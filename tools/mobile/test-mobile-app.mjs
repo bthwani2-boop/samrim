@@ -129,7 +129,32 @@ if (app === "app-partner") {
 
 import { register } from "node:module";
 import { pathToFileURL } from "node:url";
+
 register(pathToFileURL(path.join(root, "packages/design-system/tools/ts-resolver.mjs")).href, import.meta.url);
+if (app === "app-field") {
+  const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
+    pathToFileURL(path.join(appDir, "src/features/field-operations/field-commercial-agreement-rate.ts")).href
+  );
+  for (const [bps, expected] of [[0, "0"], [1, "0.01"], [10, "0.1"], [100, "1"], [1201, "12.01"], [1225, "12.25"], [1250, "12.5"], [10000, "100"]]) {
+    assert.equal(percentTextFromBps(bps), expected, `Field rate display drift for ${bps} bps`);
+  }
+  for (let bps = 0; bps <= 10000; bps += 1) {
+    assert.equal(parsePercentToBps(percentTextFromBps(bps)), bps, `Field rate precision loss for ${bps} bps`);
+  }
+  for (const invalid of ["", "-1", "100.01", "12.", "12.345", "1e2", "101"]) {
+    assert.equal(parsePercentToBps(invalid), null, `Invalid Field agreement rate was accepted: ${invalid}`);
+  }
+  assert.equal(parsePercentToBps("١٢.٢٥"), 1225, "Arabic-Indic digits must be normalized");
+  assert.equal(parsePercentToBps("12,25"), 1225, "Decimal comma must be normalized");
+  const agreedRates = [
+    { fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 1225 },
+    { fulfillmentMode: "CUSTOMER_PICKUP", commissionRateBps: 0 },
+  ];
+  assert.equal(sameAgreementRates(agreedRates, [...agreedRates].reverse()), true, "Rate comparison must be independent of mode order");
+  assert.equal(sameAgreementRates(agreedRates, [{ ...agreedRates[0], commissionRateBps: 1220 }, agreedRates[1]]), false, "Canonical readback must detect rate loss");
+  assert.equal(sameAgreementRates(agreedRates, [agreedRates[0]]), false, "Canonical readback must detect missing modes");
+  console.log("MOBILE_FIELD_AGREEMENT_RATE=PASS exact basis-point roundtrip 0..10000 and canonical rate comparison");
+}
 if (app === "app-client") {
   const { normalizeDiscoveryTaxonomy } = await import(pathToFileURL(path.join(appDir, "src/features/store-discovery/discovery-taxonomy.ts")).href);
   assert.deepEqual(normalizeDiscoveryTaxonomy(undefined, undefined), { verticals: [], categories: [] });
