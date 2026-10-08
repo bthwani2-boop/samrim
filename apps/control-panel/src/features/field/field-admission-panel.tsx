@@ -165,7 +165,7 @@ function FieldCandidateRow({ profile, draft, changed, busy, rowNotice, rowError,
     <th scope="row"><strong>{profile.fullNameAr || "ملف بلا اسم مكتمل"}</strong><br /><bdi dir="ltr">{profile.contactPhoneE164 || "—"}</bdi></th>
     <td>{cities}<br /><span className="muted">المحفظة: {providerName}</span></td>
     <td><span className="field-agent-badge">{fieldAdmissionStateLabel(profile.state)}</span>{profile.requiresProfileReview ? <p className="field-agent-blocker">تحتاج استكمالًا ومراجعة</p> : null}</td>
-    <td>لا يوجد دور دخول بعد</td><td>غير متاح قبل إنشاء الحساب</td><td>لا يوجد متجر مسجل</td><td>لا توجد رحلات</td><td>غير متاح قبل إنشاء الحساب</td>
+    <td>لا يوجد دور دخول بعد</td><td>غير متاح قبل إنشاء الحساب</td><td>لا يوجد متجر مسجل</td><td>لا توجد ملفات ضم</td><td>غير متاح قبل إنشاء الحساب</td>
     <td>
       {busy === profile.id ? <output className="muted">جارٍ تنفيذ الإجراء وإعادة القراءة…</output> : null}{rowNotice ? <output className="success-inline">{rowNotice}</output> : null}{rowError ? <p className="identity-error" role="alert">{rowError}</p> : null}
       {pendingReview ? <><details className="field-agent-edit"><summary className="button button-secondary">تعديل بيانات الملف</summary><div className="field-row-actions"><label className="field-label" htmlFor={`candidate-name-${profile.id}`}>اسم العرض<input id={`candidate-name-${profile.id}`} value={draft.fullNameAr} maxLength={120} disabled={Boolean(busy)} onChange={(event) => onDraftChange({ ...draft, fullNameAr: event.target.value })} /></label><label className="field-label" htmlFor={`candidate-wallet-${profile.id}`}>مزوّد المحفظة<select id={`candidate-wallet-${profile.id}`} value={draft.walletProviderKey} disabled={Boolean(busy)} onChange={(event) => onDraftChange({ ...draft, walletProviderKey: event.target.value })}><option value="">اختر محفظة رسمية</option>{draft.walletProviderKey && !walletProviders.some((provider) => provider.key === draft.walletProviderKey) ? <option value={draft.walletProviderKey}>{draft.walletProviderKey} · قيمة سابقة</option> : null}{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select></label><label className="field-label" htmlFor={`candidate-all-cities-${profile.id}`}><input id={`candidate-all-cities-${profile.id}`} type="checkbox" checked={draft.allServiceCities} disabled={Boolean(busy)} onChange={(event) => onDraftChange({ ...draft, allServiceCities: event.target.checked, serviceCityIds: event.target.checked ? [] : draft.serviceCityIds })} /> جميع المدن النشطة</label>{!draft.allServiceCities ? <label className="field-label" htmlFor={`candidate-cities-${profile.id}`}>مدن الخدمة<select id={`candidate-cities-${profile.id}`} multiple value={[...draft.serviceCityIds]} disabled={Boolean(busy)} onChange={(event) => onDraftChange({ ...draft, serviceCityIds: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })}>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label> : null}<button type="button" className="button button-secondary" disabled={Boolean(busy) || !changed} onClick={() => onMutate(profile, "update-profile")}>حفظ الملف والمدن</button></div></details><button type="button" className="button button-primary" disabled={Boolean(busy) || changed} onClick={() => onMutate(profile, "approve")}>{busy === profile.id ? "جارٍ الاعتماد…" : "اعتماد الملف"}</button></> : null}
@@ -253,24 +253,24 @@ type FieldAcquisitionDisclosureProps = Readonly<{
 
 function FieldAcquisitionDisclosure({ fieldActorId, page, error, busy, onLoad }: FieldAcquisitionDisclosureProps) {
   return <div className="field-agent-cases">
-      {!page && !error ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => onLoad(fieldActorId)}>{busy ? "جارٍ القراءة…" : "قراءة الرحلات"}</button> : null}
+      {!page && !error ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => onLoad(fieldActorId)}>{busy ? "جارٍ القراءة…" : "قراءة ملفات ضم الشركاء"}</button> : null}
       {error ? <><span className="identity-error" role="alert">{error}</span><button type="button" className="button button-secondary" disabled={busy} onClick={() => onLoad(fieldActorId)}>إعادة المحاولة</button></> : null}
-      {page ? <strong>المحمّل الآن: {page.cases.length} رحلة{page.nextCursor ? " · توجد صفحات أقدم" : ""}</strong> : null}
+      {page ? <strong>الملفات المحمّلة الآن: {page.cases.length}{page.nextCursor ? " · توجد ملفات أقدم" : ""}</strong> : null}
       {page?.cases.map((partnerCase: FieldAcquisitionCase) => <div key={partnerCase.id} className="field-agent-case">
         <a href={`/partners/${encodeURIComponent(partnerCase.id)}`}>{partnerCase.businessName || partnerCase.firstStoreName}</a>
         <span>{joiningCaseStateLabel(partnerCase.state)}</span>
         {partnerCase.partnerActorId ? <span>حساب الشريك مرتبط</span> : null}
         {partnerCase.state === "needs_correction" && partnerCase.correctionReason ? <span className="field-agent-blocker">{partnerCase.correctionReason}</span> : null}
       </div>)}
-      {!busy && !error && page?.cases.length === 0 ? <span className="muted">لا توجد رحلات</span> : null}
-      {page?.nextCursor ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => onLoad(fieldActorId, page.nextCursor, true)}>{busy ? "جارٍ تحميل المزيد…" : "تحميل رحلات أقدم"}</button> : null}
+      {!busy && !error && page?.cases.length === 0 ? <span className="muted">لا توجد ملفات ضم</span> : null}
+      {page?.nextCursor ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => onLoad(fieldActorId, page.nextCursor, true)}>{busy ? "جارٍ تحميل المزيد…" : "تحميل ملفات ضم أقدم"}</button> : null}
   </div>;
 }
 
 function FieldJourneySummary({ field }: Readonly<{ field: FieldAccount }>) {
   const latest = field.latestJoiningCase;
   return <div className="field-agent-journey-summary">
-    <strong>{field.joiningCaseCount ?? 0} رحلة</strong>
+    <strong>عدد ملفات ضم الشركاء: {field.joiningCaseCount ?? 0}</strong>
     {latest ? <><a href={`/partners/${encodeURIComponent(latest.id)}`}>{latest.displayName}</a><span>{joiningCaseStateLabel(latest.state)}</span><time className="muted" dateTime={latest.createdAt}>{fieldTimestamp(latest.createdAt)}</time></> : null}
   </div>;
 }
@@ -450,7 +450,7 @@ function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading
       <th scope="col"><div className="field-column-heading">{sortButton("access", "دخول التطبيق")}<select aria-label="تصفية حسب حالة دخول التطبيق" value={accessFilter} onChange={(event) => setAccessFilter(event.target.value)}><option value="">كل الحسابات</option><option value="enabled">الدخول مفعّل</option><option value="disabled">الدخول موقوف</option></select></div></th>
       <th scope="col"><div className="field-column-heading">{sortButton("activity", "آخر فتح للتطبيق")}<select aria-label="تصفية حسب فتح التطبيق" value={activityFilter} onChange={(event) => setActivityFilter(event.target.value)}><option value="">كل الأنشطة</option><option value="opened">سبق فتح التطبيق</option><option value="recent">خلال 30 يومًا</option><option value="never">لم يفتح التطبيق</option></select></div></th>
       <th scope="col"><div className="field-column-heading">{sortButton("store", "أحدث متجر")}<select aria-label="تصفية حسب وجود المتجر أو حداثته" value={storeFilter} onChange={(event) => setStoreFilter(event.target.value)}><option value="">كل المتاجر</option><option value="has">أضاف متجرًا</option><option value="recent">خلال 30 يومًا</option><option value="none">لم يضف متجرًا</option></select><input type="search" aria-label="بحث باسم أحدث متجر" placeholder="اسم المتجر" value={storeQuery} onChange={(event) => setStoreQuery(event.target.value)} /></div></th>
-      <th scope="col"><div className="field-column-heading">{sortButton("journey", "رحلات الشركاء")}<select aria-label="تصفية حسب رحلات الشركاء" value={journeyFilter} onChange={(event) => setJourneyFilter(event.target.value)}><option value="">كل الرحلات</option><option value="has">لديه رحلات</option><option value="none">بلا رحلات</option><option value="needs_correction">آخر رحلة تحتاج تصحيحًا</option></select><input type="search" aria-label="بحث باسم آخر شريك" placeholder="اسم الشريك" value={journeyQuery} onChange={(event) => setJourneyQuery(event.target.value)} /></div></th><th scope="col">المالية</th><th scope="col">الإجراءات</th>
+      <th scope="col"><div className="field-column-heading">{sortButton("journey", "ملفات ضم الشركاء")}<select aria-label="تصفية حسب ملفات ضم الشركاء" value={journeyFilter} onChange={(event) => setJourneyFilter(event.target.value)}><option value="">كل الملفات</option><option value="has">لديه ملفات ضم</option><option value="none">بلا ملفات ضم</option><option value="needs_correction">أحدث ملف يحتاج تصحيحًا</option></select><input type="search" aria-label="بحث باسم آخر شريك" placeholder="اسم الشريك" value={journeyQuery} onChange={(event) => setJourneyQuery(event.target.value)} /></div></th><th scope="col">المالية</th><th scope="col">الإجراءات</th>
     </tr></thead><tbody>
       {visibleItems.map((item) => item.kind === "candidate"
         ? <FieldCandidateRow key={`candidate:${item.admission.id}`} profile={item.admission} draft={candidateEdits[item.admission.id] ?? fieldProfile(item.admission)} changed={!sameFieldProfile(candidateEdits[item.admission.id] ?? fieldProfile(item.admission), fieldProfile(item.admission))} busy={busy} rowNotice={feedbackActorId === item.admission.id ? notice : ""} rowError={feedbackActorId === item.admission.id ? error : ""} serviceCities={serviceCities} walletProviders={walletProviders} onDraftChange={(value) => onCandidateNameChange(item.admission.id, value)} onMutate={onCandidateMutate} />
@@ -544,7 +544,7 @@ export function FieldAdmissionPanel() {
         } : page,
       }));
     } catch (cause) {
-      setAcquisitionCaseErrors((current) => ({ ...current, [fieldActorId]: fieldRequestError(cause, "تعذرت قراءة رحلات ضم الشركاء لهذا الميداني.") }));
+      setAcquisitionCaseErrors((current) => ({ ...current, [fieldActorId]: fieldRequestError(cause, "تعذرت قراءة ملفات ضم الشركاء لهذا الميداني.") }));
     } finally {
       setAcquisitionCaseBusy((current) => ({ ...current, [fieldActorId]: false }));
     }
