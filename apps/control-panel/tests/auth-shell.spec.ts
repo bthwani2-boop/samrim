@@ -710,8 +710,12 @@ test("operator profile is created, reviewed, admitted, and invited in separate s
   const phoneE164 = "+96777000123";
   const initialName = "محمود أحمد";
   const reviewedName = "محمود أحمد علي الدوبحي";
+  const initialJobTitle = "مشرف عمليات";
+  const initialDepartment = "العمليات";
+  const reviewedJobTitle = "مشرف خدمات";
+  const reviewedDepartment = "خدمة العملاء";
   const writes: Record<string, unknown>[] = [];
-  let profile: { id: string; actorId?: string; fullNameAr: string; phoneE164: string; roleEnabled?: boolean; securityEnabled?: boolean; activatedAt?: string; state: string; version: number } | null = null;
+  let profile: { id: string; actorId?: string; fullNameAr: string; phoneE164: string; jobTitle: string; department: string; roleEnabled?: boolean; securityEnabled?: boolean; activatedAt?: string; state: string; version: number } | null = null;
 
   await page.route("**/api/access/operator-profiles**", async (route) => {
     const request = route.request();
@@ -722,11 +726,11 @@ test("operator profile is created, reviewed, admitted, and invited in separate s
     const body = request.postDataJSON() as Record<string, unknown>;
     writes.push(body);
     if (new URL(request.url()).pathname === "/api/access/operator-profiles") {
-      profile = { id: profileId, fullNameAr: String(body.fullNameAr), phoneE164: String(body.phoneE164), state: "pending_review", version: 1 };
+      profile = { id: profileId, fullNameAr: String(body.fullNameAr), phoneE164: String(body.phoneE164), jobTitle: String(body.jobTitle), department: String(body.department), state: "pending_review", version: 1 };
       await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ profile, idempotentReplay: false }) });
       return;
     }
-    if (body.action === "update-profile" && profile) profile = { ...profile, fullNameAr: String(body.fullNameAr), state: "pending_review", version: profile.version + 1 };
+    if (body.action === "update-profile" && profile) profile = { ...profile, fullNameAr: String(body.fullNameAr), phoneE164: String(body.phoneE164), jobTitle: String(body.jobTitle), department: String(body.department), state: "pending_review", version: profile.version + 1 };
     else if (body.action === "approve" && profile) profile = { ...profile, state: "approved", version: profile.version + 1 };
     else if (body.action === "grant" && profile) profile = { ...profile, actorId, roleEnabled: true, securityEnabled: true, state: "admitted", version: profile.version + 1 };
     else if (body.action === "invitation" && profile) {
@@ -739,24 +743,32 @@ test("operator profile is created, reviewed, admitted, and invited in separate s
     await route.fulfill({ status: body.action === "grant" ? 201 : 200, contentType: "application/json", body: JSON.stringify({ profile, role: { actorId, role: "operator", actorCreated: true, roleCreated: true }, idempotentReplay: false }) });
   });
 
-  await page.goto("/access");
+  await page.goto("/access?view=profiles");
+  await page.getByText("مشغّل جديد", { exact: true }).click();
   await page.locator("#operator-profile-name").fill(initialName);
   await page.locator("#operator-profile-phone").fill(phoneE164);
-  await page.getByRole("button", { name: "حفظ الملف للمراجعة" }).click();
+  await page.locator("#operator-profile-title").fill(initialJobTitle);
+  await page.locator("#operator-profile-department").fill(initialDepartment);
+  await page.getByRole("button", { name: "حفظ للمراجعة", exact: true }).click();
   await expect(page.locator(`#operator-profile-name-${profileId}`)).toHaveValue(initialName);
-  await expect(page.getByText("بانتظار مراجعة الملف")).toBeVisible();
+  await expect(page.locator(`#operator-profile-title-${profileId}`)).toHaveValue(initialJobTitle);
+  await expect(page.locator(`#operator-profile-department-${profileId}`)).toHaveValue(initialDepartment);
+  await expect(page.getByRole("status").getByText("أُنشئ الملف وبات بانتظار المراجعة.")).toBeVisible();
+  await page.getByText("تعديل الملف", { exact: true }).click();
   await page.locator(`#operator-profile-name-${profileId}`).fill(reviewedName);
-  await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
+  await page.locator(`#operator-profile-title-${profileId}`).fill(reviewedJobTitle);
+  await page.locator(`#operator-profile-department-${profileId}`).fill(reviewedDepartment);
+  await page.getByRole("button", { name: "حفظ التعديل", exact: true }).click();
   await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
-  await expect(page.getByText("اعتُمد الملف. لم يُمنح دور المشغّل بعد.")).toBeVisible();
+  await expect(page.getByText("اعتُمد الملف. الخطوة التالية منح الدور.")).toBeVisible();
   await page.getByRole("button", { name: "منح دور المشغّل", exact: true }).click();
-  await expect(page.getByText("مُنح دور المشغّل بعد الاعتماد. إصدار الدعوة هو الخطوة التالية.")).toBeVisible();
+  await expect(page.getByText("مُنح دور المشغّل. أصدر دعوة التفعيل عند الجاهزية.")).toBeVisible();
   await page.getByRole("button", { name: "إصدار دعوة التفعيل", exact: true }).click();
   await expect(page.getByText("operator-enrollment-proof-code-123456", { exact: true })).toBeVisible();
   await expect(page.getByText("+967••••0123", { exact: true })).toBeVisible();
   expect(writes).toEqual([
-    { fullNameAr: initialName, phoneE164 },
-    { action: "update-profile", fullNameAr: reviewedName, phoneE164, expectedVersion: 1 },
+    { fullNameAr: initialName, phoneE164, jobTitle: initialJobTitle, department: initialDepartment },
+    { action: "update-profile", fullNameAr: reviewedName, phoneE164, jobTitle: reviewedJobTitle, department: reviewedDepartment, expectedVersion: 1 },
     { action: "approve", expectedVersion: 2 },
     { action: "grant", expectedVersion: 3 },
     { action: "invitation" },
@@ -2038,7 +2050,7 @@ test("remote logout failure keeps local sign-out and remains observable", async 
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
-  await page.getByText("حساب المشغل", { exact: true }).click();
+  await page.locator('summary[aria-label="الحساب"]').click();
   await page.getByRole("button", { name: "تسجيل الخروج" }).click();
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("تعذر تأكيد إبطال الجلسة");

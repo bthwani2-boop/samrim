@@ -16,7 +16,7 @@ function mutateOperatorSessions(actorId: string, mutation: string): void {
     [
       "compose",
       "--project-name",
-      "samrim-local",
+      runtime.composeProject,
       "--env-file",
       runtime.envFile,
       "-f",
@@ -46,7 +46,7 @@ function restartIdentity(): void {
     [
       "compose",
       "--project-name",
-      "samrim-local",
+      runtime.composeProject,
       "--env-file",
       runtime.envFile,
       "-f",
@@ -135,7 +135,7 @@ test("@live operator passkey registration, authentication and governed recovery 
   const cookiesBeforeOutage = await page.context().cookies();
   const accessBeforeOutage = cookiesBeforeOutage.find((cookie) => cookie.name.endsWith("bt_identity_access"))?.value;
   const runtime = readCanonicalRuntime();
-  execFileSync("docker", ["compose", "--project-name", "samrim-local", "--env-file", runtime.envFile, "-f", path.join(runtime.repoRoot, "infra/local/compose/compose.yaml"), "stop", "identity"], { cwd: runtime.repoRoot, encoding: "utf8", stdio: "ignore" });
+  execFileSync("docker", ["compose", "--project-name", runtime.composeProject, "--env-file", runtime.envFile, "-f", path.join(runtime.repoRoot, "infra/local/compose/compose.yaml"), "stop", "identity"], { cwd: runtime.repoRoot, encoding: "utf8", stdio: "ignore" });
   try {
     const transientSession = await readBrowserSession(page);
     expect(transientSession.status).toBe(503);
@@ -148,7 +148,7 @@ test("@live operator passkey registration, authentication and governed recovery 
   expect(sessionAfterIdentityRecovery.status, JSON.stringify(sessionAfterIdentityRecovery.body)).toBe(200);
   expect(sessionAfterIdentityRecovery.body.identity.subject).toBe(operator.actorId);
 
-  await page.getByText("حساب المشغل", { exact: true }).click();
+  await page.locator('summary[aria-label="الحساب"]').click();
   const explicitLogoutResponse = page.waitForResponse((response) =>
     response.url().endsWith("/api/auth/logout") && response.request().method() === "POST",
   );
@@ -172,9 +172,9 @@ test("@live operator passkey registration, authentication and governed recovery 
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
   await page.getByRole("button", { name: "الدخول بمفتاح المرور" }).click();
   await expect(page).toHaveURL(/\/workspace$/);
-  await expect(page.getByText("حساب المشغل", { exact: true })).toBeVisible();
+  await expect(page.locator('summary[aria-label="الحساب"]')).toBeVisible();
 
-  await page.getByText("حساب المشغل", { exact: true }).click();
+  await page.locator('summary[aria-label="الحساب"]').click();
   await page.getByRole("button", { name: "تسجيل الخروج" }).click();
   await page.getByRole("button", { name: "استرداد الوصول" }).click();
   await page.getByLabel("رقم الهاتف").fill(operator.phone);
