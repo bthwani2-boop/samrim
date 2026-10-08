@@ -64,7 +64,7 @@ const operatorJoiningCaseDraft = {
 
 async function fillOperatorJoiningCaseForm(page: Page) {
   await page.getByLabel("اسم المالك الكامل").fill(operatorJoiningCaseDraft.ownerFullName);
-  await page.getByLabel("رقم جوال المالك (E.164)").fill("+967 77000100");
+  await page.getByLabel("رقم جوال المالك").fill("+967 77000100");
   await page.getByLabel("مزوّد المحفظة الذي حدده المالك").selectOption(operatorJoiningCaseDraft.walletProviderKey);
   await page.getByLabel("الاسم القانوني للنشاط").fill(operatorJoiningCaseDraft.businessName);
   await page.getByLabel("اسم المتجر الأول").fill(operatorJoiningCaseDraft.firstStoreName);
@@ -83,7 +83,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   const actorID = `act_${role}_reviewed_candidate`;
   const admissionID = `${role === "captain" ? "cap" : "fld"}_adm_reviewed_candidate`;
   const candidateNameSelector = role === "field" ? `#candidate-name-${admissionID}` : `#${role}-candidate-name-${admissionID}`;
-  let profile: { id: string; actorId?: string; fullNameAr: string; contactPhoneE164: string; walletProviderKey: string; serviceCityId?: string; state: string; requiresProfileReview?: boolean; version: number } | null = null;
+  let profile: { id: string; actorId?: string; fullNameAr: string; contactPhoneE164: string; walletProviderKey: string; allServiceCities?: boolean; serviceCityIds?: string[]; state: string; requiresProfileReview?: boolean; version: number } | null = null;
   const mutations: Record<string, unknown>[] = [];
 
   if (role === "field") {
@@ -128,7 +128,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
     mutations.push(body);
     const action = body.action;
     if (action === "admit") {
-      profile = { id: admissionID, fullNameAr: String(body.fullNameAr), contactPhoneE164: String(body.contactPhoneE164), walletProviderKey: String(body.walletProviderKey), ...(role === "field" ? { serviceCityId: String(body.serviceCityId) } : {}), state: "pending_review", version: 1 };
+      profile = { id: admissionID, fullNameAr: String(body.fullNameAr), contactPhoneE164: String(body.contactPhoneE164), walletProviderKey: String(body.walletProviderKey), ...(role === "field" ? { allServiceCities: body.allServiceCities === true, serviceCityIds: Array.isArray(body.serviceCityIds) ? body.serviceCityIds as string[] : [] } : {}), state: "pending_review", version: 1 };
     } else if (action === "update-profile" && profile) {
       profile = { ...profile, fullNameAr: String(body.fullNameAr), state: "pending_review", version: profile.version + 1 };
     } else if (action === "approve" && profile) {
@@ -143,37 +143,36 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   });
 
   await page.goto(`/${surface}`);
-  await expect(page.getByRole("heading", { name: role === "captain" ? "ملف كابتن جديد" : "إدارة الميدانيين" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: role === "captain" ? "ملف كابتن جديد" : "الميدانيون" })).toBeVisible();
   if (role === "field") await page.getByText("إنشاء ملف ميداني").click();
   await page.locator(`#${role}-candidate-name`).fill(initialName);
   await page.locator(`#${role}-candidate-phone`).fill(phone);
-  await page.locator(role === "field" ? "#field-candidate-wallet-provider" : "#captain-candidate-wallet-provider").fill("الكريمي");
-  if (role === "field") await page.locator("#field-candidate-city").selectOption("sanaa");
+  await page.locator(role === "field" ? "#field-candidate-wallet-provider" : "#captain-candidate-wallet-provider").selectOption("wallet_provider_floosak");
   await page.getByRole("button", { name: role === "captain" ? "حفظ الملف للمراجعة" : "حفظ للمراجعة" }).click();
   await expect(page.getByText(role === "captain" ? "أُنشئ ملف الكابتن بانتظار المراجعة. لم يُمنح دور التطبيق بعد." : "أُنشئ الملف وظهر في سجل الميدانيين بانتظار المراجعة.")).toBeVisible();
-  if (role === "field" && !(await page.locator(candidateNameSelector).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+  if (role === "field" && !(await page.locator(candidateNameSelector).isVisible())) await page.getByText("تعديل بيانات الملف", { exact: true }).click();
   await expect(page.locator(candidateNameSelector)).toHaveValue(initialName);
 
-  if (role === "field" && !(await page.getByRole("button", { name: "اعتماد الملف", exact: true }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "اعتماد الملف", exact: true })).toBeVisible();
   await page.locator(candidateNameSelector).fill(reviewedName);
-  await page.getByRole("button", { name: role === "field" ? "حفظ الاسم" : "حفظ الملف", exact: true }).click();
-  if (role === "field" && !(await page.locator(candidateNameSelector).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+  await page.getByRole("button", { name: role === "field" ? "حفظ الملف والمدن" : "حفظ الملف", exact: true }).click();
+  if (role === "field" && !(await page.locator(candidateNameSelector).isVisible())) await page.getByText("تعديل بيانات الملف", { exact: true }).click();
   await expect(page.locator(candidateNameSelector)).toHaveValue(reviewedName);
   await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
   if (role === "field") {
     await expect(page.getByText("اعتُمد الملف وأُعيدت قراءته؛ أصبح منح الدور خطوته التالية.")).toBeVisible();
-    if (!(await page.getByRole("button", { name: "منح دور الميداني" }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+    await expect(page.getByRole("button", { name: "منح دور الميداني" })).toBeVisible();
   } else {
     await page.locator(`#${role}-candidate-state`).selectOption("pending_identity");
     await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(reviewedName);
   }
   await page.getByRole("button", { name: `منح دور ${role === "captain" ? "الكابتن" : "الميداني"}` }).click();
   if (role === "captain") await page.locator(`#${role}-candidate-state`).selectOption("eligible");
-  await expect(page.getByText(role === "captain" ? "اكتمل منح الدور؛ ينتظر تفعيل الحساب من الكابتن." : "مُنح دور الدخول وربط بأهلية DSH. الخطوة التالية للميداني: يفتح التطبيق، ويدخل رقم الهاتف المسجل، ثم يختار تفعيل الجهاز لإثبات الهاتف وإنشاء كلمة المرور.")).toBeVisible();
+  await expect(page.getByText(role === "captain" ? "اكتمل منح الدور؛ ينتظر تفعيل الحساب من الكابتن." : "مُنح دور الدخول وربط بأهلية النظام. الخطوة التالية للميداني: يفتح التطبيق، ويدخل رقم الهاتف المسجل، ثم يختار تفعيل الجهاز لإثبات الهاتف وإنشاء كلمة المرور.")).toBeVisible();
   await expect(page.getByText(actorID)).toHaveCount(0);
   expect(mutations).toEqual([
-    role === "field" ? { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, serviceCityId: "sanaa", walletProviderKey: "wallet_provider_floosak" } : { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, walletProviderKey: "wallet_provider_floosak" },
-    { action: "update-profile", admissionId: admissionID, fullNameAr: reviewedName, expectedVersion: 1 },
+    role === "field" ? { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, allServiceCities: true, serviceCityIds: [], walletProviderKey: "wallet_provider_floosak" } : { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, walletProviderKey: "wallet_provider_floosak" },
+    role === "field" ? { action: "update-profile", admissionId: admissionID, fullNameAr: reviewedName, walletProviderKey: "wallet_provider_floosak", allServiceCities: true, serviceCityIds: [], expectedVersion: 1 } : { action: "update-profile", admissionId: admissionID, fullNameAr: reviewedName, expectedVersion: 1 },
     { action: "approve", admissionId: admissionID, expectedVersion: 2 },
     { action: "provision", admissionId: admissionID },
   ]);
@@ -182,7 +181,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
 async function exerciseLegacyDshProfileReview(page: Page, role: "captain" | "field") {
   const surface = role === "captain" ? "captains" : "fields";
   const admissionID = `${role === "captain" ? "cap" : "fld"}_adm_legacy_review`;
-  const profile: { id: string; actorId: string; fullNameAr: string | null; contactPhoneE164: string | null; state: string; requiresProfileReview: boolean; version: number; availabilityState?: string } = {
+  const profile: { id: string; actorId: string; fullNameAr: string | null; contactPhoneE164: string | null; state: string; requiresProfileReview: boolean; version: number; availabilityState?: string; walletProviderKey?: string; allServiceCities?: boolean; serviceCityIds?: string[] } = {
     id: admissionID,
     actorId: `act_${role}_legacy_review`,
     fullNameAr: null,
@@ -190,7 +189,7 @@ async function exerciseLegacyDshProfileReview(page: Page, role: "captain" | "fie
     state: "suspended",
     requiresProfileReview: true,
     version: 9,
-    ...(role === "captain" ? { availabilityState: "unavailable" } : {}),
+    ...(role === "captain" ? { availabilityState: "unavailable" } : { walletProviderKey: "wallet_provider_floosak", allServiceCities: true, serviceCityIds: [] }),
   };
   const mutations: Record<string, unknown>[] = [];
   await page.route(`**/api/${surface}**`, async (route) => {
@@ -227,17 +226,15 @@ async function exerciseLegacyDshProfileReview(page: Page, role: "captain" | "fie
   });
 
   await page.goto(`/${surface}`);
-  await expect(page.getByRole("heading", { name: role === "captain" ? "ملفات الكباتن قبل منح الدور" : "إدارة الميدانيين" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: role === "captain" ? "ملفات الكباتن قبل منح الدور" : "الميدانيون" })).toBeVisible();
   await expect(page.getByText(role === "captain" ? "موقوف حتى استكمال الملف ومراجعته" : "الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
   const name = "سامي ناصر محمد العريقي";
   if (role === "field") {
-    if (!(await page.getByRole("button", { name: "اعتماد مراجعة الملف" }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
     await page.locator(`#field-profile-name-act_field_legacy_review`).fill(name);
-    await page.getByRole("button", { name: "حفظ الاسم" }).click();
-    if (!(await page.getByRole("button", { name: "اعتماد مراجعة الملف" }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+    await page.getByRole("button", { name: "حفظ الملف والمدن" }).click();
     await expect(page.locator("#field-profile-name-act_field_legacy_review")).toHaveValue(name);
     await page.getByRole("button", { name: "اعتماد مراجعة الملف" }).click();
-    await expect(page.getByRole("status")).toContainText("اعتُمدت مراجعة الملف وأُعيدت قراءة حالته.");
+    await expect(page.locator("output.success-inline")).toContainText("اعتُمدت مراجعة الملف وأُعيدت قراءة حالته.");
   } else {
     await page.locator(`#${role}-candidate-name-${admissionID}`).fill(name);
     await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
@@ -249,7 +246,7 @@ async function exerciseLegacyDshProfileReview(page: Page, role: "captain" | "fie
     await expect(page.getByText("موقوف حتى استكمال الملف ومراجعته")).toHaveCount(0);
   }
   expect(mutations).toEqual(role === "field" ? [
-    { action: "update-profile", actorId: profile.actorId, admissionId: admissionID, reason: "", fullNameAr: name, expectedVersion: 9 },
+    { action: "update-profile", actorId: profile.actorId, admissionId: admissionID, reason: "", fullNameAr: name, walletProviderKey: "wallet_provider_floosak", allServiceCities: true, serviceCityIds: [], expectedVersion: 9 },
     { action: "review-profile", actorId: profile.actorId, admissionId: admissionID, reason: "", fullNameAr: name, expectedVersion: 10 },
   ] : [
     { action: "update-profile", admissionId: admissionID, fullNameAr: name, expectedVersion: 9 },
@@ -401,7 +398,7 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
     ["/operations", "العمليات"],
     ["/finance", "المالية"],
     ["/captains", "قبول الكباتن"],
-    ["/fields", "قبول الميدان"],
+    ["/fields", "الميدانيون"],
     ["/catalog", "المنتجات"],
     ["/policies", "مركز السياسات"],
   ] as const;
@@ -557,7 +554,7 @@ test("marketing resource pages keep promotions and discovery content separate", 
   await page.getByRole("button", { name: "إنشاء مسودة المحتوى" }).click();
   await expect(page.getByText("تعذر تأكيد الحفظ؛ أعد المحاولة.")).toBeVisible();
   await page.getByRole("button", { name: "التحقق / إعادة محاولة الإنشاء" }).click();
-  await expect(page.getByText("تم إنشاء المحتوى وقراءته كمسودة من سجل DSH. انشره من السجل عندما يصبح جاهزًا.")).toBeVisible();
+  await expect(page.getByText("تم إنشاء المحتوى وقراءته كمسودة من السجل. انشره من السجل عندما يصبح جاهزًا.")).toBeVisible();
   expect(contentUploadKeys).toHaveLength(2);
   expect(contentUploadKeys[1]).toBe(contentUploadKeys[0]);
   expect(contentUploadCorrelations[1]).toBe(contentUploadCorrelations[0]);
@@ -626,7 +623,7 @@ test("marketing create recovery reconciles promotions and resumes content with t
   await expect(page.getByText("تعذر تأكيد الحفظ؛ أعد المحاولة.")).toBeVisible();
   expect(promotionPostCount).toBe(1);
   await page.reload();
-  await expect(page.getByText("تمت قراءة العرض المنشأ من سجل DSH؛ استعيدت نتيجته دون إنشاء نسخة أخرى.")).toBeVisible();
+  await expect(page.getByText("تمت قراءة العرض المنشأ من السجل؛ استعيدت نتيجته دون إنشاء نسخة أخرى.")).toBeVisible();
   expect(promotionPostCount).toBe(1);
   expect(await page.evaluate(() => window.sessionStorage.getItem("bthwani.control.marketing.promotion-create.v1.actor-operator"))).toBeNull();
   expect(promotionIdempotencyKeys).toHaveLength(1);
@@ -647,7 +644,7 @@ test("marketing create recovery reconciles promotions and resumes content with t
   await expect(page.getByLabel("عنوان المحتوى")).toHaveValue("محتوى الاستعادة");
   await page.getByLabel("ملف صورة المحتوى").setInputFiles({ name: "content.png", mimeType: "image/png", buffer: image });
   await page.getByRole("button", { name: "التحقق / إعادة محاولة الإنشاء" }).click();
-  await expect(page.getByText("تم إنشاء المحتوى وقراءته كمسودة من سجل DSH. انشره من السجل عندما يصبح جاهزًا.")).toBeVisible();
+  await expect(page.getByText("تم إنشاء المحتوى وقراءته كمسودة من السجل. انشره من السجل عندما يصبح جاهزًا.")).toBeVisible();
   expect(contentPostCount).toBe(2);
   expect(contentIdempotencyKeys).toHaveLength(2);
   expect(contentIdempotencyKeys[1]).toBe(contentIdempotencyKeys[0]);
@@ -823,8 +820,8 @@ test("Field center reads DSH eligibility and routes operational controls to the 
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_admitted", phoneE164: "+96777000103", role: "field", enabled, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_field_admitted", actorId: "act_field_admitted", state: "eligible", version: 4, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
-  await expect(page.getByRole("heading", { name: "إدارة الميدانيين" })).toBeVisible();
-  await page.getByText("الخطوة التالية", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "الميدانيون" })).toBeVisible();
+  await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await page.getByLabel("سبب الإجراء").fill("تجميد أهلية الميدان");
   await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", action: "disable", expectedVersion: 2, reason: "تجميد أهلية الميدان" });
@@ -845,11 +842,11 @@ test("legacy Field role with a missing profile is suspended before Identity acce
   });
   await page.goto("/fields");
   await expect(page.getByText("الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
-  await page.getByText("الخطوة التالية", { exact: true }).click();
+  await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await page.getByLabel("سبب الإجراء").fill("إيقاف حتى مراجعة الملف");
   await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
-  await expect(page.getByRole("status")).toContainText("أُوقف دور الدخول وأُعيدت قراءة حالة الحساب وأهلية DSH.");
+  await expect(page.locator("output.success-inline")).toContainText("أُوقف دور الدخول وأُعيدت قراءة حالة الحساب وأهلية النظام.");
 });
 
 test("legacy Captain profile review never offers role activation before review", async ({ page }) => {
@@ -895,7 +892,7 @@ test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_reenroll", phoneE164: "+96777000105", role: "field", enabled: true, securityEnabled: true, activatedAt: reenrolled ? undefined : "2026-09-20T08:00:00.000Z", actorVersion: 4, roleVersion: reenrolled ? 3 : 2, admission: { id: "fld_adm_reenroll", actorId: "act_field_reenroll", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
-  await page.getByText("الخطوة التالية", { exact: true }).click();
+  await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await page.getByLabel("سبب الإجراء").fill("استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
   await expect(page.locator("output.success-inline")).toContainText("أُجيزت إعادة تسجيل دور سبق تفعيله");
@@ -931,7 +928,7 @@ test("Captain reenrollment goes through DSH eligibility and verifies the Identit
   await page.goto("/captains");
   await page.getByLabel("سبب الإجراء").fill("استعادة وصول الكابتن");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.getByRole("status")).toContainText("تمت إجازة إعادة تسجيل الكابتن بعد تحقق DSH");
+  await expect(page.getByRole("status")).toContainText("تمت إجازة إعادة تسجيل الكابتن بعد تحقق النظام");
   expect(reenrollmentBody).toMatchObject({
     actorId: "act_captain_reenroll",
     action: "reenroll",
@@ -962,7 +959,7 @@ test("Captain reenrollment reconciles a server error against the current Identit
   await page.goto("/captains");
   await page.getByLabel("سبب الإجراء").fill("تسوية نتيجة إعادة التسجيل");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى");
+  await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة المعتمدة قبل أي محاولة أخرى");
   await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
@@ -1026,7 +1023,7 @@ test("Field reenrollment conflicts reload the canonical DSH-owned roster before 
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_conflict", phoneE164: "+96777000106", role: "field", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: conflictStateApplied ? 3 : 2, admission: { id: "fld_adm_conflict", actorId: "act_field_conflict", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
-  await page.getByText("الخطوة التالية", { exact: true }).click();
+  await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await page.getByLabel("سبب الإجراء").fill("استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
   await expect(page.getByText(/^تغيرت حالة الحساب بالتزامن\. أُعيد تحميل الحالة الحالية/)).toBeVisible();
@@ -1040,13 +1037,13 @@ test("Field first activation is distinct from reenrollment and explains the next
   });
   await page.goto("/fields");
   await expect(page.getByText("الدور جاهز؛ بانتظار تفعيل الجهاز")).toBeVisible();
-  await page.getByText("الخطوة التالية", { exact: true }).click();
+  await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await expect(page.getByRole("status")).toContainText("يدخل رقم الهاتف المسجل");
   await expect(page.getByRole("status")).toContainText("تفعيل الجهاز");
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
-test("Field admission form explains and enforces the international phone before save", async ({ page }) => {
+test("Field admission form accepts valid Yemeni local or international phone and rejects invalid input", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
   await page.route("**/api/service-cities**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
@@ -1057,12 +1054,14 @@ test("Field admission form explains and enforces the international phone before 
   await page.goto("/fields");
   await page.getByText("إنشاء ملف ميداني", { exact: true }).click();
   await page.getByLabel("الاسم الكامل بالعربية").fill("سالم علي");
-  await page.locator("#field-candidate-wallet-provider").fill("الكريمي");
-  await page.getByLabel("رقم الهاتف الدولي").fill("777765432");
-  await page.getByLabel("مدينة الخدمة").selectOption("sanaa");
-  await expect(page.getByText("الرقم المحلي وحده لا يُقبل")).toBeVisible();
+  await page.locator("#field-candidate-wallet-provider").selectOption("wallet_provider_floosak");
+  const phone = page.getByLabel("رقم الجوال");
+  await phone.fill("123");
+  await expect(page.getByText(/أدخل رقمًا يمنيًا صحيحًا/)).toBeVisible();
   await expect(page.getByRole("button", { name: "حفظ للمراجعة" })).toBeDisabled();
-  await page.getByLabel("رقم الهاتف الدولي").fill("+967 777 765 432");
+  await phone.fill("777765432");
+  await expect(page.getByRole("button", { name: "حفظ للمراجعة" })).toBeEnabled();
+  await phone.fill("+967 777 765 432");
   await expect(page.getByRole("button", { name: "حفظ للمراجعة" })).toBeEnabled();
 });
 
@@ -1072,8 +1071,8 @@ test("Field reenrollment remains unavailable until DSH restores eligibility", as
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_suspended", phoneE164: "+96777000107", role: "field", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_suspended", actorId: "act_field_suspended", state: "suspended", version: 9, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
-  await expect(page.getByText("موقوف").first()).toBeVisible();
-  await page.getByText("الخطوة التالية", { exact: true }).click();
+  await expect(page.locator("tr.field-agent-row").first().getByText(/موقوف/).first()).toBeVisible();
+  await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
@@ -1153,7 +1152,7 @@ test("operator operations uses the DSH read model and resource actions", async (
   });
   await page.goto("/operations");
   await expect(page.getByRole("heading", { name: "العمليات" })).toBeVisible();
-  await expect(page.getByText("order_ready")).toBeVisible();
+  await expect(page.getByRole("link", { name: "فتح الطلب" })).toHaveAttribute("href", "/operations/order_ready?tab=overview");
   const searchBox = page.getByRole("searchbox");
   await searchBox.fill("متجر الاختبار");
   await searchBox.press("Enter");
@@ -1162,8 +1161,8 @@ test("operator operations uses the DSH read model and resource actions", async (
   await page.getByLabel("ترتيب التحديث").selectOption("updated_asc");
   await expect.poll(() => requestedSort).toBe("updated_asc");
   await expect.poll(() => new URL(page.url()).searchParams.get("sort")).toBe("updated_asc");
-  await page.getByRole("link", { name: "order_ready" }).click();
-  await expect(page.getByRole("heading", { name: "order_ready" })).toBeVisible();
+  await page.getByRole("link", { name: "فتح الطلب" }).click();
+  await expect(page.getByRole("heading", { name: "طلب من متجر الاختبار" })).toBeVisible();
   const detailTabs = page.getByRole("navigation", { name: "مساحات تفاصيل الطلب" });
   await detailTabs.getByRole("link", { name: "التنفيذ" }).click();
   await expect(page.getByText("شارع الاختبار")).toBeVisible();
@@ -1227,7 +1226,7 @@ test("operator finance reads only the bounded COD cash-custody projection", asyn
   await expect(cashRow).toBeVisible();
   await expect(cashRow.getByRole("cell").nth(1)).toContainText("12,500");
   await expect(page.getByRole("heading", { name: "النقد المحصل عند التسليم" })).toBeVisible();
-  await expect(page.getByText("تظل العهدة مفتوحة بعد إرسال الكابتن للمرجع. يرفق موظف المالية إيصال التوريد المحفوظ والمشفّر ويطابقه هنا؛ عندها فقط يقيد WLT الاستلام ويحرر الحجز.")).toBeVisible();
+  await expect(page.getByText("تظل العهدة مفتوحة بعد إرسال الكابتن للمرجع. يرفق موظف المالية إيصال التوريد المحفوظ والمشفّر ويطابقه هنا؛ عندها فقط يقيد السجل المالي الاستلام ويحرر الحجز.")).toBeVisible();
   await expect(page.getByText("dsh-order-1")).toBeVisible();
   await expect(page.getByText("بانتظار مطابقة المالية")).toBeVisible();
   await expect(page.getByText("captain-slip-1")).toBeVisible();
@@ -1247,7 +1246,7 @@ test("operator finance reads only the bounded COD cash-custody projection", asyn
   await expect(page.getByRole("row", { name: /dsh-order-1/ })).toBeVisible();
   await expect(page.getByText("الإيصال محفوظ لهذه المحاولة")).toBeVisible();
   await page.getByRole("button", { name: "مطابقة الإيصال المحفوظ" }).click();
-  await expect(page.getByRole("status")).toContainText("طابق WLT إيصال التوريد وأغلق العهدة في القيد المالي.");
+  await expect(page.getByRole("status")).toContainText("طابق السجل المالي إيصال التوريد وأغلق العهدة في القيد المالي.");
   await expect(page.getByText("dsh-order-1")).toHaveCount(0);
   expect(evidenceHeaders?.["idempotency-key"]).toBeTruthy();
   expect(evidenceHeaders?.["x-correlation-id"]).toBeTruthy();
@@ -1441,7 +1440,7 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await page.goto("/partners/new");
   await expect(page.getByRole("heading", { name: "إنشاء حالة انضمام جديدة", exact: true })).toBeVisible();
   await expect(page.getByLabel("معرّف Actor الشريك")).toHaveCount(0);
-  await expect(page.getByLabel("رقم جوال المالك (E.164)")).toBeVisible();
+  await expect(page.getByLabel("رقم جوال المالك")).toBeVisible();
   await fillOperatorJoiningCaseForm(page);
   const fulfillmentModes = page.getByRole("group", { name: "أوضاع الطلب التي اختارها الشريك عند الانضمام" });
   await expect(fulfillmentModes.getByRole("checkbox")).toHaveCount(3);
@@ -1486,8 +1485,8 @@ test("operator resumes an uncertain joining-case create with the same idempotenc
   await fillOperatorJoiningCaseForm(page);
   await page.getByRole("checkbox", { name: "استلم بنفسك من المتجر" }).check();
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
-  await expect(page.getByText(/أعد المحاولة بالبيانات نفسها للتحقق بالمفتاح المحفوظ/)).toBeVisible();
-  await expect(page.getByLabel("رقم جوال المالك (E.164)")).toBeDisabled();
+  await expect(page.getByText(/أعد المحاولة بالبيانات نفسها للتحقق/)).toBeVisible();
+  await expect(page.getByLabel("رقم جوال المالك")).toBeDisabled();
   const storedMetadataRaw = await page.evaluate(() => window.sessionStorage.getItem("bthwani.control.partner.joining-case-create.v1.actor-operator"));
   expect(storedMetadataRaw).not.toBeNull();
   const storedMetadata = JSON.parse(storedMetadataRaw ?? "null") as Record<string, unknown>;
@@ -1496,14 +1495,14 @@ test("operator resumes an uncertain joining-case create with the same idempotenc
 
   await page.reload();
   await expect(page.getByRole("status")).toContainText("يحفظ المتصفح مفتاح المتابعة فقط");
-  await expect(page.getByLabel("رقم جوال المالك (E.164)")).toHaveValue("");
+  await expect(page.getByLabel("رقم جوال المالك")).toHaveValue("");
   await fillOperatorJoiningCaseForm(page);
   await page.getByRole("checkbox", { name: "استلم بنفسك من المتجر" }).check();
   await page.getByLabel("رقم الإثبات").fill("CR-WRONG");
   await expect(page.getByRole("button", { name: "إعادة محاولة إنشاء الحالة" })).toBeEnabled();
   await page.getByRole("button", { name: "إعادة محاولة إنشاء الحالة" }).click();
   await expect(page.getByText(/لم تطابق البيانات مفتاح المحاولة المحفوظ/)).toBeVisible();
-  await expect(page.getByLabel("رقم جوال المالك (E.164)")).toBeEnabled();
+  await expect(page.getByLabel("رقم جوال المالك")).toBeEnabled();
   await page.getByLabel("رقم الإثبات").fill(operatorJoiningCaseDraft.firstStoreProofNumber);
   await page.getByRole("button", { name: "إعادة محاولة إنشاء الحالة" }).click();
   await expect(page).toHaveURL(/\/partners\/join_retry$/);
@@ -1554,8 +1553,8 @@ test("operator city creation delegates the stable id to DSH", async ({ page }) =
   await page.getByLabel("الاسم العربي").fill("صنعاء");
   await page.getByRole("button", { name: "إضافة مدينة" }).click();
 
-  const cityNotice = page.getByRole("status").filter({ hasText: "تم حفظ المدينة الكانونية" });
-  await expect(cityNotice).toContainText("تم حفظ المدينة الكانونية.");
+  const cityNotice = page.getByRole("status").filter({ hasText: "تم حفظ المدينة المعتمدة" });
+  await expect(cityNotice).toContainText("تم حفظ المدينة المعتمدة.");
   await expect(cityNotice).not.toContainText("city_0123456789abcdef0123456789abcdef");
   expect(requestBody).toEqual({ displayNameAr: "صنعاء", active: true });
 });
@@ -1610,7 +1609,7 @@ test("operator creates a canonical commerce vertical before onboarding partners"
 
   await page.locator("#catalog-vertical-reason").fill("إنشاء فئة جديدة للاختبار");
   await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
-  await expect(page.getByLabel("المجال الرئيسي")).toHaveValue("vertical_0123456789abcdef0123456789abcdef");
+  await expect(page.getByLabel("النشاط الرئيسي")).toHaveValue("vertical_0123456789abcdef0123456789abcdef");
   expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", active: true, reason: "إنشاء فئة جديدة للاختبار" });
 });
 
@@ -1646,7 +1645,7 @@ test("operator creates and reads back the reward policy for the selected commerc
   await page.getByLabel("مبلغ الاستحقاق لهذا النوع (ريال يمني)").fill("250");
   await page.getByLabel("سبب إنشاء السياسة أو تغيير المبلغ").fill("سياسة اختبار نوع المطعم");
   await page.getByRole("button", { name: "إنشاء سياسة لهذا النوع" }).click();
-  await expect(page.locator("output.success")).toContainText("تم حفظ السياسة ومطابقة مبلغها وإصدارها مع WLT.");
+  await expect(page.locator("output.success")).toContainText("تم حفظ السياسة ومطابقة مبلغها وإصدارها مع السجل المالي.");
   expect(mutation).toMatchObject({ scopeType: "STORE_TYPE", scopeId: "grocery-market", rewardMinor: 250, roundingUnitMinor: 50, expectedVersion: 0, reason: "سياسة اختبار نوع المطعم" });
   await expect(page.getByText(/المبلغ الفعّال لنوع/)).toBeVisible();
 });
@@ -1845,7 +1844,7 @@ test("Partner reenrollment verifies DSH joining eligibility and the Identity rea
   await page.goto("/partners/actors/act_partner_reenroll");
   await page.getByLabel("سبب الإجراء").fill("استعادة وصول الشريك");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.getByRole("status")).toContainText("تمت إجازة إعادة تسجيل الشريك بعد تحقق DSH");
+  await expect(page.getByRole("status")).toContainText("تمت إجازة إعادة تسجيل الشريك بعد تحقق النظام");
   expect(reenrollmentBody).toMatchObject({
     actorId: "act_partner_reenroll",
     action: "reenroll",
@@ -1876,7 +1875,7 @@ test("Partner reenrollment reconciles a server error against the current Identit
   await page.goto("/partners/actors/act_partner_unknown_result");
   await page.getByLabel("سبب الإجراء").fill("تسوية نتيجة إعادة التسجيل");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى");
+  await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة المعتمدة قبل أي محاولة أخرى");
   await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });

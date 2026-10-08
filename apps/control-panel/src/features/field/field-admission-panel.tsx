@@ -639,6 +639,8 @@ export function FieldAdmissionPanel() {
       const page = await readWorkbench(admission.contactPhoneE164 ?? "");
       if (action === "provision") {
         if (!result.actorId || !page.items.some((item) => item.kind === "account" && item.account.actorId === result.actorId && item.account.admission?.id === admission.id && item.account.admission.state === "eligible")) { setError("مُنح الدور لكن إعادة القراءة لا تثبت ربط حساب الحسابات بأهلية النظام."); await load(); return; }
+        // Once provisioned, feedback belongs to the new account row rather than the removed candidate row.
+        setFeedbackActorId(result.actorId);
       } else if (!page.items.some((item) => item.kind === "candidate" && item.admission.id === admission.id && item.admission.state === expectedState && (action !== "update-profile" || item.admission.fullNameAr === nextName))) {
         setError("نُفذ الإجراء لكن إعادة القراءة لا تثبت حالة الملف المطلوبة."); await load(); return;
       }
