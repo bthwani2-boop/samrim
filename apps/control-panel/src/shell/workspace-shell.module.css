@@ -34,7 +34,6 @@
 :global(.appearance-options) { display: flex; flex-wrap: wrap; gap: 6px; }
 :global(.appearance-options label) { display: inline-flex; min-height: 36px; align-items: center; gap: 5px; padding: 0 7px; border-radius: 9px; color: var(--color-primary); font-size: 12px; font-weight: 750; cursor: pointer; }
 :global(.appearance-options label:has(input:checked)) { background: var(--action-soft); color: var(--interactive-text); }
-:global(.appearance-options input) { accent-color: var(--action-bg); }
 :global(.appearance-options label:focus-within) { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
 :global(.appearance-control small) { color: var(--danger); font-size: 11px; }
 :global(.workspace-layout) { display: grid; grid-template-columns: minmax(220px, 250px) minmax(0, 1fr); align-items: start; gap: var(--space-8); min-height: calc(100vh - 108px); padding: var(--space-6) 0 var(--space-4); }
@@ -62,7 +61,8 @@
 :global(.workspace-breadcrumbs li + li::before) { color: var(--text-muted); content: "/"; }
 :global(.workspace-breadcrumbs a) { color: var(--text-muted); text-underline-offset: 3px; }
 :global(.workspace-breadcrumbs [aria-current="page"]) { color: var(--color-primary); font-weight: var(--font-weight-bold); }
-:global(.workspace-page) { display: grid; gap: 24px; }
+:global(.workspace-page) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; min-width: 0; }
+:global(.workspace-main > *), :global(.workspace-page > *) { min-width: 0; }
 :global(.workspace-resource-grid) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
 :global(.catalog-taxonomy-workspace) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; min-width: 0; }
 :global(.catalog-taxonomy-workbench) { display: grid; gap: 18px; min-width: 0; padding: clamp(18px, 2vw, 28px); background: var(--surface-base); }
@@ -136,7 +136,6 @@
 :global(.catalog-category-media-controls .button) { justify-self: start; }
 :global(.catalog-category-editor textarea), :global(.catalog-attribute-compact textarea) { min-height: 78px; padding-block: 10px; resize: none; }
 :global(.catalog-category-active-toggle) { display: flex; align-items: center; gap: 8px; color: var(--color-primary); }
-:global(.catalog-category-active-toggle input) { width: 18px; min-height: 18px; accent-color: var(--action-bg); }
 :global(.catalog-category-editor-actions) { display: flex; align-items: end; gap: 8px; }
 :global(.catalog-category-detail) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 16px 0 0; border-top: 1px solid var(--border-subtle); }
 :global(.catalog-category-detail-heading) { grid-column: 1; }
@@ -164,7 +163,8 @@
 :global(.catalog-registry-actions) { display: flex; flex-wrap: wrap; gap: 8px; }
 :global(.catalog-registry-table tbody tr.is-selected) { background: var(--action-soft); }
 :global(.workspace-form-grid) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-:global(.workspace-form-grid input), :global(.workspace-form-grid select), :global(.workspace-form-grid textarea) { min-height: 48px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-base); color: var(--color-primary); padding: 0 14px; direction: rtl; }
+:global(.workspace-form-grid input:not([type="checkbox"]):not([type="radio"])), :global(.workspace-form-grid select), :global(.workspace-form-grid textarea) { min-height: 48px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-base); color: var(--color-primary); padding: 0 14px; direction: rtl; }
+@media (max-width: 640px) { :global(.workspace-form-grid) { grid-template-columns: minmax(0, 1fr); } }
 :global(.workspace-media-preview) { display: block; width: 100%; max-height: 180px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-muted); object-fit: cover; }
 :global(.workspace-page-heading) { padding: 12px 4px 0; }
 :global(.workspace-page-heading h1) { margin: 0; color: var(--color-primary); font-size: clamp(30px, 4vw, 46px); font-weight: 850; letter-spacing: -.06em; }

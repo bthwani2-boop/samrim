@@ -1,5 +1,3 @@
-"use client";
-
 import Link from "next/link";
 import { PartnerDirectory } from "../../../src/features/partner-onboarding/partner-directory";
 import { PartnerOperatorBoundary } from "../../../src/features/partner-onboarding/partner-workspace";
@@ -22,3 +20,5 @@ export default function PartnersPage() {
     </PartnerOperatorBoundary>
   );
 }
+
+export const metadata = { title: "الشركاء" };

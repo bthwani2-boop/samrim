@@ -19,7 +19,6 @@
 :global(.partner-registry-table) { min-width: 720px; }
 :global(.partner-registry-table th), :global(.partner-registry-table td) { padding: 10px 12px; }
 :global(.partner-registry-table a), :global(.partner-row-action) { color: var(--interactive-text); text-underline-offset: 3px; }
-:global(.partner-registry-table input[type="checkbox"]) { width: 17px; height: 17px; accent-color: var(--interactive); }
 :global(.partner-row-action) { display: inline-flex; align-items: center; gap: 6px; font-weight: 750; white-space: nowrap; }
 :global(.partner-registry-pagination) { justify-content: center; }
 :global(.partner-registry-pagination > span) { min-width: 36px; text-align: center; color: var(--text-muted); font-variant-numeric: tabular-nums; }

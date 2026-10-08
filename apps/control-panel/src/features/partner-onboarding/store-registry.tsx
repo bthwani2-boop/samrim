@@ -130,7 +130,7 @@ export function StoreRegistry() {
 
       <div className="workspace-toolbar store-registry-toolbar">
         <search className="store-registry-search" aria-label="البحث في المتاجر">
-          <form className="store-registry-search-form" onSubmit={(event) => { event.preventDefault(); navigate(filter, search.trim().slice(0, 128), sort); }}>
+          <form className="store-registry-search-form" noValidate onSubmit={(event) => { event.preventDefault(); navigate(filter, search.trim().slice(0, 128), sort); }}>
             <label className="field-label" htmlFor="partner-store-search">البحث باسم المتجر أو الشريك<input id="partner-store-search" type="search" value={search} maxLength={128} onChange={(event) => setSearch(event.target.value)} placeholder="اسم المتجر أو الشريك" /></label>
             <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
           </form>

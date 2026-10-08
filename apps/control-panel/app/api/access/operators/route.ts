@@ -1,8 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { identityErrorPayload, identityHttpStatus, readOperatorPermission, readOperatorSession, searchIdentityRoles } from "../../../../src/server/identity/identity-bff";
-import { operatorWorkspacePermissions } from "../../../../src/session/operator-permissions";
+import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../../src/server/identity/identity-bff";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
@@ -23,20 +21,15 @@ export async function GET(request: Request) {
   const sort = rawSort === "phone_asc" || rawSort === "phone_desc" ? rawSort : null;
   const rawEnabled = params.get("enabled");
   const enabled = rawEnabled === null ? undefined : rawEnabled === "true" ? true : rawEnabled === "false" ? false : null;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 25 || enabled === null || sort === null || query.trim().length > 100 || cursor.length > 512) {
+  const rawPermissionCoverage = params.get("permissionCoverage") ?? "";
+  const permissionCoverage = rawPermissionCoverage === "" || rawPermissionCoverage === "none" || rawPermissionCoverage === "some" || rawPermissionCoverage === "complete" ? rawPermissionCoverage : null;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 25 || enabled === null || sort === null || permissionCoverage === null || query.trim().length > 100 || cursor.length > 512) {
     return errorResponse("INVALID_INPUT", "valid search, cursor, sort, limit, and enabled filters are required", 400);
   }
 
   try {
-    const page = await searchIdentityRoles("operator", query, limit, cursor, enabled, sort);
-    const items = await Promise.all(page.items.map(async (operator) => {
-      if (operator.actorId === identity.subject) {
-        return { ...operator, permissions: operatorWorkspacePermissions.map(({ key: permission }) => ({ permission, enabled: identity.permissions?.includes(permission) === true })) };
-      }
-      const permissions = await Promise.all(operatorWorkspacePermissions.map(({ key: permission }) => readOperatorPermission(operator.actorId, permission, { operatorActorId: identity.subject, correlationId: randomUUID() })));
-      return { ...operator, permissions };
-    }));
-    return NextResponse.json({ items, limit: page.limit, nextCursor: page.nextCursor }, { headers: { "Cache-Control": "no-store" } });
+    const page = await searchIdentityRoles("operator", query, limit, cursor, enabled, sort, permissionCoverage || undefined);
+    return NextResponse.json({ items: page.items, limit: page.limit, nextCursor: page.nextCursor }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const payload = identityErrorPayload(error);
     return errorResponse(payload.code, payload.message, identityHttpStatus(error));

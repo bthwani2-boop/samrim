@@ -1,13 +1,13 @@
 "use client";
 
-import type { ActorRoleView, OperatorPermission } from "@bthwani/identity";
+import type { ActorRoleView } from "@bthwani/identity";
 import type { FormEvent } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { operatorWorkspacePermissions } from "../../session/operator-permissions";
 import { responseMessage } from "./identity-error-message";
 
-type OperatorRow = ActorRoleView & Readonly<{ permissions: ReadonlyArray<Readonly<{ permission: OperatorPermission; enabled: boolean }>> | null }>;
+type OperatorRow = ActorRoleView;
 type OperatorPage = Readonly<{ items: ReadonlyArray<OperatorRow>; nextCursor?: string }>;
 type CoverageFilter = "all" | "none" | "some" | "complete";
 
@@ -20,18 +20,9 @@ function identityStatus(operator: OperatorRow): Readonly<{ label: string; tone: 
   return { label: "نشط", tone: "is-active" };
 }
 
-function enabledPermissionCount(permissions: OperatorRow["permissions"]): number | null {
-  if (permissions === null) return null;
-  return permissions.reduce((total, permission) => total + Number(permission.enabled), 0);
-}
-
-function matchesCoverage(permissions: OperatorRow["permissions"], filter: CoverageFilter): boolean {
-  if (filter === "all") return true;
-  const count = enabledPermissionCount(permissions);
-  if (count === null) return false;
-  if (filter === "none") return count === 0;
-  if (filter === "complete") return count === operatorWorkspacePermissions.length;
-  return count > 0 && count < operatorWorkspacePermissions.length;
+function enabledPermissionCount(operator: OperatorRow): number | null {
+  const count = operator.operatorEnabledPermissionCount;
+  return typeof count === "number" && Number.isInteger(count) && count >= 0 && count <= operatorWorkspacePermissions.length ? count : null;
 }
 
 export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selectionDisabled = false }: Readonly<{ onSelectPhone: (phone: string) => void; selectedPhone?: string; selectionDisabled?: boolean }>) {
@@ -76,12 +67,12 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
     setEnabled(nextEnabled);
     setSort(nextSort);
     setCoverage(nextCoverage);
-    if (nextEnabled !== enabled || nextSort !== sort) {
+    if (nextEnabled !== enabled || nextSort !== sort || nextCoverage !== coverage) {
       setItems([]);
       setNextCursor("");
       setError("");
     }
-  }, [enabled, sort]);
+  }, [coverage, enabled, sort]);
 
   const load = useCallback(async (cursor = "", append = false) => {
     const requestId = ++loadRequestId.current;
@@ -92,6 +83,7 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
       const params = new URLSearchParams({ q: appliedQuery, limit: String(pageSize), sort });
       if (cursor) params.set("cursor", cursor);
       if (enabled) params.set("enabled", enabled);
+      if (coverage !== "all") params.set("permissionCoverage", coverage);
       const response = await identityFetch(`/api/access/operators?${params.toString()}`);
       if (loadRequestId.current !== requestId) return;
       if (!response.ok) throw new Error(await responseMessage(response));
@@ -110,11 +102,10 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
         setLoadingMore(false);
       }
     }
-  }, [appliedQuery, enabled, sort]);
+  }, [appliedQuery, coverage, enabled, sort]);
 
   useEffect(() => { if (urlReady) void load(); }, [load, urlReady]);
 
-  const visibleItems = useMemo(() => items.filter((operator) => matchesCoverage(operator.permissions, coverage)), [coverage, items]);
   const activeFilterCount = Number(Boolean(appliedQuery)) + Number(Boolean(enabled)) + Number(coverage !== "all");
 
   function search(event: FormEvent<HTMLFormElement>) {
@@ -161,11 +152,11 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
 
     {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر تحديث القائمة</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
     {loading && items.length === 0 ? <div className="access-loading" role="status"><span className="loading-mark" aria-hidden="true" /> جارٍ قراءة المشغّلين…</div> : null}
-    {!loading && !error && visibleItems.length === 0 ? <div className="collection-state"><strong>{items.length ? "لا توجد مطابقة في السجلات المحمّلة" : "لا توجد حسابات مطابقة"}</strong><p>{items.length && nextCursor ? "حمّل دفعة أخرى أو غيّر مرشح الصلاحيات." : "غيّر البحث أو المرشّحات لعرض سجلات أخرى."}</p></div> : null}
+    {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد حسابات مطابقة</strong><p>غيّر البحث أو المرشّحات لعرض سجلات أخرى.</p></div> : null}
 
     {items.length > 0 ? <>
-      <p className="access-result-count" aria-live="polite">{visibleItems.length} من {items.length} حسابًا محمّلًا{nextCursor ? " · توجد نتائج أخرى" : ""}</p>
-      {visibleItems.length > 0 ? <div className="access-table-wrap" aria-busy={loading}>
+      <p className="access-result-count" aria-live="polite">{items.length} حسابات في الصفحة المحمّلة{nextCursor ? " · توجد نتائج أخرى" : ""}</p>
+      {items.length > 0 ? <div className="access-table-wrap" aria-busy={loading}>
         <table className="operations-table access-table">
           <caption className="visually-hidden">قائمة حسابات المشغّلين، يمكن البحث والتصفية من عناوين الأعمدة</caption>
           <thead>
@@ -204,9 +195,9 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
             </tr>
           </thead>
           <tbody>
-            {visibleItems.map((operator) => {
+            {items.map((operator) => {
               const status = identityStatus(operator);
-              const count = enabledPermissionCount(operator.permissions);
+              const count = enabledPermissionCount(operator);
               return <tr key={operator.actorId} className={selectedPhone === operator.phoneE164 ? "is-selected" : undefined}>
                 <th scope="row"><div className="access-profile-identity">{operator.fullNameAr?.trim() ? <><strong>{operator.fullNameAr.trim()}</strong><bdi dir="ltr" className="access-operator-phone">{operator.phoneE164}</bdi></> : <strong><bdi dir="ltr" className="access-operator-phone">{operator.phoneE164}</bdi></strong>}<small>{[operator.jobTitle || "المسمى غير مسجل", operator.department || "القسم غير مسجل"].join(" · ")}</small></div></th>
                 <td><span className={`access-state-pill ${status.tone}`}>{status.label}</span></td>
@@ -217,7 +208,6 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
           </tbody>
         </table>
       </div> : null}
-      {coverage !== "all" && nextCursor ? <p className="access-filter-scope">مرشح الصلاحيات يطابق الحسابات المحمّلة فقط. حمّل دفعة أخرى لتوسيع النتائج.</p> : null}
       {nextCursor ? <div className="access-load-more"><button type="button" className="button button-secondary" disabled={loading || loadingMore} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل دفعة أخرى…" : "تحميل المزيد"}</button></div> : null}
     </> : null}
   </section>;

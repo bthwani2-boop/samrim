@@ -14,3 +14,5 @@ export default async function FinanceCashCustodyPage({ searchParams }: Readonly<
   };
   return <FinanceWorkspace resource="cash-custody"><CashCustodyWorkspace initialQuery={initialQuery} /></FinanceWorkspace>;
 }
+
+export const metadata = { title: "حفظ النقد" };

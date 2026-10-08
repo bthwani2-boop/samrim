@@ -218,7 +218,7 @@ function WorkspaceHeader({
             </svg>
           </button>
           {searchOpen ? (
-            <form className="workspace-search-form" onSubmit={submitSearch}>
+            <form className="workspace-search-form" noValidate onSubmit={submitSearch}>
               <label className="visually-hidden" htmlFor="workspace-search-input">البحث في صفحات لوحة التحكم</label>
               <input
                 ref={searchInputRef}

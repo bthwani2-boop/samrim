@@ -4,3 +4,5 @@ export default async function PartnerDetailPage({ params }: Readonly<{ params: P
   const { actorId } = await params;
   return <PartnerDetailWorkspace actorId={actorId} />;
 }
+
+export const metadata = { title: "الملف المالي للشريك" };

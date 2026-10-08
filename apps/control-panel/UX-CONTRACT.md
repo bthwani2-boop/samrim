@@ -38,17 +38,21 @@
 | Date | Native browser date/time input | `premium-ui.json` + browser platform contract | Native picker | Locale + keyboard + E2E |
 | Scrollbar | Global application stylesheet | `DESIGN.md` + generated theme | Default app surface | Computed style + rendered browser check |
 | Form | Feature-owned semantic form and API adapter | Feature contract/API | Create / edit | Targeted E2E |
+| High-cardinality registries and lookups | Domain feature over its existing bounded server API | Owning API contract | Server search/filter/sort/cursor; no unbounded option list; URL carries applied query and current cursor | Boundary-sized API/E2E plus rendered recovery states |
+| Operator notification inbox | DSH notifications through the authenticated Control Panel BFF | DSH notification cursor and complete unread count | Bounded cursor pages in the URL; server unread count is global, card groups and page counts describe the current page | Cursor/readback E2E and browser back/forward |
+| Operator account directory | Identity role search through the authenticated Control Panel BFF | Identity actor role and permission grants | Search, enabled state, permission coverage, stable sort, and cursor are filtered by Identity before page limiting; enabled permission count is part of the bounded result | Identity database filter/count test and Control Panel query E2E |
 | Table selection | `src/features/finance/use-page-selection.ts` | This contract | Visible page only; bulk operations submit only selected canonical record IDs | Keyboard + E2E |
 | CRUD | Owning route and feature service | API contract | Return to owning list after create; stay on detail for review | Full-flow E2E |
 | Finance evidence upload | Finance feature upload control and authenticated Next BFF → DSH → WLT | WLT evidence document | One receipt per transfer; one statement per period/batch | Authorization + type/size + download + reconciliation |
 
 ## Navigation and responsive behavior
 
-- Route document title policy: Each route owns a localized Next metadata/title; titles use the established page/product pattern and never contain secrets.
+- Route document title policy: Each route owns localized server-side Next Metadata in its page or route-segment layout (for client pages); the root layout supplies the product fallback and title template. Titles use the established page/product pattern and never contain secrets.
 - Route error / 403 page behavior: Keep shell navigation reachable; show a clear recovery action without exposing raw backend payloads.
-- Breadcrumb/tab/route-state policy: Breadcrumbs represent route hierarchy. Independent destinations use links, not in-page tabs. Child route state is bookmarkable in the URL.
+- Breadcrumb/tab/route-state policy: Breadcrumbs represent route hierarchy. Independent destinations use links, not in-page tabs. Applied search, filters, sort and the current bounded cursor are bookmarkable in the URL; back/forward restores the feature's cursor history where available.
 - Sidebar/drawer/bottom-sheet transformation: Persistent sidebar on desktop; focus-managed overlay drawer below 820px; Escape and backdrop close; trigger regains focus.
-- Responsive table strategy: Preserve comparison tables through the owning feature’s deliberate overflow or detail strategy; never clip the page shell.
+- Responsive table strategy: Preserve comparison tables through the owning feature’s deliberate, keyboard-reachable overflow or detail strategy; constrain grid tracks and table wrappers so a wide table never expands or clips the page shell.
+- High-cardinality data policy: Read records through bounded server pages, normally at most 50 per request. Search and filter on the owning API; do not download full registries into the browser or native selects. Keep a selected lookup value visible when search results change. Say whether a count is the current page, a loaded subset or a server-reported total; never infer total population from the visible rows.
 - Truncation/full-value access: Wrap instructional text; ellipsize only route/current values where the full page remains reachable.
 - Focus restoration and sticky-obstruction policy: Route changes focus `#workspace-main`; drawer close restores its trigger; focus rings remain visible and sticky surfaces do not cover the target.
 

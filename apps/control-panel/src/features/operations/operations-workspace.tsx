@@ -169,7 +169,7 @@ export function OperationsWorkspace() {
 
       <div className="operations-toolbar">
         <search className="operations-search" aria-label="البحث في الطلبات">
-          <form className="operations-search-form" onSubmit={(event) => { event.preventDefault(); navigate({ q: search.trim().slice(0, 128) }); }}>
+          <form className="operations-search-form" noValidate onSubmit={(event) => { event.preventDefault(); navigate({ q: search.trim().slice(0, 128) }); }}>
             <label className="field-label" htmlFor="operations-search">رقم الطلب أو اسم المتجر
  <input id="operations-search" type="search" value={search} maxLength={128} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث عن طلب أو متجر" />
             </label>

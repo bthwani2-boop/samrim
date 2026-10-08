@@ -275,11 +275,13 @@ export async function listOperatorOperations(state: string, search: string, sort
 	return (await requestDshJson<OperatorOperationsResponse>(dshOperationPaths.listOperatorOperations.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function listOperatorNotifications(limit: number, context: DshOperatorReadContext): Promise<NotificationListResponse> {
-  if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+export async function listOperatorNotifications(limit: number, context: DshOperatorReadContext, cursor = ""): Promise<NotificationListResponse> {
+  if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100 || cursor.length > 1024) {
     throw new Error("DSH_OPERATOR_NOTIFICATIONS_INPUT_INVALID");
   }
-  const path = `${dshOperationPaths.listNotifications.path}?limit=${limit}`;
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  const path = `${dshOperationPaths.listNotifications.path}?${params.toString()}`;
   return (await requestDshJson<NotificationListResponse>(dshOperationPaths.listNotifications.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 

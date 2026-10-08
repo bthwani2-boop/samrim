@@ -1,9 +1,15 @@
 import { headers } from "next/headers";
 import Script from "next/script";
 import { connection } from "next/server";
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { SessionProvider } from "../src/session/session-provider";
+
+export const metadata: Metadata = {
+  title: { default: "بوابة المشغّل", template: "%s | بثواني" },
+  description: "مساحة تشغيل بثواني لإدارة الشركاء والكتالوج والعمليات والصلاحيات.",
+};
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   await connection();

@@ -1,4 +1,5 @@
 "use client";
+import { TextArea } from "@bthwani/design-system/web";
 
 import { publicationReadinessBlockedReasonLabel, publicationStateLabel, type CommercialStoreType, type CommercialStoreTypeListResponse, type SetStoreCommercialTypeResponse, type StoreFulfillmentMode, type StoreFulfillmentModesResponse, type StorePublicationResponse } from "@bthwani/dsh";
 import Link from "next/link";
@@ -224,7 +225,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
                 {commercialTypes.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}
               </select>
             </label>
-            <label className="field-label" htmlFor="store-commercial-type-reason">سبب التعيين<textarea id="store-commercial-type-reason" value={commercialTypeReason} onChange={(event) => setCommercialTypeReason(event.target.value)} minLength={5} maxLength={500} rows={2} disabled={busy || loading} /></label>
+            <label className="field-label" htmlFor="store-commercial-type-reason">سبب التعيين<TextArea className="resize-none" id="store-commercial-type-reason" value={commercialTypeReason} onChange={(event) => setCommercialTypeReason(event.target.value)} minLength={5} maxLength={500} rows={2} disabled={busy || loading} /></label>
             <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || !selectedCommercialTypeID || commercialTypeReason.trim().length < 5} onClick={() => void saveCommercialType()}>{busy ? "جارٍ الحفظ…" : "تعيين نوع المتجر"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setSelectedCommercialTypeID(""); setCommercialTypeReason(""); }}>إلغاء التغييرات</button></div>
              <output className="managed-status managed-status-warning">لا تُحتسب العمولة أو استحقاق الميداني لهذا المتجر قبل تثبيت نوعه التجاري وتفعيل السياسة المناسبة لهذا النوع.</output>
           </>}

@@ -1,5 +1,3 @@
-"use client";
-
 import { JoiningCaseQueue } from "../../../../src/features/partner-onboarding/joining-case-queue";
 import { PartnerOperatorBoundary } from "../../../../src/features/partner-onboarding/partner-workspace";
 
@@ -17,3 +15,5 @@ export default function PartnerJoiningPage() {
     </PartnerOperatorBoundary>
   );
 }
+
+export const metadata = { title: "طلبات الانضمام" };

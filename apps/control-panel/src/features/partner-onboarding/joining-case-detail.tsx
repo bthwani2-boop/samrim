@@ -1,4 +1,5 @@
 "use client";
+import { TextArea } from "@bthwani/design-system/web";
 
 import { type CommercialStoreType, type CommerceVertical, financialProfileStateLabel, type JoiningCaseProofDetailsResponse, type JoiningCaseProofType, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type PartnerFinancialTermsPolicy, type ServiceCity, type StoreFulfillmentMode, settlementPeriodLabel } from "@bthwani/dsh";
 import Link from "next/link";
@@ -340,7 +341,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
             {current.state === "admission_requested" && current.origin === "field" ? <button type="button" className="button button-primary" disabled={busy || !current.storeProfileImage || !current.firstStoreProofImageUploaded} onClick={() => void submitCase()}>قبول الإحالة وإنشاء دور الشريك</button> : null}
             {current.state === "submitted" ? <>
                {activeTermsPolicy ? <p className="managed-status managed-status-info">ستُعتمد شروط التسوية: {settlementPeriodLabel(activeTermsPolicy.settlementPeriod)}.</p> : <><output className="managed-status managed-status-warning">{policyReadMessage || "تُقرأ فترة التسوية من قسم السياسات؛ أما عمولة كل متجر فتُحسم في اتفاقيته الخاصة بعد تفاوض المالك وموافقة المالية."}</output><Link className="button button-secondary" href="/policies/partner-financial-terms">فتح شروط تسوية الشريك</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة الشروط النشطة</button></>}
-              <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<textarea className="resize-none" id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>
+              <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<TextArea className="resize-none" id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>
               <button type="button" className="button button-primary" disabled={busy || !canManageFinancialTerms || !activeTermsPolicy} onClick={() => void reviewCase("approved")}>اعتماد الحالة وإنشاء المتجر بالشروط النشطة</button>
               <button type="button" className="button button-secondary" disabled={busy} onClick={() => void reviewCase("needs_correction")}>إعادة للتصحيح</button>
             </> : null}

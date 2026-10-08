@@ -303,7 +303,7 @@ test("authenticated operator discovers the platform centers through workspace na
   await accessLink.click();
   await expect(page).toHaveURL(/\/access$/);
   await expect(page.locator('#workspace-navigation a[href="/access"][aria-current="page"]')).toHaveAttribute("href", "/access");
-  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "المشغّلون", exact: true, level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toBeVisible();
   await expect(page.getByLabel("اسم العرض الكامل بالعربية")).toBeVisible();
   await expect(page.locator("#workspace-main")).toBeFocused();
@@ -314,7 +314,7 @@ test("authenticated operator discovers the platform centers through workspace na
   await expect(page.getByRole("button", { name: "الوصول والصلاحيات", exact: true })).toBeFocused();
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "المشغّلون", exact: true, level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toBeVisible();
 });
 
@@ -323,7 +323,7 @@ test("operator without operator-administration authority cannot open access or p
   await page.goto("/access");
 
   await expect(page.getByRole("status")).toContainText("الوصول إلى هذه المساحة غير مفعّل");
-  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "المشغّلون", exact: true, level: 1 })).toHaveCount(0);
   await expect(page.getByLabel("اسم العرض الكامل بالعربية")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "قائمة المشغّلين وصلاحياتهم" })).toHaveCount(0);
 });
@@ -387,13 +387,61 @@ test("operator notification cards write back read state and update the unread su
   await expect(page.getByRole("heading", { name: "المقروءة", exact: true })).toBeVisible();
 });
 
+test("operator notification inbox reads bounded cursor pages and restores browser history", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const requests: Array<{ limit: string | null; cursor: string | null }> = [];
+  await page.route("**/api/notifications**", async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    requests.push({ limit: params.get("limit"), cursor: params.get("cursor") });
+    const notifications = params.get("cursor") === "older-page"
+      ? [{ id: "order:older", kind: "ORDER_CREATED", title: "إشعار أقدم", body: "تفاصيل إشعار أقدم.", orderId: "order_older", createdAt: "2026-09-20T10:00:00.000Z", readAt: null }]
+      : [
+          { id: "order:newest", kind: "ORDER_CREATED", title: "وصل طلب جديد", body: "وصل طلب جديد إلى متجرك.", orderId: "order_newest", createdAt: "2026-09-22T10:00:00.000Z", readAt: null },
+          { id: "order:recent", kind: "ORDER_CREATED", title: "طلب قيد المتابعة", body: "تغيرت حالة الطلب.", orderId: "order_recent", createdAt: "2026-09-21T10:00:00.000Z", readAt: "2026-09-22T11:00:00.000Z" },
+        ];
+    const nextCursor = params.get("cursor") ? undefined : "older-page";
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ notifications, unreadCount: 2, nextCursor }) });
+  });
+
+  await page.goto("/notifications");
+  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "طلب قيد المتابعة، مقروء" })).toBeVisible();
+  await expect(page.getByText("2 إشعارات غير مقروءة", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("الصفحة الحالية: 2 إشعارًا");
+  expect(requests[0]).toEqual({ limit: "50", cursor: null });
+
+  const pagination = page.getByRole("navigation", { name: "صفحات الإشعارات" });
+  await pagination.getByRole("button", { name: "الأقدم" }).click();
+  await expect(page).toHaveURL(/cursor=older-page/);
+  await expect(page.getByRole("button", { name: "إشعار أقدم، جديد" })).toBeVisible();
+  await pagination.getByRole("button", { name: "الأحدث" }).click();
+  await expect(page).not.toHaveURL(/cursor=/);
+  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/cursor=older-page/);
+  await expect(page.getByRole("button", { name: "إشعار أقدم، جديد" })).toBeVisible();
+  await page.goForward();
+  await expect(page).not.toHaveURL(/cursor=/);
+  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+
+  await page.goto("/notifications?cursor=older-page");
+  await expect(page.getByRole("button", { name: "إشعار أقدم، جديد" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "صفحات الإشعارات" }).getByRole("button", { name: "الأحدث" })).toBeEnabled();
+  await page.getByRole("navigation", { name: "صفحات الإشعارات" }).getByRole("button", { name: "الأحدث" }).click();
+  await expect(page).not.toHaveURL(/cursor=/);
+  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+  expect(requests.every((request) => request.limit === "50")).toBe(true);
+  expect(requests.filter((request) => request.cursor === "older-page").length).toBeGreaterThanOrEqual(2);
+});
+
 test("workspace routes keep one main landmark and an actor-specific page hierarchy", async ({ page }) => {
   test.setTimeout(120_000);
   await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "operations", "partners", "catalog"], true);
   const routes = [
     ["/workspace", "الرئيسية"],
     ["/notifications", "الإشعارات"],
-    ["/access", "ملفات المشغّلين والوصول والصلاحيات"],
+    ["/access", "المشغّلون"],
     ["/partners", "الشركاء"],
     ["/operations", "العمليات"],
     ["/finance", "المالية"],
@@ -408,6 +456,7 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
     await expect(page.locator("#workspace-main")).toHaveCount(1, { timeout: 30_000 });
     await expect(page.locator("#workspace-main > main")).toHaveCount(0, { timeout: 30_000 });
     await expect(page.getByRole("heading", { name: heading, exact: true, level: 1 })).toBeVisible({ timeout: 30_000 });
+    await expect(page).toHaveTitle(/.+ \| بثواني$/);
     if (path !== "/notifications") {
       const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
       if (path === "/captains" || path === "/fields") {
@@ -697,10 +746,41 @@ test("operator direct navigation to access exposes the canonical access capabili
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 10, nextCursor: "" }) });
   });
   await page.goto("/access");
-  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toBeVisible();
-  await page.getByRole("button", { name: "الوصول والصلاحيات", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "قائمة المشغّلين وصلاحياتهم" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "المشغّلون", exact: true, level: 1 })).toBeVisible();
+  const createProfile = page.locator("details.access-create-disclosure > summary");
+  await expect(createProfile).toBeVisible();
+  await createProfile.click();
+  await expect(page.getByRole("heading", { name: "ملف جديد" })).toBeVisible();
+  await page.getByRole("navigation", { name: "إدارة المشغّلين" }).getByRole("link", { name: "الوصول والصلاحيات", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "حسابات المشغّلين" })).toBeVisible();
+});
+
+test("operator permission coverage filters the server page and starts a fresh cursor", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  const requests: string[] = [];
+  await page.route("**/api/access/operators**", async (route) => {
+    const url = new URL(route.request().url());
+    requests.push(url.toString());
+    const coverage = url.searchParams.get("permissionCoverage");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [{ actorId: "act_operator_coverage", phoneE164: "+96777000103", fullNameAr: "مشغّل تجريبي", role: "operator", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", createdAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 1, roleVersion: 1, operatorEnabledPermissionCount: coverage === "some" ? 4 : 6 }],
+        limit: 10,
+        nextCursor: coverage ? "" : "operator-next-page",
+      }),
+    });
+  });
+
+  await page.goto("/access?view=permissions");
+  await expect(page.getByRole("heading", { name: "حسابات المشغّلين" })).toBeVisible();
+  const coverageFilter = page.getByLabel("تصفية حسب نطاق الصلاحيات");
+  await coverageFilter.selectOption("some");
+  await expect.poll(() => requests.some((request) => new URL(request).searchParams.get("permissionCoverage") === "some")).toBe(true);
+  const filteredRequest = new URL(requests.find((request) => new URL(request).searchParams.get("permissionCoverage") === "some")!);
+  expect(filteredRequest.searchParams.get("cursor")).toBeNull();
+  await expect(page.getByRole("row", { name: /مشغّل تجريبي/ })).toContainText("4");
 });
 
 test("operator profile is created, reviewed, admitted, and invited in separate steps", async ({ page }) => {
@@ -782,7 +862,7 @@ test("operator access keeps phone discovery separate from actorId mutation", asy
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ items: [{ actorId: "act_operator_canonical", phoneE164: "+96777000102", role: "operator", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 7, roleVersion: 3, permissions: [] }] }),
+      body: JSON.stringify({ items: [{ actorId: "act_operator_canonical", phoneE164: "+96777000102", role: "operator", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 7, roleVersion: 3, operatorEnabledPermissionCount: 0 }] }),
     });
   });
   await page.route("**/api/access/managed-user/status**", async (route) => {
@@ -808,13 +888,14 @@ test("operator access keeps phone discovery separate from actorId mutation", asy
     mutationBody = route.request().postDataJSON() as Record<string, unknown>;
     await route.fulfill({ status: 204 });
   });
-  await page.goto("/access");
-  await page.getByRole("button", { name: "الوصول والصلاحيات", exact: true }).click();
-  await page.getByRole("button", { name: "إدارة الحساب" }).click();
-  await expect(page.getByLabel("رقم هاتف المشغّل")).toHaveValue("+96777000102");
+  await page.goto("/access?view=permissions");
+  await page.getByRole("button", { name: "عرض التفاصيل" }).click();
+  const operatorDetails = page.getByRole("dialog");
+  await expect(operatorDetails.getByText("+96777000102", { exact: true })).toBeVisible();
   await expect(page.getByText("act_operator_canonical")).toHaveCount(0);
-  await page.getByLabel("سبب تغيير حالة الحساب").fill("مراجعة صلاحية الحساب");
-  await page.getByRole("button", { name: "إيقاف المشغّل" }).click();
+  await operatorDetails.locator("details.access-account-controls").last().locator("summary").click();
+  await operatorDetails.locator("#access-reason").fill("مراجعة صلاحية الحساب");
+  await page.getByRole("button", { name: "إيقاف الدور" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_operator_canonical", role: "operator", action: "disable-role", expectedVersion: 3 });
 });
 

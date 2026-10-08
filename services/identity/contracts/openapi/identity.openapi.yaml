@@ -809,6 +809,11 @@ components:
         credentialVersion:
           type: integer
           minimum: 1
+        operatorEnabledPermissionCount:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: Enabled Operator permission count, returned on Operator role search pages only.
         actorCreated:
           type: boolean
         roleCreated:

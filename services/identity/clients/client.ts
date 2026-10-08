@@ -92,7 +92,7 @@ export type IdentityInternalClient = Readonly<{
   grantOperatorProfile(profileId: string, request: OperatorProfileMutationRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileGrantResponse>;
   issueOperatorProfileInvitation(profileId: string, context: AttributedMutationContext): Promise<OperatorProfileInvitationResponse>;
   provisionActorRole(request: ProvisionActorRoleRequest, context: AttributedMutationContext): Promise<ActorRoleView>;
-  searchActorRoles(role: ActorType, query: string, enabled?: boolean, page?: Readonly<{ limit?: number; cursor?: string; sort?: "phone_asc" | "phone_desc" }>): Promise<ActorRoleSearchPage>;
+  searchActorRoles(role: ActorType, query: string, enabled?: boolean, page?: Readonly<{ limit?: number; cursor?: string; sort?: "phone_asc" | "phone_desc"; permissionCoverage?: "none" | "some" | "complete" }>): Promise<ActorRoleSearchPage>;
   readActorRole(actorId: string, role: ActorType): Promise<ActorRoleView>;
   readOperatorPermission(actorId: string, permission: OperatorPermission, context: AttributedMutationContext): Promise<OperatorPermissionAccess>;
   setOperatorPermission(actorId: string, permission: OperatorPermission, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<OperatorPermissionAccess>;
@@ -441,6 +441,7 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
           const params = new URLSearchParams({ role, q: query, limit: String(page?.limit ?? 25) });
           if (page?.cursor) params.set("cursor", page.cursor);
           if (page?.sort) params.set("sort", page.sort);
+          if (page?.permissionCoverage) params.set("permissionCoverage", page.permissionCoverage);
           if (enabled !== undefined) params.set("enabled", String(enabled));
           response = await fetch(resolveUrl(baseUrl, identityOperationPaths.searchActorRoles.path + "?" + params.toString()), {
             method: identityOperationPaths.searchActorRoles.method,

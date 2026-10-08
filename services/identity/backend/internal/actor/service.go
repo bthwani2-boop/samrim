@@ -836,6 +836,12 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 	if sort != "phone_asc" && sort != "phone_desc" {
 		return domain.ActorSearchPage{}, domain.ErrInvalidInput
 	}
+	permissionCoverage := strings.TrimSpace(input.PermissionCoverage)
+	if permissionCoverage != "" {
+		if role != "operator" || (permissionCoverage != "none" && permissionCoverage != "some" && permissionCoverage != "complete") {
+			return domain.ActorSearchPage{}, domain.ErrInvalidInput
+		}
+	}
 	args := []any{role}
 	clauses := []string{"r.role=$1"}
 	queryArg := 0
@@ -877,7 +883,6 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 		}
 		cursorClause = fmt.Sprintf(" AND (a.phone_e164%s$%d OR (a.phone_e164=$%d AND a.id%s$%d))", comparison, phoneArg, phoneArg, comparison, idArg)
 	}
-	args = append(args, limit+1)
 	order := "ASC"
 	if sort == "phone_desc" {
 		order = "DESC"
@@ -885,7 +890,31 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 	if q != "" && role == "operator" {
 		clauses[len(clauses)-1] = fmt.Sprintf("(position($%d in a.phone_e164)>0 OR position(lower($%d) in lower(r.job_title))>0 OR position(lower($%d) in lower(r.department))>0 OR EXISTS (SELECT 1 FROM identity_operator_profiles p WHERE p.actor_id=a.id AND position(lower($%d) in lower(p.full_name_ar))>0))", queryArg, queryArg, queryArg, queryArg)
 	}
-	query := "SELECT a.id,a.phone_e164,(SELECT p.full_name_ar FROM identity_operator_profiles p WHERE p.actor_id=a.id ORDER BY p.updated_at DESC,p.id DESC LIMIT 1),r.job_title,r.department,r.role,r.enabled,r.activated_at,r.created_at,CASE WHEN r.role='operator' THEN (SELECT s.created_at FROM identity_sessions s WHERE s.actor_id=a.id AND s.role=r.role ORDER BY s.created_at DESC LIMIT 1) END,r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role WHERE " + strings.Join(clauses, " AND ") + cursorClause + " ORDER BY a.phone_e164 " + order + ",a.id " + order + " LIMIT $" + strconv.Itoa(len(args))
+	permissionSummaryJoin := ""
+	permissionSummaryColumn := ""
+	if role == "operator" {
+		permissionSummaryJoin = ` LEFT JOIN LATERAL (
+			SELECT count(*) FILTER (WHERE p.enabled) AS enabled_count
+			FROM identity_operator_permissions p
+			WHERE p.actor_id=a.id AND p.role=r.role
+		) permission_summary ON true`
+		permissionSummaryColumn = ",permission_summary.enabled_count"
+	}
+	if permissionCoverage != "" {
+		permissionCount := "permission_summary.enabled_count"
+		switch permissionCoverage {
+		case "none":
+			clauses = append(clauses, permissionCount+"=0")
+		case "some":
+			args = append(args, len(domain.OperatorPermissions()))
+			clauses = append(clauses, fmt.Sprintf("%s>0 AND %s<$%d", permissionCount, permissionCount, len(args)))
+		case "complete":
+			args = append(args, len(domain.OperatorPermissions()))
+			clauses = append(clauses, fmt.Sprintf("%s=$%d", permissionCount, len(args)))
+		}
+	}
+	args = append(args, limit+1)
+	query := "SELECT a.id,a.phone_e164,(SELECT p.full_name_ar FROM identity_operator_profiles p WHERE p.actor_id=a.id ORDER BY p.updated_at DESC,p.id DESC LIMIT 1),r.job_title,r.department,r.role,r.enabled,r.activated_at,r.created_at,CASE WHEN r.role='operator' THEN (SELECT s.created_at FROM identity_sessions s WHERE s.actor_id=a.id AND s.role=r.role ORDER BY s.created_at DESC LIMIT 1) END,r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version" + permissionSummaryColumn + " FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role" + permissionSummaryJoin + " WHERE " + strings.Join(clauses, " AND ") + cursorClause + " ORDER BY a.phone_e164 " + order + ",a.id " + order + " LIMIT $" + strconv.Itoa(len(args))
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return domain.ActorSearchPage{}, err
@@ -893,7 +922,15 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 	defer func() { _ = rows.Close() }()
 	items := []domain.ActorRoleView{}
 	for rows.Next() {
-		view, err := scanRoleView(rows.Scan)
+		var view domain.ActorRoleView
+		var enabledPermissionCount int
+		var err error
+		if role == "operator" {
+			view, err = scanRoleView(rows.Scan, &enabledPermissionCount)
+			view.OperatorEnabledPermissionCount = &enabledPermissionCount
+		} else {
+			view, err = scanRoleView(rows.Scan)
+		}
 		if err != nil {
 			return domain.ActorSearchPage{}, err
 		}
@@ -1242,12 +1279,14 @@ func newActorID() (string, error) {
 
 type scanner func(dest ...any) error
 
-func scanRoleView(scan scanner) (domain.ActorRoleView, error) {
+func scanRoleView(scan scanner, extra ...any) (domain.ActorRoleView, error) {
 	var view domain.ActorRoleView
 	var fullNameAr sql.NullString
 	var activated, lastAuthenticatedAt, lastAppOpenedAt sql.NullTime
 	var credVersion sql.NullInt64
-	if err := scan(&view.ActorID, &view.PhoneE164, &fullNameAr, &view.JobTitle, &view.Department, &view.Role, &view.Enabled, &activated, &view.CreatedAt, &lastAuthenticatedAt, &lastAppOpenedAt, &view.SecurityEnabled, &view.ActorVersion, &view.RoleVersion, &credVersion); err != nil {
+	destinations := []any{&view.ActorID, &view.PhoneE164, &fullNameAr, &view.JobTitle, &view.Department, &view.Role, &view.Enabled, &activated, &view.CreatedAt, &lastAuthenticatedAt, &lastAppOpenedAt, &view.SecurityEnabled, &view.ActorVersion, &view.RoleVersion, &credVersion}
+	destinations = append(destinations, extra...)
+	if err := scan(destinations...); err != nil {
 		return domain.ActorRoleView{}, err
 	}
 	if fullNameAr.Valid {

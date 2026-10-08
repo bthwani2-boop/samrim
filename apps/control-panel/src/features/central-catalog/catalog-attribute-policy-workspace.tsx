@@ -1,4 +1,5 @@
 "use client";
+import { TextArea } from "@bthwani/design-system/web";
 
 import type { CatalogAttributeDefinition, CatalogAttributeRule } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -139,7 +140,7 @@ export function CatalogAttributePolicyWorkspace({ verticalId, categoryId }: { ve
     <div className="catalog-attribute-rules">
       <strong>متطلبات الفئة للمنتج</strong>
       <p className="muted">حدد الخصائص المطلوبة أو التي تصنع نسخة مستقلة من المنتج.</p>
-      <label className="field-label" htmlFor="attribute-rule-reason">سبب التغيير<textarea id="attribute-rule-reason" className="resize-none" value={changeReason} onChange={(event) => setChangeReason(event.target.value)} disabled={busy || !canEdit} minLength={5} maxLength={500} /></label>
+      <label className="field-label" htmlFor="attribute-rule-reason">سبب التغيير<TextArea id="attribute-rule-reason" className="resize-none" value={changeReason} onChange={(event) => setChangeReason(event.target.value)} disabled={busy || !canEdit} minLength={5} maxLength={500} /></label>
       {loading ? <p>جارٍ قراءة القواعد…</p> : !categoryId ? <p>اختر فئة لقراءة قواعدها.</p> : definitions.length === 0 ? <p>لا توجد تعريفات خصائص لهذه النشاط الرئيسي بعد.</p> : <ul>{definitions.map((definition) => {
         const rule = rules.find((item) => item.attributeId === definition.id);
         const draft = drafts[definition.id] ?? { required: rule?.required ?? false, variantAxis: rule?.variantAxis ?? false };

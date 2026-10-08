@@ -3,3 +3,5 @@ import { StoreRegistry } from "../../../../src/features/partner-onboarding/store
 export default function PartnerStoresPage() {
   return <StoreRegistry />;
 }
+
+export const metadata = { title: "المتاجر" };

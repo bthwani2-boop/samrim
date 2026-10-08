@@ -161,6 +161,44 @@ func TestListOperatorProfilesKeysetDatabase(t *testing.T) {
 	if err != nil || len(search.Items) != 1 || search.Items[0].ActorID != granted.Role.ActorID || search.Items[0].FullNameAr != "مشغل اختبار التفاصيل" || search.Items[0].JobTitle != "قائد العمليات" || search.Items[0].Department != "مركز العمليات" || search.Items[0].CreatedAt.IsZero() || search.Items[0].LastAuthenticatedAt == nil {
 		t.Fatalf("operator directory search did not find the canonical department: result=%+v err=%v", search, err)
 	}
+	if count := search.Items[0].OperatorEnabledPermissionCount; count == nil || *count != 0 {
+		t.Fatalf("operator search did not return its enabled permission count: result=%+v", search.Items[0])
+	}
+	complete, err := service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", Query: "مركز العمليات", PermissionCoverage: "complete", Limit: 25})
+	if err != nil || len(complete.Items) != 0 {
+		t.Fatalf("complete permission coverage included an operator with no grants: result=%+v err=%v", complete, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE identity_operator_permissions SET enabled=true WHERE actor_id=$1 AND permission=$2`, granted.Role.ActorID, domain.OperatorPermissionFinance); err != nil {
+		t.Fatalf("enable one operator permission in the isolated coverage fixture: %v", err)
+	}
+	some, err := service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", Query: "مركز العمليات", PermissionCoverage: "some", Limit: 25})
+	if err != nil || len(some.Items) != 1 || some.Items[0].OperatorEnabledPermissionCount == nil || *some.Items[0].OperatorEnabledPermissionCount != 1 {
+		t.Fatalf("partial permission coverage was not filtered and counted by Identity: result=%+v err=%v", some, err)
+	}
+	complete, err = service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", Query: "مركز العمليات", PermissionCoverage: "complete", Limit: 25})
+	if err != nil || len(complete.Items) != 0 {
+		t.Fatalf("complete permission coverage included a partially granted operator: result=%+v err=%v", complete, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE identity_operator_permissions SET enabled=true WHERE actor_id=$1 AND role='operator'`, granted.Role.ActorID); err != nil {
+		t.Fatalf("complete operator permission coverage fixture: %v", err)
+	}
+	complete, err = service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", Query: "مركز العمليات", PermissionCoverage: "complete", Limit: 25})
+	if err != nil || len(complete.Items) != 1 || complete.Items[0].OperatorEnabledPermissionCount == nil || *complete.Items[0].OperatorEnabledPermissionCount != len(domain.OperatorPermissions()) {
+		t.Fatalf("complete permission coverage did not return its full permission count: result=%+v err=%v", complete, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE identity_operator_permissions SET enabled=false WHERE actor_id=$1 AND role='operator'`, granted.Role.ActorID); err != nil {
+		t.Fatalf("clear operator permission coverage fixture: %v", err)
+	}
+	none, err := service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", Query: "مركز العمليات", PermissionCoverage: "none", Limit: 25})
+	if err != nil || len(none.Items) != 1 || none.Items[0].OperatorEnabledPermissionCount == nil || *none.Items[0].OperatorEnabledPermissionCount != 0 {
+		t.Fatalf("no-permission coverage was not filtered and counted by Identity: result=%+v err=%v", none, err)
+	}
+	if _, err := service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", PermissionCoverage: "unknown", Limit: 25}); !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("invalid permission coverage was accepted: %v", err)
+	}
+	if _, err := service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "client", PermissionCoverage: "none", Limit: 25}); !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("non-operator permission coverage was accepted: %v", err)
+	}
 	longArabicSearch, err := service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", Query: strings.Repeat("م", 51), Limit: 25})
 	if err != nil {
 		t.Fatalf("operator directory search rejected a 51-character Arabic query: %v", err)

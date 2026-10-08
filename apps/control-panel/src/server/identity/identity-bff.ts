@@ -210,9 +210,9 @@ async function lookupIdentityRole(phone: string, role: ActorType): Promise<Actor
   return page.items[0] ?? null;
 }
 
-export async function searchIdentityRoles(role: ActorType, query: string, limit: number, cursor = "", enabled?: boolean, sort: "phone_asc" | "phone_desc" = "phone_asc"): Promise<ActorRoleSearchPage> {
+export async function searchIdentityRoles(role: ActorType, query: string, limit: number, cursor = "", enabled?: boolean, sort: "phone_asc" | "phone_desc" = "phone_asc", permissionCoverage?: "none" | "some" | "complete"): Promise<ActorRoleSearchPage> {
   if (!Number.isInteger(limit) || limit < 1 || limit > 100 || query.trim().length > 100 || cursor.length > 512) throw new Error("INVALID_ACTOR_ROLE_SEARCH");
-  return identityInternalClient().searchActorRoles(role, query.trim(), enabled, { limit, cursor, sort });
+  return identityInternalClient().searchActorRoles(role, query.trim(), enabled, { limit, cursor, sort, ...(permissionCoverage ? { permissionCoverage } : {}) });
 }
 
 export async function readManagedIdentityRole(actorId: string, role: ActorType): Promise<ActorRoleView> {

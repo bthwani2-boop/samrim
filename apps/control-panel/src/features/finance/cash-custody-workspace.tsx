@@ -267,7 +267,7 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
         <button type="button" className="button button-secondary" onClick={() => void loadRegistry()} disabled={loading}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button>
       </div>
 
-      <form className="cash-custody-filters" onSubmit={applyFilters}>
+      <form className="cash-custody-filters" noValidate onSubmit={applyFilters}>
         <label className="field-label" htmlFor="cash-custody-search">مرجع التحصيل<input id="cash-custody-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} maxLength={128} /></label>
         <label className="field-label" htmlFor="cash-custody-sort">ترتيب وقت التحصيل<select id="cash-custody-sort" value={sort} onChange={(event) => setSort(event.target.value as Sort)}><option value="collected_asc">الأقدم أولًا</option><option value="collected_desc">الأحدث أولًا</option></select></label>
         <button className="button button-secondary" type="submit" disabled={loading}>تطبيق البحث</button>

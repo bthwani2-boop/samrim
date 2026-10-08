@@ -84,6 +84,9 @@
 :global(.managed-status-info) { background: var(--brand-structure-soft); color: var(--color-primary); }
 :global(.managed-status-warning) { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
 :global(.managed-status-warning .button) { justify-self: start; min-height: 38px; padding: 6px 10px; }
+:global(.managed-status-error) { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+:global(.managed-status-error p) { color: inherit; }
+:global(.managed-status-error .button) { justify-self: start; min-height: 38px; padding: 6px 10px; }
 :global(.access-next-step) { color: var(--text-muted); font-size: var(--font-size-caption); }
 
 :global(.access-details-dialog) { position: fixed; inset-block: 0; inset-inline-start: 0; inset-inline-end: auto; width: min(620px, 100vw); height: 100dvh; max-width: 100vw; max-height: 100dvh; margin: 0; padding: 12px; border: 0; background: transparent; color: inherit; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }

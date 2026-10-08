@@ -33,6 +33,53 @@ test("catalog center opens its product registry and exposes resource tabs", asyn
   await expect(page.locator("#catalog-import-rows")).toHaveCount(0);
 });
 
+test("store catalog import searches server pages and keeps the selected store visible", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const storeRequests: Array<{ limit: string | null; query: string | null; cursor: string | null }> = [];
+  await page.route("**/api/partners/stores**", async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const query = params.get("q");
+    const cursor = params.get("cursor");
+    storeRequests.push({ limit: params.get("limit"), query, cursor });
+    const stores = query === "متجر 200"
+      ? [{ id: "store-200", name: "متجر 200" }]
+      : query
+        ? []
+        : Array.from({ length: 50 }, (_, index) => {
+            const first = cursor === "store-cursor-2" ? 51 : 1;
+            const number = first + index;
+            return { id: `store-${number}`, name: `متجر ${number}` };
+          });
+    const nextCursor = query ? undefined : cursor === "store-cursor-2" ? "store-cursor-3" : "store-cursor-2";
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ stores, nextCursor, limit: 50 }) });
+  });
+
+  await page.goto("/catalog/import");
+  await expect(page).toHaveTitle("استيراد الكتالوج | بثواني");
+  await expect(page.getByText(/تعرض هذه الصفحة حتى 50 متجرًا/)).toBeVisible();
+  expect(storeRequests[0]).toEqual({ limit: "50", query: null, cursor: null });
+  const storeSelect = page.getByLabel("المتجر المستهدف");
+  await expect(storeSelect).toHaveValue("");
+  await page.getByRole("navigation", { name: "صفحات نتائج المتاجر" }).getByRole("button", { name: "التالي" }).click();
+  await expect(page).toHaveURL(/storeCursor=store-cursor-2/);
+  await expect(storeSelect.locator("option")).toHaveCount(51);
+  await expect(storeSelect.locator("option").nth(1)).toHaveText("متجر 51");
+
+  await page.getByLabel("ابحث عن متجر بالاسم").fill("متجر 200");
+  await page.getByRole("button", { name: "بحث", exact: true }).click();
+  await expect(page).toHaveURL(/storeQ=%D9%85%D8%AA%D8%AC%D8%B1\+200|storeQ=%D9%85%D8%AA%D8%AC%D8%B1%20200/);
+  await expect(storeSelect.locator("option")).toHaveCount(2);
+  await storeSelect.selectOption("store-200");
+  await page.getByLabel("ابحث عن متجر بالاسم").fill("متجر غير موجود");
+  await page.getByRole("button", { name: "بحث", exact: true }).click();
+  await expect(page.getByText("لا توجد متاجر مطابقة. جرّب اسمًا أقصر أو امسح البحث.")).toBeVisible();
+  await expect(storeSelect).toHaveValue("store-200");
+  await expect(storeSelect.locator("option").nth(1)).toContainText("متجر 200 · المحدد حاليًا");
+  expect(storeRequests.every((request) => request.limit === "50")).toBe(true);
+  expect(storeRequests.some((request) => request.query === "متجر 200")).toBe(true);
+  expect(storeRequests.some((request) => request.query === "متجر غير موجود")).toBe(true);
+});
+
 test("catalog import uses the existing CSV file adapter and closes the loop", async ({ page }) => {
   await stubAuthenticatedSession(page);
   let previewBody: Record<string, unknown> | undefined;

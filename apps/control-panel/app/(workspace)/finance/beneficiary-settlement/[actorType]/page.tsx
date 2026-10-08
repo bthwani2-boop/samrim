@@ -45,3 +45,5 @@ export default async function FinanceBeneficiarySettlementRegistryPage({
     </FinanceWorkspace>
   );
 }
+
+export const metadata = { title: "المستحقات" };

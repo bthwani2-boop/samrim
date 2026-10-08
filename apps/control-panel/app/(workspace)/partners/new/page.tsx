@@ -1,5 +1,3 @@
-"use client";
-
 import { JoiningCaseCreate } from "../../../../src/features/partner-onboarding/joining-case-create";
 import { PartnerOperatorBoundary } from "../../../../src/features/partner-onboarding/partner-workspace";
 
@@ -17,3 +15,5 @@ export default function NewPartnerCasePage() {
     </PartnerOperatorBoundary>
   );
 }
+
+export const metadata = { title: "إضافة شريك" };
