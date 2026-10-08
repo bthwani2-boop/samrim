@@ -272,6 +272,7 @@ jobs:
             "OPERATOR_BOOTSTRAP_SECRET"
           ];
           const values = new Map(names.map((name) => [name, crypto.randomBytes(32).toString("hex")]));
+          values.set("IDENTITY_INITIAL_OPERATOR_PHONE", "+9677" + String(crypto.randomInt(10_000_000, 99_999_999)));
           values.set("DSH_DELIVERY_PROOF_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
           values.set("DSH_JOINING_CASE_EVIDENCE_ACTIVE_KEY_ID", "local-v1");
           values.set("DSH_JOINING_CASE_EVIDENCE_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
