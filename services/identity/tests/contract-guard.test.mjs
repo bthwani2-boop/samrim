@@ -10,6 +10,7 @@ test("Identity OpenAPI contract guard passes", () => {
   const modules = fs.readdirSync(pathDir).filter((name) => name.endsWith(".yaml")).map((name) => fs.readFileSync(path.join(pathDir, name), "utf8")).join("\n");
   const contract = entry + "\n" + modules;
   const sessionContract = fs.readFileSync(path.join(pathDir, "session.yaml"), "utf8");
+  const managedContract = fs.readFileSync(path.join(pathDir, "managed-enrollment-auth.yaml"), "utf8");
   const failures = [];
 
   function requireText(value, message = value) { if (!contract.includes(value)) failures.push("missing " + message); }
@@ -20,17 +21,21 @@ test("Identity OpenAPI contract guard passes", () => {
   for (const route of [
     "/auth/client/registration/request:", "/auth/client/register:", "/auth/client/login:", "/auth/client/recovery/request:", "/auth/client/recover:",
     "/auth/managed/activation/request:", "/auth/managed/activate:", "/auth/managed/login:",
+    "/auth/managed/recovery/request:", "/auth/managed/recover:",
     "/auth/operator/enrollment/request:", "/auth/operator/enrollment/registration/options:", "/auth/operator/enrollment/registration/finish:",
     "/auth/operator/authentication/options:", "/auth/operator/authentication/finish:", "/auth/operator/recovery/request:",
     "/auth/operator/recovery/registration/options:", "/auth/operator/recovery/registration/finish:", "/internal/bootstrap/operator:",
     "/auth/refresh:", "/auth/logout:", "/auth/session:", "/auth/development/session:", "/internal/actor-roles/provision:", "/internal/actor-roles/search:",
     "/internal/actors/{actorId}/roles/{role}/reenrollment:", "/internal/actors/{actorId}/security/disable:",
   ]) requireText(route, "canonical route " + route);
-  for (const route of ["/auth/operator/" + "login/start:", "/auth/operator/" + "login/complete:", "/auth/managed/" + "recovery/request:", "/auth/managed/" + "recover:"]) forbidText(route, route);
+  for (const route of ["/auth/operator/" + "login/start:", "/auth/operator/" + "login/complete:"]) forbidText(route, route);
   for (const value of ["platform_owner", "operator_owner", "X-Service-Caller", "identity_access_grants", "ManagedRecoveryChallengeRequest", "OperatorLoginStartRequest", "OperatorLoginCompleteRequest", "PasswordResetRequest", "username:", "activationCode:", "operator_mfa"]) forbidText(value);
   for (const value of ["enum: [client, partner, captain, field, operator]", "enum: [partner, captain, field]", "enum: [operator]"]) requireText(value);
   for (const value of ["ClientRecoveryProofRequest", "RecoveryComplete", "OperatorPasskeyRegistrationOptionsRequest", "OperatorPasskeyAuthenticationFinishRequest", "OperatorPasskeyRecoveryRegistrationOptionsRequest", "OperatorPasskeyRecoveryFinishRequest", "user-verifying", "WebAuthn", "minLength: 8", "maxLength: 8", 'pattern: "^[0-9]{6}$"']) requireText(value);
   if (!contract.includes("phone control alone never grants operator access")) failures.push("operator recovery must distinguish phone possession from authority");
+  requireText("ManagedRecoveryProofRequest");
+  const managedRecovery = managedContract.slice(managedContract.indexOf("  /auth/managed/recover:"));
+  if (!managedRecovery.includes("#/components/responses/RecoveryComplete") || managedRecovery.includes("#/components/responses/TokenPair")) failures.push("managed recovery must complete without creating a session");
   if (!contract.includes("never a password or session")) failures.push("operator bootstrap must not mint a password or session");
   if (contract.includes("#/components/responses/TokenPair")) {
     const recovery = contract.slice(contract.indexOf("/auth/client/recover:"), contract.indexOf("/auth/managed/activation/request:"));

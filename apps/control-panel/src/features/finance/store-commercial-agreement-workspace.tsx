@@ -44,12 +44,12 @@ function parsePendingAttempt(value: unknown, operatorActorId: string): PendingDe
 
 function validateDecisionReadback(agreement: StoreCommercialAgreementRecord, attempt: PendingDecisionAttempt): string | null {
   const expectedStatus = attempt.decision === "APPROVE" ? "ACTIVE" : "FINANCE_REJECTED";
-  if (agreement.agreementId !== attempt.agreementId || agreement.storeId !== attempt.storeId || agreement.partnerActorId !== attempt.partnerActorId) return "قراءة DSH لا تطابق معرّف الاتفاق والمتجر والشريك المحفوظين.";
-  if (agreement.agreementVersion !== attempt.expectedAgreementVersion) return "إصدار الاتفاق في قراءة DSH لا يطابق الإصدار المحفوظ للمحاولة.";
+  if (agreement.agreementId !== attempt.agreementId || agreement.storeId !== attempt.storeId || agreement.partnerActorId !== attempt.partnerActorId) return "قراءة الاتفاق لا تطابق المتجر أو الشريك المحفوظين للمحاولة.";
+  if (agreement.agreementVersion !== attempt.expectedAgreementVersion) return "تغيّرت الاتفاقية منذ بدء المحاولة؛ أعد قراءتها قبل المتابعة.";
   if (agreement.status !== expectedStatus) return `الحالة المقروءة هي ${agreement.status} والمتوقعة ${expectedStatus}؛ بقيت المحاولة محفوظة ولم يُعلن نجاحها.`;
-  if (agreement.financeDecisionByActorId !== attempt.operatorActorId || !agreement.financeDecisionAt) return "قراءة DSH لا تثبت أن موظف Finance الحالي سجّل القرار.";
-  if (agreement.financeDecisionReason !== attempt.reason) return "سبب القرار في قراءة DSH لا يطابق السبب المحفوظ للمحاولة.";
-  if (attempt.decision === "APPROVE" && (agreement.financeApprovedByActorId !== attempt.operatorActorId || !agreement.financeApprovedAt)) return "قراءة DSH لا تثبت اعتماد الاتفاق بواسطة موظف Finance الحالي.";
+  if (agreement.financeDecisionByActorId !== attempt.operatorActorId || !agreement.financeDecisionAt) return "قراءة النظام لا تثبت أن موظف المالية الحالي سجّل القرار.";
+  if (agreement.financeDecisionReason !== attempt.reason) return "سبب القرار في قراءة النظام لا يطابق السبب المحفوظ للمحاولة.";
+  if (attempt.decision === "APPROVE" && (agreement.financeApprovedByActorId !== attempt.operatorActorId || !agreement.financeApprovedAt)) return "قراءة النظام لا تثبت اعتماد الاتفاق بواسطة موظف المالية الحالي.";
   return null;
 }
 
@@ -66,9 +66,9 @@ function formatTimestamp(value: string | null | undefined) {
 function statusLabel(status: FinanceStoreCommercialAgreement["status"]) {
   switch (status) {
     case "PROPOSED": return "بانتظار قبول مالك المتجر";
-    case "PARTNER_ACCEPTED": return "بانتظار قرار Finance";
+    case "PARTNER_ACCEPTED": return "بانتظار قرار المالية";
     case "ACTIVE": return "نشط";
-    case "FINANCE_REJECTED": return "مرفوض من Finance";
+    case "FINANCE_REJECTED": return "مرفوض من المالية";
     case "SUPERSEDED": return "استبدل باتفاق أحدث";
   }
 }
@@ -146,7 +146,7 @@ export function StoreCommercialAgreementWorkspace() {
         setDefaults(null);
         setDefaultsTypeId("");
       }
-      if (!items.length && !append) setMessage("لا توجد اتفاقات بانتظار قرار Finance حاليًا.");
+      if (!items.length && !append) setMessage("لا توجد اتفاقات بانتظار قرار المالية حاليًا.");
     } catch (cause) {
       if (!append) setAgreements([]);
       setError(cause instanceof Error ? cause.message : "تعذر تحميل الاتفاقات المعلقة.");
@@ -182,7 +182,7 @@ export function StoreCommercialAgreementWorkspace() {
 
   function savePendingAttempt(attempt: PendingDecisionAttempt): boolean {
     if (!operatorActorId || attempt.operatorActorId !== operatorActorId) {
-      setPendingStorageError("لا تطابق هوية Finance الحالية هوية المحاولة.");
+      setPendingStorageError("لا تطابق هوية المالية الحالية هوية المحاولة.");
       return false;
     }
     try {
@@ -222,9 +222,9 @@ export function StoreCommercialAgreementWorkspace() {
     setDefaultsTypeId("");
     if (cleared) {
       setReason("");
-      setMessage(attempt.decision === "APPROVE" ? "تم التحقق من الاعتماد عبر قراءة DSH المطابقة." : "تم التحقق من الرفض عبر قراءة DSH المطابقة.");
+      setMessage(attempt.decision === "APPROVE" ? "تم التحقق من الاعتماد عبر قراءة النظام المطابقة." : "تم التحقق من الرفض عبر قراءة النظام المطابقة.");
     } else {
-      setMessage("تم التحقق من القرار عبر قراءة DSH. بقي سجل المحاولة المحلي محفوظًا بسبب تعذر حذفه؛ لا تبدأ قرارًا جديدًا قبل إعادة التحقق.");
+      setMessage("تم التحقق من القرار عبر قراءة النظام. بقي سجل المحاولة المحلي محفوظًا بسبب تعذر حذفه؛ لا تبدأ قرارًا جديدًا قبل إعادة التحقق.");
     }
     setError("");
     return true;
@@ -232,7 +232,7 @@ export function StoreCommercialAgreementWorkspace() {
 
   async function submitPendingAttempt(attempt: PendingDecisionAttempt) {
     if (!operatorActorId || attempt.operatorActorId !== operatorActorId) {
-      setError("المحاولة المحفوظة لا تخص موظف Finance الحالي.");
+      setError("المحاولة المحفوظة لا تخص موظف المالية الحالي.");
       return;
     }
     setBusy(attempt.decision);
@@ -246,9 +246,9 @@ export function StoreCommercialAgreementWorkspace() {
       });
       const body = await response.json() as Partial<StoreCommercialAgreementDecisionResponse> & { error?: { message?: string } };
       if (!response.ok || !body.agreement) throw new Error(errorMessage(body));
-      if (!finishVerifiedAttempt(body.agreement, attempt)) setMessage("وصل رد القرار، لكن لم يطابق إثبات DSH المطلوب. بقيت المحاولة محفوظة للتحقق الصريح.");
+      if (!finishVerifiedAttempt(body.agreement, attempt)) setMessage("وصل رد القرار، لكن لم يطابق إثبات النظام المطلوب. بقيت المحاولة محفوظة للتحقق الصريح.");
     } catch (cause) {
-      setError(`${cause instanceof Error ? cause.message : "تعذر تأكيد نتيجة القرار"} بقيت المحاولة نفسها محفوظة؛ أعد إرسالها صراحةً بالمفتاح نفسه أو تحقق من قراءة DSH.`);
+      setError(`${cause instanceof Error ? cause.message : "تعذر تأكيد نتيجة القرار"} بقيت المحاولة نفسها محفوظة؛ أعد إرسالها صراحةً أو أعد قراءة الاتفاقية.`);
     } finally {
       setBusy(null);
     }
@@ -256,7 +256,7 @@ export function StoreCommercialAgreementWorkspace() {
 
   async function verifyPendingAttempt(attempt: PendingDecisionAttempt) {
     if (!operatorActorId || attempt.operatorActorId !== operatorActorId) {
-      setError("المحاولة المحفوظة لا تخص موظف Finance الحالي.");
+      setError("المحاولة المحفوظة لا تخص موظف المالية الحالي.");
       return;
     }
     setBusy("readback");
@@ -267,12 +267,12 @@ export function StoreCommercialAgreementWorkspace() {
       const body = await response.json() as { agreements?: readonly StoreCommercialAgreementRecord[]; error?: { message?: string } };
       if (!response.ok || !Array.isArray(body.agreements)) throw new Error(errorMessage(body));
       const matches = body.agreements.filter((agreement) => agreement.agreementId === attempt.agreementId);
-      if (matches.length !== 1) throw new Error("لم تُرجع قراءة DSH سجلًا وحيدًا مطابقًا للاتفاق؛ بقيت المحاولة محفوظة.");
+      if (matches.length !== 1) throw new Error("لم تُرجع قراءة النظام سجلًا وحيدًا مطابقًا للاتفاق؛ بقيت المحاولة محفوظة.");
       const readback = matches[0];
-      if (!readback) throw new Error("تعذر تحديد سجل الاتفاق المطابق في قراءة DSH؛ بقيت المحاولة محفوظة.");
-      if (!finishVerifiedAttempt(readback, attempt)) setMessage("لم تثبت قراءة DSH النتيجة المطابقة؛ بقيت المحاولة محفوظة ويمكن إعادة المحاولة صراحةً.");
+      if (!readback) throw new Error("تعذر تحديد سجل الاتفاق المطابق في قراءة النظام؛ بقيت المحاولة محفوظة.");
+      if (!finishVerifiedAttempt(readback, attempt)) setMessage("لم تثبت قراءة النظام النتيجة المطابقة؛ بقيت المحاولة محفوظة ويمكن إعادة المحاولة صراحةً.");
     } catch (cause) {
-      setError(`${cause instanceof Error ? cause.message : "تعذرت قراءة الاتفاق من DSH"} لم يُرسل أي قرار جديد.`);
+      setError(`${cause instanceof Error ? cause.message : "تعذرت قراءة الاتفاق "} لم يُرسل أي قرار جديد.`);
     } finally {
       setBusy(null);
     }
@@ -282,7 +282,7 @@ export function StoreCommercialAgreementWorkspace() {
     if (!selected || !operatorActorId || !pendingStorageReady || pendingAttempt || pendingStorageError || busy !== null || selected.status !== "PARTNER_ACCEPTED" ||
       !selected.matchesCurrentFulfillmentModes || selected.partnerAcceptedByActorId !== selected.partnerActorId || selected.currentStoreOwnerActorId !== selected.partnerActorId ||
       Array.from(reason.trim()).length < 8 || Array.from(reason.trim()).length > 500) {
-      setError("لا يمكن بدء القرار: تحقق من صلاحية Finance والقبول والمالك والأنماط والسبب، أو احسم المحاولة السابقة أولًا.");
+      setError("لا يمكن بدء القرار: تحقق من صلاحية المالية والقبول والمالك والأنماط والسبب، أو احسم المحاولة السابقة أولًا.");
       return;
     }
     const attempt: PendingDecisionAttempt = {
@@ -305,35 +305,34 @@ export function StoreCommercialAgreementWorkspace() {
 
   return <section className="access-card" aria-labelledby="store-commercial-agreement-title">
     <div className="finance-toolbar">
-      <div><p className="eyebrow">قرار صريح بصلاحية Finance · سجل الاتفاقات في DSH/WLT</p><h2 id="store-commercial-agreement-title">اتفاقات المتاجر التجارية</h2></div>
-      <button className="button button-secondary" type="button" onClick={() => void readQueue()} disabled={busy !== null}>{busy === "queue" ? "جارٍ التحديث…" : "تحديث طابور Finance"}</button>
+      <div><p className="eyebrow">قرار صريح بصلاحية المالية · سجل الاتفاقات /السجل المالي</p><h2 id="store-commercial-agreement-title">اتفاقات المتاجر التجارية</h2></div>
+      <button className="button button-secondary" type="button" onClick={() => void readQueue()} disabled={busy !== null}>{busy === "queue" ? "جارٍ التحديث…" : "تحديث طابور المالية"}</button>
     </div>
-    <p className="muted">يعرض هذا الطابور الاتفاقات التي قبلها مالك المتجر وتنتظر قرار Finance. نسب الاتفاق ملزمة كما أرسلها Field؛ القيم الافتراضية ظاهرة كمرجع منفصل ولا تُنسخ أو تعتمد تلقائيًا. لا يحدث اعتماد أو رفض دون اختيار Finance الصريح وإدخال سبب موثق.</p>
+    <p className="muted">يعرض هذا الطابور الاتفاقات التي قبلها مالك المتجر وتنتظر قرار المالية. نسب الاتفاق ملزمة كما أرسلها الميدان؛ القيم الافتراضية ظاهرة كمرجع منفصل ولا تُنسخ أو تعتمد تلقائيًا. لا يحدث اعتماد أو رفض دون اختيار المالية الصريح وإدخال سبب موثق.</p>
 
     {pendingStorageError ? <p className="validation-error" role="alert">{pendingStorageError}</p> : null}
     {!pendingStorageReady && operatorActorId ? <p role="status">جارٍ التحقق من المحاولة المحفوظة لهذه الجلسة…</p> : null}
     {pendingAttempt ? <section className="access-card" aria-labelledby="pending-store-commercial-decision-title">
-      <p className="eyebrow">محاولة Finance محفوظة ولم تُرسل تلقائيًا</p>
+      <p className="eyebrow">محاولة المالية محفوظة ولم تُرسل تلقائيًا</p>
       <h3 id="pending-store-commercial-decision-title">{pendingAttempt.storeName || "متجر بثواني"}</h3>
-      <p className="muted">القرار: {pendingAttempt.decision === "APPROVE" ? "اعتماد" : "رفض"} · الإصدار المتوقع {pendingAttempt.expectedAgreementVersion}</p>
+      <p className="muted">القرار: {pendingAttempt.decision === "APPROVE" ? "اعتماد" : "رفض"}</p>
       <p className="muted">سبب القرار: {pendingAttempt.reason} · وقت حفظ المحاولة: {formatTimestamp(pendingAttempt.createdAt)}</p>
-      <details><summary>معرّفات إعادة المحاولة</summary><p className="muted">Idempotency-Key: {pendingAttempt.idempotencyKey}</p><p className="muted">X-Correlation-ID: {pendingAttempt.correlationId}</p></details>
       <div className="finance-toolbar">
         <button className="button button-primary" type="button" onClick={() => void submitPendingAttempt(pendingAttempt)} disabled={busy !== null || pendingAttempt.operatorActorId !== operatorActorId}>{busy === pendingAttempt.decision ? "جارٍ إعادة المحاولة…" : "إعادة إرسال المحاولة نفسها"}</button>
-        <button className="button button-secondary" type="button" onClick={() => void verifyPendingAttempt(pendingAttempt)} disabled={busy !== null || pendingAttempt.operatorActorId !== operatorActorId}>{busy === "readback" ? "جارٍ التحقق من DSH…" : "تحقق من النتيجة بقراءة DSH"}</button>
+        <button className="button button-secondary" type="button" onClick={() => void verifyPendingAttempt(pendingAttempt)} disabled={busy !== null || pendingAttempt.operatorActorId !== operatorActorId}>{busy === "readback" ? "جارٍ التحقق …" : "تحقق من النتيجة بقراءة النظام"}</button>
       </div>
-      <p className="muted">إعادة الإرسال تستخدم القرار والسبب والإصدار ومفتاحي التتبع المحفوظة نفسها. لا تُنشأ محاولة جديدة تلقائيًا.</p>
+      <p className="muted">إعادة الإرسال تستخدم القرار والسبب المحفوظين نفسيهما. لا تُنشأ محاولة جديدة تلقائيًا.</p>
     </section> : null}
 
     {busy === "queue" && agreements.length === 0 ? <p role="status">جارٍ تحميل الاتفاقات…</p> : null}
-    {agreements.length ? <section className="form-grid" aria-label="اتفاقات بانتظار Finance">
+    {agreements.length ? <section className="form-grid" aria-label="اتفاقات بانتظار المالية">
       {agreements.map((agreement) => <article className="access-card" key={agreement.agreementId}>
-        <div className="finance-toolbar"><div><p className="eyebrow">الإصدار {agreement.agreementVersion}</p><h3>{agreement.storeName || "متجر بثواني"}</h3></div><strong>{statusLabel(agreement.status)}</strong></div>
+        <div className="finance-toolbar"><div><p className="eyebrow">اتفاقية تجارية</p><h3>{agreement.storeName || "متجر بثواني"}</h3></div><strong>{statusLabel(agreement.status)}</strong></div>
         <p className="muted">نوع المتجر: {agreement.commercialStoreTypeNameAr} · الملكية: {agreement.currentStoreOwnerActorId === agreement.partnerActorId ? "مالك الاتفاق هو المالك الحالي" : "تغيّر مالك المتجر بعد الاتفاق"}</p>
         <p className="muted">الأنماط الحالية: {agreement.fulfillmentModes.map(modeLabel).join("، ") || "غير محددة"}</p>
         <p className="muted">أُرسل الاتفاق للمراجعة في {formatTimestamp(agreement.proposedAt)}</p>
         <p className="muted">قبله مالك المتجر في {formatTimestamp(agreement.partnerAcceptedAt)}</p>
-        {!agreement.matchesCurrentFulfillmentModes ? <p className="validation-error" role="alert">الأنماط الحالية لا تطابق نسب الاتفاق؛ لن يُتاح قرار Finance حتى تصحيح الحالة في المالك القانوني.</p> : null}
+        {!agreement.matchesCurrentFulfillmentModes ? <p className="validation-error" role="alert">الأنماط الحالية لا تطابق نسب الاتفاق؛ لن يُتاح قرار المالية حتى تصحيح الحالة في المالك القانوني.</p> : null}
         <button className="button button-secondary" type="button" aria-pressed={selectedAgreementId === agreement.agreementId} onClick={() => void selectAgreement(agreement)} disabled={busy !== null}>
           {selectedAgreementId === agreement.agreementId ? "الاتفاق المحدد" : "مراجعة النسب والقرار"}
         </button>
@@ -342,31 +341,31 @@ export function StoreCommercialAgreementWorkspace() {
     {nextCursor ? <button className="button button-secondary" type="button" onClick={() => void readQueue(nextCursor, true)} disabled={busy !== null}>{busy === "more" ? "جارٍ تحميل المزيد…" : "تحميل الاتفاقات التالية"}</button> : null}
 
     {selected ? <section className="access-card" aria-labelledby="selected-store-commercial-agreement-title">
-      <p className="eyebrow">الإصدار {selected.agreementVersion}</p>
+      <p className="eyebrow">الاتفاقية التجارية</p>
       <h3 id="selected-store-commercial-agreement-title">{selected.storeName || "متجر بثواني"}</h3>
       <p className="muted">الحالة الحالية: {statusLabel(selected.status)}</p>
       <p className="muted">نوع المتجر: {selected.commercialStoreTypeNameAr} · الملكية: {selected.currentStoreOwnerActorId === selected.partnerActorId ? "مالك الاتفاق هو المالك الحالي" : "تغيّر مالك المتجر بعد الاتفاق"}</p>
       <p className="muted">أُرسل الاتفاق في {formatTimestamp(selected.proposedAt)}</p>
       <p className="muted">قبول مالك المتجر: {formatTimestamp(selected.partnerAcceptedAt)}</p>
-      <p className="muted">الإصدار الفعال: {selected.agreementVersion} · {selected.effectiveAt ? `ساري منذ ${formatTimestamp(selected.effectiveAt)}` : "لم يبدأ سريانه بعد"}</p>
+      <p className="muted">حالة الاتفاقية: {selected.effectiveAt ? `سارية منذ ${formatTimestamp(selected.effectiveAt)}` : "لم يبدأ سريانها بعد"}</p>
       <p className="muted">أنماط تنفيذ المتجر: {selected.fulfillmentModes.map(modeLabel).join("، ") || "غير محددة"}</p>
       <h4>النسب الدقيقة في الاتفاق</h4>
       <ul>{selected.fulfillmentModes.map((mode) => {
         const rate = selected.rates.find((item) => item.fulfillmentMode === mode);
         return <li key={mode}>{modeLabel(mode)}: {rate ? formatPercent(rate.commissionRateBps) : "لا توجد نسبة لهذا النمط"}</li>;
       })}</ul>
-      {selected.reason ? <p className="muted">سبب اقتراح Field: {selected.reason}</p> : null}
+      {selected.reason ? <p className="muted">سبب اقتراح الميدان: {selected.reason}</p> : null}
 
-      <h4>الافتراضات المرجعية من WLT</h4>
+      <h4>الافتراضات المرجعية من السجل المالي</h4>
       {busy === "defaults" && defaultsTypeId ? <p role="status">جارٍ تحميل الافتراضات المرجعية…</p> : null}
       {!defaultsTypeId ? <p className="muted">لا يوجد نوع تجاري مربوط لعرض افتراضاته.</p> : null}
       {defaults && defaults.commercialStoreTypeId === defaultsTypeId ? <>
-        <p className="muted">هذه قيم WLT المقترحة لنوع «{selected.commercialStoreTypeNameAr}» وإصداراتها، للمرجع فقط.</p>
+        <p className="muted">هذه قيم السجل المالي المقترحة لنوع «{selected.commercialStoreTypeNameAr}» للمرجع فقط.</p>
         <ul>{storeCommercialAgreementModes.map(({ key, label }) => {
           const item = defaults.defaults.find((entry) => entry.fulfillmentMode === key);
-          return <li key={key}>{label}: {item ? `مقترح ${formatPercent(item.suggestedCommissionRateBps)} · الإصدار ${item.defaultVersion}` : "لا يوجد مقترح لهذا الوضع"}</li>;
+          return <li key={key}>{label}: {item ? `مقترح ${formatPercent(item.suggestedCommissionRateBps)}` : "لا يوجد مقترح لهذا الوضع"}</li>;
         })}</ul>
-        {defaults.defaults.filter((item) => item.changedByActorId || item.changeReason).map((item) => <p className="muted" key={item.fulfillmentMode}>{modeLabel(item.fulfillmentMode)} · {item.changedByActorId ? "عُدلت بواسطة Finance" : "تعديل مسجل"}{item.changeReason ? ` · ${item.changeReason}` : ""}</p>)}
+        {defaults.defaults.filter((item) => item.changedByActorId || item.changeReason).map((item) => <p className="muted" key={item.fulfillmentMode}>{modeLabel(item.fulfillmentMode)} · {item.changedByActorId ? "عُدلت بواسطة المالية" : "تعديل مسجل"}{item.changeReason ? ` · ${item.changeReason}` : ""}</p>)}
       </> : null}
 
       <label className="field-label" htmlFor="store-commercial-agreement-decision-reason">سبب القرار (إلزامي، 8 إلى 500 حرف)<textarea id="store-commercial-agreement-decision-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={8} maxLength={500} rows={3} disabled={busy !== null || Boolean(pendingAttempt)} placeholder="وضح مبرر اعتماد الاتفاق أو رفضه" /></label>
@@ -379,10 +378,10 @@ export function StoreCommercialAgreementWorkspace() {
     </section> : null}
 
     {verifiedDecision ? <article className="access-card" aria-live="polite">
-      <p className="eyebrow">تم التحقق من نتيجة القرار عبر قراءة DSH</p>
+      <p className="eyebrow">تم التحقق من نتيجة القرار عبر قراءة النظام</p>
       <h3>{verifiedDecision.attempt.storeName || "متجر بثواني"}</h3>
-      <p className="muted">الإصدار {verifiedDecision.agreement.agreementVersion} · الحالة {statusLabel(verifiedDecision.agreement.status)}</p>
-      <p className="muted">قرار Finance: {verifiedDecision.attempt.decision === "APPROVE" ? "اعتماد" : "رفض"} · {formatTimestamp(verifiedDecision.agreement.financeDecisionAt)}</p>
+       <p className="muted">الحالة {statusLabel(verifiedDecision.agreement.status)}</p>
+      <p className="muted">قرار المالية: {verifiedDecision.attempt.decision === "APPROVE" ? "اعتماد" : "رفض"} · {formatTimestamp(verifiedDecision.agreement.financeDecisionAt)}</p>
       <p className="muted">سبب القرار المسجل: {verifiedDecision.agreement.financeDecisionReason}</p>
       {verifiedDecision.agreement.effectiveAt ? <p className="muted">ساري منذ {formatTimestamp(verifiedDecision.agreement.effectiveAt)}</p> : null}
     </article> : null}

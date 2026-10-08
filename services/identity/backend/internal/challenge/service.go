@@ -170,6 +170,46 @@ func (s *Service) ActivateManaged(ctx context.Context, input domain.ManagedActiv
 	})
 }
 
+func (s *Service) RequestManagedRecovery(ctx context.Context, input domain.ManagedChallengeRequest, ipHash string) (domain.Challenge, error) {
+	role := strings.ToLower(strings.TrimSpace(input.Role))
+	if !domain.IsManagedActivationRole(role) {
+		return domain.Challenge{}, domain.ErrForbidden
+	}
+	phone, err := identitysecurity.NormalizePhoneE164(input.Phone)
+	if err != nil {
+		return domain.Challenge{}, domain.ErrInvalidInput
+	}
+	actorID := ""
+	credentialActor, _, _, lookupErr := s.actors.PasswordCredential(ctx, phone, role)
+	admissible := lookupErr == nil
+	if admissible {
+		actorID = credentialActor.ID
+	} else if !errors.Is(lookupErr, domain.ErrNotFound) {
+		return domain.Challenge{}, lookupErr
+	}
+	return s.issue(ctx, phone, role, domain.ChallengeManagedRecover, actorID, admissible, 0, ipHash)
+}
+
+func (s *Service) RecoverManaged(ctx context.Context, input domain.ManagedRecoveryProofRequest) (domain.RecoveryResult, error) {
+	role := strings.ToLower(strings.TrimSpace(input.Role))
+	if !domain.IsManagedActivationRole(role) {
+		return domain.RecoveryResult{}, domain.ErrInvalidChallenge
+	}
+	_, err := s.consume(ctx, input.Phone, role, domain.ChallengeManagedRecover, input.VerificationCode, func(tx *sql.Tx, actorID string) (domain.TokenPair, error) {
+		if actorID == "" {
+			return domain.TokenPair{}, domain.ErrInvalidChallenge
+		}
+		if err := s.actors.ResetManagedPasswordTx(ctx, tx, actorID, role, input.Password); err != nil {
+			return domain.TokenPair{}, err
+		}
+		return domain.TokenPair{Identity: domain.ActorIdentity{Subject: actorID}}, nil
+	})
+	if err != nil {
+		return domain.RecoveryResult{}, err
+	}
+	return domain.RecoveryResult{Status: "recovery_complete"}, nil
+}
+
 func (s *Service) RequestOperatorEnrollment(ctx context.Context, input domain.OperatorEnrollmentRequest, ipHash string) (domain.Challenge, error) {
 	phone, err := identitysecurity.NormalizePhoneE164(input.Phone)
 	if err != nil {

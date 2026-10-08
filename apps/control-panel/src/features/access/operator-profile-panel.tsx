@@ -1,6 +1,6 @@
 "use client";
 
-import { toAsciiDigits } from "@bthwani/design-system";
+import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
 import type { OperatorProfile, OperatorProfileInvitationResponse, OperatorProfilePage } from "@bthwani/identity";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
@@ -73,9 +73,9 @@ export function OperatorProfilePanel() {
 
   async function createProfile() {
     const name = fullNameAr.trim();
-    const phone = toAsciiDigits(phoneE164).replace(/\s+/g, "");
+    const phone = normalizeYemenPhoneE164(phoneE164);
     if (Array.from(name).length < 2 || Array.from(name).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(phone)) {
-      setError("أدخل الاسم الكامل ورقم الهاتف بصيغة دولية صحيحة قبل حفظ الملف.");
+      setError("أدخل الاسم الكامل ورقمًا يمنيًا محليًا أو دوليًا صحيحًا قبل حفظ الملف.");
       return;
     }
     setBusy("create");
@@ -91,7 +91,7 @@ export function OperatorProfilePanel() {
       if (!response.ok) { setError(await responseMessage(response)); await load(); return; }
       setFullNameAr("");
       setPhoneE164("");
-      setNotice("أُنشئ ملف المشغّل بانتظار المراجعة. لم يُنشأ actor أو دور أو دعوة.");
+      setNotice("أُنشئ ملف المشغّل بانتظار المراجعة. ستُرسل دعوة التفعيل بعد اعتماد الملف.");
       await load();
     } catch (cause) {
       setError(isRequestFailure(cause) ? cause.message : "تعذر حفظ ملف المشغّل.");
@@ -103,9 +103,9 @@ export function OperatorProfilePanel() {
 
   async function updateProfile(profile: OperatorProfile) {
     const edit = edits[profile.id] ?? { fullNameAr: profile.fullNameAr, phoneE164: profile.phoneE164 ?? "" };
-    const phone = toAsciiDigits(edit.phoneE164).replace(/\s+/g, "");
+    const phone = normalizeYemenPhoneE164(edit.phoneE164);
     if (Array.from(edit.fullNameAr.trim()).length < 2 || !/^\+[1-9][0-9]{7,14}$/.test(phone)) {
-      setError("أدخل الاسم الكامل ورقم الهاتف بصيغة دولية صحيحة.");
+      setError("أدخل الاسم الكامل ورقمًا يمنيًا محليًا أو دوليًا صحيحًا.");
       return;
     }
     await mutate(profile, "update-profile", { fullNameAr: edit.fullNameAr.trim(), phoneE164: phone, expectedVersion: profile.version }, "حُدّث الملف قبل المراجعة.");
@@ -145,13 +145,13 @@ export function OperatorProfilePanel() {
       <div className="access-card-heading"><span className="step-chip">الخطوة الأولى · ملف بلا صلاحية</span><h2 id="operator-profile-create-title">إنشاء ملف مشغّل</h2><p className="muted">سجّل اسم العرض بالعربية ورقم الاتصال فقط؛ الاسم هنا ليس اسمًا قانونيًا موثّقًا. لا يُنشأ حساب أو دور حتى تكتمل مراجعة الملف ويُعتمد.</p></div>
       <div className="access-form">
         <label className="field-label" htmlFor="operator-profile-name">اسم العرض الكامل بالعربية<input id="operator-profile-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} placeholder="مثال: سامي ناصر محمد العريقي" /></label>
-        <label className="field-label" htmlFor="operator-profile-phone">رقم الهاتف<input id="operator-profile-phone" autoComplete="tel" inputMode="tel" value={phoneE164} onChange={(event) => setPhoneE164(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="+96777000100" /></label>
+        <label className="field-label" htmlFor="operator-profile-phone">رقم الهاتف<input id="operator-profile-phone" autoComplete="tel" inputMode="tel" value={phoneE164} onChange={(event) => setPhoneE164(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="777000100 أو +967777000100" /></label>
         <button type="button" className="button button-primary" disabled={Boolean(busy) || !fullNameAr.trim() || !phoneE164.trim()} onClick={() => void createProfile()}>{busy === "create" ? "جارٍ حفظ الملف…" : "حفظ الملف للمراجعة"}</button>
       </div>
     </section>
 
     <section className="access-card" aria-labelledby="operator-profile-registry-title">
-      <div className="access-card-heading"><span className="step-chip">سجل Identity</span><h2 id="operator-profile-registry-title">ملفات المشغّلين ومراحل اعتمادها</h2><p className="muted">يُقرأ السجل من Identity ببحث وترتيب وصفحات خادمية. إنشاء الملف، المراجعة، منح الدور، ودعوة التفعيل مراحل منفصلة.</p></div>
+      <div className="access-card-heading"><span className="step-chip">سجل الحسابات</span><h2 id="operator-profile-registry-title">ملفات المشغّلين ومراحل اعتمادها</h2><p className="muted">يُقرأ السجل من الحسابات ببحث وترتيب وصفحات خادمية. إنشاء الملف، المراجعة، منح الدور، ودعوة التفعيل مراحل منفصلة.</p></div>
       <div className="workspace-toolbar">
         <label className="field-label" htmlFor="operator-profile-search">بحث بالاسم أو الهاتف<input id="operator-profile-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث عن ملف مشغّل" /></label>
         <label className="field-label" htmlFor="operator-profile-state">مرحلة الملف<select id="operator-profile-state" value={state} onChange={(event) => setState(event.target.value)}><option value="all">كل المراحل</option><option value="pending_review">بانتظار المراجعة</option><option value="approved">معتمد للدور</option><option value="admitted">مُنح الدور</option></select></label>
@@ -171,7 +171,7 @@ export function OperatorProfilePanel() {
           return <tr key={profile.id}>
             <th scope="row"><div className="access-form"><label className="field-label" htmlFor={`operator-profile-name-${profile.id}`}>الاسم<input id={`operator-profile-name-${profile.id}`} value={edit.fullNameAr} maxLength={120} disabled={Boolean(busy) || profile.state !== "pending_review"} onChange={(event) => setEdits((current) => ({ ...current, [profile.id]: { ...edit, fullNameAr: event.target.value } }))} /></label><label className="field-label" htmlFor={`operator-profile-phone-${profile.id}`}>الهاتف<input id={`operator-profile-phone-${profile.id}`} inputMode="tel" value={edit.phoneE164} disabled={Boolean(busy) || profile.state !== "pending_review"} onChange={(event) => setEdits((current) => ({ ...current, [profile.id]: { ...edit, phoneE164: toAsciiDigits(event.target.value) } }))} /></label>{profile.state === "pending_review" ? <button type="button" className="button button-secondary" disabled={Boolean(busy) || !changed} onClick={() => void updateProfile(profile)}>حفظ الملف</button> : <bdi dir="ltr">{profile.phoneE164 || "—"}</bdi>}</div></th>
             <td>{accountStatusLabel(profile, active)}</td>
-            <td>{stateLabel(profile)} · الإصدار {profile.version}</td>
+            <td>{stateLabel(profile)}</td>
             <td><div className="access-form">
               {profile.state === "pending_review" ? <button type="button" className="button button-primary" disabled={Boolean(busy) || changed} onClick={() => void mutate(profile, "approve")}>{busy === `${profile.id}:approve` ? "جارٍ الاعتماد…" : "اعتماد الملف"}</button> : null}
               {profile.state === "approved" ? <button type="button" className="button button-primary" disabled={Boolean(busy)} onClick={() => void mutate(profile, "grant")}>{busy === `${profile.id}:grant` ? "جارٍ منح الدور…" : "منح دور المشغّل"}</button> : null}

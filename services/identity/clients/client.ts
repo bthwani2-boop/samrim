@@ -10,6 +10,7 @@ import type {
   ManagedActivationRequest,
   ManagedChallengeRequest,
   ManagedPasswordLoginRequest,
+  ManagedRecoveryProofRequest,
   OperatorEnrollmentRequest,
   OperatorProfileCreateRequest,
   OperatorProfileGrantResponse,
@@ -51,6 +52,8 @@ export type IdentityClient = Readonly<{
   recoverClient(request: ClientRecoveryProofRequest): Promise<RecoveryResult>;
   requestManagedActivation(request: ManagedChallengeRequest): Promise<Challenge>;
   activateManaged(request: ManagedActivationRequest): Promise<TokenPair>;
+  requestManagedRecovery(request: ManagedChallengeRequest): Promise<Challenge>;
+  recoverManaged(request: ManagedRecoveryProofRequest): Promise<RecoveryResult>;
   requestOperatorEnrollment(request: OperatorEnrollmentRequest): Promise<Challenge>;
   beginOperatorPasskeyRegistration(request: OperatorPasskeyRegistrationOptionsRequest): Promise<PasskeyOptions>;
   finishOperatorPasskeyRegistration(request: OperatorPasskeyRegistrationFinishRequest): Promise<OperatorPasskeyRegistrationResponse>;
@@ -170,6 +173,8 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
     recoverClient: (body) => request(identityOperationPaths.recoverClient.path, { method: identityOperationPaths.recoverClient.method, body }),
     requestManagedActivation: (body) => request(identityOperationPaths.requestManagedActivation.path, { method: identityOperationPaths.requestManagedActivation.method, body }),
     activateManaged: (body) => request(identityOperationPaths.activateManagedRole.path, { method: identityOperationPaths.activateManagedRole.method, body }),
+    requestManagedRecovery: (body) => request(identityOperationPaths.requestManagedRecoveryVerification.path, { method: identityOperationPaths.requestManagedRecoveryVerification.method, body }),
+    recoverManaged: (body) => request(identityOperationPaths.recoverManagedRole.path, { method: identityOperationPaths.recoverManagedRole.method, body }),
     requestOperatorEnrollment: (body) => request(identityOperationPaths.requestOperatorEnrollment.path, { method: identityOperationPaths.requestOperatorEnrollment.method, body }),
     beginOperatorPasskeyRegistration: (body) => request(identityOperationPaths.beginOperatorPasskeyRegistration.path, { method: identityOperationPaths.beginOperatorPasskeyRegistration.method, body }),
     finishOperatorPasskeyRegistration: (body) => request(identityOperationPaths.finishOperatorPasskeyRegistration.path, { method: identityOperationPaths.finishOperatorPasskeyRegistration.method, body }),

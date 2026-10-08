@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	phoneformat "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/phone"
 	"strings"
 	"time"
 )
@@ -80,7 +81,7 @@ func HashMultiStoreCheckoutRequest(input MultiStoreCheckoutInput) string {
 	for index, child := range input.Children {
 		children = append(children, childIdentity{CartID: child.CartID, StoreID: child.StoreID, AddressID: child.AddressID, CartVersion: child.CartVersion, FulfillmentMode: child.FulfillmentMode, PromotionCode: child.PromotionCode})
 		if strings.EqualFold(strings.TrimSpace(child.Recipient.Mode), "OTHER") {
-			otherRecipients = append(otherRecipients, fmt.Sprint(index), strings.TrimSpace(child.Recipient.Name), strings.TrimSpace(child.Recipient.PhoneE164), strings.TrimSpace(child.Recipient.Instructions))
+			otherRecipients = append(otherRecipients, fmt.Sprint(index), strings.TrimSpace(child.Recipient.Name), phoneformat.NormalizeYemenE164(child.Recipient.PhoneE164), strings.TrimSpace(child.Recipient.Instructions))
 		}
 	}
 	payload := struct {

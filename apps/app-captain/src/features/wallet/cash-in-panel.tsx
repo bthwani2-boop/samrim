@@ -7,15 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
-import {
-  isSameCaptainFundingIntent,
-  isSimulatableCaptainFundingIntent,
-  matchesCaptainFundingAttempt,
-  matchesCaptainFundingRequest,
-  parseCaptainFundingAttempt,
-  selectCaptainSimulatorIntent,
-  type CaptainFundingAttempt,
-} from "./cash-in-recovery";
+import { matchesCaptainFundingAttempt, matchesCaptainFundingRequest, parseCaptainFundingAttempt, type CaptainFundingAttempt } from "./cash-in-recovery";
 
 type FundingAttempt = CaptainFundingAttempt;
 const attemptKey = (actorID: string) => `bthwani.captain.cash-in.pending.v1.${encodeURIComponent(actorID)}`;
@@ -59,7 +51,7 @@ export function CaptainCashInPanel() {
         if (storedAttempt && matchesCaptainFundingAttempt(intent, storedAttempt)) {
           await SecureStore.deleteItemAsync(attemptKey(actorID));
           setPending(null);
-          setNotice(intent.state === "SETTLED" ? "نجح الاختبار: رحّل WLT المبلغ إلى دفتر الأستاذ التجريبي." : "رُفض طلب الشحن التجريبي ولم يُضف الرصيد.");
+          setNotice(intent.providerKey === "DEVELOPMENT_SIMULATOR" ? "" : intent.state === "SETTLED" ? "تمت إضافة الرصيد." : "لم تتم إضافة الرصيد. يمكنك المحاولة مجددًا.");
         }
       }
     } catch (cause) {
@@ -90,63 +82,32 @@ export function CaptainCashInPanel() {
       if (["SETTLED", "FAILED"].includes(response.intent.state)) {
         await SecureStore.deleteItemAsync(attemptKey(actorID));
         setPending(null);
-        setNotice(response.intent.state === "SETTLED" ? "نجح الاختبار: رحّل WLT المبلغ إلى دفتر الأستاذ التجريبي." : "رُفض طلب الشحن التجريبي ولم يُضف الرصيد.");
+        setNotice(response.intent.providerKey === "DEVELOPMENT_SIMULATOR" ? "تعذر إتمام الدفع. حاول مجددًا لاحقًا." : response.intent.state === "SETTLED" ? "تمت إضافة الرصيد." : "لم تتم إضافة الرصيد. يمكنك المحاولة مجددًا.");
       } else {
-        setNotice(response.simulator ? "أنشأ WLT نية شحن تجريبية. لن يُضاف الرصيد قبل تطبيق نتيجة المحاكي." : "سُجلت نية الشحن؛ سيُضاف الرصيد بعد التأكيد الرسمي من مزود المحفظة.");
+        setNotice(response.simulator ? "تعذر إتمام الدفع. حاول مجددًا لاحقًا." : "سُجل طلب الشحن، وسيظهر الرصيد بعد تأكيد الدفع.");
       }
       await load();
     } catch (cause) {
       console.error("DSH captain Cash-In request failed", cause);
-      setError("لم نتأكد من نتيجة طلب الشحن. بقي المفتاح محفوظًا؛ أعد المحاولة للمبلغ نفسه كي لا تنشأ عملية أخرى.");
-    } finally { setBusy(false); }
-  };
-
-  const simulate = async (intent: CashInFundingIntent, outcome: "SUCCESS" | "FAILURE" | "UNKNOWN" | "DELAYED") => {
-    const identity = currentIdentityState();
-    const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
-    const activeAttempt = pending?.actorID === actorID ? pending : null;
-    if (!actorID || !wallet?.state.simulator || !isSimulatableCaptainFundingIntent(intent, actorID) || (activeAttempt && !matchesCaptainFundingAttempt(intent, activeAttempt))) {
-      setError("تعذر التحقق من طلب المحاكاة. حدّث بيانات المحفظة.");
-      return;
-    }
-    setBusy(true); setError(""); setNotice("");
-    try {
-      const token = await getUsableIdentityAccessToken();
-      const result = await captainClient().simulateOwnFundingIntent(token, intent.id, outcome, `simulate_${intent.id}_${outcome}`, `simulate_corr_${intent.id}`);
-      if (!result.simulator || !isSameCaptainFundingIntent(intent, result.intent)) throw new Error("CASH_IN_SIMULATION_RESPONSE_MISMATCH");
-      setNotice(result.intent.state === "SETTLED" ? "نجح الاختبار: رحّل WLT المبلغ إلى دفتر الأستاذ التجريبي." : `حالة الاختبار: ${result.intent.state}.`);
-      if (["SETTLED", "FAILED"].includes(result.intent.state)) {
-        const storedAttempt = parseCaptainFundingAttempt(await SecureStore.getItemAsync(attemptKey(actorID)), actorID);
-        if (storedAttempt && matchesCaptainFundingAttempt(intent, storedAttempt)) {
-          await SecureStore.deleteItemAsync(attemptKey(actorID));
-          if (pending && matchesCaptainFundingAttempt(intent, pending)) setPending(null);
-        }
-      }
-      await load();
-    } catch (cause) {
-      console.error("DSH captain development Cash-In simulation failed", cause);
-      setError("تعذر تطبيق نتيجة المحاكي؛ بقيت نية الشحن محفوظة كما هي.");
+      setError("لم نتأكد من نتيجة طلب الشحن. أعد المحاولة بالمبلغ نفسه لتجنب تكرار الطلب.");
     } finally { setBusy(false); }
   };
 
   const state = wallet?.state;
-  const latest = wallet?.fundingIntents ?? [];
-  const identity = currentIdentityState();
-  const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
-  const activeAttempt = pending?.actorID === actorID ? pending : null;
-  const simulatorIntent = state?.simulator && actorID ? selectCaptainSimulatorIntent(latest, actorID, activeAttempt) : undefined;
+  const latest = (wallet?.fundingIntents ?? []).filter((intent) => intent.providerKey !== "DEVELOPMENT_SIMULATOR");
+  const userCanAddFunds = Boolean(state?.cashInEnabled && !state.simulator);
+  const userHasPending = Boolean(pending && !state?.simulator);
+  const fundingStateLabel = (value: CashInFundingIntent["state"]) => ({ PENDING_PROVIDER: "بانتظار تأكيد الدفع", UNKNOWN: "جارٍ التحقق من الدفع", SETTLED: "تم الدفع", FAILED: "لم يكتمل الدفع" })[value];
   return <BthwaniSurface tone="base" style={styles.panel} accessibilityLabel="شحن رصيد الكابتن">
-    <Text style={styles.title}>شحن رصيد الكابتن</Text><Text style={styles.muted}>يُستخدم الرصيد الداخلي لتغطية التعرضات المالية التي يعتمدها WLT. كابتن الشريك غير مشمول.</Text>
+    <Text style={styles.title}>شحن رصيد الكابتن</Text><Text style={styles.muted}>يُستخدم الرصيد المتاح لتسوية المبالغ المعتمدة. لا ينطبق الشحن على كابتن المتجر.</Text>
     {busy && !wallet ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الرصيد…</Text></View> : null}
     {state ? <View style={styles.balance}><Text style={styles.label}>المتاح</Text><Text style={styles.amount}>{formatMoney(state.availableMinor, state.currency)}</Text><Text style={styles.muted}>الرصيد الدفتري {formatMoney(state.ledgerBalanceMinor, state.currency)} · المحجوز {formatMoney(state.heldMinor, state.currency)}</Text></View> : null}
-    {state?.simulator ? <Text style={styles.simulator}>وضع تطوير: DEVELOPMENT_SIMULATOR. لا توجد أموال حقيقية في هذا المسار.</Text> : null}
-    {state?.cashInEnabled ? <><TextInput accessibilityLabel="مبلغ شحن محفظة الكابتن" editable={!pending && !busy} keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/[^0-9]/g, ""))} placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} disabled={busy} label={pending ? "إعادة المحاولة بالمفتاح نفسه" : "إنشاء طلب شحن"} onPress={() => void createIntent()} /></> : <Text style={styles.muted}>الشحن غير متاح؛ لا يوجد مزود رسمي معتمد مفعّل حاليًا.</Text>}
-    {pending ? <Text style={styles.notice}>محاولة محفوظة بقيمة {formatMoney(pending.amountMinor, "YER")}؛ ستُعاد بنفس مفتاح WLT عند المحاولة.</Text> : null}
-    {simulatorIntent ? <View key={simulatorIntent.id} style={styles.actions}><Text style={styles.label}>محاكاة نتيجة طلب {simulatorIntent.id.slice(-8)} · {formatMoney(simulatorIntent.amountMinor, simulatorIntent.currency)} · {simulatorIntent.state}</Text>{(["SUCCESS", "FAILURE", "UNKNOWN", "DELAYED"] as const).map((outcome) => <BthwaniButton key={outcome} busy={busy} disabled={busy} variant="secondary" label={{ SUCCESS: "محاكاة نجاح", FAILURE: "محاكاة رفض", UNKNOWN: "نتيجة مجهولة", DELAYED: "تأخير التأكيد" }[outcome]} onPress={() => void simulate(simulatorIntent, outcome)} />)}</View> : null}
-    {latest.length ? <View style={styles.history}><Text style={styles.label}>آخر طلبات الشحن</Text>{latest.slice(0, 5).map((intent) => <View key={intent.id} style={styles.row}><Text style={styles.muted}>{intent.state}</Text><Text style={styles.rowAmount}>{formatMoney(intent.amountMinor, intent.currency)}</Text></View>)}</View> : null}
+    {userCanAddFunds ? <><TextInput accessibilityLabel="مبلغ شحن محفظة الكابتن" editable={!userHasPending && !busy} keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/[^0-9]/g, ""))} placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} disabled={busy} label={userHasPending ? "متابعة طلب الشحن" : "إضافة رصيد"} onPress={() => void createIntent()} /></> : <Text style={styles.muted}>الشحن غير متاح حاليًا.</Text>}
+    {userHasPending ? <Text style={styles.notice}>طلب شحن بقيمة {formatMoney(pending!.amountMinor, "YER")} بانتظار التأكيد.</Text> : null}
+    {latest.length ? <View style={styles.history}><Text style={styles.label}>آخر طلبات الشحن</Text>{latest.slice(0, 5).map((intent) => <View key={intent.id} style={styles.row}><Text style={styles.muted}>{fundingStateLabel(intent.state)}</Text><Text style={styles.rowAmount}>{formatMoney(intent.amountMinor, intent.currency)}</Text></View>)}</View> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     <BthwaniButton busy={busy} disabled={busy} label="تحديث بيانات المحفظة" onPress={() => void load()} variant="secondary" />
   </BthwaniSurface>;
 }
 
-function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ panel: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] }, title: { ...typography.titleSm, color: theme.color }, label: { ...typography.label, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, balance: { borderColor: theme.borderColor, borderBottomWidth: borders.hairline, gap: spacing[1], paddingBottom: spacing[3] }, amount: { ...typography.titleLg, color: theme.color }, input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, padding: spacing[3], textAlign: "left", writingDirection: "ltr" }, loading: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, simulator: { ...typography.bodySm, color: theme.warning }, actions: { gap: spacing[2] }, history: { gap: spacing[2] }, row: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", justifyContent: "space-between", paddingTop: spacing[2] }, rowAmount: { ...typography.bodySm, color: theme.color }, notice: { ...typography.bodySm, color: theme.interactiveText }, error: { ...typography.bodySm, color: theme.warning } }); }
+function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ panel: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] }, title: { ...typography.titleSm, color: theme.color }, label: { ...typography.label, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, balance: { borderColor: theme.borderColor, borderBottomWidth: borders.hairline, gap: spacing[1], paddingBottom: spacing[3] }, amount: { ...typography.titleLg, color: theme.color }, input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, padding: spacing[3], textAlign: "left", writingDirection: "ltr" }, loading: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, history: { gap: spacing[2] }, row: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", justifyContent: "space-between", paddingTop: spacing[2] }, rowAmount: { ...typography.bodySm, color: theme.color }, notice: { ...typography.bodySm, color: theme.interactiveText }, error: { ...typography.bodySm, color: theme.warning } }); }

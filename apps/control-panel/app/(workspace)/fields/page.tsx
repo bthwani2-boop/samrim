@@ -6,7 +6,7 @@ export default function FieldsPage() {
       <div className="workspace-page-heading">
         <p className="eyebrow">الشركاء</p>
         <h1 id="fields-page-title">قبول الميدان</h1>
-        <p className="lead">أنشئ واعتمد ملفات DSH قبل منح الدور، ثم أدر وصول الحسابات وأهليتها من سجل موحّد.</p>
+        <p className="lead">أنشئ واعتمد ملفات الميدانيين قبل منح الدور، ثم أدر وصول الحسابات وأهليتها من سجل موحّد.</p>
       </div>
       <FieldAdmissionPanel />
     </section>

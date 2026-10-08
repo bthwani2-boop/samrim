@@ -13,6 +13,10 @@ paths:
         - name: state
           in: query
           schema: { type: string, enum: [all, pending, pending_review, pending_identity, eligible, suspended, review_required] }
+        - name: serviceCityId
+          in: query
+          description: Optional operational roster filter for one assigned city.
+          schema: { type: string, maxLength: 128 }
         - name: sort
           in: query
           schema: { type: string, enum: [created_desc, created_asc] }
@@ -68,7 +72,7 @@ paths:
   /dsh/fields/admissions/{admissionId}/profile:
     patch:
       operationId: updateFieldAdmissionProfile
-      summary: Complete the Arabic name on an unapproved Field candidate
+      summary: Update editable Field profile and city assignment fields
       security:
         - serviceBearer: []
       parameters:
@@ -582,7 +586,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "../dsh.openapi.yaml#/components/schemas/CreateJoiningCaseRequest"
+              $ref: "../dsh.openapi.yaml#/components/schemas/CreateFieldJoiningCaseDraftRequest"
       responses:
         "201":
           description: Field-originated joining case.
@@ -674,6 +678,49 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
         "404":
           $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/field/joining-cases/{caseId}/draft:
+    patch:
+      operationId: updateFieldJoiningCaseDraft
+      summary: Replace editable Field draft details while preserving omitted private proof number
+      security:
+        - userBearer: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/CreateFieldJoiningCaseDraftRequest"
+      responses:
+        "200":
+          description: Field admission request readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 

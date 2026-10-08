@@ -220,6 +220,9 @@ func (s *Service) ReadForOperator(ctx context.Context, storeID, actingActorID st
 	if err != nil {
 		return postgres.StoreRecord{}, PublicationReadiness{}, err
 	}
+	if err := postgres.ReadStoreDisplayNames(ctx, s.db, &store); err != nil {
+		return postgres.StoreRecord{}, PublicationReadiness{}, err
+	}
 	readiness, err := s.ReadinessForStore(ctx, store)
 	return store, readiness, err
 }

@@ -323,7 +323,7 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
           throw new Error(message);
         }
         const evidenceDocumentId = uploaded?.document?.id ?? "";
-        if (!evidenceDocumentId) throw new Error("لم يُرجع WLT معرّف إيصال محفوظًا.");
+        if (!evidenceDocumentId) throw new Error("تعذر حفظ الإيصال. أعد المحاولة.");
         transaction = { ...transaction, evidenceDocumentId };
         savePendingRemittance(actorId, transaction);
       }
@@ -338,10 +338,10 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
         if (response.status < 500) {
           clearPendingRemittance(actorId);
         }
-        throw new Error(response.status >= 500 ? `${message}؛ أُبقيت بيانات المحاولة ومفتاحها لإعادة آمنة.` : message);
+        throw new Error(response.status >= 500 ? `${message}؛ أُبقيت بيانات المحاولة لإعادة آمنة.` : message);
       }
       if (!isPartnerCommissionRemittanceResponse(body)) {
-        throw new Error("أعاد WLT استجابة غير مكتملة للحوالة؛ بقيت بيانات المحاولة ومفتاحها محفوظين لإعادة آمنة.");
+        throw new Error("أعاد السجل المالي استجابة غير مكتملة للحوالة؛ بقيت بيانات المحاولة محفوظة لإعادة آمنة.");
       }
       const result = body;
       clearPendingRemittance(actorId);
@@ -367,7 +367,7 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
     <section className={styles.workspace} aria-labelledby="partner-receivables-title">
       <header className={styles.heading}>
         <div><p className="eyebrow">المالية · سجل تشغيلي</p><h2 id="partner-receivables-title">مستحقات الشركاء</h2></div>
-        <p className="muted">يعرض السجل أرصدة عمولات الاستلام المفتوحة من WLT، مع اسم النشاط والهاتف المقنّع من DSH وIdentity. الترتيب التقني داخلي ولا يُستخدم كهوية للمشغّل.</p>
+        <p className="muted">يعرض السجل أرصدة عمولات الاستلام المفتوحة من السجل المالي، مع اسم النشاط والهاتف المقنّع والحسابات.</p>
       </header>
 
       {error ? <p className="state-error" role="alert">{error}</p> : null}
@@ -401,7 +401,7 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
           <div><p className="eyebrow">تفاصيل عند الطلب</p><h3 id="partner-receivable-detail-title">{(() => { const selected = items.find((item) => item.partnerActorId === initialQuery.partnerActorId); return selected?.businessName?.trim() ? `مستحقات ${selected.businessName.trim()}` : "تفاصيل مستحقات الشريك"; })()}</h3></div>
           <button className="button button-quiet" type="button" onClick={() => navigate({ cursor: initialQuery.cursor, partnerActorId: "" })}>إغلاق التفاصيل</button>
         </div>
-        {detailLoading ? <p className="muted" role="status">جارٍ قراءة الملخص المالي من WLT…</p> : null}
+        {detailLoading ? <p className="muted" role="status">جارٍ قراءة الملخص المالي من السجل المالي…</p> : null}
         {selectedSummary ? <>
           <dl className={styles.metrics}>
             <div><dt>صافي المستحق</dt><dd>{formatMoney(selectedSummary.earnedMinor, selectedSummary.currency)}</dd></div>
@@ -412,11 +412,11 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
           <p className="muted">فترة التسوية: {settlementPeriodLabel(selectedSummary.settlementPeriod)} · الحالة المالية: {financialProfileStateLabel(selectedSummary.profileState)}</p>
           <section className={styles.recipientReadback} aria-labelledby="partner-payout-recipients-title">
             <div className={styles.subheading}>
-              <div><h4 id="partner-payout-recipients-title">مستلمو صرف المتاجر</h4><p className="muted">قراءة تشغيلية من WLT مع هوية المستلم وجهة المحفظة المقنّعة؛ لا تعتمد الواجهة على معرّفات Actors للتعرّف على الأشخاص.</p></div>
+              <div><h4 id="partner-payout-recipients-title">مستلمو صرف المتاجر</h4><p className="muted">يعرض السجل اسم المستلم ورقم محفظته المقنّع لمراجعة التحصيل بأمان.</p></div>
               <button className="button button-quiet" type="button" disabled={payoutRecipientsLoading} onClick={() => void loadPayoutRecipients(initialQuery.partnerActorId)}>{payoutRecipientsLoading ? "جارٍ القراءة…" : "إعادة القراءة"}</button>
             </div>
             {payoutRecipientsError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت قراءة مستلمي الصرف</strong><p>{payoutRecipientsError}</p></div> : null}
-            {payoutRecipientsLoading && !selectedPayoutRecipients ? <p className="muted" role="status">جارٍ قراءة مستلمي الصرف من WLT…</p> : null}
+            {payoutRecipientsLoading && !selectedPayoutRecipients ? <p className="muted" role="status">جارٍ قراءة مستلمي الصرف من السجل المالي…</p> : null}
             {selectedPayoutRecipients?.readback.recipients.length ? <div className={styles.tableWrap}><table className={styles.table}><caption className="sr-only">مستلمو صرف متاجر الشريك</caption><thead><tr><th scope="col">المتجر</th><th scope="col">المستلم</th><th scope="col">جهة المحفظة</th><th scope="col">الحالة</th><th scope="col">المستحقات المسندة</th></tr></thead><tbody>{selectedPayoutRecipients.readback.recipients.map((record) => {
               const profile = selectedPayoutRecipients.beneficiaryProfiles[record.beneficiaryActorId ?? ""];
               const stateLabel = record.state === "SELECTED_VERIFIED_STAFF" ? "موظف مختار" : record.state === "RECIPIENT_REVIEW_REQUIRED" ? "تحتاج مراجعة المالك" : "المالك الافتراضي";
@@ -424,16 +424,16 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
             })}</tbody></table></div> : null}
             {selectedPayoutRecipients && selectedPayoutRecipients.readback.recipients.length === 0 ? <p className={styles.empty}>لا توجد متاجر مرتبطة بهذا الشريك في قراءة الصرف الحالية.</p> : null}
           </section>
-          {receipt?.partnerActorId === initialQuery.partnerActorId ? <p className="state-success" role="status">سُجلت الحوالة {receipt.response.remittance.remittanceReference} بمبلغ {formatMoney(receipt.response.remittance.amountMinor, receipt.response.remittance.currency)}، وأثبتها المشغّل {receipt.response.remittance.verifiedBy}. {receipt.response.remittance.evidenceDocumentId ? <a href={`/api/finance/evidence/${encodeURIComponent(receipt.response.remittance.evidenceDocumentId)}`}>فتح إيصال الحوالة</a> : null}</p> : null}
+          {receipt?.partnerActorId === initialQuery.partnerActorId ? <p className="state-success" role="status">سُجلت الحوالة {receipt.response.remittance.remittanceReference} بمبلغ {formatMoney(receipt.response.remittance.amountMinor, receipt.response.remittance.currency)}. {receipt.response.remittance.evidenceDocumentId ? <a href={`/api/finance/evidence/${encodeURIComponent(receipt.response.remittance.evidenceDocumentId)}`}>فتح إيصال الحوالة</a> : null}</p> : null}
           {selectedSummary.outstandingCommissionReceivableMinor > 0 || pending ? <section className={styles.remittance} aria-labelledby="partner-remittance-title">
             <h4 id="partner-remittance-title">{pending ? "استعادة محاولة حوالة عمولة الاستلام" : "تسجيل حوالة عمولة الاستلام"}</h4>
-            {selectedSummary.outstandingCommissionReceivableMinor > 0 ? <p className="muted">أرفق إيصال الحوالة الذي راجعته ثم سجّل المبلغ المتحقق منه. WLT يحفظ الدليل ويربطه بالقيد المالي. هذه الحوالة تخص عمولة بثواني فقط ولا تسجل قيمة مبيعات المتجر.</p> : <p className="muted">لا يوجد رصيد مفتوح حالياً، لكن توجد محاولة سابقة غير محسومة. أعد الطلب المحفوظ بنفس مفتاحه ليعيد WLT النتيجة المؤكدة دون إنشاء قيد مكرر.</p>}
+            {selectedSummary.outstandingCommissionReceivableMinor > 0 ? <p className="muted">أرفق إيصال الحوالة الذي راجعته ثم سجّل المبلغ المتحقق منه. السجل المالي يحفظ الدليل ويربطه بالقيد المالي. هذه الحوالة تخص عمولة بثواني فقط ولا تسجل قيمة مبيعات المتجر.</p> : <p className="muted">لا يوجد رصيد مفتوح حالياً، لكن توجد محاولة سابقة غير محسومة. أعد إرسال البيانات المحفوظة ليعيد السجل المالي النتيجة المؤكدة دون إنشاء قيد مكرر.</p>}
             <div className={styles.formFields}>
               <label className="field-label" htmlFor="commission-remittance-amount">المبلغ بالريال اليمني<input id="commission-remittance-amount" inputMode="numeric" pattern="[0-9]*" value={pending?.amountMinor ?? amount} onChange={(event) => setAmount(event.target.value.replace(/[^0-9]/g, ""))} disabled={mutationBusy || Boolean(pending)} /></label>
               <label className="field-label" htmlFor="commission-remittance-reference">مرجع الحوالة<input id="commission-remittance-reference" value={pending?.remittanceReference ?? reference} onChange={(event) => setReference(event.target.value)} maxLength={128} disabled={mutationBusy || Boolean(pending)} /></label>
               <label className="field-label" htmlFor="commission-remittance-evidence">إيصال الحوالة (PDF أو صورة أو CSV أو Excel، بحد أقصى 10 ميغابايت)<input id="commission-remittance-evidence" type="file" accept="application/pdf,image/jpeg,image/png,text/csv,.csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => setEvidenceFile(event.target.files?.[0] ?? null)} disabled={mutationBusy || Boolean(pending?.evidenceDocumentId)} /></label>
             </div>
-            {pending ? <p className="muted">بقيت محاولة غير محسومة. إعادة التسجيل تستخدم المفاتيح والبيانات نفسيهما{pending.evidenceDocumentId ? " دون إعادة رفع الإيصال" : "؛ أعد اختيار ملف الإيصال نفسه إذا كان الرفع قد انقطع"}.</p> : null}
+            {pending ? <p className="muted">بقيت محاولة غير محسومة. أعد الإرسال بالبيانات نفسها{pending.evidenceDocumentId ? " دون إعادة رفع الإيصال" : "؛ أعد اختيار ملف الإيصال نفسه إذا كان الرفع قد انقطع"}.</p> : null}
             {pending?.evidenceDocumentId ? <p className="muted">الإيصال المحفوظ: <a href={`/api/finance/evidence/${encodeURIComponent(pending.evidenceDocumentId)}`}>فتح الإيصال</a></p> : null}
             <button className="button button-primary" type="button" onClick={() => void submitRemittance()} disabled={mutationBusy}>{mutationBusy ? "جارٍ تسجيل الحوالة…" : pending ? "إعادة المحاولة بنفس العملية" : "تسجيل الحوالة بعد التحقق"}</button>
           </section> : <p className="muted">لا يوجد رصيد عمولة مفتوح أو محاولة معلقة لهذا الشريك.</p>}

@@ -309,7 +309,7 @@ export function IdentitySurface() {
           {flow === "recovery" ? (
             <form onSubmit={(event) => { event.preventDefault(); if (challengeStarted) void beginRecoveryRegistration(); else void requestOperatorRecovery(); }} noValidate>
               <p className="security-note">أدخل اعتماد الاسترداد الذي عُرض مرة واحدة بعد تفعيل المشغل. يلزم أيضًا إثبات الهاتف؛ الهاتف وحده لا يمنح وصولًا.</p>
-              <label className="field-label" htmlFor="operator-recovery-phone">رقم الهاتف<input id="operator-recovery-phone" autoComplete="tel" disabled={challengeStarted || busy} inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} placeholder="مثال: 967 77 000 100" /></label>
+              <label className="field-label" htmlFor="operator-recovery-phone">رقم الهاتف<input id="operator-recovery-phone" autoComplete="tel" disabled={challengeStarted || busy} inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} placeholder="مثال: 777 000 100 أو +967 777 000 100" /></label>
               <label className="field-label" htmlFor="operator-recovery-credential">اعتماد الاسترداد<input id="operator-recovery-credential" autoComplete="one-time-code" disabled={challengeStarted || busy} value={recoveryInput} onChange={(event) => setRecoveryInput(event.target.value.trim())} /></label>
               {challengeStarted ? <label className="field-label" htmlFor="operator-recovery-code">رمز إثبات الهاتف<input id="operator-recovery-code" autoComplete="one-time-code" disabled={busy} inputMode="numeric" maxLength={6} value={code} onChange={(event) => setCode(toAsciiDigits(event.target.value).replace(/\D/g, "").slice(0, 6))} /></label> : null}
               {error ? <p className="identity-error" role="alert">{error}</p> : null}
@@ -324,7 +324,7 @@ export function IdentitySurface() {
           ) : null}
           {flow === "enrollment" ? (
             <form onSubmit={(event) => { event.preventDefault(); if (challengeStarted) void beginEnrollmentRegistration(); else void requestEnrollment(); }} noValidate>
-              <label className="field-label" htmlFor="operator-phone">رقم الهاتف<input id="operator-phone" autoComplete="tel" disabled={challengeStarted || busy} inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} placeholder="مثال: 967 77 000 100" /></label>
+              <label className="field-label" htmlFor="operator-phone">رقم الهاتف<input id="operator-phone" autoComplete="tel" disabled={challengeStarted || busy} inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} placeholder="مثال: 777 000 100 أو +967 777 000 100" /></label>
               <label className="field-label" htmlFor="operator-enrollment-token">دعوة التفعيل عالية الأمان<input id="operator-enrollment-token" autoComplete="one-time-code" disabled={challengeStarted || busy} maxLength={256} value={token} onChange={(event) => setToken(event.target.value.trim())} /></label>
               {challengeStarted ? <label className="field-label" htmlFor="operator-code">رمز إثبات الهاتف<input id="operator-code" autoComplete="one-time-code" disabled={busy} inputMode="numeric" maxLength={6} value={code} onChange={(event) => setCode(toAsciiDigits(event.target.value).replace(/\D/g, "").slice(0, 6))} /></label> : null}
               {error ? <p className="identity-error" role="alert">{error}</p> : null}

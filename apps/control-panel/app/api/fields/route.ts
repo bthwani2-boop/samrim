@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
 import { NextResponse } from "next/server";
 
 import { admitField, approveFieldAdmission, authorizeDshFieldReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, listFieldAdmissions, provisionFieldAdmission, readFieldAdmissionByActor, reviewFieldAdmissionProfile, setDshFieldRoleEnabled, updateFieldAdmissionProfile } from "../../../src/server/dsh/dsh-bff";
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
   if (identity.role !== "operator") return NextResponse.json({ error: { code: "FORBIDDEN", message: "operator access is required" } }, { status: 403, headers: { "Cache-Control": "no-store" } });
   const permissionDenied = operatorWorkspacePermissionDenied(identity, "partners");
   if (permissionDenied) return permissionDenied;
-  const body = (await request.json().catch(() => null)) as { action?: unknown; fullNameAr?: unknown; contactPhoneE164?: unknown; serviceCityId?: unknown; walletProviderKey?: unknown; admissionId?: unknown; actorId?: unknown; reason?: unknown; expectedVersion?: unknown; expectedAdmissionVersion?: unknown; expectedActorVersion?: unknown; expectedRoleVersion?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { action?: unknown; fullNameAr?: unknown; contactPhoneE164?: unknown; serviceCityId?: unknown; allServiceCities?: unknown; serviceCityIds?: unknown; walletProviderKey?: unknown; admissionId?: unknown; actorId?: unknown; reason?: unknown; expectedVersion?: unknown; expectedAdmissionVersion?: unknown; expectedActorVersion?: unknown; expectedRoleVersion?: unknown } | null;
   const action = typeof body?.action === "string" ? body.action.trim() : "admit";
   const admissionId = typeof body?.admissionId === "string" ? body.admissionId.trim() : "";
   const fullNameAr = typeof body?.fullNameAr === "string" ? body.fullNameAr.trim() : "";
@@ -62,7 +63,11 @@ export async function POST(request: Request) {
     const expectedVersion = Number(body?.expectedVersion);
     if (!admissionId || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "admissionId, fullNameAr, and expectedVersion are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
     try {
-      const result = await updateFieldAdmissionProfile(admissionId, fullNameAr, { ...context, expectedVersion });
+      const walletProviderKey = typeof body?.walletProviderKey === "string" ? body.walletProviderKey.trim() : "";
+      const allServiceCities = body?.allServiceCities === true;
+      const serviceCityIds = Array.isArray(body?.serviceCityIds) && body.serviceCityIds.every((value) => typeof value === "string") ? body.serviceCityIds as string[] : [];
+      if (!walletProviderKey || typeof body?.allServiceCities !== "boolean" || (!allServiceCities && !serviceCityIds.length)) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "أدخل مزوّد المحفظة وحدد نطاق المدن" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      const result = await updateFieldAdmissionProfile(admissionId, { fullNameAr, walletProviderKey, allServiceCities, serviceCityIds }, { ...context, expectedVersion });
       return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
     } catch (error) {
       const payload = isDshClientError(error) ? dshErrorPayload(error) : { code: "DSH_INTERNAL_ERROR", message: "dsh request failed" };
@@ -93,13 +98,15 @@ export async function POST(request: Request) {
     }
   }
   if (action !== "admit") return NextResponse.json({ error: { code: "INVALID_INPUT", message: "a supported Field operation is required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
-  if (!body || Object.keys(body).some((key) => !["action", "fullNameAr", "contactPhoneE164", "serviceCityId", "walletProviderKey"].includes(key))) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "Field creation accepts only fullNameAr, contactPhoneE164, serviceCityId, and the owner-selected wallet provider" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
-  const contactPhoneE164 = typeof body?.contactPhoneE164 === "string" ? body.contactPhoneE164.trim() : "";
+  if (!body || Object.keys(body).some((key) => !["action", "fullNameAr", "contactPhoneE164", "serviceCityId", "allServiceCities", "serviceCityIds", "walletProviderKey"].includes(key))) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "Field creation accepts profile and city assignment fields" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  const contactPhoneE164 = typeof body?.contactPhoneE164 === "string" ? normalizeYemenPhoneE164(body.contactPhoneE164) : "";
   const serviceCityId = typeof body?.serviceCityId === "string" ? body.serviceCityId.trim() : "";
+  const allServiceCities = body?.allServiceCities === true;
+  const serviceCityIds = Array.isArray(body?.serviceCityIds) && body.serviceCityIds.every((value) => typeof value === "string") ? body.serviceCityIds as string[] : [];
   const walletProviderKey = typeof body?.walletProviderKey === "string" ? body.walletProviderKey.trim() : "";
-  if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9]\d{7,14}$/.test(contactPhoneE164) || !serviceCityId || serviceCityId.length > 128 || Array.from(walletProviderKey).length < 1 || Array.from(walletProviderKey).length > 64 || /\p{Cc}/u.test(walletProviderKey)) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "full Arabic name, valid E.164 phone, active service city, and owner-selected wallet provider are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9]\d{7,14}$/.test(contactPhoneE164) || (!allServiceCities && !serviceCityIds.length && !serviceCityId) || Array.from(walletProviderKey).length < 1 || Array.from(walletProviderKey).length > 64 || /\p{Cc}/u.test(walletProviderKey)) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "أدخل الاسم والهاتف ومزوّد المحفظة وحدد مدينة نشطة واحدة أو أكثر" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   try {
-    const result = await admitField({ fullNameAr, contactPhoneE164, serviceCityId, walletProviderKey }, context);
+    const result = await admitField({ fullNameAr, contactPhoneE164, serviceCityId, allServiceCities, serviceCityIds, walletProviderKey }, context);
     return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const payload = isDshClientError(error) ? dshErrorPayload(error) : { code: "DSH_INTERNAL_ERROR", message: "dsh request failed" };
@@ -118,11 +125,12 @@ export async function GET(request: Request) {
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
   const query = params.get("q") ?? "";
   const cursor = params.get("cursor") ?? "";
+  const serviceCityId = params.get("serviceCityId")?.trim() ?? "";
   const rawSort = params.get("sort") ?? "phone_asc";
   const sort = rawSort === "phone_asc" || rawSort === "phone_desc" ? rawSort : null;
   const rawEnabled = params.get("enabled");
   const enabled = rawEnabled === null ? undefined : rawEnabled === "true" ? true : rawEnabled === "false" ? false : null;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || enabled === null || sort === null || query.trim().length > 100 || cursor.length > 512) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "valid search, cursor, sort, limit, and enabled filters are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || enabled === null || sort === null || query.trim().length > 100 || cursor.length > 512 || serviceCityId.length > 128) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "valid search, city, cursor, sort, limit, and enabled filters are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   try {
     if (params.get("scope") === "workbench") {
       const workbenchCursor = decodeWorkbenchCursor(cursor);
@@ -131,7 +139,7 @@ export async function GET(request: Request) {
       const items: Array<Readonly<{ kind: "candidate"; admission: Awaited<ReturnType<typeof listFieldAdmissions>>["admissions"][number] }> | Readonly<{ kind: "account"; account: Awaited<ReturnType<typeof searchIdentityRoles>>["items"][number] & { admission: Awaited<ReturnType<typeof readFieldAdmissionByActor>>["admission"] | null } }>> = [];
       let accountsCursor = "";
       if (phase === "candidates") {
-        const candidates = await listFieldAdmissions(query, "pending", "created_desc", limit, workbenchCursor?.sourceCursor ?? "", { operatorActorId: identity.subject });
+        const candidates = await listFieldAdmissions(query, "pending", "created_desc", limit, workbenchCursor?.sourceCursor ?? "", { operatorActorId: identity.subject }, serviceCityId);
         items.push(...candidates.admissions.map((admission) => ({ kind: "candidate" as const, admission })));
         if (candidates.nextCursor) return NextResponse.json({ items, nextCursor: encodeWorkbenchCursor({ version: 1, phase: "candidates", sourceCursor: candidates.nextCursor }) }, { headers: { "Cache-Control": "no-store" } });
         if (items.length >= limit) {
@@ -139,7 +147,7 @@ export async function GET(request: Request) {
           return NextResponse.json({ items, nextCursor: firstAccount.items.length ? encodeWorkbenchCursor({ version: 1, phase: "accounts", sourceCursor: "" }) : undefined }, { headers: { "Cache-Control": "no-store" } });
         }
       } else accountsCursor = workbenchCursor?.sourceCursor ?? "";
-      const accountLimit = Math.max(1, limit - items.length);
+      const accountLimit = serviceCityId ? 50 : Math.max(1, limit - items.length);
       const accounts = await searchIdentityRoles("field", query, accountLimit, accountsCursor, enabled ?? undefined, sort);
       const roster = await Promise.all(accounts.items.map(async (role) => {
         try {
@@ -150,7 +158,7 @@ export async function GET(request: Request) {
           throw error;
         }
       }));
-      items.push(...roster);
+      items.push(...roster.filter((item) => !serviceCityId || item.account.admission?.allServiceCities || item.account.admission?.serviceCityIds?.includes(serviceCityId)));
       const nextCursor = accounts.nextCursor ? encodeWorkbenchCursor({ version: 1, phase: "accounts", sourceCursor: accounts.nextCursor }) : undefined;
       return NextResponse.json({ items, nextCursor }, { headers: { "Cache-Control": "no-store" } });
     }

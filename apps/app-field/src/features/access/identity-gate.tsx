@@ -5,13 +5,15 @@ import {
   currentIdentityState,
   loginManagedIdentity,
   requestManagedActivation,
+  requestManagedRecovery,
+  recoverManagedIdentity,
   restoreIdentitySession,
   role,
   subscribeIdentitySession,
   surface,
 } from "../../bootstrap/identity";
 
-const identity = { role, surface, restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession, requestManagedActivation, activateManagedIdentity, loginManagedIdentity };
+const identity = { role, surface, restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession, requestManagedActivation, activateManagedIdentity, loginManagedIdentity, requestManagedRecovery, recoverManagedIdentity };
 
 export default function IdentityGate() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
@@ -21,7 +23,6 @@ export default function IdentityGate() {
     <ManagedIdentityFlow
       managedRole={role}
       surface={surface}
-      roleLabel="الميدان"
       binding={identity}
       authenticatedContent={<Redirect href={safeReturnTo} />}
     />

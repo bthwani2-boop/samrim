@@ -84,7 +84,7 @@ func (s *StorePublicationServer) listForOperator(w http.ResponseWriter, r *http.
 	}
 	stores := make([]contract.OperatorStoreSummary, 0, len(page.Stores))
 	for _, store := range page.Stores {
-		stores = append(stores, contract.OperatorStoreSummary{ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, ServiceCityID: store.ServiceCityID, PrimaryVerticalID: store.PrimaryVerticalID, CommercialStoreTypeID: nullableString(store.CommercialStoreTypeID), Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), FulfillmentModes: toStoreFulfillmentModes(store.FulfillmentModes), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
+		stores = append(stores, contract.OperatorStoreSummary{ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, PartnerName: store.PartnerName, ServiceCityName: store.ServiceCityName, PrimaryVerticalName: store.PrimaryVerticalName, ServiceCityID: store.ServiceCityID, PrimaryVerticalID: store.PrimaryVerticalID, CommercialStoreTypeID: nullableString(store.CommercialStoreTypeID), Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), FulfillmentModes: toStoreFulfillmentModes(store.FulfillmentModes), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
 	}
 	writeJSON(w, http.StatusOK, contract.OperatorStoreListResponse{Stores: stores, NextCursor: page.NextCursor})
 }

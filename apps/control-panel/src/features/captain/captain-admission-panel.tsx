@@ -10,7 +10,7 @@ import { responseMessage } from "../access/identity-error-message";
 type CaptainRecord = ActorRoleView & Readonly<{ admission: CaptainAdmission | null }>;
 type CaptainPage = Readonly<{ items: ReadonlyArray<CaptainRecord>; nextCursor?: string }>;
 
-const admissionLabel = (admission: CaptainAdmission | null) => admission ? captainAdmissionStateLabel(admission.state) : "لا توجد أهلية تشغيل في DSH";
+const admissionLabel = (admission: CaptainAdmission | null) => admission ? captainAdmissionStateLabel(admission.state) : "لا توجد أهلية تشغيل ";
 
 export function CaptainAdmissionPanel() {
   const [query, setQuery] = useState("");
@@ -57,7 +57,7 @@ export function CaptainAdmissionPanel() {
       return;
     }
     if (!captain.admission || !captain.activatedAt) {
-      setError("تتطلب إدارة أهلية التشغيل تسجيل الهوية ووجود أهلية كابتن في DSH.");
+      setError("تتطلب إدارة أهلية التشغيل تسجيل الهوية ووجود أهلية كابتن .");
       return;
     }
     const mustDisable = captain.enabled || (captain.admission.requiresProfileReview && captain.admission.state === "eligible");
@@ -79,18 +79,18 @@ export function CaptainAdmissionPanel() {
         const message = await responseMessage(response);
         if (response.status === 409 || response.status === 412) {
           await load();
-          setError(`تغيرت نسخة حالة أهلية الكابتن قبل الحفظ. أُعيد تحميل الحالة الكانونية: ${message}`);
+          setError(`تغيرت حالة أهلية الكابتن قبل الحفظ. أُعيد تحميل الحالة المعتمدة: ${message}`);
         } else setError(message);
         return;
       }
       const readbackParams = new URLSearchParams({ limit: "10", q: captain.phoneE164 });
       const readbackResponse = await identityFetch(`/api/captains?${readbackParams}`);
-      if (!readbackResponse.ok) { setError("تم التغيير لكن تعذرت إعادة قراءة الحالة الكانونية للكابتن. أعد القراءة قبل أي إجراء آخر."); return; }
+      if (!readbackResponse.ok) { setError("تم التغيير لكن تعذرت إعادة قراءة الحالة المعتمدة للكابتن. أعد القراءة قبل أي إجراء آخر."); return; }
       const readback = await readbackResponse.json() as CaptainPage;
       const canonical = readback.items.find((item) => item.actorId === captain.actorId);
-      if (!canonical) { setError("تم التغيير لكن لم يظهر الكابتن في إعادة القراءة الكانونية. أعد القراءة قبل أي إجراء آخر."); return; }
+      if (!canonical) { setError("تم التغيير لكن لم يظهر الكابتن في إعادة القراءة المعتمدة. أعد القراءة قبل أي إجراء آخر."); return; }
       setReasons((current) => ({ ...current, [captain.actorId]: "" }));
-      setNotice(`تم تغيير الأهلية وإعادة القراءة: الهوية ${canonical.enabled ? "نشطة" : "موقوفة"} · DSH ${admissionLabel(canonical.admission)}.`);
+      setNotice(`تم تغيير الأهلية وإعادة القراءة: الحساب ${canonical.enabled ? "نشط" : "موقوف"} · ${admissionLabel(canonical.admission)}.`);
       await load();
     } catch (cause) {
       setError(isRequestFailure(cause) ? cause.message : "تعذر تحديث أهلية الكابتن.");
@@ -106,7 +106,7 @@ export function CaptainAdmissionPanel() {
       return;
     }
     if (!captain.enabled || !captain.securityEnabled || !captain.activatedAt || captain.admission?.state !== "eligible" || captain.admission.requiresProfileReview) {
-      setError("تتطلب إعادة التسجيل هوية نشطة وأهلية كابتن سارية ومراجعة مكتملة في DSH.");
+      setError("تتطلب إعادة التسجيل هوية نشطة وأهلية كابتن سارية ومراجعة مكتملة .");
       return;
     }
     setBusy(captain.actorId + ":reenroll");
@@ -132,9 +132,9 @@ export function CaptainAdmissionPanel() {
           if (reloaded) {
             let recoveryMessage: string;
             if (response.status >= 500) {
-              recoveryMessage = "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. ";
+              recoveryMessage = "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة المعتمدة قبل أي محاولة أخرى. ";
             } else {
-              recoveryMessage = "تغيرت أهلية DSH أو نسخة الهوية قبل إعادة التسجيل. أُعيد تحميل الحالة الكانونية: ";
+              recoveryMessage = "تغيرت أهلية النظام أو نسخة الهوية قبل إعادة التسجيل. أُعيد تحميل الحالة المعتمدة: ";
             }
             setError(recoveryMessage + message);
           } else {
@@ -147,7 +147,7 @@ export function CaptainAdmissionPanel() {
       const readbackResponse = await identityFetch("/api/captains?" + readbackParams);
       if (!readbackResponse.ok) {
         const reloaded = await load();
-        setError(reloaded ? "تعذرت إعادة قراءة التفصيل لكن تم تحديث سجل الكباتن. تحقق من التفعيل قبل أي إجراء آخر." : "تم إرسال الإجازة لكن تعذرت إعادة قراءة هوية الكابتن وأهلية DSH. حدّث السجل قبل أي إجراء آخر.");
+        setError(reloaded ? "تعذرت إعادة قراءة التفصيل لكن تم تحديث سجل الكباتن. تحقق من التفعيل قبل أي إجراء آخر." : "تم إرسال الإجازة لكن تعذرت إعادة قراءة هوية الكابتن وأهلية النظام. حدّث السجل قبل أي إجراء آخر.");
         return;
       }
       const readback = await readbackResponse.json() as CaptainPage;
@@ -158,14 +158,14 @@ export function CaptainAdmissionPanel() {
         return;
       }
       setReasons((current) => ({ ...current, [captain.actorId]: "" }));
-      setNotice("تمت إجازة إعادة تسجيل الكابتن بعد تحقق DSH؛ أُعيدت قراءة النسخة " + canonical.roleVersion + ".");
+      setNotice("تمت إجازة إعادة تسجيل الكابتن بعد تحقق النظام؛ أُعيدت قراءة النسخة " + canonical.roleVersion + ".");
       await load();
     } catch (cause) {
       const reloaded = await load();
       if (reloaded) {
         let recoveryDetail = "تحقق من التفعيل المعروض.";
         if (isRequestFailure(cause)) recoveryDetail = cause.message;
-        setError("تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. " + recoveryDetail);
+        setError("تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة المعتمدة قبل أي محاولة أخرى. " + recoveryDetail);
       } else {
         setError("تعذر تأكيد نتيجة الطلب أو إعادة قراءة سجل الكباتن. حدّث السجل قبل أي محاولة أخرى.");
       }
@@ -181,7 +181,7 @@ export function CaptainAdmissionPanel() {
       return;
     }
     if (!captain.enabled || !captain.securityEnabled || !captain.activatedAt || !captain.admission || captain.admission.state !== "eligible") {
-      setError("يتطلب تغيير التوفر هوية نشطة وأهلية تشغيل فعالة في DSH.");
+      setError("يتطلب تغيير التوفر هوية نشطة وأهلية تشغيل فعالة .");
       return;
     }
     const available = captain.admission.availabilityState !== "available";
@@ -198,18 +198,18 @@ export function CaptainAdmissionPanel() {
         const message = await responseMessage(response);
         if (response.status === 409 || response.status === 412) {
           await load();
-          setError(`تغيرت نسخة حالة توفر الكابتن قبل الحفظ. أُعيد تحميل الحالة الكانونية: ${message}`);
+          setError(`تغيرت حالة توفر الكابتن قبل الحفظ. أُعيد تحميل الحالة المعتمدة: ${message}`);
         } else setError(message);
         return;
       }
       const readbackParams = new URLSearchParams({ limit: "10", q: captain.phoneE164 });
       const readbackResponse = await identityFetch(`/api/captains?${readbackParams}`);
-      if (!readbackResponse.ok) { setError("تم الطلب لكن تعذرت إعادة قراءة حالة التوفر من DSH. أعد القراءة قبل أي إجراء آخر."); return; }
+      if (!readbackResponse.ok) { setError("تم الطلب لكن تعذرت إعادة قراءة حالة التوفر . أعد القراءة قبل أي إجراء آخر."); return; }
       const readback = await readbackResponse.json() as CaptainPage;
       const canonical = readback.items.find((item) => item.actorId === captain.actorId);
       if (!canonical?.admission) { setError("تم الطلب لكن لم تظهر أهلية الكابتن في إعادة القراءة. أعد القراءة قبل أي إجراء آخر."); return; }
       setReasons((current) => ({ ...current, [captain.actorId]: "" }));
-      setNotice(`أُعيدت قراءة التوفر من DSH: ${captainAvailabilityStateLabel(canonical.admission.availabilityState)} · الإصدار ${canonical.admission.version}.`);
+      setNotice(`تم تحديث حالة التوفر: ${captainAvailabilityStateLabel(canonical.admission.availabilityState)}.`);
       await load();
     } catch (cause) {
       setError(isRequestFailure(cause) ? cause.message : "تعذر تحديث توفر الكابتن.");
@@ -222,7 +222,7 @@ export function CaptainAdmissionPanel() {
     <>
       <CaptainCandidatePanel />
       <section className="access-card" aria-labelledby="captain-roster-title">
-        <div className="access-card-heading"><span className="step-chip">سجل العمليات</span><h2 id="captain-roster-title">قائمة الكباتن وأهليتهم وتوفرهم</h2><p className="muted">بيانات الدور تُقرأ من Identity، وحالة الأهلية والتوفر من DSH. إدارة التوفر تسجّل السبب والمنفّذ والإصدار في سجل DSH، وإيقاف الأهلية التشغيلية لا يغيّر هوية الكابتن.</p></div>
+        <div className="access-card-heading"><span className="step-chip">سجل العمليات</span><h2 id="captain-roster-title">قائمة الكباتن وأهليتهم وتوفرهم</h2><p className="muted">تُقرأ بيانات الحساب وحالة الأهلية والتوفر من السجلات المعتمدة. تسجّل إدارة التوفر سبب الإجراء في سجل النظام، وإيقاف الأهلية التشغيلية لا يغيّر هوية الكابتن.</p></div>
         <div className="workspace-toolbar">
           <label className="field-label" htmlFor="captain-search">بحث برقم الهاتف<input id="captain-search" inputMode="tel" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث في أرقام الكباتن" /></label>
           <label className="field-label" htmlFor="captain-status-filter">حالة الدور<select id="captain-status-filter" value={enabledFilter} onChange={(event) => setEnabledFilter(event.target.value)}><option value="">كل الحالات</option><option value="true">مفعّل</option><option value="false">موقوف</option></select></label>
@@ -233,7 +233,7 @@ export function CaptainAdmissionPanel() {
         {error ? <p className="identity-error" role="alert">{error}</p> : null}
         {loading && items.length === 0 ? <p role="status">جارٍ قراءة قائمة الكباتن…</p> : null}
         {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد نتائج</strong><p>جرّب إزالة المرشح أو البحث برقم آخر.</p></div> : null}
-        {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th scope="col">الاسم والهاتف</th><th scope="col">تسجيل الهوية</th><th scope="col">أهلية DSH</th><th scope="col">التوفر</th><th scope="col">إدارة الأهلية</th></tr></thead><tbody>
+        {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th scope="col">الاسم والهاتف</th><th scope="col">تسجيل الهوية</th><th scope="col">أهلية النظام</th><th scope="col">التوفر</th><th scope="col">إدارة الأهلية</th></tr></thead><tbody>
           {items.map((captain, index) => {
             const requiresProfileReview = captain.admission?.requiresProfileReview === true;
             const operationallyEnabled = captain.enabled && captain.admission?.state === "eligible" && !requiresProfileReview;
@@ -269,7 +269,7 @@ export function CaptainAdmissionPanel() {
               {shouldDisable || !requiresProfileReview ? <button type="button" className={statusActionClass} disabled={Boolean(busy) || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void changeStatus(captain)}>{statusActionLabel}</button> : <span className="muted">استكمل الملف واعتمده قبل إعادة التفعيل.</span>}
               {canReenroll ? <button type="button" className="button button-secondary" disabled={Boolean(busy) || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void reenroll(captain)}>{busy === captain.actorId + ":reenroll" ? "جارٍ التحقق وإجازة التسجيل…" : "إجازة إعادة التسجيل"}</button> : null}
               <button type="button" className="button button-secondary" disabled={Boolean(busy) || !canChangeAvailability || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void changeAvailability(captain)}>{availabilityActionLabel}</button>
-            </div> : <span className="muted">يبدأ التحكم بعد اكتمال التسجيل ووجود أهلية DSH.</span>}</td>
+            </div> : <span className="muted">يبدأ التحكم بعد اكتمال التسجيل ووجود أهلية النظام.</span>}</td>
           </tr>;
           })}
         </tbody></table></div> : null}

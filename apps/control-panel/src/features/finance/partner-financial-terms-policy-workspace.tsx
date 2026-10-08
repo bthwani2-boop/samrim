@@ -11,8 +11,8 @@ const settlementLabels: Record<SettlementPeriod, string> = { DAILY: "يومية"
 
 function saveActionLabel(busy: boolean, hasPolicy: boolean): string {
   if (busy) return "جارٍ التفعيل والتحقق…";
-  if (hasPolicy) return "تفعيل إصدار جديد";
-  return "إنشاء الإصدار الأول";
+  if (hasPolicy) return "تحديث الشروط";
+  return "إنشاء الشروط الأولى";
 }
 
 export function PartnerFinancialTermsPolicyWorkspace() {
@@ -39,14 +39,14 @@ export function PartnerFinancialTermsPolicyWorkspace() {
         setReadState("missing");
         return false;
       }
-      if (!response.ok || !body.policy) throw new Error(body.error?.message || "تعذرت قراءة السياسة النشطة من WLT.");
+      if (!response.ok || !body.policy) throw new Error(body.error?.message || "تعذرت قراءة السياسة النشطة من السجل المالي.");
       setPolicy(body.policy);
       setSettlementPeriod(body.policy.settlementPeriod);
       setReadState("ready");
       return true;
     } catch (value) {
       setReadState("error");
-      setError(value instanceof Error ? value.message : "تعذرت قراءة السياسة النشطة من WLT.");
+      setError(value instanceof Error ? value.message : "تعذرت قراءة السياسة النشطة من السجل المالي.");
       return false;
     }
   }, []);
@@ -69,8 +69,8 @@ export function PartnerFinancialTermsPolicyWorkspace() {
       });
       const body = await response.json() as { error?: { message?: string } };
       if (!response.ok) throw new Error(body.error?.message || "تعذر تفعيل شروط الشريك المالية.");
-      if (!await read()) throw new Error("أُرسل التغيير، لكن تعذرت مطابقة القراءة الكانونية من WLT.");
-      setMessage("تم تفعيل نسخة الشروط والتحقق من قراءتها من WLT.");
+      if (!await read()) throw new Error("أُرسل التغيير، لكن تعذرت مطابقة القراءة المعتمدة من السجل المالي.");
+      setMessage("تم تفعيل شروط التسوية.");
       setReason("");
     } catch (value) {
       setError(value instanceof Error ? value.message : "تعذر تفعيل شروط الشريك المالية.");
@@ -81,14 +81,14 @@ export function PartnerFinancialTermsPolicyWorkspace() {
 
   return <section className="access-card" aria-labelledby="partner-financial-terms-title">
     <div className="finance-toolbar">
-      <div><p className="eyebrow">مركز السياسات · WLT · يتطلب Finance</p><h2 id="partner-financial-terms-title">فترة تسوية الشريك</h2></div>
+      <div><p className="eyebrow">مركز السياسات · السجل المالي · يتطلب المالية</p><h2 id="partner-financial-terms-title">فترة تسوية الشريك</h2></div>
       <button className="button button-secondary" type="button" onClick={() => void read()} disabled={busy || readState === "loading"}>إعادة القراءة</button>
     </div>
-    <p className="muted">تحدد هذه السياسة فترة تسوية ملف الشريك عند اعتماده. أما عمولة كل متجر فتحسمها اتفاقيته الخاصة بعد تفاوض المالك وموافقة Finance.</p>
-    {readState === "loading" ? <p role="status">جارٍ قراءة الشروط المعتمدة من WLT…</p> : null}
+    <p className="muted">تحدد هذه السياسة فترة تسوية ملف الشريك عند اعتماده. أما عمولة كل متجر فتحسمها اتفاقيته الخاصة بعد تفاوض المالك وموافقة المالية.</p>
+    {readState === "loading" ? <p role="status">جارٍ قراءة الشروط المعتمدة من السجل المالي…</p> : null}
     {readState === "missing" ? <p className="managed-status managed-status-warning" role="status">لا توجد سياسة مالية نشطة. أدخل القيم المعتمدة هنا قبل اعتماد أو استكمال ربط أي ملف شريك.</p> : null}
     {readState === "error" ? <p className="validation-error" role="alert">{error || "تعذرت القراءة؛ التعديل متوقف حتى نجاح القراءة."}</p> : null}
-    {policy ? <p className="muted">الإصدار النشط: {policy.policyVersion} · فترة التسوية: {settlementLabels[policy.settlementPeriod]}</p> : null}
+    {policy ? <p className="muted">فترة التسوية: {settlementLabels[policy.settlementPeriod]}</p> : null}
     {(readState === "ready" || readState === "missing") ? <>
       <div className="form-grid">
         <label className="field-label" htmlFor="partner-terms-settlement">فترة تسوية الشريك<select id="partner-terms-settlement" value={settlementPeriod} onChange={(event) => setSettlementPeriod(event.target.value as SettlementPeriod | "")} disabled={busy || !canEdit}><option value="">اختر الفترة</option><option value="DAILY">يومية</option><option value="WEEKLY">أسبوعية</option><option value="MONTHLY">شهرية</option></select></label>

@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	phoneformat "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/phone"
 	"github.com/lib/pq"
 )
 
@@ -316,7 +317,7 @@ type OperatorOperationsResult struct {
 func HashCheckoutRequest(input CheckoutInput) string {
 	facts := []string{strings.TrimSpace(input.ClientActorID), strings.TrimSpace(input.CartID), strings.TrimSpace(input.StoreID), strings.TrimSpace(input.AddressID), strings.TrimSpace(input.FulfillmentMode), strings.TrimSpace(input.PaymentMethod)}
 	if strings.EqualFold(strings.TrimSpace(input.Recipient.Mode), "OTHER") {
-		facts = append(facts, "delivery-recipient-other", strings.TrimSpace(input.Recipient.Name), strings.TrimSpace(input.Recipient.PhoneE164), strings.TrimSpace(input.Recipient.Instructions))
+		facts = append(facts, "delivery-recipient-other", strings.TrimSpace(input.Recipient.Name), phoneformat.NormalizeYemenE164(input.Recipient.PhoneE164), strings.TrimSpace(input.Recipient.Instructions))
 	}
 	if input.InternalBalanceAmountMinor > 0 {
 		facts = append(facts, "internal-balance", strconv.FormatInt(input.InternalBalanceAmountMinor, 10))
@@ -328,7 +329,7 @@ func HashCheckoutRequest(input CheckoutInput) string {
 func NormalizeDeliveryRecipient(input DeliveryRecipientInput, fulfillmentMode string) (DeliveryRecipientInput, error) {
 	input.Mode = strings.ToUpper(strings.TrimSpace(input.Mode))
 	input.Name = strings.TrimSpace(input.Name)
-	input.PhoneE164 = strings.TrimSpace(input.PhoneE164)
+	input.PhoneE164 = phoneformat.NormalizeYemenE164(input.PhoneE164)
 	input.Instructions = strings.TrimSpace(input.Instructions)
 	if input.Mode == "" {
 		input.Mode = "SELF"
@@ -346,15 +347,7 @@ func NormalizeDeliveryRecipient(input DeliveryRecipientInput, fulfillmentMode st
 }
 
 func validRecipientPhoneE164(value string) bool {
-	if len(value) < 9 || len(value) > 16 || value[0] != '+' || value[1] < '1' || value[1] > '9' {
-		return false
-	}
-	for _, character := range value[1:] {
-		if character < '0' || character > '9' {
-			return false
-		}
-	}
-	return true
+	return phoneformat.IsE164(value)
 }
 
 func HashOrderTransition(orderID, state string, expectedVersion int) string {
@@ -1028,7 +1021,7 @@ func deliveryRecipientRecordMatchesInput(record DeliveryRecipientRecord, input D
 		return true
 	}
 	return recipientRecordValue(record.Name) == strings.TrimSpace(input.Name) &&
-		recipientRecordValue(record.PhoneE164) == strings.TrimSpace(input.PhoneE164) &&
+		recipientRecordValue(record.PhoneE164) == phoneformat.NormalizeYemenE164(input.PhoneE164) &&
 		recipientRecordValue(record.Instructions) == strings.TrimSpace(input.Instructions)
 }
 

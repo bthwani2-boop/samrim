@@ -119,7 +119,7 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
       <div className="workspace-page-heading order-detail-heading">
         <Link href={returnHref()}>العودة إلى مسار الطلبات</Link>
         <p className="eyebrow">مساحة الطلب</p>
-        <h1 id="order-operation-title"><bdi dir="ltr">{order.id}</bdi></h1>
+        <h1 id="order-operation-title">طلب من {operation.storeName}</h1>
         <p className="lead">{operation.storeName} · {orderStateLabel(order.state)}</p>
       </div>
 
@@ -214,7 +214,7 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
         <section className="order-detail-panel" aria-labelledby="order-recovery-title">
           <h2 id="order-recovery-title">استعادة التسليم</h2>
           <p>تعذر إكمال التسليم. {assignment ? "راجع حالة الإسناد وتسليم المتجر قبل المتابعة." : "لا يوجد إسناد حالي مرتبط بهذا التعثر."}</p>
-          {action === "recover" ? <p>يمكن إعادة الطلب إلى مسار التنفيذ بعد نجاح الإجراء وإعادة قراءة الحالة الكانونية.</p> : <p>لا يتوفر إجراء استعادة لهذا الطلب في حالته الحالية.</p>}
+          {action === "recover" ? <p>يمكن إعادة الطلب إلى مسار التنفيذ بعد نجاح الإجراء وإعادة قراءة الحالة المعتمدة.</p> : <p>لا يتوفر إجراء استعادة لهذا الطلب في حالته الحالية.</p>}
         </section>
       ) : null}
     </section>

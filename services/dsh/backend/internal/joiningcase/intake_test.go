@@ -69,3 +69,30 @@ func TestNormalizeCreateRequestRequiresFulfillmentMode(t *testing.T) {
 		t.Fatalf("empty fulfillment modes error = %v, want %v", err, ErrInvalidInput)
 	}
 }
+
+func TestNormalizeFieldDraftRequestAcceptsPartialIntakeAndKeepsLocationUnset(t *testing.T) {
+	request := contract.CreateJoiningCaseRequest{ContactPhoneE164: "+967700000001"}
+	normalized, err := NormalizeFieldDraftRequest(request)
+	if err != nil {
+		t.Fatalf("partial Field draft was rejected: %v", err)
+	}
+	if normalized.Phone != "+967700000001" || normalized.ServiceCityID != "" || normalized.Latitude != 0 || normalized.Longitude != 0 || len(normalized.FulfillmentModes) != 0 {
+		t.Fatalf("partial draft normalization invented facts: %+v", normalized)
+	}
+}
+
+func TestNormalizeFieldDraftRequestRequiresPhoneAndValidatesProvidedFields(t *testing.T) {
+	if _, err := NormalizeFieldDraftRequest(contract.CreateJoiningCaseRequest{}); err != ErrInvalidInput {
+		t.Fatalf("missing contact phone error = %v, want %v", err, ErrInvalidInput)
+	}
+	request := contract.CreateJoiningCaseRequest{ContactPhoneE164: "+967700000001"}
+	normalized, err := NormalizeFieldDraftRequest(request)
+	if err != nil || normalized.Latitude != 0 || normalized.Longitude != 0 {
+		t.Fatalf("unset location must remain unconfirmed: normalized=%+v error=%v", normalized, err)
+	}
+	request.FirstStoreLatitude, request.FirstStoreLongitude = 15.3, 44.2
+	request.FirstStoreWorkingHours = contract.StoreWeeklyWorkingHours{Intervals: []contract.StoreWorkingHoursInterval{{DayOfWeek: 1, OpensAt: "17:00", ClosesAt: "09:00"}}}
+	if _, err := NormalizeFieldDraftRequest(request); err != ErrInvalidInput {
+		t.Fatalf("malformed provided hours error = %v, want %v", err, ErrInvalidInput)
+	}
+}

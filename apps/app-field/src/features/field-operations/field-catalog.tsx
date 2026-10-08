@@ -28,6 +28,23 @@ const proposalStateLabels: Readonly<Record<CatalogProductProposal["state"], stri
   rejected: "مرفوض",
 };
 
+const identifierLabels: Readonly<Record<"GTIN" | "EAN" | "UPC" | "SKU", string>> = {
+  GTIN: "باركود دولي",
+  EAN: "باركود أوروبي",
+  UPC: "باركود أمريكي",
+  SKU: "رمز الصنف في هذا المتجر",
+};
+
+const identifierOutcomeLabels: Readonly<Record<CatalogIdentifierResolution["outcome"], string>> = {
+  EXISTING_STORE_OFFER: "المنتج متوفر في المتجر",
+  SHARED_PRODUCT_MATCH: "تم العثور على المنتج",
+  STORE_LOCAL_PRODUCT_MATCH: "تم العثور على صنف المتجر",
+  UNKNOWN_IDENTIFIER: "لم يُعثر على المنتج بهذا الباركود",
+  VARIABLE_MEASURE_IDENTIFIER: "المنتج يباع بوزن متغير",
+  AMBIGUOUS_IDENTIFIER: "توجد أكثر من نتيجة لهذا الباركود",
+  UNAVAILABLE_IN_STORE: "المنتج غير متاح في هذا المتجر",
+};
+
 function initialOfferDraft(kind: MeasurementKind): OfferDraft {
   return { priceMinor: "", available: true, min: "1", max: kind === "DISCRETE" ? "1" : "100000", step: "1", pricingUnit: kind === "DISCRETE" ? "1" : "1000", inventoryOnHand: "0" };
 }
@@ -62,11 +79,13 @@ function proposalAttributeValues(rules: ReadonlyArray<CatalogAttributeRule>, dra
       if (!(enumOptions[rule.attributeId] ?? []).includes(value)) return null;
       input = { attributeId: rule.attributeId, valueKind: rule.valueKind, enumValue: value };
     } else if (rule.valueKind === "DATE") {
-      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+      const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value);
       if (!match) return null;
-      const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
-      if (date.toISOString().slice(0, 10) !== value) return null;
-      input = { attributeId: rule.attributeId, valueKind: rule.valueKind, dateValue: value };
+      const [day, month, year] = match.slice(1).map(Number);
+      if (day === undefined || month === undefined || year === undefined) return null;
+      const date = new Date(Date.UTC(year, month - 1, day));
+      if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day) return null;
+      input = { attributeId: rule.attributeId, valueKind: rule.valueKind, dateValue: date.toISOString().slice(0, 10) };
     } else {
       const measurementUnit = draft.measurementUnit.trim();
       if (!/^-?\d+(?:\.\d+)?$/.test(value) || !Number.isFinite(Number(value)) || !measurementUnit) return null;
@@ -86,10 +105,10 @@ function messageFromError(cause: unknown): string {
   if (!cause || typeof cause !== "object") return "تعذر تنفيذ عملية الكتالوج.";
   const error = cause as { kind?: unknown; status?: unknown; code?: unknown };
   if (error.kind === "http" && error.status === 401) return "انتهت جلسة الميدان. سجّل الدخول مجددًا.";
-  if (error.kind === "http" && error.status === 403) return "صلاحية الكتالوج الأولي تتطلب حالة انضمام معيّنة ومعتمدة ومتجرًا مرتبطًا وغير منشور.";
-  if (error.kind === "http" && error.status === 409) return "تعارض في نسخة البيانات أو المعرّف. أعد القراءة قبل المحاولة مجددًا.";
+  if (error.kind === "http" && error.status === 403) return "لا يمكن استخدام الكتالوج قبل اعتماد طلب انضمام المتجر وربطه بحسابك.";
+  if (error.kind === "http" && error.status === 409) return "تغيرت بيانات المنتج أو الباركود. أعد قراءة النتائج ثم حاول مجددًا.";
   if (error.kind === "network") return "تعذر الاتصال بخدمة الكتالوج. أعد المحاولة بعد التحقق من الاتصال.";
-  return typeof error.code === "string" ? `تعذر تنفيذ العملية (${error.code}).` : "تعذر تنفيذ عملية الكتالوج.";
+  return "تعذر تنفيذ العملية. راجع البيانات وحاول مجددًا.";
 }
 
 function isOutcomeUncertain(cause: unknown): boolean {
@@ -303,13 +322,13 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
         setWasCreatedLocally(false);
         setNotice(isSharedIdentifier
           ? "لم يُعثر على الباركود الدولي. يمكنك إعداد مقترح لمنتج مشترك لمراجعته، أو إنشاء منتج خاص بهذا المتجر بصورة منفصلة."
-          : "لم يُعثر على SKU. هذا المعرّف خاص بهذا المتجر؛ يمكنك تسجيل منتج محلي له، ولا يُرفق SKU بمقترح منتج مشترك.");
+          : "لم يُعثر على رمز الصنف في هذا المتجر؛ يمكنك تسجيل منتج خاص به دون ربطه بمنتج مشترك.");
       } else if (match.outcome === "SHARED_PRODUCT_MATCH" || match.outcome === "STORE_LOCAL_PRODUCT_MATCH") {
         const product = snapshot?.products.find((item) => item.id === match.productId);
         const variant = product?.variants.find((item) => item.id === match.variantId);
         if (!product || !variant) {
           await load(query);
-          setNotice("عُثر على المنتج. حدّث النتائج ثم اختر النسخة لإضافة عرضها.");
+          setNotice("عُثر على المنتج. حدّث النتائج ثم اختر أحد خياراته لإضافة عرضه.");
         } else {
           selectVariant(product, variant);
           setNotice(`${match.outcome === "SHARED_PRODUCT_MATCH" ? "منتج مشترك" : "منتج خاص بهذا المتجر"}: ${match.productName ?? product.canonicalName}.`);
@@ -322,11 +341,11 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
           setNotice("العرض موجود لهذا المتجر. حمّل صفحات العروض الإضافية لفتحه وتعديله.");
         }
       } else if (match.outcome === "VARIABLE_MEASURE_IDENTIFIER") {
-        setNotice("هذا معرّف لمنتج بكمية متغيرة، ولا يمكن إنشاء عرض قابل للطلب حتى يكتمل مسار الكمية الفعلية.");
+        setNotice("هذا الباركود يعود لمنتج يباع بوزن أو كمية متغيرة، ولا يمكن عرضه قبل تحديد طريقة البيع.");
       } else if (match.outcome === "UNAVAILABLE_IN_STORE") {
-        setNotice("هذا المعرّف مرتبط بمنتج خاص بمتجر آخر، ولا يمكن استخدامه في هذا المتجر.");
+        setNotice("هذا الباركود مرتبط بمنتج في متجر آخر، ولا يمكن استخدامه هنا.");
       } else {
-        setNotice("المعرّف يطابق أكثر من نتيجة. أوقف استخدامه واطلب مراجعة هوية المنتج.");
+        setNotice("يرتبط هذا الباركود بأكثر من منتج. اطلب مراجعة المنتج قبل إضافته.");
       }
     } catch (cause) {
       console.warn("DSH Field barcode resolution failed", cause);
@@ -495,7 +514,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
 
   function makeProposalPayload(): Omit<CreateCatalogProductProposalRequest, "id"> | null {
     if (!snapshot || !proposalCategoryID || !proposalName.trim() || !proposalVariantTitle.trim()) {
-      setProposalError("أدخل اسم المنتج والنسخة واختر تصنيفًا.");
+      setProposalError("أدخل اسم المنتج وخياره واختر تصنيفًا.");
       return null;
     }
     if (proposalRulesLoadedForCategory !== proposalCategoryID || proposalCategoryLoading) {
@@ -504,7 +523,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
     }
     const identifierValue = proposalIdentifierValue.trim();
     if ((identifierValue && !proposalIdentifierType) || (!activeProposal && (!identifierValue || !proposalIdentifierType))) {
-      setProposalError("مقترح الباركود المجهول يحتاج نوعًا عالميًا GTIN أو EAN أو UPC ورقم المعرّف.");
+      setProposalError("أضف باركود المنتج ونوعه ورقمه.");
       return null;
     }
     const typedValues = proposalAttributeValues(proposalRules, proposalAttributes, proposalEnumOptions);
@@ -599,6 +618,10 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
 
   const filteredProducts = snapshot?.products ?? [];
   const filteredProposalCategories = proposalCategories.filter((category) => `${category.pathAr} ${category.nameAr}`.toLocaleLowerCase().includes(proposalCategoryQuery.trim().toLocaleLowerCase()));
+  const proposalCategoryName = (categoryID: string) => {
+    const category = proposalCategories.find((item) => item.id === categoryID);
+    return category?.pathAr || category?.nameAr || "تصنيف المنتج";
+  };
   const canProposeFromUnknownBarcode = resolution?.outcome === "UNKNOWN_IDENTIFIER" && (identifierType === "GTIN" || identifierType === "EAN" || identifierType === "UPC");
   const showProposalEditor = Boolean(activeProposal) || canProposeFromUnknownBarcode || proposalMutationAttempt?.kind === "create";
   const proposalReadOnly = Boolean(activeProposal && activeProposal.state !== "draft" && activeProposal.state !== "needs_correction");
@@ -654,13 +677,13 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
       {filteredProducts.map((product) => <View key={product.id} style={styles.raised}><Text style={styles.heading}>{product.canonicalName} · {product.scope === "SHARED" ? "مشترك" : "خاص بهذا المتجر"}</Text>{product.variants.map((variant) => <View key={variant.id} style={styles.row}><BthwaniChip disabled={busy} label={`${variant.title} · ${measurementKindLabel(variant.measurementKind)} · ${baseUnitLabel(variant.baseUnit)}`} onPress={() => selectVariant(product, variant)} selected={selectedVariant?.id === variant.id} /></View>)}</View>)}
     </View>
     <View style={styles.card}>
-      <Text style={styles.heading}>حلّ المعرّف الشريطي</Text>
-      <Text style={styles.muted}>الباركود الدولي يُحل على مستوى النسخة. SKU يخص هذا المتجر فقط.</Text>
-      <View style={styles.row}>{(["GTIN", "EAN", "UPC", "SKU"] as const).map((value) => <BthwaniChip key={value} disabled={busy || Boolean(proposalMutationAttempt)} label={value} onPress={() => { setIdentifierType(value); setResolution(null); }} selected={identifierType === value} />)}</View>
-      <TextInput accessibilityLabel="الباركود أو SKU" autoCapitalize="characters" editable={!busy && !proposalMutationAttempt} onChangeText={(value) => { setIdentifier(value); setResolution(null); }} onSubmitEditing={() => void resolveIdentifier()} placeholder="امسح أو أدخل المعرّف" value={identifier} style={styles.input} />
-      <View style={styles.row}><BthwaniButton busy={busy} disabled={busy || Boolean(proposalMutationAttempt) || !identifier.trim()} label="حلّ المعرّف" onPress={() => void resolveIdentifier()} /><BthwaniButton disabled={busy || Boolean(proposalMutationAttempt)} label={cameraOpen ? "إغلاق الكاميرا" : "مسح بالكاميرا"} onPress={async () => { if (cameraOpen) { setCameraOpen(false); return; } if (!cameraPermission?.granted) { const permission = await requestCameraPermission(); if (!permission.granted) { setError("يلزم السماح للكاميرا لمسح الباركود."); return; } } setCameraOpen(true); }} variant="secondary" /></View>
+      <Text style={styles.heading}>البحث بالباركود أو رمز الصنف</Text>
+      <Text style={styles.muted}>امسح الباركود على العبوة، أو أدخل رمز الصنف المستخدم في هذا المتجر.</Text>
+      <View style={styles.row}>{(["GTIN", "EAN", "UPC", "SKU"] as const).map((value) => <BthwaniChip key={value} disabled={busy || Boolean(proposalMutationAttempt)} label={identifierLabels[value]} onPress={() => { setIdentifierType(value); setResolution(null); }} selected={identifierType === value} />)}</View>
+      <TextInput accessibilityLabel="الباركود على العبوة أو رمز الصنف في هذا المتجر" autoCapitalize="characters" editable={!busy && !proposalMutationAttempt} onChangeText={(value) => { setIdentifier(value); setResolution(null); }} onSubmitEditing={() => void resolveIdentifier()} placeholder="امسح الباركود أو اكتب الرمز" value={identifier} style={styles.input} />
+      <View style={styles.row}><BthwaniButton busy={busy} disabled={busy || Boolean(proposalMutationAttempt) || !identifier.trim()} label="بحث عن المنتج" onPress={() => void resolveIdentifier()} /><BthwaniButton disabled={busy || Boolean(proposalMutationAttempt)} label={cameraOpen ? "إغلاق الكاميرا" : "مسح بالكاميرا"} onPress={async () => { if (cameraOpen) { setCameraOpen(false); return; } if (!cameraPermission?.granted) { const permission = await requestCameraPermission(); if (!permission.granted) { setError("يلزم السماح للكاميرا لمسح الباركود."); return; } } setCameraOpen(true); }} variant="secondary" /></View>
       {cameraOpen ? <CameraView style={styles.camera} facing="back" barcodeScannerSettings={{ barcodeTypes: ["ean13", "ean8", "upc_a", "upc_e", "code128"] }} onBarcodeScanned={({ data }) => { setCameraOpen(false); void onBarcode(data); }} /> : null}
-      {resolution ? <Text style={styles.muted}>نتيجة الحل: {resolution.outcome}{resolution.productName ? ` · ${resolution.productName}` : ""}{resolution.variantTitle ? ` · ${resolution.variantTitle}` : ""}</Text> : null}
+      {resolution ? <Text style={styles.muted}>{identifierOutcomeLabels[resolution.outcome]}{resolution.productName ? ` · ${resolution.productName}` : ""}{resolution.variantTitle ? ` · ${resolution.variantTitle}` : ""}</Text> : null}
     </View>
     {snapshot ? <View style={styles.card}>
       <Text style={styles.heading}>مقترحات المنتجات المشتركة لهذه الحالة</Text>
@@ -668,13 +691,13 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
       {proposals.length === 0 ? <Text style={styles.muted}>لا توجد مقترحات لهذه الحالة حتى الآن.</Text> : proposals.map((proposal) => <View key={proposal.id} style={styles.raised}>
         <Text style={styles.body}>{proposal.proposedName} · {proposalStateLabels[proposal.state]}</Text>
         {proposal.correctionReason ? <Text style={styles.error}>سبب التصحيح: {proposal.correctionReason}</Text> : null}
-        <Text style={styles.muted}>{proposal.categoryId} · الإصدار {proposal.version}</Text>
+        <Text style={styles.muted}>{proposalCategoryName(proposal.categoryId)}</Text>
         <BthwaniButton disabled={busy || Boolean(proposalMutationAttempt)} label={proposal.state === "needs_correction" ? "فتح التصحيح" : proposal.state === "draft" ? "فتح المسودة" : "عرض الحالة"} onPress={() => openProposal(proposal)} variant="secondary" />
       </View>)}
     </View> : null}
     {showProposalEditor ? <View style={styles.card}>
       <Text style={styles.heading}>{activeProposal ? activeProposal.state === "needs_correction" ? "تصحيح مقترح المنتج المشترك" : "مقترح المنتج المشترك" : "اقتراح منتج مشترك للباركود المجهول"}</Text>
-      <Text style={styles.muted}>يرسل المقترح للمراجعة؛ المنتج المشترك لا يُنشأ ولا يُضاف للمتجر قبل الاعتماد. استخدم معرّفًا عالميًا GTIN أو EAN أو UPC، واترك SKU المحلي في مسار المنتج الخاص بالمتجر.</Text>
+      <Text style={styles.muted}>يرسل المقترح للمراجعة. لن يُضاف المنتج إلى المتجر قبل اعتماده.</Text>
       {activeProposal?.correctionReason ? <Text style={styles.error}>مطلوب تصحيح: {activeProposal.correctionReason}</Text> : null}
       <Text style={styles.label}>التصنيف المطلوب</Text>
       <TextInput accessibilityLabel="البحث عن تصنيف للمقترح" editable={!proposalFormLocked} onChangeText={setProposalCategoryQuery} placeholder="ابحث باسم التصنيف" value={proposalCategoryQuery} style={styles.input} />
@@ -686,21 +709,21 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
       <TextInput accessibilityLabel="اسم المنتج المشترك المقترح" editable={!proposalFormLocked} maxLength={160} onChangeText={setProposalName} placeholder="اسم المنتج" value={proposalName} style={styles.input} />
       <Text style={styles.label}>العلامة التجارية · اختياري</Text>
       <TextInput accessibilityLabel="علامة المنتج المقترح" editable={!proposalFormLocked} maxLength={160} onChangeText={setProposalBrand} placeholder="العلامة التجارية" value={proposalBrand} style={styles.input} />
-      <Text style={styles.label}>اسم النسخة</Text>
-      <TextInput accessibilityLabel="اسم نسخة المنتج المقترح" editable={!proposalFormLocked} maxLength={160} onChangeText={setProposalVariantTitle} placeholder="النسخة الافتراضية" value={proposalVariantTitle} style={styles.input} />
+      <Text style={styles.label}>خيار المنتج</Text>
+      <TextInput accessibilityLabel="خيار المنتج المقترح" editable={!proposalFormLocked} maxLength={160} onChangeText={setProposalVariantTitle} placeholder="مثال: الحجم الكبير" value={proposalVariantTitle} style={styles.input} />
       <Text style={styles.label}>نوع القياس</Text>
       <View style={styles.row}>{(["DISCRETE", "MEASURED", "VARIABLE_MEASURE"] as const).map((kind) => <BthwaniChip key={kind} disabled={proposalFormLocked} label={measurementKindLabel(kind)} onPress={() => { setProposalMeasurementKind(kind); setProposalBaseUnit(kind === "DISCRETE" ? "COUNT" : "GRAM"); }} selected={proposalMeasurementKind === kind} />)}</View>
       <Text style={styles.label}>الوحدة الأساسية</Text>
       <View style={styles.row}>{(proposalMeasurementKind === "DISCRETE" ? ["COUNT"] as const : ["GRAM", "MILLILITER"] as const).map((unit) => <BthwaniChip key={unit} disabled={proposalFormLocked} label={baseUnitLabel(unit)} onPress={() => setProposalBaseUnit(unit)} selected={proposalBaseUnit === unit} />)}</View>
-      <Text style={styles.label}>المعرّف العالمي</Text>
-      <View style={styles.row}>{(["GTIN", "EAN", "UPC"] as const).map((kind) => <BthwaniChip key={kind} disabled={proposalFormLocked} label={kind} onPress={() => setProposalIdentifierType(kind)} selected={proposalIdentifierType === kind} />)}<BthwaniChip disabled={proposalFormLocked} label="بدون معرّف" onPress={() => { setProposalIdentifierType(""); setProposalIdentifierValue(""); }} selected={!proposalIdentifierType} /></View>
-      <TextInput accessibilityLabel="قيمة المعرّف العالمي للمقترح" autoCapitalize="characters" editable={!proposalFormLocked} maxLength={128} onChangeText={setProposalIdentifierValue} placeholder="GTIN أو EAN أو UPC" value={proposalIdentifierValue} style={styles.input} />
+      <Text style={styles.label}>باركود المنتج</Text>
+      <View style={styles.row}>{(["GTIN", "EAN", "UPC"] as const).map((kind) => <BthwaniChip key={kind} disabled={proposalFormLocked} label={identifierLabels[kind]} onPress={() => setProposalIdentifierType(kind)} selected={proposalIdentifierType === kind} />)}<BthwaniChip disabled={proposalFormLocked} label="لا يوجد باركود" onPress={() => { setProposalIdentifierType(""); setProposalIdentifierValue(""); }} selected={!proposalIdentifierType} /></View>
+      <TextInput accessibilityLabel="باركود المنتج المقترح" autoCapitalize="characters" editable={!proposalFormLocked} maxLength={128} onChangeText={setProposalIdentifierValue} placeholder="امسح الباركود أو اكتبه" value={proposalIdentifierValue} style={styles.input} />
       <Text style={styles.label}>الخصائص المطلوبة للتصنيف</Text>
       {!proposalCategoryID ? <Text style={styles.muted}>اختر تصنيفًا لقراءة خصائصه المطلوبة.</Text> : proposalCategoryLoading ? <Text style={styles.muted}>جارٍ قراءة الخصائص وقيم القوائم…</Text> : proposalRulesLoadedForCategory === proposalCategoryID && proposalRules.filter((rule) => rule.required).length === 0 ? <Text style={styles.muted}>لا توجد خصائص إلزامية لهذا التصنيف.</Text> : null}
       {proposalRules.map((rule) => {
         const value = proposalAttributes[rule.attributeId]?.value ?? "";
         return <View key={rule.attributeId} style={styles.raised}>
-          <Text style={styles.body}>{rule.nameAr} · {rule.required ? "مطلوب" : "اختياري"}{rule.variantAxis ? " · خاص بالنسخة" : " · خاص بالمنتج"}</Text>
+          <Text style={styles.body}>{rule.nameAr} · {rule.required ? "مطلوب" : "اختياري"}{rule.variantAxis ? " · خاص بخيار المنتج" : " · خاص بالمنتج"}</Text>
           {rule.valueKind === "BOOLEAN" ? <View style={styles.row}>
             <BthwaniChip disabled={proposalFormLocked} label="نعم" onPress={() => setProposalAttributes((current) => ({ ...current, [rule.attributeId]: { value: "true", measurementUnit: current[rule.attributeId]?.measurementUnit ?? "" } }))} selected={value === "true"} />
             <BthwaniChip disabled={proposalFormLocked} label="لا" onPress={() => setProposalAttributes((current) => ({ ...current, [rule.attributeId]: { value: "false", measurementUnit: current[rule.attributeId]?.measurementUnit ?? "" } }))} selected={value === "false"} />
@@ -708,7 +731,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
             {(proposalEnumOptions[rule.attributeId] ?? []).map((option) => <BthwaniChip key={option} disabled={proposalFormLocked} label={option} onPress={() => setProposalAttributes((current) => ({ ...current, [rule.attributeId]: { value: option, measurementUnit: current[rule.attributeId]?.measurementUnit ?? "" } }))} selected={value === option} />)}
             {(proposalEnumOptions[rule.attributeId] ?? []).length === 0 ? <Text style={rule.required ? styles.error : styles.muted}>{rule.required ? "لا توجد قيم مفعّلة لهذه الخاصية؛ أوقف الإرسال واطلب إعداد قائمة القيم." : "لا توجد قيم مفعّلة؛ يمكن ترك الخاصية الاختيارية فارغة."}</Text> : null}
           </View> : <>
-            <TextInput accessibilityLabel={rule.nameAr} editable={!proposalFormLocked} keyboardType={rule.valueKind === "INTEGER" ? "number-pad" : rule.valueKind === "DECIMAL" || rule.valueKind === "MEASUREMENT" ? "decimal-pad" : "default"} maxLength={256} onChangeText={(nextValue) => setProposalAttributes((current) => ({ ...current, [rule.attributeId]: { value: nextValue, measurementUnit: current[rule.attributeId]?.measurementUnit ?? "" } }))} placeholder={rule.valueKind === "DATE" ? "YYYY-MM-DD" : `أدخل ${rule.nameAr}`} value={value} style={styles.input} />
+            <TextInput accessibilityLabel={rule.nameAr} editable={!proposalFormLocked} keyboardType={rule.valueKind === "INTEGER" ? "number-pad" : rule.valueKind === "DECIMAL" || rule.valueKind === "MEASUREMENT" ? "decimal-pad" : "default"} maxLength={256} onChangeText={(nextValue) => setProposalAttributes((current) => ({ ...current, [rule.attributeId]: { value: nextValue, measurementUnit: current[rule.attributeId]?.measurementUnit ?? "" } }))} placeholder={rule.valueKind === "DATE" ? "يوم/شهر/سنة" : `أدخل ${rule.nameAr}`} value={value} style={styles.input} />
             {rule.valueKind === "MEASUREMENT" ? <TextInput accessibilityLabel={`وحدة ${rule.nameAr}`} editable={!proposalFormLocked} maxLength={64} onChangeText={(measurementUnit) => setProposalAttributes((current) => ({ ...current, [rule.attributeId]: { value: current[rule.attributeId]?.value ?? "", measurementUnit } }))} placeholder="وحدة القياس" value={proposalAttributes[rule.attributeId]?.measurementUnit ?? ""} style={styles.input} /> : null}
           </>}
         </View>;
@@ -722,11 +745,11 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
     </View> : null}
     {resolution?.outcome === "UNKNOWN_IDENTIFIER" ? <View style={styles.card}>
       <Text style={styles.heading}>تسجيل منتج محلي</Text>
-      <Text style={styles.muted}>ينشئ النظام منتجًا خاصًا بالمتجر ونسخة جديدة داخل المتجر المرتبط بهذه الحالة. المعرّف العالمي يبقى فريدًا عبر النظام.</Text>
+      <Text style={styles.muted}>ينشئ المنتج في هذا المتجر فقط. يبقى باركود المنتج مميزًا عن بقية المنتجات.</Text>
       <TextInput accessibilityLabel="اسم المنتج المحلي" editable={!busy} onChangeText={setProductName} placeholder="اسم المنتج" value={productName} style={styles.input} />
       <TextInput accessibilityLabel="وصف المنتج المحلي" editable={!busy} maxLength={4000} multiline onChangeText={setDescription} placeholder="وصف اختياري" value={description} style={styles.input} />
       <TextInput accessibilityLabel="علامة المنتج المحلية" editable={!busy} onChangeText={setBrand} placeholder="العلامة التجارية (اختياري)" value={brand} style={styles.input} />
-      <TextInput accessibilityLabel="اسم نسخة المنتج" editable={!busy} onChangeText={setVariantTitle} placeholder="اسم النسخة" value={variantTitle} style={styles.input} />
+      <TextInput accessibilityLabel="خيار المنتج" editable={!busy} onChangeText={setVariantTitle} placeholder="مثال: الحجم الكبير" value={variantTitle} style={styles.input} />
       <View style={styles.row}>{(["DISCRETE", "MEASURED"] as const).map((value) => <BthwaniChip key={value} disabled={busy} label={measurementKindLabel(value)} onPress={() => { setMeasurementKind(value); setBaseUnit(value === "DISCRETE" ? "COUNT" : "GRAM"); }} selected={measurementKind === value} />)}</View>
       <View style={styles.row}>{(measurementKind === "DISCRETE" ? ["COUNT"] as const : ["GRAM", "MILLILITER"] as const).map((value) => <BthwaniChip key={value} disabled={busy} label={baseUnitLabel(value)} onPress={() => setBaseUnit(value)} selected={baseUnit === value} />)}</View>
       <BthwaniButton busy={busy} disabled={busy || !productName.trim() || !variantTitle.trim()} label="إنشاء منتج المتجر" onPress={() => void createLocalProduct()} />

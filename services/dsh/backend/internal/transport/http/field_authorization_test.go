@@ -34,6 +34,7 @@ var fieldOperatorRoutes = []fieldRegisteredRoute{
 var fieldSessionRoutes = []fieldRegisteredRoute{
 	{method: "GET", path: "/dsh/fields/me"},
 	{method: "POST", path: "/dsh/field/joining-cases"},
+	{method: "PATCH", path: "/dsh/field/joining-cases/{caseId}/draft"},
 	{method: "GET", path: "/dsh/field/joining-cases"},
 	{method: "GET", path: "/dsh/field/joining-cases/{caseId}"},
 	{method: "POST", path: "/dsh/field/joining-cases/{caseId}/submit"},

@@ -16,7 +16,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 101
+const SchemaVersion = 103
 
 type MigrationRecord struct {
 	Version int

@@ -739,6 +739,9 @@ paths:
   /dsh/field/joining-cases/{caseId}:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}"
 
+  /dsh/field/joining-cases/{caseId}/draft:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1draft"
+
   /dsh/field/joining-cases/{caseId}/submit:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1submit"
 
@@ -1011,6 +1014,79 @@ components:
         status:
           type: string
 
+    FieldDraftWorkingHours:
+      type: object
+      required: [intervals]
+      additionalProperties: false
+      properties:
+        intervals:
+          type: array
+          maxItems: 28
+          items:
+            $ref: "#/components/schemas/StoreWorkingHoursInterval"
+
+    CreateFieldJoiningCaseDraftRequest:
+      type: object
+      required: [contactPhoneE164]
+      additionalProperties: false
+      properties:
+        contactPhoneE164:
+          type: string
+          description: Yemeni local number such as 777123456 or international number; normalized to E.164 before storage.
+          pattern: '^(?:[\+][1-9][0-9]{7,14}|00[1-9][0-9]{7,14}|967[0-9]{5,12}|0[1-9][0-9]{8}|7[0-9]{8})$'
+        ownerFullName:
+          type: string
+          minLength: 0
+          maxLength: 160
+        businessName:
+          type: string
+          minLength: 0
+          maxLength: 160
+        firstStoreName:
+          type: string
+          minLength: 0
+          maxLength: 160
+        walletProviderKey:
+          type: string
+          minLength: 0
+          maxLength: 64
+          description: Provider selected by the beneficiary at admission. Do not enter a wallet number or name here.
+        firstStoreAddress:
+          type: string
+          minLength: 0
+          maxLength: 500
+        serviceCityId:
+          type: string
+        firstStoreVerticalId:
+          type: string
+        firstStoreCommercialTypeId:
+          type: string
+        firstStoreLatitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        firstStoreLongitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        firstStoreWorkingHours:
+          $ref: "#/components/schemas/FieldDraftWorkingHours"
+        firstStoreProofType:
+          $ref: "#/components/schemas/JoiningCaseProofType"
+        firstStoreProofNumber:
+          type: string
+          minLength: 0
+          maxLength: 128
+        firstStoreNotes:
+          type: string
+          maxLength: 1000
+        firstStoreFulfillmentModes:
+          type: array
+          minItems: 0
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
+
     CreateJoiningCaseRequest:
       type: object
       required: [contactPhoneE164, ownerFullName, businessName, firstStoreName, walletProviderKey, firstStoreAddress, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude, firstStoreWorkingHours, firstStoreProofType, firstStoreProofNumber, firstStoreFulfillmentModes]
@@ -1018,7 +1094,8 @@ components:
       properties:
         contactPhoneE164:
           type: string
-          pattern: '^\+[1-9][0-9]{7,14}$'
+          description: Yemeni local number such as 777123456 or international number; normalized to E.164 before storage.
+          pattern: '^(?:[\+][1-9][0-9]{7,14}|00[1-9][0-9]{7,14}|967[0-9]{5,12}|0[1-9][0-9]{8}|7[0-9]{8})$'
         ownerFullName:
           type: string
           minLength: 2
@@ -1342,6 +1419,10 @@ components:
           type: string
         name:
           type: string
+        serviceCityName:
+          type: string
+        primaryVerticalName:
+          type: string
         serviceCityId:
           type: string
         primaryVerticalId:
@@ -1384,6 +1465,12 @@ components:
         partnerActorId:
           type: string
         name:
+          type: string
+        partnerName:
+          type: string
+        serviceCityName:
+          type: string
+        primaryVerticalName:
           type: string
         serviceCityId:
           type: string
@@ -1646,6 +1733,12 @@ components:
         partnerActorId:
           type: string
         name:
+          type: string
+        partnerName:
+          type: string
+        serviceCityName:
+          type: string
+        primaryVerticalName:
           type: string
         serviceCityId:
           type: string
@@ -4999,7 +5092,8 @@ components:
           maxLength: 120
         phoneE164:
           type: string
-          pattern: '^\+[1-9][0-9]{7,14}$'
+          description: Yemeni local number such as 777123456 or international number; normalized to E.164 before storage.
+          pattern: '^(?:[\+][1-9][0-9]{7,14}|00[1-9][0-9]{7,14}|967[0-9]{5,12}|0[1-9][0-9]{8}|7[0-9]{8})$'
         instructions:
           type: string
           minLength: 1
@@ -5132,7 +5226,8 @@ components:
           maxLength: 120
         contactPhoneE164:
           type: string
-          pattern: '^\+[1-9][0-9]{7,14}$'
+          description: Yemeni local number such as 777123456 or international number; normalized to E.164 before storage.
+          pattern: '^(?:[\+][1-9][0-9]{7,14}|00[1-9][0-9]{7,14}|967[0-9]{5,12}|0[1-9][0-9]{8}|7[0-9]{8})$'
         walletProviderKey:
           type: string
           minLength: 1
@@ -5213,7 +5308,7 @@ components:
 
     FieldAdmissionRequest:
       type: object
-      required: [fullNameAr, contactPhoneE164, serviceCityId, walletProviderKey]
+      required: [fullNameAr, contactPhoneE164, allServiceCities, serviceCityIds, walletProviderKey]
       additionalProperties: false
       properties:
         fullNameAr:
@@ -5223,11 +5318,25 @@ components:
           maxLength: 120
         contactPhoneE164:
           type: string
-          pattern: '^\+[1-9][0-9]{7,14}$'
+          description: Yemeni local number such as 777123456 or international number; normalized to E.164 before storage.
+          pattern: '^(?:[\+][1-9][0-9]{7,14}|00[1-9][0-9]{7,14}|967[0-9]{5,12}|0[1-9][0-9]{8}|7[0-9]{8})$'
         serviceCityId:
           type: string
           minLength: 1
           maxLength: 128
+          deprecated: true
+          description: Legacy single-city bridge. New callers use allServiceCities and serviceCityIds.
+        allServiceCities:
+          type: boolean
+          description: Assign this Field worker to every currently active service city.
+        serviceCityIds:
+          type: array
+          uniqueItems: true
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
         walletProviderKey:
           type: string
           minLength: 1
@@ -5236,7 +5345,7 @@ components:
 
     FieldAdmissionProfileRequest:
       type: object
-      required: [fullNameAr]
+      required: [fullNameAr, walletProviderKey, allServiceCities, serviceCityIds]
       additionalProperties: false
       properties:
         fullNameAr:
@@ -5244,6 +5353,20 @@ components:
           description: Arabic display name for this Field admission; this field is not a verified legal name.
           minLength: 2
           maxLength: 120
+        walletProviderKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        allServiceCities:
+          type: boolean
+        serviceCityIds:
+          type: array
+          uniqueItems: true
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
 
     FieldAdmissionListResponse:
       type: object
@@ -5277,6 +5400,15 @@ components:
         serviceCityId:
           type: string
           nullable: true
+          deprecated: true
+          description: Derived single-city bridge; use allServiceCities and serviceCityIds.
+        allServiceCities:
+          type: boolean
+        serviceCityIds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
         walletProviderKey:
           type: string
           maxLength: 64
@@ -5736,6 +5868,12 @@ components:
           type: string
         orderId:
           type: string
+        joiningCaseId:
+          type: string
+          description: Field-owned joining case to open, when applicable.
+        storeId:
+          type: string
+          description: Related store, when applicable.
         createdAt:
           type: string
           format: date-time
@@ -5754,6 +5892,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Notification"
+        nextCursor:
+          type: string
+          maxLength: 1024
+          description: Opaque cursor for older notifications; empty on the last page.
         unreadCount:
           type: integer
           minimum: 0

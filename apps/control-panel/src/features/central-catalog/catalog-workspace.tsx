@@ -11,7 +11,7 @@ function accessDenied() {
       <div className="state-card" role="alert">
         <p className="eyebrow">صلاحية غير متاحة</p>
         <h1>الكتالوج للمشغلين فقط</h1>
-        <p className="muted">لا تمنح هذه الصفحة صلاحيات إضافية خارج Identity.</p>
+        <p className="muted">لا تمنح هذه الصفحة صلاحيات إضافية خارج الحسابات.</p>
       </div>
     </section>
   );

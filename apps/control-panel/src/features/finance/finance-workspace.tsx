@@ -17,7 +17,7 @@ function accessDenied() {
       <div className="state-card" role="alert">
         <p className="eyebrow">صلاحية غير متاحة</p>
         <h1>صلاحية المالية غير متاحة</h1>
-        <p className="muted">يتطلب فتح هذه المساحة صلاحية Finance الممنوحة لهذا الموظف في Identity.</p>
+        <p className="muted">يتطلب فتح هذه المساحة صلاحية المالية الممنوحة لهذا الموظف في الحسابات.</p>
       </div>
     </section>
   );
@@ -35,7 +35,7 @@ export function FinanceWorkspace({ resource, children }: { resource: FinanceReso
   return (
     <section className="workspace-page" aria-labelledby="finance-page-title">
       <div className="workspace-page-heading">
-        <p className="eyebrow">الحقيقة والسياسات المالية الكانونية</p>
+        <p className="eyebrow">الحقيقة والسياسات المالية المعتمدة</p>
         <h1 id="finance-page-title">{selected.key === "overview" ? "المالية" : selected.label}</h1>
         <p className="lead">{selected.description}</p>
       </div>
@@ -48,7 +48,7 @@ export function FinanceOverview() {
   return (
     <WorkspaceResourceIndex
       title="موارد المالية"
-      description="افتح السجل أو السياسة التي تعمل عليها. تبقى الأرصدة والإجراءات من WLT هي الحقيقة المعتمدة."
+      description="افتح السجل أو السياسة التي تعمل عليها. تبقى الأرصدة والإجراءات من السجل المالي هي الحقيقة المعتمدة."
       resources={workspaceFinanceResources.slice(1)}
     />
   );

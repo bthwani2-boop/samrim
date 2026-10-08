@@ -116,9 +116,9 @@ export function PartnerPayoutCard() {
     } catch (cause) {
       if (isDefinitiveDshMobileClientRejection(cause)) {
         await load();
-        setError("رُفض الإرسال وفق الحالة الحالية. احتُفظ بمفتاح الطلب؛ استرجع نتيجته قبل مراجعة المتاجر والمبالغ وجاهزية المستلمين.");
+        setError("تعذر إرسال الطلب وفق الحالة الحالية. تحقق من نتيجته قبل إنشاء طلب آخر، وراجع المتاجر والمبالغ وجاهزية المستلمين.");
       } else {
-        setError(cause instanceof Error && cause.message === "STORE_AMOUNTS_REQUIRED" ? "أدخل مبلغًا صحيحًا لمتجر واحد على الأقل." : "لم نتأكد من نتيجة الطلب؛ تحقق منه بنفس المفتاح والنطاق المحفوظين قبل إنشاء طلب جديد.");
+      setError(cause instanceof Error && cause.message === "STORE_AMOUNTS_REQUIRED" ? "أدخل مبلغًا صحيحًا لمتجر واحد على الأقل." : "لم نتأكد من نتيجة الطلب السابق؛ تحقق منها قبل إنشاء طلب صرف آخر.");
       }
     } finally { setBusy(false); }
   };
@@ -162,8 +162,8 @@ export function PartnerPayoutCard() {
         setStoreAmounts(Object.fromEntries((review.storeAmounts ?? []).map((store) => [store.storeId, String(store.amountMinor)])));
       }
       await load();
-      setNotice("لم يظهر طلب معتمد. راجع المتاجر الحالية ثم أرسل بنفس المفتاح السابق؛ اختر متاجر المحفظة الأصلية؛ سيمنع تكرار أي طلب متأخر.");
-    } catch { setError("تعذر التحقق من الطلب المحفوظ ضمن صلاحياتك الحالية. احتُفظ بمفتاحه لمنع التكرار."); }
+      setNotice("لم يظهر طلب معتمد. راجع المتاجر الحالية ثم أعد المحاولة بالبيانات المحفوظة للمتاجر نفسها.");
+    } catch { setError("تعذر التحقق من الطلب المحفوظ ضمن صلاحياتك الحالية. أعد المحاولة قبل إنشاء طلب آخر."); }
     finally { setBusy(false); }
   };
 
@@ -192,7 +192,7 @@ export function PartnerPayoutCard() {
         <BthwaniChip disabled={busy || !!pendingAttempt || !!legacyPending} label={store.storeName} selected={selected.includes(store.storeId)} onPress={() => setSelected((current) => current.includes(store.storeId) ? current.filter((id) => id !== store.storeId) : [...current, store.storeId])} />
         <Text style={styles.muted}>المتاح: {formatMoney(store.eligibleAvailableMinor, store.currency)} · المحجوز: {formatMoney(store.heldMinor, store.currency)} · {store.payoutReady ? "المستلم جاهز للصرف" : "المستلم يحتاج إجراء المالية أو المالك"}</Text>
       </View>)}
-      {pendingAttempt ? <View style={styles.pendingBox}><Text style={styles.muted}>طلب محفوظ قيد التحقق؛ سيُرسل بنفس المبالغ والمتاجر والمفتاح.</Text><BthwaniButton busy={busy} label="استرجاع نتيجة الطلب" onPress={() => void recover()} /><BthwaniButton busy={busy} label="إعادة الإرسال بنفس المفتاح" onPress={() => void request()} /></View> : legacyPending ? <View style={styles.pendingBox}><Text style={styles.muted}>طلب سابق يحتاج استرجاع نتيجته قبل تحديد نطاق الصرف الحالي.</Text><BthwaniButton busy={busy} label="استرجاع الطلب السابق" onPress={() => void recover()} /></View> : <>
+      {pendingAttempt ? <View style={styles.pendingBox}><Text style={styles.muted}>طلب محفوظ قيد التحقق؛ أعد المحاولة بالمتاجر والمبالغ المحفوظة نفسها.</Text><BthwaniButton busy={busy} label="استرجاع نتيجة الطلب" onPress={() => void recover()} /><BthwaniButton busy={busy} label="إعادة المحاولة بالبيانات المحفوظة" onPress={() => void request()} /></View> : legacyPending ? <View style={styles.pendingBox}><Text style={styles.muted}>طلب سابق يحتاج استرجاع نتيجته قبل تحديد نطاق الصرف الحالي.</Text><BthwaniButton busy={busy} label="استرجاع الطلب السابق" onPress={() => void recover()} /></View> : <>
         <View style={styles.modeRow}>
           <BthwaniChip disabled={busy} label="كامل المتاح للمتاجر المختارة" selected={mode === "FULL_AVAILABLE"} onPress={() => setMode("FULL_AVAILABLE")} />
           <BthwaniChip disabled={busy} label="مبالغ محددة لكل متجر" selected={mode === "SPECIFIED"} onPress={() => setMode("SPECIFIED")} />

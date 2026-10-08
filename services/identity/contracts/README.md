@@ -9,6 +9,7 @@ It preserves:
 - explicit actor↔role bindings and single-role sessions;
 - customer phone-verification + client-password registration/login/recovery;
 - one-time partner/captain/field activation after their domain-owned admission;
+- normal managed phone/password login and purpose/role-scoped password recovery without session issuance or admission grants;
 - explicit actor_id-addressed DSH authorization for managed-role re-enrollment after current domain eligibility is verified;
 - user-verified, discoverable Operator WebAuthn/Passkey authentication and governed re-enrollment;
 - credential-derived internal service identity.

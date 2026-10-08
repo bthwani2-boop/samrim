@@ -50,6 +50,7 @@ const schemaNames = [
   "PasswordLoginRequest",
   "ManagedPasswordLoginRequest",
   "ManagedActivationRequest",
+  "ManagedRecoveryProofRequest",
   "OperatorPasskeyRegistrationOptionsRequest",
   "WebAuthnJSON",
   "PasskeyOptions",

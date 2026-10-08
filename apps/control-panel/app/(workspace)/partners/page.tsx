@@ -13,7 +13,7 @@ export default function PartnersPage() {
           <div className="workspace-page-heading-copy">
             <p className="eyebrow">إدارة الشركاء</p>
             <h1 id="partners-page-title">الشركاء</h1>
-            <p className="lead">حسابات الشركاء المقبولين من Identity وحالات الانضمام من DSH.</p>
+            <p className="lead">حسابات الشركاء المقبولين وحالات الانضمام.</p>
           </div>
           <Link className="button button-primary" href="/partners/new">إضافة شريك</Link>
         </div>

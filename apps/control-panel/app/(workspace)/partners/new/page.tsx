@@ -10,7 +10,7 @@ export default function NewPartnerCasePage() {
         <div className="workspace-page-heading">
           <p className="eyebrow">الشركاء / إنشاء</p>
           <h1 id="new-partner-case-page-title">إنشاء حالة انضمام</h1>
-          <p className="lead">أنشئ سجل DSH الكانوني ثم انتقل إلى تفاصيله لقراءة النسخة وتنفيذ العملية المتاحة.</p>
+          <p className="lead">أنشئ سجل الشريك ثم انتقل إلى تفاصيله لمراجعة حالته وتنفيذ العملية المتاحة.</p>
         </div>
         <JoiningCaseCreate />
       </section>

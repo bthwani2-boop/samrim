@@ -168,7 +168,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
         body: JSON.stringify(payload),
       }), "تعذر تنفيذ إجراء طلب السحب");
       completeMutation(scope);
-      setNotice("حُفظ الإجراء في WLT وسجل التدقيق.");
+      setNotice("حُفظ الإجراء في السجل المالي وسجل التدقيق.");
       setReason("");
       setVerificationEvidence("");
       await refreshSelected();
@@ -202,9 +202,9 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
         method: "POST",
         headers: mutationHeaders(scope),
         body: JSON.stringify(payload),
-      }), "تعذر تغيير حالة طلب الصرف في WLT");
+      }), "تعذر تغيير حالة طلب الصرف في السجل المالي");
       completeMutation(scope);
-      setNotice(action === "prepare" ? "أُعد طلب الصرف في WLT؛ يلزم اعتماد مستقل." : "اعتمد الطلب في WLT؛ أصبح جاهزاً لدفعة التحويل اليدوي.");
+      setNotice(action === "prepare" ? "أُعد طلب الصرف في السجل المالي؛ يلزم اعتماد مستقل." : "اعتمد الطلب في السجل المالي؛ أصبح جاهزاً لدفعة التحويل اليدوي.");
       setReason("");
       setPayoutEvidenceReference("");
       await refreshSelected();
@@ -256,23 +256,23 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
           تحديث السجل
         </button>
       </div>
-      <p className="muted">العمليات تسجل التفويض؛ المالية تتحقق من الوجهة وتقبل الطلب أو ترفضه. قبول الطلب يحجز الرصيد في WLT، ثم ينتقل التنفيذ الخارجي والإيصال والمطابقة إلى مكتب الدفعات المشترك.</p>
+      <p className="muted">العمليات تسجل التفويض؛ المالية تتحقق من الوجهة وتقبل الطلب أو ترفضه. قبول الطلب يحجز الرصيد في السجل المالي، ثم ينتقل التنفيذ الخارجي والإيصال والمطابقة إلى مكتب الدفعات المشترك.</p>
 
       <form className="finance-toolbar" onSubmit={(event) => {
         event.preventDefault();
         navigate({ status, search: search.trim(), sort, cursor: "", intakeId: "" });
       }}>
-        <label className="field-label" htmlFor="customer-withdrawal-search">بحث بالاسم أو معرّف العميل أو المزوّد أو آخر أربع أرقام للمحفظة
-          <input id="customer-withdrawal-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} maxLength={128} />
+        <label className="field-label" htmlFor="customer-withdrawal-search">بحث بالاسم أو آخر أربع أرقام للمحفظة
+ <input id="customer-withdrawal-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} maxLength={128} />
         </label>
         <label className="field-label" htmlFor="customer-withdrawal-status">الحالة
-          <select id="customer-withdrawal-status" value={status} onChange={(event) => setStatus(event.target.value)}>
+ <select id="customer-withdrawal-status" value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="">كل الحالات</option>
             {Object.entries(intakeStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </label>
         <label className="field-label" htmlFor="customer-withdrawal-sort">ترتيب تاريخ الطلب
-          <select id="customer-withdrawal-sort" value={sort} onChange={(event) => setSort(event.target.value as RegistrySort)}>
+ <select id="customer-withdrawal-sort" value={sort} onChange={(event) => setSort(event.target.value as RegistrySort)}>
             <option value="requested_desc">الأحدث أولاً</option>
             <option value="requested_asc">الأقدم أولاً</option>
           </select>
@@ -286,13 +286,13 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
 
       <div className="finance-table-wrap">
         <table className="finance-table">
-          <caption className="sr-only">سجل طلبات سحب العملاء الاستثنائية من WLT</caption>
+          <caption className="sr-only">سجل طلبات سحب العملاء الاستثنائية من السجل المالي</caption>
           <thead><tr><th scope="col">العميل والطلب</th><th scope="col">وجهة الصرف</th><th scope="col">الحالة</th><th scope="col">وقت الطلب</th><th scope="col">المبلغ</th><th scope="col">التفاصيل</th></tr></thead>
           <tbody>
             {items.map((item) => (
               <tr key={item.id}>
-                <td>{item.beneficiaryName}<br /><small><bdi>{item.customerActorId}</bdi></small></td>
-                <td>{item.providerKey}<br /><bdi>{item.walletIdentifierMasked}</bdi></td>
+                <td>{item.beneficiaryName}</td>
+                <td><bdi>{item.walletIdentifierMasked}</bdi></td>
                 <td>{intakeStatusLabels[item.status]}{item.destinationStatus ? <><br /><small>{officialWalletDestinationStatusLabel(item.destinationStatus)}</small></> : null}{item.destinationVerificationStatus ? <><br /><small>{officialWalletVerificationStatusLabel(item.destinationVerificationStatus)}</small></> : null}</td>
                 <td><time dateTime={item.requestedAt}>{new Date(item.requestedAt).toLocaleString("ar-YE")}</time></td>
                 <td>{item.payoutAmountMinor != null && item.payoutCurrency ? formatMoney(item.payoutAmountMinor, item.payoutCurrency) : "—"}</td>
@@ -308,34 +308,34 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
       {initialQuery.intakeId ? (
         <section className="access-card" aria-labelledby="customer-withdrawal-detail-title">
           <div className="finance-toolbar">
-            <div><p className="eyebrow">تفاصيل الطلب · قراءة حديثة من WLT</p><h3 id="customer-withdrawal-detail-title">{intake ? `${intake.beneficiaryName} · ${intakeStatusLabels[intake.status]}` : "مراجعة طلب السحب"}</h3></div>
+            <div><p className="eyebrow">تفاصيل الطلب · قراءة حديثة من السجل المالي</p><h3 id="customer-withdrawal-detail-title">{intake ? `${intake.beneficiaryName} · ${intakeStatusLabels[intake.status]}` : "مراجعة طلب السحب"}</h3></div>
             <button className="button button-quiet" type="button" onClick={() => navigate({ ...initialQuery, intakeId: "" })}>إغلاق التفاصيل</button>
           </div>
           {detailLoading ? <p className="muted" role="status">جارٍ تحميل بيانات الطلب والرصيد والوجهة…</p> : null}
           {detailError ? <p className="state-error" role="alert">{detailError}</p> : null}
           {intake ? <>
-            <p className="muted"><bdi>{intake.id}</bdi> · أُرسل {new Date(intake.requestedAt).toLocaleString("ar-YE")} · هوية مسجلة بالإصدار {intake.beneficiaryIdentityVersion}</p>
+            <p className="muted">أُرسل {new Date(intake.requestedAt).toLocaleString("ar-YE")}</p>
             <p>{intake.requestReason}</p>
             <p>مستند التفويض: <a href={`/api/finance/evidence/${encodeURIComponent(intake.requestEvidenceDocumentId)}`}>فتح المستند الخاص</a></p>
             <div className="finance-toolbar"><strong>الرصيد المؤهل الآن: {formatMoney(intake.eligibleAvailableMinor, intake.currency)}</strong><span>المحجوز: {formatMoney(intake.heldMinor, intake.currency)}</span>{intake.payoutAmountMinor != null && intake.payoutCurrency ? <span>مبلغ طلب الصرف: {formatMoney(intake.payoutAmountMinor, intake.payoutCurrency)}</span> : null}</div>
-            {destination ? <p className="muted">الوجهة: {intake.providerKey} · <bdi>{destination.walletIdentifierMasked}</bdi> · {officialWalletDestinationStatusLabel(destination.status)} · {officialWalletVerificationStatusLabel(destination.verificationStatus)}</p> : null}
+            {destination ? <p className="muted">الوجهة: <bdi>{destination.walletIdentifierMasked}</bdi> · {officialWalletDestinationStatusLabel(destination.status)} · {officialWalletVerificationStatusLabel(destination.verificationStatus)}</p> : null}
             {intake.resolutionReason ? <p className="muted">سبب الإغلاق: {intake.resolutionReason}</p> : null}
             {showReason ? <label className="field-label" htmlFor="customer-withdrawal-reason">سبب الإجراء
-              <input id="customer-withdrawal-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={512} disabled={loading} />
+ <input id="customer-withdrawal-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={512} disabled={loading} />
             </label> : null}
             {intake.status === "REQUESTED" ? <div className="finance-actions"><button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void act("prepare-destination")}>تهيئة وجهة الصرف</button><button className="button button-quiet" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void act("reject")}>رفض الطلب</button></div> : null}
             {intake.status === "DESTINATION_PENDING" && destination?.verificationStatus === "PENDING_VERIFICATION" ? <><label className="field-label" htmlFor="customer-withdrawal-verification-evidence">مرجع دليل التحقق المستقل
-              <input id="customer-withdrawal-verification-evidence" value={verificationEvidence} onChange={(event) => setVerificationEvidence(event.target.value)} maxLength={512} disabled={loading} />
+ <input id="customer-withdrawal-verification-evidence" value={verificationEvidence} onChange={(event) => setVerificationEvidence(event.target.value)} maxLength={512} disabled={loading} />
             </label><button className="button button-secondary" type="button" disabled={loading || !verificationEvidence.trim()} onClick={() => void act("verify-destination")}>تأكيد التحقق</button></> : null}
             {intake.status === "DESTINATION_PENDING" && destination?.verificationStatus === "VERIFIED" ? <button className="button button-secondary" type="button" disabled={loading} onClick={() => void act("activate-destination")}>تفعيل وجهة الصرف</button> : null}
             {intake.status === "DESTINATION_PENDING" && destination?.status === "ACTIVE_FOR_PAYOUT" ? <button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void act("accept")}>قبول وحجز الرصيد المؤهل</button> : null}
             {intake.status === "PAYOUT_HELD" && intake.payoutStatus === "HELD" ? <><label className="field-label" htmlFor="customer-withdrawal-payout-evidence">مرجع دليل تهيئة الصرف
-              <input id="customer-withdrawal-payout-evidence" value={payoutEvidenceReference} onChange={(event) => setPayoutEvidenceReference(event.target.value)} maxLength={512} disabled={loading} />
+ <input id="customer-withdrawal-payout-evidence" value={payoutEvidenceReference} onChange={(event) => setPayoutEvidenceReference(event.target.value)} maxLength={512} disabled={loading} />
             </label><button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3 || !payoutEvidenceReference.trim()} onClick={() => void transitionPayout("prepare")}>تهيئة طلب الصرف</button></> : null}
             {intake.status === "PAYOUT_HELD" && intake.payoutStatus === "PREPARED" ? <button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void transitionPayout("approve")}>اعتماد مستقل للصرف</button> : null}
             {intake.status === "PAYOUT_HELD" && intake.payoutStatus === "APPROVED" ? <button className="button button-primary" type="button" disabled={loading} onClick={() => void createPayoutBatch()}>إنشاء الدفعة وفتح مكتب التنفيذ</button> : null}
             {intake.status === "PAYOUT_HELD" && intake.payoutStatus && ["FROZEN", "EXECUTED", "COMPLETED", "EXCEPTION", "CANCELLED"].includes(intake.payoutStatus) ? <p className="muted">يتابع طلب الصرف في مسار الدفعات المشترك · {payoutStatusLabel(intake.payoutStatus as PayoutRequest["status"])}</p> : null}
-            {intake.status === "PAYOUT_HELD" && !intake.payoutStatus ? <p className="state-error">تعذر قراءة حالة طلب الصرف من WLT؛ حدّث التفاصيل قبل المتابعة.</p> : null}
+            {intake.status === "PAYOUT_HELD" && !intake.payoutStatus ? <p className="state-error">تعذر قراءة حالة طلب الصرف من السجل المالي؛ حدّث التفاصيل قبل المتابعة.</p> : null}
           </> : null}
         </section>
       ) : null}

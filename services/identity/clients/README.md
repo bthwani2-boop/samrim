@@ -4,7 +4,8 @@ Canonical Identity-owned client bindings live here.
 
 Rules:
 - DTO lineage originates from `contracts/openapi/identity.openapi.yaml` and its declared modules;
-- customer registration/login/recovery and managed activation are distinct typed operations;
+- customer registration/login/recovery and managed password enrollment/login/recovery are distinct typed operations;
+- managed recovery clears the current app's saved session only after successful role-scoped recovery, then returns to normal login;
 - Operator Passkey options/finish, governed enrollment and break-glass re-enrollment are distinct typed operations;
 - app sessions consume one role only;
 - mobile SecureStore/keychain and control-panel HttpOnly cookies remain host adapters;

@@ -19,6 +19,11 @@ func TestValidateJoiningCaseReviewRequiresSubmittedCanonicalCase(t *testing.T) {
 		{name: "case is not bound to partner", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.PartnerActorID = "" }), input: valid, want: ErrJoiningCaseState},
 		{name: "service city missing", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.FirstStoreServiceCityID = "" }), input: valid, want: ErrJoiningCaseServiceCity},
 		{name: "vertical missing", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.FirstStoreVerticalID = "" }), input: valid, want: ErrCatalogVerticalNotFound},
+		{name: "business name missing", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.BusinessName = "" }), input: valid, want: ErrJoiningCaseState},
+		{name: "store name missing", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.FirstStoreName = "" }), input: valid, want: ErrJoiningCaseState},
+		{name: "commercial type missing", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.FirstStoreCommercialTypeID = "" }), input: valid, want: ErrCommercialStoreTypeNotFound},
+		{name: "fulfillment mode missing", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.FirstStoreFulfillmentModes = nil }), input: valid, want: ErrJoiningCaseState},
+		{name: "wallet provider missing", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.WalletProviderKey = "" }), input: valid, want: ErrJoiningCaseState},
 		{name: "store origin incomplete", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.FirstStoreLatitude = nil }), input: valid, want: ErrJoiningCaseStoreOrigin},
 		{name: "required intake evidence missing", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.FirstStoreProofImageUploaded = false }), input: valid, want: ErrJoiningCaseState},
 		{name: "partner cannot review own case", current: base, input: changeReviewInput(valid, func(i *ReviewJoiningCaseInput) { i.ActingActorID = "partner-1" }), want: ErrJoiningCaseSelfReview},
@@ -55,6 +60,7 @@ func TestValidateJoiningCaseSubmissionReadinessRequiresCompleteIntakeBeforeAdmis
 		{name: "stale version", current: valid, version: valid.Version - 1, want: ErrJoiningCaseVersion},
 		{name: "not an admission state", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.State = "needs_correction" }), version: valid.Version, want: ErrJoiningCaseState},
 		{name: "missing owner", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.OwnerFullName = " " }), version: valid.Version, want: ErrJoiningCaseState},
+		{name: "missing wallet provider", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.WalletProviderKey = " " }), version: valid.Version, want: ErrJoiningCaseState},
 		{name: "missing proof number", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.FirstStoreProofNumberPresent = false }), version: valid.Version, want: ErrJoiningCaseState},
 		{name: "missing proof image", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.FirstStoreProofImageUploaded = false }), version: valid.Version, want: ErrJoiningCaseState},
 		{name: "missing storefront image", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.StoreProfileImage = nil }), version: valid.Version, want: ErrJoiningCaseState},
@@ -106,12 +112,12 @@ func TestValidateJoiningCaseReviewNormalizesCorrectionAndFinancialTerms(t *testi
 func validReviewJoiningCase() JoiningCaseRecord {
 	latitude, longitude := 15.3, 44.2
 	return JoiningCaseRecord{
-		OwnerFullName: "Store owner", FirstStoreAddress: "Main street",
-		FirstStoreWorkingHours: []byte(`{"sunday":[{"opensAt":"09:00","closesAt":"18:00"}]}`),
-		FirstStoreProofType:    "commercial_register", FirstStoreProofNumberPresent: true,
+		OwnerFullName: "Store owner", WalletProviderKey: "provider-test", BusinessName: "Business", FirstStoreName: "Store", FirstStoreAddress: "Main street",
+		FirstStoreWorkingHours: []byte(`{"intervals":[{"dayOfWeek":1,"opensAt":"09:00","closesAt":"18:00","closesNextDay":false}]}`),
+		FirstStoreProofType:    "COMMERCIAL_REGISTRATION", FirstStoreProofNumberPresent: true,
 		FirstStoreProofImageUploaded: true, StoreProfileImage: &StoreProfileMediaRecord{ID: "profile-image-1"},
 		PartnerActorID: "partner-1", State: "submitted", FirstStoreServiceCityID: "city-1",
-		FirstStoreVerticalID: "vertical-1", FirstStoreLatitude: &latitude, FirstStoreLongitude: &longitude,
+		FirstStoreVerticalID: "vertical-1", FirstStoreCommercialTypeID: "type-1", FirstStoreFulfillmentModes: []string{FulfillmentModeBthwaniCaptain}, FirstStoreLatitude: &latitude, FirstStoreLongitude: &longitude,
 		Version: 4,
 	}
 }

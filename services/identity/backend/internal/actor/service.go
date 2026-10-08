@@ -399,10 +399,18 @@ WHERE r.actor_id=$1 AND r.role=$2 FOR UPDATE OF r,a`, actorID, role).Scan(&enabl
 	if !enabled || !securityEnabled || !activated.Valid {
 		return domain.ErrInvalidChallenge
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO identity_password_credentials(actor_id,role,password_hash,version)
-VALUES($1,$2,$3,1)
-ON CONFLICT (actor_id,role) DO UPDATE SET password_hash=EXCLUDED.password_hash,version=identity_password_credentials.version+1,updated_at=clock_timestamp()`, actorID, role, hash); err != nil {
+	result, err := tx.ExecContext(ctx, `UPDATE identity_password_credentials
+SET password_hash=$1,version=version+1,updated_at=clock_timestamp()
+WHERE actor_id=$2 AND role=$3`, hash, actorID, role)
+	if err != nil {
 		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated != 1 {
+		return domain.ErrInvalidChallenge
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL", actorID, role); err != nil {
 		return err

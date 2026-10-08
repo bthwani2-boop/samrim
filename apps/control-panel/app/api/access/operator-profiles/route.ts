@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
 import { NextResponse } from "next/server";
 
 import { createOperatorProfile, identityErrorPayload, identityHttpStatus, listOperatorProfiles, readOperatorSession } from "../../../../src/server/identity/identity-bff";
@@ -43,8 +44,8 @@ export async function POST(request: Request) {
   if ("response" in access) return access.response;
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const fullNameAr = typeof body?.fullNameAr === "string" ? body.fullNameAr.trim() : "";
-  const phoneE164 = typeof body?.phoneE164 === "string" ? body.phoneE164.replace(/\s+/g, "") : "";
-  if (!body || Object.keys(body).some((key) => !["fullNameAr", "phoneE164"].includes(key)) || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(phoneE164)) return denied(400, "INVALID_INPUT", "a full Arabic name and valid E.164 phone number are required");
+  const phoneE164 = typeof body?.phoneE164 === "string" ? normalizeYemenPhoneE164(body.phoneE164) : "";
+  if (!body || Object.keys(body).some((key) => !["fullNameAr", "phoneE164"].includes(key)) || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(phoneE164)) return denied(400, "INVALID_INPUT", "a full Arabic name and valid Yemeni local or international phone number are required");
   const context = { operatorActorId: access.identity.subject, correlationId: randomUUID(), idempotencyKey: randomUUID() };
   try {
     const result = await createOperatorProfile({ fullNameAr, phoneE164 }, context);

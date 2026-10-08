@@ -171,13 +171,13 @@ export function OperationsWorkspace() {
         <search className="operations-search" aria-label="البحث في الطلبات">
           <form className="operations-search-form" onSubmit={(event) => { event.preventDefault(); navigate({ q: search.trim().slice(0, 128) }); }}>
             <label className="field-label" htmlFor="operations-search">رقم الطلب أو اسم المتجر
-              <input id="operations-search" type="search" value={search} maxLength={128} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث عن طلب أو متجر" />
+ <input id="operations-search" type="search" value={search} maxLength={128} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث عن طلب أو متجر" />
             </label>
             <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
           </form>
         </search>
         <label className="field-label operations-sort" htmlFor="operations-sort">ترتيب التحديث
-          <select id="operations-sort" value={sort} onChange={(event) => navigate({ sort: event.target.value })}>
+ <select id="operations-sort" value={sort} onChange={(event) => navigate({ sort: event.target.value })}>
             <option value="updated_desc">الأحدث أولًا</option>
             <option value="updated_asc">الأقدم أولًا</option>
           </select>
@@ -197,7 +197,7 @@ export function OperationsWorkspace() {
             <tbody>
               {operations.map((item) => (
                 <tr key={item.orderId}>
-                  <th scope="row"><Link href={orderHref(item.orderId)}><bdi dir="ltr">{item.orderId}</bdi></Link></th>
+                  <th scope="row"><Link href={orderHref(item.orderId)}>فتح الطلب</Link></th>
                   <td>{item.storeName}</td>
                   <td><span className={`status-badge status-${item.state.toLowerCase()}`}>{orderStateLabel(item.state)}</span></td>
                   <td>{item.assignment ? captainAssignmentStateLabel(item.assignment.state) : <span className="muted">غير مسند</span>}</td>

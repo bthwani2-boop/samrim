@@ -57,13 +57,13 @@ function formatYemenDateTimeInput(value: string): string {
     hourCycle: "h23",
   }).formatToParts(new Date(value));
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
-  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}`;
+  return `${part("day")}/${part("month")}/${part("year")} ${part("hour")}:${part("minute")}`;
 }
 
 function parseYemenDateTimeInput(value: string): string | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/.exec(toAsciiDigits(value.trim()));
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/.exec(toAsciiDigits(value.trim()));
   if (!match) return null;
-  const [year, month, day, hour, minute] = match.slice(1).map(Number);
+  const [day, month, year, hour, minute] = match.slice(1).map(Number);
   if (year === undefined || month === undefined || day === undefined || hour === undefined || minute === undefined || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
   const yemenLocalAsUTC = Date.UTC(year, month - 1, day, hour, minute);
   const instant = new Date(yemenLocalAsUTC - 3 * 60 * 60 * 1000);
@@ -222,7 +222,7 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
         setPendingAttempt(null);
         setError(status === 401 ? "انتهت جلسة الشريك. سجّل الدخول مجددًا." : status === 403 ? "لا تملك صلاحية إدارة إتاحة هذا المتجر." : "رفضت المنصة التحديث؛ راجع المدخلات ثم أعد المحاولة.");
       } else {
-        setError("لم يصل تأكيد الحفظ. أعد إرسال التحديث المحفوظ بالمفتاح نفسه للتحقق من النتيجة.");
+        setError("لم يصل تأكيد الحفظ. أعد المحاولة من زر الحفظ للتحقق من النتيجة.");
       }
     } finally {
       setBusy(false);
@@ -257,8 +257,8 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
     <View style={styles.settingRow}><View style={styles.settingCopy}><Text style={styles.label}>إيقاف استقبال الطلبات مؤقتًا</Text><Text style={styles.muted}>{draft.paused ? draft.pauseUntil ? `يستمر الإيقاف حتى ${draft.pauseUntil} بتوقيت اليمن ما لم تستأنف الطلبات قبل ذلك.` : "يبقى الإيقاف حتى تستأنف الطلبات يدويًا." : "يمكن إيقاف الطلبات دون إلغاء نشر المتجر."}</Text></View><Switch accessibilityLabel="إيقاف استقبال الطلبات مؤقتًا" disabled={disabled} onValueChange={(paused) => setDraft((value) => value ? { ...value, paused, pauseReason: paused ? value.pauseReason : "", pauseUntil: paused ? value.pauseUntil : null } : value)} value={draft.paused} /></View>
     {draft.paused ? <>
       <TextInput accessibilityLabel="سبب إيقاف استقبال الطلبات" editable={!disabled} maxLength={500} onChangeText={(pauseReason) => setDraft((value) => value ? { ...value, pauseReason } : value)} placeholder="سبب الإيقاف" value={draft.pauseReason} style={styles.input} />
-      <TextInput accessibilityLabel="موعد انتهاء الإيقاف بتوقيت اليمن" editable={!disabled} maxLength={16} onChangeText={(pauseUntil) => setDraft((value) => value ? { ...value, pauseUntil: toAsciiDigits(pauseUntil) || null } : value)} placeholder="YYYY-MM-DD HH:mm" value={draft.pauseUntil ?? ""} style={styles.input} />
-      <Text style={styles.muted}>أدخل موعدًا مستقبليًا بتوقيت اليمن بصيغة YYYY-MM-DD HH:mm، أو اتركه فارغًا إذا كان الإيقاف حتى الاستئناف اليدوي.</Text>
+      <TextInput accessibilityLabel="موعد استئناف استقبال الطلبات" editable={!disabled} maxLength={16} onChangeText={(pauseUntil) => setDraft((value) => value ? { ...value, pauseUntil: toAsciiDigits(pauseUntil) || null } : value)} placeholder="يوم/شهر/سنة ساعة:دقيقة" value={draft.pauseUntil ?? ""} style={styles.input} />
+      <Text style={styles.muted}>أدخل موعدًا مستقبليًا بتوقيت اليمن، أو اتركه فارغًا للاستئناف يدويًا.</Text>
     </> : null}
     <View style={styles.block}>
       <Text style={styles.label}>مدة التجهيز</Text>
@@ -275,7 +275,7 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
       })}
     </View> : null}
     <View style={styles.currentState}>
-      <Text style={styles.label}>الحالة المعتمدة الآن · الإصدار {current.version}</Text>
+      <Text style={styles.label}>الحالة الحالية المعتمدة</Text>
       {state.value.orderabilityByMode.length ? state.value.orderabilityByMode.map((item) => <Text key={item.fulfillmentMode} style={styles.muted}>{modeLabel(item.fulfillmentMode)}: {orderabilityLabel(item.state)}{item.preparationMinutes ? ` · تجهيز ${item.preparationMinutes} دقيقة` : ""}</Text>) : <Text style={styles.muted}>لا يوجد وضع طلب دائم معتمد لهذا المتجر بعد.</Text>}
     </View>
     {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}

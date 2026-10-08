@@ -14,6 +14,12 @@ paths:
             type: integer
             minimum: 1
             maximum: 100
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 1024
         - name: X-Acting-Actor-ID
           in: header
           required: false

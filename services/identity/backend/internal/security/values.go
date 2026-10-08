@@ -40,6 +40,8 @@ func NormalizePhoneE164(raw string) (string, error) {
 		phone = "+" + strings.TrimPrefix(phone, "00")
 	case strings.HasPrefix(phone, "967"):
 		phone = "+" + phone
+	case len(phone) == 10 && strings.HasPrefix(phone, "0") && phone[1] >= '1' && phone[1] <= '9':
+		phone = "+967" + phone[1:]
 	case strings.HasPrefix(phone, "7"):
 		phone = "+967" + phone
 	}

@@ -182,6 +182,13 @@ type ClientRecoveryProofRequest struct {
 	Password string `json:"password"`
 }
 
+type ManagedRecoveryProofRequest struct {
+	Phone            string `json:"phone"`
+	Role             string `json:"role"`
+	VerificationCode string `json:"verificationCode"`
+	Password         string `json:"password"`
+}
+
 type PasswordLoginRequest struct {
 	Phone            string `json:"phone"`
 	Password         string `json:"password"`
@@ -324,6 +331,7 @@ const (
 	ChallengeClientRegister  = "client_register"
 	ChallengeClientRecover   = "client_recover"
 	ChallengeManagedActivate = "managed_activate"
+	ChallengeManagedRecover  = "managed_recover"
 	ChallengeOperatorEnroll  = "operator_enroll"
 	ChallengeOperatorRecover = "operator_recover"
 )

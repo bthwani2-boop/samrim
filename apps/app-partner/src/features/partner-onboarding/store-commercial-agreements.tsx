@@ -57,10 +57,10 @@ function rateValue(commissionRateBps: number): string {
 
 function acceptanceErrorMessage(cause: unknown, hasSavedAttempt: boolean): string {
   if (cause && typeof cause === "object" && "status" in cause && (cause as { status?: unknown }).status === 409) {
-    return "تغير إصدار الاتفاقية أو حالتها. أعد قراءة الحالة قبل أي خطوة أخرى.";
+    return "تغيرت بيانات الاتفاقية أو حالتها. أعد قراءتها قبل المتابعة.";
   }
   return hasSavedAttempt
-    ? "لم نتأكد من نتيجة القبول؛ أعد المحاولة بالمفتاح المحفوظ نفسه أو أعد قراءة الاتفاقية. لن يُرسل القبول تلقائيًا."
+    ? "لم نتأكد من نتيجة القبول؛ تحقق من الاتفاقية قبل إعادة المحاولة. لن يُرسل القبول تلقائيًا."
     : "تعذر تأكيد قبول الاتفاقية. أعد المحاولة بعد مراجعة التفاصيل.";
 }
 
@@ -192,7 +192,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       }
       await SecureStore.deleteItemAsync(storageKey);
       setPendingAttempt(null);
-      setNotice("سُجل قبولك وتم تأكيد حالة الاتفاقية من القراءة المعتمدة في DSH.");
+      setNotice("سُجل قبولك وتم تأكيد الاتفاقية.");
     } catch (cause) {
       setError(acceptanceErrorMessage(cause, attemptSaved));
     } finally {
@@ -219,7 +219,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
         return (
           <View key={agreement.agreementId} style={styles.agreement}>
             <View style={styles.agreementHeading}>
-              <Text style={styles.agreementTitle}>إصدار الاتفاقية {agreement.agreementVersion}</Text>
+              <Text style={styles.agreementTitle}>الاتفاقية التجارية</Text>
               <Text accessibilityRole="text" style={[styles.status, agreement.status === "ACTIVE" ? styles.active : agreement.status.includes("REJECT") ? styles.rejected : styles.pending]}>{statusLabel(agreement.status)}</Text>
             </View>
             {agreement.rates.length > 0 ? agreement.rates.map((rate) => (
@@ -241,7 +241,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
                 style={styles.reasonInput}
                 value={reason}
               />
-              {savedAttempt ? <Text style={styles.muted}>محاولة قبول سابقة غير محسومة؛ سيُعاد إرسال السبب والمفتاح نفسيهما عند ضغط الزر.</Text> : null}
+              {savedAttempt ? <Text style={styles.muted}>محاولة قبول سابقة غير محسومة؛ تحقق من نتيجتها قبل إعادة المحاولة.</Text> : null}
               <BthwaniButton
                 busy={busyAgreementID === agreement.agreementId}
                 disabled={!canAccept || (!savedAttempt && Array.from(reason.trim()).length < 8)}
@@ -257,7 +257,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
         busy={Boolean(agreementToConfirm && busyAgreementID === agreementToConfirm.agreementId)}
         confirmLabel="تأكيد قبول الاتفاقية"
         description={agreementToConfirm
-          ? `ستوافق على إصدار الاتفاقية ${agreementToConfirm.agreementVersion}. النسب: ${agreementToConfirm.rates.map((rate) => `${modeLabel(rate.fulfillmentMode)}: ${rateValue(rate.commissionRateBps)}`).join("، ")}. بعد قبولك تنتقل الاتفاقية إلى اعتماد المالية قبل أن تصبح سارية.`
+          ? `ستوافق على الاتفاقية التجارية. النسب: ${agreementToConfirm.rates.map((rate) => `${modeLabel(rate.fulfillmentMode)}: ${rateValue(rate.commissionRateBps)}`).join("، ")}. بعد قبولك تراجعها الإدارة المالية قبل أن تصبح سارية.`
           : ""}
         onCancel={() => setAgreementToConfirm(null)}
         onConfirm={() => {

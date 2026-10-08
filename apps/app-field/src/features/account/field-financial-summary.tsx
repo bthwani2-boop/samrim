@@ -1,6 +1,7 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { useCallback, useEffect, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
 import { Text, View, StyleSheet } from "react-native";
 import { formatMoney, type FieldAcquisitionEntitlementPage, type FieldFinancialSummary } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
@@ -79,7 +80,7 @@ export function FieldFinancialSummaryCard() {
     }
   }, [ledger?.nextCursor, ledgerLoading, loadingMore]);
 
-  useEffect(() => { void load(); }, [load]);
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   const entitlementRows = ledger?.entitlements.map((entry) => <View key={entry.ledgerTransactionId} style={styles.entry}>
     <View style={styles.entryMain}>
@@ -93,9 +94,9 @@ export function FieldFinancialSummaryCard() {
     <Text style={styles.eyebrow}>المحفظة والاستحقاقات</Text>
     <Text style={styles.title}>استحقاق ضم الشريك</Text>
     {summary ? <View style={styles.grid}>
-      <View><Text style={styles.label}>إجمالي ما أودع في المحفظة</Text><Text style={styles.value}>{formatMoney(summary.earnedMinor, summary.currency)}</Text></View>
-      <View><Text style={styles.label}>شركاء تحقق استحقاقهم</Text><Text style={styles.value}>{summary.partnerCount.toLocaleString("ar-YE")}</Text></View>
-      <View><Text style={styles.label}>إجمالي الاستحقاقات</Text><Text style={styles.value}>{formatMoney(summary.entitlementMinor, summary.currency)}</Text></View>
+      <View style={styles.metric}><Text style={styles.label}>إجمالي ما أودع في المحفظة</Text><Text style={styles.value}>{formatMoney(summary.earnedMinor, summary.currency)}</Text></View>
+      <View style={styles.metric}><Text style={styles.label}>شركاء تحقق استحقاقهم</Text><Text style={styles.value}>{summary.partnerCount.toLocaleString("ar-YE")}</Text></View>
+      <View style={styles.metric}><Text style={styles.label}>إجمالي الاستحقاقات</Text><Text style={styles.value}>{formatMoney(summary.entitlementMinor, summary.currency)}</Text></View>
     </View> : null}
     {summaryLoading && !summary ? <Text style={styles.muted}>جارٍ قراءة ملخص المستحقات…</Text> : null}
     {summaryError ? <Text accessibilityRole="alert" style={styles.error}>{summaryError}</Text> : null}
@@ -116,7 +117,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     eyebrow: { ...typography.caption, color: theme.interactiveText },
     title: { ...typography.titleMd, color: theme.color },
     sectionTitle: { ...typography.bodyStrong, color: theme.color, marginTop: spacing[2] },
-    grid: { flexDirection: "row", gap: spacing[5] },
+    grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing[3] },
+    metric: { flexBasis: 136, flexGrow: 1, minWidth: 0 },
     entry: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", gap: spacing[3], justifyContent: "space-between", paddingVertical: spacing[3] },
     entryMain: { flex: 1, gap: spacing[1] },
     label: { ...typography.caption, color: theme.colorMuted },

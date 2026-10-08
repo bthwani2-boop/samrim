@@ -1,6 +1,10 @@
 package notification
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+)
 
 func TestValidNotificationSessionAcceptsFieldSurface(t *testing.T) {
 	if !validNotificationSession("field-actor-1", "field", "app-field") {
@@ -58,5 +62,13 @@ func TestStoreGoLiveNotificationCopyIsSpecificToEachRecipient(t *testing.T) {
 		if kind != test.kind || title != test.title || body == "" {
 			t.Fatalf("message(%q, %q) = (%q, %q, %q)", test.eventType, test.role, kind, title, body)
 		}
+	}
+}
+
+func TestPresentCarriesJoiningCaseAndStoreReferences(t *testing.T) {
+	event := postgres.NotificationEvent{ID: "field:42", EventType: "joining_case_approved", JoiningCaseID: "case-17", StoreID: "store-9"}
+	view := present(event, "field")
+	if view.JoiningCaseID != "case-17" || view.StoreID != "store-9" {
+		t.Fatalf("present dropped notification destination references: %+v", view)
 	}
 }

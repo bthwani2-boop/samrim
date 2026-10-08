@@ -30,6 +30,8 @@ const iconNames: Record<MobileIconName, ReturnType<typeof Icon.select>> = {
   search: Icon.select({ ios: "magnifyingglass", android: require("@expo/material-symbols/search.xml") }),
   notifications: Icon.select({ ios: "bell.fill", android: require("@expo/material-symbols/notifications_active.xml") }),
   close: Icon.select({ ios: "xmark", android: require("@expo/material-symbols/close.xml") }),
+  eye: Icon.select({ ios: "eye", android: require("@expo/material-symbols/visibility.xml") }),
+  "eye-off": Icon.select({ ios: "eye.slash", android: require("@expo/material-symbols/visibility_off.xml") }),
 };
 
 export function BthwaniIcon({

@@ -134,7 +134,7 @@ export function CatalogProposalReview() {
     } catch (cause) {
       if (cause && typeof cause === "object" && (cause as { status?: number }).status === 409) {
         setConflict(true);
-        setNotice("تغيّر هذا المقترح قبل قرارك. أُعيد تحميل النسخة الحالية للمراجعة.");
+        setNotice("تغيّر هذا المقترح قبل قرارك. أُعيد تحميل البيانات الحالية للمراجعة.");
         await loadQueue();
       } else {
         setError(cause instanceof Error ? cause.message : "تعذر تسجيل قرار المقترح.");
@@ -181,11 +181,10 @@ export function CatalogProposalReview() {
               <div><dt>الاسم المقترح</dt><dd>{selected.proposedName}</dd></div>
               <div><dt>العلامة</dt><dd>{selected.proposedBrand || "غير محددة"}</dd></div>
               <div><dt>النسخة</dt><dd>{selected.proposedVariantTitle}</dd></div>
-              <div><dt>النسخة الحالية: {selected.version}</dt></div>
-              <div><dt>الفئة الرئيسية</dt><dd>{vertical?.nameAr ?? "الفئة الرئيسية غير متاحة"}</dd></div>
+              <div><dt>النشاط الرئيسي</dt><dd>{vertical?.nameAr ?? "النشاط الرئيسي غير متاحة"}</dd></div>
               <div><dt>الفئة</dt><dd>{category?.nameAr ?? "الفئة غير متاحة"}</dd></div>
               <div><dt>القياس</dt><dd>{measurementLabels[selected.proposedMeasurementKind]} · {unitLabels[selected.proposedBaseUnit]}</dd></div>
-              <div><dt>المعرّف</dt><dd>{selected.proposedIdentifierValue ? `${selected.proposedIdentifierType ?? "معرّف"}: ${selected.proposedIdentifierValue}` : "لا يوجد"}</dd></div>
+              <div><dt>الباركود</dt><dd>{selected.proposedIdentifierValue ? selected.proposedIdentifierValue : "لا يوجد"}</dd></div>
               <div><dt>الحالة</dt><dd>{catalogProductProposalStateLabel(selected.state)}</dd></div>
               {selected.correctionReason ? <div><dt>سبب التصحيح السابق</dt><dd>{selected.correctionReason}</dd></div> : null}
             </dl>

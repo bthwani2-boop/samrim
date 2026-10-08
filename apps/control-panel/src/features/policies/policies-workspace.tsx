@@ -23,17 +23,17 @@ export function PoliciesWorkspace({ resource, children }: { resource: PolicyReso
   return (
     <section className="workspace-page" aria-labelledby="policies-page-title">
       <div className="workspace-page-heading">
-        <p className="eyebrow">السياسات · DSH وWLT</p>
+        <p className="eyebrow">السياسات · الخدمة والرسوم</p>
         <h1 id="policies-page-title">{selected.key === "overview" ? "مركز السياسات" : selected.label}</h1>
         <p className="lead">{selected.description}</p>
       </div>
-      {!canEdit ? <p className="managed-status managed-status-warning" role="status">{activeResource === "partner-financial-terms" ? "تتطلب هذه السياسة صلاحية سياسات المنصة وصلاحية Finance من Identity." : "وضع قراءة فقط. يتطلب التعديل صلاحية سياسات المنصة من Identity."}</p> : null}
+      {!canEdit ? <p className="managed-status managed-status-warning" role="status">{activeResource === "partner-financial-terms" ? "تتطلب هذه السياسة صلاحية سياسات المنصة وصلاحية المالية من الحسابات." : "وضع قراءة فقط. يتطلب التعديل صلاحية سياسات المنصة من الحسابات."}</p> : null}
       {children ?? <WorkspaceResourceIndex
         title="سياسات المنصة"
         description="تُقرأ السياسة من المالك القانوني وتُحفظ لديه؛ الشارة توضح المالك قبل الدخول."
         resources={workspacePolicyResources.slice(1).map((item) => ({
           ...item,
-          source: item.key === "delivery-fees" || item.key === "field-acquisition" || item.key === "partner-financial-terms" ? "WLT" : "DSH",
+          source: item.key === "delivery-fees" || item.key === "field-acquisition" || item.key === "partner-financial-terms" ? "المالك المالي" : "مالك الخدمة",
         }))}
       />}
     </section>

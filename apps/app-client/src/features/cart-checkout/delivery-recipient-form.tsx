@@ -1,4 +1,4 @@
-import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { borders, normalizeYemenPhoneE164, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniChip, BthwaniSectionHeader, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useMemo } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
@@ -13,7 +13,7 @@ export type DeliveryRecipientInput = Readonly<{
 export function deliveryRecipientIsValid(value: DeliveryRecipientInput): boolean {
   if (value.mode === "SELF") return true;
   const name = value.name?.trim() ?? "";
-  const phone = value.phoneE164?.trim() ?? "";
+  const phone = normalizeYemenPhoneE164(value.phoneE164?.trim() ?? "");
   const instructions = value.instructions?.trim() ?? "";
   return name.length >= 2 && name.length <= 120 && /^\+[1-9][0-9]{7,14}$/u.test(phone) && instructions.length <= 500;
 }
@@ -25,7 +25,7 @@ export function checkoutRecipient(value: DeliveryRecipientInput, allowOther: boo
   const phoneE164 = value.phoneE164?.trim();
   const instructions = value.instructions?.trim();
   if (name) recipient.name = name;
-  if (phoneE164) recipient.phoneE164 = phoneE164;
+  if (phoneE164) recipient.phoneE164 = normalizeYemenPhoneE164(phoneE164);
   if (instructions) recipient.instructions = instructions;
   return recipient;
 }
@@ -48,9 +48,9 @@ export function DeliveryRecipientForm({ value, allowOther, onChange }: {
       </View>
       {mode === "OTHER" ? <View style={styles.fields}>
         <TextInput accessibilityLabel="اسم مستلم الطلب" autoCapitalize="words" autoComplete="name" maxLength={120} onChangeText={(name) => onChange({ ...value, mode: "OTHER", name })} placeholder="اسم المستلم" placeholderTextColor={theme.colorMuted} style={styles.input} value={value.name ?? ""} />
-        <TextInput accessibilityLabel="رقم المستلم بصيغة دولية" autoComplete="tel" keyboardType="phone-pad" maxLength={16} onChangeText={(phoneE164) => onChange({ ...value, mode: "OTHER", phoneE164 })} placeholder="رقم دولي، مثال +9677…" placeholderTextColor={theme.colorMuted} style={styles.input} value={value.phoneE164 ?? ""} />
+        <TextInput accessibilityLabel="رقم المستلم" autoComplete="tel" keyboardType="phone-pad" maxLength={20} onChangeText={(phoneE164) => onChange({ ...value, mode: "OTHER", phoneE164 })} placeholder="مثال: 777123456 أو +967777123456" placeholderTextColor={theme.colorMuted} style={styles.input} value={value.phoneE164 ?? ""} />
         <TextInput accessibilityLabel="تعليمات توصيل المستلم" maxLength={500} multiline onChangeText={(instructions) => onChange({ ...value, mode: "OTHER", instructions })} placeholder="تعليمات للمندوب (اختياري)" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.instructions]} textAlignVertical="top" value={value.instructions ?? ""} />
-        {!deliveryRecipientIsValid(value) ? <Text accessibilityRole="alert" style={styles.error}>أدخل اسمًا ورقمًا دوليًا صحيحًا للمستلم.</Text> : null}
+        {!deliveryRecipientIsValid(value) ? <Text accessibilityRole="alert" style={styles.error}>أدخل اسمًا ورقمًا يمنيًا صحيحًا للمستلم، محليًا أو دوليًا.</Text> : null}
       </View> : null}
     </View>
   );

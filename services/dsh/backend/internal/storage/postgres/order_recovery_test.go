@@ -148,6 +148,10 @@ func TestCheckoutRecipientNormalizationAndIdempotency(t *testing.T) {
 	if HashCheckoutRequest(base) == otherHash {
 		t.Fatal("changed recipient facts retained the same checkout idempotency identity")
 	}
+	localRecipient, err := NormalizeDeliveryRecipient(DeliveryRecipientInput{Mode: "OTHER", Name: "Ali", PhoneE164: "777123456"}, base.FulfillmentMode)
+	if err != nil || localRecipient.PhoneE164 != "+967777123456" {
+		t.Fatalf("local Yemeni recipient phone was not normalized: %+v, %v", localRecipient, err)
+	}
 }
 
 func TestNormalizeDeliveryRecipientRejectsInvalidOrPickupOther(t *testing.T) {
@@ -158,7 +162,7 @@ func TestNormalizeDeliveryRecipientRejectsInvalidOrPickupOther(t *testing.T) {
 	}{
 		{name: "self with unrelated personal data", mode: FulfillmentModeBthwaniCaptain, data: DeliveryRecipientInput{Mode: "SELF", Name: "Ali"}},
 		{name: "other without name", mode: FulfillmentModeBthwaniCaptain, data: DeliveryRecipientInput{Mode: "OTHER", PhoneE164: "+967712345678"}},
-		{name: "other with local phone", mode: FulfillmentModeBthwaniCaptain, data: DeliveryRecipientInput{Mode: "OTHER", Name: "Ali", PhoneE164: "771234567"}},
+		{name: "other with malformed phone", mode: FulfillmentModeBthwaniCaptain, data: DeliveryRecipientInput{Mode: "OTHER", Name: "Ali", PhoneE164: "77123456"}},
 		{name: "other for pickup", mode: FulfillmentModeCustomerPickup, data: DeliveryRecipientInput{Mode: "OTHER", Name: "Ali", PhoneE164: "+967712345678"}},
 	}
 	for _, test := range tests {

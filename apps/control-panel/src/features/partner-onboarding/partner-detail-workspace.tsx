@@ -61,7 +61,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
       setStoresCursor(page.nextCursor ?? "");
       setStoresPageStack(pageStack);
     } catch (cause) {
-      setStoresError(partnerRequestError(cause, "تعذرت قراءة متاجر الشريك من DSH."));
+      setStoresError(partnerRequestError(cause, "تعذرت قراءة متاجر الشريك ."));
       setStores([]);
       setStoresCursor("");
     } finally { setLoadingStores(false); }
@@ -124,13 +124,13 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
         const message = await partnerErrorMessage(response);
         if (response.status === 409 || response.status === 412) {
           await loadDetail();
-          setError(`تغيّرت الحالة قبل الحفظ. أُعيدت قراءة الحقيقة الكانونية: ${message}`);
+      setError(`تغيّرت الحالة قبل الحفظ. أُعيدت قراءة الحالة المعتمدة: ${message}`);
         } else setError(message);
         return;
       }
       const readbackResponse = await identityFetch(`/api/partners/roster/${encodeURIComponent(actorId)}`, { cache: "no-store" });
       if (!readbackResponse.ok) {
-        setError("تم إرسال التغيير لكن تعذرت إعادة قراءة Identity وDSH. أعد القراءة قبل أي إجراء آخر.");
+        setError("تم إرسال التغيير لكن تعذرت إعادة قراءة الحسابات والنظام. أعد القراءة قبل أي إجراء آخر.");
         return;
       }
       const canonical = await readbackResponse.json() as PartnerDetail;
@@ -141,7 +141,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
         return;
       }
       setReason("");
-      setNotice(`أُعيدت قراءة الحالة الكانونية: الدور ${observedEnabled ? "مفعّل" : "موقوف"} · الانضمام ${canonical.joiningCase ? joiningCaseStateLabel(canonical.joiningCase.state) : "غير مرتبط"}.`);
+      setNotice(`أُعيدت قراءة الحالة المعتمدة: الدور ${observedEnabled ? "مفعّل" : "موقوف"} · الانضمام ${canonical.joiningCase ? joiningCaseStateLabel(canonical.joiningCase.state) : "غير مرتبط"}.`);
     } catch (cause) {
       setError(isRequestFailure(cause) ? cause.message : cause instanceof Error ? cause.message : "تعذر تحديث حالة الشريك.");
     } finally { setBusy(false); }
@@ -156,7 +156,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
       return;
     }
     if (!eligibleStates.includes(detail.joiningCase?.state ?? "") || !detail.partner.enabled || !detail.partner.securityEnabled || !detail.partner.activatedAt) {
-      setError("تتطلب إعادة التسجيل دورًا نشطًا وأهلية انضمام سارية في DSH.");
+      setError("تتطلب إعادة التسجيل دورًا نشطًا وأهلية انضمام سارية .");
       return;
     }
     setBusy(true);
@@ -182,9 +182,9 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
           if (reloaded) {
             let recoveryMessage: string;
             if (response.status >= 500) {
-              recoveryMessage = "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. ";
+              recoveryMessage = "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة المعتمدة قبل أي محاولة أخرى. ";
             } else {
-              recoveryMessage = "تغيرت أهلية الانضمام أو نسخة الهوية قبل إعادة التسجيل. أُعيد تحميل الحالة الكانونية: ";
+              recoveryMessage = "تغيرت أهلية الانضمام أو نسخة الهوية قبل إعادة التسجيل. أُعيد تحميل الحالة المعتمدة: ";
             }
             setError(recoveryMessage + message);
           } else {
@@ -196,7 +196,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
       const readbackResponse = await identityFetch("/api/partners/roster/" + encodeURIComponent(actorId), { cache: "no-store" });
       if (!readbackResponse.ok) {
         const reloaded = await loadDetail();
-        setError(reloaded ? "تعذرت إعادة قراءة التفصيل لكن تم تحديث ملف الشريك. تحقق من التفعيل قبل أي إجراء آخر." : "تم إرسال الإجازة لكن تعذرت إعادة قراءة Identity وDSH. حدّث الملف قبل أي إجراء آخر.");
+        setError(reloaded ? "تعذرت إعادة قراءة التفصيل لكن تم تحديث ملف الشريك. تحقق من التفعيل قبل أي إجراء آخر." : "تم إرسال الإجازة لكن تعذرت إعادة قراءة الحسابات والنظام. حدّث الملف قبل أي إجراء آخر.");
         return;
       }
       const canonical = await readbackResponse.json() as PartnerDetail;
@@ -207,13 +207,13 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
         return;
       }
       setReason("");
-      setNotice("تمت إجازة إعادة تسجيل الشريك بعد تحقق DSH؛ يلزمه إكمال التفعيل من تطبيق الشريك.");
+      setNotice("تمت إجازة إعادة تسجيل الشريك بعد تحقق النظام؛ يلزمه إكمال التفعيل من تطبيق الشريك.");
     } catch (cause) {
       const reloaded = await loadDetail();
       if (reloaded) {
         let recoveryDetail = "تحقق من التفعيل المعروض.";
         if (isRequestFailure(cause)) recoveryDetail = cause.message;
-        setError("تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. " + recoveryDetail);
+        setError("تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة المعتمدة قبل أي محاولة أخرى. " + recoveryDetail);
       } else {
         setError("تعذر تأكيد نتيجة الطلب أو إعادة قراءة ملف الشريك. حدّثه قبل أي محاولة أخرى.");
       }
@@ -252,16 +252,16 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
 
     {detail && activeTab === "profile" ? <div className="partner-profile-grid">
       <section className="partner-detail-section" aria-labelledby="partner-identity-title">
-        <div className="partner-detail-section-heading"><div><p className="eyebrow">Identity · DSH</p><h2 id="partner-identity-title">الحساب والانضمام</h2></div><button type="button" className="button button-secondary" onClick={() => void loadDetail()} disabled={loading || busy}>إعادة القراءة</button></div>
+        <div className="partner-detail-section-heading"><div><p className="eyebrow">بيانات الحساب والانضمام</p><h2 id="partner-identity-title">الحساب والانضمام</h2></div><button type="button" className="button button-secondary" onClick={() => void loadDetail()} disabled={loading || busy}>إعادة القراءة</button></div>
         <dl className="partner-detail-facts">
           <div><dt>الهاتف</dt><dd><bdi dir="ltr">{detail.partner.phoneE164}</bdi></dd></div>
           <div><dt>حالة الهوية</dt><dd>{detail.partner.securityEnabled ? "نشطة" : "موقوفة"}</dd></div>
           <div><dt>حالة الدور</dt><dd>{roleStatusLabel}</dd></div>
-          <div><dt>طلب الانضمام</dt><dd>{detail.joiningCase ? <><Link href={`/partners/${encodeURIComponent(detail.joiningCase.id)}`}>{joiningCaseStateLabel(detail.joiningCase.state)}</Link> · {detail.joiningCase.businessName}</> : "لا توجد حالة DSH مرتبطة"}</dd></div>
+          <div><dt>طلب الانضمام</dt><dd>{detail.joiningCase ? <><Link href={`/partners/${encodeURIComponent(detail.joiningCase.id)}`}>{joiningCaseStateLabel(detail.joiningCase.state)}</Link> · {detail.joiningCase.businessName}</> : "لا توجد حالة النظام مرتبطة"}</dd></div>
         </dl>
       </section>
       <section className="partner-detail-section partner-status-action" aria-labelledby="partner-status-action-title">
-        <div><p className="eyebrow">إجراء موثق</p><h2 id="partner-status-action-title">{detail.partner.enabled ? "إيقاف دور الشريك" : "تفعيل دور الشريك"}</h2><p className="muted">يتطلب السبب ويُحفظ عبر Identity مع نسخة الدور الحالية.</p></div>
+        <div><p className="eyebrow">إجراء موثق</p><h2 id="partner-status-action-title">{detail.partner.enabled ? "إيقاف دور الشريك" : "تفعيل دور الشريك"}</h2><p className="muted">يتطلب السبب ويُحفظ عبر الحسابات مع نسخة الدور الحالية.</p></div>
         <label className="field-label" htmlFor="partner-status-reason">سبب الإجراء<input id="partner-status-reason" value={reason} minLength={5} maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder="اكتب سببًا واضحًا للتغيير" disabled={!(canChangeStatus || canReenroll) || busy} /></label>
         <button type="button" className={statusActionClass} disabled={!canChangeStatus || busy || reason.trim().length < 5} onClick={() => void changeStatus()}>{statusActionLabel}</button>
         {canReenroll ? <button type="button" className="button button-secondary" disabled={busy || Array.from(reason.trim()).length < 5} onClick={() => void reenroll()}>{busy ? "جارٍ التحقق وإجازة التسجيل…" : "إجازة إعادة التسجيل"}</button> : null}
@@ -271,12 +271,12 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
     </div> : null}
 
     {detail && activeTab === "stores" ? <section className="partner-detail-section" aria-labelledby="partner-stores-title">
-      <div className="partner-detail-section-heading"><div><p className="eyebrow">العلاقة الكانونية · DSH</p><h2 id="partner-stores-title">متاجر الشريك</h2></div><button type="button" className="button button-secondary" disabled={loadingStores} onClick={() => void loadStores(storesPageStack.length ? new URLSearchParams(window.location.search).get("cursor") ?? "" : "", storesPageStack)}>{loadingStores ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
+      <div className="partner-detail-section-heading"><div><p className="eyebrow">العلاقة المعتمدة · النظام</p><h2 id="partner-stores-title">متاجر الشريك</h2></div><button type="button" className="button button-secondary" disabled={loadingStores} onClick={() => void loadStores(storesPageStack.length ? new URLSearchParams(window.location.search).get("cursor") ?? "" : "", storesPageStack)}>{loadingStores ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
       {storesError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت قراءة المتاجر</strong><p>{storesError}</p><button type="button" className="button button-secondary" onClick={() => void loadStores(new URLSearchParams(window.location.search).get("cursor") ?? "", storesPageStack)} disabled={loadingStores}>إعادة المحاولة</button></div> : null}
-      {loadingStores && stores.length === 0 ? <div className="collection-state" role="status"><strong>جارٍ قراءة المتاجر من DSH</strong></div> : null}
-      {!loadingStores && !storesError && stores.length === 0 ? <div className="collection-state"><strong>لا توجد متاجر مرتبطة بهذا الشريك</strong><p>هذه نتيجة القراءة الحالية من DSH.</p></div> : null}
+      {loadingStores && stores.length === 0 ? <div className="collection-state" role="status"><strong>جارٍ قراءة المتاجر </strong></div> : null}
+      {!loadingStores && !storesError && stores.length === 0 ? <div className="collection-state"><strong>لا توجد متاجر مرتبطة بهذا الشريك</strong><p>هذه نتيجة القراءة الحالية .</p></div> : null}
       {stores.length > 0 ? <>
-        <div className="partner-stores-table-wrap"><table className="operations-table partner-detail-stores-table"><caption className="visually-hidden">صفحة متاجر الشريك</caption><thead><tr><th scope="col">المتجر</th><th scope="col">المدينة</th><th scope="col">الفئة</th><th scope="col">النشر</th><th scope="col">التنفيذ</th></tr></thead><tbody>{stores.map((store) => <tr key={store.id}><th scope="row"><Link href={`/partners/stores/${encodeURIComponent(store.id)}`}>{store.name}</Link></th><td><bdi dir="ltr">{store.serviceCityId || "غير محددة"}</bdi></td><td><bdi dir="ltr">{store.primaryVerticalId || "غير محددة"}</bdi></td><td>{publicationStateLabel(store.publicationState)}</td><td>{store.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "غير محددة"}</td></tr>)}</tbody></table></div>
+        <div className="partner-stores-table-wrap"><table className="operations-table partner-detail-stores-table"><caption className="visually-hidden">صفحة متاجر الشريك</caption><thead><tr><th scope="col">المتجر</th><th scope="col">المدينة</th><th scope="col">الفئة</th><th scope="col">النشر</th><th scope="col">التنفيذ</th></tr></thead><tbody>{stores.map((store) => <tr key={store.id}><th scope="row"><Link href={`/partners/stores/${encodeURIComponent(store.id)}`}>{store.name}</Link></th><td><bdi dir="ltr">{store.serviceCityName || "غير محددة"}</bdi></td><td><bdi dir="ltr">{store.primaryVerticalName || "غير محددة"}</bdi></td><td>{publicationStateLabel(store.publicationState)}</td><td>{store.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "غير محددة"}</td></tr>)}</tbody></table></div>
         <nav className="partner-registry-pagination" aria-label="صفحات متاجر الشريك"><button type="button" className="button button-secondary" disabled={loadingStores || storesPageStack.length === 0} onClick={() => navigateStorePage(storesPageStack.at(-1) ?? "", storesPageStack.slice(0, -1))}>السابق</button><span>{storesPageStack.length + 1}</span><button type="button" className="button button-secondary" disabled={loadingStores || !storesCursor} onClick={() => navigateStorePage(storesCursor, [...storesPageStack, new URLSearchParams(window.location.search).get("cursor") ?? ""])}>التالي</button></nav>
       </> : null}
     </section> : null}

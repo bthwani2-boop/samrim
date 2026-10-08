@@ -213,7 +213,7 @@ export function CaptainDeliveries() {
     } catch (cause) {
       console.error("DSH Captain completion failed", cause);
       setCompletionRejected(captainCompletionHttpRejected(cause));
-      setError(captainCompletionHttpRejected(cause) ? "رفض الخادم المحاولة ولم نعدّل بياناتها. أعد إرسالها بالمفتاح نفسه أو تحقق من المهمة لفتح تعديل آمن." : "تعذر تأكيد النتيجة. بقيت المحاولة ومفتاحها محفوظين؛ أعد إرسالها بالمفتاح نفسه.");
+      setError(captainCompletionHttpRejected(cause) ? "لم تُحدّث المهمة. تحقق منها قبل إعادة المحاولة." : "تعذر تأكيد النتيجة. بقيت المحاولة محفوظة؛ أعد المحاولة من الزر نفسه.");
     } finally {
       setBusy("");
     }
@@ -235,7 +235,7 @@ export function CaptainDeliveries() {
     } catch (cause) {
       console.error("DSH Captain completion recovery failed", cause);
       setCompletionRejected(captainCompletionHttpRejected(cause));
-      setError(captainCompletionHttpRejected(cause) ? "رفض الخادم المحاولة ولم نعدّل بياناتها. تحقق من المهمة قبل تصحيحها." : "لم نتأكد من النتيجة. بقيت المحاولة محفوظة؛ أعد إرسالها بالمفتاح نفسه.");
+      setError(captainCompletionHttpRejected(cause) ? "لم تُحدّث المهمة. تحقق منها قبل إعادة المحاولة." : "لم نتأكد من النتيجة. بقيت المحاولة محفوظة؛ أعد المحاولة من الزر نفسه.");
     } finally {
       setBusy("");
     }
@@ -292,7 +292,7 @@ export function CaptainDeliveries() {
     <View style={styles.container} accessibilityLabel="التوصيلات الحالية">
       <Text style={styles.title}>التوصيلات الحالية</Text>
       <Text style={styles.muted}>رتّب عملك من الاستلام إلى التسليم، وتعرّف على العائق قبل بدء الإجراء.</Text>
-      {pendingCompletion ? <View style={styles.warningBox}><Text style={styles.warning}>توجد محاولة تسليم محفوظة للمهمة. أعد إرسال الحقائق والمفتاح نفسيهما حتى نثبت النتيجة.</Text><BthwaniButton busy={busy === pendingCompletion.assignmentID} disabled={Boolean(busy) || !completionStorageReady} label="التحقق من نتيجة التسليم" onPress={() => void retryPendingCompletion()} />{completionRejected ? <BthwaniButton busy={Boolean(busy)} disabled={Boolean(busy)} label="تحقق من المهمة لفتح تصحيح آمن" onPress={() => void replaceRejectedCompletionAfterReadback()} variant="secondary" /> : null}</View> : null}
+      {pendingCompletion ? <View style={styles.warningBox}><Text style={styles.warning}>توجد محاولة تسليم محفوظة للمهمة؛ تحقق من نتيجتها قبل إنشاء محاولة جديدة.</Text><BthwaniButton busy={busy === pendingCompletion.assignmentID} disabled={Boolean(busy) || !completionStorageReady} label="التحقق من نتيجة التسليم" onPress={() => void retryPendingCompletion()} />{completionRejected ? <BthwaniButton busy={Boolean(busy)} disabled={Boolean(busy)} label="تحقق من المهمة لفتح تصحيح آمن" onPress={() => void replaceRejectedCompletionAfterReadback()} variant="secondary" /> : null}</View> : null}
       {completionStorageIssue ? <Text accessibilityRole="alert" style={styles.error}>تعذر قراءة المحاولة الآمنة السابقة. لا تؤكد تسليمًا جديدًا؛ أعد قراءة الحالة أو اطلب مراجعة المشغل.</Text> : null}
       {!completionStorageReady && !completionStorageIssue && !loading ? <Text accessibilityRole="alert" style={styles.warning}>تعذر التحقق من المحاولات المحفوظة؛ لن نرسل تأكيدًا حتى تنجح إعادة القراءة.</Text> : null}
       {cashLiability ? <View style={styles.summaryCard} accessibilityLabel="العهدة النقدية">

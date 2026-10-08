@@ -22,7 +22,7 @@ export type MobileStoreCatalogImportWorkspaceProps = Readonly<{
 function classificationLabel(item: CatalogImportItem): string {
   switch (item.classification) {
     case "READY": return "جاهز للتطبيق";
-    case "NEEDS_REVIEW": return "معرّف غير معروف · للمراجعة";
+    case "NEEDS_REVIEW": return "باركود غير معروف · للمراجعة";
     case "DUPLICATE_INPUT": return "مكرر في الملف";
     case "DUPLICATE_EXISTING": return "مطابق لسجل موجود";
     case "CONFLICT_EXISTING": return "تعارض يحتاج مراجعة";
@@ -36,6 +36,12 @@ function classificationLabel(item: CatalogImportItem): string {
 
 function isCommitAllowed(result: StoreCatalogImportResult): boolean {
   return result.run.state === "previewed" && result.run.acceptedCount > 0;
+}
+
+function importStateLabel(state: CatalogImportRunResponse["run"]["state"]): string {
+  if (state === "previewed") return "جاهزة للمراجعة";
+  if (state === "committed") return "تم اعتمادها";
+  return "تحتاج إلى تعديل";
 }
 
 export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToken, pickFile, createUUID, onCommitted }: MobileStoreCatalogImportWorkspaceProps) {
@@ -92,7 +98,7 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
       setResult(previewResult);
       setNotice("أُنشئت المعاينة من الملف. الصفوف المجهولة محفوظة للمراجعة ولن تنشئ منتجات تلقائيًا.");
     } catch {
-      setError("تعذر إنشاء المعاينة. أعد المحاولة؛ سيعاد استخدام مفتاح العملية نفسه.");
+      setError("تعذر إنشاء المعاينة. أعد المحاولة من الزر نفسه.");
     } finally {
       setBusy("");
     }
@@ -104,7 +110,7 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
     try {
       setResult(await readCurrentRun(runID));
     } catch {
-      setError("تعذرت إعادة قراءة حالة الاستيراد من DSH.");
+      setError("تعذرت إعادة قراءة حالة الاستيراد.");
     } finally {
       setBusy("");
     }
@@ -130,9 +136,9 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
       setResult(committed);
       if (committed.run.state === "committed") {
         await onCommitted?.();
-        setNotice("اعتمد DSH الصفوف الصالحة وأعاد نتيجة الكتابة. الصفوف التي تحتاج مراجعة باقية دون تغيير.");
+        setNotice("تم اعتماد الصفوف الصالحة. بقيت الصفوف التي تحتاج إلى مراجعة دون تغيير.");
       } else {
-        setNotice("لم يعتمد DSH هذه المعاينة. أعد قراءة الحالة ثم أنشئ معاينة جديدة قبل أي محاولة أخرى.");
+        setNotice("لم تُعتمد هذه المعاينة. أعد قراءتها ثم أنشئ معاينة جديدة.");
       }
     } catch {
       try {
@@ -150,20 +156,20 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
 
   return <View style={styles.card}>
     <Text style={styles.title}>استيراد أسعار المتجر</Text>
-    <Text style={styles.muted}>اختر CSV أو XLSX يحتوي باركودًا وسعرًا صحيحًا بالريال اليمني. الحد 5000 صف و20 ميغابايت. تُراجع المعاينة قبل أي كتابة.</Text>
-    <BthwaniButton busy={busy === "pick"} disabled={Boolean(busy)} label={file ? "اختيار ملف آخر" : "اختيار ملف CSV أو XLSX"} onPress={() => void chooseFile()} variant="secondary" />
+    <Text style={styles.muted}>اختر ملفًا جدوليًا يحتوي باركودًا وسعرًا بالريال اليمني. الحد 5000 صف و20 ميغابايت. تُراجع المعاينة قبل الحفظ.</Text>
+    <BthwaniButton busy={busy === "pick"} disabled={Boolean(busy)} label={file ? "اختيار ملف آخر" : "اختيار ملف الأسعار"} onPress={() => void chooseFile()} variant="secondary" />
     {file ? <Text style={styles.text}>{file.name}</Text> : null}
     {file && !result ? <BthwaniButton busy={busy === "preview"} disabled={Boolean(busy) || !attempt} label="معاينة الأسعار" onPress={() => void preview()} /> : null}
     {result ? <View style={styles.status}>
-      <Text style={styles.text}>حالة المعاينة: {result.run.state} · جاهز: {result.run.acceptedCount} · يحتاج تصنيفًا: {result.run.conflictCount}</Text>
-      <Text style={styles.muted}>المعرّفات غير المعروفة محفوظة للمراجعة فقط؛ لا يُنشأ منها منتج.</Text>
+      <Text style={styles.text}>حالة المعاينة: {importStateLabel(result.run.state)} · جاهز: {result.run.acceptedCount} · يحتاج مراجعة: {result.run.conflictCount}</Text>
+      <Text style={styles.muted}>تبقى الباركودات غير المعروفة للمراجعة؛ لا تُنشأ منها منتجات تلقائيًا.</Text>
       {result.items.map((item) => <View key={`${item.rowNumber}-${item.stableKey}`} style={styles.item}>
         <Text style={styles.text}>السطر {item.rowNumber} · {classificationLabel(item)}</Text>
-        {item.errorMessage ? <Text style={styles.muted}>{item.errorMessage}</Text> : null}
+        {item.errorMessage ? <Text style={styles.muted}>راجع بيانات هذا الصف.</Text> : null}
       </View>)}
       {isCommitAllowed(result) ? <BthwaniButton busy={busy === "commit"} disabled={Boolean(busy)} label="اعتماد الصفوف الصالحة" onPress={() => void commit()} /> : null}
       {result.run.state === "rejected" ? <>
-        <Text style={styles.muted}>تعارضت هذه المعاينة مع إصدارات حالية. أعد معاينة الملف نفسه قبل اعتماد الصفوف مجددًا.</Text>
+        <Text style={styles.muted}>تغيرت بعض البيانات منذ إعداد المعاينة. راجع الملف وأعد معاينته قبل الاعتماد.</Text>
         <BthwaniButton busy={busy === "preview"} disabled={Boolean(busy)} label="إعادة معاينة الأسعار" onPress={() => void preview()} />
       </> : null}
       {result.run.state === "committed" ? <BthwaniButton busy={busy === "read"} disabled={Boolean(busy)} label="إعادة قراءة النتيجة" onPress={() => void readBack(result.run.id)} variant="secondary" /> : null}

@@ -76,7 +76,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
       }
       setPendingAttempt(attempt);
       setBody(attempt.body);
-      setError("لم نتأكد من نتيجة الإرسال. بقيت الرسالة محفوظة؛ أعد المحاولة بالمفتاح نفسه لتفادي تكرارها.");
+      setError("لم نتأكد من نتيجة الإرسال. بقيت الرسالة محفوظة؛ أعد المحاولة من الزر نفسه لتجنب تكرارها.");
       return;
     }
 
@@ -90,7 +90,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     setPendingAttempt(storageCleared ? null : attempt);
     setBody(storageCleared ? "" : attempt.body);
     const refreshed = await load();
-    if (!storageCleared) setError("تأكد إرسال الرسالة، وبقي سجل الاستعادة المحلي. إعادة المحاولة بالمفتاح نفسه آمنة.");
+    if (!storageCleared) setError("تأكد إرسال الرسالة، وبقيت المحاولة محفوظة. أعد المحاولة من الزر نفسه لتجنب تكرارها.");
     else if (!refreshed) setError("تأكد إرسال الرسالة، لكن تعذر تحديث سجل المحادثة.");
   }
 
@@ -150,7 +150,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     {state.kind === "ready" ? <>
       {!state.value.messages.length ? <Text style={styles.muted}>لا توجد رسائل بعد.</Text> : <View style={styles.messages}>{state.value.messages.map((message) => <View key={message.id} style={[styles.message, message.mine ? styles.mine : null]}><Text style={styles.sender}>{message.mine ? "أنت" : senderLabel(message.senderRole)}</Text><Text style={styles.body}>{message.body}</Text><Text style={styles.time}>{new Date(message.createdAt).toLocaleString("ar-YE")}</Text></View>)}</View>}
       {state.value.unreadCount > 0 ? <BthwaniButton busy={busy} disabled={busy} label="تحديد الرسائل كمقروءة" onPress={() => void markRead()} variant="secondary" /> : null}
-      {pendingAttempt ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>المحاولة محفوظة لهذا الحساب والطلب. ستُعاد بالمفتاح نفسه حتى نتأكد من نتيجتها.</Text><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /></View> : state.value.canSend ? <><TextInput accessibilityLabel="رسالة المحادثة" editable={!busy} maxLength={2000} multiline onChangeText={setBody} placeholder="اكتب رسالة تشغيلية قصيرة" placeholderTextColor={theme.colorMuted} style={styles.input} textAlign="right" value={body} /><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady || !body.trim()} label="إرسال الرسالة" onPress={() => void send()} /></> : <Text style={styles.muted}>أُغلقت المحادثة للكتابة، ويمكنك قراءة سجلها فقط.</Text>}
+      {pendingAttempt ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>المحاولة محفوظة لهذا الحساب والطلب. سنتحقق من نتيجتها قبل إعادة الإرسال.</Text><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /></View> : state.value.canSend ? <><TextInput accessibilityLabel="رسالة المحادثة" editable={!busy} maxLength={2000} multiline onChangeText={setBody} placeholder="اكتب رسالة تشغيلية قصيرة" placeholderTextColor={theme.colorMuted} style={styles.input} textAlign="right" value={body} /><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady || !body.trim()} label="إرسال الرسالة" onPress={() => void send()} /></> : <Text style={styles.muted}>أُغلقت المحادثة للكتابة، ويمكنك قراءة سجلها فقط.</Text>}
     </> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
   </BthwaniSurface>;

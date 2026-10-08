@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, isDshClientError, listOperatorCashCustody } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, listOperatorCashCustody, readOperatorDestination } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 function errorResponse(code: string, message: string, status: number) {
@@ -26,7 +26,16 @@ export async function GET(request: Request) {
 
   try {
     const result = await listOperatorCashCustody(search, sort as typeof allowedSorts[number], cursor, limit, { operatorActorId: identity.subject });
-    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+    const names = new Map(await Promise.all([...new Set(result.items.map((item) => item.captainActorId))].map(async (actorId) => {
+      try {
+        const { destination } = await readOperatorDestination("captain", actorId, { operatorActorId: identity.subject });
+        return [actorId, destination?.beneficiaryName?.trim() || ""] as const;
+      } catch (error) {
+        if (isDshClientError(error)) return [actorId, ""] as const;
+        throw error;
+      }
+    })));
+    return NextResponse.json({ ...result, items: result.items.map((item) => ({ ...item, captainName: names.get(item.captainActorId) || "" })) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "cash custody read failed", 500);
     const payload = dshErrorPayload(error);

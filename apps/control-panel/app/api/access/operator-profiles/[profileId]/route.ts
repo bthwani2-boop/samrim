@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
 import { NextResponse } from "next/server";
 
 import { approveOperatorProfile, grantOperatorProfile, identityErrorPayload, identityHttpStatus, issueOperatorProfileInvitation, readOperatorSession, updateOperatorProfile } from "../../../../../src/server/identity/identity-bff";
@@ -22,9 +23,9 @@ export async function POST(request: Request, context: Readonly<{ params: Promise
   try {
     if (action === "update-profile") {
       const fullNameAr = typeof body?.fullNameAr === "string" ? body.fullNameAr.trim() : "";
-      const phoneE164 = typeof body?.phoneE164 === "string" ? body.phoneE164.replace(/\s+/g, "") : "";
+      const phoneE164 = typeof body?.phoneE164 === "string" ? normalizeYemenPhoneE164(body.phoneE164) : "";
       const expectedVersion = typeof body?.expectedVersion === "number" ? body.expectedVersion : NaN;
-      if (Object.keys(body ?? {}).some((key) => !["action", "fullNameAr", "phoneE164", "expectedVersion"].includes(key)) || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(phoneE164) || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) return denied(400, "INVALID_INPUT", "a valid profile, E.164 phone and current profile version are required");
+      if (Object.keys(body ?? {}).some((key) => !["action", "fullNameAr", "phoneE164", "expectedVersion"].includes(key)) || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(phoneE164) || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) return denied(400, "INVALID_INPUT", "a valid profile, Yemeni local or international phone and current profile version are required");
       const result = await updateOperatorProfile(profileId, { fullNameAr, phoneE164, expectedVersion }, contextValues);
       return NextResponse.json(result, { headers: noStore });
     }

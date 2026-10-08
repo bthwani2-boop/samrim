@@ -95,8 +95,8 @@ export function DeliveryFeePolicyWorkspace() {
       const body = await response.json() as { error?: { message?: string } };
       if (!response.ok) throw new Error(body.error?.message || "تعذر تفعيل سياسة رسوم التوصيل.");
       const confirmed = await read(serviceCityId);
-      if (!confirmed) throw new Error("تم إرسال التغيير، لكن تعذرت مطابقة القراءة الكانونية بعد الحفظ. حدّث القراءة قبل أي تعديل آخر.");
-      setMessage("تم تفعيل السياسة والتحقق من قراءتها من WLT.");
+      if (!confirmed) throw new Error("تم إرسال التغيير، لكن تعذرت مطابقة القراءة المعتمدة بعد الحفظ. حدّث القراءة قبل أي تعديل آخر.");
+      setMessage("تم تفعيل السياسة والتحقق من قراءتها من السجل المالي.");
       setReason("");
     } catch (value) {
       setError(value instanceof Error ? value.message : "تعذر تفعيل سياسة رسوم التوصيل.");
@@ -106,14 +106,14 @@ export function DeliveryFeePolicyWorkspace() {
   };
 
   return <section className="access-card" aria-labelledby="delivery-fee-policy-title">
-    <div className="finance-toolbar"><div><p className="eyebrow">مركز السياسات · WLT</p><h2 id="delivery-fee-policy-title">رسوم التوصيل</h2></div><button className="button button-secondary" type="button" onClick={() => void read(serviceCityId)} disabled={busy || readState === "loading"}>إعادة القراءة</button></div>
+    <div className="finance-toolbar"><div><p className="eyebrow">مركز السياسات · السجل المالي</p><h2 id="delivery-fee-policy-title">رسوم التوصيل</h2></div><button className="button button-secondary" type="button" onClick={() => void read(serviceCityId)} disabled={busy || readState === "loading"}>إعادة القراءة</button></div>
     <p className="muted">تُحسب الرسوم خادميًا من المسافة، ومدينة الخدمة كمنطقة، ووحدات السلة. كل تعديل يصدر نسخة جديدة، والتقريب ثابت عند 50 ريال.</p>
     <label className="field-label" htmlFor="delivery-fee-city">النطاق / مدينة الخدمة<select id="delivery-fee-city" value={serviceCityId} onChange={(event) => { const next = event.target.value; setServiceCityId(next); void read(next); }} disabled={busy}><option value="">السياسة العامة</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}{city.active ? "" : " · غير نشطة"}</option>)}</select></label>
-    {readState === "loading" ? <p role="status">جارٍ قراءة WLT لهذا النطاق…</p> : null}
+    {readState === "loading" ? <p role="status">جارٍ قراءة السجل المالي لهذا النطاق…</p> : null}
     {readState === "missing" ? <p className="managed-status managed-status-warning" role="status">لا توجد سياسة نشطة لهذا النطاق. املأ القيم صراحةً لإنشاء أول إصدار.</p> : null}
     {readState === "error" ? <p className="validation-error" role="alert">{error || "تعذرت القراءة؛ الحفظ معطل حتى نجاح القراءة."}</p> : null}
     {message ? <p className="success" role="status">{message}</p> : null}
-    {policy ? <p className="muted">الحالة: {financialPolicyStateLabel(policy.state)} · الإصدار: {policy.version} · التقريب: {policy.roundingUnitMinor} ريال</p> : null}
+    {policy ? <p className="muted">الحالة: {financialPolicyStateLabel(policy.state)} · التقريب: {policy.roundingUnitMinor} ريال</p> : null}
     {(readState === "ready" || readState === "missing") ? <>
       <div className="form-grid">
         <label className="field-label" htmlFor="delivery-base">الرسوم الأساسية (ريال)<input id="delivery-base" type="number" min="0" value={form.baseFeeMinor} onChange={(event) => update("baseFeeMinor", event.target.value)} disabled={busy || !canEdit} /></label>

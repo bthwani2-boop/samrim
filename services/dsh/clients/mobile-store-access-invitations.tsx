@@ -95,7 +95,7 @@ export function StoreAccessInvitationInbox({ baseURL, cryptoRandomUUID, getAcces
       {!loading && items.length === 0 && !error ? <Text style={styles.muted}>لا توجد دعوات وصول موجهة إلى حسابك.</Text> : null}
       {items.map((grant) => <View key={grant.id} style={styles.invitation}>
         <Text style={styles.title}>{grant.storeName}</Text>
-        <Text style={styles.muted}>الصلاحيات المطلوبة: {grant.permissions.map((permission) => permissionLabels[permission] ?? permission).join("، ")}</Text>
+        <Text style={styles.muted}>الصلاحيات المطلوبة: {grant.permissions.map((permission) => permissionLabels[permission] ?? "صلاحية إضافية").join("، ")}</Text>
         <Text style={styles.status}>{grantStateLabel(grant.state)}</Text>
         {grant.state === "pending_acceptance" ? <View style={styles.actions}>
           <View style={styles.action}><BthwaniButton busy={busyGrantID === grant.id} disabled={Boolean(busyGrantID)} label="قبول الدعوة" onPress={() => void decide(grant, "accept")} /></View>

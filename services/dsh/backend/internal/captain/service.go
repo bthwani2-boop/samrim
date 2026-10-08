@@ -5,12 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
+	phoneformat "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/phone"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -30,8 +30,6 @@ var (
 	ErrLocationIdempotencyConflict = errors.New("captain location idempotency key conflicts with a previous request")
 )
 
-var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
-
 type Service struct {
 	identity  *identityintegration.Client
 	db        *sql.DB
@@ -48,9 +46,9 @@ func New(identity *identityintegration.Client, db *sql.DB, payment *wlt.Client, 
 
 func (s *Service) Admit(ctx context.Context, fullNameAr, phone, walletProviderKey, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, bool, error) {
 	fullNameAr = strings.TrimSpace(fullNameAr)
-	phone = strings.TrimSpace(phone)
+	phone = phoneformat.NormalizeYemenE164(phone)
 	walletProviderKey, providerKeyValid := postgres.NormalizeWalletProviderKey(walletProviderKey)
-	if len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || !phoneE164Pattern.MatchString(phone) || !providerKeyValid || !validMutation(idempotencyKey, correlationID, actingActorID) {
+	if len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || !phoneformat.IsE164(phone) || !providerKeyValid || !validMutation(idempotencyKey, correlationID, actingActorID) {
 		return postgres.CaptainAdmission{}, false, ErrInvalidInput
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {

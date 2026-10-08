@@ -352,8 +352,8 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       </div>
       <button type="button" className="button button-primary catalog-taxonomy-main-action" disabled={!canEdit || busy} onClick={() => { if (verticalReady) openCreate(); else if (selectedVertical || verticals.length === 0) { const settings = verticalSettingsRef.current; settings?.querySelector("summary")?.click(); settings?.scrollIntoView({ behavior: "smooth", block: "center" }); } else onVerticalChange(verticals.find((vertical) => vertical.active)?.id ?? ""); }}>{mainActionLabel}</button>
     </div>
-    <label className="field-label catalog-taxonomy-vertical-label" htmlFor="catalog-taxonomy-vertical">المجال الرئيسي
-      <select id="catalog-taxonomy-vertical" value={verticalId} disabled={loading || busy || verticals.length === 0} onChange={(event) => onVerticalChange(event.target.value)}>
+    <label className="field-label catalog-taxonomy-vertical-label" htmlFor="catalog-taxonomy-vertical">النشاط الرئيسي
+ <select id="catalog-taxonomy-vertical" value={verticalId} disabled={loading || busy || verticals.length === 0} onChange={(event) => onVerticalChange(event.target.value)}>
         {verticals.length === 0 ? <option value="">لا توجد مجالات تستخدم الفئات المشتركة</option> : null}
         {verticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr} · {vertical.nameEn}</option>)}
       </select>
@@ -373,7 +373,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       </form>
       <label className="field-label" htmlFor="catalog-category-parent">تتبع الفئة<select id="catalog-category-parent" disabled={busy || !canEdit || !verticalId} value={parentCategoryId} onChange={(event) => setParentCategoryId(event.target.value)}><option value="">فئة رئيسية</option>{parentOptions.filter((category) => category.id !== editingCategory?.id).map((category) => <option value={category.id} key={category.id}>{category.pathAr}{category.active ? "" : " · متوقفة"}</option>)}</select></label>
       {parentNextCursor ? <button type="button" className="button button-quiet" disabled={parentLoading} onClick={() => void searchParents(parentNextCursor, true)}>تحميل المزيد من الفئات الأعلى</button> : null}
-      <p className="muted">يتحقق DSH عند الحفظ من المجال ومنع وضع الفئة تحت نفسها أو أحد فروعها.</p>
+      <p className="muted">يتحقق النظام عند الحفظ من المجال ومنع وضع الفئة تحت نفسها أو أحد فروعها.</p>
       <label className="field-label" htmlFor="catalog-category-name-ar">الاسم بالعربية<input id="catalog-category-name-ar" disabled={busy || !canEdit} value={nameAr} onChange={(event) => setNameAr(event.target.value)} maxLength={160} autoComplete="off" /></label>
       <label className="field-label" htmlFor="catalog-category-name-en">الاسم بالإنجليزية<input id="catalog-category-name-en" disabled={busy || !canEdit} value={nameEn} onChange={(event) => setNameEn(event.target.value)} maxLength={160} dir="auto" autoComplete="off" /></label>
       {editingCategory ? <label className="catalog-category-active-toggle"><input id="catalog-category-active" type="checkbox" disabled={busy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> إظهار الفئة للمنتجات</label> : null}
@@ -393,7 +393,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       <div className="catalog-taxonomy-records">
         <div className="catalog-taxonomy-record-heading" aria-hidden="true"><span>الفئة ومسارها</span><span>الموقع</span><span>الحالة</span><span>الإجراء</span></div>
         {loading && categories.length === 0 ? <p className="catalog-taxonomy-feedback" role="status">جارٍ تحميل صفحة الفئات…</p> : null}
-        {!loading && categories.length === 0 ? <div className="catalog-taxonomy-empty catalog-taxonomy-empty-inset"><strong>{categoryQuery ? "لا توجد فئات مطابقة" : "لا توجد فئات في هذا المجال"}</strong><p>{categoryQuery ? "غيّر نص البحث أو الحالة." : "أنشئ الفئة الرئيسية الأولى من الزر أعلى السجل، ثم أضف الفروع عند الحاجة."}</p></div> : null}
+        {!loading && categories.length === 0 ? <div className="catalog-taxonomy-empty catalog-taxonomy-empty-inset"><strong>{categoryQuery ? "لا توجد فئات مطابقة" : "لا توجد فئات في هذا المجال"}</strong><p>{categoryQuery ? "غيّر نص البحث أو الحالة." : "أنشئ النشاط الرئيسي الأولى من الزر أعلى السجل، ثم أضف الفروع عند الحاجة."}</p></div> : null}
         {categories.length > 0 ? <>
           <div className="catalog-taxonomy-vertical-root"><span>المجال التجاري الرئيسي</span><strong>{selectedVertical?.nameAr ?? "المجال المحدد"}</strong></div>
           {rootCategories.length ? <ul aria-label={`شجرة فئات ${selectedVertical?.nameAr ?? "المجال المحدد"}`} className="catalog-taxonomy-tree">

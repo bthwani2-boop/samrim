@@ -55,7 +55,63 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		scenario.verifyFavorites()
 		scenario.verifyProposalPagination()
 		scenario.verifyAdmissionPagination()
+		scenario.verifyFieldCityAssignments()
 	})
+}
+
+func (s *catalogRefoundationScenario) verifyFieldCityAssignments() {
+	s.t.Helper()
+	createCity := func(name, key string, active bool) postgres.ServiceCityRecord {
+		result, err := postgres.CreateServiceCity(s.ctx, s.db, name, active, key, postgres.HashServiceCityCreateRequest(name, active), testOperatorActorID, key+"-correlation")
+		if err != nil {
+			s.t.Fatalf("create Field assignment city %q: %v", name, err)
+		}
+		return result.City
+	}
+	selectedCity := createCity("مدينة تعيين مختارة", "field-city-selected", true)
+	inactiveCity := createCity("مدينة تعيين غير نشطة", "field-city-inactive", false)
+	createCandidate := func(idem, phone string, all bool, cityIDs []string) (postgres.FieldAdmission, error) {
+		returnAdmission, _, _, err := postgres.CreateFieldAdmissionCandidate(s.ctx, s.db, postgres.FieldAdmissionCandidateInput{
+			FullNameAr: "ميداني اختبار", Phone: phone, WalletProviderKey: "wallet-test", AllServiceCities: all, ServiceCityIDs: cityIDs,
+			IdempotencyKey: idem, RequestHash: postgres.HashFieldAdmissionRequestScope("ميداني اختبار", phone, all, cityIDs, "wallet-test"), ActingActorID: testOperatorActorID, CorrelationID: idem + "-correlation",
+		})
+		return returnAdmission, err
+	}
+	all, err := createCandidate("field-city-all-create", "+967770020001", true, nil)
+	if err != nil || !all.AllServiceCities || len(all.ServiceCityIDs) != 0 || all.ServiceCityID == "" {
+		s.t.Fatalf("all-active Field assignment was not persisted: %+v err=%v", all, err)
+	}
+	selected, err := createCandidate("field-city-selected-create", "+967770020002", false, []string{selectedCity.ID})
+	if err != nil || selected.AllServiceCities || len(selected.ServiceCityIDs) != 1 || selected.ServiceCityIDs[0] != selectedCity.ID {
+		s.t.Fatalf("selected Field city assignment was not persisted: %+v err=%v", selected, err)
+	}
+	if _, err := createCandidate("field-city-inactive-create", "+967770020003", false, []string{inactiveCity.ID}); !errors.Is(err, postgres.ErrServiceCityInvalid) {
+		s.t.Fatalf("inactive Field assignment city error = %v", err)
+	}
+	if _, err := createCandidate("field-city-unknown-create", "+967770020004", false, []string{"unknown-city"}); !errors.Is(err, postgres.ErrServiceCityNotFound) {
+		s.t.Fatalf("unknown Field assignment city error = %v", err)
+	}
+	newCity := createCity("مدينة مضافة لاحقًا", "field-city-added-later", true)
+	allPage, err := postgres.ListFieldAdmissionsByCity(s.ctx, s.db, "ميداني اختبار", "all", "created_desc", newCity.ID, 10, "")
+	if err != nil || len(allPage.Admissions) != 1 || allPage.Admissions[0].ID != all.ID {
+		s.t.Fatalf("all-active assignment did not include a newly active city: %+v err=%v", allPage, err)
+	}
+	selectedPage, err := postgres.ListFieldAdmissionsByCity(s.ctx, s.db, "ميداني اختبار", "all", "created_desc", newCity.ID, 10, "")
+	if err != nil || len(selectedPage.Admissions) != 1 {
+		s.t.Fatalf("active city filter returned wrong fixture count: %+v err=%v", selectedPage, err)
+	}
+	profileHash := postgres.HashFieldAdmissionProfileScopeRequest(selected.ID, "ميداني اختبار محدث", "wallet-updated", false, []string{newCity.ID}, 1)
+	if _, _, err := postgres.UpdateFieldAdmissionProfile(s.ctx, s.db, selected.ID, "ميداني اختبار محدث", "wallet-updated", false, []string{newCity.ID}, 2, "field-city-stale-profile", profileHash, testOperatorActorID, "field-city-profile-correlation"); !errors.Is(err, postgres.ErrFieldVersionConflict) {
+		s.t.Fatalf("stale Field profile version error = %v", err)
+	}
+	updated, replayed, err := postgres.UpdateFieldAdmissionProfile(s.ctx, s.db, selected.ID, "ميداني اختبار محدث", "wallet-updated", false, []string{newCity.ID}, 1, "field-city-profile-update", profileHash, testOperatorActorID, "field-city-profile-correlation")
+	if err != nil || replayed || updated.WalletProviderKey != "wallet-updated" || len(updated.ServiceCityIDs) != 1 || updated.ServiceCityIDs[0] != newCity.ID {
+		s.t.Fatalf("Field profile assignment update failed: %+v replay=%v err=%v", updated, replayed, err)
+	}
+	replayedProfile, replayed, err := postgres.UpdateFieldAdmissionProfile(s.ctx, s.db, selected.ID, "ميداني اختبار محدث", "wallet-updated", false, []string{newCity.ID}, 1, "field-city-profile-update", profileHash, testOperatorActorID, "field-city-profile-correlation")
+	if err != nil || !replayed || replayedProfile.Version != updated.Version {
+		s.t.Fatalf("Field profile update replay failed: %+v replay=%v err=%v", replayedProfile, replayed, err)
+	}
 }
 
 func (s *catalogRefoundationScenario) verifyFreshSchema(records []postgres.MigrationRecord, migrationSQL []string) {
@@ -71,6 +127,8 @@ func (s *catalogRefoundationScenario) verifyFreshSchema(records []postgres.Migra
 		"095_wallet_provider_intent.sql",
 		"096_catalog_product_proposal_field_ownership.sql",
 		"097_store_catalog_import_scope.sql",
+		"102_joining_case_field_drafts.sql",
+		"103_field_city_assignments.sql",
 	)
 	if err := postgres.Migrate(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
 		s.t.Fatalf("apply fresh DSH migrations: %v", err)

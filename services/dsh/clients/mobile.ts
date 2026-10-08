@@ -1,3 +1,5 @@
+import type { CreateFieldJoiningCaseDraftRequest } from "./generated/dsh-types";
+import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
 import { dshOperationPaths } from "./generated/dsh-operations";
 import type { StoreAccessGrantActivationRequest, StoreAccessGrantPermissionsRequest } from "./generated/dsh-types";
 import type { StorePayoutRecipientListResponse, StorePayoutRecipientMutationResponse, StorePayoutRecipientRevertRequest, StorePayoutRecipientRevertResponse, StorePayoutRecipientSelectRequest } from "./generated/dsh-types";
@@ -690,9 +692,9 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (normalizedCartID) query.set("cartId", normalizedCartID);
       return userRequest<OrderListResponse>(accessToken, `${dshOperationPaths.listClientOrders.path}?${query.toString()}`, dshOperationPaths.listClientOrders.method);
     },
-    async listNotifications(accessToken: string, limit = 50): Promise<NotificationListResponse> {
+    async listNotifications(accessToken: string, limit = 50, cursor = ""): Promise<NotificationListResponse> {
       if (limit < 1 || limit > 100) throw new Error("DSH_NOTIFICATION_LIMIT_INVALID");
-      return userRequest<NotificationListResponse>(accessToken, `${dshOperationPaths.listNotifications.path}?${new URLSearchParams({ limit: String(limit) }).toString()}`, dshOperationPaths.listNotifications.method);
+      return userRequest<NotificationListResponse>(accessToken, `${dshOperationPaths.listNotifications.path}?${new URLSearchParams({ limit: String(limit), ...(cursor ? { cursor } : {}) }).toString()}`, dshOperationPaths.listNotifications.method);
     },
     async markNotificationRead(accessToken: string, notificationID: string): Promise<NotificationReadResponse> {
       const normalized = notificationID.trim();
@@ -1088,15 +1090,17 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.updateFieldInitialCatalogOffer.path.replace("{caseId}", encodeURIComponent(normalizedCase)).replace("{offerId}", encodeURIComponent(normalizedOffer));
       return userRequest<CatalogStoreOfferResponse>(accessToken, path, dshOperationPaths.updateFieldInitialCatalogOffer.method, input, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
     },
-    async createFieldJoiningCase(accessToken: string, input: CreateJoiningCaseRequest, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
-      const contactPhoneE164 = input.contactPhoneE164.trim();
-      const businessName = input.businessName.trim();
-      const firstStoreName = input.firstStoreName.trim();
-      const serviceCityId = input.serviceCityId.trim();
-      const firstStoreVerticalId = input.firstStoreVerticalId.trim();
-      const firstStoreCommercialTypeId = input.firstStoreCommercialTypeId.trim();
-      if (!/^\+[1-9]\d{7,14}$/.test(contactPhoneE164) || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || !serviceCityId || !firstStoreVerticalId || !firstStoreCommercialTypeId || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
-      return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.createFieldJoiningCase.path, dshOperationPaths.createFieldJoiningCase.method, { ...input, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId }, mutationHeaders(idempotencyKey, correlationID));
+    async createFieldJoiningCase(accessToken: string, input: CreateFieldJoiningCaseDraftRequest, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
+      const contactPhoneE164 = normalizeYemenPhoneE164(input.contactPhoneE164);
+      if (!/^\+[1-9]\d{7,14}$/.test(contactPhoneE164)) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
+      return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.createFieldJoiningCase.path, dshOperationPaths.createFieldJoiningCase.method, { ...input, contactPhoneE164 }, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async updateFieldJoiningCaseDraft(accessToken: string, caseID: string, input: CreateFieldJoiningCaseDraftRequest, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
+      const normalized = caseID.trim();
+      const contactPhoneE164 = normalizeYemenPhoneE164(input.contactPhoneE164);
+      if (!normalized || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || !/^\+[1-9]\d{7,14}$/.test(contactPhoneE164)) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
+      const path = dshOperationPaths.updateFieldJoiningCaseDraft.path.replace("{caseId}", encodeURIComponent(normalized));
+      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.updateFieldJoiningCaseDraft.method, { ...input, contactPhoneE164 }, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
     },
     async readOwnFieldJoiningCase(accessToken: string, caseID: string): Promise<JoiningCaseResponse> {
       const normalized = caseID.trim();
