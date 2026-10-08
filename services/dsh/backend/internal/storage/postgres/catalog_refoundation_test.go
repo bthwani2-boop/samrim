@@ -768,4 +768,22 @@ func (s *catalogRefoundationScenario) verifyAdmissionPagination() {
 	if err != nil || len(fieldNext.Admissions) != 1 || fieldNext.NextCursor != "" || fieldNext.Admissions[0].ID == fieldPage.Admissions[0].ID {
 		s.t.Fatalf("Field admission cursor failed: first=%+v second=%+v err=%v", fieldPage, fieldNext, err)
 	}
+	if _, err := s.db.ExecContext(s.ctx, `UPDATE dsh.field_admissions SET actor_id='field_finance_first',contact_phone_e164=NULL,full_name_ar='FinanceRoster fixture first',state='eligible' WHERE id='field_first'`); err != nil {
+		s.t.Fatalf("bind first Field finance roster fixture: %v", err)
+	}
+	if _, err := s.db.ExecContext(s.ctx, `UPDATE dsh.field_admissions SET actor_id='field_finance_second',contact_phone_e164=NULL,full_name_ar='FinanceRoster fixture second',state='suspended' WHERE id='field_second'`); err != nil {
+		s.t.Fatalf("bind second Field finance roster fixture: %v", err)
+	}
+	financePage, err := postgres.ListFieldFinanceRoster(s.ctx, s.db, "FinanceRoster fixture", "all", "", 1)
+	if err != nil || len(financePage.Items) != 1 || financePage.NextCursor == "" || financePage.TotalCount != 2 || financePage.Items[0].ActorID != "field_finance_second" || financePage.Items[0].State != "suspended" {
+		s.t.Fatalf("Field finance roster first page failed: %+v err=%v", financePage, err)
+	}
+	financeNext, err := postgres.ListFieldFinanceRoster(s.ctx, s.db, "FinanceRoster fixture", "all", financePage.NextCursor, 1)
+	if err != nil || len(financeNext.Items) != 1 || financeNext.NextCursor != "" || financeNext.TotalCount != 2 || financeNext.Items[0].ActorID != "field_finance_first" || financeNext.Items[0].State != "eligible" {
+		s.t.Fatalf("Field finance roster cursor failed: first=%+v second=%+v err=%v", financePage, financeNext, err)
+	}
+	eligibleOnly, err := postgres.ListFieldFinanceRoster(s.ctx, s.db, "FinanceRoster fixture", "eligible", "", 10)
+	if err != nil || len(eligibleOnly.Items) != 1 || eligibleOnly.TotalCount != 1 || eligibleOnly.Items[0].ActorID != "field_finance_first" {
+		s.t.Fatalf("Field finance roster admission-state filter failed: %+v err=%v", eligibleOnly, err)
+	}
 }

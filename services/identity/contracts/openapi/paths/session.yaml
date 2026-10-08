@@ -31,6 +31,17 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/ActorIdentity" } } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
 
+  /auth/session/app-opened:
+    post:
+      tags: [session]
+      operationId: recordFieldAppOpened
+      description: Records the server timestamp for the authenticated caller's own Field role. The caller identity is derived from the access token; actor IDs and timestamps are never accepted from the client.
+      security: [{ accessToken: [] }]
+      responses:
+        "204": { description: Current Field app foreground timestamp recorded using the server clock. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /auth/development/session:
     post:
       tags: [session]

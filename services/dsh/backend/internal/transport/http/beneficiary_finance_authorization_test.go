@@ -56,8 +56,8 @@ func TestBeneficiaryFinanceRegisteredRoutesRejectUnauthenticatedRequests(t *test
 	server.Register(mux)
 
 	routes := beneficiaryFinanceRegisteredRoutes(t)
-	if len(routes) != 49 {
-		t.Fatalf("beneficiary finance route census changed: got %d, want 49; review authentication for every new or removed route", len(routes))
+	if len(routes) != 50 {
+		t.Fatalf("beneficiary finance route census changed: got %d, want 50; review authentication for every new or removed route", len(routes))
 	}
 	for _, route := range routes {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {

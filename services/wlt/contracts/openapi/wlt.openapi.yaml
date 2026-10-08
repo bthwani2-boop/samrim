@@ -823,6 +823,77 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/FieldAcquisitionEntitlementPage' }
+  /wlt/v1/fields/{fieldActorId}/wallet-history:
+    get:
+      operationId: readFieldWalletHistory
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: fieldActorId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 512 } }
+      responses:
+        '200':
+          description: Actor-scoped paginated posted WLT ledger movements; payout requests are returned separately.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [currency, entries, limit]
+                additionalProperties: false
+                properties:
+                  currency: { type: string, const: YER }
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      required: [type, direction, amountMinor, currency, createdAt, balanceAfterMinor]
+                      additionalProperties: false
+                      properties:
+                        type: { type: string }
+                        direction: { type: string, enum: [CREDIT, DEBIT] }
+                        amountMinor: { type: integer, minimum: 1 }
+                        currency: { type: string, const: YER }
+                        createdAt: { type: string, format: date-time }
+                        balanceAfterMinor: { type: integer }
+                  nextCursor: { type: string }
+                  limit: { type: integer }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '502': { $ref: '#/components/responses/DependencyUnavailable' }
+  /wlt/v1/fields/{fieldActorId}/payout-requests:
+    get:
+      operationId: listFieldPayoutRequests
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: fieldActorId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 512 } }
+      responses:
+        '200':
+          description: Actor-scoped current states of Field payout requests, separate from posted ledger movements.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requests, limit]
+                additionalProperties: false
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      type: object
+                      required: [status, amountMinor, currency, createdAt]
+                      additionalProperties: false
+                      properties:
+                        status: { type: string }
+                        amountMinor: { type: integer, minimum: 1 }
+                        currency: { type: string, const: YER }
+                        createdAt: { type: string, format: date-time }
+                  nextCursor: { type: string }
+                  limit: { type: integer }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '502': { $ref: '#/components/responses/DependencyUnavailable' }
   /wlt/v1/operator/official-wallet-destinations:
     post:
       operationId: createOfficialWalletDestination
@@ -1175,7 +1246,7 @@ paths:
           schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
         '200':
-          description: Finance-authorized server-derived beneficiary balances and payout state.
+          description: Finance-authorized server-derived beneficiary balances and payout state, with Field-only posted acquisition counts and credited totals.
           content:
             application/json:
               schema:
@@ -1187,6 +1258,55 @@ paths:
                     items: { $ref: '#/components/schemas/PayoutState' }
                   nextCursor: { type: string }
                   limit: { type: integer }
+  /wlt/v1/operator/field-payout-states:batch:
+    post:
+      operationId: readFieldPayoutStatesBatch
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actorIds]
+              additionalProperties: false
+              properties:
+                actorIds:
+                  type: array
+                  maxItems: 100
+                  uniqueItems: true
+                  items: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Bounded server-derived Field payout states plus a WLT-global aggregate independent of DSH admission filters.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [beneficiaries, fieldFinanceSummary]
+                additionalProperties: false
+                properties:
+                  beneficiaries:
+                    type: array
+                    items: { $ref: '#/components/schemas/PayoutState' }
+                  fieldFinanceSummary:
+                    type: object
+                    required: [currency, fieldActorCount, acquiredStoreCount, earnedMinor, eligibleAvailableMinor, heldMinor, payoutRequestCount, activeDestinationCount]
+                    additionalProperties: false
+                    properties:
+                      currency: { type: string, const: YER }
+                      fieldActorCount: { type: integer, minimum: 0, description: Distinct Field actors represented by canonical WLT finance records. }
+                      acquiredStoreCount: { type: integer, minimum: 0, description: Distinct stores or joining cases with posted Field entitlements across WLT. }
+                      earnedMinor: { type: integer, minimum: 0, description: Sum of posted Field entitlement credits across WLT. }
+                      eligibleAvailableMinor: { type: integer, description: Aggregate available Field balance across WLT after active holds. }
+                      heldMinor: { type: integer, minimum: 0, description: Aggregate active Field payout holds across WLT. }
+                      payoutRequestCount: { type: integer, minimum: 0, description: Total Field payout requests recorded by WLT. }
+                      activeDestinationCount: { type: integer, minimum: 0, description: Field actors with an active verified payout destination in WLT. }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '502': { $ref: '#/components/responses/DependencyUnavailable' }
   /wlt/v1/operator/beneficiaries/{actorType}/{actorId}/financial-statement:
     get:
       operationId: readOperatorBeneficiaryFinancialStatement
@@ -2435,6 +2555,8 @@ components:
         currency: { type: string, const: YER }
         eligibleAvailableMinor: { type: integer }
         heldMinor: { type: integer, minimum: 0 }
+        acquiredStoreCount: { type: integer, minimum: 0, description: Field-only count of distinct stores or joining cases with a posted entitlement. }
+        earnedMinor: { type: integer, minimum: 0, description: Field-only credited earnings from posted acquisition entitlements. }
         destination:
           allOf:
             - { $ref: '#/components/schemas/OfficialWalletDestination' }

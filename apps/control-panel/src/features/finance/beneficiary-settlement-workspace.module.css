@@ -42,6 +42,165 @@
   outline-offset: 2px;
 }
 
+.fieldEligibility {
+  margin: 0 0 var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+.fieldInlineSummary,
+.fieldRosterSummary,
+.fieldGlobalSummary {
+  margin-block: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--font-size-label);
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.fieldRosterSummary {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-bold);
+}
+
+.fieldGlobalSummary {
+  margin-block-end: var(--space-3);
+}
+
+.fieldFilters {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) minmax(10rem, 1fr) minmax(16rem, 2fr) auto auto;
+  align-items: end;
+  gap: var(--space-3);
+  margin-block: var(--space-4);
+}
+
+.fieldTableWrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+}
+
+.fieldTableWrap:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.fieldTable {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.fieldTable th,
+.fieldTable td {
+  padding: var(--space-2) var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+  text-align: start;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+.fieldTable th {
+  position: sticky;
+  inset-block-start: 0;
+  background: var(--surface-muted);
+  font-size: var(--font-size-label);
+}
+
+.fieldTable td:nth-child(2) { width: 180px; }
+.fieldTable td:nth-child(3),
+.fieldTable td:nth-child(4),
+.fieldTable td:nth-child(5),
+.fieldTable td:nth-child(6) { width: 135px; }
+.fieldTable td:nth-child(7) { width: 160px; }
+.fieldTable td:nth-child(8) { width: 170px; }
+.fieldTable td:nth-child(9) { width: 180px; }
+
+.fieldRowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.fieldEmpty {
+  padding: var(--space-6) !important;
+  color: var(--text-muted);
+  text-align: center !important;
+}
+
+.fieldActionHint {
+  color: var(--text-muted);
+}
+
+.fieldDetails {
+  border-block-start: 1px solid var(--border-subtle);
+  padding-block-start: var(--space-2);
+}
+
+.fieldDetails summary {
+  cursor: pointer;
+  color: var(--interactive-text);
+  font-weight: var(--font-weight-bold);
+}
+
+.fieldEligible,
+.fieldSuspended {
+  display: inline-flex;
+  margin-block-start: var(--space-1);
+  padding: 2px 8px;
+  border-radius: var(--radius-round);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+}
+
+.fieldEligible {
+  background: var(--success-soft);
+  color: var(--success-text);
+}
+
+.fieldSuspended {
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+
+.fieldResource {
+  margin-block: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.fieldResource > summary {
+  min-height: var(--size-controlMd);
+  padding: var(--space-3);
+  cursor: pointer;
+  color: var(--interactive-text);
+  font-weight: var(--font-weight-bold);
+}
+
+.fieldResourceBody {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .fieldFilters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+  }
+
+  .fieldFilters > label:nth-of-type(3) { grid-column: 1 / -1; }
+}
+
 @media print {
   :global(body *) {
     visibility: hidden !important;

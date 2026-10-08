@@ -34,6 +34,7 @@ type ActorRoleView struct {
 	Role              string     `json:"role"`
 	Enabled           bool       `json:"enabled"`
 	ActivatedAt       *time.Time `json:"activatedAt,omitempty"`
+	LastAppOpenedAt   *time.Time `json:"lastAppOpenedAt,omitempty"`
 	SecurityEnabled   bool       `json:"securityEnabled"`
 	ActorVersion      int        `json:"actorVersion"`
 	RoleVersion       int        `json:"roleVersion"`

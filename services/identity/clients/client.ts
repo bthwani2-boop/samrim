@@ -65,6 +65,7 @@ export type IdentityClient = Readonly<{
   refresh(request: RefreshRequest): Promise<TokenPair>;
   developmentSession(role: ActorType, clientInstanceId: string): Promise<TokenPair>;
   session(accessToken: string): Promise<ActorIdentity>;
+  recordFieldAppOpened(accessToken: string): Promise<void>;
   logout(accessToken: string): Promise<void>;
 }>;
 
@@ -186,6 +187,7 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
     refresh: (body) => request(identityOperationPaths.refreshSession.path, { method: identityOperationPaths.refreshSession.method, body }),
     developmentSession: (role, clientInstanceId) => request(identityOperationPaths.createDevelopmentSession.path, { method: identityOperationPaths.createDevelopmentSession.method, body: { role, clientInstanceId } }),
     session: (accessToken) => request(identityOperationPaths.readCurrentSession.path, { method: identityOperationPaths.readCurrentSession.method, token: accessToken }),
+    recordFieldAppOpened: (accessToken) => request(identityOperationPaths.recordFieldAppOpened.path, { method: identityOperationPaths.recordFieldAppOpened.method, token: accessToken }),
     logout: (accessToken) => request(identityOperationPaths.logoutSession.path, { method: identityOperationPaths.logoutSession.method, token: accessToken }),
   };
 }

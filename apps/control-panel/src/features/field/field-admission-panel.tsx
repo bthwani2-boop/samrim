@@ -1,15 +1,16 @@
 "use client";
 
 import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
-import { type FieldAdmission, type JoiningCaseListResponse, type ServiceCity, type ServiceCityListResponse, fieldAdmissionStateLabel, joiningCaseStateLabel } from "@bthwani/dsh";
+import { type FieldAdmission, type JoiningCaseListResponse, type OperatorFieldLatestJoiningCase, type ServiceCity, type ServiceCityListResponse, fieldAdmissionStateLabel, joiningCaseStateLabel } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./field-workbench.module.css";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
 import { useWalletProviders, type WalletProviderOption } from "../wallet-provider/use-wallet-providers";
 
-type FieldAccount = ActorRoleView & Readonly<{ admission: FieldAdmission | null }>;
+type LatestStore = Readonly<{ storeId: string; storeName: string; joiningCaseId: string; createdAt: string }>;
+type FieldAccount = ActorRoleView & Readonly<{ admission: FieldAdmission | null; latestStore?: LatestStore | null; joiningCaseCount?: number; latestJoiningCase?: OperatorFieldLatestJoiningCase | null }>;
 type FieldWorkbenchItem = Readonly<{ kind: "candidate"; admission: FieldAdmission }> | Readonly<{ kind: "account"; account: FieldAccount }>;
 type FieldPage = Readonly<{ items: ReadonlyArray<FieldWorkbenchItem>; nextCursor?: string }>;
 type FieldAcquisitionCase = JoiningCaseListResponse["cases"][number];
@@ -34,6 +35,12 @@ function fieldRequestError(cause: unknown, fallback: string): string {
 
 function fieldPhoneE164(value: string): string {
   return normalizeYemenPhoneE164(value);
+}
+
+function fieldTimestamp(value: string | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("ar-YE", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 function isFieldPhoneE164(value: string): boolean {
@@ -128,24 +135,30 @@ type FieldCandidateRowProps = Readonly<{
   draft: FieldProfileDraft;
   changed: boolean;
   busy: string;
+  rowNotice: string;
+  rowError: string;
   serviceCities: ReadonlyArray<ServiceCity>;
   walletProviders: ReadonlyArray<WalletProviderOption>;
   onDraftChange: (value: FieldProfileDraft) => void;
   onMutate: (admission: FieldAdmission, action: FieldCandidateAction) => void;
 }>;
 
-function FieldCandidateRow({ profile, draft, changed, busy, serviceCities, walletProviders, onDraftChange, onMutate }: FieldCandidateRowProps) {
+function FieldCandidateRow({ profile, draft, changed, busy, rowNotice, rowError, serviceCities, walletProviders, onDraftChange, onMutate }: FieldCandidateRowProps) {
   const pendingReview = profile.state === "pending_review";
   const pendingIdentity = profile.state === "pending_identity";
-  return <tr>
-    <th scope="row"><strong>{profile.fullNameAr || "ملف بلا اسم مكتمل"}</strong><br /><bdi dir="ltr">{profile.contactPhoneE164 || "—"}</bdi><br /><span className="muted">{profile.allServiceCities ? "جميع المدن النشطة" : (profile.serviceCityIds ?? []).map((id) => serviceCities.find((city) => city.id === id)?.displayNameAr ?? "مدينة غير متاحة").join("، ") || "لا توجد مدينة محددة"}</span></th>
-    <td>{fieldAdmissionStateLabel(profile.state)}</td>
-    <td><span className="muted">لم يُنشأ الدور بعد</span></td>
-    <td><details className="field-row-disclosure"><summary className="button button-secondary">الخطوة التالية</summary><div className="field-row-actions">
-      {pendingReview ? <><label className="field-label" htmlFor={`candidate-name-${profile.id}`}>اسم العرض<input id={`candidate-name-${profile.id}`} value={draft.fullNameAr} maxLength={120} disabled={Boolean(busy)} onChange={(event) => onDraftChange({ ...draft, fullNameAr: event.target.value })} /></label><label className="field-label" htmlFor={`candidate-wallet-${profile.id}`}>مزوّد المحفظة<select id={`candidate-wallet-${profile.id}`} value={draft.walletProviderKey} disabled={Boolean(busy)} onChange={(event) => onDraftChange({ ...draft, walletProviderKey: event.target.value })}><option value="">اختر محفظة رسمية</option>{draft.walletProviderKey && !walletProviders.some((provider) => provider.key === draft.walletProviderKey) ? <option value={draft.walletProviderKey}>{draft.walletProviderKey} · قيمة سابقة</option> : null}{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select></label><label className="field-label" htmlFor={`candidate-all-cities-${profile.id}`}><input id={`candidate-all-cities-${profile.id}`} type="checkbox" checked={draft.allServiceCities} disabled={Boolean(busy)} onChange={(event) => onDraftChange({ ...draft, allServiceCities: event.target.checked, serviceCityIds: event.target.checked ? [] : draft.serviceCityIds })} /> جميع المدن النشطة</label>{!draft.allServiceCities ? <label className="field-label" htmlFor={`candidate-cities-${profile.id}`}>مدن الخدمة<select id={`candidate-cities-${profile.id}`} multiple value={[...draft.serviceCityIds]} disabled={Boolean(busy)} onChange={(event) => onDraftChange({ ...draft, serviceCityIds: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })}>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label> : null}<button type="button" className="button button-secondary" disabled={Boolean(busy) || !changed} onClick={() => onMutate(profile, "update-profile")}>حفظ الملف والمدن</button><button type="button" className="button button-primary" disabled={Boolean(busy) || changed} onClick={() => onMutate(profile, "approve")}>{busy === profile.id ? "جارٍ الاعتماد…" : "اعتماد الملف"}</button></> : null}
+  const cities = profile.allServiceCities ? "جميع المدن النشطة" : (profile.serviceCityIds ?? []).map((id) => serviceCities.find((city) => city.id === id)?.displayNameAr ?? "مدينة غير متاحة").join("، ") || "لا توجد مدينة محددة";
+  const providerName = walletProviders.find((provider) => provider.key === profile.walletProviderKey)?.displayNameAr || profile.walletProviderKey || "غير محدد";
+  return <tr className="field-agent-row">
+    <th scope="row"><strong>{profile.fullNameAr || "ملف بلا اسم مكتمل"}</strong><br /><bdi dir="ltr">{profile.contactPhoneE164 || "—"}</bdi></th>
+    <td>{cities}<br /><span className="muted">المحفظة: {providerName}</span></td>
+    <td><span className="field-agent-badge">{fieldAdmissionStateLabel(profile.state)}</span>{profile.requiresProfileReview ? <p className="field-agent-blocker">تحتاج استكمالًا ومراجعة</p> : null}</td>
+    <td>لا يوجد دور دخول بعد</td><td>غير متاح قبل إنشاء الحساب</td><td>لا يوجد متجر مسجل</td><td>لا توجد رحلات</td><td>غير متاح قبل إنشاء الحساب</td>
+    <td>
+      {busy === profile.id ? <output className="muted" role="status">جارٍ تنفيذ الإجراء وإعادة القراءة…</output> : null}{rowNotice ? <output className="success-inline" role="status">{rowNotice}</output> : null}{rowError ? <p className="identity-error" role="alert">{rowError}</p> : null}
+      {pendingReview ? <><details className="field-agent-edit"><summary className="button button-secondary">تعديل بيانات الملف</summary><div className="field-row-actions"><label className="field-label" htmlFor={`candidate-name-${profile.id}`}>اسم العرض<input id={`candidate-name-${profile.id}`} value={draft.fullNameAr} maxLength={120} disabled={Boolean(busy)} onChange={(event) => onDraftChange({ ...draft, fullNameAr: event.target.value })} /></label><label className="field-label" htmlFor={`candidate-wallet-${profile.id}`}>مزوّد المحفظة<select id={`candidate-wallet-${profile.id}`} value={draft.walletProviderKey} disabled={Boolean(busy)} onChange={(event) => onDraftChange({ ...draft, walletProviderKey: event.target.value })}><option value="">اختر محفظة رسمية</option>{draft.walletProviderKey && !walletProviders.some((provider) => provider.key === draft.walletProviderKey) ? <option value={draft.walletProviderKey}>{draft.walletProviderKey} · قيمة سابقة</option> : null}{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select></label><label className="field-label" htmlFor={`candidate-all-cities-${profile.id}`}><input id={`candidate-all-cities-${profile.id}`} type="checkbox" checked={draft.allServiceCities} disabled={Boolean(busy)} onChange={(event) => onDraftChange({ ...draft, allServiceCities: event.target.checked, serviceCityIds: event.target.checked ? [] : draft.serviceCityIds })} /> جميع المدن النشطة</label>{!draft.allServiceCities ? <label className="field-label" htmlFor={`candidate-cities-${profile.id}`}>مدن الخدمة<select id={`candidate-cities-${profile.id}`} multiple value={[...draft.serviceCityIds]} disabled={Boolean(busy)} onChange={(event) => onDraftChange({ ...draft, serviceCityIds: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })}>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label> : null}<button type="button" className="button button-secondary" disabled={Boolean(busy) || !changed} onClick={() => onMutate(profile, "update-profile")}>حفظ الملف والمدن</button></div></details><button type="button" className="button button-primary" disabled={Boolean(busy) || changed} onClick={() => onMutate(profile, "approve")}>{busy === profile.id ? "جارٍ الاعتماد…" : "اعتماد الملف"}</button></> : null}
       {pendingIdentity ? <button type="button" className="button button-primary" disabled={Boolean(busy)} onClick={() => onMutate(profile, "provision")}>{busy === profile.id ? "جارٍ منح الدور…" : "منح دور الميداني"}</button> : null}
       {!pendingReview && !pendingIdentity ? <span className="muted">لا توجد خطوة متاحة لهذه المرحلة.</span> : null}
-    </div></details></td>
+    </td>
   </tr>;
 }
 
@@ -192,7 +205,7 @@ type FieldAccountAccessActionsProps = Readonly<Pick<FieldAccountMutationActionsP
 function FieldAccountAccessActions({ field, busy, reason, onMutate, waitingForFirstActivation, waitingForReenrollment, shouldDisable, requiresProfileReview, mustDisable, reasonIsValid }: FieldAccountAccessActionsProps) {
   const accessAction: FieldAccountAction = shouldDisable ? "disable" : "activate";
   const canDisable = shouldDisable;
-  const canReactivate = !field.enabled && !requiresProfileReview && field.securityEnabled && field.admission?.state === "eligible";
+  const canReactivate = !field.enabled && !requiresProfileReview && field.securityEnabled && (field.admission?.state === "eligible" || field.admission?.state === "suspended");
   return <>
     {waitingForFirstActivation ? <p className="muted" role="status">الدور جاهز. الخطوة التالية للميداني: يفتح تطبيق الميدان، يدخل رقم الهاتف المسجل، ثم يختار «تفعيل الجهاز» لإثبات الهاتف وإنشاء كلمة المرور.</p> : null}
     {waitingForReenrollment ? <button type="button" className="button button-primary" disabled={Boolean(busy) || !reasonIsValid} onClick={() => onMutate(field, "reenroll")}>{busy === field.actorId ? "جارٍ الإجازة…" : "إجازة إعادة التسجيل"}</button> : null}
@@ -210,12 +223,11 @@ function FieldAccountMutationActions({ field, name, reason, busy, serviceCities,
   const waitingForReenrollment = !requiresProfileReview && field.securityEnabled && field.enabled && Boolean(field.activatedAt) && admission?.state === "eligible";
   const reasonIsValid = Array.from(reason.trim()).length >= 5;
 
-  return admission ? <details className="field-row-disclosure"><summary className="button button-secondary">الخطوة التالية</summary><div className="field-row-actions">
-    <FieldAccountProfileActions key={admission.version} field={field} serviceCities={serviceCities} walletProviders={walletProviders} busy={busy} onMutate={onMutate} />
-    <label className="field-label" htmlFor={`field-reason-${field.actorId}`}>سبب الإجراء<input id={`field-reason-${field.actorId}`} maxLength={500} value={reason} onChange={(event) => onReasonChange(event.target.value)} disabled={Boolean(busy)} /></label>
+  return admission ? <div className="field-agent-controls">
+    <details className="field-agent-edit" open={admission.requiresProfileReview}><summary className="button button-secondary">تعديل الملف والتغطية</summary><div className="field-row-actions"><FieldAccountProfileActions key={admission.version} field={field} serviceCities={serviceCities} walletProviders={walletProviders} busy={busy} onMutate={onMutate} /></div></details>
+    <label className="field-label field-agent-reason" htmlFor={`field-reason-${field.actorId}`}>سبب الإجراء<input id={`field-reason-${field.actorId}`} maxLength={500} value={reason} onChange={(event) => onReasonChange(event.target.value)} disabled={Boolean(busy)} placeholder="مطلوب لتغيير الوصول" /></label>
     <FieldAccountAccessActions field={field} busy={busy} reason={reason} onMutate={onMutate} waitingForFirstActivation={waitingForFirstActivation} waitingForReenrollment={waitingForReenrollment} shouldDisable={shouldDisable} requiresProfileReview={requiresProfileReview} mustDisable={mustDisable} reasonIsValid={reasonIsValid} />
-    <a className="button button-secondary" href={`/finance/beneficiary-settlement/field?search=${encodeURIComponent(field.actorId)}`}>كشف المحفظة والحركات المالية</a>
-  </div></details> : <span className="muted">راجع الأهلية قبل إتاحة العمل الميداني.</span>;
+  </div> : <span className="muted">راجع الأهلية قبل إتاحة العمل الميداني.</span>;
 }
 
 type FieldAcquisitionDisclosureProps = Readonly<{
@@ -227,24 +239,27 @@ type FieldAcquisitionDisclosureProps = Readonly<{
 }>;
 
 function FieldAcquisitionDisclosure({ fieldActorId, page, error, busy, onLoad }: FieldAcquisitionDisclosureProps) {
-  return <details className="field-row-disclosure" onToggle={(event) => {
-    if (event.currentTarget.open && !page && !busy) onLoad(fieldActorId);
-  }}>
-    <summary className="button button-secondary">الشركاء ورحلات الانضمام</summary>
-    <div className="field-row-actions">
-      {busy && !page ? <output className="muted">جارٍ قراءة رحلات النظام…</output> : null}
+  return <div className="field-agent-cases">
+      {!page && !error ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => onLoad(fieldActorId)}>{busy ? "جارٍ القراءة…" : "قراءة الرحلات"}</button> : null}
       {error ? <><span className="identity-error" role="alert">{error}</span><button type="button" className="button button-secondary" disabled={busy} onClick={() => onLoad(fieldActorId)}>إعادة المحاولة</button></> : null}
-      {page?.cases.map((partnerCase: FieldAcquisitionCase) => <div key={partnerCase.id} className="field-row-actions">
-        <strong>{partnerCase.businessName}</strong>
-        <span>{partnerCase.firstStoreName}</span>
-        <span className="muted">حالة طلب الشريك: {joiningCaseStateLabel(partnerCase.state)}</span>
-        {partnerCase.state === "needs_correction" && partnerCase.correctionReason ? <span className="muted">المطلوب استكماله: {partnerCase.correctionReason}</span> : null}
-        {partnerCase.partnerActorId ? <span className="muted">حساب الشريك مرتبط</span> : null}
+      {page ? <strong>المحمّل الآن: {page.cases.length} رحلة{page.nextCursor ? " · توجد صفحات أقدم" : ""}</strong> : null}
+      {page?.cases.map((partnerCase: FieldAcquisitionCase) => <div key={partnerCase.id} className="field-agent-case">
+        <a href={`/partners/${encodeURIComponent(partnerCase.id)}`}>{partnerCase.businessName || partnerCase.firstStoreName}</a>
+        <span>{joiningCaseStateLabel(partnerCase.state)}</span>
+        {partnerCase.partnerActorId ? <span>حساب الشريك مرتبط</span> : null}
+        {partnerCase.state === "needs_correction" && partnerCase.correctionReason ? <span className="field-agent-blocker">{partnerCase.correctionReason}</span> : null}
       </div>)}
-      {!busy && !error && page?.cases.length === 0 ? <span className="muted">لا توجد رحلات انضمام منسوبة إلى هذا الحساب .</span> : null}
+      {!busy && !error && page?.cases.length === 0 ? <span className="muted">لا توجد رحلات</span> : null}
       {page?.nextCursor ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => onLoad(fieldActorId, page.nextCursor, true)}>{busy ? "جارٍ تحميل المزيد…" : "تحميل رحلات أقدم"}</button> : null}
-    </div>
-  </details>;
+  </div>;
+}
+
+function FieldJourneySummary({ field }: Readonly<{ field: FieldAccount }>) {
+  const latest = field.latestJoiningCase;
+  return <div className="field-agent-journey-summary">
+    <strong>{field.joiningCaseCount ?? 0} رحلة</strong>
+    {latest ? <><a href={`/partners/${encodeURIComponent(latest.id)}`}>{latest.displayName}</a><span>{joiningCaseStateLabel(latest.state)}</span><time className="muted" dateTime={latest.createdAt}>{fieldTimestamp(latest.createdAt)}</time></> : null}
+  </div>;
 }
 
 type FieldAccountRowProps = Readonly<{
@@ -254,6 +269,8 @@ type FieldAccountRowProps = Readonly<{
   name: string;
   reason: string;
   busy: string;
+  rowNotice: string;
+  rowError: string;
   acquisitionPage: JoiningCaseListResponse | undefined;
   acquisitionError: string;
   acquisitionBusy: boolean;
@@ -263,16 +280,20 @@ type FieldAccountRowProps = Readonly<{
   onLoadAcquisitionCases: (fieldActorId: string, cursor?: string, append?: boolean) => void;
 }>;
 
-function FieldAccountRow({ field, serviceCities, walletProviders, name, reason, busy, acquisitionPage, acquisitionError, acquisitionBusy, onNameChange, onReasonChange, onMutate, onLoadAcquisitionCases }: FieldAccountRowProps) {
+function FieldAccountRow({ field, serviceCities, walletProviders, name, reason, busy, rowNotice, rowError, acquisitionPage, acquisitionError, acquisitionBusy, onNameChange, onReasonChange, onMutate, onLoadAcquisitionCases }: FieldAccountRowProps) {
   const admission = field.admission;
-  return <tr>
-    <th scope="row"><strong>{admission?.fullNameAr || "حساب بلا ملف اسم مكتمل"}</strong><br /><bdi dir="ltr">{field.phoneE164}</bdi><br /><span className="muted">{admission?.allServiceCities ? "جميع المدن النشطة" : (admission?.serviceCityIds ?? []).map((id) => serviceCities.find((city) => city.id === id)?.displayNameAr ?? "مدينة غير متاحة").join("، ") || "لا توجد مدينة محددة"}</span><br /><span className="muted">{admission?.walletProviderKey || "مزوّد المحفظة غير محدد"}</span></th>
-    <td>{admissionStatusLabel(admission)}</td>
-    <td>{identityStatusLabel(field)}</td>
-    <td>
-      <FieldAccountMutationActions field={field} name={name} reason={reason} busy={busy} serviceCities={serviceCities} walletProviders={walletProviders} onNameChange={onNameChange} onReasonChange={onReasonChange} onMutate={onMutate} />
-      <FieldAcquisitionDisclosure fieldActorId={field.actorId} page={acquisitionPage} error={acquisitionError} busy={acquisitionBusy} onLoad={onLoadAcquisitionCases} />
-    </td>
+  const cities = admission?.allServiceCities ? "جميع المدن النشطة" : (admission?.serviceCityIds ?? []).map((id) => serviceCities.find((city) => city.id === id)?.displayNameAr ?? "مدينة غير متاحة").join("، ") || "لا توجد مدينة محددة";
+  const providerName = walletProviders.find((provider) => provider.key === admission?.walletProviderKey)?.displayNameAr || admission?.walletProviderKey || "غير محدد";
+  return <tr className="field-agent-row">
+    <th scope="row"><strong>{admission?.fullNameAr || "حساب بلا ملف اسم مكتمل"}</strong><br /><bdi dir="ltr">{field.phoneE164}</bdi></th>
+    <td>{cities}<br /><span className="muted">المحفظة: {providerName}</span></td>
+    <td><span className="field-agent-badge">{admissionStatusLabel(admission)}</span>{admission?.requiresProfileReview ? <p className="field-agent-blocker">استكمال الملف مطلوب</p> : null}</td>
+    <td><span className={`field-agent-badge ${field.enabled ? "is-enabled" : "is-disabled"}`}>{identityStatusLabel(field)}</span><br /><span className="muted">{field.activatedAt ? "سبق تفعيله" : "لم يفعّل الجهاز"}</span></td>
+    <td>{field.lastAppOpenedAt ? <time dateTime={field.lastAppOpenedAt}>{fieldTimestamp(field.lastAppOpenedAt)}</time> : <span className="muted">لم يفتح التطبيق بعد</span>}</td>
+    <td>{field.latestStore ? <><a href={`/partners/${encodeURIComponent(field.latestStore.joiningCaseId)}`}>{field.latestStore.storeName}</a><br /><time className="muted" dateTime={field.latestStore.createdAt}>{fieldTimestamp(field.latestStore.createdAt)}</time></> : <span className="muted">لا يوجد متجر مسجل</span>}</td>
+    <td><FieldJourneySummary field={field} /><FieldAcquisitionDisclosure fieldActorId={field.actorId} page={acquisitionPage} error={acquisitionError} busy={acquisitionBusy} onLoad={onLoadAcquisitionCases} /></td>
+    <td><a className="button button-secondary" href={`/finance/beneficiary-settlement/field?search=${encodeURIComponent(field.actorId)}`}>الملف المالي</a></td>
+    <td>{busy === field.actorId ? <output className="muted" role="status">جارٍ تنفيذ الإجراء وإعادة القراءة…</output> : null}{rowNotice ? <output className="success-inline" role="status">{rowNotice}</output> : null}{rowError ? <p className="identity-error" role="alert">{rowError}</p> : null}<FieldAccountMutationActions field={field} name={name} reason={reason} busy={busy} serviceCities={serviceCities} walletProviders={walletProviders} onNameChange={onNameChange} onReasonChange={onReasonChange} onMutate={onMutate} /></td>
   </tr>;
 }
 
@@ -286,6 +307,7 @@ type FieldAdmissionRosterProps = Readonly<{
   loadingMore: boolean;
   nextCursor: string;
   busy: string;
+  feedbackActorId: string;
   serviceCities: ReadonlyArray<ServiceCity>;
   walletProviders: ReadonlyArray<WalletProviderOption>;
   candidateEdits: Record<string, FieldProfileDraft>;
@@ -312,18 +334,115 @@ function FieldEmptyRoster({ query }: Readonly<{ query: string }>) {
   return <div className="collection-state"><strong>{title}</strong><p>{description}</p></div>;
 }
 
-function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading, loadingMore, nextCursor, busy, serviceCities, walletProviders, candidateEdits, profileEdits, reasons, acquisitionCases, acquisitionCaseErrors, acquisitionCaseBusy, onQueryChange, onCityFilterChange, onRefresh, onLoadMore, onCandidateNameChange, onCandidateMutate, onProfileNameChange, onReasonChange, onAccountMutate, onLoadAcquisitionCases }: FieldAdmissionRosterProps) {
+function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading, loadingMore, nextCursor, busy, feedbackActorId, serviceCities, walletProviders, candidateEdits, profileEdits, reasons, acquisitionCases, acquisitionCaseErrors, acquisitionCaseBusy, onQueryChange, onCityFilterChange, onRefresh, onLoadMore, onCandidateNameChange, onCandidateMutate, onProfileNameChange, onReasonChange, onAccountMutate, onLoadAcquisitionCases }: FieldAdmissionRosterProps) {
+  const [admissionFilter, setAdmissionFilter] = useState("");
+  const [accessFilter, setAccessFilter] = useState("");
+  const [activityFilter, setActivityFilter] = useState("");
+  const [storeFilter, setStoreFilter] = useState("");
+  const [storeQuery, setStoreQuery] = useState("");
+  const [journeyFilter, setJourneyFilter] = useState("");
+  const [journeyQuery, setJourneyQuery] = useState("");
+  const [providerFilter, setProviderFilter] = useState("");
+  const [sortBy, setSortBy] = useState<"name" | "city" | "provider" | "admission" | "access" | "activity" | "store" | "journey">("name");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const visibleItems = useMemo(() => {
+    const matches = items.filter((item) => {
+      if (item.kind === "candidate") {
+        if (accessFilter || activityFilter || storeFilter || storeQuery.trim()) return false;
+        if (admissionFilter && (admissionFilter === "none" || item.admission.state !== admissionFilter)) return false;
+        if (journeyFilter === "has" || journeyFilter === "needs_correction" || journeyQuery.trim()) return false;
+        return !providerFilter || item.admission.walletProviderKey === providerFilter;
+      }
+      if (accessFilter === "enabled" && !item.account.enabled) return false;
+      if (accessFilter === "disabled" && item.account.enabled) return false;
+      if (admissionFilter === "none" && item.account.admission) return false;
+      if (admissionFilter && admissionFilter !== "none" && item.account.admission?.state !== admissionFilter) return false;
+      if (providerFilter && item.account.admission?.walletProviderKey !== providerFilter) return false;
+      const openedAt = item.account.lastAppOpenedAt ? Date.parse(item.account.lastAppOpenedAt) : NaN;
+      if (activityFilter === "opened" && !Number.isFinite(openedAt)) return false;
+      if (activityFilter === "never" && Number.isFinite(openedAt)) return false;
+      if (activityFilter === "recent" && (!Number.isFinite(openedAt) || Date.now() - openedAt > 30 * 24 * 60 * 60 * 1000)) return false;
+      if (storeFilter === "has" && !item.account.latestStore) return false;
+      if (storeFilter === "none" && item.account.latestStore) return false;
+      if (storeFilter === "recent" && (!item.account.latestStore || Date.now() - Date.parse(item.account.latestStore.createdAt) > 30 * 24 * 60 * 60 * 1000)) return false;
+      if (storeQuery.trim() && !item.account.latestStore?.storeName.toLocaleLowerCase("ar").includes(storeQuery.trim().toLocaleLowerCase("ar"))) return false;
+      const joiningCaseCount = item.account.joiningCaseCount ?? 0;
+      const latestJoiningCase = item.account.latestJoiningCase;
+      if (journeyFilter === "has" && joiningCaseCount === 0) return false;
+      if (journeyFilter === "none" && joiningCaseCount > 0) return false;
+      if (journeyFilter === "needs_correction" && latestJoiningCase?.state !== "needs_correction") return false;
+      if (journeyQuery.trim() && !latestJoiningCase?.displayName.toLocaleLowerCase("ar").includes(journeyQuery.trim().toLocaleLowerCase("ar"))) return false;
+      return true;
+    });
+    const direction = sortDirection === "asc" ? 1 : -1;
+    return [...matches].sort((a, b) => {
+      const nameA = a.kind === "candidate" ? a.admission.fullNameAr : a.account.admission?.fullNameAr;
+      const nameB = b.kind === "candidate" ? b.admission.fullNameAr : b.account.admission?.fullNameAr;
+      if (sortBy === "name") return direction * (nameA ?? "").localeCompare(nameB ?? "", "ar");
+      if (sortBy === "access") {
+        const enabledA = a.kind === "account" && a.account.enabled ? 1 : 0;
+        const enabledB = b.kind === "account" && b.account.enabled ? 1 : 0;
+        return direction * (enabledA - enabledB);
+      }
+      if (sortBy === "provider" || sortBy === "city") {
+        const getValue = (item: FieldWorkbenchItem) => {
+          const admission = item.kind === "candidate" ? item.admission : item.account.admission;
+          if (sortBy === "provider") return walletProviders.find((provider) => provider.key === admission?.walletProviderKey)?.displayNameAr ?? admission?.walletProviderKey ?? "";
+          if (!admission) return "";
+          if (admission.allServiceCities) return "جميع المدن النشطة";
+          const cityIDs = admission.serviceCityIds ?? [];
+          return cityIDs.map((cityID) => serviceCities.find((city) => city.id === cityID)?.displayNameAr ?? "").sort((a, b) => a.localeCompare(b, "ar")).join("، ");
+        };
+        return direction * getValue(a).localeCompare(getValue(b), "ar");
+      }
+      if (sortBy === "activity") {
+        const openedA = a.kind === "account" && a.account.lastAppOpenedAt ? Date.parse(a.account.lastAppOpenedAt) : 0;
+        const openedB = b.kind === "account" && b.account.lastAppOpenedAt ? Date.parse(b.account.lastAppOpenedAt) : 0;
+        return direction * (openedA - openedB);
+      }
+      if (sortBy === "store") {
+        const createdA = a.kind === "account" && a.account.latestStore ? Date.parse(a.account.latestStore.createdAt) : 0;
+        const createdB = b.kind === "account" && b.account.latestStore ? Date.parse(b.account.latestStore.createdAt) : 0;
+        return direction * (createdA - createdB);
+      }
+      if (sortBy === "journey") {
+        const countA = a.kind === "account" ? a.account.joiningCaseCount ?? 0 : 0;
+        const countB = b.kind === "account" ? b.account.joiningCaseCount ?? 0 : 0;
+        if (countA !== countB) return direction * (countA - countB);
+        const createdA = a.kind === "account" && a.account.latestJoiningCase ? Date.parse(a.account.latestJoiningCase.createdAt) : 0;
+        const createdB = b.kind === "account" && b.account.latestJoiningCase ? Date.parse(b.account.latestJoiningCase.createdAt) : 0;
+        return direction * (createdA - createdB);
+      }
+      const stateA = a.kind === "candidate" ? a.admission.state : a.account.admission?.state ?? "";
+      const stateB = b.kind === "candidate" ? b.admission.state : b.account.admission?.state ?? "";
+      return direction * stateA.localeCompare(stateB, "ar");
+    });
+  }, [items, admissionFilter, accessFilter, activityFilter, storeFilter, storeQuery, journeyFilter, journeyQuery, providerFilter, sortBy, sortDirection, serviceCities, walletProviders]);
+  function toggleSort(column: "name" | "city" | "provider" | "admission" | "access" | "activity" | "store" | "journey") {
+    if (sortBy === column) setSortDirection((value) => value === "asc" ? "desc" : "asc");
+    else { setSortBy(column); setSortDirection("asc"); }
+  }
+  const sortButton = (column: "name" | "city" | "provider" | "admission" | "access" | "activity" | "store" | "journey", label: string) => <button type="button" className="field-column-sort" onClick={() => toggleSort(column)} aria-label={`ترتيب حسب ${label}`} aria-pressed={sortBy === column}>{label}{sortBy === column ? <span aria-hidden="true"> {sortDirection === "asc" ? "↑" : "↓"}</span> : null}</button>;
+  const hasFilters = Boolean(query || cityFilter || admissionFilter || accessFilter || activityFilter || storeFilter || storeQuery || journeyFilter || journeyQuery || providerFilter);
+  const hasLoadedPageFilters = Boolean(admissionFilter || accessFilter || activityFilter || storeFilter || storeQuery || journeyFilter || journeyQuery || providerFilter);
   return <div className="field-workbench-pane">
-    <div className="field-list-heading"><div><h3 id="field-roster-title">سجل الميدانيين</h3><p className="muted">كل شخص يظهر مرة واحدة، مع مرحلته والخطوة التالية.</p></div></div>
-    <div className="workspace-toolbar"><label className="field-label" htmlFor="field-search">بحث بالاسم أو الهاتف<input id="field-search" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="ابحث في ملفات وحسابات الميدانيين" /></label><label className="field-label" htmlFor="field-city-filter">مدينة الخدمة<select id="field-city-filter" value={cityFilter} onChange={(event) => onCityFilterChange(event.target.value)}><option value="">كل المدن</option>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={onRefresh}>{loading ? "جارٍ التحديث…" : "إعادة القراءة"}</button></div>
-    {notice ? <output className="success-inline">{notice}</output> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}
+    <div className="field-roster-tools">{hasFilters ? <button type="button" className="button button-secondary" onClick={() => { onQueryChange(""); onCityFilterChange(""); setAdmissionFilter(""); setAccessFilter(""); setActivityFilter(""); setStoreFilter(""); setStoreQuery(""); setJourneyFilter(""); setJourneyQuery(""); setProviderFilter(""); }}>مسح المرشحات</button> : null}<button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={onRefresh}>{loading ? "جارٍ التحديث…" : "تحديث السجل"}</button></div>
+    {notice && !feedbackActorId ? <output className="success-inline">{notice}</output> : null}{error && !feedbackActorId ? <p className="identity-error" role="alert">{error}</p> : null}
     {loading && items.length === 0 ? <output>جارٍ قراءة سجل الميدانيين…</output> : null}
     {!loading && !error && items.length === 0 ? <FieldEmptyRoster query={query} /> : null}
-    {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th scope="col">الميداني</th><th scope="col">مرحلة الملف</th><th scope="col">حساب التطبيق</th><th scope="col">الإجراء</th></tr></thead><tbody>
-      {items.map((item) => item.kind === "candidate"
-        ? <FieldCandidateRow key={`candidate:${item.admission.id}`} profile={item.admission} draft={candidateEdits[item.admission.id] ?? fieldProfile(item.admission)} changed={!sameFieldProfile(candidateEdits[item.admission.id] ?? fieldProfile(item.admission), fieldProfile(item.admission))} busy={busy} serviceCities={serviceCities} walletProviders={walletProviders} onDraftChange={(value) => onCandidateNameChange(item.admission.id, value)} onMutate={onCandidateMutate} />
-        : <FieldAccountRow key={`account:${item.account.actorId}`} field={item.account} serviceCities={serviceCities} walletProviders={walletProviders} name={profileEdits[item.account.actorId] ?? item.account.admission?.fullNameAr ?? ""} reason={reasons[item.account.actorId] ?? ""} busy={busy} acquisitionPage={acquisitionCases[item.account.actorId]} acquisitionError={acquisitionCaseErrors[item.account.actorId] ?? ""} acquisitionBusy={acquisitionCaseBusy[item.account.actorId] ?? false} onNameChange={(value) => onProfileNameChange(item.account.actorId, value)} onReasonChange={(value) => onReasonChange(item.account.actorId, value)} onMutate={onAccountMutate} onLoadAcquisitionCases={onLoadAcquisitionCases} />)}
-    </tbody></table></div> : null}
+    {items.length > 0 ? <div className="operations-table-wrap field-agent-table-wrap" role="region" aria-label="سجل الميدانيين، تحرك أفقيًا عند الحاجة لعرض الأعمدة" tabIndex={0}><table className="operations-table field-agent-table"><caption className="visually-hidden">سجل الميدانيين، أدوات التصفية والترتيب داخل عناوين الأعمدة</caption><thead><tr>
+      <th scope="col"><div className="field-column-heading">{sortButton("name", "الميداني والهاتف")}<input id="field-search" type="search" aria-label="بحث بالاسم أو الهاتف" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="اسم أو هاتف" /></div></th>
+      <th scope="col"><div className="field-column-heading">{sortButton("city", "مدينة الخدمة")}<select aria-label="تصفية حسب مدينة الخدمة" value={cityFilter} onChange={(event) => onCityFilterChange(event.target.value)}><option value="">كل المدن</option>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select>{sortButton("provider", "مزوّد المحفظة")}<select aria-label="تصفية حسب مزوّد المحفظة" value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}><option value="">كل المزوّدين</option>{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select></div></th>
+      <th scope="col"><div className="field-column-heading">{sortButton("admission", "أهلية النظام")}<select aria-label="تصفية حسب حالة الأهلية" value={admissionFilter} onChange={(event) => setAdmissionFilter(event.target.value)}><option value="">كل الحالات</option><option value="none">لا توجد أهلية مرتبطة</option><option value="pending_review">بانتظار المراجعة</option><option value="pending_identity">بانتظار إنشاء الحساب</option><option value="eligible">مؤهل</option><option value="suspended">موقوفة</option></select></div></th>
+      <th scope="col"><div className="field-column-heading">{sortButton("access", "دخول التطبيق")}<select aria-label="تصفية حسب حالة دخول التطبيق" value={accessFilter} onChange={(event) => setAccessFilter(event.target.value)}><option value="">كل الحسابات</option><option value="enabled">الدخول مفعّل</option><option value="disabled">الدخول موقوف</option></select></div></th>
+      <th scope="col"><div className="field-column-heading">{sortButton("activity", "آخر فتح للتطبيق")}<select aria-label="تصفية حسب فتح التطبيق" value={activityFilter} onChange={(event) => setActivityFilter(event.target.value)}><option value="">كل الأنشطة</option><option value="opened">سبق فتح التطبيق</option><option value="recent">خلال 30 يومًا</option><option value="never">لم يفتح التطبيق</option></select></div></th>
+      <th scope="col"><div className="field-column-heading">{sortButton("store", "أحدث متجر")}<select aria-label="تصفية حسب وجود المتجر أو حداثته" value={storeFilter} onChange={(event) => setStoreFilter(event.target.value)}><option value="">كل المتاجر</option><option value="has">أضاف متجرًا</option><option value="recent">خلال 30 يومًا</option><option value="none">لم يضف متجرًا</option></select><input type="search" aria-label="بحث باسم أحدث متجر" placeholder="اسم المتجر" value={storeQuery} onChange={(event) => setStoreQuery(event.target.value)} /></div></th>
+      <th scope="col"><div className="field-column-heading">{sortButton("journey", "رحلات الشركاء")}<select aria-label="تصفية حسب رحلات الشركاء" value={journeyFilter} onChange={(event) => setJourneyFilter(event.target.value)}><option value="">كل الرحلات</option><option value="has">لديه رحلات</option><option value="none">بلا رحلات</option><option value="needs_correction">آخر رحلة تحتاج تصحيحًا</option></select><input type="search" aria-label="بحث باسم آخر شريك" placeholder="اسم الشريك" value={journeyQuery} onChange={(event) => setJourneyQuery(event.target.value)} /></div></th><th scope="col">المالية</th><th scope="col">الإجراءات</th>
+    </tr></thead><tbody>
+      {visibleItems.map((item) => item.kind === "candidate"
+        ? <FieldCandidateRow key={`candidate:${item.admission.id}`} profile={item.admission} draft={candidateEdits[item.admission.id] ?? fieldProfile(item.admission)} changed={!sameFieldProfile(candidateEdits[item.admission.id] ?? fieldProfile(item.admission), fieldProfile(item.admission))} busy={busy} rowNotice={feedbackActorId === item.admission.id ? notice : ""} rowError={feedbackActorId === item.admission.id ? error : ""} serviceCities={serviceCities} walletProviders={walletProviders} onDraftChange={(value) => onCandidateNameChange(item.admission.id, value)} onMutate={onCandidateMutate} />
+        : <FieldAccountRow key={`account:${item.account.actorId}`} field={item.account} serviceCities={serviceCities} walletProviders={walletProviders} name={profileEdits[item.account.actorId] ?? item.account.admission?.fullNameAr ?? ""} reason={reasons[item.account.actorId] ?? ""} busy={busy} rowNotice={feedbackActorId === item.account.actorId ? notice : ""} rowError={feedbackActorId === item.account.actorId ? error : ""} acquisitionPage={acquisitionCases[item.account.actorId]} acquisitionError={acquisitionCaseErrors[item.account.actorId] ?? ""} acquisitionBusy={acquisitionCaseBusy[item.account.actorId] ?? false} onNameChange={(value) => onProfileNameChange(item.account.actorId, value)} onReasonChange={(value) => onReasonChange(item.account.actorId, value)} onMutate={onAccountMutate} onLoadAcquisitionCases={onLoadAcquisitionCases} />)}
+    </tbody></table>{visibleItems.length === 0 && !loading ? <output className="field-filter-empty">لا تطابق السجلات المحمّلة هذه المرشحات.</output> : null}{hasLoadedPageFilters ? <output className="field-filter-count" aria-live="polite">{visibleItems.length} من {items.length} سجل محمّل</output> : null}</div> : null}
     {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" disabled={loadingMore || Boolean(busy)} onClick={onLoadMore}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
   </div>;
 }
@@ -350,6 +469,7 @@ export function FieldAdmissionPanel() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [feedbackActorId, setFeedbackActorId] = useState("");
   const [acquisitionCases, setAcquisitionCases] = useState<Record<string, JoiningCaseListResponse>>({});
   const [acquisitionCaseErrors, setAcquisitionCaseErrors] = useState<Record<string, string>>({});
   const [acquisitionCaseBusy, setAcquisitionCaseBusy] = useState<Record<string, boolean>>({});
@@ -462,7 +582,7 @@ export function FieldAdmissionPanel() {
       setError("اختر مزوّدًا نشطًا من قائمة المحافظ الرسمية.");
       return;
     }
-    setBusy("create"); setError(""); setNotice("");
+    setFeedbackActorId(""); setBusy("create"); setError(""); setNotice("");
     try {
       const response = await identityFetch("/api/fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "admit", fullNameAr: name, contactPhoneE164, walletProviderKey: providerKey, allServiceCities, serviceCityIds: selectedCities.map((city) => city.id) }) });
       if (!response.ok) { const message = await responseMessage(response); await load(); setError(message); return; }
@@ -483,6 +603,7 @@ export function FieldAdmissionPanel() {
   }
 
   async function mutateCandidate(admission: FieldAdmission, action: FieldCandidateAction) {
+    setFeedbackActorId(admission.id);
     const draft = candidateEdits[admission.id] ?? fieldProfile(admission);
     const nextName = draft.fullNameAr.trim();
     if (action === "update-profile" && (Array.from(nextName).length < 2 || Array.from(nextName).length > 120)) { setError("أدخل الاسم الكامل قبل حفظ الملف."); return; }
@@ -516,6 +637,7 @@ export function FieldAdmissionPanel() {
   }
 
   async function mutateAccount(field: FieldAccount, action: FieldAccountAction, profileDraft?: FieldProfileDraft) {
+    setFeedbackActorId(field.actorId);
     const reason = reasons[field.actorId]?.trim() ?? "";
     const admission = field.admission;
     const profile = profileDraft ?? (admission ? fieldProfile(admission) : { fullNameAr: "", walletProviderKey: "", allServiceCities: false, serviceCityIds: [] });
@@ -549,21 +671,10 @@ export function FieldAdmissionPanel() {
   const candidateProviderValid = walletProviders.some((provider) => provider.key === walletProviderKey);
   const candidateCityValid = allServiceCities || serviceCityIds.length > 0 && serviceCityIds.every((id) => serviceCities.some((city) => city.id === id && city.active));
 
-  return <section className={`access-card field-workbench ${styles.root}`} aria-labelledby="field-workbench-title">
+  return <section className={`access-card field-workbench ${styles.root}`} aria-label="إدارة الميدانيين">
     <header className="field-workbench-heading">
-      <div><span className="step-chip">مساحة الشركاء</span><h2 id="field-workbench-title">إدارة الميدانيين</h2><p className="muted">قائمة واحدة تجمع ملفات الأهلية والحسابات. النظام يملك الأهلية والحسابات يملك دور الدخول.</p></div>
       <details className="field-create-disclosure"><summary className="button button-primary">إنشاء ملف ميداني</summary><div className="field-create-content"><div className="access-card-heading"><h3>ملف ميداني جديد</h3><p className="muted">إنشاء الملف يحفظ أهلية النظام للمراجعة فقط؛ لا ينشئ حساب الدخول ولا يرسل رمز التفعيل.</p></div><form className="access-form" onSubmit={(event) => { event.preventDefault(); void createProfile(); }}><label className="field-label" htmlFor="field-candidate-name">الاسم الكامل بالعربية<input id="field-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} /></label><label className="field-label" htmlFor="field-candidate-phone">رقم الجوال<input id="field-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="مثال: 777 765 432 أو +967 777 765 432" aria-invalid={Boolean(phone.trim()) && !candidatePhoneValid} aria-describedby="field-candidate-phone-help" /><span id="field-candidate-phone-help" className={phone.trim() && !candidatePhoneValid ? "identity-error" : "muted"}>{phone.trim() && !candidatePhoneValid ? "أدخل رقمًا يمنيًا صحيحًا، محليًا مثل 777 765 432 أو دوليًا مثل +967 777 765 432." : "يُستخدم هذا الرقم لإثبات الهاتف وتفعيل الدخول، ثم لتسجيل الدخول اليومي."}</span></label><label className="field-label" htmlFor="field-candidate-wallet-provider">مزوّد المحفظة الذي حدده الميداني<select id="field-candidate-wallet-provider" value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)} disabled={Boolean(busy) || walletProvidersLoading || Boolean(walletProvidersError)}><option value="">اختر محفظة رسمية</option>{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select><small>المزوّد فقط؛ لا تدخل رقم محفظة أو اسمًا قانونيًا.</small></label>{walletProvidersError ? <p className="identity-error" role="alert">{walletProvidersError}</p> : null}<label className="field-label" htmlFor="field-candidate-all-cities"><input id="field-candidate-all-cities" type="checkbox" checked={allServiceCities} onChange={(event) => setAllServiceCities(event.target.checked)} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)} /> جميع المدن النشطة، بما فيها المدن التي ستضاف لاحقًا</label>{!allServiceCities ? <label className="field-label" htmlFor="field-candidate-cities">مدن الخدمة<select id="field-candidate-cities" multiple value={serviceCityIds} onChange={(event) => setServiceCityIds(Array.from(event.currentTarget.selectedOptions, (option) => option.value))} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)}>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label> : null}{serviceCitiesError ? <p className="identity-error" role="alert">{serviceCitiesError}</p> : null}<button type="submit" className="button button-primary" disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError) || walletProvidersLoading || Boolean(walletProvidersError) || !candidateNameValid || !candidatePhoneValid || !candidateProviderValid || !candidateCityValid}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ للمراجعة"}</button></form></div></details>
     </header>
-    <section className={styles.lifecycleGuide} aria-labelledby="field-lifecycle-title">
-      <h3 id="field-lifecycle-title">مسار إنشاء حساب الميداني وتفعيله</h3>
-      <ol className={styles.lifecycleSteps}>
-        <li><strong>١. إنشاء ملف النظام</strong><span>يحفظ للمراجعة ولا يمنح الدخول.</span></li>
-        <li><strong>٢. مراجعة واعتماد الملف</strong><span>بعد الاعتماد تصبح خطوة منح الدور متاحة.</span></li>
-        <li><strong>٣. منح دور الميداني</strong><span>يربط المشغّل الأهلية بدور الدخول في الحسابات.</span></li>
-        <li><strong>٤. تفعيل الجهاز</strong><span>الميداني يثبت الهاتف المسجل بالرمز وينشئ كلمة المرور.</span></li>
-      </ol>
-      <p className={styles.lifecycleNote}>بعد التفعيل: الدخول بالهاتف وكلمة المرور. إعادة التسجيل لا تظهر إلا لدور سبق تفعيله، وبعد إجازة المشغّل.</p>
-    </section>
-    <FieldAdmissionRoster items={items} query={query} cityFilter={cityFilter} notice={notice} error={error} loading={loading} loadingMore={loadingMore} nextCursor={nextCursor} busy={busy} serviceCities={serviceCities} walletProviders={walletProviders} candidateEdits={candidateEdits} profileEdits={profileEdits} reasons={reasons} acquisitionCases={acquisitionCases} acquisitionCaseErrors={acquisitionCaseErrors} acquisitionCaseBusy={acquisitionCaseBusy} onQueryChange={updateQuery} onCityFilterChange={updateCityFilter} onRefresh={() => { void load(); }} onLoadMore={() => { void load(nextCursor, true); }} onCandidateNameChange={(id, value) => setCandidateEdits((current) => ({ ...current, [id]: value }))} onCandidateMutate={mutateCandidate} onProfileNameChange={(id, value) => setProfileEdits((current) => ({ ...current, [id]: value }))} onReasonChange={(id, value) => setReasons((current) => ({ ...current, [id]: value }))} onAccountMutate={mutateAccount} onLoadAcquisitionCases={loadAcquisitionCases} />
+    <FieldAdmissionRoster items={items} query={query} cityFilter={cityFilter} notice={notice} error={error} loading={loading} loadingMore={loadingMore} nextCursor={nextCursor} busy={busy} feedbackActorId={feedbackActorId} serviceCities={serviceCities} walletProviders={walletProviders} candidateEdits={candidateEdits} profileEdits={profileEdits} reasons={reasons} acquisitionCases={acquisitionCases} acquisitionCaseErrors={acquisitionCaseErrors} acquisitionCaseBusy={acquisitionCaseBusy} onQueryChange={updateQuery} onCityFilterChange={updateCityFilter} onRefresh={() => { setFeedbackActorId(""); void load(); }} onLoadMore={() => { void load(nextCursor, true); }} onCandidateNameChange={(id, value) => setCandidateEdits((current) => ({ ...current, [id]: value }))} onCandidateMutate={mutateCandidate} onProfileNameChange={(id, value) => setProfileEdits((current) => ({ ...current, [id]: value }))} onReasonChange={(id, value) => setReasons((current) => ({ ...current, [id]: value }))} onAccountMutate={mutateAccount} onLoadAcquisitionCases={loadAcquisitionCases} />
   </section>;
 }

@@ -227,6 +227,88 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/fields/me/wallet-history:
+    get:
+      operationId: listOwnFieldWalletHistory
+      summary: Read the authenticated Field actor's posted WLT wallet movements
+      security:
+        - userBearer: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: Actor-bound paginated ledger movements, excluding payout request lifecycle.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/FieldWalletHistoryPage"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/fields/me/payout-requests:
+    get:
+      operationId: listOwnFieldPayoutRequests
+      summary: Read the authenticated Field actor's payout request history
+      security:
+        - userBearer: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: Actor-bound payout requests with current status, separate from posted ledger movements.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/FieldPayoutRequestHistoryPage"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/fields/activity:
+    get:
+      operationId: listOperatorFieldActivity
+      summary: Read latest linked stores for a bounded set of Field actors
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: fieldActorId
+          in: query
+          required: true
+          style: form
+          explode: true
+          description: Repeat for each Field actor; at most 50 unique actors are accepted.
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 50
+            uniqueItems: true
+            items: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Latest canonical store linked to a Field-originated joining case, if any.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/OperatorFieldActivityResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/operator/fields/{fieldActorId}/financial-summary:
     get:
       operationId: readOperatorFieldFinancialSummary

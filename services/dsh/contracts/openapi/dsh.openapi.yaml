@@ -559,6 +559,8 @@ paths:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests"
   /dsh/operator/beneficiaries:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1beneficiaries"
+  /dsh/operator/field-finance-roster:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1field-finance-roster"
   /dsh/operator/beneficiaries/{actorType}/{actorId}/financial-statement:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1beneficiaries~1{actorType}~1{actorId}~1financial-statement"
   /dsh/operator/financial-statements:
@@ -762,6 +764,15 @@ paths:
 
   /dsh/fields/me/acquisition-entitlements:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1acquisition-entitlements"
+
+  /dsh/fields/me/wallet-history:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1wallet-history"
+
+  /dsh/fields/me/payout-requests:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1payout-requests"
+
+  /dsh/operator/fields/activity:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1activity"
 
   /dsh/operator/fields/{fieldActorId}/financial-summary:
     $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1{fieldActorId}~1financial-summary"
@@ -6711,6 +6722,65 @@ components:
         summary:
           $ref: "#/components/schemas/FieldFinancialSummary"
 
+    OperatorFieldLatestStore:
+      type: object
+      additionalProperties: false
+      required: [storeId, storeName, joiningCaseId, createdAt]
+      properties:
+        storeId:
+          type: string
+        storeName:
+          type: string
+        joiningCaseId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    OperatorFieldLatestJoiningCase:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, state, createdAt]
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        state:
+          type: string
+          enum: [draft, admission_requested, submitted, needs_correction, approved]
+        createdAt:
+          type: string
+          format: date-time
+
+    OperatorFieldActivitySummary:
+      type: object
+      additionalProperties: false
+      required: [fieldActorId, joiningCaseCount, latestJoiningCase, latestStore]
+      properties:
+        fieldActorId:
+          type: string
+        joiningCaseCount:
+          type: integer
+          format: int64
+          minimum: 0
+        latestJoiningCase:
+          $ref: "#/components/schemas/OperatorFieldLatestJoiningCase"
+          nullable: true
+        latestStore:
+          $ref: "#/components/schemas/OperatorFieldLatestStore"
+          nullable: true
+
+    OperatorFieldActivityResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperatorFieldActivitySummary"
+
     FieldAcquisitionEntitlement:
       type: object
       additionalProperties: false
@@ -6758,6 +6828,76 @@ components:
             $ref: "#/components/schemas/FieldAcquisitionEntitlement"
         nextCursor:
           type: string
+
+    FieldWalletHistoryEntry:
+      type: object
+      additionalProperties: false
+      required: [type, direction, amountMinor, currency, createdAt, balanceAfterMinor]
+      properties:
+        type:
+          type: string
+        direction:
+          type: string
+          enum: [CREDIT, DEBIT]
+        amountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        createdAt:
+          type: string
+          format: date-time
+        balanceAfterMinor:
+          type: integer
+
+    FieldWalletHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [currency, entries, limit]
+      properties:
+        currency:
+          type: string
+          const: YER
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldWalletHistoryEntry"
+        nextCursor:
+          type: string
+        limit:
+          type: integer
+
+    FieldPayoutRequestHistoryEntry:
+      type: object
+      additionalProperties: false
+      required: [status, amountMinor, currency, createdAt]
+      properties:
+        status:
+          type: string
+        amountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        createdAt:
+          type: string
+          format: date-time
+
+    FieldPayoutRequestHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [requests, limit]
+      properties:
+        requests:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldPayoutRequestHistoryEntry"
+        nextCursor:
+          type: string
+        limit:
+          type: integer
 
     OfficialWalletDestination:
       type: object
@@ -7499,6 +7639,11 @@ components:
           enum: [customer, partner, captain, field]
         actorId:
           type: string
+        fieldAdmissionState:
+          type: string
+          enum: [eligible, suspended]
+          readOnly: true
+          description: DSH Field admission state; present on Field finance roster rows only.
         displayName:
           type: string
           maxLength: 200
@@ -7518,6 +7663,16 @@ components:
         heldMinor:
           type: integer
           minimum: 0
+        acquiredStoreCount:
+          type: integer
+          minimum: 0
+          x-go-pointer: true
+          description: Field-only count of distinct stores or joining cases with a posted acquisition entitlement.
+        earnedMinor:
+          type: integer
+          minimum: 0
+          x-go-pointer: true
+          description: Field-only total credited amount from posted acquisition entitlements.
         destination:
           $ref: "#/components/schemas/OfficialWalletDestination"
           nullable: true
@@ -7532,6 +7687,64 @@ components:
       properties:
         state:
           $ref: "#/components/schemas/BeneficiaryPayoutState"
+
+    FieldFinanceSummary:
+      type: object
+      additionalProperties: false
+      required: [currency, fieldActorCount, acquiredStoreCount, earnedMinor, eligibleAvailableMinor, heldMinor, payoutRequestCount, activeDestinationCount]
+      properties:
+        currency:
+          type: string
+          const: YER
+        fieldActorCount:
+          type: integer
+          minimum: 0
+          description: WLT Field actors represented by any canonical Field finance record.
+        acquiredStoreCount:
+          type: integer
+          minimum: 0
+          description: Global WLT count of distinct stores or joining cases with posted Field entitlements.
+        earnedMinor:
+          type: integer
+          minimum: 0
+          description: Global WLT sum of posted Field entitlement credits.
+        eligibleAvailableMinor:
+          type: integer
+          description: Global WLT available Field balance after active holds.
+        heldMinor:
+          type: integer
+          minimum: 0
+          description: Global WLT active Field payout holds.
+        payoutRequestCount:
+          type: integer
+          minimum: 0
+          description: Global WLT count of Field payout requests.
+        activeDestinationCount:
+          type: integer
+          minimum: 0
+          description: Global WLT count of Fields with an active verified payout destination.
+
+    OperatorFieldFinanceRosterResponse:
+      type: object
+      additionalProperties: false
+      required: [beneficiaries, limit, totalCount, fieldFinanceSummary]
+      properties:
+        beneficiaries:
+          type: array
+          items:
+            $ref: "#/components/schemas/BeneficiaryPayoutState"
+        nextCursor:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+        totalCount:
+          type: integer
+          minimum: 0
+          description: Count of bound eligible/suspended admissions matching search and admissionState, before payout status filtering.
+        fieldFinanceSummary:
+          $ref: "#/components/schemas/FieldFinanceSummary"
 
     StoreFulfillmentMode:
       type: string

@@ -13,12 +13,12 @@ func TestManagedRoleRecoveryMigrationIsRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load identity migrations: %v", err)
 	}
-	if len(records) != 25 {
-		t.Fatalf("identity migration count = %d, want 25", len(records))
+	if len(records) != 26 {
+		t.Fatalf("identity migration count = %d, want 26", len(records))
 	}
 	last := records[len(records)-1]
-	if last.Version != 25 || last.Name != "025_managed_role_password_recovery.sql" {
-		t.Fatalf("last identity migration = %#v, want v25 managed role password recovery", last)
+	if last.Version != 26 || last.Name != "026_field_app_foreground_timestamp.sql" {
+		t.Fatalf("last identity migration = %#v, want v26 Field app foreground timestamp", last)
 	}
 }
 

@@ -69,6 +69,7 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("POST /auth/refresh", s.refresh)
 	mux.HandleFunc("POST /auth/logout", s.logout)
 	mux.HandleFunc("GET /auth/session", s.currentSession)
+	mux.HandleFunc("POST /auth/session/app-opened", s.recordFieldAppOpened)
 	if config.Development {
 		mux.HandleFunc("POST /auth/development/session", s.developmentSession)
 	}
@@ -375,6 +376,28 @@ func (s *Server) currentSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, identity)
+}
+
+func (s *Server) recordFieldAppOpened(w http.ResponseWriter, r *http.Request) {
+	token, ok := bearerToken(r)
+	if !ok {
+		writeDomainError(w, domain.ErrUnauthenticated)
+		return
+	}
+	identity, err := s.sessions.ResolveAccessToken(r.Context(), token)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	if identity.Role != "field" {
+		writeDomainError(w, domain.ErrForbidden)
+		return
+	}
+	if err := s.sessions.RecordFieldAppOpened(r.Context(), identity.Subject, identity.SessionID); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type internalHandler func(http.ResponseWriter, *http.Request, string)

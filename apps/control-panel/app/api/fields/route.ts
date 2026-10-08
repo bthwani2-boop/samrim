@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
 import { NextResponse } from "next/server";
 
-import { admitField, approveFieldAdmission, authorizeDshFieldReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, listFieldAdmissions, provisionFieldAdmission, readFieldAdmissionByActor, reviewFieldAdmissionProfile, setDshFieldRoleEnabled, updateFieldAdmissionProfile } from "../../../src/server/dsh/dsh-bff";
+import { admitField, approveFieldAdmission, authorizeDshFieldReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, listFieldAdmissions, listOperatorFieldActivity, provisionFieldAdmission, readFieldAdmissionByActor, reviewFieldAdmissionProfile, setDshFieldRoleEnabled, updateFieldAdmissionProfile } from "../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../src/server/security/csrf";
@@ -136,7 +136,7 @@ export async function GET(request: Request) {
       const workbenchCursor = decodeWorkbenchCursor(cursor);
       if (cursor && !workbenchCursor) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "field workbench cursor is invalid" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
       const phase = workbenchCursor?.phase ?? "candidates";
-      const items: Array<Readonly<{ kind: "candidate"; admission: Awaited<ReturnType<typeof listFieldAdmissions>>["admissions"][number] }> | Readonly<{ kind: "account"; account: Awaited<ReturnType<typeof searchIdentityRoles>>["items"][number] & { admission: Awaited<ReturnType<typeof readFieldAdmissionByActor>>["admission"] | null } }>> = [];
+      const items: Array<Readonly<{ kind: "candidate"; admission: Awaited<ReturnType<typeof listFieldAdmissions>>["admissions"][number] }> | Readonly<{ kind: "account"; account: Awaited<ReturnType<typeof searchIdentityRoles>>["items"][number] & { admission: Awaited<ReturnType<typeof readFieldAdmissionByActor>>["admission"] | null; latestStore: Awaited<ReturnType<typeof listOperatorFieldActivity>>["items"][number]["latestStore"]; joiningCaseCount: number; latestJoiningCase: Awaited<ReturnType<typeof listOperatorFieldActivity>>["items"][number]["latestJoiningCase"] } }>> = [];
       let accountsCursor = "";
       if (phase === "candidates") {
         const candidates = await listFieldAdmissions(query, "pending", "created_desc", limit, workbenchCursor?.sourceCursor ?? "", { operatorActorId: identity.subject }, serviceCityId);
@@ -158,12 +158,18 @@ export async function GET(request: Request) {
           throw error;
         }
       }));
-      items.push(...roster.filter((item) => !serviceCityId || item.account.admission?.allServiceCities || item.account.admission?.serviceCityIds?.includes(serviceCityId)));
+      const visibleRoster = roster.filter((item) => !serviceCityId || item.account.admission?.allServiceCities || item.account.admission?.serviceCityIds?.includes(serviceCityId));
+      const activity = visibleRoster.length ? await listOperatorFieldActivity(visibleRoster.map((item) => item.account.actorId), { operatorActorId: identity.subject }) : { items: [] };
+      const activityByActor = new Map(activity.items.map((item) => [item.fieldActorId, item] as const));
+      items.push(...visibleRoster.map((item) => {
+        const summary = activityByActor.get(item.account.actorId);
+        return { ...item, account: { ...item.account, latestStore: summary?.latestStore ?? null, joiningCaseCount: summary?.joiningCaseCount ?? 0, latestJoiningCase: summary?.latestJoiningCase ?? null } };
+      }));
       const nextCursor = accounts.nextCursor ? encodeWorkbenchCursor({ version: 1, phase: "accounts", sourceCursor: accounts.nextCursor }) : undefined;
       return NextResponse.json({ items, nextCursor }, { headers: { "Cache-Control": "no-store" } });
     }
     const page = await searchIdentityRoles("field", query, limit, cursor, enabled, sort);
-    const items = await Promise.all(page.items.map(async (role) => {
+    const roster = await Promise.all(page.items.map(async (role) => {
       try {
         const result = await readFieldAdmissionByActor(role.actorId, { operatorActorId: identity.subject });
         return { ...role, admission: result.admission };
@@ -172,6 +178,12 @@ export async function GET(request: Request) {
         throw error;
       }
     }));
+    const activity = roster.length ? await listOperatorFieldActivity(roster.map((role) => role.actorId), { operatorActorId: identity.subject }) : { items: [] };
+    const activityByActor = new Map(activity.items.map((item) => [item.fieldActorId, item] as const));
+    const items = roster.map((role) => {
+      const summary = activityByActor.get(role.actorId);
+      return { ...role, latestStore: summary?.latestStore ?? null, joiningCaseCount: summary?.joiningCaseCount ?? 0, latestJoiningCase: summary?.latestJoiningCase ?? null };
+    });
     return NextResponse.json({ items, limit: page.limit, nextCursor: page.nextCursor }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (isDshClientError(error)) {

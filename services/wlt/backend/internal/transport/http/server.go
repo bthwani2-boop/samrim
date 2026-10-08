@@ -113,6 +113,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/field-acquisition-entitlements/{joiningCaseId}", s.readFieldAcquisitionEntitlementByJoiningCase)
 	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/financial-summary", s.readFieldFinancialSummary)
 	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/wallet-history", s.readFieldWalletHistory)
+	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/payout-requests", s.listFieldPayoutRequests)
 	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/acquisition-entitlements", s.listFieldAcquisitionEntitlements)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations", s.createOfficialWalletDestination)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/verify", s.verifyOfficialWalletDestination)
@@ -131,6 +132,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/payout-state/{actorType}/{actorId}", s.readPayoutState)
 	mux.HandleFunc("GET /wlt/v1/operator/payout-requests", s.listPayoutRequests)
 	mux.HandleFunc("GET /wlt/v1/operator/beneficiaries", s.listBeneficiaryPayoutStates)
+	mux.HandleFunc("POST /wlt/v1/operator/field-payout-states:batch", s.readFieldPayoutStatesBatch)
 	mux.HandleFunc("GET /wlt/v1/operator/beneficiaries/{actorType}/{actorId}/financial-statement", s.readFinancialStatement)
 	mux.HandleFunc("GET /wlt/v1/operator/financial-statements", s.listFinancialStatementSummaries)
 	mux.HandleFunc("GET /wlt/v1/operator/payout-requests/{payoutId}", s.readOperatorPayoutRequest)
@@ -356,6 +358,8 @@ type payoutStateJSON struct {
 	Currency               string                         `json:"currency"`
 	EligibleAvailableMinor int64                          `json:"eligibleAvailableMinor"`
 	HeldMinor              int64                          `json:"heldMinor"`
+	AcquiredStoreCount     *int64                         `json:"acquiredStoreCount,omitempty"`
+	EarnedMinor            *int64                         `json:"earnedMinor,omitempty"`
 	Destination            *officialWalletDestinationJSON `json:"destination"`
 	LatestPayout           *payoutRequestJSON             `json:"latestPayout"`
 }
@@ -364,6 +368,46 @@ type beneficiaryPayoutRegistryResponse struct {
 	Beneficiaries []payoutStateJSON `json:"beneficiaries"`
 	NextCursor    string            `json:"nextCursor,omitempty"`
 	Limit         int               `json:"limit"`
+}
+
+type fieldFinanceAggregateJSON struct {
+	Currency               string `json:"currency"`
+	FieldActorCount        int64  `json:"fieldActorCount"`
+	AcquiredStoreCount     int64  `json:"acquiredStoreCount"`
+	EarnedMinor            int64  `json:"earnedMinor"`
+	EligibleAvailableMinor int64  `json:"eligibleAvailableMinor"`
+	HeldMinor              int64  `json:"heldMinor"`
+	PayoutRequestCount     int64  `json:"payoutRequestCount"`
+	ActiveDestinationCount int64  `json:"activeDestinationCount"`
+}
+
+type fieldPayoutStatesBatchRequest struct {
+	ActorIDs []string `json:"actorIds"`
+}
+
+type fieldPayoutStatesBatchResponse struct {
+	Beneficiaries       []payoutStateJSON         `json:"beneficiaries"`
+	FieldFinanceSummary fieldFinanceAggregateJSON `json:"fieldFinanceSummary"`
+}
+
+func normalizeFieldPayoutBatchActorIDs(rawActorIDs []string) ([]string, bool) {
+	if len(rawActorIDs) > 100 {
+		return nil, false
+	}
+	actorIDs := make([]string, 0, len(rawActorIDs))
+	seen := make(map[string]struct{}, len(rawActorIDs))
+	for _, rawActorID := range rawActorIDs {
+		actorID := strings.TrimSpace(rawActorID)
+		if actorID == "" || len(actorID) > 128 {
+			return nil, false
+		}
+		if _, exists := seen[actorID]; exists {
+			continue
+		}
+		seen[actorID] = struct{}{}
+		actorIDs = append(actorIDs, actorID)
+	}
+	return actorIDs, true
 }
 
 type beneficiaryPayoutRegistryCursor struct {
@@ -1511,6 +1555,52 @@ func (s *Server) listBeneficiaryPayoutStates(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (s *Server) readFieldPayoutStatesBatch(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) || !s.requireActingOperator(w, r) {
+		return
+	}
+	var input fieldPayoutStatesBatchRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	actorIDs, validActorIDs := normalizeFieldPayoutBatchActorIDs(input.ActorIDs)
+	if !validActorIDs {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "field beneficiary batch actor ids are invalid")
+		return
+	}
+	result := fieldPayoutStatesBatchResponse{Beneficiaries: make([]payoutStateJSON, 0, len(actorIDs))}
+	for _, actorID := range actorIDs {
+		state, err := postgres.ReadPayoutState(r.Context(), s.db, "field", actorID)
+		if err != nil {
+			writePayoutError(w, err)
+			return
+		}
+		financialSummary, err := postgres.ReadFieldFinancialSummary(r.Context(), s.db, actorID)
+		if err != nil {
+			writePayoutError(w, err)
+			return
+		}
+		acquiredStoreCount := financialSummary.PartnerCount
+		earnedMinor := financialSummary.EarnedMinor
+		state.AcquiredStoreCount = &acquiredStoreCount
+		state.EarnedMinor = &earnedMinor
+		result.Beneficiaries = append(result.Beneficiaries, toPayoutState(state))
+	}
+	aggregate, err := postgres.ReadFieldFinanceAggregate(r.Context(), s.db)
+	if err != nil {
+		writePayoutError(w, err)
+		return
+	}
+	result.FieldFinanceSummary = fieldFinanceAggregateJSON{
+		Currency: "YER", FieldActorCount: aggregate.FieldActorCount,
+		AcquiredStoreCount: aggregate.AcquiredStoreCount, EarnedMinor: aggregate.EarnedMinor,
+		EligibleAvailableMinor: aggregate.EligibleAvailableMinor, HeldMinor: aggregate.HeldMinor,
+		PayoutRequestCount: aggregate.PayoutRequestCount, ActiveDestinationCount: aggregate.ActiveDestinationCount,
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) bool {
 	provided := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(r.Header.Get("Authorization")), "Bearer "))
 	if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(s.serviceToken)) != 1 {
@@ -1623,7 +1713,7 @@ func toPayoutRequest(item postgres.PayoutRequestRecord) payoutRequestJSON {
 }
 
 func toPayoutState(item postgres.PayoutStateRecord) payoutStateJSON {
-	result := payoutStateJSON{ActorType: item.ActorType, ActorID: item.ActorID, Currency: item.Currency, EligibleAvailableMinor: item.EligibleAvailableMinor, HeldMinor: item.HeldMinor}
+	result := payoutStateJSON{ActorType: item.ActorType, ActorID: item.ActorID, Currency: item.Currency, EligibleAvailableMinor: item.EligibleAvailableMinor, HeldMinor: item.HeldMinor, AcquiredStoreCount: item.AcquiredStoreCount, EarnedMinor: item.EarnedMinor}
 	if item.Destination != nil {
 		destination := toOfficialWalletDestination(*item.Destination)
 		result.Destination = &destination

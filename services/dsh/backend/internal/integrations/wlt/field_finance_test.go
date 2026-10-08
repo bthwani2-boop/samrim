@@ -17,6 +17,8 @@ func newFieldFinanceClient(t *testing.T) *Client {
 	mux.HandleFunc("GET /wlt/v1/field-acquisition-entitlements/{joiningCaseId}", readFieldEntitlementResponse)
 	mux.HandleFunc("GET /wlt/v1/fields/field-1/financial-summary", fieldSummaryResponse)
 	mux.HandleFunc("GET /wlt/v1/fields/field-1/acquisition-entitlements", fieldEntitlementsResponse)
+	mux.HandleFunc("GET /wlt/v1/fields/field-1/wallet-history", fieldWalletHistoryResponse)
+	mux.HandleFunc("GET /wlt/v1/fields/field-1/payout-requests", fieldPayoutRequestsResponse)
 	mux.HandleFunc("GET /wlt/v1/operator/partner-financial-terms-policy", readPartnerTermsResponse)
 	mux.HandleFunc("POST /wlt/v1/operator/partner-financial-terms-policy", createPartnerTermsResponse)
 	server := httptest.NewServer(mux)
@@ -75,6 +77,22 @@ func fieldEntitlementsResponse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeFieldFinanceJSON(w, `{"entitlements":[{"id":"entitlement-1","storeId":"store-1","fieldActorId":"field-1","rewardMinor":250}],"nextCursor":"cursor-2"}`)
+}
+
+func fieldWalletHistoryResponse(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") != "Bearer test-token" || r.URL.Query().Get("limit") != "20" || r.URL.Query().Get("cursor") != "cursor-1" {
+		http.Error(w, "field wallet history pagination changed", http.StatusBadRequest)
+		return
+	}
+	writeFieldFinanceJSON(w, `{"currency":"YER","entries":[{"type":"FIELD_ACQUISITION_ENTITLEMENT_POSTED","direction":"CREDIT","amountMinor":250,"currency":"YER","createdAt":"2026-10-04T01:02:03Z","balanceAfterMinor":250}],"nextCursor":"cursor-2","limit":20}`)
+}
+
+func fieldPayoutRequestsResponse(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") != "Bearer test-token" || r.URL.Query().Get("limit") != "20" || r.URL.Query().Get("cursor") != "cursor-1" {
+		http.Error(w, "field payout request pagination changed", http.StatusBadRequest)
+		return
+	}
+	writeFieldFinanceJSON(w, `{"requests":[{"status":"HELD","amountMinor":250,"currency":"YER","createdAt":"2026-10-04T01:02:03Z"}],"nextCursor":"cursor-2","limit":20}`)
 }
 
 func readPartnerTermsResponse(w http.ResponseWriter, _ *http.Request) {
@@ -139,6 +157,37 @@ func TestListFieldAcquisitionEntitlementsContract(t *testing.T) {
 	page, err := newFieldFinanceClient(t).ListFieldAcquisitionEntitlements(context.Background(), "field-1", "cursor-1", 20)
 	if err != nil || page.NextCursor != "cursor-2" || len(page.Entitlements) != 1 || page.Entitlements[0].StoreID != "store-1" {
 		t.Fatalf("field entitlement page: page=%#v err=%v", page, err)
+	}
+}
+
+func TestListFieldWalletHistoryContract(t *testing.T) {
+	page, err := newFieldFinanceClient(t).ListFieldWalletHistory(context.Background(), "field-1", "cursor-1", 20)
+	if err != nil || page.NextCursor != "cursor-2" || len(page.Entries) != 1 || page.Entries[0].Direction != "CREDIT" || page.Entries[0].BalanceAfterMinor != 250 {
+		t.Fatalf("field wallet history page: page=%#v err=%v", page, err)
+	}
+}
+
+func TestListFieldPayoutRequestsContract(t *testing.T) {
+	page, err := newFieldFinanceClient(t).ListFieldPayoutRequests(context.Background(), "field-1", "cursor-1", 20)
+	if err != nil || page.NextCursor != "cursor-2" || len(page.Requests) != 1 || page.Requests[0].Status != "HELD" || page.Requests[0].AmountMinor != 250 {
+		t.Fatalf("field payout request page: page=%#v err=%v", page, err)
+	}
+}
+
+func TestPayoutStateDecodesFieldEarningsAsOptional(t *testing.T) {
+	var field PayoutState
+	if err := json.Unmarshal([]byte(`{"actorType":"field","actorId":"field-1","currency":"YER","eligibleAvailableMinor":0,"heldMinor":0,"acquiredStoreCount":0,"earnedMinor":725}`), &field); err != nil {
+		t.Fatal(err)
+	}
+	if field.AcquiredStoreCount == nil || *field.AcquiredStoreCount != 0 || field.EarnedMinor == nil || *field.EarnedMinor != 725 {
+		t.Fatalf("Field WLT payout-state metrics did not decode, including zero: %#v", field)
+	}
+	var partner PayoutState
+	if err := json.Unmarshal([]byte(`{"actorType":"partner","actorId":"partner-1","currency":"YER","eligibleAvailableMinor":0,"heldMinor":0}`), &partner); err != nil {
+		t.Fatal(err)
+	}
+	if partner.AcquiredStoreCount != nil || partner.EarnedMinor != nil {
+		t.Fatalf("optional Field-only metrics were populated for a partner: %#v", partner)
 	}
 }
 

@@ -31,7 +31,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func TestMigrationV13ToV25Upgrade(t *testing.T) {
+func TestMigrationV13ToV26Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("IDENTITY_DATABASE_URL is required for the migration upgrade proof")
@@ -733,7 +733,7 @@ func TestMigrationV13ToV25Upgrade(t *testing.T) {
 		t.Fatalf("expected schema version 24, got %d (err: %v)", version, err)
 	}
 
-	// Apply the current migration and verify full postgres.Ready on v25.
+	// Apply the current migration and verify full postgres.Ready on v26.
 	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
 		t.Fatalf("canonical migration from v24 to current schema failed: %v", err)
 	}
@@ -741,21 +741,21 @@ func TestMigrationV13ToV25Upgrade(t *testing.T) {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	// Re-run the canonical runtime migrator and prove it is a no-op at v25.
+	// Re-run the canonical runtime migrator and prove it is a no-op at v26.
 	beforeSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
 		t.Fatalf("second canonical migration run failed: %v", err)
 	}
 	afterSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	assertMigrationNoOpSnapshotUnchanged(t, beforeSecondRun, afterSecondRun)
-	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 25 {
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 26 {
 		t.Fatalf("schema version changed during second canonical migration run: version=%d err=%v", version, err)
 	}
 
-	t.Log("Migration v13 -> v25 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Operator workspace permissions, verified legal-name schema cutover, Operator profile registry and managed recovery test PASSED successfully!")
+	t.Log("Migration v13 -> v26 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Operator workspace permissions, verified legal-name schema cutover, Operator profile registry, managed recovery, and Field app foreground timestamp test PASSED successfully!")
 }
 
-func TestManagedRecoveryMigrationFreshBootstrapAndV24Upgrade(t *testing.T) {
+func TestManagedRecoveryMigrationFreshBootstrapAndV25Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("IDENTITY_DATABASE_URL is required for isolated Identity migration proofs")
@@ -783,84 +783,84 @@ func TestManagedRecoveryMigrationFreshBootstrapAndV24Upgrade(t *testing.T) {
 		t.Fatal("could not find identity migrations directory")
 	}
 	records := identityMigrationRecords(t, migDir)
-	if len(records) != 25 {
-		t.Fatalf("identity migration count = %d, want 25", len(records))
+	if len(records) != 26 {
+		t.Fatalf("identity migration count = %d, want 26", len(records))
 	}
 	latestMigration := records[len(records)-1]
-	if latestMigration.Version != 25 || latestMigration.Name != "025_managed_role_password_recovery.sql" {
-		t.Fatalf("latest migration = %#v, want v25 managed role recovery", latestMigration)
+	if latestMigration.Version != 26 || latestMigration.Name != "026_field_app_foreground_timestamp.sql" {
+		t.Fatalf("latest migration = %#v, want v26 Field app foreground timestamp", latestMigration)
 	}
 
 	freshDB, freshURL := createIsolatedMigrationDatabase(t, ctx, rootDB, databaseURL, "id_recovery_fresh")
 	if err := identityruntime.RunMigrations(ctx, "development", freshURL, migDir); err != nil {
-		t.Fatalf("fresh bootstrap through v25: %v", err)
+		t.Fatalf("fresh bootstrap through v26: %v", err)
 	}
 	if err := postgres.Ready(ctx, freshDB); err != nil {
-		t.Fatalf("fresh v25 database readiness: %v", err)
+		t.Fatalf("fresh v26 database readiness: %v", err)
 	}
 	if err := postgres.VerifyExactConstraints(ctx, freshDB); err != nil {
-		t.Fatalf("fresh v25 exact constraints: %v", err)
+		t.Fatalf("fresh v26 exact constraints: %v", err)
 	}
 	if err := postgres.VerifyMigrationHistory(ctx, freshDB, records); err != nil {
-		t.Fatalf("fresh v25 migration history: %v", err)
+		t.Fatalf("fresh v26 migration history: %v", err)
 	}
 
-	upgradeDB, upgradeURL := createIsolatedMigrationDatabase(t, ctx, rootDB, databaseURL, "id_recovery_v24")
-	for _, record := range records[:24] {
+	upgradeDB, upgradeURL := createIsolatedMigrationDatabase(t, ctx, rootDB, databaseURL, "id_recovery_v25")
+	for _, record := range records[:25] {
 		migrationSQL, err := os.ReadFile(filepath.Join(migDir, record.Name))
 		if err != nil {
 			t.Fatalf("read migration %s: %v", record.Name, err)
 		}
 		if err := postgres.Migrate(ctx, upgradeDB, record.Version, record.Name, record.SHA256, string(migrationSQL)); err != nil {
-			t.Fatalf("establish prior-v24 baseline at migration %d: %v", record.Version, err)
+			t.Fatalf("establish prior-v25 baseline at migration %d: %v", record.Version, err)
 		}
 	}
-	if version, err := postgres.CurrentSchemaVersion(ctx, upgradeDB); err != nil || version != 24 {
-		t.Fatalf("prior baseline version = %d, want 24 (err: %v)", version, err)
+	if version, err := postgres.CurrentSchemaVersion(ctx, upgradeDB); err != nil || version != 25 {
+		t.Fatalf("prior baseline version = %d, want 25 (err: %v)", version, err)
 	}
-	if err := postgres.SynchronizeMigrationHistory(ctx, upgradeDB, records[:24]); err != nil {
-		t.Fatalf("verify prior-v24 migration history: %v", err)
+	if err := postgres.SynchronizeMigrationHistory(ctx, upgradeDB, records[:25]); err != nil {
+		t.Fatalf("verify prior-v25 migration history: %v", err)
 	}
 
 	const preservedActorID = "act_recovery_migration_preserved"
 	const preservedPhone = "+967770009821"
 	if _, err := upgradeDB.ExecContext(ctx, "INSERT INTO identity_actors(id,phone_e164,security_enabled,version) VALUES($1,$2,true,1)", preservedActorID, preservedPhone); err != nil {
-		t.Fatalf("insert prior-v24 actor fixture: %v", err)
+		t.Fatalf("insert prior-v25 actor fixture: %v", err)
 	}
 	if _, err := upgradeDB.ExecContext(ctx, "INSERT INTO identity_actor_roles(actor_id,role,enabled,activated_at,version) VALUES($1,'partner',true,clock_timestamp(),1)", preservedActorID); err != nil {
-		t.Fatalf("insert prior-v24 role fixture: %v", err)
+		t.Fatalf("insert prior-v25 role fixture: %v", err)
 	}
 	if _, err := upgradeDB.ExecContext(ctx, "INSERT INTO identity_password_credentials(actor_id,role,password_hash,version) VALUES($1,'partner',$2,3)", preservedActorID, strings.Repeat("a", 64)); err != nil {
-		t.Fatalf("insert prior-v24 credential fixture: %v", err)
+		t.Fatalf("insert prior-v25 credential fixture: %v", err)
 	}
 	const preservedChallengeID = "challenge_recovery_migration_preserved"
 	if _, err := upgradeDB.ExecContext(ctx, `INSERT INTO identity_challenges(id,actor_id,role,purpose,phone_e164,code_hash,request_ip_hash,admissible,status,attempts,expires_at)
 VALUES($1,$2,'partner','managed_activate',$3,$4,$5,true,'pending',0,clock_timestamp()+interval '1 hour')`, preservedChallengeID, preservedActorID, preservedPhone, strings.Repeat("b", 64), strings.Repeat("c", 64)); err != nil {
-		t.Fatalf("insert prior-v24 challenge fixture: %v", err)
+		t.Fatalf("insert prior-v25 challenge fixture: %v", err)
 	}
 
 	if err := identityruntime.RunMigrations(ctx, "development", upgradeURL, migDir); err != nil {
-		t.Fatalf("prior-v24 upgrade to v25: %v", err)
+		t.Fatalf("prior-v25 upgrade to v26: %v", err)
 	}
 	if err := postgres.Ready(ctx, upgradeDB); err != nil {
-		t.Fatalf("upgraded v25 database readiness: %v", err)
+		t.Fatalf("upgraded v26 database readiness: %v", err)
 	}
 	if err := postgres.VerifyExactConstraints(ctx, upgradeDB); err != nil {
-		t.Fatalf("upgraded v25 exact constraints: %v", err)
+		t.Fatalf("upgraded v26 exact constraints: %v", err)
 	}
 	if err := postgres.VerifyMigrationHistory(ctx, upgradeDB, records); err != nil {
-		t.Fatalf("upgraded v25 migration history: %v", err)
+		t.Fatalf("upgraded v26 migration history: %v", err)
 	}
 	var credentialVersion int
 	if err := upgradeDB.QueryRowContext(ctx, "SELECT version FROM identity_password_credentials WHERE actor_id=$1 AND role='partner'", preservedActorID).Scan(&credentialVersion); err != nil || credentialVersion != 3 {
-		t.Fatalf("prior credential after v25 = version %d (err: %v), want version 3", credentialVersion, err)
+		t.Fatalf("prior credential after v26 = version %d (err: %v), want version 3", credentialVersion, err)
 	}
 	var challengePurpose, challengeRole, challengeStatus string
 	if err := upgradeDB.QueryRowContext(ctx, "SELECT purpose,role,status FROM identity_challenges WHERE id=$1", preservedChallengeID).Scan(&challengePurpose, &challengeRole, &challengeStatus); err != nil {
 		t.Fatalf("read preserved prior-v24 challenge: %v", err)
 	}
 	if challengePurpose != "managed_activate" || challengeRole != "partner" || challengeStatus != "pending" {
-		t.Fatalf("prior challenge changed during v25 upgrade: purpose=%s role=%s status=%s", challengePurpose, challengeRole, challengeStatus)
+		t.Fatalf("prior challenge changed during v26 upgrade: purpose=%s role=%s status=%s", challengePurpose, challengeRole, challengeStatus)
 	}
 
 	for _, role := range []string{"partner", "captain", "field"} {

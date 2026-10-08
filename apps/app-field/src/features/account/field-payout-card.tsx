@@ -11,19 +11,6 @@ import { fieldClient } from "../field-operations/field-client";
 
 type PayoutAttempt = Readonly<{ mode: "FULL_AVAILABLE" | "SPECIFIED"; amountMinor?: number; idempotencyKey: string; correlationID: string }>;
 
-function payoutStatusLabel(status: NonNullable<BeneficiaryPayoutState["latestPayout"]>["status"]): string {
-  switch (status) {
-    case "HELD": return "محجوز للمراجعة";
-    case "PREPARED": return "قيد تجهيز الصرف";
-    case "APPROVED": return "معتمد للصرف";
-    case "FROZEN": return "مجمّد للمراجعة";
-    case "EXECUTED": return "تم تنفيذ الصرف";
-    case "COMPLETED": return "اكتمل الصرف";
-    case "CANCELLED": return "أُلغي الطلب";
-    case "EXCEPTION": return "يحتاج إلى متابعة";
-  }
-}
-
 function destinationStatusLabel(state: BeneficiaryPayoutState["destination"]): string {
   if (!state) return "غير مهيأة";
   if (state.status === "ACTIVE_FOR_PAYOUT" && state.verificationStatus === "VERIFIED") return "معتمدة";
@@ -32,7 +19,7 @@ function destinationStatusLabel(state: BeneficiaryPayoutState["destination"]): s
   return "قيد الإعداد";
 }
 
-export function FieldPayoutCard() {
+export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<{ refreshVersion: number; onPayoutConfirmed: () => void }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const authenticated = currentIdentityState().kind === "authenticated";
@@ -58,7 +45,7 @@ export function FieldPayoutCard() {
       console.warn("DSH field payout state readback failed", cause);
       setError("تعذر قراءة حالة طلب التسوية.");
     } finally { setBusy(false); }
-  }, [authenticated]);
+  }, [authenticated, refreshVersion]);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
   const request = async (mode: "FULL_AVAILABLE" | "SPECIFIED") => {
     if (pendingAttempt) mode = pendingAttempt.mode;
@@ -87,9 +74,10 @@ export function FieldPayoutCard() {
         throw new Error("FIELD_PAYOUT_CANONICAL_READBACK_MISMATCH");
       }
       setState(canonical);
+      onPayoutConfirmed();
       await SecureStore.deleteItemAsync(storageKey);
       setPendingAttempt(null);
-      setNotice(`تم تسجيل طلب التسوية وتأكيد حجز ${formatMoney(created.payout.resolvedAmountMinor, created.payout.currency)} من القراءة المعتمدة.`);
+      setNotice(`أُرسل طلب التسوية: ${formatMoney(created.payout.resolvedAmountMinor, created.payout.currency)}.`);
       setAmount("");
     } catch (cause) {
       console.warn("DSH field payout intent failed", cause);
@@ -111,7 +99,25 @@ export function FieldPayoutCard() {
   } else if (destinationReady && state) {
     payoutActions = <Text style={styles.muted}>لا يوجد رصيد متاح لطلب التسوية الآن.</Text>;
   }
-  return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="طلب تسوية الميداني"><Text style={styles.eyebrow}>تسوية المحفظة</Text><Text style={styles.title}>الرصيد والطلبات</Text>{busy && !state ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل بيانات التسوية…</Text></View> : null}{state ? <><View style={styles.destination}><Text style={styles.metricLabel}>وجهة الصرف · {destinationStatusLabel(state.destination)}</Text>{destinationReady ? <Text style={styles.destinationValue}>{state.destination?.walletIdentifierMasked}</Text> : <Text style={styles.muted}>لا يمكن طلب التسوية حتى تعتمد المالية وجهة الصرف.</Text>}</View><View style={styles.metrics}><View style={styles.metricTile}><Text style={styles.metricLabel}>المتاح الآن</Text><Text style={styles.metric}>{formatMoney(state.eligibleAvailableMinor, state.currency)}</Text></View><View style={styles.metricTile}><Text style={styles.metricLabel}>محجوز</Text><Text style={styles.metric}>{formatMoney(state.heldMinor, state.currency)}</Text></View></View>{state.latestPayout ? <View style={styles.latest}><Text style={styles.metricLabel}>آخر طلب تسوية</Text><Text style={styles.status}>{payoutStatusLabel(state.latestPayout.status)} · {formatMoney(state.latestPayout.resolvedAmountMinor, state.latestPayout.currency)}</Text></View> : <Text style={styles.muted}>لا توجد طلبات تسوية سابقة.</Text>}{payoutActions}</> : null}{notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}{authenticated ? <BthwaniButton busy={busy} label="تحديث" onPress={() => void load()} variant="secondary" /> : null}<BthwaniConfirmDialog busy={busy} confirmLabel="تأكيد طلب التسوية" description={confirmMode && state ? `سيُنشأ طلب تسوية بمبلغ ${formatMoney(confirmAmount, state.currency)} إلى وجهة المحفظة الرسمية المعتمدة، وسيُحجز المبلغ للمراجعة.` : ""} onCancel={() => setConfirmMode(null)} onConfirm={() => { const mode = confirmMode; setConfirmMode(null); if (mode) void request(mode); }} title="مراجعة طلب التسوية" visible={Boolean(confirmMode)} /></BthwaniSurface>;
+  return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="طلب تسوية الميداني">
+    <Text style={styles.title}>طلب تسوية</Text>
+    {busy && !state ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل بيانات التسوية…</Text></View> : null}
+    {busy && state ? <Text style={styles.muted}>جارٍ تحديث بيانات التسوية…</Text> : null}
+    {state ? <>
+      <View style={styles.destination}>
+        <Text style={styles.metricLabel}>وجهة الصرف · {destinationStatusLabel(state.destination)}</Text>
+        {destinationReady ? <Text style={styles.destinationValue}>{state.destination?.walletIdentifierMasked}</Text> : <Text style={styles.muted}>جهة الصرف بانتظار اعتماد المالية.</Text>}
+      </View>
+      <View style={styles.metrics}>
+        <View style={styles.metricTile}><Text style={styles.metricLabel}>المتاح الآن</Text><Text style={styles.metric}>{formatMoney(state.eligibleAvailableMinor, state.currency)}</Text></View>
+        <View style={styles.metricTile}><Text style={styles.metricLabel}>محجوز</Text><Text style={styles.metric}>{formatMoney(state.heldMinor, state.currency)}</Text></View>
+      </View>
+      {payoutActions}
+    </> : null}
+    {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
+    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    <BthwaniConfirmDialog busy={busy} confirmLabel="تأكيد طلب التسوية" description={confirmMode && state ? `سيُنشأ طلب تسوية بمبلغ ${formatMoney(confirmAmount, state.currency)} إلى وجهة المحفظة الرسمية المعتمدة، وسيُحجز المبلغ للمراجعة.` : ""} onCancel={() => setConfirmMode(null)} onConfirm={() => { const mode = confirmMode; setConfirmMode(null); if (mode) void request(mode); }} title="مراجعة طلب التسوية" visible={Boolean(confirmMode)} />
+  </BthwaniSurface>;
 }
 
-function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ card: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] }, eyebrow: { ...typography.label, color: theme.interactiveText }, title: { ...typography.titleSm, color: theme.color }, loading: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, destination: { backgroundColor: theme.actionSoft, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] }, destinationValue: { ...typography.bodyStrong, color: theme.color, writingDirection: "ltr" }, latest: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[1], paddingTop: spacing[2] }, metrics: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] }, metricTile: { flexBasis: 136, flexGrow: 1, minWidth: 0 }, metricLabel: { ...typography.caption, color: theme.colorMuted }, metric: { ...typography.bodyStrong, color: theme.color }, status: { ...typography.bodySm, color: theme.interactiveText }, muted: { ...typography.bodySm, color: theme.colorMuted }, input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, padding: spacing[3], textAlign: "left", writingDirection: "ltr" }, notice: { ...typography.bodySm, color: theme.interactiveText }, error: { ...typography.bodySm, color: theme.warning } }); }
+function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ card: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] }, title: { ...typography.titleSm, color: theme.color }, loading: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, destination: { backgroundColor: theme.actionSoft, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] }, destinationValue: { ...typography.bodyStrong, color: theme.color, writingDirection: "ltr" }, metrics: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] }, metricTile: { flexBasis: 136, flexGrow: 1, minWidth: 0 }, metricLabel: { ...typography.caption, color: theme.colorMuted }, metric: { ...typography.bodyStrong, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, padding: spacing[3], textAlign: "left", writingDirection: "ltr" }, notice: { ...typography.bodySm, color: theme.interactiveText }, error: { ...typography.bodySm, color: theme.warning } }); }

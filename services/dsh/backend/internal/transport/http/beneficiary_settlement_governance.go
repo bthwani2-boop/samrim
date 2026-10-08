@@ -18,6 +18,7 @@ import (
 func (s *BeneficiaryFinanceServer) RegisterSettlementGovernance(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/payout-requests", s.listOperatorPayoutRequests)
 	mux.HandleFunc("GET /dsh/operator/beneficiaries", s.listOperatorBeneficiaryPayoutStates)
+	mux.HandleFunc("GET /dsh/operator/field-finance-roster", s.listOperatorFieldFinanceRoster)
 	mux.HandleFunc("GET /dsh/operator/beneficiaries/{actorType}/{actorId}/financial-statement", s.readOperatorFinancialStatement)
 	mux.HandleFunc("GET /dsh/operator/financial-statements", s.listOperatorFinancialStatementSummaries)
 	mux.HandleFunc("GET /dsh/operator/payout-requests/{payoutId}", s.readOperatorPayoutRequest)
@@ -246,14 +247,23 @@ type beneficiaryFinancialStatementSummaryRegistryPresentation struct {
 
 type beneficiaryPayoutStatePresentation struct {
 	wlt.PayoutState
-	DisplayName string `json:"displayName,omitempty"`
-	PhoneMasked string `json:"phoneMasked,omitempty"`
+	DisplayName         string `json:"displayName,omitempty"`
+	PhoneMasked         string `json:"phoneMasked,omitempty"`
+	FieldAdmissionState string `json:"fieldAdmissionState,omitempty"`
 }
 
 type beneficiaryPayoutStateRegistryPresentation struct {
 	Beneficiaries []beneficiaryPayoutStatePresentation `json:"beneficiaries"`
 	NextCursor    string                               `json:"nextCursor,omitempty"`
 	Limit         int                                  `json:"limit"`
+}
+
+type fieldFinanceRosterPresentation struct {
+	Beneficiaries       []beneficiaryPayoutStatePresentation `json:"beneficiaries"`
+	NextCursor          string                               `json:"nextCursor,omitempty"`
+	Limit               int                                  `json:"limit"`
+	TotalCount          int64                                `json:"totalCount"`
+	FieldFinanceSummary wlt.FieldFinanceSummary              `json:"fieldFinanceSummary"`
 }
 
 type settlementBatchItemPresentation struct {
@@ -370,6 +380,81 @@ func (s *BeneficiaryFinanceServer) listOperatorBeneficiaryPayoutStates(w http.Re
 		Beneficiaries: beneficiaries,
 		NextCursor:    result.NextCursor,
 		Limit:         result.Limit,
+	})
+}
+
+func (s *BeneficiaryFinanceServer) listOperatorFieldFinanceRoster(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeAndRequireOperator(w, r) {
+		return
+	}
+	statusFilter, validStatus := normalizeFieldFinancePayoutStatus(r.URL.Query().Get("status"))
+	if !validStatus {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field payout status filter is invalid")
+		return
+	}
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 50 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field finance page limit is invalid")
+			return
+		}
+		limit = parsed
+	}
+	page, err := postgres.ListFieldFinanceRoster(r.Context(), s.db, r.URL.Query().Get("search"), r.URL.Query().Get("admissionState"), r.URL.Query().Get("cursor"), limit)
+	if err != nil {
+		if errors.Is(err, postgres.ErrFieldAdmissionRegistry) {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field finance roster filters or cursor are invalid")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "Field finance roster is unavailable")
+		return
+	}
+	actorIDs := make([]string, 0, len(page.Items))
+	for _, item := range page.Items {
+		actorIDs = append(actorIDs, item.ActorID)
+	}
+	finance, err := s.payment.ReadFieldPayoutStatesBatch(r.Context(), actorIDs, strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")))
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	statesByActor := make(map[string]wlt.PayoutState, len(finance.Beneficiaries))
+	for _, item := range finance.Beneficiaries {
+		statesByActor[item.ActorID] = item
+	}
+	phones := make(map[string]string, len(actorIDs))
+	if len(actorIDs) > 0 {
+		roles, roleErr := s.identity.ReadActorRoles(r.Context(), "field", actorIDs)
+		if roleErr != nil {
+			writeIdentityError(w, roleErr)
+			return
+		}
+		for _, role := range roles.Items {
+			if role.Role == "field" && role.ActorID != "" {
+				phones[role.ActorID] = maskPartnerFinancePhone(role.PhoneE164)
+			}
+		}
+	}
+	beneficiaries := make([]beneficiaryPayoutStatePresentation, 0, len(page.Items))
+	for _, admission := range page.Items {
+		state, ok := statesByActor[admission.ActorID]
+		if !ok {
+			zero := int64(0)
+			state = wlt.PayoutState{ActorType: "field", ActorID: admission.ActorID, Currency: "YER", AcquiredStoreCount: &zero, EarnedMinor: &zero}
+		}
+		if !fieldFinanceStateMatchesPayoutStatus(state, statusFilter) {
+			continue
+		}
+		beneficiaries = append(beneficiaries, beneficiaryPayoutStatePresentation{
+			PayoutState: state, DisplayName: admission.DisplayName, PhoneMasked: phones[admission.ActorID],
+			FieldAdmissionState: admission.State,
+		})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, fieldFinanceRosterPresentation{
+		Beneficiaries: beneficiaries, NextCursor: page.NextCursor, Limit: page.Limit, TotalCount: page.TotalCount,
+		FieldFinanceSummary: finance.FieldFinanceSummary,
 	})
 }
 

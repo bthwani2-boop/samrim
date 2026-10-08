@@ -429,7 +429,7 @@ func (s *Service) GetRole(ctx context.Context, caller, actorID, role string) (do
 		return domain.ActorRoleView{}, domain.ErrForbidden
 	}
 	view, err := scanRoleView(func(dest ...any) error {
-		return s.db.QueryRowContext(ctx, "SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,a.security_enabled,a.version,r.version,c.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role WHERE a.id=$1 AND r.role=$2", actorID, role).Scan(dest...)
+		return s.db.QueryRowContext(ctx, "SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role WHERE a.id=$1 AND r.role=$2", actorID, role).Scan(dest...)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ActorRoleView{}, domain.ErrNotFound
@@ -478,7 +478,7 @@ func (s *Service) ReadRoles(ctx context.Context, caller, role string, actorIDs [
 		ids = append(ids, actorID)
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,a.security_enabled,a.version,r.version,c.version
+	rows, err := s.db.QueryContext(ctx, `SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version
 		FROM identity_actors a
 		JOIN identity_actor_roles r ON r.actor_id=a.id
 		LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role
@@ -570,7 +570,7 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 	if sort == "phone_desc" {
 		order = "DESC"
 	}
-	query := "SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,a.security_enabled,a.version,r.version,c.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role WHERE " + strings.Join(clauses, " AND ") + cursorClause + " ORDER BY a.phone_e164 " + order + ",a.id " + order + " LIMIT $" + strconv.Itoa(len(args))
+	query := "SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role WHERE " + strings.Join(clauses, " AND ") + cursorClause + " ORDER BY a.phone_e164 " + order + ",a.id " + order + " LIMIT $" + strconv.Itoa(len(args))
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return domain.ActorSearchPage{}, err
@@ -926,14 +926,18 @@ type scanner func(dest ...any) error
 
 func scanRoleView(scan scanner) (domain.ActorRoleView, error) {
 	var view domain.ActorRoleView
-	var activated sql.NullTime
+	var activated, lastAppOpenedAt sql.NullTime
 	var credVersion sql.NullInt64
-	if err := scan(&view.ActorID, &view.PhoneE164, &view.Role, &view.Enabled, &activated, &view.SecurityEnabled, &view.ActorVersion, &view.RoleVersion, &credVersion); err != nil {
+	if err := scan(&view.ActorID, &view.PhoneE164, &view.Role, &view.Enabled, &activated, &lastAppOpenedAt, &view.SecurityEnabled, &view.ActorVersion, &view.RoleVersion, &credVersion); err != nil {
 		return domain.ActorRoleView{}, err
 	}
 	if activated.Valid {
 		value := activated.Time
 		view.ActivatedAt = &value
+	}
+	if lastAppOpenedAt.Valid {
+		value := lastAppOpenedAt.Time
+		view.LastAppOpenedAt = &value
 	}
 	if credVersion.Valid && credVersion.Int64 > 0 {
 		view.CredentialVersion = int(credVersion.Int64)

@@ -1,5 +1,6 @@
 import type { CreateFieldJoiningCaseDraftRequest } from "./generated/dsh-types";
 import type { WalletProviderListResponse } from "./generated/dsh-types";
+import type { FieldPayoutRequestHistoryPage, FieldWalletHistoryPage } from "./generated/dsh-types";
 import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
 import { dshOperationPaths } from "./generated/dsh-operations";
 import type { StoreAccessGrantActivationRequest, StoreAccessGrantPermissionsRequest } from "./generated/dsh-types";
@@ -389,6 +390,22 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (cursor.trim()) query.set("cursor", cursor.trim());
       const path = `${dshOperationPaths.listOwnFieldAcquisitionEntitlements.path}?${query.toString()}`;
       return userRequest<FieldAcquisitionEntitlementPage>(accessToken, path, dshOperationPaths.listOwnFieldAcquisitionEntitlements.method);
+    },
+    async listOwnFieldWalletHistory(accessToken: string, limit = 50, cursor = ""): Promise<FieldWalletHistoryPage> {
+      const normalizedCursor = cursor.trim();
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100 || normalizedCursor.length > 512) throw new Error("DSH_FIELD_WALLET_HISTORY_QUERY_INVALID");
+      const query = new URLSearchParams({ limit: String(limit) });
+      if (normalizedCursor) query.set("cursor", normalizedCursor);
+      const path = `${dshOperationPaths.listOwnFieldWalletHistory.path}?${query.toString()}`;
+      return userRequest<FieldWalletHistoryPage>(accessToken, path, dshOperationPaths.listOwnFieldWalletHistory.method);
+    },
+    async listOwnFieldPayoutRequests(accessToken: string, limit = 50, cursor = ""): Promise<FieldPayoutRequestHistoryPage> {
+      const normalizedCursor = cursor.trim();
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100 || normalizedCursor.length > 512) throw new Error("DSH_FIELD_PAYOUT_REQUEST_QUERY_INVALID");
+      const query = new URLSearchParams({ limit: String(limit) });
+      if (normalizedCursor) query.set("cursor", normalizedCursor);
+      const path = `${dshOperationPaths.listOwnFieldPayoutRequests.path}?${query.toString()}`;
+      return userRequest<FieldPayoutRequestHistoryPage>(accessToken, path, dshOperationPaths.listOwnFieldPayoutRequests.method);
     },
     async readOwnPayoutState(accessToken: string): Promise<BeneficiaryPayoutStateResponse> {
       return userRequest<BeneficiaryPayoutStateResponse>(accessToken, dshOperationPaths.readOwnPayoutState.path, dshOperationPaths.readOwnPayoutState.method);

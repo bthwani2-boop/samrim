@@ -387,6 +387,26 @@ func (s *Service) ListRole(ctx context.Context, actorID, role string) ([]domain.
 	return result, rows.Err()
 }
 
+func (s *Service) RecordFieldAppOpened(ctx context.Context, actorID, sessionID string) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE identity_actor_roles r
+		SET last_app_opened_at=clock_timestamp()
+		FROM identity_actors a
+		WHERE r.actor_id=$1 AND r.role='field' AND r.enabled=true AND a.id=r.actor_id AND a.security_enabled=true
+		AND EXISTS (SELECT 1 FROM identity_sessions s WHERE s.id=$2 AND s.actor_id=r.actor_id AND s.role='field'
+			AND s.revoked_at IS NULL AND s.access_expires_at>clock_timestamp() AND s.absolute_expires_at>clock_timestamp())`, strings.TrimSpace(actorID), strings.TrimSpace(sessionID))
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return domain.ErrUnauthenticated
+	}
+	return nil
+}
+
 func (s *Service) RevokeRoleSession(ctx context.Context, actorID, role, sessionID, principal, correlationID, operatorActorID string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

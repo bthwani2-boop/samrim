@@ -916,6 +916,46 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/operator/field-finance-roster:
+    get:
+      operationId: listOperatorFieldFinanceRoster
+      summary: List bound eligible and suspended Field admissions with canonical WLT finance state
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 100, description: Matches the admission display name or actor ID. }
+        - name: admissionState
+          in: query
+          required: false
+          schema: { type: string, enum: [all, eligible, suspended], default: all }
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [NO_REQUEST, HELD, PREPARED, APPROVED, FROZEN, EXECUTED, COMPLETED, EXCEPTION, CANCELLED] }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 50 }
+      responses:
+        "200":
+          description: DSH-paginated bound eligible/suspended Field admissions enriched in one bounded WLT batch. totalCount is the matching admission count before payout status filtering. fieldFinanceSummary covers WLT Field finance records globally, independently of roster filters.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/OperatorFieldFinanceRosterResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/operator/payout-requests/{payoutId}:
     get:
       operationId: readOperatorPayoutRequest

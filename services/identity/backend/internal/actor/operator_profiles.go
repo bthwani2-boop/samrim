@@ -499,7 +499,7 @@ func scanOperatorProfile(scan func(...any) error) (domain.OperatorProfile, error
 }
 
 func readOperatorProfileRole(ctx context.Context, q operatorProfileQueryer, actorID string) (domain.ActorRoleView, error) {
-	return scanRoleView(q.QueryRowContext(ctx, `SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,a.security_enabled,a.version,r.version,c.version
+	return scanRoleView(q.QueryRowContext(ctx, `SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version
 		FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role
 		WHERE a.id=$1 AND r.role='operator'`, strings.TrimSpace(actorID)).Scan)
 }
