@@ -59,7 +59,7 @@ export function BthwaniButton({ label, variant = "primary", busy = false, disabl
   );
 }
 
-export function BthwaniNavigationRow({ description, icon, onPress, style, title, ...props }: Omit<PressableProps, "children" | "onPress"> & { description: string; icon: MobileIconName; onPress: NonNullable<PressableProps["onPress"]>; title: string }) {
+export function BthwaniNavigationRow({ compact = false, description, icon, onPress, style, title, ...props }: Omit<PressableProps, "children" | "onPress"> & { compact?: boolean; description: string; icon: MobileIconName; onPress: NonNullable<PressableProps["onPress"]>; title: string }) {
   const theme = useAppearanceTheme();
   const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
   const disabled = Boolean(props.disabled);
@@ -72,10 +72,10 @@ export function BthwaniNavigationRow({ description, icon, onPress, style, title,
       accessibilityState={{ ...props.accessibilityState, disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={(state) => [styles.navigationRow, disabled && styles.navigationRowDisabled, state.pressed && !disabled && styles.buttonPressed, resolvePressableStyle(style, state)]}
+      style={(state) => [compact ? styles.navigationRowCompact : styles.navigationRow, disabled && styles.navigationRowDisabled, state.pressed && !disabled && styles.buttonPressed, resolvePressableStyle(style, state)]}
     >
-      <View style={styles.navigationRowIcon}>
-        <BthwaniIcon name={icon} color={theme.interactiveText} size={sizing.iconLg} />
+      <View style={[styles.navigationRowIcon, compact && styles.navigationRowIconCompact]}>
+        <BthwaniIcon name={icon} color={theme.interactiveText} size={compact ? sizing.iconSm : sizing.iconLg} />
       </View>
       <View style={styles.navigationRowCopy}>
         <Text style={styles.navigationRowTitle}>{title}</Text>
@@ -239,8 +239,10 @@ function createPrimitiveStyles(theme: ThemeColors) {
     chipTextSelected: { color: theme.interactiveText, fontWeight: "600" },
     chipTextDisabled: { color: theme.disabledText },
     navigationRow: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[3], minHeight: sizing.controlLg + spacing[4], paddingHorizontal: spacing[3], paddingVertical: spacing[3], width: "100%" },
+    navigationRowCompact: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: sizing.controlLg, paddingHorizontal: spacing[2], paddingVertical: spacing[1], width: "100%" },
     navigationRowDisabled: { opacity: opacity.disabled },
     navigationRowIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: sizing.avatarMd, justifyContent: "center", width: sizing.avatarMd },
+    navigationRowIconCompact: { height: sizing.controlSm, width: sizing.controlSm },
     navigationRowCopy: { flex: 1, gap: spacing[1], minWidth: 0 },
     navigationRowTitle: { ...typography.bodyStrong, color: theme.color },
     navigationRowDescription: { ...typography.caption, color: theme.colorMuted },

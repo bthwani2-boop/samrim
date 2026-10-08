@@ -2,6 +2,7 @@
 
 import type { OfficialWalletDestination } from "@bthwani/dsh";
 import { useState } from "react";
+import { useWalletProviders, walletProviderLabel } from "../wallet-provider/use-wallet-providers";
 
 type BeneficiaryActorType = "partner" | "captain" | "field";
 type WalletIntent = Readonly<{ actorType: BeneficiaryActorType; actorId: string; providerKey: string; sourceId: string }>;
@@ -66,6 +67,7 @@ function expectedReadback(attempt: DestinationAttempt, destination: OfficialWall
 }
 
 export function OfficialWalletDestinationManager({ actorType, actorId }: Readonly<{ actorType: BeneficiaryActorType; actorId: string }>) {
+  const { walletProviders } = useWalletProviders();
   const [intent, setIntent] = useState<WalletIntent | null>(null);
   const [operatorActorId, setOperatorActorId] = useState("");
   const [destination, setDestination] = useState<OfficialWalletDestination | null>(null);
@@ -228,7 +230,7 @@ export function OfficialWalletDestinationManager({ actorType, actorId }: Readonl
       <button className="button button-secondary" type="button" onClick={() => void read()} disabled={busy}>{busy ? "جارٍ القراءة…" : "قراءة النية والوجهة والسجل المالي"}</button>
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
       {notice ? <p className="managed-status managed-status-info" role="status">{notice}</p> : null}
-      {intent ? <p>تم تسجيل مزوّد المحفظة لهذا المستفيد.</p> : <p className="muted">اقرأ السجل قبل تنفيذ أي إجراء.</p>}
+      {intent ? <p>المزوّد المسجل: {walletProviderLabel(intent.providerKey, walletProviders)}.</p> : <p className="muted">اقرأ السجل قبل تنفيذ أي إجراء.</p>}
       {destination ? <div className="managed-status managed-status-info"><strong>{destinationStatusLabels[destination.status]}</strong><p>{verificationStatusLabels[destination.verificationStatus]} · <bdi>{destination.walletIdentifierMasked}</bdi></p><p>{destination.beneficiaryName}</p></div> : intent ? <p className="muted">لا توجد وجهة السجل المالي مسجلة لهذا المستفيد.</p> : null}
       {legacyStaleDestination ? <p className="managed-status managed-status-warning">يمكن استعادة اللقطات المالية القديمة فقط إذا طابقت الوجهة الحالية رقم المحفظة والاسم المحفوظين فيها. تغيير الهوية أو الرقم يتطلب إنشاء وجهة جديدة، ولا يغيّر الوجهة المحفوظة في أي لقطة معتمدة.</p> : null}
       {pendingAttempt ? <div className="managed-status managed-status-warning"><p>محاولة محفوظة للإجراء «{pendingAttempt.action}» دون تكرار العملية؛ لم تُرسل تلقائيًا بعد إعادة التحميل.</p><button className="button button-primary" type="button" onClick={() => void runAttempt(pendingAttempt)} disabled={busy}>{busy ? "جارٍ إعادة المحاولة…" : "إعادة إرسال المحاولة المحفوظة"}</button></div> : null}

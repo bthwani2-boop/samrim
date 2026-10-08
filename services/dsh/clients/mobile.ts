@@ -1,4 +1,5 @@
 import type { CreateFieldJoiningCaseDraftRequest } from "./generated/dsh-types";
+import type { WalletProviderListResponse } from "./generated/dsh-types";
 import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
 import { dshOperationPaths } from "./generated/dsh-operations";
 import type { StoreAccessGrantActivationRequest, StoreAccessGrantPermissionsRequest } from "./generated/dsh-types";
@@ -1179,6 +1180,10 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     },
     async listActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {
       return (await publicRequest<ServiceCityListResponse>(dshOperationPaths.listActiveServiceCities.path)).cities;
+    },
+    async listWalletProviders(accessToken: string): Promise<WalletProviderListResponse> {
+      if (!accessToken.trim()) throw new Error("DSH_ACCESS_TOKEN_REQUIRED");
+      return publicRequest<WalletProviderListResponse>(dshOperationPaths.listActiveWalletProviders.path);
     },
     async listClientFavoriteStores(accessToken: string): Promise<FavoriteStoreListResponse> {
       return userRequest<FavoriteStoreListResponse>(accessToken, dshOperationPaths.listClientFavoriteStores.path, dshOperationPaths.listClientFavoriteStores.method);

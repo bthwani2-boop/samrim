@@ -10,6 +10,7 @@ import (
 
 	dshcontract "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	wltintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
 func (s *BeneficiaryFinanceServer) RegisterCustomerWithdrawalGovernance(mux *http.ServeMux) {
@@ -108,6 +109,15 @@ func (s *BeneficiaryFinanceServer) createCustomerWithdrawalIntake(w http.Respons
 		RequestEvidenceDocumentID string `json:"requestEvidenceDocumentId"`
 	}
 	if !decodeJSON(w, r, &input) {
+		return
+	}
+	activeProvider, providerErr := postgres.IsActiveWalletProvider(r.Context(), s.db, input.ProviderKey)
+	if providerErr != nil {
+		writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "DSH persistence is unavailable")
+		return
+	}
+	if !activeProvider {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "providerKey must be an active wallet provider")
 		return
 	}
 	input.CustomerActorID = strings.TrimSpace(input.CustomerActorID)

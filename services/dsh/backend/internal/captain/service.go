@@ -54,6 +54,13 @@ func (s *Service) Admit(ctx context.Context, fullNameAr, phone, walletProviderKe
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.CaptainAdmission{}, false, err
 	}
+	activeProvider, providerErr := postgres.IsActiveWalletProvider(ctx, s.db, walletProviderKey)
+	if providerErr != nil {
+		return postgres.CaptainAdmission{}, false, providerErr
+	}
+	if !activeProvider {
+		return postgres.CaptainAdmission{}, false, ErrInvalidInput
+	}
 	hash := postgres.HashCaptainAdmissionRequest(fullNameAr, phone, walletProviderKey)
 	admission, replayed, err := postgres.CreateCaptainAdmissionCandidate(ctx, s.db, fullNameAr, phone, walletProviderKey, strings.TrimSpace(idempotencyKey), hash, strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
 	if err != nil {

@@ -137,7 +137,7 @@ export const appearanceOptions: ReadonlyArray<{ value: ThemePreference; label: s
   { value: "dark", label: "داكن" },
 ];
 
-export function AppearancePicker({ title = "المظهر", helper = "اختر مظهر التطبيق" }: { title?: string; helper?: string }) {
+export function AppearancePicker({ compact = false, title = "المظهر", helper = "اختر مظهر التطبيق" }: { compact?: boolean; title?: string; helper?: string }) {
   const { preference, setPreference, theme } = useMobileAppearance();
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -157,10 +157,10 @@ export function AppearancePicker({ title = "المظهر", helper = "اختر م
   }
 
   return (
-    <View style={styles.container} accessibilityLabel={title}>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.helper}>{helper}</Text>
-      <View style={styles.options}>
+    <View style={[styles.container, compact && styles.compactContainer]} accessibilityLabel={title}>
+      <Text style={[styles.title, compact && styles.compactTitle]}>{title}</Text>
+      {helper ? <Text style={styles.helper}>{helper}</Text> : null}
+      <View style={[styles.options, compact && styles.compactOptions]}>
         {appearanceOptions.map((option) => {
           const selected = preference === option.value;
           return (
@@ -170,7 +170,7 @@ export function AppearancePicker({ title = "المظهر", helper = "اختر م
               accessibilityState={{ busy, disabled: busy, selected }}
               disabled={busy}
               onPress={() => void select(option.value)}
-              style={[styles.option, selected && styles.selectedOption, busy && styles.disabledOption]}
+              style={[styles.option, compact && styles.compactOption, selected && styles.selectedOption, busy && styles.disabledOption]}
             >
               <Text style={[styles.optionText, selected && styles.selectedOptionText]}>{option.label}</Text>
             </Pressable>
@@ -185,10 +185,14 @@ export function AppearancePicker({ title = "المظهر", helper = "اختر م
 function createAppearanceStyles(theme: ThemeColors) {
   return StyleSheet.create({
     container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    compactContainer: { alignItems: "center", borderRadius: radius.md, flexDirection: "row", gap: spacing[2], justifyContent: "space-between", paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
     title: { ...typography.bodyStrong, color: theme.color },
+    compactTitle: { flexShrink: 1 },
     helper: { ...typography.bodySm, color: theme.colorMuted },
     options: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    compactOptions: { alignItems: "center", flexDirection: "row", flexWrap: "nowrap", gap: spacing[1] },
     option: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
+    compactOption: { minHeight: sizing.controlSm, paddingHorizontal: spacing[2] },
     selectedOption: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
     disabledOption: { opacity: opacity.disabled },
     optionText: { ...typography.bodySm, color: theme.color, textAlign: "center" },

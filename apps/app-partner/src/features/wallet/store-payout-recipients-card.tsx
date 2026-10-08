@@ -17,25 +17,28 @@ type RecipientConfirmation =
   | Readonly<{ kind: "revert"; storeId: string; storeName: string }>
   | null;
 
-function providerLabel(providerKey: string): string {
-  return providerKey.trim().replaceAll("_", " ");
+type WalletProvider = Awaited<ReturnType<ReturnType<typeof client>["listWalletProviders"]>>["walletProviders"][number];
+
+function providerLabel(providerKey: string, providers: ReadonlyArray<WalletProvider>): string {
+  const key = providerKey.trim();
+  return providers.find((provider) => provider.key === key)?.displayNameAr ?? key;
 }
 
-function profileSummary(profile?: StorePayoutBeneficiaryProfile): string {
+function profileSummary(profile: StorePayoutBeneficiaryProfile | undefined, providers: ReadonlyArray<WalletProvider>): string {
   if (!profile) return "بيانات المستلم المالية غير متاحة";
   const identity = [profile.beneficiaryName?.trim(), profile.phoneMasked?.trim()].filter((value): value is string => Boolean(value)).join(" · ");
-  const wallet = profile.providerKey ? `جهة المحفظة: ${providerLabel(profile.providerKey)}${profile.walletIdentifierMasked ? ` · ${profile.walletIdentifierMasked}` : ""}` : "جهة المحفظة الرسمية غير جاهزة";
+  const wallet = profile.providerKey ? `جهة المحفظة: ${providerLabel(profile.providerKey, providers)}${profile.walletIdentifierMasked ? ` · ${profile.walletIdentifierMasked}` : ""}` : "جهة المحفظة الرسمية غير جاهزة";
   return [identity || "المستلم الموثّق", wallet].join(" · ");
 }
 
-function recipientStateLabel(record: StorePayoutRecipientRecord, profiles: Readonly<Record<string, StorePayoutBeneficiaryProfile>>): string {
+function recipientStateLabel(record: StorePayoutRecipientRecord, profiles: Readonly<Record<string, StorePayoutBeneficiaryProfile>>, providers: ReadonlyArray<WalletProvider>): string {
   switch (record.state) {
     case "SELECTED_VERIFIED_STAFF":
-      return `المستلم المسجّل: ${profileSummary(profiles[record.beneficiaryActorId ?? ""])}`;
+      return `المستلم المسجّل: ${profileSummary(profiles[record.beneficiaryActorId ?? ""], providers)}`;
     case "RECIPIENT_REVIEW_REQUIRED":
-      return `بانتظار إجراء المالك: المستلم المسجّل لم يعد مؤهلاً · ${profileSummary(profiles[record.beneficiaryActorId ?? ""])}`;
+      return `بانتظار إجراء المالك: المستلم المسجّل لم يعد مؤهلاً · ${profileSummary(profiles[record.beneficiaryActorId ?? ""], providers)}`;
     default:
-      return `المالك (الافتراضي) · ${profileSummary(profiles[record.beneficiaryActorId ?? ""])}`;
+      return `المالك (الافتراضي) · ${profileSummary(profiles[record.beneficiaryActorId ?? ""], providers)}`;
   }
 }
 
@@ -44,6 +47,7 @@ export function StorePayoutRecipientsCard() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const authenticated = currentIdentityState().kind === "authenticated";
   const [state, setState] = useState<StorePayoutRecipientListResponse | null>(null);
+  const [walletProviders, setWalletProviders] = useState<ReadonlyArray<WalletProvider>>([]);
   const [busyStoreId, setBusyStoreId] = useState("");
   const [pickerStoreId, setPickerStoreId] = useState("");
   const [grants, setGrants] = useState<StoreAccessGrant[]>([]);
@@ -64,6 +68,18 @@ export function StorePayoutRecipientsCard() {
     }
   }, [authenticated]);
   useEffect(() => { void load(); }, [load]);
+
+  const loadWalletProviders = useCallback(async () => {
+    if (!authenticated) return;
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const response = await client().listWalletProviders(token);
+      setWalletProviders(response.walletProviders.filter((provider) => provider.active));
+    } catch (cause) {
+      console.error("DSH wallet provider catalog read failed", cause);
+    }
+  }, [authenticated]);
+  useEffect(() => { void loadWalletProviders(); }, [loadWalletProviders]);
 
   const openPicker = async (storeId: string) => {
     setBusyStoreId(storeId); setError(""); setNotice(""); setGrants([]);
@@ -141,7 +157,7 @@ export function StorePayoutRecipientsCard() {
         <View style={styles.row}>
           <View style={styles.rowCopy}>
             <Text style={styles.storeName}>{storeNames[record.storeId] ?? "متجر"}</Text>
-            <Text style={[styles.muted, record.state === "RECIPIENT_REVIEW_REQUIRED" ? styles.attention : null]}>{recipientStateLabel(record, profiles)}</Text>
+            <Text style={[styles.muted, record.state === "RECIPIENT_REVIEW_REQUIRED" ? styles.attention : null]}>{recipientStateLabel(record, profiles, walletProviders)}</Text>
             <Text style={styles.muted}>مستحقات مسندة: {formatMoney(record.partnerNetMinor, "YER")} · {record.orderCount.toLocaleString("ar-YE")} طلب</Text>
           </View>
           <View style={styles.actions}>
@@ -158,7 +174,7 @@ export function StorePayoutRecipientsCard() {
             return <Pressable accessibilityRole="button" accessibilityState={{ disabled: !ready }} disabled={!ready || Boolean(busyStoreId)} key={grant.id} onPress={() => setConfirmation({ kind: "select", storeId: record.storeId, grantId: grant.id, storeName: storeNames[record.storeId] ?? "المتجر", beneficiaryName, phoneMasked, providerKey, walletIdentifierMasked })} style={[styles.pickRow, !ready && styles.pickRowDisabled]}>
               <View style={styles.pickCopy}>
                 <Text style={styles.pickText}>{[beneficiaryName, phoneMasked].filter(Boolean).join(" · ")}</Text>
-                <Text style={styles.muted}>{ready ? `جهة المحفظة: ${providerLabel(providerKey)}${walletIdentifierMasked ? ` · ${walletIdentifierMasked}` : ""}` : "لا يمكن اختياره حتى تجهز جهة المحفظة الرسمية"}</Text>
+                <Text style={styles.muted}>{ready ? `جهة المحفظة: ${providerLabel(providerKey, walletProviders)}${walletIdentifierMasked ? ` · ${walletIdentifierMasked}` : ""}` : "لا يمكن اختياره حتى تجهز جهة المحفظة الرسمية"}</Text>
               </View>
               <Text style={styles.muted}>{ready ? "مراجعة وتأكيد" : "غير جاهز"}</Text>
             </Pressable>;
@@ -170,7 +186,7 @@ export function StorePayoutRecipientsCard() {
       busy={Boolean(confirmation && busyStoreId === confirmation.storeId)}
       confirmLabel={confirmation?.kind === "revert" ? "إعادة الصرف إلى المالك" : "تأكيد مستلم الصرف"}
       description={confirmation?.kind === "select"
-        ? `سيتم توجيه الصرف المستقبلي لمتجر ${confirmation.storeName} إلى ${confirmation.beneficiaryName}${confirmation.phoneMasked ? ` · ${confirmation.phoneMasked}` : ""}. جهة المحفظة: ${providerLabel(confirmation.providerKey)}${confirmation.walletIdentifierMasked ? ` · ${confirmation.walletIdentifierMasked}` : ""}. هذا تغيير مالي ويطبق على الصرف المستقبلي للمتجر.`
+        ? `سيتم توجيه الصرف المستقبلي لمتجر ${confirmation.storeName} إلى ${confirmation.beneficiaryName}${confirmation.phoneMasked ? ` · ${confirmation.phoneMasked}` : ""}. جهة المحفظة: ${providerLabel(confirmation.providerKey, walletProviders)}${confirmation.walletIdentifierMasked ? ` · ${confirmation.walletIdentifierMasked}` : ""}. هذا تغيير مالي ويطبق على الصرف المستقبلي للمتجر.`
         : confirmation?.kind === "revert"
           ? `سيعود الصرف المستقبلي لمتجر ${confirmation.storeName} إلى مالك المتجر بدل الموظف المسجّل حاليًا.`
           : ""}

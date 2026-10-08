@@ -496,7 +496,7 @@ func requiredFieldMutationHeaders(w http.ResponseWriter, r *http.Request) (strin
 }
 
 func toFieldAdmission(value postgres.FieldAdmission) contract.FieldAdmission {
-	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, ServiceCityID: value.ServiceCityID, AllServiceCities: value.AllServiceCities, ServiceCityIds: value.ServiceCityIDs, WalletProviderKey: value.WalletProviderKey, State: value.State, RequiresProfileReview: value.RequiresProfileReview, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, AllServiceCities: value.AllServiceCities, ServiceCityIds: value.ServiceCityIDs, WalletProviderKey: value.WalletProviderKey, State: value.State, RequiresProfileReview: value.RequiresProfileReview, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 }
 
 func writeFieldError(w http.ResponseWriter, err error) {

@@ -28,6 +28,28 @@ export type StorePublicationMutationContext = DshVersionedMutationContext & Read
 export type DshOperatorReadContext = Readonly<{
   operatorActorId: string;
 }>;
+export type WalletProvider = Readonly<{ key: string; displayNameAr: string; active: boolean; version: number }>;
+export type WalletProviderListResponse = Readonly<{ walletProviders: ReadonlyArray<WalletProvider> }>;
+type WalletProviderResponse = Readonly<{ walletProvider: WalletProvider }>;
+
+export async function listOperatorWalletProviders(includeInactive: boolean, context: DshOperatorReadContext): Promise<WalletProviderListResponse> {
+  const query = includeInactive ? "?includeInactive=true" : "";
+  return (await requestDshJson<WalletProviderListResponse>("GET", `/dsh/wallet-providers${query}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function createOperatorWalletProvider(input: Readonly<{ displayNameAr: string; active: boolean }>, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: WalletProviderResponse }>> {
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_IDEMPOTENCY_KEY_MISSING");
+  return requestDshJson<WalletProviderResponse>("POST", "/dsh/wallet-providers", input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function updateOperatorWalletProvider(providerKey: string, input: Readonly<{ displayNameAr: string; active: boolean }>, context: StorePublicationMutationContext): Promise<Readonly<{ status: number; payload: WalletProviderResponse }>> {
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_IDEMPOTENCY_KEY_MISSING");
+  const key = providerKey.trim();
+  if (!key || key.length > 128) throw new Error("DSH_WALLET_PROVIDER_KEY_INVALID");
+  return requestDshJson<WalletProviderResponse>("PATCH", `/dsh/wallet-providers/${encodeURIComponent(key)}`, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+}
 
 export type CreateFieldAcquisitionRewardPolicyRequest = Readonly<{
   scopeType: "STORE_TYPE";

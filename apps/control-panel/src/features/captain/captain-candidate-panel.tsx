@@ -5,10 +5,12 @@ import { type CaptainAdmission, captainAdmissionStateLabel } from "@bthwani/dsh"
 import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
+import { useWalletProviders } from "../wallet-provider/use-wallet-providers";
 
 type CandidatePage = Readonly<{ items: ReadonlyArray<CaptainAdmission>; nextCursor?: string }>;
 
 export function CaptainCandidatePanel() {
+  const { walletProviders, walletProvidersLoading, walletProvidersError } = useWalletProviders();
   const [fullNameAr, setFullNameAr] = useState("");
   const [phone, setPhone] = useState("");
   const [walletProviderKey, setWalletProviderKey] = useState("");
@@ -52,7 +54,7 @@ export function CaptainCandidatePanel() {
     const name = fullNameAr.trim();
     const contactPhoneE164 = normalizeYemenPhoneE164(phone);
     const providerKey = walletProviderKey.trim();
-    if (Array.from(name).length < 2 || Array.from(name).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164) || Array.from(providerKey).length < 1 || Array.from(providerKey).length > 64) {
+    if (Array.from(name).length < 2 || Array.from(name).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164) || !walletProviders.some((provider) => provider.key === providerKey)) {
       setError("أدخل الاسم ورقم الجوال ومزوّد المحفظة الذي حدده الكابتن.");
       return;
     }
@@ -128,8 +130,9 @@ export function CaptainCandidatePanel() {
       <div className="access-form">
         <label className="field-label" htmlFor="captain-candidate-name">اسم العرض الكامل بالعربية<input id="captain-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} placeholder="مثال: مروان أحمد صالح الحضرمي" /></label>
         <label className="field-label" htmlFor="captain-candidate-phone">رقم الهاتف<input id="captain-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="777000100 أو +967777000100" /></label>
-        <label className="field-label" htmlFor="captain-candidate-wallet-provider">مزوّد المحفظة الرسمية الذي حدده الكابتن<input id="captain-candidate-wallet-provider" autoComplete="off" maxLength={64} value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)} disabled={Boolean(busy)} /><small>سجّل اسم المزوّد فقط. لا تدخل رقم المحفظة أو الاسم القانوني هنا.</small></label>
-        <button type="button" className="button button-primary" disabled={Boolean(busy) || !fullNameAr.trim() || !phone.trim() || !walletProviderKey.trim()} onClick={() => void createProfile()}>{busy === "create" ? "جارٍ حفظ الملف…" : "حفظ الملف للمراجعة"}</button>
+        <label className="field-label" htmlFor="captain-candidate-wallet-provider">مزوّد المحفظة الرسمية الذي حدده الكابتن<select id="captain-candidate-wallet-provider" value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)} disabled={Boolean(busy) || walletProvidersLoading || Boolean(walletProvidersError)}><option value="">اختر محفظة رسمية</option>{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select><small>سجّل المزوّد فقط. لا تدخل رقم المحفظة أو الاسم القانوني هنا.</small></label>
+        {walletProvidersError ? <p className="identity-error" role="alert">{walletProvidersError}</p> : null}
+        <button type="button" className="button button-primary" disabled={Boolean(busy) || walletProvidersLoading || Boolean(walletProvidersError) || !fullNameAr.trim() || !phone.trim() || !walletProviderKey} onClick={() => void createProfile()}>{busy === "create" ? "جارٍ حفظ الملف…" : "حفظ الملف للمراجعة"}</button>
       </div>
     </section>
     <section className="access-card" aria-labelledby="captain-candidate-registry-title">

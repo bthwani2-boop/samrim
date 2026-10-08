@@ -1,13 +1,14 @@
 import { BthwaniButton, BthwaniSectionHeader, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient } from "./mobile";
-import type { StoreAccessGrant } from "./generated/dsh-types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import type { StoreAccessGrant } from "./generated/dsh-types";
+import { createDshMobileClient } from "./mobile";
 
 export type StoreAccessInvitationInboxProps = Readonly<{
   baseURL: string;
   cryptoRandomUUID: () => string;
   getAccessToken: () => Promise<string>;
+  showTitle?: boolean;
 }>;
 
 function grantStateLabel(state: StoreAccessGrant["state"]): string {
@@ -33,7 +34,7 @@ const permissionLabels: Readonly<Record<string, string>> = {
   fulfillment: "التوصيل والاستلام",
 };
 
-export function StoreAccessInvitationInbox({ baseURL, cryptoRandomUUID, getAccessToken }: StoreAccessInvitationInboxProps) {
+export function StoreAccessInvitationInbox({ baseURL, cryptoRandomUUID, getAccessToken, showTitle = true }: StoreAccessInvitationInboxProps) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [items, setItems] = useState<ReadonlyArray<StoreAccessGrant>>([]);
@@ -89,7 +90,7 @@ export function StoreAccessInvitationInbox({ baseURL, cryptoRandomUUID, getAcces
   }
 
   return <View style={styles.container}>
-    <BthwaniSectionHeader title="دعوات الوصول للمتاجر" subtitle="اقبل الدعوة أولًا؛ تفعيل صلاحيات المتجر يحتاج جلسة شريك مستقلة." />
+    {showTitle ? <BthwaniSectionHeader title="دعوات الوصول للمتاجر" subtitle="اقبل الدعوة أولًا؛ تفعيل صلاحيات المتجر يحتاج جلسة شريك مستقلة." /> : <Text style={styles.muted}>اقبل الدعوة أولًا؛ تفعيل صلاحيات المتجر يحتاج جلسة شريك مستقلة.</Text>}
     <BthwaniSurface tone="raised" style={styles.panel}>
       {loading ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة دعوات الوصول" color={theme.interactiveText} /><Text style={styles.muted}>جارٍ قراءة الحالة المعتمدة…</Text></View> : null}
       {!loading && items.length === 0 && !error ? <Text style={styles.muted}>لا توجد دعوات وصول موجهة إلى حسابك.</Text> : null}

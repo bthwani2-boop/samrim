@@ -36,7 +36,7 @@ export function FieldMediaProvenanceEditor({ value, disabled, onChange }: Readon
     else onChange({ ...value, sourceDescription: customSourceDescription });
   }
 
-  return <View style={styles.card}>
+  return <View style={{ gap: 12 }}>
     <Text style={styles.cardTitle}>مصدر صورة المتجر وحق عرضها</Text>
     <Text style={styles.muted}>اختر مصدر الصورة بدقة. هذا الاختيار يسجل وصف المصدر فقط ولا يمنح إذنًا تلقائيًا باستخدام الصورة. أكمل بيانات المنشئ والحق وأكّد صحتها قبل الرفع.</Text>
     <Text style={styles.muted}>يلزم اسم المنشئ (حرفان على الأقل)، ووصف المصدر (3 أحرف)، وبيان حق العرض (5 أحرف) مع التأكيد. الروابط اختيارية.</Text>

@@ -13,6 +13,7 @@ import {
 } from "@bthwani/dsh";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useWalletProviders, walletProviderLabel } from "../wallet-provider/use-wallet-providers";
 
 import styles from "./partner-earnings.module.css";
 
@@ -37,10 +38,6 @@ function buildHref(pathname: string, query: PartnerEarningsInitialQuery) {
   if (query.partnerActorId) params.set("partnerActorId", query.partnerActorId);
   const suffix = params.toString();
   return suffix ? `${pathname}?${suffix}` : pathname;
-}
-
-function payoutProviderLabel(providerKey: string): string {
-  return providerKey.trim().replaceAll("_", " ");
 }
 
 function payoutRecipientSummary(record: StorePayoutRecipientRecord, profiles: Readonly<Record<string, StorePayoutBeneficiaryProfile>>): string {
@@ -115,6 +112,7 @@ function readPartnerRemittanceRecovery(): Map<string, PendingRemittance> {
 }
 
 export function PartnerEarningsWorkspace({ initialQuery }: Props) {
+  const { walletProviders } = useWalletProviders();
   const router = useRouter();
   const pathname = usePathname() ?? "/finance/partner-commission-receivables";
   const cursorHistory = useRef<string[]>([]);
@@ -420,7 +418,7 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
             {selectedPayoutRecipients?.readback.recipients.length ? <div className={styles.tableWrap}><table className={styles.table}><caption className="sr-only">مستلمو صرف متاجر الشريك</caption><thead><tr><th scope="col">المتجر</th><th scope="col">المستلم</th><th scope="col">جهة المحفظة</th><th scope="col">الحالة</th><th scope="col">المستحقات المسندة</th></tr></thead><tbody>{selectedPayoutRecipients.readback.recipients.map((record) => {
               const profile = selectedPayoutRecipients.beneficiaryProfiles[record.beneficiaryActorId ?? ""];
               const stateLabel = record.state === "SELECTED_VERIFIED_STAFF" ? "موظف مختار" : record.state === "RECIPIENT_REVIEW_REQUIRED" ? "تحتاج مراجعة المالك" : "المالك الافتراضي";
-              return <tr key={record.storeId}><th scope="row">{selectedPayoutRecipients.storeNames[record.storeId] ?? "متجر"}</th><td>{payoutRecipientSummary(record, selectedPayoutRecipients.beneficiaryProfiles)}</td><td>{profile?.providerKey ? <>{payoutProviderLabel(profile.providerKey)}{profile.walletIdentifierMasked ? <> · <bdi dir="ltr">{profile.walletIdentifierMasked}</bdi></> : null}</> : "غير جاهزة"}</td><td>{stateLabel}</td><td>{formatMoney(record.partnerNetMinor, selectedPayoutRecipients.readback.currency)}</td></tr>;
+              return <tr key={record.storeId}><th scope="row">{selectedPayoutRecipients.storeNames[record.storeId] ?? "متجر"}</th><td>{payoutRecipientSummary(record, selectedPayoutRecipients.beneficiaryProfiles)}</td><td>{profile?.providerKey ? <>{walletProviderLabel(profile.providerKey, walletProviders)}{profile.walletIdentifierMasked ? <> · <bdi dir="ltr">{profile.walletIdentifierMasked}</bdi></> : null}</> : "غير جاهزة"}</td><td>{stateLabel}</td><td>{formatMoney(record.partnerNetMinor, selectedPayoutRecipients.readback.currency)}</td></tr>;
             })}</tbody></table></div> : null}
             {selectedPayoutRecipients && selectedPayoutRecipients.readback.recipients.length === 0 ? <p className={styles.empty}>لا توجد متاجر مرتبطة بهذا الشريك في قراءة الصرف الحالية.</p> : null}
           </section>

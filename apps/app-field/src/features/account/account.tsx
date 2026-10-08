@@ -1,5 +1,5 @@
 import { radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { AppearancePicker, BthwaniButton, BthwaniIcon, BthwaniNavigationRow, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { AppearancePicker, appearanceOptions, BthwaniButton, BthwaniIcon, BthwaniNavigationRow, BthwaniSurface, useAppearanceTheme, useMobileAppearance } from "@bthwani/design-system/native";
 import { fieldAdmissionStateLabel } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
@@ -20,12 +20,14 @@ function profileDescription(state: OwnAdmissionState, phone?: string | null): st
 export default function FieldAccount() {
   const router = useRouter();
   const theme = useAppearanceTheme();
+  const appearance = useMobileAppearance();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [showAppearance, setShowAppearance] = useState(false);
   const { state: profileState, refresh: refreshProfile } = useOwnFieldAdmission();
   const profile = profileState.kind === "ready" ? profileState.admission : null;
+  const appearanceLabel = appearanceOptions.find((option) => option.value === appearance.preference)?.label ?? "حسب النظام";
 
   async function logout() {
     if (busy) return;
@@ -42,49 +44,40 @@ export default function FieldAccount() {
 
   return (
     <View style={styles.container} accessibilityLabel="حساب الميدان">
-      <View style={styles.heading}>
-        <Text style={styles.eyebrow}>مساحة الميدان</Text>
-        <Text style={styles.title}>الحساب</Text>
-      </View>
-
       <BthwaniSurface tone="raised" style={styles.profileCard}>
         <View style={styles.profileIcon}><BthwaniIcon name="account" color={theme.interactiveText} size={sizing.iconLg} /></View>
         <View style={styles.profileCopy}>
           <Text style={styles.profileTitle}>{profile?.fullNameAr || "ملف الميداني"}</Text>
-          <Text style={styles.profileDescription}>{profileDescription(profileState, profile?.contactPhoneE164)}</Text>
-          {profile ? <Text style={styles.profileDescription}>حالة التفعيل: {fieldAdmissionStateLabel(profile.state)}</Text> : null}
+          <Text style={styles.profileDescription}>{profileDescription(profileState, profile?.contactPhoneE164)}{profile ? ` · أهلية الميدان: ${fieldAdmissionStateLabel(profile.state)}` : ""}</Text>
         </View>
       </BthwaniSurface>
       {profileState.kind === "missing" || profileState.kind === "error" ? <BthwaniButton label="تحديث حالة التفعيل" onPress={() => void refreshProfile()} variant="secondary" /> : null}
 
-      <StoreAccessInvitationSummary onPress={() => router.push("/invitations" as Href)} />
+      <StoreAccessInvitationSummary compact onPress={() => router.push("/invitations" as Href)} />
 
       <View style={styles.settings}>
-        <BthwaniNavigationRow description="فاتح أو داكن أو حسب إعدادات النظام" icon="appearance" title="مظهر التطبيق" onPress={() => setShowAppearance((current) => !current)} />
-        {showAppearance ? <BthwaniSurface tone="inset" style={styles.appearancePanel}>
-          <AppearancePicker title="اختيار النسق" helper="يُطبَّق التغيير مباشرة على شاشات التطبيق." />
-        </BthwaniSurface> : null}
+        <BthwaniNavigationRow compact description={`المظهر الحالي: ${appearanceLabel}`} icon="appearance" title="مظهر التطبيق" onPress={() => setShowAppearance((current) => !current)} />
+        {showAppearance ? <AppearancePicker compact title="المظهر" helper="" /> : null}
       </View>
 
-      <BthwaniButton busy={busy} disabled={busy} label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} onPress={() => void logout()} variant="secondary" />
-      {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}
+      <View style={styles.footer}>
+        <BthwaniButton busy={busy} disabled={busy} label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} onPress={() => void logout()} variant="secondary" />
+        {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}
+      </View>
     </View>
   );
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    container: { flexGrow: 1, gap: spacing[3], paddingTop: spacing[4], width: "100%" },
-    heading: { gap: spacing[1] },
-    eyebrow: { ...typography.label, color: theme.interactiveText },
-    title: { ...typography.hero, color: theme.color },
-    profileCard: { alignItems: "center", borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], padding: spacing[3] },
-    profileIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: sizing.avatarMd, justifyContent: "center", width: sizing.avatarMd },
-    profileCopy: { flex: 1, gap: spacing[1], minWidth: 0 },
-    profileTitle: { ...typography.titleSm, color: theme.color },
-    profileDescription: { ...typography.bodySm, color: theme.colorMuted },
+    container: { flexGrow: 1, gap: spacing[2], paddingTop: spacing[2], width: "100%" },
+    footer: { gap: spacing[2], marginTop: "auto", paddingTop: spacing[4] },
+    profileCard: { alignItems: "center", borderRadius: radius.md, flexDirection: "row", gap: spacing[2], paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
+    profileIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: sizing.controlMd, justifyContent: "center", width: sizing.controlMd },
+    profileCopy: { flex: 1, gap: 0, minWidth: 0 },
+    profileTitle: { ...typography.bodyStrong, color: theme.color },
+    profileDescription: { ...typography.caption, color: theme.colorMuted },
     settings: { gap: spacing[2] },
-    appearancePanel: { borderRadius: radius.lg, padding: spacing[3] },
     notice: { ...typography.bodySm, color: theme.warning },
   });
 }

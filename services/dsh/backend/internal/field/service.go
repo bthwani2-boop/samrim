@@ -54,8 +54,15 @@ func (s *Service) Admit(ctx context.Context, fullNameAr, phone, serviceCityID, w
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
+	activeProvider, providerErr := postgres.IsActiveWalletProvider(ctx, s.db, walletProviderKey)
+	if providerErr != nil {
+		return postgres.FieldAdmission{}, false, providerErr
+	}
+	if !activeProvider {
+		return postgres.FieldAdmission{}, false, ErrInvalidInput
+	}
 	hash := postgres.HashFieldAdmissionRequestScope(fullNameAr, phone, allServiceCities, serviceCityIDs, walletProviderKey)
-	admission, _, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, postgres.FieldAdmissionCandidateInput{FullNameAr: fullNameAr, Phone: phone, ServiceCityID: serviceCityID, AllServiceCities: allServiceCities, ServiceCityIDs: serviceCityIDs, WalletProviderKey: walletProviderKey, IdempotencyKey: idempotencyKey, RequestHash: hash, ActingActorID: actingActorID, CorrelationID: correlationID})
+	admission, _, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, postgres.FieldAdmissionCandidateInput{FullNameAr: fullNameAr, Phone: phone, AllServiceCities: allServiceCities, ServiceCityIDs: serviceCityIDs, WalletProviderKey: walletProviderKey, IdempotencyKey: idempotencyKey, RequestHash: hash, ActingActorID: actingActorID, CorrelationID: correlationID})
 	if err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
@@ -149,6 +156,19 @@ func (s *Service) UpdateAdmissionProfile(ctx context.Context, admissionID, fullN
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.FieldAdmission{}, false, err
+	}
+	current, readErr := postgres.ReadFieldAdmission(ctx, s.db, admissionID)
+	if readErr != nil {
+		return postgres.FieldAdmission{}, false, readErr
+	}
+	if strings.TrimSpace(current.WalletProviderKey) != strings.TrimSpace(walletProviderKey) {
+		activeProvider, providerErr := postgres.IsActiveWalletProvider(ctx, s.db, walletProviderKey)
+		if providerErr != nil {
+			return postgres.FieldAdmission{}, false, providerErr
+		}
+		if !activeProvider {
+			return postgres.FieldAdmission{}, false, ErrInvalidInput
+		}
 	}
 	hash := postgres.HashFieldAdmissionProfileScopeRequest(admissionID, fullNameAr, walletProviderKey, allServiceCities, serviceCityIDs, expectedVersion)
 	return postgres.UpdateFieldAdmissionProfile(ctx, s.db, admissionID, fullNameAr, walletProviderKey, allServiceCities, serviceCityIDs, expectedVersion, idempotencyKey, hash, actingActorID, correlationID)

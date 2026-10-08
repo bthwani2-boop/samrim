@@ -93,10 +93,12 @@ export function FieldFinancialSummaryCard() {
   return <BthwaniSurface tone="base" style={styles.card}>
     <Text style={styles.eyebrow}>المحفظة والاستحقاقات</Text>
     <Text style={styles.title}>استحقاق ضم الشريك</Text>
-    {summary ? <View style={styles.grid}>
-      <View style={styles.metric}><Text style={styles.label}>إجمالي ما أودع في المحفظة</Text><Text style={styles.value}>{formatMoney(summary.earnedMinor, summary.currency)}</Text></View>
-      <View style={styles.metric}><Text style={styles.label}>شركاء تحقق استحقاقهم</Text><Text style={styles.value}>{summary.partnerCount.toLocaleString("ar-YE")}</Text></View>
-      <View style={styles.metric}><Text style={styles.label}>إجمالي الاستحقاقات</Text><Text style={styles.value}>{formatMoney(summary.entitlementMinor, summary.currency)}</Text></View>
+    {summary ? <View style={styles.metrics}>
+      <View style={styles.primaryMetric}><Text style={styles.label}>المودع في المحفظة</Text><Text style={styles.primaryValue}>{formatMoney(summary.earnedMinor, summary.currency)}</Text></View>
+      <View style={styles.secondaryMetrics}>
+        <View style={styles.metric}><Text style={styles.label}>شركاء مستحقون</Text><Text style={styles.value}>{summary.partnerCount.toLocaleString("ar-YE")}</Text></View>
+        <View style={styles.metric}><Text style={styles.label}>قيمة الاستحقاقات</Text><Text style={styles.value}>{formatMoney(summary.entitlementMinor, summary.currency)}</Text></View>
+      </View>
     </View> : null}
     {summaryLoading && !summary ? <Text style={styles.muted}>جارٍ قراءة ملخص المستحقات…</Text> : null}
     {summaryError ? <Text accessibilityRole="alert" style={styles.error}>{summaryError}</Text> : null}
@@ -117,8 +119,11 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     eyebrow: { ...typography.caption, color: theme.interactiveText },
     title: { ...typography.titleMd, color: theme.color },
     sectionTitle: { ...typography.bodyStrong, color: theme.color, marginTop: spacing[2] },
-    grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing[3] },
-    metric: { flexBasis: 136, flexGrow: 1, minWidth: 0 },
+    metrics: { gap: spacing[3] },
+    primaryMetric: { gap: spacing[1] },
+    primaryValue: { ...typography.titleMd, color: theme.color },
+    secondaryMetrics: { flexDirection: "row", gap: spacing[3] },
+    metric: { flex: 1, gap: spacing[1], minWidth: 0 },
     entry: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", gap: spacing[3], justifyContent: "space-between", paddingVertical: spacing[3] },
     entryMain: { flex: 1, gap: spacing[1] },
     label: { ...typography.caption, color: theme.colorMuted },

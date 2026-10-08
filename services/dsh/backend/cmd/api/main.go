@@ -104,6 +104,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	walletProviderServer, err := transporthttp.NewWalletProvider(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	if err != nil {
+		log.Fatal(err)
+	}
 	serviceabilityService, err := serviceability.New(identityClient, database)
 	if err != nil {
 		log.Fatal(err)
@@ -182,6 +186,7 @@ func main() {
 		storeAccessServer.Register(mux)
 		locationCoreServer.Register(mux)
 		serviceCityServer.Register(mux)
+		walletProviderServer.Register(mux)
 		serviceabilityServer.Register(mux)
 		deliveryFeeServer.Register(mux)
 		partnerFinanceServer.Register(mux)

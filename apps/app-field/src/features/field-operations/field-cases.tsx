@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { isMediaProvenanceInputValid, resolveJoiningCaseImageContentType, type DshImageUploadInput, type JoiningCaseResponse, type JoiningCaseSummary, joiningCaseStateLabel, type MediaProvenanceInput } from "@bthwani/dsh";
+import { type DshImageUploadInput, isMediaProvenanceInputValid, type JoiningCaseResponse, type JoiningCaseSummary, joiningCaseStateLabel, type MediaProvenanceInput, resolveJoiningCaseImageContentType } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
@@ -9,12 +9,13 @@ import { ActivityIndicator, FlatList, Image, Text, TextInput, View } from "react
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient, isMissingFieldAdmission } from "./field-client";
 import { FieldCommercialAgreement } from "./field-commercial-agreement";
-import { createFieldOperationStyles } from "./field-operation-styles";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
+import { createFieldOperationStyles } from "./field-operation-styles";
 
 const FIELD_CASE_PAGE_SIZE = 25;
 
 type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput }>;
+type WalletProvider = Awaited<ReturnType<ReturnType<typeof fieldClient>["listWalletProviders"]>>["walletProviders"][number];
 type PendingStoreImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: StoreImageDraft; idempotencyKey: string; correlationID: string }>;
 type PendingProofImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: DshImageUploadInput; idempotencyKey: string; correlationID: string }>;
 type FieldCasePagination = { sequence: number; query: string; cursor: string; loadingMore: boolean };
@@ -45,6 +46,7 @@ export function FieldCases() {
   const routeCaseId = (Array.isArray(rawCaseId) ? rawCaseId[0] ?? "" : rawCaseId ?? "").trim().slice(0, 128);
   const [appliedQuery, setAppliedQuery] = useState(routeQuery.trim());
   const [cases, setCases] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
+  const [walletProviders, setWalletProviders] = useState<ReadonlyArray<WalletProvider>>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -63,6 +65,20 @@ export function FieldCases() {
   const [pendingProofImageAttempt, setPendingProofImageAttempt] = useState<PendingProofImageAttempt | null>(null);
   const [caseToSubmit, setCaseToSubmit] = useState<JoiningCaseSummary | null>(null);
   const pagination = useRef<FieldCasePagination>({ sequence: 0, query: routeQuery.trim(), cursor: "", loadingMore: false });
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const token = await getUsableIdentityAccessToken();
+        const response = await fieldClient().listWalletProviders(token);
+        if (active) setWalletProviders(response.walletProviders);
+      } catch (cause) {
+        console.warn("DSH Field wallet provider labels read failed", cause);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => setAppliedQuery(routeQuery.trim()), 250);
@@ -387,6 +403,7 @@ export function FieldCases() {
     } else {
       nextStepText = "اعتمد فريق التشغيل الطلب؛ يتابع المتجر التفعيل قبل ظهوره للعملاء.";
     }
+    const walletProviderName = walletProviders.find((provider) => provider.key === item.walletProviderKey)?.displayNameAr ?? item.walletProviderKey;
 
     let storeImageButtonLabel: string;
     if (storeImage) {
@@ -401,6 +418,7 @@ export function FieldCases() {
     <View style={selectedByRoute ? styles.summaryCard : styles.card}>
       {selectedByRoute ? <Text accessibilityLiveRegion="polite" style={styles.cardTitle}>الطلب المحدد من التنبيه</Text> : null}
       <View style={styles.orderHeader}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><BthwaniStatusBadge icon={badgeIcon} label={joiningCaseStateLabel(item.state)} tone={badgeTone} /></View>
+      <Text style={styles.muted}>المحفظة الرسمية: {walletProviderName || "غير محددة"}</Text>
       {item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}
       <Text style={styles.muted}>{nextStepText}</Text>
       {item.state === "approved" ? <>
@@ -471,7 +489,6 @@ export function FieldCases() {
     ListFooterComponent={paginationFooter}
     ListFooterComponentStyle={styles.caseListFooter}
     ListHeaderComponent={<View style={styles.container}>
-      <Text style={styles.title}>الشركاء</Text>
       <Text style={styles.muted}>تابع الشركاء الذين تعمل على ضمهم، وأرسل بياناتهم للمراجعة عند اكتمالها.</Text>
       {cases.length > 0 ? <Text style={styles.sectionTitle}>عدد الشركاء: {cases.length}{nextCursor ? " · توجد نتائج أخرى" : ""}</Text> : null}
       {error && cases.length > 0 ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}

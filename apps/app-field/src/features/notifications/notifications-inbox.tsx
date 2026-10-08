@@ -138,7 +138,10 @@ export function NotificationsInbox() {
           <Text style={styles.title}>الإشعارات</Text>
           <Text style={styles.description}>{copy.description}</Text>
         </View>
-        <BthwaniIconButton icon="back" label="العودة" onPress={() => router.back()} size={sizing.controlSm} tone="soft" />
+        <View style={styles.screenActions}>
+          {authenticated ? <BthwaniIconButton disabled={Boolean(busy) || loading || loadingMore} icon="refresh" label="تحديث الإشعارات" onPress={() => void load(true)} size={sizing.controlSm} tone="soft" /> : null}
+          <BthwaniIconButton icon="back" label="العودة" onPress={() => router.back()} size={sizing.controlSm} tone="soft" />
+        </View>
       </View>
 
       {!authenticated ? (
@@ -159,9 +162,9 @@ export function NotificationsInbox() {
         </BthwaniSurface>
       ) : (
         <>
-          <View style={styles.summary}><View style={styles.summaryCopy}><Text style={styles.summaryTitle}>{unreadCount.toLocaleString("ar-YE")} غير مقروءة إجمالًا</Text><Text style={styles.muted}>تعرض القائمة الإشعارات الأحدث أولًا.</Text></View><BthwaniButton busy={refreshing} disabled={Boolean(busy) || loadingMore} label="تحديث" onPress={() => void load(true)} variant="secondary" /></View>
+          <BthwaniSurface tone="inset" style={styles.summary}><View style={styles.summaryIcon}><BthwaniIcon name="notifications" color={theme.interactiveText} size={sizing.iconMd} /></View><View style={styles.summaryCopy}><Text style={styles.summaryTitle}>{unreadCount.toLocaleString("ar-YE")} غير مقروءة</Text><Text style={styles.muted}>تُعرض الإشعارات الأحدث أولًا.</Text></View></BthwaniSurface>
           {items.length ? <View style={styles.list}>{items.map(renderItem)}</View> : null}
-          {!items.length ? <View style={styles.empty}><BthwaniIcon name="notifications" color={theme.colorMuted} size={sizing.iconMd} /><Text style={styles.muted}>لا توجد إشعارات حالياً</Text></View> : null}
+          {!items.length ? <BthwaniSurface tone="inset" style={styles.empty}><View style={styles.emptyIcon}><BthwaniIcon name="notifications" color={theme.interactiveText} size={sizing.iconXl} /></View><Text style={styles.cardTitle}>لا توجد إشعارات حاليًا</Text><Text style={styles.muted}>ستظهر هنا تحديثات الشركاء عند توفرها.</Text></BthwaniSurface> : null}
           {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
           {nextCursor ? <BthwaniButton busy={loadingMore} disabled={Boolean(busy) || refreshing || loading} label="تحميل إشعارات أقدم" onPress={loadMore} variant="secondary" /> : null}
         </>
@@ -184,11 +187,13 @@ function formatNotificationDate(value: string) {
 function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({
   container: { backgroundColor: theme.background, direction: "rtl", flexGrow: 1, gap: spacing[3], paddingBottom: spacing[5], paddingTop: spacing[3], width: "100%" },
   screenHeader: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+  screenActions: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
   headingCopy: { flex: 1, gap: spacing[1] },
   eyebrow: { ...typography.label, color: theme.interactiveText },
   title: { ...typography.titleLg, color: theme.color },
   description: { ...typography.body, color: theme.colorMuted },
-  summary: { alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "space-between" },
+  summary: { alignItems: "center", borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], padding: spacing[3] },
+  summaryIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: sizing.avatarMd, justifyContent: "center", width: sizing.avatarMd },
   summaryCopy: { flex: 1, gap: spacing[1] },
   summaryTitle: { ...typography.titleSm, color: theme.color },
   list: { gap: spacing[3] },
@@ -205,7 +210,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleShee
   stateIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
   cardTitle: { ...typography.titleSm, color: theme.color, textAlign: "center" },
   loadingState: { gap: spacing[2] },
-  empty: { alignItems: "center", flexDirection: "row", gap: spacing[2], paddingVertical: spacing[3] },
+  empty: { alignItems: "center", borderRadius: radius.lg, gap: spacing[2], padding: spacing[4] },
+  emptyIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
   error: { ...typography.bodySm, color: theme.warning },
   pressed: { opacity: 0.76 },
 }); }

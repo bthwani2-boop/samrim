@@ -1,10 +1,10 @@
-import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogIdentifierResolution, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CreateCatalogProductProposalRequest, type CreateFieldCatalogProductRequest, type CreateStoreOfferRequest, type MeasurementKind, measurementKindLabel, type StoreOfferPublicationState, type UpdateCatalogProductProposalRequest, type UpdateStoreOfferRequest } from "@bthwani/dsh";
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogIdentifierResolution, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CreateCatalogProductProposalRequest, type CreateFieldCatalogProductRequest, type CreateStoreOfferRequest, type MeasurementKind, measurementKindLabel, type StoreOfferPublicationState, type UpdateCatalogProductProposalRequest, type UpdateStoreOfferRequest } from "@bthwani/dsh";
+import { MobileStoreCatalogImportWorkspace } from "@bthwani/dsh/mobile/store-catalog-import";
+import { MobileStoreQuickPricesWorkspace } from "@bthwani/dsh/mobile/store-quick-prices";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
-import { MobileStoreCatalogImportWorkspace } from "@bthwani/dsh/mobile/store-catalog-import";
-import { MobileStoreQuickPricesWorkspace } from "@bthwani/dsh/mobile/store-quick-prices";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
@@ -627,7 +627,6 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   const proposalReadOnly = Boolean(activeProposal && activeProposal.state !== "draft" && activeProposal.state !== "needs_correction");
   const proposalFormLocked = busy || Boolean(proposalMutationAttempt) || proposalReadOnly;
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-    <Text style={styles.title}>الكتالوج الأولي</Text>
     <Text style={styles.muted}>يظهر هذا المسار للحالة المعتمدة فقط. يتحقق النظام في كل قراءة وكتابة من الإسناد والارتباط بالمتجر وعدم إتمام إطلاق المتجر.</Text>
     {snapshot ? <View style={styles.card}><Text style={styles.heading}>المتجر المعتمد</Text><Text style={styles.body}>المتجر: {snapshot.storeName}</Text><Text style={styles.body}>المجال: {snapshot.verticalNameAr}</Text></View> : null}
     {snapshot ? <View style={styles.card}>

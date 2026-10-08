@@ -39,8 +39,8 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "103_field_city_assignments.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 103_field_city_assignments.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "106_wallet_providers.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 106_wallet_providers.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
 	migrationByName := make(map[string]string, len(records))
 	for index, record := range records {
@@ -105,6 +105,13 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 	cityMigration := migrationByName["103_field_city_assignments.sql"]
 	if !strings.Contains(cityMigration, "all_service_cities") || !strings.Contains(cityMigration, "field_admission_service_cities") || !strings.Contains(cityMigration, "SELECT id, service_city_id FROM dsh.field_admissions WHERE service_city_id IS NOT NULL") {
 		t.Fatal("Field city assignment migration must preserve the existing single-city assignment while adding multi-city and all-active scope")
+	}
+	cityCutover := migrationByName["104_field_city_assignment_cutover.sql"]
+	if !strings.Contains(cityCutover, "DROP COLUMN service_city_id") || !strings.Contains(cityCutover, "field_admissions_pending_service_city_chk") {
+		t.Fatal("Field city assignment cutover must remove the obsolete single-city owner after the migration 103 backfill")
+	}
+	if draftReadiness := migrationByName["105_field_draft_fulfillment_readiness.sql"]; !strings.Contains(draftReadiness, "state = 'draft' OR cardinality(first_store_fulfillment_modes) > 0") || !strings.Contains(draftReadiness, "first_store_fulfillment_modes <@ ARRAY['BTHWANI_CAPTAIN','PARTNER_CAPTAIN','CUSTOMER_PICKUP']") {
+		t.Fatal("Field drafts must permit unselected fulfillment while retaining the supported-mode allowlist")
 	}
 	if !strings.Contains(migrationByName["069_catalog_store_offer_paging.sql"], "catalog_store_offers_store_created_registry_idx") || !strings.Contains(migrationByName["069_catalog_store_offer_paging.sql"], "ON dsh.catalog_store_offers (store_id, created_at, id)") {
 		t.Fatal("DSH migration 069 is missing the StoreOffer keyset paging index")

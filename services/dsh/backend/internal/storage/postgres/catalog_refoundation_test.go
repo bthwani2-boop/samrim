@@ -59,6 +59,114 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 	})
 }
 
+func TestFieldCityAssignmentCutoverPreservesExistingAssignment(t *testing.T) {
+	databaseURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
+	if databaseURL == "" {
+		t.Skip("DSH_DATABASE_URL is required for the Field city assignment upgrade proof")
+	}
+	rootDB, err := sql.Open("postgres", databaseURL)
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	t.Cleanup(func() { _ = rootDB.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := rootDB.PingContext(ctx); err != nil {
+		t.Fatalf("configured postgres is not reachable: %v", err)
+	}
+
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+		if len(records) != postgres.SchemaVersion || len(migrationSQL) != len(records) {
+			t.Fatalf("unexpected DSH migration graph: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
+		}
+		if err := applyMigrationPrefix(ctx, db, records, migrationSQL, 102); err != nil {
+			t.Fatalf("apply DSH migrations through v102: %v", err)
+		}
+
+		const cityName = "مدينة ترقية تعيين الميداني"
+		city, err := postgres.CreateServiceCity(ctx, db, cityName, true, "field-city-upgrade-preserve", postgres.HashServiceCityCreateRequest(cityName, true), testOperatorActorID, "field-city-upgrade-preserve-correlation")
+		if err != nil {
+			t.Fatalf("create legacy Field assignment city: %v", err)
+		}
+		const admissionID = "field-city-cutover-existing"
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.field_admissions(id,contact_phone_e164,full_name_ar,service_city_id,wallet_provider_key,state,requires_profile_review,version)
+			VALUES($1,$2,$3,$4,$5,'pending_review',false,7)`, admissionID, "+967770099991", "مندوب محفوظ قبل الترقية", city.City.ID, "wallet-preserved"); err != nil {
+			t.Fatalf("insert pre-cutover Field admission fixture: %v", err)
+		}
+
+		if err := applyMigrationPrefix(ctx, db, records, migrationSQL, 103); err != nil {
+			t.Fatalf("upgrade legacy DSH schema through city-assignment backfill v103: %v", err)
+		}
+		var backfilled int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM dsh.field_admission_service_cities WHERE admission_id=$1 AND service_city_id=$2`, admissionID, city.City.ID).Scan(&backfilled); err != nil || backfilled != 1 {
+			t.Fatalf("migration 103 did not preserve the old city assignment: rows=%d err=%v", backfilled, err)
+		}
+
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+			t.Fatalf("apply canonical city-assignment cutover v104: %v", err)
+		}
+		if err := postgres.VerifySchema(ctx, db, records); err != nil {
+			t.Fatalf("verify upgraded DSH schema: %v", err)
+		}
+		page, err := postgres.ListFieldAdmissionsByCity(ctx, db, "", "all", "created_asc", city.City.ID, 10, "")
+		if err != nil || len(page.Admissions) != 1 {
+			t.Fatalf("preserved admission is not readable in its assigned city: page=%+v err=%v", page, err)
+		}
+		admission := page.Admissions[0]
+		if admission.ID != admissionID || admission.FullNameAr != "مندوب محفوظ قبل الترقية" || admission.PhoneE164 != "+967770099991" || admission.Version != 7 || admission.AllServiceCities || len(admission.ServiceCityIDs) != 1 || admission.ServiceCityIDs[0] != city.City.ID {
+			t.Fatalf("legacy admission facts or city assignment changed during cutover: %+v", admission)
+		}
+		var legacyColumnCount int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.columns WHERE table_schema='dsh' AND table_name='field_admissions' AND column_name='service_city_id'`).Scan(&legacyColumnCount); err != nil || legacyColumnCount != 0 {
+			t.Fatalf("obsolete scalar city column remains after cutover: count=%d err=%v", legacyColumnCount, err)
+		}
+	})
+}
+
+func applyMigrationPrefix(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string, through int) error {
+	if db == nil || len(records) != postgres.SchemaVersion || len(migrationSQL) != len(records) || through < 0 || through > len(records) {
+		return fmt.Errorf("invalid DSH migration prefix through v%d", through)
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin migration prefix: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended('dsh:migrations', 0))"); err != nil {
+		return fmt.Errorf("lock migration prefix: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS dsh"); err != nil {
+		return fmt.Errorf("create DSH schema for migration prefix: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS dsh.schema_migrations (version integer PRIMARY KEY, name text NOT NULL, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT clock_timestamp())`); err != nil {
+		return fmt.Errorf("create DSH migration history for prefix: %w", err)
+	}
+	var current int
+	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(version), 0) FROM dsh.schema_migrations").Scan(&current); err != nil {
+		return fmt.Errorf("read current DSH migration prefix: %w", err)
+	}
+	if current > through {
+		return fmt.Errorf("DSH schema already exceeds requested migration prefix: current=%d through=%d", current, through)
+	}
+	for index := current; index < through; index++ {
+		record := records[index]
+		if record.Version != current+1 {
+			return fmt.Errorf("non-contiguous DSH migration prefix at v%d after v%d", record.Version, current)
+		}
+		if _, err := tx.ExecContext(ctx, migrationSQL[index]); err != nil {
+			return fmt.Errorf("apply DSH migration prefix v%d: %w", record.Version, err)
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.schema_migrations(version,name,sha256) VALUES($1,$2,$3)", record.Version, record.Name, record.SHA256); err != nil {
+			return fmt.Errorf("record DSH migration prefix v%d: %w", record.Version, err)
+		}
+		current++
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit DSH migration prefix through v%d: %w", through, err)
+	}
+	return nil
+}
+
 func (s *catalogRefoundationScenario) verifyFieldCityAssignments() {
 	s.t.Helper()
 	createCity := func(name, key string, active bool) postgres.ServiceCityRecord {
@@ -78,7 +186,7 @@ func (s *catalogRefoundationScenario) verifyFieldCityAssignments() {
 		return returnAdmission, err
 	}
 	all, err := createCandidate("field-city-all-create", "+967770020001", true, nil)
-	if err != nil || !all.AllServiceCities || len(all.ServiceCityIDs) != 0 || all.ServiceCityID == "" {
+	if err != nil || !all.AllServiceCities || len(all.ServiceCityIDs) != 0 {
 		s.t.Fatalf("all-active Field assignment was not persisted: %+v err=%v", all, err)
 	}
 	selected, err := createCandidate("field-city-selected-create", "+967770020002", false, []string{selectedCity.ID})
@@ -129,6 +237,8 @@ func (s *catalogRefoundationScenario) verifyFreshSchema(records []postgres.Migra
 		"097_store_catalog_import_scope.sql",
 		"102_joining_case_field_drafts.sql",
 		"103_field_city_assignments.sql",
+		"104_field_city_assignment_cutover.sql",
+		"105_field_draft_fulfillment_readiness.sql",
 	)
 	if err := postgres.Migrate(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
 		s.t.Fatalf("apply fresh DSH migrations: %v", err)
@@ -633,9 +743,13 @@ func (s *catalogRefoundationScenario) verifyAdmissionPagination() {
 			VALUES($1,$2,$3,'pending_identity',$4)`, "captain_"+suffix, phone, "كابتن "+suffix, createdAt); err != nil {
 			s.t.Fatalf("insert Captain admission fixture %s: %v", suffix, err)
 		}
-		if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.field_admissions(id,contact_phone_e164,full_name_ar,service_city_id,state,created_at)
-			VALUES($1,$2,$3,$4,'pending_identity',$5)`, "field_"+suffix, fmt.Sprintf("+967770011%03d", index+1), "مندوب "+suffix, s.cityID, createdAt); err != nil {
+		admissionID := "field_" + suffix
+		if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.field_admissions(id,contact_phone_e164,full_name_ar,all_service_cities,state,created_at)
+			VALUES($1,$2,$3,false,'pending_identity',$4)`, admissionID, fmt.Sprintf("+967770011%03d", index+1), "مندوب "+suffix, createdAt); err != nil {
 			s.t.Fatalf("insert Field admission fixture %s: %v", suffix, err)
+		}
+		if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.field_admission_service_cities(admission_id,service_city_id) VALUES($1,$2)`, admissionID, s.cityID); err != nil {
+			s.t.Fatalf("assign Field admission fixture %s to service city: %v", suffix, err)
 		}
 	}
 	captainPage, err := postgres.ListCaptainAdmissions(s.ctx, s.db, "", "all", "created_asc", 1, "")

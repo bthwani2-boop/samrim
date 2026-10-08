@@ -384,6 +384,15 @@ paths:
   /dsh/public/service-cities:
     $ref: "./paths/service-city.yaml#/paths/~1dsh~1public~1service-cities"
 
+  /dsh/wallet-providers:
+    $ref: "./paths/wallet-provider.yaml#/paths/~1dsh~1wallet-providers"
+
+  /dsh/wallet-providers/{providerKey}:
+    $ref: "./paths/wallet-provider.yaml#/paths/~1dsh~1wallet-providers~1{providerKey}"
+
+  /dsh/public/wallet-providers:
+    $ref: "./paths/wallet-provider.yaml#/paths/~1dsh~1public~1wallet-providers"
+
   /dsh/serviceability:
     $ref: "./paths/serviceability.yaml#/paths/~1dsh~1serviceability"
 
@@ -4701,6 +4710,64 @@ components:
           items:
             $ref: "#/components/schemas/ServiceCity"
 
+    WalletProvider:
+      type: object
+      required: [key, displayNameAr, active, version]
+      additionalProperties: false
+      properties:
+        key:
+          type: string
+          pattern: '^wallet_provider_[a-z0-9_]{2,60}$'
+        displayNameAr:
+          type: string
+          minLength: 2
+          maxLength: 80
+        active:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+    WalletProviderListResponse:
+      type: object
+      required: [walletProviders]
+      additionalProperties: false
+      properties:
+        walletProviders:
+          type: array
+          items:
+            $ref: "#/components/schemas/WalletProvider"
+    WalletProviderResponse:
+      type: object
+      required: [walletProvider, idempotentReplay]
+      additionalProperties: false
+      properties:
+        walletProvider:
+          $ref: "#/components/schemas/WalletProvider"
+        idempotentReplay:
+          type: boolean
+    CreateWalletProviderRequest:
+      type: object
+      required: [displayNameAr, active]
+      additionalProperties: false
+      properties:
+        displayNameAr:
+          type: string
+          minLength: 2
+          maxLength: 80
+        active:
+          type: boolean
+    UpdateWalletProviderRequest:
+      type: object
+      required: [displayNameAr, active]
+      additionalProperties: false
+      properties:
+        displayNameAr:
+          type: string
+          minLength: 2
+          maxLength: 80
+        active:
+          type: boolean
+
     ServiceabilityStatus:
       type: string
       enum: [SERVICEABLE, UNSERVICEABLE, UNAVAILABLE]
@@ -5397,11 +5464,6 @@ components:
         contactPhoneE164:
           type: string
           nullable: true
-        serviceCityId:
-          type: string
-          nullable: true
-          deprecated: true
-          description: Derived single-city bridge; use allServiceCities and serviceCityIds.
         allServiceCities:
           type: boolean
         serviceCityIds:

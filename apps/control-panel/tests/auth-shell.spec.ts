@@ -25,6 +25,16 @@ async function stubAuthenticatedSession(page: Page, permissions = authenticatedO
   });
 }
 
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/wallet-providers**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ walletProviders: [
+      { key: "wallet_provider_floosak", displayNameAr: "فلوسك", active: true, version: 1 },
+      { key: "wallet_provider_haseb", displayNameAr: "حاسب", active: true, version: 1 },
+      { key: "wallet_provider_jeeb", displayNameAr: "جيب", active: true, version: 1 },
+    ] }) });
+  });
+});
+
 async function stubCommercialStoreTypes(page: Page) {
   await page.route("**/api/catalog/commercial-store-types**", async (route) => {
     await route.fulfill({
@@ -38,7 +48,7 @@ async function stubCommercialStoreTypes(page: Page) {
 const operatorJoiningCaseDraft = {
   ownerFullName: "سامي ناصر محمد العريقي",
   contactPhoneE164: "+96777000100",
-  walletProviderKey: "الكريمي",
+  walletProviderKey: "wallet_provider_floosak",
   businessName: "نشاط الاختبار",
   firstStoreName: "متجر الاختبار",
   firstStoreAddress: "شارع الزبيري، صنعاء",
@@ -55,7 +65,7 @@ const operatorJoiningCaseDraft = {
 async function fillOperatorJoiningCaseForm(page: Page) {
   await page.getByLabel("اسم المالك الكامل").fill(operatorJoiningCaseDraft.ownerFullName);
   await page.getByLabel("رقم جوال المالك (E.164)").fill("+967 77000100");
-  await page.getByLabel("مزوّد المحفظة الذي حدده المالك").fill(operatorJoiningCaseDraft.walletProviderKey);
+  await page.getByLabel("مزوّد المحفظة الذي حدده المالك").selectOption(operatorJoiningCaseDraft.walletProviderKey);
   await page.getByLabel("الاسم القانوني للنشاط").fill(operatorJoiningCaseDraft.businessName);
   await page.getByLabel("اسم المتجر الأول").fill(operatorJoiningCaseDraft.firstStoreName);
   await page.getByLabel("عنوان المتجر").fill(operatorJoiningCaseDraft.firstStoreAddress);
@@ -162,7 +172,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   await expect(page.getByText(role === "captain" ? "اكتمل منح الدور؛ ينتظر تفعيل الحساب من الكابتن." : "مُنح دور الدخول وربط بأهلية DSH. الخطوة التالية للميداني: يفتح التطبيق، ويدخل رقم الهاتف المسجل، ثم يختار تفعيل الجهاز لإثبات الهاتف وإنشاء كلمة المرور.")).toBeVisible();
   await expect(page.getByText(actorID)).toHaveCount(0);
   expect(mutations).toEqual([
-    role === "field" ? { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, serviceCityId: "sanaa", walletProviderKey: "الكريمي" } : { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, walletProviderKey: "الكريمي" },
+    role === "field" ? { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, serviceCityId: "sanaa", walletProviderKey: "wallet_provider_floosak" } : { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, walletProviderKey: "wallet_provider_floosak" },
     { action: "update-profile", admissionId: admissionID, fullNameAr: reviewedName, expectedVersion: 1 },
     { action: "approve", admissionId: admissionID, expectedVersion: 2 },
     { action: "provision", admissionId: admissionID },

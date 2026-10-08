@@ -49,6 +49,9 @@ func (s *Service) Create(ctx context.Context, input contract.CreateJoiningCaseRe
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
+	activeProvider, providerErr := postgres.IsActiveWalletProvider(ctx, s.db, request.WalletProviderKey)
+	if providerErr != nil { return postgres.JoiningCaseResult{}, providerErr }
+	if !activeProvider { return postgres.JoiningCaseResult{}, ErrInvalidInput }
 	requestHash, err := HashCreateRequest(s.evidenceKeys, "control-panel-joining-case-create", actingActorID, request)
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err

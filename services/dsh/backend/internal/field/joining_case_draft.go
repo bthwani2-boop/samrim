@@ -18,6 +18,15 @@ func (s *Service) CreateJoiningCaseDraft(ctx context.Context, accessToken, idemp
 	if err != nil {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
+	if normalized.WalletProviderKey != "" {
+		active, checkErr := postgres.IsActiveWalletProvider(ctx, s.db, normalized.WalletProviderKey)
+		if checkErr != nil {
+			return postgres.JoiningCaseResult{}, checkErr
+		}
+		if !active {
+			return postgres.JoiningCaseResult{}, ErrInvalidInput
+		}
+	}
 	idempotencyKey, correlationID = strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
 	if len(idempotencyKey) < 8 || len(idempotencyKey) > 128 || len(correlationID) < 8 || len(correlationID) > 128 {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
@@ -40,6 +49,22 @@ func (s *Service) UpdateJoiningCaseDraft(ctx context.Context, accessToken, caseI
 	normalized, err := joiningcase.NormalizeFieldDraftRequest(request)
 	if err != nil {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	current, readErr := postgres.ReadJoiningCaseForField(ctx, s.db, identity.Subject, caseID)
+	if readErr != nil {
+		return postgres.JoiningCaseResult{}, readErr
+	}
+	if normalized.WalletProviderKey == "" {
+		normalized.WalletProviderKey = current.Case.WalletProviderKey
+	}
+	if normalized.WalletProviderKey != current.Case.WalletProviderKey {
+		active, checkErr := postgres.IsActiveWalletProvider(ctx, s.db, normalized.WalletProviderKey)
+		if checkErr != nil {
+			return postgres.JoiningCaseResult{}, checkErr
+		}
+		if !active {
+			return postgres.JoiningCaseResult{}, ErrInvalidInput
+		}
 	}
 	caseID, idempotencyKey, correlationID = strings.TrimSpace(caseID), strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
 	if caseID == "" || expectedVersion < 1 || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 || len(correlationID) < 8 || len(correlationID) > 128 {

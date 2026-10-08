@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { partnerErrorMessage } from "./partner-error-message";
+import type { WalletProviderOption } from "../wallet-provider/use-wallet-providers";
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
 type JoiningCaseCreateInput = CreateJoiningCaseRequest;
@@ -85,6 +86,7 @@ export function JoiningCaseCreate() {
   const [workingDays, setWorkingDays] = useState<ReadonlyArray<number>>([]);
   const [workingHours, setWorkingHours] = useState<ReadonlyArray<StoreWorkingHoursInterval>>(emptyWorkingHours);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
+  const [walletProviders, setWalletProviders] = useState<ReadonlyArray<WalletProviderOption>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [commercialTypes, setCommercialTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
   const [commercialTypesBusy, setCommercialTypesBusy] = useState(false);
@@ -128,18 +130,20 @@ export function JoiningCaseCreate() {
     setOptionsBusy(true);
     setOptionsError("");
     try {
-      const [citiesResponse, verticalsResponse] = await Promise.all([
+      const [citiesResponse, verticalsResponse, providersResponse] = await Promise.all([
         fetch("/api/service-cities", { cache: "no-store" }),
         fetch("/api/catalog/verticals", { cache: "no-store" }),
+        fetch("/api/wallet-providers", { cache: "no-store" }),
       ]);
-      if (!citiesResponse.ok || !verticalsResponse.ok) {
-        setOptionsError("تعذر قراءة المدن أو الفئات الرئيسية.");
+      if (!citiesResponse.ok || !verticalsResponse.ok || !providersResponse.ok) {
+        setOptionsError("تعذر قراءة المدن أو الفئات الرئيسية أو المحافظ الرسمية.");
         return;
       }
       setCities((await citiesResponse.json() as { cities: ReadonlyArray<ServiceCity> }).cities);
       setVerticals((await verticalsResponse.json() as { verticals: ReadonlyArray<CommerceVertical> }).verticals);
+      setWalletProviders((await providersResponse.json() as { walletProviders: ReadonlyArray<WalletProviderOption> }).walletProviders);
     } catch {
-      setOptionsError("تعذر قراءة المدن أو الفئات الرئيسية.");
+      setOptionsError("تعذر قراءة المدن أو الفئات الرئيسية أو المحافظ الرسمية.");
     } finally {
       setOptionsBusy(false);
     }
@@ -282,7 +286,7 @@ export function JoiningCaseCreate() {
       <div className="access-form">
         <label className="field-label" htmlFor="joining-owner">اسم المالك الكامل<input id="joining-owner" autoComplete="name" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={ownerFullName} onChange={(event) => setOwnerFullName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-phone">رقم جوال المالك<input id="joining-phone" autoComplete="tel" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} placeholder="مثال: 777000100 أو +967777000100" /></label>
-        <label className="field-label" htmlFor="joining-wallet-provider">مزوّد المحفظة الذي حدده المالك<input id="joining-wallet-provider" autoComplete="off" aria-required="true" maxLength={64} disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)} placeholder="مثال: الكريمي" /><small>سجّل اسم المزوّد فقط. لا تدخل رقم المحفظة أو الاسم القانوني هنا.</small></label>
+        <label className="field-label" htmlFor="joining-wallet-provider">مزوّد المحفظة الذي حدده المالك<select id="joining-wallet-provider" aria-required="true" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)}><option value="">اختر محفظة رسمية</option>{walletProviderKey && !walletProviders.some((provider) => provider.key === walletProviderKey) ? <option value={walletProviderKey}>{walletProviderKey} · قيمة سابقة محفوظة</option> : null}{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select><small>سجّل المزوّد فقط. لا تدخل رقم المحفظة أو الاسم القانوني هنا.</small></label>
         <label className="field-label" htmlFor="joining-business">الاسم القانوني للنشاط<input id="joining-business" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={businessName} onChange={(event) => setBusinessName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-store">اسم المتجر الأول<input id="joining-store" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={storeName} onChange={(event) => setStoreName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-address">عنوان المتجر<textarea id="joining-address" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={storeAddress} onChange={(event) => setStoreAddress(event.target.value)} placeholder="الحي والشارع وأقرب معلم" rows={3} /></label>

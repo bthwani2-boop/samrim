@@ -1,24 +1,25 @@
 import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniMap, useAppearanceTheme, type BthwaniMapCoordinate } from "@bthwani/design-system/native";
-import { fieldAdmissionStateLabel, isMediaProvenanceInputValid, resolveJoiningCaseImageContentType, type CommercialStoreType, type CommerceVertical, type CreateFieldJoiningCaseDraftRequest, type CreateJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseProofType, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type ServiceCity } from "@bthwani/dsh";
+import { BthwaniButton, BthwaniChip, BthwaniMap, type BthwaniMapCoordinate, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type CommerceVertical, type CommercialStoreType, type CreateFieldJoiningCaseDraftRequest, type CreateJoiningCaseRequest, type DshImageUploadInput, fieldAdmissionStateLabel, isMediaProvenanceInputValid, type JoiningCaseProofType, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, resolveJoiningCaseImageContentType, type ServiceCity } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import { type Href, Link, useLocalSearchParams } from "expo-router";
+import { type Href, Link, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Text, TextInput, useWindowDimensions, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
-import { createFieldOperationStyles } from "./field-operation-styles";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
-import { FieldWorkingHoursEditor, toStoreWorkingHoursIntervals, type EditableWorkingHours, type EditableWorkingHoursInterval } from "./field-working-hours-editor";
+import { createFieldOperationStyles } from "./field-operation-styles";
+import { type EditableWorkingHours, type EditableWorkingHoursInterval, FieldWorkingHoursEditor, toStoreWorkingHoursIntervals } from "./field-working-hours-editor";
 import { useOwnFieldAdmission } from "./use-field-admission";
 
 type PendingDraftAttempt =
   | Readonly<{ kind: "create"; request: CreateFieldJoiningCaseDraftRequest; idempotencyKey: string; correlationID: string }>
   | Readonly<{ kind: "update"; caseID: string; expectedVersion: number; request: CreateFieldJoiningCaseDraftRequest; idempotencyKey: string; correlationID: string }>;
 type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput }>;
+type WalletProvider = Awaited<ReturnType<ReturnType<typeof fieldClient>["listWalletProviders"]>>["walletProviders"][number];
 type PendingImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: StoreImageDraft; idempotencyKey: string; correlationID: string }>;
 type PendingProofImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: DshImageUploadInput; idempotencyKey: string; correlationID: string }>;
 const proofTypeOptions: ReadonlyArray<{ value: JoiningCaseProofType; label: string }> = [
@@ -62,6 +63,7 @@ function dshErrorCode(cause: unknown): string {
 export function FieldNewCase() {
 const theme = useAppearanceTheme();
   const { width } = useWindowDimensions();
+  const navigation = useNavigation();
   const wideLayout = width >= 768;
   const { caseId: rawCaseId } = useLocalSearchParams<{ caseId?: string | string[] }>();
   const caseId = Array.isArray(rawCaseId) ? rawCaseId[0] ?? "" : rawCaseId ?? "";
@@ -75,9 +77,13 @@ const theme = useAppearanceTheme();
   const [draftConflictNeedsRead, setDraftConflictNeedsRead] = useState(false);
   const [selectedStoreOrigin, setSelectedStoreOrigin] = useState<BthwaniMapCoordinate | null>(null);
   const [createdCase, setCreatedCase] = useState<JoiningCaseResponse | null>(null);
+  const headerTitle = caseId || createdCase ? "تعديل مسودة الشريك" : "إضافة شريك";
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [commercialTypes, setCommercialTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
+  const [walletProviders, setWalletProviders] = useState<ReadonlyArray<WalletProvider>>([]);
+  const [walletProvidersLoading, setWalletProvidersLoading] = useState(true);
+  const [walletProvidersError, setWalletProvidersError] = useState("");
   const [commercialTypesLoading, setCommercialTypesLoading] = useState(false);
   const [commercialTypesError, setCommercialTypesError] = useState("");
   const [optionsLoading, setOptionsLoading] = useState(true);
@@ -96,6 +102,8 @@ const theme = useAppearanceTheme();
   const [pendingProofImageAttempt, setPendingProofImageAttempt] = useState<PendingProofImageAttempt | null>(null);
   const preloadedVerticalID = useRef("");
   const formLocked = busy || caseLoading || Boolean(pendingDraftAttempt) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt);
+
+  useEffect(() => { navigation.setOptions({ headerTitle }); }, [headerTitle, navigation]);
 
   const loadAdmission = useCallback(async () => {
     setError("");
@@ -118,6 +126,23 @@ const theme = useAppearanceTheme();
   }, []);
 
   useEffect(() => { void loadOptions(); }, [loadOptions]);
+
+  const loadWalletProviders = useCallback(async () => {
+    setWalletProvidersLoading(true);
+    setWalletProvidersError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const response = await fieldClient().listWalletProviders(token);
+      setWalletProviders(response.walletProviders);
+    } catch (cause) {
+      console.warn("DSH Field wallet provider options read failed", cause);
+      setWalletProvidersError("تعذر قراءة المحافظ الرسمية. أعد المحاولة لاختيار محفظة معتمدة.");
+    } finally {
+      setWalletProvidersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadWalletProviders(); }, [loadWalletProviders]);
 
   useEffect(() => {
     if (!caseId) {
@@ -204,6 +229,10 @@ const theme = useAppearanceTheme();
 
   async function createCase() {
     if (busy || draftConflictNeedsRead) return;
+    if (!pendingDraftAttempt && !walletProviders.some((provider) => provider.active && provider.key === input.walletProviderKey)) {
+      setError("اختر محفظة رسمية نشطة من القائمة قبل حفظ المسودة.");
+      return;
+    }
     let attempt: PendingDraftAttempt;
     if (pendingDraftAttempt) {
       attempt = pendingDraftAttempt;
@@ -476,7 +505,6 @@ const theme = useAppearanceTheme();
 
   return (
     <View style={styles.container} accessibilityLabel="إضافة شريك">
-      <Text style={styles.title}>{caseId || createdCase ? "تعديل مسودة الشريك" : "إضافة شريك"}</Text>
       <Text style={styles.muted}>{caseId || createdCase ? "حدّث بيانات المسودة واحفظ التغييرات. سيبقى رقم الإثبات الخاص مخفيًا ما لم تدخل رقمًا بديلًا." : "أدخل رقم جوال المالك لحفظ مسودة جزئية، ثم أكمل بيانات المتجر والصور قبل إرسالها للمراجعة."}</Text>
       {caseLoading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المسودة…</Text></View> : null}
       {caseId && !caseLoading && error.startsWith("تعذر قراءة المسودة") ? <BthwaniButton label="إعادة قراءة المسودة" onPress={() => setCaseLoadRetry((value) => value + 1)} variant="secondary" /> : null}
@@ -484,15 +512,24 @@ const theme = useAppearanceTheme();
       {admissionState.kind === "missing" ? <View style={styles.card}><Text style={styles.cardTitle}>لم يكتمل تفعيل الحساب</Text><Text style={styles.muted}>تواصل مع فريق التشغيل لإكمال تسجيلك للميدان.</Text></View> : null}
       {admissionState.kind === "ready" && admissionState.admission.state !== "eligible" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إضافة شريك الآن</Text><Text style={styles.muted}>حالة التفعيل الحالية: {fieldAdmissionStateLabel(admissionState.admission.state)}. تابع الحالة أو تواصل مع فريق التشغيل.</Text></View> : null}
       {admissionState.kind === "error" ? <View style={styles.card}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة حالة تفعيلك الآن. أعد المحاولة عند توفر الاتصال.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void loadAdmission()} variant="secondary" /></View> : null}
-      {admissionState.kind === "ready" && admissionState.admission.state === "eligible" && (!caseId || Boolean(createdCase)) ? <View style={styles.card}>
+      {admissionState.kind === "ready" && admissionState.admission.state === "eligible" && (!caseId || Boolean(createdCase)) ? <>
+        <View style={styles.card}>
         <Text style={styles.sectionTitle}>بيانات المالك</Text>
         <Text style={styles.label}>الاسم الكامل للمالك حسب الهوية</Text>
         <TextInput accessibilityLabel="الاسم الكامل للمالك حسب الهوية" editable={!formLocked} autoComplete="name" placeholder="كما يظهر في الهوية" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.ownerFullName} onChangeText={(value) => setInput((current) => ({ ...current, ownerFullName: value }))} />
-        <Text style={styles.label}>اسم مزوّد المحفظة</Text>
-        <Text style={styles.muted}>اكتب اسم مزوّد المحفظة الذي يختاره المالك فقط، بحد أقصى 64 حرفًا. لا تُدخل رقم المحفظة أو الاسم القانوني هنا.</Text>
-        <TextInput accessibilityLabel="اسم مزوّد المحفظة" editable={!formLocked} autoCapitalize="words" maxLength={64} placeholder="اسم مزوّد المحفظة" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.walletProviderKey} onChangeText={(value) => setInput((current) => ({ ...current, walletProviderKey: value }))} />
+        <Text style={styles.label}>المحفظة الرسمية</Text>
+        <Text style={styles.muted}>اختر المحفظة التي يستخدمها المالك. لا تُدخل رقم المحفظة هنا.</Text>
+        {walletProvidersLoading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المحافظ الرسمية…</Text></View> : null}
+        {walletProvidersError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{walletProvidersError}</Text><BthwaniButton disabled={formLocked} label="إعادة قراءة المحافظ" onPress={() => void loadWalletProviders()} variant="secondary" /></View> : null}
+        {!walletProvidersLoading && !walletProvidersError && walletProviders.filter((provider) => provider.active).length === 0 ? <Text style={styles.muted}>لا توجد محافظ رسمية نشطة للاختيار الآن.</Text> : null}
+        {!walletProvidersLoading && !walletProvidersError && walletProviders.filter((provider) => provider.active).length > 0 ? <View accessibilityLabel="اختيار المحفظة الرسمية" accessibilityRole="radiogroup" style={styles.optionList}>
+          {walletProviders.filter((provider) => provider.active).map((provider) => <BthwaniChip key={provider.key} accessibilityRole="radio" accessibilityState={{ selected: input.walletProviderKey === provider.key, disabled: formLocked }} disabled={formLocked} label={provider.displayNameAr} onPress={() => { setInput((current) => ({ ...current, walletProviderKey: provider.key })); setError(""); }} selected={input.walletProviderKey === provider.key} />)}
+        </View> : null}
+        {input.walletProviderKey && !walletProviders.some((provider) => provider.key === input.walletProviderKey) ? <Text style={styles.muted}>القيمة المحفوظة سابقًا: {input.walletProviderKey}. اختر محفظة نشطة لتحديث المسودة.</Text> : null}
         <Text style={styles.label}>رقم جوال المالك</Text>
         <TextInput accessibilityLabel="رقم جوال المالك" editable={!formLocked} autoCapitalize="none" keyboardType="phone-pad" placeholder="مثال: 777123456 أو +967777123456" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={input.contactPhoneE164} onChangeText={(value) => setInput((current) => ({ ...current, contactPhoneE164: value }))} />
+        </View>
+        <View style={styles.card}>
         <Text style={styles.sectionTitle}>النشاط والمتجر الأول</Text>
         <Text style={styles.label}>{sameBusinessAndStore ? "الاسم التجاري واسم المتجر" : "الاسم التجاري"}</Text>
         <Text style={styles.muted}>الاسم التجاري هو اسم المنشأة أو النشاط كما يستخدمه المالك، وليس اسمًا عامًا للشريك.</Text>
@@ -511,6 +548,8 @@ const theme = useAppearanceTheme();
           <Text style={styles.label}>اسم المتجر الأول</Text>
           <TextInput accessibilityLabel="اسم المتجر الأول" editable={!formLocked} placeholder="الاسم الظاهر على واجهة المتجر" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.firstStoreName} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreName: value }))} />
         </> : null}
+        </View>
+        <View style={styles.card}>
         <Text style={styles.sectionTitle}>مدينة الخدمة وموقع المتجر</Text>
         <Text style={styles.label}>مدينة الخدمة</Text>
         {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة المدن المتاحة…</Text> : null}
@@ -526,23 +565,30 @@ const theme = useAppearanceTheme();
         {commercialTypesError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{commercialTypesError}</Text><BthwaniButton label="إعادة قراءة أنواع المتاجر" onPress={() => { const verticalId = input.firstStoreVerticalId; if (verticalId) { setCommercialTypesError(""); setCommercialTypesLoading(true); void fieldClient().listCommercialStoreTypes(verticalId).then((items) => setCommercialTypes(items.filter((item) => item.active))).catch(() => setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذه الفئة.")).finally(() => setCommercialTypesLoading(false)); } }} variant="secondary" /></View> : null}
         {!commercialTypesLoading && !commercialTypesError && input.firstStoreVerticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذه الفئة. اطلب من المشغّل إعداد النوع التجاري أولًا.</Text> : null}
         <View style={styles.optionList}>{commercialTypes.map((item) => <BthwaniChip key={item.id} disabled={formLocked} label={item.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreCommercialTypeId: item.id }))} selected={input.firstStoreCommercialTypeId === item.id} />)}</View>
+        </View>
+        <View style={styles.card}>
+        <Text style={styles.sectionTitle}>بيانات الإثبات</Text>
         <Text style={styles.label}>نوع الإثبات</Text>
         <View style={styles.optionList}>{proofTypeOptions.map((option) => <BthwaniChip key={option.value} disabled={formLocked} label={option.label} onPress={() => setSelectedProofType(option.value)} selected={selectedProofType === option.value} />)}</View>
         <Text style={styles.label}>{createdCase?.case.firstStoreProofType ? "رقم الإثبات · اختياري عند التعديل" : "رقم الإثبات"}</Text>
         {createdCase?.case.firstStoreProofType ? <Text style={styles.muted}>الرقم المسجل خاص ولا يظهر هنا. أدخل رقمًا جديدًا عند الحاجة إلى تصحيحه، أو اترك الحقل فارغًا للاحتفاظ به.</Text> : null}
         <TextInput accessibilityLabel="رقم الإثبات، اتركه فارغًا للاحتفاظ بالرقم المسجل عند التعديل" editable={!formLocked} autoCapitalize="characters" placeholder={createdCase?.case.firstStoreProofType ? "رقم جديد فقط عند التصحيح" : "أدخل رقم السجل أو الوثيقة"} placeholderTextColor={theme.colorMuted} style={styles.input} value={input.firstStoreProofNumber} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreProofNumber: value }))} />
+        </View>
         <View style={styles.card}>
           <Text style={styles.label}>صورة الإثبات الخاصة · مطلوبة قبل الإرسال</Text>
           <Text style={styles.muted}>{createdCase?.case.firstStoreProofImageUploaded ? "صورة الإثبات الخاصة مسجلة ومشفّرة ولا تظهر كصورة واجهة للمتجر." : "تُخزّن مشفّرة في السجل الخاص ولا تظهر كصورة واجهة للمتجر. يُسمح بحفظ المسودة قبل الرفع، لكن الإرسال للمراجعة يتطلب تأكيد ربط الصورة."}</Text>
           {proofImage ? <Image accessibilityLabel="معاينة صورة الإثبات الخاصة" source={{ uri: proofImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="contain" /> : null}
           <BthwaniButton disabled={formLocked} label={proofImage ? "تغيير صورة الإثبات" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
         </View>
+        <View style={styles.card}>
+        <Text style={styles.sectionTitle}>التوصيل المتاح</Text>
         <Text style={styles.label}>أوضاع الطلب التي اختارها الشريك عند الانضمام</Text>
         <Text style={styles.muted}>سجّل الأوضاع المتاحة في المتجر لأول مرة. بعد إنشاء المتجر لا يغيّرها الشريك من التطبيق؛ يديرها المشغّل من لوحة التحكم.</Text>
         <View style={styles.optionList}>
           <BthwaniChip label="توصيل بثواني · مسؤولية المنصة" onPress={() => { if (!formLocked) toggleFulfillmentMode("BTHWANI_CAPTAIN"); }} selected={input.firstStoreFulfillmentModes.includes("BTHWANI_CAPTAIN")} />
           <BthwaniChip label="توصيل المتجر · كابتن المتجر" onPress={() => { if (!formLocked) toggleFulfillmentMode("PARTNER_CAPTAIN"); }} selected={input.firstStoreFulfillmentModes.includes("PARTNER_CAPTAIN")} />
           <BthwaniChip label="استلم بنفسك من المتجر" onPress={() => { if (!formLocked) toggleFulfillmentMode("CUSTOMER_PICKUP"); }} selected={input.firstStoreFulfillmentModes.includes("CUSTOMER_PICKUP")} />
+        </View>
         </View>
         <View style={styles.card}>
           <Text style={styles.label}>عنوان المتجر وموقعه</Text>
@@ -557,8 +603,13 @@ const theme = useAppearanceTheme();
         </View>
         <Text style={styles.sectionTitle}>ساعات العمل الأسبوعية</Text>
         <FieldWorkingHoursEditor disabled={formLocked} onChange={setWorkingHoursByDay} value={workingHoursByDay} />
+        <View style={styles.card}>
+        <Text style={styles.sectionTitle}>ملاحظات</Text>
         <Text style={styles.label}>ملاحظات · اختياري</Text>
         <TextInput accessibilityLabel="ملاحظات اختيارية" editable={!formLocked} multiline maxLength={1000} placeholder="أي تفاصيل إضافية للمراجعة" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 88, paddingTop: 12, textAlignVertical: "top" }]} value={input.firstStoreNotes ?? ""} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreNotes: value }))} />
+        </View>
+        <View style={styles.card}>
+        <Text style={styles.sectionTitle}>صورة الواجهة وحق استخدامها</Text>
         <Text style={styles.label}>صورة واجهة المتجر · مطلوبة قبل الإرسال</Text>
         <Text style={styles.muted}>اختر صورة واضحة للواجهة. تُرفع مركزيًا وتظهر بعد اعتماد المتجر؛ حفظ المسودة ممكن قبل رفعها، لكن لا تُرسل للمراجعة حتى تكتمل.</Text>
         {storeImage ? <Image accessibilityLabel="معاينة صورة المتجر" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="cover" /> : null}
@@ -570,7 +621,8 @@ const theme = useAppearanceTheme();
         <Text style={styles.muted}>حفظ المسودة لا يرسلها للمراجعة. أكمِل صورتي الواجهة والإثبات أولًا.</Text>
         {draftConflictNeedsRead ? <BthwaniButton busy={busy} disabled={busy} label="إعادة قراءة النسخة الأحدث قبل الحفظ" onPress={() => void rereadAfterDraftConflict()} variant="secondary" /> : null}
         <BthwaniButton busy={busy} disabled={busy || draftConflictNeedsRead || (!pendingDraftAttempt && formLocked)} label={pendingDraftAttempt ? "إعادة التحقق من حفظ المسودة" : draftConflict ? "حفظ مدخلاتي واستبدال النسخة الأحدث" : createdCase ? "حفظ التعديلات" : "حفظ المسودة"} onPress={() => void createCase()} />
-      </View> : null}
+        </View>
+      </> : null}
       {createdCase ? <View accessibilityLiveRegion="polite" style={styles.successCard}>
         <Text style={styles.cardTitle}>حُفظت مسودة الشريك</Text>
         <Text style={styles.muted}>{createdCase.case.businessName} · {createdCase.case.firstStoreName}</Text>
