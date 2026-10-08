@@ -1,3 +1,4 @@
+import { toAsciiDigits } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConfirmDialog, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { StoreCommercialAgreement, StoreCommercialAgreementProposalRequest, StoreFulfillmentMode } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
