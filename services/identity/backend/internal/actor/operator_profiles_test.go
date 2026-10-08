@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 	_ "github.com/lib/pq"
 )
 
@@ -86,6 +87,12 @@ func TestListOperatorProfilesKeysetDatabase(t *testing.T) {
 	}
 	if _, err := db.ExecContext(ctx, "INSERT INTO identity_bootstrap_state(id,bootstrap_completed_at,initial_operator_actor_id) VALUES(1,clock_timestamp(),$1)", adminID); err != nil {
 		t.Fatalf("establish operator profile administrator authority fixture: %v", err)
+	}
+	for _, permission := range domain.OperatorPermissions() {
+		if _, err := db.ExecContext(ctx, `INSERT INTO identity_operator_permissions(actor_id,role,permission,enabled,version,changed_by_actor_id,reason)
+			VALUES($1,'operator',$2,true,1,$1,'initial operator bootstrap')`, adminID, permission); err != nil {
+			t.Fatalf("establish canonical operator permission fixture %s: %v", permission, err)
+		}
 	}
 
 	for index, suffix := range []string{"first", "second"} {
