@@ -13,7 +13,7 @@ func TestNormalizeWalletProviderKey(t *testing.T) {
 		want  string
 		valid bool
 	}{
-		{name: "trims surrounding spaces", value: "  provider-yemen  ", want: "provider-yemen", valid: true},
+		{name: "trims surrounding spaces", value: "  wallet_provider_floosak  ", want: "wallet_provider_floosak", valid: true},
 		{name: "rejects empty", value: " \t ", valid: false},
 		{name: "rejects control characters", value: "provider\nkey", valid: false},
 		{name: "rejects over limit", value: "12345678901234567890123456789012345678901234567890123456789012345", valid: false},
