@@ -12,6 +12,9 @@ import {
   type IdentityClientError,
   identityAuthorizesSurface,
   isIdentityClientError,
+  type OperatorPasskeyRegistrationResponse,
+  type OperatorPermission,
+  type OperatorPermissionAccess,
   type OperatorProfileCreateRequest,
   type OperatorProfileGrantResponse,
   type OperatorProfileInvitationResponse,
@@ -20,9 +23,7 @@ import {
   type OperatorProfilePage,
   type OperatorProfileResponse,
   type OperatorProfileUpdateRequest,
-  type OperatorPasskeyRegistrationResponse,
-  type OperatorPermission,
-  type OperatorPermissionAccess,
+  type OperatorRoleDetailsUpdateRequest,
   type PasskeyOptions,
   type TokenPair,
   type VersionedMutationContext,
@@ -174,6 +175,10 @@ export async function createOperatorProfile(request: OperatorProfileCreateReques
 
 export async function updateOperatorProfile(profileId: string, request: OperatorProfileUpdateRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse> {
   return identityInternalClient().updateOperatorProfile(profileId, request, context);
+}
+
+export async function updateOperatorRoleDetails(actorId: string, request: OperatorRoleDetailsUpdateRequest, context: AttributedMutationContext): Promise<ActorRoleView> {
+  return identityInternalClient().updateOperatorRoleDetails(actorId, request, context);
 }
 
 export async function approveOperatorProfile(profileId: string, request: OperatorProfileMutationRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse> {
@@ -338,7 +343,7 @@ async function refreshOperatorSession(refreshToken: string, clientInstanceId: st
   try {
     await writeTokens(pair, clientInstanceId);
     return pair.identity;
-  } catch (error) {
+  } catch (_error) {
     throw localSessionError(503, "IDENTITY_SESSION_PERSISTENCE_UNAVAILABLE", "identity session persistence is unavailable");
   }
 }

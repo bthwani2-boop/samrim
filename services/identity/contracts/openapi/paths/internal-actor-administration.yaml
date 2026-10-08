@@ -71,6 +71,27 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /internal/operators/{actorId}/details:
+    patch:
+      tags: [internal-actor-roles]
+      operationId: updateOperatorRoleDetails
+      security: [{ internalServiceToken: [] }]
+      description: Updates descriptive title and department for an admitted Operator. These fields never grant access or authority.
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorRoleDetailsUpdateRequest" } } }
+      responses:
+        "200": { description: Updated canonical Operator role details., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /internal/operator-profiles/{profileId}/approve:
     post:
       tags: [internal-actor-roles]

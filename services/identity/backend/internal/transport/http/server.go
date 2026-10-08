@@ -55,6 +55,7 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("GET /internal/operator-profiles", s.internal(s.listOperatorProfiles))
 	mux.HandleFunc("POST /internal/operator-profiles", s.internal(s.createOperatorProfile))
 	mux.HandleFunc("PATCH /internal/operator-profiles/{profileId}", s.internal(s.updateOperatorProfile))
+	mux.HandleFunc("PATCH /internal/operators/{actorId}/details", s.internal(s.updateOperatorRoleDetails))
 	mux.HandleFunc("POST /internal/operator-profiles/{profileId}/approve", s.internal(s.approveOperatorProfile))
 	mux.HandleFunc("POST /internal/operator-profiles/{profileId}/grant", s.internal(s.grantOperatorProfile))
 	mux.HandleFunc("POST /internal/operator-profiles/{profileId}/invitation", s.internal(s.issueOperatorProfileInvitation))

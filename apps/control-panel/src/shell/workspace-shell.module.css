@@ -21,7 +21,8 @@
 :global(.workspace-search-results small), :global(.workspace-search-empty), :global(.workspace-search-label) { color: var(--text-muted); }
 :global(.workspace-search-empty), :global(.workspace-search-label) { margin: 0; padding: var(--space-2) var(--space-3); font-size: var(--font-size-caption); }
 :global(.workspace-search-trigger:focus-visible), :global(.workspace-search-close:focus-visible) { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
-:global(.workspace-notifications-link) { display: inline-flex; min-height: var(--size-controlMd); align-items: center; justify-content: center; padding-inline: var(--space-3); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-base); color: var(--color-primary); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); text-decoration: none; }
+:global(.workspace-notifications-link) { display: inline-flex; width: var(--size-controlMd); min-width: var(--size-controlMd); min-height: var(--size-controlMd); align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-base); color: var(--color-primary); text-decoration: none; }
+:global(.workspace-notifications-link svg) { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 :global(.workspace-notifications-link:hover), :global(.workspace-notifications-link[aria-current="page"]) { border-color: var(--focus-ring); background: var(--action-soft); color: var(--interactive-text); }
 :global(.actor-context) { overflow: hidden; max-width: 100%; color: var(--color-primary); font-size: 13px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 :global(.workspace-logout) { width: 100%; min-width: 0; min-height: var(--size-controlMd); padding-inline: var(--space-4); }
@@ -171,8 +172,9 @@
 :global(.workspace-restricted) { min-height: 420px; }
 :global(.skip-link) { position: absolute; z-index: var(--z-raised); top: var(--space-1); inset-inline-start: var(--space-1); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--action-bg); color: var(--color-on-action); transform: translateY(-180%); }
 :global(.skip-link:focus) { transform: translateY(0); }
-:global(.account-menu) { position: relative; min-width: 170px; }
-:global(.account-menu > summary) { display: flex; min-height: var(--size-controlMd); align-items: center; justify-content: center; padding-inline: var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-base); color: var(--color-primary); cursor: pointer; font-size: var(--font-size-label); font-weight: var(--font-weight-bold); list-style: none; }
+:global(.account-menu) { position: relative; min-width: 0; }
+:global(.account-menu > summary) { display: flex; width: var(--size-controlMd); min-width: var(--size-controlMd); min-height: var(--size-controlMd); align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-base); color: var(--color-primary); cursor: pointer; list-style: none; }
+:global(.account-menu > summary svg) { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 :global(.account-menu > summary::-webkit-details-marker) { display: none; }
 :global(.account-menu[open] > summary) { border-color: var(--focus-ring); box-shadow: 0 0 0 3px var(--action-soft); }
 :global(.account-menu-panel) { position: absolute; z-index: var(--z-dropdown); top: calc(100% + var(--space-2)); inset-inline-end: 0; display: grid; width: min(320px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); gap: var(--space-3); overflow-y: auto; overscroll-behavior: contain; padding: var(--space-3); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-base); box-shadow: var(--shadow-card); }

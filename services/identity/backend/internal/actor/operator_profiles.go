@@ -34,7 +34,8 @@ type operatorProfileCursor struct {
 func (s *Service) CreateOperatorProfile(ctx context.Context, caller, actingActorID, correlationID, idempotencyKey string, input domain.OperatorProfileCreateRequest) (domain.OperatorProfileResponse, error) {
 	caller, actingActorID = strings.ToLower(strings.TrimSpace(caller)), strings.TrimSpace(actingActorID)
 	input.FullNameAr = strings.TrimSpace(input.FullNameAr)
-	if caller != "control-panel" || actingActorID == "" || !operatorProfileMutationValid(correlationID, idempotencyKey) || utf8.RuneCountInString(input.FullNameAr) < 2 || utf8.RuneCountInString(input.FullNameAr) > 120 {
+	input.JobTitle, input.Department = strings.TrimSpace(input.JobTitle), strings.TrimSpace(input.Department)
+	if caller != "control-panel" || actingActorID == "" || !operatorProfileMutationValid(correlationID, idempotencyKey) || utf8.RuneCountInString(input.FullNameAr) < 2 || utf8.RuneCountInString(input.FullNameAr) > 120 || !validOperatorDetails(input.JobTitle, input.Department) {
 		return domain.OperatorProfileResponse{}, domain.ErrInvalidInput
 	}
 	phone, err := identitysecurity.NormalizePhoneE164(input.PhoneE164)
@@ -44,7 +45,7 @@ func (s *Service) CreateOperatorProfile(ctx context.Context, caller, actingActor
 	if err := s.requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
 		return domain.OperatorProfileResponse{}, err
 	}
-	hash := operatorProfileHash("create", input.FullNameAr, phone)
+	hash := operatorProfileHash("create", input.FullNameAr, phone, input.JobTitle, input.Department)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.OperatorProfileResponse{}, err
@@ -79,7 +80,7 @@ func (s *Service) CreateOperatorProfile(ctx context.Context, caller, actingActor
 		return domain.OperatorProfileResponse{}, err
 	}
 	id := "oprof_" + token
-	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_operator_profiles(id,full_name_ar,phone_e164,state,version,created_by_actor_id) VALUES($1,$2,$3,'pending_review',1,$4)", id, input.FullNameAr, phone, actingActorID); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_operator_profiles(id,full_name_ar,phone_e164,job_title,department,state,version,created_by_actor_id) VALUES($1,$2,$3,$4,$5,'pending_review',1,$6)", id, input.FullNameAr, phone, input.JobTitle, input.Department, actingActorID); err != nil {
 		if isUniqueViolation(err) {
 			return domain.OperatorProfileResponse{}, domain.ErrConflict
 		}
@@ -102,7 +103,8 @@ func (s *Service) UpdateOperatorProfile(ctx context.Context, caller, actingActor
 	caller, actingActorID = strings.ToLower(strings.TrimSpace(caller)), strings.TrimSpace(actingActorID)
 	profileID = strings.TrimSpace(profileID)
 	input.FullNameAr = strings.TrimSpace(input.FullNameAr)
-	if caller != "control-panel" || actingActorID == "" || profileID == "" || input.ExpectedVersion < 1 || !operatorProfileMutationValid(correlationID, idempotencyKey) || utf8.RuneCountInString(input.FullNameAr) < 2 || utf8.RuneCountInString(input.FullNameAr) > 120 {
+	input.JobTitle, input.Department = strings.TrimSpace(input.JobTitle), strings.TrimSpace(input.Department)
+	if caller != "control-panel" || actingActorID == "" || profileID == "" || input.ExpectedVersion < 1 || !operatorProfileMutationValid(correlationID, idempotencyKey) || utf8.RuneCountInString(input.FullNameAr) < 2 || utf8.RuneCountInString(input.FullNameAr) > 120 || !validOperatorDetails(input.JobTitle, input.Department) {
 		return domain.OperatorProfileResponse{}, domain.ErrInvalidInput
 	}
 	phone, err := identitysecurity.NormalizePhoneE164(input.PhoneE164)
@@ -112,7 +114,7 @@ func (s *Service) UpdateOperatorProfile(ctx context.Context, caller, actingActor
 	if err := s.requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
 		return domain.OperatorProfileResponse{}, err
 	}
-	hash := operatorProfileHash("update", profileID, input.FullNameAr, phone, fmt.Sprint(input.ExpectedVersion))
+	hash := operatorProfileHash("update", profileID, input.FullNameAr, phone, input.JobTitle, input.Department, fmt.Sprint(input.ExpectedVersion))
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.OperatorProfileResponse{}, err
@@ -149,7 +151,7 @@ func (s *Service) UpdateOperatorProfile(ctx context.Context, caller, actingActor
 	if occupied {
 		return domain.OperatorProfileResponse{}, domain.ErrConflict
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_profiles SET full_name_ar=$1,phone_e164=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$3 AND version=$4", input.FullNameAr, phone, profileID, input.ExpectedVersion); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_profiles SET full_name_ar=$1,phone_e164=$2,job_title=$3,department=$4,version=version+1,updated_at=clock_timestamp() WHERE id=$5 AND version=$6", input.FullNameAr, phone, input.JobTitle, input.Department, profileID, input.ExpectedVersion); err != nil {
 		return domain.OperatorProfileResponse{}, err
 	}
 	if err := insertOperatorProfileEvent(ctx, tx, profileID, "profile_updated", actingActorID, idempotencyKey, hash, correlationID); err != nil {
@@ -200,12 +202,15 @@ func (s *Service) ListOperatorProfiles(ctx context.Context, caller, actingActorI
 		}
 		cursorCreatedAt, cursorID = decoded.CreatedAt, decoded.ID
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.full_name_ar,coalesce(CASE WHEN p.state='admitted' THEN a.phone_e164 ELSE p.phone_e164 END,''),coalesce(p.actor_id,''),r.enabled,a.security_enabled,r.activated_at,p.state,p.version,p.created_at,p.updated_at
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.full_name_ar,
+		CASE WHEN p.state='admitted' THEN coalesce(r.job_title,'') ELSE p.job_title END,
+		CASE WHEN p.state='admitted' THEN coalesce(r.department,'') ELSE p.department END,
+		coalesce(CASE WHEN p.state='admitted' THEN a.phone_e164 ELSE p.phone_e164 END,''),coalesce(p.actor_id,''),r.enabled,a.security_enabled,r.activated_at,p.state,p.version,p.created_at,p.updated_at
 		FROM identity_operator_profiles p
 		LEFT JOIN identity_actors a ON a.id=p.actor_id
 		LEFT JOIN identity_actor_roles r ON r.actor_id=p.actor_id AND r.role='operator'
 		WHERE ($1='' OR $1='all' OR p.state=$1)
-		AND ($2='' OR lower(p.full_name_ar) LIKE $2 OR coalesce(CASE WHEN p.state='admitted' THEN a.phone_e164 ELSE p.phone_e164 END,'') LIKE $2)
+		AND ($2='' OR lower(p.full_name_ar) LIKE $2 OR coalesce(CASE WHEN p.state='admitted' THEN a.phone_e164 ELSE p.phone_e164 END,'') LIKE $2 OR lower(CASE WHEN p.state='admitted' THEN coalesce(r.job_title,'') ELSE p.job_title END) LIKE $2 OR lower(CASE WHEN p.state='admitted' THEN coalesce(r.department,'') ELSE p.department END) LIKE $2)
 		AND (NOT $3::boolean OR ($7='created_asc' AND (p.created_at,p.id)>($4::timestamptz,$5::text)) OR ($7='created_desc' AND (p.created_at,p.id)<($4::timestamptz,$5::text)))
 		ORDER BY CASE WHEN $7='created_asc' THEN p.created_at END ASC,CASE WHEN $7='created_desc' THEN p.created_at END DESC,
 		CASE WHEN $7='created_asc' THEN p.id END ASC,CASE WHEN $7='created_desc' THEN p.id END DESC
@@ -393,7 +398,8 @@ func (s *Service) GrantOperatorProfile(ctx context.Context, caller, actingActorI
 	if !errors.Is(err, sql.ErrNoRows) {
 		return domain.OperatorProfileGrantResponse{}, err
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_actor_roles(actor_id,role,enabled,activated_at,version) VALUES($1,'operator',true,NULL,1)", actorRecord.ID); err != nil {
+	var roleCreatedAt time.Time
+	if err := tx.QueryRowContext(ctx, "INSERT INTO identity_actor_roles(actor_id,role,enabled,activated_at,version,job_title,department) VALUES($1,'operator',true,NULL,1,$2,$3) RETURNING created_at", actorRecord.ID, profile.JobTitle, profile.Department).Scan(&roleCreatedAt); err != nil {
 		return domain.OperatorProfileGrantResponse{}, err
 	}
 	roleVersion = 1
@@ -407,7 +413,7 @@ func (s *Service) GrantOperatorProfile(ctx context.Context, caller, actingActorI
 			return domain.OperatorProfileGrantResponse{}, err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_profiles SET state='admitted',phone_e164=NULL,actor_id=$1,version=version+1,updated_at=clock_timestamp() WHERE id=$2 AND state='approved' AND version=$3", actorRecord.ID, profile.ID, expectedVersion); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_profiles SET state='admitted',phone_e164=NULL,job_title='',department='',actor_id=$1,version=version+1,updated_at=clock_timestamp() WHERE id=$2 AND state='approved' AND version=$3", actorRecord.ID, profile.ID, expectedVersion); err != nil {
 		return domain.OperatorProfileGrantResponse{}, err
 	}
 	if err := insertOperatorProfileEvent(ctx, tx, profile.ID, "role_admitted", actingActorID, idempotencyKey, hash, correlationID); err != nil {
@@ -417,7 +423,7 @@ func (s *Service) GrantOperatorProfile(ctx context.Context, caller, actingActorI
 	if err != nil {
 		return domain.OperatorProfileGrantResponse{}, err
 	}
-	role := domain.ActorRoleView{ActorID: actorRecord.ID, PhoneE164: actorRecord.PhoneE164, Role: "operator", Enabled: true, ActorVersion: actorRecord.Version, RoleVersion: roleVersion, SecurityEnabled: actorRecord.SecurityEnabled}
+	role := domain.ActorRoleView{ActorID: actorRecord.ID, PhoneE164: actorRecord.PhoneE164, JobTitle: profile.JobTitle, Department: profile.Department, Role: "operator", Enabled: true, CreatedAt: roleCreatedAt, ActorVersion: actorRecord.Version, RoleVersion: roleVersion, SecurityEnabled: actorRecord.SecurityEnabled}
 	role.ActorCreated, role.RoleCreated = actorCreated, roleCreated
 	if err := tx.Commit(); err != nil {
 		return domain.OperatorProfileGrantResponse{}, err
@@ -430,6 +436,10 @@ func operatorProfileMutationValid(correlationID, idempotencyKey string) bool {
 }
 
 func queryRuneCount(value string) int { return utf8.RuneCountInString(strings.TrimSpace(value)) }
+
+func validOperatorDetails(jobTitle, department string) bool {
+	return utf8.ValidString(jobTitle) && utf8.ValidString(department) && utf8.RuneCountInString(jobTitle) >= 1 && utf8.RuneCountInString(jobTitle) <= 80 && utf8.RuneCountInString(department) >= 1 && utf8.RuneCountInString(department) <= 80
+}
 
 func operatorProfileHash(values ...string) string {
 	hash := sha256.Sum256([]byte(strings.Join(values, "\x00")))
@@ -469,7 +479,10 @@ func insertOperatorProfileEvent(ctx context.Context, tx *sql.Tx, profileID, even
 
 func readOperatorProfile(ctx context.Context, q operatorProfileQueryer, id string) (domain.OperatorProfile, error) {
 	id = strings.TrimSpace(id)
-	query := `SELECT p.id,p.full_name_ar,coalesce(CASE WHEN p.state='admitted' THEN a.phone_e164 ELSE p.phone_e164 END,''),coalesce(p.actor_id,''),r.enabled,a.security_enabled,r.activated_at,p.state,p.version,p.created_at,p.updated_at
+	query := `SELECT p.id,p.full_name_ar,
+		CASE WHEN p.state='admitted' THEN coalesce(r.job_title,'') ELSE p.job_title END,
+		CASE WHEN p.state='admitted' THEN coalesce(r.department,'') ELSE p.department END,
+		coalesce(CASE WHEN p.state='admitted' THEN a.phone_e164 ELSE p.phone_e164 END,''),coalesce(p.actor_id,''),r.enabled,a.security_enabled,r.activated_at,p.state,p.version,p.created_at,p.updated_at
 		FROM identity_operator_profiles p LEFT JOIN identity_actors a ON a.id=p.actor_id LEFT JOIN identity_actor_roles r ON r.actor_id=p.actor_id AND r.role='operator' WHERE p.id=$1`
 	if strings.HasSuffix(id, " FOR UPDATE") {
 		id = strings.TrimSpace(strings.TrimSuffix(id, " FOR UPDATE"))
@@ -482,7 +495,7 @@ func scanOperatorProfile(scan func(...any) error) (domain.OperatorProfile, error
 	var profile domain.OperatorProfile
 	var roleEnabled, securityEnabled sql.NullBool
 	var activatedAt sql.NullTime
-	err := scan(&profile.ID, &profile.FullNameAr, &profile.PhoneE164, &profile.ActorID, &roleEnabled, &securityEnabled, &activatedAt, &profile.State, &profile.Version, &profile.CreatedAt, &profile.UpdatedAt)
+	err := scan(&profile.ID, &profile.FullNameAr, &profile.JobTitle, &profile.Department, &profile.PhoneE164, &profile.ActorID, &roleEnabled, &securityEnabled, &activatedAt, &profile.State, &profile.Version, &profile.CreatedAt, &profile.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.OperatorProfile{}, domain.ErrNotFound
 	}
@@ -499,7 +512,12 @@ func scanOperatorProfile(scan func(...any) error) (domain.OperatorProfile, error
 }
 
 func readOperatorProfileRole(ctx context.Context, q operatorProfileQueryer, actorID string) (domain.ActorRoleView, error) {
-	return scanRoleView(q.QueryRowContext(ctx, `SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version
+	return scanRoleView(q.QueryRowContext(ctx, `SELECT a.id,a.phone_e164,
+		(SELECT p.full_name_ar FROM identity_operator_profiles p WHERE p.actor_id=a.id ORDER BY p.updated_at DESC,p.id DESC LIMIT 1),
+		r.job_title,r.department,
+		r.role,r.enabled,r.activated_at,r.created_at,
+		CASE WHEN r.role='operator' THEN (SELECT s.created_at FROM identity_sessions s WHERE s.actor_id=a.id AND s.role=r.role ORDER BY s.created_at DESC LIMIT 1) END,
+		r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version
 		FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role
 		WHERE a.id=$1 AND r.role='operator'`, strings.TrimSpace(actorID)).Scan)
 }

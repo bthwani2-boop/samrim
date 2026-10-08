@@ -62,6 +62,19 @@ func (s *Server) updateOperatorProfile(w http.ResponseWriter, r *http.Request, c
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (s *Server) updateOperatorRoleDetails(w http.ResponseWriter, r *http.Request, caller string) {
+	var input domain.OperatorRoleDetailsUpdateRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.actors.UpdateOperatorRoleDetails(r.Context(), caller, strings.TrimSpace(r.Header.Get(operatorProfileActingActorHeader)), strings.TrimSpace(r.Header.Get(operatorProfileCorrelationHeader)), r.PathValue("actorId"), input)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) approveOperatorProfile(w http.ResponseWriter, r *http.Request, caller string) {
 	var input domain.OperatorProfileMutationRequest
 	if !decodeJSON(w, r, &input) {

@@ -195,7 +195,10 @@ function WorkspaceHeader({
         <span className="actor-context">لوحة التحكم · جلسة موثقة</span>
       </div>
       <div className="workspace-header-tools">
-        <Link className="workspace-notifications-link" href="/notifications" aria-current={pathname === "/notifications" ? "page" : undefined}>الإشعارات</Link>
+        <Link className="workspace-notifications-link" href="/notifications" aria-label="الإشعارات" title="الإشعارات" aria-current={pathname === "/notifications" ? "page" : undefined}>
+          <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></svg>
+          <span className="visually-hidden">الإشعارات</span>
+        </Link>
         <search className="workspace-search-control" aria-label="البحث في صفحات لوحة التحكم">
           <button
             ref={searchTriggerRef}
@@ -231,7 +234,10 @@ function WorkspaceHeader({
           ) : null}
         </search>
         <details className="account-menu" onToggle={(event) => setAccountMenuOpen(event.currentTarget.open)}>
-          <summary>حساب المشغل</summary>
+          <summary aria-label="الحساب" title="الحساب">
+            <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5" /><path d="M5 20c.7-3.1 3.2-5 7-5s6.3 1.9 7 5" /></svg>
+            <span className="visually-hidden">الحساب</span>
+          </summary>
           <div className="account-menu-panel">
             {identity ? <OperatorProfile key={identity.subject} identity={identity} active={accountMenuOpen} /> : null}
             <AppearanceControl />

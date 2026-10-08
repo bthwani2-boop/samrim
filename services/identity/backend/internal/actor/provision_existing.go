@@ -51,13 +51,14 @@ func (s *Service) ProvisionExistingTrustedWithContext(ctx context.Context, calle
 
 	var enabled bool
 	var activatedAt sql.NullTime
+	var roleCreatedAt time.Time
 	var roleVersion int
 	roleCreated := false
-	err = tx.QueryRowContext(ctx, `SELECT enabled,activated_at,version FROM identity_actor_roles
-		WHERE actor_id=$1 AND role=$2 FOR UPDATE`, actor.ID, role).Scan(&enabled, &activatedAt, &roleVersion)
+	err = tx.QueryRowContext(ctx, `SELECT enabled,activated_at,created_at,version FROM identity_actor_roles
+		WHERE actor_id=$1 AND role=$2 FOR UPDATE`, actor.ID, role).Scan(&enabled, &activatedAt, &roleCreatedAt, &roleVersion)
 	if errors.Is(err, sql.ErrNoRows) {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO identity_actor_roles(actor_id,role,enabled,activated_at,version)
-			VALUES($1,$2,true,NULL,1)`, actor.ID, role); err != nil {
+		if err := tx.QueryRowContext(ctx, `INSERT INTO identity_actor_roles(actor_id,role,enabled,activated_at,version)
+			VALUES($1,$2,true,NULL,1) RETURNING created_at`, actor.ID, role).Scan(&roleCreatedAt); err != nil {
 			return domain.ActorRoleView{}, err
 		}
 		enabled, roleVersion, roleCreated = true, 1, true
@@ -91,7 +92,7 @@ func (s *Service) ProvisionExistingTrustedWithContext(ctx context.Context, calle
 	}
 	return domain.ActorRoleView{
 		ActorID: actor.ID, PhoneE164: actor.PhoneE164, Role: role, Enabled: enabled,
-		ActivatedAt: activated, SecurityEnabled: actor.SecurityEnabled, ActorVersion: actor.Version,
+		ActivatedAt: activated, CreatedAt: roleCreatedAt, SecurityEnabled: actor.SecurityEnabled, ActorVersion: actor.Version,
 		RoleVersion: roleVersion, CredentialVersion: 0, ActorCreated: false, RoleCreated: roleCreated,
 	}, nil
 }

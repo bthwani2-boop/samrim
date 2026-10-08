@@ -45,10 +45,12 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const fullNameAr = typeof body?.fullNameAr === "string" ? body.fullNameAr.trim() : "";
   const phoneE164 = typeof body?.phoneE164 === "string" ? normalizeYemenPhoneE164(body.phoneE164) : "";
-  if (!body || Object.keys(body).some((key) => !["fullNameAr", "phoneE164"].includes(key)) || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(phoneE164)) return denied(400, "INVALID_INPUT", "a full Arabic name and valid Yemeni local or international phone number are required");
+  const jobTitle = typeof body?.jobTitle === "string" ? body.jobTitle.trim() : "";
+  const department = typeof body?.department === "string" ? body.department.trim() : "";
+  if (!body || Object.keys(body).some((key) => !["fullNameAr", "phoneE164", "jobTitle", "department"].includes(key)) || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || Array.from(jobTitle).length < 1 || Array.from(jobTitle).length > 80 || Array.from(department).length < 1 || Array.from(department).length > 80 || !/^\+[1-9][0-9]{7,14}$/.test(phoneE164)) return denied(400, "INVALID_INPUT", "a full Arabic name, job title, department, and valid Yemeni local or international phone number are required");
   const context = { operatorActorId: access.identity.subject, correlationId: randomUUID(), idempotencyKey: randomUUID() };
   try {
-    const result = await createOperatorProfile({ fullNameAr, phoneE164 }, context);
+    const result = await createOperatorProfile({ fullNameAr, phoneE164, jobTitle, department }, context);
     return NextResponse.json(result, { status: result.idempotentReplay ? 200 : 201, headers: noStore });
   } catch (error) {
     const payload = identityErrorPayload(error);

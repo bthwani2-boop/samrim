@@ -31,7 +31,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func TestMigrationV13ToV26Upgrade(t *testing.T) {
+func TestMigrationV13ToV28Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("IDENTITY_DATABASE_URL is required for the migration upgrade proof")
@@ -733,7 +733,7 @@ func TestMigrationV13ToV26Upgrade(t *testing.T) {
 		t.Fatalf("expected schema version 24, got %d (err: %v)", version, err)
 	}
 
-	// Apply the current migration and verify full postgres.Ready on v26.
+	// Apply the current migrations and verify full postgres.Ready on v28.
 	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
 		t.Fatalf("canonical migration from v24 to current schema failed: %v", err)
 	}
@@ -741,18 +741,18 @@ func TestMigrationV13ToV26Upgrade(t *testing.T) {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	// Re-run the canonical runtime migrator and prove it is a no-op at v26.
+	// Re-run the canonical runtime migrator and prove it is a no-op at v28.
 	beforeSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
 		t.Fatalf("second canonical migration run failed: %v", err)
 	}
 	afterSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	assertMigrationNoOpSnapshotUnchanged(t, beforeSecondRun, afterSecondRun)
-	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 26 {
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 28 {
 		t.Fatalf("schema version changed during second canonical migration run: version=%d err=%v", version, err)
 	}
 
-	t.Log("Migration v13 -> v26 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Operator workspace permissions, verified legal-name schema cutover, Operator profile registry, managed recovery, and Field app foreground timestamp test PASSED successfully!")
+	t.Log("Migration v13 -> v28 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Operator workspace permissions, verified legal-name schema cutover, Operator profile registry, managed recovery, Field app foreground timestamp, Operator role details, and recoverable passkey replacement test PASSED successfully!")
 }
 
 func TestManagedRecoveryMigrationFreshBootstrapAndV25Upgrade(t *testing.T) {
@@ -783,26 +783,26 @@ func TestManagedRecoveryMigrationFreshBootstrapAndV25Upgrade(t *testing.T) {
 		t.Fatal("could not find identity migrations directory")
 	}
 	records := identityMigrationRecords(t, migDir)
-	if len(records) != 26 {
-		t.Fatalf("identity migration count = %d, want 26", len(records))
+	if len(records) != 28 {
+		t.Fatalf("identity migration count = %d, want 28", len(records))
 	}
 	latestMigration := records[len(records)-1]
-	if latestMigration.Version != 26 || latestMigration.Name != "026_field_app_foreground_timestamp.sql" {
-		t.Fatalf("latest migration = %#v, want v26 Field app foreground timestamp", latestMigration)
+	if latestMigration.Version != 28 || latestMigration.Name != "028_operator_recovery_reservation.sql" {
+		t.Fatalf("latest migration = %#v, want v28 Operator recovery reservation", latestMigration)
 	}
 
 	freshDB, freshURL := createIsolatedMigrationDatabase(t, ctx, rootDB, databaseURL, "id_recovery_fresh")
 	if err := identityruntime.RunMigrations(ctx, "development", freshURL, migDir); err != nil {
-		t.Fatalf("fresh bootstrap through v26: %v", err)
+		t.Fatalf("fresh bootstrap through v28: %v", err)
 	}
 	if err := postgres.Ready(ctx, freshDB); err != nil {
-		t.Fatalf("fresh v26 database readiness: %v", err)
+		t.Fatalf("fresh v28 database readiness: %v", err)
 	}
 	if err := postgres.VerifyExactConstraints(ctx, freshDB); err != nil {
-		t.Fatalf("fresh v26 exact constraints: %v", err)
+		t.Fatalf("fresh v28 exact constraints: %v", err)
 	}
 	if err := postgres.VerifyMigrationHistory(ctx, freshDB, records); err != nil {
-		t.Fatalf("fresh v26 migration history: %v", err)
+		t.Fatalf("fresh v28 migration history: %v", err)
 	}
 
 	upgradeDB, upgradeURL := createIsolatedMigrationDatabase(t, ctx, rootDB, databaseURL, "id_recovery_v25")
@@ -838,29 +838,66 @@ func TestManagedRecoveryMigrationFreshBootstrapAndV25Upgrade(t *testing.T) {
 VALUES($1,$2,'partner','managed_activate',$3,$4,$5,true,'pending',0,clock_timestamp()+interval '1 hour')`, preservedChallengeID, preservedActorID, preservedPhone, strings.Repeat("b", 64), strings.Repeat("c", 64)); err != nil {
 		t.Fatalf("insert prior-v25 challenge fixture: %v", err)
 	}
+	const preservedOperatorID = "act_recovery_passkey_preserved"
+	if _, err := upgradeDB.ExecContext(ctx, "INSERT INTO identity_actors(id,phone_e164,security_enabled,version) VALUES($1,$2,true,1)", preservedOperatorID, "+967770009822"); err != nil {
+		t.Fatalf("insert prior-v25 operator fixture: %v", err)
+	}
+	if _, err := upgradeDB.ExecContext(ctx, "INSERT INTO identity_actor_roles(actor_id,role,enabled,activated_at,version) VALUES($1,'operator',true,clock_timestamp(),1)", preservedOperatorID); err != nil {
+		t.Fatalf("insert prior-v25 operator role fixture: %v", err)
+	}
+	if _, err := upgradeDB.ExecContext(ctx, `INSERT INTO identity_webauthn_credentials(actor_id,rp_id,credential_id,credential_json)
+VALUES($1,'localhost',$2,'{}'::jsonb)`, preservedOperatorID, []byte("preserved-operator-passkey")); err != nil {
+		t.Fatalf("insert prior-v25 operator passkey fixture: %v", err)
+	}
+	if _, err := upgradeDB.ExecContext(ctx, `INSERT INTO identity_sessions(id,actor_id,role,access_token_hash,refresh_token_hash,client_instance_id_hash,access_expires_at,refresh_expires_at,absolute_expires_at)
+VALUES('session_recovery_passkey_preserved',$1,'operator',repeat('d',64),repeat('e',64),repeat('f',64),clock_timestamp()+interval '15 minutes',clock_timestamp()+interval '1 hour',clock_timestamp()+interval '2 hours')`, preservedOperatorID); err != nil {
+		t.Fatalf("insert prior-v25 operator session fixture: %v", err)
+	}
+	if _, err := upgradeDB.ExecContext(ctx, `INSERT INTO identity_webauthn_ceremonies(id,kind,actor_id,challenge,session_data,expires_at)
+VALUES('ceremony_recovery_passkey_preserved','operator_recovery_registration',$1,'preserved-recovery-challenge','{}'::jsonb,clock_timestamp()+interval '1 hour')`, preservedOperatorID); err != nil {
+		t.Fatalf("insert prior-v25 recovery ceremony fixture: %v", err)
+	}
+	if _, err := upgradeDB.ExecContext(ctx, "INSERT INTO identity_operator_recovery_credentials(id,actor_id,credential_hash) VALUES('recovery_passkey_preserved',$1,$2)", preservedOperatorID, strings.Repeat("1", 64)); err != nil {
+		t.Fatalf("insert prior-v25 operator recovery credential fixture: %v", err)
+	}
 
 	if err := identityruntime.RunMigrations(ctx, "development", upgradeURL, migDir); err != nil {
-		t.Fatalf("prior-v25 upgrade to v26: %v", err)
+		t.Fatalf("prior-v25 upgrade to v28: %v", err)
 	}
 	if err := postgres.Ready(ctx, upgradeDB); err != nil {
-		t.Fatalf("upgraded v26 database readiness: %v", err)
+		t.Fatalf("upgraded v28 database readiness: %v", err)
 	}
 	if err := postgres.VerifyExactConstraints(ctx, upgradeDB); err != nil {
-		t.Fatalf("upgraded v26 exact constraints: %v", err)
+		t.Fatalf("upgraded v28 exact constraints: %v", err)
 	}
 	if err := postgres.VerifyMigrationHistory(ctx, upgradeDB, records); err != nil {
-		t.Fatalf("upgraded v26 migration history: %v", err)
+		t.Fatalf("upgraded v28 migration history: %v", err)
 	}
 	var credentialVersion int
 	if err := upgradeDB.QueryRowContext(ctx, "SELECT version FROM identity_password_credentials WHERE actor_id=$1 AND role='partner'", preservedActorID).Scan(&credentialVersion); err != nil || credentialVersion != 3 {
-		t.Fatalf("prior credential after v26 = version %d (err: %v), want version 3", credentialVersion, err)
+		t.Fatalf("prior credential after v28 = version %d (err: %v), want version 3", credentialVersion, err)
 	}
 	var challengePurpose, challengeRole, challengeStatus string
 	if err := upgradeDB.QueryRowContext(ctx, "SELECT purpose,role,status FROM identity_challenges WHERE id=$1", preservedChallengeID).Scan(&challengePurpose, &challengeRole, &challengeStatus); err != nil {
 		t.Fatalf("read preserved prior-v24 challenge: %v", err)
 	}
 	if challengePurpose != "managed_activate" || challengeRole != "partner" || challengeStatus != "pending" {
-		t.Fatalf("prior challenge changed during v26 upgrade: purpose=%s role=%s status=%s", challengePurpose, challengeRole, challengeStatus)
+		t.Fatalf("prior challenge changed during v28 upgrade: purpose=%s role=%s status=%s", challengePurpose, challengeRole, challengeStatus)
+	}
+	var preservedPasskeyCount, preservedOperatorSessionCount int
+	var recoveryHash string
+	var recoveryReservation sql.NullString
+	if err := upgradeDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_webauthn_credentials WHERE actor_id=$1 AND credential_id=$2 AND revoked_at IS NULL", preservedOperatorID, []byte("preserved-operator-passkey")).Scan(&preservedPasskeyCount); err != nil {
+		t.Fatalf("read preserved passkey after v28 migration: %v", err)
+	}
+	if err := upgradeDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_sessions WHERE id='session_recovery_passkey_preserved' AND actor_id=$1 AND revoked_at IS NULL", preservedOperatorID).Scan(&preservedOperatorSessionCount); err != nil {
+		t.Fatalf("read preserved operator session after v28 migration: %v", err)
+	}
+	if err := upgradeDB.QueryRowContext(ctx, "SELECT credential_hash,reserved_by_ceremony_id FROM identity_operator_recovery_credentials WHERE id='recovery_passkey_preserved'").Scan(&recoveryHash, &recoveryReservation); err != nil {
+		t.Fatalf("read preserved recovery credential after v28 migration: %v", err)
+	}
+	if preservedPasskeyCount != 1 || preservedOperatorSessionCount != 1 || recoveryHash != strings.Repeat("1", 64) || recoveryReservation.Valid {
+		t.Fatalf("v28 migration changed prior operator access: passkeys=%d sessions=%d recoveryHashPreserved=%t reservationNull=%t", preservedPasskeyCount, preservedOperatorSessionCount, recoveryHash == strings.Repeat("1", 64), !recoveryReservation.Valid)
 	}
 
 	for _, role := range []string{"partner", "captain", "field"} {

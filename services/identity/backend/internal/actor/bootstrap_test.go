@@ -266,7 +266,10 @@ func TestInitialOperatorPermissionAdministrationEnforcesScopeVersionAuditAndSess
 	if err != nil {
 		t.Fatalf("provision initial operator: %v", err)
 	}
-	createdProfile, err := service.CreateOperatorProfile(ctx, "control-panel", root.ActorID, "profile-create-proof", "profile-create-key", domain.OperatorProfileCreateRequest{FullNameAr: "مشغل اختبار", PhoneE164: "+15555550124"})
+	if root.CreatedAt.IsZero() {
+		t.Fatal("initial operator role creation time is missing")
+	}
+	createdProfile, err := service.CreateOperatorProfile(ctx, "control-panel", root.ActorID, "profile-create-proof", "profile-create-key", domain.OperatorProfileCreateRequest{FullNameAr: "مشغل اختبار", PhoneE164: "+15555550124", JobTitle: "مسؤول دعم", Department: "العمليات"})
 	if err != nil {
 		t.Fatalf("create isolated operator profile: %v", err)
 	}

@@ -24,9 +24,11 @@ export async function POST(request: Request, context: Readonly<{ params: Promise
     if (action === "update-profile") {
       const fullNameAr = typeof body?.fullNameAr === "string" ? body.fullNameAr.trim() : "";
       const phoneE164 = typeof body?.phoneE164 === "string" ? normalizeYemenPhoneE164(body.phoneE164) : "";
+      const jobTitle = typeof body?.jobTitle === "string" ? body.jobTitle.trim() : "";
+      const department = typeof body?.department === "string" ? body.department.trim() : "";
       const expectedVersion = typeof body?.expectedVersion === "number" ? body.expectedVersion : NaN;
-      if (Object.keys(body ?? {}).some((key) => !["action", "fullNameAr", "phoneE164", "expectedVersion"].includes(key)) || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(phoneE164) || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) return denied(400, "INVALID_INPUT", "a valid profile, Yemeni local or international phone and current profile version are required");
-      const result = await updateOperatorProfile(profileId, { fullNameAr, phoneE164, expectedVersion }, contextValues);
+      if (Object.keys(body ?? {}).some((key) => !["action", "fullNameAr", "phoneE164", "jobTitle", "department", "expectedVersion"].includes(key)) || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || Array.from(jobTitle).length < 1 || Array.from(jobTitle).length > 80 || Array.from(department).length < 1 || Array.from(department).length > 80 || !/^\+[1-9][0-9]{7,14}$/.test(phoneE164) || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) return denied(400, "INVALID_INPUT", "a valid profile, phone, job title, department and current profile version are required");
+      const result = await updateOperatorProfile(profileId, { fullNameAr, phoneE164, jobTitle, department, expectedVersion }, contextValues);
       return NextResponse.json(result, { headers: noStore });
     }
     if (action === "approve" || action === "grant") {

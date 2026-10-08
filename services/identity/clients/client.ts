@@ -18,6 +18,7 @@ import type {
   OperatorProfileMutationRequest,
   OperatorProfilePage,
   OperatorProfileResponse,
+  OperatorRoleDetailsUpdateRequest,
   OperatorProfileUpdateRequest,
   OperatorPasskeyAuthenticationFinishRequest,
   OperatorPasskeyRecoveryFinishRequest,
@@ -86,6 +87,7 @@ export type IdentityInternalClient = Readonly<{
   listOperatorProfiles(query: string, state: string, sort: "created_asc" | "created_desc", limit: number, cursor: string, context: AttributedMutationContext): Promise<OperatorProfilePage>;
   createOperatorProfile(request: OperatorProfileCreateRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse>;
   updateOperatorProfile(profileId: string, request: OperatorProfileUpdateRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse>;
+  updateOperatorRoleDetails(actorId: string, request: OperatorRoleDetailsUpdateRequest, context: AttributedMutationContext): Promise<ActorRoleView>;
   approveOperatorProfile(profileId: string, request: OperatorProfileMutationRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse>;
   grantOperatorProfile(profileId: string, request: OperatorProfileMutationRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileGrantResponse>;
   issueOperatorProfileInvitation(profileId: string, context: AttributedMutationContext): Promise<OperatorProfileInvitationResponse>;
@@ -384,6 +386,9 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     ),
     updateOperatorProfile: (profileId, request, context) => requestOperatorProfile<OperatorProfileResponse>(
       { ...identityOperationPaths.updateOperatorProfile, path: expandPath(identityOperationPaths.updateOperatorProfile.path, { profileId }) }, context, request, context.idempotencyKey,
+    ),
+    updateOperatorRoleDetails: (actorId, request, context) => requestOperatorProfile<ActorRoleView>(
+      { ...identityOperationPaths.updateOperatorRoleDetails, path: expandPath(identityOperationPaths.updateOperatorRoleDetails.path, { actorId }) }, context, request,
     ),
     approveOperatorProfile: (profileId, request, context) => requestOperatorProfile<OperatorProfileResponse>(
       { ...identityOperationPaths.approveOperatorProfile, path: expandPath(identityOperationPaths.approveOperatorProfile.path, { profileId }) }, context, request, context.idempotencyKey,

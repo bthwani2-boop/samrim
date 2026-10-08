@@ -64,9 +64,7 @@
   :global(.workspace-header) { gap: 8px; }
   :global(.workspace-header-tools) { min-width: 0; }
   :global(.workspace-search-panel) { width: calc(100vw - 24px); }
-  :global(.workspace-notifications-link) { padding-inline: 6px; font-size: 10px; }
-  :global(.workspace-header-tools .account-menu) { min-width: 0 !important; width: min(104px, 27vw); }
-  :global(.account-menu > summary) { width: 100%; overflow: hidden; padding-inline: 6px; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+  :global(.workspace-notifications-link), :global(.workspace-header-tools .account-menu), :global(.account-menu > summary) { width: var(--size-controlMd); min-width: var(--size-controlMd); }
   :global(.workspace-nav-toggle) { width: var(--size-controlMd); min-width: var(--size-controlMd); padding: 0; }
   :global(.admission-form) { grid-template-columns: 1fr; }
   :global(.admission-form .button) { width: 100%; }
