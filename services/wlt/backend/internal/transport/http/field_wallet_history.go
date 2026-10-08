@@ -11,19 +11,19 @@ import (
 )
 
 type fieldWalletHistoryEntryJSON struct {
-	Type             string `json:"type"`
-	Direction        string `json:"direction"`
-	AmountMinor      int64  `json:"amountMinor"`
-	Currency         string `json:"currency"`
-	CreatedAt        string `json:"createdAt"`
-	BalanceAfterMinor int64 `json:"balanceAfterMinor"`
+	Type              string `json:"type"`
+	Direction         string `json:"direction"`
+	AmountMinor       int64  `json:"amountMinor"`
+	Currency          string `json:"currency"`
+	CreatedAt         string `json:"createdAt"`
+	BalanceAfterMinor int64  `json:"balanceAfterMinor"`
 }
 
 type fieldWalletHistoryResponse struct {
-	Currency    string                        `json:"currency"`
-	Entries     []fieldWalletHistoryEntryJSON `json:"entries"`
-	NextCursor  string                        `json:"nextCursor,omitempty"`
-	Limit       int                           `json:"limit"`
+	Currency   string                        `json:"currency"`
+	Entries    []fieldWalletHistoryEntryJSON `json:"entries"`
+	NextCursor string                        `json:"nextCursor,omitempty"`
+	Limit      int                           `json:"limit"`
 }
 
 func (s *Server) readFieldWalletHistory(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +80,7 @@ func (s *Server) readFieldWalletHistory(w http.ResponseWriter, r *http.Request) 
 		entries = append(entries, fieldWalletHistoryEntryJSON{
 			Type: entry.TransactionType, Direction: entry.Direction,
 			AmountMinor: entry.AmountMinor, Currency: entry.Currency,
-			CreatedAt: entry.CreatedAt.UTC().Format(time.RFC3339Nano),
+			CreatedAt:         entry.CreatedAt.UTC().Format(time.RFC3339Nano),
 			BalanceAfterMinor: entry.BalanceAfter,
 		})
 	}

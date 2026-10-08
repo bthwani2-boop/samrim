@@ -29,6 +29,7 @@ func TestReadFieldWalletHistoryUsesLedgerAndReturnsReducedPagedEntries(t *testin
 	createdAt := time.Date(2026, time.October, 8, 9, 30, 0, 0, time.UTC)
 	db := sql.OpenDB(fieldWalletHistoryConnector{createdAt: createdAt})
 	defer db.Close()
+	db.SetMaxOpenConns(1)
 	server := &Server{db: db, serviceToken: "service-token"}
 	request := httptest.NewRequest(http.MethodGet, "/wlt/v1/fields/field-1/wallet-history?limit=1", nil)
 	request.SetPathValue("fieldActorId", "field-1")
@@ -98,9 +99,13 @@ type fieldWalletHistoryConnection struct {
 	queries   int
 }
 
-func (*fieldWalletHistoryConnection) Prepare(string) (driver.Stmt, error) { return nil, errors.New("unsupported") }
-func (*fieldWalletHistoryConnection) Close() error                        { return nil }
-func (*fieldWalletHistoryConnection) Begin() (driver.Tx, error)            { return nil, errors.New("unsupported") }
+func (*fieldWalletHistoryConnection) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("unsupported")
+}
+func (*fieldWalletHistoryConnection) Close() error { return nil }
+func (*fieldWalletHistoryConnection) Begin() (driver.Tx, error) {
+	return nil, errors.New("unsupported")
+}
 
 func (c *fieldWalletHistoryConnection) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	c.queries++
