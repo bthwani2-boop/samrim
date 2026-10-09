@@ -97,18 +97,6 @@ async function findOrBootstrapPrimaryOperator(
   if (existing) {
     expect(existing.actorId).toMatch(/^act_/);
     expect(existing.phone).toMatch(/^\+9677/);
-    if (process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "disposable-ci" && process.env.CI === "true") {
-      const enrollment = await jsonRequest(
-        identityBase,
-        "/internal/bootstrap/operator",
-        bootstrapToken,
-        { phoneE164: existing.phone, role: "operator" },
-      );
-      expect(enrollment.response.status, "disposable CI founder must enroll through canonical bootstrap").toBe(200);
-      const token = String(enrollment.body?.enrollmentToken?.code || "");
-      expect(token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
-      return { ...existing, token };
-    }
     return existing;
   }
 
@@ -153,6 +141,14 @@ test("@live provision and activate an independent operator for downstream DSH se
   const primaryOperator = await findOrBootstrapPrimaryOperator(identityBase, controlToken, bootstrapToken);
   const independentOperator = await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId);
   const fixturePath = dshRuntimeFixturePath;
+  const actingProofOperator = fixturePath
+    ? await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId)
+    : null;
+  if (actingProofOperator) {
+    for (const permission of ["operations", "partners", "catalog", "marketing", "finance", "platform_policies"]) {
+      await enableOperatorPermission(identityBase, controlToken, primaryOperator.actorId, actingProofOperator.actorId, permission);
+    }
+  }
   if (fixturePath) {
     await enableOperatorPermission(identityBase, controlToken, primaryOperator.actorId, independentOperator.actorId, "operations");
     await enableOperatorPermission(identityBase, controlToken, primaryOperator.actorId, independentOperator.actorId, "finance");
@@ -168,6 +164,17 @@ test("@live provision and activate an independent operator for downstream DSH se
       console.log("DSH_PRIMARY_OPERATOR_ACTIVATION=PASS");
     } finally {
       await primaryContext.close();
+    }
+  }
+  if (actingProofOperator) {
+    const actingContext = await browser.newContext({ baseURL: baseUrl, locale: "ar-YE" });
+    try {
+      const actingPage = await actingContext.newPage();
+      await enableVirtualAuthenticator(actingPage);
+      await registerOperator(actingPage, actingProofOperator, baseUrl, mailpitBase);
+      console.log("DSH_ACTING_OPERATOR_ACTIVATION=PASS");
+    } finally {
+      await actingContext.close();
     }
   }
   const independentContext = await browser.newContext({ baseURL: baseUrl, locale: "ar-YE" });
