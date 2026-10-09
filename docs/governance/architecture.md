@@ -44,6 +44,10 @@ WLT
 
 A service existing in source does not automatically admit Product breadth; Product admission is owned by `docs/governance/product/overview.md`.
 
+## Architecture selection
+
+DDD, rich domain models, Clean/Hexagonal Architecture, ports/adapters and SOLID are design techniques, not mandatory layers, directory layouts or compliance targets. Choose the smallest implementation that preserves domain ownership, business invariants, transaction/concurrency correctness, authorization and contract evolution. Add an abstraction only for a proven current need whose benefit exceeds its complexity; never refactor correct code solely to match a named pattern.
+
 ## Adapter boundary
 
 Media storage/delivery and notification delivery may use bounded technical adapters. An adapter owns transport/provider mechanics only.
