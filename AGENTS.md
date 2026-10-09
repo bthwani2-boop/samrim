@@ -14,28 +14,17 @@ Preserve unrelated changes, secrets, durable data and active user state.
 
 `MATERIAL` means capable of changing behavior, meaning, authority, safety, durable data, contracts, runtime/configuration, user experience, external/deployable identity, evidence validity or operational outcome.
 
-## 2. Durable knowledge
+## 2. Approved outcomes, decisions and canonical owners
 
-`knowledge.sources.json` pins the exact durable BThwani Product/System/Policy/Quality/Experience/Data/Design baseline. It is challengeable durable knowledge, not a replacement for current task authority or live repository truth.
+Local docs/governance/README.md routes challengeable approved Product/platform/architecture/policy decisions. Actual source, schemas, API contracts, tests, configuration and runtime readback own current implementation truth. Historical external governance and competitor research are read-only evidence, not operational dependencies.
 
-Read pinned governance only when it can change the decision. `REPOSITORY-STRUCTURE.md` owns repository placement rules.
-
-Repository-local `AGENTS.md` owns execution and safety law. Do not duplicate Product, System, Policy, Experience, Data or Design semantics here.
-
-Classify governance impact as exactly one of:
-
-- `NONE`: no durable meaning is affected.
-- `REVALIDATE_ONLY`: durable meaning remains correct but must be checked against the change.
-- `UPDATE_REQUIRED`: intentional durable meaning must change.
-- `DEFECT_FOUND`: the durable source is wrong, incomplete or contradictory.
-
-For `UPDATE_REQUIRED` or `DEFECT_FOUND`, repair the canonical governance owner first, merge that durable change through its governed path, then repin this repository to the exact canonical commit. Do not create shadow policy locally.
+Classify each material durable impact as NONE, REVALIDATE_ONLY, UPDATE_REQUIRED or DEFECT_FOUND. Correct the one applicable local durable owner for approved changed meaning in the same coherent samrim PR as materially affected implementation/tests. Never invent commercial features, promote speculative instructions, duplicate executable facts or require routine donor reads. AGENTS.md alone owns agent execution law; REPOSITORY-STRUCTURE.md owns placement.
 
 ## 3. Discovery, ownership and simplification
 
 Do one bounded discovery sufficient to identify the affected cone, current truth, canonical owner, causal root, risk and required proof. Then execute. Widen only when new evidence can materially change the repair.
 
-The implementation and closure unit is a bounded cross-surface vertical slice, including every materially affected app, operator surface, service, contract, state owner and pinned Governance source. Search all its material connections across repositories, read deeply only inside the proven cone, and close required behavior plus obsolete/duplicate paths; do not split by screen or manufacture platform-wide audits. End-to-end Journeys remain integration proof scenarios, not a parallel execution queue.
+The implementation and closure unit is a bounded cross-surface vertical slice, including every materially affected app, operator surface, service, contract, state owner and applicable local approved decision. Search material connections across affected local owners and evidenced external interfaces, read deeply only inside the proven cone, and close required behavior plus obsolete/duplicate paths; do not split by screen or manufacture platform-wide audits. End-to-end Journeys remain integration proof scenarios, not a parallel execution queue.
 
 Use native/current evidence before adding diagnostic abstractions. Repair the highest proven causal root, not downstream symptoms.
 
@@ -124,8 +113,17 @@ Model context is a scarce working set, not an archive. Reduce context without re
 - Local commits may be development checkpoints. Push, pull-request creation, remote CI and remote AI review are integration events, not routine iterative-development checkpoints; unless earlier remote integration is materially required, defer them until feature freeze.
 - Candidate-wide proof should normally run once after feature freeze. Rerun only proof invalidated by a later affected change.
 
-When the task is to plan or prepare implementation work rather than execute it, use the pinned Governance `execution/contract.md`. Do not maintain or request a separate reusable trigger that duplicates the generated execution command. The planner emits only the current material slice command, then consumes the executor's compact checkpoint through delta review for the next slice.
+When asked to plan, emit one bounded objective command anchored to current HEAD, approved outcome, affected owners, necessary proof and safe stop point; do not add another permanent planning contract.
 
+### Professional product closure — applicable affected scope
+
+Before implementation, verify the approved outcome, what already works, acceptance criteria and real actors. Distinguish implemented, partial, authorized future and obsolete behavior. Find the highest evidenced causal root and the full materially affected writers, readers, state owners, services, consumers and handoffs. Choose the simplest complete maintainable repair. Remove losing paths only after verified consumer cutover and regression; retain adopted migrations, real history and supported published APIs.
+
+For materially affected UI, deliver real professional fit-and-finish using the Design System: useful hierarchy/navigation, coherent layout, complete forms, validation, messages and recovery; correct Arabic/RTL where required; responsive layouts, touch/keyboard/focus/screen-reader support, WCAG 2.2 AA where applicable, and supported themes/reduced motion. Render representative browser/device states and verify materially relevant loading, populated, empty, no-results, forbidden, invalid, network error/retry, busy/success/failure, concurrency and destructive confirmation/undo behavior. State applicability is justified, not a ceremonial full matrix. Backend-only or trivial text work has no fictitious visual gate.
+
+For affected functionality, verify the authorized actor finishes the task and the next authorized actor reads canonical persistent state. Include real negative/security/tenant/role boundaries, retry/idempotency, concurrency, settlement/financial conservation and failure recovery where materially applicable. No mocked screen, isolated HTTP 200 or green CI alone proves full journey closure. Use bounded disposable owned fixtures and actual state owners; do not change user data, invent features or rebuild healthy code.
+
+Use narrow symbol/owner searches, existing Nx affected/static-first proof and still-valid evidence; rerun only invalidated checks. Final exact-HEAD review must account for approved outcome, materially affected UX/data/security/actors, canonical readback, safe legacy removal and honest residual limits. Mark the objective blocked for any unproven material gate; never claim perpetual or unverified 100% correctness.
 
 ## 6. Consequential action safety
 
@@ -157,7 +155,7 @@ Run the smallest fresh proof that can falsify the affected claims. Reuse still-v
 
 Check for stale references, dead paths, duplicate owners, shadow truth, partial cutovers and obsolete compatibility residue.
 
-If governance changed, verify the repository pins the exact merged canonical governance commit and that the durable owner contains the intended meaning.
+If approved durable meaning changed, verify its one local owner and materially affected consumers on the exact final candidate.
 
 Closure requires all of the following:
 

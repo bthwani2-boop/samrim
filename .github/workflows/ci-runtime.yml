@@ -71,6 +71,16 @@ jobs:
             exit 0
           fi
 
+          changed_scope="$(git diff --name-only "$NX_BASE" "$NX_HEAD")"
+          if [[ -n "$changed_scope" ]] && ! grep -Evq '^(AGENTS\.md|README\.md|REPOSITORY-STRUCTURE\.md|SECURITY\.md|CONTRIBUTING\.md|CLAUDE\.md|GEMINI\.md|knowledge\.sources\.json|\.github/pull_request_template\.md|apps/control-panel/(DESIGN|UX-CONTRACT)\.md|packages/design-system/README\.md|docs/(governance|reference/competitors)/.*|tools/governance/.*)$' <<< "$changed_scope"; then
+            echo 'Governance-only change: no executable runtime owner was affected.'
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+            echo 'browser=false' >> "$GITHUB_OUTPUT"
+            echo 'checker=false' >> "$GITHUB_OUTPUT"
+            echo 'control_proof=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           run=false
           browser=false
           checker=false

@@ -1,21 +1,15 @@
-## Summary
+## Approved outcome and material scope
 
-<!-- What exact outcome does this PR produce? -->
+<!-- Existing behavior, causal owner, accepted outcome, affected actors/surfaces/handoffs and intentional exclusions. -->
 
-## Scope
+## Durable decision impact
 
-<!-- Material affected cone, canonical owner/root cause, and what is intentionally outside the cone. -->
+<!-- NONE | REVALIDATE_ONLY | UPDATE_REQUIRED | DEFECT_FOUND. For changed decisions, identify the one local docs/governance owner updated in this same PR. -->
 
-## Governance impact
+## Material quality, UX, data and security risks
 
-<!-- Final value: GOVERNANCE_IMPACT=<NONE | REVALIDATE_ONLY | UPDATE_REQUIRED | DEFECT_FOUND> -->
+<!-- Applicable rendered states/RTL/accessibility/recovery, authz/data/finance/migration concerns, or justified N/A. -->
 
-<!-- For UPDATE_REQUIRED or DEFECT_FOUND also record the merged canonical Governance commit as: GOVERNANCE_CANONICAL_SHA=<40-char SHA> -->
+## Exact candidate proof and remaining limits
 
-## Verification
-
-<!-- Claim-specific evidence actually executed for this exact candidate. A green check proves only what it exercised. -->
-
-## Remaining limits
-
-<!-- State any real unproven authority/environment blocker. Write "None" when there is none. -->
+<!-- Direct proof and required CI on final HEAD. State any actual review, environment or behavior gaps honestly. -->

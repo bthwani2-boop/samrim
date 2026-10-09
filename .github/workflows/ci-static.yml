@@ -86,8 +86,11 @@ jobs:
       - name: Install workspace
         run: pnpm install --frozen-lockfile
 
-      - name: Lint development tooling
-        run: pnpm exec biome lint tools/dev --diagnostic-level=error
+      - name: Verify local governance integrity and adversarial fixtures
+        run: node tools/governance/verify-governance.mjs && node --test tools/governance/verify-governance.test.mjs
+
+      - name: Lint development and governance tooling
+        run: pnpm exec biome lint tools/dev tools/governance --diagnostic-level=error
 
       - name: Check unused files and dependencies
         run: pnpm exec knip --no-progress --reporter compact --no-config-hints
@@ -100,7 +103,15 @@ jobs:
 
       - name: Verify affected static graph
         if: github.event_name != 'schedule'
-        run: pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,vet,export-smoke,compose-config --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=3 --nxBail=true
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only "$NX_BASE" "$NX_HEAD")"
+          if [[ -n "$changed" ]] && ! grep -Evq '^(AGENTS\.md|README\.md|REPOSITORY-STRUCTURE\.md|SECURITY\.md|CONTRIBUTING\.md|CLAUDE\.md|GEMINI\.md|knowledge\.sources\.json|\.github/pull_request_template\.md|apps/control-panel/(DESIGN|UX-CONTRACT)\.md|packages/design-system/README\.md|docs/(governance|reference/competitors)/.*|tools/governance/.*)$' <<< "$changed"; then
+            echo 'Governance-only change: integrity, secret, dependency, Knip, mobile and theme gates still run; Nx implementation targets are not affected.'
+            exit 0
+          fi
+          pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,vet,export-smoke,compose-config --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=3 --nxBail=true
 
       - name: Verify consumers of trusted executable resolution changes
         if: github.event_name != 'schedule'

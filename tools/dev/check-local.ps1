@@ -11,6 +11,7 @@ $ErrorActionPreference = 'Stop'
 $Repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Push-Location $Repo
 try {
+    $governanceOnlyPattern = '^(AGENTS\.md|README\.md|REPOSITORY-STRUCTURE\.md|SECURITY\.md|CONTRIBUTING\.md|CLAUDE\.md|GEMINI\.md|knowledge\.sources\.json|\.github/pull_request_template\.md|apps/control-panel/(DESIGN|UX-CONTRACT)\.md|packages/design-system/README\.md|docs/(governance|reference/competitors)/.*|tools/governance/.*)$'
     if ($Candidate) {
         $branch = (git branch --show-current).Trim()
         if ($LASTEXITCODE -ne 0 -or -not $branch) { throw 'Candidate verification requires a named branch.' }
@@ -37,6 +38,22 @@ try {
         Write-Host "VERIFY_SCOPE base=$BaseSha head=$head runtime=off cloud=off"
         pnpm exec nx affected -t lint format-check typecheck unit contract build vet export-smoke --base=$BaseSha --head=$head --outputStyle=static --parallel=2 --nxBail=true
         if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
+        $governanceBase = $BaseSha
+        if ($governanceBase -eq $head) {
+            git rev-parse --verify --quiet refs/remotes/origin/main *> $null
+            if ($LASTEXITCODE -eq 0) {
+                $governanceBase = (git merge-base $head refs/remotes/origin/main).Trim()
+                if ($LASTEXITCODE -ne 0) { throw 'Unable to resolve governance candidate comparison base.' }
+            }
+        }
+        $candidateFiles = @(git diff --name-only $governanceBase $head -- | ForEach-Object { ([string]$_).Trim().Replace('\','/') } | Where-Object { $_ })
+        if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect candidate governance scope.' }
+        if (@($candidateFiles | Where-Object { $_ -match $governanceOnlyPattern }).Count -gt 0) {
+            node tools/governance/verify-governance.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Candidate governance integrity check failed.' }
+            node --test tools/governance/verify-governance.test.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Candidate governance adversarial tests failed.' }
+        }
         if ((git rev-parse HEAD).Trim() -ne $head -or @(git status --porcelain=v1 --untracked-files=all).Count -gt 0) {
             throw 'Candidate changed during verification.'
         }
@@ -66,6 +83,15 @@ try {
     if (@($files | Where-Object { $_ -match '\.(ps1|psm1|psd1)$' }).Count -gt 0) {
         pwsh -NoProfile -ExecutionPolicy Bypass -File tools/powershell/verify-syntax.ps1
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+
+    if (@($files | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -eq 0) {
+        node tools/governance/verify-governance.mjs
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        node --test tools/governance/verify-governance.test.mjs
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        Write-Host "LOCAL_CHECK=PASS scope=governance-only files=$($files.Count)"
+        return
     }
 
     $affectedProjectJson = pnpm exec nx show projects --affected --base=HEAD --json

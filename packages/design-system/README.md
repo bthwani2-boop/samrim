@@ -2,7 +2,7 @@
 
 Canonical executable reusable visual-system implementation for BThwani deployable surfaces.
 
-Pinned Governance owns durable BThwani Design/Experience meaning. This package implements admitted reusable visual semantics through design tokens, semantic themes, and only those visual primitives/components/patterns whose cross-surface value is proven. Native RTL behavior remains owned by Expo/React Native configuration; browser-only direction remains owned by the web surface.
+Local docs/governance/policies/design.md and docs/governance/policies/experience.md own durable Design/Experience meaning. This package implements admitted reusable visual semantics through design tokens, semantic themes, and only those visual primitives/components/patterns whose cross-surface value is proven. Native RTL behavior remains owned by Expo/React Native configuration; browser-only direction remains owned by the web surface.
 
 It must not own Product/domain strings, business rules, permissions, durable state, app-specific information architecture/navigation, app-specific native configuration, or service-specific presentation semantics.
 
