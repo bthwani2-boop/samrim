@@ -96,6 +96,29 @@ for (const source of governed) {
       fail("governance reference points to absent owner " + source + " -> " + referenced);
   }
 }
+// Validate the capability router against the admitted Product IDs and declared owners.
+// This follows the live owner map instead of freezing a donor-era filename list.
+const overview = get("docs/governance/product/overview.md");
+const admittedSection = overview.split("## Admitted capabilities\n")[1]?.split("\n## ")[0];
+if (!admittedSection) fail("admitted capabilities section missing");
+const admitted = [...admittedSection.matchAll(/^- `([A-Z][A-Z0-9_]*)`$/gm)].map((m) => m[1]);
+if (!admitted.length || new Set(admitted).size !== admitted.length)
+  fail("missing or duplicated admitted capability ID");
+const capabilityRouter = get("docs/governance/product/capabilities.md");
+const capabilityRoutes = [...capabilityRouter.matchAll(/^`([A-Z][A-Z0-9_]*)`[ \t]*→[ \t]*`(capabilities\/[\w/-]+\.md)`[ \t]*$/gm)];
+const routedIds = new Set(), routedPaths = new Set();
+for (const [, id, relative] of capabilityRoutes) {
+  const owner = "docs/governance/product/" + relative;
+  if (routedIds.has(id) || routedPaths.has(owner)) fail("duplicate capability routing " + id);
+  if (!seenOwners.has(owner)) fail("capability target missing " + id + " -> " + owner);
+  const declaration = /^CAPABILITY_ID:\s*(\S+)\s*$/m.exec(get(owner));
+  if (!declaration || declaration[1] !== id) fail("capability owner mismatch " + id + " -> " + owner);
+  routedIds.add(id); routedPaths.add(owner);
+}
+if (capabilityRoutes.length !== admitted.length || admitted.some((id) => !routedIds.has(id)))
+  fail("admitted capability has no unique routed owner");
+for (const owner of governed.filter((p) => p.startsWith("docs/governance/product/capabilities/")))
+  if (!routedPaths.has(owner)) fail("orphaned capability owner " + owner);
 if (fs.existsSync(at("knowledge.sources.json")))
 	fail("external donor pin resurrected");
 const law = get("AGENTS.md");

@@ -39,7 +39,7 @@ Collections must be bounded, deterministically ordered and paginated; cursor/key
 
 Durable media ownership must not depend on a disposable app filesystem. Validate authorization, content type, size, metadata privacy and storage relationship. Signed/direct and resumable uploads are conditional on real bandwidth, file-size or unstable-network pressure; maintain post-upload validation and durable ownership. Generate rebuildable right-sized derivatives where beneficial. Video processing exists only for an admitted video capability. CDN/edge caching is conditional on measured traffic/geographic benefit, with versioned identity and safe invalidation.
 
-Mobile and web surfaces should use paged queries, bounded memory, purposeful caching, efficient images and list virtualization where workload requires them. Measure perceived loading, offline/error recovery, network usage and accessibility before optimizing. Do not introduce alternate client business authority or speculative prefetch networks.
+Mobile and web surfaces should use paged queries, bounded memory, purposeful caching, efficient images and list virtualization where workload requires them. Deduplicate repeated reads and cancel obsolete requests where they waste work. Bound polling; adjust continuous location-update frequency to the real tracking need to avoid unnecessary battery/network use. Offline mutation queues require explicit idempotency, replay and conflict-recovery semantics. Measure perceived loading, low-bandwidth/high-latency behavior, offline/error recovery, network and battery usage, and accessibility before optimizing. Do not introduce alternate client business authority or speculative prefetch networks.
 
 ## Runtime, deployment and failure domains
 
