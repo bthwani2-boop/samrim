@@ -32,12 +32,8 @@ try {
                 $BaseSha = (git merge-base $head refs/remotes/origin/main).Trim()
             }
         }
-        $env:NX_BASE = $BaseSha
         $env:NX_HEAD = $head
         $env:NX_NO_CLOUD = 'true'
-        Write-Host "VERIFY_SCOPE base=$BaseSha head=$head runtime=off cloud=off"
-        pnpm exec nx affected -t lint format-check typecheck unit contract build vet export-smoke --base=$BaseSha --head=$head --outputStyle=static --parallel=2 --nxBail=true
-        if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
         $governanceBase = $BaseSha
         if ($governanceBase -eq $head) {
             git rev-parse --verify --quiet refs/remotes/origin/main *> $null
@@ -46,8 +42,15 @@ try {
                 if ($LASTEXITCODE -ne 0) { throw 'Unable to resolve governance candidate comparison base.' }
             }
         }
+        $env:NX_BASE = $governanceBase
+        Write-Host "VERIFY_SCOPE base=$governanceBase head=$head runtime=off cloud=off"
         $candidateFiles = @(git diff --name-only $governanceBase $head -- | ForEach-Object { ([string]$_).Trim().Replace('\','/') } | Where-Object { $_ })
         if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect candidate governance scope.' }
+        if (@($candidateFiles | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -gt 0) {
+            pnpm exec nx affected -t lint format-check typecheck unit contract build vet export-smoke --base=$governanceBase --head=$head --outputStyle=static --parallel=2 --nxBail=true
+            if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
+        }
+        else { Write-Host 'VERIFY_SCOPE=governance-only; Nx implementation checks not affected' }
         if (@($candidateFiles | Where-Object { $_ -match $governanceOnlyPattern }).Count -gt 0) {
             node tools/governance/verify-governance.mjs
             if ($LASTEXITCODE -ne 0) { throw 'Candidate governance integrity check failed.' }
@@ -57,7 +60,7 @@ try {
         if ((git rev-parse HEAD).Trim() -ne $head -or @(git status --porcelain=v1 --untracked-files=all).Count -gt 0) {
             throw 'Candidate changed during verification.'
         }
-        Write-Host "VERIFY=PASS base=$BaseSha head=$head"
+        Write-Host "VERIFY=PASS base=$governanceBase head=$head"
         return
     }
 
