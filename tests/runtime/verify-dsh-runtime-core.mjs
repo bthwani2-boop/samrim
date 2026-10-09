@@ -415,14 +415,14 @@ const attributeDefinitions = [
   { id: dateAttributeID, code: "expiry_date", nameAr: `الصلاحية ${suffix}`, valueKind: "DATE" },
 ];
 for (const definition of attributeDefinitions) {
-  const response = await request(dshBase, "POST", "/dsh/catalog/attributes", { token: dshToken, headers: serviceHeaders(actingOperatorID, `attribute-${definition.id}`), body: { ...definition, verticalId: verticalID, active: true } });
+  const response = await request(dshBase, "POST", "/dsh/catalog/attributes", { token: dshToken, headers: serviceHeaders(actingOperatorID, `attribute-${definition.id}`), body: { ...definition, verticalId: verticalID, active: true, reason: "DSH runtime typed attribute definition proof" } });
   if (response.status !== 201 || response.body?.definition?.id !== definition.id || response.body.definition.valueKind !== definition.valueKind) fail("typed catalog Attribute definition failed", JSON.stringify({ definition, response }));
 
 }
 const attributeRead = await request(dshBase, "GET", `/dsh/catalog/attributes?verticalId=${encodeURIComponent(verticalID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (attributeRead.status !== 200 || !attributeRead.body?.definitions?.some((item) => item.id === enumAttributeID && item.valueKind === "ENUM")) fail("typed Attribute definition readback failed", JSON.stringify(attributeRead));
-const enumOption = await request(dshBase, "POST", `/dsh/catalog/attributes/${enumAttributeID}/enum-options`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `enum-option-${suffix}`), body: { optionValue: "Dark", active: true, ordinal: 1 } });
-const enumOptionReplay = await request(dshBase, "POST", `/dsh/catalog/attributes/${enumAttributeID}/enum-options`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `enum-option-${suffix}`), body: { optionValue: "Dark", active: true, ordinal: 1 } });
+const enumOption = await request(dshBase, "POST", `/dsh/catalog/attributes/${enumAttributeID}/enum-options`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `enum-option-${suffix}`), body: { optionValue: "Dark", active: true, ordinal: 1, reason: "DSH runtime enum option proof" } });
+const enumOptionReplay = await request(dshBase, "POST", `/dsh/catalog/attributes/${enumAttributeID}/enum-options`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `enum-option-${suffix}`), body: { optionValue: "Dark", active: true, ordinal: 1, reason: "DSH runtime enum option proof" } });
 const enumOptions = await request(dshBase, "GET", `/dsh/catalog/attributes/${enumAttributeID}/enum-options`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (enumOption.status !== 201 || enumOption.body?.option?.optionValue !== "Dark" || enumOptionReplay.status !== 200 || enumOptionReplay.body?.idempotentReplay !== true || enumOptions.status !== 200 || enumOptions.body?.options?.length !== 1) fail("ENUM option canonical write/readback failed", JSON.stringify({ enumOption, enumOptionReplay, enumOptions }));
 for (const attributeID of [measurementAttributeID, dateAttributeID]) {
