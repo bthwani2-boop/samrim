@@ -20,6 +20,8 @@ GIT                 = historical rationale
 
 Governance is authoritative within the applicable durable semantic owner and challengeable by stronger fact-specific evidence. If stale, contradictory, incomplete or wrong, correct the canonical owner rather than creating an implementation-only exception.
 
+The byte-preserved competitor observations under `docs/reference/competitors/` may contain historical references to the former externally pinned Governance. Those references are **not current instructions**: evaluate each observation only against the applicable owner routed here and the current executable BThwani implementation. Keep the frozen reference bytes intact; clarify authority outside the reference files.
+
 ## Canonical owner tree
 
 The durable Product-scope owner is `docs/governance/product/overview.md`, bounded service/data ownership is `docs/governance/architecture.md`, and actor/surface terminology is `docs/governance/platform.md`. Capability-specific decisions remain with their distinct documents under `docs/governance/product/capabilities/`.

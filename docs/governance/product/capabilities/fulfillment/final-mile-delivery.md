@@ -12,7 +12,7 @@ After governed Store-to-Captain custody transfer, the canonical Captain complete
 
 ## Ownership
 
-DSH owns operational delivery lifecycle/result, bounded tracking projection, Order recipient-contact use and delivery-evidence relationship/validation. WLT owns payment collection, COD exposure/cash custody, earnings and other financial effects. Customer Pickup is a separate fulfillment capability.
+DSH owns operational delivery lifecycle/result, bounded tracking projection, Order recipient-contact use, delivery-evidence relationship/validation and physical cash possession/collection/handoff facts where applicable. WLT owns canonical payment collection truth, COD receivable/exposure, earnings, remittance and other financial effects. Customer Pickup is a separate fulfillment capability.
 
 ## Invariants
 

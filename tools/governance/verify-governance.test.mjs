@@ -82,6 +82,11 @@ const cases = [
 		false,
 	],
 	[
+		"missing research directory fails with governed error",
+		(dir) => fs.rmSync(path.join(dir, "docs/reference/competitors"), { recursive: true }),
+		false,
+	],
+	[
 		"missing security owner fails",
 		(dir) =>
 			fs.unlinkSync(path.join(dir, "docs/governance/policies/security.md")),
@@ -158,4 +163,14 @@ test("governance-only routing cannot exempt executable or runtime changes", () =
   const re=new RegExp(staticRe[1]);
   for(const p of ["AGENTS.md","docs/governance/product/overview.md","docs/reference/competitors/README.md","tools/governance/verify-governance.mjs","apps/control-panel/UX-CONTRACT.md"])assert.equal(re.test(p),true,"governance-only "+p);
   for(const p of ["services/dsh/backend/internal/catalog/x.go","services/identity/backend/internal/session/x.go","services/wlt/backend/internal/ledger/x.go","apps/control-panel/src/features/central-catalog/x.tsx","infra/local/compose/compose.yaml",".github/workflows/ci-runtime.yml",".github/workflows/ci-static.yml",".github/CODEOWNERS","tools/dev/check-local.ps1","tests/runtime/verify-dsh-runtime-core.mjs"])assert.equal(re.test(p),false,"implementation must retain normal checks "+p);
+});
+
+test("committed governance candidates cannot bypass integrity verification", () => {
+  const source = fs.readFileSync(path.join(root, "tools/dev/check-local.ps1"), "utf8");
+  const candidate = source.split("if ($Candidate) {")[1]?.split("    $files = @(")[0] ?? "";
+  assert.match(candidate, /git diff --name-only \$governanceBase \$head/);
+  assert.match(candidate, /refs\/remotes\/origin\/main/);
+  assert.match(candidate, /node tools\/governance\/verify-governance\.mjs/);
+  assert.match(candidate, /node --test tools\/governance\/verify-governance\.test\.mjs/);
+  assert.ok(candidate.indexOf("node --test tools/governance/verify-governance.test.mjs") < candidate.indexOf('Write-Host "VERIFY=PASS'), "candidate PASS must follow governance proof");
 });

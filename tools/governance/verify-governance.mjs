@@ -115,8 +115,9 @@ const manifest = {
 	"tasaheel.md": "b5315d539415b2804d66737f6ab3253fa6f80f39",
 	"tawseel-one.md": "d9e69f9d1762d8f97aa2fb4dee44d671be14c9c8",
 };
-const dir = at("docs/reference/competitors"),
-	names = fs.readdirSync(dir).sort(),
+const dir = at("docs/reference/competitors");
+if (!fs.existsSync(dir)) fail("research directory missing");
+const names = fs.readdirSync(dir).sort(),
 	expected = Object.keys(manifest).sort();
 if (JSON.stringify(names) !== JSON.stringify(expected))
 	fail("research file set differs");
