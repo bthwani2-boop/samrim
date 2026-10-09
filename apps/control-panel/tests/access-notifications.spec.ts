@@ -92,7 +92,7 @@ test("operator profile mutation errors label list refresh accurately", async ({ 
 
   await page.goto("/access");
   await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
-  const populatedError = page.getByRole("alert");
+  const populatedError = page.locator(".profile-workspace > .managed-status-warning[role='alert']");
   await expect(populatedError.getByRole("button", { name: "تحديث القائمة", exact: true })).toBeVisible();
   await expect(populatedError.getByRole("button", { name: "إعادة المحاولة", exact: true })).toHaveCount(0);
   await populatedError.getByRole("button", { name: "تحديث القائمة", exact: true }).click();
