@@ -5,3 +5,5 @@ import { StoreCommercialAgreementWorkspace } from "../../../../src/features/fina
 export default function FinancePartnerStoreCommissionsPage() {
   return <FinanceWorkspace resource="partner-store-commissions"><StoreTypeCommissionDefaultWorkspace /><StoreCommercialAgreementWorkspace /></FinanceWorkspace>;
 }
+
+export const metadata = { title: "اتفاقات المتاجر" };

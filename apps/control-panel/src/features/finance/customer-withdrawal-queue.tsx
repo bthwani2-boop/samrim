@@ -258,7 +258,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
       </div>
       <p className="muted">العمليات تسجل التفويض؛ المالية تتحقق من الوجهة وتقبل الطلب أو ترفضه. قبول الطلب يحجز الرصيد في السجل المالي، ثم ينتقل التنفيذ الخارجي والإيصال والمطابقة إلى مكتب الدفعات المشترك.</p>
 
-      <form className="finance-toolbar" onSubmit={(event) => {
+      <form className="finance-toolbar" noValidate onSubmit={(event) => {
         event.preventDefault();
         navigate({ status, search: search.trim(), sort, cursor: "", intakeId: "" });
       }}>

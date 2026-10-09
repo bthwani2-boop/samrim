@@ -95,14 +95,14 @@ function validateVersionedMutationContext(context: DshVersionedMutationContext):
 }
 
 function parseErrorPayload(value: unknown): { code: string; message: string } {
-  if (!value || typeof value !== "object") return { code: "DSH_ERROR", message: "dsh request failed" };
+  if (!value || typeof value !== "object") return { code: "DSH_ERROR", message: "تعذر قراءة رد خدمة البيانات التشغيلية." };
   const nested = (value as { error?: unknown }).error;
-  if (!nested || typeof nested !== "object") return { code: "DSH_ERROR", message: "dsh request failed" };
+  if (!nested || typeof nested !== "object") return { code: "DSH_ERROR", message: "تعذر قراءة رد خدمة البيانات التشغيلية." };
   const code = (nested as { code?: unknown }).code;
   const message = (nested as { message?: unknown }).message;
   return {
     code: typeof code === "string" && code.trim() ? code : "DSH_ERROR",
-    message: typeof message === "string" && message.trim() ? message : "dsh request failed",
+    message: typeof message === "string" && message.trim() ? message : "تعذر قراءة رد خدمة البيانات التشغيلية.",
   };
 }
 
@@ -111,9 +111,9 @@ export function isDshClientError(value: unknown): value is DshClientError {
 }
 
 export function dshErrorPayload(error: unknown): Readonly<{ code: string; message: string }> {
-  if (!isDshClientError(error)) return { code: "DSH_INTERNAL_ERROR", message: "dsh request failed" };
-  if (error.kind === "network") return { code: "DSH_UNAVAILABLE", message: "dsh service is unavailable" };
-  if (error.kind === "config") return { code: "DSH_CONFIG_ERROR", message: "dsh service configuration is incomplete" };
+  if (!isDshClientError(error)) return { code: "DSH_INTERNAL_ERROR", message: "تعذر إكمال الطلب في خدمة البيانات التشغيلية." };
+  if (error.kind === "network") return { code: "DSH_UNAVAILABLE", message: "تعذر الاتصال بخدمة البيانات التشغيلية." };
+  if (error.kind === "config") return { code: "DSH_CONFIG_ERROR", message: "خدمة البيانات التشغيلية غير مهيأة بالكامل." };
   return { code: error.code, message: error.message };
 }
 
@@ -275,11 +275,13 @@ export async function listOperatorOperations(state: string, search: string, sort
 	return (await requestDshJson<OperatorOperationsResponse>(dshOperationPaths.listOperatorOperations.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function listOperatorNotifications(limit: number, context: DshOperatorReadContext): Promise<NotificationListResponse> {
-  if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+export async function listOperatorNotifications(limit: number, context: DshOperatorReadContext, cursor = ""): Promise<NotificationListResponse> {
+  if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100 || cursor.length > 1024) {
     throw new Error("DSH_OPERATOR_NOTIFICATIONS_INPUT_INVALID");
   }
-  const path = `${dshOperationPaths.listNotifications.path}?limit=${limit}`;
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  const path = `${dshOperationPaths.listNotifications.path}?${params.toString()}`;
   return (await requestDshJson<NotificationListResponse>(dshOperationPaths.listNotifications.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 

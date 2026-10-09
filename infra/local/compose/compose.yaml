@@ -63,6 +63,29 @@ services:
       IDENTITY_MIGRATION_DIR: "/app/migrations"
     entrypoint: ["/migrate"]
 
+  identity-bootstrap:
+    image: samrim-local-identity:dev
+    build:
+      context: ../../..
+      dockerfile: services/identity/backend/Dockerfile
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      identity-migrate:
+        condition: service_completed_successfully
+    environment:
+      BTHWANI_ENV: "development"
+      IDENTITY_BOOTSTRAP_DOCKER_LOCAL_ONLY: "1"
+      IDENTITY_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      IDENTITY_INITIAL_OPERATOR_PHONE: "${IDENTITY_INITIAL_OPERATOR_PHONE:-}"
+      IDENTITY_DEVELOPMENT_OPERATOR_ACTOR_ID: "${IDENTITY_DEVELOPMENT_OPERATOR_ACTOR_ID:-}"
+      BTHWANI_EXPECTED_DATABASE_HOST: "postgres"
+      BTHWANI_EXPECTED_DATABASE_PORT: "5432"
+      BTHWANI_EXPECTED_DATABASE_NAME: "${SAMRIM_POSTGRES_DB}"
+      BTHWANI_EXPECTED_DATABASE_USER: "${SAMRIM_POSTGRES_USER}"
+    entrypoint: ["/bootstrap-operator"]
+
   identity:
     image: samrim-local-identity:dev
     restart: unless-stopped
@@ -75,6 +98,8 @@ services:
       mailpit:
         condition: service_started
       identity-migrate:
+        condition: service_completed_successfully
+      identity-bootstrap:
         condition: service_completed_successfully
     environment:
       PORT: "8082"

@@ -4,6 +4,8 @@ export const sizing = {
   controlMd: 44,
   controlLg: 52,
   controlXl: 60,
+  controlIndicator: 18,
+  controlTextarea: 120,
   iconSm: 16,
   iconMd: 20,
   iconLg: 24,

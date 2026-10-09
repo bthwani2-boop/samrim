@@ -5,3 +5,5 @@ export default async function FinanceBeneficiarySettlementPage({ searchParams }:
   const query = typeof batchId === "string" && batchId.trim() ? `?batchId=${encodeURIComponent(batchId.trim())}` : "";
   redirect(`/finance/beneficiary-settlement/partners${query}`);
 }
+
+export const metadata = { title: "المستحقات" };

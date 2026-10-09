@@ -1,4 +1,5 @@
 "use client";
+import { TextArea } from "@bthwani/design-system/web";
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -368,7 +369,7 @@ export function StoreCommercialAgreementWorkspace() {
         {defaults.defaults.filter((item) => item.changedByActorId || item.changeReason).map((item) => <p className="muted" key={item.fulfillmentMode}>{modeLabel(item.fulfillmentMode)} · {item.changedByActorId ? "عُدلت بواسطة المالية" : "تعديل مسجل"}{item.changeReason ? ` · ${item.changeReason}` : ""}</p>)}
       </> : null}
 
-      <label className="field-label" htmlFor="store-commercial-agreement-decision-reason">سبب القرار (إلزامي، 8 إلى 500 حرف)<textarea id="store-commercial-agreement-decision-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={8} maxLength={500} rows={3} disabled={busy !== null || Boolean(pendingAttempt)} placeholder="وضح مبرر اعتماد الاتفاق أو رفضه" /></label>
+      <label className="field-label" htmlFor="store-commercial-agreement-decision-reason">سبب القرار (إلزامي، 8 إلى 500 حرف)<TextArea className="resize-none" id="store-commercial-agreement-decision-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={8} maxLength={500} rows={3} disabled={busy !== null || Boolean(pendingAttempt)} placeholder="وضح مبرر اعتماد الاتفاق أو رفضه" /></label>
       {selected.status !== "PARTNER_ACCEPTED" || selected.partnerAcceptedByActorId !== selected.partnerActorId || selected.currentStoreOwnerActorId !== selected.partnerActorId || !selected.matchesCurrentFulfillmentModes ? <p className="validation-error" role="alert">لا يمكن اتخاذ القرار: يلزم اتفاق مقبول من المالك الحالي وبنسب مطابقة لأنماط المتجر الحالية.</p> : null}
       {pendingAttempt ? <p className="muted">توجد محاولة محفوظة؛ أكمل إعادة إرسالها أو تحقق من قراءتها قبل بدء قرار آخر.</p> : null}
       <div className="finance-toolbar">

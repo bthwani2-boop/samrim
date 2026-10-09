@@ -24,7 +24,7 @@
     "migration-proof": {
       "cache": false,
       "executor": "nx:run-commands",
-      "options": {"command": "node tests/runtime/verify-identity-migrations.mjs --env-file=infra/local/.env"}
+      "options": {"command": "node --test tests/runtime/verify-identity-migrations.test.mjs && node tests/runtime/verify-identity-migrations.mjs --env-file=infra/local/.env"}
     },
     "runtime-proof": {
       "cache": false,

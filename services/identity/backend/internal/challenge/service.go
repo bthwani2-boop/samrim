@@ -23,6 +23,11 @@ type ProviderBudgetConfig struct {
 	MaxPerHour   int
 }
 
+type OperatorRecoveryPhoneProof struct {
+	ActorID              string
+	RecoveryCredentialID string
+}
+
 func DefaultProviderBudgetConfig() ProviderBudgetConfig {
 	return ProviderBudgetConfig{
 		MaxPerMinute: 60,
@@ -259,12 +264,12 @@ WHERE a.phone_e164=$1`, phone, identitysecurity.SHA256Hex(recoveryCredential)).S
 	return s.issue(ctx, phone, "operator", domain.ChallengeOperatorRecover, actorID, admissible, 0, ipHash)
 }
 
-func (s *Service) ConsumeOperatorRecoveryPhoneProof(ctx context.Context, input domain.OperatorPasskeyRecoveryRegistrationOptionsRequest) (string, error) {
+func (s *Service) ConsumeOperatorRecoveryPhoneProof(ctx context.Context, input domain.OperatorPasskeyRecoveryRegistrationOptionsRequest) (OperatorRecoveryPhoneProof, error) {
 	recoveryCredential, err := identitysecurity.NormalizeRecoveryCredential(input.RecoveryCredential)
 	if err != nil {
-		return "", domain.ErrInvalidChallenge
+		return OperatorRecoveryPhoneProof{}, domain.ErrInvalidChallenge
 	}
-	var actorID string
+	proof := OperatorRecoveryPhoneProof{}
 	_, err = s.consume(ctx, input.Phone, "operator", domain.ChallengeOperatorRecover, input.VerificationCode, func(tx *sql.Tx, challengeActorID string) (domain.TokenPair, error) {
 		if challengeActorID == "" {
 			return domain.TokenPair{}, domain.ErrInvalidChallenge
@@ -275,22 +280,13 @@ func (s *Service) ConsumeOperatorRecoveryPhoneProof(ctx context.Context, input d
 		} else if err != nil {
 			return domain.TokenPair{}, err
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_recovery_credentials SET used_at=clock_timestamp(),revoked_at=clock_timestamp() WHERE id=$1", credentialID); err != nil {
-			return domain.TokenPair{}, err
-		}
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role='operator' AND revoked_at IS NULL", challengeActorID); err != nil {
-			return domain.TokenPair{}, err
-		}
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_webauthn_credentials SET revoked_at=COALESCE(revoked_at,clock_timestamp()) WHERE actor_id=$1 AND revoked_at IS NULL", challengeActorID); err != nil {
-			return domain.TokenPair{}, err
-		}
-		actorID = challengeActorID
+		proof = OperatorRecoveryPhoneProof{ActorID: challengeActorID, RecoveryCredentialID: credentialID}
 		return domain.TokenPair{Identity: domain.ActorIdentity{Subject: challengeActorID}}, nil
 	})
 	if err != nil {
-		return "", err
+		return OperatorRecoveryPhoneProof{}, err
 	}
-	return actorID, nil
+	return proof, nil
 }
 
 func (s *Service) ConsumeOperatorEnrollmentPhoneProof(ctx context.Context, input domain.OperatorPasskeyRegistrationOptionsRequest) (string, error) {

@@ -22,6 +22,10 @@
 :global(.operator-notification-copy time) { color: var(--text-muted); font-size: 12px; }
 :global(.operator-notification-state) { color: var(--interactive-text); font-size: 12px; font-weight: 800; white-space: nowrap; }
 :global(.operator-notification-card.is-read .operator-notification-state) { color: var(--text-muted); }
+:global(.operator-notification-page-status) { margin: 0; color: var(--text-muted); font-size: var(--font-size-caption); }
+:global(.operator-notification-pagination) { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--space-2); }
+:global(.operator-notification-pagination .button) { width: auto; min-width: var(--size-controlLg); min-height: var(--size-controlMd); padding-inline: var(--space-3); }
+:global(.operator-notification-pagination span) { color: var(--text-muted); text-align: center; }
 :global(.operator-notifications-empty) { display: grid; gap: 8px; }
 :global(.operator-notifications-empty h2), :global(.operator-notifications-empty p) { margin: 0; }
 @media (max-width: 640px) {
@@ -29,4 +33,5 @@
   :global(.operator-notifications-summary .button) { width: 100%; }
   :global(.operator-notification-card) { grid-template-columns: auto minmax(0, 1fr); }
   :global(.operator-notification-state) { grid-column: 2; }
+  :global(.operator-notification-pagination span) { flex: 1 0 100%; order: -1; }
 }

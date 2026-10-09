@@ -1,5 +1,3 @@
-"use client";
-
 import { PartnerOperatorBoundary } from "../../../../src/features/partner-onboarding/partner-workspace";
 import { StoreAccessAdmissionQueue } from "../../../../src/features/partner-onboarding/store-access-admission-queue";
 
@@ -15,3 +13,5 @@ export default function PartnerStoreAccessPage() {
     </section>
   </PartnerOperatorBoundary>;
 }
+
+export const metadata = { title: "اعتماد وصول المتاجر" };

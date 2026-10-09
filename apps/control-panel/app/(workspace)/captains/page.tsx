@@ -12,3 +12,5 @@ export default function CaptainsPage() {
     </section>
   );
 }
+
+export const metadata = { title: "قبول الكباتن" };

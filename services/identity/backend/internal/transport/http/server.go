@@ -55,6 +55,7 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("GET /internal/operator-profiles", s.internal(s.listOperatorProfiles))
 	mux.HandleFunc("POST /internal/operator-profiles", s.internal(s.createOperatorProfile))
 	mux.HandleFunc("PATCH /internal/operator-profiles/{profileId}", s.internal(s.updateOperatorProfile))
+	mux.HandleFunc("PATCH /internal/operators/{actorId}/details", s.internal(s.updateOperatorRoleDetails))
 	mux.HandleFunc("POST /internal/operator-profiles/{profileId}/approve", s.internal(s.approveOperatorProfile))
 	mux.HandleFunc("POST /internal/operator-profiles/{profileId}/grant", s.internal(s.grantOperatorProfile))
 	mux.HandleFunc("POST /internal/operator-profiles/{profileId}/invitation", s.internal(s.issueOperatorProfileInvitation))
@@ -497,6 +498,14 @@ func (s *Server) bootstrapFirstOperator(w http.ResponseWriter, r *http.Request, 
 		writeDomainError(w, err)
 		return
 	}
+	if !view.ActorCreated && !view.RoleCreated {
+		// Docker may create the canonical founder before initial Passkey enrollment.
+		// Only development can issue its invitation, never reactivate an owner.
+		if !s.config.Development || view.ActivatedAt != nil || !view.Enabled || !view.SecurityEnabled || strings.TrimSpace(input.PhoneE164) != view.PhoneE164 {
+			writeDomainError(w, domain.ErrConflict)
+			return
+		}
+	}
 	status := http.StatusOK
 	if view.ActorCreated || view.RoleCreated {
 		status = http.StatusCreated
@@ -527,7 +536,7 @@ func (s *Server) searchRoles(w http.ResponseWriter, r *http.Request, caller stri
 		}
 		enabled = &value
 	}
-	page, err := s.actors.Search(r.Context(), caller, domain.ActorSearchInput{Role: strings.TrimSpace(r.URL.Query().Get("role")), Query: strings.TrimSpace(r.URL.Query().Get("q")), Enabled: enabled, Sort: strings.TrimSpace(r.URL.Query().Get("sort")), Limit: limit, Cursor: strings.TrimSpace(r.URL.Query().Get("cursor"))})
+	page, err := s.actors.Search(r.Context(), caller, domain.ActorSearchInput{Role: strings.TrimSpace(r.URL.Query().Get("role")), Query: strings.TrimSpace(r.URL.Query().Get("q")), Enabled: enabled, PermissionCoverage: strings.TrimSpace(r.URL.Query().Get("permissionCoverage")), Sort: strings.TrimSpace(r.URL.Query().Get("sort")), Limit: limit, Cursor: strings.TrimSpace(r.URL.Query().Get("cursor"))})
 	if err != nil {
 		writeDomainError(w, err)
 		return

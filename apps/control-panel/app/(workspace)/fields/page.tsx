@@ -10,3 +10,5 @@ export default function FieldsPage() {
     </section>
   );
 }
+
+export const metadata = { title: "الميدانيون" };

@@ -1,4 +1,5 @@
 "use client";
+import { TextArea } from "@bthwani/design-system/web";
 
 import type { PartnerFinancialTermsPolicy } from "@bthwani/dsh";
 import { useCallback, useEffect, useState } from "react";
@@ -93,7 +94,7 @@ export function PartnerFinancialTermsPolicyWorkspace() {
       <div className="form-grid">
         <label className="field-label" htmlFor="partner-terms-settlement">فترة تسوية الشريك<select id="partner-terms-settlement" value={settlementPeriod} onChange={(event) => setSettlementPeriod(event.target.value as SettlementPeriod | "")} disabled={busy || !canEdit}><option value="">اختر الفترة</option><option value="DAILY">يومية</option><option value="WEEKLY">أسبوعية</option><option value="MONTHLY">شهرية</option></select></label>
       </div>
-      <label className="field-label" htmlFor="partner-terms-reason">سبب التفعيل أو التغيير<textarea id="partner-terms-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} rows={3} disabled={busy || !canEdit} /></label>
+      <label className="field-label" htmlFor="partner-terms-reason">سبب التفعيل أو التغيير<TextArea className="resize-none" id="partner-terms-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} rows={3} disabled={busy || !canEdit} /></label>
       {error ? <p className="validation-error" role="alert">{error}</p> : null}
       {message ? <p className="success" role="status">{message}</p> : null}
       <button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || !canEdit || !settlementPeriod || !validReason}>{saveLabel}</button>

@@ -1,4 +1,5 @@
 import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
+import { containsHostPostgresFallback } from "./runtime-proof/identity-migration-host-fallback.mjs";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -11,7 +12,7 @@ const canonicalProject = "samrim-local";
 const goImage = "golang:1.27.1-alpine";
 const migrationTestPath = path.join(root, "services/identity/backend/internal/storage/postgres/migrate_test.go");
 const canonicalMigrationTests = [
-  "TestMigrationV13ToV26Upgrade",
+  "TestMigrationV13ToV28Upgrade",
   "TestManagedRecoveryMigrationFreshBootstrapAndV25Upgrade",
 ];
 
@@ -42,7 +43,7 @@ function requireEnv(values, name) {
 }
 
 const migrationTestSource = fs.readFileSync(migrationTestPath, "utf8");
-if (/127\.0\.0\.1|localhost|55432/.test(migrationTestSource)) {
+if (containsHostPostgresFallback(migrationTestSource)) {
   fail("migration proof must not contain a host PostgreSQL fallback");
 }
 for (const testName of canonicalMigrationTests) {

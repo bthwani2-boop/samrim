@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": ["**/*.css"],
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
@@ -11,7 +11,9 @@
     "./tokens": "./src/tokens/index.ts",
     "./theme": "./src/theme/index.ts",
     "./native": "./src/native/index.tsx",
-    "./theme.css": "./theme.css"
+    "./theme.css": "./theme.css",
+    "./web": "./src/web/index.ts",
+    "./web.css": "./web.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

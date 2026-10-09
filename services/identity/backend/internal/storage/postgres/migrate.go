@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 26
+const SchemaVersion = 28
 
 type MigrationRecord struct {
 	Version int
@@ -25,7 +25,7 @@ type schemaRequirement struct {
 var identitySchemaRequirements = []schemaRequirement{
 	{table: "identity_schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, indexes: []string{"identity_schema_migrations_pkey"}},
 	{table: "identity_actors", columns: []string{"id", "phone_e164", "security_enabled", "version", "created_at", "updated_at"}, indexes: []string{"identity_actors_pkey", "identity_actors_phone_uq"}},
-	{table: "identity_actor_roles", columns: []string{"actor_id", "role", "enabled", "activated_at", "last_app_opened_at", "version", "created_at", "updated_at"}, indexes: []string{"identity_actor_roles_pkey", "identity_actor_roles_role_idx"}},
+	{table: "identity_actor_roles", columns: []string{"actor_id", "role", "enabled", "activated_at", "last_app_opened_at", "version", "job_title", "department", "created_at", "updated_at"}, indexes: []string{"identity_actor_roles_pkey", "identity_actor_roles_role_idx"}},
 	{table: "identity_password_credentials", columns: []string{"actor_id", "role", "password_hash", "version", "created_at", "updated_at"}, indexes: []string{"identity_password_credentials_pkey"}},
 	{table: "identity_challenges", columns: []string{"id", "actor_id", "role", "purpose", "phone_e164", "code_hash", "request_ip_hash", "admissible", "credential_version", "status", "attempts", "expires_at", "consumed_at", "created_at", "updated_at"}, indexes: []string{"identity_challenges_pkey", "identity_challenges_one_pending_uq", "identity_challenges_lookup_idx", "identity_challenges_ip_idx", "identity_challenges_phone_purpose_idx"}},
 	{table: "identity_challenge_deliveries", columns: []string{"challenge_id", "provider", "status", "attempts", "started_at", "finished_at", "created_at", "updated_at"}, indexes: []string{"identity_challenge_deliveries_pkey", "identity_challenge_deliveries_pending_idx"}},
@@ -38,9 +38,9 @@ var identitySchemaRequirements = []schemaRequirement{
 	{table: "identity_webauthn_users", columns: []string{"rp_id", "actor_id", "user_handle", "created_at"}, indexes: []string{"identity_webauthn_users_pkey", "identity_webauthn_user_handle_uq"}},
 	{table: "identity_webauthn_credentials", columns: []string{"rp_id", "credential_id", "actor_id", "credential_json", "sign_count", "clone_warning", "backup_state", "last_used_at", "revoked_at", "created_at"}, indexes: []string{"identity_webauthn_credentials_pkey", "identity_webauthn_credentials_actor_idx", "identity_webauthn_credentials_active_idx"}},
 	{table: "identity_webauthn_ceremonies", columns: []string{"id", "kind", "actor_id", "challenge", "session_data", "expires_at", "consumed_at", "created_at"}, indexes: []string{"identity_webauthn_ceremonies_pkey", "identity_webauthn_ceremonies_challenge_uq", "identity_webauthn_ceremonies_expiry_idx"}},
-	{table: "identity_operator_recovery_credentials", columns: []string{"id", "actor_id", "credential_hash", "created_at", "used_at", "revoked_at"}, indexes: []string{"identity_operator_recovery_credentials_pkey", "identity_operator_recovery_credentials_active_uq", "identity_operator_recovery_credentials_hash_uq", "identity_operator_recovery_credentials_actor_idx"}},
+	{table: "identity_operator_recovery_credentials", columns: []string{"id", "actor_id", "credential_hash", "created_at", "used_at", "revoked_at", "reserved_by_ceremony_id"}, indexes: []string{"identity_operator_recovery_credentials_pkey", "identity_operator_recovery_credentials_active_uq", "identity_operator_recovery_credentials_hash_uq", "identity_operator_recovery_credentials_actor_idx", "identity_operator_recovery_credentials_reservation_uq"}},
 	{table: "identity_operator_permissions", columns: []string{"actor_id", "role", "permission", "enabled", "version", "changed_by_actor_id", "reason", "created_at", "updated_at"}, indexes: []string{"identity_operator_permissions_pkey"}},
-	{table: "identity_operator_profiles", columns: []string{"id", "full_name_ar", "phone_e164", "actor_id", "state", "version", "created_by_actor_id", "reviewed_by_actor_id", "reviewed_at", "created_at", "updated_at"}, indexes: []string{"identity_operator_profiles_pkey", "identity_operator_profiles_actor_id_key", "identity_operator_profiles_pending_phone_uq", "identity_operator_profiles_registry_idx"}},
+	{table: "identity_operator_profiles", columns: []string{"id", "full_name_ar", "phone_e164", "actor_id", "state", "version", "job_title", "department", "created_by_actor_id", "reviewed_by_actor_id", "reviewed_at", "created_at", "updated_at"}, indexes: []string{"identity_operator_profiles_pkey", "identity_operator_profiles_actor_id_key", "identity_operator_profiles_pending_phone_uq", "identity_operator_profiles_registry_idx"}},
 	{table: "identity_operator_profile_events", columns: []string{"id", "profile_id", "event_type", "acting_actor_id", "idempotency_key", "request_hash", "correlation_id", "created_at"}, indexes: []string{"identity_operator_profile_events_pkey", "identity_operator_profile_events_idempotency_key_key", "identity_operator_profile_events_profile_idx"}},
 }
 

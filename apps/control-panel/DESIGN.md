@@ -104,11 +104,17 @@ Solid orange is the primary action, outline/neutral is secondary, and text links
 
 ### Navigation and data display
 
-The workspace registry is the sole owner of top-level destinations and nested route labels. Breadcrumbs represent real hierarchy and never turn the current page into a self-link. Lists and tables retain semantic HTML and expose loading, empty, error and recovery states through their owning feature.
+The workspace registry is the sole owner of top-level destinations and nested navigation labels; each route page or its server layout owns localized document metadata. Breadcrumbs represent real hierarchy and never turn the current page into a self-link. Lists and tables retain semantic HTML and expose loading, empty, error and recovery states through their owning feature.
+
+Large registries are a normal operating condition. Search, filters, sort and cursor pagination stay with the domain API and remain in the URL; the browser receives only a bounded page. Native selects contain only a small, bounded result set. Larger entity lookups require server-backed search and paging, and keep the chosen entity visible when the query changes. Labels distinguish the visible page from a server-reported total, and selection scope is stated before a bulk action.
+
+The notification inbox is a cursor-backed activity stream over DSH pages. Its unread summary is the server's full unread count; read/unread groups and page counts describe only the currently loaded page.
+
+The operator directory uses Identity's bounded role search for name, phone, title, and department queries, enabled-state and permission-coverage filters, stable sorting, and cursors. Enabled permission counts are returned by Identity in the same page query; opening an account loads its individual versioned permission records on demand.
 
 ### Forms and overlays
 
-Forms use real labels, app-owned validation and explicit recovery. Selects remain native where the browser-owned popup is accepted by the product; dialogs and account surfaces keep focus and Escape behavior visible. The navigation drawer makes the background inert and restores focus to its trigger.
+Forms use real labels, app-owned validation and explicit recovery. Browser controls use the shared Design System sizing and native-control rules; the shared web `TextArea` keeps resize behavior usable without allowing horizontal page growth. Selects remain native where the browser-owned popup is accepted by the product; dialogs and account surfaces keep focus and Escape behavior visible. The navigation drawer makes the background inert and restores focus to its trigger.
 
 ### Iconography
 

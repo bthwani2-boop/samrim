@@ -29,23 +29,31 @@ type ActorRole struct {
 }
 
 type ActorRoleView struct {
-	ActorID           string     `json:"actorId"`
-	PhoneE164         string     `json:"phoneE164"`
-	Role              string     `json:"role"`
-	Enabled           bool       `json:"enabled"`
-	ActivatedAt       *time.Time `json:"activatedAt,omitempty"`
-	LastAppOpenedAt   *time.Time `json:"lastAppOpenedAt,omitempty"`
-	SecurityEnabled   bool       `json:"securityEnabled"`
-	ActorVersion      int        `json:"actorVersion"`
-	RoleVersion       int        `json:"roleVersion"`
-	CredentialVersion int        `json:"credentialVersion,omitempty"`
-	ActorCreated      bool       `json:"actorCreated,omitempty"`
-	RoleCreated       bool       `json:"roleCreated,omitempty"`
+	ActorID                        string     `json:"actorId"`
+	PhoneE164                      string     `json:"phoneE164"`
+	FullNameAr                     string     `json:"fullNameAr,omitempty"`
+	JobTitle                       string     `json:"jobTitle,omitempty"`
+	Department                     string     `json:"department,omitempty"`
+	Role                           string     `json:"role"`
+	Enabled                        bool       `json:"enabled"`
+	ActivatedAt                    *time.Time `json:"activatedAt,omitempty"`
+	CreatedAt                      time.Time  `json:"createdAt"`
+	LastAppOpenedAt                *time.Time `json:"lastAppOpenedAt,omitempty"`
+	LastAuthenticatedAt            *time.Time `json:"lastAuthenticatedAt,omitempty"`
+	SecurityEnabled                bool       `json:"securityEnabled"`
+	ActorVersion                   int        `json:"actorVersion"`
+	RoleVersion                    int        `json:"roleVersion"`
+	CredentialVersion              int        `json:"credentialVersion,omitempty"`
+	OperatorEnabledPermissionCount *int       `json:"operatorEnabledPermissionCount,omitempty"`
+	ActorCreated                   bool       `json:"actorCreated,omitempty"`
+	RoleCreated                    bool       `json:"roleCreated,omitempty"`
 }
 
 type OperatorProfile struct {
 	ID              string     `json:"id"`
 	FullNameAr      string     `json:"fullNameAr"`
+	JobTitle        string     `json:"jobTitle"`
+	Department      string     `json:"department"`
 	PhoneE164       string     `json:"phoneE164,omitempty"`
 	ActorID         string     `json:"actorId,omitempty"`
 	RoleEnabled     *bool      `json:"roleEnabled,omitempty"`
@@ -65,12 +73,22 @@ type OperatorProfilePage struct {
 
 type OperatorProfileCreateRequest struct {
 	FullNameAr string `json:"fullNameAr"`
+	JobTitle   string `json:"jobTitle"`
+	Department string `json:"department"`
 	PhoneE164  string `json:"phoneE164"`
 }
 
 type OperatorProfileUpdateRequest struct {
 	FullNameAr      string `json:"fullNameAr"`
+	JobTitle        string `json:"jobTitle"`
+	Department      string `json:"department"`
 	PhoneE164       string `json:"phoneE164"`
+	ExpectedVersion int    `json:"expectedVersion"`
+}
+
+type OperatorRoleDetailsUpdateRequest struct {
+	JobTitle        string `json:"jobTitle"`
+	Department      string `json:"department"`
 	ExpectedVersion int    `json:"expectedVersion"`
 }
 
@@ -133,12 +151,13 @@ type SetOperatorPermissionRequest struct {
 }
 
 type ActorSearchInput struct {
-	Role    string
-	Query   string
-	Enabled *bool
-	Sort    string
-	Limit   int
-	Cursor  string
+	Role               string
+	Query              string
+	Enabled            *bool
+	PermissionCoverage string
+	Sort               string
+	Limit              int
+	Cursor             string
 }
 
 type ActorSearchPage struct {

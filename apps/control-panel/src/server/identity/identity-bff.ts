@@ -12,6 +12,9 @@ import {
   type IdentityClientError,
   identityAuthorizesSurface,
   isIdentityClientError,
+  type OperatorPasskeyRegistrationResponse,
+  type OperatorPermission,
+  type OperatorPermissionAccess,
   type OperatorProfileCreateRequest,
   type OperatorProfileGrantResponse,
   type OperatorProfileInvitationResponse,
@@ -20,9 +23,7 @@ import {
   type OperatorProfilePage,
   type OperatorProfileResponse,
   type OperatorProfileUpdateRequest,
-  type OperatorPasskeyRegistrationResponse,
-  type OperatorPermission,
-  type OperatorPermissionAccess,
+  type OperatorRoleDetailsUpdateRequest,
   type PasskeyOptions,
   type TokenPair,
   type VersionedMutationContext,
@@ -176,6 +177,10 @@ export async function updateOperatorProfile(profileId: string, request: Operator
   return identityInternalClient().updateOperatorProfile(profileId, request, context);
 }
 
+export async function updateOperatorRoleDetails(actorId: string, request: OperatorRoleDetailsUpdateRequest, context: AttributedMutationContext): Promise<ActorRoleView> {
+  return identityInternalClient().updateOperatorRoleDetails(actorId, request, context);
+}
+
 export async function approveOperatorProfile(profileId: string, request: OperatorProfileMutationRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse> {
   return identityInternalClient().approveOperatorProfile(profileId, request, context);
 }
@@ -205,9 +210,9 @@ async function lookupIdentityRole(phone: string, role: ActorType): Promise<Actor
   return page.items[0] ?? null;
 }
 
-export async function searchIdentityRoles(role: ActorType, query: string, limit: number, cursor = "", enabled?: boolean, sort: "phone_asc" | "phone_desc" = "phone_asc"): Promise<ActorRoleSearchPage> {
+export async function searchIdentityRoles(role: ActorType, query: string, limit: number, cursor = "", enabled?: boolean, sort: "phone_asc" | "phone_desc" = "phone_asc", permissionCoverage?: "none" | "some" | "complete"): Promise<ActorRoleSearchPage> {
   if (!Number.isInteger(limit) || limit < 1 || limit > 100 || query.trim().length > 100 || cursor.length > 512) throw new Error("INVALID_ACTOR_ROLE_SEARCH");
-  return identityInternalClient().searchActorRoles(role, query.trim(), enabled, { limit, cursor, sort });
+  return identityInternalClient().searchActorRoles(role, query.trim(), enabled, { limit, cursor, sort, ...(permissionCoverage ? { permissionCoverage } : {}) });
 }
 
 export async function readManagedIdentityRole(actorId: string, role: ActorType): Promise<ActorRoleView> {
@@ -338,7 +343,7 @@ async function refreshOperatorSession(refreshToken: string, clientInstanceId: st
   try {
     await writeTokens(pair, clientInstanceId);
     return pair.identity;
-  } catch (error) {
+  } catch (_error) {
     throw localSessionError(503, "IDENTITY_SESSION_PERSISTENCE_UNAVAILABLE", "identity session persistence is unavailable");
   }
 }

@@ -13,3 +13,5 @@ export default async function PartnerCommissionReceivablesPage({ searchParams }:
   };
   return <FinanceWorkspace resource="partner-commission-receivables"><PartnerEarningsWorkspace initialQuery={initialQuery} /></FinanceWorkspace>;
 }
+
+export const metadata = { title: "تحصيل عمولة المنصة" };

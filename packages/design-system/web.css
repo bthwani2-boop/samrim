@@ -1,0 +1,41 @@
+/* Browser-native controls shared by web applications; colors and dimensions come from theme.css. */
+:where(input[type="checkbox"], input[type="radio"]) {
+  width: var(--size-controlIndicator);
+  min-width: var(--size-controlIndicator);
+  height: var(--size-controlIndicator);
+  min-height: var(--size-controlIndicator);
+  margin: 0;
+  accent-color: var(--action-bg);
+  vertical-align: middle;
+}
+
+:where(select) {
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--size-controlMd);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background-color: var(--surface-base);
+  color: var(--text-primary);
+  font: inherit;
+  padding-inline: var(--space-3);
+}
+
+:where(select:focus-visible) {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+:where(select:disabled) {
+  background-color: var(--disabled-bg);
+  color: var(--disabled-text);
+  cursor: not-allowed;
+}
+
+textarea.ds-textarea.resize-none {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-height: var(--size-controlTextarea);
+  resize: none;
+}

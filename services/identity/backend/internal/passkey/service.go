@@ -75,7 +75,7 @@ func (s *Service) BeginAuthentication(ctx context.Context) (domain.PasskeyOption
 	if err != nil {
 		return domain.PasskeyOptions{}, fmt.Errorf("begin operator passkey authentication: %w", err)
 	}
-	return s.storeCeremony(ctx, ceremonyAuthentication, "", *data, assertion.Response)
+	return s.storeCeremony(ctx, ceremonyAuthentication, "", "", *data, assertion.Response)
 }
 
 func (s *Service) BeginRegistration(ctx context.Context, input domain.OperatorPasskeyRegistrationOptionsRequest) (domain.PasskeyOptions, error) {
@@ -98,15 +98,15 @@ func (s *Service) BeginRegistration(ctx context.Context, input domain.OperatorPa
 	if err != nil {
 		return domain.PasskeyOptions{}, fmt.Errorf("begin operator passkey registration: %w", err)
 	}
-	return s.storeCeremony(ctx, ceremonyRegistration, actorID, *data, creation.Response)
+	return s.storeCeremony(ctx, ceremonyRegistration, actorID, "", *data, creation.Response)
 }
 
 func (s *Service) BeginRecoveryRegistration(ctx context.Context, input domain.OperatorPasskeyRecoveryRegistrationOptionsRequest) (domain.PasskeyOptions, error) {
-	actorID, err := s.challenges.ConsumeOperatorRecoveryPhoneProof(ctx, input)
+	proof, err := s.challenges.ConsumeOperatorRecoveryPhoneProof(ctx, input)
 	if err != nil {
 		return domain.PasskeyOptions{}, err
 	}
-	user, err := s.loadOperator(ctx, actorID)
+	user, err := s.loadOperator(ctx, proof.ActorID)
 	if err != nil {
 		return domain.PasskeyOptions{}, err
 	}
@@ -121,7 +121,7 @@ func (s *Service) BeginRecoveryRegistration(ctx context.Context, input domain.Op
 	if err != nil {
 		return domain.PasskeyOptions{}, fmt.Errorf("begin operator recovery passkey registration: %w", err)
 	}
-	return s.storeCeremony(ctx, ceremonyRecovery, actorID, *data, creation.Response)
+	return s.storeCeremony(ctx, ceremonyRecovery, proof.ActorID, proof.RecoveryCredentialID, *data, creation.Response)
 }
 
 func (s *Service) FinishRegistration(ctx context.Context, input domain.OperatorPasskeyRegistrationFinishRequest) (domain.OperatorPasskeyRegistrationResponse, error) {
@@ -160,8 +160,18 @@ func (s *Service) finishRegistration(ctx context.Context, ceremonyID string, raw
 		return domain.OperatorPasskeyRegistrationResponse{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if ceremonyKind == ceremonyRecovery {
+		if err := lockRecoveryCredentialReservation(ctx, tx, ceremony.actorID, ceremonyID); err != nil {
+			return domain.OperatorPasskeyRegistrationResponse{}, err
+		}
+	}
 	if err := lockUnconsumedCeremony(ctx, tx, ceremonyID, ceremonyKind); err != nil {
 		return domain.OperatorPasskeyRegistrationResponse{}, err
+	}
+	if ceremonyKind == ceremonyRecovery {
+		if err := completeRecoveryTx(ctx, tx, ceremony.actorID, ceremonyID); err != nil {
+			return domain.OperatorPasskeyRegistrationResponse{}, err
+		}
 	}
 	if err := storeCredentialTx(ctx, tx, ceremony.actorID, s.webauthn.Config.GetRPID(), credential); err != nil {
 		return domain.OperatorPasskeyRegistrationResponse{}, err
@@ -179,6 +189,11 @@ func (s *Service) finishRegistration(ctx context.Context, ceremonyID string, raw
 	if err := auditTx(ctx, tx, "operator.passkey_registered", ceremony.actorID, ceremony.actorID, "success", map[string]any{"userVerification": true, "ceremonyKind": ceremonyKind}); err != nil {
 		return domain.OperatorPasskeyRegistrationResponse{}, err
 	}
+	if ceremonyKind == ceremonyRecovery {
+		if err := auditTx(ctx, tx, "operator.recovery_completed", ceremony.actorID, ceremony.actorID, "success", map[string]any{"userVerification": true}); err != nil {
+			return domain.OperatorPasskeyRegistrationResponse{}, err
+		}
+	}
 	pair, err := s.sessions.CreateTx(ctx, tx, ceremony.actorID, "operator", clientInstanceID)
 	if err != nil {
 		return domain.OperatorPasskeyRegistrationResponse{}, err
@@ -187,6 +202,33 @@ func (s *Service) finishRegistration(ctx context.Context, ceremonyID string, raw
 		return domain.OperatorPasskeyRegistrationResponse{}, err
 	}
 	return domain.OperatorPasskeyRegistrationResponse{TokenPair: pair, RecoveryCredential: recoveryCredential}, nil
+}
+
+func completeRecoveryTx(ctx context.Context, tx *sql.Tx, actorID, ceremonyID string) error {
+	result, err := tx.ExecContext(ctx, `UPDATE identity_operator_recovery_credentials
+SET used_at=clock_timestamp(),revoked_at=clock_timestamp(),reserved_by_ceremony_id=NULL
+WHERE actor_id=$1 AND reserved_by_ceremony_id=$2 AND used_at IS NULL AND revoked_at IS NULL`, actorID, ceremonyID)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return domain.ErrInvalidChallenge
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE identity_sessions
+SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1
+WHERE actor_id=$1 AND role='operator' AND revoked_at IS NULL`, actorID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE identity_webauthn_credentials
+SET revoked_at=COALESCE(revoked_at,clock_timestamp())
+WHERE actor_id=$1 AND revoked_at IS NULL`, actorID); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Service) FinishAuthentication(ctx context.Context, input domain.OperatorPasskeyAuthenticationFinishRequest) (domain.TokenPair, error) {
@@ -240,7 +282,7 @@ type storedCeremony struct {
 	session webauthn.SessionData
 }
 
-func (s *Service) storeCeremony(ctx context.Context, kind, actorID string, data webauthn.SessionData, options any) (domain.PasskeyOptions, error) {
+func (s *Service) storeCeremony(ctx context.Context, kind, actorID, recoveryCredentialID string, data webauthn.SessionData, options any) (domain.PasskeyOptions, error) {
 	id, err := identitysecurity.RandomToken(18)
 	if err != nil {
 		return domain.PasskeyOptions{}, err
@@ -254,7 +296,58 @@ func (s *Service) storeCeremony(ctx context.Context, kind, actorID string, data 
 		return domain.PasskeyOptions{}, err
 	}
 	expires := s.now().UTC().Add(ceremonyLifetime)
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO identity_webauthn_ceremonies(id,kind,actor_id,challenge,session_data,expires_at) VALUES($1,$2,NULLIF($3,''),$4,$5,$6)`, id, kind, actorID, data.Challenge, dataJSON, expires); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.PasskeyOptions{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO identity_webauthn_ceremonies(id,kind,actor_id,challenge,session_data,expires_at) VALUES($1,$2,NULLIF($3,''),$4,$5,$6)`, id, kind, actorID, data.Challenge, dataJSON, expires); err != nil {
+		return domain.PasskeyOptions{}, err
+	}
+	if kind == ceremonyRecovery {
+		var previousCeremonyID sql.NullString
+		err := tx.QueryRowContext(ctx, `SELECT reserved_by_ceremony_id FROM identity_operator_recovery_credentials
+WHERE id=$1 AND actor_id=$2 AND used_at IS NULL AND revoked_at IS NULL FOR UPDATE`, recoveryCredentialID, actorID).Scan(&previousCeremonyID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.PasskeyOptions{}, domain.ErrConflict
+		}
+		if err != nil {
+			return domain.PasskeyOptions{}, err
+		}
+		if previousCeremonyID.Valid {
+			previous, err := tx.ExecContext(ctx, `UPDATE identity_webauthn_ceremonies
+SET consumed_at=COALESCE(consumed_at,clock_timestamp())
+WHERE id=$1 AND kind=$2 AND actor_id=$3`, previousCeremonyID.String, ceremonyRecovery, actorID)
+			if err != nil {
+				return domain.PasskeyOptions{}, err
+			}
+			previousCount, err := previous.RowsAffected()
+			if err != nil {
+				return domain.PasskeyOptions{}, err
+			}
+			if previousCount != 1 {
+				return domain.PasskeyOptions{}, domain.ErrConflict
+			}
+		}
+		reservation, err := tx.ExecContext(ctx, `UPDATE identity_operator_recovery_credentials
+SET reserved_by_ceremony_id=$1
+WHERE id=$2 AND actor_id=$3 AND used_at IS NULL AND revoked_at IS NULL
+  AND reserved_by_ceremony_id IS NOT DISTINCT FROM $4`, id, recoveryCredentialID, actorID, previousCeremonyID)
+		if err != nil {
+			return domain.PasskeyOptions{}, err
+		}
+		reservedCount, err := reservation.RowsAffected()
+		if err != nil {
+			return domain.PasskeyOptions{}, err
+		}
+		if reservedCount != 1 {
+			return domain.PasskeyOptions{}, domain.ErrConflict
+		}
+		if err := auditTx(ctx, tx, "operator.recovery_started", actorID, actorID, "success", map[string]any{"recoveryCredentialReserved": true}); err != nil {
+			return domain.PasskeyOptions{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return domain.PasskeyOptions{}, err
 	}
 	return domain.PasskeyOptions{CeremonyID: id, PublicKey: optionsJSON}, nil
@@ -359,6 +452,16 @@ func lockUnconsumedCeremony(ctx context.Context, tx *sql.Tx, id, kind string) er
 	var consumedAt sql.NullTime
 	err := tx.QueryRowContext(ctx, "SELECT consumed_at FROM identity_webauthn_ceremonies WHERE id=$1 AND kind=$2 FOR UPDATE", id, kind).Scan(&consumedAt)
 	if errors.Is(err, sql.ErrNoRows) || consumedAt.Valid {
+		return domain.ErrInvalidChallenge
+	}
+	return err
+}
+
+func lockRecoveryCredentialReservation(ctx context.Context, tx *sql.Tx, actorID, ceremonyID string) error {
+	var credentialID string
+	err := tx.QueryRowContext(ctx, `SELECT id FROM identity_operator_recovery_credentials
+WHERE actor_id=$1 AND reserved_by_ceremony_id=$2 AND used_at IS NULL AND revoked_at IS NULL FOR UPDATE`, actorID, ceremonyID).Scan(&credentialID)
+	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ErrInvalidChallenge
 	}
 	return err

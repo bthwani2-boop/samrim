@@ -37,6 +37,8 @@ paths:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operator-profiles"
   /internal/operator-profiles/{profileId}:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operator-profiles~1{profileId}"
+  /internal/operators/{actorId}/details:
+    $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operators~1{actorId}~1details"
   /internal/operator-profiles/{profileId}/approve:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operator-profiles~1{profileId}~1approve"
   /internal/operator-profiles/{profileId}/grant:
@@ -238,6 +240,14 @@ components:
           description: Arabic display name for this Operator profile; this field is not a verified legal name.
           minLength: 2
           maxLength: 120
+        jobTitle:
+          type: string
+          description: Descriptive Operator job title, required when creating or updating an Operator profile. It does not grant access or authority.
+          maxLength: 80
+        department:
+          type: string
+          description: Descriptive Operator department, required when creating or updating an Operator profile. It does not grant access or authority.
+          maxLength: 80
         phoneE164:
           type: string
           pattern: '^\\+[1-9][0-9]{7,14}$'
@@ -282,7 +292,7 @@ components:
     OperatorProfileCreateRequest:
       type: object
       additionalProperties: false
-      required: [fullNameAr, phoneE164]
+      required: [fullNameAr, phoneE164, jobTitle, department]
       properties:
         fullNameAr:
           type: string
@@ -293,10 +303,20 @@ components:
           type: string
           description: Yemeni local number such as 777123456 or international number; normalized to E.164 before storage.
           pattern: '^(?:[+][1-9][0-9]{7,14}|00[1-9][0-9]{7,14}|967[0-9]{5,12}|0[1-9][0-9]{8}|7[0-9]{8})$'
+        jobTitle:
+          type: string
+          description: Descriptive Operator job title, required when creating or updating an Operator profile. It does not grant access or authority.
+          minLength: 1
+          maxLength: 80
+        department:
+          type: string
+          description: Descriptive Operator department, required when creating or updating an Operator profile. It does not grant access or authority.
+          minLength: 1
+          maxLength: 80
     OperatorProfileUpdateRequest:
       type: object
       additionalProperties: false
-      required: [fullNameAr, phoneE164, expectedVersion]
+      required: [fullNameAr, phoneE164, jobTitle, department, expectedVersion]
       properties:
         fullNameAr:
           type: string
@@ -307,6 +327,32 @@ components:
           type: string
           description: Yemeni local number such as 777123456 or international number; normalized to E.164 before storage.
           pattern: '^(?:[+][1-9][0-9]{7,14}|00[1-9][0-9]{7,14}|967[0-9]{5,12}|0[1-9][0-9]{8}|7[0-9]{8})$'
+        jobTitle:
+          type: string
+          description: Descriptive Operator job title, required when updating an admitted Operator. It does not grant access or authority.
+          minLength: 1
+          maxLength: 80
+        department:
+          type: string
+          description: Descriptive Operator department, required when updating an admitted Operator. It does not grant access or authority.
+          minLength: 1
+          maxLength: 80
+        expectedVersion:
+          type: integer
+          minimum: 1
+    OperatorRoleDetailsUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [jobTitle, department, expectedVersion]
+      properties:
+        jobTitle:
+          type: string
+          minLength: 1
+          maxLength: 80
+        department:
+          type: string
+          minLength: 1
+          maxLength: 80
         expectedVersion:
           type: integer
           minimum: 1
@@ -723,11 +769,17 @@ components:
     ActorRoleView:
       type: object
       additionalProperties: false
-      required: [actorId, phoneE164, role, enabled, securityEnabled, actorVersion, roleVersion]
+      required: [actorId, phoneE164, role, enabled, createdAt, securityEnabled, actorVersion, roleVersion]
       properties:
         actorId:
           type: string
         phoneE164:
+          type: string
+        fullNameAr:
+          type: string
+        jobTitle:
+          type: string
+        department:
           type: string
         role:
           $ref: "#/components/schemas/ActorType"
@@ -736,9 +788,16 @@ components:
         activatedAt:
           type: string
           format: date-time
+        createdAt:
+          type: string
+          format: date-time
         lastAppOpenedAt:
           type: string
           format: date-time
+        lastAuthenticatedAt:
+          type: string
+          format: date-time
+          description: Most recent successful operator session creation time.
         securityEnabled:
           type: boolean
         actorVersion:
@@ -750,6 +809,11 @@ components:
         credentialVersion:
           type: integer
           minimum: 1
+        operatorEnabledPermissionCount:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: Enabled Operator permission count, returned on Operator role search pages only.
         actorCreated:
           type: boolean
         roleCreated:

@@ -3,6 +3,7 @@ package actor
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 	_ "github.com/lib/pq"
 )
 
@@ -87,10 +89,16 @@ func TestListOperatorProfilesKeysetDatabase(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "INSERT INTO identity_bootstrap_state(id,bootstrap_completed_at,initial_operator_actor_id) VALUES(1,clock_timestamp(),$1)", adminID); err != nil {
 		t.Fatalf("establish operator profile administrator authority fixture: %v", err)
 	}
+	for _, permission := range domain.OperatorPermissions() {
+		if _, err := db.ExecContext(ctx, `INSERT INTO identity_operator_permissions(actor_id,role,permission,enabled,version,changed_by_actor_id,reason)
+			VALUES($1,'operator',$2,true,1,$1,'initial operator bootstrap')`, adminID, permission); err != nil {
+			t.Fatalf("establish canonical operator permission fixture %s: %v", permission, err)
+		}
+	}
 
 	for index, suffix := range []string{"first", "second"} {
-		if _, err := db.ExecContext(ctx, `INSERT INTO identity_operator_profiles(id,full_name_ar,phone_e164,state,version,created_by_actor_id,created_at)
-			VALUES($1,$2,$3,'pending_review',1,$4,clock_timestamp()+($5::int * interval '1 second'))`, "profile_"+suffix, "مشغل "+suffix, fmt.Sprintf("+9677700099%02d", index+2), adminID, index); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO identity_operator_profiles(id,full_name_ar,phone_e164,job_title,department,state,version,created_by_actor_id,created_at)
+			VALUES($1,$2,$3,'مشرف اختبار','العمليات','pending_review',1,$4,clock_timestamp()+($5::int * interval '1 second'))`, "profile_"+suffix, "مشغل "+suffix, fmt.Sprintf("+9677700099%02d", index+2), adminID, index); err != nil {
 			t.Fatalf("insert operator profile fixture %s: %v", suffix, err)
 		}
 	}
@@ -107,5 +115,95 @@ func TestListOperatorProfilesKeysetDatabase(t *testing.T) {
 	filtered, err := service.ListOperatorProfiles(ctx, "control-panel", adminID, "first", "pending_review", "created_desc", 25, "")
 	if err != nil || len(filtered.Items) != 1 || filtered.Items[0].ID != first.Items[0].ID {
 		t.Fatalf("operator profile state/search filters failed: %+v err=%v", filtered, err)
+	}
+
+	created, err := service.CreateOperatorProfile(ctx, "control-panel", adminID, "operator-details-correlation-create", "operator-details-idempotency-create", domain.OperatorProfileCreateRequest{
+		FullNameAr: "مشغل اختبار التفاصيل", PhoneE164: "+967770009999", JobTitle: "محلل عمليات", Department: "العمليات",
+	})
+	if err != nil || created.Profile.JobTitle != "محلل عمليات" || created.Profile.Department != "العمليات" {
+		t.Fatalf("operator creation did not persist required job details: profile=%+v err=%v", created.Profile, err)
+	}
+	if _, err := service.ApproveOperatorProfile(ctx, "control-panel", adminID, "operator-details-correlation-approve", "operator-details-idempotency-approve", created.Profile.ID, created.Profile.Version); err != nil {
+		t.Fatalf("approve operator profile: %v", err)
+	}
+	approved, err := service.ReadOperatorProfile(ctx, "control-panel", adminID, created.Profile.ID)
+	if err != nil {
+		t.Fatalf("read approved operator profile: %v", err)
+	}
+	granted, err := service.GrantOperatorProfile(ctx, "control-panel", adminID, "operator-details-correlation-grant", "operator-details-idempotency-grant", approved.ID, approved.Version)
+	if err != nil || granted.Role.JobTitle != "محلل عمليات" || granted.Role.Department != "العمليات" {
+		t.Fatalf("operator role did not receive the reviewed job details: role=%+v err=%v", granted.Role, err)
+	}
+	if granted.Profile.JobTitle != granted.Role.JobTitle || granted.Profile.Department != granted.Role.Department {
+		t.Fatalf("canonical admitted profile did not read the role-owned details: profile=%+v role=%+v", granted.Profile, granted.Role)
+	}
+
+	updated, err := service.UpdateOperatorRoleDetails(ctx, "control-panel", adminID, "operator-details-correlation-update", granted.Role.ActorID, domain.OperatorRoleDetailsUpdateRequest{
+		JobTitle: "قائد العمليات", Department: "مركز العمليات", ExpectedVersion: granted.Role.RoleVersion,
+	})
+	if err != nil || updated.JobTitle != "قائد العمليات" || updated.Department != "مركز العمليات" || updated.RoleVersion != granted.Role.RoleVersion+1 {
+		t.Fatalf("operator role detail update/readback failed: role=%+v err=%v", updated, err)
+	}
+	if _, err := service.UpdateOperatorRoleDetails(ctx, "control-panel", adminID, "operator-details-correlation-stale", granted.Role.ActorID, domain.OperatorRoleDetailsUpdateRequest{
+		JobTitle: "قديم", Department: "قديم", ExpectedVersion: granted.Role.RoleVersion,
+	}); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("stale operator role version was not rejected: %v", err)
+	}
+	var audited bool
+	if err := db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM identity_security_audit WHERE subject_actor_id=$1 AND event_type='operator.details_updated' AND correlation_id=$2)", granted.Role.ActorID, "operator-details-correlation-update").Scan(&audited); err != nil || !audited {
+		t.Fatalf("operator details update was not audited: audited=%v err=%v", audited, err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO identity_sessions(id,actor_id,role,access_token_hash,refresh_token_hash,client_instance_id_hash,access_expires_at,refresh_expires_at,absolute_expires_at,created_at)
+		VALUES('operator-details-search-session',$1,'operator',repeat('a',64),repeat('b',64),repeat('c',64),clock_timestamp()+interval '15 minutes',clock_timestamp()+interval '1 hour',clock_timestamp()+interval '2 hours',clock_timestamp()-interval '5 minutes')`, granted.Role.ActorID); err != nil {
+		t.Fatalf("create operator session readback fixture: %v", err)
+	}
+	search, err := service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", Query: "مركز العمليات", Limit: 25})
+	if err != nil || len(search.Items) != 1 || search.Items[0].ActorID != granted.Role.ActorID || search.Items[0].FullNameAr != "مشغل اختبار التفاصيل" || search.Items[0].JobTitle != "قائد العمليات" || search.Items[0].Department != "مركز العمليات" || search.Items[0].CreatedAt.IsZero() || search.Items[0].LastAuthenticatedAt == nil {
+		t.Fatalf("operator directory search did not find the canonical department: result=%+v err=%v", search, err)
+	}
+	if count := search.Items[0].OperatorEnabledPermissionCount; count == nil || *count != 0 {
+		t.Fatalf("operator search did not return its enabled permission count: result=%+v", search.Items[0])
+	}
+	complete, err := service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", Query: "مركز العمليات", PermissionCoverage: "complete", Limit: 25})
+	if err != nil || len(complete.Items) != 0 {
+		t.Fatalf("complete permission coverage included an operator with no grants: result=%+v err=%v", complete, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE identity_operator_permissions SET enabled=true WHERE actor_id=$1 AND permission=$2`, granted.Role.ActorID, domain.OperatorPermissionFinance); err != nil {
+		t.Fatalf("enable one operator permission in the isolated coverage fixture: %v", err)
+	}
+	some, err := service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", Query: "مركز العمليات", PermissionCoverage: "some", Limit: 25})
+	if err != nil || len(some.Items) != 1 || some.Items[0].OperatorEnabledPermissionCount == nil || *some.Items[0].OperatorEnabledPermissionCount != 1 {
+		t.Fatalf("partial permission coverage was not filtered and counted by Identity: result=%+v err=%v", some, err)
+	}
+	complete, err = service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", Query: "مركز العمليات", PermissionCoverage: "complete", Limit: 25})
+	if err != nil || len(complete.Items) != 0 {
+		t.Fatalf("complete permission coverage included a partially granted operator: result=%+v err=%v", complete, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE identity_operator_permissions SET enabled=true WHERE actor_id=$1 AND role='operator'`, granted.Role.ActorID); err != nil {
+		t.Fatalf("complete operator permission coverage fixture: %v", err)
+	}
+	complete, err = service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", Query: "مركز العمليات", PermissionCoverage: "complete", Limit: 25})
+	if err != nil || len(complete.Items) != 1 || complete.Items[0].OperatorEnabledPermissionCount == nil || *complete.Items[0].OperatorEnabledPermissionCount != len(domain.OperatorPermissions()) {
+		t.Fatalf("complete permission coverage did not return its full permission count: result=%+v err=%v", complete, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE identity_operator_permissions SET enabled=false WHERE actor_id=$1 AND role='operator'`, granted.Role.ActorID); err != nil {
+		t.Fatalf("clear operator permission coverage fixture: %v", err)
+	}
+	none, err := service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", Query: "مركز العمليات", PermissionCoverage: "none", Limit: 25})
+	if err != nil || len(none.Items) != 1 || none.Items[0].OperatorEnabledPermissionCount == nil || *none.Items[0].OperatorEnabledPermissionCount != 0 {
+		t.Fatalf("no-permission coverage was not filtered and counted by Identity: result=%+v err=%v", none, err)
+	}
+	if _, err := service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", PermissionCoverage: "unknown", Limit: 25}); !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("invalid permission coverage was accepted: %v", err)
+	}
+	if _, err := service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "client", PermissionCoverage: "none", Limit: 25}); !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("non-operator permission coverage was accepted: %v", err)
+	}
+	longArabicSearch, err := service.Search(ctx, "control-panel", domain.ActorSearchInput{Role: "operator", Query: strings.Repeat("م", 51), Limit: 25})
+	if err != nil {
+		t.Fatalf("operator directory search rejected a 51-character Arabic query: %v", err)
+	}
+	if len(longArabicSearch.Items) != 0 {
+		t.Fatalf("long Arabic query unexpectedly matched operators: %+v", longArabicSearch.Items)
 	}
 }

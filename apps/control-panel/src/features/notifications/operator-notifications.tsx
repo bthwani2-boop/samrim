@@ -1,12 +1,14 @@
 "use client";
 
 import type { Notification, NotificationKind } from "@bthwani/dsh";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { notificationKindLabel } from "./notification-presentation";
 import "./operator-notifications.module.css";
 
-type NotificationListPayload = Readonly<{ notifications?: ReadonlyArray<Notification>; unreadCount?: number }>;
+type NotificationListPayload = Readonly<{ notifications?: ReadonlyArray<Notification>; unreadCount?: number; nextCursor?: string }>;
 type NotificationReadPayload = Readonly<{ notificationId: string; readAt: string }>;
+type NotificationHistory = Readonly<{ operatorNotificationCursors?: ReadonlyArray<string> }>;
+const notificationPageSize = 50;
 
 export function OperatorNotifications() {
   const [items, setItems] = useState<ReadonlyArray<Notification>>([]);
@@ -15,27 +17,69 @@ export function OperatorNotifications() {
   const [refreshing, setRefreshing] = useState(false);
   const [pendingId, setPendingId] = useState("");
   const [error, setError] = useState("");
+  const [cursor, setCursor] = useState("");
+  const [cursorStack, setCursorStack] = useState<ReadonlyArray<string>>([]);
+  const [nextCursor, setNextCursor] = useState("");
+  const [routeStateReady, setRouteStateReady] = useState(false);
+  const requestSequence = useRef(0);
 
-  const load = useCallback(async (preserveCurrent = false) => {
+  useEffect(() => {
+    const syncPageFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const history = window.history.state as NotificationHistory | null;
+      setCursor(params.get("cursor") ?? "");
+      setCursorStack(history?.operatorNotificationCursors ?? []);
+    };
+    syncPageFromUrl();
+    setRouteStateReady(true);
+    window.addEventListener("popstate", syncPageFromUrl);
+    return () => window.removeEventListener("popstate", syncPageFromUrl);
+  }, []);
+
+  const load = useCallback(async (pageCursor: string, preserveCurrent = false) => {
+    const sequence = ++requestSequence.current;
     if (preserveCurrent) setRefreshing(true); else setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/notifications?limit=100", { cache: "no-store" });
+      const params = new URLSearchParams({ limit: String(notificationPageSize) });
+      if (pageCursor) params.set("cursor", pageCursor);
+      const response = await fetch(`/api/notifications?${params.toString()}`, { cache: "no-store" });
       if (!response.ok) {
         const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
         throw new Error(payload?.error?.message || "تعذر قراءة إشعارات التشغيل.");
       }
       const payload = await response.json() as NotificationListPayload;
+      if (sequence !== requestSequence.current) return;
       setItems(payload.notifications ?? []);
       setUnreadCount(payload.unreadCount ?? 0);
+      setNextCursor(payload.nextCursor ?? "");
     } catch (cause) {
+      if (sequence !== requestSequence.current) return;
+      if (!preserveCurrent) {
+        setItems([]);
+        setNextCursor("");
+      }
       setError(cause instanceof Error ? cause.message : "تعذر قراءة إشعارات التشغيل.");
     } finally {
-      if (preserveCurrent) setRefreshing(false); else setLoading(false);
+      if (sequence === requestSequence.current) {
+        if (preserveCurrent) setRefreshing(false); else setLoading(false);
+      }
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (routeStateReady) void load(cursor);
+  }, [cursor, load, routeStateReady]);
+
+  function navigatePage(pageCursor: string, pageStack: ReadonlyArray<string>) {
+    const url = new URL(window.location.href);
+    if (pageCursor) url.searchParams.set("cursor", pageCursor); else url.searchParams.delete("cursor");
+    const previousState = window.history.state;
+    const historyState = previousState && typeof previousState === "object" ? previousState : {};
+    window.history.pushState({ ...historyState, operatorNotificationCursors: pageStack }, "", `${url.pathname}${url.search}${url.hash}`);
+    setCursor(pageCursor);
+    setCursorStack(pageStack);
+  }
 
   async function markRead(item: Notification) {
     if (item.readAt || pendingId) return;
@@ -74,7 +118,7 @@ export function OperatorNotifications() {
           <strong>{unreadCount} إشعارات غير مقروءة</strong>
           <p>{unreadCount ? "ابدأ بالأحدث لتبقى على اطلاع بمسار التشغيل." : "لا توجد إشعارات جديدة تحتاج إلى متابعة."}</p>
         </div>
-        <button type="button" className="button button-secondary" disabled={loading || refreshing} onClick={() => void load(true)}>
+        <button type="button" className="button button-secondary" disabled={loading || refreshing} onClick={() => void load(cursor, true)}>
           {refreshing ? "جارٍ التحديث…" : "تحديث الإشعارات"}
         </button>
       </div>
@@ -82,8 +126,14 @@ export function OperatorNotifications() {
       {loading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تجهيز الإشعارات</strong></div> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة الإشعارات</strong><p>{error}</p></div> : null}
       {!loading && !error && !items.length ? <div className="access-card operator-notifications-empty"><p className="eyebrow">لا توجد تحديثات</p><h2>لا توجد إشعارات حالياً</h2><p className="muted">ستظهر هنا تحديثات العمليات وطلبات الانضمام عند تسجيل أحداث جديدة.</p></div> : null}
-      {!loading && !error && unreadItems.length ? <NotificationGroup title="الجديدة" count={unreadItems.length} items={unreadItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
-      {!loading && !error && readItems.length ? <NotificationGroup title="المقروءة" count={readItems.length} items={readItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
+      {!loading && items.length ? <p className="operator-notification-page-status" role="status">الصفحة الحالية: {items.length} إشعارًا · حد القراءة {notificationPageSize} لكل طلب</p> : null}
+      {!loading && unreadItems.length ? <NotificationGroup title="الجديدة" count={unreadItems.length} items={unreadItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
+      {!loading && readItems.length ? <NotificationGroup title="المقروءة" count={readItems.length} items={readItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
+      {!loading && (cursor || cursorStack.length > 0 || nextCursor) ? <nav className="operator-notification-pagination" aria-label="صفحات الإشعارات">
+        <button type="button" className="button button-secondary" disabled={loading || refreshing || (cursorStack.length === 0 && !cursor)} onClick={() => { const previous = [...cursorStack]; const previousCursor = previous.pop() ?? ""; navigatePage(previousCursor, previous); }}>الأحدث</button>
+        <span>كل صفحة تعرض حتى {notificationPageSize} إشعارًا</span>
+        <button type="button" className="button button-secondary" disabled={loading || refreshing || !nextCursor} onClick={() => navigatePage(nextCursor, [...cursorStack, cursor])}>الأقدم</button>
+      </nav> : null}
     </section>
   );
 }

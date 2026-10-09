@@ -1,5 +1,5 @@
-import { randomInt, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { randomInt, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page } from "@playwright/test";
@@ -36,14 +36,18 @@ export async function jsonRequest(base: string, pathname: string, token: string,
   return { response, body: await response.json().catch(() => null) as Record<string, any> | null };
 }
 
-export function readCanonicalRuntime(): { envFile: string; repoRoot: string; postgresUser: string; postgresDatabase: string } {
+export function readCanonicalRuntime(): { envFile: string; repoRoot: string; postgresUser: string; postgresDatabase: string; composeProject: string } {
   const repoRoots = [path.resolve(process.cwd()), path.resolve(process.cwd(), "../..")];
   const repoRoot = repoRoots.find((candidate) =>
-    existsSync(path.join(candidate, "infra/local/.env")) &&
     existsSync(path.join(candidate, "infra/local/compose/compose.yaml")),
   );
-  if (!repoRoot) throw new Error("canonical local runtime environment is required to identify the bootstrap Operator");
-  const envFile = path.join(repoRoot, "infra/local/.env");
+  if (!repoRoot) throw new Error("canonical local Compose definition is required to identify the runtime repository");
+  const envFile = path.resolve(process.env.SAMRIM_RUNTIME_COMPOSE_ENV_FILE?.trim() || path.join(repoRoot, "infra/local/.env"));
+  if (!existsSync(envFile)) throw new Error("configured local runtime Compose environment file does not exist");
+  const disposableCi = process.env.CI === "true" && process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "disposable-ci";
+  const composeProject = process.env.SAMRIM_RUNTIME_COMPOSE_PROJECT?.trim() || (disposableCi ? "samrim-local" : "");
+  if (!composeProject || !/^[a-z0-9][a-z0-9_-]*$/i.test(composeProject)) throw new Error("live Identity proof requires an explicit disposable Compose project");
+  if (composeProject === "samrim-local" && !disposableCi) throw new Error("live Identity proof refuses the persistent local Compose project");
   const env = Object.fromEntries(readFileSync(envFile, "utf8").split(/\r?\n/).filter((line) => line.trim() && !line.trim().startsWith("#")).map((line) => {
     const separator = line.indexOf("=");
     if (separator < 1) throw new Error("malformed canonical local runtime environment");
@@ -52,13 +56,11 @@ export function readCanonicalRuntime(): { envFile: string; repoRoot: string; pos
   const postgresUser = String(env.SAMRIM_POSTGRES_USER || "");
   const postgresDatabase = String(env.SAMRIM_POSTGRES_DB || "");
   if (!postgresUser || !postgresDatabase) throw new Error("canonical Postgres credentials are required for live Identity proof");
-  return { envFile, repoRoot, postgresUser, postgresDatabase };
+  return { envFile, repoRoot, postgresUser, postgresDatabase, composeProject };
 }
 
 function readCanonicalInitialOperator(): { actorId: string; phone: string } | null {
-  const { envFile, repoRoot, postgresUser, postgresDatabase } = readCanonicalRuntime();
-  const composeProject = process.env.SAMRIM_RUNTIME_COMPOSE_PROJECT?.trim() || "samrim-local";
-  if (!/^[a-z0-9][a-z0-9_-]*$/i.test(composeProject)) throw new Error("runtime Compose project name is invalid");
+  const { envFile, repoRoot, postgresUser, postgresDatabase, composeProject } = readCanonicalRuntime();
   const output = execFileSync(resolveTrustedExecutable("docker"), [
     "compose", "--project-name", composeProject, "--env-file", envFile,
     "-f", path.join(repoRoot, "infra/local/compose/compose.yaml"), "exec", "-T", "postgres",
@@ -146,7 +148,9 @@ export async function provisionIndependentOperator(
   const operator: PreparedOperator = { actorId: "", phone, token: "", profileId: "", actorCreatedByTest: false };
   const mutationHeaders = (key: string) => ({ "X-Acting-Actor-ID": actingOperatorID, "X-Correlation-ID": randomUUID(), "Idempotency-Key": key });
   const fullNameAr = "محمود أحمد علي الدوبحي";
-  const creation = await jsonRequest(identityBase, "/internal/operator-profiles", controlToken, { fullNameAr, phoneE164: phone }, mutationHeaders(randomUUID()));
+  const jobTitle = "مشغل عمليات";
+  const department = "العمليات";
+  const creation = await jsonRequest(identityBase, "/internal/operator-profiles", controlToken, { fullNameAr, phoneE164: phone, jobTitle, department }, mutationHeaders(randomUUID()));
   operator.profileId = String(creation.body?.profile?.id || "");
   if (!operator.profileId) {
     const createdProfile = await findOperatorProfileByPhone(identityBase, controlToken, actingOperatorID, phone).catch(() => null);
@@ -154,7 +158,7 @@ export async function provisionIndependentOperator(
   }
   expect(creation.response.status, "operator candidate profile creation must succeed").toBe(201);
   expect(operator.profileId).toMatch(/^oprof_/);
-  expect(creation.body?.profile?.state).toBe("pending_review");
+  expect(creation.body?.profile).toMatchObject({ state: "pending_review", fullNameAr, jobTitle, department, phoneE164: phone });
 
   const approval = await jsonRequest(identityBase, "/internal/operator-profiles/" + encodeURIComponent(operator.profileId) + "/approve", controlToken, { expectedVersion: 1 }, mutationHeaders(randomUUID()));
   expect(approval.response.status, "operator profile review must precede role admission").toBe(200);
@@ -205,17 +209,29 @@ async function assertNoExistingActorForPhone(identityBase: string, controlToken:
   }
 }
 
-async function findOperatorProfileByPhone(identityBase: string, controlToken: string, actingOperatorID: string, phone: string): Promise<Readonly<{ id: string; actorId?: string; state: string }> | null> {
+export async function findOperatorProfileByPhone(identityBase: string, controlToken: string, actingOperatorID: string, phone: string): Promise<Readonly<{ id: string; actorId?: string; phoneE164: string; fullNameAr: string; jobTitle: string; department: string; state: string; version: number; roleEnabled?: boolean; securityEnabled?: boolean; activatedAt?: string }> | null> {
   const params = new URLSearchParams({ q: phone, state: "all", sort: "created_desc", limit: "10" });
   const response = await fetch(identityBase + "/internal/operator-profiles?" + params, {
     headers: { Accept: "application/json", Authorization: "Bearer " + controlToken, "X-Acting-Actor-ID": actingOperatorID },
     signal: AbortSignal.timeout(5_000),
   });
   if (!response.ok) return null;
-  const body = await response.json() as { items?: Array<{ id?: string; actorId?: string; phoneE164?: string; state?: string }> };
+  const body = await response.json() as { items?: Array<{ id?: string; actorId?: string; phoneE164?: string; fullNameAr?: string; jobTitle?: string; department?: string; state?: string; version?: number; roleEnabled?: boolean; securityEnabled?: boolean; activatedAt?: string }> };
   const profile = body.items?.find((item) => item.phoneE164 === phone);
-  if (!profile?.id || !profile.state) return null;
-  return { id: profile.id, ...(profile.actorId ? { actorId: profile.actorId } : {}), state: profile.state };
+  if (!profile?.id || !profile.phoneE164 || !profile.fullNameAr || !profile.jobTitle || !profile.department || !profile.state || profile.version === undefined) return null;
+  return {
+    id: profile.id,
+    phoneE164: profile.phoneE164,
+    fullNameAr: profile.fullNameAr,
+    jobTitle: profile.jobTitle,
+    department: profile.department,
+    state: profile.state,
+    version: profile.version,
+    ...(profile.actorId ? { actorId: profile.actorId } : {}),
+    ...(profile.roleEnabled !== undefined ? { roleEnabled: profile.roleEnabled } : {}),
+    ...(profile.securityEnabled !== undefined ? { securityEnabled: profile.securityEnabled } : {}),
+    ...(profile.activatedAt ? { activatedAt: profile.activatedAt } : {}),
+  };
 }
 
 export async function waitForMailpitCode(mailpitBaseUrl: string, phone: string, purpose: string, sentAfter: number): Promise<string> {
@@ -261,7 +277,7 @@ export async function registerOperator(page: Page, operator: PreparedOperator, b
     expect(currentSession.status).toBe(200);
     expect(currentSession.body.identity?.subject).toBe(requiredEnv("PLAYWRIGHT_DEVELOPMENT_OPERATOR_ACTOR_ID"));
     expect(currentSession.body.identity?.role).toBe("operator");
-    await page.getByText("حساب المشغل", { exact: true }).click();
+    await page.locator('summary[aria-label="الحساب"]').click();
     await page.getByRole("button", { name: "تسجيل الخروج", exact: true }).click();
   }
   await expect(signInHeading).toBeVisible();

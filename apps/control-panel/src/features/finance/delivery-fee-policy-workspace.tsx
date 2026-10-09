@@ -1,4 +1,5 @@
 "use client";
+import { TextArea } from "@bthwani/design-system/web";
 
 import { financialPolicyStateLabel } from "@bthwani/dsh";
 import type { DeliveryFeePolicy } from "@bthwani/dsh";
@@ -123,7 +124,7 @@ export function DeliveryFeePolicyWorkspace() {
         <label className="field-label" htmlFor="delivery-size-rate">رسوم كل وحدة حجم (ريال)<input id="delivery-size-rate" type="number" min="0" value={form.orderSizeRateMinor} onChange={(event) => update("orderSizeRateMinor", event.target.value)} disabled={busy || !canEdit} /></label>
         <label className="field-label" htmlFor="delivery-zone">بدل المنطقة (ريال)<input id="delivery-zone" type="number" min="0" value={form.zoneSurchargeMinor} onChange={(event) => update("zoneSurchargeMinor", event.target.value)} disabled={busy || !canEdit} /></label>
       </div>
-      <label className="field-label" htmlFor="delivery-policy-reason">سبب التغيير<textarea id="delivery-policy-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} disabled={busy || !canEdit} /></label>
+      <label className="field-label" htmlFor="delivery-policy-reason">سبب التغيير<TextArea className="resize-none" id="delivery-policy-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} disabled={busy || !canEdit} /></label>
       {error ? <p className="validation-error" role="alert">{error}</p> : null}
       <button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || !canEdit || !validForm(form) || reason.trim().length < 5 || reason.trim().length > 500}>{busy ? "جارٍ التفعيل والتحقق…" : policy ? "تفعيل نسخة معدلة" : "إنشاء السياسة الأولى"}</button>
     </> : null}

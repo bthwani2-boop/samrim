@@ -13,7 +13,7 @@ func TestStoreRegistryPermissions(t *testing.T) {
 	}{
 		{name: "published targets", state: " published ", want: []string{"partners", "marketing", "platform_policies"}},
 		{name: "hidden stores", state: "hidden", want: []string{"partners"}},
-		{name: "all states", state: "", want: []string{"partners"}},
+		{name: "all states", state: "", want: []string{"partners", "catalog"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

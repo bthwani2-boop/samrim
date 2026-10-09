@@ -1,4 +1,5 @@
 @import "@bthwani/design-system/theme.css";
+@import "@bthwani/design-system/web.css";
 
 * { box-sizing: border-box; }
 html { min-height: 100%; background: var(--surface-warm); direction: rtl; }

@@ -1,4 +1,5 @@
 "use client";
+import { TextArea } from "@bthwani/design-system/web";
 
 import type { CommercialStoreType, CommercialStoreTypeListResponse, CommerceVertical, CommerceVerticalListResponse, StoreTypeCommissionDefault, StoreTypeCommissionDefaultsResponse } from "@bthwani/dsh";
 import { useEffect, useState } from "react";
@@ -143,7 +144,7 @@ export function StoreTypeCommissionDefaultWorkspace() {
           </div>;
         })}
       </fieldset>
-      <label className="field-label" htmlFor="store-type-commission-default-reason">سبب التغيير (إلزامي، 8 إلى 500 حرف)<textarea id="store-type-commission-default-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={8} maxLength={500} rows={3} disabled={busyMode !== null} placeholder="وضح سبب تعديل النسبة المقترحة" /></label>
+      <label className="field-label" htmlFor="store-type-commission-default-reason">سبب التغيير (إلزامي، 8 إلى 500 حرف)<TextArea className="resize-none" id="store-type-commission-default-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={8} maxLength={500} rows={3} disabled={busyMode !== null} placeholder="وضح سبب تعديل النسبة المقترحة" /></label>
     </> : null}
     {error ? <p className="validation-error" role="alert">{error}</p> : null}
     {message ? <output className="success">{message}</output> : null}

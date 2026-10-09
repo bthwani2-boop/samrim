@@ -72,6 +72,7 @@ const schemaNames = [
   "OperatorProfilePage",
   "OperatorProfileCreateRequest",
   "OperatorProfileUpdateRequest",
+  "OperatorRoleDetailsUpdateRequest",
   "OperatorProfileMutationRequest",
   "OperatorProfileResponse",
   "OperatorProfileGrantResponse",

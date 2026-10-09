@@ -129,7 +129,7 @@ export function PartnerDirectory() {
   return <section className="partner-directory" aria-label="سجل الشركاء التشغيلي">
     <div className="partner-registry-toolbar">
       <search className="partner-registry-search" aria-label="البحث والتصفية في سجل الشركاء">
-        <form onSubmit={(event) => { event.preventDefault(); navigate(enabledFilter, query.trim().slice(0, 100), sort); }}>
+        <form noValidate onSubmit={(event) => { event.preventDefault(); navigate(enabledFilter, query.trim().slice(0, 100), sort); }}>
           <label className="field-label" htmlFor="partner-roster-search">رقم الهاتف<input id="partner-roster-search" inputMode="tel" maxLength={100} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="بحث برقم الهاتف" /></label>
           <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
         </form>

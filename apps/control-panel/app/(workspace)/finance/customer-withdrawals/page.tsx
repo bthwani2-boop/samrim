@@ -20,3 +20,5 @@ export default async function FinanceCustomerWithdrawalsPage({ searchParams }: R
   };
   return <FinanceWorkspace resource="customer-withdrawals"><CustomerWithdrawalQueue initialQuery={initialQuery} /></FinanceWorkspace>;
 }
+
+export const metadata = { title: "مراجعة سحوبات العملاء" };

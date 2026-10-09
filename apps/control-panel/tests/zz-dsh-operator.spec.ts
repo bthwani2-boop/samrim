@@ -1,5 +1,5 @@
-import { randomInt } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { randomInt } from "node:crypto";
 import { existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -141,6 +141,14 @@ test("@live provision and activate an independent operator for downstream DSH se
   const primaryOperator = await findOrBootstrapPrimaryOperator(identityBase, controlToken, bootstrapToken);
   const independentOperator = await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId);
   const fixturePath = dshRuntimeFixturePath;
+  const actingProofOperator = fixturePath
+    ? await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId)
+    : null;
+  if (actingProofOperator) {
+    for (const permission of ["operations", "partners", "catalog", "marketing", "finance", "platform_policies"]) {
+      await enableOperatorPermission(identityBase, controlToken, primaryOperator.actorId, actingProofOperator.actorId, permission);
+    }
+  }
   if (fixturePath) {
     await enableOperatorPermission(identityBase, controlToken, primaryOperator.actorId, independentOperator.actorId, "operations");
     await enableOperatorPermission(identityBase, controlToken, primaryOperator.actorId, independentOperator.actorId, "finance");
@@ -156,6 +164,24 @@ test("@live provision and activate an independent operator for downstream DSH se
       console.log("DSH_PRIMARY_OPERATOR_ACTIVATION=PASS");
     } finally {
       await primaryContext.close();
+    }
+  }
+  if (actingProofOperator) {
+    const actingContext = await browser.newContext({ baseURL: baseUrl, locale: "ar-YE" });
+    try {
+      const actingPage = await actingContext.newPage();
+      await enableVirtualAuthenticator(actingPage);
+      await registerOperator(actingPage, actingProofOperator, baseUrl, mailpitBase);
+      const sessionSubject = await actingPage.evaluate(async () => {
+        const response = await fetch("/api/auth/session", { cache: "no-store" });
+        if (!response.ok) return null;
+        const session = await response.json() as { identity?: { subject?: string } };
+        return session.identity?.subject ?? null;
+      });
+      expect(sessionSubject, "the activated DSH acting Operator must own its session").toBe(actingProofOperator.actorId);
+      console.log("DSH_ACTING_OPERATOR_ACTIVATION=PASS");
+    } finally {
+      await actingContext.close();
     }
   }
   const independentContext = await browser.newContext({ baseURL: baseUrl, locale: "ar-YE" });

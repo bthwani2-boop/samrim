@@ -184,6 +184,7 @@ export function BeneficiarySettlementWorkspace({ actorType, initialQuery }: Bene
   const [fieldFinanceSummary, setFieldFinanceSummary] = useState<FieldFinanceSummary | null>(null);
   const [nextCursor, setNextCursor] = useState("");
   const [registryLoading, setRegistryLoading] = useState(true);
+  const [registryError, setRegistryError] = useState(false);
   const [batchListLoading, setBatchListLoading] = useState(false);
   const [batchDetailLoading, setBatchDetailLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -235,7 +236,7 @@ export function BeneficiarySettlementWorkspace({ actorType, initialQuery }: Bene
 
   const read = useCallback(async (route: Pick<BeneficiarySettlementInitialQuery, "status" | "search" | "sort" | "cursor">, preserveSelection = false) => {
     const sequence = ++registrySequence.current;
-    setRegistryLoading(true); setError(""); setNotice("");
+    setRegistryLoading(true); setRegistryError(false); setError(""); setNotice("");
     try {
       const query = new URLSearchParams({ actorType, limit: "50" });
       if (route.search.trim()) query.set("search", route.search.trim());
@@ -254,7 +255,7 @@ export function BeneficiarySettlementWorkspace({ actorType, initialQuery }: Bene
         const eligibleIds = new Set(nextBeneficiaries.filter((item) => item.latestPayout?.status === "APPROVED").map((item) => item.id));
         selection.retainValid(eligibleIds);
       } else selection.clear();
-    } catch (value) { if (sequence === registrySequence.current) setError(value instanceof Error ? value.message : "تعذر قراءة سجل المستفيدين"); }
+    } catch (value) { if (sequence === registrySequence.current) { setRegistryError(true); setError(value instanceof Error ? value.message : "تعذر قراءة سجل المستفيدين"); } }
     finally { if (sequence === registrySequence.current) setRegistryLoading(false); }
   }, [actorType, admissionState, selection.clear, selection.retainValid]);
 
@@ -695,9 +696,11 @@ export function BeneficiarySettlementWorkspace({ actorType, initialQuery }: Bene
     <div className="finance-toolbar"><div><p className="eyebrow">المالية · التسويات</p><h2 id="beneficiary-settlement-title">{actorType === "field" ? "مستحقات الميداني" : "مستحقات وتسويات الشركاء والكباتن والميدان"}</h2></div>{actorType !== "field" ? <button className="button button-secondary" type="button" onClick={() => void read({ status, search, sort, cursor })} disabled={registryLoading}>{registryLoading ? "جارٍ التحديث…" : "تحديث السجل"}</button> : null}</div>
     {actorType === "field" ? <>
       <p className={styles.fieldEligibility}>الميداني مؤهل للاستحقاق بمجرد تفعيله. تُسجّل مكافأة كل متجر تلقائيًا بعد ظهوره للعملاء.</p>
-      {fieldRosterTotalCount !== null ? <p className={styles.fieldRosterSummary} aria-live="polite">إجمالي الميدانيين المطابقين للبحث وفلتر التفعيل: {fieldRosterTotalCount.toLocaleString("ar-YE")} · العدد يشمل السجل قبل تطبيق فلتر طلب التسوية.</p> : null}
-      <p className={styles.fieldInlineSummary} aria-live="polite">صفوف هذه الصفحة: {filtered.length.toLocaleString("ar-YE")} ميداني · {acquiredStoreTotal.toLocaleString("ar-YE")} متجر مستحق · مكتسب {formatMoney(earnedLifetimeTotal, "YER")} · متاح {formatMoney(availableTotal, "YER")} · محجوز {formatMoney(heldTotal, "YER")} · {requestCount.toLocaleString("ar-YE")} طلب تسوية</p>
-      {fieldFinanceSummary ? <p className={styles.fieldGlobalSummary} aria-live="polite">إجمالي السجل المالي: {fieldFinanceSummary.fieldActorCount.toLocaleString("ar-YE")} ملفًا · {fieldFinanceSummary.acquiredStoreCount.toLocaleString("ar-YE")} متجر مستحق · مكتسب {formatMoney(fieldFinanceSummary.earnedMinor, fieldFinanceSummary.currency)} · متاح {formatMoney(fieldFinanceSummary.eligibleAvailableMinor, fieldFinanceSummary.currency)} · محجوز {formatMoney(fieldFinanceSummary.heldMinor, fieldFinanceSummary.currency)} · {fieldFinanceSummary.payoutRequestCount.toLocaleString("ar-YE")} طلب · {fieldFinanceSummary.activeDestinationCount.toLocaleString("ar-YE")} وجهة نشطة</p> : null}
+      {registryLoading ? <p className={styles.fieldInlineSummary} role="status">جارٍ تحميل سجل المستحقات…</p> : registryError ? <p className={styles.fieldInlineSummary}>ملخص الصفحة غير متاح حتى ينجح تحميل السجل.</p> : <>
+        {fieldRosterTotalCount !== null ? <p className={styles.fieldRosterSummary} aria-live="polite">إجمالي الميدانيين المطابقين للبحث وفلتر التفعيل: {fieldRosterTotalCount.toLocaleString("ar-YE")} · العدد يشمل السجل قبل تطبيق فلتر طلب التسوية.</p> : null}
+        <p className={styles.fieldInlineSummary} aria-live="polite">صفوف هذه الصفحة: {filtered.length.toLocaleString("ar-YE")} ميداني · {acquiredStoreTotal.toLocaleString("ar-YE")} متجر مستحق · مكتسب {formatMoney(earnedLifetimeTotal, "YER")} · متاح {formatMoney(availableTotal, "YER")} · محجوز {formatMoney(heldTotal, "YER")} · {requestCount.toLocaleString("ar-YE")} طلب تسوية</p>
+        {fieldFinanceSummary ? <p className={styles.fieldGlobalSummary} aria-live="polite">إجمالي السجل المالي: {fieldFinanceSummary.fieldActorCount.toLocaleString("ar-YE")} ملفًا · {fieldFinanceSummary.acquiredStoreCount.toLocaleString("ar-YE")} متجر مستحق · مكتسب {formatMoney(fieldFinanceSummary.earnedMinor, fieldFinanceSummary.currency)} · متاح {formatMoney(fieldFinanceSummary.eligibleAvailableMinor, fieldFinanceSummary.currency)} · محجوز {formatMoney(fieldFinanceSummary.heldMinor, fieldFinanceSummary.currency)} · {fieldFinanceSummary.payoutRequestCount.toLocaleString("ar-YE")} طلب · {fieldFinanceSummary.activeDestinationCount.toLocaleString("ar-YE")} وجهة نشطة</p> : null}
+      </>}
     </> : <p className="muted" aria-live="polite">سجلات الصفحة الحالية: {filtered.length.toLocaleString("ar-YE")} مستفيد؛ {requestCount.toLocaleString("ar-YE")} لديهم طلب تسوية؛ {selection.selected.length.toLocaleString("ar-YE")} طلبات معتمدة محددة.</p>}
      <nav className={styles.actorNav} aria-label="سجلات مستحقات المستفيدين">
         {([
@@ -744,7 +747,7 @@ export function BeneficiarySettlementWorkspace({ actorType, initialQuery }: Bene
           <td><div className={styles.fieldRowActions}>{payoutActionView}<button className="button button-quiet" type="button" onClick={() => void readFinancialStatement(item)} disabled={statementBusy}>الحركات</button></div></td>
         </tr>;
       })}
-      {filtered.length === 0 ? <tr><td colSpan={9} className={styles.fieldEmpty}>{registryLoading ? "جارٍ التحميل…" : "لا توجد نتائج مطابقة."}</td></tr> : null}
+      {filtered.length === 0 ? <tr><td colSpan={9} className={styles.fieldEmpty}>{registryLoading ? <span role="status">جارٍ التحميل…</span> : registryError ? "تعذر تحميل سجل المستحقات. أعد المحاولة من «عرض النتائج»." : "لا توجد نتائج مطابقة."}</td></tr> : null}
         </tbody>
       </table>
     </section> : <div hidden={view !== "beneficiaries"} className="finance-table-wrap"><table className="finance-table"><caption className="sr-only">سجل مستحقات وتسويات المستفيدين</caption><thead><tr><th scope="col"><input type="checkbox" aria-label="تحديد الطلبات المعتمدة الظاهرة" checked={selection.allVisibleSelected} onChange={selection.toggleAllVisible} /></th><th scope="col">المستفيد</th><th scope="col">المتاح للتسوية</th><th scope="col">المحجوز</th><th scope="col">آخر طلب ومبلغه</th><th scope="col">حالة الطلب</th><th scope="col">وجهة التسوية</th><th scope="col">الإجراء</th></tr></thead><tbody>{filtered.map((item) => { const payout = item.latestPayout; const selectable = payout?.status === "APPROVED"; let payoutActionView: ReactNode = "—"; if (payout?.status === "HELD") payoutActionView = <button className="button button-quiet" type="button" onClick={() => void payoutAction(payout.id, "prepare")} disabled={busy || !reason.trim() || !payoutEvidenceReference.trim()}>تهيئة</button>; else if (payout?.status === "PREPARED") payoutActionView = <button className="button button-quiet" type="button" onClick={() => setPendingFinanceAction({ kind: "payout", payoutId: payout.id, action: "approve" })} disabled={busy || !reason.trim()}>مراجعة الاعتماد</button>; else if (payout?.status === "APPROVED") payoutActionView = <button className="button button-quiet" type="button" onClick={() => setPendingFinanceAction({ kind: "payout", payoutId: payout.id, action: "cancel" })} disabled={busy || !reason.trim()}>مراجعة الإلغاء</button>; return <tr key={item.id}><td><input type="checkbox" aria-label={`تحديد طلب تسوية للمستفيد ${item.displayName?.trim() || item.destination?.beneficiaryName?.trim() || actorLabel[item.actorType]}`} checked={selection.selectedIds.has(item.id)} disabled={!selectable} onChange={() => selection.toggle(item.id)} /></td><td><strong>{item.displayName?.trim() || item.destination?.beneficiaryName?.trim() || actorLabel[item.actorType]}</strong>{item.phoneMasked ? <><br /><bdi dir="ltr">{item.phoneMasked}</bdi></> : null}<br /><span className="muted">{actorLabel[item.actorType]}</span><br /><button className="button button-quiet" type="button" onClick={() => void readFinancialStatement(item)} disabled={statementBusy}>فتح التاريخ وكشف الحساب</button>{item.actorType === "partner" || item.actorType === "captain" || item.actorType === "field" ? <OfficialWalletDestinationManager actorType={item.actorType} actorId={item.actorId} /> : null}</td><td>{formatMoney(item.eligibleAvailableMinor, item.currency)}</td><td>{formatMoney(item.heldMinor, item.currency)}</td><td>{payout ? <><br />{formatMoney(payout.resolvedAmountMinor, payout.currency)}</> : "لا يوجد طلب"}</td><td>{payout ? payoutStatusLabel(payout.status) : "لا يوجد طلب"}</td><td>{item.destination ? <><bdi>{item.destination.walletIdentifierMasked}</bdi> · {officialWalletDestinationStatusLabel(item.destination.status)}</> : "لا توجد وجهة معتمدة"}</td><td>{payoutActionView}</td></tr>; })}</tbody></table>{!busy && filtered.length === 0 ? <p className="muted">لا توجد سجلات مطابقة. حدّث النتائج بعد تغيير البحث أو الفئة.</p> : null}</div>}

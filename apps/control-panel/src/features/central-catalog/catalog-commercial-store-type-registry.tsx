@@ -1,4 +1,5 @@
 "use client";
+import { TextArea } from "@bthwani/design-system/web";
 
 import type { CommercialStoreType, CommerceVertical } from "@bthwani/dsh";
 import { useCallback, useEffect, useState } from "react";
@@ -136,7 +137,7 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: Re
       <label className="field-label" htmlFor="commercial-type-name-ar">الاسم العربي<input id="commercial-type-name-ar" disabled={busy || !canEdit || !vertical?.active} value={nameAr} onChange={(event) => setNameAr(event.target.value)} placeholder="ملحمة" /></label>
       <label className="field-label" htmlFor="commercial-type-name-en">الاسم الإنجليزي<input id="commercial-type-name-en" disabled={busy || !canEdit || !vertical?.active} value={nameEn} onChange={(event) => setNameEn(event.target.value)} placeholder="Butcher" /></label>
       <label className="field-label"><input type="checkbox" disabled={busy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> نشط للاستخدام في ملفات الانضمام والسياسات</label>
-      <label className="field-label" htmlFor="commercial-type-reason">سبب التغيير<textarea id="commercial-type-reason" disabled={busy || !canEdit} minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+      <label className="field-label" htmlFor="commercial-type-reason">سبب التغيير<TextArea className="resize-none" id="commercial-type-reason" disabled={busy || !canEdit} minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
       <div className="catalog-registry-actions"><button type="button" className="button button-primary" disabled={busy || !canEdit || !vertical?.active} onClick={() => void save()}>{saveLabel}</button><button type="button" className="button button-secondary" disabled={busy} onClick={clearEditor}>إلغاء</button></div>
     </div> : null}
     {items.length > 0 ? <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr><th>النوع التجاري</th><th>الاسم الدولي</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.nameAr}</strong></td><td><bdi dir="ltr">{item.nameEn}</bdi></td><td>{item.active ? "نشط" : "متوقف"}</td><td><button type="button" className="catalog-row-action" disabled={busy || !canEdit} onClick={() => edit(item)}>تعديل</button></td></tr>)}</tbody></table></div> : null}

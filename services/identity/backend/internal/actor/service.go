@@ -22,8 +22,156 @@ type Service struct {
 	developmentOperatorActorID string
 }
 
+type rowQueryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+type InitialOperatorBootstrapStatus struct {
+	ActorID   string
+	CanCreate bool
+}
+
+type InitialOperatorPhoneUpdateStatus struct {
+	ActorID                              string
+	PhoneMatchesRequested                bool
+	PendingChallengesForOtherPhone       int
+	PendingEnrollmentTokensForOtherPhone int
+}
+
 func New(db *sql.DB, developmentOperatorActorID string) *Service {
 	return &Service{db: db, developmentOperatorActorID: strings.TrimSpace(developmentOperatorActorID)}
+}
+
+// ReadInitialOperatorActorID returns the canonical, persisted bootstrap actor.
+// A bootstrap row with a missing actor, Operator role, or permission registry is
+// incomplete and must not be repaired implicitly by development login.
+func ReadInitialOperatorActorID(ctx context.Context, source rowQueryer) (string, error) {
+	var actorID sql.NullString
+	err := source.QueryRowContext(ctx, `SELECT initial_operator_actor_id FROM identity_bootstrap_state WHERE id=1`).Scan(&actorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", domain.ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if !actorID.Valid || strings.TrimSpace(actorID.String) == "" {
+		return "", domain.ErrConflict
+	}
+	canonicalActorID := strings.TrimSpace(actorID.String)
+	var exists bool
+	if err := source.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM identity_actors a
+		JOIN identity_actor_roles r ON r.actor_id=a.id AND r.role='operator'
+		WHERE a.id=$1
+	)`, canonicalActorID).Scan(&exists); err != nil {
+		return "", err
+	}
+	if !exists {
+		return "", domain.ErrConflict
+	}
+	var permissionCount int
+	if err := source.QueryRowContext(ctx, `SELECT count(DISTINCT permission)
+		FROM identity_operator_permissions WHERE actor_id=$1 AND role='operator'`, canonicalActorID).Scan(&permissionCount); err != nil {
+		return "", err
+	}
+	if permissionCount != len(domain.OperatorPermissions()) {
+		return "", domain.ErrConflict
+	}
+	return canonicalActorID, nil
+}
+
+// ReadInitialOperatorBootstrapStatus reports whether the canonical operator
+// exists or the Identity database is still empty enough for first creation.
+func ReadInitialOperatorBootstrapStatus(ctx context.Context, source rowQueryer) (InitialOperatorBootstrapStatus, error) {
+	actorID, err := ReadInitialOperatorActorID(ctx, source)
+	if err == nil {
+		return InitialOperatorBootstrapStatus{ActorID: actorID}, nil
+	}
+	if !errors.Is(err, domain.ErrNotFound) {
+		return InitialOperatorBootstrapStatus{}, err
+	}
+	var occupied bool
+	if err := source.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_actors)
+		OR EXISTS(SELECT 1 FROM identity_actor_roles)
+		OR EXISTS(SELECT 1 FROM identity_password_credentials)
+		OR EXISTS(SELECT 1 FROM identity_challenges)
+		OR EXISTS(SELECT 1 FROM identity_challenge_deliveries)
+		OR EXISTS(SELECT 1 FROM identity_sessions)
+		OR EXISTS(SELECT 1 FROM identity_refresh_token_history)
+		OR EXISTS(SELECT 1 FROM identity_password_attempts)
+		OR EXISTS(SELECT 1 FROM identity_security_audit)
+		OR EXISTS(SELECT 1 FROM identity_bootstrap_state)
+		OR EXISTS(SELECT 1 FROM identity_operator_permissions)
+		OR EXISTS(SELECT 1 FROM identity_actor_legal_name_versions)
+		OR EXISTS(SELECT 1 FROM identity_actor_legal_names)
+		OR EXISTS(SELECT 1 FROM identity_actor_legal_name_events)
+		OR EXISTS(SELECT 1 FROM identity_webauthn_users)
+		OR EXISTS(SELECT 1 FROM identity_webauthn_credentials)
+		OR EXISTS(SELECT 1 FROM identity_webauthn_ceremonies)
+		OR EXISTS(SELECT 1 FROM identity_operator_recovery_credentials)
+		OR EXISTS(SELECT 1 FROM identity_operator_enrollment_tokens)
+		OR EXISTS(SELECT 1 FROM identity_operator_profiles)
+		OR EXISTS(SELECT 1 FROM identity_operator_profile_events)`).Scan(&occupied); err != nil {
+		return InitialOperatorBootstrapStatus{}, err
+	}
+	if occupied {
+		return InitialOperatorBootstrapStatus{}, domain.ErrConflict
+	}
+	return InitialOperatorBootstrapStatus{CanCreate: true}, nil
+}
+
+// ReadInitialOperatorPhoneUpdateStatus reads only whether the requested local
+// phone matches the canonical actor and how many pending phone-bound proofs
+// remain attached to a different phone. Phone values are never returned.
+func ReadInitialOperatorPhoneUpdateStatus(ctx context.Context, source rowQueryer, phoneInput string) (InitialOperatorPhoneUpdateStatus, error) {
+	phone, err := identitysecurity.NormalizePhoneE164(phoneInput)
+	if err != nil {
+		return InitialOperatorPhoneUpdateStatus{}, domain.ErrInvalidInput
+	}
+	actorID, err := ReadInitialOperatorActorID(ctx, source)
+	if err != nil {
+		return InitialOperatorPhoneUpdateStatus{}, err
+	}
+	var currentPhone string
+	if err := source.QueryRowContext(ctx, `SELECT phone_e164 FROM identity_actors WHERE id=$1`, actorID).Scan(&currentPhone); errors.Is(err, sql.ErrNoRows) {
+		return InitialOperatorPhoneUpdateStatus{}, domain.ErrConflict
+	} else if err != nil {
+		return InitialOperatorPhoneUpdateStatus{}, err
+	}
+	status := InitialOperatorPhoneUpdateStatus{ActorID: actorID, PhoneMatchesRequested: currentPhone == phone}
+	if err := source.QueryRowContext(ctx, `SELECT count(*) FROM identity_challenges
+		WHERE actor_id=$1 AND phone_e164<>$2 AND status='pending'`, actorID, phone).Scan(&status.PendingChallengesForOtherPhone); err != nil {
+		return InitialOperatorPhoneUpdateStatus{}, err
+	}
+	if err := source.QueryRowContext(ctx, `SELECT count(*) FROM identity_operator_enrollment_tokens
+		WHERE actor_id=$1 AND phone_e164<>$2 AND status='pending'`, actorID, phone).Scan(&status.PendingEnrollmentTokensForOtherPhone); err != nil {
+		return InitialOperatorPhoneUpdateStatus{}, err
+	}
+	return status, nil
+}
+
+func readInitialOperatorRoleView(ctx context.Context, source rowQueryer) (domain.ActorRoleView, error) {
+	actorID, err := ReadInitialOperatorActorID(ctx, source)
+	if err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	var view domain.ActorRoleView
+	var activatedAt sql.NullTime
+	err = source.QueryRowContext(ctx, `SELECT a.id,a.phone_e164,a.security_enabled,a.version,r.enabled,r.activated_at,r.created_at,r.version
+		FROM identity_actors a
+		JOIN identity_actor_roles r ON r.actor_id=a.id AND r.role='operator'
+		WHERE a.id=$1`, actorID).Scan(&view.ActorID, &view.PhoneE164, &view.SecurityEnabled, &view.ActorVersion, &view.Enabled, &activatedAt, &view.CreatedAt, &view.RoleVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.ActorRoleView{}, domain.ErrConflict
+	}
+	if err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	if activatedAt.Valid {
+		value := activatedAt.Time
+		view.ActivatedAt = &value
+	}
+	return view, nil
 }
 
 func (s *Service) ProvisionTrustedWithContext(ctx context.Context, caller string, input domain.ProvisionActorRoleInput, actingActorID string) (domain.ActorRoleView, error) {
@@ -36,6 +184,134 @@ func (s *Service) ProvisionFirstOperatorBootstrap(ctx context.Context, caller st
 	}
 	input.Role = "operator"
 	return s.provisionTrusted(ctx, caller, input, true, "")
+}
+
+// UpdateInitialOperatorPhoneForLocal changes only the persisted initial
+// Operator's local development phone. The caller is available only through
+// the local Docker bootstrap command; ordinary bootstrap remains idempotent.
+func (s *Service) UpdateInitialOperatorPhoneForLocal(ctx context.Context, caller, phoneInput string) (domain.ActorRoleView, error) {
+	if !domain.CanBootstrapFirstOperator(caller) {
+		return domain.ActorRoleView{}, domain.ErrForbidden
+	}
+	phone, err := identitysecurity.NormalizePhoneE164(phoneInput)
+	if err != nil {
+		return domain.ActorRoleView{}, domain.ErrInvalidInput
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:bootstrap:first-operator"); err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	actorID, err := ReadInitialOperatorActorID(ctx, tx)
+	if err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:phone:"+phone); err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	var currentPhone string
+	var actorVersion int
+	if err := tx.QueryRowContext(ctx, "SELECT phone_e164,version FROM identity_actors WHERE id=$1 FOR UPDATE", actorID).Scan(&currentPhone, &actorVersion); err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	phoneChanged := currentPhone != phone
+	sessionsRevoked := int64(0)
+	if phoneChanged {
+		var occupied bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_actors WHERE phone_e164=$1 AND id<>$2)
+			OR EXISTS(SELECT 1 FROM identity_operator_profiles WHERE phone_e164=$1)`, phone, actorID).Scan(&occupied); err != nil {
+			return domain.ActorRoleView{}, err
+		}
+		if occupied {
+			return domain.ActorRoleView{}, domain.ErrConflict
+		}
+		result, err := tx.ExecContext(ctx, "UPDATE identity_actors SET phone_e164=$1,version=version+1,updated_at=clock_timestamp() WHERE id=$2 AND version=$3", phone, actorID, actorVersion)
+		if err != nil {
+			if isUniqueViolation(err) {
+				return domain.ActorRoleView{}, domain.ErrConflict
+			}
+			return domain.ActorRoleView{}, err
+		}
+		if count, _ := result.RowsAffected(); count != 1 {
+			return domain.ActorRoleView{}, domain.ErrConflict
+		}
+		sessionsResult, err := tx.ExecContext(ctx, `UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1
+			WHERE actor_id=$1 AND revoked_at IS NULL`, actorID)
+		if err != nil {
+			return domain.ActorRoleView{}, err
+		}
+		sessionsRevoked, err = sessionsResult.RowsAffected()
+		if err != nil {
+			return domain.ActorRoleView{}, err
+		}
+	}
+	deliveriesResult, err := tx.ExecContext(ctx, `UPDATE identity_challenge_deliveries d
+		SET status='suppressed',finished_at=COALESCE(finished_at,clock_timestamp()),updated_at=clock_timestamp()
+		FROM identity_challenges c
+		WHERE d.challenge_id=c.id AND c.actor_id=$1 AND c.phone_e164<>$2 AND c.status='pending' AND d.status='pending'`, actorID, phone)
+	if err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	staleDeliveriesSuppressed, err := deliveriesResult.RowsAffected()
+	if err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	challengesResult, err := tx.ExecContext(ctx, `UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp()
+		WHERE actor_id=$1 AND phone_e164<>$2 AND status='pending'`, actorID, phone)
+	if err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	staleChallengesRevoked, err := challengesResult.RowsAffected()
+	if err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	tokensResult, err := tx.ExecContext(ctx, `UPDATE identity_operator_enrollment_tokens SET status='revoked',updated_at=clock_timestamp()
+		WHERE actor_id=$1 AND phone_e164<>$2 AND status='pending'`, actorID, phone)
+	if err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	staleTokensRevoked, err := tokensResult.RowsAffected()
+	if err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	if !phoneChanged && sessionsRevoked == 0 && staleDeliveriesSuppressed == 0 && staleChallengesRevoked == 0 && staleTokensRevoked == 0 {
+		view, err := readInitialOperatorRoleView(ctx, tx)
+		if err != nil {
+			return domain.ActorRoleView{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return domain.ActorRoleView{}, err
+		}
+		return view, nil
+	}
+	metadata := map[string]any{
+		"oldPhone":                     identitysecurity.MaskPhone(currentPhone),
+		"newPhone":                     identitysecurity.MaskPhone(phone),
+		"workload":                     "local-operator-phone-update",
+		"reason":                       "user-authorized local development update",
+		"sessionsRevoked":              sessionsRevoked,
+		"staleDeliveriesSuppressed":    staleDeliveriesSuppressed,
+		"staleChallengesRevoked":       staleChallengesRevoked,
+		"staleEnrollmentTokensRevoked": staleTokensRevoked,
+	}
+	eventType := "actor.phone_changed"
+	if !phoneChanged {
+		eventType = "actor.phone_change_proofs_revoked"
+	}
+	if err := auditTx(ctx, tx, eventType, actorID, caller, "success", "", metadata); err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	view, err := readInitialOperatorRoleView(ctx, tx)
+	if err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.ActorRoleView{}, err
+	}
+	return view, nil
 }
 
 func (s *Service) provisionTrusted(ctx context.Context, caller string, input domain.ProvisionActorRoleInput, bootstrapOnly bool, actingActorID string) (domain.ActorRoleView, error) {
@@ -54,9 +330,14 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 			return domain.ActorRoleView{}, domain.ErrInvalidInput
 		}
 	}
-	phone, err := identitysecurity.NormalizePhoneE164(input.PhoneE164)
-	if err != nil {
-		return domain.ActorRoleView{}, domain.ErrInvalidInput
+	phoneInput := strings.TrimSpace(input.PhoneE164)
+	var phone string
+	var err error
+	if !bootstrapOnly {
+		phone, err = identitysecurity.NormalizePhoneE164(phoneInput)
+		if err != nil {
+			return domain.ActorRoleView{}, domain.ErrInvalidInput
+		}
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -72,12 +353,29 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 		return domain.ActorRoleView{}, err
 	}
 	if bootstrapOnly {
-		var exists bool
-		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM identity_bootstrap_state WHERE id=1) OR EXISTS(SELECT 1 FROM identity_actor_roles WHERE role='operator')").Scan(&exists); err != nil {
+		if _, err := tx.ExecContext(ctx, "LOCK TABLE identity_actors IN SHARE ROW EXCLUSIVE MODE"); err != nil {
 			return domain.ActorRoleView{}, err
 		}
-		if exists {
+		view, err := readInitialOperatorRoleView(ctx, tx)
+		if err == nil {
+			if err := tx.Commit(); err != nil {
+				return domain.ActorRoleView{}, err
+			}
+			return view, nil
+		}
+		if !errors.Is(err, domain.ErrNotFound) {
+			return domain.ActorRoleView{}, err
+		}
+		status, err := ReadInitialOperatorBootstrapStatus(ctx, tx)
+		if err != nil {
+			return domain.ActorRoleView{}, err
+		}
+		if !status.CanCreate {
 			return domain.ActorRoleView{}, domain.ErrConflict
+		}
+		phone, err = identitysecurity.NormalizePhoneE164(phoneInput)
+		if err != nil {
+			return domain.ActorRoleView{}, domain.ErrInvalidInput
 		}
 	}
 
@@ -111,11 +409,12 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 
 	var enabled bool
 	var activatedAt sql.NullTime
+	var roleCreatedAt time.Time
 	var roleVersion int
-	err = tx.QueryRowContext(ctx, "SELECT enabled,activated_at,version FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE", a.ID, role).Scan(&enabled, &activatedAt, &roleVersion)
+	err = tx.QueryRowContext(ctx, "SELECT enabled,activated_at,created_at,version FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE", a.ID, role).Scan(&enabled, &activatedAt, &roleCreatedAt, &roleVersion)
 	roleCreated := false
 	if errors.Is(err, sql.ErrNoRows) {
-		if _, err := tx.ExecContext(ctx, "INSERT INTO identity_actor_roles(actor_id,role,enabled,activated_at,version) VALUES($1,$2,true,NULL,1)", a.ID, role); err != nil {
+		if err := tx.QueryRowContext(ctx, "INSERT INTO identity_actor_roles(actor_id,role,enabled,activated_at,version) VALUES($1,$2,true,NULL,1) RETURNING created_at", a.ID, role).Scan(&roleCreatedAt); err != nil {
 			return domain.ActorRoleView{}, err
 		}
 		if bootstrapOnly {
@@ -142,7 +441,7 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 	}
 
 	if bootstrapOnly {
-		if err := tx.QueryRowContext(ctx, "SELECT enabled,activated_at,version FROM identity_actor_roles WHERE actor_id=$1 AND role=$2", a.ID, role).Scan(&enabled, &activatedAt, &roleVersion); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT enabled,activated_at,created_at,version FROM identity_actor_roles WHERE actor_id=$1 AND role=$2", a.ID, role).Scan(&enabled, &activatedAt, &roleCreatedAt, &roleVersion); err != nil {
 			return domain.ActorRoleView{}, err
 		}
 	}
@@ -178,7 +477,7 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 		activated = &value
 	}
 	credVersion := 0
-	return domain.ActorRoleView{ActorID: a.ID, PhoneE164: a.PhoneE164, Role: role, Enabled: enabled, ActivatedAt: activated, SecurityEnabled: a.SecurityEnabled, ActorVersion: a.Version, RoleVersion: roleVersion, CredentialVersion: credVersion, ActorCreated: actorCreated, RoleCreated: roleCreated}, nil
+	return domain.ActorRoleView{ActorID: a.ID, PhoneE164: a.PhoneE164, Role: role, Enabled: enabled, ActivatedAt: activated, CreatedAt: roleCreatedAt, SecurityEnabled: a.SecurityEnabled, ActorVersion: a.Version, RoleVersion: roleVersion, CredentialVersion: credVersion, ActorCreated: actorCreated, RoleCreated: roleCreated}, nil
 }
 
 func (s *Service) RegisterClientTx(ctx context.Context, tx *sql.Tx, rawPhone, password string) (domain.Actor, error) {
@@ -429,7 +728,13 @@ func (s *Service) GetRole(ctx context.Context, caller, actorID, role string) (do
 		return domain.ActorRoleView{}, domain.ErrForbidden
 	}
 	view, err := scanRoleView(func(dest ...any) error {
-		return s.db.QueryRowContext(ctx, "SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role WHERE a.id=$1 AND r.role=$2", actorID, role).Scan(dest...)
+		return s.db.QueryRowContext(ctx, `SELECT a.id,a.phone_e164,
+			(SELECT p.full_name_ar FROM identity_operator_profiles p WHERE p.actor_id=a.id ORDER BY p.updated_at DESC,p.id DESC LIMIT 1),
+			r.job_title,r.department,
+			r.role,r.enabled,r.activated_at,r.created_at,
+			CASE WHEN r.role='operator' THEN (SELECT s.created_at FROM identity_sessions s WHERE s.actor_id=a.id AND s.role=r.role ORDER BY s.created_at DESC LIMIT 1) END,
+			r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version
+			FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role WHERE a.id=$1 AND r.role=$2`, actorID, role).Scan(dest...)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ActorRoleView{}, domain.ErrNotFound
@@ -478,7 +783,12 @@ func (s *Service) ReadRoles(ctx context.Context, caller, role string, actorIDs [
 		ids = append(ids, actorID)
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version
+	rows, err := s.db.QueryContext(ctx, `SELECT a.id,a.phone_e164,
+		(SELECT p.full_name_ar FROM identity_operator_profiles p WHERE p.actor_id=a.id ORDER BY p.updated_at DESC,p.id DESC LIMIT 1),
+		r.job_title,r.department,
+		r.role,r.enabled,r.activated_at,r.created_at,
+		CASE WHEN r.role='operator' THEN (SELECT s.created_at FROM identity_sessions s WHERE s.actor_id=a.id AND s.role=r.role ORDER BY s.created_at DESC LIMIT 1) END,
+		r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version
 		FROM identity_actors a
 		JOIN identity_actor_roles r ON r.actor_id=a.id
 		LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role
@@ -516,7 +826,7 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 		return domain.ActorSearchPage{}, domain.ErrInvalidInput
 	}
 	q := strings.TrimSpace(input.Query)
-	if len(q) > 100 {
+	if utf8.RuneCountInString(q) > 100 {
 		return domain.ActorSearchPage{}, domain.ErrInvalidInput
 	}
 	sort := strings.TrimSpace(input.Sort)
@@ -526,8 +836,15 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 	if sort != "phone_asc" && sort != "phone_desc" {
 		return domain.ActorSearchPage{}, domain.ErrInvalidInput
 	}
+	permissionCoverage := strings.TrimSpace(input.PermissionCoverage)
+	if permissionCoverage != "" {
+		if role != "operator" || (permissionCoverage != "none" && permissionCoverage != "some" && permissionCoverage != "complete") {
+			return domain.ActorSearchPage{}, domain.ErrInvalidInput
+		}
+	}
 	args := []any{role}
 	clauses := []string{"r.role=$1"}
+	queryArg := 0
 	if input.Enabled != nil {
 		args = append(args, *input.Enabled)
 		clauses = append(clauses, fmt.Sprintf("r.enabled=$%d", len(args)))
@@ -537,7 +854,8 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 			q = phone
 		}
 		args = append(args, q)
-		clauses = append(clauses, fmt.Sprintf("position($%d in a.phone_e164)>0", len(args)))
+		queryArg = len(args)
+		clauses = append(clauses, fmt.Sprintf("position($%d in a.phone_e164)>0", queryArg))
 	}
 	cursorClause := ""
 	if input.Cursor != "" {
@@ -565,12 +883,38 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 		}
 		cursorClause = fmt.Sprintf(" AND (a.phone_e164%s$%d OR (a.phone_e164=$%d AND a.id%s$%d))", comparison, phoneArg, phoneArg, comparison, idArg)
 	}
-	args = append(args, limit+1)
 	order := "ASC"
 	if sort == "phone_desc" {
 		order = "DESC"
 	}
-	query := "SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role WHERE " + strings.Join(clauses, " AND ") + cursorClause + " ORDER BY a.phone_e164 " + order + ",a.id " + order + " LIMIT $" + strconv.Itoa(len(args))
+	if q != "" && role == "operator" {
+		clauses[len(clauses)-1] = fmt.Sprintf("(position($%d in a.phone_e164)>0 OR position(lower($%d) in lower(r.job_title))>0 OR position(lower($%d) in lower(r.department))>0 OR EXISTS (SELECT 1 FROM identity_operator_profiles p WHERE p.actor_id=a.id AND position(lower($%d) in lower(p.full_name_ar))>0))", queryArg, queryArg, queryArg, queryArg)
+	}
+	permissionSummaryJoin := ""
+	permissionSummaryColumn := ""
+	if role == "operator" {
+		permissionSummaryJoin = ` LEFT JOIN LATERAL (
+			SELECT count(*) FILTER (WHERE p.enabled) AS enabled_count
+			FROM identity_operator_permissions p
+			WHERE p.actor_id=a.id AND p.role=r.role
+		) permission_summary ON true`
+		permissionSummaryColumn = ",permission_summary.enabled_count"
+	}
+	if permissionCoverage != "" {
+		permissionCount := "permission_summary.enabled_count"
+		switch permissionCoverage {
+		case "none":
+			clauses = append(clauses, permissionCount+"=0")
+		case "some":
+			args = append(args, len(domain.OperatorPermissions()))
+			clauses = append(clauses, fmt.Sprintf("%s>0 AND %s<$%d", permissionCount, permissionCount, len(args)))
+		case "complete":
+			args = append(args, len(domain.OperatorPermissions()))
+			clauses = append(clauses, fmt.Sprintf("%s=$%d", permissionCount, len(args)))
+		}
+	}
+	args = append(args, limit+1)
+	query := "SELECT a.id,a.phone_e164,(SELECT p.full_name_ar FROM identity_operator_profiles p WHERE p.actor_id=a.id ORDER BY p.updated_at DESC,p.id DESC LIMIT 1),r.job_title,r.department,r.role,r.enabled,r.activated_at,r.created_at,CASE WHEN r.role='operator' THEN (SELECT s.created_at FROM identity_sessions s WHERE s.actor_id=a.id AND s.role=r.role ORDER BY s.created_at DESC LIMIT 1) END,r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version" + permissionSummaryColumn + " FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role" + permissionSummaryJoin + " WHERE " + strings.Join(clauses, " AND ") + cursorClause + " ORDER BY a.phone_e164 " + order + ",a.id " + order + " LIMIT $" + strconv.Itoa(len(args))
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return domain.ActorSearchPage{}, err
@@ -578,7 +922,15 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 	defer func() { _ = rows.Close() }()
 	items := []domain.ActorRoleView{}
 	for rows.Next() {
-		view, err := scanRoleView(rows.Scan)
+		var view domain.ActorRoleView
+		var enabledPermissionCount int
+		var err error
+		if role == "operator" {
+			view, err = scanRoleView(rows.Scan, &enabledPermissionCount)
+			view.OperatorEnabledPermissionCount = &enabledPermissionCount
+		} else {
+			view, err = scanRoleView(rows.Scan)
+		}
 		if err != nil {
 			return domain.ActorSearchPage{}, err
 		}
@@ -695,19 +1047,22 @@ func (s *Service) SetOperatorPermission(ctx context.Context, caller, actorID, ac
 	return view, nil
 }
 
-type financeAccessQueryer interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}
+type financeAccessQueryer = rowQueryer
 
-func IsOperatorPermissionAdministrator(ctx context.Context, source financeAccessQueryer, actorID, developmentOperatorActorID string) (bool, error) {
-	if developmentOperatorActorID != "" && actorID == developmentOperatorActorID {
-		return true, nil
+func IsOperatorPermissionAdministrator(ctx context.Context, source rowQueryer, actorID, developmentOperatorActorID string) (bool, error) {
+	actorID = strings.TrimSpace(actorID)
+	developmentOperatorActorID = strings.TrimSpace(developmentOperatorActorID)
+	if actorID == "" {
+		return false, nil
 	}
-	var authorized bool
-	if err := source.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_bootstrap_state WHERE id=1 AND initial_operator_actor_id=$1)`, actorID).Scan(&authorized); err != nil {
+	canonicalActorID, err := ReadInitialOperatorActorID(ctx, source)
+	if errors.Is(err, domain.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
 		return false, err
 	}
-	return authorized, nil
+	return actorID == canonicalActorID && (developmentOperatorActorID == "" || developmentOperatorActorID == canonicalActorID), nil
 }
 
 func (s *Service) requireOperatorPermissionAdministrator(ctx context.Context, source financeAccessQueryer, actorID string) error {
@@ -924,16 +1279,26 @@ func newActorID() (string, error) {
 
 type scanner func(dest ...any) error
 
-func scanRoleView(scan scanner) (domain.ActorRoleView, error) {
+func scanRoleView(scan scanner, extra ...any) (domain.ActorRoleView, error) {
 	var view domain.ActorRoleView
-	var activated, lastAppOpenedAt sql.NullTime
+	var fullNameAr sql.NullString
+	var activated, lastAuthenticatedAt, lastAppOpenedAt sql.NullTime
 	var credVersion sql.NullInt64
-	if err := scan(&view.ActorID, &view.PhoneE164, &view.Role, &view.Enabled, &activated, &lastAppOpenedAt, &view.SecurityEnabled, &view.ActorVersion, &view.RoleVersion, &credVersion); err != nil {
+	destinations := []any{&view.ActorID, &view.PhoneE164, &fullNameAr, &view.JobTitle, &view.Department, &view.Role, &view.Enabled, &activated, &view.CreatedAt, &lastAuthenticatedAt, &lastAppOpenedAt, &view.SecurityEnabled, &view.ActorVersion, &view.RoleVersion, &credVersion}
+	destinations = append(destinations, extra...)
+	if err := scan(destinations...); err != nil {
 		return domain.ActorRoleView{}, err
+	}
+	if fullNameAr.Valid {
+		view.FullNameAr = fullNameAr.String
 	}
 	if activated.Valid {
 		value := activated.Time
 		view.ActivatedAt = &value
+	}
+	if lastAuthenticatedAt.Valid {
+		value := lastAuthenticatedAt.Time
+		view.LastAuthenticatedAt = &value
 	}
 	if lastAppOpenedAt.Valid {
 		value := lastAppOpenedAt.Time

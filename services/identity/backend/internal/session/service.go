@@ -52,7 +52,19 @@ func (s *Service) CreateDevelopment(ctx context.Context, role, clientInstanceId 
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
 	actorID := strings.TrimSpace(s.developmentActorIDs[role])
-	if actorID == "" {
+	if role == "operator" {
+		canonicalActorID, err := actor.ReadInitialOperatorActorID(ctx, s.db)
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.TokenPair{}, domain.ErrNotFound
+		}
+		if err != nil {
+			return domain.TokenPair{}, err
+		}
+		if actorID != "" && actorID != canonicalActorID {
+			return domain.TokenPair{}, domain.ErrForbidden
+		}
+		actorID = canonicalActorID
+	} else if actorID == "" {
 		return domain.TokenPair{}, domain.ErrNotFound
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -70,7 +82,7 @@ func (s *Service) CreateDevelopment(ctx context.Context, role, clientInstanceId 
 	}
 	ready := roleSessionReady(role, readiness)
 	if role == "operator" {
-		// Local password login activates only the configured, admitted operator.
+		// Local password login activates only the canonical, admitted operator.
 		// Normal operator login still requires a passkey.
 		ready = readiness.enabled && readiness.securityEnabled
 		if ready && !readiness.activated {

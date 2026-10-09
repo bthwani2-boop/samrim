@@ -263,8 +263,12 @@ func (s *Service) requireStoreRegistryPermission(ctx context.Context, actingActo
 }
 
 func storeRegistryPermissions(state string) []string {
-	if strings.TrimSpace(state) == "published" {
+	state = strings.TrimSpace(state)
+	if state == "published" {
 		return []string{"partners", "marketing", "platform_policies"}
+	}
+	if state == "" {
+		return []string{"partners", "catalog"}
 	}
 	return []string{"partners"}
 }

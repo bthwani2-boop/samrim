@@ -1,4 +1,5 @@
 "use client";
+import { TextArea } from "@bthwani/design-system/web";
 
 import type { CommercialStoreType, CommerceVertical } from "@bthwani/dsh";
 import { financialPolicyStateLabel, formatMoney } from "@bthwani/dsh";
@@ -204,7 +205,7 @@ export function FieldAcquisitionPolicyWorkspace() {
       <FieldAcquisitionPolicySelection verticalId={verticalId} verticals={verticals} selectedVertical={selectedVertical} verticalsError={verticalsError} onVerticalChange={chooseVertical} onVerticalRetry={() => void loadVerticals()} commercialTypes={commercialTypes} selectedCommercialType={selectedCommercialType} commercialTypeId={commercialTypeId} commercialTypesLoading={commercialTypesLoading} commercialTypesError={commercialTypesError} onCommercialTypeChange={chooseCommercialType} onCommercialTypesRetry={() => void loadCommercialTypes(verticalId)} busy={busy} readState={readState} policy={policy} error={error} />
       <label className="field-label" htmlFor="field-acquisition-reward">مبلغ الاستحقاق لهذا النوع (ريال يمني)<input id="field-acquisition-reward" type="number" min="50" step="50" value={rewardMinor} onChange={(event) => setRewardMinor(event.target.value)} disabled={busy || !canEdit || !canEditPolicy} /></label>
       <p className="muted">وحدة التقريب ثابتة عند ٥٠ ريالًا. المبلغ لا يُضبط في ملف الميداني أو المتجر.</p>
-      <label className="field-label" htmlFor="field-reward-reason">سبب إنشاء السياسة أو تغيير المبلغ<textarea id="field-reward-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} disabled={busy || !canEdit || !canEditPolicy} /></label>
+      <label className="field-label" htmlFor="field-reward-reason">سبب إنشاء السياسة أو تغيير المبلغ<TextArea className="resize-none" id="field-reward-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} disabled={busy || !canEdit || !canEditPolicy} /></label>
     </div>
      {message ? <output className="success">{message}</output> : null}
     {error && readState !== "error" ? <p className="validation-error" role="alert">{error}</p> : null}

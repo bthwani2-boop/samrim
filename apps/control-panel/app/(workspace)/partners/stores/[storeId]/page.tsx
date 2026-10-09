@@ -4,3 +4,5 @@ export default async function PartnerStorePage({ params }: { params: Promise<{ s
   const { storeId } = await params;
   return <StoreWorkspace storeId={storeId} />;
 }
+
+export const metadata = { title: "ملف المتجر" };

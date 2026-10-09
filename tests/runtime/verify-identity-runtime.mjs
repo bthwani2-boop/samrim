@@ -96,7 +96,7 @@ const admitReviewedOperatorCandidate = async (candidatePhone, fullNameAr, expect
   const created = await expect("POST", "/internal/operator-profiles", 201, {
     token: controlToken,
     headers: mutationHeaders(),
-    body: { fullNameAr, phoneE164: candidatePhone },
+    body: { fullNameAr, phoneE164: candidatePhone, jobTitle: "مسؤول العمليات", department: "العمليات" },
   });
   const profileID = created?.profile?.id;
   assert(typeof profileID === "string" && profileID.startsWith("oprof_"), "operator candidate profile was not created");
