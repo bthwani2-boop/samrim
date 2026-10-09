@@ -172,6 +172,13 @@ test("@live provision and activate an independent operator for downstream DSH se
       const actingPage = await actingContext.newPage();
       await enableVirtualAuthenticator(actingPage);
       await registerOperator(actingPage, actingProofOperator, baseUrl, mailpitBase);
+      const sessionSubject = await actingPage.evaluate(async () => {
+        const response = await fetch("/api/auth/session", { cache: "no-store" });
+        if (!response.ok) return null;
+        const session = await response.json() as { identity?: { subject?: string } };
+        return session.identity?.subject ?? null;
+      });
+      expect(sessionSubject, "the activated DSH acting Operator must own its session").toBe(actingProofOperator.actorId);
       console.log("DSH_ACTING_OPERATOR_ACTIVATION=PASS");
     } finally {
       await actingContext.close();

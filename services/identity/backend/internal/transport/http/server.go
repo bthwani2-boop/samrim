@@ -499,8 +499,12 @@ func (s *Server) bootstrapFirstOperator(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if !view.ActorCreated && !view.RoleCreated {
-		writeDomainError(w, domain.ErrConflict)
-		return
+		// Docker may create the canonical founder before initial Passkey enrollment.
+		// Only development can issue its invitation, never reactivate an owner.
+		if !s.config.Development || view.ActivatedAt != nil || !view.Enabled || !view.SecurityEnabled || strings.TrimSpace(input.PhoneE164) != view.PhoneE164 {
+			writeDomainError(w, domain.ErrConflict)
+			return
+		}
 	}
 	status := http.StatusOK
 	if view.ActorCreated || view.RoleCreated {
