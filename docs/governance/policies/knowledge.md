@@ -11,7 +11,6 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 - Wrong, stale or duplicate live meaning is corrected, merged or deleted; Git preserves history.
 - Research output is distilled into current BThwani invariants, decisions, constraints or evidence requirements, then the transcript is discarded from live Governance.
 - Mutable external facts are revalidated at actual use.
-- A consuming implementation pins one exact immutable Governance commit; the pin is provenance, not another knowledge registry.
 - Verifiers protect deterministic relationships/invariants and do not become prose or semantic authorities.
 - Future Product concepts remain absent until admitted by current need.
 

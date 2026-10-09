@@ -78,8 +78,8 @@ try {
 
     $env:NX_NO_CLOUD = 'true'
 
-    if (@($files | Where-Object { $_ -match '^(tools/dev/|biome\.jsonc?$)' }).Count -gt 0) {
-        pnpm exec biome lint tools/dev --diagnostic-level=error
+    if (@($files | Where-Object { $_ -match '^(tools/(dev|governance)/|biome\.jsonc?$)' }).Count -gt 0) {
+        pnpm exec biome lint tools/dev tools/governance --diagnostic-level=error
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 
@@ -88,11 +88,15 @@ try {
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 
-    if (@($files | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -eq 0) {
+    $governanceChanged = @($files | Where-Object { $_ -match $governanceOnlyPattern }).Count -gt 0
+    if ($governanceChanged) {
         node tools/governance/verify-governance.mjs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         node --test tools/governance/verify-governance.test.mjs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+
+    if (@($files | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -eq 0) {
         Write-Host "LOCAL_CHECK=PASS scope=governance-only files=$($files.Count)"
         return
     }

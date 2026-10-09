@@ -19,6 +19,25 @@ const files = [
 	"apps/control-panel/UX-CONTRACT.md",
 	"packages/design-system/README.md",
 ];
+function git(dir, args) {
+	const r = spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+	assert.equal(r.status, 0, "git " + args.join(" ") + ": " + r.stderr);
+	return r.stdout.trim();
+}
+function commit(dir, message) {
+	git(dir, ["add", "--all"]);
+	git(dir, [
+		"-c",
+		"user.name=Governance Fixture",
+		"-c",
+		"user.email=governance-fixture@example.invalid",
+		"commit",
+		"--quiet",
+		"--no-verify",
+		"-m",
+		message,
+	]);
+}
 function fixture() {
 	const dir = fs.mkdtempSync(
 		path.join(os.tmpdir(), "bthwani-governance-fixture-"),
@@ -34,15 +53,38 @@ function fixture() {
 	}
 	for (const p of ["docs/governance", "docs/reference/competitors"])
 		fs.cpSync(path.join(root, p), path.join(dir, p), { recursive: true });
-	return dir;
+	commit(dir, "trusted fixture baseline");
+	return { dir, trustedRef: git(dir, ["rev-parse", "HEAD"]) };
 }
-function run(dir) {
-	return spawnSync(process.execPath, [guard, "--root", dir], {
+function run(f) {
+	return spawnSync(process.execPath, [guard, "--root", f.dir], {
 		encoding: "utf8",
+		env: {
+			...process.env,
+			GITHUB_EVENT_PATH: "",
+			GOVERNANCE_TRUSTED_REF: f.trustedRef,
+		},
 	});
 }
 const cases = [
 	["clean snapshot passes", () => {}, true],
+	[
+		"unowned or duplicate governance document fails",
+		(dir) => {
+			const p = path.join(dir, "docs/governance/policies/shadow.md");
+			fs.writeFileSync(p, "# Shadow rule\nSEMANTIC_OWNER: docs/governance/policies/security.md\n");
+		},
+		false,
+	],
+	[
+		"retired governance reference fails even when document is not an entrypoint",
+		(dir) =>
+			fs.appendFileSync(
+				path.join(dir, "docs/governance/product/overview.md"),
+				"\nRefer to docs/governance/policies/nonexistent.md for the supposed owner.\n",
+			),
+		false,
+	],
 	[
 		"broken local link fails",
 		(dir) =>
@@ -72,6 +114,15 @@ const cases = [
 			fs.appendFileSync(
 				path.join(dir, "docs/reference/competitors/etlobni.md"),
 				"\nunauthorized edit\n",
+			),
+		false,
+	],
+	[
+		"untracked research file fails",
+		(dir) =>
+			fs.writeFileSync(
+				path.join(dir, "docs/reference/competitors/extra.md"),
+				"unexpected research\n",
 			),
 		false,
 	],
@@ -113,10 +164,10 @@ const cases = [
 ];
 for (const [label, mutate, pass] of cases)
 	test(label, () => {
-		const dir = fixture();
+		const f = fixture();
 		try {
-			mutate(dir);
-			const r = run(dir);
+			mutate(f.dir);
+			const r = run(f);
 			assert.equal(
 				r.status === 0,
 				pass,
@@ -124,9 +175,106 @@ for (const [label, mutate, pass] of cases)
 			);
 			if (!pass) assert.match(r.stderr, /GOVERNANCE_INTEGRITY_FAIL/);
 		} finally {
-			fs.rmSync(dir, { recursive: true, force: true });
+			fs.rmSync(f.dir, { recursive: true, force: true });
 		}
 	});
+test("committed research changes remain bound to the trusted base", () => {
+	const f = fixture();
+	try {
+		fs.appendFileSync(
+			path.join(f.dir, "docs/reference/competitors/etlobni.md"),
+			"\ncommitted change\n",
+		);
+		commit(f.dir, "candidate research change");
+		const r = run(f);
+		assert.notEqual(r.status, 0);
+		assert.match(r.stderr, /GOVERNANCE_INTEGRITY_FAIL/);
+	} finally {
+		fs.rmSync(f.dir, { recursive: true, force: true });
+	}
+});
+test("changed research mode remains bound to the trusted base", () => {
+	const f = fixture();
+	try {
+		git(f.dir, [
+			"update-index",
+			"--chmod=+x",
+			"docs/reference/competitors/nass.md",
+		]);
+		git(f.dir, [
+			"-c",
+			"user.name=Governance Fixture",
+			"-c",
+			"user.email=governance-fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"--no-verify",
+			"-m",
+			"candidate research mode change",
+		]);
+		const r = run(f);
+		assert.notEqual(r.status, 0);
+		assert.match(r.stderr, /GOVERNANCE_INTEGRITY_FAIL/);
+	} finally {
+		fs.rmSync(f.dir, { recursive: true, force: true });
+	}
+});
+test("ignored local work is excluded from repository integrity scanning", () => {
+	const f = fixture();
+	try {
+		fs.appendFileSync(
+			path.join(f.dir, ".git/info/exclude"),
+			"\n/ignored-local-work/\n",
+		);
+		const ignored = path.join(f.dir, "ignored-local-work");
+		fs.mkdirSync(ignored, { recursive: true });
+		const obsoleteAuthority = [
+			"bthwani2-boop/governance",
+			"and-docs",
+		].join("-");
+		fs.writeFileSync(path.join(ignored, "DESIGN.md"), obsoleteAuthority);
+		const r = run(f);
+		assert.equal(r.status, 0, r.stdout + " " + r.stderr);
+	} finally {
+		fs.rmSync(f.dir, { recursive: true, force: true });
+	}
+});
+test("repository symlinks fail closed instead of hiding scanned content", (t) => {
+	if (process.platform === "win32") return t.skip("symlink creation requires a Windows privilege");
+	const f = fixture();
+	try {
+		const target = path.join(f.dir, "external-owner.md");
+		fs.writeFileSync(target, "knowledge.sources.json\n");
+		fs.symlinkSync(target, path.join(f.dir, "docs/governance/linked-owner.md"));
+		const r = run(f);
+		assert.notEqual(r.status, 0);
+		assert.match(r.stderr, /repository symlink is not scanned/);
+	} finally {
+		fs.rmSync(f.dir, { recursive: true, force: true });
+	}
+});
+test("new branch events use protected main and ignore environment baseline overrides", () => {
+	const eventDir = fs.mkdtempSync(path.join(os.tmpdir(), "bthwani-governance-event-"));
+	const eventPath = path.join(eventDir, "event.json");
+	fs.writeFileSync(eventPath, JSON.stringify({ before: "0".repeat(40) }));
+	try {
+		const rootArgument = process.platform === "win32" ? root.toUpperCase() : root;
+		const r = spawnSync(process.execPath, [guard, "--root", rootArgument], {
+			cwd: root,
+			encoding: "utf8",
+			env: {
+				...process.env,
+				GITHUB_EVENT_PATH: eventPath,
+				GITHUB_SHA: "0".repeat(40),
+				GOVERNANCE_TRUSTED_REF: "0".repeat(40),
+			},
+		});
+		assert.equal(r.status, 0, r.stdout + " " + r.stderr);
+		assert.match(r.stdout, /GOVERNANCE_INTEGRITY_PASS competitor_tree=/);
+	} finally {
+		fs.rmSync(eventDir, { recursive: true, force: true });
+	}
+});
 test("legacy adapter removal requires consumer cutover and regression", () => {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bthwani-adapter-proof-"));
 	try {
@@ -181,9 +329,29 @@ test("committed governance candidates cannot bypass integrity verification", () 
   assert.match(candidate, /\$env:NX_BASE = \$governanceBase/);
   assert.match(candidate, /Where-Object \{ \$_ -notmatch \$governanceOnlyPattern \}/);
   assert.match(candidate, /--base=\$governanceBase --head=\$head/);
-  assert.ok(candidate.indexOf("pnpm exec nx affected") > candidate.indexOf("$candidateFiles"), "Nx only after affected scope is known");
+  const candidateFiles = candidate.indexOf("$candidateFiles = @(git diff");
+  const nxAffected = candidate.indexOf("pnpm exec nx affected");
+  assert.ok(candidateFiles >= 0, "candidate files must be computed");
+  assert.ok(nxAffected >= 0, "affected Nx verification must exist");
+  assert.ok(nxAffected > candidateFiles, "Nx only after affected scope is known");
   assert.match(candidate, /refs\/remotes\/origin\/main/);
   assert.match(candidate, /node tools\/governance\/verify-governance\.mjs/);
   assert.match(candidate, /node --test tools\/governance\/verify-governance\.test\.mjs/);
   assert.ok(candidate.indexOf("node --test tools/governance/verify-governance.test.mjs") < candidate.indexOf('Write-Host "VERIFY=PASS'), "candidate PASS must follow governance proof");
+});
+
+test("local mixed-scope changes still verify governance before Nx", () => {
+  const source = fs.readFileSync(path.join(root, "tools/dev/check-local.ps1"), "utf8");
+  const local = source.split("    $files = @(")[1] ?? "";
+  assert.match(local, /\$governanceChanged = @\(\$files \| Where-Object \{ \$_ -match \$governanceOnlyPattern \}\)\.Count -gt 0/);
+  assert.match(local, /if \(\$governanceChanged\) \{/);
+  const integrityCheck = local.indexOf("node tools/governance/verify-governance.mjs");
+  const fixtureCheck = local.indexOf("node --test tools/governance/verify-governance.test.mjs");
+  const nxDiscovery = local.indexOf("pnpm exec nx show projects");
+  assert.ok(integrityCheck >= 0, "the integrity check must exist");
+  assert.ok(fixtureCheck >= 0, "the adversarial fixture run must exist");
+  assert.ok(nxDiscovery >= 0, "the Nx discovery step must exist");
+  assert.ok(integrityCheck < nxDiscovery, "integrity runs on mixed changes before Nx");
+  assert.ok(fixtureCheck < nxDiscovery, "adversarial fixtures run on mixed changes before Nx");
+  assert.match(local, /tools\/\(dev\|governance\)\//, "governance tooling changes must run Biome locally");
 });

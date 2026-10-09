@@ -5,11 +5,23 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = path.resolve(
-	process.argv[2] === "--root"
-		? process.argv[3]
-		: path.join(path.dirname(fileURLToPath(import.meta.url)), "../.."),
+const repoRoot = path.resolve(
+	path.join(path.dirname(fileURLToPath(import.meta.url)), "../.."),
 );
+const root = path.resolve(
+	process.argv[2] === "--root" ? process.argv[3] : repoRoot,
+);
+const isRepositoryRoot = (() => {
+	try {
+		const actualRoot = fs.realpathSync.native(root);
+		const actualRepoRoot = fs.realpathSync.native(repoRoot);
+		return process.platform === "win32"
+			? actualRoot.toLowerCase() === actualRepoRoot.toLowerCase()
+			: actualRoot === actualRepoRoot;
+	} catch {
+		return false;
+	}
+})();
 const at = (p) => path.join(root, ...p.split("/"));
 const get = (p) => fs.readFileSync(at(p), "utf8");
 function fail(s) {
@@ -18,32 +30,72 @@ function fail(s) {
 function git(args, input) {
 	const p = spawnSync("git", args, { cwd: root, input, encoding: "utf8" });
 	if (p.status !== 0) fail("git " + args.join(" ") + ": " + p.stderr);
-	return p.stdout.trim();
+	return args.includes("-z") ? p.stdout : p.stdout.trim();
 }
+function resolveTrustedCommit() {
+	let ref =
+		isRepositoryRoot
+			? "refs/remotes/origin/main"
+			: process.env.GOVERNANCE_TRUSTED_REF || "refs/remotes/origin/main";
+	if (isRepositoryRoot && process.env.GITHUB_EVENT_PATH) {
+		let event;
+		try {
+			event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+		} catch {
+			fail("unable to read GitHub event for trusted governance baseline");
+		}
+		const before = event.before;
+		const validBefore =
+			typeof before === "string" &&
+			/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(before) &&
+			!/^0+$/.test(before);
+		ref =
+			event.pull_request?.base?.sha ||
+			(validBefore ? before : "refs/remotes/origin/main");
+	}
+	if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64}|refs\/remotes\/origin\/main)$/i.test(ref))
+		fail("invalid trusted governance baseline reference");
+	return git(["rev-parse", "--verify", ref + "^{commit}"]);
+}
+const trustedCommit = resolveTrustedCommit();
+// Only stable entrypoints are fixed; owner documents are verified by declaration and routing.
 const owners = [
-	"AGENTS.md",
-	"README.md",
-	"REPOSITORY-STRUCTURE.md",
-	"SECURITY.md",
-	".github/pull_request_template.md",
-	"docs/governance/README.md",
-	"docs/governance/platform.md",
-	"docs/governance/architecture.md",
-	"docs/governance/product/overview.md",
-	"docs/governance/product/capabilities.md",
-	"docs/governance/product/journeys.md",
-	"docs/governance/policies/security.md",
-	"docs/governance/policies/data.md",
-	"docs/governance/policies/finance.md",
-	"docs/governance/policies/experience.md",
-	"docs/governance/policies/design.md",
-	"apps/control-panel/DESIGN.md",
-	"apps/control-panel/UX-CONTRACT.md",
-	"packages/design-system/README.md",
+  "AGENTS.md",
+  "README.md",
+  "REPOSITORY-STRUCTURE.md",
+  "SECURITY.md",
+  ".github/pull_request_template.md",
+  "docs/governance/README.md",
+  "docs/governance/policies/security.md",
+  "apps/control-panel/DESIGN.md",
+  "apps/control-panel/UX-CONTRACT.md",
+  "packages/design-system/README.md"
 ];
 for (const p of owners)
 	if (!fs.existsSync(at(p)) || !fs.lstatSync(at(p)).isFile())
 		fail("canonical owner missing " + p);
+
+const governed = git(["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "docs/governance/"])
+  .split("\0").filter((p) => p.endsWith(".md"));
+const seenOwners = new Set();
+for (const p of governed) {
+  if (!fs.existsSync(at(p))) fail("tracked governance owner missing " + p);
+  const stat = fs.lstatSync(at(p));
+  if (stat.isSymbolicLink()) fail("repository symlink is not scanned " + p);
+  if (!stat.isFile()) fail("governance owner is not a file " + p);
+  const body = get(p);
+  const declaration = /^SEMANTIC_OWNER:\s*(\S+)\s*$/m.exec(body);
+  if (!declaration || declaration[1] !== p || seenOwners.has(declaration[1]))
+    fail("missing, duplicate, or misrouted semantic owner " + p);
+  seenOwners.add(p);
+}
+// References in every current owner must resolve, not only those in the root router.
+for (const source of governed) {
+  for (const referenced of get(source).match(/docs\/governance\/[\w/-]+\.md/g) ?? []) {
+    if (!seenOwners.has(referenced))
+      fail("governance reference points to absent owner " + source + " -> " + referenced);
+  }
+}
 if (fs.existsSync(at("knowledge.sources.json")))
 	fail("external donor pin resurrected");
 const law = get("AGENTS.md");
@@ -68,15 +120,13 @@ if (
 	!get("docs/governance/README.md").includes("docs/governance/architecture.md")
 )
 	fail("durable owner router incomplete");
-function walk(d, r = "") {
-	if (!fs.existsSync(d)) return [];
-	return fs.readdirSync(d, { withFileTypes: true }).flatMap((x) => {
-		if ([".git", "node_modules", ".nx", ".next"].includes(x.name)) return [];
-		const q = r ? r + "/" + x.name : x.name;
-		return x.isDirectory() ? walk(path.join(d, x.name), q) : [q];
-	});
-}
-const paths = walk(root);
+const paths = git([
+	"ls-files",
+	"--cached",
+	"--others",
+	"--exclude-standard",
+	"-z",
+]).split("\0").filter(Boolean);
 const oldRepo = ["bthwani2-boop/governance", "and-docs"].join("-"),
 	oldSha = ["GOVERNANCE", "CANONICAL", "SHA"].join("_");
 for (const p of paths) {
@@ -87,6 +137,14 @@ for (const p of paths) {
 	) continue;
 	if (!/\.(md|mdx|mjs|js|cjs|ts|tsx|json|jsonc|yml|yaml|ps1|psm1)$/.test(p))
 		continue;
+	let stat;
+	try {
+		stat = fs.lstatSync(at(p));
+	} catch {
+		fail("repository file missing " + p);
+	}
+	if (stat.isSymbolicLink()) fail("repository symlink is not scanned " + p);
+	if (!stat.isFile()) continue;
 	const s = get(p);
 	if (
 		s.includes(oldRepo) ||
@@ -111,33 +169,26 @@ for (const p of paths) {
 		}
 	}
 }
-const manifest = {
-	"README.md": "1ee645e386ce373a015f73e0a4bed6f78c78794a",
-	"etlobni.md": "04739bee7334f85108c7859c1a94c7714aad714d",
-	"hungerstation.md": "3a186568cbc941aff480fa33dadf27854fc425e7",
-	"nass.md": "0b980387e6f3f4e9d599d27167b89644c30eef59",
-	"tasaheel.md": "b5315d539415b2804d66737f6ab3253fa6f80f39",
-	"tawseel-one.md": "d9e69f9d1762d8f97aa2fb4dee44d671be14c9c8",
-};
-const dir = at("docs/reference/competitors");
-if (!fs.existsSync(dir)) fail("research directory missing");
-const names = fs.readdirSync(dir).sort(),
-	expected = Object.keys(manifest).sort();
-if (JSON.stringify(names) !== JSON.stringify(expected))
-	fail("research file set differs");
-const rows = [];
-for (const n of names) {
-	const p = path.join(dir, n),
-		stat = fs.lstatSync(p);
-	if (!stat.isFile() || stat.isSymbolicLink())
-		fail("research mode mismatch " + n);
-	const blob = git(["hash-object", "--no-filters", p]);
-	if (blob !== manifest[n]) fail("research blob differs " + n);
-	rows.push("100644 blob " + blob + "\t" + n);
-}
-const tree = git(["mktree", "--missing"], rows.join("\n") + "\n");
-if (tree !== "c9e63f530dd92f2a45bd60af6b24b4c868861c47")
-	fail("research tree differs " + tree);
-console.log(
-	"GOVERNANCE_INTEGRITY_PASS tree=" + tree + " inspected=" + paths.length,
+const researchPath = "docs/reference/competitors";
+const trustedTree = git(["rev-parse", trustedCommit + ":" + researchPath]);
+const candidateTree = git(["rev-parse", "HEAD:" + researchPath]);
+if (candidateTree !== trustedTree)
+	fail("research Git tree differs from protected baseline " + trustedTree);
+const worktreeDiff = spawnSync(
+	"git",
+	["diff", "--quiet", "--no-ext-diff", "--no-textconv", trustedCommit, "--", researchPath],
+	{ cwd: root, encoding: "utf8" },
 );
+if (worktreeDiff.status !== 0)
+	fail("research worktree differs from protected baseline " + trustedTree);
+const untrackedResearch = git([
+	"ls-files",
+	"--others",
+	"--exclude-standard",
+	"-z",
+	"--",
+	researchPath,
+]).split("\0").filter(Boolean);
+if (untrackedResearch.length > 0)
+	fail("untracked research files are not part of the protected baseline");
+console.log("GOVERNANCE_INTEGRITY_PASS competitor_tree=" + candidateTree);

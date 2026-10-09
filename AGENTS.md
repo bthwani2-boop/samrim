@@ -92,6 +92,8 @@ For a material cross-surface slice, a passing screen, API, typecheck, unit test 
 
 Proof must exercise the material failure modes of the affected claim, not only its happy path. Add negative, authorization, isolation, validation, recovery, idempotency or concurrency proof only when that risk is materially present in the affected cone.
 
+Where available, derive expected results from a contract, invariant or canonical readback independent of the implementation decision being tested. Reusing the same decision logic as both implementation and oracle can reproduce the same defect and a false pass.
+
 Use the native failing command and native failure output first. Broaden diagnostics only when broader evidence can change the repair decision.
 
 A valid PASS remains reusable until an affected change, relevant state change or environment change invalidates it. Rerun invalidated proof, not everything for reassurance.

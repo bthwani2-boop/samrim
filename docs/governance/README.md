@@ -61,7 +61,7 @@ Routing only: each listed file owns its own durable invariants. Every policy mus
 - `docs/governance/policies/reliability.md` — idempotency, failure handling, resilience and recovery
 - `docs/governance/policies/experience.md` — owns durable information architecture, shell/navigation, interaction, RTL/localization, accessibility and recovery invariants.
 - `docs/governance/policies/design.md` — owns durable cross-surface visual identity and design-language invariants; it is not an executable token or component registry.
-- `docs/governance/policies/quality.md` — evidence, testing, assurance and justified closure
+- `docs/governance/policies/quality.md` — approved-outcome quality, independent evidence and representative scale claims
 - `docs/governance/policies/scalability.md` — owns durable admission, escalation, proof and retirement rules for performance, capacity, scalability and load-management mechanisms; it does not own current topology, traffic, thresholds or provider choices.
 - `docs/governance/policies/delivery.md` — bounded work, safe changes, integration and delivery
 - `docs/governance/policies/integrations.md` — bounded external providers, rails and interoperability

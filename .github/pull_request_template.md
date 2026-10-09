@@ -13,3 +13,4 @@
 ## Exact candidate proof and remaining limits
 
 <!-- Direct proof and required CI on final HEAD. State any actual review, environment or behavior gaps honestly. -->
+<!-- If guard or CI enforcement changes, state its before/after behavior and how independent review of its sensitivity was handled. -->
