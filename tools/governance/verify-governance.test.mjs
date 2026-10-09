@@ -187,3 +187,13 @@ test("committed governance candidates cannot bypass integrity verification", () 
   assert.match(candidate, /node --test tools\/governance\/verify-governance\.test\.mjs/);
   assert.ok(candidate.indexOf("node --test tools/governance/verify-governance.test.mjs") < candidate.indexOf('Write-Host "VERIFY=PASS'), "candidate PASS must follow governance proof");
 });
+
+test("local mixed-scope changes still verify governance before Nx", () => {
+  const source = fs.readFileSync(path.join(root, "tools/dev/check-local.ps1"), "utf8");
+  const local = source.split("    $files = @(")[1] ?? "";
+  assert.match(local, /\$governanceChanged = @\(\$files \| Where-Object \{ \$_ -match \$governanceOnlyPattern \}\)\.Count -gt 0/);
+  assert.match(local, /if \(\$governanceChanged\) \{/);
+  assert.ok(local.indexOf("node tools/governance/verify-governance.mjs") < local.indexOf("pnpm exec nx show projects"), "integrity runs on mixed changes before Nx");
+  assert.ok(local.indexOf("node --test tools/governance/verify-governance.test.mjs") < local.indexOf("pnpm exec nx show projects"), "adversarial fixtures run on mixed changes before Nx");
+  assert.match(local, /tools\/\(dev\|governance\)\//, "governance tooling changes must run Biome locally");
+});
