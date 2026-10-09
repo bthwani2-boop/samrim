@@ -69,6 +69,23 @@ function run(f) {
 const cases = [
 	["clean snapshot passes", () => {}, true],
 	[
+		"unowned or duplicate governance document fails",
+		(dir) => {
+			const p = path.join(dir, "docs/governance/policies/shadow.md");
+			fs.writeFileSync(p, "# Shadow rule\nSEMANTIC_OWNER: docs/governance/policies/security.md\n");
+		},
+		false,
+	],
+	[
+		"retired governance reference fails even when document is not an entrypoint",
+		(dir) =>
+			fs.appendFileSync(
+				path.join(dir, "docs/governance/product/overview.md"),
+				"\nRefer to docs/governance/policies/nonexistent.md for the supposed owner.\n",
+			),
+		false,
+	],
+	[
 		"broken local link fails",
 		(dir) =>
 			fs.appendFileSync(

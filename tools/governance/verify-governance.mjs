@@ -58,30 +58,41 @@ function resolveTrustedCommit() {
 	return git(["rev-parse", "--verify", ref + "^{commit}"]);
 }
 const trustedCommit = resolveTrustedCommit();
+// Only stable entrypoints are fixed; owner documents are verified by declaration and routing.
 const owners = [
-	"AGENTS.md",
-	"README.md",
-	"REPOSITORY-STRUCTURE.md",
-	"SECURITY.md",
-	".github/pull_request_template.md",
-	"docs/governance/README.md",
-	"docs/governance/platform.md",
-	"docs/governance/architecture.md",
-	"docs/governance/product/overview.md",
-	"docs/governance/product/capabilities.md",
-	"docs/governance/product/journeys.md",
-	"docs/governance/policies/security.md",
-	"docs/governance/policies/data.md",
-	"docs/governance/policies/finance.md",
-	"docs/governance/policies/experience.md",
-	"docs/governance/policies/design.md",
-	"apps/control-panel/DESIGN.md",
-	"apps/control-panel/UX-CONTRACT.md",
-	"packages/design-system/README.md",
+  "AGENTS.md",
+  "README.md",
+  "REPOSITORY-STRUCTURE.md",
+  "SECURITY.md",
+  ".github/pull_request_template.md",
+  "docs/governance/README.md",
+  "docs/governance/policies/security.md",
+  "apps/control-panel/DESIGN.md",
+  "apps/control-panel/UX-CONTRACT.md",
+  "packages/design-system/README.md"
 ];
 for (const p of owners)
 	if (!fs.existsSync(at(p)) || !fs.lstatSync(at(p)).isFile())
 		fail("canonical owner missing " + p);
+
+const governed = git(["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "docs/governance/"])
+  .split("\0").filter((p) => p.endsWith(".md"));
+const seenOwners = new Set();
+for (const p of governed) {
+  if (!fs.existsSync(at(p))) fail("tracked governance owner missing " + p);
+  const body = get(p);
+  const declaration = /^SEMANTIC_OWNER:\s*(\S+)\s*$/m.exec(body);
+  if (!declaration || declaration[1] !== p || seenOwners.has(declaration[1]))
+    fail("missing, duplicate, or misrouted semantic owner " + p);
+  seenOwners.add(p);
+}
+// References in every current owner must resolve, not only those in the root router.
+for (const source of governed) {
+  for (const referenced of get(source).match(/docs\/governance\/[\w/-]+\.md/g) ?? []) {
+    if (!seenOwners.has(referenced))
+      fail("governance reference points to absent owner " + source + " -> " + referenced);
+  }
+}
 if (fs.existsSync(at("knowledge.sources.json")))
 	fail("external donor pin resurrected");
 const law = get("AGENTS.md");
