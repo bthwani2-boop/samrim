@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
@@ -21,13 +22,14 @@ const catalogTestServiceToken = "ssssssssssssssssssssssss"
 
 type dshCatalogTestAPI struct {
 	mux               *http.ServeMux
-	permissionEnabled bool
+	permissionEnabled atomic.Bool
 	reconcile         func(context.Context) error
 }
 
 func newDSHCatalogTestAPI(t *testing.T, db *sql.DB, mediaStore media.Store) *dshCatalogTestAPI {
 	t.Helper()
-	api := &dshCatalogTestAPI{permissionEnabled: true}
+	api := &dshCatalogTestAPI{}
+	api.permissionEnabled.Store(true)
 	identityServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer "+catalogTestIdentityToken {
 			http.Error(w, "unauthorized test identity request", http.StatusUnauthorized)
@@ -41,7 +43,7 @@ func newDSHCatalogTestAPI(t *testing.T, db *sql.DB, mediaStore media.Store) *dsh
 		if strings.HasPrefix(r.URL.Path, "/internal/operators/") && strings.HasSuffix(r.URL.Path, "/permissions/catalog") {
 			w.Header().Set("Content-Type", "application/json")
 			permission := "false"
-			if api.permissionEnabled {
+			if api.permissionEnabled.Load() {
 				permission = "true"
 			}
 			_, _ = io.WriteString(w, `{"actorId":"`+testOperatorActorID+`","permission":"catalog","enabled":`+permission+`,"version":1,"reason":"isolated test"}`)

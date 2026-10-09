@@ -149,12 +149,12 @@ func TestCatalogAttributeRegistryLifecycle(t *testing.T) {
 			t.Fatalf("typed product attribute canonical readback=%+v error=%v", productRead.Attributes, err)
 		}
 
-		api.permissionEnabled = false
+		api.permissionEnabled.Store(false)
 		unauthorizedDefinition := api.request(t, http.MethodPatch, "/dsh/catalog/attributes/"+definition.ID, contract.UpdateCatalogAttributeDefinitionRequest{NameAr: definition.NameAr, Active: false, ExpectedVersion: 1, Reason: "Reject unauthorized attribute edit"}, "corr-attribute-definition-denied-"+suffix, "idem-attribute-definition-denied-"+suffix, 0)
 		if unauthorizedDefinition.Code != http.StatusForbidden || !strings.Contains(unauthorizedDefinition.Body.String(), "FORBIDDEN") {
 			t.Fatalf("attribute update without Catalog permission status=%d body=%s, want FORBIDDEN", unauthorizedDefinition.Code, unauthorizedDefinition.Body.String())
 		}
-		api.permissionEnabled = true
+		api.permissionEnabled.Store(true)
 
 		deactivateDefinitionReason := "Pause color attribute"
 		deactivateDefinition := contract.UpdateCatalogAttributeDefinitionRequest{NameAr: definition.NameAr, Active: false, ExpectedVersion: 1, Reason: deactivateDefinitionReason}
