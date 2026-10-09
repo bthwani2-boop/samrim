@@ -188,14 +188,19 @@ export function CatalogAttributePolicyWorkspace({ verticalId, categoryId }: { ve
     <div className="catalog-attribute-options">
         <strong>خيارات قيم الخصائص</strong>
         <label className="field-label" htmlFor="attribute-option-select">خاصية التعداد<select id="attribute-option-select" value={selectedAttributeId} disabled={busy} onChange={(event) => { const id = event.target.value; setSelectedAttributeId(id); setOptions([]); if (id) void loadOptions(id); }}><option value="">اختر خاصية لها قائمة خيارات</option>{definitions.filter((item) => item.valueKind === "ENUM").map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}</select></label>
-        {selectedAttribute?.valueKind === "ENUM" ? <><label className="field-label" htmlFor="attribute-option-value">قيمة الخيار<input id="attribute-option-value" value={optionValue} onChange={(event) => setOptionValue(event.target.value)} disabled={busy || !canEdit || !selectedAttribute.active} maxLength={160} /></label><button type="button" className="button button-secondary" disabled={busy || !canEdit || !selectedAttribute.active || !optionValue.trim() || changeReason.trim().length < 5} onClick={() => void createOption()}>إضافة خيار</button><ul>{options.map((option) => <li key={option.optionValue}>
-          <span>{option.optionValue} · {option.active ? "نشط" : "متوقف"}</span>
-          <label className="field-label">ترتيب الخيار {option.optionValue}<input type="number" min={0} max={100} value={optionOrdinals[option.optionValue] ?? String(option.ordinal)} disabled={busy || !canEdit} onChange={(event) => setOptionOrdinals((current) => ({ ...current, [option.optionValue]: event.target.value }))} /></label>
-          <div className="catalog-registry-actions">
-            <button type="button" className="button button-secondary" disabled={busy || !canEdit || changeReason.trim().length < 5 || Number(optionOrdinals[option.optionValue] ?? option.ordinal) === option.ordinal} onClick={() => void updateOption(option, option.active, Number(optionOrdinals[option.optionValue] ?? option.ordinal))}>حفظ ترتيب الخيار {option.optionValue}</button>
-            <button type="button" className="button button-secondary" disabled={busy || !canEdit || changeReason.trim().length < 5} onClick={() => void updateOption(option, !option.active)}>{option.active ? `إيقاف الخيار ${option.optionValue}` : `تفعيل الخيار ${option.optionValue}`}</button>
-          </div>
-        </li>)}</ul></> : <p>اختر خاصية لها قائمة خيارات لإدارة قيمها.</p>}
+        {selectedAttribute?.valueKind === "ENUM" ? <><label className="field-label" htmlFor="attribute-option-value">قيمة الخيار<input id="attribute-option-value" value={optionValue} onChange={(event) => setOptionValue(event.target.value)} disabled={busy || !canEdit || !selectedAttribute.active} maxLength={160} /></label><button type="button" className="button button-secondary" disabled={busy || !canEdit || !selectedAttribute.active || !optionValue.trim() || changeReason.trim().length < 5} onClick={() => void createOption()}>إضافة خيار</button><ul>{options.map((option) => {
+            const ordinalDraft = optionOrdinals[option.optionValue] ?? String(option.ordinal);
+            const nextOrdinal = Number(ordinalDraft);
+            const validOrdinal = ordinalDraft.trim() !== "" && Number.isInteger(nextOrdinal) && nextOrdinal >= 0 && nextOrdinal <= 100;
+            return <li key={option.optionValue}>
+              <span>{option.optionValue} · {option.active ? "نشط" : "متوقف"}</span>
+              <label className="field-label">ترتيب الخيار {option.optionValue}<input type="number" min={0} max={100} value={ordinalDraft} disabled={busy || !canEdit} onChange={(event) => setOptionOrdinals((current) => ({ ...current, [option.optionValue]: event.target.value }))} /></label>
+              <div className="catalog-registry-actions">
+                <button type="button" className="button button-secondary" disabled={busy || !canEdit || changeReason.trim().length < 5 || !validOrdinal || nextOrdinal === option.ordinal} onClick={() => void updateOption(option, option.active, nextOrdinal)}>حفظ ترتيب الخيار {option.optionValue}</button>
+                <button type="button" className="button button-secondary" disabled={busy || !canEdit || changeReason.trim().length < 5} onClick={() => void updateOption(option, !option.active)}>{option.active ? `إيقاف الخيار ${option.optionValue}` : `تفعيل الخيار ${option.optionValue}`}</button>
+              </div>
+            </li>;
+          })}</ul></> : <p>اختر خاصية لها قائمة خيارات لإدارة قيمها.</p>}
     </div>
     <div className="catalog-attribute-rules">
       <strong>متطلبات الفئة للمنتج</strong>

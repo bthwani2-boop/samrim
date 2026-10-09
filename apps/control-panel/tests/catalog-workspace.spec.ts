@@ -306,7 +306,7 @@ test("catalog attribute and enum option status changes use optimistic versions a
   const vertical = { id: "grocery", nameAr: "المقاضي", nameEn: "Groceries", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" };
   const root = { id: "grocery-drinks", verticalId: "grocery", parentCategoryId: null, nameAr: "مشروبات", nameEn: "Beverages", pathAr: "المقاضي / مشروبات", pathEn: "Groceries / Beverages", active: true, version: 1, createdAt: vertical.createdAt, updatedAt: vertical.updatedAt };
   let definition = { id: "attr-color", verticalId: "grocery", code: "color", nameAr: "اللون", valueKind: "ENUM" as const, active: true, filterable: false, version: 1 };
-  let option = { attributeId: definition.id, optionValue: "أحمر", active: true, ordinal: 0, version: 1 };
+  let option = { attributeId: definition.id, optionValue: "أحمر", active: true, ordinal: 1, version: 1 };
   let rule = { categoryId: root.id, attributeId: definition.id, code: "color", nameAr: definition.nameAr, valueKind: "ENUM" as const, required: false, filterable: false, variantAxis: false, version: 1 };
   const mutationRequests: Array<{ path: string; body: Record<string, unknown> }> = [];
   const ruleRequests: Array<Record<string, unknown>> = [];
@@ -361,14 +361,25 @@ test("catalog attribute and enum option status changes use optimistic versions a
   await expect(page.locator(".catalog-attribute-definition-list li").filter({ hasText: "اللون" })).toContainText("متوقفة");
   await page.getByLabel("خاصية التعداد").selectOption(definition.id);
   await expect(page.getByText("أحمر · نشط")).toBeVisible();
+  const ordinalInput = page.getByLabel("ترتيب الخيار أحمر");
+  const saveOrdinalButton = page.getByRole("button", { name: "حفظ ترتيب الخيار أحمر" });
+  for (const invalidOrdinal of ["", "1.5", "-1", "101"]) {
+    await ordinalInput.fill(invalidOrdinal);
+    await expect(saveOrdinalButton).toBeDisabled();
+  }
+  await ordinalInput.fill("0");
+  await expect(saveOrdinalButton).toBeEnabled();
+  await saveOrdinalButton.click();
+  await expect(page.getByRole("status")).toContainText("تم تحديث خيار الخاصية: أحمر.");
   await page.getByRole("button", { name: "إيقاف الخيار أحمر" }).click();
   await expect(page.getByText("أحمر · متوقف")).toBeVisible();
   await page.getByLabel("قابل للتصفية").check();
   await page.getByRole("button", { name: "حفظ القاعدة" }).click();
   await expect(page.getByRole("status")).toContainText("تم تحديث قواعد خصائص الفئة");
-  expect(mutationRequests).toHaveLength(2);
+  expect(mutationRequests).toHaveLength(3);
   expect(mutationRequests[0]?.body).toMatchObject({ active: false, expectedVersion: 1, reason: "إيقاف خاصية اللون مؤقتًا" });
-  expect(mutationRequests[1]?.body).toMatchObject({ active: false, expectedVersion: 1, reason: "إيقاف خاصية اللون مؤقتًا" });
+  expect(mutationRequests[1]?.body).toMatchObject({ active: true, ordinal: 0, expectedVersion: 1, reason: "إيقاف خاصية اللون مؤقتًا" });
+  expect(mutationRequests[2]?.body).toMatchObject({ active: false, ordinal: 0, expectedVersion: 2, reason: "إيقاف خاصية اللون مؤقتًا" });
   expect(ruleRequests).toHaveLength(1);
   expect(ruleRequests[0]).toMatchObject({ required: false, filterable: true, variantAxis: false, expectedVersion: 1, reason: "إيقاف خاصية اللون مؤقتًا" });
 });

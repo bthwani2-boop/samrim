@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
@@ -18,7 +19,7 @@ func TestServiceCityWritesRequirePlatformPoliciesPermission(t *testing.T) {
 		serviceKey  = "ssssssssssssssssssssssss"
 		identityKey = "tttttttttttttttttttttttttttttttt"
 	)
-	permissionReads := 0
+	var permissionReads atomic.Int32
 	identityServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer "+identityKey {
 			http.Error(w, "unauthorized test identity request", http.StatusUnauthorized)
@@ -29,7 +30,7 @@ func TestServiceCityWritesRequirePlatformPoliciesPermission(t *testing.T) {
 		case strings.HasPrefix(r.URL.Path, "/internal/actors/") && strings.HasSuffix(r.URL.Path, "/roles/operator"):
 			_, _ = fmt.Fprintf(w, `{"actorId":%q,"role":"operator","enabled":true,"securityEnabled":true,"activatedAt":"2026-01-01T00:00:00Z"}`, actorID)
 		case strings.HasPrefix(r.URL.Path, "/internal/operators/") && strings.HasSuffix(r.URL.Path, "/permissions/platform_policies"):
-			permissionReads++
+			permissionReads.Add(1)
 			_, _ = fmt.Fprintf(w, `{"actorId":%q,"permission":"platform_policies","enabled":false,"version":1,"reason":"test denied"}`, actorID)
 		default:
 			http.NotFound(w, r)
@@ -66,7 +67,7 @@ func TestServiceCityWritesRequirePlatformPoliciesPermission(t *testing.T) {
 	}
 	for _, testCase := range requests {
 		t.Run(testCase.name, func(t *testing.T) {
-			request := httptest.NewRequest(testCase.method, testCase.path, strings.NewReader(testCase.body))
+			request := httptest.NewRequestWithContext(t.Context(), testCase.method, testCase.path, strings.NewReader(testCase.body))
 			request.Header.Set("Authorization", "Bearer "+serviceKey)
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("X-Acting-Actor-ID", actorID)
@@ -82,7 +83,7 @@ func TestServiceCityWritesRequirePlatformPoliciesPermission(t *testing.T) {
 			}
 		})
 	}
-	if permissionReads != len(requests) {
-		t.Fatalf("Platform Policies authorization reads=%d, want one for each write", permissionReads)
+	if got := int(permissionReads.Load()); got != len(requests) {
+		t.Fatalf("Platform Policies authorization reads=%d, want one for each write", got)
 	}
 }

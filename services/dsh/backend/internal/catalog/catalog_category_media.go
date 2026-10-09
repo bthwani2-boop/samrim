@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
@@ -76,8 +77,14 @@ func (s *Service) UploadCatalogCategoryMedia(ctx context.Context, actingActorID 
 		return postgres.CatalogCategoryRecord{}, postgres.ErrCatalogVersionConflict
 	}
 	if err = s.media.Put(ctx, objectKey, bytes.NewReader(input.Bytes), int64(len(input.Bytes)), contentType); err != nil {
-		_ = postgres.MarkCatalogCategoryMediaAssetFailed(ctx, s.db, asset.ID, err.Error())
-		_ = s.ReconcileMediaStorage(ctx)
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		_ = postgres.MarkCatalogCategoryMediaAssetFailed(cleanupCtx, s.db, asset.ID, err.Error())
+		if cleanupErr := s.media.Delete(cleanupCtx, objectKey); cleanupErr == nil {
+			_ = postgres.MarkCatalogCategoryMediaAssetDeleted(cleanupCtx, s.db, asset.ID)
+		} else {
+			_ = postgres.MarkCatalogCategoryMediaAssetCleanupFailure(cleanupCtx, s.db, asset.ID, cleanupErr.Error())
+		}
+		cancel()
 		return postgres.CatalogCategoryRecord{}, ErrCatalogMediaStorageUnavailable
 	}
 	result, _, err := postgres.AttachCatalogCategoryMediaAsset(ctx, s.db, asset, actingActorID, input.CorrelationID)

@@ -78,7 +78,7 @@ func (api *dshCatalogTestAPI) request(t *testing.T, method, path string, body an
 		}
 		requestBody = strings.NewReader(string(encoded))
 	}
-	request := httptest.NewRequest(method, path, requestBody)
+	request := httptest.NewRequestWithContext(t.Context(), method, path, requestBody)
 	request.Header.Set("Authorization", "Bearer "+catalogTestServiceToken)
 	request.Header.Set("X-Acting-Actor-ID", testOperatorActorID)
 	if correlationID != "" {

@@ -85,6 +85,19 @@ func TestCatalogCategoryMediaLifecycleAndPartialUploadRecovery(t *testing.T) {
 		if partialState != "failed" || partialAttempts < 2 || objectStore.objectCount() != 1 {
 			t.Fatalf("partial upload record state=%s attempts=%d objects=%d; want durable failed retry and one retained object", partialState, partialAttempts, objectStore.objectCount())
 		}
+		secondPartialKey := "idem-media-partial-second-" + suffix
+		objectStore.failNextPutWithPartialWrite()
+		secondPartialStatus, _, secondPartialBody := uploadCategoryMediaViaAPI(t, api, category.ID, secondPartialKey, "corr-media-partial-second-"+suffix, "Replace category image", 1, provenance, firstImage)
+		if secondPartialStatus != http.StatusServiceUnavailable || !strings.Contains(secondPartialBody, "MEDIA_STORAGE_UNAVAILABLE") {
+			t.Fatalf("second partial object API response=%d body=%s, want storage unavailable", secondPartialStatus, secondPartialBody)
+		}
+		var secondPartialState string
+		if err := db.QueryRowContext(ctx, "SELECT state FROM dsh.catalog_category_media_assets WHERE idempotency_key=$1", secondPartialKey).Scan(&secondPartialState); err != nil || secondPartialState != "deleted" || objectStore.objectCount() != 1 {
+			t.Fatalf("targeted cleanup state=%s error=%v objects=%d; want only the current partial object deleted", secondPartialState, err, objectStore.objectCount())
+		}
+		if err := db.QueryRowContext(ctx, "SELECT state FROM dsh.catalog_category_media_assets WHERE idempotency_key=$1", partialKey).Scan(&partialState); err != nil || partialState != "failed" {
+			t.Fatalf("unrelated failed asset state=%s error=%v; targeted cleanup must leave it for reconciliation", partialState, err)
+		}
 		objectStore.allowDeletes()
 		if err := api.reconcile(ctx); err != nil {
 			t.Fatalf("retry failed category media cleanup: %v", err)
@@ -170,7 +183,7 @@ func uploadCategoryMediaViaAPI(t *testing.T, api *dshCatalogTestAPI, categoryID,
 	if err := writer.Close(); err != nil {
 		t.Fatalf("finish category media multipart request: %v", err)
 	}
-	request := httptest.NewRequest(http.MethodPost, "/dsh/catalog/categories/"+categoryID+"/media/upload", &body)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/dsh/catalog/categories/"+categoryID+"/media/upload", &body)
 	request.Header.Set("Authorization", "Bearer "+catalogTestServiceToken)
 	request.Header.Set("X-Acting-Actor-ID", testOperatorActorID)
 	request.Header.Set("X-Correlation-ID", correlationID)
@@ -276,5 +289,11 @@ func (s *categoryMediaTestStore) objectCount() int {
 func (s *categoryMediaTestStore) allowDeletes() {
 	s.mu.Lock()
 	s.deleteFailures = 0
+	s.mu.Unlock()
+}
+
+func (s *categoryMediaTestStore) failNextPutWithPartialWrite() {
+	s.mu.Lock()
+	s.partialOnPut = true
 	s.mu.Unlock()
 }
