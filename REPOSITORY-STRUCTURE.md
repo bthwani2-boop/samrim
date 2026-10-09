@@ -1,6 +1,6 @@
 # Repository placement
 
-This file defines placement only. `AGENTS.md` governs execution. Pinned Governance owns durable Product/System/Policy meaning. Exact source, project graph, configuration and runtime own current implementation truth.
+This file defines placement only. `AGENTS.md` governs execution. Local docs/governance/README.md routes approved durable Product/System/Policy meaning. Exact source, project graph, configuration and runtime own current implementation truth.
 
 ## Owners
 

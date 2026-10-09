@@ -4,7 +4,7 @@
 
 - Audience: Authenticated BThwani operators.
 - Primary jobs: Monitor operations, move partner onboarding forward, maintain catalog resources, manage finance/marketing workspaces and administer platform access.
-- Target market(s): BThwani operations in Yemen; domain policy remains in the pinned Governance repository.
+- Target market(s): BThwani operations in Yemen; approved durable domain policy is routed by `../../docs/governance/README.md`.
 - Active locales: Arabic RTL for the current web surface.
 - Language/content register: Direct operator language; no raw backend identifiers in normal UI copy.
 - Timezone/calendar policy: Feature-owned API values remain canonical; display formatting follows existing feature contracts.
@@ -14,9 +14,9 @@
 
 | Domain / scope | Authoritative source | Source type | Reviewed date |
 |---|---|---|---|
-| Operator information architecture | `knowledge.sources.json` → Governance `governance/policy/EXPERIENCE.md` | Pinned policy | 2026-09-22 |
-| Partner onboarding and field admission | `governance/product/capabilities/partner/partner-onboarding-store-publication.md` | Pinned capability policy | 2026-09-22 |
-| Captain operations | `governance/product/capabilities/fulfillment/captain-dispatch.md` | Pinned capability policy | 2026-09-22 |
+| Operator information architecture | `../../docs/governance/policies/experience.md` | Local approved policy | 2026-09-22 |
+| Partner onboarding and field admission | `../../docs/governance/product/capabilities/partner/partner-onboarding-store-publication.md` | Local approved capability | 2026-09-22 |
+| Captain operations | `../../docs/governance/product/capabilities/fulfillment/captain-dispatch.md` | Local approved capability | 2026-09-22 |
 | Permission model | `services/identity` session contract and `src/session/session-provider.tsx` | Runtime/API evidence | 2026-09-22 |
 | Catalog lifecycle | `services/dsh/contracts/openapi` and `src/features/central-catalog` | API/implementation evidence | 2026-09-22 |
 

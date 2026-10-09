@@ -6,7 +6,7 @@ Canonical repository for the BThwani platform.
 
 - `AGENTS.md`: repository execution/safety law.
 - `REPOSITORY-STRUCTURE.md`: repository placement rules.
-- `knowledge.sources.json`: immutable Governance binding.
+- `docs/governance/README.md`: local approved decision and owner routing.
 - Live source/config/schema/runtime/database/readback: current implementation truth.
 
 ## Local development

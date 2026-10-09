@@ -63,7 +63,7 @@ The control panel is a dispatch desk for a busy Arabic RTL operation: a warm, qu
 ### Product context and register
 
 - **Audience and primary job:** Authenticated operators route work across partners, catalog, operations, finance, marketing and platform controls without losing the canonical state of a case or resource.
-- **Target market(s) and evidence:** BThwani operator workspace; the durable center taxonomy follows `governance/policy/EXPERIENCE.md` at the pinned Governance commit in `../../knowledge.sources.json`.
+- **Target market(s) and evidence:** BThwani operator workspace; the durable center taxonomy is routed by `../../docs/governance/policies/experience.md`.
 - **Locale(s) and language policy:** Arabic RTL is the primary web locale. User-facing labels name the operator's job, while API and backend identifiers stay out of normal UI copy.
 - **Usage scene:** Desktop-first operations with narrow laptop and phone access during review, admission and recovery work. Navigation must remain reachable when the viewport is short or the browser is zoomed.
 - **Register:** Product. Familiarity, hierarchy, focus and recovery lead; brand expression is concentrated in the orange action signal and deep-blue orientation structure.
