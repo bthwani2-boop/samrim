@@ -8,11 +8,23 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
-func (s *Service) CreateAttributeDefinition(ctx context.Context, actingActorID string, input postgres.CatalogAttributeDefinitionInput, idempotencyKey string) (postgres.CatalogAttributeDefinitionRecord, bool, error) {
+func (s *Service) CreateAttributeDefinition(ctx context.Context, actingActorID, correlationID, reason string, input postgres.CatalogAttributeDefinitionInput, idempotencyKey string) (postgres.CatalogAttributeDefinitionRecord, bool, error) {
 	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return postgres.CatalogAttributeDefinitionRecord{}, false, err
 	}
-	return postgres.CreateCatalogAttributeDefinition(ctx, s.db, input, strings.TrimSpace(idempotencyKey), postgres.HashCatalogAttributeDefinitionRequest(input))
+	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
+	audit := postgres.CatalogRegistryAuditInput{ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), Reason: reason}
+	return postgres.CreateCatalogAttributeDefinition(ctx, s.db, input, strings.TrimSpace(idempotencyKey), postgres.HashCatalogAttributeDefinitionRequest(input, reason), audit)
+}
+
+func (s *Service) UpdateAttributeDefinition(ctx context.Context, actingActorID, correlationID, reason, attributeID, idempotencyKey string, input postgres.UpdateCatalogAttributeDefinitionInput) (postgres.CatalogAttributeDefinitionRecord, bool, error) {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
+		return postgres.CatalogAttributeDefinitionRecord{}, false, err
+	}
+	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
+	audit := postgres.CatalogRegistryAuditInput{ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), Reason: reason}
+	hash := postgres.HashCatalogAttributeDefinitionUpdateRequest(attributeID, input, reason)
+	return postgres.UpdateCatalogAttributeDefinition(ctx, s.db, attributeID, input, strings.TrimSpace(idempotencyKey), hash, audit)
 }
 
 func (s *Service) ListAttributeDefinitions(ctx context.Context, verticalID string) ([]postgres.CatalogAttributeDefinitionRecord, error) {
@@ -32,27 +44,39 @@ func (s *Service) ListAttributeDefinitionsForOperator(ctx context.Context, actin
 	return postgres.ListCatalogAttributeDefinitions(ctx, s.db, verticalID, activeOnly)
 }
 
-func (s *Service) ListAttributeEnumOptions(ctx context.Context, actingActorID, attributeID string) ([]postgres.CatalogAttributeEnumOptionRecord, error) {
+func (s *Service) ListAttributeEnumOptions(ctx context.Context, actingActorID, attributeID string, activeOnly bool) ([]postgres.CatalogAttributeEnumOptionRecord, error) {
 	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return nil, err
 	}
-	return postgres.ListCatalogAttributeEnumOptions(ctx, s.db, attributeID, true)
+	return postgres.ListCatalogAttributeEnumOptions(ctx, s.db, attributeID, activeOnly)
 }
 
 func (s *Service) ListPublicAttributeEnumOptions(ctx context.Context, attributeID string) ([]postgres.CatalogAttributeEnumOptionRecord, error) {
 	return postgres.ListCatalogAttributeEnumOptions(ctx, s.db, strings.TrimSpace(attributeID), true)
 }
 
-func (s *Service) CreateAttributeEnumOption(ctx context.Context, actingActorID, attributeID string, input postgres.CatalogAttributeEnumOptionInput, idempotencyKey string) (postgres.CatalogAttributeEnumOptionRecord, bool, error) {
+func (s *Service) CreateAttributeEnumOption(ctx context.Context, actingActorID, correlationID, reason, attributeID string, input postgres.CatalogAttributeEnumOptionInput, idempotencyKey string) (postgres.CatalogAttributeEnumOptionRecord, bool, error) {
 	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return postgres.CatalogAttributeEnumOptionRecord{}, false, err
 	}
+	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
 	input.AttributeID = strings.TrimSpace(attributeID)
 	input.OptionValue = strings.Join(strings.Fields(strings.TrimSpace(input.OptionValue)), " ")
 	if input.OptionValue == "" || input.Ordinal < 0 || input.Ordinal > 100 {
 		return postgres.CatalogAttributeEnumOptionRecord{}, false, ErrCatalogModifierInvalid
 	}
-	return postgres.CreateCatalogAttributeEnumOption(ctx, s.db, input, strings.TrimSpace(idempotencyKey), postgres.HashCatalogAttributeEnumOptionRequest(input))
+	audit := postgres.CatalogRegistryAuditInput{ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), Reason: reason}
+	return postgres.CreateCatalogAttributeEnumOption(ctx, s.db, input, strings.TrimSpace(idempotencyKey), postgres.HashCatalogAttributeEnumOptionRequest(input, reason), audit)
+}
+
+func (s *Service) UpdateAttributeEnumOption(ctx context.Context, actingActorID, correlationID, reason, attributeID, optionValue, idempotencyKey string, input postgres.UpdateCatalogAttributeEnumOptionInput) (postgres.CatalogAttributeEnumOptionRecord, bool, error) {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
+		return postgres.CatalogAttributeEnumOptionRecord{}, false, err
+	}
+	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
+	audit := postgres.CatalogRegistryAuditInput{ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), Reason: reason}
+	hash := postgres.HashCatalogAttributeEnumOptionUpdateRequest(attributeID, optionValue, input, reason)
+	return postgres.UpdateCatalogAttributeEnumOption(ctx, s.db, attributeID, optionValue, input, strings.TrimSpace(idempotencyKey), hash, audit)
 }
 
 func (s *Service) UpsertProductAttribute(ctx context.Context, actingActorID, productID string, input postgres.CatalogAttributeValueInput) error {
@@ -77,9 +101,6 @@ func (s *Service) UpsertCategoryAttributeRule(ctx context.Context, actingActorID
 	correlationID = strings.TrimSpace(correlationID)
 	if len([]rune(reason)) < 5 || len([]rune(reason)) > 500 || correlationID == "" || expectedVersion < 0 {
 		return ErrCatalogModifierInvalid
-	}
-	if rule.Filterable {
-		return postgres.ErrCatalogAttributeRuleInvalid
 	}
 	audit := postgres.CatalogRegistryAuditInput{ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: correlationID, Reason: reason}
 	return postgres.UpsertCatalogCategoryAttributeRule(ctx, s.db, rule, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCatalogCategoryAttributeRuleRequest(rule, expectedVersion, reason), audit)

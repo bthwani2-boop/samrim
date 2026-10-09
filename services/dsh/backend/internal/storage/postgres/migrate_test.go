@@ -39,8 +39,8 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "106_wallet_providers.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 106_wallet_providers.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "107_catalog_attribute_lifecycle.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 107_catalog_attribute_lifecycle.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
 	migrationByName := make(map[string]string, len(records))
 	for index, record := range records {
@@ -112,6 +112,12 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 	}
 	if draftReadiness := migrationByName["105_field_draft_fulfillment_readiness.sql"]; !strings.Contains(draftReadiness, "state = 'draft' OR cardinality(first_store_fulfillment_modes) > 0") || !strings.Contains(draftReadiness, "first_store_fulfillment_modes <@ ARRAY['BTHWANI_CAPTAIN','PARTNER_CAPTAIN','CUSTOMER_PICKUP']") {
 		t.Fatal("Field drafts must permit unselected fulfillment while retaining the supported-mode allowlist")
+	}
+	attributeLifecycleMigration := migrationByName["107_catalog_attribute_lifecycle.sql"]
+	for _, required := range []string{"ADD COLUMN version integer NOT NULL DEFAULT 1", "ADD COLUMN updated_at timestamptz NOT NULL DEFAULT clock_timestamp()", "'attribute_definition', 'attribute_enum_option'"} {
+		if !strings.Contains(attributeLifecycleMigration, required) {
+			t.Fatalf("DSH migration 107 is missing attribute lifecycle storage: %s", required)
+		}
 	}
 	if !strings.Contains(migrationByName["069_catalog_store_offer_paging.sql"], "catalog_store_offers_store_created_registry_idx") || !strings.Contains(migrationByName["069_catalog_store_offer_paging.sql"], "ON dsh.catalog_store_offers (store_id, created_at, id)") {
 		t.Fatal("DSH migration 069 is missing the StoreOffer keyset paging index")

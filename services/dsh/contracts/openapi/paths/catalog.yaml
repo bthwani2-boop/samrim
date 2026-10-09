@@ -250,6 +250,24 @@ paths:
         "201": { description: Attribute definition created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeDefinitionResponse" } } } }
         "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeDefinitionResponse" } } } }
 
+  /dsh/catalog/attributes/{attributeId}:
+    patch:
+      operationId: updateCatalogAttributeDefinition
+      summary: Update one Attribute label or active state with version and audit control
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/AttributeId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCatalogAttributeDefinitionRequest" } }
+      responses:
+        "200": { description: Attribute definition updated or replayed., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeDefinitionResponse" } } } }
+
   /dsh/public/catalog/attributes/{attributeId}/enum-options:
     get:
       operationId: listPublicCatalogAttributeEnumOptions
@@ -287,6 +305,28 @@ paths:
       responses:
         "201": { description: ENUM option created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeEnumOptionResponse" } } } }
         "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeEnumOptionResponse" } } } }
+
+  /dsh/catalog/attributes/{attributeId}/enum-options/{optionValue}:
+    patch:
+      operationId: updateCatalogAttributeEnumOption
+      summary: Update one ENUM option's status or order with version and audit control
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/AttributeId"
+        - name: optionValue
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 160 }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCatalogAttributeEnumOptionRequest" } }
+      responses:
+        "200": { description: ENUM option updated or replayed., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeEnumOptionResponse" } } } }
 
   /dsh/catalog/products/{productId}/attributes/{attributeId}:
     put:

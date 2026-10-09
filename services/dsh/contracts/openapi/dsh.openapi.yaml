@@ -78,8 +78,14 @@ paths:
   /dsh/catalog/attributes:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1attributes"
 
+  /dsh/catalog/attributes/{attributeId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1attributes~1{attributeId}"
+
   /dsh/catalog/attributes/{attributeId}/enum-options:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1attributes~1{attributeId}~1enum-options"
+
+  /dsh/catalog/attributes/{attributeId}/enum-options/{optionValue}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1attributes~1{attributeId}~1enum-options~1{optionValue}"
 
   /dsh/catalog/products:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products"
@@ -2144,7 +2150,7 @@ components:
 
     CreateCatalogAttributeDefinitionRequest:
       type: object
-      required: [id, verticalId, code, nameAr, valueKind, active]
+      required: [id, verticalId, code, nameAr, valueKind, active, reason]
       additionalProperties: false
       properties:
         id:
@@ -2168,6 +2174,29 @@ components:
           enum: [TEXT, INTEGER, DECIMAL, BOOLEAN, ENUM, MEASUREMENT, DATE]
         active:
           type: boolean
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+
+    UpdateCatalogAttributeDefinitionRequest:
+      type: object
+      required: [nameAr, active, expectedVersion, reason]
+      additionalProperties: false
+      properties:
+        nameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        active:
+          type: boolean
+        expectedVersion:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
 
     CatalogAttributeDefinitionResponse:
       type: object
@@ -2191,7 +2220,7 @@ components:
 
     CatalogAttributeEnumOption:
       type: object
-      required: [attributeId, optionValue, active, ordinal]
+      required: [attributeId, optionValue, active, ordinal, version]
       additionalProperties: false
       properties:
         attributeId:
@@ -2202,10 +2231,13 @@ components:
           type: boolean
         ordinal:
           type: integer
+        version:
+          type: integer
+          minimum: 1
 
     CreateCatalogAttributeEnumOptionRequest:
       type: object
-      required: [optionValue, active, ordinal]
+      required: [optionValue, active, ordinal, reason]
       additionalProperties: false
       properties:
         optionValue:
@@ -2218,6 +2250,29 @@ components:
           type: integer
           minimum: 0
           maximum: 100
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+
+    UpdateCatalogAttributeEnumOptionRequest:
+      type: object
+      required: [active, ordinal, expectedVersion, reason]
+      additionalProperties: false
+      properties:
+        active:
+          type: boolean
+        ordinal:
+          type: integer
+          minimum: 0
+          maximum: 100
+        expectedVersion:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
 
     CatalogAttributeEnumOptionResponse:
       type: object
