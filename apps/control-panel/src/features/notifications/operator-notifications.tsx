@@ -55,8 +55,10 @@ export function OperatorNotifications() {
       setNextCursor(payload.nextCursor ?? "");
     } catch (cause) {
       if (sequence !== requestSequence.current) return;
-      setItems([]);
-      setNextCursor("");
+      if (!preserveCurrent) {
+        setItems([]);
+        setNextCursor("");
+      }
       setError(cause instanceof Error ? cause.message : "تعذر قراءة إشعارات التشغيل.");
     } finally {
       if (sequence === requestSequence.current) {
@@ -124,9 +126,9 @@ export function OperatorNotifications() {
       {loading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تجهيز الإشعارات</strong></div> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة الإشعارات</strong><p>{error}</p></div> : null}
       {!loading && !error && !items.length ? <div className="access-card operator-notifications-empty"><p className="eyebrow">لا توجد تحديثات</p><h2>لا توجد إشعارات حالياً</h2><p className="muted">ستظهر هنا تحديثات العمليات وطلبات الانضمام عند تسجيل أحداث جديدة.</p></div> : null}
-      {!loading && !error && items.length ? <p className="operator-notification-page-status" role="status">الصفحة الحالية: {items.length} إشعارًا · حد القراءة {notificationPageSize} لكل طلب</p> : null}
-      {!loading && !error && unreadItems.length ? <NotificationGroup title="الجديدة" count={unreadItems.length} items={unreadItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
-      {!loading && !error && readItems.length ? <NotificationGroup title="المقروءة" count={readItems.length} items={readItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
+      {!loading && items.length ? <p className="operator-notification-page-status" role="status">الصفحة الحالية: {items.length} إشعارًا · حد القراءة {notificationPageSize} لكل طلب</p> : null}
+      {!loading && unreadItems.length ? <NotificationGroup title="الجديدة" count={unreadItems.length} items={unreadItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
+      {!loading && readItems.length ? <NotificationGroup title="المقروءة" count={readItems.length} items={readItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
       {!loading && (cursor || cursorStack.length > 0 || nextCursor) ? <nav className="operator-notification-pagination" aria-label="صفحات الإشعارات">
         <button type="button" className="button button-secondary" disabled={loading || refreshing || (cursorStack.length === 0 && !cursor)} onClick={() => { const previous = [...cursorStack]; const previousCursor = previous.pop() ?? ""; navigatePage(previousCursor, previous); }}>الأحدث</button>
         <span>كل صفحة تعرض حتى {notificationPageSize} إشعارًا</span>

@@ -85,7 +85,7 @@ export function StoreCatalogImportWorkspace() {
     const params = new URLSearchParams({ limit: String(storePageSize) });
     if (appliedStoreSearch) params.set("q", appliedStoreSearch);
     if (storeCursor) params.set("cursor", storeCursor);
-    void fetch(`/api/partners/stores?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+    void fetch(`/api/catalog/stores?${params.toString()}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => await readJson<OperatorStoreListResponse>(response))
       .then((page) => {
         if (sequence !== storeRequestSequence.current) return;

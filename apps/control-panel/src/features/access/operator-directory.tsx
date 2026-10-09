@@ -150,13 +150,9 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
       {activeFilterCount > 1 ? <button type="button" className="access-clear-filters" onClick={clearFilters}>مسح الكل</button> : null}
     </fieldset> : null}
 
-    {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر تحديث القائمة</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
-    {loading && items.length === 0 ? <div className="access-loading" role="status"><span className="loading-mark" aria-hidden="true" /> جارٍ قراءة المشغّلين…</div> : null}
-    {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد حسابات مطابقة</strong><p>غيّر البحث أو المرشّحات لعرض سجلات أخرى.</p></div> : null}
-
-    {items.length > 0 ? <>
-      <p className="access-result-count" aria-live="polite">{items.length} حسابات في الصفحة المحمّلة{nextCursor ? " · توجد نتائج أخرى" : ""}</p>
-      {items.length > 0 ? <div className="access-table-wrap" aria-busy={loading}>
+    {error && items.length > 0 ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر تحديث القائمة</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
+    {items.length > 0 ? <p className="access-result-count" aria-live="polite">{items.length} حسابات في الصفحة المحمّلة{nextCursor ? " · توجد نتائج أخرى" : ""}</p> : null}
+    <div className="access-table-wrap" aria-busy={loading}>
         <table className="operations-table access-table">
           <caption className="visually-hidden">قائمة حسابات المشغّلين، يمكن البحث والتصفية من عناوين الأعمدة</caption>
           <thead>
@@ -195,6 +191,11 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
             </tr>
           </thead>
           <tbody>
+            {items.length === 0 ? <tr><td colSpan={4}>
+              {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر تحديث القائمة</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>إعادة المحاولة</button></div>
+                : loading ? <div className="access-loading" role="status"><span className="loading-mark" aria-hidden="true" /> جارٍ قراءة المشغّلين…</div>
+                  : <div className="collection-state"><strong>لا توجد حسابات مطابقة</strong><p>غيّر البحث أو المرشّحات لعرض سجلات أخرى.</p></div>}
+            </td></tr> : null}
             {items.map((operator) => {
               const status = identityStatus(operator);
               const count = enabledPermissionCount(operator);
@@ -207,8 +208,7 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
             })}
           </tbody>
         </table>
-      </div> : null}
-      {nextCursor ? <div className="access-load-more"><button type="button" className="button button-secondary" disabled={loading || loadingMore} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل دفعة أخرى…" : "تحميل المزيد"}</button></div> : null}
-    </> : null}
+    </div>
+    {items.length > 0 && nextCursor ? <div className="access-load-more"><button type="button" className="button button-secondary" disabled={loading || loadingMore} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل دفعة أخرى…" : "تحميل المزيد"}</button></div> : null}
   </section>;
 }

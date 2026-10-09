@@ -1,4 +1,5 @@
 import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
+import { containsHostPostgresFallback } from "./runtime-proof/identity-migration-host-fallback.mjs";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -42,12 +43,7 @@ function requireEnv(values, name) {
 }
 
 const migrationTestSource = fs.readFileSync(migrationTestPath, "utf8");
-const hostPostgresFallbackPatterns = [
-  /\bpostgres(?:ql)?:\/\/(?:[^@\s]+@)?(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/|[?\s"'`]|$)/i,
-  /\bhost\s*=\s*(?:localhost|127\.0\.0\.1)\b/i,
-  /(?:localhost|127\.0\.0\.1):55432\b/i,
-];
-if (hostPostgresFallbackPatterns.some((pattern) => pattern.test(migrationTestSource))) {
+if (containsHostPostgresFallback(migrationTestSource)) {
   fail("migration proof must not contain a host PostgreSQL fallback");
 }
 for (const testName of canonicalMigrationTests) {

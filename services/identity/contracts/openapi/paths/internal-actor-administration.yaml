@@ -26,7 +26,7 @@ paths:
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
         - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
       responses:
-        "200": { description: Server-paged Identity-owned operator profiles., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfilePage" } } }
+        "200": { description: Server-paged Identity-owned operator profiles., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfilePage" } } } }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -43,8 +43,8 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileCreateRequest" } } }
       responses:
-        "201": { description: Profile created without an actor role., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } }
-        "200": { description: Exact idempotent replay., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } }
+        "201": { description: Profile created without an actor role., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } } }
+        "200": { description: Exact idempotent replay., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } } }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -64,7 +64,7 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileUpdateRequest" } } }
       responses:
-        "200": { description: Updated pre-review profile., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } }
+        "200": { description: Updated pre-review profile., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } } }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -85,7 +85,7 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/OperatorRoleDetailsUpdateRequest" } } }
       responses:
-        "200": { description: Updated canonical Operator role details., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } }
+        "200": { description: Updated canonical Operator role details., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -106,7 +106,7 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileMutationRequest" } } }
       responses:
-        "200": { description: Reviewed operator profile; role is still absent., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } }
+        "200": { description: Reviewed operator profile; role is still absent., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } } }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -128,8 +128,8 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileMutationRequest" } } }
       responses:
-        "200": { description: Existing approved Identity role readback., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileGrantResponse" } } }
-        "201": { description: Identity actor and operator role granted after review., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileGrantResponse" } } }
+        "200": { description: Existing approved Identity role readback., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileGrantResponse" } } } }
+        "201": { description: Identity actor and operator role granted after review., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileGrantResponse" } } } }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -147,7 +147,7 @@ paths:
         - { $ref: "#/components/parameters/ControlPanelActingActorId" }
         - { $ref: "#/components/parameters/CorrelationId" }
       responses:
-        "201": { description: Single-use operator enrollment token returned once., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileInvitationResponse" } } }
+        "201": { description: Single-use operator enrollment token returned once., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileInvitationResponse" } } } }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -187,7 +187,7 @@ paths:
         - { $ref: "#/components/parameters/ActingActorId" }
       responses:
         "200": { description: Existing exact Partner role readback., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
-        "201": { description: Partner role admitted for the existing canonical actor., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } }
+        "201": { description: Partner role admitted for the existing canonical actor., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -259,7 +259,7 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/SetOperatorPermissionRequest" } } }
       responses:
-        "200": { description: Exact committed Operator permission state., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPermissionAccess" } } }
+        "200": { description: Exact committed Operator permission state., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPermissionAccess" } } } }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }

@@ -3,6 +3,7 @@ package passkey
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	identityactor "github.com/bthwani2-boop/samrim/services/identity/backend/internal/actor"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/challenge"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
+	challengedelivery "github.com/bthwani2-boop/samrim/services/identity/backend/internal/integrations/challenge"
 	identitysecurity "github.com/bthwani2-boop/samrim/services/identity/backend/internal/security"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
 	webauthn "github.com/go-webauthn/webauthn/webauthn"
@@ -58,7 +60,7 @@ VALUES('operator-recovery-old-session',$1,'operator',repeat('a',64),repeat('b',6
 	}
 
 	sessions := session.New(db, []byte(strings.Repeat("s", 32)), false, nil)
-	challengeService := challenge.New(db, actors, sessions, []byte(secret), nil)
+	challengeService := challenge.New(db, actors, sessions, []byte(secret), passkeyRecoveryChallengeSender{})
 	service, err := New(db, sessions, challengeService, Config{RPID: "localhost", Origins: []string{"http://localhost:13000"}, RPName: "Bthwani test"})
 	if err != nil {
 		t.Fatalf("configure isolated passkey service: %v", err)
@@ -106,41 +108,72 @@ VALUES('operator-recovery-old-session',$1,'operator',repeat('a',64),repeat('b',6
 	}
 	assertRecoveryAccessUnchanged(t, ctx, db, root.ActorID, first.CeremonyID, true)
 
-	if _, err := db.ExecContext(ctx, "UPDATE identity_webauthn_ceremonies SET expires_at=clock_timestamp()-interval '1 second' WHERE id=$1", first.CeremonyID); err != nil {
-		t.Fatalf("expire abandoned recovery ceremony fixture: %v", err)
+	retryChallenge, err := challengeService.RequestOperatorRecovery(ctx, domain.OperatorRecoveryRequest{Phone: root.PhoneE164, RecoveryCredential: recoveryCredential}, strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatalf("request recovery while prior ceremony is active: %v", err)
 	}
-	if _, err := service.FinishRecoveryRegistration(ctx, domain.OperatorPasskeyRecoveryFinishRequest{CeremonyID: first.CeremonyID, Credential: json.RawMessage(`{}`), ClientInstanceId: "recovery-expired-attempt"}); !errors.Is(err, domain.ErrInvalidChallenge) {
-		t.Fatalf("expired recovery ceremony error = %v; want invalid challenge", err)
+	var retryAdmissible bool
+	var retryDeliveryStatus string
+	if err := db.QueryRowContext(ctx, `SELECT c.admissible,d.status FROM identity_challenges c
+JOIN identity_challenge_deliveries d ON d.challenge_id=c.id WHERE c.id=$1`, retryChallenge.ChallengeID).Scan(&retryAdmissible, &retryDeliveryStatus); err != nil {
+		t.Fatalf("read retried recovery challenge delivery: %v", err)
 	}
-	assertRecoveryAccessUnchanged(t, ctx, db, root.ActorID, first.CeremonyID, true)
-
-	insertRecoveryChallenge(t, ctx, db, root.ActorID, root.PhoneE164, []byte(secret), "operator-recovery-retry", "654321")
-	input.VerificationCode = "654321"
+	if !retryAdmissible || retryDeliveryStatus != "pending" {
+		t.Fatalf("recovery retry delivery admissible=%t status=%q; want admissible pending delivery", retryAdmissible, retryDeliveryStatus)
+	}
+	input.VerificationCode = operatorRecoveryTestCode(t, []byte(secret), retryChallenge.ChallengeID)
 	second, err := service.BeginRecoveryRegistration(ctx, input)
 	if err != nil {
 		t.Fatalf("retry recovery after abandoned ceremony: %v", err)
 	}
 	assertRecoveryAccessUnchanged(t, ctx, db, root.ActorID, second.CeremonyID, true)
+	var firstConsumedAt sql.NullTime
+	if err := db.QueryRowContext(ctx, "SELECT consumed_at FROM identity_webauthn_ceremonies WHERE id=$1", first.CeremonyID).Scan(&firstConsumedAt); err != nil || !firstConsumedAt.Valid {
+		t.Fatalf("superseded recovery ceremony consumed=%t err=%v; want consumed", firstConsumedAt.Valid, err)
+	}
+	if _, err := service.FinishRecoveryRegistration(ctx, domain.OperatorPasskeyRecoveryFinishRequest{CeremonyID: first.CeremonyID, Credential: json.RawMessage(`{}`), ClientInstanceId: "recovery-superseded-attempt"}); !errors.Is(err, domain.ErrInvalidChallenge) {
+		t.Fatalf("superseded recovery ceremony error = %v; want invalid challenge", err)
+	}
+	assertRecoveryAccessUnchanged(t, ctx, db, root.ActorID, second.CeremonyID, true)
+
+	if _, err := db.ExecContext(ctx, "UPDATE identity_webauthn_ceremonies SET expires_at=clock_timestamp()-interval '1 second' WHERE id=$1", second.CeremonyID); err != nil {
+		t.Fatalf("expire abandoned recovery ceremony fixture: %v", err)
+	}
+	if _, err := service.FinishRecoveryRegistration(ctx, domain.OperatorPasskeyRecoveryFinishRequest{CeremonyID: second.CeremonyID, Credential: json.RawMessage(`{}`), ClientInstanceId: "recovery-expired-attempt"}); !errors.Is(err, domain.ErrInvalidChallenge) {
+		t.Fatalf("expired recovery ceremony error = %v; want invalid challenge", err)
+	}
+	assertRecoveryAccessUnchanged(t, ctx, db, root.ActorID, second.CeremonyID, true)
+
+	thirdChallenge, err := challengeService.RequestOperatorRecovery(ctx, domain.OperatorRecoveryRequest{Phone: root.PhoneE164, RecoveryCredential: recoveryCredential}, strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatalf("request recovery after expired ceremony: %v", err)
+	}
+	input.VerificationCode = operatorRecoveryTestCode(t, []byte(secret), thirdChallenge.ChallengeID)
+	third, err := service.BeginRecoveryRegistration(ctx, input)
+	if err != nil {
+		t.Fatalf("retry recovery after expired ceremony: %v", err)
+	}
+	assertRecoveryAccessUnchanged(t, ctx, db, root.ActorID, third.CeremonyID, true)
 
 	rollbackTx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatalf("begin rollback proof transaction: %v", err)
 	}
-	if err := completeRecoveryTx(ctx, rollbackTx, root.ActorID, second.CeremonyID); err != nil {
+	if err := completeRecoveryTx(ctx, rollbackTx, root.ActorID, third.CeremonyID); err != nil {
 		_ = rollbackTx.Rollback()
 		t.Fatalf("stage recovery completion for rollback proof: %v", err)
 	}
 	if err := rollbackTx.Rollback(); err != nil {
 		t.Fatalf("roll back recovery completion proof: %v", err)
 	}
-	assertRecoveryAccessUnchanged(t, ctx, db, root.ActorID, second.CeremonyID, true)
+	assertRecoveryAccessUnchanged(t, ctx, db, root.ActorID, third.CeremonyID, true)
 
 	completionTx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatalf("begin successful recovery transaction fixture: %v", err)
 	}
 	defer func() { _ = completionTx.Rollback() }()
-	if err := completeRecoveryTx(ctx, completionTx, root.ActorID, second.CeremonyID); err != nil {
+	if err := completeRecoveryTx(ctx, completionTx, root.ActorID, third.CeremonyID); err != nil {
 		t.Fatalf("complete recovery revocation transition: %v", err)
 	}
 	replacement := &webauthn.Credential{ID: []byte("replacement-operator-passkey"), PublicKey: []byte("replacement-test-key"), Flags: webauthn.CredentialFlags{UserPresent: true, UserVerified: true}}
@@ -154,7 +187,7 @@ VALUES('operator-recovery-old-session',$1,'operator',repeat('a',64),repeat('b',6
 	if _, err := completionTx.ExecContext(ctx, "UPDATE identity_actor_roles SET activated_at=COALESCE(activated_at,clock_timestamp()),version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND role='operator' AND enabled=true", root.ActorID); err != nil {
 		t.Fatalf("activate recovered operator role: %v", err)
 	}
-	if err := markCeremonyConsumedTx(ctx, completionTx, second.CeremonyID); err != nil {
+	if err := markCeremonyConsumedTx(ctx, completionTx, third.CeremonyID); err != nil {
 		t.Fatalf("consume completed recovery ceremony: %v", err)
 	}
 	if _, err := sessions.CreateTx(ctx, completionTx, root.ActorID, "operator", "operator-recovery-complete"); err != nil {
@@ -170,7 +203,7 @@ VALUES('operator-recovery-old-session',$1,'operator',repeat('a',64),repeat('b',6
 		t.Fatalf("begin completed ceremony replay proof: %v", err)
 	}
 	defer func() { _ = replayTx.Rollback() }()
-	if err := lockUnconsumedCeremony(ctx, replayTx, second.CeremonyID, ceremonyRecovery); !errors.Is(err, domain.ErrInvalidChallenge) {
+	if err := lockUnconsumedCeremony(ctx, replayTx, third.CeremonyID, ceremonyRecovery); !errors.Is(err, domain.ErrInvalidChallenge) {
 		t.Fatalf("completed recovery ceremony replay error = %v; want invalid challenge", err)
 	}
 }
@@ -233,6 +266,25 @@ func insertRecoveryChallenge(t *testing.T, ctx context.Context, db *sql.DB, acto
 VALUES($1,$2,'operator',$3,$4,$5,repeat('a',64),true,'pending',0,clock_timestamp()+interval '10 minutes')`, challengeID, actorID, domain.ChallengeOperatorRecover, phone, identitysecurity.HMAC256Hex(secret, challengeID, domain.ChallengeOperatorRecover, code)); err != nil {
 		t.Fatalf("create isolated recovery challenge fixture: %v", err)
 	}
+}
+
+func operatorRecoveryTestCode(t *testing.T, secret []byte, challengeID string) string {
+	t.Helper()
+	raw := identitysecurity.HMAC256Hex(secret, challengeID, string(domain.ChallengeOperatorRecover), "challenge-code")
+	decoded, err := hex.DecodeString(raw[:8])
+	if err != nil || len(decoded) != 4 {
+		t.Fatalf("decode generated operator recovery challenge code: bytes=%d err=%v", len(decoded), err)
+	}
+	value := uint32(decoded[0])<<24 | uint32(decoded[1])<<16 | uint32(decoded[2])<<8 | uint32(decoded[3])
+	return fmt.Sprintf("%06d", value%1_000_000)
+}
+
+type passkeyRecoveryChallengeSender struct{}
+
+func (passkeyRecoveryChallengeSender) Provider() string { return "passkey-test" }
+
+func (passkeyRecoveryChallengeSender) Send(context.Context, challengedelivery.Message) error {
+	return nil
 }
 
 func newIsolatedIdentityDatabase(t *testing.T) (context.Context, *sql.DB) {

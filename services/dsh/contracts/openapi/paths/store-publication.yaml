@@ -2,7 +2,7 @@ paths:
   /dsh/stores:
     get:
       operationId: listOperatorStores
-      summary: List canonical DSH stores; published stores are also selectable by marketing and platform-policy operators
+      summary: List canonical DSH stores; Catalog operators may read stores for catalog workflows, and published stores are selectable by marketing and platform-policy operators
       security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
@@ -14,7 +14,7 @@ paths:
         - { name: state, in: query, required: false, schema: { type: string, enum: [unpublished, published, hidden] } }
         - { name: sort, in: query, required: false, schema: { type: string, enum: [updated_desc, updated_asc, name_asc] } }
       responses:
-        "200": { description: Bounded canonical store summaries for operator registry use., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/OperatorStoreListResponse" } } }
+        "200": { description: Bounded canonical store summaries for operator registry use., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/OperatorStoreListResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }

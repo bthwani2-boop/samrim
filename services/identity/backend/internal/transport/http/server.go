@@ -498,6 +498,10 @@ func (s *Server) bootstrapFirstOperator(w http.ResponseWriter, r *http.Request, 
 		writeDomainError(w, err)
 		return
 	}
+	if !view.ActorCreated && !view.RoleCreated {
+		writeDomainError(w, domain.ErrConflict)
+		return
+	}
 	status := http.StatusOK
 	if view.ActorCreated || view.RoleCreated {
 		status = http.StatusCreated

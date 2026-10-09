@@ -25,6 +25,21 @@ async function stubAuthenticatedSession(page: Page, permissions = authenticatedO
   });
 }
 
+test("workspace search hides child destinations when their parent permission is absent", async ({ page }) => {
+  await stubAuthenticatedSession(page, ["catalog"]);
+  await page.goto("/workspace");
+  await page.getByRole("button", { name: "البحث في صفحات لوحة التحكم" }).click();
+  const search = page.getByRole("searchbox", { name: "البحث في صفحات لوحة التحكم" });
+
+  for (const query of ["الكباتن", "الميدان"]) {
+    await search.fill(query);
+    await expect(page.getByText("لا توجد صفحات مطابقة.")).toBeVisible();
+  }
+
+  await search.fill("المنتجات");
+  await expect(page.locator(".workspace-search-results").getByRole("link", { name: "المنتجات" })).toBeVisible();
+});
+
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/wallet-providers**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ walletProviders: [
@@ -304,18 +319,25 @@ test("authenticated operator discovers the platform centers through workspace na
   await expect(page).toHaveURL(/\/access$/);
   await expect(page.locator('#workspace-navigation a[href="/access"][aria-current="page"]')).toHaveAttribute("href", "/access");
   await expect(page.getByRole("heading", { name: "المشغّلون", exact: true, level: 1 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toBeVisible();
-  await expect(page.getByLabel("اسم العرض الكامل بالعربية")).toBeVisible();
-  await expect(page.locator("#workspace-main")).toBeFocused();
-  await page.getByRole("button", { name: "الوصول والصلاحيات", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "قائمة المشغّلين وصلاحياتهم" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "إدارة حسابات مشغّلي لوحة التحكم" })).toBeVisible();
+  await page.locator(".access-create-disclosure > summary").click();
+  await expect(page.getByRole("heading", { name: "ملف جديد" })).toBeVisible();
+  await expect(page.getByLabel("الاسم بالعربية")).toBeVisible();
+  await expect(page.locator(".access-create-disclosure > summary")).toBeFocused();
+  await page.getByRole("navigation", { name: "إدارة المشغّلين" }).getByRole("link", { name: "الوصول والصلاحيات" }).click();
+  await expect(page.getByRole("heading", { name: "حسابات المشغّلين", level: 2 })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "بحث بالاسم أو الهاتف أو المسمى أو القسم" })).toBeVisible();
+  await expect(page.locator(".access-table")).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.getByRole("button", { name: "الوصول والصلاحيات", exact: true })).toBeFocused();
+  await expect(page.getByRole("navigation", { name: "إدارة المشغّلين" }).getByRole("link", { name: "الوصول والصلاحيات" })).toBeFocused();
 
   await page.reload();
+  await expect(page).toHaveURL(/\/access\?view=permissions$/);
   await expect(page.getByRole("heading", { name: "المشغّلون", exact: true, level: 1 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "حسابات المشغّلين", level: 2 })).toBeVisible();
+  await page.getByRole("navigation", { name: "إدارة المشغّلين" }).getByRole("link", { name: "ملفات المشغّلين" }).click();
+  await expect(page).toHaveURL(/\/access\?view=profiles$/);
+  await page.locator(".access-create-disclosure > summary").click();
+  await expect(page.getByRole("heading", { name: "ملف جديد" })).toBeVisible();
 });
 
 test("operator without operator-administration authority cannot open access or profile controls", async ({ page }) => {
@@ -325,7 +347,7 @@ test("operator without operator-administration authority cannot open access or p
   await expect(page.getByRole("status")).toContainText("الوصول إلى هذه المساحة غير مفعّل");
   await expect(page.getByRole("heading", { name: "المشغّلون", exact: true, level: 1 })).toHaveCount(0);
   await expect(page.getByLabel("اسم العرض الكامل بالعربية")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "قائمة المشغّلين وصلاحياتهم" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "حسابات المشغّلين", level: 2 })).toHaveCount(0);
 });
 
 test("operator home reads only work queues covered by the current session permissions", async ({ page }) => {

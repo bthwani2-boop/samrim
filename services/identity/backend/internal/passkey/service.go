@@ -160,6 +160,11 @@ func (s *Service) finishRegistration(ctx context.Context, ceremonyID string, raw
 		return domain.OperatorPasskeyRegistrationResponse{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if ceremonyKind == ceremonyRecovery {
+		if err := lockRecoveryCredentialReservation(ctx, tx, ceremony.actorID, ceremonyID); err != nil {
+			return domain.OperatorPasskeyRegistrationResponse{}, err
+		}
+	}
 	if err := lockUnconsumedCeremony(ctx, tx, ceremonyID, ceremonyKind); err != nil {
 		return domain.OperatorPasskeyRegistrationResponse{}, err
 	}
@@ -300,22 +305,38 @@ func (s *Service) storeCeremony(ctx context.Context, kind, actorID, recoveryCred
 		return domain.PasskeyOptions{}, err
 	}
 	if kind == ceremonyRecovery {
-		if _, err := tx.ExecContext(ctx, `UPDATE identity_operator_recovery_credentials c
-SET reserved_by_ceremony_id=NULL
-WHERE c.id=$1 AND c.reserved_by_ceremony_id IS NOT NULL AND EXISTS (
-  SELECT 1 FROM identity_webauthn_ceremonies previous
-  WHERE previous.id=c.reserved_by_ceremony_id
-    AND (previous.consumed_at IS NOT NULL OR previous.expires_at<=clock_timestamp())
-)`, recoveryCredentialID); err != nil {
-			return domain.PasskeyOptions{}, err
+		var previousCeremonyID sql.NullString
+		err := tx.QueryRowContext(ctx, `SELECT reserved_by_ceremony_id FROM identity_operator_recovery_credentials
+WHERE id=$1 AND actor_id=$2 AND used_at IS NULL AND revoked_at IS NULL FOR UPDATE`, recoveryCredentialID, actorID).Scan(&previousCeremonyID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.PasskeyOptions{}, domain.ErrConflict
 		}
-		reserved, err := tx.ExecContext(ctx, `UPDATE identity_operator_recovery_credentials
-SET reserved_by_ceremony_id=$1
-WHERE id=$2 AND actor_id=$3 AND used_at IS NULL AND revoked_at IS NULL AND reserved_by_ceremony_id IS NULL`, id, recoveryCredentialID, actorID)
 		if err != nil {
 			return domain.PasskeyOptions{}, err
 		}
-		reservedCount, err := reserved.RowsAffected()
+		if previousCeremonyID.Valid {
+			previous, err := tx.ExecContext(ctx, `UPDATE identity_webauthn_ceremonies
+SET consumed_at=COALESCE(consumed_at,clock_timestamp())
+WHERE id=$1 AND kind=$2 AND actor_id=$3`, previousCeremonyID.String, ceremonyRecovery, actorID)
+			if err != nil {
+				return domain.PasskeyOptions{}, err
+			}
+			previousCount, err := previous.RowsAffected()
+			if err != nil {
+				return domain.PasskeyOptions{}, err
+			}
+			if previousCount != 1 {
+				return domain.PasskeyOptions{}, domain.ErrConflict
+			}
+		}
+		reservation, err := tx.ExecContext(ctx, `UPDATE identity_operator_recovery_credentials
+SET reserved_by_ceremony_id=$1
+WHERE id=$2 AND actor_id=$3 AND used_at IS NULL AND revoked_at IS NULL
+  AND reserved_by_ceremony_id IS NOT DISTINCT FROM $4`, id, recoveryCredentialID, actorID, previousCeremonyID)
+		if err != nil {
+			return domain.PasskeyOptions{}, err
+		}
+		reservedCount, err := reservation.RowsAffected()
 		if err != nil {
 			return domain.PasskeyOptions{}, err
 		}
@@ -431,6 +452,16 @@ func lockUnconsumedCeremony(ctx context.Context, tx *sql.Tx, id, kind string) er
 	var consumedAt sql.NullTime
 	err := tx.QueryRowContext(ctx, "SELECT consumed_at FROM identity_webauthn_ceremonies WHERE id=$1 AND kind=$2 FOR UPDATE", id, kind).Scan(&consumedAt)
 	if errors.Is(err, sql.ErrNoRows) || consumedAt.Valid {
+		return domain.ErrInvalidChallenge
+	}
+	return err
+}
+
+func lockRecoveryCredentialReservation(ctx context.Context, tx *sql.Tx, actorID, ceremonyID string) error {
+	var credentialID string
+	err := tx.QueryRowContext(ctx, `SELECT id FROM identity_operator_recovery_credentials
+WHERE actor_id=$1 AND reserved_by_ceremony_id=$2 AND used_at IS NULL AND revoked_at IS NULL FOR UPDATE`, actorID, ceremonyID).Scan(&credentialID)
+	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ErrInvalidChallenge
 	}
 	return err

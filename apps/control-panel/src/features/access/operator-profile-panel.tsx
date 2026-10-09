@@ -280,15 +280,11 @@ export function OperatorProfilePanel() {
     </fieldset> : null}
 
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}
-    {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
+    {error && items.length > 0 ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
     {invitation ? <div className="code-output" role="status"><span className="summary-label">رمز دعوة التفعيل · يظهر مرة واحدة</span><code>{invitation.enrollmentToken.code}</code><p>أُرسلت الدعوة إلى <bdi dir="ltr">{invitation.enrollmentToken.maskedPhone}</bdi>. تنتهي في {new Date(invitation.enrollmentToken.expiresAt).toLocaleString("ar-YE-u-nu-latn", { dateStyle: "medium", timeStyle: "short" })}.</p></div> : null}
 
-    {loading && items.length === 0 ? <div className="access-loading" role="status"><span className="loading-mark" aria-hidden="true" /> جارٍ قراءة الملفات…</div> : null}
-    {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد ملفات مطابقة</strong><p>غيّر البحث أو أنشئ ملفًا جديدًا.</p></div> : null}
-
-    {items.length > 0 ? <>
-      <p className="access-result-count" aria-live="polite">{items.length} ملفًا محمّلًا{nextCursor ? " · توجد نتائج أخرى" : ""}</p>
-      <div className="access-table-wrap" aria-busy={loading}>
+    {items.length > 0 ? <p className="access-result-count" aria-live="polite">{items.length} ملفًا محمّلًا{nextCursor ? " · توجد نتائج أخرى" : ""}</p> : null}
+    <div className="access-table-wrap" aria-busy={loading}>
         <table className="operations-table access-table profile-table">
           <caption className="visually-hidden">ملفات المشغّلين وحالتها والإجراء التالي</caption>
           <thead>
@@ -320,6 +316,11 @@ export function OperatorProfilePanel() {
             </tr>
           </thead>
           <tbody>
+            {items.length === 0 ? <tr><td colSpan={4}>
+              {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>إعادة المحاولة</button></div>
+                : loading ? <div className="access-loading" role="status"><span className="loading-mark" aria-hidden="true" /> جارٍ قراءة الملفات…</div>
+                  : <div className="collection-state"><strong>لا توجد ملفات مطابقة</strong><p>غيّر البحث أو أنشئ ملفًا جديدًا.</p></div>}
+            </td></tr> : null}
             {items.map((profile) => {
               const edit = edits[profile.id] ?? { fullNameAr: profile.fullNameAr, phoneE164: profile.phoneE164 ?? "", jobTitle: profile.jobTitle ?? "", department: profile.department ?? "" };
               const changed = edit.fullNameAr.trim() !== profile.fullNameAr || edit.phoneE164.replace(/\s+/g, "") !== profile.phoneE164 || edit.jobTitle.trim() !== (profile.jobTitle ?? "") || edit.department.trim() !== (profile.department ?? "");
@@ -354,8 +355,7 @@ export function OperatorProfilePanel() {
             })}
           </tbody>
         </table>
-      </div>
-      {nextCursor ? <div className="access-load-more"><button type="button" className="button button-secondary" disabled={loading || loadingMore || Boolean(busy)} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
-    </> : null}
+    </div>
+    {items.length > 0 && nextCursor ? <div className="access-load-more"><button type="button" className="button button-secondary" disabled={loading || loadingMore || Boolean(busy)} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
   </section>;
 }

@@ -251,12 +251,7 @@ func (s *Service) RequestOperatorRecovery(ctx context.Context, input domain.Oper
 	var enabled, securityEnabled, credentialValid bool
 	err = s.db.QueryRowContext(ctx, `SELECT a.id,r.enabled,a.security_enabled,EXISTS(
 SELECT 1 FROM identity_operator_recovery_credentials c
-WHERE c.actor_id=a.id AND c.credential_hash=$2 AND c.used_at IS NULL AND c.revoked_at IS NULL
-AND (c.reserved_by_ceremony_id IS NULL OR EXISTS (
-  SELECT 1 FROM identity_webauthn_ceremonies ceremony
-  WHERE ceremony.id=c.reserved_by_ceremony_id
-    AND (ceremony.consumed_at IS NOT NULL OR ceremony.expires_at<=clock_timestamp())
-)))
+WHERE c.actor_id=a.id AND c.credential_hash=$2 AND c.used_at IS NULL AND c.revoked_at IS NULL)
 FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id AND r.role='operator'
 WHERE a.phone_e164=$1`, phone, identitysecurity.SHA256Hex(recoveryCredential)).Scan(&actorID, &enabled, &securityEnabled, &credentialValid)
 	admissible := err == nil && enabled && securityEnabled && credentialValid

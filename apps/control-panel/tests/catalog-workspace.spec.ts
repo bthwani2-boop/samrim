@@ -36,7 +36,7 @@ test("catalog center opens its product registry and exposes resource tabs", asyn
 test("store catalog import searches server pages and keeps the selected store visible", async ({ page }) => {
   await stubAuthenticatedSession(page);
   const storeRequests: Array<{ limit: string | null; query: string | null; cursor: string | null }> = [];
-  await page.route("**/api/partners/stores**", async (route) => {
+  await page.route("**/api/catalog/stores**", async (route) => {
     const params = new URL(route.request().url()).searchParams;
     const query = params.get("q");
     const cursor = params.get("cursor");

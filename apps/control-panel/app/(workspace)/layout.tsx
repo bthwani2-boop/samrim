@@ -138,7 +138,7 @@ function WorkspaceHeader({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchEntries = identity
     ? workspaceSearchEntries.filter((entry) => {
-        const destination = workspaceDestinations.find((candidate) => isCurrentWorkspacePath(entry.href, candidate.href));
+        const destination = workspaceDestinations.find((candidate) => isCurrentWorkspaceDestination(entry.href, candidate));
         return !destination || canOpenWorkspaceDestination(identity, destination);
       })
     : [];
