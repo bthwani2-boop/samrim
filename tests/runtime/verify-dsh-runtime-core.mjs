@@ -256,8 +256,7 @@ if (!checkerOperatorID) fail("independent active checker Operator fixture is mis
 if (!checkerOperatorID.startsWith("act_") || checkerOperatorID === actingOperatorID) fail("checker operator identity is invalid", checkerOperatorID);
 for (const permission of ["operations", "finance"]) {
   const currentPermission = await request(identityBase, "GET", `/internal/operators/${encodeURIComponent(checkerOperatorID)}/permissions/${permission}`, {
-    token: dshToken,
-    headers: { "X-Acting-Actor-ID": actingOperatorID },
+    token: identityDshToken,
   });
   if (currentPermission.status !== 200 || currentPermission.body?.actorId !== checkerOperatorID || currentPermission.body?.permission !== permission || !Number.isSafeInteger(currentPermission.body?.version)) {
     fail("checker Operator permission readback failed", JSON.stringify({ permission, currentPermission }));
