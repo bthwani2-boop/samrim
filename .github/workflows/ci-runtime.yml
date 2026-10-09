@@ -164,7 +164,7 @@ jobs:
           fi
 
           runtime_test_files="$(grep -E '^tests/runtime/' <<< "$changed_files" || true)"
-          unknown_runtime_test_files="$(grep -Ev '^(tests/runtime/(mailpit-challenge\.mjs|verify-dsh-baseline\.mjs|verify-dsh-location-runtime\.mjs|verify-dsh-runtime-core\.mjs|verify-identity-migrations\.mjs|verify-identity-runtime\.mjs|runtime-proof/(canonical-dsh-migration-history\.mjs|challenge-source\.mjs|trusted-executables\.mjs|trusted-executables\.d\.mts)))$' <<< "$runtime_test_files" || true)"
+          unknown_runtime_test_files="$(grep -Ev '^(tests/runtime/(mailpit-challenge\.mjs|verify-dsh-baseline\.mjs|verify-dsh-location-runtime\.mjs|verify-dsh-runtime-core\.mjs|verify-identity-migrations\.mjs|verify-identity-migrations\.test\.mjs|verify-identity-runtime\.mjs|runtime-proof/(canonical-dsh-migration-history\.mjs|challenge-source\.mjs|identity-migration-host-fallback\.mjs|trusted-executables\.mjs|trusted-executables\.d\.mts)))$' <<< "$runtime_test_files" || true)"
           if [[ -n "$unknown_runtime_test_files" ]]; then
             echo "::error::Runtime proof files require explicit proof ownership before CI can route them:"
             printf '%s\n' "$unknown_runtime_test_files"
@@ -177,7 +177,7 @@ jobs:
           dsh_runtime_proof_changed=false
           dsh_location_proof_changed=false
 
-          if grep -Eq '^tests/runtime/verify-identity-migrations\.mjs$' <<< "$changed_files"; then identity_migration_proof_changed=true; fi
+          if grep -Eq '^tests/runtime/(verify-identity-migrations\.mjs|verify-identity-migrations\.test\.mjs|runtime-proof/identity-migration-host-fallback\.mjs)$' <<< "$changed_files"; then identity_migration_proof_changed=true; fi
           if grep -Eq '^tests/runtime/verify-identity-runtime\.mjs$' <<< "$changed_files"; then identity_runtime_proof_changed=true; fi
           if grep -Eq '^tests/runtime/verify-dsh-baseline\.mjs$' <<< "$changed_files"; then dsh_baseline_proof_changed=true; fi
           if grep -Eq '^tests/runtime/verify-dsh-runtime-core\.mjs$' <<< "$changed_files"; then dsh_runtime_proof_changed=true; fi
