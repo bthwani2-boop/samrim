@@ -14,7 +14,8 @@ func ReadPublicCatalogAttributeRules(ctx context.Context, db *sql.DB, categoryID
 	rows, err := db.QueryContext(ctx, `SELECT r.category_id,r.attribute_id,a.code,a.name_ar,a.value_kind,r.required,r.filterable,r.variant_axis,r.version
 		FROM dsh.catalog_category_attribute_rules r
 		JOIN dsh.catalog_categories c ON c.id=r.category_id AND c.active=true
-		JOIN dsh.catalog_attribute_definitions a ON a.id=r.attribute_id AND a.active=true
+		JOIN dsh.commerce_verticals v ON v.id=c.vertical_id AND v.active=true
+		JOIN dsh.catalog_attribute_definitions a ON a.id=r.attribute_id AND a.active=true AND a.vertical_id=c.vertical_id
 		WHERE r.category_id=$1
 		ORDER BY a.code,a.id`, categoryID)
 	if err != nil {

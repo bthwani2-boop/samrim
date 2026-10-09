@@ -210,6 +210,169 @@ test("operator sees shared product categories as a hierarchy under their commerc
   await expect(page.getByRole("list", { name: "شجرة فئات المقاضي" })).toHaveCount(0);
 });
 
+test("vertical registry does not present a category image as a vertical image", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const vertical = { id: "grocery", nameAr: "المقاضي", nameEn: "Groceries", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" };
+  const root = { id: "grocery-drinks", verticalId: "grocery", parentCategoryId: null, nameAr: "مشروبات", nameEn: "Beverages", pathAr: "المقاضي / مشروبات", pathEn: "Groceries / Beverages", active: true, imageUri: "https://media.example/root-category.png", version: 1, createdAt: vertical.createdAt, updatedAt: vertical.updatedAt };
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [vertical] }) });
+  });
+  await page.route("**/api/catalog/categories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith(`/${root.id}`)) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ category: root }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [root], nextCursor: "" }) });
+  });
+  await page.route("**/api/catalog/attributes**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ definitions: [] }) });
+  });
+
+  await page.goto("/catalog/categories?verticalId=grocery");
+  await page.locator("details.catalog-vertical-settings > summary").click();
+  await expect(page.getByRole("heading", { name: "المجالات التجارية" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "صورة المجال المقاضي" })).toHaveCount(0);
+  await expect(page.getByText("لا توجد صورة جذر")).toHaveCount(0);
+});
+
+test("category media upload records rights and displays the canonical replacement", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const vertical = { id: "grocery", nameAr: "المقاضي", nameEn: "Groceries", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" };
+  let category = { id: "grocery-drinks", verticalId: vertical.id, parentCategoryId: null, nameAr: "مشروبات", nameEn: "Beverages", pathAr: "المقاضي / مشروبات", pathEn: "Groceries / Beverages", active: true, imageUri: undefined as string | undefined, version: 1, createdAt: vertical.createdAt, updatedAt: vertical.updatedAt };
+  let mediaRequest: { url: string; expectedVersion: string | null; idempotencyKey: string | null; contentType: string | null; body: string | null } | undefined;
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [vertical] }) });
+  });
+  await page.route("**/api/catalog/categories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/attribute-rules")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: [] }) });
+      return;
+    }
+    if (url.pathname.endsWith(`/${category.id}`)) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ category }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [category], nextCursor: "" }) });
+  });
+  await page.route("**/api/catalog/attributes**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ definitions: [] }) });
+  });
+  await page.route("**/api/catalog/categories/grocery-drinks/media", async (route) => {
+    const headers = route.request().headers();
+    mediaRequest = {
+      url: new URL(route.request().url()).pathname,
+      expectedVersion: headers["x-expected-version"] ?? null,
+      idempotencyKey: headers["idempotency-key"] ?? null,
+      contentType: headers["content-type"] ?? null,
+      body: route.request().postData(),
+    };
+    category = { ...category, imageUri: "https://media.example/category-v2.png", version: 2 };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ category, idempotentReplay: false }) });
+  });
+
+  await page.goto("/catalog/categories?verticalId=grocery&categoryId=grocery-drinks");
+  const uploadButton = page.getByRole("button", { name: "إرفاق الصورة" });
+  await expect(uploadButton).toBeDisabled();
+  await page.locator("#catalog-category-image").setInputFiles({
+    name: "beverages.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jKXcAAAAASUVORK5CYII=", "base64"),
+  });
+  await page.getByLabel("اسم المنشئ أو المصوّر").fill("فريق الكتالوج");
+  await page.getByLabel("مصدر الصورة").fill("تصوير داخلي");
+  await page.getByLabel("بيان الإذن أو الترخيص").fill("إذن موثق لعرض الصورة");
+  await page.getByLabel("سبب الإرفاق").fill("استبدال الصورة المعتمدة");
+  await expect(uploadButton).toBeDisabled();
+  await page.getByLabel("أقرّ بوجود إذن يسمح بعرض هذه الصورة").check();
+  await expect(uploadButton).toBeEnabled();
+  await uploadButton.click();
+
+  await expect(page.getByRole("status")).toContainText("تم إرفاق صورة «مشروبات».");
+  await expect(page.getByRole("img", { name: "معاينة صورة مشروبات" })).toHaveAttribute("src", "https://media.example/category-v2.png");
+  await expect(page.getByRole("button", { name: "استبدال الصورة" })).toBeDisabled();
+  expect(mediaRequest).toMatchObject({ url: "/api/catalog/categories/grocery-drinks/media", expectedVersion: "1", contentType: expect.stringContaining("multipart/form-data") });
+  expect(mediaRequest?.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/i);
+  expect(mediaRequest?.body).toContain("فريق الكتالوج");
+  expect(mediaRequest?.body).toContain("تصوير داخلي");
+  expect(mediaRequest?.body).toContain("إذن موثق لعرض الصورة");
+  expect(mediaRequest?.body).toContain("rightsAttested");
+  expect(mediaRequest?.body).toContain("true");
+});
+
+test("catalog attribute and enum option status changes use optimistic versions and re-read", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const vertical = { id: "grocery", nameAr: "المقاضي", nameEn: "Groceries", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" };
+  const root = { id: "grocery-drinks", verticalId: "grocery", parentCategoryId: null, nameAr: "مشروبات", nameEn: "Beverages", pathAr: "المقاضي / مشروبات", pathEn: "Groceries / Beverages", active: true, version: 1, createdAt: vertical.createdAt, updatedAt: vertical.updatedAt };
+  let definition = { id: "attr-color", verticalId: "grocery", code: "color", nameAr: "اللون", valueKind: "ENUM" as const, active: true, filterable: false, version: 1 };
+  let option = { attributeId: definition.id, optionValue: "أحمر", active: true, ordinal: 0, version: 1 };
+  let rule = { categoryId: root.id, attributeId: definition.id, code: "color", nameAr: definition.nameAr, valueKind: "ENUM" as const, required: false, filterable: false, variantAxis: false, version: 1 };
+  const mutationRequests: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const ruleRequests: Array<Record<string, unknown>> = [];
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [vertical] }) });
+  });
+  await page.route("**/api/catalog/categories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/attribute-rules") || url.pathname.includes("/attribute-rules/")) {
+      if (route.request().method() === "PUT") {
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        ruleRequests.push(body);
+        rule = { ...rule, required: Boolean(body.required), filterable: Boolean(body.filterable), variantAxis: Boolean(body.variantAxis), version: Number(body.expectedVersion) + 1 };
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: [rule] }) });
+      return;
+    }
+    if (url.pathname.endsWith(`/${root.id}`)) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ category: root }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [root], nextCursor: "" }) });
+  });
+  await page.route("**/api/catalog/attributes**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.includes("/enum-options/")) {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      mutationRequests.push({ path: url.pathname, body });
+      option = { ...option, active: Boolean(body.active), ordinal: Number(body.ordinal), version: Number(body.expectedVersion) + 1 };
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ option, idempotentReplay: false }) });
+      return;
+    }
+    if (url.pathname.endsWith("/enum-options")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ options: [option] }) });
+      return;
+    }
+    if (route.request().method() === "PATCH") {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      mutationRequests.push({ path: url.pathname, body });
+      definition = { ...definition, nameAr: String(body.nameAr), active: Boolean(body.active), version: Number(body.expectedVersion) + 1 };
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ definition, idempotentReplay: false }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ definitions: [definition] }) });
+  });
+
+  await page.goto("/catalog/categories?verticalId=grocery&categoryId=grocery-drinks");
+  await expect(page.getByRole("heading", { name: "مشروبات", exact: true, level: 4 })).toBeVisible();
+  await page.locator("details.catalog-category-properties > summary").click();
+  await page.getByLabel("سبب التغيير").fill("إيقاف خاصية اللون مؤقتًا");
+  await page.getByRole("button", { name: "إيقاف الخاصية اللون" }).click();
+  await expect(page.locator(".catalog-attribute-definition-list li").filter({ hasText: "اللون" })).toContainText("متوقفة");
+  await page.getByLabel("خاصية التعداد").selectOption(definition.id);
+  await expect(page.getByText("أحمر · نشط")).toBeVisible();
+  await page.getByRole("button", { name: "إيقاف الخيار أحمر" }).click();
+  await expect(page.getByText("أحمر · متوقف")).toBeVisible();
+  await page.getByLabel("قابل للتصفية").check();
+  await page.getByRole("button", { name: "حفظ القاعدة" }).click();
+  await expect(page.getByRole("status")).toContainText("تم تحديث قواعد خصائص الفئة");
+  expect(mutationRequests).toHaveLength(2);
+  expect(mutationRequests[0]?.body).toMatchObject({ active: false, expectedVersion: 1, reason: "إيقاف خاصية اللون مؤقتًا" });
+  expect(mutationRequests[1]?.body).toMatchObject({ active: false, expectedVersion: 1, reason: "إيقاف خاصية اللون مؤقتًا" });
+  expect(ruleRequests).toHaveLength(1);
+  expect(ruleRequests[0]).toMatchObject({ required: false, filterable: true, variantAxis: false, expectedVersion: 1, reason: "إيقاف خاصية اللون مؤقتًا" });
+});
+
 test("catalog proposal review shows detail and re-reads after approval", async ({ page }) => {
   await stubAuthenticatedSession(page);
   let queueRead = 0;

@@ -51,8 +51,6 @@
 :global(.catalog-registry-table td:first-child), :global(.catalog-registry-table th:first-child) { width: 36px; text-align: center; }
 :global(.catalog-registry-table td strong), :global(.catalog-registry-table td small) { display: block; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 :global(.catalog-registry-table td small) { margin-top: 3px; color: var(--text-muted); font-size: 11px; }
-:global(.catalog-vertical-image) { display: block; width: 64px; height: 48px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border-subtle); }
-:global(.catalog-vertical-image-empty) { color: var(--text-muted); font-size: 11px; }
 :global(.catalog-registry-product) { display: flex; align-items: center; gap: 10px; min-width: 210px; }
 :global(.catalog-registry-product > span:last-child) { display: grid; min-width: 0; }
 :global(.catalog-registry-product-image), :global(.catalog-registry-product-placeholder) { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-muted); object-fit: cover; color: var(--interactive-text); font-weight: 800; }

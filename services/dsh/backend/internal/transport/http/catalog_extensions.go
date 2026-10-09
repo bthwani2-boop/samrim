@@ -128,7 +128,7 @@ func (s *CatalogServer) listPublicAttributeEnumOptions(w http.ResponseWriter, r 
 	}
 	values := make([]contract.CatalogAttributeEnumOption, 0, len(items))
 	for _, item := range items {
-		values = append(values, contract.CatalogAttributeEnumOption{AttributeID: item.AttributeID, OptionValue: item.OptionValue, Active: item.Active, Ordinal: item.Ordinal})
+		values = append(values, toCatalogAttributeEnumOption(item))
 	}
 	writeJSON(w, http.StatusOK, contract.CatalogAttributeEnumOptionListResponse{Options: values})
 }
@@ -143,14 +143,15 @@ func (s *CatalogServer) listAttributeEnumOptions(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	items, err := s.service.ListAttributeEnumOptions(r.Context(), acting, r.PathValue("attributeId"))
+	activeOnly := r.URL.Query().Get("includeInactive") != "true"
+	items, err := s.service.ListAttributeEnumOptions(r.Context(), acting, r.PathValue("attributeId"), activeOnly)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
 	}
 	values := make([]contract.CatalogAttributeEnumOption, 0, len(items))
 	for _, item := range items {
-		values = append(values, contract.CatalogAttributeEnumOption{AttributeID: item.AttributeID, OptionValue: item.OptionValue, Active: item.Active, Ordinal: item.Ordinal})
+		values = append(values, toCatalogAttributeEnumOption(item))
 	}
 	writeJSON(w, http.StatusOK, contract.CatalogAttributeEnumOptionListResponse{Options: values})
 }
@@ -160,7 +161,7 @@ func (s *CatalogServer) createAttributeEnumOption(w http.ResponseWriter, r *http
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return
 	}
-	acting, _, idempotency, ok := requiredMutationHeaders(w, r)
+	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
 	if !ok {
 		return
 	}
@@ -168,12 +169,12 @@ func (s *CatalogServer) createAttributeEnumOption(w http.ResponseWriter, r *http
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, replayed, err := s.service.CreateAttributeEnumOption(r.Context(), acting, r.PathValue("attributeId"), postgres.CatalogAttributeEnumOptionInput{OptionValue: input.OptionValue, Active: input.Active, Ordinal: input.Ordinal}, idempotency)
+	item, replayed, err := s.service.CreateAttributeEnumOption(r.Context(), acting, correlation, input.Reason, r.PathValue("attributeId"), postgres.CatalogAttributeEnumOptionInput{OptionValue: input.OptionValue, Active: input.Active, Ordinal: input.Ordinal}, idempotency)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
 	}
-	writeJSON(w, responseStatus(replayed), contract.CatalogAttributeEnumOptionResponse{Option: contract.CatalogAttributeEnumOption{AttributeID: item.AttributeID, OptionValue: item.OptionValue, Active: item.Active, Ordinal: item.Ordinal}, IdempotentReplay: replayed})
+	writeJSON(w, responseStatus(replayed), contract.CatalogAttributeEnumOptionResponse{Option: toCatalogAttributeEnumOption(item), IdempotentReplay: replayed})
 }
 
 func (s *CatalogServer) createAttributeDefinition(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +182,7 @@ func (s *CatalogServer) createAttributeDefinition(w http.ResponseWriter, r *http
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return
 	}
-	acting, _, idempotency, ok := requiredMutationHeaders(w, r)
+	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
 	if !ok {
 		return
 	}
@@ -189,12 +190,58 @@ func (s *CatalogServer) createAttributeDefinition(w http.ResponseWriter, r *http
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, replayed, err := s.service.CreateAttributeDefinition(r.Context(), acting, postgres.CatalogAttributeDefinitionInput{ID: input.ID, VerticalID: input.VerticalID, Code: input.Code, NameAr: input.NameAr, ValueKind: input.ValueKind, Active: input.Active}, idempotency)
+	item, replayed, err := s.service.CreateAttributeDefinition(r.Context(), acting, correlation, input.Reason, postgres.CatalogAttributeDefinitionInput{ID: input.ID, VerticalID: input.VerticalID, Code: input.Code, NameAr: input.NameAr, ValueKind: input.ValueKind, Active: input.Active}, idempotency)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
 	}
 	writeJSON(w, responseStatus(replayed), contract.CatalogAttributeDefinitionResponse{Definition: toCatalogAttributeDefinition(item), IdempotentReplay: replayed})
+}
+
+func (s *CatalogServer) updateAttributeDefinition(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.UpdateCatalogAttributeDefinitionRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	item, replayed, err := s.service.UpdateAttributeDefinition(r.Context(), acting, correlation, input.Reason, r.PathValue("attributeId"), idempotency, postgres.UpdateCatalogAttributeDefinitionInput{NameAr: input.NameAr, Active: input.Active, ExpectedVersion: input.ExpectedVersion})
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogAttributeDefinitionResponse{Definition: toCatalogAttributeDefinition(item), IdempotentReplay: replayed})
+}
+
+func (s *CatalogServer) updateAttributeEnumOption(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.UpdateCatalogAttributeEnumOptionRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	item, replayed, err := s.service.UpdateAttributeEnumOption(r.Context(), acting, correlation, input.Reason, r.PathValue("attributeId"), r.PathValue("optionValue"), idempotency, postgres.UpdateCatalogAttributeEnumOptionInput{Active: input.Active, Ordinal: input.Ordinal, ExpectedVersion: input.ExpectedVersion})
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogAttributeEnumOptionResponse{Option: toCatalogAttributeEnumOption(item), IdempotentReplay: replayed})
+}
+
+func toCatalogAttributeEnumOption(item postgres.CatalogAttributeEnumOptionRecord) contract.CatalogAttributeEnumOption {
+	return contract.CatalogAttributeEnumOption{AttributeID: item.AttributeID, OptionValue: item.OptionValue, Active: item.Active, Ordinal: item.Ordinal, Version: item.Version}
 }
 
 func (s *CatalogServer) upsertProductAttribute(w http.ResponseWriter, r *http.Request) {

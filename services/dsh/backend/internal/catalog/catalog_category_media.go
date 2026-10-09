@@ -77,6 +77,7 @@ func (s *Service) UploadCatalogCategoryMedia(ctx context.Context, actingActorID 
 	}
 	if err = s.media.Put(ctx, objectKey, bytes.NewReader(input.Bytes), int64(len(input.Bytes)), contentType); err != nil {
 		_ = postgres.MarkCatalogCategoryMediaAssetFailed(ctx, s.db, asset.ID, err.Error())
+		_ = s.ReconcileMediaStorage(ctx)
 		return postgres.CatalogCategoryRecord{}, ErrCatalogMediaStorageUnavailable
 	}
 	result, _, err := postgres.AttachCatalogCategoryMediaAsset(ctx, s.db, asset, actingActorID, input.CorrelationID)

@@ -25,6 +25,8 @@ var (
 	ErrCatalogIdempotencyConflict       = errors.New("catalog idempotency key was already used with different facts")
 	ErrCatalogVersionConflict           = errors.New("catalog version is stale")
 	ErrCatalogAttributeRuleInvalid      = errors.New("catalog attribute rule is invalid")
+	ErrCatalogAttributeDefinitionExists = errors.New("catalog attribute definition already exists")
+	ErrCatalogAttributeOptionExists     = errors.New("catalog attribute option already exists")
 	ErrCatalogCategoryCycle             = errors.New("catalog category parent would create a cycle")
 	ErrCatalogCategoryHasActiveChildren = errors.New("active catalog categories cannot be detached from their active parent")
 	ErrCatalogCategoryParentInactive    = errors.New("an active catalog category requires an active parent path")

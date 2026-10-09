@@ -3,9 +3,14 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/lib/pq"
 )
 
 type CatalogAttributeDefinitionRecord struct {
@@ -13,6 +18,8 @@ type CatalogAttributeDefinitionRecord struct {
 	Active, Filterable                      bool
 	Version                                 int
 }
+
+var catalogAttributeCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{1,63}$`)
 
 type CatalogAttributeDefinitionInput struct {
 	ID, VerticalID, Code, NameAr, ValueKind string
@@ -22,7 +29,7 @@ type CatalogAttributeDefinitionInput struct {
 type CatalogAttributeEnumOptionRecord struct {
 	AttributeID, OptionValue string
 	Active                   bool
-	Ordinal                  int
+	Ordinal, Version         int
 }
 
 type CatalogAttributeEnumOptionInput struct {
@@ -63,29 +70,48 @@ type CatalogStorefrontSectionInput struct {
 	Active              bool
 }
 
-func HashCatalogAttributeDefinitionRequest(input CatalogAttributeDefinitionInput) string {
-	return hashFacts("attribute", input.ID, input.VerticalID, input.Code, input.NameAr, input.ValueKind, fmt.Sprint(input.Active))
+type UpdateCatalogAttributeDefinitionInput struct {
+	NameAr          string
+	Active          bool
+	ExpectedVersion int
 }
 
-func HashCatalogAttributeEnumOptionRequest(input CatalogAttributeEnumOptionInput) string {
-	return hashFacts("attribute-enum-option", input.AttributeID, input.OptionValue, fmt.Sprint(input.Active), fmt.Sprint(input.Ordinal))
+type UpdateCatalogAttributeEnumOptionInput struct {
+	Active          bool
+	Ordinal         int
+	ExpectedVersion int
 }
 
-func CreateCatalogAttributeDefinition(ctx context.Context, db *sql.DB, input CatalogAttributeDefinitionInput, idempotencyKey, requestHash string) (CatalogAttributeDefinitionRecord, bool, error) {
-	if strings.TrimSpace(input.ID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" {
-		return CatalogAttributeDefinitionRecord{}, false, ErrCatalogIdempotencyConflict
+func HashCatalogAttributeDefinitionRequest(input CatalogAttributeDefinitionInput, reason string) string {
+	return hashFacts("attribute-create", input.ID, input.VerticalID, input.Code, input.NameAr, input.ValueKind, fmt.Sprint(input.Active), strings.TrimSpace(reason))
+}
+
+func HashCatalogAttributeDefinitionUpdateRequest(attributeID string, input UpdateCatalogAttributeDefinitionInput, reason string) string {
+	return hashFacts("attribute-update", strings.TrimSpace(attributeID), strings.TrimSpace(input.NameAr), fmt.Sprint(input.Active), fmt.Sprint(input.ExpectedVersion), strings.TrimSpace(reason))
+}
+
+func HashCatalogAttributeEnumOptionRequest(input CatalogAttributeEnumOptionInput, reason string) string {
+	return hashFacts("attribute-enum-option-create", input.AttributeID, input.OptionValue, fmt.Sprint(input.Active), fmt.Sprint(input.Ordinal), strings.TrimSpace(reason))
+}
+
+func HashCatalogAttributeEnumOptionUpdateRequest(attributeID, optionValue string, input UpdateCatalogAttributeEnumOptionInput, reason string) string {
+	return hashFacts("attribute-enum-option-update", strings.TrimSpace(attributeID), strings.TrimSpace(optionValue), fmt.Sprint(input.Active), fmt.Sprint(input.Ordinal), fmt.Sprint(input.ExpectedVersion), strings.TrimSpace(reason))
+}
+
+func CreateCatalogAttributeDefinition(ctx context.Context, db *sql.DB, input CatalogAttributeDefinitionInput, idempotencyKey, requestHash string, audit CatalogRegistryAuditInput) (CatalogAttributeDefinitionRecord, bool, error) {
+	input.ID, input.VerticalID = strings.TrimSpace(input.ID), strings.TrimSpace(input.VerticalID)
+	input.Code, input.NameAr, input.ValueKind = strings.TrimSpace(input.Code), strings.TrimSpace(input.NameAr), strings.TrimSpace(input.ValueKind)
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if input.ID == "" || input.VerticalID == "" || !catalogAttributeCodePattern.MatchString(input.Code) || utf8.RuneCountInString(input.NameAr) < 2 || utf8.RuneCountInString(input.NameAr) > 160 || !validCatalogAttributeValueKind(input.ValueKind) || idempotencyKey == "" || strings.TrimSpace(requestHash) == "" || !validCatalogAttributeAudit(audit) {
+		return CatalogAttributeDefinitionRecord{}, false, ErrCatalogAttributeRuleInvalid
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return CatalogAttributeDefinitionRecord{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var activeVertical bool
-	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.commerce_verticals WHERE id=$1 AND active=true FOR SHARE)`, input.VerticalID).Scan(&activeVertical); err != nil {
+	if err = lockCatalogAttributeIdempotencyTx(ctx, tx, idempotencyKey); err != nil {
 		return CatalogAttributeDefinitionRecord{}, false, err
-	}
-	if !activeVertical {
-		return CatalogAttributeDefinitionRecord{}, false, ErrCatalogVerticalNotFound
 	}
 	var storedHash, storedID, operation string
 	err = tx.QueryRowContext(ctx, "SELECT request_hash,attribute_id,operation FROM dsh.catalog_attribute_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&storedHash, &storedID, &operation)
@@ -105,7 +131,17 @@ func CreateCatalogAttributeDefinition(ctx context.Context, db *sql.DB, input Cat
 	if !errors.Is(err, sql.ErrNoRows) {
 		return CatalogAttributeDefinitionRecord{}, false, err
 	}
+	var activeVertical bool
+	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.commerce_verticals WHERE id=$1 AND active=true FOR SHARE)`, input.VerticalID).Scan(&activeVertical); err != nil {
+		return CatalogAttributeDefinitionRecord{}, false, err
+	}
+	if !activeVertical {
+		return CatalogAttributeDefinitionRecord{}, false, ErrCatalogVerticalNotFound
+	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_attribute_definitions(id,vertical_id,code,name_ar,value_kind,active) VALUES($1,$2,$3,$4,$5,$6)", input.ID, input.VerticalID, input.Code, input.NameAr, input.ValueKind, input.Active); err != nil {
+		if catalogAttributeDefinitionDuplicate(err) {
+			return CatalogAttributeDefinitionRecord{}, false, ErrCatalogAttributeDefinitionExists
+		}
 		return CatalogAttributeDefinitionRecord{}, false, err
 	}
 	item, err := readCatalogAttributeDefinitionTx(ctx, tx, input.ID)
@@ -115,10 +151,83 @@ func CreateCatalogAttributeDefinition(ctx context.Context, db *sql.DB, input Cat
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_attribute_mutation_idempotency(idempotency_key,request_hash,attribute_id,operation,result_version) VALUES($1,$2,$3,'create',$4)", idempotencyKey, requestHash, input.ID, item.Version); err != nil {
 		return CatalogAttributeDefinitionRecord{}, false, err
 	}
+	audit.EntityType, audit.EntityID, audit.Action = "attribute_definition", item.ID, "CREATED"
+	audit.ExpectedVersion, audit.ResultingVersion, audit.BeforeState, audit.AfterState = 0, item.Version, nil, item
+	if err = writeCatalogRegistryAudit(ctx, tx, audit); err != nil {
+		return CatalogAttributeDefinitionRecord{}, false, err
+	}
 	if err = tx.Commit(); err != nil {
 		return CatalogAttributeDefinitionRecord{}, false, err
 	}
 	return item, false, nil
+}
+
+func UpdateCatalogAttributeDefinition(ctx context.Context, db *sql.DB, attributeID string, input UpdateCatalogAttributeDefinitionInput, idempotencyKey, requestHash string, audit CatalogRegistryAuditInput) (CatalogAttributeDefinitionRecord, bool, error) {
+	attributeID, idempotencyKey = strings.TrimSpace(attributeID), strings.TrimSpace(idempotencyKey)
+	input.NameAr = strings.TrimSpace(input.NameAr)
+	if attributeID == "" || idempotencyKey == "" || strings.TrimSpace(requestHash) == "" || input.ExpectedVersion < 1 || utf8.RuneCountInString(input.NameAr) < 2 || utf8.RuneCountInString(input.NameAr) > 160 || !validCatalogAttributeAudit(audit) {
+		return CatalogAttributeDefinitionRecord{}, false, ErrCatalogAttributeRuleInvalid
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CatalogAttributeDefinitionRecord{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err = lockCatalogAttributeIdempotencyTx(ctx, tx, idempotencyKey); err != nil {
+		return CatalogAttributeDefinitionRecord{}, false, err
+	}
+	var storedHash, storedID, operation string
+	err = tx.QueryRowContext(ctx, "SELECT request_hash,attribute_id,operation FROM dsh.catalog_attribute_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&storedHash, &storedID, &operation)
+	if err == nil {
+		if storedHash != requestHash || storedID != attributeID || operation != "update" {
+			return CatalogAttributeDefinitionRecord{}, false, ErrCatalogIdempotencyConflict
+		}
+		item, readErr := readCatalogAttributeDefinitionTx(ctx, tx, attributeID)
+		if readErr != nil {
+			return CatalogAttributeDefinitionRecord{}, false, readErr
+		}
+		if err = tx.Commit(); err != nil {
+			return CatalogAttributeDefinitionRecord{}, false, err
+		}
+		return item, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return CatalogAttributeDefinitionRecord{}, false, err
+	}
+	var before CatalogAttributeDefinitionRecord
+	err = tx.QueryRowContext(ctx, "SELECT id,vertical_id,code,name_ar,value_kind,active,version FROM dsh.catalog_attribute_definitions WHERE id=$1 FOR UPDATE", attributeID).Scan(&before.ID, &before.VerticalID, &before.Code, &before.NameAr, &before.ValueKind, &before.Active, &before.Version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CatalogAttributeDefinitionRecord{}, false, ErrCatalogCategoryNotFound
+	}
+	if err != nil {
+		return CatalogAttributeDefinitionRecord{}, false, err
+	}
+	if before.Version != input.ExpectedVersion {
+		return CatalogAttributeDefinitionRecord{}, false, ErrCatalogVersionConflict
+	}
+	result, err := tx.ExecContext(ctx, "UPDATE dsh.catalog_attribute_definitions SET name_ar=$2,active=$3,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$4", attributeID, input.NameAr, input.Active, input.ExpectedVersion)
+	if err != nil {
+		return CatalogAttributeDefinitionRecord{}, false, err
+	}
+	if changed, changedErr := result.RowsAffected(); changedErr != nil || changed != 1 {
+		return CatalogAttributeDefinitionRecord{}, false, ErrCatalogVersionConflict
+	}
+	after, err := readCatalogAttributeDefinitionTx(ctx, tx, attributeID)
+	if err != nil {
+		return CatalogAttributeDefinitionRecord{}, false, err
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_attribute_mutation_idempotency(idempotency_key,request_hash,attribute_id,operation,result_version) VALUES($1,$2,$3,'update',$4)", idempotencyKey, requestHash, attributeID, after.Version); err != nil {
+		return CatalogAttributeDefinitionRecord{}, false, err
+	}
+	audit.EntityType, audit.EntityID, audit.Action = "attribute_definition", attributeID, "UPDATED"
+	audit.ExpectedVersion, audit.ResultingVersion, audit.BeforeState, audit.AfterState = before.Version, after.Version, before, after
+	if err = writeCatalogRegistryAudit(ctx, tx, audit); err != nil {
+		return CatalogAttributeDefinitionRecord{}, false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return CatalogAttributeDefinitionRecord{}, false, err
+	}
+	return after, false, nil
 }
 
 func readCatalogAttributeDefinitionTx(ctx context.Context, tx *sql.Tx, id string) (CatalogAttributeDefinitionRecord, error) {
@@ -159,11 +268,13 @@ func ListCatalogAttributeDefinitions(ctx context.Context, db *sql.DB, verticalID
 }
 
 func ListCatalogAttributeEnumOptions(ctx context.Context, db *sql.DB, attributeID string, activeOnly bool) ([]CatalogAttributeEnumOptionRecord, error) {
-	where := "attribute_id=$1"
+	query := "SELECT option.attribute_id,option.option_value,option.active,option.ordinal,option.version FROM dsh.catalog_attribute_enum_options option"
+	where := "option.attribute_id=$1"
 	if activeOnly {
-		where += " AND active=true"
+		query += " JOIN dsh.catalog_attribute_definitions definition ON definition.id=option.attribute_id AND definition.active=true JOIN dsh.commerce_verticals vertical ON vertical.id=definition.vertical_id AND vertical.active=true"
+		where += " AND option.active=true"
 	}
-	rows, err := db.QueryContext(ctx, "SELECT attribute_id,option_value,active,ordinal FROM dsh.catalog_attribute_enum_options WHERE "+where+" ORDER BY ordinal,option_value", strings.TrimSpace(attributeID))
+	rows, err := db.QueryContext(ctx, query+" WHERE "+where+" ORDER BY option.ordinal,option.option_value", strings.TrimSpace(attributeID))
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +282,7 @@ func ListCatalogAttributeEnumOptions(ctx context.Context, db *sql.DB, attributeI
 	items := make([]CatalogAttributeEnumOptionRecord, 0)
 	for rows.Next() {
 		var item CatalogAttributeEnumOptionRecord
-		if err := rows.Scan(&item.AttributeID, &item.OptionValue, &item.Active, &item.Ordinal); err != nil {
+		if err := rows.Scan(&item.AttributeID, &item.OptionValue, &item.Active, &item.Ordinal, &item.Version); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -179,35 +290,29 @@ func ListCatalogAttributeEnumOptions(ctx context.Context, db *sql.DB, attributeI
 	return items, rows.Err()
 }
 
-func CreateCatalogAttributeEnumOption(ctx context.Context, db *sql.DB, input CatalogAttributeEnumOptionInput, idempotencyKey, requestHash string) (CatalogAttributeEnumOptionRecord, bool, error) {
+func CreateCatalogAttributeEnumOption(ctx context.Context, db *sql.DB, input CatalogAttributeEnumOptionInput, idempotencyKey, requestHash string, audit CatalogRegistryAuditInput) (CatalogAttributeEnumOptionRecord, bool, error) {
 	input.AttributeID = strings.TrimSpace(input.AttributeID)
 	input.OptionValue = strings.Join(strings.Fields(strings.TrimSpace(input.OptionValue)), " ")
-	if input.AttributeID == "" || input.OptionValue == "" || input.Ordinal < 0 || input.Ordinal > 100 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" {
-		return CatalogAttributeEnumOptionRecord{}, false, ErrCatalogIdempotencyConflict
-	}
-	_, kind, _, err := readCatalogAttributeDefinition(ctx, db, input.AttributeID)
-	if err != nil {
-		return CatalogAttributeEnumOptionRecord{}, false, err
-	}
-	if kind != "ENUM" {
-		return CatalogAttributeEnumOptionRecord{}, false, ErrCatalogCategoryNotFound
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if input.AttributeID == "" || input.OptionValue == "" || utf8.RuneCountInString(input.OptionValue) > 160 || input.Ordinal < 0 || input.Ordinal > 100 || idempotencyKey == "" || strings.TrimSpace(requestHash) == "" || !validCatalogAttributeAudit(audit) {
+		return CatalogAttributeEnumOptionRecord{}, false, ErrCatalogAttributeRuleInvalid
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return CatalogAttributeEnumOptionRecord{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-attribute-option:idempotency:"+idempotencyKey); err != nil {
+	if err = lockCatalogAttributeIdempotencyTx(ctx, tx, idempotencyKey); err != nil {
 		return CatalogAttributeEnumOptionRecord{}, false, err
 	}
 	var storedHash, storedID, operation string
 	err = tx.QueryRowContext(ctx, "SELECT request_hash,attribute_id,operation FROM dsh.catalog_attribute_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&storedHash, &storedID, &operation)
 	if err == nil {
-		if storedHash != requestHash || storedID != input.AttributeID || operation != "update" {
+		if storedHash != requestHash || storedID != input.AttributeID || operation != "create" {
 			return CatalogAttributeEnumOptionRecord{}, false, ErrCatalogIdempotencyConflict
 		}
 		var item CatalogAttributeEnumOptionRecord
-		if err = tx.QueryRowContext(ctx, "SELECT attribute_id,option_value,active,ordinal FROM dsh.catalog_attribute_enum_options WHERE attribute_id=$1 AND option_value=$2", input.AttributeID, input.OptionValue).Scan(&item.AttributeID, &item.OptionValue, &item.Active, &item.Ordinal); err != nil {
+		if err = tx.QueryRowContext(ctx, "SELECT attribute_id,option_value,active,ordinal,version FROM dsh.catalog_attribute_enum_options WHERE attribute_id=$1 AND option_value=$2", input.AttributeID, input.OptionValue).Scan(&item.AttributeID, &item.OptionValue, &item.Active, &item.Ordinal, &item.Version); err != nil {
 			return CatalogAttributeEnumOptionRecord{}, false, err
 		}
 		if err = tx.Commit(); err != nil {
@@ -218,16 +323,147 @@ func CreateCatalogAttributeEnumOption(ctx context.Context, db *sql.DB, input Cat
 	if !errors.Is(err, sql.ErrNoRows) {
 		return CatalogAttributeEnumOptionRecord{}, false, err
 	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_attribute_enum_options(attribute_id,option_value,active,ordinal) VALUES($1,$2,$3,$4)", input.AttributeID, input.OptionValue, input.Active, input.Ordinal); err != nil {
+	var kind string
+	if err = tx.QueryRowContext(ctx, "SELECT value_kind FROM dsh.catalog_attribute_definitions WHERE id=$1", input.AttributeID).Scan(&kind); errors.Is(err, sql.ErrNoRows) {
+		return CatalogAttributeEnumOptionRecord{}, false, ErrCatalogCategoryNotFound
+	} else if err != nil {
 		return CatalogAttributeEnumOptionRecord{}, false, err
 	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_attribute_mutation_idempotency(idempotency_key,request_hash,attribute_id,operation,result_version) VALUES($1,$2,$3,'update',1)", idempotencyKey, requestHash, input.AttributeID); err != nil {
+	if kind != "ENUM" {
+		return CatalogAttributeEnumOptionRecord{}, false, ErrCatalogAttributeRuleInvalid
+	}
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-attribute-option:"+input.AttributeID+":"+input.OptionValue); err != nil {
+		return CatalogAttributeEnumOptionRecord{}, false, err
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_attribute_enum_options(attribute_id,option_value,active,ordinal,version) VALUES($1,$2,$3,$4,1)", input.AttributeID, input.OptionValue, input.Active, input.Ordinal); err != nil {
+		if catalogAttributeOptionDuplicate(err) {
+			return CatalogAttributeEnumOptionRecord{}, false, ErrCatalogAttributeOptionExists
+		}
+		return CatalogAttributeEnumOptionRecord{}, false, err
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_attribute_mutation_idempotency(idempotency_key,request_hash,attribute_id,operation,result_version) VALUES($1,$2,$3,'create',1)", idempotencyKey, requestHash, input.AttributeID); err != nil {
+		return CatalogAttributeEnumOptionRecord{}, false, err
+	}
+	item := CatalogAttributeEnumOptionRecord{AttributeID: input.AttributeID, OptionValue: input.OptionValue, Active: input.Active, Ordinal: input.Ordinal, Version: 1}
+	audit.EntityType, audit.EntityID, audit.Action = "attribute_enum_option", catalogAttributeOptionAuditID(input.AttributeID, input.OptionValue), "CREATED"
+	audit.ExpectedVersion, audit.ResultingVersion, audit.BeforeState, audit.AfterState = 0, item.Version, nil, item
+	if err = writeCatalogRegistryAudit(ctx, tx, audit); err != nil {
 		return CatalogAttributeEnumOptionRecord{}, false, err
 	}
 	if err = tx.Commit(); err != nil {
 		return CatalogAttributeEnumOptionRecord{}, false, err
 	}
-	return CatalogAttributeEnumOptionRecord{AttributeID: input.AttributeID, OptionValue: input.OptionValue, Active: input.Active, Ordinal: input.Ordinal}, false, nil
+	return item, false, nil
+}
+
+func UpdateCatalogAttributeEnumOption(ctx context.Context, db *sql.DB, attributeID, optionValue string, input UpdateCatalogAttributeEnumOptionInput, idempotencyKey, requestHash string, audit CatalogRegistryAuditInput) (CatalogAttributeEnumOptionRecord, bool, error) {
+	attributeID, optionValue, idempotencyKey = strings.TrimSpace(attributeID), strings.Join(strings.Fields(strings.TrimSpace(optionValue)), " "), strings.TrimSpace(idempotencyKey)
+	if attributeID == "" || optionValue == "" || utf8.RuneCountInString(optionValue) > 160 || input.Ordinal < 0 || input.Ordinal > 100 || input.ExpectedVersion < 1 || idempotencyKey == "" || strings.TrimSpace(requestHash) == "" || !validCatalogAttributeAudit(audit) {
+		return CatalogAttributeEnumOptionRecord{}, false, ErrCatalogAttributeRuleInvalid
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CatalogAttributeEnumOptionRecord{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err = lockCatalogAttributeIdempotencyTx(ctx, tx, idempotencyKey); err != nil {
+		return CatalogAttributeEnumOptionRecord{}, false, err
+	}
+	var storedHash, storedID, operation string
+	err = tx.QueryRowContext(ctx, "SELECT request_hash,attribute_id,operation FROM dsh.catalog_attribute_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&storedHash, &storedID, &operation)
+	if err == nil {
+		if storedHash != requestHash || storedID != attributeID || operation != "update" {
+			return CatalogAttributeEnumOptionRecord{}, false, ErrCatalogIdempotencyConflict
+		}
+		item, readErr := readCatalogAttributeEnumOptionTx(ctx, tx, attributeID, optionValue)
+		if readErr != nil {
+			return CatalogAttributeEnumOptionRecord{}, false, readErr
+		}
+		if err = tx.Commit(); err != nil {
+			return CatalogAttributeEnumOptionRecord{}, false, err
+		}
+		return item, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return CatalogAttributeEnumOptionRecord{}, false, err
+	}
+	var before CatalogAttributeEnumOptionRecord
+	if err = tx.QueryRowContext(ctx, "SELECT attribute_id,option_value,active,ordinal,version FROM dsh.catalog_attribute_enum_options WHERE attribute_id=$1 AND option_value=$2 FOR UPDATE", attributeID, optionValue).Scan(&before.AttributeID, &before.OptionValue, &before.Active, &before.Ordinal, &before.Version); errors.Is(err, sql.ErrNoRows) {
+		return CatalogAttributeEnumOptionRecord{}, false, ErrCatalogCategoryNotFound
+	} else if err != nil {
+		return CatalogAttributeEnumOptionRecord{}, false, err
+	}
+	if before.Version != input.ExpectedVersion {
+		return CatalogAttributeEnumOptionRecord{}, false, ErrCatalogVersionConflict
+	}
+	result, err := tx.ExecContext(ctx, "UPDATE dsh.catalog_attribute_enum_options SET active=$3,ordinal=$4,version=version+1,updated_at=clock_timestamp() WHERE attribute_id=$1 AND option_value=$2 AND version=$5", attributeID, optionValue, input.Active, input.Ordinal, input.ExpectedVersion)
+	if err != nil {
+		return CatalogAttributeEnumOptionRecord{}, false, err
+	}
+	if changed, changedErr := result.RowsAffected(); changedErr != nil || changed != 1 {
+		return CatalogAttributeEnumOptionRecord{}, false, ErrCatalogVersionConflict
+	}
+	after, err := readCatalogAttributeEnumOptionTx(ctx, tx, attributeID, optionValue)
+	if err != nil {
+		return CatalogAttributeEnumOptionRecord{}, false, err
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_attribute_mutation_idempotency(idempotency_key,request_hash,attribute_id,operation,result_version) VALUES($1,$2,$3,'update',$4)", idempotencyKey, requestHash, attributeID, after.Version); err != nil {
+		return CatalogAttributeEnumOptionRecord{}, false, err
+	}
+	audit.EntityType, audit.EntityID, audit.Action = "attribute_enum_option", catalogAttributeOptionAuditID(attributeID, optionValue), "UPDATED"
+	audit.ExpectedVersion, audit.ResultingVersion, audit.BeforeState, audit.AfterState = before.Version, after.Version, before, after
+	if err = writeCatalogRegistryAudit(ctx, tx, audit); err != nil {
+		return CatalogAttributeEnumOptionRecord{}, false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return CatalogAttributeEnumOptionRecord{}, false, err
+	}
+	return after, false, nil
+}
+
+func readCatalogAttributeEnumOptionTx(ctx context.Context, tx *sql.Tx, attributeID, optionValue string) (CatalogAttributeEnumOptionRecord, error) {
+	var item CatalogAttributeEnumOptionRecord
+	err := tx.QueryRowContext(ctx, "SELECT attribute_id,option_value,active,ordinal,version FROM dsh.catalog_attribute_enum_options WHERE attribute_id=$1 AND option_value=$2", attributeID, optionValue).Scan(&item.AttributeID, &item.OptionValue, &item.Active, &item.Ordinal, &item.Version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CatalogAttributeEnumOptionRecord{}, ErrCatalogCategoryNotFound
+	}
+	return item, err
+}
+
+func lockCatalogAttributeIdempotencyTx(ctx context.Context, tx *sql.Tx, key string) error {
+	_, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-attribute:idempotency:"+key)
+	return err
+}
+
+func validCatalogAttributeAudit(audit CatalogRegistryAuditInput) bool {
+	reasonLength := utf8.RuneCountInString(strings.TrimSpace(audit.Reason))
+	actorLength := utf8.RuneCountInString(strings.TrimSpace(audit.ActingActorID))
+	correlationLength := utf8.RuneCountInString(strings.TrimSpace(audit.CorrelationID))
+	return actorLength >= 1 && actorLength <= 128 && correlationLength >= 1 && correlationLength <= 128 && reasonLength >= 5 && reasonLength <= 500
+}
+
+func validCatalogAttributeValueKind(kind string) bool {
+	switch kind {
+	case "TEXT", "INTEGER", "DECIMAL", "BOOLEAN", "ENUM", "MEASUREMENT", "DATE":
+		return true
+	default:
+		return false
+	}
+}
+
+func catalogAttributeOptionAuditID(attributeID, optionValue string) string {
+	value, _ := json.Marshal([2]string{attributeID, optionValue})
+	return string(value)
+}
+
+func catalogAttributeDefinitionDuplicate(err error) bool {
+	var pqError *pq.Error
+	return errors.As(err, &pqError) && pqError.Code == "23505" && (pqError.Constraint == "catalog_attribute_definitions_pkey" || pqError.Constraint == "catalog_attribute_definitions_vertical_code_uq")
+}
+
+func catalogAttributeOptionDuplicate(err error) bool {
+	var pqError *pq.Error
+	return errors.As(err, &pqError) && pqError.Code == "23505" && pqError.Constraint == "catalog_attribute_enum_options_pkey"
 }
 
 func readCatalogAttributeDefinition(ctx context.Context, db *sql.DB, attributeID string) (string, string, bool, error) {
@@ -431,9 +667,6 @@ func UpsertCatalogCategoryAttributeRule(ctx context.Context, db *sql.DB, rule Ca
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	if rule.CategoryID == "" || rule.AttributeID == "" || expectedVersion < 0 || idempotencyKey == "" || requestHash == "" {
 		return ErrCatalogCategoryNotFound
-	}
-	if rule.Filterable {
-		return ErrCatalogAttributeRuleInvalid
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {

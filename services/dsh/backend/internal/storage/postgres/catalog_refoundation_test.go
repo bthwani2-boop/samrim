@@ -355,7 +355,9 @@ func (s *catalogRefoundationScenario) createRegistryFixtures() {
 		s.t.Fatalf("category tree should be fully restored and active: count=%d err=%v", activeTreeCategories, err)
 	}
 	attributeInput := postgres.CatalogAttributeDefinitionInput{ID: "coffee_origin", VerticalID: vertical.ID, Code: "origin", NameAr: "بلد المنشأ", ValueKind: "TEXT", Active: true}
-	if _, _, err := postgres.CreateCatalogAttributeDefinition(s.ctx, s.db, attributeInput, "idem-attribute-origin-v1", postgres.HashCatalogAttributeDefinitionRequest(attributeInput)); err != nil {
+	attributeReason := "Create origin attribute definition"
+	attributeAudit := postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-attribute-origin-v1", Reason: attributeReason}
+	if _, _, err := postgres.CreateCatalogAttributeDefinition(s.ctx, s.db, attributeInput, "idem-attribute-origin-v1", postgres.HashCatalogAttributeDefinitionRequest(attributeInput, attributeReason), attributeAudit); err != nil {
 		s.t.Fatalf("create catalog attribute definition: %v", err)
 	}
 	rule := postgres.CatalogAttributeRuleRecord{CategoryID: category.ID, AttributeID: attributeInput.ID}

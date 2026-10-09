@@ -64,6 +64,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/catalog/categories/{categoryId}/media/upload", s.uploadCategoryMedia)
 	mux.HandleFunc("GET /dsh/catalog/attributes", s.listAttributeDefinitions)
 	mux.HandleFunc("POST /dsh/catalog/attributes", s.createAttributeDefinition)
+	mux.HandleFunc("PATCH /dsh/catalog/attributes/{attributeId}", s.updateAttributeDefinition)
 	mux.HandleFunc("GET /dsh/catalog/products", s.listProducts)
 	mux.HandleFunc("GET /dsh/catalog/product-registry", s.listProductRegistry)
 	mux.HandleFunc("POST /dsh/catalog/products", s.createProduct)
@@ -96,6 +97,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/catalog/store-imports/{runId}/commit", s.commitOperatorStoreCatalogImport)
 	mux.HandleFunc("GET /dsh/catalog/attributes/{attributeId}/enum-options", s.listAttributeEnumOptions)
 	mux.HandleFunc("POST /dsh/catalog/attributes/{attributeId}/enum-options", s.createAttributeEnumOption)
+	mux.HandleFunc("PATCH /dsh/catalog/attributes/{attributeId}/enum-options/{optionValue}", s.updateAttributeEnumOption)
 	mux.HandleFunc("GET /dsh/catalog/product-proposals/review-queue", s.listProductProposalReviewQueue)
 	mux.HandleFunc("POST /dsh/catalog/product-proposals/{proposalId}/review", s.reviewProductProposal)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/offers", s.listOffers)
@@ -958,6 +960,10 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "catalog record was not found")
 	case errors.Is(err, postgres.ErrCatalogIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different catalog facts")
+	case errors.Is(err, postgres.ErrCatalogAttributeDefinitionExists):
+		writeError(w, http.StatusConflict, "ATTRIBUTE_EXISTS", "an attribute with this identifier or code already exists in the vertical")
+	case errors.Is(err, postgres.ErrCatalogAttributeOptionExists):
+		writeError(w, http.StatusConflict, "ATTRIBUTE_OPTION_EXISTS", "this value already exists for the attribute")
 	case errors.Is(err, postgres.ErrCatalogVersionConflict):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "catalog version is stale")
 	case errors.Is(err, postgres.ErrCommercialStoreTypeInvalid):

@@ -89,6 +89,20 @@ func verifyStoreCommercialTypeAssignment(t *testing.T, ctx context.Context, db *
 		Reason: "Assign commercial type", CorrelationID: "corr-store-type-assignment-" + suffix,
 		IdempotencyKey: "idem-store-type-assignment-" + suffix, ExpectedVersion: 1,
 	}
+	otherVerticalID := createCommercialTypeVertical(t, ctx, db, suffix+"-mismatch")
+	otherType := postgres.CommercialStoreTypeRecord{ID: "wrong-vertical-type-" + suffix, VerticalID: otherVerticalID, NameAr: "صيدلية", NameEn: "Pharmacy", Active: true}
+	otherTypeReason := "Create type in another vertical"
+	otherTypeAudit := postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-wrong-vertical-type-" + suffix, Reason: otherTypeReason}
+	if _, err := postgres.CreateCommercialStoreType(ctx, db, otherType, "idem-wrong-vertical-type-"+suffix, postgres.HashCommercialStoreTypeCreateRequest(otherType, otherTypeReason), otherTypeAudit); err != nil {
+		t.Fatalf("create commercial type in second vertical: %v", err)
+	}
+	incompatible := input
+	incompatible.TypeID = otherType.ID
+	incompatible.IdempotencyKey += "-wrong-vertical"
+	incompatible.CorrelationID += "-wrong-vertical"
+	if _, err := postgres.SetStoreCommercialType(ctx, db, incompatible); !errors.Is(err, postgres.ErrCommercialStoreTypeNotFound) {
+		t.Fatalf("assign type from another vertical error=%v, want compatibility rejection", err)
+	}
 	assigned, err := postgres.SetStoreCommercialType(ctx, db, input)
 	if err != nil || assigned.StoreID != storeID || assigned.CommercialStoreTypeID != createdType.StoreType.ID || assigned.Version != 2 || assigned.Replayed {
 		t.Fatalf("assign commercial type = %+v, error=%v", assigned, err)
@@ -118,7 +132,7 @@ func verifyStoreCommercialTypeAssignment(t *testing.T, ctx context.Context, db *
 func createCommercialTypeVertical(t *testing.T, ctx context.Context, db *sql.DB, suffix string) string {
 	t.Helper()
 	vertical := postgres.CommerceVerticalRecord{
-		ID: "storetype-vertical-" + suffix, NameAr: "تصنيف اختبار", NameEn: "Test Vertical",
+		ID: "storetype-vertical-" + suffix, NameAr: "تصنيف اختبار " + suffix, NameEn: "Test Vertical " + suffix,
 		Active: true,
 	}
 	reason := "Create commercial type test vertical"
