@@ -80,7 +80,11 @@ const paths = walk(root);
 const oldRepo = ["bthwani2-boop/governance", "and-docs"].join("-"),
 	oldSha = ["GOVERNANCE", "CANONICAL", "SHA"].join("_");
 for (const p of paths) {
-	if (p.startsWith("tools/governance/")) continue;
+	// Only the verifier and its fixture source contain intentional legacy literals.
+	if (
+		p === "tools/governance/verify-governance.mjs" ||
+		p === "tools/governance/verify-governance.test.mjs"
+	) continue;
 	if (!/\.(md|mdx|mjs|js|cjs|ts|tsx|json|jsonc|yml|yaml|ps1|psm1)$/.test(p))
 		continue;
 	const s = get(p);

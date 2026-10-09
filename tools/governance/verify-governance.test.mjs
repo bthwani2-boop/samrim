@@ -76,6 +76,15 @@ const cases = [
 		false,
 	],
 	[
+		"new governance helper cannot reintroduce donor authority",
+		(dir) => {
+			const helper = path.join(dir, "tools/governance/legacy-helper.mjs");
+			fs.mkdirSync(path.dirname(helper), { recursive: true });
+			fs.writeFileSync(helper, 'export const GOVERNANCE_CANONICAL_SHA = "stale";\n');
+		},
+		false,
+	],
+	[
 		"deleted research file fails",
 		(dir) =>
 			fs.unlinkSync(path.join(dir, "docs/reference/competitors/nass.md")),
@@ -169,6 +178,10 @@ test("committed governance candidates cannot bypass integrity verification", () 
   const source = fs.readFileSync(path.join(root, "tools/dev/check-local.ps1"), "utf8");
   const candidate = source.split("if ($Candidate) {")[1]?.split("    $files = @(")[0] ?? "";
   assert.match(candidate, /git diff --name-only \$governanceBase \$head/);
+  assert.match(candidate, /\$env:NX_BASE = \$governanceBase/);
+  assert.match(candidate, /Where-Object \{ \$_ -notmatch \$governanceOnlyPattern \}/);
+  assert.match(candidate, /--base=\$governanceBase --head=\$head/);
+  assert.ok(candidate.indexOf("pnpm exec nx affected") > candidate.indexOf("$candidateFiles"), "Nx only after affected scope is known");
   assert.match(candidate, /refs\/remotes\/origin\/main/);
   assert.match(candidate, /node tools\/governance\/verify-governance\.mjs/);
   assert.match(candidate, /node --test tools\/governance\/verify-governance\.test\.mjs/);
