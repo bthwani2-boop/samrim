@@ -191,7 +191,12 @@ export function OperatorProfilePanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fullNameAr: name, phoneE164: phone, jobTitle: title, department: unit }),
       });
-      if (!response.ok) { setError(await responseMessage(response)); await load(); return; }
+      if (!response.ok) {
+        const message = await responseMessage(response);
+        await load();
+        setError(message);
+        return;
+      }
       setFullNameAr("");
       setPhoneE164("");
       setJobTitle("");
@@ -205,8 +210,9 @@ export function OperatorProfilePanel() {
       setNotice("أُنشئ الملف وبات بانتظار المراجعة.");
       await load();
     } catch (cause) {
-      setError(isRequestFailure(cause) ? cause.message : "تعذر حفظ ملف المشغّل.");
+      const message = isRequestFailure(cause) ? cause.message : "تعذر حفظ ملف المشغّل.";
       await load();
+      setError(message);
     } finally {
       setBusy("");
     }
