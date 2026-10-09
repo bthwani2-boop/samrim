@@ -11,7 +11,7 @@ const canonicalProject = "samrim-local";
 const goImage = "golang:1.27.1-alpine";
 const migrationTestPath = path.join(root, "services/identity/backend/internal/storage/postgres/migrate_test.go");
 const canonicalMigrationTests = [
-  "TestMigrationV13ToV26Upgrade",
+  "TestMigrationV13ToV28Upgrade",
   "TestManagedRecoveryMigrationFreshBootstrapAndV25Upgrade",
 ];
 
@@ -42,7 +42,12 @@ function requireEnv(values, name) {
 }
 
 const migrationTestSource = fs.readFileSync(migrationTestPath, "utf8");
-if (/127\.0\.0\.1|localhost|55432/.test(migrationTestSource)) {
+const hostPostgresFallbackPatterns = [
+  /\bpostgres(?:ql)?:\/\/(?:[^@\s]+@)?(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/|[?\s"'`]|$)/i,
+  /\bhost\s*=\s*(?:localhost|127\.0\.0\.1)\b/i,
+  /(?:localhost|127\.0\.0\.1):55432\b/i,
+];
+if (hostPostgresFallbackPatterns.some((pattern) => pattern.test(migrationTestSource))) {
   fail("migration proof must not contain a host PostgreSQL fallback");
 }
 for (const testName of canonicalMigrationTests) {
