@@ -124,7 +124,7 @@ Model context is a scarce working set, not an archive. Reduce context without re
 - Local commits may be development checkpoints. Push, pull-request creation, remote CI and remote AI review are integration events, not routine iterative-development checkpoints; unless earlier remote integration is materially required, defer them until feature freeze.
 - Candidate-wide proof should normally run once after feature freeze. Rerun only proof invalidated by a later affected change.
 
-When the task is to plan or prepare implementation work rather than execute it, use the pinned Governance `docs/EXECUTION-CONTRACT.md`. Do not maintain or request a separate reusable trigger that duplicates the generated execution command. The planner emits only the current material slice command, then consumes the executor's compact checkpoint through delta review for the next slice.
+When the task is to plan or prepare implementation work rather than execute it, use the pinned Governance `execution/contract.md`. Do not maintain or request a separate reusable trigger that duplicates the generated execution command. The planner emits only the current material slice command, then consumes the executor's compact checkpoint through delta review for the next slice.
 
 
 ## 6. Consequential action safety
