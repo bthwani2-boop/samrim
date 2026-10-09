@@ -1,5 +1,5 @@
-import { randomInt } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { randomInt } from "node:crypto";
 import { existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -97,6 +97,18 @@ async function findOrBootstrapPrimaryOperator(
   if (existing) {
     expect(existing.actorId).toMatch(/^act_/);
     expect(existing.phone).toMatch(/^\+9677/);
+    if (process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "disposable-ci" && process.env.CI === "true") {
+      const enrollment = await jsonRequest(
+        identityBase,
+        "/internal/bootstrap/operator",
+        bootstrapToken,
+        { phoneE164: existing.phone, role: "operator" },
+      );
+      expect(enrollment.response.status, "disposable CI founder must enroll through canonical bootstrap").toBe(200);
+      const token = String(enrollment.body?.enrollmentToken?.code || "");
+      expect(token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+      return { ...existing, token };
+    }
     return existing;
   }
 

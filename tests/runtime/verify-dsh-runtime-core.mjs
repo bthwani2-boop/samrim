@@ -243,9 +243,7 @@ let actingOperatorID = sql("SELECT r.actor_id FROM identity_actor_roles r JOIN i
 if (!actingOperatorID) console.log(`DSH_OPERATOR_CANDIDATES=${sql("SELECT COALESCE(string_agg(r.actor_id || ':' || r.enabled::text || ':' || (r.activated_at IS NOT NULL)::text || ':' || a.security_enabled::text, ',' ORDER BY r.activated_at DESC NULLS LAST, r.actor_id), 'none') FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator'")}`);
 if (!actingOperatorID) actingOperatorID = sql("SELECT b.initial_operator_actor_id FROM identity_bootstrap_state b JOIN identity_actor_roles r ON r.actor_id=b.initial_operator_actor_id AND r.role='operator' JOIN identity_actors a ON a.id=r.actor_id WHERE b.id=1 AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL");
 if (!actingOperatorID) {
-  const bootstrapped = await request(identityBase, "POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: `+9677${crypto.randomInt(10_000_000, 99_999_999)}`, role: "operator" } });
-  if (bootstrapped.status !== 201 || !bootstrapped.body?.role?.actorId) fail("operator bootstrap failed", JSON.stringify(bootstrapped));
-  actingOperatorID = String(bootstrapped.body.role.actorId);
+  fail("canonical active Operator with Platform Policies permission is missing; complete founder enrollment and permission readback before DSH proof");
 }
 if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is invalid", actingOperatorID);
 const platformPoliciesAccess = await request(identityBase, "GET", `/internal/operators/${encodeURIComponent(actingOperatorID)}/permissions/platform_policies`, { token: identityDshToken });
