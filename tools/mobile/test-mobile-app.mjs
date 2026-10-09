@@ -139,6 +139,28 @@ if (app === "app-field") {
     authenticatedBoundaryOpen >= 0 && admissionProviderOpen > authenticatedBoundaryOpen && admissionProviderOpen < authenticatedBoundaryClose,
     "app-field: admission read state must remain inside the authenticated route boundary",
   );
+  const { fieldAdmissionActionability } = await import(
+    pathToFileURL(path.join(appDir, "src/features/field-operations/field-eligibility.ts")).href
+  );
+  const completeAdmission = { state: "eligible", requiresProfileReview: false, fullNameAr: "ميداني" };
+  assert.equal(fieldAdmissionActionability(completeAdmission), "available");
+  assert.equal(fieldAdmissionActionability({ ...completeAdmission, requiresProfileReview: true }), "profile_review");
+  assert.equal(fieldAdmissionActionability({ ...completeAdmission, fullNameAr: "" }), "profile_review");
+  assert.equal(fieldAdmissionActionability({ ...completeAdmission, fullNameAr: "  " }), "available");
+  assert.equal(fieldAdmissionActionability({ ...completeAdmission, state: "suspended" }), "not_eligible");
+  assert.equal(fieldAdmissionActionability({ ...completeAdmission, state: "pending_review" }), "not_eligible");
+  assert.equal(fieldAdmissionActionability({ ...completeAdmission, fullNameAr: undefined }), "profile_review");
+  for (const consumer of [
+    "app/(app)/_layout.tsx",
+    "src/shell/field-admission-gate.tsx",
+    "src/features/field-operations/field-readiness.tsx",
+    "src/features/field-operations/field-new-case.tsx",
+    "src/features/account/account.tsx",
+  ]) {
+    const source = fs.readFileSync(path.join(appDir, consumer), "utf8");
+    assert.ok(source.includes("fieldAdmissionActionability"), `app-field: ${consumer} must use canonical admission actionability`);
+  }
+  assert.match(layoutContent, /if \(becameActive\) \{[\s\S]*?recordOpen\(\);[\s\S]*?void refresh\(\);[\s\S]*?\}/, "app-field: refresh admission after returning to foreground");
   const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-commercial-agreement-rate.ts")).href
   );
