@@ -80,6 +80,9 @@ const governed = git(["ls-files", "--cached", "--others", "--exclude-standard", 
 const seenOwners = new Set();
 for (const p of governed) {
   if (!fs.existsSync(at(p))) fail("tracked governance owner missing " + p);
+  const stat = fs.lstatSync(at(p));
+  if (stat.isSymbolicLink()) fail("repository symlink is not scanned " + p);
+  if (!stat.isFile()) fail("governance owner is not a file " + p);
   const body = get(p);
   const declaration = /^SEMANTIC_OWNER:\s*(\S+)\s*$/m.exec(body);
   if (!declaration || declaration[1] !== p || seenOwners.has(declaration[1]))
