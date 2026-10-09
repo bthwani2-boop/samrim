@@ -68,6 +68,42 @@ function run(f) {
 }
 const cases = [
 	["clean snapshot passes", () => {}, true],
+  [
+    "missing capability route target fails",
+    (dir) => fs.writeFileSync(
+      path.join(dir, "docs/governance/product/capabilities.md"),
+      fs.readFileSync(path.join(dir, "docs/governance/product/capabilities.md"), "utf8")
+        .replace("capabilities/commerce/cart-checkout.md", "capabilities/commerce/retired-checkout.md"),
+    ),
+    false,
+  ],
+  [
+    "capability ID mismatching declared owner fails",
+    (dir) => {
+      const p = path.join(dir, "docs/governance/product/capabilities/commerce/cart-checkout.md");
+      fs.writeFileSync(p, fs.readFileSync(p, "utf8")
+        .replace("CAPABILITY_ID: CART_CHECKOUT", "CAPABILITY_ID: OTHER_CHECKOUT"));
+    },
+    false,
+  ],
+  [
+    "missing admitted capability route fails",
+    (dir) => {
+      const p = path.join(dir, "docs/governance/product/capabilities.md");
+      fs.writeFileSync(p, fs.readFileSync(p, "utf8")
+        .replace(/^`CART_CHECKOUT`.*\r?\n/m, ""));
+    },
+    false,
+  ],
+  [
+    "duplicate capability route fails",
+    (dir) => fs.appendFileSync(
+      path.join(dir, "docs/governance/product/capabilities.md"),
+      "\n`CART_CHECKOUT` → `capabilities/commerce/cart-checkout.md`\n",
+    ),
+    false,
+  ],
+
 	[
 		"unowned or duplicate governance document fails",
 		(dir) => {
