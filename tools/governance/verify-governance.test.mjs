@@ -156,6 +156,6 @@ test("governance-only routing cannot exempt executable or runtime changes", () =
   assert.equal(staticRe[1],runtimeRe[1]);
   assert.equal(staticRe[1],localRe[1]);
   const re=new RegExp(staticRe[1]);
-  for(const p of ["AGENTS.md","docs/governance/product/overview.md","docs/reference/competitors/README.md","tools/governance/verify-governance.mjs",".github/workflows/ci-static.yml","apps/control-panel/UX-CONTRACT.md"])assert.equal(re.test(p),true,"governance-only "+p);
-  for(const p of ["services/dsh/backend/internal/catalog/x.go","services/identity/backend/internal/session/x.go","services/wlt/backend/internal/ledger/x.go","apps/control-panel/src/features/central-catalog/x.tsx","infra/local/compose/compose.yaml",".github/workflows/ci-runtime.yml","tests/runtime/verify-dsh-runtime-core.mjs"])assert.equal(re.test(p),false,"implementation must retain normal checks "+p);
+  for(const p of ["AGENTS.md","docs/governance/product/overview.md","docs/reference/competitors/README.md","tools/governance/verify-governance.mjs","apps/control-panel/UX-CONTRACT.md"])assert.equal(re.test(p),true,"governance-only "+p);
+  for(const p of ["services/dsh/backend/internal/catalog/x.go","services/identity/backend/internal/session/x.go","services/wlt/backend/internal/ledger/x.go","apps/control-panel/src/features/central-catalog/x.tsx","infra/local/compose/compose.yaml",".github/workflows/ci-runtime.yml",".github/workflows/ci-static.yml",".github/CODEOWNERS","tools/dev/check-local.ps1","tests/runtime/verify-dsh-runtime-core.mjs"])assert.equal(re.test(p),false,"implementation must retain normal checks "+p);
 });

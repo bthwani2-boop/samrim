@@ -68,7 +68,7 @@ try {
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 
-    $governanceOnlyPattern = '^(AGENTS\.md|README\.md|REPOSITORY-STRUCTURE\.md|SECURITY\.md|CONTRIBUTING\.md|CLAUDE\.md|GEMINI\.md|knowledge\.sources\.json|\.github/(CODEOWNERS|pull_request_template\.md|workflows/ci-static\.yml)|apps/control-panel/(DESIGN|UX-CONTRACT)\.md|packages/design-system/README\.md|tools/dev/check-local\.ps1|docs/(governance|reference/competitors)/.*|tools/governance/.*)$'
+    $governanceOnlyPattern = '^(AGENTS\.md|README\.md|REPOSITORY-STRUCTURE\.md|SECURITY\.md|CONTRIBUTING\.md|CLAUDE\.md|GEMINI\.md|knowledge\.sources\.json|\.github/pull_request_template\.md|apps/control-panel/(DESIGN|UX-CONTRACT)\.md|packages/design-system/README\.md|docs/(governance|reference/competitors)/.*|tools/governance/.*)$'
     if (@($files | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -eq 0) {
         node tools/governance/verify-governance.mjs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -107,7 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           changed="$(git diff --name-only "$NX_BASE" "$NX_HEAD")"
-          if [[ -n "$changed" ]] && ! grep -Evq '^(AGENTS\.md|README\.md|REPOSITORY-STRUCTURE\.md|SECURITY\.md|CONTRIBUTING\.md|CLAUDE\.md|GEMINI\.md|knowledge\.sources\.json|\.github/(CODEOWNERS|pull_request_template\.md|workflows/ci-static\.yml)|apps/control-panel/(DESIGN|UX-CONTRACT)\.md|packages/design-system/README\.md|tools/dev/check-local\.ps1|docs/(governance|reference/competitors)/.*|tools/governance/.*)$' <<< "$changed"; then
+          if [[ -n "$changed" ]] && ! grep -Evq '^(AGENTS\.md|README\.md|REPOSITORY-STRUCTURE\.md|SECURITY\.md|CONTRIBUTING\.md|CLAUDE\.md|GEMINI\.md|knowledge\.sources\.json|\.github/pull_request_template\.md|apps/control-panel/(DESIGN|UX-CONTRACT)\.md|packages/design-system/README\.md|docs/(governance|reference/competitors)/.*|tools/governance/.*)$' <<< "$changed"; then
             echo 'Governance-only change: integrity, secret, dependency, Knip, mobile and theme gates still run; Nx implementation targets are not affected.'
             exit 0
           fi
