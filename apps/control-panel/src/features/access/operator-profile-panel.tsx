@@ -280,7 +280,7 @@ export function OperatorProfilePanel() {
     </fieldset> : null}
 
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}
-    {error && items.length > 0 ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
+    {error && items.length > 0 ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>تحديث القائمة</button></div> : null}
     {invitation ? <div className="code-output" role="status"><span className="summary-label">رمز دعوة التفعيل · يظهر مرة واحدة</span><code>{invitation.enrollmentToken.code}</code><p>أُرسلت الدعوة إلى <bdi dir="ltr">{invitation.enrollmentToken.maskedPhone}</bdi>. تنتهي في {new Date(invitation.enrollmentToken.expiresAt).toLocaleString("ar-YE-u-nu-latn", { dateStyle: "medium", timeStyle: "short" })}.</p></div> : null}
 
     {items.length > 0 ? <p className="access-result-count" aria-live="polite">{items.length} ملفًا محمّلًا{nextCursor ? " · توجد نتائج أخرى" : ""}</p> : null}
@@ -317,7 +317,7 @@ export function OperatorProfilePanel() {
           </thead>
           <tbody>
             {items.length === 0 ? <tr><td colSpan={4}>
-              {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>إعادة المحاولة</button></div>
+              {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>تحديث القائمة</button></div>
                 : loading ? <div className="access-loading" role="status"><span className="loading-mark" aria-hidden="true" /> جارٍ قراءة الملفات…</div>
                   : <div className="collection-state"><strong>لا توجد ملفات مطابقة</strong><p>غيّر البحث أو أنشئ ملفًا جديدًا.</p></div>}
             </td></tr> : null}

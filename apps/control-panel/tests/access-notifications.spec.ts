@@ -77,6 +77,42 @@ test("operator profile filters stay mounted when search has no matches", async (
   await expect(page.getByLabel("تصفية حسب المرحلة")).toBeVisible();
 });
 
+test("operator profile mutation errors label list refresh accurately", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/access/operator-profiles**", async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      const query = new URL(request.url()).searchParams.get("q");
+      const items = query ? [] : [{ id: "profile-1", version: 1, state: "pending_review", fullNameAr: "مشغّل تجريبي", phoneE164: "+967770000003", jobTitle: "المراجعة", department: "التشغيل", roleEnabled: false, securityEnabled: true, activatedAt: null, createdAt: "2026-10-01T00:00:00.000Z" }];
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items }) });
+      return;
+    }
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "DSH_UNAVAILABLE", message: "الخدمة غير متاحة" } }) });
+  });
+
+  await page.goto("/access");
+  await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
+  const populatedError = page.getByRole("alert");
+  await expect(populatedError.getByRole("button", { name: "تحديث القائمة", exact: true })).toBeVisible();
+  await expect(populatedError.getByRole("button", { name: "إعادة المحاولة", exact: true })).toHaveCount(0);
+  await populatedError.getByRole("button", { name: "تحديث القائمة", exact: true }).click();
+  await expect(populatedError).toHaveCount(0);
+
+  const search = page.getByLabel("بحث بالاسم أو الهاتف");
+  await search.fill("لا يوجد");
+  await search.press("Enter");
+  await expect(page.getByText("لا توجد ملفات مطابقة")).toBeVisible();
+  await page.getByText("مشغّل جديد", { exact: true }).click();
+  await page.locator("#operator-profile-name").fill("مشغّل جديد");
+  await page.locator("#operator-profile-phone").fill("+96777000111");
+  await page.locator("#operator-profile-title").fill("مشرف");
+  await page.locator("#operator-profile-department").fill("العمليات");
+  await page.getByRole("button", { name: "حفظ للمراجعة", exact: true }).click();
+  const emptyError = page.locator(".access-table-wrap tbody .managed-status-warning[role='alert']");
+  await expect(emptyError.getByRole("button", { name: "تحديث القائمة", exact: true })).toBeVisible();
+  await expect(emptyError.getByRole("button", { name: "إعادة المحاولة", exact: true })).toHaveCount(0);
+});
+
 test("notification refresh errors preserve the page being read", async ({ page }) => {
   await stubAuthenticatedSession(page);
   let requestCount = 0;
