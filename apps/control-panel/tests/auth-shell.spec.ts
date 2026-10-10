@@ -937,6 +937,11 @@ test("Field center reads DSH eligibility and routes operational controls to the 
   await page.goto("/fields");
   await expect(page.getByRole("heading", { name: "الميدانيون" })).toBeVisible();
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator("tr.field-agent-row > th").first()).toHaveCSS("position", "sticky");
+  await expect(page.locator("tr.field-agent-row > td").last()).toHaveCSS("position", "sticky");
+  await page.setViewportSize({ width: 800, height: 800 });
+  await expect(page.locator("tr.field-agent-row > td").last()).toHaveCSS("position", "static");
   await page.getByLabel("سبب الإجراء").fill("تجميد أهلية الميدان");
   await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", action: "disable", expectedVersion: 2, reason: "تجميد أهلية الميدان" });

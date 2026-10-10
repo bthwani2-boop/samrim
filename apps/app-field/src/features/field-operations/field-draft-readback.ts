@@ -7,12 +7,12 @@ function matchesDraftText(expected: string | undefined, actual: string | null | 
 function hoursSignature(intervals: ReadonlyArray<StoreWorkingHoursInterval>): string {
   return intervals
     .map(({ dayOfWeek, opensAt, closesAt, closesNextDay }) => `${dayOfWeek}:${opensAt}:${closesAt}:${closesNextDay}`)
-    .sort()
+    .sort((left, right) => left.localeCompare(right))
     .join("|");
 }
 
 function modesSignature(modes: ReadonlyArray<string>): string {
-  return [...modes].sort().join("|");
+  return [...modes].sort((left, right) => left.localeCompare(right)).join("|");
 }
 
 // DSH draft create/update replaces the full snapshot; omitted fields clear to null or empty.
