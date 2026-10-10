@@ -167,6 +167,7 @@ if (app === "app-field") {
   assert.match(accountSource, /verifiedWorkspace \? <StoreAccessInvitationSummary/, "app-field: unavailable or unverified admission must not show invitation actions");
   const providerSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/use-field-admission.ts"), "utf8");
   assert.doesNotMatch(providerSource, /setState\(\{ kind: "loading" \}\)/, "app-field: foreground revalidation must not unmount unsaved forms");
+  assert.match(providerSource, /setState\(\(current\) => current\.kind === "ready" \? current : \{ kind: "loading" \}\)/, "app-field: retries preserve admitted forms but show progress for missing or failed admission");
   assert.match(gateSource, /pointerEvents=\{verified \? "auto" : "none"\}/, "app-field: forms must be non-interactive until admission readback succeeds");
   assert.match(layoutContent, /if \(becameActive\) \{[\s\S]*?recordOpen\(\);[\s\S]*?void refresh\(\);[\s\S]*?\}/, "app-field: refresh admission after returning to foreground");
   const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(

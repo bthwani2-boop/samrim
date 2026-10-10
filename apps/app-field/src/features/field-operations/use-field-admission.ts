@@ -26,7 +26,8 @@ export function FieldAdmissionProvider({ children }: Readonly<PropsWithChildren>
   const refresh = useCallback(async () => {
     const sequence = requestSequence.current + 1;
     requestSequence.current = sequence;
-    // Keep mounted forms intact while revalidating; the gate blocks interaction until readback.
+    // Preserve admitted drafts; an initial or failed admission retry must show progress and disable repeat actions.
+    setState((current) => current.kind === "ready" ? current : { kind: "loading" });
     setVerification("checking");
     try {
       const token = await getUsableIdentityAccessToken();
