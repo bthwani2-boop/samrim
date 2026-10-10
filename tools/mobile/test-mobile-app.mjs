@@ -249,6 +249,16 @@ if (app === "app-field") {
   assert.equal([...casesSource.matchAll(/disabled=\{Boolean\(busy\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\)\} label=/g)].length, 3, "Cases store image, camera and close-detail actions must protect pending uploads");
   assert.match(newCaseSource, /disabled=\{busy \|\| Boolean\(pendingImageAttempt\)\} label=\{pendingProofImageAttempt \?/, "Draft proof retry must be visibly blocked by pending store upload");
   assert.match(newCaseSource, /disabled=\{busy \|\| Boolean\(pendingProofImageAttempt\)\} label=\{pendingImageAttempt \?/, "Draft store retry must be visibly blocked by pending proof upload");
+  for (const [surface, source] of [["new-case", newCaseSource], ["cases", casesSource]]) {
+    const start = source.indexOf("async function pickStoreImage(");
+    const end = source.indexOf("async function pickProofImage()", start);
+    assert.ok(start !== -1 && end > start, "Field " + surface + " must expose store-image selection");
+    const picker = source.slice(start, end);
+    assert.match(picker, /if \(asset\.fileSize && asset\.fileSize > 10 \* 1024 \* 1024\) throw new Error\("STORE_IMAGE_SIZE_INVALID"\);/, "Field " + surface + " must reject oversized picker metadata before loading bytes");
+    assert.match(picker, /if \(!blob\.size \|\| blob\.size > 10 \* 1024 \* 1024\) throw new Error\("STORE_IMAGE_SIZE_INVALID"\);/, "Field " + surface + " must reject empty and oversized image bytes even without picker metadata");
+    assert.match(picker, /cause\.message === "STORE_IMAGE_SIZE_INVALID" \? "يجب ألا يتجاوز حجم صورة المتجر 10 ميغابايت\."/, "Field " + surface + " must explain the DSH size limit in Arabic");
+    assert.ok(picker.indexOf('throw new Error("STORE_IMAGE_SIZE_INVALID")') < picker.indexOf("setStoreImage("), "Field " + surface + " must reject invalid media before storing a selected image");
+  }
   console.log("MOBILE_FIELD_MEDIA_READBACK=PASS image marker, private proof, version, isolation, recovery and both Field surfaces");
   const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-commercial-agreement-rate.ts")).href
