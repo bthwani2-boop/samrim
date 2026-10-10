@@ -45,3 +45,19 @@ export function fieldDraftMatchesReadback(
     Math.abs(actual.firstStoreLongitude - longitude) > 0.000001) return false;
   return true;
 }
+
+export function fieldDraftMediaUploadConfirmed(
+  uploaded: JoiningCaseView,
+  canonical: JoiningCaseView,
+  kind: "store" | "proof",
+  previousVersion: number,
+): boolean {
+  if (uploaded.id !== canonical.id || uploaded.origin !== "field" ||
+    uploaded.version <= previousVersion || canonical.version < uploaded.version) return false;
+  if (kind === "proof") return uploaded.firstStoreProofImageUploaded && canonical.firstStoreProofImageUploaded;
+  const submittedImage = uploaded.storeProfileImage;
+  const savedImage = canonical.storeProfileImage;
+  if (!submittedImage?.uri || !savedImage?.uri) return false;
+  return !submittedImage.contentSha256 || !savedImage.contentSha256 ||
+    submittedImage.contentSha256 === savedImage.contentSha256;
+}

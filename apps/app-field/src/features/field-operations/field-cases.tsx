@@ -8,6 +8,7 @@ import { ActivityIndicator, FlatList, Image, Text, TextInput, View } from "react
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient, isMissingFieldAdmission } from "./field-client";
+import { fieldDraftMediaUploadConfirmed } from "./field-draft-readback";
 import { FieldCommercialAgreement } from "./field-commercial-agreement";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
 import { createFieldOperationStyles } from "./field-operation-styles";
@@ -21,6 +22,7 @@ type PendingProofImageAttempt = Readonly<{ caseID: string; expectedVersion: numb
 type FieldCasePagination = { sequence: number; query: string; cursor: string; loadingMore: boolean };
 
 function isOutcomeUncertain(cause: unknown): boolean {
+  if (cause instanceof Error && cause.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH") return true;
   if (!cause || typeof cause !== "object") return false;
   const error = cause as { kind?: unknown; status?: unknown };
   return error.kind === "network" || (error.kind === "http" && typeof error.status === "number" && error.status >= 500);
@@ -294,7 +296,9 @@ export function FieldCases() {
     try {
       const token = await getUsableIdentityAccessToken();
       const saved = await fieldClient().uploadJoiningCaseStoreImage(token, attempt.caseID, attempt.image, attempt.image.provenance, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
-      setMediaCase(saved);
+      const canonical = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID);
+      if (!fieldDraftMediaUploadConfirmed(saved.case, canonical.case, "store", attempt.expectedVersion)) throw new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH");
+      setMediaCase(canonical);
       setStoreImage(null);
       setPendingImageAttempt(null);
       await load();
@@ -351,7 +355,9 @@ export function FieldCases() {
     try {
       const token = await getUsableIdentityAccessToken();
       const saved = await fieldClient().uploadFieldJoiningCaseProofImage(token, attempt.caseID, attempt.image, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
-      setMediaCase(saved);
+      const canonical = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID);
+      if (!fieldDraftMediaUploadConfirmed(saved.case, canonical.case, "proof", attempt.expectedVersion)) throw new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH");
+      setMediaCase(canonical);
       setProofImage(null);
       setPendingProofImageAttempt(null);
       await load();
