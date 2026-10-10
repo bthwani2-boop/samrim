@@ -175,6 +175,35 @@ if (app === "app-field") {
   const { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-draft-readback.ts")).href
   );
+  const { wrapDayMinutes, parseClockTime, formatClockTime, rotateClockMinutes, clockHandDegrees, clockDarkness } = await import(
+    pathToFileURL(path.join(appDir, "src/features/field-operations/field-circular-clock.ts")).href
+  );
+  assert.equal(parseClockTime("21:57"), 1317, "Field dial must reopen at the exact persisted time");
+  assert.equal(parseClockTime("garbage"), 540, "Invalid legacy time should fall back to 09:00");
+  assert.equal(formatClockTime(-1), "23:59", "Minute decrement must wrap to the preceding day");
+  assert.equal(formatClockTime(1440), "00:00", "Midnight must persist as a valid HH:mm time");
+  assert.equal(clockHandDegrees(9 * 60), 270, "Nine o'clock should aim at the nine on the dial");
+  let rotated = parseClockTime("21:57");
+  const quarterAngles = [-Math.PI / 2, 0, Math.PI / 2, Math.PI, 3 * Math.PI / 2];
+  for (let pass = 0; pass < 2; pass++) {
+    for (let index = 1; index < quarterAngles.length; index++) {
+      rotated = rotateClockMinutes(rotated, quarterAngles[index - 1], quarterAngles[index]);
+    }
+    assert.equal(formatClockTime(rotated), pass === 0 ? "09:57" : "21:57", "Each complete turn must advance exactly twelve hours");
+  }
+  assert.equal(formatClockTime(rotateClockMinutes(0, Math.PI - 0.01, -Math.PI + 0.01)), "00:02", "Dial crossing at the angle seam must advance, not jump backwards");
+  assert.equal(wrapDayMinutes(-1441), 1439);
+  assert.equal(clockDarkness(5 * 60), 1);
+  assert.equal(clockDarkness(6 * 60 + 30), 0.5);
+  assert.equal(clockDarkness(7 * 60), 0);
+  assert.equal(clockDarkness(18 * 60), 0);
+  assert.equal(clockDarkness(19 * 60 + 30), 0.5);
+  assert.equal(clockDarkness(21 * 60), 1);
+  const dialSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-circular-time-picker.tsx"), "utf8");
+  assert.ok(dialSource.includes("onResponderMove={move}"), "Clock hand must respond to actual drag gestures");
+  assert.ok(dialSource.includes("onChange(formatClockTime(minutes))"), "Field time must be persisted via existing 24-hour schema");
+  assert.doesNotMatch(dialSource, /react-native-svg/, "Circular clock must need no additional native dependency");
+  console.log("MOBILE_FIELD_CIRCULAR_CLOCK=PASS twelve-hour rotations, minute precision, midnight and day-night transitions");
   const intervals = [{ dayOfWeek: 1, opensAt: "09:00", closesAt: "17:00", closesNextDay: false }, { dayOfWeek: 2, opensAt: "10:00", closesAt: "18:00", closesNextDay: false }];
   const draft = { contactPhoneE164: "+967777123456", ownerFullName: "مالك النشاط", businessName: "نشاط الاختبار", firstStoreName: "المتجر الأول", walletProviderKey: "wallet_provider_test", firstStoreAddress: "صنعاء", serviceCityId: "city-1", firstStoreVerticalId: "vertical-1", firstStoreCommercialTypeId: "type-1", firstStoreProofType: "COMMERCIAL_REGISTRATION", firstStoreNotes: "ملاحظات", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreWorkingHours: { intervals }, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP", "BTHWANI_CAPTAIN"] };
   const saved = { ...draft, state: "draft", origin: "field", version: 3, firstStoreWorkingHours: { intervals: [...intervals].reverse() }, firstStoreFulfillmentModes: [...draft.firstStoreFulfillmentModes].reverse() };

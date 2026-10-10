@@ -2,8 +2,9 @@ import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-
 import { isValidStoreWorkingHours, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, Switch, Text, View } from "react-native";
+import { Switch, Text, View } from "react-native";
 
+import { FieldCircularTimePicker as TimePickerField } from "./field-circular-time-picker";
 import { createFieldOperationStyles } from "./field-operation-styles";
 
 export type EditableWorkingHoursInterval = StoreWorkingHoursInterval & Readonly<{ id: string }>;
@@ -29,58 +30,6 @@ function isValidLocalTime(value: string): boolean {
 
 function intervalLabel(interval: StoreWorkingHoursInterval): string {
   return `${interval.opensAt}–${interval.closesAt}${interval.closesNextDay ? " · ينتهي غدًا" : ""}`;
-}
-
-const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
-const MINUTES = Array.from({ length: 60 }, (_, minute) => minute);
-
-function TimePickerField({ label, value, onChange, disabled }: Readonly<{
-  label: string; value: string; onChange: (value: string) => void; disabled: boolean;
-}>) {
-  const theme = useAppearanceTheme();
-  const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
-  const [visible, setVisible] = useState(false);
-  const [time, setTime] = useState("09:00");
-  const [hourText, minuteText] = time.split(":");
-  const chosenHour = Number(hourText ?? "9");
-  const chosenMinute = Number(minuteText ?? "0");
-  function chooseClock(nextHour: number, nextMinute: number) {
-    setTime(`${String(nextHour).padStart(2, "0")}:${String(nextMinute).padStart(2, "0")}`);
-  }
-  return <View style={{ flex: 1, minWidth: 112 }}>
-    <BthwaniButton disabled={disabled} label={value || label} onPress={() => { setTime(isValidLocalTime(value) ? value : "09:00"); setVisible(true); }} variant="secondary" />
-    <Modal animationType="fade" transparent visible={visible} onRequestClose={() => setVisible(false)}>
-      <View style={{ flex: 1, justifyContent: "center", padding: 20, backgroundColor: "rgba(0,0,0,0.5)" }}>
-        <View style={{ backgroundColor: theme.surface, borderRadius: 18, padding: 16, gap: 12 }}>
-          <Text style={styles.cardTitle}>{label}</Text>
-          <Text style={styles.muted}>اختر الساعة والدقيقة بتوقيت المدينة (24 ساعة)</Text>
-          <Text style={[styles.sectionTitle, { textAlign: "center" }]}>{time}</Text>
-          <View style={{ flexDirection: "row", gap: 12, height: 220 }}>
-            <ScrollView style={{ flex: 1 }} accessibilityLabel="الساعات">
-              {HOURS.map((item) => <Pressable key={item} accessibilityRole="button"
-                accessibilityLabel={`الساعة ${item}`} accessibilityState={{ selected: chosenHour === item }}
-                onPress={() => chooseClock(item, chosenMinute)}
-                style={{ padding: 10, borderRadius: 8, backgroundColor: chosenHour === item ? theme.actionBackground : theme.surface }}>
-                <Text style={{ color: chosenHour === item ? theme.actionText : theme.color, textAlign: "center" }}>{String(item).padStart(2, "0")}</Text>
-              </Pressable>)}
-            </ScrollView>
-            <ScrollView style={{ flex: 1 }} accessibilityLabel="الدقائق">
-              {MINUTES.map((item) => <Pressable key={item} accessibilityRole="button"
-                accessibilityLabel={`الدقيقة ${item}`} accessibilityState={{ selected: chosenMinute === item }}
-                onPress={() => chooseClock(chosenHour, item)}
-                style={{ padding: 10, borderRadius: 8, backgroundColor: chosenMinute === item ? theme.actionBackground : theme.surface }}>
-                <Text style={{ color: chosenMinute === item ? theme.actionText : theme.color, textAlign: "center" }}>{String(item).padStart(2, "0")}</Text>
-              </Pressable>)}
-            </ScrollView>
-          </View>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <View style={{ flex: 1 }}><BthwaniButton label="إلغاء" variant="secondary" onPress={() => setVisible(false)} /></View>
-            <View style={{ flex: 1 }}><BthwaniButton label="تأكيد" onPress={() => { onChange(time); setVisible(false); }} /></View>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  </View>;
 }
 
 export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<{
