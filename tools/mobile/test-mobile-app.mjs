@@ -132,6 +132,8 @@ import { pathToFileURL } from "node:url";
 
 register(pathToFileURL(path.join(root, "packages/design-system/tools/ts-resolver.mjs")).href, import.meta.url);
 if (app === "app-field") {
+  const newCaseRoute = fs.readFileSync(path.join(appDir, "app/(app)/new-case.tsx"), "utf8");
+  assert.match(newCaseRoute, /key=\{`field-case:\$\{caseId\}`\}/, "app-field: changing the edited case identity must remount the draft editor rather than reuse another partner's state");
   const admissionProviderOpen = layoutContent.indexOf("<FieldAdmissionProvider>");
   const authenticatedBoundaryOpen = layoutContent.indexOf("<AuthenticatedMobileBoundary");
   const authenticatedBoundaryClose = layoutContent.indexOf("</AuthenticatedMobileBoundary>");

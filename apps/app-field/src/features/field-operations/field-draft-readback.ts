@@ -45,4 +45,3 @@ export function fieldDraftMatchesReadback(
     Math.abs(actual.firstStoreLongitude - longitude) > 0.000001) return false;
   return true;
 }
-
