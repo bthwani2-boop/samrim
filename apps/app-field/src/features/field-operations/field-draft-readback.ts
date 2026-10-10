@@ -46,6 +46,12 @@ export function fieldDraftMatchesReadback(
   return true;
 }
 
+// A successful draft write followed by failed readback has an uncertain outcome;
+// preserve its original idempotency identity instead of starting another write.
+export function markFieldDraftReadbackUncertain(cause: unknown): Error {
+  return Object.assign(new Error("FIELD_JOINING_CASE_CANONICAL_READBACK_UNAVAILABLE"), { cause });
+}
+
 // Only the post-upload canonical read is uncertain; an upload request failure keeps its own error classification.
 export function markFieldMediaReadbackUncertain(cause: unknown): Error {
   return Object.assign(new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE"), { cause });

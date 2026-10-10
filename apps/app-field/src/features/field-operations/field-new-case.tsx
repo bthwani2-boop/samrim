@@ -10,7 +10,7 @@ import { ActivityIndicator, Image, Text, TextInput, useWindowDimensions, View } 
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
-import { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldMediaReadbackUncertain } from "./field-draft-readback";
+import { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain } from "./field-draft-readback";
 import { fieldAdmissionActionability } from "./field-eligibility";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
 import { createFieldOperationStyles } from "./field-operation-styles";
@@ -53,7 +53,7 @@ function initialJoiningCaseInput(): CreateJoiningCaseRequest {
 function isOutcomeUncertain(cause: unknown): boolean {
   // The server may have committed the draft even when its subsequent canonical readback disagrees.
   // Retain the original idempotency identity so retry cannot create a second draft.
-  if (cause instanceof Error && cause.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH") return true;
+  if (cause instanceof Error && (cause.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH" || cause.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_UNAVAILABLE")) return true;
   if (cause instanceof Error && (cause.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH" || cause.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE")) return true;
   if (!cause || typeof cause !== "object") return false;
   const error = cause as { kind?: unknown; status?: unknown };
@@ -280,7 +280,7 @@ const theme = useAppearanceTheme();
       const response = attempt.kind === "update"
         ? await fieldClient().updateFieldJoiningCaseDraft(token, attempt.caseID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID)
         : await fieldClient().createFieldJoiningCase(token, attempt.request, attempt.idempotencyKey, attempt.correlationID);
-      const canonical = await fieldClient().readOwnFieldJoiningCase(token, response.case.id);
+      const canonical = await fieldClient().readOwnFieldJoiningCase(token, response.case.id).catch((cause: unknown) => { throw markFieldDraftReadbackUncertain(cause); });
       if (canonical.case.id !== response.case.id || !fieldDraftMatchesReadback(attempt.request, canonical.case, response.case.version)) {
         throw new Error("FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH");
       }

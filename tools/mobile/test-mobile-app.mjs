@@ -172,7 +172,7 @@ if (app === "app-field") {
   assert.match(providerSource, /setState\(\(current\) => current\.kind === "ready" \? current : \{ kind: "loading" \}\)/, "app-field: retries preserve admitted forms but show progress for missing or failed admission");
   assert.match(gateSource, /pointerEvents=\{verified \? "auto" : "none"\}/, "app-field: forms must be non-interactive until admission readback succeeds");
   assert.match(layoutContent, /if \(becameActive\) \{[\s\S]*?recordOpen\(\);[\s\S]*?void refresh\(\);[\s\S]*?\}/, "app-field: refresh admission after returning to foreground");
-  const { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldMediaReadbackUncertain } = await import(
+  const { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-draft-readback.ts")).href
   );
   const intervals = [{ dayOfWeek: 1, opensAt: "09:00", closesAt: "17:00", closesNextDay: false }, { dayOfWeek: 2, opensAt: "10:00", closesAt: "18:00", closesNextDay: false }];
@@ -195,7 +195,15 @@ if (app === "app-field") {
   assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreWorkingHours: { intervals: [intervals[0]] } }, 3), false, "Clearing hours must not silently retain old intervals");
   assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreLatitude: 15.3, firstStoreLongitude: 44.2 }, 3), false, "Clearing a map pin must not silently retain old coordinates");
   const newCaseSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-new-case.tsx"), "utf8");
-  assert.match(newCaseSource, /if \(cause instanceof Error && cause\.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH"\) return true/, "Field readback mismatch must retain the original idempotency identity for a safe retry");
+  assert.match(newCaseSource, /cause\.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH"/, "Field readback mismatch must retain the original idempotency identity for a safe retry");
+  assert.match(newCaseSource, /cause\.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_UNAVAILABLE"/, "A failed post-write draft readback must preserve the original attempt identity");
+  assert.match(newCaseSource, /readOwnFieldJoiningCase\(token, response\.case\.id\)\.catch\(\(cause: unknown\) => \{ throw markFieldDraftReadbackUncertain\(cause\); \}\)/, "Post-write readback errors must not be classified as draft write failures");
+  for (const status of [401, 403, 404]) {
+    const readFailure = Object.assign(new Error("Draft readback failed"), { kind: "http", status });
+    const uncertain = markFieldDraftReadbackUncertain(readFailure);
+    assert.equal(uncertain.message, "FIELD_JOINING_CASE_CANONICAL_READBACK_UNAVAILABLE", "Post-write readback must remain uncertain regardless of 4xx status");
+    assert.equal(uncertain.cause, readFailure, "Original draft readback error must be retained for diagnosis");
+  }
   assert.match(newCaseSource, /if \(isOutcomeUncertain\(cause\)\) \{\s*setError/, "Field uncertain results must remain recoverable instead of starting a duplicate draft");
   console.log("MOBILE_FIELD_DRAFT_READBACK=PASS complete and cleared drafts, normalized sets, mismatches, version and uncertain retry");
   const uploadedMedia = { ...saved, id: "field-case-1", version: 4, storeProfileImage: { uri: "https://media.example/store-1.png", contentSha256: "digest-one" }, firstStoreProofImageUploaded: true };
