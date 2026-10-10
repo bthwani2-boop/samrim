@@ -121,6 +121,7 @@ const theme = useAppearanceTheme();
   const [draftConflict, setDraftConflict] = useState(false);
   const [draftConflictNeedsRead, setDraftConflictNeedsRead] = useState(false);
   const [selectedStoreOrigin, setSelectedStoreOrigin] = useState<BthwaniMapCoordinate | null>(null);
+  const [showLocationMap, setShowLocationMap] = useState(false);
   const [createdCase, setCreatedCase] = useState<JoiningCaseResponse | null>(null);
   const headerTitle = caseId || createdCase ? "تعديل مسودة الشريك" : "إضافة شريك";
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
@@ -323,6 +324,28 @@ const theme = useAppearanceTheme();
 
   async function createCase(submitAfterSave = false) {
     if (busy || draftConflictNeedsRead || (createdCase && createdCase.case.state !== "draft")) return;
+    // Drafts may be incomplete, but nonempty fields must satisfy server limits.
+    if (!pendingDraftAttempt) {
+      const owner = input.ownerFullName.trim();
+      const business = input.businessName.trim();
+      const store = input.firstStoreName.trim();
+      const address = input.firstStoreAddress.trim();
+      const proof = input.firstStoreProofNumber.trim();
+      const issues: ReadonlyArray<readonly [boolean, string, number]> = [
+        [Boolean(owner) && (Array.from(owner).length < 2 || Array.from(owner).length > 160), "اسم المالك: أدخل حرفين على الأقل (حتى 160 حرفًا).", 0],
+        [Boolean(business) && (Array.from(business).length < 2 || Array.from(business).length > 160), "الاسم التجاري: أدخل حرفين على الأقل (حتى 160 حرفًا).", 0],
+        [Boolean(store) && (Array.from(store).length < 2 || Array.from(store).length > 160), "اسم المتجر: أدخل حرفين على الأقل (حتى 160 حرفًا).", 0],
+        [Boolean(address) && (Array.from(address).length < 4 || Array.from(address).length > 500), "العنوان: اكتب الحي والشارع أو أقرب معلم بأربعة أحرف على الأقل.", 1],
+        [Array.from(proof).length > 128, "رقم الإثبات: الحد الأقصى 128 حرفًا.", 1],
+        [enteredHours.length > 0 && !isValidStoreWorkingHours(enteredHours), "ساعات العمل: راجع الفترات المتداخلة أو غير الصحيحة.", 1],
+      ];
+      const issue = issues.find(([invalid]) => invalid);
+      if (issue) {
+        setActiveStep(issue[2]);
+        setError(issue[1]);
+        return;
+      }
+    }
     let attempt: PendingDraftAttempt;
     if (pendingDraftAttempt) {
       attempt = pendingDraftAttempt;
@@ -456,23 +479,23 @@ const theme = useAppearanceTheme();
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (permission.status !== "granted") {
-        setLocationError("لم نتمكن من استخدام موقعك. اختر موقع المتجر يدويًا على الخريطة.");
+        setLocationError("لم نتمكن من استخدام موقعك. افتح الخريطة لتحديد موقع المتجر يدويًا.");
         return;
       }
       if (!(await Location.hasServicesEnabledAsync())) {
-        setLocationError("خدمة الموقع غير مفعّلة. فعّلها أو اختر موقع المتجر يدويًا على الخريطة.");
+        setLocationError("خدمة الموقع غير مفعّلة. فعّلها أو افتح الخريطة وحدد موقع المتجر.");
         return;
       }
       const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const coordinate = { latitude: position.coords.latitude, longitude: position.coords.longitude };
       if (!Number.isFinite(coordinate.latitude) || !Number.isFinite(coordinate.longitude) || coordinate.latitude < -90 || coordinate.latitude > 90 || coordinate.longitude < -180 || coordinate.longitude > 180) {
-        setLocationError("تعذر تحديد موقع صالح. اختر موقع المتجر يدويًا على الخريطة.");
+        setLocationError("تعذر تحديد موقع صالح. افتح الخريطة وحدد موقع المتجر يدويًا.");
         return;
       }
       setSelectedStoreOrigin(coordinate);
-      setLocationMessage("حددنا موقعك كنقطة بداية. اسحب المؤشر أو المس الخريطة لضبط موقع المتجر.");
+      setLocationMessage("تم تحديد موقعك. إذا لم تكن داخل المتجر، افتح الخريطة وعدّل النقطة.");
     } catch {
-      setLocationError("تعذر تحديد موقعك الآن. يمكنك اختيار موقع المتجر يدويًا على الخريطة.");
+      setLocationError("تعذر تحديد موقعك الآن. افتح الخريطة لتحديد موقع المتجر يدويًا.");
     } finally {
       setLocationBusy(false);
     }
@@ -734,12 +757,13 @@ const theme = useAppearanceTheme();
         </View> : null}
         {activeStep === 1 ? <View style={styles.compactCard}>
           <Text style={styles.label}>موقع المتجر</Text>
-          <BthwaniButton busy={locationBusy} disabled={formLocked} label="استخدام موقعي الحالي" onPress={() => void requestCurrentLocation()} variant="secondary" />
+          <BthwaniButton busy={locationBusy} disabled={formLocked} label={selectedStoreOrigin ? "تحديث موقعي الحالي" : "استخدام موقعي الحالي"} onPress={() => void requestCurrentLocation()} variant="secondary" />
+          <BthwaniButton disabled={formLocked} label={showLocationMap ? "إخفاء الخريطة" : "تحديد الموقع على الخريطة"} onPress={() => setShowLocationMap((value) => !value)} variant="secondary" />
           {locationMessage ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{locationMessage}</Text> : null}
           {locationError ? <Text accessibilityRole="alert" style={styles.error}>{locationError}</Text> : null}
           <View style={{ flexDirection: wideLayout ? "row" : "column", gap: 12 }}>
-            <View style={{ flex: 1, minWidth: 0 }}><BthwaniMap accessibilityLabel="تحديد موقع المتجر على الخريطة" selection={selectedStoreOrigin} selectionTitle="موقع المتجر" onSelectCoordinate={(coordinate) => { if (!formLocked) { setSelectedStoreOrigin(coordinate); setLocationMessage(""); setLocationError(""); setError(""); } }} /></View>
-            <View style={{ flex: 1, gap: 8, minWidth: 0 }}><Text style={styles.label}>العنوان النصي</Text><TextInput onFocus={focusField} accessibilityLabel="عنوان المتجر" editable={!formLocked} multiline placeholder="الحي، الشارع، أقرب معلم" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 72, paddingTop: 10, textAlignVertical: "top" }]} value={input.firstStoreAddress} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreAddress: value }))} /><Text style={styles.muted}>{selectedStoreOrigin ? "تم تحديد الموقع" : "اختر الموقع من الخريطة"}</Text></View>
+            {showLocationMap ? <View style={{ flex: 1, minWidth: 0 }}><BthwaniMap accessibilityLabel="تحديد موقع المتجر على الخريطة" selection={selectedStoreOrigin} selectionTitle="موقع المتجر" onSelectCoordinate={(coordinate) => { if (!formLocked) { setSelectedStoreOrigin(coordinate); setLocationMessage("تم تحديد موقع المتجر على الخريطة."); setLocationError(""); setError(""); } }} /></View> : null}
+            <View style={{ flex: 1, gap: 8, minWidth: 0 }}><Text style={styles.label}>العنوان النصي</Text><TextInput onFocus={focusField} accessibilityLabel="عنوان المتجر" editable={!formLocked} multiline placeholder="الحي، الشارع، أقرب معلم" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 72, paddingTop: 10, textAlignVertical: "top" }]} value={input.firstStoreAddress} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreAddress: value }))} />{input.firstStoreAddress.trim().length > 0 && Array.from(input.firstStoreAddress.trim()).length < 4 ? <Text accessibilityRole="alert" style={styles.error}>العنوان قصير؛ اذكر الحي أو أقرب معلم (4 أحرف على الأقل).</Text> : null}<Text style={styles.muted}>{selectedStoreOrigin ? "تم تحديد الموقع" : "حدد الموقع تلقائيًا أو افتح الخريطة للتحديد اليدوي"}</Text></View>
           </View>
         </View> : null}
         {activeStep === 1 ? <FieldWorkingHoursEditor disabled={formLocked} onChange={setWorkingHoursByDay} value={workingHoursByDay} /> : null}
