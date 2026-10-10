@@ -1,9 +1,9 @@
-import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { formatMoney, type BeneficiaryPayoutState } from "@bthwani/dsh";
+import { type BeneficiaryPayoutState, formatMoney } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import * as SecureStore from "expo-secure-store";
 import { useFocusEffect } from "expo-router";
+import * as SecureStore from "expo-secure-store";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
@@ -106,7 +106,7 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
     {state ? <>
       <View style={styles.destination}>
         <Text style={styles.metricLabel}>وجهة الصرف · {destinationStatusLabel(state.destination)}</Text>
-        {destinationReady ? <Text style={styles.destinationValue}>{state.destination?.walletIdentifierMasked}</Text> : <Text style={styles.muted}>جهة الصرف بانتظار اعتماد المالية.</Text>}
+        {destinationReady ? <Text style={styles.destinationValue}>{state.destination?.walletIdentifierMasked}</Text> : <Text style={styles.muted}>{state.destination ? "وجهة الصرف غير جاهزة؛ راجع المالية للتحقق أو الاعتماد." : "لم تُهيّئ المالية وجهة صرف رسمية لهذا الحساب بعد."}</Text>}
       </View>
       <View style={styles.metrics}>
         <View style={styles.metricTile}><Text style={styles.metricLabel}>المتاح الآن</Text><Text style={styles.metric}>{formatMoney(state.eligibleAvailableMinor, state.currency)}</Text></View>
