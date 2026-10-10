@@ -150,6 +150,12 @@ if (app === "app-field") {
   const joiningCaseSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-new-case.tsx"), "utf8");
   assert.doesNotMatch(joiningCaseSource, /if \(!pendingDraftAttempt && !walletProviders\.some\(/, "app-field: wallet preference must not block saving a partial joining-case draft");
   assert.match(joiningCaseSource, /المحفظة الرسمية · اختياري/, "app-field: wallet preference must be labeled optional");
+  const invalidPhoneBranchStart = joiningCaseSource.indexOf("if (!/^\\+[1-9]\\d{7,14}$/.test(contactPhoneE164)) {");
+  const invalidPhoneBranchEnd = joiningCaseSource.indexOf("\n      }", invalidPhoneBranchStart);
+  assert.ok(invalidPhoneBranchStart !== -1 && invalidPhoneBranchEnd > invalidPhoneBranchStart, "app-field: owner phone validation must remain identifiable");
+  const invalidPhoneBranch = joiningCaseSource.slice(invalidPhoneBranchStart, invalidPhoneBranchEnd);
+  assert.match(invalidPhoneBranch, /setCurrentStep\("owner"\)/, "app-field: invalid phone save from a later step must return to the owner field");
+  assert.match(invalidPhoneBranch, /onStepNavigate\?\.\(\)/, "app-field: returning to the owner field must reset the scroll position");
   const nativeMapSource = fs.readFileSync(path.join(root, "packages/design-system/src/native/map.tsx"), "utf8");
   assert.doesNotMatch(nativeMapSource, /onMapReady=\{\(\) => setLoadState\("ready"\)\}/, "app-field: map readiness must wait for rendered map tiles, not interaction readiness");
   assert.match(nativeMapSource, /onMapLoaded=\{\(\) => setLoadState\("ready"\)\}/, "app-field: successful map rendering must clear the loading state");

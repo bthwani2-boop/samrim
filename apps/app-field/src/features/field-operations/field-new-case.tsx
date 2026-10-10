@@ -255,6 +255,9 @@ const theme = useAppearanceTheme();
     } else {
       const contactPhoneE164 = normalizeYemenPhoneE164(input.contactPhoneE164);
       if (!/^\+[1-9]\d{7,14}$/.test(contactPhoneE164)) {
+        Keyboard.dismiss();
+        setCurrentStep("owner");
+        onStepNavigate?.();
         setError("أدخل رقم جوال المالك بصيغة صحيحة مثل 777123456 أو +967777123456 لحفظ المسودة.");
         return;
       }
