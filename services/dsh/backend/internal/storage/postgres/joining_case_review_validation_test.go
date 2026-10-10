@@ -62,8 +62,12 @@ func TestValidateJoiningCaseSubmissionReadinessRequiresCompleteIntakeBeforeAdmis
 		{name: "missing wallet provider", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.WalletProviderKey = " " }), version: valid.Version, want: ErrJoiningCaseState},
 		{name: "missing proof number", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.FirstStoreProofNumberPresent = false }), version: valid.Version, want: ErrJoiningCaseState},
 		{name: "no proof image needed", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.FirstStoreProofImageUploaded = false }), version: valid.Version},
-		{name: "field admission without document image", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.Origin = "field"; c.State = "admission_requested"; c.FirstStoreProofImageUploaded = false }), version: valid.Version},
-		{name: "missing storefront image", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.StoreProfileImage = nil }), version: valid.Version, want: ErrJoiningCaseState},
+		{name: "field admission without document image", current: changeReviewCase(valid, func(c *JoiningCaseRecord) {
+			c.Origin = "field"
+			c.State = "admission_requested"
+			c.FirstStoreProofImageUploaded = false
+		}), version: valid.Version},
+		{name: "logo deferred to publication", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.StoreProfileImage = nil }), version: valid.Version},
 		{name: "missing location", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.FirstStoreLongitude = nil }), version: valid.Version, want: ErrJoiningCaseStoreOrigin},
 		{name: "missing fulfillment mode", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.FirstStoreFulfillmentModes = nil }), version: valid.Version, want: ErrJoiningCaseState},
 		{name: "invalid schedule", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.FirstStoreWorkingHours = []byte(`{"intervals":[]}`) }), version: valid.Version, want: ErrJoiningCaseState},

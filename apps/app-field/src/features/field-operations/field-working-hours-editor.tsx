@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
-import { isValidStoreWorkingHours, type StoreWorkingHoursInterval } from "@bthwani/dsh";
+import { isValidStoreWorkingHours, normalizeOvernightWorkingHours, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useMemo, useState } from "react";
 import { Switch, Text, View } from "react-native";
@@ -21,7 +21,7 @@ const weekdays = [
 ] as const;
 
 export function toStoreWorkingHoursIntervals(schedule: EditableWorkingHours): ReadonlyArray<StoreWorkingHoursInterval> {
-  return weekdays.flatMap(({ day }) => (schedule[day] ?? []).map(({ dayOfWeek: _day, id: _id, ...interval }) => ({ dayOfWeek: day, ...interval })));
+  return weekdays.flatMap(({ day }) => (schedule[day] ?? []).map(({ dayOfWeek: _day, id: _id, ...interval }) => normalizeOvernightWorkingHours({ dayOfWeek: day, ...interval })));
 }
 
 function isValidLocalTime(value: string): boolean {
@@ -29,7 +29,8 @@ function isValidLocalTime(value: string): boolean {
 }
 
 function intervalLabel(interval: StoreWorkingHoursInterval): string {
-  return `${formatClockDisplay(interval.opensAt)} – ${formatClockDisplay(interval.closesAt)}${interval.closesNextDay ? " · ينتهي غدًا" : ""}`;
+  const nextDay = normalizeOvernightWorkingHours(interval).closesNextDay;
+  return `${formatClockDisplay(interval.opensAt)} – ${formatClockDisplay(interval.closesAt)}${nextDay ? " · ينتهي غدًا" : ""}`;
 }
 
 export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<{
@@ -67,11 +68,21 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
     });
   }
 
+  function applyYemenDaytimePreset() {
+    const schedule: Record<number, ReadonlyArray<EditableWorkingHoursInterval>> = {};
+    for (const { day } of weekdays) {
+      schedule[day] = [{ id: Crypto.randomUUID(), dayOfWeek: day, opensAt: "08:00", closesAt: "22:00", closesNextDay: false }];
+    }
+    onChange(schedule);
+    setShowScheduler(false);
+    setShowWeekDetails(false);
+  }
+
   function applyQuickPeriod() {
     if (!quickPeriodValid || selectedDays.size === 0) return;
     const next: Record<number, ReadonlyArray<EditableWorkingHoursInterval>> = { ...value };
     for (const day of selectedDays) {
-      next[day] = [{ id: Crypto.randomUUID(), dayOfWeek: day, opensAt, closesAt, closesNextDay }];
+      next[day] = [{ id: Crypto.randomUUID(), dayOfWeek: day, opensAt, closesAt, closesNextDay: closesNextDay || closesAt < opensAt }];
     }
     onChange(next);
     setSelectedDays(new Set());
@@ -83,6 +94,10 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
       <BthwaniButton disabled={disabled} label={showScheduler ? "إخفاء" : intervals.length ? "تعديل" : "تحديد"} onPress={() => setShowScheduler((current) => !current)} variant="secondary" />
     </View>
     <Text style={styles.muted}>{intervals.length ? `${weekdays.filter(({ day }) => (value[day] ?? []).length > 0).length} أيام · ${intervals.length} فترات` : "لم تُحدد ساعات العمل"}</Text>
+    <View style={styles.optionList}>
+      <BthwaniButton disabled={disabled} label="8 صباحًا – 10 مساءً · كل الأسبوع" onPress={applyYemenDaytimePreset} variant="secondary" />
+    </View>
+    <Text style={styles.muted}>اختصار شائع في اليمن؛ غيّره حسب ساعات المتجر الحقيقية. يُحسب الإغلاق بعد منتصف الليل تلقائيًا.</Text>
     {showScheduler ? <>
     <Text style={styles.label}>الأيام</Text>
     <View style={styles.optionList}>
@@ -91,12 +106,12 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
     </View>
 
     <View style={styles.optionList}>
-      <TimePickerField label="وقت الفتح" value={opensAt} onChange={setOpensAt} disabled={disabled} />
-      <TimePickerField label="وقت الإغلاق" value={closesAt} onChange={setClosesAt} disabled={disabled} />
+      <TimePickerField label="وقت الفتح" value={opensAt} onChange={(next) => { setOpensAt(next); if (closesAt) setClosesNextDay(closesAt < next || (closesAt === next && closesNextDay)); }} disabled={disabled} />
+      <TimePickerField label="وقت الإغلاق" value={closesAt} onChange={(next) => { setClosesAt(next); if (opensAt) setClosesNextDay(next < opensAt || (next === opensAt && closesNextDay)); }} disabled={disabled} />
     </View>
     <View style={styles.orderHeader}>
       <Switch disabled={disabled} value={closesNextDay} onValueChange={setClosesNextDay} />
-      <Text style={[styles.muted, { flex: 1 }]}>إغلاق في اليوم التالي</Text>
+      <Text style={[styles.muted, { flex: 1 }]}>إغلاق في اليوم التالي (تلقائي إذا أغلق بعد منتصف الليل)</Text>
       <BthwaniButton disabled={disabled || selectedDays.size === 0 || !quickPeriodValid} label="تطبيق على الأيام المحددة" onPress={applyQuickPeriod} variant="secondary" />
     </View>
     {opensAt || closesAt ? <Text style={quickPeriodValid ? styles.muted : styles.error}>{quickPeriodValid ? `ستستبدل الفترة الحالية في ${selectedDays.size.toLocaleString("ar-YE")} أيام محددة.` : "حدّد وقت الفتح والإغلاق من الساعة."}</Text> : null}
@@ -125,7 +140,7 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
             </View>
             <View style={styles.optionList}>
               <Switch disabled={disabled} value={interval.closesNextDay} onValueChange={(nextClosesNextDay) => updateDay(day, dayIntervals.map((item, itemIndex) => itemIndex === index ? { ...item, closesNextDay: nextClosesNextDay } : item))} />
-              <Text style={styles.muted}>ينتهي في اليوم التالي</Text>
+              <Text style={styles.muted}>ينتهي في اليوم التالي تلقائيًا عند الإغلاق بعد منتصف الليل</Text>
               {dayIntervals.length > 1 ? <BthwaniButton disabled={disabled} label="حذف الفترة" onPress={() => updateDay(day, dayIntervals.filter((_, itemIndex) => itemIndex !== index))} variant="secondary" /> : null}
             </View>
           </View>)}

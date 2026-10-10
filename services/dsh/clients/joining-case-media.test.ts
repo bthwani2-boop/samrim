@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { isValidStoreWorkingHours, joiningCaseImageMultipartPart, resolveJoiningCaseImageContentType } from "./joining-case-media.ts";
+import { isValidStoreWorkingHours, joiningCaseImageMultipartPart, normalizeOvernightWorkingHours, resolveJoiningCaseImageContentType } from "./joining-case-media.ts";
 
 test("native joining-case image upload uses the URI file part instead of a fetched Blob", () => {
   const blob = new Blob(["image"], { type: "image/png" });
@@ -28,6 +28,19 @@ test("isValidStoreWorkingHours accepts a valid overnight interval", () => {
 	assert.equal(isValidStoreWorkingHours([
 		{ dayOfWeek: 1, opensAt: "09:00", closesAt: "09:00", closesNextDay: true },
 	]), true);
+});
+
+test("field hours: 8 AM to 10 PM across seven days is valid, and overnight closes at 5 AM automatically", () => {
+  const daytime = Array.from({ length: 7 }, (_, index) => ({ dayOfWeek: index + 1, opensAt: "08:00", closesAt: "22:00", closesNextDay: false }));
+  assert.equal(isValidStoreWorkingHours(daytime), true);
+  const night = Array.from({ length: 7 }, (_, index) => normalizeOvernightWorkingHours({ dayOfWeek: index + 1, opensAt: "12:00", closesAt: "05:00", closesNextDay: false }));
+  assert.ok(night.every((interval) => interval.closesNextDay));
+  assert.equal(isValidStoreWorkingHours(night), true);
+  assert.deepEqual(normalizeOvernightWorkingHours({ dayOfWeek: 1, opensAt: "08:00", closesAt: "22:00", closesNextDay: false }), daytime[0]);
+  assert.equal(isValidStoreWorkingHours([
+    ...night,
+    { dayOfWeek: 1, opensAt: "04:00", closesAt: "06:00", closesNextDay: false },
+  ]), false);
 });
 
 test("isValidStoreWorkingHours rejects invalid clocks, >24-hour spans, and weekly overlap", () => {

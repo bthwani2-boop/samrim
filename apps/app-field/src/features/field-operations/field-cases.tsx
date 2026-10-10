@@ -208,7 +208,7 @@ export function FieldCases() {
   }, [appliedQuery, loading]);
 
   async function submitCase(item: JoiningCaseSummary) {
-    if (busy || item.state !== "draft" || storeImage || pendingImageAttempt) return;
+    if (busy || item.state !== "draft") return;
     setBusy(item.id);
     setError("");
     try {
@@ -387,7 +387,7 @@ export function FieldCases() {
         <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="تعديل بيانات المسودة" onPress={() => router.push({ pathname: "/new-case", params: { caseId: item.id } } as Href)} variant="secondary" />
         <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="شعار المتجر" onPress={() => void openStoreImage(item)} variant="secondary" />
       </View> : null}
-      {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(storeImage)} label="إرسال للمراجعة" onPress={() => setCaseToSubmit(item)} /> : null}
+      {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy)} label="إرسال للمراجعة" onPress={() => setCaseToSubmit(item)} /> : null}
       {mediaCase?.case.id === item.id ? <View style={styles.card}>
         <Text style={styles.cardTitle}>شعار المتجر</Text>
         {mediaCase.case.storeProfileImage ? <Image accessibilityLabel="شعار المتجر المحفوظ" source={{ uri: mediaCase.case.storeProfileImage.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : <Text style={styles.muted}>لم يُحفظ شعار المتجر بعد.</Text>}
@@ -400,7 +400,7 @@ export function FieldCases() {
           <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label="التقاط صورة بالكاميرا" onPress={() => void pickStoreImage("camera")} variant="secondary" />
         </View>
         {storeImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || (!pendingImageAttempt && !isMediaProvenanceInputValid(storeImage.provenance))} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "حفظ شعار المتجر"} onPress={() => void uploadStoreImage()} /> : null}
-        {storeImage ? <Text style={styles.muted}>احفظ صورة الواجهة أو أغلق التفاصيل لإلغاء الاختيار.</Text> : null}
+        {storeImage ? <Text style={styles.muted}>يمكن إرسال طلب الانضمام دون حفظ الشعار؛ سيُضاف قبل نشر المتجر للعملاء.</Text> : null}
         <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label="إغلاق تفاصيل الصورة" onPress={() => { setMediaCase(null); setStoreImage(null); }} variant="secondary" />
       </View> : null}
     </View>

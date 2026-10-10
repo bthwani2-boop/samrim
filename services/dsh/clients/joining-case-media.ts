@@ -26,6 +26,14 @@ export function resolveJoiningCaseImageContentType(
   return null;
 }
 
+// Field staff should not need to mark the next day manually when a Store closes
+// after midnight. The backend still validates 24-hour length and overlaps.
+export function normalizeOvernightWorkingHours(interval: StoreWorkingHoursInterval): StoreWorkingHoursInterval {
+  const open = parseClock(interval.opensAt);
+  const close = parseClock(interval.closesAt);
+  return { ...interval, closesNextDay: interval.closesNextDay || (open !== null && close !== null && close < open) };
+}
+
 export function isValidStoreWorkingHours(intervals: readonly StoreWorkingHoursInterval[]): boolean {
   if (intervals.length === 0 || intervals.length > 28) return false;
   const weekMinutes = 7 * 24 * 60;

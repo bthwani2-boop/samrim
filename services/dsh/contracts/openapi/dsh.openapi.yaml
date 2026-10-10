@@ -1753,7 +1753,7 @@ components:
           type: boolean
         blockedReason:
           type: string
-          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, FINANCIAL_PROFILE_NOT_READY, SERVICE_CITY_NOT_ELIGIBLE, CATALOG_NOT_READY]
+          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, FINANCIAL_PROFILE_NOT_READY, SERVICE_CITY_NOT_ELIGIBLE, STORE_LOGO_NOT_READY, CATALOG_NOT_READY]
 
     StoreView:
       type: object

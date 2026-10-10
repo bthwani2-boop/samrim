@@ -2031,6 +2031,7 @@ test("partner Store publication exposes the canonical readiness block", async ({
     { code: "PARTNER_IDENTITY_NOT_ELIGIBLE", label: "هوية الشريك أو صلاحية دوره غير جاهزة للنشر" },
     { code: "SERVICE_CITY_NOT_ELIGIBLE", label: "مدينة خدمة المتجر غير مؤهلة للنشر" },
     { code: "CATALOG_NOT_READY", label: "لا يوجد كتالوج أو عرض منشور صالح يجعل المتجر جاهزًا" },
+    { code: "STORE_LOGO_NOT_READY", label: "شعار المتجر غير جاهز؛ أضفه من ملف المتجر قبل النشر للعملاء" },
   ] as const;
   let blockedReason: (typeof publicationReasons)[number]["code"] = publicationReasons[0].code;
   await page.route("**/api/service-cities**", async (route) => {

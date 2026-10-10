@@ -147,13 +147,13 @@ const theme = useAppearanceTheme();
   const [pendingDraftAttempt, setPendingDraftAttempt] = useState<PendingDraftAttempt | null>(null);
   const [pendingImageAttempt, setPendingImageAttempt] = useState<PendingImageAttempt | null>(null);
   const preloadedVerticalID = useRef("");
-  const formLocked = busy || caseLoading || Boolean(pendingDraftAttempt) || Boolean(pendingImageAttempt) || Boolean(createdCase && createdCase.case.state !== "draft");
+  const formLocked = busy || caseLoading || Boolean(pendingDraftAttempt) || Boolean(createdCase && createdCase.case.state !== "draft");
   const phoneValid = /^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(input.contactPhoneE164));
   const enteredHours = toStoreWorkingHoursIntervals(workingHoursByDay);
   const operationComplete = Boolean(input.serviceCityId && input.firstStoreVerticalId && input.firstStoreCommercialTypeId && input.firstStoreAddress.trim().length >= 4 && selectedStoreOrigin && input.firstStoreFulfillmentModes.length && enteredHours.length && isValidStoreWorkingHours(enteredHours));
   const stepComplete = [
     phoneValid && input.ownerFullName.trim().length >= 2 && Boolean(input.businessName.trim() && input.firstStoreName.trim()),
-    operationComplete && Boolean(selectedProofType && createdCase?.case.firstStoreProofNumberPresent && createdCase.case.storeProfileImage && !proofDetailsDirty),
+    operationComplete && Boolean(selectedProofType && (input.firstStoreProofNumber.trim() || createdCase?.case.firstStoreProofNumberPresent) && !proofDetailsDirty),
   ];
   const completedSteps = stepComplete.filter(Boolean).length;
   const joiningReadiness = getFieldJoiningRequirements(createdCase?.case ?? null);
@@ -167,30 +167,32 @@ const theme = useAppearanceTheme();
   const walletChanged = Boolean(savedDraft && input.walletProviderKey !== (savedDraft.walletProviderKey ?? ""));
   const hoursSignature = (hours: typeof enteredHours) =>
     hours.map((item) => [item.dayOfWeek, item.opensAt, item.closesAt, item.closesNextDay].join(":")).sort().join("|");
-  const operationChanged = Boolean(savedDraft && (
-    input.serviceCityId !== (savedDraft.serviceCityId ?? "") ||
-    input.firstStoreVerticalId !== savedDraft.firstStoreVerticalId ||
-    input.firstStoreCommercialTypeId !== (savedDraft.firstStoreCommercialTypeId ?? "") ||
-    input.firstStoreAddress.trim() !== (savedDraft.firstStoreAddress ?? "").trim() ||
-    [...input.firstStoreFulfillmentModes].sort().join("|") !== [...savedDraft.firstStoreFulfillmentModes].sort().join("|") ||
-    hoursSignature(enteredHours) !== hoursSignature(savedDraft.firstStoreWorkingHours?.intervals ?? []) ||
-    Math.abs((selectedStoreOrigin?.latitude ?? 0) - (savedDraft.firstStoreLatitude ?? 0)) > 0.000001 ||
-    Math.abs((selectedStoreOrigin?.longitude ?? 0) - (savedDraft.firstStoreLongitude ?? 0)) > 0.000001
-  ));
   const pendingReadiness: Record<(typeof joiningReadiness)[number]["key"], boolean> = {
     basic: Boolean(stepComplete[0]),
     wallet: Boolean(input.walletProviderKey),
-    operation: operationComplete,
+    city: Boolean(input.serviceCityId),
+    vertical: Boolean(input.firstStoreVerticalId),
+    storeType: Boolean(input.firstStoreCommercialTypeId),
+    address: input.firstStoreAddress.trim().length >= 4,
+    location: Boolean(selectedStoreOrigin),
+    hours: enteredHours.length > 0 && isValidStoreWorkingHours(enteredHours),
+    fulfillment: input.firstStoreFulfillmentModes.length > 0,
     proofNumber: Boolean(selectedProofType && (input.firstStoreProofNumber.trim() || savedDraft?.firstStoreProofNumberPresent)),
-    storeImage: Boolean(storeImage && isMediaProvenanceInputValid(storeImage.provenance)),
   };
   const readinessLabels = joiningReadiness.map(({ key, label, saved }) => {
-    const changed =
-      (key === "basic" && basicChanged) ||
-      (key === "wallet" && walletChanged) ||
-      (key === "operation" && operationChanged) ||
-      (key === "storeImage" && Boolean(storeImage)) ||
-      (proofDetailsDirty && key === "proofNumber");
+    const changed = Boolean(savedDraft) && ({
+      basic: basicChanged,
+      wallet: walletChanged,
+      city: input.serviceCityId !== (savedDraft?.serviceCityId ?? ""),
+      vertical: input.firstStoreVerticalId !== (savedDraft?.firstStoreVerticalId ?? ""),
+      storeType: input.firstStoreCommercialTypeId !== (savedDraft?.firstStoreCommercialTypeId ?? ""),
+      address: input.firstStoreAddress.trim() !== (savedDraft?.firstStoreAddress ?? "").trim(),
+      location: Math.abs((selectedStoreOrigin?.latitude ?? 0) - (savedDraft?.firstStoreLatitude ?? 0)) > 0.000001 ||
+        Math.abs((selectedStoreOrigin?.longitude ?? 0) - (savedDraft?.firstStoreLongitude ?? 0)) > 0.000001,
+      hours: hoursSignature(enteredHours) !== hoursSignature(savedDraft?.firstStoreWorkingHours?.intervals ?? []),
+      fulfillment: [...input.firstStoreFulfillmentModes].sort().join("|") !== [...(savedDraft?.firstStoreFulfillmentModes ?? [])].sort().join("|"),
+      proofNumber: proofDetailsDirty,
+    })[key];
     const confirmed = saved && !changed;
     return { key, label, confirmed, pending: !confirmed && pendingReadiness[key] };
   });
@@ -313,7 +315,18 @@ const theme = useAppearanceTheme();
     let active = true;
     setCommercialTypesLoading(true);
     void fieldClient().listCommercialStoreTypes(verticalId)
-      .then((items) => { if (active) setCommercialTypes(items.filter((item) => item.active)); })
+      .then((items) => {
+        if (!active) return;
+        const available = items.filter((item) => item.active);
+        setCommercialTypes(available);
+        // A single available type is not a decision that Field should repeat for every Store.
+        if (available.length === 1 && available[0]) {
+          const onlyType = available[0];
+          setInput((current) => current.firstStoreVerticalId === verticalId && !current.firstStoreCommercialTypeId
+            ? { ...current, firstStoreCommercialTypeId: onlyType.id }
+            : current);
+        }
+      })
       .catch((cause: unknown) => {
         console.warn("DSH Field commercial store type read failed", cause);
         if (active) setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذه الفئة.");
@@ -408,9 +421,11 @@ const theme = useAppearanceTheme();
       }
       if (submitAfterSave) {
         const latest = await fieldClient().readOwnFieldJoiningCase(token, canonical.case.id);
-        const missing = getFieldJoiningRequirements(latest.case).filter((item) => !item.saved).map((item) => item.label);
+        const missing = getFieldJoiningRequirements(latest.case).filter((item) => !item.saved);
         if (missing.length > 0) {
-          setError("حُفظت المسودة. أكمل فقط: " + missing.join("، ") + " ثم أرسلها للمراجعة.");
+          setActiveStep(missing.some((item) => item.key === "basic" || item.key === "wallet") ? 0 : 1);
+          const missingLabels = missing.map((item) => item.label);
+          setError(`حُفظت المسودة. أكمل فقط: ${missingLabels.join("، ")} ثم أرسلها للمراجعة.`);
           return;
         }
         const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, "field-submit:" + latest.case.id + ":" + latest.case.version);
@@ -714,7 +729,7 @@ const theme = useAppearanceTheme();
         <View style={styles.optionList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} disabled={formLocked} label={vertical.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreVerticalId: vertical.id }))} selected={input.firstStoreVerticalId === vertical.id} />)}</View>
         <Text style={styles.label}>نوع المتجر</Text>
         {commercialTypesLoading ? <Text style={styles.muted}>جارٍ قراءة أنواع المتاجر لهذه الفئة…</Text> : null}
-        {commercialTypesError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{commercialTypesError}</Text><BthwaniButton label="إعادة قراءة أنواع المتاجر" onPress={() => { const verticalId = input.firstStoreVerticalId; if (verticalId) { setCommercialTypesError(""); setCommercialTypesLoading(true); void fieldClient().listCommercialStoreTypes(verticalId).then((items) => setCommercialTypes(items.filter((item) => item.active))).catch(() => setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذه الفئة.")).finally(() => setCommercialTypesLoading(false)); } }} variant="secondary" /></View> : null}
+        {commercialTypesError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{commercialTypesError}</Text><BthwaniButton label="إعادة قراءة أنواع المتاجر" onPress={() => { const verticalId = input.firstStoreVerticalId; if (verticalId) { setCommercialTypesError(""); setCommercialTypesLoading(true); void fieldClient().listCommercialStoreTypes(verticalId).then((items) => { const available = items.filter((item) => item.active); setCommercialTypes(available); if (available.length === 1 && available[0]) { const onlyType = available[0]; setInput((current) => current.firstStoreVerticalId === verticalId && !current.firstStoreCommercialTypeId ? { ...current, firstStoreCommercialTypeId: onlyType.id } : current); } }).catch(() => setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذه الفئة.")).finally(() => setCommercialTypesLoading(false)); } }} variant="secondary" /></View> : null}
         {!commercialTypesLoading && !commercialTypesError && input.firstStoreVerticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذه الفئة. اطلب من المشغّل إعداد النوع التجاري أولًا.</Text> : null}
         <View style={styles.optionList}>{commercialTypes.map((item) => <BthwaniChip key={item.id} disabled={formLocked} label={item.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreCommercialTypeId: item.id }))} selected={input.firstStoreCommercialTypeId === item.id} />)}</View>
         </View> : null}
@@ -771,8 +786,8 @@ const theme = useAppearanceTheme();
         <View style={styles.compactCard}>
         <Text style={styles.label}>ملاحظات (اختياري)</Text>
         <TextInput onFocus={focusField} accessibilityLabel="ملاحظات اختيارية" editable={!formLocked} multiline maxLength={1000} placeholder="أي تفاصيل إضافية للمراجعة" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 64, paddingTop: 10, textAlignVertical: "top" }]} value={input.firstStoreNotes ?? ""} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreNotes: value }))} />
-        <Text style={styles.sectionTitle}>شعار (لوجو) المتجر</Text>
-        <Text style={styles.muted}>يظهر الشعار في بطاقة المتجر وفي تطبيق العميل؛ ويمكن للإدارة تحسينه لاحقًا.</Text>
+        <Text style={styles.sectionTitle}>شعار (لوجو) المتجر · اختياري عند الانضمام</Text>
+        <Text style={styles.muted}>يمكن إرفاق الشعار الآن أو إضافته لاحقًا من الإدارة. لا يمنع إرساله للمراجعة، لكنه مطلوب قبل نشر المتجر للعملاء.</Text>
         {storeImage ? <Image accessibilityLabel="معاينة شعار المتجر" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="cover" /> : null}
         {storeImage ? <FieldMediaProvenanceEditor key={storeImage.uri} creatorName={admissionState.kind === "ready" ? admissionState.admission.fullNameAr ?? "" : ""} disabled={formLocked} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} value={storeImage.provenance} /> : null}
         <View style={styles.optionList}>
@@ -799,7 +814,7 @@ const theme = useAppearanceTheme();
             </Text>
           )}
           <Text style={needsSave ? styles.muted : styles.successText}>
-            {!needsSave ? "الطلب جاهز للإرسال من قائمة الشركاء." : readinessLabels.some((item) => !item.confirmed && !item.pending) ? "أكمل البيانات المطلوبة ثم احفظها." : "احفظ البيانات والشعار قبل الإرسال."}
+            {!needsSave ? "الطلب جاهز للإرسال من قائمة الشركاء." : readinessLabels.some((item) => !item.confirmed && !item.pending) ? "أكمل البيانات المطلوبة ثم احفظها." : "احفظ البيانات الأساسية لإرسال الطلب للمراجعة."}
           </Text>
         </View>
         </> : null}
