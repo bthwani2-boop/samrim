@@ -45,6 +45,7 @@ export function BthwaniMap({ accessibilityLabel, markers = [], selection, select
   const theme = useAppearanceTheme();
   const map = useRef<MapView>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [mapRetryKey, setMapRetryKey] = useState(0);
   const selectionLatitude = selection?.latitude;
   const selectionLongitude = selection?.longitude;
   useEffect(() => {
@@ -65,13 +66,13 @@ export function BthwaniMap({ accessibilityLabel, markers = [], selection, select
   return (
     <View accessibilityLabel={accessibilityLabel} style={[styles.frame, { height, backgroundColor: theme.surface }]}>
       <MapView
+        key={mapRetryKey}
         ref={map}
         provider={PROVIDER_GOOGLE}
         initialRegion={initialRegion(markers, selection, initialCoordinate)}
         loadingEnabled
         loadingBackgroundColor={theme.surface}
         loadingIndicatorColor={theme.interactiveText}
-        onMapReady={() => setLoadState("ready")}
         onMapLoaded={() => setLoadState("ready")}
         {...(onSelectCoordinate ? { onPress: selectMapPoint } : {})}
         style={StyleSheet.absoluteFill}
@@ -82,7 +83,7 @@ export function BthwaniMap({ accessibilityLabel, markers = [], selection, select
         {selection ? <Marker coordinate={selection} title={selectionTitle} draggable={Boolean(onSelectCoordinate)} {...(onSelectCoordinate ? { onDragEnd: (event) => onSelectCoordinate(event.nativeEvent.coordinate) } : {})} /> : null}
       </MapView>
       {loadState === "loading" ? <View pointerEvents="none" accessibilityLiveRegion="polite" style={[styles.loadHint, { backgroundColor: theme.surface }]}><ActivityIndicator color={theme.interactiveText} /><Text style={[styles.stateText, { color: theme.colorMuted }]}>جارٍ تحميل الخريطة…</Text></View> : null}
-      {loadState === "unavailable" ? <View accessibilityLiveRegion="polite" style={[styles.unavailable, { backgroundColor: theme.surface }]}><Text style={[styles.stateText, { color: theme.color }]}>تعذر تحميل الخريطة. تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة تحميل الخريطة" onPress={() => { map.current?.animateToRegion(initialRegion(markers, selection, initialCoordinate), 300); setLoadState("loading"); }} variant="secondary" /></View> : null}
+      {loadState === "unavailable" ? <View accessibilityLiveRegion="polite" style={[styles.unavailable, { backgroundColor: theme.surface }]}><Text style={[styles.stateText, { color: theme.color }]}>تعذر تحميل الخريطة. تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة تحميل الخريطة" onPress={() => { setLoadState("loading"); setMapRetryKey((current) => current + 1); }} variant="secondary" /></View> : null}
       {onSelectCoordinate && loadState === "ready" ? <View pointerEvents="none" style={[styles.hint, { backgroundColor: theme.surface }]}><Text style={[styles.hintText, { color: theme.color }]}>المس الخريطة لتحديد النقطة أو اسحب الدبوس</Text></View> : null}
     </View>
   );

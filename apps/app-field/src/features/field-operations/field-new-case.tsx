@@ -6,7 +6,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { type Href, Link, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Image, Keyboard, Text, TextInput, useWindowDimensions, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
@@ -14,6 +14,7 @@ import { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldDra
 import { fieldAdmissionActionability } from "./field-eligibility";
 import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
+import { FIELD_JOINING_CASE_STEPS, getFieldJoiningCaseStepProgress, moveFieldJoiningCaseStep, type FieldJoiningCaseStepID } from "./field-new-case-flow";
 import { createFieldOperationStyles } from "./field-operation-styles";
 import { type EditableWorkingHours, type EditableWorkingHoursInterval, FieldWorkingHoursEditor, toStoreWorkingHoursIntervals } from "./field-working-hours-editor";
 import { useOwnFieldAdmission } from "./use-field-admission";
@@ -67,7 +68,7 @@ function dshErrorCode(cause: unknown): string {
   return typeof code === "string" ? code : "";
 }
 
-export function FieldNewCase() {
+export function FieldNewCase({ onStepNavigate }: Readonly<{ onStepNavigate?: () => void }>) {
 const theme = useAppearanceTheme();
   const { width } = useWindowDimensions();
   const navigation = useNavigation();
@@ -79,6 +80,7 @@ const theme = useAppearanceTheme();
   const admissionActionability = admissionState.kind === "ready" ? fieldAdmissionActionability(admissionState.admission) : null;
   const [input, setInput] = useState<CreateJoiningCaseRequest>(initialJoiningCaseInput);
   const [workingHoursByDay, setWorkingHoursByDay] = useState<EditableWorkingHours>({});
+  const [currentStep, setCurrentStep] = useState<FieldJoiningCaseStepID>("owner");
   const [sameBusinessAndStore, setSameBusinessAndStore] = useState(false);
   const [selectedProofType, setSelectedProofType] = useState<JoiningCaseProofType | null>(null);
   const [draftConflict, setDraftConflict] = useState(false);
@@ -110,6 +112,7 @@ const theme = useAppearanceTheme();
   const [pendingProofImageAttempt, setPendingProofImageAttempt] = useState<PendingProofImageAttempt | null>(null);
   const preloadedVerticalID = useRef("");
   const formLocked = busy || caseLoading || Boolean(pendingDraftAttempt) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt);
+  const stepProgress = getFieldJoiningCaseStepProgress(currentStep);
 
   useEffect(() => { navigation.setOptions({ headerTitle }); }, [headerTitle, navigation]);
 
@@ -235,12 +238,17 @@ const theme = useAppearanceTheme();
     return () => { active = false; };
   }, [input.firstStoreVerticalId]);
 
+  function navigateStep(direction: -1 | 1) {
+    const nextStep = moveFieldJoiningCaseStep(currentStep, direction);
+    if (nextStep === currentStep) return;
+    Keyboard.dismiss();
+    setCurrentStep(nextStep);
+    setError("");
+    onStepNavigate?.();
+  }
+
   async function createCase() {
     if (busy || draftConflictNeedsRead) return;
-    if (!pendingDraftAttempt && !walletProviders.some((provider) => provider.active && provider.key === input.walletProviderKey)) {
-      setError("اختر محفظة رسمية نشطة من القائمة قبل حفظ المسودة.");
-      return;
-    }
     let attempt: PendingDraftAttempt;
     if (pendingDraftAttempt) {
       attempt = pendingDraftAttempt;
@@ -517,8 +525,8 @@ const theme = useAppearanceTheme();
   }
 
   return (
-    <View style={styles.container} accessibilityLabel="إضافة شريك">
-      <Text style={styles.muted}>{caseId || createdCase ? "حدّث بيانات المسودة واحفظ التغييرات. سيبقى رقم الإثبات الخاص مخفيًا ما لم تدخل رقمًا بديلًا." : "أدخل رقم جوال المالك لحفظ مسودة جزئية، ثم أكمل بيانات المتجر والصور قبل إرسالها للمراجعة."}</Text>
+    <View style={[styles.container, styles.formContainer]} accessibilityLabel="إضافة شريك">
+      <Text style={styles.muted}>{caseId || createdCase ? "حدّث المسودة على مراحل، واحفظ التغييرات قبل مغادرة الصفحة." : "أكمل بيانات الانضمام على مراحل، ويمكنك حفظ المسودة والعودة إليها لاحقًا."}</Text>
       {caseLoading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المسودة…</Text></View> : null}
       {caseId && !caseLoading && error.startsWith("تعذر قراءة المسودة") ? <BthwaniButton label="إعادة قراءة المسودة" onPress={() => setCaseLoadRetry((value) => value + 1)} variant="secondary" /> : null}
       {admissionState.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة حالة التفعيل…</Text></View> : null}
@@ -526,12 +534,22 @@ const theme = useAppearanceTheme();
       {admissionState.kind === "ready" && admissionActionability !== "available" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إضافة شريك الآن</Text><Text style={styles.muted}>{admissionActionability === "profile_review" ? "ملفك يحتاج مراجعة قبل إضافة شريك. تواصل مع فريق التشغيل لاستكمالها." : `حالة التفعيل الحالية: ${fieldAdmissionStateLabel(admissionState.admission.state)}. تابع الحالة أو تواصل مع فريق التشغيل.`}</Text></View> : null}
       {admissionState.kind === "error" ? <View style={styles.card}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة حالة تفعيلك الآن. أعد المحاولة عند توفر الاتصال.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void loadAdmission()} variant="secondary" /></View> : null}
       {admissionActionability === "available" && (!caseId || Boolean(createdCase)) ? <>
-        <View style={styles.card}>
+        <View style={styles.formProgressCard}>
+          <View style={styles.formProgressHeader}>
+            <Text style={styles.sectionTitle}>{stepProgress.title}</Text>
+            <Text style={styles.muted}>الخطوة {stepProgress.current} من {stepProgress.total}</Text>
+          </View>
+          <View accessibilityRole="progressbar" accessibilityLabel={`تقدم بيانات الانضمام: ${stepProgress.title}`} accessibilityValue={{ min: 0, max: 100, now: stepProgress.progressPercent }} style={styles.formProgressTrack}>
+            <View style={[styles.formProgressFill, { width: `${stepProgress.progressPercent}%` }]} />
+          </View>
+        </View>
+        {currentStep === "owner" ? <View style={styles.formStep}>
+        <View style={[styles.card, styles.formCard]}>
         <Text style={styles.sectionTitle}>بيانات المالك</Text>
         <Text style={styles.label}>الاسم الكامل للمالك حسب الهوية</Text>
         <TextInput accessibilityLabel="الاسم الكامل للمالك حسب الهوية" editable={!formLocked} autoComplete="name" placeholder="كما يظهر في الهوية" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.ownerFullName} onChangeText={(value) => setInput((current) => ({ ...current, ownerFullName: value }))} />
-        <Text style={styles.label}>المحفظة الرسمية</Text>
-        <Text style={styles.muted}>اختر المحفظة التي يستخدمها المالك. لا تُدخل رقم المحفظة هنا.</Text>
+        <Text style={styles.label}>المحفظة الرسمية · اختياري</Text>
+        <Text style={styles.muted}>يمكنك اختيارها الآن أو تركها فارغة وإكمالها لاحقًا. لا تُدخل رقم المحفظة هنا.</Text>
         {walletProvidersLoading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المحافظ الرسمية…</Text></View> : null}
         {walletProvidersError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{walletProvidersError}</Text><BthwaniButton disabled={formLocked} label="إعادة قراءة المحافظ" onPress={() => void loadWalletProviders()} variant="secondary" /></View> : null}
         {!walletProvidersLoading && !walletProvidersError && walletProviders.filter((provider) => provider.active).length === 0 ? <Text style={styles.muted}>لا توجد محافظ رسمية نشطة للاختيار الآن.</Text> : null}
@@ -542,7 +560,9 @@ const theme = useAppearanceTheme();
         <Text style={styles.label}>رقم جوال المالك</Text>
         <TextInput accessibilityLabel="رقم جوال المالك" editable={!formLocked} autoCapitalize="none" keyboardType="phone-pad" placeholder="مثال: 777123456 أو +967777123456" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={input.contactPhoneE164} onChangeText={(value) => setInput((current) => ({ ...current, contactPhoneE164: value }))} />
         </View>
-        <View style={styles.card}>
+        </View> : null}
+        {currentStep === "store" ? <View style={styles.formStep}>
+        <View style={[styles.card, styles.formCard]}>
         <Text style={styles.sectionTitle}>النشاط والمتجر الأول</Text>
         <Text style={styles.label}>{sameBusinessAndStore ? "الاسم التجاري واسم المتجر" : "الاسم التجاري"}</Text>
         <Text style={styles.muted}>الاسم التجاري هو اسم المنشأة أو النشاط كما يستخدمه المالك، وليس اسمًا عامًا للشريك.</Text>
@@ -579,7 +599,9 @@ const theme = useAppearanceTheme();
         {!commercialTypesLoading && !commercialTypesError && input.firstStoreVerticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذه الفئة. اطلب من المشغّل إعداد النوع التجاري أولًا.</Text> : null}
         <View style={styles.optionList}>{commercialTypes.map((item) => <BthwaniChip key={item.id} disabled={formLocked} label={item.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreCommercialTypeId: item.id }))} selected={input.firstStoreCommercialTypeId === item.id} />)}</View>
         </View>
-        <View style={styles.card}>
+        </View> : null}
+        {currentStep === "evidence" ? <View style={styles.formStep}>
+        <View style={[styles.card, styles.formCard]}>
         <Text style={styles.sectionTitle}>بيانات الإثبات</Text>
         <Text style={styles.label}>نوع الإثبات</Text>
         <View style={styles.optionList}>{proofTypeOptions.map((option) => <BthwaniChip key={option.value} disabled={formLocked} label={option.label} onPress={() => setSelectedProofType(option.value)} selected={selectedProofType === option.value} />)}</View>
@@ -587,13 +609,15 @@ const theme = useAppearanceTheme();
         {createdCase?.case.firstStoreProofType ? <Text style={styles.muted}>الرقم المسجل خاص ولا يظهر هنا. أدخل رقمًا جديدًا عند الحاجة إلى تصحيحه، أو اترك الحقل فارغًا للاحتفاظ به.</Text> : null}
         <TextInput accessibilityLabel="رقم الإثبات، اتركه فارغًا للاحتفاظ بالرقم المسجل عند التعديل" editable={!formLocked} autoCapitalize="characters" placeholder={createdCase?.case.firstStoreProofType ? "رقم جديد فقط عند التصحيح" : "أدخل رقم السجل أو الوثيقة"} placeholderTextColor={theme.colorMuted} style={styles.input} value={input.firstStoreProofNumber} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreProofNumber: value }))} />
         </View>
-        <View style={styles.card}>
+        <View style={[styles.card, styles.formCard]}>
           <Text style={styles.label}>صورة الإثبات الخاصة · مطلوبة قبل الإرسال</Text>
           <Text style={styles.muted}>{createdCase?.case.firstStoreProofImageUploaded ? "صورة الإثبات الخاصة مسجلة ومشفّرة ولا تظهر كصورة واجهة للمتجر." : "تُخزّن مشفّرة في السجل الخاص ولا تظهر كصورة واجهة للمتجر. يُسمح بحفظ المسودة قبل الرفع، لكن الإرسال للمراجعة يتطلب تأكيد ربط الصورة."}</Text>
           {proofImage ? <Image accessibilityLabel="معاينة صورة الإثبات الخاصة" source={{ uri: proofImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="contain" /> : null}
           <BthwaniButton disabled={formLocked} label={proofImage ? "تغيير صورة الإثبات" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
         </View>
-        <View style={styles.card}>
+        </View> : null}
+        {currentStep === "location" ? <View style={styles.formStep}>
+        <View style={[styles.card, styles.formCard]}>
         <Text style={styles.sectionTitle}>التوصيل المتاح</Text>
         <Text style={styles.label}>أوضاع الطلب التي اختارها الشريك عند الانضمام</Text>
         <Text style={styles.muted}>سجّل الأوضاع المتاحة في المتجر لأول مرة. بعد إنشاء المتجر لا يغيّرها الشريك من التطبيق؛ يديرها المشغّل من لوحة التحكم.</Text>
@@ -603,7 +627,7 @@ const theme = useAppearanceTheme();
           <BthwaniChip label="استلم بنفسك من المتجر" onPress={() => { if (!formLocked) toggleFulfillmentMode("CUSTOMER_PICKUP"); }} selected={input.firstStoreFulfillmentModes.includes("CUSTOMER_PICKUP")} />
         </View>
         </View>
-        <View style={styles.card}>
+        <View style={[styles.card, styles.formCard]}>
           <Text style={styles.label}>عنوان المتجر وموقعه</Text>
           <Text style={styles.muted}>حدد موقع المتجر على الخريطة أو استخدم موقعك الحالي كنقطة بداية، ثم اضبط المؤشر على المتجر.</Text>
           <BthwaniButton busy={locationBusy} disabled={formLocked} label="استخدام موقعي الحالي" onPress={() => void requestCurrentLocation()} variant="secondary" />
@@ -611,17 +635,19 @@ const theme = useAppearanceTheme();
           {locationError ? <Text accessibilityRole="alert" style={styles.error}>{locationError}</Text> : null}
           <View style={{ flexDirection: wideLayout ? "row" : "column", gap: 12 }}>
             <View style={{ flex: 1, minWidth: 0 }}><BthwaniMap accessibilityLabel="تحديد موقع المتجر على الخريطة" selection={selectedStoreOrigin} selectionTitle="موقع المتجر" onSelectCoordinate={(coordinate) => { if (!formLocked) { setSelectedStoreOrigin(coordinate); setLocationMessage(""); setLocationError(""); setError(""); } }} /></View>
-            <View style={{ flex: 1, gap: 8, minWidth: 0 }}><Text style={styles.label}>العنوان النصي</Text><TextInput accessibilityLabel="عنوان المتجر" editable={!formLocked} multiline placeholder="الحي، الشارع، وأقرب معلم" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 120, paddingTop: 12, textAlignVertical: "top" }]} value={input.firstStoreAddress} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreAddress: value }))} /><Text style={styles.muted}>{selectedStoreOrigin ? `الإحداثيات المحددة: ${selectedStoreOrigin.latitude.toFixed(5)}, ${selectedStoreOrigin.longitude.toFixed(5)}` : "لم يُحدد موقع على الخريطة بعد."}</Text></View>
+            <View style={{ flex: 1, gap: 8, minWidth: 0 }}><Text style={styles.label}>العنوان النصي</Text><TextInput accessibilityLabel="عنوان المتجر" editable={!formLocked} multiline placeholder="المنطقة أو الحي، الشارع، وأقرب معلم" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 120, paddingTop: 12, textAlignVertical: "top" }]} value={input.firstStoreAddress} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreAddress: value }))} /><Text style={styles.muted}>{selectedStoreOrigin ? `الإحداثيات المحددة: ${selectedStoreOrigin.latitude.toFixed(5)}, ${selectedStoreOrigin.longitude.toFixed(5)}` : "لم يُحدد موقع على الخريطة بعد."}</Text></View>
           </View>
         </View>
+        </View> : null}
+        {currentStep === "operations" ? <View style={styles.formStep}>
         <Text style={styles.sectionTitle}>ساعات العمل الأسبوعية</Text>
         <FieldWorkingHoursEditor disabled={formLocked} onChange={setWorkingHoursByDay} value={workingHoursByDay} />
-        <View style={styles.card}>
+        <View style={[styles.card, styles.formCard]}>
         <Text style={styles.sectionTitle}>ملاحظات</Text>
         <Text style={styles.label}>ملاحظات · اختياري</Text>
         <TextInput accessibilityLabel="ملاحظات اختيارية" editable={!formLocked} multiline maxLength={1000} placeholder="أي تفاصيل إضافية للمراجعة" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 88, paddingTop: 12, textAlignVertical: "top" }]} value={input.firstStoreNotes ?? ""} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreNotes: value }))} />
         </View>
-        <View style={styles.card}>
+        <View style={[styles.card, styles.formCard]}>
         <Text style={styles.sectionTitle}>صورة الواجهة وحق استخدامها</Text>
         <Text style={styles.label}>صورة واجهة المتجر · مطلوبة قبل الإرسال</Text>
         <Text style={styles.muted}>اختر صورة واضحة للواجهة. تُرفع مركزيًا وتظهر بعد اعتماد المتجر؛ حفظ المسودة ممكن قبل رفعها، لكن لا تُرسل للمراجعة حتى تكتمل.</Text>
@@ -631,10 +657,15 @@ const theme = useAppearanceTheme();
           <BthwaniButton disabled={formLocked} label={storeImage ? "اختيار صورة أخرى من الجهاز" : "اختيار صورة من الجهاز"} onPress={() => void pickStoreImage("library")} variant="secondary" />
           <BthwaniButton disabled={formLocked} label="التقاط صورة بالكاميرا" onPress={() => void pickStoreImage("camera")} variant="secondary" />
         </View>
-        <Text style={styles.muted}>حفظ المسودة لا يرسلها للمراجعة. أكمِل صورتي الواجهة والإثبات أولًا.</Text>
-        {draftConflictNeedsRead ? <BthwaniButton busy={busy} disabled={busy} label="إعادة قراءة النسخة الأحدث قبل الحفظ" onPress={() => void rereadAfterDraftConflict()} variant="secondary" /> : null}
-        <BthwaniButton busy={busy} disabled={busy || draftConflictNeedsRead || (!pendingDraftAttempt && formLocked)} label={pendingDraftAttempt ? "إعادة التحقق من حفظ المسودة" : draftConflict ? "حفظ مدخلاتي واستبدال النسخة الأحدث" : createdCase ? "حفظ التعديلات" : "حفظ المسودة"} onPress={() => void createCase()} />
         </View>
+        </View> : null}
+        <View style={styles.formNavigation}>
+          {stepProgress.current < stepProgress.total ? <View style={styles.formNavigationAction}><BthwaniButton disabled={formLocked} label={`التالي: ${FIELD_JOINING_CASE_STEPS[stepProgress.current]?.title ?? ""}`} onPress={() => navigateStep(1)} /></View> : null}
+          {stepProgress.current > 1 ? <View style={styles.formNavigationAction}><BthwaniButton disabled={formLocked} label="السابق" onPress={() => navigateStep(-1)} variant="secondary" /></View> : null}
+        </View>
+        {draftConflictNeedsRead ? <BthwaniButton busy={busy} disabled={busy} label="إعادة قراءة النسخة الأحدث قبل الحفظ" onPress={() => void rereadAfterDraftConflict()} variant="secondary" /> : null}
+        <BthwaniButton busy={busy} disabled={busy || draftConflictNeedsRead || (!pendingDraftAttempt && formLocked)} label={pendingDraftAttempt ? "إعادة التحقق من حفظ المسودة" : draftConflict ? "حفظ مدخلاتي واستبدال النسخة الأحدث" : createdCase ? "حفظ التعديلات" : "حفظ المسودة والمتابعة لاحقًا"} onPress={() => void createCase()} variant={stepProgress.current === stepProgress.total ? "primary" : "secondary"} />
+        {stepProgress.current === stepProgress.total ? <Text style={styles.muted}>حفظ المسودة لا يرسلها للمراجعة؛ أكمل الصورتين قبل الإرسال.</Text> : null}
       </> : null}
       {createdCase ? <View accessibilityLiveRegion="polite" style={styles.successCard}>
         <Text style={styles.cardTitle}>حُفظت مسودة الشريك</Text>

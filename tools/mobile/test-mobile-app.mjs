@@ -134,6 +134,26 @@ register(pathToFileURL(path.join(root, "packages/design-system/tools/ts-resolver
 if (app === "app-field") {
   const newCaseRoute = fs.readFileSync(path.join(appDir, "app/(app)/new-case.tsx"), "utf8");
   assert.match(newCaseRoute, /key=\{`field-case:\$\{caseId\}`\}/, "app-field: changing the edited case identity must remount the draft editor rather than reuse another partner's state");
+  const { FIELD_JOINING_CASE_STEPS, getFieldJoiningCaseStepProgress, moveFieldJoiningCaseStep } = await import(
+    pathToFileURL(path.join(appDir, "src/features/field-operations/field-new-case-flow.ts")).href
+  );
+  assert.deepEqual(FIELD_JOINING_CASE_STEPS.map(({ id }) => id), ["owner", "store", "evidence", "location", "operations"]);
+  for (let index = 0; index < FIELD_JOINING_CASE_STEPS.length; index += 1) {
+    const step = FIELD_JOINING_CASE_STEPS[index];
+    const progress = getFieldJoiningCaseStepProgress(step.id);
+    assert.equal(progress.current, index + 1);
+    assert.equal(progress.total, FIELD_JOINING_CASE_STEPS.length);
+    assert.equal(progress.progressPercent, Math.round(((index + 1) / FIELD_JOINING_CASE_STEPS.length) * 100));
+    assert.equal(moveFieldJoiningCaseStep(step.id, -1), FIELD_JOINING_CASE_STEPS[Math.max(0, index - 1)].id);
+    assert.equal(moveFieldJoiningCaseStep(step.id, 1), FIELD_JOINING_CASE_STEPS[Math.min(FIELD_JOINING_CASE_STEPS.length - 1, index + 1)].id);
+  }
+  const joiningCaseSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-new-case.tsx"), "utf8");
+  assert.doesNotMatch(joiningCaseSource, /if \(!pendingDraftAttempt && !walletProviders\.some\(/, "app-field: wallet preference must not block saving a partial joining-case draft");
+  assert.match(joiningCaseSource, /المحفظة الرسمية · اختياري/, "app-field: wallet preference must be labeled optional");
+  const nativeMapSource = fs.readFileSync(path.join(root, "packages/design-system/src/native/map.tsx"), "utf8");
+  assert.doesNotMatch(nativeMapSource, /onMapReady=\{\(\) => setLoadState\("ready"\)\}/, "app-field: map readiness must wait for rendered map tiles, not interaction readiness");
+  assert.match(nativeMapSource, /onMapLoaded=\{\(\) => setLoadState\("ready"\)\}/, "app-field: successful map rendering must clear the loading state");
+  assert.match(nativeMapSource, /key=\{mapRetryKey\}/, "app-field: retry must recreate the native map view");
   const admissionProviderOpen = layoutContent.indexOf("<FieldAdmissionProvider>");
   const authenticatedBoundaryOpen = layoutContent.indexOf("<AuthenticatedMobileBoundary");
   const authenticatedBoundaryClose = layoutContent.indexOf("</AuthenticatedMobileBoundary>");

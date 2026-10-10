@@ -10,10 +10,14 @@ type FieldSearchNavigation = {
   setParams: (params: { focus?: string; q?: string }) => void;
 };
 
-export function FieldScrollScreen({ children }: PropsWithChildren) {
+export function FieldScrollScreen({ children, scrollToTopKey }: PropsWithChildren<{ scrollToTopKey?: number | string }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
+  const scrollView = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (scrollToTopKey !== undefined) scrollView.current?.scrollTo({ y: 0, animated: false });
+  }, [scrollToTopKey]);
+  return <ScrollView ref={scrollView} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
 }
 
 export function createFieldTabOptions(theme: ReturnType<typeof resolveTheme>, canSearch: boolean) {
