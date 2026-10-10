@@ -259,6 +259,27 @@ if (app === "app-field") {
     assert.match(picker, /cause\.message === "STORE_IMAGE_SIZE_INVALID" \? "يجب ألا يتجاوز حجم صورة المتجر 10 ميغابايت\."/, "Field " + surface + " must explain the DSH size limit in Arabic");
     assert.ok(picker.indexOf('throw new Error("STORE_IMAGE_SIZE_INVALID")') < picker.indexOf("setStoreImage("), "Field " + surface + " must reject invalid media before storing a selected image");
   }
+  const { fieldJoiningImageDimensionsSupported } = await import(
+    pathToFileURL(path.join(appDir, "src/features/field-operations/field-image-dimensions.ts")).href
+  );
+  for (const [width, height] of [[1, 1], [6000, 6000], [1, 6000], [6000, 1]]) {
+    assert.equal(fieldJoiningImageDimensionsSupported(width, height), true, "DSH-valid boundary dimensions must remain selectable");
+  }
+  for (const [width, height] of [[0, 1], [1, 0], [6001, 1], [1, 6001], [-1, 2], [1.5, 2], [NaN, 2], [2, Infinity], [undefined, 2]]) {
+    assert.equal(fieldJoiningImageDimensionsSupported(width, height), false, "Invalid image dimensions must be rejected before upload");
+  }
+  for (const [surface, source] of [["new-case", newCaseSource], ["cases", casesSource]]) {
+    const storeStart = source.indexOf("async function pickStoreImage(");
+    const proofStart = source.indexOf("async function pickProofImage()", storeStart);
+    const proofEnd = source.indexOf("async function uploadProofImage(", proofStart);
+    assert.ok(storeStart !== -1 && proofStart > storeStart && proofEnd > proofStart, "Field " + surface + " must have bounded store and proof pickers");
+    for (const [kind, picker] of [["STORE", source.slice(storeStart, proofStart)], ["PROOF", source.slice(proofStart, proofEnd)]]) {
+      assert.ok(picker.includes(`if (!fieldJoiningImageDimensionsSupported(asset.width, asset.height)) throw new Error("${kind}_IMAGE_DIMENSIONS_INVALID");`), `Field ${surface} ${kind} picker must use the tested dimensions guard`);
+      assert.ok(picker.indexOf("fieldJoiningImageDimensionsSupported(asset.width, asset.height)") < picker.indexOf("await fetch(asset.uri)"), `Field ${surface} ${kind} must reject dimensions before reading bytes`);
+      assert.ok(picker.includes(`cause.message === "${kind}_IMAGE_DIMENSIONS_INVALID"`), `Field ${surface} ${kind} must show a distinct dimensions error`);
+      assert.match(picker, /يجب أن تكون أبعاد صورة (المتجر|الإثبات) بين 1 و6000 بكسل للعرض والارتفاع/, `Field ${surface} ${kind} must explain accepted dimensions in Arabic`);
+    }
+  }
   console.log("MOBILE_FIELD_MEDIA_READBACK=PASS image marker, private proof, version, isolation, recovery and both Field surfaces");
   const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-commercial-agreement-rate.ts")).href
