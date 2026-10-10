@@ -261,7 +261,7 @@ export function FieldCases() {
   }
 
   async function pickStoreImage(source: "camera" | "library" = "library") {
-    if (!mediaCase || busy || pendingImageAttempt) return;
+    if (!mediaCase || busy || pendingImageAttempt || pendingProofImageAttempt) return;
     const permission = source === "camera" ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { setError(source === "camera" ? "يلزم السماح باستخدام الكاميرا لالتقاط صورة المتجر." : "يلزم السماح بالوصول إلى الصور لاختيار صورة المتجر."); return; }
     const result = source === "camera"
@@ -284,7 +284,7 @@ export function FieldCases() {
   }
 
   async function uploadStoreImage() {
-    if (!mediaCase || !storeImage || busy) return;
+    if (!mediaCase || !storeImage || busy || pendingProofImageAttempt) return;
     if (!isMediaProvenanceInputValid(storeImage.provenance)) {
       setError("أكمل منشئ الصورة ومصدرها وبيان حق استخدامها، ثم أكّد صحة التصريح.");
       return;
@@ -325,7 +325,7 @@ export function FieldCases() {
   }
 
   async function pickProofImage() {
-    if (!mediaCase || mediaCase.case.state !== "draft" || busy || pendingProofImageAttempt) return;
+    if (!mediaCase || mediaCase.case.state !== "draft" || busy || pendingProofImageAttempt || pendingImageAttempt) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { setError("يلزم السماح بالوصول إلى الصور لاختيار صورة الإثبات."); return; }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1 });
@@ -347,7 +347,7 @@ export function FieldCases() {
   }
 
   async function uploadProofImage() {
-    if (!mediaCase || !proofImage || busy) return;
+    if (!mediaCase || !proofImage || busy || pendingImageAttempt) return;
     const attempt = pendingProofImageAttempt ?? { caseID: mediaCase.case.id, expectedVersion: mediaCase.case.version, image: proofImage, idempotencyKey: `field_proof_image_${Crypto.randomUUID()}`, correlationID: `field_proof_image_corr_${Crypto.randomUUID()}` };
     setPendingProofImageAttempt(attempt);
     setBusy(attempt.caseID);
@@ -444,17 +444,17 @@ export function FieldCases() {
           <FieldMediaProvenanceEditor disabled={Boolean(busy) || Boolean(pendingImageAttempt)} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} value={storeImage.provenance} />
         </View> : null}
         <View style={styles.optionList}>
-          <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label={storeImageButtonLabel} onPress={() => void pickStoreImage("library")} variant="secondary" />
-          <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label="التقاط صورة بالكاميرا" onPress={() => void pickStoreImage("camera")} variant="secondary" />
+          <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label={storeImageButtonLabel} onPress={() => void pickStoreImage("library")} variant="secondary" />
+          <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="التقاط صورة بالكاميرا" onPress={() => void pickStoreImage("camera")} variant="secondary" />
         </View>
-        {storeImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || (!pendingImageAttempt && !isMediaProvenanceInputValid(storeImage.provenance))} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "حفظ صورة المتجر"} onPress={() => void uploadStoreImage()} /> : null}
+        {storeImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingProofImageAttempt) || (!pendingImageAttempt && !isMediaProvenanceInputValid(storeImage.provenance))} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "حفظ صورة المتجر"} onPress={() => void uploadStoreImage()} /> : null}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>صورة الإثبات الخاصة</Text>
           <Text style={mediaCase.case.firstStoreProofImageUploaded ? styles.muted : styles.error}>{mediaCase.case.firstStoreProofImageUploaded ? "صورة الإثبات مسجلة للمسودة." : "ارفع صورة الإثبات من هذه القائمة لإكمال المسودة بعد مغادرة شاشة الإنشاء."}</Text>
           {proofImage ? <Image accessibilityLabel="معاينة صورة الإثبات" source={{ uri: proofImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="contain" /> : null}
           {!mediaCase.case.firstStoreProofImageUploaded ? <>
-            <BthwaniButton disabled={Boolean(busy) || Boolean(pendingProofImageAttempt)} label={proofImage ? "اختيار صورة إثبات أخرى" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
-            {proofImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy)} label={pendingProofImageAttempt ? "إعادة التحقق من رفع الإثبات" : "رفع صورة الإثبات المشفّرة"} onPress={() => void uploadProofImage()} /> : null}
+            <BthwaniButton disabled={Boolean(busy) || Boolean(pendingProofImageAttempt) || Boolean(pendingImageAttempt)} label={proofImage ? "اختيار صورة إثبات أخرى" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
+            {proofImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label={pendingProofImageAttempt ? "إعادة التحقق من رفع الإثبات" : "رفع صورة الإثبات المشفّرة"} onPress={() => void uploadProofImage()} /> : null}
           </> : null}
         </View>
         {storeImage || proofImage ? <Text style={styles.muted}>ارفع الصور المختارة أو أغلق التفاصيل لإلغاء الاختيار قبل إرسال المسودة للمراجعة.</Text> : null}

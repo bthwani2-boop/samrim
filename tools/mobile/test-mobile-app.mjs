@@ -238,6 +238,17 @@ if (app === "app-field") {
   assert.match(casesSource, /if \(busy \|\| storeImage \|\| proofImage \|\| pendingImageAttempt \|\| pendingProofImageAttempt \|\| item\.state !== "draft"\) return;/, "Opening other media details must not replace a pending proof image or upload attempt");
   assert.equal([...casesSource.matchAll(/disabled=\{Boolean\(busy\) \|\| Boolean\(storeImage\) \|\| Boolean\(proofImage\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\)\}/g)].length, 2, "Draft editing and media navigation must both protect unsaved proof selection");
   assert.match(casesSource, /setMediaCase\(null\); setStoreImage\(null\); setProofImage\(null\);/, "Closing media details must discard both uncommitted image selections");
+  assert.match(newCaseSource, /if \(!createdCase \|\| !storeImage \|\| busy \|\| pendingProofImageAttempt\) return;/, "Store retry must not overtake unresolved proof upload in draft editor");
+  assert.match(newCaseSource, /if \(!createdCase \|\| !proofImage \|\| busy \|\| pendingImageAttempt\) return;/, "Proof retry must not overtake unresolved store upload in draft editor");
+  assert.match(newCaseSource, /if \(busy \|\| pendingImageAttempt \|\| pendingProofImageAttempt\) return;/, "Store selection must remain locked during either pending upload");
+  assert.match(newCaseSource, /if \(busy \|\| pendingProofImageAttempt \|\| pendingImageAttempt\) return;/, "Proof selection must remain locked during either pending upload");
+  assert.match(casesSource, /if \(!mediaCase \|\| !storeImage \|\| busy \|\| pendingProofImageAttempt\) return;/, "Store upload must not overtake unresolved proof upload in cases");
+  assert.match(casesSource, /if \(!mediaCase \|\| !proofImage \|\| busy \|\| pendingImageAttempt\) return;/, "Proof upload must not overtake unresolved store upload in cases");
+  assert.match(casesSource, /if \(!mediaCase \|\| busy \|\| pendingImageAttempt \|\| pendingProofImageAttempt\) return;/, "Cases store picker must guard both pending uploads");
+  assert.match(casesSource, /if \(!mediaCase \|\| mediaCase\.case\.state !== "draft" \|\| busy \|\| pendingProofImageAttempt \|\| pendingImageAttempt\) return;/, "Cases proof picker must guard both pending uploads");
+  assert.equal([...casesSource.matchAll(/disabled=\{Boolean\(busy\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\)\} label=/g)].length, 3, "Cases store image, camera and close-detail actions must protect pending uploads");
+  assert.match(newCaseSource, /disabled=\{busy \|\| Boolean\(pendingImageAttempt\)\} label=\{pendingProofImageAttempt \?/, "Draft proof retry must be visibly blocked by pending store upload");
+  assert.match(newCaseSource, /disabled=\{busy \|\| Boolean\(pendingProofImageAttempt\)\} label=\{pendingImageAttempt \?/, "Draft store retry must be visibly blocked by pending proof upload");
   console.log("MOBILE_FIELD_MEDIA_READBACK=PASS image marker, private proof, version, isolation, recovery and both Field surfaces");
   const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-commercial-agreement-rate.ts")).href
