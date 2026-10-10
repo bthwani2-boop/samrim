@@ -25,7 +25,7 @@ function missingFieldIntake(caseData: JoiningCaseView): string[] {
   if (!caseData.firstStoreAddress?.trim() || caseData.firstStoreLatitude == null || caseData.firstStoreLongitude == null) missing.push("العنوان والموقع");
   if (!isValidStoreWorkingHours(caseData.firstStoreWorkingHours?.intervals ?? [])) missing.push("ساعات العمل");
   if (!caseData.firstStoreFulfillmentModes.length) missing.push("طرق التوصيل");
-  if (!caseData.firstStoreProofType || !caseData.firstStoreProofImageUploaded) missing.push("نوع الإثبات ورقمه وصورته");
+  if (!caseData.firstStoreProofType || !caseData.firstStoreProofNumberPresent || !caseData.firstStoreProofImageUploaded) missing.push("نوع الإثبات ورقمه وصورته");
   if (!caseData.storeProfileImage) missing.push("صورة واجهة المتجر");
   return missing;
 }
@@ -348,7 +348,7 @@ export function FieldCases() {
   }
 
   async function pickProofImage() {
-    if (mediaCase?.case.state !== "draft" || busy || pendingProofImageAttempt || pendingImageAttempt) return;
+    if (!mediaCase || mediaCase.case.state !== "draft" || busy || pendingProofImageAttempt || pendingImageAttempt) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { setError("يلزم السماح بالوصول إلى الصور لاختيار صورة الإثبات."); return; }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1 });
@@ -466,7 +466,7 @@ export function FieldCases() {
         {mediaCase.case.storeProfileImage ? <Image accessibilityLabel="صورة المتجر المحفوظة" source={{ uri: mediaCase.case.storeProfileImage.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : <Text style={styles.muted}>لا توجد صورة محفوظة للشريك بعد.</Text>}
         {storeImage ? <Image accessibilityLabel="معاينة صورة المتجر الجديدة" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="cover" /> : null}
         {storeImage ? <View style={styles.card}>
-          <FieldMediaProvenanceEditor disabled={Boolean(busy) || Boolean(pendingImageAttempt)} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} value={storeImage.provenance} />
+          <FieldMediaProvenanceEditor key={storeImage.uri} disabled={Boolean(busy) || Boolean(pendingImageAttempt)} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} value={storeImage.provenance} />
         </View> : null}
         <View style={styles.optionList}>
           <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label={storeImageButtonLabel} onPress={() => void pickStoreImage("library")} variant="secondary" />

@@ -2,7 +2,7 @@ import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-
 import { isValidStoreWorkingHours, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useMemo, useState } from "react";
-import { Switch, Text, TextInput, View } from "react-native";
+import { Modal, Pressable, ScrollView, Switch, Text, View } from "react-native";
 
 import { createFieldOperationStyles } from "./field-operation-styles";
 
@@ -29,6 +29,58 @@ function isValidLocalTime(value: string): boolean {
 
 function intervalLabel(interval: StoreWorkingHoursInterval): string {
   return `${interval.opensAt}–${interval.closesAt}${interval.closesNextDay ? " · ينتهي غدًا" : ""}`;
+}
+
+const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+const MINUTES = Array.from({ length: 60 }, (_, minute) => minute);
+
+function TimePickerField({ label, value, onChange, disabled }: Readonly<{
+  label: string; value: string; onChange: (value: string) => void; disabled: boolean;
+}>) {
+  const theme = useAppearanceTheme();
+  const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
+  const [visible, setVisible] = useState(false);
+  const [time, setTime] = useState("09:00");
+  const [hourText, minuteText] = time.split(":");
+  const chosenHour = Number(hourText ?? "9");
+  const chosenMinute = Number(minuteText ?? "0");
+  function chooseClock(nextHour: number, nextMinute: number) {
+    setTime(`${String(nextHour).padStart(2, "0")}:${String(nextMinute).padStart(2, "0")}`);
+  }
+  return <View style={{ flex: 1, minWidth: 112 }}>
+    <BthwaniButton disabled={disabled} label={value || label} onPress={() => { setTime(isValidLocalTime(value) ? value : "09:00"); setVisible(true); }} variant="secondary" />
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={() => setVisible(false)}>
+      <View style={{ flex: 1, justifyContent: "center", padding: 20, backgroundColor: "rgba(0,0,0,0.5)" }}>
+        <View style={{ backgroundColor: theme.surface, borderRadius: 18, padding: 16, gap: 12 }}>
+          <Text style={styles.cardTitle}>{label}</Text>
+          <Text style={styles.muted}>اختر الساعة والدقيقة بتوقيت المدينة (24 ساعة)</Text>
+          <Text style={[styles.sectionTitle, { textAlign: "center" }]}>{time}</Text>
+          <View style={{ flexDirection: "row", gap: 12, height: 220 }}>
+            <ScrollView style={{ flex: 1 }} accessibilityLabel="الساعات">
+              {HOURS.map((item) => <Pressable key={item} accessibilityRole="button"
+                accessibilityLabel={`الساعة ${item}`} accessibilityState={{ selected: chosenHour === item }}
+                onPress={() => chooseClock(item, chosenMinute)}
+                style={{ padding: 10, borderRadius: 8, backgroundColor: chosenHour === item ? theme.actionBackground : theme.surface }}>
+                <Text style={{ color: chosenHour === item ? theme.actionText : theme.color, textAlign: "center" }}>{String(item).padStart(2, "0")}</Text>
+              </Pressable>)}
+            </ScrollView>
+            <ScrollView style={{ flex: 1 }} accessibilityLabel="الدقائق">
+              {MINUTES.map((item) => <Pressable key={item} accessibilityRole="button"
+                accessibilityLabel={`الدقيقة ${item}`} accessibilityState={{ selected: chosenMinute === item }}
+                onPress={() => chooseClock(chosenHour, item)}
+                style={{ padding: 10, borderRadius: 8, backgroundColor: chosenMinute === item ? theme.actionBackground : theme.surface }}>
+                <Text style={{ color: chosenMinute === item ? theme.actionText : theme.color, textAlign: "center" }}>{String(item).padStart(2, "0")}</Text>
+              </Pressable>)}
+            </ScrollView>
+          </View>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={{ flex: 1 }}><BthwaniButton label="إلغاء" variant="secondary" onPress={() => setVisible(false)} /></View>
+            <View style={{ flex: 1 }}><BthwaniButton label="تأكيد" onPress={() => { onChange(time); setVisible(false); }} /></View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  </View>;
 }
 
 export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<{
@@ -90,8 +142,8 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
     </View>
 
     <View style={styles.optionList}>
-      <TextInput accessibilityLabel="بداية فترة العمل" editable={!disabled} keyboardType="numbers-and-punctuation" maxLength={5} placeholder="من 09:00" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput, { flex: 1 }]} value={opensAt} onChangeText={setOpensAt} />
-      <TextInput accessibilityLabel="نهاية فترة العمل" editable={!disabled} keyboardType="numbers-and-punctuation" maxLength={5} placeholder="إلى 17:00" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput, { flex: 1 }]} value={closesAt} onChangeText={setClosesAt} />
+      <TimePickerField label="وقت الفتح" value={opensAt} onChange={setOpensAt} disabled={disabled} />
+      <TimePickerField label="وقت الإغلاق" value={closesAt} onChange={setClosesAt} disabled={disabled} />
     </View>
     <View style={styles.orderHeader}>
       <Switch disabled={disabled} value={closesNextDay} onValueChange={setClosesNextDay} />
@@ -119,8 +171,8 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
           {dayIntervals.map((interval, index) => <View key={interval.id} style={{ gap: 6 }}>
             <Text style={styles.muted}>الفترة {index + 1}</Text>
             <View style={styles.optionList}>
-              <TextInput accessibilityLabel={`${label} بداية الفترة ${index + 1}`} editable={!disabled} keyboardType="numbers-and-punctuation" maxLength={5} placeholder="من 09:00" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput, { flex: 1 }]} value={interval.opensAt} onChangeText={(nextOpensAt) => updateDay(day, dayIntervals.map((item, itemIndex) => itemIndex === index ? { ...item, opensAt: nextOpensAt } : item))} />
-              <TextInput accessibilityLabel={`${label} نهاية الفترة ${index + 1}`} editable={!disabled} keyboardType="numbers-and-punctuation" maxLength={5} placeholder="إلى 17:00" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput, { flex: 1 }]} value={interval.closesAt} onChangeText={(nextClosesAt) => updateDay(day, dayIntervals.map((item, itemIndex) => itemIndex === index ? { ...item, closesAt: nextClosesAt } : item))} />
+              <TimePickerField label={`${label} · بداية الفترة ${index + 1}`} disabled={disabled} value={interval.opensAt} onChange={(nextOpensAt) => updateDay(day, dayIntervals.map((item, itemIndex) => itemIndex === index ? { ...item, opensAt: nextOpensAt } : item))} />
+              <TimePickerField label={`${label} · نهاية الفترة ${index + 1}`} disabled={disabled} value={interval.closesAt} onChange={(nextClosesAt) => updateDay(day, dayIntervals.map((item, itemIndex) => itemIndex === index ? { ...item, closesAt: nextClosesAt } : item))} />
             </View>
             <View style={styles.optionList}>
               <Switch disabled={disabled} value={interval.closesNextDay} onValueChange={(nextClosesNextDay) => updateDay(day, dayIntervals.map((item, itemIndex) => itemIndex === index ? { ...item, closesNextDay: nextClosesNextDay } : item))} />

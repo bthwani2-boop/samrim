@@ -118,7 +118,7 @@ const theme = useAppearanceTheme();
   const stepComplete = [
     phoneValid && input.ownerFullName.trim().length >= 2 && Boolean(input.businessName.trim() && input.firstStoreName.trim()),
     Boolean(input.serviceCityId && input.firstStoreVerticalId && input.firstStoreCommercialTypeId && input.firstStoreAddress.trim().length >= 4 && selectedStoreOrigin && input.firstStoreFulfillmentModes.length && enteredHours.length && isValidStoreWorkingHours(enteredHours)),
-    Boolean(selectedProofType && createdCase?.case.firstStoreProofImageUploaded && createdCase.case.storeProfileImage && !proofDetailsDirty),
+    Boolean(selectedProofType && createdCase?.case.firstStoreProofNumberPresent && createdCase.case.firstStoreProofImageUploaded && createdCase.case.storeProfileImage && !proofDetailsDirty),
   ];
   const completedSteps = stepComplete.filter(Boolean).length;
   const missingBeforeSubmission = [
@@ -126,7 +126,7 @@ const theme = useAppearanceTheme();
     !stepComplete[1] ? "المتجر والتشغيل" : "",
     !input.walletProviderKey ? "المحفظة الرسمية" : "",
     !selectedProofType ? "نوع الإثبات" : "",
-    !input.firstStoreProofNumber.trim() && !createdCase?.case.firstStoreProofImageUploaded ? "رقم الإثبات" : "",
+    !createdCase?.case.firstStoreProofNumberPresent ? "رقم الإثبات المحفوظ" : "",
     !createdCase?.case.firstStoreProofImageUploaded || proofDetailsDirty ? "صورة الإثبات" : "",
     !createdCase?.case.storeProfileImage ? "صورة الواجهة" : "",
   ].filter(Boolean);
@@ -281,7 +281,7 @@ const theme = useAppearanceTheme();
         firstStoreCommercialTypeId: input.firstStoreCommercialTypeId.trim(),
         firstStoreWorkingHours: { intervals: toStoreWorkingHoursIntervals(workingHoursByDay) },
         ...(selectedProofType ? { firstStoreProofType: selectedProofType } : {}),
-        ...(proofNumber ? { firstStoreProofNumber: proofNumber } : {}),
+        ...(proofNumber && (!createdCase || proofDetailsDirty) ? { firstStoreProofNumber: proofNumber } : {}),
         ...(notes ? { firstStoreNotes: notes } : {}),
         firstStoreFulfillmentModes: input.firstStoreFulfillmentModes,
         ...(selectedStoreOrigin ? { firstStoreLatitude: selectedStoreOrigin.latitude, firstStoreLongitude: selectedStoreOrigin.longitude } : {}),
@@ -303,12 +303,18 @@ const theme = useAppearanceTheme();
         throw new Error("FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH");
       }
       setCreatedCase(canonical);
+      // The server preserves the encrypted number when omitted. Never resend a saved
+      // number on unrelated draft updates: doing so invalidates the linked proof image.
+      setInput((current) => ({ ...current, firstStoreProofNumber: "" }));
       setProofDetailsDirty(false);
       setDraftConflict(false);
       setDraftConflictNeedsRead(false);
       setPendingDraftAttempt(null);
+      // Save the proof before the public image, because each upload advances the case version.
+      const proofSavedCase = proofImage ? await uploadProofImage(canonical, proofImage) : canonical;
+      if (!proofSavedCase) return;
       if (storeImage && isMediaProvenanceInputValid(storeImage.provenance)) {
-        await uploadStoreImage(canonical, storeImage);
+        await uploadStoreImage(proofSavedCase, storeImage);
       }
       if (storeImage && !isMediaProvenanceInputValid(storeImage.provenance)) setError("حُفظت المسودة. أكمل مصدر الصورة وحق عرضها قبل رفع الصورة.");
     } catch (cause) {
@@ -505,7 +511,7 @@ const theme = useAppearanceTheme();
     }
   }
 
-  async function uploadProofImage(current: JoiningCaseResponse, image: DshImageUploadInput, existingAttempt?: PendingProofImageAttempt) {
+  async function uploadProofImage(current: JoiningCaseResponse, image: DshImageUploadInput, existingAttempt?: PendingProofImageAttempt): Promise<JoiningCaseResponse | null> {
     const attempt = existingAttempt ?? { caseID: current.case.id, expectedVersion: current.case.version, image, idempotencyKey: `field_proof_image_${Crypto.randomUUID()}`, correlationID: `field_proof_image_corr_${Crypto.randomUUID()}` };
     setPendingProofImageAttempt(attempt);
     try {
@@ -516,11 +522,12 @@ const theme = useAppearanceTheme();
       setCreatedCase(canonical);
       setProofImage(null);
       setPendingProofImageAttempt(null);
+      return canonical;
     } catch (cause) {
       console.warn("DSH Field proof image upload failed", cause);
       if (isOutcomeUncertain(cause)) {
         setError("لم نتأكد من رفع صورة الإثبات بعد. أعد المحاولة للتحقق من حالتها.");
-        return;
+        return null;
       }
       setPendingProofImageAttempt(null);
       try {
@@ -532,6 +539,7 @@ const theme = useAppearanceTheme();
       }
       setError("تعذر تأكيد صورة الإثبات. حدّث المسودة قبل إعادة الرفع.");
     }
+    return null;
   }
 
   return (
@@ -669,7 +677,7 @@ const theme = useAppearanceTheme();
         <TextInput accessibilityLabel="ملاحظات اختيارية" editable={!formLocked} multiline maxLength={1000} placeholder="أي تفاصيل إضافية للمراجعة" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 64, paddingTop: 10, textAlignVertical: "top" }]} value={input.firstStoreNotes ?? ""} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreNotes: value }))} />
         <Text style={styles.sectionTitle}>صورة واجهة المتجر</Text>
         {storeImage ? <Image accessibilityLabel="معاينة صورة المتجر" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="cover" /> : null}
-        {storeImage ? <FieldMediaProvenanceEditor disabled={formLocked} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} value={storeImage.provenance} /> : null}
+        {storeImage ? <FieldMediaProvenanceEditor key={storeImage.uri} creatorName={admissionState.kind === "ready" ? admissionState.admission.fullNameAr ?? "" : ""} disabled={formLocked} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} value={storeImage.provenance} /> : null}
         <View style={styles.optionList}>
           <BthwaniButton disabled={formLocked} label={storeImage ? "تغيير الصورة" : "من الجهاز"} onPress={() => void pickStoreImage("library")} variant="secondary" />
           <BthwaniButton disabled={formLocked} label="الكاميرا" onPress={() => void pickStoreImage("camera")} variant="secondary" />

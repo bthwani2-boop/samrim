@@ -1301,7 +1301,7 @@ components:
 
     JoiningCaseView:
       type: object
-      required: [id, contactPhoneE164, ownerFullName, businessName, firstStoreName, walletProviderKey, firstStoreAddress, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, firstStoreWorkingHours, firstStoreProofType, firstStoreProofImageUploaded, firstStoreFulfillmentModes, origin, state, financialProfileState, termsPolicyVersion, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, ownerFullName, businessName, firstStoreName, walletProviderKey, firstStoreAddress, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, firstStoreWorkingHours, firstStoreProofType, firstStoreProofNumberPresent, firstStoreProofImageUploaded, firstStoreFulfillmentModes, origin, state, financialProfileState, termsPolicyVersion, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -1354,6 +1354,9 @@ components:
         firstStoreProofType:
           $ref: "#/components/schemas/JoiningCaseProofType"
           nullable: true
+        firstStoreProofNumberPresent:
+          type: boolean
+          description: Indicates encrypted proof number is on file; never exposes the number.
         firstStoreProofImageUploaded:
           type: boolean
         firstStoreNotes:
@@ -4430,7 +4433,7 @@ components:
 
     PublicStoreView:
       type: object
-      required: [id, name, serviceCity, primaryVerticalId, categoryIds, fulfillmentModes, version, ratingAverage, ratingCount, publishedAt, createdAt, updatedAt]
+      required: [id, name, serviceCity, primaryVerticalId, categoryIds, fulfillmentModes, orderabilityByMode, version, ratingAverage, ratingCount, publishedAt, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -4453,6 +4456,11 @@ components:
           uniqueItems: true
           items:
             $ref: "#/components/schemas/StoreFulfillmentMode"
+        orderabilityByMode:
+          type: array
+          description: Current authoritative orderability at the evaluated server instant; distinct from publication.
+          items:
+            $ref: "#/components/schemas/StoreOrderability"
         distanceMeters:
           type: integer
           minimum: 0

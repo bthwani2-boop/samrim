@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/lib/pq"
@@ -269,9 +270,19 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 		writeStorePublicationError(w, err)
 		return
 	}
+	orderabilityByStore, err := postgres.EvaluatePublishedStoresOrderability(r.Context(), s.db, page.Stores, time.Now().UTC())
+	if err != nil {
+		writeStoreAvailabilityError(w, err)
+		return
+	}
 	values := make([]contract.PublicStoreView, 0, len(page.Stores))
 	for _, store := range page.Stores {
-		values = append(values, toPublicStoreView(store))
+		view := toPublicStoreView(store)
+		view.OrderabilityByMode = make([]contract.StoreOrderability, 0, len(orderabilityByStore[store.ID]))
+		for _, state := range orderabilityByStore[store.ID] {
+			view.OrderabilityByMode = append(view.OrderabilityByMode, toStoreOrderabilityView(state))
+		}
+		values = append(values, view)
 	}
 	verticalRecords, err := postgres.ListPublicDiscoveryVerticals(r.Context(), s.db, serviceCityID)
 	if err != nil {
@@ -313,7 +324,17 @@ func (s *StorePublicationServer) readPublic(w http.ResponseWriter, r *http.Reque
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(toPublicStoreView(store))
+	orderabilityByStore, err := postgres.EvaluatePublishedStoresOrderability(r.Context(), s.db, []postgres.PublicStoreRecord{store}, time.Now().UTC())
+	if err != nil {
+		writeStoreAvailabilityError(w, err)
+		return
+	}
+	view := toPublicStoreView(store)
+	view.OrderabilityByMode = make([]contract.StoreOrderability, 0, len(orderabilityByStore[store.ID]))
+	for _, state := range orderabilityByStore[store.ID] {
+		view.OrderabilityByMode = append(view.OrderabilityByMode, toStoreOrderabilityView(state))
+	}
+	_ = json.NewEncoder(w).Encode(view)
 }
 
 func (s *StorePublicationServer) readPublicOrderability(w http.ResponseWriter, r *http.Request) {

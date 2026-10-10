@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
@@ -384,10 +385,37 @@ func UpdateFieldJoiningCaseDraft(ctx context.Context, db *sql.DB, input UpdateFi
 		return JoiningCaseResult{}, ErrJoiningCaseVersion
 	}
 	request := input.Request
-	// An uploaded proof image is tied to the proof details it accompanied.
-	// Changing either detail requires a newly uploaded image before submission.
-	proofDetailsChanged := current.Case.FirstStoreProofType != request.FirstStoreProofType ||
-		(!input.PreserveProofNumber && strings.TrimSpace(request.FirstStoreProofNumber) != "")
+	// Compare the encrypted number without leaking it into the public case view.
+	// An identical resubmission must not erase an already uploaded proof image.
+	proofNumber := strings.TrimSpace(request.FirstStoreProofNumber)
+	numberChanged := false
+	if !input.PreserveProofNumber && proofNumber != "" {
+		if input.EvidenceKeyring == nil {
+			return JoiningCaseResult{}, errors.New("DSH joining-case evidence keyring is required")
+		}
+		var previousKeyID sql.NullString
+		var previousCiphertext []byte
+		readErr := tx.QueryRowContext(ctx, `SELECT proof_number_key_id,proof_number_ciphertext
+			FROM dsh.joining_case_private_evidence WHERE joining_case_id=$1`, input.CaseID).Scan(&previousKeyID, &previousCiphertext)
+		switch {
+		case errors.Is(readErr, sql.ErrNoRows):
+			numberChanged = true
+		case readErr != nil:
+			return JoiningCaseResult{}, fmt.Errorf("read existing encrypted proof number: %w", readErr)
+		default:
+			if !previousKeyID.Valid || len(previousCiphertext) == 0 {
+				numberChanged = true
+				break
+			}
+			previous, decryptErr := input.EvidenceKeyring.Decrypt(input.CaseID, "proof-number", previousKeyID.String, previousCiphertext)
+			if decryptErr != nil {
+				return JoiningCaseResult{}, decryptErr
+			}
+			numberChanged = subtle.ConstantTimeCompare(previous, []byte(proofNumber)) != 1
+		}
+	}
+	// An uploaded proof image is tied to the exact type and number.
+	proofDetailsChanged := current.Case.FirstStoreProofType != request.FirstStoreProofType || numberChanged
 	if request.Phone != current.Case.ContactPhoneE164 {
 		phones := []string{current.Case.ContactPhoneE164, request.Phone}
 		sort.Strings(phones)
@@ -424,10 +452,7 @@ func UpdateFieldJoiningCaseDraft(ctx context.Context, db *sql.DB, input UpdateFi
 	if count, err := updated.RowsAffected(); err != nil || count != 1 {
 		return JoiningCaseResult{}, ErrJoiningCaseVersion
 	}
-	if !input.PreserveProofNumber && strings.TrimSpace(request.FirstStoreProofNumber) != "" {
-		if input.EvidenceKeyring == nil {
-			return JoiningCaseResult{}, errors.New("DSH joining-case evidence keyring is required")
-		}
+	if numberChanged {
 		keyID, ciphertext, encryptErr := input.EvidenceKeyring.Encrypt(input.CaseID, "proof-number", []byte(strings.TrimSpace(request.FirstStoreProofNumber)))
 		if encryptErr != nil {
 			return JoiningCaseResult{}, encryptErr
@@ -1159,6 +1184,22 @@ func createJoiningCaseReviewStoreTx(ctx context.Context, tx *sql.Tx, current Joi
 	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,commercial_store_type_id,address_text,business_working_hours,delivery_origin_latitude,delivery_origin_longitude,delivery_origin_version,delivery_origin_updated_at,fulfillment_modes) VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),NULLIF($8,'')::jsonb,$9,$10,1,clock_timestamp(),$11)", storeID, current.PartnerActorID, current.FirstStoreName, current.FirstStoreServiceCityID, current.FirstStoreVerticalID, current.FirstStoreCommercialTypeID, current.FirstStoreAddress, string(current.FirstStoreWorkingHours), *current.FirstStoreLatitude, *current.FirstStoreLongitude, pq.Array(current.FirstStoreFulfillmentModes)); err != nil {
 		return "", fmt.Errorf("create canonical store: %w", err)
+	}
+	// Seed the actual orderability owner from the accepted intake schedule in
+	// the same transaction as Store creation. Never default this Store to 24/7.
+	windows, err := operationalWindowsFromJoiningHours(current.FirstStoreWorkingHours)
+	if err != nil {
+		return "", fmt.Errorf("convert joining-case operating hours: %w", err)
+	}
+	scheduleJSON, err := json.Marshal(windows)
+	if err != nil {
+		return "", fmt.Errorf("encode initial operating hours: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_operational_availability
+		(store_id,schedule_mode,schedule_timezone,weekly_schedule,paused,unavailable_fulfillment_modes,version,updated_by_actor_id)
+		VALUES($1,'WEEKLY',$2,$3::jsonb,false,ARRAY[]::text[],1,$4)`,
+		storeID, StoreScheduleTimezone, string(scheduleJSON), "system:joining-case"); err != nil {
+		return "", fmt.Errorf("initialize canonical Store orderability: %w", err)
 	}
 	if err := AttachStoreProfileMediaToStoreTx(ctx, tx, caseID, storeID); err != nil {
 		return "", fmt.Errorf("attach canonical store profile image: %w", err)
