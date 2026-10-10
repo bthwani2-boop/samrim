@@ -170,6 +170,32 @@ if (app === "app-field") {
   assert.match(providerSource, /setState\(\(current\) => current\.kind === "ready" \? current : \{ kind: "loading" \}\)/, "app-field: retries preserve admitted forms but show progress for missing or failed admission");
   assert.match(gateSource, /pointerEvents=\{verified \? "auto" : "none"\}/, "app-field: forms must be non-interactive until admission readback succeeds");
   assert.match(layoutContent, /if \(becameActive\) \{[\s\S]*?recordOpen\(\);[\s\S]*?void refresh\(\);[\s\S]*?\}/, "app-field: refresh admission after returning to foreground");
+  const { fieldDraftMatchesReadback } = await import(
+    pathToFileURL(path.join(appDir, "src/features/field-operations/field-draft-readback.ts")).href
+  );
+  const intervals = [{ dayOfWeek: 1, opensAt: "09:00", closesAt: "17:00", closesNextDay: false }, { dayOfWeek: 2, opensAt: "10:00", closesAt: "18:00", closesNextDay: false }];
+  const draft = { contactPhoneE164: "+967777123456", ownerFullName: "مالك النشاط", businessName: "نشاط الاختبار", firstStoreName: "المتجر الأول", walletProviderKey: "wallet_provider_test", firstStoreAddress: "صنعاء", serviceCityId: "city-1", firstStoreVerticalId: "vertical-1", firstStoreCommercialTypeId: "type-1", firstStoreProofType: "COMMERCIAL_REGISTRATION", firstStoreNotes: "ملاحظات", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreWorkingHours: { intervals }, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP", "BTHWANI_CAPTAIN"] };
+  const saved = { ...draft, state: "draft", origin: "field", version: 3, firstStoreWorkingHours: { intervals: [...intervals].reverse() }, firstStoreFulfillmentModes: [...draft.firstStoreFulfillmentModes].reverse() };
+  assert.equal(fieldDraftMatchesReadback(draft, saved, 3), true, "Field draft readback should allow server-normalized set ordering");
+  for (const key of ["ownerFullName", "businessName", "firstStoreName", "walletProviderKey", "firstStoreAddress", "serviceCityId", "firstStoreVerticalId", "firstStoreCommercialTypeId", "firstStoreProofType", "firstStoreNotes"]) {
+    assert.equal(fieldDraftMatchesReadback(draft, { ...saved, [key]: "different" }, 3), false, `Field draft readback missed ${key} divergence`);
+  }
+  for (const [name, altered] of [
+    ["version", { version: 2 }], ["origin", { origin: "control_panel" }], ["state", { state: "submitted" }],
+    ["latitude", { firstStoreLatitude: 15.35 }], ["longitude", { firstStoreLongitude: 44.2 }],
+    ["hours", { firstStoreWorkingHours: { intervals: [intervals[0]] } }], ["modes", { firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] }],
+  ]) assert.equal(fieldDraftMatchesReadback(draft, { ...saved, ...altered }, 3), false, `Field draft readback missed ${name} divergence`);
+  const partial = { contactPhoneE164: draft.contactPhoneE164 };
+  const partialSaved = { ...saved, ownerFullName: null, businessName: "", firstStoreName: "", walletProviderKey: "", firstStoreAddress: null, serviceCityId: null, firstStoreVerticalId: "", firstStoreCommercialTypeId: null, firstStoreProofType: null, firstStoreNotes: null, firstStoreLatitude: null, firstStoreLongitude: null, firstStoreWorkingHours: null, firstStoreFulfillmentModes: [] };
+  assert.equal(fieldDraftMatchesReadback(partial, partialSaved, 3), true, "Omitted fields in a partial snapshot may read back as null or empty");
+  assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, walletProviderKey: "obsolete-wallet" }, 3), false, "Clearing an omitted wallet must be reflected in canonical readback");
+  assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] }, 3), false, "Clearing modes must not silently retain old modes");
+  assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreWorkingHours: { intervals: [intervals[0]] } }, 3), false, "Clearing hours must not silently retain old intervals");
+  assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreLatitude: 15.3, firstStoreLongitude: 44.2 }, 3), false, "Clearing a map pin must not silently retain old coordinates");
+  const newCaseSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-new-case.tsx"), "utf8");
+  assert.match(newCaseSource, /if \(cause instanceof Error && cause\.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH"\) return true/, "Field readback mismatch must retain the original idempotency identity for a safe retry");
+  assert.match(newCaseSource, /if \(isOutcomeUncertain\(cause\)\) \{\s*setError/, "Field uncertain results must remain recoverable instead of starting a duplicate draft");
+  console.log("MOBILE_FIELD_DRAFT_READBACK=PASS complete and cleared drafts, normalized sets, mismatches, version and uncertain retry");
   const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-commercial-agreement-rate.ts")).href
   );

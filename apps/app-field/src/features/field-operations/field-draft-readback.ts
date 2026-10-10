@@ -1,0 +1,48 @@
+import type { CreateFieldJoiningCaseDraftRequest, JoiningCaseView, StoreWorkingHoursInterval } from "@bthwani/dsh";
+
+function matchesDraftText(expected: string | undefined, actual: string | null | undefined): boolean {
+  return (expected ?? "").trim() === (actual ?? "").trim();
+}
+
+function hoursSignature(intervals: ReadonlyArray<StoreWorkingHoursInterval>): string {
+  return intervals
+    .map(({ dayOfWeek, opensAt, closesAt, closesNextDay }) => `${dayOfWeek}:${opensAt}:${closesAt}:${closesNextDay}`)
+    .sort()
+    .join("|");
+}
+
+function modesSignature(modes: ReadonlyArray<string>): string {
+  return [...modes].sort().join("|");
+}
+
+// DSH draft create/update replaces the full snapshot; omitted fields clear to null or empty.
+// Compare the normalized, persisted snapshot without depending on set ordering.
+export function fieldDraftMatchesReadback(
+  requested: CreateFieldJoiningCaseDraftRequest,
+  actual: JoiningCaseView,
+  minimumVersion: number,
+): boolean {
+  if (actual.state !== "draft" || actual.origin !== "field" || actual.version < minimumVersion) return false;
+  if (actual.contactPhoneE164 !== requested.contactPhoneE164) return false;
+  if (!matchesDraftText(requested.ownerFullName, actual.ownerFullName)) return false;
+  if (!matchesDraftText(requested.businessName, actual.businessName)) return false;
+  if (!matchesDraftText(requested.firstStoreName, actual.firstStoreName)) return false;
+  if (!matchesDraftText(requested.walletProviderKey, actual.walletProviderKey)) return false;
+  if (!matchesDraftText(requested.firstStoreAddress, actual.firstStoreAddress)) return false;
+  if (!matchesDraftText(requested.serviceCityId, actual.serviceCityId)) return false;
+  if (!matchesDraftText(requested.firstStoreVerticalId, actual.firstStoreVerticalId)) return false;
+  if (!matchesDraftText(requested.firstStoreCommercialTypeId, actual.firstStoreCommercialTypeId)) return false;
+  if (!matchesDraftText(requested.firstStoreProofType, actual.firstStoreProofType)) return false;
+  if (!matchesDraftText(requested.firstStoreNotes, actual.firstStoreNotes)) return false;
+  if (hoursSignature(requested.firstStoreWorkingHours?.intervals ?? []) !== hoursSignature(actual.firstStoreWorkingHours?.intervals ?? [])) return false;
+  if (modesSignature(requested.firstStoreFulfillmentModes ?? []) !== modesSignature(actual.firstStoreFulfillmentModes)) return false;
+  const latitude = requested.firstStoreLatitude ?? 0;
+  const longitude = requested.firstStoreLongitude ?? 0;
+  if (latitude === 0 && longitude === 0) {
+    if (actual.firstStoreLatitude != null || actual.firstStoreLongitude != null) return false;
+  } else if (actual.firstStoreLatitude == null || actual.firstStoreLongitude == null ||
+    Math.abs(actual.firstStoreLatitude - latitude) > 0.000001 ||
+    Math.abs(actual.firstStoreLongitude - longitude) > 0.000001) return false;
+  return true;
+}
+

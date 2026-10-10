@@ -10,6 +10,7 @@ import { ActivityIndicator, Image, Text, TextInput, useWindowDimensions, View } 
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
+import { fieldDraftMatchesReadback } from "./field-draft-readback";
 import { fieldAdmissionActionability } from "./field-eligibility";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
 import { createFieldOperationStyles } from "./field-operation-styles";
@@ -50,6 +51,9 @@ function initialJoiningCaseInput(): CreateJoiningCaseRequest {
 }
 
 function isOutcomeUncertain(cause: unknown): boolean {
+  // The server may have committed the draft even when its subsequent canonical readback disagrees.
+  // Retain the original idempotency identity so retry cannot create a second draft.
+  if (cause instanceof Error && cause.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH") return true;
   if (!cause || typeof cause !== "object") return false;
   const error = cause as { kind?: unknown; status?: unknown };
   return error.kind === "network" || (error.kind === "http" && typeof error.status === "number" && error.status >= 500);
@@ -276,11 +280,7 @@ const theme = useAppearanceTheme();
         ? await fieldClient().updateFieldJoiningCaseDraft(token, attempt.caseID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID)
         : await fieldClient().createFieldJoiningCase(token, attempt.request, attempt.idempotencyKey, attempt.correlationID);
       const canonical = await fieldClient().readOwnFieldJoiningCase(token, response.case.id);
-      if (canonical.case.id !== response.case.id ||
-        (attempt.request.businessName && canonical.case.businessName !== attempt.request.businessName) ||
-        (attempt.request.firstStoreName && canonical.case.firstStoreName !== attempt.request.firstStoreName) ||
-        canonical.case.contactPhoneE164 !== attempt.request.contactPhoneE164 ||
-        canonical.case.version < response.case.version) {
+      if (canonical.case.id !== response.case.id || !fieldDraftMatchesReadback(attempt.request, canonical.case, response.case.version)) {
         throw new Error("FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH");
       }
       setCreatedCase(canonical);
