@@ -231,6 +231,33 @@ if (app === "app-captain") {
   console.log("MOBILE_CAPTAIN_CASH_IN_RECOVERY=PASS canonical intent, actor scope, retry identity, and terminal cleanup");
 }
 if (app === "app-partner") {
+  const { matchesPartnerPayoutReadback } = await import(
+    pathToFileURL(path.join(appDir, "src/features/account/partner-payout-readback.ts")).href
+  );
+  const payout = (id, actor, amount) => ({
+    id, actorType: "partner", actorId: actor, beneficiaryActorId: actor,
+    amountMode: "SPECIFIED", requestedAmountMinor: amount, resolvedAmountMinor: amount,
+    currency: "YER", destinationId: "wallet-" + actor, destinationVersion: 1,
+    status: "HELD", policyVersion: "v1", createdAt: "2026-10-10T00:00:00Z",
+  });
+  const payoutRequest = {
+    id: "request-1", status: "PARTITIONED", scopeMode: "SPECIFIED", totalAmountMinor: 3000,
+    currency: "YER", createdAt: "2026-10-10T00:00:00Z",
+    stores: [
+      { storeId: "store-a", amountMinor: 1000, beneficiaryActorId: "partner-a", recipientAssignmentVersion: 3, currency: "YER" },
+      { storeId: "store-b", amountMinor: 2000, beneficiaryActorId: "partner-b", recipientAssignmentVersion: 5, currency: "YER" },
+    ],
+    payouts: [payout("payout-a", "partner-a", 1000), payout("payout-b", "partner-b", 2000)],
+  };
+  assert.equal(matchesPartnerPayoutReadback(payoutRequest, payoutRequest), true);
+  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, stores: [...payoutRequest.stores].reverse(), payouts: [...payoutRequest.payouts].reverse() }), true, "Readback order must not matter");
+  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, stores: payoutRequest.stores.map((store) => ({ ...store, amountMinor: store.amountMinor === 1000 ? 2000 : 1000 })) }), false, "Same aggregate cannot hide swapped Store allocations");
+  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, stores: payoutRequest.stores.map((store) => ({ ...store, beneficiaryActorId: "different-recipient" })) }), false, "The recipient assignment must match");
+  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, destinationId: "changed-wallet" })) }), false, "Canonical payout destination must match");
+  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, status: "PREPARED" })) }), true, "Legitimate later WLT status must not reject financial identity");
+  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, stores: [payoutRequest.stores[0], payoutRequest.stores[0]] }), false, "Repeated Store allocation IDs must be rejected");
+  console.log("MOBILE_PARTNER_PAYOUT_READBACK=PASS allocation, recipient, destination and immutable financial identity");
+
   const { canonicalPartnerSurfacePath, derivePartnerAuthority, RESOLVING_PARTNER_AUTHORITY } = await import(pathToFileURL(path.join(appDir, "src/shell/partner-authority.ts")).href);
   const accessibleStore = (id, owned, permissions) => ({ id, name: `متجر ${id}`, serviceCityId: "city", primaryVerticalId: "vertical", publicationState: "published", fulfillmentModes: [], owned, permissions });
   const surfacesOf = (stores) => derivePartnerAuthority(stores).surfaces;

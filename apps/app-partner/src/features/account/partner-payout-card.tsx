@@ -6,6 +6,7 @@ import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { matchesPartnerPayoutReadback } from "./partner-payout-readback";
 
 function client() {
   const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -103,10 +104,7 @@ export function PartnerPayoutCard() {
       const token = await getUsableIdentityAccessToken();
       const response = await client().createPartnerPayoutRequest(token, attempt.body, attempt.idempotencyKey, attempt.correlationID);
       const canonical = await client().readPartnerPayoutRequestByKey(token, attempt.walletOwnerActorId, attempt.idempotencyKey);
-      if (canonical.request.id !== response.request.id ||
-        canonical.request.totalAmountMinor !== response.request.totalAmountMinor ||
-        canonical.request.currency !== response.request.currency ||
-        canonical.request.payouts.length !== response.request.payouts.length) {
+      if (!matchesPartnerPayoutReadback(response.request, canonical.request)) {
         throw new Error("PARTNER_PAYOUT_CANONICAL_READBACK_MISMATCH");
       }
       await SecureStore.deleteItemAsync(attemptStorageKey);
