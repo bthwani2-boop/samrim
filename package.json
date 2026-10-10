@@ -36,7 +36,8 @@
     "overrides": {
       "uuid": "11.1.1",
       "decode-uri-component": "0.5.0",
-      "nx>smol-toml": "1.8.0"
+      "nx>smol-toml": "1.8.0",
+      "shell-quote": "1.11.0"
     }
   },
   "devDependencies": {
@@ -44,7 +45,7 @@
     "@expo/metro-config": "57.0.12",
     "expo": "57.0.27",
     "knip": "6.34.0",
-    "next": "16.3.4",
+    "next": "16.3.6",
     "nx": "23.2.1",
     "typescript": "6.0.2"
   }
