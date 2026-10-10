@@ -19,10 +19,29 @@ export function formatClockTime(value: number): string {
   return `${String(Math.floor(wrapped / 60)).padStart(2, "0")}:${String(wrapped % 60).padStart(2, "0")}`;
 }
 
-export function rotateClockMinutes(value: number, fromAngle: number, toAngle: number): number {
+// Show a 12-hour clock in the UI; leave DSH's canonical HH:mm unchanged.
+export function formatClockDisplay(value: string): string {
+  if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(value)) return value;
+  const minuteOfDay = parseClockTime(value);
+  const hour = Math.floor(minuteOfDay / 60);
+  const minute = minuteOfDay % 60;
+  return `${hour % 12 || 12}:${String(minute).padStart(2, "0")} ${hour < 12 ? "صباحًا" : "مساءً"}`;
+}
+
+export function clockHandAtRadius(radius: number): "hour" | "minute" {
+  "worklet";
+  // The inner ring selects the short hand; the outer ring selects minutes.
+  return radius <= 75 ? "hour" : "minute";
+}
+
+export function finishClockHour(value: number, originalMinute: number): number {
+  return wrapDayMinutes(Math.round((value - originalMinute) / 60) * 60 + originalMinute);
+}
+
+export function rotateClockMinutes(value: number, fromAngle: number, toAngle: number, hand: "hour" | "minute" = "hour"): number {
   // Signed shortest arc avoids jumps on crossing 12 at the top of the dial.
   const delta = Math.atan2(Math.sin(toAngle - fromAngle), Math.cos(toAngle - fromAngle));
-  return wrapDayMinutes(value + (delta * HALF_DAY_MINUTES) / FULL_TURN);
+  return wrapDayMinutes(value + (delta * (hand === "hour" ? HALF_DAY_MINUTES : 60)) / FULL_TURN);
 }
 
 export function clockHandDegrees(value: number): number {

@@ -21,6 +21,7 @@ export function getFieldJoiningRequirements(saved: JoiningCaseView | null): Read
       label: "المدينة والتشغيل والموقع",
       saved: Boolean(saved?.serviceCityId && saved.firstStoreVerticalId && saved.firstStoreCommercialTypeId &&
         saved.firstStoreAddress?.trim() && saved.firstStoreLatitude != null && saved.firstStoreLongitude != null &&
+        (saved.firstStoreLatitude !== 0 || saved.firstStoreLongitude !== 0) &&
         saved.firstStoreFulfillmentModes.length && isValidStoreWorkingHours(saved.firstStoreWorkingHours?.intervals ?? [])),
     },
     { key: "proofNumber", label: "نوع ورقم الإثبات", saved: Boolean(saved?.firstStoreProofType && saved.firstStoreProofNumberPresent) },

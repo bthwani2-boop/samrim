@@ -39,7 +39,10 @@ export function fieldDraftMatchesReadback(
   const latitude = requested.firstStoreLatitude ?? 0;
   const longitude = requested.firstStoreLongitude ?? 0;
   if (latitude === 0 && longitude === 0) {
-    if (actual.firstStoreLatitude != null || actual.firstStoreLongitude != null) return false;
+    // DSH currently projects absent coordinates (NULL in PostgreSQL) as 0,0.
+    // Both forms represent an unset draft location, never a chosen point.
+    if ((actual.firstStoreLatitude != null && actual.firstStoreLatitude !== 0) ||
+        (actual.firstStoreLongitude != null && actual.firstStoreLongitude !== 0)) return false;
   } else if (actual.firstStoreLatitude == null || actual.firstStoreLongitude == null ||
     Math.abs(actual.firstStoreLatitude - latitude) > 0.000001 ||
     Math.abs(actual.firstStoreLongitude - longitude) > 0.000001) return false;

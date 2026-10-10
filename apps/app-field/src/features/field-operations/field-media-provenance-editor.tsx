@@ -1,5 +1,5 @@
 import { useAppearanceTheme } from "@bthwani/design-system/native";
-import { isMediaProvenanceInputValid, type MediaProvenanceInput } from "@bthwani/dsh";
+import { type MediaProvenanceInput } from "@bthwani/dsh";
 import { useMemo } from "react";
 import { Switch, Text, View } from "react-native";
 
@@ -30,6 +30,5 @@ export function FieldMediaProvenanceEditor({ value, disabled, onChange }: Readon
           : "أؤكد أن مالك المتجر قدّم الصورة ويملك حق عرضها."}
       </Text>
     </View>
-    {!isMediaProvenanceInputValid(value) ? <Text style={styles.muted}>أكّد حق عرض الصورة قبل حفظها.</Text> : null}
   </View>;
 }

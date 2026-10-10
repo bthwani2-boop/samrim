@@ -3,7 +3,7 @@ import { isValidStoreWorkingHours, type StoreWorkingHoursInterval } from "@bthwa
 import * as Crypto from "expo-crypto";
 import { useMemo, useState } from "react";
 import { Switch, Text, View } from "react-native";
-
+import { formatClockDisplay } from "./field-circular-clock";
 import { FieldCircularTimePicker as TimePickerField } from "./field-circular-time-picker";
 import { createFieldOperationStyles } from "./field-operation-styles";
 
@@ -29,7 +29,7 @@ function isValidLocalTime(value: string): boolean {
 }
 
 function intervalLabel(interval: StoreWorkingHoursInterval): string {
-  return `${interval.opensAt}–${interval.closesAt}${interval.closesNextDay ? " · ينتهي غدًا" : ""}`;
+  return `${formatClockDisplay(interval.opensAt)} – ${formatClockDisplay(interval.closesAt)}${interval.closesNextDay ? " · ينتهي غدًا" : ""}`;
 }
 
 export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<{
@@ -99,7 +99,7 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
       <Text style={[styles.muted, { flex: 1 }]}>إغلاق في اليوم التالي</Text>
       <BthwaniButton disabled={disabled || selectedDays.size === 0 || !quickPeriodValid} label="تطبيق على الأيام المحددة" onPress={applyQuickPeriod} variant="secondary" />
     </View>
-    {opensAt || closesAt ? <Text style={quickPeriodValid ? styles.muted : styles.error}>{quickPeriodValid ? `ستستبدل الفترة الحالية في ${selectedDays.size.toLocaleString("ar-YE")} أيام محددة.` : "أدخل وقتين بصيغة 24 ساعة، مثل 09:00 و17:00."}</Text> : null}
+    {opensAt || closesAt ? <Text style={quickPeriodValid ? styles.muted : styles.error}>{quickPeriodValid ? `ستستبدل الفترة الحالية في ${selectedDays.size.toLocaleString("ar-YE")} أيام محددة.` : "حدّد وقت الفتح والإغلاق من الساعة."}</Text> : null}
 
     <View style={styles.orderHeader}>
       <Text style={styles.label}>ملخص الأسبوع</Text>
@@ -125,7 +125,7 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
             </View>
             <View style={styles.optionList}>
               <Switch disabled={disabled} value={interval.closesNextDay} onValueChange={(nextClosesNextDay) => updateDay(day, dayIntervals.map((item, itemIndex) => itemIndex === index ? { ...item, closesNextDay: nextClosesNextDay } : item))} />
-              <Text style={styles.muted}>ينتهي غدًا (00:00–00:00 تعني 24 ساعة)</Text>
+              <Text style={styles.muted}>ينتهي في اليوم التالي</Text>
               {dayIntervals.length > 1 ? <BthwaniButton disabled={disabled} label="حذف الفترة" onPress={() => updateDay(day, dayIntervals.filter((_, itemIndex) => itemIndex !== index))} variant="secondary" /> : null}
             </View>
           </View>)}

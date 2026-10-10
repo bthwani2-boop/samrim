@@ -175,7 +175,7 @@ if (app === "app-field") {
   const { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-draft-readback.ts")).href
   );
-  const { wrapDayMinutes, parseClockTime, formatClockTime, rotateClockMinutes, clockHandDegrees, clockDarkness } = await import(
+  const { wrapDayMinutes, parseClockTime, formatClockTime, formatClockDisplay, clockHandAtRadius, finishClockHour, rotateClockMinutes, clockHandDegrees, clockDarkness } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-circular-clock.ts")).href
   );
   assert.equal(parseClockTime("21:57"), 1317, "Field dial must reopen at the exact persisted time");
@@ -183,6 +183,16 @@ if (app === "app-field") {
   assert.equal(formatClockTime(-1), "23:59", "Minute decrement must wrap to the preceding day");
   assert.equal(formatClockTime(1440), "00:00", "Midnight must persist as a valid HH:mm time");
   assert.equal(clockHandDegrees(9 * 60), 270, "Nine o'clock should aim at the nine on the dial");
+  assert.equal(formatClockDisplay("00:00"), "12:00 صباحًا", "Midnight must be 12 AM on screen");
+  assert.equal(formatClockDisplay("12:00"), "12:00 مساءً", "Noon must be 12 PM on screen");
+  assert.equal(formatClockDisplay("21:57"), "9:57 مساءً", "Evening must be shown in 12-hour format");
+  assert.equal(formatClockDisplay("09:15"), "9:15 صباحًا", "Morning must be shown in 12-hour format");
+  assert.equal(clockHandAtRadius(52), "hour", "Inner dial touch must control the short hour hand");
+  assert.equal(clockHandAtRadius(91), "minute", "Outer dial touch must control the long minute hand");
+  assert.equal(formatClockTime(rotateClockMinutes(10 * 60, -Math.PI / 2, 0, "minute")), "10:15", "Quarter minute-hand revolution must advance 15 minutes");
+  assert.equal(formatClockTime(rotateClockMinutes(10 * 60, 0, Math.PI / 2, "hour")), "13:00", "Quarter hour-hand revolution must advance three hours");
+  assert.equal(formatClockTime(finishClockHour(13 * 60 + 37, 12)), "13:12", "Hour-hand release must preserve original minute precision");
+  assert.equal(formatClockTime(finishClockHour(13 * 60 + 45, 12)), "14:12", "Hour-hand release must round to nearest hour");
   let rotated = parseClockTime("21:57");
   const quarterAngles = [-Math.PI / 2, 0, Math.PI / 2, Math.PI, 3 * Math.PI / 2];
   for (let pass = 0; pass < 2; pass++) {
@@ -200,8 +210,14 @@ if (app === "app-field") {
   assert.equal(clockDarkness(19 * 60 + 30), 0.5);
   assert.equal(clockDarkness(21 * 60), 1);
   const dialSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-circular-time-picker.tsx"), "utf8");
-  assert.ok(dialSource.includes("onResponderMove={move}"), "Clock hand must respond to actual drag gestures");
-  assert.ok(dialSource.includes("onChange(formatClockTime(precise.current))"), "Field time must be persisted from precise hand position via existing 24-hour schema");
+  assert.ok(dialSource.includes(".onUpdate((event) =>"), "Clock hands must respond to UI-thread drag gestures");
+  assert.ok(dialSource.includes("GestureHandlerRootView"), "Modal gestures must have a native gesture-handler root");
+  assert.ok(dialSource.includes("onChange(formatClockTime(minutes.value))"), "Field time must be persisted from precise hand position via existing DSH schema");
+  assert.match(dialSource, /useSharedValue/, "Both clock hands must be driven by native-thread shared values");
+  assert.match(dialSource, /Gesture\.Pan\(\)/, "Clock must handle native gestures without React event rerenders");
+  assert.match(dialSource, /useAnimatedStyle/, "Clock must render hand rotations on the UI thread");
+  assert.doesNotMatch(dialSource, /clockQuarterHour|QUARTERS|label=\{`:[0-9]|label="[+−] دقيقة"/, "The old quarter-minute boxes and buttons must be removed");
+  assert.doesNotMatch(dialSource, /\(24 ساعة\)|يُحفظ الوقت:/, "The picker must not expose 24-hour notation to field staff");
   assert.doesNotMatch(dialSource, /react-native-svg/, "Circular clock must need no additional native dependency");
   console.log("MOBILE_FIELD_CIRCULAR_CLOCK=PASS twelve-hour rotations, minute precision, midnight and day-night transitions");
   const intervals = [{ dayOfWeek: 1, opensAt: "09:00", closesAt: "17:00", closesNextDay: false }, { dayOfWeek: 2, opensAt: "10:00", closesAt: "18:00", closesNextDay: false }];
@@ -226,6 +242,7 @@ if (app === "app-field") {
     storeProfileImage: { uri: "https://example.test/store.png" },
   };
   assert.deepEqual(getFieldJoiningRequirements(completeReadback).filter((item) => !item.saved), [], "Complete canonical draft must have no phantom missing fields");
+  assert.deepEqual(getFieldJoiningRequirements({ ...completeReadback, firstStoreLatitude: 0, firstStoreLongitude: 0 }).filter((item) => !item.saved).map((item) => item.key), ["operation"], "DSH zeroed unset coordinates must not be accepted as a selected store location");
   assert.deepEqual(
     getFieldJoiningRequirements({ ...completeReadback, firstStoreProofImageUploaded: false, storeProfileImage: null }).filter((item) => !item.saved).map((item) => item.key),
     ["proofImage", "storeImage"],
@@ -237,6 +254,41 @@ if (app === "app-field") {
     "Unsaved local inputs must not be reported as persisted",
   );
   const threeModes = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"];
+  // One coherent, entirely synthetic Sana'a restaurant. This is a simulation
+  // against the real app's draft/readback rules, not a published merchant.
+  const simulatedHours = Array.from({ length: 7 }, (_, i) => ({
+    dayOfWeek: i + 1,
+    opensAt: i === 6 ? "12:00" : "09:00",
+    closesAt: i === 6 ? "22:00" : "23:15",
+    closesNextDay: false,
+  }));
+  const simulatedStore = {
+    ...draft,
+    contactPhoneE164: "+967700000171",
+    ownerFullName: "سالم ناصر القيسي (شخصية تجريبية)",
+    businessName: "مؤسسة الساحة اليمنية الغذائية (تجريبية)",
+    firstStoreName: "مطعم الساحة اليمنية (تجريبي)",
+    firstStoreAddress: "صنعاء، شارع الزبيري، قرب جولة المصباحي (عنوان افتراضي)",
+    firstStoreNotes: "مطعم وجبات يمنية؛ بيانات داخلية للاختبار فقط، غير معتمد للنشر.",
+    firstStoreLatitude: 15.369445,
+    firstStoreLongitude: 44.191006,
+    firstStoreWorkingHours: { intervals: simulatedHours },
+    firstStoreFulfillmentModes: threeModes,
+  };
+  const simulatedReadback = {
+    ...simulatedStore, state: "draft", origin: "field", version: 3,
+    firstStoreWorkingHours: { intervals: [...simulatedHours].reverse() },
+    firstStoreFulfillmentModes: [...threeModes].reverse(),
+    firstStoreProofNumberPresent: true,
+    firstStoreProofImageUploaded: true,
+    storeProfileImage: { id: "synthetic-storefront-fixture", uri: "https://example.test/storefront-fixture.png" },
+  };
+  assert.equal(fieldDraftMatchesReadback(simulatedStore, simulatedReadback, 3), true, "Synthetic restaurant must roundtrip all fields and three delivery modes");
+  assert.deepEqual(getFieldJoiningRequirements(simulatedReadback).filter((item) => !item.saved), [], "Synthetic restaurant must pass the shared canonical readiness checklist");
+  assert.equal(simulatedHours.length, 7, "Synthetic restaurant must have an explicit schedule for every day");
+  assert.ok(simulatedHours.every((item) => item.opensAt === "09:00" && item.closesAt === "23:15" || item.dayOfWeek === 7), "Every simulated weekday must follow its chosen opening hours");
+  assert.equal(formatClockDisplay(simulatedHours[0].closesAt), "11:15 مساءً", "Synthetic store closing must display as an evening time");
+  console.log("MOBILE_FIELD_SYNTHETIC_STORE=PASS realistic Sana'a draft, seven-day hours, three delivery modes, canonical readiness (no persisted merchant)");
   assert.equal(fieldDraftMatchesReadback({ ...draft, firstStoreFulfillmentModes: threeModes }, {
     ...saved, firstStoreFulfillmentModes: [...threeModes].reverse(),
   }, 3), true, "A trial restaurant must preserve all three fulfillment modes in canonical readback");
@@ -252,11 +304,16 @@ if (app === "app-field") {
   const partial = { contactPhoneE164: draft.contactPhoneE164 };
   const partialSaved = { ...saved, ownerFullName: null, businessName: "", firstStoreName: "", walletProviderKey: "", firstStoreAddress: null, serviceCityId: null, firstStoreVerticalId: "", firstStoreCommercialTypeId: null, firstStoreProofType: null, firstStoreNotes: null, firstStoreLatitude: null, firstStoreLongitude: null, firstStoreWorkingHours: null, firstStoreFulfillmentModes: [] };
   assert.equal(fieldDraftMatchesReadback(partial, partialSaved, 3), true, "Omitted fields in a partial snapshot may read back as null or empty");
+  assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreLatitude: 0, firstStoreLongitude: 0 }, 3), true, "Omitted draft coordinates projected as 0,0 must be accepted without treating them as a real map pin");
   assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, walletProviderKey: "obsolete-wallet" }, 3), false, "Clearing an omitted wallet must be reflected in canonical readback");
   assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] }, 3), false, "Clearing modes must not silently retain old modes");
   assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreWorkingHours: { intervals: [intervals[0]] } }, 3), false, "Clearing hours must not silently retain old intervals");
   assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreLatitude: 15.3, firstStoreLongitude: 44.2 }, 3), false, "Clearing a map pin must not silently retain old coordinates");
   const newCaseSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-new-case.tsx"), "utf8");
+  assert.match(newCaseSource, /keyboardDidShow/, "Field form must observe the keyboard appearing");
+  assert.match(newCaseSource, /ensureFocusedInputVisible/, "Field form must scroll focused inputs clear of the keyboard");
+  assert.match(newCaseSource, /onFocus=\{focusField\}/, "Form fields must request keyboard-safe positioning");
+  assert.match(newCaseSource, /current\.firstStoreLatitude !== 0 \|\| current\.firstStoreLongitude !== 0/, "An unset 0,0 location must not become a selected map pin after draft reload");
   assert.match(newCaseSource, /cause\.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH"/, "Field readback mismatch must retain the original idempotency identity for a safe retry");
   assert.match(newCaseSource, /cause\.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_UNAVAILABLE"/, "A failed post-write draft readback must preserve the original attempt identity");
   assert.match(newCaseSource, /readOwnFieldJoiningCase\(token, response\.case\.id\)\.catch\(\(cause: unknown\) => \{ throw markFieldDraftReadbackUncertain\(cause\); \}\)/, "Post-write readback errors must not be classified as draft write failures");
