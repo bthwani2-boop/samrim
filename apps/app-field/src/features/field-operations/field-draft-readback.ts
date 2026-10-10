@@ -46,6 +46,11 @@ export function fieldDraftMatchesReadback(
   return true;
 }
 
+// Only the post-upload canonical read is uncertain; an upload request failure keeps its own error classification.
+export function markFieldMediaReadbackUncertain(cause: unknown): Error {
+  return Object.assign(new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE"), { cause });
+}
+
 export function fieldDraftMediaUploadConfirmed(
   uploaded: JoiningCaseView,
   canonical: JoiningCaseView,

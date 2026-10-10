@@ -172,7 +172,7 @@ if (app === "app-field") {
   assert.match(providerSource, /setState\(\(current\) => current\.kind === "ready" \? current : \{ kind: "loading" \}\)/, "app-field: retries preserve admitted forms but show progress for missing or failed admission");
   assert.match(gateSource, /pointerEvents=\{verified \? "auto" : "none"\}/, "app-field: forms must be non-interactive until admission readback succeeds");
   assert.match(layoutContent, /if \(becameActive\) \{[\s\S]*?recordOpen\(\);[\s\S]*?void refresh\(\);[\s\S]*?\}/, "app-field: refresh admission after returning to foreground");
-  const { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed } = await import(
+  const { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldMediaReadbackUncertain } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-draft-readback.ts")).href
   );
   const intervals = [{ dayOfWeek: 1, opensAt: "09:00", closesAt: "17:00", closesNextDay: false }, { dayOfWeek: 2, opensAt: "10:00", closesAt: "18:00", closesNextDay: false }];
@@ -211,11 +211,19 @@ if (app === "app-field") {
   assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, storeProfileImage: { uri: "https://media.example/store-1.png" } }, uploadedMedia, "store", 3), false, "A response lacking an upload digest cannot prove the same media was persisted");
   assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, version: 3 }, uploadedMedia, "store", 3), false, "A non-advancing upload version cannot prove media persistence");
   assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia, firstStoreProofImageUploaded: false }, "proof", 3), false, "Private proof confirmation requires canonical uploaded flag");
+  for (const status of [401, 403, 404]) {
+    const readFailure = Object.assign(new Error("Readback failed"), { kind: "http", status });
+    const uncertain = markFieldMediaReadbackUncertain(readFailure);
+    assert.equal(uncertain.message, "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE", "Post-upload readback failure must remain uncertain");
+    assert.equal(uncertain.cause, readFailure, "Preserve original readback failure for diagnosis");
+  }
   const casesSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-cases.tsx"), "utf8");
   for (const source of [newCaseSource, casesSource]) {
     assert.match(source, /fieldDraftMediaUploadConfirmed\([^\n]+"store"/, "Field store upload must use canonical readback before discarding selected media");
     assert.match(source, /fieldDraftMediaUploadConfirmed\([^\n]+"proof"/, "Field proof upload must use canonical readback before discarding selected media");
     assert.match(source, /cause\.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH"/, "Unconfirmed media upload must retain original idempotency identity for retry");
+    assert.match(source, /cause\.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE"/, "Failed post-upload readback must retain the same pending upload identity");
+    assert.equal([...source.matchAll(/readOwnFieldJoiningCase\(token, attempt\.caseID\)\.catch\(\(cause: unknown\) => \{ throw markFieldMediaReadbackUncertain\(cause\); \}\)/g)].length, 2, "Both media flows must classify post-upload read failures separately from upload request failures");
   }
   console.log("MOBILE_FIELD_MEDIA_READBACK=PASS image marker, private proof, version, isolation, recovery and both Field surfaces");
   const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
