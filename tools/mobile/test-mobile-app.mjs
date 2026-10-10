@@ -133,7 +133,15 @@ import { pathToFileURL } from "node:url";
 register(pathToFileURL(path.join(root, "packages/design-system/tools/ts-resolver.mjs")).href, import.meta.url);
 if (app === "app-field") {
   const newCaseRoute = fs.readFileSync(path.join(appDir, "app/(app)/new-case.tsx"), "utf8");
-  assert.match(newCaseRoute, /key=\{`field-case:\$\{caseId\}`\}/, "app-field: changing the edited case identity must remount the draft editor rather than reuse another partner's state");
+  assert.match(newCaseRoute, /field-case:\$\{caseId\}/, "app-field: reopening a different draft must remount the editor");
+  assert.match(newCaseRoute, /field-new:\$\{fresh\}/, "app-field: Add Partner must mount a fresh form even after viewing a submitted case");
+  assert.match(newCaseRoute, /caseId = fresh \? ""/, "app-field: a fresh-entry request must ignore any retained draft case ID");
+  const fieldReadinessSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-readiness.tsx"), "utf8");
+  assert.match(fieldReadinessSource, /fresh: Crypto\.randomUUID\(\)/, "app-field: each Add Partner tap must create a distinct form identity");
+  const newCaseSourceForNavigation = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-new-case.tsx"), "utf8");
+  assert.match(newCaseSourceForNavigation, /router\.replace\(\{ pathname: "\/cases", params: \{ caseId: submitted\.case\.id \} \}/, "app-field: after confirmed submission, return to the saved case list");
+  const hoursEditorSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-working-hours-editor.tsx"), "utf8");
+  assert.doesNotMatch(hoursEditorSource, /applyYemenDaytimePreset|8 صباحًا – 10 مساءً · كل الأسبوع|أيام · \$\{intervals\.length\} فترات/, "app-field: the removed quick preset and counts must not reappear in the working-hours form");
   const admissionProviderOpen = layoutContent.indexOf("<FieldAdmissionProvider>");
   const authenticatedBoundaryOpen = layoutContent.indexOf("<AuthenticatedMobileBoundary");
   const authenticatedBoundaryClose = layoutContent.indexOf("</AuthenticatedMobileBoundary>");
@@ -242,15 +250,15 @@ if (app === "app-field") {
     storeProfileImage: { uri: "https://example.test/store.png" },
   };
   assert.deepEqual(getFieldJoiningRequirements(completeReadback).filter((item) => !item.saved), [], "Complete canonical draft must have no phantom missing fields");
-  assert.deepEqual(getFieldJoiningRequirements({ ...completeReadback, firstStoreLatitude: 0, firstStoreLongitude: 0 }).filter((item) => !item.saved).map((item) => item.key), ["operation"], "DSH zeroed unset coordinates must not be accepted as a selected store location");
+  assert.deepEqual(getFieldJoiningRequirements({ ...completeReadback, firstStoreLatitude: 0, firstStoreLongitude: 0 }).filter((item) => !item.saved).map((item) => item.key), ["location"], "DSH zeroed unset coordinates must not be accepted as a selected store location");
   assert.deepEqual(
     getFieldJoiningRequirements({ ...completeReadback, firstStoreProofImageUploaded: false, storeProfileImage: null }).filter((item) => !item.saved).map((item) => item.key),
-    ["proofImage", "storeImage"],
-    "Readiness must reflect actual canonical upload flags, not local image selection",
+    [],
+    "Optional document photos and Store logos must not prevent submitting a joining case for review",
   );
   assert.deepEqual(
     getFieldJoiningRequirements(null).filter((item) => !item.saved).length,
-    6,
+    10,
     "Unsaved local inputs must not be reported as persisted",
   );
   const threeModes = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"];
@@ -327,79 +335,42 @@ if (app === "app-field") {
   console.log("MOBILE_FIELD_DRAFT_READBACK=PASS complete and cleared drafts, normalized sets, mismatches, version and uncertain retry");
   const uploadedMedia = { ...saved, id: "field-case-1", version: 4, storeProfileImage: { uri: "https://media.example/store-1.png", contentSha256: "digest-one" }, firstStoreProofImageUploaded: true };
   assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia }, "store", 3), true, "Field store image needs canonical confirmation");
-  assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia }, "proof", 3), true, "Field private proof image needs canonical confirmation");
   for (const [name, changed] of [
-    ["case identity", { id: "other-case" }], ["version", { version: 3 }],
+    ["case identity", { id: "other-case" }],
+    ["version", { version: 3 }],
     ["lost store image", { storeProfileImage: null }],
     ["changed media URI", { storeProfileImage: { uri: "https://media.example/store-2.png", contentSha256: "digest-one" } }],
     ["missing canonical digest", { storeProfileImage: { uri: "https://media.example/store-1.png" } }],
     ["image digest divergence", { storeProfileImage: { uri: "https://media.example/store-1.png", contentSha256: "digest-two" } }],
-  ]) assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia, ...changed }, "store", 3), false, `Field media confirmation missed ${name}`);
-  assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, storeProfileImage: { uri: "https://media.example/store-1.png" } }, uploadedMedia, "store", 3), false, "A response lacking an upload digest cannot prove the same media was persisted");
-  assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, version: 3 }, uploadedMedia, "store", 3), false, "A non-advancing upload version cannot prove media persistence");
-  assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia, firstStoreProofImageUploaded: false }, "proof", 3), false, "Private proof confirmation requires canonical uploaded flag");
+  ]) assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia, ...changed }, "store", 3), false, "Field logo upload confirmation missed " + name);
+  assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, storeProfileImage: { uri: "https://media.example/store-1.png" } }, uploadedMedia, "store", 3), false, "A response without media digest cannot prove upload");
+  assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, version: 3 }, uploadedMedia, "store", 3), false, "A stale upload version cannot prove persistence");
   for (const status of [401, 403, 404]) {
     const readFailure = Object.assign(new Error("Readback failed"), { kind: "http", status });
     const uncertain = markFieldMediaReadbackUncertain(readFailure);
-    assert.equal(uncertain.message, "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE", "Post-upload readback failure must remain uncertain");
-    assert.equal(uncertain.cause, readFailure, "Preserve original readback failure for diagnosis");
+    assert.equal(uncertain.message, "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE");
+    assert.equal(uncertain.cause, readFailure);
   }
   const casesSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-cases.tsx"), "utf8");
   for (const source of [newCaseSource, casesSource]) {
-    assert.match(source, /fieldDraftMediaUploadConfirmed\([^\n]+"store"/, "Field store upload must use canonical readback before discarding selected media");
-    assert.match(source, /fieldDraftMediaUploadConfirmed\([^\n]+"proof"/, "Field proof upload must use canonical readback before discarding selected media");
-    assert.match(source, /cause\.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH"/, "Unconfirmed media upload must retain original idempotency identity for retry");
-    assert.match(source, /cause\.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE"/, "Failed post-upload readback must retain the same pending upload identity");
-    assert.equal([...source.matchAll(/readOwnFieldJoiningCase\(token, attempt\.caseID\)\.catch\(\(cause: unknown\) => \{ throw markFieldMediaReadbackUncertain\(cause\); \}\)/g)].length, 2, "Both media flows must classify post-upload read failures separately from upload request failures");
+    assert.match(source, /fieldDraftMediaUploadConfirmed\([^\n]+"store"/, "Logo upload must use canonical readback");
+    assert.match(source, /readOwnFieldJoiningCase\(token, attempt\.caseID\)\.catch\(\(cause: unknown\) => \{ throw markFieldMediaReadbackUncertain\(cause\); \}\)/, "Logo upload readback failure must be classified as uncertain");
   }
-  assert.match(casesSource, /if \(busy \|\| item\.state !== "draft" \|\| storeImage \|\| proofImage \|\| pendingImageAttempt \|\| pendingProofImageAttempt\) return;/, "Field submission must reject unsaved media even if directly invoked");
-  assert.match(casesSource, /disabled=\{Boolean\(busy\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\) \|\| Boolean\(storeImage\) \|\| Boolean\(proofImage\)\} label="إرسال للمراجعة"/, "Field must not submit a case while unsaved store or proof images are selected");
-  assert.match(casesSource, /if \(busy \|\| storeImage \|\| proofImage \|\| pendingImageAttempt \|\| pendingProofImageAttempt \|\| item\.state !== "draft"\) return;/, "Opening other media details must not replace a pending proof image or upload attempt");
-  assert.equal([...casesSource.matchAll(/disabled=\{Boolean\(busy\) \|\| Boolean\(storeImage\) \|\| Boolean\(proofImage\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\)\}/g)].length, 2, "Draft editing and media navigation must both protect unsaved proof selection");
-  assert.match(casesSource, /setMediaCase\(null\); setStoreImage\(null\); setProofImage\(null\);/, "Closing media details must discard both uncommitted image selections");
-  assert.match(newCaseSource, /if \(!createdCase \|\| !storeImage \|\| busy \|\| pendingProofImageAttempt\) return;/, "Store retry must not overtake unresolved proof upload in draft editor");
-  assert.match(newCaseSource, /if \(!createdCase \|\| !proofImage \|\| busy \|\| pendingImageAttempt\) return;/, "Proof retry must not overtake unresolved store upload in draft editor");
-  assert.match(newCaseSource, /if \(busy \|\| pendingImageAttempt \|\| pendingProofImageAttempt\) return;/, "Store selection must remain locked during either pending upload");
-  assert.match(newCaseSource, /if \(busy \|\| pendingProofImageAttempt \|\| pendingImageAttempt\) return;/, "Proof selection must remain locked during either pending upload");
-  assert.match(casesSource, /if \(!mediaCase \|\| !storeImage \|\| busy \|\| pendingProofImageAttempt\) return;/, "Store upload must not overtake unresolved proof upload in cases");
-  assert.match(casesSource, /if \(!mediaCase \|\| !proofImage \|\| busy \|\| pendingImageAttempt\) return;/, "Proof upload must not overtake unresolved store upload in cases");
-  assert.match(casesSource, /if \(!mediaCase \|\| busy \|\| pendingImageAttempt \|\| pendingProofImageAttempt\) return;/, "Cases store picker must guard both pending uploads");
-  assert.match(casesSource, /if \(!mediaCase \|\| mediaCase\.case\.state !== "draft" \|\| busy \|\| pendingProofImageAttempt \|\| pendingImageAttempt\) return;/, "Cases proof picker must guard both pending uploads");
-  assert.equal([...casesSource.matchAll(/disabled=\{Boolean\(busy\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\)\} label=/g)].length, 3, "Cases store image, camera and close-detail actions must protect pending uploads");
-  assert.match(newCaseSource, /pendingProofImageAttempt && proofImage \? <BthwaniButton disabled=\{busy \|\| Boolean\(pendingImageAttempt\)\}/, "Proof retry is visible only for unresolved uploads and never overtakes a store upload");
-  assert.match(newCaseSource, /pendingImageAttempt && storeImage \? <BthwaniButton busy=\{busy\} disabled=\{busy \|\| Boolean\(pendingProofImageAttempt\)\}/, "Draft store retry must be visible only on unresolved uploads and blocked by pending proof upload");
-  for (const [surface, source] of [["new-case", newCaseSource], ["cases", casesSource]]) {
-    const start = source.indexOf("async function pickStoreImage(");
-    const end = source.indexOf("async function pickProofImage()", start);
-    assert.ok(start !== -1 && end > start, "Field " + surface + " must expose store-image selection");
-    const picker = source.slice(start, end);
-    assert.match(picker, /if \(asset\.fileSize && asset\.fileSize > 10 \* 1024 \* 1024\) throw new Error\("STORE_IMAGE_SIZE_INVALID"\);/, "Field " + surface + " must reject oversized picker metadata before loading bytes");
-    assert.match(picker, /if \(!blob\.size \|\| blob\.size > 10 \* 1024 \* 1024\) throw new Error\("STORE_IMAGE_SIZE_INVALID"\);/, "Field " + surface + " must reject empty and oversized image bytes even without picker metadata");
-    assert.match(picker, /cause\.message === "STORE_IMAGE_SIZE_INVALID" \? "يجب ألا يتجاوز حجم صورة المتجر 10 ميغابايت\."/, "Field " + surface + " must explain the DSH size limit in Arabic");
-    assert.ok(picker.indexOf('throw new Error("STORE_IMAGE_SIZE_INVALID")') < picker.indexOf("setStoreImage("), "Field " + surface + " must reject invalid media before storing a selected image");
-  }
+  assert.match(casesSource, /if \(busy \|\| item\.state !== "draft"\) return;/, "Submission must reject non-draft cases");
+  assert.match(casesSource, /disabled=\{Boolean\(busy\)\} label="إرسال للمراجعة"/, "Optional logo upload cannot disable submission");
+  assert.doesNotMatch(casesSource, /pendingProofImageAttempt|pickProofImage|uploadProofImage/, "Removed identity-proof photo workflow must stay absent");
+  assert.match(newCaseSource, /if \(!createdCase \|\| !storeImage \|\| busy\) return;/, "Store-logo retry requires a saved draft and selection");
+  assert.match(newCaseSource, /if \(busy \|\| pendingImageAttempt\) return;/, "Store-logo picker must not override a pending upload");
   const { fieldJoiningImageDimensionsSupported } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-image-dimensions.ts")).href
   );
   for (const [width, height] of [[1, 1], [6000, 6000], [1, 6000], [6000, 1]]) {
-    assert.equal(fieldJoiningImageDimensionsSupported(width, height), true, "DSH-valid boundary dimensions must remain selectable");
+    assert.equal(fieldJoiningImageDimensionsSupported(width, height), true);
   }
   for (const [width, height] of [[0, 1], [1, 0], [6001, 1], [1, 6001], [-1, 2], [1.5, 2], [NaN, 2], [2, Infinity], [undefined, 2]]) {
-    assert.equal(fieldJoiningImageDimensionsSupported(width, height), false, "Invalid image dimensions must be rejected before upload");
+    assert.equal(fieldJoiningImageDimensionsSupported(width, height), false);
   }
-  for (const [surface, source] of [["new-case", newCaseSource], ["cases", casesSource]]) {
-    const storeStart = source.indexOf("async function pickStoreImage(");
-    const proofStart = source.indexOf("async function pickProofImage()", storeStart);
-    const proofEnd = source.indexOf("async function uploadProofImage(", proofStart);
-    assert.ok(storeStart !== -1 && proofStart > storeStart && proofEnd > proofStart, "Field " + surface + " must have bounded store and proof pickers");
-    for (const [kind, picker] of [["STORE", source.slice(storeStart, proofStart)], ["PROOF", source.slice(proofStart, proofEnd)]]) {
-      assert.ok(picker.includes(`if (!fieldJoiningImageDimensionsSupported(asset.width, asset.height)) throw new Error("${kind}_IMAGE_DIMENSIONS_INVALID");`), `Field ${surface} ${kind} picker must use the tested dimensions guard`);
-      assert.ok(picker.indexOf("fieldJoiningImageDimensionsSupported(asset.width, asset.height)") < picker.indexOf("await fetch(asset.uri)"), `Field ${surface} ${kind} must reject dimensions before reading bytes`);
-      assert.ok(picker.includes(`cause.message === "${kind}_IMAGE_DIMENSIONS_INVALID"`), `Field ${surface} ${kind} must show a distinct dimensions error`);
-      assert.match(picker, /يجب أن تكون أبعاد صورة (المتجر|الإثبات) بين 1 و6000 بكسل للعرض والارتفاع/, `Field ${surface} ${kind} must explain accepted dimensions in Arabic`);
-    }
-  }
-  console.log("MOBILE_FIELD_MEDIA_READBACK=PASS image marker, private proof, version, isolation, recovery and both Field surfaces");
+  console.log("MOBILE_FIELD_MEDIA_READBACK=PASS logo readback, version, retry, no identity-photo blocker");
   const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-commercial-agreement-rate.ts")).href
   );

@@ -68,16 +68,6 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
     });
   }
 
-  function applyYemenDaytimePreset() {
-    const schedule: Record<number, ReadonlyArray<EditableWorkingHoursInterval>> = {};
-    for (const { day } of weekdays) {
-      schedule[day] = [{ id: Crypto.randomUUID(), dayOfWeek: day, opensAt: "08:00", closesAt: "22:00", closesNextDay: false }];
-    }
-    onChange(schedule);
-    setShowScheduler(false);
-    setShowWeekDetails(false);
-  }
-
   function applyQuickPeriod() {
     if (!quickPeriodValid || selectedDays.size === 0) return;
     const next: Record<number, ReadonlyArray<EditableWorkingHoursInterval>> = { ...value };
@@ -93,11 +83,6 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
       <Text style={styles.cardTitle}>ساعات العمل</Text>
       <BthwaniButton disabled={disabled} label={showScheduler ? "إخفاء" : intervals.length ? "تعديل" : "تحديد"} onPress={() => setShowScheduler((current) => !current)} variant="secondary" />
     </View>
-    <Text style={styles.muted}>{intervals.length ? `${weekdays.filter(({ day }) => (value[day] ?? []).length > 0).length} أيام · ${intervals.length} فترات` : "لم تُحدد ساعات العمل"}</Text>
-    <View style={styles.optionList}>
-      <BthwaniButton disabled={disabled} label="8 صباحًا – 10 مساءً · كل الأسبوع" onPress={applyYemenDaytimePreset} variant="secondary" />
-    </View>
-    <Text style={styles.muted}>اختصار شائع في اليمن؛ غيّره حسب ساعات المتجر الحقيقية. يُحسب الإغلاق بعد منتصف الليل تلقائيًا.</Text>
     {showScheduler ? <>
     <Text style={styles.label}>الأيام</Text>
     <View style={styles.optionList}>

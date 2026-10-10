@@ -4,7 +4,7 @@ import { type CommerceVertical, type CommercialStoreType, type CreateFieldJoinin
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import { type Href, Link, useLocalSearchParams, useNavigation } from "expo-router";
+import { type Href, Link, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Keyboard, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 
@@ -69,13 +69,12 @@ function dshErrorCode(cause: unknown): string {
   return typeof code === "string" ? code : "";
 }
 
-export function FieldNewCase() {
-const theme = useAppearanceTheme();
+export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
+  const theme = useAppearanceTheme();
   const { width } = useWindowDimensions();
   const navigation = useNavigation();
+  const router = useRouter();
   const wideLayout = width >= 768;
-  const { caseId: rawCaseId } = useLocalSearchParams<{ caseId?: string | string[] }>();
-  const caseId = Array.isArray(rawCaseId) ? rawCaseId[0] ?? "" : rawCaseId ?? "";
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const { state: admissionState, refresh: refreshAdmission } = useOwnFieldAdmission();
   const admissionActionability = admissionState.kind === "ready" ? fieldAdmissionActionability(admissionState.admission) : null;
@@ -434,6 +433,7 @@ const theme = useAppearanceTheme();
         if (submitted.case.state === "draft") throw new Error("FIELD_SUBMISSION_UNCONFIRMED");
         setCreatedCase(submitted);
         setError("");
+        router.replace({ pathname: "/cases", params: { caseId: submitted.case.id } } as Href);
       }
     } catch (cause) {
       console.warn("DSH Field joining-case draft save failed", cause);
