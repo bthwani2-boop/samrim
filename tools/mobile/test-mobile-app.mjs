@@ -249,16 +249,23 @@ if (app === "app-partner") {
     ],
     payouts: [payout("payout-a", "partner-a", 1000), payout("payout-b", "partner-b", 2000)],
   };
-  assert.equal(matchesPartnerPayoutReadback(payoutRequest, payoutRequest), true);
-  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, stores: [...payoutRequest.stores].reverse(), payouts: [...payoutRequest.payouts].reverse() }), true, "Readback order must not matter");
-  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, stores: payoutRequest.stores.map((store) => ({ ...store, amountMinor: store.amountMinor === 1000 ? 2000 : 1000 })) }), false, "Same aggregate cannot hide swapped Store allocations");
-  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, stores: payoutRequest.stores.map((store) => ({ ...store, beneficiaryActorId: "different-recipient" })) }), false, "The recipient assignment must match");
-  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, destinationId: "changed-wallet" })) }), false, "Canonical payout destination must match");
-  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, status: "PREPARED" })) }), true, "Legitimate later WLT status must not reject financial identity");
-  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, status: "CANCELLED" })) }), false, "Cancelled payouts cannot be reported as successful requests");
-  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, status: "EXCEPTION" })) }), false, "Exceptional payouts need human review, not a success notice");
-  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, resolvedAmountMinor: entry.resolvedAmountMinor === 1000 ? 2000 : 1000 })) }), false, "Same aggregate cannot hide swapped payout allocations");
-  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, stores: [payoutRequest.stores[0], payoutRequest.stores[0]] }), false, "Repeated Store allocation IDs must be rejected");
+  const payoutInput = {
+    scopeMode: "SPECIFIED", storeIds: ["store-a", "store-b"],
+    storeAmounts: [{ storeId: "store-a", amountMinor: 1000 }, { storeId: "store-b", amountMinor: 2000 }],
+  };
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, payoutRequest), true);
+  assert.equal(matchesPartnerPayoutReadback({ ...payoutInput, storeIds: ["other-store", "store-b"] }, payoutRequest, payoutRequest), false, "Canonical response must retain the stores originally requested");
+  assert.equal(matchesPartnerPayoutReadback({ ...payoutInput, storeAmounts: [{ storeId: "store-a", amountMinor: 2000 }, { storeId: "store-b", amountMinor: 1000 }] }, payoutRequest, payoutRequest), false, "Matching POST and GET cannot hide a change to requested amounts");
+  assert.equal(matchesPartnerPayoutReadback({ ...payoutInput, storeIds: ["store-a", "store-a"] }, payoutRequest, payoutRequest), false, "Repeated requested Store IDs must fail");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, stores: [...payoutRequest.stores].reverse(), payouts: [...payoutRequest.payouts].reverse() }), true, "Readback order must not matter");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, stores: payoutRequest.stores.map((store) => ({ ...store, amountMinor: store.amountMinor === 1000 ? 2000 : 1000 })) }), false, "Same aggregate cannot hide swapped Store allocations");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, stores: payoutRequest.stores.map((store) => ({ ...store, beneficiaryActorId: "different-recipient" })) }), false, "The recipient assignment must match");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, destinationId: "changed-wallet" })) }), false, "Canonical payout destination must match");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, status: "PREPARED" })) }), true, "Legitimate later WLT status must not reject financial identity");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, status: "CANCELLED" })) }), false, "Cancelled payouts cannot be reported as successful requests");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, status: "EXCEPTION" })) }), false, "Exceptional payouts need human review, not a success notice");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, resolvedAmountMinor: entry.resolvedAmountMinor === 1000 ? 2000 : 1000 })) }), false, "Same aggregate cannot hide swapped payout allocations");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, stores: [payoutRequest.stores[0], payoutRequest.stores[0]] }), false, "Repeated Store allocation IDs must be rejected");
   console.log("MOBILE_PARTNER_PAYOUT_READBACK=PASS allocation, recipient, destination and immutable financial identity");
 
   const { canonicalPartnerSurfacePath, derivePartnerAuthority, RESOLVING_PARTNER_AUTHORITY } = await import(pathToFileURL(path.join(appDir, "src/shell/partner-authority.ts")).href);

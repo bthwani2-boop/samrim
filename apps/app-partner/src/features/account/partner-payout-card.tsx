@@ -104,7 +104,7 @@ export function PartnerPayoutCard() {
       const token = await getUsableIdentityAccessToken();
       const response = await client().createPartnerPayoutRequest(token, attempt.body, attempt.idempotencyKey, attempt.correlationID);
       const canonical = await client().readPartnerPayoutRequestByKey(token, attempt.walletOwnerActorId, attempt.idempotencyKey);
-      if (!matchesPartnerPayoutReadback(response.request, canonical.request)) {
+      if (!matchesPartnerPayoutReadback(attempt.body, response.request, canonical.request)) {
         throw new Error("PARTNER_PAYOUT_CANONICAL_READBACK_MISMATCH");
       }
       await SecureStore.deleteItemAsync(attemptStorageKey);

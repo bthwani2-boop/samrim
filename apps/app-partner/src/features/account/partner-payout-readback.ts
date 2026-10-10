@@ -1,4 +1,4 @@
-import type { PartnerPayoutRequestView } from "@bthwani/dsh";
+import type { PartnerPayoutRequestCreateRequest, PartnerPayoutRequestView } from "@bthwani/dsh";
 
 function matchingUniqueItems<T>(
   expected: readonly T[],
@@ -25,7 +25,24 @@ function matchingUniqueItems<T>(
 
 // Never prove a financial handoff from an ID and aggregate total alone.
 // Status may advance independently after the POST, so compare immutable facts.
-export function matchesPartnerPayoutReadback(expected: PartnerPayoutRequestView, actual: PartnerPayoutRequestView): boolean {
+export function matchesPartnerPayoutReadback(
+  requested: PartnerPayoutRequestCreateRequest,
+  expected: PartnerPayoutRequestView,
+  actual: PartnerPayoutRequestView,
+): boolean {
+  const requestedStoreIds = requested.storeIds ?? [];
+  if (requested.scopeMode !== actual.scopeMode || requestedStoreIds.length === 0 ||
+      requestedStoreIds.length !== actual.stores.length ||
+      new Set(requestedStoreIds).size !== requestedStoreIds.length ||
+      !actual.stores.every((item) => requestedStoreIds.includes(item.storeId))) return false;
+
+  if (requested.scopeMode === "SPECIFIED") {
+    const amounts = requested.storeAmounts ?? [];
+    const perStore = new Map(amounts.map((item) => [item.storeId, item.amountMinor]));
+    if (amounts.length !== requestedStoreIds.length || perStore.size !== amounts.length ||
+        !actual.stores.every((item) => perStore.get(item.storeId) === item.amountMinor)) return false;
+  }
+
   if (expected.id !== actual.id || expected.scopeMode !== actual.scopeMode ||
       expected.currency !== actual.currency || expected.totalAmountMinor !== actual.totalAmountMinor ||
       !Number.isSafeInteger(actual.totalAmountMinor) || actual.totalAmountMinor <= 0) return false;
