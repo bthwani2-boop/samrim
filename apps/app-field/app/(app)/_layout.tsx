@@ -13,9 +13,9 @@ export default function FieldAppLayout() { const router = useRouter(); const pat
 
 function FieldTabs() {
   const theme = useAppearanceTheme();
-  const tabOptions = useMemo(() => createFieldTabOptions(theme), [theme]);
-  const { state, refresh } = useOwnFieldAdmission();
+  const { state, verification, refresh } = useOwnFieldAdmission();
   const eligible = state.kind === "ready" && fieldAdmissionActionability(state.admission) === "available";
+  const tabOptions = useMemo(() => createFieldTabOptions(theme, eligible && verification === "verified"), [theme, eligible, verification]);
   useEffect(() => {
     let wasActive = AppState.currentState === "active";
     const recordOpen = () => { void recordFieldAppOpened().catch(() => undefined); };

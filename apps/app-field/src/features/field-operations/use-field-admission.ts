@@ -12,6 +12,7 @@ export type OwnFieldAdmissionState =
 
 type OwnFieldAdmissionContextValue = Readonly<{
   state: OwnFieldAdmissionState;
+  verification: "checking" | "verified" | "failed";
   refresh: () => Promise<void>;
 }>;
 
@@ -19,23 +20,31 @@ const OwnFieldAdmissionContext = createContext<OwnFieldAdmissionContextValue | n
 
 export function FieldAdmissionProvider({ children }: Readonly<PropsWithChildren>) {
   const [state, setState] = useState<OwnFieldAdmissionState>({ kind: "loading" });
+  const [verification, setVerification] = useState<OwnFieldAdmissionContextValue["verification"]>("checking");
   const requestSequence = useRef(0);
 
   const refresh = useCallback(async () => {
     const sequence = requestSequence.current + 1;
     requestSequence.current = sequence;
-    setState({ kind: "loading" });
+    // Keep mounted forms intact while revalidating; the gate blocks interaction until readback.
+    setVerification("checking");
     try {
       const token = await getUsableIdentityAccessToken();
       const response = await fieldClient().readOwnFieldAdmission(token);
-      if (requestSequence.current === sequence) setState({ kind: "ready", admission: response.admission });
+      if (requestSequence.current === sequence) {
+        setState({ kind: "ready", admission: response.admission });
+        setVerification("verified");
+      }
     } catch (cause) {
+      if (requestSequence.current !== sequence) return;
       if (isMissingFieldAdmission(cause)) {
-        if (requestSequence.current === sequence) setState({ kind: "missing" });
+        setState({ kind: "missing" });
+        setVerification("verified");
         return;
       }
       console.warn("DSH Field admission readback failed", cause);
-      if (requestSequence.current === sequence) setState({ kind: "error" });
+      setState((current) => current.kind === "ready" ? current : { kind: "error" });
+      setVerification("failed");
     }
   }, []);
 
@@ -44,7 +53,7 @@ export function FieldAdmissionProvider({ children }: Readonly<PropsWithChildren>
     return () => { requestSequence.current += 1; };
   }, [refresh]);
 
-  return createElement(OwnFieldAdmissionContext.Provider, { value: { state, refresh } }, children);
+  return createElement(OwnFieldAdmissionContext.Provider, { value: { state, verification, refresh } }, children);
 }
 
 export function useOwnFieldAdmission() {
