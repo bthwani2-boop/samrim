@@ -233,6 +233,9 @@ if (app === "app-field") {
     assert.match(source, /cause\.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE"/, "Failed post-upload readback must retain the same pending upload identity");
     assert.equal([...source.matchAll(/readOwnFieldJoiningCase\(token, attempt\.caseID\)\.catch\(\(cause: unknown\) => \{ throw markFieldMediaReadbackUncertain\(cause\); \}\)/g)].length, 2, "Both media flows must classify post-upload read failures separately from upload request failures");
   }
+  assert.match(casesSource, /if \(busy \|\| item\.state !== "draft" \|\| storeImage \|\| proofImage \|\| pendingImageAttempt \|\| pendingProofImageAttempt\) return;/, "Field submission must reject unsaved media even if directly invoked");
+  assert.match(casesSource, /disabled=\{Boolean\(busy\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\) \|\| Boolean\(storeImage\) \|\| Boolean\(proofImage\)\} label="إرسال للمراجعة"/, "Field must not submit a case while unsaved store or proof images are selected");
+  assert.match(casesSource, /setMediaCase\(null\); setStoreImage\(null\); setProofImage\(null\);/, "Closing media details must discard both uncommitted image selections");
   console.log("MOBILE_FIELD_MEDIA_READBACK=PASS image marker, private proof, version, isolation, recovery and both Field surfaces");
   const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-commercial-agreement-rate.ts")).href
