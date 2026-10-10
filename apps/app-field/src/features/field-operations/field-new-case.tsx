@@ -10,6 +10,7 @@ import { ActivityIndicator, Image, Text, TextInput, useWindowDimensions, View } 
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
+import { fieldAdmissionActionability } from "./field-eligibility";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
 import { createFieldOperationStyles } from "./field-operation-styles";
 import { type EditableWorkingHours, type EditableWorkingHoursInterval, FieldWorkingHoursEditor, toStoreWorkingHoursIntervals } from "./field-working-hours-editor";
@@ -69,6 +70,7 @@ const theme = useAppearanceTheme();
   const caseId = Array.isArray(rawCaseId) ? rawCaseId[0] ?? "" : rawCaseId ?? "";
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const { state: admissionState, refresh: refreshAdmission } = useOwnFieldAdmission();
+  const admissionActionability = admissionState.kind === "ready" ? fieldAdmissionActionability(admissionState.admission) : null;
   const [input, setInput] = useState<CreateJoiningCaseRequest>(initialJoiningCaseInput);
   const [workingHoursByDay, setWorkingHoursByDay] = useState<EditableWorkingHours>({});
   const [sameBusinessAndStore, setSameBusinessAndStore] = useState(false);
@@ -510,9 +512,9 @@ const theme = useAppearanceTheme();
       {caseId && !caseLoading && error.startsWith("تعذر قراءة المسودة") ? <BthwaniButton label="إعادة قراءة المسودة" onPress={() => setCaseLoadRetry((value) => value + 1)} variant="secondary" /> : null}
       {admissionState.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة حالة التفعيل…</Text></View> : null}
       {admissionState.kind === "missing" ? <View style={styles.card}><Text style={styles.cardTitle}>لم يكتمل تفعيل الحساب</Text><Text style={styles.muted}>تواصل مع فريق التشغيل لإكمال تسجيلك للميدان.</Text></View> : null}
-      {admissionState.kind === "ready" && admissionState.admission.state !== "eligible" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إضافة شريك الآن</Text><Text style={styles.muted}>حالة التفعيل الحالية: {fieldAdmissionStateLabel(admissionState.admission.state)}. تابع الحالة أو تواصل مع فريق التشغيل.</Text></View> : null}
+      {admissionState.kind === "ready" && admissionActionability !== "available" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إضافة شريك الآن</Text><Text style={styles.muted}>{admissionActionability === "profile_review" ? "ملفك يحتاج مراجعة قبل إضافة شريك. تواصل مع فريق التشغيل لاستكمالها." : `حالة التفعيل الحالية: ${fieldAdmissionStateLabel(admissionState.admission.state)}. تابع الحالة أو تواصل مع فريق التشغيل.`}</Text></View> : null}
       {admissionState.kind === "error" ? <View style={styles.card}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة حالة تفعيلك الآن. أعد المحاولة عند توفر الاتصال.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void loadAdmission()} variant="secondary" /></View> : null}
-      {admissionState.kind === "ready" && admissionState.admission.state === "eligible" && (!caseId || Boolean(createdCase)) ? <>
+      {admissionActionability === "available" && (!caseId || Boolean(createdCase)) ? <>
         <View style={styles.card}>
         <Text style={styles.sectionTitle}>بيانات المالك</Text>
         <Text style={styles.label}>الاسم الكامل للمالك حسب الهوية</Text>

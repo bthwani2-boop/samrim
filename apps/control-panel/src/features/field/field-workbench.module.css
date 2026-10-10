@@ -16,15 +16,38 @@
 :global(.field-create-content .access-form .button) { min-width: 170px; min-height: 44px; }
 :global(.field-workbench .workspace-toolbar) { display: flex; justify-content: flex-end; gap: 8px; padding: 0; border: 0; background: transparent; }
 :global(.field-workbench .workspace-toolbar .button) { min-height: 36px; padding: 6px 11px; }
-:global(.field-workbench .field-roster-tools) { display: flex; justify-content: flex-end; }
-:global(.field-workbench .field-roster-tools .button) { min-height: 34px; padding: 5px 10px; }
+:global(.field-workbench .field-roster-tools) { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; align-items: end; gap: 12px; }
+:global(.field-workbench .field-roster-tools > .field-roster-filter-disclosure[open]) { grid-column: 1 / -1; grid-row: 2; }
+:global(.field-workbench .field-roster-search), :global(.field-workbench .field-roster-filter-panel > label) { display: grid; min-width: 0; gap: 6px; color: var(--text-secondary); font-size: 13px; font-weight: 700; }
+:global(.field-workbench .field-roster-search) { align-self: start; grid-row: 1; }
+:global(.field-workbench .field-roster-search input), :global(.field-workbench .field-roster-filter-panel input), :global(.field-workbench .field-roster-filter-panel select) { width: 100%; min-width: 0; min-height: 44px; padding: 8px 11px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-base); color: var(--text-primary); font: inherit; font-size: 14px; }
+:global(.field-workbench .field-roster-filter-disclosure) { min-width: 0; }
+:global(.field-workbench .field-roster-filter-disclosure > summary) { display: flex; min-height: 44px; align-items: center; justify-content: center; gap: 8px; padding-inline: 14px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-muted); color: var(--text-primary); font-weight: 700; cursor: pointer; list-style: none; }
+:global(.field-workbench .field-roster-filter-disclosure > summary::-webkit-details-marker) { display: none; }
+:global(.field-workbench .field-roster-filter-disclosure > summary::after) { content: "⌄"; color: var(--text-muted); font-size: 16px; }
+:global(.field-workbench .field-roster-filter-disclosure[open] > summary::after) { content: "⌃"; }
+:global(.field-workbench .field-filter-active-count) { display: inline-grid; min-width: 22px; min-height: 22px; place-items: center; border-radius: 999px; background: var(--text-primary); color: var(--surface-base); font-size: 12px; }
+:global(.field-workbench .field-roster-filter-panel) { display: grid; min-inline-size: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 10px 0 0; padding: 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-muted); }
+:global(.field-workbench .field-roster-filter-note) { grid-column: 1 / -1; margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+:global(.field-workbench .field-roster-filter-panel > label) { font-weight: 600; }
+:global(.field-workbench .field-roster-tools > .button) { align-self: start; grid-row: 1; min-height: 44px; margin-top: 22px; padding: 7px 12px; white-space: nowrap; }
 :global(.field-workbench .operations-table) { min-width: 780px; }
-:global(.field-workbench .field-agent-table) { width: 100%; min-width: 0; table-layout: auto; }
+:global(.field-workbench .field-agent-table) { width: 100%; min-width: 1380px; table-layout: fixed; }
 :global(.field-workbench .field-agent-table th) { min-width: 0; }
 :global(.field-workbench .field-agent-table th .field-column-heading) { display: grid; justify-items: start; gap: 6px; }
 :global(.field-workbench .field-agent-table .field-column-sort) { max-width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 700; text-align: start; cursor: pointer; }
-:global(.field-workbench .field-agent-table th select), :global(.field-workbench .field-agent-table th input) { width: 100%; max-width: 13rem; min-width: 0; min-height: 34px; padding: 5px 8px; border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--surface-base); color: var(--text-primary); font: inherit; font-size: 12px; }
-:global(.field-workbench .field-agent-table th input) { max-width: 15rem; }
+:global(.field-workbench .field-agent-table tr > :nth-child(1)) { width: 210px; }
+:global(.field-workbench .field-agent-table tr > :nth-child(2)) { width: 150px; }
+:global(.field-workbench .field-agent-table tr > :nth-child(3)) { width: 140px; }
+:global(.field-workbench .field-agent-table tr > :nth-child(4)) { width: 130px; }
+:global(.field-workbench .field-agent-table tr > :nth-child(5)) { width: 135px; }
+:global(.field-workbench .field-agent-table tr > :nth-child(6)) { width: 140px; }
+:global(.field-workbench .field-agent-table tr > :nth-child(7)) { width: 180px; }
+:global(.field-workbench .field-agent-table tr > :nth-child(8)) { width: 105px; }
+:global(.field-workbench .field-agent-table tr > :nth-child(9)) { width: 190px; }
+:global(.field-workbench .field-agent-table thead tr > :nth-child(1)), :global(.field-workbench .field-agent-table tbody tr > :nth-child(1)) { position: sticky; inset-inline-start: 0; background: var(--surface-base); box-shadow: -5px 0 8px -7px var(--text-muted); }
+:global(.field-workbench .field-agent-table thead tr > :nth-child(1)) { z-index: 3; }
+:global(.field-workbench .field-agent-table tbody tr > :nth-child(1)) { z-index: 1; }
 :global(.field-workbench .field-filter-empty) { display: block; padding: 10px 4px; color: var(--text-muted); }
 :global(.field-workbench .field-filter-count) { display: block; padding: 4px 14px 10px; color: var(--text-muted); font-size: 12px; }
 :global(.field-workbench .field-agent-row > th), :global(.field-workbench .field-agent-row > td) { vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
@@ -45,6 +68,8 @@
 :global(.field-workbench .field-agent-edit[open] .field-row-actions) { margin-top: 8px; }
 :global(.field-workbench .field-agent-table-wrap) { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
 :global(.field-workbench .field-agent-table-wrap:focus-visible) { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+:global(.field-workbench .field-filter-count) { display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 13px; }
+:global(.field-workbench .field-roster-scroll-hint) { display: none; }
 :global(.field-workbench .operations-table th), :global(.field-workbench .operations-table td) { padding: 13px 14px; vertical-align: middle; }
 :global(.field-workbench .operations-table tbody th) { min-width: 210px; line-height: 1.7; }
 :global(.field-workbench .operations-table tbody td:nth-child(2)), :global(.field-workbench .operations-table tbody td:nth-child(3)) { min-width: 165px; line-height: 1.65; }
@@ -61,6 +86,9 @@
   :global(.field-workbench-heading) { align-items: flex-start; }
   :global(.field-create-content .access-form) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   :global(.field-create-content .access-form .button) { grid-column: 1 / -1; justify-self: start; }
+  :global(.field-workbench .field-roster-tools) { grid-template-columns: minmax(0, 1fr) auto auto; }
+  :global(.field-workbench .field-roster-filter-panel) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :global(.field-workbench .field-roster-scroll-hint) { display: block; margin: 0 0 8px; color: var(--text-muted); font-size: 12px; }
 }
 
 @media (max-width: 560px) {
@@ -70,5 +98,9 @@
   :global(.field-create-content .access-form) { grid-template-columns: minmax(0, 1fr); }
   :global(.field-create-content .access-form .button) { grid-column: auto; width: 100%; }
   :global(.field-workbench .operations-table) { min-width: 700px; }
-  :global(.field-workbench .field-agent-table) { min-width: 0; }
+  :global(.field-workbench .field-roster-tools) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :global(.field-workbench .field-roster-search), :global(.field-workbench .field-roster-filter-disclosure[open]) { grid-column: 1 / -1; }
+  :global(.field-workbench .field-roster-tools > .button) { grid-row: auto; width: 100%; min-height: 44px; margin-top: 0; padding-inline: 8px; font-size: 13px; }
+  :global(.field-workbench .field-roster-filter-disclosure > summary) { width: 100%; }
+  :global(.field-workbench .field-roster-filter-panel) { grid-template-columns: minmax(0, 1fr); padding: 12px; }
 }

@@ -3,6 +3,7 @@ import { type Href, Redirect } from "expo-router";
 import { type PropsWithChildren, useMemo } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
+import { fieldAdmissionActionability } from "../features/field-operations/field-eligibility";
 import { createFieldOperationStyles } from "../features/field-operations/field-operation-styles";
 import { useOwnFieldAdmission } from "../features/field-operations/use-field-admission";
 
@@ -17,7 +18,7 @@ export function FieldAdmissionGate({ children }: Readonly<PropsWithChildren>) {
   if (state.kind === "error") {
     return <View style={styles.card}><Text accessibilityRole="alert" style={styles.error}>تعذر التحقق من أهلية الميداني، لذلك بقيت هذه المساحة مغلقة مؤقتًا.</Text><BthwaniButton label="إعادة التحقق" onPress={() => void refresh()} variant="secondary" /></View>;
   }
-  if (state.kind !== "ready" || state.admission.state !== "eligible") {
+  if (state.kind !== "ready" || fieldAdmissionActionability(state.admission) !== "available") {
     return <Redirect href={"/home" as Href} />;
   }
   return <>{children}</>;
