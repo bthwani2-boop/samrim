@@ -26,9 +26,10 @@ export default function FieldAccount() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [showAppearance, setShowAppearance] = useState(false);
-  const { state: profileState, refresh: refreshProfile } = useOwnFieldAdmission();
+  const { state: profileState, verification, refresh: refreshProfile } = useOwnFieldAdmission();
   const profile = profileState.kind === "ready" ? profileState.admission : null;
   const profileActionability = profile ? fieldAdmissionActionability(profile) : null;
+  const verifiedWorkspace = verification === "verified" && profileActionability === "available";
   const appearanceLabel = appearanceOptions.find((option) => option.value === appearance.preference)?.label ?? "حسب النظام";
 
   async function logout() {
@@ -51,12 +52,14 @@ export default function FieldAccount() {
         <View style={styles.profileCopy}>
           <Text style={styles.profileTitle}>{profile?.fullNameAr || "ملف الميداني"}</Text>
           <Text style={styles.profileDescription}>{profileDescription(profileState, profile?.contactPhoneE164)}{profile ? ` · أهلية الميدان: ${profileActionability === "profile_review" ? "الملف يحتاج مراجعة" : fieldAdmissionStateLabel(profile.state)}` : ""}</Text>
-          {profileActionability === "profile_review" ? <Text accessibilityLiveRegion="polite" style={styles.profileDescription}>تواصل مع فريق التشغيل لاستكمال مراجعة الملف قبل استخدام وظائف الميدان.</Text> : null}
+          {verification === "checking" && profile ? <Text accessibilityLiveRegion="polite" style={styles.profileDescription}>جارٍ إعادة التحقق من أهلية الميدان…</Text> : null}
+          {verification === "verified" && profileActionability === "profile_review" ? <Text accessibilityLiveRegion="polite" style={styles.profileDescription}>تواصل مع فريق التشغيل لاستكمال مراجعة الملف قبل استخدام وظائف الميدان.</Text> : null}
+          {verification === "failed" && profile ? <Text accessibilityRole="alert" style={styles.profileDescription}>تعذر تأكيد أهلية الميدان. الوظائف محجوبة حتى إعادة التحقق.</Text> : null}
         </View>
       </BthwaniSurface>
-      {profileState.kind === "missing" || profileState.kind === "error" ? <BthwaniButton label="تحديث حالة التفعيل" onPress={() => void refreshProfile()} variant="secondary" /> : null}
+      {profileState.kind === "missing" || profileState.kind === "error" || verification === "failed" ? <BthwaniButton label="إعادة التحقق من الأهلية" onPress={() => void refreshProfile()} variant="secondary" /> : null}
 
-      {profileActionability === "available" ? <StoreAccessInvitationSummary compact onPress={() => router.push("/invitations" as Href)} /> : null}
+      {verifiedWorkspace ? <StoreAccessInvitationSummary compact onPress={() => router.push("/invitations" as Href)} /> : null}
 
       <View style={styles.settings}>
         <BthwaniNavigationRow compact description={`المظهر الحالي: ${appearanceLabel}`} icon="appearance" title="مظهر التطبيق" onPress={() => setShowAppearance((current) => !current)} />

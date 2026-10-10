@@ -163,7 +163,11 @@ if (app === "app-field") {
   const gateSource = fs.readFileSync(path.join(appDir, "src/shell/field-admission-gate.tsx"), "utf8");
   assert.match(gateSource, /fieldAdmissionActionability\(state\.admission\) !== "available"/, "app-field: guarded routes reject non-available admissions");
   const accountSource = fs.readFileSync(path.join(appDir, "src/features/account/account.tsx"), "utf8");
-  assert.match(accountSource, /profileActionability === "available" \? <StoreAccessInvitationSummary/, "app-field: unavailable admission must not show an unusable invitation action");
+  assert.match(accountSource, /verifiedWorkspace = verification === "verified" && profileActionability === "available"/, "app-field: admission and a fresh successful readback must both authorize invitation actions");
+  assert.match(accountSource, /verifiedWorkspace \? <StoreAccessInvitationSummary/, "app-field: unavailable or unverified admission must not show invitation actions");
+  const providerSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/use-field-admission.ts"), "utf8");
+  assert.doesNotMatch(providerSource, /setState\(\{ kind: "loading" \}\)/, "app-field: foreground revalidation must not unmount unsaved forms");
+  assert.match(gateSource, /pointerEvents=\{verified \? "auto" : "none"\}/, "app-field: forms must be non-interactive until admission readback succeeds");
   assert.match(layoutContent, /if \(becameActive\) \{[\s\S]*?recordOpen\(\);[\s\S]*?void refresh\(\);[\s\S]*?\}/, "app-field: refresh admission after returning to foreground");
   const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-commercial-agreement-rate.ts")).href
