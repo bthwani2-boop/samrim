@@ -63,12 +63,11 @@ export function markFieldMediaReadbackUncertain(cause: unknown): Error {
 export function fieldDraftMediaUploadConfirmed(
   uploaded: JoiningCaseView,
   canonical: JoiningCaseView,
-  kind: "store" | "proof",
+  kind: "store",
   previousVersion: number,
 ): boolean {
   if (uploaded.id !== canonical.id || uploaded.origin !== "field" ||
     uploaded.version <= previousVersion || canonical.version < uploaded.version) return false;
-  if (kind === "proof") return uploaded.firstStoreProofImageUploaded && canonical.firstStoreProofImageUploaded;
   const submittedImage = uploaded.storeProfileImage;
   const savedImage = canonical.storeProfileImage;
   // The private DSH media readback includes the persisted URI and SHA-256.

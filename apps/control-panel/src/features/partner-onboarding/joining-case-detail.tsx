@@ -1,12 +1,12 @@
 "use client";
 import { TextArea } from "@bthwani/design-system/web";
 
-import { type CommercialStoreType, type CommerceVertical, financialProfileStateLabel, type JoiningCaseProofDetailsResponse, type JoiningCaseProofType, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type PartnerFinancialTermsPolicy, type ServiceCity, type StoreFulfillmentMode, settlementPeriodLabel } from "@bthwani/dsh";
+import { type CommerceVertical, type CommercialStoreType, financialProfileStateLabel, type JoiningCaseProofDetailsResponse, type JoiningCaseProofType, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type PartnerFinancialTermsPolicy, type ServiceCity, type StoreFulfillmentMode, settlementPeriodLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useSession } from "../../session/session-provider";
 import { partnerErrorMessage } from "./partner-error-message";
 import { stablePartnerMutationHeaders } from "./partner-request";
-import { useSession } from "../../session/session-provider";
 
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
   { value: "BTHWANI_CAPTAIN", label: "توصيل بثواني", description: "المنصة تتولى إسناد التوصيل وإدارته." },
@@ -28,7 +28,6 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
   const [result, setResult] = useState<JoiningCaseResponse | null>(null);
   const [proofDetails, setProofDetails] = useState<JoiningCaseProofDetailsResponse | null>(null);
   const [proofDetailsError, setProofDetailsError] = useState("");
-  const [proofImageFile, setProofImageFile] = useState<File | null>(null);
   const [storeImageFile, setStoreImageFile] = useState<File | null>(null);
   const [storeImageProvenance, setStoreImageProvenance] = useState<MediaProvenanceInput>({ creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false });
   const [activeTermsPolicy, setActiveTermsPolicy] = useState<PartnerFinancialTermsPolicy | null>(null);
@@ -133,47 +132,39 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
     setError(message || fallback);
   }
 
-  async function uploadIntakeImage(kind: "proof" | "store") {
+  async function uploadIntakeImage() {
     const current = result?.case;
-    const file = kind === "proof" ? proofImageFile : storeImageFile;
+    const file = storeImageFile;
     if (!current || current.state !== "draft" || !file || busy) return;
-    if (kind === "store" && (storeImageProvenance.creator.trim().length < 2 || storeImageProvenance.sourceDescription.trim().length < 3 || storeImageProvenance.rightsStatement.trim().length < 5 || !storeImageProvenance.rightsAttested)) {
+    if (storeImageProvenance.creator.trim().length < 2 || storeImageProvenance.sourceDescription.trim().length < 3 || storeImageProvenance.rightsStatement.trim().length < 5 || !storeImageProvenance.rightsAttested) {
       setError("أكمل منشئ صورة الواجهة ومصدرها وبيان حق استخدامها، وأكّد صحة التصريح.");
       return;
     }
     setBusy(true);
     setError("");
     try {
-      const headers = new Headers(await stablePartnerMutationHeaders(`joining-case-${kind}-image:${caseId}:${current.version}:${file.name}:${file.size}:${file.lastModified}`));
+      const headers = new Headers(await stablePartnerMutationHeaders(`joining-case-store-image:${caseId}:${current.version}:${file.name}:${file.size}:${file.lastModified}`));
       headers.delete("Content-Type");
       headers.set("X-Expected-Version", String(current.version));
       const form = new FormData();
       form.append("file", file, file.name);
-      if (kind === "store") {
         form.set("creator", storeImageProvenance.creator);
         form.set("sourceDescription", storeImageProvenance.sourceDescription);
         form.set("sourceUri", storeImageProvenance.sourceUri ?? "");
         form.set("rightsStatement", storeImageProvenance.rightsStatement);
         form.set("rightsUri", storeImageProvenance.rightsUri ?? "");
         form.set("rightsAttested", String(storeImageProvenance.rightsAttested));
-      }
-      const suffix = kind === "proof" ? "proof-image" : "store-image";
+      const suffix = "store-image";
       const response = await fetch(`/api/partners/joining-cases/${encodeURIComponent(caseId)}/${suffix}`, { method: "POST", headers, body: form });
       if (!response.ok) {
-        await reconcileMutationError(response, kind === "proof" ? "تعذر رفع صورة الإثبات الخاصة." : "تعذر رفع صورة واجهة المتجر.");
+        await reconcileMutationError(response, "تعذر رفع صورة واجهة المتجر.");
         return;
       }
       const updated = await response.json() as JoiningCaseResponse;
       setResult(updated);
-      if (kind === "proof") {
-        setProofImageFile(null);
-        await readProofDetails();
-      } else {
-        setStoreImageFile(null);
-      }
+      setStoreImageFile(null);
     } catch {
       await readCase(false);
-      if (kind === "proof") await readProofDetails();
       setError("تعذر تأكيد رفع الصورة. أُعيدت قراءة الحالة؛ تحقق من حالة الملف قبل تكرار الرفع.");
     } finally {
       setBusy(false);
@@ -304,7 +295,6 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>ساعات العمل</dt><dd>{current.firstStoreWorkingHours ? current.firstStoreWorkingHours.intervals.length > 0 ? <ul>{current.firstStoreWorkingHours.intervals.map((interval) => <li key={`${interval.dayOfWeek}-${interval.opensAt}-${interval.closesAt}`}>{weekdays[interval.dayOfWeek - 1] ?? `اليوم ${interval.dayOfWeek}`}: {interval.opensAt}–{interval.closesAt}{interval.closesNextDay ? " (اليوم التالي)" : ""}</li>)}</ul> : "لا توجد فترات عمل مسجلة" : "غير متاحة في بيانات الحالة القديمة"}</dd></div>
               <div><dt>نوع الإثبات</dt><dd>{current.firstStoreProofType ? proofTypeLabels[current.firstStoreProofType] ?? "وثيقة نشاط" : "غير متاح في بيانات الحالة القديمة"}</dd></div>
               <div><dt>رقم الإثبات</dt><dd>{proofDetails?.proofNumber ?? (proofDetailsError || "جارٍ قراءة الرقم من السجل الخاص…")}</dd></div>
-              <div><dt>صورة الإثبات</dt><dd>{typeof current.firstStoreProofImageUploaded === "boolean" ? current.firstStoreProofImageUploaded ? "تم رفع صورة الإثبات؛ لا يُعرض ملف الإثبات الخاص في هذه الشاشة." : "لم تُرفع صورة إثبات لهذا الملف." : "حالة صورة الإثبات غير متاحة في بيانات الحالة القديمة"}</dd></div>
               <div><dt>طريقة التوصيل</dt><dd>{current.firstStoreFulfillmentModes.map((mode) => fulfillmentModeOptions.find((option) => option.value === mode)?.label ?? mode).join("، ") || "غير متاحة في بيانات الحالة القديمة"}</dd></div>
               <div><dt>ملاحظات</dt><dd>{current.firstStoreNotes === undefined ? "غير متاحة في بيانات الحالة القديمة" : current.firstStoreNotes?.trim() || "لا توجد ملاحظات"}</dd></div>
               <div><dt>مصدر الحالة</dt><dd>{current.origin === "field" ? "تطبيق الميداني" : "لوحة التحكم"}</dd></div>
@@ -321,24 +311,17 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
             {current.state === "draft" ? <div className="managed-status managed-status-info">
               <strong>مرفقات ملف الانضمام</strong>
               {!current.storeProfileImage ? <>
-                <p>ارفع صورة واجهة المتجر. هذه الصورة مخصّصة للعرض وتختلف عن صورة الإثبات الخاصة.</p>
+                <p>ارفع صورة واجهة المتجر. هذه الصورة مخصّصة لعرض المتجر للعملاء.</p>
                 <label className="field-label" htmlFor="joining-storefront-file">صورة واجهة المتجر<input id="joining-storefront-file" type="file" accept="image/jpeg,image/png" disabled={busy} onChange={(event) => setStoreImageFile(event.target.files?.[0] ?? null)} /></label>
                 <label className="field-label" htmlFor="joining-storefront-creator">منشئ الصورة<input id="joining-storefront-creator" disabled={busy} value={storeImageProvenance.creator} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, creator: event.target.value }))} /></label>
                 <label className="field-label" htmlFor="joining-storefront-source">مصدر الصورة<input id="joining-storefront-source" disabled={busy} value={storeImageProvenance.sourceDescription} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, sourceDescription: event.target.value }))} /></label>
                 <label className="field-label" htmlFor="joining-storefront-rights">حق الاستخدام<input id="joining-storefront-rights" disabled={busy} value={storeImageProvenance.rightsStatement} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, rightsStatement: event.target.value }))} /></label>
                 <label className="flex items-center gap-2"><input type="checkbox" disabled={busy} checked={storeImageProvenance.rightsAttested} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, rightsAttested: event.target.checked }))} /> أؤكد صحة مصدر الصورة وحق استخدامه</label>
-                {storeImageFile ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void uploadIntakeImage("store")}>رفع صورة واجهة المتجر</button> : null}
+                {storeImageFile ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void uploadIntakeImage()}>رفع صورة واجهة المتجر</button> : null}
               </> : <p>صورة واجهة المتجر مرفوعة.</p>}
-              {!current.firstStoreProofImageUploaded ? <>
-                <p>ارفع صورة الإثبات بعد اختيار JPG أو PNG. تُخزّن الصورة مشفّرة ولا تُعرض كرابط عام.</p>
-                <label className="field-label" htmlFor="joining-proof-file">صورة الإثبات الخاصة<input id="joining-proof-file" type="file" accept="image/jpeg,image/png" disabled={busy} onChange={(event) => setProofImageFile(event.target.files?.[0] ?? null)} /></label>
-                {proofImageFile ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void uploadIntakeImage("proof")}>رفع صورة الإثبات المشفّرة</button> : null}
-              </> : <p>صورة الإثبات الخاصة مرفوعة ومحمية بالتشفير.</p>}
-              {proofDetailsError ? <p role="alert">{proofDetailsError}</p> : null}
-              {proofDetails?.proofImageUploaded ? <a className="button button-secondary" href={`/api/partners/joining-cases/${encodeURIComponent(caseId)}/proof-image`} rel="noreferrer" target="_blank">تنزيل صورة الإثبات للمراجعة المصرّح بها</a> : null}
             </div> : null}
-            {current.state === "draft" && current.origin === "control_panel" ? <button type="button" className="button button-primary" disabled={busy || !current.storeProfileImage || !current.firstStoreProofImageUploaded} onClick={() => void submitCase()}>إرسال الحالة للمراجعة وإنشاء دور الشريك</button> : null}
-            {current.state === "admission_requested" && current.origin === "field" ? <button type="button" className="button button-primary" disabled={busy || !current.storeProfileImage || !current.firstStoreProofImageUploaded} onClick={() => void submitCase()}>قبول الإحالة وإنشاء دور الشريك</button> : null}
+            {current.state === "draft" && current.origin === "control_panel" ? <button type="button" className="button button-primary" disabled={busy || !current.storeProfileImage} onClick={() => void submitCase()}>إرسال الحالة للمراجعة وإنشاء دور الشريك</button> : null}
+            {current.state === "admission_requested" && current.origin === "field" ? <button type="button" className="button button-primary" disabled={busy || !current.storeProfileImage} onClick={() => void submitCase()}>قبول الإحالة وإنشاء دور الشريك</button> : null}
             {current.state === "submitted" ? <>
                {activeTermsPolicy ? <p className="managed-status managed-status-info">ستُعتمد شروط التسوية: {settlementPeriodLabel(activeTermsPolicy.settlementPeriod)}.</p> : <><output className="managed-status managed-status-warning">{policyReadMessage || "تُقرأ فترة التسوية من قسم السياسات؛ أما عمولة كل متجر فتُحسم في اتفاقيته الخاصة بعد تفاوض المالك وموافقة المالية."}</output><Link className="button button-secondary" href="/policies/partner-financial-terms">فتح شروط تسوية الشريك</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة الشروط النشطة</button></>}
               <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<TextArea className="resize-none" id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>

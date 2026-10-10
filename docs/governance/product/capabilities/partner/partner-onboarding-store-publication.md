@@ -8,7 +8,7 @@ CAPABILITY_ID: PARTNER_ONBOARDING_STORE_PUBLICATION
 
 ## Outcome
 
-A prospective Partner progresses through one DSH-owned joining lifecycle to one canonically bound Partner actor and one governed Store-publication result. The first-Store intake captures the owner name and contact phone; Store name; Service City; primary Commerce Vertical and commercial Store Type; written address and fixed map location; weekly working hours; one or more initially admitted fulfillment modes; and the required onboarding evidence type, number and private image. The public Storefront profile image is a separate asset. Operator-facing notes are optional.
+A prospective Partner progresses through one DSH-owned joining lifecycle to one canonically bound Partner actor and one governed Store-publication result. The first-Store intake captures the owner name and contact phone; Store name; Service City; primary Commerce Vertical and commercial Store Type; written address and fixed map location; weekly working hours; one or more initially admitted fulfillment modes; and onboarding evidence type and number (verified against the physical document outside the app). No document photograph is required or collected for new cases. The public Storefront profile image is a separate asset. Operator-facing notes are optional.
 
 ## Ownership
 
@@ -26,8 +26,8 @@ DSH owns joining-case, Field standing admission/eligibility, assignment, Partner
 - first-Store Service City, Commerce Vertical, commercial Store Type and fulfillment-mode policy are preserved through review, correction and resubmission and become canonical Store facts atomically at Store creation;
 - the required first-Store intake includes a submitted owner name and contact phone, Store name, active Service City, primary Commerce Vertical, compatible commercial Store Type, written Store address, fixed map coordinates, weekly working hours and one or more fulfillment modes; the owner name is an onboarding fact and does not silently replace the Identity account profile;
 - first-Store intake may capture the bound Partner owner's official-wallet provider preference; WLT resolves the destination only after Identity binding and never takes a separate wallet number or beneficiary name;
-- onboarding proof is required and consists of exactly one supported proof type (commercial registration, identity document or freelance-work document), its number and a private image of that evidence; the evidence image and its number are case-scoped personal/business data, never public Store or Catalog media, and never appear in public discovery or ordinary Store summaries;
-- only the bound Partner for that case and an authorized DSH Operator reviewer may read the private evidence image or unmasked number; Field may collect and submit it only for an authorized case and has no general evidence-download capability; evidence reads are attributable and sensitive values are redacted from logs;
+- onboarding proof requires exactly one supported proof type (commercial registration, identity document or freelance-work document) and its number, verified through authorized in-person review; a document image is not a submission, correction or publication prerequisite. Verification and any permitted paper archive stay outside the digital joining form;
+- the existing case-scoped encrypted document number remains private; only authorized participants may retrieve the unmasked number. Previously uploaded document images, if present, are historical sensitive records and must not be silently deleted or made public. New submissions do not upload document images;
 - the public Storefront profile image is a separate required visual asset and cannot serve as legal evidence; it follows Store-profile media provenance and publication rules;
 - weekly working hours are expressed in the selected Service City's local time and support closed days and multiple opening intervals in a day; optional onboarding notes are available to the Operator reviewer and do not replace structured intake facts;
 - at first-Store creation, accepted joining-case working hours initialize the canonical `STORE_OPERATIONAL_AVAILABILITY` schedule in the same transaction, including overnight windows; the intake and Store business-hours snapshot remain historical context, not a second authority for live orderability; later authorized Partner/Operator changes use the operational-availability owner only;
@@ -89,7 +89,7 @@ PARTNER
 → Store publication
 ```
 
-Documents and evidence belong to the joining lifecycle when this capability's intake requires them; they are not separate capabilities. Onboarding evidence remains private and purpose-limited under DSH ownership. Storefront profile imagery remains a separately governed public-facing media asset.
+The joining form collects evidence type and number only. Physical-document verification and any controlled paper retention happen outside the app when required. Historical digital evidence remains purpose-limited under DSH ownership until an explicitly authorized retention decision. Storefront profile imagery remains a separately governed public-facing media asset.
 
 ## Failure and recovery
 

@@ -1,7 +1,7 @@
 import { isValidStoreWorkingHours, type JoiningCaseView } from "@bthwani/dsh";
 
 export type FieldJoiningRequirement = Readonly<{
-  key: "basic" | "wallet" | "operation" | "proofNumber" | "proofImage" | "storeImage";
+  key: "basic" | "wallet" | "operation" | "proofNumber" | "storeImage";
   label: string;
   saved: boolean;
 }>;
@@ -25,7 +25,6 @@ export function getFieldJoiningRequirements(saved: JoiningCaseView | null): Read
         saved.firstStoreFulfillmentModes.length && isValidStoreWorkingHours(saved.firstStoreWorkingHours?.intervals ?? [])),
     },
     { key: "proofNumber", label: "نوع ورقم الإثبات", saved: Boolean(saved?.firstStoreProofType && saved.firstStoreProofNumberPresent) },
-    { key: "proofImage", label: "صورة الإثبات", saved: Boolean(saved?.firstStoreProofImageUploaded) },
     { key: "storeImage", label: "صورة واجهة المتجر", saved: Boolean(saved?.storeProfileImage) },
   ];
 }

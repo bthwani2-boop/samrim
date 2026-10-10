@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { isValidStoreWorkingHours, resolveJoiningCaseImageContentType } from "./joining-case-media.ts";
+import { isValidStoreWorkingHours, joiningCaseImageMultipartPart, resolveJoiningCaseImageContentType } from "./joining-case-media.ts";
+
+test("native joining-case image upload uses the URI file part instead of a fetched Blob", () => {
+  const blob = new Blob(["image"], { type: "image/png" });
+  assert.deepEqual(joiningCaseImageMultipartPart("file:///cache/proof.png", "proof.png", "image/png", blob), {
+    uri: "file:///cache/proof.png", name: "proof.png", type: "image/png",
+  });
+  assert.deepEqual(joiningCaseImageMultipartPart("content://media/7", "store.jpg", "image/jpeg", blob), {
+    uri: "content://media/7", name: "store.jpg", type: "image/jpeg",
+  });
+  assert.equal(joiningCaseImageMultipartPart("blob:https://example.test/image", "proof.png", "image/png", blob), blob);
+});
 
 test("resolveJoiningCaseImageContentType uses declared type and supported extensions", () => {
 	assert.equal(resolveJoiningCaseImageContentType("image/png", "image/jpeg", "photo.jpg", "file:///photo"), "image/png");

@@ -134,7 +134,7 @@ func TestFieldJoiningCaseDraftCreateUpdateOwnershipIdempotencyAndMedia(t *testin
 		if _, err := postgres.UpdateFieldJoiningCaseDraft(ctx, db, wrongOwner); !errors.Is(err, postgres.ErrJoiningCasePartnerAccess) {
 			t.Fatalf("foreign actor draft update error = %v, want ownership denial", err)
 		}
-		// Correcting private proof details makes the previously uploaded image stale.
+		// Changing private proof details must not discard historical photo evidence.
 		changedProof := preserveUpdate
 		changedProof.ExpectedVersion = sameNumberSaved.Case.Version
 		changedProof.IdempotencyKey = "idem-field-draft-proof-change"
@@ -143,15 +143,11 @@ func TestFieldJoiningCaseDraftCreateUpdateOwnershipIdempotencyAndMedia(t *testin
 		changedProof.Request.FirstStoreProofNumber = "987654321"
 		changedProof.RequestHash = hashDraftUpdate(t, keys, changedProof)
 		changed, err := postgres.UpdateFieldJoiningCaseDraft(ctx, db, changedProof)
-		if err != nil || !changed.Case.FirstStoreProofNumberPresent || changed.Case.FirstStoreProofImageUploaded {
-			t.Fatalf("new proof number did not invalidate existing image: case=%+v err=%v", changed.Case, err)
-		}
-		refreshed, err := joiningcaseservice.UploadPrivateProofImage(ctx, db, keys, created.Case.ID, fieldActor, "field", "field-proof-image-upload", "idem-draft-proof-refresh", "corr-draft-proof-refresh", changed.Case.Version, "image/png", tinyPNG)
-		if err != nil || !refreshed.Case.FirstStoreProofImageUploaded {
-			t.Fatalf("fresh proof image could not restore readiness: case=%+v err=%v", refreshed.Case, err)
+		if err != nil || !changed.Case.FirstStoreProofNumberPresent || !changed.Case.FirstStoreProofImageUploaded {
+			t.Fatalf("new proof number discarded historical image: case=%+v err=%v", changed.Case, err)
 		}
 		changedType := changedProof
-		changedType.ExpectedVersion = refreshed.Case.Version
+		changedType.ExpectedVersion = changed.Case.Version
 		changedType.IdempotencyKey = "idem-field-draft-type-change"
 		changedType.CorrelationID = "corr-field-draft-type-change"
 		changedType.PreserveProofNumber = true
@@ -159,19 +155,15 @@ func TestFieldJoiningCaseDraftCreateUpdateOwnershipIdempotencyAndMedia(t *testin
 		changedType.Request.FirstStoreProofType = "IDENTITY_DOCUMENT"
 		changedType.RequestHash = hashDraftUpdate(t, keys, changedType)
 		typeUpdated, err := postgres.UpdateFieldJoiningCaseDraft(ctx, db, changedType)
-		if err != nil || typeUpdated.Case.FirstStoreProofImageUploaded {
-			t.Fatalf("changed proof type retained stale image: case=%+v err=%v", typeUpdated.Case, err)
+		if err != nil || !typeUpdated.Case.FirstStoreProofImageUploaded {
+			t.Fatalf("changed proof type discarded a protected historical image: case=%+v err=%v", typeUpdated.Case, err)
 		}
-		// The first submission gate is the now-invalidated private image, not the city.
-		if _, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, created.Case.ID, fieldActor, typeUpdated.Case.Version, "idem-field-draft-incomplete-submit", postgres.HashFieldJoiningCaseAdmission(created.Case.ID, fieldActor, typeUpdated.Case.Version), "corr-draft-incomplete-submit"); !errors.Is(err, postgres.ErrJoiningCaseState) {
-			t.Fatalf("incomplete draft submit error = %v, want missing-proof-image rejection", err)
+		// A document image is no longer a submission prerequisite; the missing city remains the first blocker.
+		if _, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, created.Case.ID, fieldActor, typeUpdated.Case.Version, "idem-field-draft-incomplete-submit", postgres.HashFieldJoiningCaseAdmission(created.Case.ID, fieldActor, typeUpdated.Case.Version), "corr-draft-incomplete-submit"); !errors.Is(err, postgres.ErrJoiningCaseServiceCity) {
+			t.Fatalf("incomplete draft submit error = %v, want missing-city rejection", err)
 		}
-		proofAfterTypeChange, err := joiningcaseservice.UploadPrivateProofImage(ctx, db, keys, created.Case.ID, fieldActor, "field", "field-proof-image-upload", "idem-draft-proof-type-refresh", "corr-draft-proof-type-refresh", typeUpdated.Case.Version, "image/png", tinyPNG)
-		if err != nil || !proofAfterTypeChange.Case.FirstStoreProofImageUploaded {
-			t.Fatalf("new proof type image not saved: %+v error=%v", proofAfterTypeChange.Case, err)
-		}
-		if _, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, created.Case.ID, fieldActor, proofAfterTypeChange.Case.Version, "idem-field-draft-missing-city", postgres.HashFieldJoiningCaseAdmission(created.Case.ID, fieldActor, proofAfterTypeChange.Case.Version), "corr-draft-missing-city"); !errors.Is(err, postgres.ErrJoiningCaseServiceCity) {
-			t.Fatalf("complete proof without city error = %v, want missing-city rejection", err)
+		if _, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, created.Case.ID, fieldActor, typeUpdated.Case.Version, "idem-field-draft-missing-city", postgres.HashFieldJoiningCaseAdmission(created.Case.ID, fieldActor, typeUpdated.Case.Version), "corr-draft-missing-city"); !errors.Is(err, postgres.ErrJoiningCaseServiceCity) {
+			t.Fatalf("missing city without image requirement = %v, want missing-city rejection", err)
 		}
 	})
 }

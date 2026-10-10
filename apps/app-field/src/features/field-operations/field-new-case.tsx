@@ -26,7 +26,6 @@ type PendingDraftAttempt =
 type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput }>;
 type WalletProvider = Awaited<ReturnType<ReturnType<typeof fieldClient>["listWalletProviders"]>>["walletProviders"][number];
 type PendingImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: StoreImageDraft; idempotencyKey: string; correlationID: string }>;
-type PendingProofImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: DshImageUploadInput; idempotencyKey: string; correlationID: string }>;
 const joiningSteps = ["البيانات الأساسية", "المتجر والتشغيل", "الإثبات والمراجعة"] as const;
 const proofTypeOptions: ReadonlyArray<{ value: JoiningCaseProofType; label: string }> = [
   { value: "COMMERCIAL_REGISTRATION", label: "سجل تجاري" },
@@ -142,18 +141,16 @@ const theme = useAppearanceTheme();
   const [locationMessage, setLocationMessage] = useState("");
   const [locationError, setLocationError] = useState("");
   const [storeImage, setStoreImage] = useState<StoreImageDraft | null>(null);
-  const [proofImage, setProofImage] = useState<DshImageUploadInput | null>(null);
   const [pendingDraftAttempt, setPendingDraftAttempt] = useState<PendingDraftAttempt | null>(null);
   const [pendingImageAttempt, setPendingImageAttempt] = useState<PendingImageAttempt | null>(null);
-  const [pendingProofImageAttempt, setPendingProofImageAttempt] = useState<PendingProofImageAttempt | null>(null);
   const preloadedVerticalID = useRef("");
-  const formLocked = busy || caseLoading || Boolean(pendingDraftAttempt) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt);
+  const formLocked = busy || caseLoading || Boolean(pendingDraftAttempt) || Boolean(pendingImageAttempt);
   const phoneValid = /^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(input.contactPhoneE164));
   const enteredHours = toStoreWorkingHoursIntervals(workingHoursByDay);
   const stepComplete = [
     phoneValid && input.ownerFullName.trim().length >= 2 && Boolean(input.businessName.trim() && input.firstStoreName.trim()),
     Boolean(input.serviceCityId && input.firstStoreVerticalId && input.firstStoreCommercialTypeId && input.firstStoreAddress.trim().length >= 4 && selectedStoreOrigin && input.firstStoreFulfillmentModes.length && enteredHours.length && isValidStoreWorkingHours(enteredHours)),
-    Boolean(selectedProofType && createdCase?.case.firstStoreProofNumberPresent && createdCase.case.firstStoreProofImageUploaded && createdCase.case.storeProfileImage && !proofDetailsDirty),
+    Boolean(selectedProofType && createdCase?.case.firstStoreProofNumberPresent && createdCase.case.storeProfileImage && !proofDetailsDirty),
   ];
   const completedSteps = stepComplete.filter(Boolean).length;
   const joiningReadiness = getFieldJoiningRequirements(createdCase?.case ?? null);
@@ -182,7 +179,6 @@ const theme = useAppearanceTheme();
     wallet: Boolean(input.walletProviderKey),
     operation: Boolean(stepComplete[1]),
     proofNumber: Boolean(selectedProofType && (input.firstStoreProofNumber.trim() || savedDraft?.firstStoreProofNumberPresent)),
-    proofImage: Boolean(proofImage),
     storeImage: Boolean(storeImage && isMediaProvenanceInputValid(storeImage.provenance)),
   };
   const readinessLabels = joiningReadiness.map(({ key, label, saved }) => {
@@ -191,8 +187,7 @@ const theme = useAppearanceTheme();
       (key === "wallet" && walletChanged) ||
       (key === "operation" && operationChanged) ||
       (key === "storeImage" && Boolean(storeImage)) ||
-      (proofDetailsDirty && (key === "proofNumber" || key === "proofImage")) ||
-      (key === "proofImage" && Boolean(proofImage));
+      (proofDetailsDirty && key === "proofNumber");
     const confirmed = saved && !changed;
     return { key, label, confirmed, pending: !confirmed && pendingReadiness[key] };
   });
@@ -332,7 +327,7 @@ const theme = useAppearanceTheme();
     } else {
       const contactPhoneE164 = normalizeYemenPhoneE164(input.contactPhoneE164);
       if (!/^\+[1-9]\d{7,14}$/.test(contactPhoneE164)) {
-        setError("أدخل رقم جوال المالك بصيغة صحيحة مثل 777123456 أو +967777123456 لحفظ المسودة.");
+        setError("أدخل رقم جوال المالك بصيغة صحيحة لحفظ المسودة.");
         return;
       }
       const proofNumber = input.firstStoreProofNumber.trim();
@@ -372,17 +367,14 @@ const theme = useAppearanceTheme();
       }
       setCreatedCase(canonical);
       // The server preserves the encrypted number when omitted. Never resend a saved
-      // number on unrelated draft updates: doing so invalidates the linked proof image.
+      // number on unrelated draft updates: leave the existing private number unchanged.
       setInput((current) => ({ ...current, firstStoreProofNumber: "" }));
       setProofDetailsDirty(false);
       setDraftConflict(false);
       setDraftConflictNeedsRead(false);
       setPendingDraftAttempt(null);
-      // Save the proof before the public image, because each upload advances the case version.
-      const proofSavedCase = proofImage ? await uploadProofImage(canonical, proofImage) : canonical;
-      if (!proofSavedCase) return;
       if (storeImage && isMediaProvenanceInputValid(storeImage.provenance)) {
-        await uploadStoreImage(proofSavedCase, storeImage);
+        await uploadStoreImage(canonical, storeImage);
       }
       if (storeImage && !isMediaProvenanceInputValid(storeImage.provenance)) setError("حُفظت المسودة. أكّد حق عرض صورة الواجهة لإكمال رفعها.");
     } catch (cause) {
@@ -474,7 +466,7 @@ const theme = useAppearanceTheme();
   }
 
   async function pickStoreImage(source: "camera" | "library" = "library") {
-    if (busy || pendingImageAttempt || pendingProofImageAttempt) return;
+    if (busy || pendingImageAttempt) return;
     const permission = source === "camera" ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { setError(source === "camera" ? "يلزم السماح باستخدام الكاميرا لالتقاط صورة المتجر." : "يلزم السماح بالوصول إلى الصور لاختيار صورة المتجر."); return; }
     const result = source === "camera"
@@ -499,32 +491,8 @@ const theme = useAppearanceTheme();
     }
   }
 
-  async function pickProofImage() {
-    if (busy || pendingProofImageAttempt || pendingImageAttempt) return;
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) { setError("يلزم السماح بالوصول إلى الصور لاختيار صورة الإثبات."); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1 });
-    if (result.canceled || !result.assets[0]?.uri) return;
-    const asset = result.assets[0];
-    try {
-      if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) throw new Error("PROOF_IMAGE_SIZE_INVALID");
-      if (!fieldJoiningImageDimensionsSupported(asset.width, asset.height)) throw new Error("PROOF_IMAGE_DIMENSIONS_INVALID");
-      const response = await fetch(asset.uri);
-      if (!response.ok) throw new Error("PROOF_IMAGE_READ_FAILED");
-      const blob = await response.blob();
-      if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("PROOF_IMAGE_SIZE_INVALID");
-      const type = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
-      if (!type) throw new Error("PROOF_IMAGE_TYPE_INVALID");
-      setProofImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "joining-case-proof.png" : "joining-case-proof.jpg"), type, blob });
-      setError("");
-    } catch (cause) {
-      console.warn("Field proof image preparation failed", cause);
-      setError(cause instanceof Error && cause.message === "PROOF_IMAGE_SIZE_INVALID" ? "يجب ألا يتجاوز حجم صورة الإثبات 10 ميغابايت." : cause instanceof Error && cause.message === "PROOF_IMAGE_DIMENSIONS_INVALID" ? "يجب أن تكون أبعاد صورة الإثبات بين 1 و6000 بكسل للعرض والارتفاع." : cause instanceof Error && cause.message === "PROOF_IMAGE_TYPE_INVALID" ? "صيغة صورة الإثبات غير مدعومة. اختر صورة بصيغة JPG أو PNG." : "تعذر تجهيز صورة الإثبات. اختر الصورة مرة أخرى.");
-    }
-  }
-
   async function retryStoreImage() {
-    if (!createdCase || !storeImage || busy || pendingProofImageAttempt) return;
+    if (!createdCase || !storeImage || busy) return;
     setBusy(true);
     setError("");
     try {
@@ -568,48 +536,6 @@ const theme = useAppearanceTheme();
     }
   }
 
-  async function retryProofImage() {
-    if (!createdCase || !proofImage || busy || pendingImageAttempt) return;
-    setBusy(true);
-    setError("");
-    try {
-      await uploadProofImage(createdCase, proofImage, pendingProofImageAttempt ?? undefined);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function uploadProofImage(current: JoiningCaseResponse, image: DshImageUploadInput, existingAttempt?: PendingProofImageAttempt): Promise<JoiningCaseResponse | null> {
-    const attempt = existingAttempt ?? { caseID: current.case.id, expectedVersion: current.case.version, image, idempotencyKey: `field_proof_image_${Crypto.randomUUID()}`, correlationID: `field_proof_image_corr_${Crypto.randomUUID()}` };
-    setPendingProofImageAttempt(attempt);
-    try {
-      const token = await getUsableIdentityAccessToken();
-      const uploaded = await fieldClient().uploadFieldJoiningCaseProofImage(token, attempt.caseID, attempt.image, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
-      const canonical = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID).catch((cause: unknown) => { throw markFieldMediaReadbackUncertain(cause); });
-      if (!fieldDraftMediaUploadConfirmed(uploaded.case, canonical.case, "proof", attempt.expectedVersion)) throw new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH");
-      setCreatedCase(canonical);
-      setProofImage(null);
-      setPendingProofImageAttempt(null);
-      return canonical;
-    } catch (cause) {
-      console.warn("DSH Field proof image upload failed", cause);
-      if (isOutcomeUncertain(cause)) {
-        setError("لم نتأكد من رفع صورة الإثبات بعد. أعد المحاولة للتحقق من حالتها.");
-        return null;
-      }
-      setPendingProofImageAttempt(null);
-      try {
-        const token = await getUsableIdentityAccessToken();
-        const latest = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID);
-        setCreatedCase(latest);
-      } catch (readError) {
-        console.warn("DSH Field case reconciliation after proof image upload failed", readError);
-      }
-      setError("تعذر تأكيد صورة الإثبات. حدّث المسودة قبل إعادة الرفع.");
-    }
-    return null;
-  }
-
   return (
     <View style={{ backgroundColor: theme.background, flex: 1 }}>
       <ScrollView ref={scrollRef} onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={16} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingHorizontal: spacing[3], paddingVertical: spacing[2], paddingBottom: keyboardVisible ? keyboardHeight + spacing[5] : spacing[2] }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -651,7 +577,7 @@ const theme = useAppearanceTheme();
         </View> : null}
         {input.walletProviderKey && !walletProviders.some((provider) => provider.key === input.walletProviderKey) ? <Text style={styles.muted}>القيمة المحفوظة سابقًا: {input.walletProviderKey}. اختر محفظة نشطة لتحديث المسودة.</Text> : null}
         <Text style={styles.label}>رقم جوال المالك</Text>
-        <TextInput onFocus={focusField} accessibilityLabel="رقم جوال المالك" editable={!formLocked} autoCapitalize="none" keyboardType="phone-pad" placeholder="777123456" onBlur={() => setInput((current) => ({ ...current, contactPhoneE164: normalizeYemenPhoneE164(current.contactPhoneE164) }))} placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={input.contactPhoneE164} onChangeText={(value) => setInput((current) => ({ ...current, contactPhoneE164: toAsciiDigits(value).replace(/[^\d+\s()\-]/g, "").slice(0, 19) }))} />
+        <TextInput onFocus={focusField} accessibilityLabel="رقم جوال المالك" editable={!formLocked} autoCapitalize="none" keyboardType="phone-pad" placeholder="أدخل رقم جوال المالك" onBlur={() => setInput((current) => ({ ...current, contactPhoneE164: normalizeYemenPhoneE164(current.contactPhoneE164) }))} placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={input.contactPhoneE164} onChangeText={(value) => setInput((current) => ({ ...current, contactPhoneE164: toAsciiDigits(value).replace(/[^\d+\s()-]/g, "").slice(0, 19) }))} />
         </View>
         <View style={styles.compactCard}>
         <Text style={styles.sectionTitle}>النشاط والمتجر</Text>
@@ -703,7 +629,7 @@ const theme = useAppearanceTheme();
         <Text style={styles.sectionTitle}>بيانات الإثبات</Text>
         <Text style={styles.label}>نوع الإثبات</Text>
         <View style={styles.optionList}>{proofTypeOptions.map((option) => <BthwaniChip key={option.value} disabled={formLocked} label={option.label} onPress={() => {
-          if (selectedProofType !== option.value) { setProofDetailsDirty(true); setProofImage(null); }
+          if (selectedProofType !== option.value) setProofDetailsDirty(true);
           setSelectedProofType(option.value);
         }} selected={selectedProofType === option.value} />)}</View>
         <Text style={styles.label}>{createdCase?.case.firstStoreProofType ? "رقم الإثبات · اختياري عند التعديل" : "رقم الإثبات"}</Text>
@@ -711,14 +637,7 @@ const theme = useAppearanceTheme();
         <TextInput onFocus={focusField} accessibilityLabel="رقم الإثبات، اتركه فارغًا للاحتفاظ بالرقم المسجل عند التعديل" editable={!formLocked} autoCapitalize="characters" placeholder={createdCase?.case.firstStoreProofType ? "رقم جديد فقط عند التصحيح" : "أدخل رقم السجل أو الوثيقة"} placeholderTextColor={theme.colorMuted} style={styles.input} value={input.firstStoreProofNumber} onChangeText={(value) => {
           setInput((current) => ({ ...current, firstStoreProofNumber: value }));
           setProofDetailsDirty(true);
-          setProofImage(null);
         }} />
-          <Text style={styles.label}>صورة الإثبات</Text>
-          {!createdCase?.case.firstStoreProofImageUploaded ? <Text style={styles.muted}>مشفّرة ولا تظهر للعملاء.</Text> : null}
-          {proofImage ? <Image accessibilityLabel="معاينة صورة الإثبات الخاصة" source={{ uri: proofImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="contain" /> : null}
-          <BthwaniButton disabled={formLocked} label={proofImage ? "تغيير صورة الإثبات" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
-          {proofDetailsDirty ? <Text style={styles.muted}>احفظ المسودة ليُرفع الإثبات الجديد تلقائيًا.</Text> : null}
-          {pendingProofImageAttempt && proofImage ? <BthwaniButton disabled={busy || Boolean(pendingImageAttempt)} label="التحقق من رفع صورة الإثبات" onPress={() => void retryProofImage()} variant="secondary" /> : null}
         </View>
         </> : null}
         {activeStep === 1 ? <View style={styles.compactCard}>
@@ -780,7 +699,7 @@ const theme = useAppearanceTheme();
       </> : null}
       {createdCase && activeStep === 2 ? <View accessibilityLiveRegion="polite" style={styles.compactCard}>
         <Text style={styles.muted}>المسودة محفوظة · {joiningCaseStateLabel(createdCase.case.state)}</Text>
-        {pendingImageAttempt && storeImage ? <BthwaniButton busy={busy} disabled={busy || Boolean(pendingProofImageAttempt)} label="التحقق من رفع صورة الواجهة" onPress={() => void retryStoreImage()} variant="secondary" /> : null}
+        {pendingImageAttempt && storeImage ? <BthwaniButton busy={busy} disabled={busy} label="التحقق من رفع صورة الواجهة" onPress={() => void retryStoreImage()} variant="secondary" /> : null}
         <Link href={{ pathname: "/cases", params: { caseId: createdCase.case.id } } as Href} asChild>
           <BthwaniButton label={needsSave ? "العودة إلى مسودات الشركاء" : "المراجعة والإرسال"} variant="secondary" />
         </Link>

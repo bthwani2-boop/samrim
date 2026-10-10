@@ -191,35 +191,6 @@ paths:
         "503": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
   /dsh/joining-cases/{caseId}/proof-image:
-    post:
-      operationId: uploadJoiningCaseProofImage
-      summary: Store a private encrypted proof image for a joining case
-      description: An eligible Field representative uploads the initial evidence during a draft; the bound Partner may replace it while the case needs correction. Field and Partner callers cannot read or download private proof evidence.
-      security: [{ userBearer: [] }]
-      parameters:
-        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
-        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
-        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
-        - { name: caseId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [file]
-              additionalProperties: false
-              properties:
-                file: { type: string, format: binary }
-      responses:
-        "200": { description: Private proof image attached and joining-case readback returned., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
-        "201": { description: Private proof image attached and joining-case readback returned., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
-        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
-        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
-        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
-        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
-        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
-        "503": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
     get:
       operationId: downloadJoiningCaseProofImage
       summary: Download private joining-case proof evidence as an authorized DSH operator
@@ -250,36 +221,6 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
-
-  /dsh/operator/joining-cases/{caseId}/proof-image:
-    post:
-      operationId: uploadOperatorJoiningCaseProofImage
-      summary: Attach initial private joining-case proof image as an authorized DSH operator
-      security: [{ serviceBearer: [] }]
-      parameters:
-        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
-        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
-        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
-        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
-        - { name: caseId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [file]
-              additionalProperties: false
-              properties:
-                file: { type: string, format: binary }
-      responses:
-        "200": { description: Private proof image attached and joining-case readback returned., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
-        "201": { description: Private proof image attached and joining-case readback returned., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
-        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
-        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
-        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
-        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
-        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
 
   /dsh/joining-cases/{caseId}/correct-and-resubmit:
     post:

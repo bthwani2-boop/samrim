@@ -324,21 +324,6 @@ func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotenc
 	return postgres.CreateJoiningCaseForField(ctx, s.db, postgres.CreateJoiningCaseInput{IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ActingActorID: identity.Subject, CorrelationID: strings.TrimSpace(correlationID), EvidenceKeyring: s.evidenceKeys, Request: request})
 }
 
-func (s *Service) UploadJoiningCaseProofImage(ctx context.Context, accessToken, caseID, idempotencyKey, correlationID string, expectedVersion int, declaredContentType string, data []byte) (postgres.JoiningCaseResult, error) {
-	identity, err := s.requireEligibleField(ctx, accessToken)
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	result, err := joiningcase.UploadPrivateProofImage(ctx, s.db, s.evidenceKeys, caseID, identity.Subject, "field", "field-proof-image-upload", idempotencyKey, correlationID, expectedVersion, declaredContentType, data)
-	if err != nil {
-		if errors.Is(err, joiningcase.ErrInvalidInput) {
-			return postgres.JoiningCaseResult{}, ErrInvalidInput
-		}
-		return postgres.JoiningCaseResult{}, err
-	}
-	return result, nil
-}
-
 func (s *Service) ListJoiningCases(ctx context.Context, accessToken, queryText string, limit int, cursor string) (postgres.JoiningCaseListResult, error) {
 	identity, err := s.requireEligibleField(ctx, accessToken)
 	if err != nil {

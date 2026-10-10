@@ -8,48 +8,6 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 )
 
-func (s *JoiningCaseServer) uploadPartnerJoiningCaseProofImage(w http.ResponseWriter, r *http.Request) {
-	if bearerToken(r) == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an authenticated Partner session is required")
-		return
-	}
-	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
-	if !ok {
-		return
-	}
-	data, contentType, ok := readJoiningCaseProofImageUpload(w, r)
-	if !ok {
-		return
-	}
-	result, err := s.service.UploadProofImageForPartner(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, correlation, expected, contentType, data)
-	if err != nil {
-		writeJoiningCaseError(w, err)
-		return
-	}
-	s.writeResult(w, r, responseStatus(result.Replayed), result)
-}
-
-func (s *JoiningCaseServer) uploadOperatorJoiningCaseProofImage(w http.ResponseWriter, r *http.Request) {
-	if !s.auth.Authorized(r) {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
-		return
-	}
-	acting, correlation, idempotency, expected, ok := requiredVersionedCaseHeaders(w, r)
-	if !ok {
-		return
-	}
-	data, contentType, ok := readJoiningCaseProofImageUpload(w, r)
-	if !ok {
-		return
-	}
-	result, err := s.service.UploadProofImageForOperator(r.Context(), r.PathValue("caseId"), acting, idempotency, correlation, expected, contentType, data)
-	if err != nil {
-		writeJoiningCaseError(w, err)
-		return
-	}
-	s.writeResult(w, r, responseStatus(result.Replayed), result)
-}
-
 func (s *JoiningCaseServer) readJoiningCaseProofDetails(w http.ResponseWriter, r *http.Request) {
 	if !s.auth.Authorized(r) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")

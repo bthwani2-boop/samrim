@@ -2,6 +2,13 @@ import type { StoreWorkingHoursInterval } from "./generated/dsh-types";
 
 export type JoiningCaseImageContentType = "image/jpeg" | "image/png";
 
+// React Native FormData uploads local images by URI, not by appending a fetched Blob.
+// Browser uploads retain the Blob representation.
+export function joiningCaseImageMultipartPart(uri: string, name: string, type: string, blob?: Blob): Blob {
+  if (/^(?:file|content):\/\//i.test(uri)) return { uri, name, type } as unknown as Blob;
+  return blob ?? ({ uri, name, type } as unknown as Blob);
+}
+
 export function resolveJoiningCaseImageContentType(
   assetType: string | null | undefined,
   blobType: string | null | undefined,

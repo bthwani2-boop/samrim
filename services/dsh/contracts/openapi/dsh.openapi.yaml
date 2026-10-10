@@ -42,9 +42,6 @@ paths:
   /dsh/joining-cases/{caseId}/proof-details:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1proof-details"
 
-  /dsh/operator/joining-cases/{caseId}/proof-image:
-    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1operator~1joining-cases~1{caseId}~1proof-image"
-
   /dsh/operator/joining-cases/{caseId}/store-image:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1operator~1joining-cases~1{caseId}~1store-image"
 
@@ -761,9 +758,6 @@ paths:
 
   /dsh/field/joining-cases/{caseId}/submit:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1submit"
-
-  /dsh/field/joining-cases/{caseId}/proof-image:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1proof-image"
 
   /dsh/fields/me/financial-summary:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1financial-summary"

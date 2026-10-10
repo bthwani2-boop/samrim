@@ -1,13 +1,11 @@
-import { borders, radius, toAsciiDigits, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniConfirmDialog, useAppearanceTheme } from "@bthwani/design-system/native";
-import { resolveJoiningCaseImageContentType, type CommercialStoreType, type CommerceVertical, type DshImageUploadInput, type JoiningCaseProofType, type JoiningCaseResponse, type ServiceCity, type StoreFulfillmentMode, type StoreWeeklyWorkingHours, type StoreWorkingHoursInterval } from "@bthwani/dsh";
+import type { CommerceVertical, CommercialStoreType, JoiningCaseProofType, JoiningCaseResponse, ServiceCity, StoreFulfillmentMode, StoreWeeklyWorkingHours, StoreWorkingHoursInterval } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Switch, Text, TextInput, View } from "react-native";
-
-import { correctAndResubmitOwnJoiningCase, listCatalogVerticals, listCommercialStoreTypes, readOwnJoiningCase, uploadOwnJoiningCaseProofImage } from "./store-readback-client";
 import { StoreProfileImageEditor } from "./store-profile-image-editor";
+import { correctAndResubmitOwnJoiningCase, listCatalogVerticals, listCommercialStoreTypes, readOwnJoiningCase } from "./store-readback-client";
 
 const WEEKDAYS = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"] as const;
 const DEFAULT_OPEN = "09:00";
@@ -18,7 +16,6 @@ const PROOF_TYPES: ReadonlyArray<{ value: JoiningCaseProofType; label: string }>
   { value: "IDENTITY_DOCUMENT", label: "هوية" },
   { value: "FREELANCE_WORK_DOCUMENT", label: "وثيقة عمل حر" },
 ];
-type ProofImageDraft = Readonly<{ image: DshImageUploadInput; contentSha256: string }>;
 type WorkingIntervalDraft = StoreWorkingHoursInterval & Readonly<{ draftKey: string }>;
 
 function workingIntervalDrafts(intervals: ReadonlyArray<StoreWorkingHoursInterval>): WorkingIntervalDraft[] {
@@ -118,16 +115,12 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
   const [proofNumber, setProofNumber] = useState("");
   const [notes, setNotes] = useState(current.firstStoreNotes ?? "");
   const [fulfillmentModes, setFulfillmentModes] = useState<ReadonlyArray<StoreFulfillmentMode>>(current.firstStoreFulfillmentModes);
-  const [proofImage, setProofImage] = useState<ProofImageDraft | null>(null);
-  const [uploadedProofFingerprint, setUploadedProofFingerprint] = useState("");
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [commercialTypes, setCommercialTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
   const [commercialTypesLoading, setCommercialTypesLoading] = useState(false);
   const [commercialTypesError, setCommercialTypesError] = useState(false);
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionsError, setOptionsError] = useState(false);
-  const [evidenceLoading, setEvidenceLoading] = useState(false);
-  const [proofUploadBusy, setProofUploadBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmResubmit, setConfirmResubmit] = useState(false);
@@ -152,8 +145,6 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     setProofNumber("");
     setNotes(current.firstStoreNotes ?? "");
     setFulfillmentModes(current.firstStoreFulfillmentModes);
-    setProofImage(null);
-    setUploadedProofFingerprint("");
   }, [current.businessName, current.firstStoreAddress, current.firstStoreCommercialTypeId, current.firstStoreFulfillmentModes, current.firstStoreLatitude, current.firstStoreLongitude, current.firstStoreName, current.firstStoreNotes, current.firstStoreProofType, current.firstStoreVerticalId, current.firstStoreWorkingHours, current.ownerFullName, current.serviceCityId, current.version]);
 
   const loadOptions = useCallback(async () => {
@@ -214,80 +205,6 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     setWorkingIntervals((items) => items.length >= 28 ? items : [...items, { draftKey: Crypto.randomUUID(), dayOfWeek, opensAt: DEFAULT_OPEN, closesAt: DEFAULT_CLOSE, closesNextDay: false }]);
   }
 
-  async function refreshEvidenceStatus() {
-    setEvidenceLoading(true);
-    try {
-      const latest = await readOwnJoiningCase();
-      if (latest.case.id === current.id && latest.case.state === "needs_correction") preserveCorrectionDraftAtVersion.current = latest.case.version;
-      onUpdated(latest);
-    } catch (cause) {
-      console.warn("DSH Partner joining-case evidence status read failed", cause);
-      setError("تعذر تحديث حالة صورة الإثبات. تحقق من الاتصال ثم أعد المحاولة.");
-    } finally {
-      setEvidenceLoading(false);
-    }
-  }
-
-  async function chooseProofImage() {
-    if (proofUploadBusy || busy) return;
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setError("يلزم السماح بالوصول إلى الصور لاختيار صورة الإثبات النظامي.");
-      return;
-    }
-    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1 });
-    const asset = picked.canceled ? undefined : picked.assets[0];
-    if (!asset?.uri) return;
-    try {
-      const response = await fetch(asset.uri);
-      if (!response.ok) throw new Error("JOINING_CASE_PROOF_IMAGE_READ_FAILED");
-      const blob = await response.blob();
-      if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("JOINING_CASE_PROOF_IMAGE_SIZE_INVALID");
-      const mimeType = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
-      if (!mimeType) throw new Error("JOINING_CASE_PROOF_IMAGE_TYPE_INVALID");
-      const digest = new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, await blob.arrayBuffer()));
-      const contentSha256 = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
-      setProofImage({ contentSha256, image: { uri: asset.uri, name: asset.fileName ?? (mimeType === "image/png" ? "joining-case-proof.png" : "joining-case-proof.jpg"), type: mimeType, blob } });
-      setUploadedProofFingerprint("");
-      setError("");
-    } catch (cause) {
-      console.warn("DSH Partner joining-case proof image preparation failed", cause);
-      setError(cause instanceof Error && cause.message === "JOINING_CASE_PROOF_IMAGE_TYPE_INVALID" ? "صيغة صورة الإثبات غير مدعومة. اختر صورة JPG أو PNG." : "تعذر تجهيز صورة الإثبات أو تجاوزت 10 ميغابايت. اختر صورة أخرى.");
-    }
-  }
-
-  async function uploadProofImage() {
-    if (!proofImage || proofUploadBusy || busy) return;
-    const fingerprint = `${proofType}|${toAsciiDigits(proofNumber.trim())}`;
-    if (!proofType || !toAsciiDigits(proofNumber.trim())) {
-      setError("أدخل نوع الإثبات ورقمه قبل رفع الصورة الخاصة حتى يرتبط الإثبات الصحيح بالملف.");
-      return;
-    }
-    setProofUploadBusy(true);
-    setError("");
-    try {
-      const identity = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `${current.id}:${current.version}:${proofImage.contentSha256}`);
-      const updated = await uploadOwnJoiningCaseProofImage(current.id, proofImage.image, current.version, `partner_case_proof_${identity}`, `partner_case_proof_corr_${identity}`);
-      preserveCorrectionDraftAtVersion.current = updated.case.version;
-      onUpdated(updated);
-      setProofImage(null);
-      setUploadedProofFingerprint(fingerprint);
-      if (!updated.case.firstStoreProofImageUploaded) setError("استجاب الخادم لكن لم تظهر صورة الإثبات كمرتبطة بالطلب. أعد قراءة الحالة قبل إعادة الإرسال.");
-    } catch (cause) {
-      console.warn("DSH Partner joining-case proof image upload failed", cause);
-      try {
-        const latest = await readOwnJoiningCase();
-        if (latest.case.id === current.id && latest.case.state === "needs_correction") preserveCorrectionDraftAtVersion.current = latest.case.version;
-        onUpdated(latest);
-      } catch (readError) {
-        console.warn("DSH Partner joining-case proof image readback failed", readError);
-      }
-      setError("تعذر تأكيد رفع صورة الإثبات. أُعيدت قراءة الحالة؛ أعد المحاولة بالصورة نفسها لإتمام التسوية.");
-    } finally {
-      setProofUploadBusy(false);
-    }
-  }
-
   async function correctAndResubmit() {
     const nextOwnerName = ownerFullName.trim();
     const nextBusinessName = businessName.trim();
@@ -300,13 +217,8 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     const nextLongitude = parseCoordinate(longitude);
     const nextWorkingHours = storeWorkingHours(workingIntervals);
     const hoursError = workingHoursIssue(nextWorkingHours.intervals);
-    if (nextOwnerName.length < 2 || nextOwnerName.length > 160 || nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || nextAddress.length < 4 || nextAddress.length > 500 || proofNumberLength < 1 || proofNumberLength > 128 || nextNotes.length > 1000 || !proofType || !serviceCityId || !verticalId || !commercialTypeId || nextLatitude === null || nextLongitude === null || nextLatitude < -90 || nextLatitude > 90 || nextLongitude < -180 || nextLongitude > 180 || fulfillmentModes.length === 0 || hoursError) {
+    if (nextOwnerName.length < 2 || nextOwnerName.length > 160 || nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || nextAddress.length < 4 || nextAddress.length > 500 || (proofNumberLength < 1 && !current.firstStoreProofNumberPresent) || proofNumberLength > 128 || nextNotes.length > 1000 || !proofType || !serviceCityId || !verticalId || !commercialTypeId || nextLatitude === null || nextLongitude === null || nextLatitude < -90 || nextLatitude > 90 || nextLongitude < -180 || nextLongitude > 180 || fulfillmentModes.length === 0 || hoursError) {
       setError(hoursError || "أكمل اسم المالك والمتجر والنشاط والعنوان والمدينة والتصنيف والإثبات وطريقة توصيل واحدة على الأقل ضمن الحدود الموضحة.");
-      return;
-    }
-    const requiredProofFingerprint = `${proofType}|${nextProofNumber}`;
-    if (uploadedProofFingerprint !== requiredProofFingerprint) {
-      setError("ارفع صورة حديثة للإثبات بعد إدخال نوعه ورقمه. لن يُعاد الإرسال بصورة قديمة مرتبطة ببيانات سابقة.");
       return;
     }
     setBusy(true);
@@ -333,7 +245,6 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
         expectedVersion: current.version,
       });
       onUpdated(resubmitted);
-      if (!resubmitted.case.firstStoreProofImageUploaded) setError("تم تحديث حالة الطلب، لكن صورة الإثبات غير موجودة؛ لا تعتبر بيانات الانضمام مكتملة. أعد رفع الصورة بالطريقة المعتمدة ثم اقرأ الحالة من جديد.");
     } catch (nextError) {
       try {
         const latest = await readOwnJoiningCase();
@@ -353,14 +264,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
           && latestCase.firstStoreProofType === proofType
           && (latestCase.firstStoreNotes ?? "") === nextNotes
           && sameValues(latestCase.firstStoreFulfillmentModes, fulfillmentModes);
-        if (submittedMatches && latestCase.firstStoreProofImageUploaded) {
-          setError("");
-          return;
-        }
-        if (submittedMatches && !latestCase.firstStoreProofImageUploaded) {
-          setError("أُعيدت قراءة الطلب وهو مرسل، لكن صورة الإثبات غير موجودة؛ لا تعتبر بيانات الانضمام مكتملة. أعد رفع الصورة بالطريقة المعتمدة ثم اقرأ الحالة من جديد.");
-          return;
-        }
+        if (submittedMatches) { setError(""); return; }
       } catch (readError) {
         console.warn("DSH Partner correction recovery read failed", readError);
       }
@@ -373,8 +277,6 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
         setError("نوع المتجر لم يعد نشطًا لهذه الفئة. أعد قراءة الأنواع واختر نوعًا متاحًا.");
       } else if (code === "VERSION_CONFLICT" || code === "STATE_CONFLICT") {
         setError("تغيّرت الحالة أثناء التصحيح. أعد قراءة حالة الانضمام ثم حاول مجددًا.");
-      } else if (code === "PROOF_IMAGE_REQUIRED") {
-        setError("ارفع صورة إثبات جديدة بعد إدخال الرقم والنوع الحاليين ثم أعد الإرسال.");
       } else {
         setError("تعذر حفظ التصحيح وإعادة الإرسال. تحقق من الاتصال ثم أعد المحاولة.");
       }
@@ -383,8 +285,6 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     }
   }
 
-  const imageUploaded = current.firstStoreProofImageUploaded;
-  const proofReadyForThisCorrection = uploadedProofFingerprint === `${proofType}|${toAsciiDigits(proofNumber.trim())}` && Boolean(proofType) && Boolean(toAsciiDigits(proofNumber.trim()));
   const sortedWorkingIntervals = [...workingIntervals].sort((left, right) => left.dayOfWeek - right.dayOfWeek || left.opensAt.localeCompare(right.opensAt) || left.closesAt.localeCompare(right.closesAt));
 
   return (
@@ -393,18 +293,6 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       <Text style={styles.reason}>{current.correctionReason || "طلب المشغّل تصحيح البيانات."}</Text>
       <Text style={styles.phone}>رقم الهاتف المعتمد: <Text style={styles.phoneValue}>{current.contactPhoneE164}</Text></Text>
       <StoreProfileImageEditor value={value} onUpdated={onUpdated} />
-      <View style={styles.evidenceBox} accessibilityLabel="حالة صورة الإثبات النظامي">
-        <Text style={styles.label}>صورة الإثبات النظامي المطلوبة</Text>
-        <Text accessibilityRole="alert" style={proofReadyForThisCorrection ? styles.success : styles.error}>{proofReadyForThisCorrection ? "رُفعت صورة إثبات جديدة ومطابقة لنوع الإثبات ورقمه الحاليين." : imageUploaded ? "الصورة الموجودة مرتبطة ببيانات سابقة. ارفع صورة حديثة بعد إدخال نوع الإثبات ورقمه قبل إعادة الإرسال." : "لم تُرفع صورة الإثبات بعد. لن يمكن إعادة الإرسال قبل رفعها وربطها بالطلب."}</Text>
-        {!proofReadyForThisCorrection ? <>
-          <Text style={styles.muted}>ستُرسل الصورة إلى مساحة إثبات خاصة بالطلب، ولا تعرض هذه الشاشة الصورة أو رابطها. صورة واجهة المتجر لا تُعد إثباتًا نظاميًا.</Text>
-          <Text style={styles.muted}>أدخل نوع الإثبات ورقمه في الحقول أدناه أولًا؛ إن غيّرت أيًا منهما بعد الرفع، أعد رفع الصورة المطابقة.</Text>
-          {proofImage ? <Text style={styles.muted}>تم اختيار صورة للإثبات. ارفعها لتأكيد ربطها بهذا الطلب.</Text> : null}
-          <BthwaniButton disabled={proofUploadBusy || busy} label={proofImage ? "اختيار صورة إثبات أخرى" : "اختيار صورة الإثبات"} onPress={() => void chooseProofImage()} variant="secondary" />
-          {proofImage ? <BthwaniButton busy={proofUploadBusy} disabled={busy} label="رفع صورة الإثبات الخاصة" onPress={() => void uploadProofImage()} variant="secondary" /> : null}
-        </> : null}
-        <BthwaniButton busy={evidenceLoading} disabled={busy} label="إعادة قراءة حالة الإثبات" onPress={() => void refreshEvidenceStatus()} variant="secondary" />
-      </View>
       <View style={styles.locationBox}>
         <Text style={styles.label}>موقع المتجر الثابت</Text>
         <Text style={styles.muted}>صحّح إحداثيات المتجر إذا طلب فريق التشغيل ذلك. احفظ نقطة المتجر نفسها، لا موقع الهاتف.</Text>
@@ -461,7 +349,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
         <Text style={styles.label}>نوع الإثبات</Text>
         <View style={styles.cityList}>{PROOF_TYPES.map((item) => <BthwaniChip key={item.value} disabled={busy} label={item.label} onPress={() => setProofType(item.value)} selected={proofType === item.value} />)}</View>
         <Text style={styles.label}>رقم الإثبات</Text>
-        <TextInput accessibilityLabel="رقم الإثبات النظامي" editable={!busy} maxLength={128} onChangeText={(nextValue) => setProofNumber(toAsciiDigits(nextValue))} placeholder="رقم السجل أو الوثيقة" value={proofNumber} style={styles.input} />
+        <TextInput accessibilityLabel="رقم الإثبات النظامي" editable={!busy} maxLength={128} onChangeText={(nextValue) => setProofNumber(toAsciiDigits(nextValue))} placeholder={current.firstStoreProofNumberPresent ? "اتركه فارغًا للاحتفاظ بالرقم السابق" : "رقم السجل أو الوثيقة"} value={proofNumber} style={styles.input} />
       </View>
       <View style={styles.scheduleBox}>
         <Text style={styles.label}>طريقة التوصيل والاستلام</Text>
@@ -471,7 +359,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       <Text style={styles.label}>ملاحظات (اختياري)</Text>
       <TextInput accessibilityLabel="ملاحظات طلب الانضمام" editable={!busy} maxLength={1000} multiline onChangeText={setNotes} placeholder="أي تفاصيل إضافية تساعد في مراجعة الطلب" value={notes} style={[styles.input, styles.multiline]} />
       <View style={styles.locationBox}><Text style={styles.label}>أوضاع الطلب المثبتة عند الانضمام</Text><Text style={styles.muted}>{current.firstStoreFulfillmentModes.map(fulfillmentModeLabel).join(" · ") || "لم تُحدد طريقة توصيل بعد"}</Text><Text style={styles.muted}>اختيارك أعلاه سيُحفظ مع التصحيح ذريًا. بعد إنشاء المتجر يديره المشغّل من لوحة التحكم.</Text></View>
-      <BthwaniButton busy={busy} disabled={optionsLoading || evidenceLoading || proofUploadBusy || !proofReadyForThisCorrection} label="مراجعة التصحيح وإعادة الإرسال" onPress={() => setConfirmResubmit(true)} />
+      <BthwaniButton busy={busy} disabled={optionsLoading} label="مراجعة التصحيح وإعادة الإرسال" onPress={() => setConfirmResubmit(true)} />
       <BthwaniConfirmDialog
         busy={busy}
         confirmLabel="حفظ وإعادة الإرسال"
@@ -510,7 +398,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     muted: { ...typography.bodySm, color: theme.colorMuted },
     optionError: { gap: spacing[2] },
     locationBox: { backgroundColor: theme.structureSoft, borderRadius: radius.sm, gap: spacing[1], padding: spacing[2] },
-    evidenceBox: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[2] },
     scheduleBox: { backgroundColor: theme.structureSoft, borderRadius: radius.sm, gap: spacing[2], padding: spacing[2] },
     dayCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[2] },
     dayHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },

@@ -1,4 +1,4 @@
-import { type CommercialStoreType, type CommerceVertical, createDshMobileClient, type CorrectJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput, type PartnerAccessibleStorePage, type PartnerStoreOperationalAvailabilityMutationResponse, type PartnerStoreOperationalAvailabilityResponse, type ServiceCity, type StoreAccessGrantListResponse, type StoreAccessGrantMutationResponse, type StoreAccessGrantPermissionsRequest, type StoreAccessGrantTransitionRequest, type StoreAccessInvitationCreateRequest, type StoreAccessInvitationDecisionRequest, type StoreAccessPermission, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
+import { type CommerceVertical, type CommercialStoreType, type CorrectJoiningCaseRequest, createDshMobileClient, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput, type PartnerAccessibleStorePage, type PartnerStoreOperationalAvailabilityMutationResponse, type PartnerStoreOperationalAvailabilityResponse, type ServiceCity, type StoreAccessGrantListResponse, type StoreAccessGrantMutationResponse, type StoreAccessGrantPermissionsRequest, type StoreAccessGrantTransitionRequest, type StoreAccessInvitationCreateRequest, type StoreAccessInvitationDecisionRequest, type StoreAccessPermission, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
@@ -68,11 +68,6 @@ export async function activateOwnStoreAccessInvitation(grantID: string, expected
 export async function correctAndResubmitOwnJoiningCase({ caseID, input, expectedVersion }: OwnJoiningCaseCorrection): Promise<JoiningCaseResponse> {
 	const token = await accessToken();
 	return dshClient().correctAndResubmitJoiningCase(token, caseID, input, expectedVersion, `partner_case_correction_${Crypto.randomUUID()}`, `partner_case_correction_corr_${Crypto.randomUUID()}`);
-}
-
-export async function uploadOwnJoiningCaseProofImage(caseID: string, image: DshImageUploadInput, expectedVersion: number, idempotencyKey: string, correlationID: string): Promise<JoiningCaseResponse> {
-  const token = await accessToken();
-  return dshClient().uploadJoiningCaseProofImage(token, caseID, image, expectedVersion, idempotencyKey, correlationID);
 }
 
 export async function uploadOwnJoiningCaseStoreImage(caseID: string, image: DshImageUploadInput, provenance: MediaProvenanceInput, expectedVersion: number, idempotencyKey: string, correlationID: string): Promise<JoiningCaseResponse> {

@@ -414,8 +414,6 @@ func UpdateFieldJoiningCaseDraft(ctx context.Context, db *sql.DB, input UpdateFi
 			numberChanged = subtle.ConstantTimeCompare(previous, []byte(proofNumber)) != 1
 		}
 	}
-	// An uploaded proof image is tied to the exact type and number.
-	proofDetailsChanged := current.Case.FirstStoreProofType != request.FirstStoreProofType || numberChanged
 	if request.Phone != current.Case.ContactPhoneE164 {
 		phones := []string{current.Case.ContactPhoneE164, request.Phone}
 		sort.Strings(phones)
@@ -460,11 +458,6 @@ func UpdateFieldJoiningCaseDraft(ctx context.Context, db *sql.DB, input UpdateFi
 		_, err = tx.ExecContext(ctx, `INSERT INTO dsh.joining_case_private_evidence(joining_case_id,proof_number_key_id,proof_number_ciphertext) VALUES($1,$2,$3) ON CONFLICT(joining_case_id) DO UPDATE SET proof_number_key_id=EXCLUDED.proof_number_key_id,proof_number_ciphertext=EXCLUDED.proof_number_ciphertext,updated_at=clock_timestamp()`, input.CaseID, keyID, ciphertext)
 		if err != nil {
 			return JoiningCaseResult{}, fmt.Errorf("update encrypted Field draft proof number: %w", err)
-		}
-	}
-	if proofDetailsChanged && current.Case.FirstStoreProofImageUploaded {
-		if _, err := tx.ExecContext(ctx, `UPDATE dsh.joining_case_private_evidence SET proof_image_key_id=NULL, proof_image_ciphertext=NULL, proof_image_content_type=NULL, proof_image_ciphertext_sha256=NULL, proof_image_byte_size=NULL, proof_image_uploaded_at=NULL, updated_at=clock_timestamp() WHERE joining_case_id=$1`, input.CaseID); err != nil {
-			return JoiningCaseResult{}, fmt.Errorf("invalidate outdated Field joining-case proof image: %w", err)
 		}
 	}
 	resultVersion := input.ExpectedVersion + 1
@@ -677,7 +670,7 @@ func ValidateJoiningCaseSubmissionReadiness(current JoiningCaseRecord, expectedV
 }
 
 func ValidateJoiningCaseIntakeReadiness(current JoiningCaseRecord) error {
-	if _, validProvider := NormalizeWalletProviderKey(current.WalletProviderKey); strings.TrimSpace(current.OwnerFullName) == "" || strings.TrimSpace(current.BusinessName) == "" || strings.TrimSpace(current.FirstStoreName) == "" || !validProvider || strings.TrimSpace(current.FirstStoreAddress) == "" || !ValidateStoreWorkingHours(current.FirstStoreWorkingHours) || strings.TrimSpace(current.FirstStoreProofType) == "" || !current.FirstStoreProofNumberPresent || !current.FirstStoreProofImageUploaded || current.StoreProfileImage == nil {
+	if _, validProvider := NormalizeWalletProviderKey(current.WalletProviderKey); strings.TrimSpace(current.OwnerFullName) == "" || strings.TrimSpace(current.BusinessName) == "" || strings.TrimSpace(current.FirstStoreName) == "" || !validProvider || strings.TrimSpace(current.FirstStoreAddress) == "" || !ValidateStoreWorkingHours(current.FirstStoreWorkingHours) || strings.TrimSpace(current.FirstStoreProofType) == "" || !current.FirstStoreProofNumberPresent || current.StoreProfileImage == nil {
 		return ErrJoiningCaseState
 	}
 	if strings.TrimSpace(current.FirstStoreServiceCityID) == "" {
@@ -812,15 +805,8 @@ func correctAndResubmitJoiningCase(ctx context.Context, db *sql.DB, input Correc
 	if current.Case.PartnerActorID == "" || current.Case.PartnerActorID != actorID {
 		return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
 	}
-	if !current.Case.FirstStoreProofImageUploaded {
-		return JoiningCaseResult{}, ErrJoiningCaseProofImageRequired
-	}
-	var freshProofImage bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.joining_case_private_evidence_audit WHERE joining_case_id=$1 AND event_type='proof_image_uploaded' AND authority_source='partner' AND acting_actor_id=$2 AND result_version=$3)`, caseID, actorID, expectedVersion).Scan(&freshProofImage); err != nil {
-		return JoiningCaseResult{}, fmt.Errorf("verify fresh partner proof image for correction: %w", err)
-	}
-	if !freshProofImage {
-		return JoiningCaseResult{}, ErrJoiningCaseProofImageRequired
+	if strings.TrimSpace(input.FirstStoreProofNumber) == "" && !current.Case.FirstStoreProofNumberPresent {
+		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
 	if strings.TrimSpace(input.FirstStoreProofNumber) != "" && input.EvidenceKeyring == nil {
 		return JoiningCaseResult{}, errors.New("DSH joining-case evidence keyring is required")
