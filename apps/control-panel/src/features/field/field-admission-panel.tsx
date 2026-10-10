@@ -1,13 +1,13 @@
 "use client";
 
 import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
-import { type FieldAdmission, type JoiningCaseListResponse, type OperatorFieldLatestJoiningCase, type ServiceCity, type ServiceCityListResponse, fieldAdmissionStateLabel, joiningCaseStateLabel } from "@bthwani/dsh";
+import { type FieldAdmission, fieldAdmissionStateLabel, type JoiningCaseListResponse, joiningCaseStateLabel, type OperatorFieldLatestJoiningCase, type ServiceCity, type ServiceCityListResponse } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import styles from "./field-workbench.module.css";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
 import { useWalletProviders, type WalletProviderOption } from "../wallet-provider/use-wallet-providers";
+import styles from "./field-workbench.module.css";
 
 type LatestStore = Readonly<{ storeId: string; storeName: string; joiningCaseId: string; createdAt: string }>;
 type FieldAccount = ActorRoleView & Readonly<{ admission: FieldAdmission | null; latestStore?: LatestStore | null; joiningCaseCount?: number; latestJoiningCase?: OperatorFieldLatestJoiningCase | null }>;
@@ -445,7 +445,7 @@ function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading
         <input id="field-search" type="search" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="اسم أو هاتف" />
       </label>
       <details className="field-roster-filter-disclosure">
-        <summary aria-label={activeFilterCount ? "المرشحات، " + String(activeFilterCount) + " مرشح نشط" : "المرشحات"}>المرشحات{activeFilterCount ? <span className="field-filter-active-count" aria-hidden="true">{activeFilterCount}</span> : null}</summary>
+        <summary aria-label={activeFilterCount ? `المرشحات، ${activeFilterCount} مرشح نشط` : "المرشحات"}>المرشحات{activeFilterCount ? <span className="field-filter-active-count" aria-hidden="true">{activeFilterCount}</span> : null}</summary>
         <fieldset className="field-roster-filter-panel">
           <legend className="visually-hidden">مرشحات سجل الميدانيين</legend>
           <p className="field-roster-filter-note">البحث بالاسم أو الهاتف والمدينة يصل إلى السجل عبر الخدمة. بقية المرشحات والترتيب تطبّق على الصفحات المحمّلة.</p>
@@ -469,7 +469,7 @@ function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading
     {items.length > 0 ? <>
       {/* biome-ignore lint/a11y/noNoninteractiveTabindex: Keep the horizontally scrollable roster reachable by keyboard. */}
       <section className="operations-table-wrap field-agent-table-wrap" aria-label="سجل الميدانيين" tabIndex={0} aria-describedby="field-roster-scroll-hint">
-      <output className="field-filter-count" aria-live="polite">{visibleItems.length} من {items.length} سجلًا محمّلًا</output>
+      <p className="field-filter-count" aria-live="polite">{visibleItems.length} من {items.length} سجلًا محمّلًا</p>
       <p id="field-roster-scroll-hint" className="field-roster-scroll-hint">مرّر السجل أفقيًا لعرض بقية الأعمدة؛ يبقى اسم الميداني والهاتف ظاهرين.</p>
       <table className="operations-table field-agent-table"><caption className="visually-hidden">سجل الميدانيين، اختر عنوان العمود للترتيب وحرك السجل أفقيًا لعرض بقية الأعمدة</caption><thead><tr>
       <th scope="col"><div className="field-column-heading">{sortButton("name", "الميداني والهاتف")}</div></th>

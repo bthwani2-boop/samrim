@@ -56,7 +56,7 @@ export default function FieldAccount() {
       </BthwaniSurface>
       {profileState.kind === "missing" || profileState.kind === "error" ? <BthwaniButton label="تحديث حالة التفعيل" onPress={() => void refreshProfile()} variant="secondary" /> : null}
 
-      <StoreAccessInvitationSummary compact onPress={() => router.push("/invitations" as Href)} />
+      {profileActionability === "available" ? <StoreAccessInvitationSummary compact onPress={() => router.push("/invitations" as Href)} /> : null}
 
       <View style={styles.settings}>
         <BthwaniNavigationRow compact description={`المظهر الحالي: ${appearanceLabel}`} icon="appearance" title="مظهر التطبيق" onPress={() => setShowAppearance((current) => !current)} />
