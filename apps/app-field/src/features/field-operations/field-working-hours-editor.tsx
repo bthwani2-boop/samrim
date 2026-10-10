@@ -44,6 +44,7 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
   const [closesNextDay, setClosesNextDay] = useState(false);
   const [editingDay, setEditingDay] = useState<number | null>(null);
   const [showWeekDetails, setShowWeekDetails] = useState(false);
+  const [showScheduler, setShowScheduler] = useState(false);
   const intervals = toStoreWorkingHoursIntervals(value);
   const quickPeriodValid = isValidLocalTime(opensAt) && isValidLocalTime(closesAt) && (opensAt !== closesAt || closesNextDay);
   const invalidTime = Object.values(value).some((dayIntervals) => dayIntervals.some((interval) =>
@@ -75,31 +76,33 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
     setSelectedDays(new Set());
   }
 
-  return <View style={styles.card}>
-    <Text style={styles.cardTitle}>جدول الأسبوع</Text>
-    <Text style={styles.muted}>حدد الأيام المتشابهة، ثم طبّق فترة واحدة عليها. يمكنك فتح يوم منفرد لإضافة فترة أو تعديلها.</Text>
-
-    <Text style={styles.label}>أيام تطبيق الفترة</Text>
+  return <View style={styles.compactCard}>
+    <View style={styles.orderHeader}>
+      <Text style={styles.cardTitle}>ساعات العمل</Text>
+      <BthwaniButton disabled={disabled} label={showScheduler ? "إخفاء" : intervals.length ? "تعديل" : "تحديد"} onPress={() => setShowScheduler((current) => !current)} variant="secondary" />
+    </View>
+    <Text style={styles.muted}>{intervals.length ? `${weekdays.filter(({ day }) => (value[day] ?? []).length > 0).length} أيام · ${intervals.length} فترات` : "لم تُحدد ساعات العمل"}</Text>
+    {showScheduler ? <>
+    <Text style={styles.label}>الأيام</Text>
     <View style={styles.optionList}>
       {weekdays.map(({ day, label }) => <BthwaniChip key={day} disabled={disabled} label={label} onPress={() => toggleSelectedDay(day)} selected={selectedDays.has(day)} />)}
       <BthwaniChip disabled={disabled} label={selectedDays.size === weekdays.length ? "إلغاء تحديد الأيام" : "كل الأسبوع"} onPress={() => setSelectedDays((current) => current.size === weekdays.length ? new Set() : new Set(weekdays.map(({ day }) => day)))} selected={selectedDays.size === weekdays.length} />
     </View>
 
-    <Text style={styles.label}>الفترة</Text>
     <View style={styles.optionList}>
       <TextInput accessibilityLabel="بداية فترة العمل" editable={!disabled} keyboardType="numbers-and-punctuation" maxLength={5} placeholder="من 09:00" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput, { flex: 1 }]} value={opensAt} onChangeText={setOpensAt} />
       <TextInput accessibilityLabel="نهاية فترة العمل" editable={!disabled} keyboardType="numbers-and-punctuation" maxLength={5} placeholder="إلى 17:00" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput, { flex: 1 }]} value={closesAt} onChangeText={setClosesAt} />
     </View>
     <View style={styles.orderHeader}>
       <Switch disabled={disabled} value={closesNextDay} onValueChange={setClosesNextDay} />
-      <Text style={[styles.muted, { flex: 1 }]}>ينتهي وقت الإغلاق في اليوم التالي</Text>
+      <Text style={[styles.muted, { flex: 1 }]}>إغلاق في اليوم التالي</Text>
       <BthwaniButton disabled={disabled || selectedDays.size === 0 || !quickPeriodValid} label="تطبيق على الأيام المحددة" onPress={applyQuickPeriod} variant="secondary" />
     </View>
     {opensAt || closesAt ? <Text style={quickPeriodValid ? styles.muted : styles.error}>{quickPeriodValid ? `ستستبدل الفترة الحالية في ${selectedDays.size.toLocaleString("ar-YE")} أيام محددة.` : "أدخل وقتين بصيغة 24 ساعة، مثل 09:00 و17:00."}</Text> : null}
 
     <View style={styles.orderHeader}>
       <Text style={styles.label}>ملخص الأسبوع</Text>
-      <BthwaniButton disabled={disabled} label={showWeekDetails ? "إخفاء التفاصيل" : "تعديل الأيام بالتفصيل"} variant="secondary" onPress={() => setShowWeekDetails((current) => !current)} />
+      <BthwaniButton disabled={disabled} label={showWeekDetails ? "إخفاء" : "تفاصيل الأيام"} variant="secondary" onPress={() => setShowWeekDetails((current) => !current)} />
     </View>
     {showWeekDetails ? weekdays.map(({ day, label }) => {
       const dayIntervals = value[day] ?? [];
@@ -131,7 +134,8 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
           </View>
         </View> : <Text style={styles.muted}>مغلق. اختر هذا اليوم أعلاه لإضافة فترة مشتركة.</Text> : null}
       </View>;
-    }) : <Text style={styles.muted}>{intervals.length ? `عدد الأيام المفتوحة: ${weekdays.filter(({ day }) => (value[day] ?? []).length > 0).length} · عدد الفترات: ${intervals.length}` : "لم تحدد ساعات العمل بعد."}</Text>}
+    }) : null}
+    </> : null}
 
     {invalidSchedule ? <Text accessibilityRole="alert" style={styles.error}>تحقق من صيغة الوقت وترتيب الفترات: لا تتداخل الفترات، ويمكن للفترة أن تنتهي في اليوم التالي أو تستمر 24 ساعة.</Text> : null}
   </View>;

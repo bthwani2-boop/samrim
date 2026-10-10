@@ -1,12 +1,12 @@
-import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
+import { borders, normalizeYemenPhoneE164, spacing } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniMap, type BthwaniMapCoordinate, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type CommerceVertical, type CommercialStoreType, type CreateFieldJoiningCaseDraftRequest, type CreateJoiningCaseRequest, type DshImageUploadInput, fieldAdmissionStateLabel, isMediaProvenanceInputValid, type JoiningCaseProofType, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, resolveJoiningCaseImageContentType, type ServiceCity } from "@bthwani/dsh";
+import { type CommerceVertical, type CommercialStoreType, type CreateFieldJoiningCaseDraftRequest, type CreateJoiningCaseRequest, type DshImageUploadInput, fieldAdmissionStateLabel, isMediaProvenanceInputValid, isValidStoreWorkingHours, type JoiningCaseProofType, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, resolveJoiningCaseImageContentType, type ServiceCity } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { type Href, Link, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Image, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
@@ -25,7 +25,7 @@ type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvena
 type WalletProvider = Awaited<ReturnType<ReturnType<typeof fieldClient>["listWalletProviders"]>>["walletProviders"][number];
 type PendingImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: StoreImageDraft; idempotencyKey: string; correlationID: string }>;
 type PendingProofImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: DshImageUploadInput; idempotencyKey: string; correlationID: string }>;
-const joiningSteps = ["المالك", "المتجر", "الموقع", "التشغيل", "الإثبات"] as const;
+const joiningSteps = ["البيانات الأساسية", "المتجر والتشغيل", "الإثبات والمراجعة"] as const;
 const proofTypeOptions: ReadonlyArray<{ value: JoiningCaseProofType; label: string }> = [
   { value: "COMMERCIAL_REGISTRATION", label: "سجل تجاري" },
   { value: "IDENTITY_DOCUMENT", label: "هوية" },
@@ -114,14 +114,22 @@ const theme = useAppearanceTheme();
   const preloadedVerticalID = useRef("");
   const formLocked = busy || caseLoading || Boolean(pendingDraftAttempt) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt);
   const phoneValid = /^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(input.contactPhoneE164));
+  const enteredHours = toStoreWorkingHoursIntervals(workingHoursByDay);
   const stepComplete = [
-    phoneValid && input.ownerFullName.trim().length >= 2,
-    Boolean(input.businessName.trim() && input.firstStoreName.trim() && input.serviceCityId && input.firstStoreVerticalId && input.firstStoreCommercialTypeId),
-    Boolean(input.firstStoreAddress.trim().length >= 4 && selectedStoreOrigin),
-    input.firstStoreFulfillmentModes.length > 0 && toStoreWorkingHoursIntervals(workingHoursByDay).length > 0,
-    Boolean(selectedProofType && (input.firstStoreProofNumber.trim() || createdCase?.case.firstStoreProofImageUploaded) && createdCase?.case.firstStoreProofImageUploaded && createdCase?.case.storeProfileImage && !proofDetailsDirty),
+    phoneValid && input.ownerFullName.trim().length >= 2 && Boolean(input.businessName.trim() && input.firstStoreName.trim()),
+    Boolean(input.serviceCityId && input.firstStoreVerticalId && input.firstStoreCommercialTypeId && input.firstStoreAddress.trim().length >= 4 && selectedStoreOrigin && input.firstStoreFulfillmentModes.length && enteredHours.length && isValidStoreWorkingHours(enteredHours)),
+    Boolean(selectedProofType && createdCase?.case.firstStoreProofImageUploaded && createdCase.case.storeProfileImage && !proofDetailsDirty),
   ];
   const completedSteps = stepComplete.filter(Boolean).length;
+  const missingBeforeSubmission = [
+    !stepComplete[0] ? "البيانات الأساسية" : "",
+    !stepComplete[1] ? "المتجر والتشغيل" : "",
+    !input.walletProviderKey ? "المحفظة الرسمية" : "",
+    !selectedProofType ? "نوع الإثبات" : "",
+    !input.firstStoreProofNumber.trim() && !createdCase?.case.firstStoreProofImageUploaded ? "رقم الإثبات" : "",
+    !createdCase?.case.firstStoreProofImageUploaded || proofDetailsDirty ? "صورة الإثبات" : "",
+    !createdCase?.case.storeProfileImage ? "صورة الواجهة" : "",
+  ].filter(Boolean);
 
   useEffect(() => { navigation.setOptions({ headerTitle }); }, [headerTitle, navigation]);
 
@@ -527,8 +535,9 @@ const theme = useAppearanceTheme();
   }
 
   return (
-    <View style={styles.container} accessibilityLabel="إضافة شريك">
-      <Text style={styles.muted}>{caseId || createdCase ? "تعديل مسودة الشريك؛ احفظ تغييرات كل مرحلة قبل الإرسال." : "أكمل البيانات على مراحل، ويمكنك حفظ مسودة بعد إدخال رقم الجوال."}</Text>
+    <View style={{ backgroundColor: theme.background, flex: 1 }}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingHorizontal: spacing[3], paddingVertical: spacing[2] }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <View style={styles.compactContainer} accessibilityLabel="إضافة شريك">
       {caseLoading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المسودة…</Text></View> : null}
       {caseId && !caseLoading && error.startsWith("تعذر قراءة المسودة") ? <BthwaniButton label="إعادة قراءة المسودة" onPress={() => setCaseLoadRetry((value) => value + 1)} variant="secondary" /> : null}
       {admissionState.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة حالة التفعيل…</Text></View> : null}
@@ -536,7 +545,7 @@ const theme = useAppearanceTheme();
       {admissionState.kind === "ready" && admissionActionability !== "available" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إضافة شريك الآن</Text><Text style={styles.muted}>{admissionActionability === "profile_review" ? "ملفك يحتاج مراجعة قبل إضافة شريك. تواصل مع فريق التشغيل لاستكمالها." : `حالة التفعيل الحالية: ${fieldAdmissionStateLabel(admissionState.admission.state)}. تابع الحالة أو تواصل مع فريق التشغيل.`}</Text></View> : null}
       {admissionState.kind === "error" ? <View style={styles.card}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة حالة تفعيلك الآن. أعد المحاولة عند توفر الاتصال.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void loadAdmission()} variant="secondary" /></View> : null}
       {admissionActionability === "available" && (!caseId || Boolean(createdCase)) ? <>
-        <View style={styles.card}>
+        <View style={styles.progressCard}>
           <View style={styles.orderHeader}>
             <Text style={styles.sectionTitle}>الخطوة {activeStep + 1} من {joiningSteps.length} · {joiningSteps[activeStep]}</Text>
             <Text accessibilityLiveRegion="polite" style={styles.muted}>اكتمل {completedSteps} من {joiningSteps.length}</Text>
@@ -552,12 +561,12 @@ const theme = useAppearanceTheme();
             ))}
           </View>
         </View>
-        {activeStep === 0 ? <View style={styles.card}>
+        {activeStep === 0 ? <>
+        <View style={styles.compactCard}>
         <Text style={styles.sectionTitle}>بيانات المالك</Text>
-        <Text style={styles.label}>الاسم الكامل للمالك حسب الهوية</Text>
+        <Text style={styles.label}>اسم المالك</Text>
         <TextInput accessibilityLabel="الاسم الكامل للمالك حسب الهوية" editable={!formLocked} autoComplete="name" placeholder="كما يظهر في الهوية" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.ownerFullName} onChangeText={(value) => setInput((current) => ({ ...current, ownerFullName: value }))} />
-        <Text style={styles.label}>المحفظة الرسمية</Text>
-        <Text style={styles.muted}>اختياري عند إنشاء المسودة؛ يمكن استكمال المحفظة الرسمية قبل الإرسال.</Text>
+        <Text style={styles.label}>المحفظة الرسمية (اختياري للمسودة)</Text>
         {walletProvidersLoading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المحافظ الرسمية…</Text></View> : null}
         {walletProvidersError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{walletProvidersError}</Text><BthwaniButton disabled={formLocked} label="إعادة قراءة المحافظ" onPress={() => void loadWalletProviders()} variant="secondary" /></View> : null}
         {!walletProvidersLoading && !walletProvidersError && walletProviders.filter((provider) => provider.active).length === 0 ? <Text style={styles.muted}>لا توجد محافظ رسمية نشطة للاختيار الآن.</Text> : null}
@@ -566,22 +575,21 @@ const theme = useAppearanceTheme();
         </View> : null}
         {input.walletProviderKey && !walletProviders.some((provider) => provider.key === input.walletProviderKey) ? <Text style={styles.muted}>القيمة المحفوظة سابقًا: {input.walletProviderKey}. اختر محفظة نشطة لتحديث المسودة.</Text> : null}
         <Text style={styles.label}>رقم جوال المالك</Text>
-        <TextInput accessibilityLabel="رقم جوال المالك" editable={!formLocked} autoCapitalize="none" keyboardType="phone-pad" placeholder="مثال: 777123456 أو +967777123456" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={input.contactPhoneE164} onChangeText={(value) => setInput((current) => ({ ...current, contactPhoneE164: value }))} />
-        </View> : null}
-        {activeStep === 1 ? <>
-        <View style={styles.card}>
-        <Text style={styles.sectionTitle}>النشاط والمتجر الأول</Text>
+        <TextInput accessibilityLabel="رقم جوال المالك" editable={!formLocked} autoCapitalize="none" keyboardType="phone-pad" placeholder="777123456" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={input.contactPhoneE164} onChangeText={(value) => setInput((current) => ({ ...current, contactPhoneE164: value }))} />
+        </View>
+        <View style={styles.compactCard}>
+        <Text style={styles.sectionTitle}>النشاط والمتجر</Text>
         <Text style={styles.label}>{sameBusinessAndStore ? "الاسم التجاري واسم المتجر" : "الاسم التجاري"}</Text>
-        <Text style={styles.muted}>الاسم التجاري هو اسم المنشأة أو النشاط كما يستخدمه المالك، وليس اسمًا عامًا للشريك.</Text>
         <TextInput accessibilityLabel={sameBusinessAndStore ? "الاسم التجاري واسم المتجر" : "الاسم التجاري"} editable={!formLocked} placeholder={sameBusinessAndStore ? "الاسم الذي يستخدمه المتجر" : "اسم المنشأة أو النشاط"} placeholderTextColor={theme.colorMuted} style={styles.input} value={sameBusinessAndStore ? input.firstStoreName : input.businessName} onChangeText={(value) => setInput((current) => sameBusinessAndStore ? ({ ...current, businessName: value, firstStoreName: value }) : ({ ...current, businessName: value }))} />
         <View style={styles.optionList}>
-          <BthwaniChip disabled={formLocked} label="الاسم التجاري مختلف عن اسم المتجر" onPress={() => setSameBusinessAndStore(false)} selected={!sameBusinessAndStore} />
-          <BthwaniChip disabled={formLocked} label="الاسم التجاري هو اسم المتجر نفسه" onPress={() => {
-            setSameBusinessAndStore(true);
-            setInput((current) => {
-              const storeName = current.firstStoreName.trim() || current.businessName;
-              return { ...current, businessName: storeName, firstStoreName: storeName };
-            });
+          <BthwaniChip disabled={formLocked} label="اسم المتجر مطابق للاسم التجاري" onPress={() => {
+            setSameBusinessAndStore((wasSame) => !wasSame);
+            if (!sameBusinessAndStore) {
+              setInput((current) => {
+                const storeName = current.firstStoreName.trim() || current.businessName;
+                return { ...current, businessName: storeName, firstStoreName: storeName };
+              });
+            }
           }} selected={sameBusinessAndStore} />
         </View>
         {!sameBusinessAndStore ? <>
@@ -589,8 +597,9 @@ const theme = useAppearanceTheme();
           <TextInput accessibilityLabel="اسم المتجر الأول" editable={!formLocked} placeholder="الاسم الظاهر على واجهة المتجر" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.firstStoreName} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreName: value }))} />
         </> : null}
         </View>
-        <View style={styles.card}>
-        <Text style={styles.sectionTitle}>مدينة الخدمة وموقع المتجر</Text>
+        </> : null}
+        {activeStep === 1 ? <View style={styles.compactCard}>
+        <Text style={styles.sectionTitle}>المدينة والنشاط</Text>
         <Text style={styles.label}>مدينة الخدمة</Text>
         {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة المدن المتاحة…</Text> : null}
         {optionsError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{optionsError}</Text><BthwaniButton label="إعادة قراءة الخيارات" onPress={() => void loadOptions()} variant="secondary" /></View> : null}
@@ -607,15 +616,14 @@ const theme = useAppearanceTheme();
         {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
         {!optionsLoading && !optionsError && verticals.length === 0 ? <Text style={styles.error}>لا يوجد نشاط تجاري متاح حاليًا.</Text> : null}
         <View style={styles.optionList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} disabled={formLocked} label={vertical.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreVerticalId: vertical.id }))} selected={input.firstStoreVerticalId === vertical.id} />)}</View>
-        <Text style={styles.label}>نوع المتجر التجاري</Text>
+        <Text style={styles.label}>نوع المتجر</Text>
         {commercialTypesLoading ? <Text style={styles.muted}>جارٍ قراءة أنواع المتاجر لهذه الفئة…</Text> : null}
         {commercialTypesError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{commercialTypesError}</Text><BthwaniButton label="إعادة قراءة أنواع المتاجر" onPress={() => { const verticalId = input.firstStoreVerticalId; if (verticalId) { setCommercialTypesError(""); setCommercialTypesLoading(true); void fieldClient().listCommercialStoreTypes(verticalId).then((items) => setCommercialTypes(items.filter((item) => item.active))).catch(() => setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذه الفئة.")).finally(() => setCommercialTypesLoading(false)); } }} variant="secondary" /></View> : null}
         {!commercialTypesLoading && !commercialTypesError && input.firstStoreVerticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذه الفئة. اطلب من المشغّل إعداد النوع التجاري أولًا.</Text> : null}
         <View style={styles.optionList}>{commercialTypes.map((item) => <BthwaniChip key={item.id} disabled={formLocked} label={item.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreCommercialTypeId: item.id }))} selected={input.firstStoreCommercialTypeId === item.id} />)}</View>
-        </View>
-        </> : null}
-        {activeStep === 4 ? <>
-        <View style={styles.card}>
+        </View> : null}
+        {activeStep === 2 ? <>
+        <View style={styles.compactCard}>
         <Text style={styles.sectionTitle}>بيانات الإثبات</Text>
         <Text style={styles.label}>نوع الإثبات</Text>
         <View style={styles.optionList}>{proofTypeOptions.map((option) => <BthwaniChip key={option.value} disabled={formLocked} label={option.label} onPress={() => {
@@ -623,91 +631,90 @@ const theme = useAppearanceTheme();
           setSelectedProofType(option.value);
         }} selected={selectedProofType === option.value} />)}</View>
         <Text style={styles.label}>{createdCase?.case.firstStoreProofType ? "رقم الإثبات · اختياري عند التعديل" : "رقم الإثبات"}</Text>
-        {createdCase?.case.firstStoreProofType ? <Text style={styles.muted}>الرقم المسجل خاص ولا يظهر هنا. أدخل رقمًا جديدًا عند الحاجة إلى تصحيحه، أو اترك الحقل فارغًا للاحتفاظ به.</Text> : null}
+        {createdCase?.case.firstStoreProofType ? <Text style={styles.muted}>اتركه فارغًا للاحتفاظ بالرقم المسجل.</Text> : null}
         <TextInput accessibilityLabel="رقم الإثبات، اتركه فارغًا للاحتفاظ بالرقم المسجل عند التعديل" editable={!formLocked} autoCapitalize="characters" placeholder={createdCase?.case.firstStoreProofType ? "رقم جديد فقط عند التصحيح" : "أدخل رقم السجل أو الوثيقة"} placeholderTextColor={theme.colorMuted} style={styles.input} value={input.firstStoreProofNumber} onChangeText={(value) => {
           setInput((current) => ({ ...current, firstStoreProofNumber: value }));
           setProofDetailsDirty(true);
           setProofImage(null);
         }} />
-        </View>
-        <View style={styles.card}>
-          <Text style={styles.label}>صورة الإثبات الخاصة · مطلوبة قبل الإرسال</Text>
-          <Text style={styles.muted}>{createdCase?.case.firstStoreProofImageUploaded ? "صورة الإثبات الخاصة مسجلة ومشفّرة ولا تظهر كصورة واجهة للمتجر." : "تُخزّن مشفّرة في السجل الخاص ولا تظهر كصورة واجهة للمتجر. يُسمح بحفظ المسودة قبل الرفع، لكن الإرسال للمراجعة يتطلب تأكيد ربط الصورة."}</Text>
+          <Text style={styles.label}>صورة الإثبات</Text>
+          {!createdCase?.case.firstStoreProofImageUploaded ? <Text style={styles.muted}>مشفّرة ولا تظهر للعملاء.</Text> : null}
           {proofImage ? <Image accessibilityLabel="معاينة صورة الإثبات الخاصة" source={{ uri: proofImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="contain" /> : null}
           <BthwaniButton disabled={formLocked} label={proofImage ? "تغيير صورة الإثبات" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
           {proofDetailsDirty ? <Text accessibilityRole="alert" style={styles.error}>احفظ بيانات الإثبات الجديدة أولًا؛ يلزم رفع صورة مرتبطة بها.</Text> : null}
         </View>
         </> : null}
-        {activeStep === 3 ? <View style={styles.card}>
-        <Text style={styles.sectionTitle}>التوصيل المتاح</Text>
-        <Text style={styles.muted}>اختر طريقة أو أكثر. يعتمد المشغّل طرق التنفيذ عند إنشاء المتجر.</Text>
+        {activeStep === 1 ? <View style={styles.compactCard}>
+        <Text style={styles.sectionTitle}>طرق التوصيل</Text>
         <View style={styles.optionList}>
           <BthwaniChip label="توصيل بثواني" onPress={() => { if (!formLocked) toggleFulfillmentMode("BTHWANI_CAPTAIN"); }} selected={input.firstStoreFulfillmentModes.includes("BTHWANI_CAPTAIN")} />
           <BthwaniChip label="توصيل المتجر" onPress={() => { if (!formLocked) toggleFulfillmentMode("PARTNER_CAPTAIN"); }} selected={input.firstStoreFulfillmentModes.includes("PARTNER_CAPTAIN")} />
           <BthwaniChip label="استلام من المتجر" onPress={() => { if (!formLocked) toggleFulfillmentMode("CUSTOMER_PICKUP"); }} selected={input.firstStoreFulfillmentModes.includes("CUSTOMER_PICKUP")} />
         </View>
         </View> : null}
-        {activeStep === 2 ? <View style={styles.card}>
-          <Text style={styles.label}>عنوان المتجر وموقعه</Text>
-          <Text style={styles.muted}>حدد موقع المتجر على الخريطة أو استخدم موقعك الحالي كنقطة بداية، ثم اضبط المؤشر على المتجر.</Text>
+        {activeStep === 1 ? <View style={styles.compactCard}>
+          <Text style={styles.label}>موقع المتجر</Text>
           <BthwaniButton busy={locationBusy} disabled={formLocked} label="استخدام موقعي الحالي" onPress={() => void requestCurrentLocation()} variant="secondary" />
           {locationMessage ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{locationMessage}</Text> : null}
           {locationError ? <Text accessibilityRole="alert" style={styles.error}>{locationError}</Text> : null}
           <View style={{ flexDirection: wideLayout ? "row" : "column", gap: 12 }}>
             <View style={{ flex: 1, minWidth: 0 }}><BthwaniMap accessibilityLabel="تحديد موقع المتجر على الخريطة" selection={selectedStoreOrigin} selectionTitle="موقع المتجر" onSelectCoordinate={(coordinate) => { if (!formLocked) { setSelectedStoreOrigin(coordinate); setLocationMessage(""); setLocationError(""); setError(""); } }} /></View>
-            <View style={{ flex: 1, gap: 8, minWidth: 0 }}><Text style={styles.label}>العنوان النصي</Text><TextInput accessibilityLabel="عنوان المتجر" editable={!formLocked} multiline placeholder="الحي، الشارع، وأقرب معلم" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 120, paddingTop: 12, textAlignVertical: "top" }]} value={input.firstStoreAddress} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreAddress: value }))} /><Text style={styles.muted}>{selectedStoreOrigin ? `الإحداثيات المحددة: ${selectedStoreOrigin.latitude.toFixed(5)}, ${selectedStoreOrigin.longitude.toFixed(5)}` : "لم يُحدد موقع على الخريطة بعد."}</Text></View>
+            <View style={{ flex: 1, gap: 8, minWidth: 0 }}><Text style={styles.label}>العنوان النصي</Text><TextInput accessibilityLabel="عنوان المتجر" editable={!formLocked} multiline placeholder="الحي، الشارع، أقرب معلم" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 72, paddingTop: 10, textAlignVertical: "top" }]} value={input.firstStoreAddress} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreAddress: value }))} /><Text style={styles.muted}>{selectedStoreOrigin ? "تم تحديد الموقع" : "اختر الموقع من الخريطة"}</Text></View>
           </View>
         </View> : null}
-        {activeStep === 3 ? <>
-        <Text style={styles.sectionTitle}>ساعات العمل الأسبوعية</Text>
-        <FieldWorkingHoursEditor disabled={formLocked} onChange={setWorkingHoursByDay} value={workingHoursByDay} />
-        </> : null}
-        {activeStep === 4 ? <>
-        <View style={styles.card}>
-        <Text style={styles.sectionTitle}>ملاحظات</Text>
-        <Text style={styles.label}>ملاحظات · اختياري</Text>
-        <TextInput accessibilityLabel="ملاحظات اختيارية" editable={!formLocked} multiline maxLength={1000} placeholder="أي تفاصيل إضافية للمراجعة" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 88, paddingTop: 12, textAlignVertical: "top" }]} value={input.firstStoreNotes ?? ""} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreNotes: value }))} />
-        </View>
-        <View style={styles.card}>
-        <Text style={styles.sectionTitle}>صورة الواجهة وحق استخدامها</Text>
-        <Text style={styles.label}>صورة واجهة المتجر · مطلوبة قبل الإرسال</Text>
-        <Text style={styles.muted}>اختر صورة واضحة للواجهة. تُرفع مركزيًا وتظهر بعد اعتماد المتجر؛ حفظ المسودة ممكن قبل رفعها، لكن لا تُرسل للمراجعة حتى تكتمل.</Text>
+        {activeStep === 1 ? <FieldWorkingHoursEditor disabled={formLocked} onChange={setWorkingHoursByDay} value={workingHoursByDay} /> : null}
+        {activeStep === 2 ? <>
+        <View style={styles.compactCard}>
+        <Text style={styles.label}>ملاحظات (اختياري)</Text>
+        <TextInput accessibilityLabel="ملاحظات اختيارية" editable={!formLocked} multiline maxLength={1000} placeholder="أي تفاصيل إضافية للمراجعة" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 64, paddingTop: 10, textAlignVertical: "top" }]} value={input.firstStoreNotes ?? ""} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreNotes: value }))} />
+        <Text style={styles.sectionTitle}>صورة واجهة المتجر</Text>
         {storeImage ? <Image accessibilityLabel="معاينة صورة المتجر" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="cover" /> : null}
         {storeImage ? <FieldMediaProvenanceEditor disabled={formLocked} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} value={storeImage.provenance} /> : null}
         <View style={styles.optionList}>
-          <BthwaniButton disabled={formLocked} label={storeImage ? "اختيار صورة أخرى من الجهاز" : "اختيار صورة من الجهاز"} onPress={() => void pickStoreImage("library")} variant="secondary" />
-          <BthwaniButton disabled={formLocked} label="التقاط صورة بالكاميرا" onPress={() => void pickStoreImage("camera")} variant="secondary" />
+          <BthwaniButton disabled={formLocked} label={storeImage ? "تغيير الصورة" : "من الجهاز"} onPress={() => void pickStoreImage("library")} variant="secondary" />
+          <BthwaniButton disabled={formLocked} label="الكاميرا" onPress={() => void pickStoreImage("camera")} variant="secondary" />
         </View>
-        <Text style={styles.muted}>حفظ المسودة لا يرسلها للمراجعة. أكمِل صورتي الواجهة والإثبات أولًا.</Text>
+        </View>
+        <View style={styles.compactCard} accessibilityLiveRegion="polite">
+          <Text style={styles.sectionTitle}>قبل الإرسال</Text>
+          <Text style={missingBeforeSubmission.length ? styles.muted : styles.successText}>
+            {missingBeforeSubmission.length ? `ينقص: ${missingBeforeSubmission.join("، ")}` : "المتطلبات مكتملة. احفظ ثم أرسل للمراجعة."}
+          </Text>
         </View>
         </> : null}
-        <View style={styles.optionList}>
-          {activeStep > 0 ? <BthwaniButton label="السابق" disabled={formLocked} onPress={() => { setActiveStep((current) => current - 1); setError(""); }} variant="secondary" /> : null}
-          {activeStep < joiningSteps.length - 1 ? <BthwaniButton label="التالي" disabled={formLocked} onPress={() => { setActiveStep((current) => current + 1); setError(""); }} /> : null}
-        </View>
-        {draftConflictNeedsRead ? <BthwaniButton busy={busy} disabled={busy} label="إعادة قراءة النسخة الأحدث قبل الحفظ" onPress={() => void rereadAfterDraftConflict()} variant="secondary" /> : null}
-        <BthwaniButton busy={busy} disabled={busy || draftConflictNeedsRead || (!pendingDraftAttempt && formLocked)} label={pendingDraftAttempt ? "إعادة التحقق من حفظ المسودة" : draftConflict ? "حفظ مدخلاتي واستبدال النسخة الأحدث" : createdCase ? "حفظ التعديلات" : "حفظ المسودة"} onPress={() => void createCase()} />
       </> : null}
       {createdCase ? <View accessibilityLiveRegion="polite" style={styles.successCard}>
-        <Text style={styles.cardTitle}>حُفظت مسودة الشريك</Text>
-        <Text style={styles.muted}>{createdCase.case.businessName} · {createdCase.case.firstStoreName}</Text>
-        <Text style={styles.successText}>الحالة: {joiningCaseStateLabel(createdCase.case.state)} · لم يُرسل للمراجعة</Text>
-        <Text style={createdCase.case.storeProfileImage ? styles.successText : styles.error}>{createdCase.case.storeProfileImage ? "صورة واجهة المتجر مرفوعة." : "مطلوب قبل الإرسال: اختيار صورة واجهة المتجر ورفعها."}</Text>
-        <Text style={createdCase.case.firstStoreProofImageUploaded ? styles.successText : styles.error}>{createdCase.case.firstStoreProofImageUploaded ? "صورة الإثبات الخاصة مسجلة." : "مطلوب قبل الإرسال: رفع صورة الإثبات الخاصة عبر المسار الآمن."}</Text>
-        {activeStep === 4 && (!createdCase.case.firstStoreProofImageUploaded || Boolean(proofImage) || proofDetailsDirty) ? <>
+        <Text style={styles.cardTitle}>المسودة محفوظة · {joiningCaseStateLabel(createdCase.case.state)}</Text>
+        {activeStep === 2 ? <>
+          <Text style={createdCase.case.storeProfileImage ? styles.successText : styles.muted}>{createdCase.case.storeProfileImage ? "✓ صورة الواجهة مرفوعة" : "صورة الواجهة لم تُرفع"}</Text>
+          <Text style={createdCase.case.firstStoreProofImageUploaded ? styles.successText : styles.muted}>{createdCase.case.firstStoreProofImageUploaded ? "✓ صورة الإثبات مرفوعة" : "صورة الإثبات لم تُرفع"}</Text>
+        </> : null}
+        {activeStep === 2 && (!createdCase.case.firstStoreProofImageUploaded || Boolean(proofImage) || proofDetailsDirty) ? <>
           {proofImage ? <Image accessibilityLabel="معاينة صورة الإثبات المختارة" source={{ uri: proofImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="contain" /> : null}
           <BthwaniButton disabled={busy || Boolean(pendingProofImageAttempt) || Boolean(pendingImageAttempt)} label={proofImage ? "تغيير صورة الإثبات" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
           {proofImage ? <BthwaniButton busy={busy} disabled={busy || Boolean(pendingImageAttempt) || proofDetailsDirty || !createdCase.case.firstStoreProofType} label={pendingProofImageAttempt ? "إعادة التحقق من رفع صورة الإثبات" : "رفع صورة الإثبات المشفّرة"} onPress={() => void retryProofImage()} variant="primary" /> : null}
         </> : null}
-        {storeImage ? <>
+        {activeStep === 2 && storeImage ? <>
           <Image accessibilityLabel="معاينة صورة المتجر التي لم يكتمل رفعها" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="cover" />
           <BthwaniButton disabled={busy || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="اختيار صورة أخرى" onPress={() => void pickStoreImage()} variant="secondary" />
           <BthwaniButton busy={busy} disabled={busy || Boolean(pendingProofImageAttempt)} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "إعادة رفع صورة المتجر"} onPress={() => void retryStoreImage()} variant="secondary" />
         </> : null}
-        <Link href={{ pathname: "/cases", params: { caseId: createdCase.case.id } } as Href} asChild><BthwaniButton label="مراجعة المسودة وإرسالها" variant="secondary" /></Link>
+        {activeStep === 2 ? <Link href={{ pathname: "/cases", params: { caseId: createdCase.case.id } } as Href} asChild><BthwaniButton label={missingBeforeSubmission.length ? "فتح مسودات الشركاء" : "المراجعة والإرسال"} variant="secondary" /></Link> : null}
       </View> : null}
       {error ? <View><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{pendingDraftAttempt || error.startsWith("يوجد طلب نشط") ? <Link href={"/cases" as Href} asChild><BthwaniButton label="فتح قائمة الشركاء" variant="secondary" /></Link> : null}</View> : null}
       {admissionActionability !== "available" ? <BthwaniButton busy={busy} disabled={busy || admissionState.kind === "loading"} label="تحديث حالة التفعيل" onPress={() => void loadAdmission()} variant="secondary" /> : null}
+        </View>
+      </ScrollView>
+      {admissionActionability === "available" && (!caseId || Boolean(createdCase)) ? (
+        <View style={{ backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[2], paddingHorizontal: spacing[3], paddingVertical: spacing[2] }}>
+          {draftConflictNeedsRead ? <BthwaniButton busy={busy} disabled={busy} label="إعادة قراءة المسودة" onPress={() => void rereadAfterDraftConflict()} variant="secondary" /> : null}
+          <View style={{ flexDirection: "row", gap: spacing[2] }}>
+            {activeStep > 0 ? <View style={{ flex: 1 }}><BthwaniButton label="السابق" disabled={formLocked} onPress={() => { setActiveStep((current) => current - 1); setError(""); }} variant="secondary" /></View> : null}
+            {activeStep < joiningSteps.length - 1 ? <View style={{ flex: 1 }}><BthwaniButton label="التالي" disabled={formLocked} onPress={() => { setActiveStep((current) => current + 1); setError(""); }} /></View> : null}
+            <View style={{ flex: 1 }}><BthwaniButton busy={busy} disabled={busy || draftConflictNeedsRead || (!pendingDraftAttempt && formLocked)} label={pendingDraftAttempt ? "تحقق من الحفظ" : draftConflict ? "حفظ التغييرات" : createdCase ? "حفظ التعديلات" : "حفظ المسودة"} onPress={() => void createCase()} variant="secondary" /></View>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
