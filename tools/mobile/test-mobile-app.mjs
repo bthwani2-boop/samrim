@@ -146,7 +146,7 @@ if (app === "app-field") {
   assert.equal(fieldAdmissionActionability(completeAdmission), "available");
   assert.equal(fieldAdmissionActionability({ ...completeAdmission, requiresProfileReview: true }), "profile_review");
   assert.equal(fieldAdmissionActionability({ ...completeAdmission, fullNameAr: "" }), "profile_review");
-  assert.equal(fieldAdmissionActionability({ ...completeAdmission, fullNameAr: "  " }), "available");
+  assert.equal(fieldAdmissionActionability({ ...completeAdmission, fullNameAr: "  " }), "profile_review");
   assert.equal(fieldAdmissionActionability({ ...completeAdmission, state: "suspended" }), "not_eligible");
   assert.equal(fieldAdmissionActionability({ ...completeAdmission, state: "pending_review" }), "not_eligible");
   assert.equal(fieldAdmissionActionability({ ...completeAdmission, fullNameAr: undefined }), "profile_review");

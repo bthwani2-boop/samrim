@@ -17,8 +17,9 @@
 :global(.field-workbench .workspace-toolbar) { display: flex; justify-content: flex-end; gap: 8px; padding: 0; border: 0; background: transparent; }
 :global(.field-workbench .workspace-toolbar .button) { min-height: 36px; padding: 6px 11px; }
 :global(.field-workbench .field-roster-tools) { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; align-items: end; gap: 12px; }
+:global(.field-workbench .field-roster-tools > .field-roster-filter-disclosure[open]) { grid-column: 1 / -1; grid-row: 2; }
 :global(.field-workbench .field-roster-search), :global(.field-workbench .field-roster-filter-panel > label) { display: grid; min-width: 0; gap: 6px; color: var(--text-secondary); font-size: 13px; font-weight: 700; }
-:global(.field-workbench .field-roster-search) { align-self: start; }
+:global(.field-workbench .field-roster-search) { align-self: start; grid-row: 1; }
 :global(.field-workbench .field-roster-search input), :global(.field-workbench .field-roster-filter-panel input), :global(.field-workbench .field-roster-filter-panel select) { width: 100%; min-width: 0; min-height: 44px; padding: 8px 11px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-base); color: var(--text-primary); font: inherit; font-size: 14px; }
 :global(.field-workbench .field-roster-filter-disclosure) { min-width: 0; }
 :global(.field-workbench .field-roster-filter-disclosure > summary) { display: flex; min-height: 44px; align-items: center; justify-content: center; gap: 8px; padding-inline: 14px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-muted); color: var(--text-primary); font-weight: 700; cursor: pointer; list-style: none; }
@@ -29,7 +30,7 @@
 :global(.field-workbench .field-roster-filter-panel) { display: grid; min-inline-size: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 10px 0 0; padding: 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-muted); }
 :global(.field-workbench .field-roster-filter-note) { grid-column: 1 / -1; margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
 :global(.field-workbench .field-roster-filter-panel > label) { font-weight: 600; }
-:global(.field-workbench .field-roster-tools > .button) { align-self: start; min-height: 44px; margin-top: 22px; padding: 7px 12px; white-space: nowrap; }
+:global(.field-workbench .field-roster-tools > .button) { align-self: start; grid-row: 1; min-height: 44px; margin-top: 22px; padding: 7px 12px; white-space: nowrap; }
 :global(.field-workbench .operations-table) { min-width: 780px; }
 :global(.field-workbench .field-agent-table) { width: 100%; min-width: 1380px; table-layout: fixed; }
 :global(.field-workbench .field-agent-table th) { min-width: 0; }
@@ -86,7 +87,6 @@
   :global(.field-create-content .access-form) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   :global(.field-create-content .access-form .button) { grid-column: 1 / -1; justify-self: start; }
   :global(.field-workbench .field-roster-tools) { grid-template-columns: minmax(0, 1fr) auto auto; }
-  :global(.field-workbench .field-roster-filter-disclosure[open]) { grid-column: 1 / -1; }
   :global(.field-workbench .field-roster-filter-panel) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   :global(.field-workbench .field-roster-scroll-hint) { display: block; margin: 0 0 8px; color: var(--text-muted); font-size: 12px; }
 }
@@ -100,7 +100,7 @@
   :global(.field-workbench .operations-table) { min-width: 700px; }
   :global(.field-workbench .field-roster-tools) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   :global(.field-workbench .field-roster-search), :global(.field-workbench .field-roster-filter-disclosure[open]) { grid-column: 1 / -1; }
-  :global(.field-workbench .field-roster-tools > .button) { width: 100%; min-height: 44px; margin-top: 0; padding-inline: 8px; font-size: 13px; }
+  :global(.field-workbench .field-roster-tools > .button) { grid-row: auto; width: 100%; min-height: 44px; margin-top: 0; padding-inline: 8px; font-size: 13px; }
   :global(.field-workbench .field-roster-filter-disclosure > summary) { width: 100%; }
   :global(.field-workbench .field-roster-filter-panel) { grid-template-columns: minmax(0, 1fr); padding: 12px; }
 }
