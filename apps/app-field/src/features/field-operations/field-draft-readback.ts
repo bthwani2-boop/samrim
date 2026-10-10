@@ -57,7 +57,8 @@ export function fieldDraftMediaUploadConfirmed(
   if (kind === "proof") return uploaded.firstStoreProofImageUploaded && canonical.firstStoreProofImageUploaded;
   const submittedImage = uploaded.storeProfileImage;
   const savedImage = canonical.storeProfileImage;
-  if (!submittedImage?.uri || !savedImage?.uri) return false;
-  return !submittedImage.contentSha256 || !savedImage.contentSha256 ||
-    submittedImage.contentSha256 === savedImage.contentSha256;
+  // The private DSH media readback includes the persisted URI and SHA-256.
+  // Missing evidence or another stored image cannot confirm this particular upload.
+  if (!submittedImage?.uri || !savedImage?.uri || !submittedImage.contentSha256 || !savedImage.contentSha256) return false;
+  return submittedImage.uri === savedImage.uri && submittedImage.contentSha256 === savedImage.contentSha256;
 }
