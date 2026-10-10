@@ -66,3 +66,26 @@ export function matchesPartnerPayoutReadback(
     expected.stores.reduce((total, item) => total + item.amountMinor, 0) === expected.totalAmountMinor &&
     expected.payouts.reduce((total, item) => total + item.resolvedAmountMinor, 0) === expected.totalAmountMinor;
 }
+
+/** A recovered GET must prove a payable, internally consistent request before
+ * the saved idempotency key can be discarded. Legacy attempts have no saved
+ * immutable input snapshot, so verify the canonical financial facts directly. */
+export function isRecoverablePartnerPayout(
+  recovered: PartnerPayoutRequestView,
+  requested?: PartnerPayoutRequestCreateRequest,
+): boolean {
+  if (recovered.payouts.length === 0 || recovered.stores.length === 0 ||
+      !Number.isSafeInteger(recovered.totalAmountMinor) || recovered.totalAmountMinor <= 0 ||
+      recovered.payouts.some((item) => item.status === "CANCELLED" || item.status === "EXCEPTION") ||
+      !matchingUniqueItems(recovered.stores, recovered.stores, (item) => item.storeId, (a, b) =>
+        a.amountMinor === b.amountMinor && a.currency === b.currency &&
+        a.beneficiaryActorId === b.beneficiaryActorId &&
+        a.recipientAssignmentVersion === b.recipientAssignmentVersion) ||
+      !matchingUniqueItems(recovered.payouts, recovered.payouts, (item) => item.id, (a, b) =>
+        a.actorId === b.actorId && a.resolvedAmountMinor === b.resolvedAmountMinor) ||
+      !recovered.stores.every((item) => Number.isSafeInteger(item.amountMinor) && item.amountMinor > 0 && item.currency === recovered.currency) ||
+      !recovered.payouts.every((item) => Number.isSafeInteger(item.resolvedAmountMinor) && item.resolvedAmountMinor > 0 && item.currency === recovered.currency) ||
+      recovered.stores.reduce((total, item) => total + item.amountMinor, 0) !== recovered.totalAmountMinor ||
+      recovered.payouts.reduce((total, item) => total + item.resolvedAmountMinor, 0) !== recovered.totalAmountMinor) return false;
+  return requested ? matchesPartnerPayoutReadback(requested, recovered, recovered) : true;
+}

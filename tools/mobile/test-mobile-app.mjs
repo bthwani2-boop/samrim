@@ -231,7 +231,7 @@ if (app === "app-captain") {
   console.log("MOBILE_CAPTAIN_CASH_IN_RECOVERY=PASS canonical intent, actor scope, retry identity, and terminal cleanup");
 }
 if (app === "app-partner") {
-  const { matchesPartnerPayoutReadback } = await import(
+  const { isRecoverablePartnerPayout, matchesPartnerPayoutReadback } = await import(
     pathToFileURL(path.join(appDir, "src/features/account/partner-payout-readback.ts")).href
   );
   const payout = (id, actor, amount) => ({
@@ -254,6 +254,14 @@ if (app === "app-partner") {
     storeAmounts: [{ storeId: "store-a", amountMinor: 1000 }, { storeId: "store-b", amountMinor: 2000 }],
   };
   assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, payoutRequest), true);
+  assert.equal(isRecoverablePartnerPayout(payoutRequest, payoutInput), true, "Recovered request must match a saved modern attempt");
+  assert.equal(isRecoverablePartnerPayout(payoutRequest), true, "A legacy GET needs internally valid financial facts");
+  assert.equal(isRecoverablePartnerPayout({ ...payoutRequest, payouts: payoutRequest.payouts.map((item) => ({ ...item, status: "CANCELLED" })) }), false, "Recovery must not clear an attempt for cancelled transfers");
+  assert.equal(isRecoverablePartnerPayout({ ...payoutRequest, payouts: payoutRequest.payouts.map((item) => ({ ...item, status: "EXCEPTION" })) }, payoutInput), false, "Recovery must not clear an attempt for exceptional transfers");
+  assert.equal(isRecoverablePartnerPayout(payoutRequest, { ...payoutInput, storeIds: ["incorrect-store"] }), false, "Modern recovery must prove original requested stores");
+  assert.equal(isRecoverablePartnerPayout({ ...payoutRequest, payouts: [...payoutRequest.payouts, payoutRequest.payouts[0]] }), false, "Legacy recovery must reject duplicate transfer IDs");
+  assert.equal(isRecoverablePartnerPayout({ ...payoutRequest, stores: [...payoutRequest.stores, payoutRequest.stores[0]] }), false, "Legacy recovery must reject duplicate store allocations");
+  assert.equal(isRecoverablePartnerPayout({ ...payoutRequest, totalAmountMinor: 4000 }), false, "Legacy recovery must reject mismatched totals");
   assert.equal(matchesPartnerPayoutReadback({ ...payoutInput, storeIds: ["other-store", "store-b"] }, payoutRequest, payoutRequest), false, "Canonical response must retain the stores originally requested");
   assert.equal(matchesPartnerPayoutReadback({ ...payoutInput, storeAmounts: [{ storeId: "store-a", amountMinor: 2000 }, { storeId: "store-b", amountMinor: 1000 }] }, payoutRequest, payoutRequest), false, "Matching POST and GET cannot hide a change to requested amounts");
   assert.equal(matchesPartnerPayoutReadback({ ...payoutInput, storeIds: ["store-a", "store-a"] }, payoutRequest, payoutRequest), false, "Repeated requested Store IDs must fail");

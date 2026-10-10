@@ -6,7 +6,7 @@ import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { matchesPartnerPayoutReadback } from "./partner-payout-readback";
+import { isRecoverablePartnerPayout, matchesPartnerPayoutReadback } from "./partner-payout-readback";
 
 function client() {
   const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -134,6 +134,9 @@ export function PartnerPayoutCard() {
       for (const owner of owners) {
         try {
           const response = await client().readPartnerPayoutRequestByKey(token, owner, saved.idempotencyKey);
+          if (!isRecoverablePartnerPayout(response.request, pendingAttempt?.body)) {
+            throw new Error("PARTNER_PAYOUT_RECOVERY_CANONICAL_READBACK_MISMATCH");
+          }
           await SecureStore.deleteItemAsync(attemptStorageKey);
           setLastRequest(response.request); setPendingAttempt(null); setLegacyPending(null); setLegacyKey(null);
           setNotice("تم استرجاع طلب الصرف المعتمد دون إنشاء طلب جديد.");
