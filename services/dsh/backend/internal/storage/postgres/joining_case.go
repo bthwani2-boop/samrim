@@ -384,6 +384,10 @@ func UpdateFieldJoiningCaseDraft(ctx context.Context, db *sql.DB, input UpdateFi
 		return JoiningCaseResult{}, ErrJoiningCaseVersion
 	}
 	request := input.Request
+	// An uploaded proof image is tied to the proof details it accompanied.
+	// Changing either detail requires a newly uploaded image before submission.
+	proofDetailsChanged := current.Case.FirstStoreProofType != request.FirstStoreProofType ||
+		(!input.PreserveProofNumber && strings.TrimSpace(request.FirstStoreProofNumber) != "")
 	if request.Phone != current.Case.ContactPhoneE164 {
 		phones := []string{current.Case.ContactPhoneE164, request.Phone}
 		sort.Strings(phones)
@@ -431,6 +435,11 @@ func UpdateFieldJoiningCaseDraft(ctx context.Context, db *sql.DB, input UpdateFi
 		_, err = tx.ExecContext(ctx, `INSERT INTO dsh.joining_case_private_evidence(joining_case_id,proof_number_key_id,proof_number_ciphertext) VALUES($1,$2,$3) ON CONFLICT(joining_case_id) DO UPDATE SET proof_number_key_id=EXCLUDED.proof_number_key_id,proof_number_ciphertext=EXCLUDED.proof_number_ciphertext,updated_at=clock_timestamp()`, input.CaseID, keyID, ciphertext)
 		if err != nil {
 			return JoiningCaseResult{}, fmt.Errorf("update encrypted Field draft proof number: %w", err)
+		}
+	}
+	if proofDetailsChanged && current.Case.FirstStoreProofImageUploaded {
+		if _, err := tx.ExecContext(ctx, `UPDATE dsh.joining_case_private_evidence SET proof_image_key_id=NULL, proof_image_ciphertext=NULL, proof_image_content_type=NULL, proof_image_ciphertext_sha256=NULL, proof_image_byte_size=NULL, proof_image_uploaded_at=NULL, updated_at=clock_timestamp() WHERE joining_case_id=$1`, input.CaseID); err != nil {
+			return JoiningCaseResult{}, fmt.Errorf("invalidate outdated Field joining-case proof image: %w", err)
 		}
 	}
 	resultVersion := input.ExpectedVersion + 1

@@ -1,20 +1,34 @@
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type DshImageUploadInput, isMediaProvenanceInputValid, type JoiningCaseResponse, type JoiningCaseSummary, joiningCaseStateLabel, type MediaProvenanceInput, resolveJoiningCaseImageContentType } from "@bthwani/dsh";
+import { type DshImageUploadInput, isMediaProvenanceInputValid, isValidStoreWorkingHours, type JoiningCaseResponse, type JoiningCaseSummary, type JoiningCaseView, joiningCaseStateLabel, type MediaProvenanceInput, resolveJoiningCaseImageContentType } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Image, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, Image, Text, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient, isMissingFieldAdmission } from "./field-client";
-import { fieldDraftMediaUploadConfirmed, markFieldMediaReadbackUncertain } from "./field-draft-readback";
 import { FieldCommercialAgreement } from "./field-commercial-agreement";
+import { fieldDraftMediaUploadConfirmed, markFieldMediaReadbackUncertain } from "./field-draft-readback";
 import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
 import { createFieldOperationStyles } from "./field-operation-styles";
 
 const FIELD_CASE_PAGE_SIZE = 25;
+
+function missingFieldIntake(caseData: JoiningCaseView): string[] {
+  const missing: string[] = [];
+  if (!caseData.ownerFullName?.trim()) missing.push("اسم المالك");
+  if (!caseData.businessName.trim() || !caseData.firstStoreName.trim()) missing.push("النشاط واسم المتجر");
+  if (!caseData.walletProviderKey) missing.push("المحفظة الرسمية");
+  if (!caseData.serviceCityId || !caseData.firstStoreVerticalId || !caseData.firstStoreCommercialTypeId) missing.push("المدينة والنشاط ونوع المتجر");
+  if (!caseData.firstStoreAddress?.trim() || caseData.firstStoreLatitude == null || caseData.firstStoreLongitude == null) missing.push("العنوان والموقع");
+  if (!isValidStoreWorkingHours(caseData.firstStoreWorkingHours?.intervals ?? [])) missing.push("ساعات العمل");
+  if (!caseData.firstStoreFulfillmentModes.length) missing.push("طرق التوصيل");
+  if (!caseData.firstStoreProofType || !caseData.firstStoreProofImageUploaded) missing.push("نوع الإثبات ورقمه وصورته");
+  if (!caseData.storeProfileImage) missing.push("صورة واجهة المتجر");
+  return missing;
+}
 
 type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput }>;
 type WalletProvider = Awaited<ReturnType<ReturnType<typeof fieldClient>["listWalletProviders"]>>["walletProviders"][number];
@@ -216,6 +230,11 @@ export function FieldCases() {
         setNotice("الحالة الحالية للشريك: " + joiningCaseStateLabel(current.case.state) + ".");
         return;
       }
+      const missing = missingFieldIntake(current.case);
+      if (missing.length > 0) {
+        setError(`لا يمكن إرسال المسودة. استكمل: ${missing.join("، ")}. افتح تعديل المسودة لإكمال البيانات.`);
+        return;
+      }
       const identity = await fieldCaseSubmitIdentity(item.id, current.case.version);
       await fieldClient().submitFieldJoiningCase(token, item.id, current.case.version, identity.idempotencyKey, identity.correlationID);
       const canonical = await fieldClient().readOwnFieldJoiningCase(token, item.id);
@@ -329,7 +348,7 @@ export function FieldCases() {
   }
 
   async function pickProofImage() {
-    if (!mediaCase || mediaCase.case.state !== "draft" || busy || pendingProofImageAttempt || pendingImageAttempt) return;
+    if (mediaCase?.case.state !== "draft" || busy || pendingProofImageAttempt || pendingImageAttempt) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { setError("يلزم السماح بالوصول إلى الصور لاختيار صورة الإثبات."); return; }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1 });

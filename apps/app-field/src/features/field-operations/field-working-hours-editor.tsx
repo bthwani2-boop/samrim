@@ -1,5 +1,5 @@
-import { isValidStoreWorkingHours, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
+import { isValidStoreWorkingHours, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useMemo, useState } from "react";
 import { Switch, Text, TextInput, View } from "react-native";
@@ -43,6 +43,7 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
   const [closesAt, setClosesAt] = useState("");
   const [closesNextDay, setClosesNextDay] = useState(false);
   const [editingDay, setEditingDay] = useState<number | null>(null);
+  const [showWeekDetails, setShowWeekDetails] = useState(false);
   const intervals = toStoreWorkingHoursIntervals(value);
   const quickPeriodValid = isValidLocalTime(opensAt) && isValidLocalTime(closesAt) && (opensAt !== closesAt || closesNextDay);
   const invalidTime = Object.values(value).some((dayIntervals) => dayIntervals.some((interval) =>
@@ -96,8 +97,11 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
     </View>
     {opensAt || closesAt ? <Text style={quickPeriodValid ? styles.muted : styles.error}>{quickPeriodValid ? `ستستبدل الفترة الحالية في ${selectedDays.size.toLocaleString("ar-YE")} أيام محددة.` : "أدخل وقتين بصيغة 24 ساعة، مثل 09:00 و17:00."}</Text> : null}
 
-    <Text style={styles.label}>ملخص الأسبوع</Text>
-    {weekdays.map(({ day, label }) => {
+    <View style={styles.orderHeader}>
+      <Text style={styles.label}>ملخص الأسبوع</Text>
+      <BthwaniButton disabled={disabled} label={showWeekDetails ? "إخفاء التفاصيل" : "تعديل الأيام بالتفصيل"} variant="secondary" onPress={() => setShowWeekDetails((current) => !current)} />
+    </View>
+    {showWeekDetails ? weekdays.map(({ day, label }) => {
       const dayIntervals = value[day] ?? [];
       const isEditing = editingDay === day;
       return <View key={day} style={{ gap: 8 }}>
@@ -127,7 +131,7 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
           </View>
         </View> : <Text style={styles.muted}>مغلق. اختر هذا اليوم أعلاه لإضافة فترة مشتركة.</Text> : null}
       </View>;
-    })}
+    }) : <Text style={styles.muted}>{intervals.length ? `عدد الأيام المفتوحة: ${weekdays.filter(({ day }) => (value[day] ?? []).length > 0).length} · عدد الفترات: ${intervals.length}` : "لم تحدد ساعات العمل بعد."}</Text>}
 
     {invalidSchedule ? <Text accessibilityRole="alert" style={styles.error}>تحقق من صيغة الوقت وترتيب الفترات: لا تتداخل الفترات، ويمكن للفترة أن تنتهي في اليوم التالي أو تستمر 24 ساعة.</Text> : null}
   </View>;
