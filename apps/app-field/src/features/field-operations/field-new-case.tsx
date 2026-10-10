@@ -10,7 +10,9 @@ import { ActivityIndicator, Image, Text, TextInput, useWindowDimensions, View } 
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
+import { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain } from "./field-draft-readback";
 import { fieldAdmissionActionability } from "./field-eligibility";
+import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
 import { createFieldOperationStyles } from "./field-operation-styles";
 import { type EditableWorkingHours, type EditableWorkingHoursInterval, FieldWorkingHoursEditor, toStoreWorkingHoursIntervals } from "./field-working-hours-editor";
@@ -50,6 +52,10 @@ function initialJoiningCaseInput(): CreateJoiningCaseRequest {
 }
 
 function isOutcomeUncertain(cause: unknown): boolean {
+  // The server may have committed the draft even when its subsequent canonical readback disagrees.
+  // Retain the original idempotency identity so retry cannot create a second draft.
+  if (cause instanceof Error && (cause.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH" || cause.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_UNAVAILABLE")) return true;
+  if (cause instanceof Error && (cause.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH" || cause.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE")) return true;
   if (!cause || typeof cause !== "object") return false;
   const error = cause as { kind?: unknown; status?: unknown };
   return error.kind === "network" || (error.kind === "http" && typeof error.status === "number" && error.status >= 500);
@@ -275,12 +281,8 @@ const theme = useAppearanceTheme();
       const response = attempt.kind === "update"
         ? await fieldClient().updateFieldJoiningCaseDraft(token, attempt.caseID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID)
         : await fieldClient().createFieldJoiningCase(token, attempt.request, attempt.idempotencyKey, attempt.correlationID);
-      const canonical = await fieldClient().readOwnFieldJoiningCase(token, response.case.id);
-      if (canonical.case.id !== response.case.id ||
-        (attempt.request.businessName && canonical.case.businessName !== attempt.request.businessName) ||
-        (attempt.request.firstStoreName && canonical.case.firstStoreName !== attempt.request.firstStoreName) ||
-        canonical.case.contactPhoneE164 !== attempt.request.contactPhoneE164 ||
-        canonical.case.version < response.case.version) {
+      const canonical = await fieldClient().readOwnFieldJoiningCase(token, response.case.id).catch((cause: unknown) => { throw markFieldDraftReadbackUncertain(cause); });
+      if (canonical.case.id !== response.case.id || !fieldDraftMatchesReadback(attempt.request, canonical.case, response.case.version)) {
         throw new Error("FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH");
       }
       setCreatedCase(canonical);
@@ -380,7 +382,7 @@ const theme = useAppearanceTheme();
   }
 
   async function pickStoreImage(source: "camera" | "library" = "library") {
-    if (busy || pendingImageAttempt) return;
+    if (busy || pendingImageAttempt || pendingProofImageAttempt) return;
     const permission = source === "camera" ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { setError(source === "camera" ? "يلزم السماح باستخدام الكاميرا لالتقاط صورة المتجر." : "يلزم السماح بالوصول إلى الصور لاختيار صورة المتجر."); return; }
     const result = source === "camera"
@@ -389,27 +391,32 @@ const theme = useAppearanceTheme();
     if (result.canceled || !result.assets[0]?.uri) return;
     const asset = result.assets[0];
     try {
+      if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) throw new Error("STORE_IMAGE_SIZE_INVALID");
+      if (!fieldJoiningImageDimensionsSupported(asset.width, asset.height)) throw new Error("STORE_IMAGE_DIMENSIONS_INVALID");
       const response = await fetch(asset.uri);
       if (!response.ok) throw new Error("STORE_IMAGE_READ_FAILED");
       const blob = await response.blob();
+      if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("STORE_IMAGE_SIZE_INVALID");
       const type = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
       if (!type) throw new Error("STORE_IMAGE_TYPE_INVALID");
       setStoreImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "store-image.png" : "store-image.jpg"), type, blob, provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
       setError("");
     } catch (cause) {
       console.warn("Field store image preparation failed", cause);
-      setError("تعذر تجهيز صورة المتجر. اختر الصورة مرة أخرى.");
+      setError(cause instanceof Error && cause.message === "STORE_IMAGE_SIZE_INVALID" ? "يجب ألا يتجاوز حجم صورة المتجر 10 ميغابايت." : cause instanceof Error && cause.message === "STORE_IMAGE_DIMENSIONS_INVALID" ? "يجب أن تكون أبعاد صورة المتجر بين 1 و6000 بكسل للعرض والارتفاع." : cause instanceof Error && cause.message === "STORE_IMAGE_TYPE_INVALID" ? "صيغة صورة المتجر غير مدعومة. اختر صورة بصيغة JPG أو PNG." : "تعذر تجهيز صورة المتجر. اختر الصورة مرة أخرى.");
     }
   }
 
   async function pickProofImage() {
-    if (busy || pendingProofImageAttempt) return;
+    if (busy || pendingProofImageAttempt || pendingImageAttempt) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { setError("يلزم السماح بالوصول إلى الصور لاختيار صورة الإثبات."); return; }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1 });
     if (result.canceled || !result.assets[0]?.uri) return;
     const asset = result.assets[0];
     try {
+      if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) throw new Error("PROOF_IMAGE_SIZE_INVALID");
+      if (!fieldJoiningImageDimensionsSupported(asset.width, asset.height)) throw new Error("PROOF_IMAGE_DIMENSIONS_INVALID");
       const response = await fetch(asset.uri);
       if (!response.ok) throw new Error("PROOF_IMAGE_READ_FAILED");
       const blob = await response.blob();
@@ -420,12 +427,12 @@ const theme = useAppearanceTheme();
       setError("");
     } catch (cause) {
       console.warn("Field proof image preparation failed", cause);
-      setError(cause instanceof Error && cause.message === "PROOF_IMAGE_SIZE_INVALID" ? "يجب ألا يتجاوز حجم صورة الإثبات 10 ميغابايت." : cause instanceof Error && cause.message === "PROOF_IMAGE_TYPE_INVALID" ? "صيغة صورة الإثبات غير مدعومة. اختر صورة بصيغة JPG أو PNG." : "تعذر تجهيز صورة الإثبات. اختر الصورة مرة أخرى.");
+      setError(cause instanceof Error && cause.message === "PROOF_IMAGE_SIZE_INVALID" ? "يجب ألا يتجاوز حجم صورة الإثبات 10 ميغابايت." : cause instanceof Error && cause.message === "PROOF_IMAGE_DIMENSIONS_INVALID" ? "يجب أن تكون أبعاد صورة الإثبات بين 1 و6000 بكسل للعرض والارتفاع." : cause instanceof Error && cause.message === "PROOF_IMAGE_TYPE_INVALID" ? "صيغة صورة الإثبات غير مدعومة. اختر صورة بصيغة JPG أو PNG." : "تعذر تجهيز صورة الإثبات. اختر الصورة مرة أخرى.");
     }
   }
 
   async function retryStoreImage() {
-    if (!createdCase || !storeImage || busy) return;
+    if (!createdCase || !storeImage || busy || pendingProofImageAttempt) return;
     setBusy(true);
     setError("");
     try {
@@ -441,7 +448,9 @@ const theme = useAppearanceTheme();
     try {
       const token = await getUsableIdentityAccessToken();
       const uploaded = await fieldClient().uploadJoiningCaseStoreImage(token, attempt.caseID, attempt.image, attempt.image.provenance, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
-      setCreatedCase(uploaded);
+      const canonical = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID).catch((cause: unknown) => { throw markFieldMediaReadbackUncertain(cause); });
+      if (!fieldDraftMediaUploadConfirmed(uploaded.case, canonical.case, "store", attempt.expectedVersion)) throw new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH");
+      setCreatedCase(canonical);
       setStoreImage(null);
       setPendingImageAttempt(null);
     } catch (cause) {
@@ -468,7 +477,7 @@ const theme = useAppearanceTheme();
   }
 
   async function retryProofImage() {
-    if (!createdCase || !proofImage || busy) return;
+    if (!createdCase || !proofImage || busy || pendingImageAttempt) return;
     setBusy(true);
     setError("");
     try {
@@ -484,7 +493,9 @@ const theme = useAppearanceTheme();
     try {
       const token = await getUsableIdentityAccessToken();
       const uploaded = await fieldClient().uploadFieldJoiningCaseProofImage(token, attempt.caseID, attempt.image, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
-      setCreatedCase(uploaded);
+      const canonical = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID).catch((cause: unknown) => { throw markFieldMediaReadbackUncertain(cause); });
+      if (!fieldDraftMediaUploadConfirmed(uploaded.case, canonical.case, "proof", attempt.expectedVersion)) throw new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH");
+      setCreatedCase(canonical);
       setProofImage(null);
       setPendingProofImageAttempt(null);
     } catch (cause) {
@@ -633,13 +644,13 @@ const theme = useAppearanceTheme();
         <Text style={createdCase.case.firstStoreProofImageUploaded ? styles.successText : styles.error}>{createdCase.case.firstStoreProofImageUploaded ? "صورة الإثبات الخاصة مسجلة." : "مطلوب قبل الإرسال: رفع صورة الإثبات الخاصة عبر المسار الآمن."}</Text>
         {!createdCase.case.firstStoreProofImageUploaded ? <>
           {proofImage ? <Image accessibilityLabel="معاينة صورة الإثبات المختارة" source={{ uri: proofImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="contain" /> : null}
-          <BthwaniButton disabled={busy || Boolean(pendingProofImageAttempt)} label={proofImage ? "تغيير صورة الإثبات" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
-          {proofImage ? <BthwaniButton busy={busy} disabled={busy} label={pendingProofImageAttempt ? "إعادة التحقق من رفع صورة الإثبات" : "رفع صورة الإثبات المشفّرة"} onPress={() => void retryProofImage()} variant="primary" /> : null}
+          <BthwaniButton disabled={busy || Boolean(pendingProofImageAttempt) || Boolean(pendingImageAttempt)} label={proofImage ? "تغيير صورة الإثبات" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
+          {proofImage ? <BthwaniButton busy={busy} disabled={busy || Boolean(pendingImageAttempt)} label={pendingProofImageAttempt ? "إعادة التحقق من رفع صورة الإثبات" : "رفع صورة الإثبات المشفّرة"} onPress={() => void retryProofImage()} variant="primary" /> : null}
         </> : null}
         {storeImage ? <>
           <Image accessibilityLabel="معاينة صورة المتجر التي لم يكتمل رفعها" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="cover" />
-          <BthwaniButton disabled={busy || Boolean(pendingImageAttempt)} label="اختيار صورة أخرى" onPress={() => void pickStoreImage()} variant="secondary" />
-          <BthwaniButton busy={busy} disabled={busy} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "إعادة رفع صورة المتجر"} onPress={() => void retryStoreImage()} variant="secondary" />
+          <BthwaniButton disabled={busy || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="اختيار صورة أخرى" onPress={() => void pickStoreImage()} variant="secondary" />
+          <BthwaniButton busy={busy} disabled={busy || Boolean(pendingProofImageAttempt)} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "إعادة رفع صورة المتجر"} onPress={() => void retryStoreImage()} variant="secondary" />
         </> : null}
         <Link href={"/cases" as Href} asChild><BthwaniButton label="فتح قائمة الشركاء" variant="secondary" /></Link>
       </View> : null}

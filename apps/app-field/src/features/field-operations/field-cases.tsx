@@ -8,7 +8,9 @@ import { ActivityIndicator, FlatList, Image, Text, TextInput, View } from "react
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient, isMissingFieldAdmission } from "./field-client";
+import { fieldDraftMediaUploadConfirmed, markFieldMediaReadbackUncertain } from "./field-draft-readback";
 import { FieldCommercialAgreement } from "./field-commercial-agreement";
+import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
 import { createFieldOperationStyles } from "./field-operation-styles";
 
@@ -21,6 +23,7 @@ type PendingProofImageAttempt = Readonly<{ caseID: string; expectedVersion: numb
 type FieldCasePagination = { sequence: number; query: string; cursor: string; loadingMore: boolean };
 
 function isOutcomeUncertain(cause: unknown): boolean {
+  if (cause instanceof Error && (cause.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH" || cause.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE")) return true;
   if (!cause || typeof cause !== "object") return false;
   const error = cause as { kind?: unknown; status?: unknown };
   return error.kind === "network" || (error.kind === "http" && typeof error.status === "number" && error.status >= 500);
@@ -202,7 +205,7 @@ export function FieldCases() {
   }, [appliedQuery, loading]);
 
   async function submitCase(item: JoiningCaseSummary) {
-    if (busy || item.state !== "draft") return;
+    if (busy || item.state !== "draft" || storeImage || proofImage || pendingImageAttempt || pendingProofImageAttempt) return;
     setBusy(item.id);
     setError("");
     try {
@@ -240,7 +243,7 @@ export function FieldCases() {
   }
 
   async function openStoreImage(item: JoiningCaseSummary) {
-    if (busy || storeImage || pendingImageAttempt || item.state !== "draft") return;
+    if (busy || storeImage || proofImage || pendingImageAttempt || pendingProofImageAttempt || item.state !== "draft") return;
     setBusy(item.id);
     setError("");
     try {
@@ -259,7 +262,7 @@ export function FieldCases() {
   }
 
   async function pickStoreImage(source: "camera" | "library" = "library") {
-    if (!mediaCase || busy || pendingImageAttempt) return;
+    if (!mediaCase || busy || pendingImageAttempt || pendingProofImageAttempt) return;
     const permission = source === "camera" ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { setError(source === "camera" ? "يلزم السماح باستخدام الكاميرا لالتقاط صورة المتجر." : "يلزم السماح بالوصول إلى الصور لاختيار صورة المتجر."); return; }
     const result = source === "camera"
@@ -268,21 +271,24 @@ export function FieldCases() {
     if (result.canceled || !result.assets[0]?.uri) return;
     const asset = result.assets[0];
     try {
+      if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) throw new Error("STORE_IMAGE_SIZE_INVALID");
+      if (!fieldJoiningImageDimensionsSupported(asset.width, asset.height)) throw new Error("STORE_IMAGE_DIMENSIONS_INVALID");
       const response = await fetch(asset.uri);
       if (!response.ok) throw new Error("STORE_IMAGE_READ_FAILED");
       const blob = await response.blob();
+      if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("STORE_IMAGE_SIZE_INVALID");
       const type = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
       if (!type) throw new Error("STORE_IMAGE_TYPE_INVALID");
       setStoreImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "store-image.png" : "store-image.jpg"), type, blob, provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
       setError("");
     } catch (cause) {
       console.warn("Field store image preparation failed", cause);
-      setError("تعذر تجهيز صورة المتجر. اختر الصورة مرة أخرى.");
+      setError(cause instanceof Error && cause.message === "STORE_IMAGE_SIZE_INVALID" ? "يجب ألا يتجاوز حجم صورة المتجر 10 ميغابايت." : cause instanceof Error && cause.message === "STORE_IMAGE_DIMENSIONS_INVALID" ? "يجب أن تكون أبعاد صورة المتجر بين 1 و6000 بكسل للعرض والارتفاع." : cause instanceof Error && cause.message === "STORE_IMAGE_TYPE_INVALID" ? "صيغة صورة المتجر غير مدعومة. اختر صورة بصيغة JPG أو PNG." : "تعذر تجهيز صورة المتجر. اختر الصورة مرة أخرى.");
     }
   }
 
   async function uploadStoreImage() {
-    if (!mediaCase || !storeImage || busy) return;
+    if (!mediaCase || !storeImage || busy || pendingProofImageAttempt) return;
     if (!isMediaProvenanceInputValid(storeImage.provenance)) {
       setError("أكمل منشئ الصورة ومصدرها وبيان حق استخدامها، ثم أكّد صحة التصريح.");
       return;
@@ -294,7 +300,9 @@ export function FieldCases() {
     try {
       const token = await getUsableIdentityAccessToken();
       const saved = await fieldClient().uploadJoiningCaseStoreImage(token, attempt.caseID, attempt.image, attempt.image.provenance, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
-      setMediaCase(saved);
+      const canonical = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID).catch((cause: unknown) => { throw markFieldMediaReadbackUncertain(cause); });
+      if (!fieldDraftMediaUploadConfirmed(saved.case, canonical.case, "store", attempt.expectedVersion)) throw new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH");
+      setMediaCase(canonical);
       setStoreImage(null);
       setPendingImageAttempt(null);
       await load();
@@ -321,13 +329,15 @@ export function FieldCases() {
   }
 
   async function pickProofImage() {
-    if (!mediaCase || mediaCase.case.state !== "draft" || busy || pendingProofImageAttempt) return;
+    if (!mediaCase || mediaCase.case.state !== "draft" || busy || pendingProofImageAttempt || pendingImageAttempt) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { setError("يلزم السماح بالوصول إلى الصور لاختيار صورة الإثبات."); return; }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1 });
     if (result.canceled || !result.assets[0]?.uri) return;
     const asset = result.assets[0];
     try {
+      if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) throw new Error("PROOF_IMAGE_SIZE_INVALID");
+      if (!fieldJoiningImageDimensionsSupported(asset.width, asset.height)) throw new Error("PROOF_IMAGE_DIMENSIONS_INVALID");
       const response = await fetch(asset.uri);
       if (!response.ok) throw new Error("PROOF_IMAGE_READ_FAILED");
       const blob = await response.blob();
@@ -338,12 +348,12 @@ export function FieldCases() {
       setError("");
     } catch (cause) {
       console.warn("Field draft proof image preparation failed", cause);
-      setError(cause instanceof Error && cause.message === "PROOF_IMAGE_SIZE_INVALID" ? "يجب ألا يتجاوز حجم صورة الإثبات 10 ميغابايت." : cause instanceof Error && cause.message === "PROOF_IMAGE_TYPE_INVALID" ? "صيغة صورة الإثبات غير مدعومة. اختر صورة بصيغة JPG أو PNG." : "تعذر تجهيز صورة الإثبات. اختر الصورة مرة أخرى.");
+      setError(cause instanceof Error && cause.message === "PROOF_IMAGE_SIZE_INVALID" ? "يجب ألا يتجاوز حجم صورة الإثبات 10 ميغابايت." : cause instanceof Error && cause.message === "PROOF_IMAGE_DIMENSIONS_INVALID" ? "يجب أن تكون أبعاد صورة الإثبات بين 1 و6000 بكسل للعرض والارتفاع." : cause instanceof Error && cause.message === "PROOF_IMAGE_TYPE_INVALID" ? "صيغة صورة الإثبات غير مدعومة. اختر صورة بصيغة JPG أو PNG." : "تعذر تجهيز صورة الإثبات. اختر الصورة مرة أخرى.");
     }
   }
 
   async function uploadProofImage() {
-    if (!mediaCase || !proofImage || busy) return;
+    if (!mediaCase || !proofImage || busy || pendingImageAttempt) return;
     const attempt = pendingProofImageAttempt ?? { caseID: mediaCase.case.id, expectedVersion: mediaCase.case.version, image: proofImage, idempotencyKey: `field_proof_image_${Crypto.randomUUID()}`, correlationID: `field_proof_image_corr_${Crypto.randomUUID()}` };
     setPendingProofImageAttempt(attempt);
     setBusy(attempt.caseID);
@@ -351,7 +361,9 @@ export function FieldCases() {
     try {
       const token = await getUsableIdentityAccessToken();
       const saved = await fieldClient().uploadFieldJoiningCaseProofImage(token, attempt.caseID, attempt.image, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
-      setMediaCase(saved);
+      const canonical = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID).catch((cause: unknown) => { throw markFieldMediaReadbackUncertain(cause); });
+      if (!fieldDraftMediaUploadConfirmed(saved.case, canonical.case, "proof", attempt.expectedVersion)) throw new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH");
+      setMediaCase(canonical);
       setProofImage(null);
       setPendingProofImageAttempt(null);
       await load();
@@ -426,10 +438,10 @@ export function FieldCases() {
         <BthwaniButton disabled={Boolean(busy)} label="إعداد كتالوج المتجر الأولي" onPress={() => router.push(`/(app)/catalog/${encodeURIComponent(item.id)}` as Href)} variant="secondary" />
       </> : null}
       {item.state === "draft" ? <View style={styles.optionList}>
-        <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="تعديل بيانات المسودة" onPress={() => router.push({ pathname: "/new-case", params: { caseId: item.id } } as Href)} variant="secondary" />
-        <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="استكمال صور المسودة" onPress={() => void openStoreImage(item)} variant="secondary" />
+        <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(proofImage) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="تعديل بيانات المسودة" onPress={() => router.push({ pathname: "/new-case", params: { caseId: item.id } } as Href)} variant="secondary" />
+        <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(proofImage) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="استكمال صور المسودة" onPress={() => void openStoreImage(item)} variant="secondary" />
       </View> : null}
-      {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt) || (Boolean(storeImage) && mediaCase?.case.id !== item.id)} label="إرسال للمراجعة" onPress={() => setCaseToSubmit(item)} /> : null}
+      {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt) || Boolean(storeImage) || Boolean(proofImage)} label="إرسال للمراجعة" onPress={() => setCaseToSubmit(item)} /> : null}
       {mediaCase?.case.id === item.id ? <View style={styles.card}>
         <Text style={styles.cardTitle}>صورة واجهة المتجر</Text>
         {mediaCase.case.storeProfileImage ? <Image accessibilityLabel="صورة المتجر المحفوظة" source={{ uri: mediaCase.case.storeProfileImage.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : <Text style={styles.muted}>لا توجد صورة محفوظة للشريك بعد.</Text>}
@@ -438,20 +450,21 @@ export function FieldCases() {
           <FieldMediaProvenanceEditor disabled={Boolean(busy) || Boolean(pendingImageAttempt)} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} value={storeImage.provenance} />
         </View> : null}
         <View style={styles.optionList}>
-          <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label={storeImageButtonLabel} onPress={() => void pickStoreImage("library")} variant="secondary" />
-          <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label="التقاط صورة بالكاميرا" onPress={() => void pickStoreImage("camera")} variant="secondary" />
+          <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label={storeImageButtonLabel} onPress={() => void pickStoreImage("library")} variant="secondary" />
+          <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="التقاط صورة بالكاميرا" onPress={() => void pickStoreImage("camera")} variant="secondary" />
         </View>
-        {storeImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || (!pendingImageAttempt && !isMediaProvenanceInputValid(storeImage.provenance))} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "حفظ صورة المتجر"} onPress={() => void uploadStoreImage()} /> : null}
+        {storeImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingProofImageAttempt) || (!pendingImageAttempt && !isMediaProvenanceInputValid(storeImage.provenance))} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "حفظ صورة المتجر"} onPress={() => void uploadStoreImage()} /> : null}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>صورة الإثبات الخاصة</Text>
           <Text style={mediaCase.case.firstStoreProofImageUploaded ? styles.muted : styles.error}>{mediaCase.case.firstStoreProofImageUploaded ? "صورة الإثبات مسجلة للمسودة." : "ارفع صورة الإثبات من هذه القائمة لإكمال المسودة بعد مغادرة شاشة الإنشاء."}</Text>
           {proofImage ? <Image accessibilityLabel="معاينة صورة الإثبات" source={{ uri: proofImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="contain" /> : null}
           {!mediaCase.case.firstStoreProofImageUploaded ? <>
-            <BthwaniButton disabled={Boolean(busy) || Boolean(pendingProofImageAttempt)} label={proofImage ? "اختيار صورة إثبات أخرى" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
-            {proofImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy)} label={pendingProofImageAttempt ? "إعادة التحقق من رفع الإثبات" : "رفع صورة الإثبات المشفّرة"} onPress={() => void uploadProofImage()} /> : null}
+            <BthwaniButton disabled={Boolean(busy) || Boolean(pendingProofImageAttempt) || Boolean(pendingImageAttempt)} label={proofImage ? "اختيار صورة إثبات أخرى" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
+            {proofImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label={pendingProofImageAttempt ? "إعادة التحقق من رفع الإثبات" : "رفع صورة الإثبات المشفّرة"} onPress={() => void uploadProofImage()} /> : null}
           </> : null}
         </View>
-        <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="إغلاق تفاصيل الصورة" onPress={() => { setMediaCase(null); setStoreImage(null); }} variant="secondary" />
+        {storeImage || proofImage ? <Text style={styles.muted}>ارفع الصور المختارة أو أغلق التفاصيل لإلغاء الاختيار قبل إرسال المسودة للمراجعة.</Text> : null}
+        <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="إغلاق تفاصيل الصورة" onPress={() => { setMediaCase(null); setStoreImage(null); setProofImage(null); }} variant="secondary" />
       </View> : null}
     </View>
     );

@@ -132,6 +132,8 @@ import { pathToFileURL } from "node:url";
 
 register(pathToFileURL(path.join(root, "packages/design-system/tools/ts-resolver.mjs")).href, import.meta.url);
 if (app === "app-field") {
+  const newCaseRoute = fs.readFileSync(path.join(appDir, "app/(app)/new-case.tsx"), "utf8");
+  assert.match(newCaseRoute, /key=\{`field-case:\$\{caseId\}`\}/, "app-field: changing the edited case identity must remount the draft editor rather than reuse another partner's state");
   const admissionProviderOpen = layoutContent.indexOf("<FieldAdmissionProvider>");
   const authenticatedBoundaryOpen = layoutContent.indexOf("<AuthenticatedMobileBoundary");
   const authenticatedBoundaryClose = layoutContent.indexOf("</AuthenticatedMobileBoundary>");
@@ -163,8 +165,122 @@ if (app === "app-field") {
   const gateSource = fs.readFileSync(path.join(appDir, "src/shell/field-admission-gate.tsx"), "utf8");
   assert.match(gateSource, /fieldAdmissionActionability\(state\.admission\) !== "available"/, "app-field: guarded routes reject non-available admissions");
   const accountSource = fs.readFileSync(path.join(appDir, "src/features/account/account.tsx"), "utf8");
-  assert.match(accountSource, /profileActionability === "available" \? <StoreAccessInvitationSummary/, "app-field: unavailable admission must not show an unusable invitation action");
+  assert.match(accountSource, /verifiedWorkspace = verification === "verified" && profileActionability === "available"/, "app-field: admission and a fresh successful readback must both authorize invitation actions");
+  assert.match(accountSource, /verifiedWorkspace \? <StoreAccessInvitationSummary/, "app-field: unavailable or unverified admission must not show invitation actions");
+  const providerSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/use-field-admission.ts"), "utf8");
+  assert.doesNotMatch(providerSource, /setState\(\{ kind: "loading" \}\)/, "app-field: foreground revalidation must not unmount unsaved forms");
+  assert.match(providerSource, /setState\(\(current\) => current\.kind === "ready" \? current : \{ kind: "loading" \}\)/, "app-field: retries preserve admitted forms but show progress for missing or failed admission");
+  assert.match(gateSource, /pointerEvents=\{verified \? "auto" : "none"\}/, "app-field: forms must be non-interactive until admission readback succeeds");
   assert.match(layoutContent, /if \(becameActive\) \{[\s\S]*?recordOpen\(\);[\s\S]*?void refresh\(\);[\s\S]*?\}/, "app-field: refresh admission after returning to foreground");
+  const { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain } = await import(
+    pathToFileURL(path.join(appDir, "src/features/field-operations/field-draft-readback.ts")).href
+  );
+  const intervals = [{ dayOfWeek: 1, opensAt: "09:00", closesAt: "17:00", closesNextDay: false }, { dayOfWeek: 2, opensAt: "10:00", closesAt: "18:00", closesNextDay: false }];
+  const draft = { contactPhoneE164: "+967777123456", ownerFullName: "مالك النشاط", businessName: "نشاط الاختبار", firstStoreName: "المتجر الأول", walletProviderKey: "wallet_provider_test", firstStoreAddress: "صنعاء", serviceCityId: "city-1", firstStoreVerticalId: "vertical-1", firstStoreCommercialTypeId: "type-1", firstStoreProofType: "COMMERCIAL_REGISTRATION", firstStoreNotes: "ملاحظات", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreWorkingHours: { intervals }, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP", "BTHWANI_CAPTAIN"] };
+  const saved = { ...draft, state: "draft", origin: "field", version: 3, firstStoreWorkingHours: { intervals: [...intervals].reverse() }, firstStoreFulfillmentModes: [...draft.firstStoreFulfillmentModes].reverse() };
+  assert.equal(fieldDraftMatchesReadback(draft, saved, 3), true, "Field draft readback should allow server-normalized set ordering");
+  for (const key of ["ownerFullName", "businessName", "firstStoreName", "walletProviderKey", "firstStoreAddress", "serviceCityId", "firstStoreVerticalId", "firstStoreCommercialTypeId", "firstStoreProofType", "firstStoreNotes"]) {
+    assert.equal(fieldDraftMatchesReadback(draft, { ...saved, [key]: "different" }, 3), false, `Field draft readback missed ${key} divergence`);
+  }
+  for (const [name, altered] of [
+    ["version", { version: 2 }], ["origin", { origin: "control_panel" }], ["state", { state: "submitted" }],
+    ["latitude", { firstStoreLatitude: 15.35 }], ["longitude", { firstStoreLongitude: 44.2 }],
+    ["hours", { firstStoreWorkingHours: { intervals: [intervals[0]] } }], ["modes", { firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] }],
+  ]) assert.equal(fieldDraftMatchesReadback(draft, { ...saved, ...altered }, 3), false, `Field draft readback missed ${name} divergence`);
+  const partial = { contactPhoneE164: draft.contactPhoneE164 };
+  const partialSaved = { ...saved, ownerFullName: null, businessName: "", firstStoreName: "", walletProviderKey: "", firstStoreAddress: null, serviceCityId: null, firstStoreVerticalId: "", firstStoreCommercialTypeId: null, firstStoreProofType: null, firstStoreNotes: null, firstStoreLatitude: null, firstStoreLongitude: null, firstStoreWorkingHours: null, firstStoreFulfillmentModes: [] };
+  assert.equal(fieldDraftMatchesReadback(partial, partialSaved, 3), true, "Omitted fields in a partial snapshot may read back as null or empty");
+  assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, walletProviderKey: "obsolete-wallet" }, 3), false, "Clearing an omitted wallet must be reflected in canonical readback");
+  assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] }, 3), false, "Clearing modes must not silently retain old modes");
+  assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreWorkingHours: { intervals: [intervals[0]] } }, 3), false, "Clearing hours must not silently retain old intervals");
+  assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreLatitude: 15.3, firstStoreLongitude: 44.2 }, 3), false, "Clearing a map pin must not silently retain old coordinates");
+  const newCaseSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-new-case.tsx"), "utf8");
+  assert.match(newCaseSource, /cause\.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH"/, "Field readback mismatch must retain the original idempotency identity for a safe retry");
+  assert.match(newCaseSource, /cause\.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_UNAVAILABLE"/, "A failed post-write draft readback must preserve the original attempt identity");
+  assert.match(newCaseSource, /readOwnFieldJoiningCase\(token, response\.case\.id\)\.catch\(\(cause: unknown\) => \{ throw markFieldDraftReadbackUncertain\(cause\); \}\)/, "Post-write readback errors must not be classified as draft write failures");
+  for (const status of [401, 403, 404]) {
+    const readFailure = Object.assign(new Error("Draft readback failed"), { kind: "http", status });
+    const uncertain = markFieldDraftReadbackUncertain(readFailure);
+    assert.equal(uncertain.message, "FIELD_JOINING_CASE_CANONICAL_READBACK_UNAVAILABLE", "Post-write readback must remain uncertain regardless of 4xx status");
+    assert.equal(uncertain.cause, readFailure, "Original draft readback error must be retained for diagnosis");
+  }
+  assert.match(newCaseSource, /if \(isOutcomeUncertain\(cause\)\) \{\s*setError/, "Field uncertain results must remain recoverable instead of starting a duplicate draft");
+  console.log("MOBILE_FIELD_DRAFT_READBACK=PASS complete and cleared drafts, normalized sets, mismatches, version and uncertain retry");
+  const uploadedMedia = { ...saved, id: "field-case-1", version: 4, storeProfileImage: { uri: "https://media.example/store-1.png", contentSha256: "digest-one" }, firstStoreProofImageUploaded: true };
+  assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia }, "store", 3), true, "Field store image needs canonical confirmation");
+  assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia }, "proof", 3), true, "Field private proof image needs canonical confirmation");
+  for (const [name, changed] of [
+    ["case identity", { id: "other-case" }], ["version", { version: 3 }],
+    ["lost store image", { storeProfileImage: null }],
+    ["changed media URI", { storeProfileImage: { uri: "https://media.example/store-2.png", contentSha256: "digest-one" } }],
+    ["missing canonical digest", { storeProfileImage: { uri: "https://media.example/store-1.png" } }],
+    ["image digest divergence", { storeProfileImage: { uri: "https://media.example/store-1.png", contentSha256: "digest-two" } }],
+  ]) assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia, ...changed }, "store", 3), false, `Field media confirmation missed ${name}`);
+  assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, storeProfileImage: { uri: "https://media.example/store-1.png" } }, uploadedMedia, "store", 3), false, "A response lacking an upload digest cannot prove the same media was persisted");
+  assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, version: 3 }, uploadedMedia, "store", 3), false, "A non-advancing upload version cannot prove media persistence");
+  assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia, firstStoreProofImageUploaded: false }, "proof", 3), false, "Private proof confirmation requires canonical uploaded flag");
+  for (const status of [401, 403, 404]) {
+    const readFailure = Object.assign(new Error("Readback failed"), { kind: "http", status });
+    const uncertain = markFieldMediaReadbackUncertain(readFailure);
+    assert.equal(uncertain.message, "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE", "Post-upload readback failure must remain uncertain");
+    assert.equal(uncertain.cause, readFailure, "Preserve original readback failure for diagnosis");
+  }
+  const casesSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-cases.tsx"), "utf8");
+  for (const source of [newCaseSource, casesSource]) {
+    assert.match(source, /fieldDraftMediaUploadConfirmed\([^\n]+"store"/, "Field store upload must use canonical readback before discarding selected media");
+    assert.match(source, /fieldDraftMediaUploadConfirmed\([^\n]+"proof"/, "Field proof upload must use canonical readback before discarding selected media");
+    assert.match(source, /cause\.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH"/, "Unconfirmed media upload must retain original idempotency identity for retry");
+    assert.match(source, /cause\.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE"/, "Failed post-upload readback must retain the same pending upload identity");
+    assert.equal([...source.matchAll(/readOwnFieldJoiningCase\(token, attempt\.caseID\)\.catch\(\(cause: unknown\) => \{ throw markFieldMediaReadbackUncertain\(cause\); \}\)/g)].length, 2, "Both media flows must classify post-upload read failures separately from upload request failures");
+  }
+  assert.match(casesSource, /if \(busy \|\| item\.state !== "draft" \|\| storeImage \|\| proofImage \|\| pendingImageAttempt \|\| pendingProofImageAttempt\) return;/, "Field submission must reject unsaved media even if directly invoked");
+  assert.match(casesSource, /disabled=\{Boolean\(busy\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\) \|\| Boolean\(storeImage\) \|\| Boolean\(proofImage\)\} label="إرسال للمراجعة"/, "Field must not submit a case while unsaved store or proof images are selected");
+  assert.match(casesSource, /if \(busy \|\| storeImage \|\| proofImage \|\| pendingImageAttempt \|\| pendingProofImageAttempt \|\| item\.state !== "draft"\) return;/, "Opening other media details must not replace a pending proof image or upload attempt");
+  assert.equal([...casesSource.matchAll(/disabled=\{Boolean\(busy\) \|\| Boolean\(storeImage\) \|\| Boolean\(proofImage\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\)\}/g)].length, 2, "Draft editing and media navigation must both protect unsaved proof selection");
+  assert.match(casesSource, /setMediaCase\(null\); setStoreImage\(null\); setProofImage\(null\);/, "Closing media details must discard both uncommitted image selections");
+  assert.match(newCaseSource, /if \(!createdCase \|\| !storeImage \|\| busy \|\| pendingProofImageAttempt\) return;/, "Store retry must not overtake unresolved proof upload in draft editor");
+  assert.match(newCaseSource, /if \(!createdCase \|\| !proofImage \|\| busy \|\| pendingImageAttempt\) return;/, "Proof retry must not overtake unresolved store upload in draft editor");
+  assert.match(newCaseSource, /if \(busy \|\| pendingImageAttempt \|\| pendingProofImageAttempt\) return;/, "Store selection must remain locked during either pending upload");
+  assert.match(newCaseSource, /if \(busy \|\| pendingProofImageAttempt \|\| pendingImageAttempt\) return;/, "Proof selection must remain locked during either pending upload");
+  assert.match(casesSource, /if \(!mediaCase \|\| !storeImage \|\| busy \|\| pendingProofImageAttempt\) return;/, "Store upload must not overtake unresolved proof upload in cases");
+  assert.match(casesSource, /if \(!mediaCase \|\| !proofImage \|\| busy \|\| pendingImageAttempt\) return;/, "Proof upload must not overtake unresolved store upload in cases");
+  assert.match(casesSource, /if \(!mediaCase \|\| busy \|\| pendingImageAttempt \|\| pendingProofImageAttempt\) return;/, "Cases store picker must guard both pending uploads");
+  assert.match(casesSource, /if \(!mediaCase \|\| mediaCase\.case\.state !== "draft" \|\| busy \|\| pendingProofImageAttempt \|\| pendingImageAttempt\) return;/, "Cases proof picker must guard both pending uploads");
+  assert.equal([...casesSource.matchAll(/disabled=\{Boolean\(busy\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\)\} label=/g)].length, 3, "Cases store image, camera and close-detail actions must protect pending uploads");
+  assert.match(newCaseSource, /disabled=\{busy \|\| Boolean\(pendingImageAttempt\)\} label=\{pendingProofImageAttempt \?/, "Draft proof retry must be visibly blocked by pending store upload");
+  assert.match(newCaseSource, /disabled=\{busy \|\| Boolean\(pendingProofImageAttempt\)\} label=\{pendingImageAttempt \?/, "Draft store retry must be visibly blocked by pending proof upload");
+  for (const [surface, source] of [["new-case", newCaseSource], ["cases", casesSource]]) {
+    const start = source.indexOf("async function pickStoreImage(");
+    const end = source.indexOf("async function pickProofImage()", start);
+    assert.ok(start !== -1 && end > start, "Field " + surface + " must expose store-image selection");
+    const picker = source.slice(start, end);
+    assert.match(picker, /if \(asset\.fileSize && asset\.fileSize > 10 \* 1024 \* 1024\) throw new Error\("STORE_IMAGE_SIZE_INVALID"\);/, "Field " + surface + " must reject oversized picker metadata before loading bytes");
+    assert.match(picker, /if \(!blob\.size \|\| blob\.size > 10 \* 1024 \* 1024\) throw new Error\("STORE_IMAGE_SIZE_INVALID"\);/, "Field " + surface + " must reject empty and oversized image bytes even without picker metadata");
+    assert.match(picker, /cause\.message === "STORE_IMAGE_SIZE_INVALID" \? "يجب ألا يتجاوز حجم صورة المتجر 10 ميغابايت\."/, "Field " + surface + " must explain the DSH size limit in Arabic");
+    assert.ok(picker.indexOf('throw new Error("STORE_IMAGE_SIZE_INVALID")') < picker.indexOf("setStoreImage("), "Field " + surface + " must reject invalid media before storing a selected image");
+  }
+  const { fieldJoiningImageDimensionsSupported } = await import(
+    pathToFileURL(path.join(appDir, "src/features/field-operations/field-image-dimensions.ts")).href
+  );
+  for (const [width, height] of [[1, 1], [6000, 6000], [1, 6000], [6000, 1]]) {
+    assert.equal(fieldJoiningImageDimensionsSupported(width, height), true, "DSH-valid boundary dimensions must remain selectable");
+  }
+  for (const [width, height] of [[0, 1], [1, 0], [6001, 1], [1, 6001], [-1, 2], [1.5, 2], [NaN, 2], [2, Infinity], [undefined, 2]]) {
+    assert.equal(fieldJoiningImageDimensionsSupported(width, height), false, "Invalid image dimensions must be rejected before upload");
+  }
+  for (const [surface, source] of [["new-case", newCaseSource], ["cases", casesSource]]) {
+    const storeStart = source.indexOf("async function pickStoreImage(");
+    const proofStart = source.indexOf("async function pickProofImage()", storeStart);
+    const proofEnd = source.indexOf("async function uploadProofImage(", proofStart);
+    assert.ok(storeStart !== -1 && proofStart > storeStart && proofEnd > proofStart, "Field " + surface + " must have bounded store and proof pickers");
+    for (const [kind, picker] of [["STORE", source.slice(storeStart, proofStart)], ["PROOF", source.slice(proofStart, proofEnd)]]) {
+      assert.ok(picker.includes(`if (!fieldJoiningImageDimensionsSupported(asset.width, asset.height)) throw new Error("${kind}_IMAGE_DIMENSIONS_INVALID");`), `Field ${surface} ${kind} picker must use the tested dimensions guard`);
+      assert.ok(picker.indexOf("fieldJoiningImageDimensionsSupported(asset.width, asset.height)") < picker.indexOf("await fetch(asset.uri)"), `Field ${surface} ${kind} must reject dimensions before reading bytes`);
+      assert.ok(picker.includes(`cause.message === "${kind}_IMAGE_DIMENSIONS_INVALID"`), `Field ${surface} ${kind} must show a distinct dimensions error`);
+      assert.match(picker, /يجب أن تكون أبعاد صورة (المتجر|الإثبات) بين 1 و6000 بكسل للعرض والارتفاع/, `Field ${surface} ${kind} must explain accepted dimensions in Arabic`);
+    }
+  }
+  console.log("MOBILE_FIELD_MEDIA_READBACK=PASS image marker, private proof, version, isolation, recovery and both Field surfaces");
   const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-commercial-agreement-rate.ts")).href
   );
@@ -231,6 +347,51 @@ if (app === "app-captain") {
   console.log("MOBILE_CAPTAIN_CASH_IN_RECOVERY=PASS canonical intent, actor scope, retry identity, and terminal cleanup");
 }
 if (app === "app-partner") {
+  const { isRecoverablePartnerPayout, matchesPartnerPayoutReadback } = await import(
+    pathToFileURL(path.join(appDir, "src/features/account/partner-payout-readback.ts")).href
+  );
+  const payout = (id, actor, amount) => ({
+    id, actorType: "partner", actorId: actor, beneficiaryActorId: actor,
+    amountMode: "SPECIFIED", requestedAmountMinor: amount, resolvedAmountMinor: amount,
+    currency: "YER", destinationId: "wallet-" + actor, destinationVersion: 1,
+    status: "HELD", policyVersion: "v1", createdAt: "2026-10-10T00:00:00Z",
+  });
+  const payoutRequest = {
+    id: "request-1", status: "PARTITIONED", scopeMode: "SPECIFIED", totalAmountMinor: 3000,
+    currency: "YER", createdAt: "2026-10-10T00:00:00Z",
+    stores: [
+      { storeId: "store-a", amountMinor: 1000, beneficiaryActorId: "partner-a", recipientAssignmentVersion: 3, currency: "YER" },
+      { storeId: "store-b", amountMinor: 2000, beneficiaryActorId: "partner-b", recipientAssignmentVersion: 5, currency: "YER" },
+    ],
+    payouts: [payout("payout-a", "partner-a", 1000), payout("payout-b", "partner-b", 2000)],
+  };
+  const payoutInput = {
+    scopeMode: "SPECIFIED", storeIds: ["store-a", "store-b"],
+    storeAmounts: [{ storeId: "store-a", amountMinor: 1000 }, { storeId: "store-b", amountMinor: 2000 }],
+  };
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, payoutRequest), true);
+  assert.equal(isRecoverablePartnerPayout(payoutRequest, payoutInput), true, "Recovered request must match a saved modern attempt");
+  assert.equal(isRecoverablePartnerPayout(payoutRequest), true, "A legacy GET needs internally valid financial facts");
+  assert.equal(isRecoverablePartnerPayout({ ...payoutRequest, payouts: payoutRequest.payouts.map((item) => ({ ...item, status: "CANCELLED" })) }), false, "Recovery must not clear an attempt for cancelled transfers");
+  assert.equal(isRecoverablePartnerPayout({ ...payoutRequest, payouts: payoutRequest.payouts.map((item) => ({ ...item, status: "EXCEPTION" })) }, payoutInput), false, "Recovery must not clear an attempt for exceptional transfers");
+  assert.equal(isRecoverablePartnerPayout(payoutRequest, { ...payoutInput, storeIds: ["incorrect-store"] }), false, "Modern recovery must prove original requested stores");
+  assert.equal(isRecoverablePartnerPayout({ ...payoutRequest, payouts: [...payoutRequest.payouts, payoutRequest.payouts[0]] }), false, "Legacy recovery must reject duplicate transfer IDs");
+  assert.equal(isRecoverablePartnerPayout({ ...payoutRequest, stores: [...payoutRequest.stores, payoutRequest.stores[0]] }), false, "Legacy recovery must reject duplicate store allocations");
+  assert.equal(isRecoverablePartnerPayout({ ...payoutRequest, totalAmountMinor: 4000 }), false, "Legacy recovery must reject mismatched totals");
+  assert.equal(matchesPartnerPayoutReadback({ ...payoutInput, storeIds: ["other-store", "store-b"] }, payoutRequest, payoutRequest), false, "Canonical response must retain the stores originally requested");
+  assert.equal(matchesPartnerPayoutReadback({ ...payoutInput, storeAmounts: [{ storeId: "store-a", amountMinor: 2000 }, { storeId: "store-b", amountMinor: 1000 }] }, payoutRequest, payoutRequest), false, "Matching POST and GET cannot hide a change to requested amounts");
+  assert.equal(matchesPartnerPayoutReadback({ ...payoutInput, storeIds: ["store-a", "store-a"] }, payoutRequest, payoutRequest), false, "Repeated requested Store IDs must fail");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, stores: [...payoutRequest.stores].reverse(), payouts: [...payoutRequest.payouts].reverse() }), true, "Readback order must not matter");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, stores: payoutRequest.stores.map((store) => ({ ...store, amountMinor: store.amountMinor === 1000 ? 2000 : 1000 })) }), false, "Same aggregate cannot hide swapped Store allocations");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, stores: payoutRequest.stores.map((store) => ({ ...store, beneficiaryActorId: "different-recipient" })) }), false, "The recipient assignment must match");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, destinationId: "changed-wallet" })) }), false, "Canonical payout destination must match");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, status: "PREPARED" })) }), true, "Legitimate later WLT status must not reject financial identity");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, status: "CANCELLED" })) }), false, "Cancelled payouts cannot be reported as successful requests");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, status: "EXCEPTION" })) }), false, "Exceptional payouts need human review, not a success notice");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, resolvedAmountMinor: entry.resolvedAmountMinor === 1000 ? 2000 : 1000 })) }), false, "Same aggregate cannot hide swapped payout allocations");
+  assert.equal(matchesPartnerPayoutReadback(payoutInput, payoutRequest, { ...payoutRequest, stores: [payoutRequest.stores[0], payoutRequest.stores[0]] }), false, "Repeated Store allocation IDs must be rejected");
+  console.log("MOBILE_PARTNER_PAYOUT_READBACK=PASS allocation, recipient, destination and immutable financial identity");
+
   const { canonicalPartnerSurfacePath, derivePartnerAuthority, RESOLVING_PARTNER_AUTHORITY } = await import(pathToFileURL(path.join(appDir, "src/shell/partner-authority.ts")).href);
   const accessibleStore = (id, owned, permissions) => ({ id, name: `متجر ${id}`, serviceCityId: "city", primaryVerticalId: "vertical", publicationState: "published", fulfillmentModes: [], owned, permissions });
   const surfacesOf = (stores) => derivePartnerAuthority(stores).surfaces;

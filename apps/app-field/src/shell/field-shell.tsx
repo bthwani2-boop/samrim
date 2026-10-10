@@ -16,7 +16,7 @@ export function FieldScrollScreen({ children }: PropsWithChildren) {
   return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
 }
 
-export function createFieldTabOptions(theme: ReturnType<typeof resolveTheme>) {
+export function createFieldTabOptions(theme: ReturnType<typeof resolveTheme>, canSearch: boolean) {
   const styles = createStyles(theme);
   const icons = { home: "home", cases: "cases", invitations: "store", wallet: "wallet" } as const;
   return ({ route }: { route: { name: string } }) => ({
@@ -26,7 +26,7 @@ export function createFieldTabOptions(theme: ReturnType<typeof resolveTheme>) {
       const { route: headerRoute, navigation, options } = headerProps as { route: { name: string; params?: unknown }; navigation: unknown; options: { headerTitle?: unknown; headerRight?: unknown } };
       const params = headerRoute.params as { focus?: string | string[]; q?: string | string[] } | undefined;
       const title = typeof options.headerTitle === "string" ? options.headerTitle : fieldHeaderTitle(headerRoute.name);
-      return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><FieldHeader title={title} routeName={headerRoute.name} headerRight={options.headerRight} focus={params?.focus} searchQuery={params?.q} navigation={navigation as FieldSearchNavigation} styles={styles} /></SafeAreaView>;
+      return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><FieldHeader canSearch={canSearch} title={title} routeName={headerRoute.name} headerRight={options.headerRight} focus={params?.focus} searchQuery={params?.q} navigation={navigation as FieldSearchNavigation} styles={styles} /></SafeAreaView>;
     },
     tabBarActiveBackgroundColor: theme.actionSoft,
     tabBarActiveTintColor: theme.interactiveText,
@@ -55,7 +55,7 @@ function fieldHeaderTitle(routeName: string) {
   return titles[routeName] ?? "الميدان";
 }
 
-function FieldHeader({ title, routeName, headerRight, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { title: string; routeName: string; headerRight?: unknown; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation: FieldSearchNavigation; styles: ReturnType<typeof createStyles> }) {
+function FieldHeader({ canSearch, title, routeName, headerRight, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { canSearch: boolean; title: string; routeName: string; headerRight?: unknown; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation: FieldSearchNavigation; styles: ReturnType<typeof createStyles> }) {
   const router = useRouter();
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
@@ -63,13 +63,13 @@ function FieldHeader({ title, routeName, headerRight, focus: rawFocus, searchQue
   const searchInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
-    if (!isSearchOpen) return;
+    if (!isSearchOpen || !canSearch) return;
     const timer = setTimeout(() => searchInputRef.current?.focus(), 50);
     return () => clearTimeout(timer);
-  }, [isSearchOpen]);
+  }, [canSearch, isSearchOpen]);
 
   const customAction = typeof headerRight === "function" ? (headerRight as () => ReactNode)() : headerRight as ReactNode;
-  return <View style={styles.header}>{isSearchOpen ? <View style={styles.headerSearchActions}><BthwaniSearchField accessibilityLabel="البحث عن شريك" autoCapitalize="none" autoCorrect={false} containerStyle={styles.headerSearchField} inputRef={searchInputRef} maxLength={128} onChangeText={(value) => navigation.setParams({ q: value.slice(0, 128) })} onClear={() => navigation.setParams({ q: "" })} placeholder="ابحث باسم المالك أو النشاط أو المتجر أو الهاتف" returnKeyType="search" value={searchQuery.slice(0, 128)} /><BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => navigation.setParams({ focus: "", q: "" })} size={sizing.controlMd} tone="soft" /></View> : <><View style={styles.headerIdentity}><Text numberOfLines={1} style={styles.pageTitle}>{title}</Text></View><View style={styles.headerActions}>{customAction}{routeName !== "account" ? <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlSm} tone="soft" /> : null}<BthwaniIconButton icon="search" label="البحث عن شريك" onPress={() => navigation.navigate("cases", { focus: "search" })} size={sizing.controlSm} tone="soft" /><BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlSm} tone="soft" /></View></>}</View>;
+  return <View style={styles.header}>{isSearchOpen && canSearch ? <View style={styles.headerSearchActions}><BthwaniSearchField accessibilityLabel="البحث عن شريك" autoCapitalize="none" autoCorrect={false} containerStyle={styles.headerSearchField} inputRef={searchInputRef} maxLength={128} onChangeText={(value) => navigation.setParams({ q: value.slice(0, 128) })} onClear={() => navigation.setParams({ q: "" })} placeholder="ابحث باسم المالك أو النشاط أو المتجر أو الهاتف" returnKeyType="search" value={searchQuery.slice(0, 128)} /><BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => navigation.setParams({ focus: "", q: "" })} size={sizing.controlMd} tone="soft" /></View> : <><View style={styles.headerIdentity}><Text numberOfLines={1} style={styles.pageTitle}>{title}</Text></View><View style={styles.headerActions}>{customAction}{routeName !== "account" ? <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlSm} tone="soft" /> : null}{canSearch ? <BthwaniIconButton icon="search" label="البحث عن شريك" onPress={() => navigation.navigate("cases", { focus: "search" })} size={sizing.controlSm} tone="soft" /> : null}<BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlSm} tone="soft" /></View></>}</View>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
@@ -84,7 +84,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     scene: { backgroundColor: theme.background },
     screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
     navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, elevation: 8, paddingHorizontal: spacing[3], paddingTop: spacing[2], zIndex: 8 },
-    navigationItem: { alignItems: "center", borderRadius: radius.md, flex: 1, gap: spacing[1], justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[2] },
+    navigationItem: { alignItems: "center", borderRadius: radius.md, gap: spacing[1], justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[2], transform: [{ translateY: -spacing[4] }] },
     navigationLabel: { ...typography.caption },
   });
 }
