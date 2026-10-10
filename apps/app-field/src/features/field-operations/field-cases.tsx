@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type DshImageUploadInput, isMediaProvenanceInputValid, isValidStoreWorkingHours, type JoiningCaseResponse, type JoiningCaseSummary, type JoiningCaseView, joiningCaseStateLabel, type MediaProvenanceInput, resolveJoiningCaseImageContentType } from "@bthwani/dsh";
+import { type DshImageUploadInput, isMediaProvenanceInputValid, type JoiningCaseResponse, type JoiningCaseSummary, type JoiningCaseView, joiningCaseStateLabel, type MediaProvenanceInput, resolveJoiningCaseImageContentType } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
@@ -11,23 +11,15 @@ import { fieldClient, isMissingFieldAdmission } from "./field-client";
 import { FieldCommercialAgreement } from "./field-commercial-agreement";
 import { fieldDraftMediaUploadConfirmed, markFieldMediaReadbackUncertain } from "./field-draft-readback";
 import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
+import { getFieldJoiningRequirements } from "./field-joining-readiness";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
 import { createFieldOperationStyles } from "./field-operation-styles";
+import { fieldStoreImageProvenance } from "./field-store-image-provenance";
 
 const FIELD_CASE_PAGE_SIZE = 25;
 
 function missingFieldIntake(caseData: JoiningCaseView): string[] {
-  const missing: string[] = [];
-  if (!caseData.ownerFullName?.trim()) missing.push("اسم المالك");
-  if (!caseData.businessName.trim() || !caseData.firstStoreName.trim()) missing.push("النشاط واسم المتجر");
-  if (!caseData.walletProviderKey) missing.push("المحفظة الرسمية");
-  if (!caseData.serviceCityId || !caseData.firstStoreVerticalId || !caseData.firstStoreCommercialTypeId) missing.push("المدينة والنشاط ونوع المتجر");
-  if (!caseData.firstStoreAddress?.trim() || caseData.firstStoreLatitude == null || caseData.firstStoreLongitude == null) missing.push("العنوان والموقع");
-  if (!isValidStoreWorkingHours(caseData.firstStoreWorkingHours?.intervals ?? [])) missing.push("ساعات العمل");
-  if (!caseData.firstStoreFulfillmentModes.length) missing.push("طرق التوصيل");
-  if (!caseData.firstStoreProofType || !caseData.firstStoreProofNumberPresent || !caseData.firstStoreProofImageUploaded) missing.push("نوع الإثبات ورقمه وصورته");
-  if (!caseData.storeProfileImage) missing.push("صورة واجهة المتجر");
-  return missing;
+  return getFieldJoiningRequirements(caseData).filter((item) => !item.saved).map((item) => item.label);
 }
 
 type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput }>;
@@ -298,7 +290,7 @@ export function FieldCases() {
       if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("STORE_IMAGE_SIZE_INVALID");
       const type = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
       if (!type) throw new Error("STORE_IMAGE_TYPE_INVALID");
-      setStoreImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "store-image.png" : "store-image.jpg"), type, blob, provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
+      setStoreImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "store-image.png" : "store-image.jpg"), type, blob, provenance: fieldStoreImageProvenance(source, mediaCase.case.ownerFullName ?? "") });
       setError("");
     } catch (cause) {
       console.warn("Field store image preparation failed", cause);
@@ -309,7 +301,7 @@ export function FieldCases() {
   async function uploadStoreImage() {
     if (!mediaCase || !storeImage || busy || pendingProofImageAttempt) return;
     if (!isMediaProvenanceInputValid(storeImage.provenance)) {
-      setError("أكمل منشئ الصورة ومصدرها وبيان حق استخدامها، ثم أكّد صحة التصريح.");
+      setError("أكّد حق عرض صورة الواجهة قبل حفظها.");
       return;
     }
     const attempt = pendingImageAttempt ?? { caseID: mediaCase.case.id, expectedVersion: mediaCase.case.version, image: storeImage, idempotencyKey: `field_store_image_${Crypto.randomUUID()}`, correlationID: `field_store_image_corr_${Crypto.randomUUID()}` };

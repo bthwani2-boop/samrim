@@ -27,7 +27,7 @@ const surface = app;
 const configPath = path.join(appDir, "mobile.config.json");
 assert.ok(fs.existsSync(configPath), `${app}: missing mobile.config.json`);
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-assert.equal(Object.prototype.hasOwnProperty.call(config, "nativeCapabilities"), false, `${app}: nativeCapabilities shadow registry survived`);
+assert.equal(Object.hasOwn(config, "nativeCapabilities"), false, `${app}: nativeCapabilities shadow registry survived`);
 
 // 2. Current native/config contract verification.
 const pkgPath = path.join(appDir, "package.json");
@@ -201,12 +201,45 @@ if (app === "app-field") {
   assert.equal(clockDarkness(21 * 60), 1);
   const dialSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-circular-time-picker.tsx"), "utf8");
   assert.ok(dialSource.includes("onResponderMove={move}"), "Clock hand must respond to actual drag gestures");
-  assert.ok(dialSource.includes("onChange(formatClockTime(minutes))"), "Field time must be persisted via existing 24-hour schema");
+  assert.ok(dialSource.includes("onChange(formatClockTime(precise.current))"), "Field time must be persisted from precise hand position via existing 24-hour schema");
   assert.doesNotMatch(dialSource, /react-native-svg/, "Circular clock must need no additional native dependency");
   console.log("MOBILE_FIELD_CIRCULAR_CLOCK=PASS twelve-hour rotations, minute precision, midnight and day-night transitions");
   const intervals = [{ dayOfWeek: 1, opensAt: "09:00", closesAt: "17:00", closesNextDay: false }, { dayOfWeek: 2, opensAt: "10:00", closesAt: "18:00", closesNextDay: false }];
   const draft = { contactPhoneE164: "+967777123456", ownerFullName: "مالك النشاط", businessName: "نشاط الاختبار", firstStoreName: "المتجر الأول", walletProviderKey: "wallet_provider_test", firstStoreAddress: "صنعاء", serviceCityId: "city-1", firstStoreVerticalId: "vertical-1", firstStoreCommercialTypeId: "type-1", firstStoreProofType: "COMMERCIAL_REGISTRATION", firstStoreNotes: "ملاحظات", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreWorkingHours: { intervals }, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP", "BTHWANI_CAPTAIN"] };
   const saved = { ...draft, state: "draft", origin: "field", version: 3, firstStoreWorkingHours: { intervals: [...intervals].reverse() }, firstStoreFulfillmentModes: [...draft.firstStoreFulfillmentModes].reverse() };
+  const { fieldStoreImageProvenance } = await import(
+    pathToFileURL(path.join(appDir, "src/features/field-operations/field-store-image-provenance.ts")).href
+  );
+  const employeeImage = fieldStoreImageProvenance("camera", "مالك المتجر", "موظف الميدان");
+  const ownerImage = fieldStoreImageProvenance("library", "مالك المتجر");
+  assert.equal(employeeImage.rightsAttested, false, "Store image consent must never be fabricated or prechecked");
+  assert.equal(ownerImage.rightsAttested, false, "Gallery media requires the field worker's explicit owner-permission confirmation");
+  assert.equal(ownerImage.creator, "مالك المتجر", "Gallery media must record the supplied owner source");
+  assert.match(employeeImage.sourceDescription, /موظف الميدان/, "Camera provenance must retain the actual capture context");
+  const { getFieldJoiningRequirements } = await import(
+    pathToFileURL(path.join(appDir, "src/features/field-operations/field-joining-readiness.ts")).href
+  );
+  const completeReadback = {
+    ...saved,
+    firstStoreProofNumberPresent: true,
+    firstStoreProofImageUploaded: true,
+    storeProfileImage: { uri: "https://example.test/store.png" },
+  };
+  assert.deepEqual(getFieldJoiningRequirements(completeReadback).filter((item) => !item.saved), [], "Complete canonical draft must have no phantom missing fields");
+  assert.deepEqual(
+    getFieldJoiningRequirements({ ...completeReadback, firstStoreProofImageUploaded: false, storeProfileImage: null }).filter((item) => !item.saved).map((item) => item.key),
+    ["proofImage", "storeImage"],
+    "Readiness must reflect actual canonical upload flags, not local image selection",
+  );
+  assert.deepEqual(
+    getFieldJoiningRequirements(null).filter((item) => !item.saved).length,
+    6,
+    "Unsaved local inputs must not be reported as persisted",
+  );
+  const threeModes = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"];
+  assert.equal(fieldDraftMatchesReadback({ ...draft, firstStoreFulfillmentModes: threeModes }, {
+    ...saved, firstStoreFulfillmentModes: [...threeModes].reverse(),
+  }, 3), true, "A trial restaurant must preserve all three fulfillment modes in canonical readback");
   assert.equal(fieldDraftMatchesReadback(draft, saved, 3), true, "Field draft readback should allow server-normalized set ordering");
   for (const key of ["ownerFullName", "businessName", "firstStoreName", "walletProviderKey", "firstStoreAddress", "serviceCityId", "firstStoreVerticalId", "firstStoreCommercialTypeId", "firstStoreProofType", "firstStoreNotes"]) {
     assert.equal(fieldDraftMatchesReadback(draft, { ...saved, [key]: "different" }, 3), false, `Field draft readback missed ${key} divergence`);
@@ -276,8 +309,8 @@ if (app === "app-field") {
   assert.match(casesSource, /if \(!mediaCase \|\| busy \|\| pendingImageAttempt \|\| pendingProofImageAttempt\) return;/, "Cases store picker must guard both pending uploads");
   assert.match(casesSource, /if \(!mediaCase \|\| mediaCase\.case\.state !== "draft" \|\| busy \|\| pendingProofImageAttempt \|\| pendingImageAttempt\) return;/, "Cases proof picker must guard both pending uploads");
   assert.equal([...casesSource.matchAll(/disabled=\{Boolean\(busy\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\)\} label=/g)].length, 3, "Cases store image, camera and close-detail actions must protect pending uploads");
-  assert.match(newCaseSource, /disabled=\{busy \|\| Boolean\(pendingImageAttempt\) \|\| proofDetailsDirty \|\| !createdCase\.case\.firstStoreProofType\} label=\{pendingProofImageAttempt \?/, "Draft proof retry must be blocked by pending store upload, unsaved proof details and absent proof type");
-  assert.match(newCaseSource, /disabled=\{busy \|\| Boolean\(pendingProofImageAttempt\)\} label=\{pendingImageAttempt \?/, "Draft store retry must be visibly blocked by pending proof upload");
+  assert.match(newCaseSource, /pendingProofImageAttempt && proofImage \? <BthwaniButton disabled=\{busy \|\| Boolean\(pendingImageAttempt\)\}/, "Proof retry is visible only for unresolved uploads and never overtakes a store upload");
+  assert.match(newCaseSource, /pendingImageAttempt && storeImage \? <BthwaniButton busy=\{busy\} disabled=\{busy \|\| Boolean\(pendingProofImageAttempt\)\}/, "Draft store retry must be visible only on unresolved uploads and blocked by pending proof upload");
   for (const [surface, source] of [["new-case", newCaseSource], ["cases", casesSource]]) {
     const start = source.indexOf("async function pickStoreImage(");
     const end = source.indexOf("async function pickProofImage()", start);

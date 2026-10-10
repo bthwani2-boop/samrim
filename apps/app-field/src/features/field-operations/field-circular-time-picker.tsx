@@ -1,6 +1,6 @@
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { useRef, useState } from "react";
-import { I18nManager, Modal, Text, View, type GestureResponderEvent } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { type GestureResponderEvent, I18nManager, Modal, Text, View } from "react-native";
 
 import {
   clockDarkness,
@@ -38,10 +38,16 @@ export function FieldCircularTimePicker({ label, value, onChange, disabled }: Re
   const theme = useAppearanceTheme();
   const styles = createFieldOperationStyles(theme);
   const [visible, setVisible] = useState(false);
-  const [minutes, setMinutes] = useState(9 * 60);
+  const [visualMinutes, setVisualMinutes] = useState(9 * 60);
   const precise = useRef(9 * 60);
+  const animationFrame = useRef<number | null>(null);
   const lastAngle = useRef<number | null>(null);
-  const darkness = clockDarkness(minutes);
+  const minutes = Math.round(visualMinutes) % (24 * 60);
+  const darkness = clockDarkness(visualMinutes);
+
+  useEffect(() => () => {
+    if (animationFrame.current !== null) cancelAnimationFrame(animationFrame.current);
+  }, []);
   const dialBackground = interpolateColor([239, 246, 255], [23, 37, 61], darkness);
   const dialForeground = darkness >= 0.57 ? "#FFFFFF" : "#243247";
   const hour = Math.floor(minutes / 60);
@@ -51,7 +57,23 @@ export function FieldCircularTimePicker({ label, value, onChange, disabled }: Re
 
   function updateMinutes(next: number) {
     precise.current = wrapDayMinutes(next);
-    setMinutes(Math.round(precise.current) % (24 * 60));
+    // Keep fractional minutes while dragging. Render at most once per display frame;
+    // only round for text and the persisted HH:mm value.
+    if (animationFrame.current === null) {
+      animationFrame.current = requestAnimationFrame(() => {
+        animationFrame.current = null;
+        setVisualMinutes(precise.current);
+      });
+    }
+  }
+
+  function finishGesture() {
+    lastAngle.current = null;
+    if (animationFrame.current !== null) {
+      cancelAnimationFrame(animationFrame.current);
+      animationFrame.current = null;
+    }
+    setVisualMinutes(precise.current);
   }
 
   function open() {
@@ -93,8 +115,8 @@ export function FieldCircularTimePicker({ label, value, onChange, disabled }: Re
             onMoveShouldSetResponder={() => true}
             onResponderGrant={(event) => { lastAngle.current = dialAngle(event); }}
             onResponderMove={move}
-            onResponderRelease={() => { lastAngle.current = null; }}
-            onResponderTerminate={() => { lastAngle.current = null; }}
+            onResponderRelease={finishGesture}
+            onResponderTerminate={finishGesture}
             style={{
               width: SIZE, height: SIZE, borderRadius: CENTER,
               backgroundColor: dialBackground, alignSelf: "center",
@@ -110,7 +132,7 @@ export function FieldCircularTimePicker({ label, value, onChange, disabled }: Re
             )}
             <View pointerEvents="none" style={{
               position: "absolute", top: 0, left: 0, width: SIZE, height: SIZE,
-              transform: [{ rotate: `${clockHandDegrees(minutes)}deg` }],
+              transform: [{ rotate: `${clockHandDegrees(visualMinutes)}deg` }],
             }}>
               <View style={{
                 position: "absolute", top: CENTER - 84, left: CENTER - 2,
@@ -134,7 +156,7 @@ export function FieldCircularTimePicker({ label, value, onChange, disabled }: Re
           <Text style={styles.muted}>يُحفظ الوقت: {formatClockTime(minutes)} (24 ساعة)</Text>
           <View style={{ flexDirection: "row", gap: 10, alignSelf: "stretch" }}>
             <View style={{ flex: 1 }}><BthwaniButton label="إلغاء" variant="secondary" onPress={() => setVisible(false)} /></View>
-            <View style={{ flex: 1 }}><BthwaniButton label="تأكيد" onPress={() => { onChange(formatClockTime(minutes)); setVisible(false); }} /></View>
+            <View style={{ flex: 1 }}><BthwaniButton label="تأكيد" onPress={() => { onChange(formatClockTime(precise.current)); setVisible(false); }} /></View>
           </View>
         </View>
       </View>

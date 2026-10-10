@@ -13,8 +13,10 @@ import { fieldClient } from "./field-client";
 import { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain } from "./field-draft-readback";
 import { fieldAdmissionActionability } from "./field-eligibility";
 import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
+import { getFieldJoiningRequirements } from "./field-joining-readiness";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
 import { createFieldOperationStyles } from "./field-operation-styles";
+import { fieldStoreImageProvenance } from "./field-store-image-provenance";
 import { type EditableWorkingHours, type EditableWorkingHoursInterval, FieldWorkingHoursEditor, toStoreWorkingHoursIntervals } from "./field-working-hours-editor";
 import { useOwnFieldAdmission } from "./use-field-admission";
 
@@ -121,15 +123,47 @@ const theme = useAppearanceTheme();
     Boolean(selectedProofType && createdCase?.case.firstStoreProofNumberPresent && createdCase.case.firstStoreProofImageUploaded && createdCase.case.storeProfileImage && !proofDetailsDirty),
   ];
   const completedSteps = stepComplete.filter(Boolean).length;
-  const missingBeforeSubmission = [
-    !stepComplete[0] ? "البيانات الأساسية" : "",
-    !stepComplete[1] ? "المتجر والتشغيل" : "",
-    !input.walletProviderKey ? "المحفظة الرسمية" : "",
-    !selectedProofType ? "نوع الإثبات" : "",
-    !createdCase?.case.firstStoreProofNumberPresent ? "رقم الإثبات المحفوظ" : "",
-    !createdCase?.case.firstStoreProofImageUploaded || proofDetailsDirty ? "صورة الإثبات" : "",
-    !createdCase?.case.storeProfileImage ? "صورة الواجهة" : "",
-  ].filter(Boolean);
+  const joiningReadiness = getFieldJoiningRequirements(createdCase?.case ?? null);
+  const savedDraft = createdCase?.case;
+  const basicChanged = Boolean(savedDraft && (
+    input.ownerFullName.trim() !== (savedDraft.ownerFullName ?? "").trim() ||
+    input.businessName.trim() !== savedDraft.businessName.trim() ||
+    input.firstStoreName.trim() !== savedDraft.firstStoreName.trim() ||
+    normalizeYemenPhoneE164(input.contactPhoneE164) !== savedDraft.contactPhoneE164
+  ));
+  const walletChanged = Boolean(savedDraft && input.walletProviderKey !== (savedDraft.walletProviderKey ?? ""));
+  const hoursSignature = (hours: typeof enteredHours) =>
+    hours.map((item) => [item.dayOfWeek, item.opensAt, item.closesAt, item.closesNextDay].join(":")).sort().join("|");
+  const operationChanged = Boolean(savedDraft && (
+    input.serviceCityId !== (savedDraft.serviceCityId ?? "") ||
+    input.firstStoreVerticalId !== savedDraft.firstStoreVerticalId ||
+    input.firstStoreCommercialTypeId !== (savedDraft.firstStoreCommercialTypeId ?? "") ||
+    input.firstStoreAddress.trim() !== (savedDraft.firstStoreAddress ?? "").trim() ||
+    [...input.firstStoreFulfillmentModes].sort().join("|") !== [...savedDraft.firstStoreFulfillmentModes].sort().join("|") ||
+    hoursSignature(enteredHours) !== hoursSignature(savedDraft.firstStoreWorkingHours?.intervals ?? []) ||
+    Math.abs((selectedStoreOrigin?.latitude ?? 0) - (savedDraft.firstStoreLatitude ?? 0)) > 0.000001 ||
+    Math.abs((selectedStoreOrigin?.longitude ?? 0) - (savedDraft.firstStoreLongitude ?? 0)) > 0.000001
+  ));
+  const pendingReadiness: Record<(typeof joiningReadiness)[number]["key"], boolean> = {
+    basic: Boolean(stepComplete[0]),
+    wallet: Boolean(input.walletProviderKey),
+    operation: Boolean(stepComplete[1]),
+    proofNumber: Boolean(selectedProofType && (input.firstStoreProofNumber.trim() || savedDraft?.firstStoreProofNumberPresent)),
+    proofImage: Boolean(proofImage),
+    storeImage: Boolean(storeImage && isMediaProvenanceInputValid(storeImage.provenance)),
+  };
+  const readinessLabels = joiningReadiness.map(({ key, label, saved }) => {
+    const changed =
+      (key === "basic" && basicChanged) ||
+      (key === "wallet" && walletChanged) ||
+      (key === "operation" && operationChanged) ||
+      (key === "storeImage" && Boolean(storeImage)) ||
+      (proofDetailsDirty && (key === "proofNumber" || key === "proofImage")) ||
+      (key === "proofImage" && Boolean(proofImage));
+    const confirmed = saved && !changed;
+    return { key, label, confirmed, pending: !confirmed && pendingReadiness[key] };
+  });
+  const needsSave = readinessLabels.some((item) => !item.confirmed);
 
   useEffect(() => { navigation.setOptions({ headerTitle }); }, [headerTitle, navigation]);
 
@@ -316,7 +350,7 @@ const theme = useAppearanceTheme();
       if (storeImage && isMediaProvenanceInputValid(storeImage.provenance)) {
         await uploadStoreImage(proofSavedCase, storeImage);
       }
-      if (storeImage && !isMediaProvenanceInputValid(storeImage.provenance)) setError("حُفظت المسودة. أكمل مصدر الصورة وحق عرضها قبل رفع الصورة.");
+      if (storeImage && !isMediaProvenanceInputValid(storeImage.provenance)) setError("حُفظت المسودة. أكّد حق عرض صورة الواجهة لإكمال رفعها.");
     } catch (cause) {
       console.warn("DSH Field joining-case draft save failed", cause);
       if (isOutcomeUncertain(cause)) {
@@ -423,7 +457,7 @@ const theme = useAppearanceTheme();
       if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("STORE_IMAGE_SIZE_INVALID");
       const type = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
       if (!type) throw new Error("STORE_IMAGE_TYPE_INVALID");
-      setStoreImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "store-image.png" : "store-image.jpg"), type, blob, provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
+      setStoreImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "store-image.png" : "store-image.jpg"), type, blob, provenance: fieldStoreImageProvenance(source, input.ownerFullName, admissionState.kind === "ready" ? admissionState.admission.fullNameAr ?? "" : "") });
       setError("");
     } catch (cause) {
       console.warn("Field store image preparation failed", cause);
@@ -649,11 +683,25 @@ const theme = useAppearanceTheme();
           {!createdCase?.case.firstStoreProofImageUploaded ? <Text style={styles.muted}>مشفّرة ولا تظهر للعملاء.</Text> : null}
           {proofImage ? <Image accessibilityLabel="معاينة صورة الإثبات الخاصة" source={{ uri: proofImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="contain" /> : null}
           <BthwaniButton disabled={formLocked} label={proofImage ? "تغيير صورة الإثبات" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
-          {proofDetailsDirty ? <Text accessibilityRole="alert" style={styles.error}>احفظ بيانات الإثبات الجديدة أولًا؛ يلزم رفع صورة مرتبطة بها.</Text> : null}
+          {proofDetailsDirty ? <Text style={styles.muted}>احفظ المسودة ليُرفع الإثبات الجديد تلقائيًا.</Text> : null}
+          {pendingProofImageAttempt && proofImage ? <BthwaniButton disabled={busy || Boolean(pendingImageAttempt)} label="التحقق من رفع صورة الإثبات" onPress={() => void retryProofImage()} variant="secondary" /> : null}
         </View>
         </> : null}
         {activeStep === 1 ? <View style={styles.compactCard}>
-        <Text style={styles.sectionTitle}>طرق التوصيل</Text>
+        <View style={styles.orderHeader}>
+          <Text style={styles.sectionTitle}>طرق التوصيل</Text>
+          <BthwaniChip
+            label="الثلاثة معًا"
+            disabled={formLocked}
+            selected={input.firstStoreFulfillmentModes.length === 3}
+            onPress={() => setInput((current) => ({
+              ...current,
+              firstStoreFulfillmentModes: current.firstStoreFulfillmentModes.length === 3
+                ? []
+                : ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"],
+            }))}
+          />
+        </View>
         <View style={styles.optionList}>
           <BthwaniChip label="توصيل بثواني" onPress={() => { if (!formLocked) toggleFulfillmentMode("BTHWANI_CAPTAIN"); }} selected={input.firstStoreFulfillmentModes.includes("BTHWANI_CAPTAIN")} />
           <BthwaniChip label="توصيل المتجر" onPress={() => { if (!formLocked) toggleFulfillmentMode("PARTNER_CAPTAIN"); }} selected={input.firstStoreFulfillmentModes.includes("PARTNER_CAPTAIN")} />
@@ -684,30 +732,24 @@ const theme = useAppearanceTheme();
         </View>
         </View>
         <View style={styles.compactCard} accessibilityLiveRegion="polite">
-          <Text style={styles.sectionTitle}>قبل الإرسال</Text>
-          <Text style={missingBeforeSubmission.length ? styles.muted : styles.successText}>
-            {missingBeforeSubmission.length ? `ينقص: ${missingBeforeSubmission.join("، ")}` : "المتطلبات مكتملة. احفظ ثم أرسل للمراجعة."}
+          <Text style={styles.sectionTitle}>جاهزية الإرسال</Text>
+          {readinessLabels.map(({ key, label, confirmed, pending }) =>
+            <Text key={key} style={confirmed ? styles.successText : styles.muted}>
+              {confirmed ? "✓" : pending ? "◷" : "○"} {label}{confirmed ? " · محفوظ" : pending ? " · أدخلته، احفظه" : " · مطلوب"}
+            </Text>
+          )}
+          <Text style={needsSave ? styles.muted : styles.successText}>
+            {needsSave ? "احفظ التغييرات والصور ثم راجع حالة الطلب." : "البيانات محفوظة وجاهزة للإرسال."}
           </Text>
         </View>
         </> : null}
       </> : null}
-      {createdCase ? <View accessibilityLiveRegion="polite" style={styles.successCard}>
-        <Text style={styles.cardTitle}>المسودة محفوظة · {joiningCaseStateLabel(createdCase.case.state)}</Text>
-        {activeStep === 2 ? <>
-          <Text style={createdCase.case.storeProfileImage ? styles.successText : styles.muted}>{createdCase.case.storeProfileImage ? "✓ صورة الواجهة مرفوعة" : "صورة الواجهة لم تُرفع"}</Text>
-          <Text style={createdCase.case.firstStoreProofImageUploaded ? styles.successText : styles.muted}>{createdCase.case.firstStoreProofImageUploaded ? "✓ صورة الإثبات مرفوعة" : "صورة الإثبات لم تُرفع"}</Text>
-        </> : null}
-        {activeStep === 2 && (!createdCase.case.firstStoreProofImageUploaded || Boolean(proofImage) || proofDetailsDirty) ? <>
-          {proofImage ? <Image accessibilityLabel="معاينة صورة الإثبات المختارة" source={{ uri: proofImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="contain" /> : null}
-          <BthwaniButton disabled={busy || Boolean(pendingProofImageAttempt) || Boolean(pendingImageAttempt)} label={proofImage ? "تغيير صورة الإثبات" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
-          {proofImage ? <BthwaniButton busy={busy} disabled={busy || Boolean(pendingImageAttempt) || proofDetailsDirty || !createdCase.case.firstStoreProofType} label={pendingProofImageAttempt ? "إعادة التحقق من رفع صورة الإثبات" : "رفع صورة الإثبات المشفّرة"} onPress={() => void retryProofImage()} variant="primary" /> : null}
-        </> : null}
-        {activeStep === 2 && storeImage ? <>
-          <Image accessibilityLabel="معاينة صورة المتجر التي لم يكتمل رفعها" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="cover" />
-          <BthwaniButton disabled={busy || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="اختيار صورة أخرى" onPress={() => void pickStoreImage()} variant="secondary" />
-          <BthwaniButton busy={busy} disabled={busy || Boolean(pendingProofImageAttempt)} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "إعادة رفع صورة المتجر"} onPress={() => void retryStoreImage()} variant="secondary" />
-        </> : null}
-        {activeStep === 2 ? <Link href={{ pathname: "/cases", params: { caseId: createdCase.case.id } } as Href} asChild><BthwaniButton label={missingBeforeSubmission.length ? "فتح مسودات الشركاء" : "المراجعة والإرسال"} variant="secondary" /></Link> : null}
+      {createdCase && activeStep === 2 ? <View accessibilityLiveRegion="polite" style={styles.compactCard}>
+        <Text style={styles.muted}>المسودة محفوظة · {joiningCaseStateLabel(createdCase.case.state)}</Text>
+        {pendingImageAttempt && storeImage ? <BthwaniButton busy={busy} disabled={busy || Boolean(pendingProofImageAttempt)} label="التحقق من رفع صورة الواجهة" onPress={() => void retryStoreImage()} variant="secondary" /> : null}
+        <Link href={{ pathname: "/cases", params: { caseId: createdCase.case.id } } as Href} asChild>
+          <BthwaniButton label={needsSave ? "العودة إلى مسودات الشركاء" : "المراجعة والإرسال"} variant="secondary" />
+        </Link>
       </View> : null}
       {error ? <View><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{pendingDraftAttempt || error.startsWith("يوجد طلب نشط") ? <Link href={"/cases" as Href} asChild><BthwaniButton label="فتح قائمة الشركاء" variant="secondary" /></Link> : null}</View> : null}
       {admissionActionability !== "available" ? <BthwaniButton busy={busy} disabled={busy || admissionState.kind === "loading"} label="تحديث حالة التفعيل" onPress={() => void loadAdmission()} variant="secondary" /> : null}
