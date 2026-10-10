@@ -255,6 +255,9 @@ if (app === "app-partner") {
   assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, stores: payoutRequest.stores.map((store) => ({ ...store, beneficiaryActorId: "different-recipient" })) }), false, "The recipient assignment must match");
   assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, destinationId: "changed-wallet" })) }), false, "Canonical payout destination must match");
   assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, status: "PREPARED" })) }), true, "Legitimate later WLT status must not reject financial identity");
+  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, status: "CANCELLED" })) }), false, "Cancelled payouts cannot be reported as successful requests");
+  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, status: "EXCEPTION" })) }), false, "Exceptional payouts need human review, not a success notice");
+  assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, payouts: payoutRequest.payouts.map((entry) => ({ ...entry, resolvedAmountMinor: entry.resolvedAmountMinor === 1000 ? 2000 : 1000 })) }), false, "Same aggregate cannot hide swapped payout allocations");
   assert.equal(matchesPartnerPayoutReadback(payoutRequest, { ...payoutRequest, stores: [payoutRequest.stores[0], payoutRequest.stores[0]] }), false, "Repeated Store allocation IDs must be rejected");
   console.log("MOBILE_PARTNER_PAYOUT_READBACK=PASS allocation, recipient, destination and immutable financial identity");
 

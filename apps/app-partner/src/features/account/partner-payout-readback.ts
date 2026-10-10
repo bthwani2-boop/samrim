@@ -35,6 +35,9 @@ export function matchesPartnerPayoutReadback(expected: PartnerPayoutRequestView,
       a.beneficiaryActorId === b.beneficiaryActorId &&
       a.recipientAssignmentVersion === b.recipientAssignmentVersion)) return false;
 
+  // A terminal cancellation or exception is not proof of a payable request.
+  if (actual.payouts.some((item) => item.status === "CANCELLED" || item.status === "EXCEPTION")) return false;
+
   if (!matchingUniqueItems(expected.payouts, actual.payouts, (item) => item.id,
     (a, b) => a.actorType === b.actorType && a.actorId === b.actorId &&
       a.beneficiaryActorId === b.beneficiaryActorId && a.amountMode === b.amountMode &&
