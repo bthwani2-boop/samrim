@@ -14,7 +14,7 @@ const WEEK_MINUTES = 7 * 24 * 60;
 const PROOF_TYPES: ReadonlyArray<{ value: JoiningCaseProofType; label: string }> = [
   { value: "COMMERCIAL_REGISTRATION", label: "سجل تجاري" },
   { value: "IDENTITY_DOCUMENT", label: "هوية" },
-  { value: "FREELANCE_WORK_DOCUMENT", label: "وثيقة عمل حر" },
+  { value: "PASSPORT", label: "جواز سفر" },
 ];
 type WorkingIntervalDraft = StoreWorkingHoursInterval & Readonly<{ draftKey: string }>;
 

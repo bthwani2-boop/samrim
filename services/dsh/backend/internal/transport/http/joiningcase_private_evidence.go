@@ -8,6 +8,29 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 )
 
+func (s *JoiningCaseServer) readJoiningCaseReviewPhoto(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication required")
+		return
+	}
+	actor := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actor == "" || len(actor) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "operator actor required")
+		return
+	}
+	bytes, contentType, err := s.service.ReadReviewPhotoForOperator(r.Context(), r.PathValue("caseId"), actor)
+	if err != nil {
+		writeJoiningCaseError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", "attachment; filename=joining-review-photo")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(bytes)
+}
+
 func (s *JoiningCaseServer) readJoiningCaseProofDetails(w http.ResponseWriter, r *http.Request) {
 	if !s.auth.Authorized(r) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")

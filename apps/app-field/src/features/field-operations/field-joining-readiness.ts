@@ -25,6 +25,6 @@ export function getFieldJoiningRequirements(saved: JoiningCaseView | null): Read
         saved.firstStoreFulfillmentModes.length && isValidStoreWorkingHours(saved.firstStoreWorkingHours?.intervals ?? [])),
     },
     { key: "proofNumber", label: "نوع ورقم الإثبات", saved: Boolean(saved?.firstStoreProofType && saved.firstStoreProofNumberPresent) },
-    { key: "storeImage", label: "صورة واجهة المتجر", saved: Boolean(saved?.storeProfileImage) },
+    { key: "storeImage", label: "شعار المتجر", saved: Boolean(saved?.storeProfileImage) },
   ];
 }

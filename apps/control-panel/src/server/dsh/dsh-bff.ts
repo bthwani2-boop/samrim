@@ -824,6 +824,12 @@ export async function downloadJoiningCaseProofImage(caseId: string, context: Dsh
   return requestDshFile(path, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": `cp_proof_image_${crypto.randomUUID()}` });
 }
 
+export async function downloadJoiningCaseReviewPhoto(caseId: string, context: DshOperatorReadContext): Promise<Readonly<{ content: Uint8Array; contentType: string; contentDisposition: string }>> {
+  if (!caseId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_JOINING_REVIEW_PHOTO_READ_INPUT_INVALID");
+  const path = dshOperationPaths.downloadJoiningCaseReviewPhoto.path.replace("{caseId}", encodeURIComponent(caseId.trim()));
+  return requestDshFile(path, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": "cp_joining_review_" + crypto.randomUUID() });
+}
+
 export async function listCatalogVerticals(context: DshOperatorReadContext, includeInactive = false): Promise<CommerceVerticalListResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_CATALOG_VERTICAL_READ_INPUT_INVALID");
   const path = includeInactive ? `${dshOperationPaths.listCatalogVerticals.path}?includeInactive=true` : dshOperationPaths.listCatalogVerticals.path;

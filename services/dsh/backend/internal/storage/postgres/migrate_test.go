@@ -39,8 +39,8 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "108_backfill_joining_hours_into_orderability.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 108_backfill_joining_hours_into_orderability.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "110_joining_case_review_photos.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 110_joining_case_review_photos.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
 	migrationByName := make(map[string]string, len(records))
 	for index, record := range records {

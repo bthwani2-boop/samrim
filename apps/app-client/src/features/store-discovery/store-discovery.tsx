@@ -485,7 +485,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         const closedBySchedule = orderability.length > 0 && orderability.every((state) => state.state === "CLOSED_BY_SCHEDULE");
         const availabilityLabel = acceptsOrders ? "مفتوح الآن" : paused ? "متوقف مؤقتًا" : closedBySchedule ? "مغلق حسب ساعات العمل" : orderability.length ? "غير متاح للطلبات" : "تحقق من التوفر";
         return <Pressable accessibilityRole="button" accessibilityLabel={`فتح متجر ${store.name}، ${availabilityLabel}${modeSummary}`} onPress={() => router.push(`/store/${encodeURIComponent(store.id)}` as Href)} style={({ pressed }) => [styles.storeCard, pressed && styles.pressed]}>
-          {store.storeProfileImage?.uri ? <Image accessibilityLabel={`صورة متجر ${store.name}`} source={{ uri: store.storeProfileImage.uri }} style={styles.storeImage} resizeMode="cover" /> : <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
+          {store.storeProfileImage?.uri ? <Image accessibilityLabel={`شعار متجر ${store.name}`} source={{ uri: store.storeProfileImage.uri }} style={styles.storeImage} resizeMode="cover" /> : <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
           <View style={styles.storeCopy}>
             <Text style={styles.storeTitle} numberOfLines={2}>{store.name}</Text>
             <Text style={styles.storeMeta}>{typeof store.distanceMeters === "number" ? `${(store.distanceMeters / 1000).toFixed(2)} كم` : selectedCityName || "مدينة الخدمة"}</Text>

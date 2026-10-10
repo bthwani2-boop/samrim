@@ -56,7 +56,7 @@ function createButtonLabel(busy: boolean, hasPendingAttempt: boolean): string {
 const proofTypeOptions: ReadonlyArray<{ value: JoiningCaseProofType; label: string }> = [
   { value: "COMMERCIAL_REGISTRATION", label: "سجل تجاري" },
   { value: "IDENTITY_DOCUMENT", label: "هوية" },
-  { value: "FREELANCE_WORK_DOCUMENT", label: "وثيقة عمل حر" },
+  { value: "PASSPORT", label: "جواز سفر" },
 ];
 const weekdays = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"] as const;
 

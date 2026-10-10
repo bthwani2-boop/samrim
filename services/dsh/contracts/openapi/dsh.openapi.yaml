@@ -42,6 +42,9 @@ paths:
   /dsh/joining-cases/{caseId}/proof-details:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1proof-details"
 
+  /dsh/operator/joining-cases/{caseId}/review-photo:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1operator~1joining-cases~1{caseId}~1review-photo"
+
   /dsh/operator/joining-cases/{caseId}/store-image:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1operator~1joining-cases~1{caseId}~1store-image"
 
@@ -759,6 +762,9 @@ paths:
   /dsh/field/joining-cases/{caseId}/submit:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1submit"
 
+  /dsh/field/joining-cases/{caseId}/review-photo:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1review-photo"
+
   /dsh/fields/me/financial-summary:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1financial-summary"
 
@@ -1174,7 +1180,7 @@ components:
 
     JoiningCaseProofType:
       type: string
-      enum: [COMMERCIAL_REGISTRATION, IDENTITY_DOCUMENT, FREELANCE_WORK_DOCUMENT]
+      enum: [COMMERCIAL_REGISTRATION, IDENTITY_DOCUMENT, PASSPORT, FREELANCE_WORK_DOCUMENT]
 
     StoreWeeklyWorkingHours:
       type: object
@@ -1295,7 +1301,7 @@ components:
 
     JoiningCaseView:
       type: object
-      required: [id, contactPhoneE164, ownerFullName, businessName, firstStoreName, walletProviderKey, firstStoreAddress, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, firstStoreWorkingHours, firstStoreProofType, firstStoreProofNumberPresent, firstStoreProofImageUploaded, firstStoreFulfillmentModes, origin, state, financialProfileState, termsPolicyVersion, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, ownerFullName, businessName, firstStoreName, walletProviderKey, firstStoreAddress, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, firstStoreWorkingHours, firstStoreProofType, firstStoreProofNumberPresent, firstStoreProofImageUploaded, reviewPhotoUploaded, firstStoreFulfillmentModes, origin, state, financialProfileState, termsPolicyVersion, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -1353,6 +1359,9 @@ components:
           description: Indicates encrypted proof number is on file; never exposes the number.
         firstStoreProofImageUploaded:
           type: boolean
+        reviewPhotoUploaded:
+          type: boolean
+          description: Private optional case-only premises review photo, never public Store media.
         firstStoreNotes:
           type: string
           nullable: true

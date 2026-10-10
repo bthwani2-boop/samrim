@@ -38,6 +38,7 @@ var fieldSessionRoutes = []fieldRegisteredRoute{
 	{method: "GET", path: "/dsh/field/joining-cases"},
 	{method: "GET", path: "/dsh/field/joining-cases/{caseId}"},
 	{method: "POST", path: "/dsh/field/joining-cases/{caseId}/submit"},
+	{method: "POST", path: "/dsh/field/joining-cases/{caseId}/review-photo"},
 }
 
 func fieldRegisteredRoutes(t *testing.T) []fieldRegisteredRoute {

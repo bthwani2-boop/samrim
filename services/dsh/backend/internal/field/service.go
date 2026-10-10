@@ -10,6 +10,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	phoneformat "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/phone"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
@@ -338,6 +339,18 @@ func (s *Service) ReadJoiningCase(ctx context.Context, accessToken, caseID strin
 		return postgres.JoiningCaseResult{}, err
 	}
 	return postgres.ReadJoiningCaseForField(ctx, s.db, identity.Subject, caseID)
+}
+
+func (s *Service) UploadReviewPhoto(ctx context.Context, accessToken, caseID, idempotencyKey, correlationID string, expectedVersion int, declaredType string, data []byte) (postgres.JoiningCaseResult, error) {
+	actor, err := s.requireEligibleField(ctx, accessToken)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	actualType, _, _, err := media.ValidateImageBytes(data)
+	if err != nil || (declaredType != "" && declaredType != actualType) {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	return postgres.SaveJoiningCaseReviewPhoto(ctx, s.db, caseID, actor.Subject, expectedVersion, idempotencyKey, correlationID, actualType, data)
 }
 
 func (s *Service) SubmitJoiningCase(ctx context.Context, accessToken, caseID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {

@@ -65,7 +65,7 @@ func (s *Service) Create(ctx context.Context, input contract.CreateJoiningCaseRe
 
 func validJoiningCaseProofType(value string) bool {
 	switch value {
-	case "COMMERCIAL_REGISTRATION", "IDENTITY_DOCUMENT", "FREELANCE_WORK_DOCUMENT":
+	case "COMMERCIAL_REGISTRATION", "IDENTITY_DOCUMENT", "FREELANCE_WORK_DOCUMENT", "PASSPORT":
 		return true
 	default:
 		return false
@@ -348,6 +348,13 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	}
 	mutation.RequestHash = requestHash
 	return postgres.CorrectAndResubmitJoiningCase(ctx, s.db, mutation)
+}
+
+func (s *Service) ReadReviewPhotoForOperator(ctx context.Context, caseID, actingActorID string) ([]byte, string, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return nil, "", err
+	}
+	return postgres.ReadJoiningCaseReviewPhotoForOperator(ctx, s.db, caseID)
 }
 
 func (s *Service) ReadProofDetailsForOperator(ctx context.Context, caseID, actingActorID, correlationID string) (postgres.JoiningCaseProofDetails, error) {

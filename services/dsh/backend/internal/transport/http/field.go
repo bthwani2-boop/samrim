@@ -87,6 +87,7 @@ func (s *FieldServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/field/joining-cases", s.listJoiningCases)
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}", s.readJoiningCase)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/submit", s.submitJoiningCase)
+	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/review-photo", s.uploadReviewPhoto)
 }
 
 func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
@@ -424,6 +425,26 @@ func (s *FieldServer) submitJoiningCase(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	result, err := s.service.SubmitJoiningCase(r.Context(), bearerToken(r), r.PathValue("caseId"), expected, idempotency, correlation)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeFieldCaseResult(w, http.StatusOK, result)
+}
+
+func (s *FieldServer) uploadReviewPhoto(w http.ResponseWriter, r *http.Request) {
+	if !authorizedFieldSession(w, r) {
+		return
+	}
+	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	data, contentType, ok := readMultipartImageUpload(w, r, "optional review photo must be JPG or PNG under 10 MiB")
+	if !ok {
+		return
+	}
+	result, err := s.service.UploadReviewPhoto(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, correlation, expected, contentType, data)
 	if err != nil {
 		writeFieldError(w, err)
 		return

@@ -84,7 +84,7 @@ func (s *Service) uploadStoreProfileImage(ctx context.Context, scope, actorID, c
 		if err != nil {
 			return postgres.JoiningCaseResult{}, err
 		}
-		if current.Case.State != "draft" {
+		if current.Case.State != "draft" && !(current.Case.State == "approved" && current.Case.StoreID != "") {
 			return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaState
 		}
 	default:

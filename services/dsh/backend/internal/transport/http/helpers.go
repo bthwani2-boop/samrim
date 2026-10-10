@@ -44,7 +44,7 @@ func toJoiningCaseView(record postgres.JoiningCaseRecord) contract.JoiningCaseVi
 		ServiceCityID:     record.FirstStoreServiceCityID, FirstStoreVerticalID: record.FirstStoreVerticalID,
 		FirstStoreCommercialTypeID: record.FirstStoreCommercialTypeID, FirstStoreLatitude: nullableFloatValue(record.FirstStoreLatitude),
 		FirstStoreLongitude: nullableFloatValue(record.FirstStoreLongitude), FirstStoreFulfillmentModes: toFulfillmentModes(record.FirstStoreFulfillmentModes),
-		FirstStoreProofNumberPresent: record.FirstStoreProofNumberPresent, FirstStoreProofImageUploaded: record.FirstStoreProofImageUploaded, FirstStoreNotes: record.FirstStoreNotes,
+		FirstStoreProofNumberPresent: record.FirstStoreProofNumberPresent, FirstStoreProofImageUploaded: record.FirstStoreProofImageUploaded, ReviewPhotoUploaded: record.ReviewPhotoUploaded, FirstStoreNotes: record.FirstStoreNotes,
 		Origin: contract.JoiningCaseOrigin(record.Origin), State: contract.JoiningCaseState(record.State), CorrectionReason: record.CorrectionReason,
 		Version: record.Version, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
 	}

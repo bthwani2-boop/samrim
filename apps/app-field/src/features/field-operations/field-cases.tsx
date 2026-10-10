@@ -270,7 +270,7 @@ export function FieldCases() {
   async function pickStoreImage(source: "camera" | "library" = "library") {
     if (!mediaCase || busy || pendingImageAttempt) return;
     const permission = source === "camera" ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) { setError(source === "camera" ? "يلزم السماح باستخدام الكاميرا لالتقاط صورة المتجر." : "يلزم السماح بالوصول إلى الصور لاختيار صورة المتجر."); return; }
+    if (!permission.granted) { setError(source === "camera" ? "يلزم السماح باستخدام الكاميرا لالتقاط صورة المتجر." : "يلزم السماح بالوصول إلى الصور لاختيار شعار المتجر."); return; }
     const result = source === "camera"
       ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 })
       : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
@@ -367,9 +367,9 @@ export function FieldCases() {
     if (storeImage) {
       storeImageButtonLabel = "اختيار صورة أخرى";
     } else if (mediaCase?.case.storeProfileImage) {
-      storeImageButtonLabel = "تغيير صورة المتجر";
+      storeImageButtonLabel = "تغيير شعار المتجر";
     } else {
-      storeImageButtonLabel = "اختيار صورة المتجر";
+      storeImageButtonLabel = "اختيار شعار المتجر";
     }
 
     return (
@@ -385,13 +385,13 @@ export function FieldCases() {
       </> : null}
       {item.state === "draft" ? <View style={styles.optionList}>
         <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="تعديل بيانات المسودة" onPress={() => router.push({ pathname: "/new-case", params: { caseId: item.id } } as Href)} variant="secondary" />
-        <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="صورة واجهة المتجر" onPress={() => void openStoreImage(item)} variant="secondary" />
+        <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="شعار المتجر" onPress={() => void openStoreImage(item)} variant="secondary" />
       </View> : null}
       {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(storeImage)} label="إرسال للمراجعة" onPress={() => setCaseToSubmit(item)} /> : null}
       {mediaCase?.case.id === item.id ? <View style={styles.card}>
-        <Text style={styles.cardTitle}>صورة واجهة المتجر</Text>
-        {mediaCase.case.storeProfileImage ? <Image accessibilityLabel="صورة المتجر المحفوظة" source={{ uri: mediaCase.case.storeProfileImage.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : <Text style={styles.muted}>لا توجد صورة محفوظة للشريك بعد.</Text>}
-        {storeImage ? <Image accessibilityLabel="معاينة صورة المتجر الجديدة" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="cover" /> : null}
+        <Text style={styles.cardTitle}>شعار المتجر</Text>
+        {mediaCase.case.storeProfileImage ? <Image accessibilityLabel="شعار المتجر المحفوظ" source={{ uri: mediaCase.case.storeProfileImage.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : <Text style={styles.muted}>لم يُحفظ شعار المتجر بعد.</Text>}
+        {storeImage ? <Image accessibilityLabel="معاينة شعار المتجر الجديد" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="cover" /> : null}
         {storeImage ? <View style={styles.card}>
           <FieldMediaProvenanceEditor key={storeImage.uri} disabled={Boolean(busy) || Boolean(pendingImageAttempt)} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} value={storeImage.provenance} />
         </View> : null}
@@ -399,7 +399,7 @@ export function FieldCases() {
           <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label={storeImageButtonLabel} onPress={() => void pickStoreImage("library")} variant="secondary" />
           <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label="التقاط صورة بالكاميرا" onPress={() => void pickStoreImage("camera")} variant="secondary" />
         </View>
-        {storeImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || (!pendingImageAttempt && !isMediaProvenanceInputValid(storeImage.provenance))} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "حفظ صورة المتجر"} onPress={() => void uploadStoreImage()} /> : null}
+        {storeImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || (!pendingImageAttempt && !isMediaProvenanceInputValid(storeImage.provenance))} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "حفظ شعار المتجر"} onPress={() => void uploadStoreImage()} /> : null}
         {storeImage ? <Text style={styles.muted}>احفظ صورة الواجهة أو أغلق التفاصيل لإلغاء الاختيار.</Text> : null}
         <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label="إغلاق تفاصيل الصورة" onPress={() => { setMediaCase(null); setStoreImage(null); }} variant="secondary" />
       </View> : null}
@@ -456,7 +456,7 @@ export function FieldCases() {
   <BthwaniConfirmDialog
     busy={Boolean(caseToSubmit && busy === caseToSubmit.id)}
     confirmLabel="إرسال للمراجعة"
-    description={caseToSubmit ? `سيُغلق تحرير مسودة «${caseToSubmit.businessName} · ${caseToSubmit.firstStoreName}» لدى الميدان ويُنقل الطلب إلى مراجعة التشغيل والشريك. تأكد من اكتمال البيانات وصورة واجهة المتجر قبل الإرسال.` : ""}
+    description={caseToSubmit ? `سيُغلق تحرير مسودة «${caseToSubmit.businessName} · ${caseToSubmit.firstStoreName}» لدى الميدان ويُنقل الطلب إلى مراجعة التشغيل والشريك. تأكد من اكتمال البيانات وشعار المتجر قبل الإرسال.` : ""}
     onCancel={() => setCaseToSubmit(null)}
     onConfirm={() => {
       const item = caseToSubmit;

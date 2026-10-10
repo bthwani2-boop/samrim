@@ -53,6 +53,7 @@ type JoiningCaseRecord struct {
 	FirstStoreProofType          string
 	FirstStoreProofNumberPresent bool
 	FirstStoreProofImageUploaded bool
+	ReviewPhotoUploaded          bool
 	FirstStoreNotes              string
 	FirstStoreServiceCityID      string
 	FirstStoreVerticalID         string
@@ -1110,6 +1111,10 @@ func ReviewJoiningCase(ctx context.Context, db *sql.DB, input ReviewJoiningCaseI
 		return JoiningCaseResult{}, err
 	}
 	if decision == "approved" {
+		// The optional premises photo is for intake review only, never a Store asset.
+		if _, err := tx.ExecContext(ctx, "DELETE FROM dsh.joining_case_review_photos WHERE joining_case_id=$1", caseID); err != nil {
+			return JoiningCaseResult{}, err
+		}
 		outboxID, outboxErr := newID("joining_financial")
 		if outboxErr != nil {
 			return JoiningCaseResult{}, outboxErr
@@ -1418,6 +1423,7 @@ func ListJoiningCasesForField(ctx context.Context, db *sql.DB, fieldActorID, que
 const joiningCaseSelect = `SELECT c.id,c.contact_phone_e164,c.owner_full_name,c.business_name,c.first_store_name,c.first_store_address,c.first_store_working_hours,c.first_store_proof_type,c.first_store_notes,
 	EXISTS(SELECT 1 FROM dsh.joining_case_private_evidence e WHERE e.joining_case_id=c.id AND e.proof_number_ciphertext IS NOT NULL),
 	EXISTS(SELECT 1 FROM dsh.joining_case_private_evidence e WHERE e.joining_case_id=c.id AND e.proof_image_ciphertext IS NOT NULL),
+	EXISTS(SELECT 1 FROM dsh.joining_case_review_photos p WHERE p.joining_case_id=c.id),
 	c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.settlement_period,c.financial_profile_id,c.financial_profile_state,c.correction_reason,c.reviewed_by,c.store_id,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_commercial_type_id,c.first_store_latitude,c.first_store_longitude,c.first_store_fulfillment_modes,c.terms_policy_version,COALESCE(c.wallet_provider_key,''),
 	 s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.commercial_store_type_id,s.version,s.publication_state,s.publication_changed_at,s.created_at,s.updated_at,s.delivery_origin_latitude,s.delivery_origin_longitude,s.delivery_origin_version,s.delivery_origin_updated_at,s.fulfillment_modes FROM dsh.joining_cases c LEFT JOIN dsh.stores s ON s.id=c.store_id`
 
@@ -1454,7 +1460,7 @@ func readJoiningCaseRow(ctx context.Context, row rowScanner, _ bool) (JoiningCas
 	var storeChanged, storeCreated, storeUpdated, storeOriginUpdated sql.NullTime
 	var storeOriginLatitude, storeOriginLongitude sql.NullFloat64
 	var storeOriginVersion sql.NullInt64
-	err := row.Scan(&record.ID, &record.ContactPhoneE164, &ownerFullName, &record.BusinessName, &record.FirstStoreName, &firstStoreAddress, &workingHours, &firstStoreProofType, &firstStoreNotes, &proofNumberPresent, &proofImageUploaded, &actorID, &originatingFieldActorID, &origin, &record.State, &settlementPeriod, &financialProfileID, &financialProfileState, &correctionReason, &reviewedBy, &storeID, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID, &verticalID, &commercialTypeID, &latitude, &longitude, pq.Array(&record.FirstStoreFulfillmentModes), &termsPolicyVersion, &record.WalletProviderKey,
+	err := row.Scan(&record.ID, &record.ContactPhoneE164, &ownerFullName, &record.BusinessName, &record.FirstStoreName, &firstStoreAddress, &workingHours, &firstStoreProofType, &firstStoreNotes, &proofNumberPresent, &proofImageUploaded, &record.ReviewPhotoUploaded, &actorID, &originatingFieldActorID, &origin, &record.State, &settlementPeriod, &financialProfileID, &financialProfileState, &correctionReason, &reviewedBy, &storeID, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID, &verticalID, &commercialTypeID, &latitude, &longitude, pq.Array(&record.FirstStoreFulfillmentModes), &termsPolicyVersion, &record.WalletProviderKey,
 		&storeIDValue, &storePartner, &storeName, &storeCityID, &storeVerticalID, &storeCommercialTypeID, &storeVersion, &storeState, &storeChanged, &storeCreated, &storeUpdated, &storeOriginLatitude, &storeOriginLongitude, &storeOriginVersion, &storeOriginUpdated, pq.Array(&store.FulfillmentModes))
 	if err != nil {
 		return JoiningCaseRecord{}, err

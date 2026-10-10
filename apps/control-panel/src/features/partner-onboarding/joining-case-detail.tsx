@@ -17,7 +17,8 @@ const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMo
 const proofTypeLabels: Record<JoiningCaseProofType, string> = {
   COMMERCIAL_REGISTRATION: "سجل تجاري",
   IDENTITY_DOCUMENT: "هوية",
-  FREELANCE_WORK_DOCUMENT: "وثيقة عمل حر",
+  FREELANCE_WORK_DOCUMENT: "وثيقة عمل حر (سجل قديم)",
+  PASSPORT: "جواز سفر",
 };
 
 const weekdays = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"] as const;
@@ -135,7 +136,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
   async function uploadIntakeImage() {
     const current = result?.case;
     const file = storeImageFile;
-    if (!current || current.state !== "draft" || !file || busy) return;
+    if (!current || (current.state !== "draft" && !(current.state === "approved" && current.store?.id)) || !file || busy) return;
     if (storeImageProvenance.creator.trim().length < 2 || storeImageProvenance.sourceDescription.trim().length < 3 || storeImageProvenance.rightsStatement.trim().length < 5 || !storeImageProvenance.rightsAttested) {
       setError("أكمل منشئ صورة الواجهة ومصدرها وبيان حق استخدامها، وأكّد صحة التصريح.");
       return;
@@ -302,23 +303,25 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>إصدار شروط السياسة</dt><dd>{current.termsPolicyVersion ?? "لم يُربط بعد"}</dd></div>
               <div><dt>الحالة المالية</dt><dd>{financialProfileStateLabel(current.financialProfileState)}</dd></div>
             </dl>
-            {current.storeProfileImage?.uri ? <figure className="mt-4 overflow-hidden rounded-xl border border-slate-200"><img src={current.storeProfileImage.uri} alt={`صورة واجهة متجر ${current.firstStoreName}`} className="h-48 w-full object-cover" /><figcaption className="p-2 text-sm text-slate-600">صورة واجهة المتجر المرفوعة من الميداني</figcaption></figure> : <p className="muted">لم تُرفع صورة واجهة متجر لهذا الملف بعد.</p>}
+            {current.storeProfileImage?.uri ? <figure className="mt-4 overflow-hidden rounded-xl border border-slate-200"><img src={current.storeProfileImage.uri} alt={`شعار متجر ${current.firstStoreName}`} className="h-48 w-full object-cover" /><figcaption className="p-2 text-sm text-slate-600">شعار المتجر المحفوظ من الميدان</figcaption></figure> : <p className="muted">لم تُرفع شعار متجر لهذا الملف بعد.</p>}
+            {current.reviewPhotoUploaded ? <p><a className="button button-secondary" href={`/api/partners/joining-cases/${encodeURIComponent(caseId)}/review-photo`} target="_blank" rel="noreferrer">عرض صورة المتجر الداخلية للمراجعة</a></p> : <p className="muted">لا توجد صورة داخلية اختيارية لهذا الطلب.</p>}
             {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}
           </div>
           <div className="managed-status managed-status-info">
             <strong>العمليات المتاحة</strong>
             {current.state === "draft" && current.origin === "field" ? <p>يستكمل الميداني الملف ثم يطلب قبول المشغّل؛ لا يُنشأ دور الشريك من تطبيق الميداني.</p> : null}
-            {current.state === "draft" ? <div className="managed-status managed-status-info">
+            {(current.state === "draft" || (current.state === "approved" && Boolean(current.store?.id))) ? <div className="managed-status managed-status-info">
               <strong>مرفقات ملف الانضمام</strong>
-              {!current.storeProfileImage ? <>
-                <p>ارفع صورة واجهة المتجر. هذه الصورة مخصّصة لعرض المتجر للعملاء.</p>
-                <label className="field-label" htmlFor="joining-storefront-file">صورة واجهة المتجر<input id="joining-storefront-file" type="file" accept="image/jpeg,image/png" disabled={busy} onChange={(event) => setStoreImageFile(event.target.files?.[0] ?? null)} /></label>
+              <>
+                {current.storeProfileImage ? <p>الشعار الحالي محفوظ. يمكنك رفع شعار أوضح لتحسين بطاقات المتجر وإشعاراته.</p> : null}
+                <p>ارفع شعار المتجر ليظهر في بطاقته وفي تطبيق العميل.</p>
+                <label className="field-label" htmlFor="joining-storefront-file">شعار المتجر<input id="joining-storefront-file" type="file" accept="image/jpeg,image/png" disabled={busy} onChange={(event) => setStoreImageFile(event.target.files?.[0] ?? null)} /></label>
                 <label className="field-label" htmlFor="joining-storefront-creator">منشئ الصورة<input id="joining-storefront-creator" disabled={busy} value={storeImageProvenance.creator} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, creator: event.target.value }))} /></label>
                 <label className="field-label" htmlFor="joining-storefront-source">مصدر الصورة<input id="joining-storefront-source" disabled={busy} value={storeImageProvenance.sourceDescription} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, sourceDescription: event.target.value }))} /></label>
                 <label className="field-label" htmlFor="joining-storefront-rights">حق الاستخدام<input id="joining-storefront-rights" disabled={busy} value={storeImageProvenance.rightsStatement} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, rightsStatement: event.target.value }))} /></label>
                 <label className="flex items-center gap-2"><input type="checkbox" disabled={busy} checked={storeImageProvenance.rightsAttested} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, rightsAttested: event.target.checked }))} /> أؤكد صحة مصدر الصورة وحق استخدامه</label>
-                {storeImageFile ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void uploadIntakeImage()}>رفع صورة واجهة المتجر</button> : null}
-              </> : <p>صورة واجهة المتجر مرفوعة.</p>}
+                {storeImageFile ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void uploadIntakeImage()}>رفع شعار المتجر</button> : null}
+              </>
             </div> : null}
             {current.state === "draft" && current.origin === "control_panel" ? <button type="button" className="button button-primary" disabled={busy || !current.storeProfileImage} onClick={() => void submitCase()}>إرسال الحالة للمراجعة وإنشاء دور الشريك</button> : null}
             {current.state === "admission_requested" && current.origin === "field" ? <button type="button" className="button button-primary" disabled={busy || !current.storeProfileImage} onClick={() => void submitCase()}>قبول الإحالة وإنشاء دور الشريك</button> : null}
