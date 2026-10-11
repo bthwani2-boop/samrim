@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -201,7 +202,9 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=true WHERE id=$1", serviceCityID); err != nil {
 			t.Fatalf("reactivate Service City for approval gate proof: %v", err)
 		}
-		approvalRequest := postgres.JoiningCaseRequest{Phone: "+967700000104", WalletProviderKey: "provider-test", OwnerFullName: "مالك بوابة الاعتماد", BusinessName: "نشاط المدينة الموقوفة", FirstStoreName: "متجر المدينة الموقوفة", FirstStoreAddress: "شارع بوابة الاعتماد", FirstStoreWorkingHours: workHours, FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "456123789", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
+		// Two independent daily shifts must survive admission and become the canonical Store orderability schedule.
+		splitHours := []byte(`{"intervals":[{"dayOfWeek":1,"opensAt":"09:00","closesAt":"14:00","closesNextDay":false},{"dayOfWeek":1,"opensAt":"17:00","closesAt":"22:00","closesNextDay":false}]}`)
+		approvalRequest := postgres.JoiningCaseRequest{Phone: "+967700000104", WalletProviderKey: "provider-test", OwnerFullName: "مالك بوابة الاعتماد", BusinessName: "نشاط المدينة الموقوفة", FirstStoreName: "متجر المدينة الموقوفة", FirstStoreAddress: "شارع بوابة الاعتماد", FirstStoreWorkingHours: splitHours, FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "456123789", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
 		approvalCase, err := postgres.CreateJoiningCase(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: "idem-join-approval-city-create", RequestHash: postgres.HashJoiningCaseRequest(approvalRequest), ActingActorID: operatorActor, CorrelationID: "corr-join-approval-city-create", EvidenceKeyring: evidenceKeys, Request: approvalRequest})
 		if err != nil {
 			t.Fatalf("create approval-gate joining case: %v", err)
@@ -227,6 +230,31 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		approved, err := postgres.ReviewJoiningCase(ctx, db, postgres.ReviewJoiningCaseInput{CaseID: approvalCase.Case.ID, Decision: "approved", SettlementPeriod: "WEEKLY", TermsPolicyVersion: "partner-financial-terms:v1", ExpectedVersion: approvalSubmitted.Case.Version, IdempotencyKey: "idem-join-approval-without-logo", RequestHash: approvalHash, ActingActorID: operatorActor, CorrelationID: "corr-join-approval-without-logo"})
 		if err != nil || approved.Case.State != "approved" || approved.Case.StoreID == "" || approved.Case.StoreProfileImage != nil {
 			t.Fatalf("approved joining case without logo failed: case=%+v err=%v", approved.Case, err)
+		}
+		availability, err := postgres.ReadStoreOperationalAvailability(ctx, db, approved.Case.StoreID)
+		if err != nil {
+			t.Fatalf("read canonical Store schedule after approved intake: %v", err)
+		}
+		expectedShifts := []postgres.StoreScheduleWindow{
+			{DayOfWeek: 1, OpensAtMinute: 540, ClosesAtMinute: 840},
+			{DayOfWeek: 1, OpensAtMinute: 1020, ClosesAtMinute: 1320},
+		}
+		if availability.StoreID != approved.Case.StoreID || availability.ScheduleMode != "WEEKLY" || availability.ScheduleTimezone != postgres.StoreScheduleTimezone || !reflect.DeepEqual(availability.WeeklySchedule, expectedShifts) {
+			t.Fatalf("approved joining-case shifts not transferred to the canonical Store schedule: %+v, want %+v", availability, expectedShifts)
+		}
+		for _, check := range []struct {
+			hourUTC   int
+			wantState string
+		}{
+			{hourUTC: 7, wantState: postgres.StoreOrderabilityOpenForOrders},     // Monday 10:00 in Sana'a
+			{hourUTC: 12, wantState: postgres.StoreOrderabilityClosedBySchedule}, // Monday 15:00, between shifts
+			{hourUTC: 15, wantState: postgres.StoreOrderabilityOpenForOrders},    // Monday 18:00
+		} {
+			at := time.Date(2026, time.October, 12, check.hourUTC, 0, 0, 0, time.UTC)
+			orderability, err := postgres.EvaluateStoreOrderability(ctx, db, approved.Case.StoreID, postgres.FulfillmentModeBthwaniCaptain, at)
+			if err != nil || orderability.State != check.wantState {
+				t.Fatalf("Store schedule orderability at %s = %+v err=%v, want %s", at.Format(time.RFC3339), orderability, err, check.wantState)
+			}
 		}
 	})
 }
