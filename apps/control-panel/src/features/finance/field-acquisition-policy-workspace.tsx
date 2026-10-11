@@ -1,5 +1,6 @@
 "use client";
 import { TextArea } from "@bthwani/design-system/web";
+import styles from "./field-acquisition-policy-workspace.module.css";
 
 import type { CommercialStoreType, CommerceVertical } from "@bthwani/dsh";
 import { financialPolicyStateLabel, formatMoney } from "@bthwani/dsh";
@@ -10,19 +11,18 @@ type Policy = Readonly<{ id: string; scopeType: "STORE_TYPE"; scopeId: string; r
 type ReadState = "unselected" | "loading" | "ready" | "missing" | "error";
 
 function saveButtonLabel(busy: boolean, hasPolicy: boolean): string {
-  if (busy) return "جارٍ حفظ السياسة والتحقق منها…";
-  return hasPolicy ? "حفظ إصدار جديد لنوع المتجر" : "إنشاء سياسة لهذا النوع";
+  if (busy) return "جارٍ الحفظ ومطابقة السجل…";
+  return hasPolicy ? "حفظ التغيير" : "إنشاء السياسة";
 }
 
 function FieldAcquisitionPolicySelection({
-  verticalId, verticals, selectedVertical, verticalsError, onVerticalChange, onVerticalRetry,
+  verticalId, verticals, verticalsError, onVerticalChange, onVerticalRetry,
   commercialTypes, selectedCommercialType, commercialTypeId, commercialTypesLoading,
   commercialTypesError, onCommercialTypeChange, onCommercialTypesRetry, busy, readState,
   policy, error,
 }: Readonly<{
   verticalId: string;
   verticals: ReadonlyArray<CommerceVertical>;
-  selectedVertical: CommerceVertical | undefined;
   verticalsError: string;
   onVerticalChange: (id: string) => void;
   onVerticalRetry: () => void;
@@ -39,24 +39,25 @@ function FieldAcquisitionPolicySelection({
   error: string;
 }>) {
   return <>
-    <label className="field-label" htmlFor="field-reward-vertical">المجال التجاري<select id="field-reward-vertical" value={verticalId} onChange={(event) => onVerticalChange(event.target.value)} disabled={busy || verticals.length === 0}>
-      <option value="">اختر المجال التجاري</option>
-      {verticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}
-    </select></label>
-    {selectedVertical ? <p className="muted">المجال المختار: <strong>{selectedVertical.nameAr}</strong>.</p> : null}
-    {verticalsError ? <p className="validation-error" role="alert">{verticalsError} <button className="button button-quiet" type="button" onClick={onVerticalRetry} disabled={busy}>إعادة تحميل الفئات</button></p> : null}
-    {verticals.length === 0 && !verticalsError ? <p className="muted">لا توجد فئات متاجر نشطة حاليًا.</p> : null}
-    {commercialTypesLoading ? <output>جارٍ قراءة أنواع المتاجر…</output> : null}
-    {commercialTypesError ? <p className="validation-error" role="alert">{commercialTypesError} <button className="button button-quiet" type="button" onClick={onCommercialTypesRetry} disabled={busy}>إعادة القراءة</button></p> : null}
-    {verticalId && !commercialTypesLoading && !commercialTypesError ? <label className="field-label" htmlFor="field-reward-commercial-type">نوع المتجر التجاري<select id="field-reward-commercial-type" value={commercialTypeId} onChange={(event) => onCommercialTypeChange(event.target.value)} disabled={busy || commercialTypes.length === 0}>
-      <option value="">اختر نوع المتجر</option>
-      {commercialTypes.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}
-    </select></label> : null}
-    {readState === "loading" ? <output>جارٍ قراءة سياسة نوع المتجر من السجل المالي…</output> : null}
-    {readState === "unselected" && verticalId && !commercialTypeId ? <p className="muted">اختر نوع متجر نشطًا لقراءة سياسته المركزية.</p> : null}
-    {readState === "missing" ? <output className="managed-status managed-status-warning">لا توجد سياسة مفعّلة لنوع «{selectedCommercialType?.nameAr}». لن ينشأ استحقاق لهذه الرحلة حتى تُنشأ السياسة هنا.</output> : null}
-    {readState === "error" ? <p className="validation-error" role="alert">{error || "تعذرت القراءة؛ الحفظ معطل حتى نجاحها."}</p> : null}
-    {policy ? <output className="managed-status">المبلغ الفعّال لنوع «{selectedCommercialType?.nameAr}»: <strong>{formatMoney(policy.rewardMinor, "YER")}</strong> · {financialPolicyStateLabel(policy.state)}</output> : null}
+    <div className={`${styles.scopeFields}${verticalId && !commercialTypesLoading && !commercialTypesError ? ` ${styles.scopeFieldsWithType}` : ""}`}>
+      <label className={`field-label ${styles.field}`} htmlFor="field-reward-vertical">المجال التجاري<select id="field-reward-vertical" value={verticalId} onChange={(event) => onVerticalChange(event.target.value)} disabled={busy || verticals.length === 0}>
+        <option value="">اختر المجال التجاري</option>
+        {verticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}
+      </select></label>
+      {verticalId && !commercialTypesLoading && !commercialTypesError ? <label className={`field-label ${styles.field}`} htmlFor="field-reward-commercial-type">نوع المتجر التجاري<select id="field-reward-commercial-type" value={commercialTypeId} onChange={(event) => onCommercialTypeChange(event.target.value)} disabled={busy || commercialTypes.length === 0}>
+        <option value="">اختر نوع المتجر</option>
+        {commercialTypes.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}
+      </select></label> : null}
+    </div>
+    {verticalsError ? <p className={`validation-error ${styles.feedback}`} role="alert">{verticalsError} <button className="button button-quiet" type="button" onClick={onVerticalRetry} disabled={busy}>إعادة تحميل الفئات</button></p> : null}
+    {verticals.length === 0 && !verticalsError ? <p className={`muted ${styles.feedback}`}>لا توجد فئات متاجر نشطة حاليًا.</p> : null}
+    {commercialTypesLoading ? <p className={styles.feedback} role="status">جارٍ قراءة أنواع المتاجر…</p> : null}
+    {commercialTypesError ? <p className={`validation-error ${styles.feedback}`} role="alert">{commercialTypesError} <button className="button button-quiet" type="button" onClick={onCommercialTypesRetry} disabled={busy}>إعادة القراءة</button></p> : null}
+    {readState === "loading" ? <p className={styles.feedback} role="status">جارٍ قراءة سياسة نوع المتجر من السجل المالي…</p> : null}
+    {readState === "unselected" && verticalId && !commercialTypeId ? <p className={`muted ${styles.feedback}`}>اختر نوع متجر نشطًا لقراءة سياسته.</p> : null}
+    {readState === "missing" ? <p className={`managed-status managed-status-warning ${styles.feedback}`} role="status">لا توجد سياسة لنوع «{selectedCommercialType?.nameAr}». أنشئها هنا لاحتساب الاستحقاق.</p> : null}
+    {readState === "error" ? <p className={`validation-error ${styles.feedback}`} role="alert">{error || "تعذرت القراءة؛ الحفظ معطل حتى نجاحها."}</p> : null}
+    {policy ? <div className={styles.policyReadout} role="status"><span>المبلغ الفعّال</span><strong>{formatMoney(policy.rewardMinor, "YER")}</strong><span>{financialPolicyStateLabel(policy.state)}</span></div> : null}
   </>;
 }
 
@@ -191,24 +192,36 @@ export function FieldAcquisitionPolicyWorkspace() {
     }
   };
 
-  const selectedVertical = verticals.find((vertical) => vertical.id === verticalId);
   const selectedCommercialType = commercialTypes.find((item) => item.id === commercialTypeId);
   const canEditPolicy = Boolean(commercialTypeId) && (readState === "ready" || readState === "missing");
 
-  return <section className="access-card" aria-labelledby="field-acquisition-policy-title">
-    <div className="finance-toolbar">
-      <div><p className="eyebrow">مركز السياسات · السجل المالي</p><h2 id="field-acquisition-policy-title">استحقاق ضم الشريك للميداني</h2></div>
-      <button className="button button-secondary" type="button" onClick={() => { if (commercialTypeId) void read(commercialTypeId); }} disabled={!commercialTypeId || busy || readState === "loading"}>إعادة القراءة</button>
-    </div>
-    <p className="muted">لكل نوع متجر تجاري سياسة مبلغ مستقلة من مركز السياسات. يتحقق الاستحقاق مرة واحدة لرحلة ضم الشريك عند ظهور أول متجر مؤهل في تطبيق العميل. لا ينتقل مبلغ نوع إلى نوع آخر، ولا توجد قيمة افتراضية أو قيمة خاصة بمتجر.</p>
-    <div className="form-grid">
-      <FieldAcquisitionPolicySelection verticalId={verticalId} verticals={verticals} selectedVertical={selectedVertical} verticalsError={verticalsError} onVerticalChange={chooseVertical} onVerticalRetry={() => void loadVerticals()} commercialTypes={commercialTypes} selectedCommercialType={selectedCommercialType} commercialTypeId={commercialTypeId} commercialTypesLoading={commercialTypesLoading} commercialTypesError={commercialTypesError} onCommercialTypeChange={chooseCommercialType} onCommercialTypesRetry={() => void loadCommercialTypes(verticalId)} busy={busy} readState={readState} policy={policy} error={error} />
-      <label className="field-label" htmlFor="field-acquisition-reward">مبلغ الاستحقاق لهذا النوع (ريال يمني)<input id="field-acquisition-reward" type="number" min="50" step="50" value={rewardMinor} onChange={(event) => setRewardMinor(event.target.value)} disabled={busy || !canEdit || !canEditPolicy} /></label>
-      <p className="muted">وحدة التقريب ثابتة عند ٥٠ ريالًا. المبلغ لا يُضبط في ملف الميداني أو المتجر.</p>
-      <label className="field-label" htmlFor="field-reward-reason">سبب إنشاء السياسة أو تغيير المبلغ<TextArea className="resize-none" id="field-reward-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} disabled={busy || !canEdit || !canEditPolicy} /></label>
-    </div>
-     {message ? <output className="success">{message}</output> : null}
-    {error && readState !== "error" ? <p className="validation-error" role="alert">{error}</p> : null}
-    <button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || !canEdit || !canEditPolicy || !Number.isInteger(Number(rewardMinor)) || Number(rewardMinor) < 50 || reason.trim().length < 5 || reason.trim().length > 500}>{saveButtonLabel(busy, Boolean(policy))}</button>
+  return <section className={`access-card ${styles.panel}`} aria-labelledby="field-acquisition-policy-title">
+    <header className={styles.header}>
+      <div className={styles.heading}>
+        <p className="eyebrow">سياسة مالية · لكل نوع متجر</p>
+        <h2 id="field-acquisition-policy-title">إعداد مبلغ الاستحقاق</h2>
+      </div>
+      <div className={styles.headerActions}>
+        <span className={styles.source}>مصدرها السجل المالي</span>
+        <button className="button button-secondary" type="button" onClick={() => { if (commercialTypeId) void read(commercialTypeId); }} disabled={!commercialTypeId || busy || readState === "loading"}>إعادة القراءة</button>
+      </div>
+    </header>
+    <p className={styles.description}>لكل نوع متجر مبلغ مستقل يُحتسب مرة واحدة عند ظهور أول متجر مؤهل في تطبيق العميل؛ بلا مبلغ افتراضي أو تخصيص لمتجر.</p>
+    <section className={styles.scope} aria-labelledby="field-acquisition-scope-title">
+      <div className={styles.sectionHeading}><span className={styles.step} aria-hidden="true">١</span><div><h3 id="field-acquisition-scope-title">حدد نوع المتجر</h3><p>اختر المجال ثم النوع لقراءة السياسة الحالية.</p></div></div>
+      <FieldAcquisitionPolicySelection verticalId={verticalId} verticals={verticals} verticalsError={verticalsError} onVerticalChange={chooseVertical} onVerticalRetry={() => void loadVerticals()} commercialTypes={commercialTypes} selectedCommercialType={selectedCommercialType} commercialTypeId={commercialTypeId} commercialTypesLoading={commercialTypesLoading} commercialTypesError={commercialTypesError} onCommercialTypeChange={chooseCommercialType} onCommercialTypesRetry={() => void loadCommercialTypes(verticalId)} busy={busy} readState={readState} policy={policy} error={error} />
+    </section>
+    {canEditPolicy ? <section className={styles.settings} aria-labelledby="field-acquisition-settings-title">
+      <div className={styles.sectionHeading}><span className={styles.step} aria-hidden="true">٢</span><div><h3 id="field-acquisition-settings-title">قيمة السياسة</h3><p>تُحفظ كتغيير جديد في السجل المالي.</p></div></div>
+      <div className={styles.settingsGrid}>
+        <label className={`field-label ${styles.field}`} htmlFor="field-acquisition-reward">مبلغ الاستحقاق<input id="field-acquisition-reward" type="number" min="50" step="50" value={rewardMinor} onChange={(event) => setRewardMinor(event.target.value)} aria-describedby="field-acquisition-rounding" disabled={busy || !canEdit} /></label>
+        <label className={`field-label ${styles.field} ${styles.reasonField}`} htmlFor="field-reward-reason">سبب الإنشاء أو التغيير<TextArea id="field-reward-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} aria-describedby="field-reward-reason-hint" disabled={busy || !canEdit} /></label>
+        <p id="field-acquisition-rounding" className={`muted ${styles.helper}`}>بالريال اليمني، وبمضاعفات ٥٠. يخص نوع المتجر ولا يُعدّل من ملف الميداني أو المتجر.</p>
+        <p id="field-reward-reason-hint" className={`muted ${styles.helper}`}>من ٥ إلى ٥٠٠ حرف.</p>
+      </div>
+      {message ? <output className={`success ${styles.notice}`} role="status">{message}</output> : null}
+      {error ? <p className={`validation-error ${styles.notice}`} role="alert">{error}</p> : null}
+      <button className={`button button-primary ${styles.saveButton}`} type="button" onClick={() => void save()} disabled={busy || !canEdit || !Number.isInteger(Number(rewardMinor)) || Number(rewardMinor) < 50 || reason.trim().length < 5 || reason.trim().length > 500}>{saveButtonLabel(busy, Boolean(policy))}</button>
+    </section> : null}
   </section>;
 }
