@@ -107,5 +107,54 @@ func TestCatalogTrashPreservesProductsAndHidesActiveReads(t *testing.T) {
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.catalog_product_trash_audit WHERE product_id=$1", before.ID).Scan(&count); err != nil || count != 2 {
 			t.Fatalf("restore audit missing: %d err=%v", count, err)
 		}
+
+		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: "trash-store-one", PartnerActorID: "actor-partner-one", Name: "متجر اليمن الأول", PrimaryVerticalID: "trash_vertical"})
+		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: "trash-store-two", PartnerActorID: "actor-partner-two", Name: "متجر اليمن الثاني", PrimaryVerticalID: "trash_vertical"})
+		for _, fixture := range []struct{ id, store string }{
+			{"trash-store-product-one", "trash-store-one"},
+			{"trash-store-product-two", "trash-store-two"},
+		} {
+			if _, err := db.ExecContext(ctx, "INSERT INTO dsh.catalog_products(id,vertical_id,scope,store_id,canonical_name,active) VALUES($1,'trash_vertical','STORE_SCOPED',$2,$1,true)", fixture.id, fixture.store); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, _, err := postgres.SetStoreScopedProductTrashed(ctx, db, "trash-store-two", "trash-store-product-one", "actor-partner-two", "حذف غير مسموح", "trash", "other-store-attempt-001", 1); !errors.Is(err, postgres.ErrCatalogProductNotFound) {
+			t.Fatalf("other store must not delete product: %v", err)
+		}
+		deleted, replay, err := postgres.SetStoreScopedProductTrashed(ctx, db, "trash-store-one", "trash-store-product-one", "actor-partner-one", "منتج مكرر في المتجر", "trash", "store-trash-key-0001", 1)
+		if err != nil || replay || deleted.StoreID != "trash-store-one" || deleted.Version != 2 {
+			t.Fatalf("own store trash: %+v replay=%v err=%v", deleted, replay, err)
+		}
+		ownList, err := postgres.ListDeletedCatalogProductsForStore(ctx, db, "trash-store-one", 10, "")
+		if err != nil || len(ownList.Products) != 1 || ownList.Products[0].ID != "trash-store-product-one" {
+			t.Fatalf("own store list: %+v err=%v", ownList, err)
+		}
+		otherList, err := postgres.ListDeletedCatalogProductsForStore(ctx, db, "trash-store-two", 10, "")
+		if err != nil || len(otherList.Products) != 0 {
+			t.Fatalf("other store leak: %+v err=%v", otherList, err)
+		}
+		adminList, err := postgres.ListDeletedCatalogProducts(ctx, db, 10, "")
+		if err != nil || len(adminList.Products) != 0 {
+			t.Fatalf("store scoped product appeared in shared trash: %+v err=%v", adminList, err)
+		}
+		if _, err := postgres.ReadCatalogProduct(ctx, db, "trash-store-product-one"); !errors.Is(err, postgres.ErrCatalogProductNotFound) {
+			t.Fatalf("deleted product readable: %v", err)
+		}
+		if _, _, err := postgres.SetStoreScopedProductTrashed(ctx, db, "trash-store-two", "trash-store-product-one", "actor-partner-two", "", "restore", "store-cross-restore-001", 2); !errors.Is(err, postgres.ErrCatalogProductNotFound) {
+			t.Fatalf("other store could restore product: %v", err)
+		}
+		if _, _, err := postgres.SetStoreScopedProductTrashed(ctx, db, "trash-store-one", "trash-store-product-one", "actor-partner-one", "", "restore", "store-stale-restore-001", 1); !errors.Is(err, postgres.ErrCatalogVersionConflict) {
+			t.Fatalf("stale version accepted: %v", err)
+		}
+		restoredStore, replay, err := postgres.SetStoreScopedProductTrashed(ctx, db, "trash-store-one", "trash-store-product-one", "actor-partner-one", "", "restore", "store-restore-key-0001", 2)
+		if err != nil || replay || restoredStore.DeletedAt != nil || restoredStore.Version != 3 {
+			t.Fatalf("own store restore: %+v replay=%v err=%v", restoredStore, replay, err)
+		}
+		if _, err := postgres.ReadCatalogProduct(ctx, db, "trash-store-product-one"); err != nil {
+			t.Fatalf("restored store product missing: %v", err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.catalog_product_trash_audit WHERE product_id='trash-store-product-one'").Scan(&count); err != nil || count != 2 {
+			t.Fatalf("store trash audit incomplete: count=%d err=%v", count, err)
+		}
 	})
 }

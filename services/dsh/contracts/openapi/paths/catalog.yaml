@@ -1,4 +1,67 @@
 paths:
+  /dsh/stores/{storeId}/trash:
+    get:
+      operationId: listStoreDeletedCatalogProducts
+      summary: List deleted products belonging only to the authenticated partner's store
+      security:
+        - userBearer: []
+      parameters:
+        - { name: storeId, in: path, required: true, schema: { type: string, maxLength: 128 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 512 } }
+      responses:
+        "200": { description: Bounded own-store deleted products. }
+        "403": { description: Partner lacks ownership or store access. }
+  /dsh/stores/{storeId}/products/{productId}/trash:
+    post:
+      operationId: trashStoreScopedProduct
+      summary: Soft-delete one store-owned product without destroying orders or offers
+      security:
+        - userBearer: []
+      parameters:
+        - { name: storeId, in: path, required: true, schema: { type: string, maxLength: 128 } }
+        - { name: productId, in: path, required: true, schema: { type: string, maxLength: 128 } }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        "200": { description: Product placed in own-store trash or replayed. }
+        "403": { description: Product belongs to another store. }
+        "409": { description: Version or idempotency conflict. }
+  /dsh/stores/{storeId}/products/{productId}/restore:
+    post:
+      operationId: restoreStoreScopedProduct
+      summary: Restore a store-owned product subject to current catalog publication rules
+      security:
+        - userBearer: []
+      parameters:
+        - { name: storeId, in: path, required: true, schema: { type: string, maxLength: 128 } }
+        - { name: productId, in: path, required: true, schema: { type: string, maxLength: 128 } }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, enum: [""] }
+      responses:
+        "200": { description: Restored own-store product or replayed. }
+        "403": { description: Product belongs to another store. }
+        "409": { description: Version or idempotency conflict. }
   /dsh/catalog/trash:
     get:
       operationId: listDeletedCatalogProducts

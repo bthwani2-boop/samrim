@@ -1694,7 +1694,7 @@ func UpdateCatalogVariant(ctx context.Context, db *sql.DB, variantID string, inp
 func validateCatalogProductModelTx(ctx context.Context, tx *sql.Tx, productID string) error {
 	var scope string
 	err := tx.QueryRowContext(ctx, `SELECT p.scope FROM dsh.catalog_products p
-		JOIN dsh.commerce_verticals cv ON cv.id=p.vertical_id WHERE p.id=$1 AND cv.active=true FOR SHARE OF cv`, productID).Scan(&scope)
+		JOIN dsh.commerce_verticals cv ON cv.id=p.vertical_id WHERE p.id=$1 AND cv.active=true AND p.deleted_at IS NULL FOR SHARE OF cv`, productID).Scan(&scope)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrCatalogProductNotFound
 	}

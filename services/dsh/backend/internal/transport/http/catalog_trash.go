@@ -72,3 +72,59 @@ func (s *CatalogServer) mutateProductTrash(w http.ResponseWriter, r *http.Reques
 		IdempotentReplay bool                           `json:"idempotentReplay"`
 	}{Product: product, IdempotentReplay: replayed})
 }
+
+func (s *CatalogServer) listStoreProductTrash(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
+		return
+	}
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > 100 {
+			writeCatalogError(w, postgres.ErrCatalogTrashInvalid)
+			return
+		}
+		limit = n
+	}
+	page, err := s.service.ListDeletedProductsForStore(r.Context(), bearerToken(r), r.PathValue("storeId"), limit, r.URL.Query().Get("cursor"))
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (s *CatalogServer) trashStoreProduct(w http.ResponseWriter, r *http.Request) {
+	s.mutateStoreProductTrash(w, r, "trash")
+}
+
+func (s *CatalogServer) restoreStoreProduct(w http.ResponseWriter, r *http.Request) {
+	s.mutateStoreProductTrash(w, r, "restore")
+}
+
+func (s *CatalogServer) mutateStoreProductTrash(w http.ResponseWriter, r *http.Request, action string) {
+	_, key, expected, ok := requiredPartnerOfferHeaders(w, r, true)
+	if !ok {
+		return
+	}
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if (action == "trash" && strings.TrimSpace(input.Reason) == "") || (action == "restore" && input.Reason != "") {
+		writeCatalogError(w, postgres.ErrCatalogTrashInvalid)
+		return
+	}
+	product, replayed, err := s.service.SetStoreProductTrashed(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("productId"), input.Reason, action, key, expected)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Product          postgres.DeletedCatalogProduct `json:"product"`
+		IdempotentReplay bool                           `json:"idempotentReplay"`
+	}{Product: product, IdempotentReplay: replayed})
+}

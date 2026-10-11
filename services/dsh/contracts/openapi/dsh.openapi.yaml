@@ -102,6 +102,15 @@ paths:
   /dsh/catalog/products/{productId}/restore:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1restore"
 
+  /dsh/stores/{storeId}/trash:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1trash"
+
+  /dsh/stores/{storeId}/products/{productId}/trash:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1products~1{productId}~1trash"
+
+  /dsh/stores/{storeId}/products/{productId}/restore:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1products~1{productId}~1restore"
+
   /dsh/catalog/products/{productId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}"
 
