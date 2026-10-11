@@ -441,7 +441,7 @@ function joiningCaseDetails(businessName, firstStoreName, serviceCityId, vertica
     firstStoreName,
     walletProviderKey: "wallet_provider_floosak",
     firstStoreAddress: `${firstStoreName} street, building 1`,
-    firstStoreWorkingHours: { intervals: [{ dayOfWeek: 1, opensAt: "08:00", closesAt: "16:00", closesNextDay: false }] },
+    firstStoreWorkingHours: { intervals: Array.from({ length: 7 }, (_, day) => ({ dayOfWeek: day + 1, opensAt: "00:00", closesAt: "00:00", closesNextDay: true })) },
     firstStoreProofType: "COMMERCIAL_REGISTRATION",
     firstStoreProofNumber: `CR-${crypto.randomUUID()}`,
     serviceCityId,
