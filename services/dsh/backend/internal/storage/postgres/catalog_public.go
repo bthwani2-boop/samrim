@@ -325,6 +325,10 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 	if storeID != "" {
 		args = append(args, storeID)
 		conditions = append([]string{fmt.Sprintf("o.store_id=$%d", len(args))}, conditions...)
+	} else {
+		// Public cross-Store search must honor the same financial eligibility as Store discovery.
+		// Store-scoped catalog preparation/readback is permitted before Partner admission.
+		conditions = append(conditions, "EXISTS (SELECT 1 FROM dsh.joining_cases jc WHERE jc.partner_actor_id=s.partner_actor_id AND jc.financial_profile_state='ACTIVE')")
 	}
 	if serviceCityID != "" {
 		args = append(args, serviceCityID)
