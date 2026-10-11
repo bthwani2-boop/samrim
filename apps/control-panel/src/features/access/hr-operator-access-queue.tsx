@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { HRAccessRequest, HRAccessRequestPage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
 
@@ -10,6 +10,9 @@ export function HROperatorAccessQueue() {
  const [next,setNext]=useState("");
  const [loading,setLoading]=useState(true);
  const [busy,setBusy]=useState("");
+ const [rejecting,setRejecting]=useState("");
+ const [rejectReason,setRejectReason]=useState("");
+ const rejectMutation=useRef<{signature:string;key:string}|null>(null);
  const [error,setError]=useState("");
  const [notice,setNotice]=useState("");
  const reload=useCallback(async()=>{
@@ -33,6 +36,25 @@ export function HROperatorAccessQueue() {
    await reload();
   }catch(e){setError(e instanceof Error?e.message:"تعذر تحويل الطلب")}finally{setBusy("")}
  }
+ async function rejectRequest(item:HRAccessRequest){
+  if(busy)return;
+  const reason=rejectReason.trim();
+  if(reason.length<8||reason.length>500){setError("اكتب سبب رفض واضحًا لا يقل عن 8 أحرف.");return}
+  const body={expectedVersion:item.version,reason};
+  const signature=JSON.stringify({id:item.id,...body});
+  if(rejectMutation.current?.signature!==signature)rejectMutation.current={signature,key:crypto.randomUUID()};
+  setBusy(item.id);setError("");setNotice("");
+  try{
+   const response=await identityFetch(`/api/access/hr-requests/${encodeURIComponent(item.id)}/reject`,{
+    method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":rejectMutation.current.key},body:JSON.stringify(body),
+   });
+   if(!response.ok)throw new Error(response.status===409?"تغيرت حالة الطلب؛ حدّث القائمة قبل اتخاذ قرار.":"تعذر رفض الطلب؛ يمكن إعادة المحاولة بالبيانات نفسها.");
+   setRejecting("");setRejectReason("");rejectMutation.current=null;
+   setNotice("رُفض طلب الوصول وسُجل السبب. يستطيع HR الآن تصحيح الموظف وتقديم طلب جديد.");
+   await reload();
+  }catch(e){setError(e instanceof Error?e.message:"تعذر رفض الطلب");}
+  finally{setBusy("")}
+ }
  return <section className="access-workspace-section">
   <div className="access-section-heading">
    <div><h2>طلبات الوصول من الموارد البشرية</h2><p>يقدّم HR الطلب، والمشغّل الأساسي يحوّله إلى ملف مراجعة Identity. الصلاحيات المقترحة ليست منحًا فعليًا.</p></div>
@@ -46,11 +68,22 @@ export function HROperatorAccessQueue() {
     {items.map((item)=><tr key={item.id}>
      <th scope="row">{item.employeeName}</th><td>{item.jobTitle} — {item.department}</td><td>{item.reason}</td>
      <td>{item.requestedPermissions.join("، ")||"بدون اقتراح"}</td>
-     <td>{item.state==="pending_review"?"بانتظار المشغّل الأساسي":"أُحيل إلى Identity"}</td>
-     <td>{item.state==="pending_review"?
-      <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>void openProfile(item.id)}>
-       {busy===item.id?"جارٍ التحويل…":"إنشاء ملف مراجعة"}
-      </button>:"تابع الاعتماد في القائمة أدناه"}</td>
+     <td>{item.state==="pending_review"?"بانتظار المشغّل الأساسي":item.state==="rejected"?"مرفوض":item.state==="identity_provisioning"?"جارٍ إنشاء ملف المراجعة":"أُحيل إلى Identity"}</td>
+     <td>{item.state==="pending_review"?<>
+      <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>void openProfile(item.id)}>{busy===item.id?"جارٍ التحويل…":"إنشاء ملف مراجعة"}</button>
+      <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>{setRejecting(item.id);setRejectReason("");rejectMutation.current=null;}}>رفض الطلب</button>
+      {rejecting===item.id?<div className="form-section" style={{maxInlineSize:320}}>
+       <label className="field-label">سبب الرفض
+        <textarea required minLength={8} maxLength={500} rows={3} value={rejectReason} onChange={(e)=>{setRejectReason(e.target.value);rejectMutation.current=null}}/>
+       </label>
+       <div className="form-actions">
+        <button type="button" className="button button-secondary" disabled={!!busy||rejectReason.trim().length<8} onClick={()=>void rejectRequest(item)}>تأكيد الرفض</button>
+        <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>setRejecting("")}>إلغاء</button>
+       </div>
+      </div>:null}
+     </>:item.state==="identity_provisioning"?
+       <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>void openProfile(item.id)}>استكمال التحويل</button>:
+       item.state==="rejected"?<span>{item.rejectionReason||"مرفوض"}</span>:"تابع الاعتماد في القائمة أدناه"}</td>
     </tr>)}
     {!loading&&items.length===0?<tr><td colSpan={6}>لا توجد طلبات وصول.</td></tr>:null}
     {loading?<tr><td colSpan={6}>جارٍ تحميل الطلبات…</td></tr>:null}

@@ -14,6 +14,7 @@ export function EmployeeAccessRequest({ employee }: { employee: HREmployee }) {
  const [requestedPermissions,setRequestedPermissions]=useState<string[]>([]);
  const [pending,setPending]=useState(false);
  const [sent,setSent]=useState<HRAccessRequest|null>(null);
+ const [rejected,setRejected]=useState<HRAccessRequest|null>(null);
  const [checking,setChecking]=useState(true);
  const [error,setError]=useState("");
  const mutation=useRef<{signature:string;key:string}|null>(null);
@@ -24,7 +25,11 @@ export function EmployeeAccessRequest({ employee }: { employee: HREmployee }) {
     const response=await identityFetch(`/api/hr/access-requests?employeeId=${encodeURIComponent(employee.id)}`);
     if(!response.ok)throw new Error("تعذر التحقق من طلبات الوصول السابقة.");
     const page=await response.json() as {items:HRAccessRequest[]};
-    if(live)setSent(page.items[0]??null);
+    if(live){
+     const latest=page.items[0]??null;
+     setSent(latest?.state==="rejected"?null:latest);
+     setRejected(latest?.state==="rejected"?latest:null);
+    }
    }catch{if(live)setError("تعذر التحقق من طلب الوصول السابق. حاول فتح الملف مجددًا.")}
    finally{if(live)setChecking(false)}
   }
@@ -52,7 +57,7 @@ export function EmployeeAccessRequest({ employee }: { employee: HREmployee }) {
     throw new Error(response.status===409?"يوجد طلب وصول سابق لهذا الموظف.":"تعذر إرسال طلب الوصول. حاول مجددًا.");
    }
    const result=await response.json() as {request:HRAccessRequest};
-   setSent(result.request);
+   setSent(result.request);setRejected(null);mutation.current=null;
   }catch(e){setError(e instanceof Error?e.message:"تعذر إرسال الطلب")}
   finally{setPending(false)}
  }
@@ -61,7 +66,8 @@ export function EmployeeAccessRequest({ employee }: { employee: HREmployee }) {
  return <form onSubmit={(event)=>void submit(event)} className="form-section" style={{maxInlineSize:620}}>
   <h3>طلب منح وصول للوحة التحكم</h3>
   <p className="muted">هذا طلب للمشغّل الأساسي فقط؛ لا يتم منح أي صلاحيات عند الإرسال.</p>
-  {checking?<p role="status">جارٍ التحقق من حالة الطلب…</p>:sent?<p role="status">{sent.state==="pending_review"?"طلب الوصول بانتظار المشغّل الأساسي.":"أُحيل الطلب إلى Identity وما زالت الموافقة على الوصول والتفعيل منفصلتين."}</p>:error?<p role="alert">{error}</p>:<>
+  {rejected?<p role="status">رُفض الطلب السابق: {rejected.rejectionReason||"راجع المشغّل الأساسي"}. يمكنك تصحيح بيانات الموظف وإرسال طلب جديد.</p>:null}
+  {checking?<p role="status">جارٍ التحقق من حالة الطلب…</p>:sent?<p role="status">{sent.state==="pending_review"?"طلب الوصول بانتظار المشغّل الأساسي.":sent.state==="identity_provisioning"?"جارٍ تحويل الطلب إلى Identity.":"أُحيل الطلب إلى Identity وما زالت الموافقة على الوصول والتفعيل منفصلتين."}</p>:error?<p role="alert">{error}</p>:<>
   <label className="field-label">سبب طلب الوصول
    <textarea required minLength={8} maxLength={500} value={reason} onChange={(e)=>{setReason(e.target.value);mutation.current=null}}/>
   </label>

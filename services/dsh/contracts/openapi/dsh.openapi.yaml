@@ -423,6 +423,10 @@ paths:
     $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}"
   /dsh/hr/access-requests/{requestId}/link:
     $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}~1link"
+  /dsh/hr/access-requests/{requestId}/reject:
+    $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}~1reject"
+  /dsh/hr/access-requests/{requestId}/provision:
+    $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}~1provision"
 
   /dsh/hr/employees:
     $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees"
@@ -4923,7 +4927,7 @@ components:
             type: string
         state:
           type: string
-          enum: [pending_review, identity_profile_created]
+          enum: [pending_review, identity_provisioning, identity_profile_created, rejected]
         operatorProfileId:
           type: string
         requestedByActorId:
@@ -4933,6 +4937,13 @@ components:
           format: date-time
         version:
           type: integer
+        rejectedAt:
+          type: string
+          format: date-time
+        rejectedByActorId:
+          type: string
+        rejectionReason:
+          type: string
     HRAccessRequestInput:
       type: object
       additionalProperties: false
@@ -4946,6 +4957,18 @@ components:
           type: array
           items:
             type: string
+    HRAccessDecisionInput:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 8
+          maxLength: 500
     HRAccessLinkInput:
       type: object
       additionalProperties: false

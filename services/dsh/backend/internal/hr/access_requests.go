@@ -24,19 +24,22 @@ type AccessRequestInput struct {
 	RequestedPermissions []string `json:"requestedPermissions"`
 }
 type AccessRequest struct {
-	ID                   string    `json:"id"`
-	EmployeeID           string    `json:"employeeId"`
-	EmployeeName         string    `json:"employeeName"`
-	PhoneE164            string    `json:"phoneE164"`
-	Department           string    `json:"department"`
-	JobTitle             string    `json:"jobTitle"`
-	Reason               string    `json:"reason"`
-	RequestedPermissions []string  `json:"requestedPermissions"`
-	State                string    `json:"state"`
-	OperatorProfileID    string    `json:"operatorProfileId,omitempty"`
-	RequestedByActorID   string    `json:"requestedByActorId"`
-	CreatedAt            time.Time `json:"createdAt"`
-	Version              int       `json:"version"`
+	ID                   string     `json:"id"`
+	EmployeeID           string     `json:"employeeId"`
+	EmployeeName         string     `json:"employeeName"`
+	PhoneE164            string     `json:"phoneE164"`
+	Department           string     `json:"department"`
+	JobTitle             string     `json:"jobTitle"`
+	Reason               string     `json:"reason"`
+	RequestedPermissions []string   `json:"requestedPermissions"`
+	State                string     `json:"state"`
+	OperatorProfileID    string     `json:"operatorProfileId,omitempty"`
+	RequestedByActorID   string     `json:"requestedByActorId"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	RejectedAt           *time.Time `json:"rejectedAt,omitempty"`
+	RejectionReason      string     `json:"rejectionReason,omitempty"`
+	RejectedByActorID    string     `json:"rejectedByActorId,omitempty"`
+	Version              int        `json:"version"`
 }
 type AccessRequestResult struct {
 	Request          AccessRequest `json:"request"`
@@ -77,13 +80,13 @@ func normalizeAccessRequest(in AccessRequestInput) (AccessRequestInput, error) {
 }
 
 const accessSelect = `SELECT r.id,r.employee_id,r.employee_name_snapshot,r.phone_e164_snapshot,r.department_snapshot,r.job_title_snapshot,
- r.reason,r.requested_permissions,r.state,COALESCE(r.operator_profile_id,''),r.requested_by_actor_id,r.created_at,r.version
+ r.reason,r.requested_permissions,r.state,COALESCE(r.operator_profile_id,''),r.requested_by_actor_id,r.created_at,r.rejected_at,COALESCE(r.rejection_reason,''),COALESCE(r.rejected_by_actor_id,''),r.version
  FROM dsh.hr_operator_access_requests r JOIN dsh.hr_employees e ON e.id=r.employee_id`
 
 func scanAccess(row rowScanner) (AccessRequest, error) {
 	var a AccessRequest
 	err := row.Scan(&a.ID, &a.EmployeeID, &a.EmployeeName, &a.PhoneE164, &a.Department, &a.JobTitle,
-		&a.Reason, pq.Array(&a.RequestedPermissions), &a.State, &a.OperatorProfileID, &a.RequestedByActorID, &a.CreatedAt, &a.Version)
+		&a.Reason, pq.Array(&a.RequestedPermissions), &a.State, &a.OperatorProfileID, &a.RequestedByActorID, &a.CreatedAt, &a.RejectedAt, &a.RejectionReason, &a.RejectedByActorID, &a.Version)
 	return a, err
 }
 func ReadAccessRequest(ctx context.Context, db *sql.DB, id string) (AccessRequest, error) {
@@ -233,7 +236,7 @@ func LinkAccessRequest(ctx context.Context, db *sql.DB, id, profileID, acting, c
 		return AccessRequestResult{}, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "hr:access:link:"+id); err != nil {
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "hr:access:action:"+id); err != nil {
 		return AccessRequestResult{}, err
 	}
 	var previousID, previousHash string
@@ -262,7 +265,7 @@ func LinkAccessRequest(ctx context.Context, db *sql.DB, id, profileID, acting, c
 	if err != nil {
 		return AccessRequestResult{}, err
 	}
-	if state != "pending_review" || oldProfile != "" {
+	if state != "identity_provisioning" || oldProfile != "" {
 		return AccessRequestResult{}, ErrConflict
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE dsh.hr_operator_access_requests SET state='identity_profile_created',

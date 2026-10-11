@@ -65,3 +65,45 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+  /dsh/hr/access-requests/{requestId}/reject:
+    post:
+      operationId: rejectHRAccessRequest
+      summary: Initial Operator decision, serialized before Identity provisioning
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HRAccessDecisionInput" } }
+      responses:
+        "200": { description: Decision recorded or idempotently replayed, content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HRAccessRequestMutationResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+  /dsh/hr/access-requests/{requestId}/provision:
+    post:
+      operationId: provisionHRAccessRequest
+      summary: Initial Operator decision, serialized before Identity provisioning
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HRAccessDecisionInput" } }
+      responses:
+        "200": { description: Decision recorded or idempotently replayed, content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HRAccessRequestMutationResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }

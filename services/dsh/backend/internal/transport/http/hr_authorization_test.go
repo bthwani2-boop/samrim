@@ -63,7 +63,6 @@ func TestHRDirectoryRequiresExplicitHRGrantOnEveryPath(t *testing.T) {
 		{"access_queue", http.MethodGet, "/dsh/hr/access-requests", ""},
 		{"access_details", http.MethodGet, "/dsh/hr/access-requests/hreq_00000000000000000000000000000000", ""},
 		{"access_submit", http.MethodPost, "/dsh/hr/access-requests", `{"employeeId":"emp_00000000000000000000000000000000","reason":"Needs workspace access","requestedPermissions":["operations"]}`},
-		{"access_link", http.MethodPost, "/dsh/hr/access-requests/hreq_00000000000000000000000000000000/link", `{"operatorProfileId":"oprof_123"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

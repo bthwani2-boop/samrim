@@ -90,6 +90,13 @@ func (c *Client) ProvisionExistingRoleWithContext(ctx context.Context, actorID, 
 	err := c.doWithContext(ctx, IdentityOperationProvisionExistingActorRole.Method, pathname, correlationID, "", strings.TrimSpace(operatorActorID), 0, nil, &result)
 	return result, err
 }
+
+// Identity alone verifies the canonical initial Operator.
+func (c *Client) RequireOperatorProfileAdministrator(ctx context.Context, actingActorID string) error {
+	var result OperatorProfilePage
+	return c.doWithContext(ctx, IdentityOperationListOperatorProfiles.Method,
+		IdentityOperationListOperatorProfiles.Path+"?limit=1", "", "", strings.TrimSpace(actingActorID), 0, nil, &result)
+}
 func (c *Client) ReadOperatorProfileForAdministrator(ctx context.Context, actingActorID, profileID string) (OperatorProfileResponse, error) {
 	var result OperatorProfileResponse
 	path := identityRoute(IdentityOperationReadOperatorProfile.Path, "profileId", url.PathEscape(strings.TrimSpace(profileID)))

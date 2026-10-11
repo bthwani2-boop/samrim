@@ -83,7 +83,7 @@ func Update(ctx context.Context, db *sql.DB, id string, input UpdateInput, actin
 	if norm.FullNameAr != before.FullNameAr || norm.PhoneE164 != before.PhoneE164 ||
 		norm.Department != before.Department || norm.JobTitle != before.JobTitle {
 		var hasRequest bool
-		err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.hr_operator_access_requests WHERE employee_id=$1)`, id).Scan(&hasRequest)
+		err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.hr_operator_access_requests WHERE employee_id=$1 AND state<>'rejected')`, id).Scan(&hasRequest)
 		if err != nil {
 			return UpdateResult{}, err
 		}

@@ -16,7 +16,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 116
+const SchemaVersion = 117
 
 type MigrationRecord struct {
 	Version int
@@ -26,7 +26,7 @@ type MigrationRecord struct {
 
 var requiredTables = []schemaRelationExpectation{
 	{name: "dsh.hr_employees", columns: []string{"id", "full_name_ar", "phone_e164", "department", "job_title", "manager_employee_id", "start_date", "work_location", "status", "operator_actor_id", "version", "created_by_actor_id", "created_at", "updated_at"}, constraints: []string{"hr_employees_pkey", "hr_employee_name_chk", "hr_employee_phone_chk", "hr_employee_dept_chk", "hr_employee_title_chk", "hr_employee_status_chk"}, indexes: []string{"hr_employees_recent_idx", "hr_employees_department_idx", "hr_employees_manager_idx", "hr_employees_phone_uq"}},
-	{name: "dsh.hr_operator_access_requests", columns: []string{"id", "employee_id", "reason", "requested_permissions", "state", "operator_profile_id", "requested_by_actor_id", "linked_by_actor_id", "created_at", "updated_at", "version", "employee_name_snapshot", "phone_e164_snapshot", "department_snapshot", "job_title_snapshot"}, constraints: []string{"hr_operator_access_requests_pkey", "hr_access_state_chk", "hr_access_permissions_chk", "hr_access_snapshot_chk"}, indexes: []string{"hr_access_pending_idx"}},
+	{name: "dsh.hr_operator_access_requests", columns: []string{"id", "employee_id", "reason", "requested_permissions", "state", "operator_profile_id", "requested_by_actor_id", "linked_by_actor_id", "created_at", "updated_at", "version", "employee_name_snapshot", "phone_e164_snapshot", "department_snapshot", "job_title_snapshot", "rejected_at", "rejected_by_actor_id", "rejection_reason", "provisioning_at", "provisioning_by_actor_id"}, constraints: []string{"hr_operator_access_requests_pkey", "hr_access_state_chk", "hr_access_permissions_chk", "hr_access_snapshot_chk"}, indexes: []string{"hr_access_pending_idx"}},
 	{name: "dsh.hr_operator_access_events", columns: []string{"idempotency_key", "request_id", "event_type", "request_hash", "acting_actor_id", "correlation_id", "created_at"}, constraints: []string{"hr_operator_access_events_pkey", "hr_access_event_hash_chk"}},
 	{name: "dsh.hr_employee_events", columns: []string{"idempotency_key", "employee_id", "event_type", "request_hash", "acting_actor_id", "correlation_id", "created_at", "before_snapshot", "after_snapshot"}, constraints: []string{"hr_employee_events_pkey", "hr_employee_event_type_chk", "hr_employee_event_hash_chk", "hr_employee_update_snapshots_chk"}, indexes: []string{"hr_employee_events_employee_idx", "hr_employee_events_recent_idx"}},
 	{name: "dsh.schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, constraints: []string{"schema_migrations_pkey"}},

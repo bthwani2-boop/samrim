@@ -170,7 +170,7 @@ func (s *Service) UpdateOperatorProfile(ctx context.Context, caller, actingActor
 func (s *Service) ListOperatorProfiles(ctx context.Context, caller, actingActorID, query, state, sort string, limit int, cursor string) (domain.OperatorProfilePage, error) {
 	caller, actingActorID = strings.ToLower(strings.TrimSpace(caller)), strings.TrimSpace(actingActorID)
 	query, state, sort = strings.TrimSpace(query), strings.TrimSpace(state), strings.TrimSpace(sort)
-	if caller != "control-panel" || actingActorID == "" || queryRuneCount(query) > 100 {
+	if (caller != "control-panel" && caller != "dsh") || actingActorID == "" || queryRuneCount(query) > 100 {
 		return domain.OperatorProfilePage{}, domain.ErrInvalidInput
 	}
 	if limit == 0 {
@@ -244,7 +244,7 @@ func (s *Service) ListOperatorProfiles(ctx context.Context, caller, actingActorI
 }
 
 func (s *Service) ReadOperatorProfile(ctx context.Context, caller, actingActorID, profileID string) (domain.OperatorProfile, error) {
-	if strings.ToLower(strings.TrimSpace(caller)) != "control-panel" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(profileID) == "" {
+	if (strings.ToLower(strings.TrimSpace(caller)) != "control-panel" && strings.ToLower(strings.TrimSpace(caller)) != "dsh") || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(profileID) == "" {
 		return domain.OperatorProfile{}, domain.ErrInvalidInput
 	}
 	if err := s.requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {

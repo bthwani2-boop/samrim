@@ -13,6 +13,8 @@ func (s *HRServer) registerAccessRequests(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/hr/access-requests/{requestId}", s.readAccessRequest)
 	mux.HandleFunc("POST /dsh/hr/access-requests", s.createAccessRequest)
 	mux.HandleFunc("POST /dsh/hr/access-requests/{requestId}/link", s.linkAccessRequest)
+	mux.HandleFunc("POST /dsh/hr/access-requests/{requestId}/reject", s.rejectAccessRequest)
+	mux.HandleFunc("POST /dsh/hr/access-requests/{requestId}/provision", s.provisionAccessRequest)
 }
 func (s *HRServer) createAccessRequest(w http.ResponseWriter, r *http.Request) {
 	actor, ok := s.authorize(w, r)
@@ -73,8 +75,37 @@ func (s *HRServer) readAccessRequest(w http.ResponseWriter, r *http.Request) {
 		Request hr.AccessRequest `json:"request"`
 	}{result})
 }
+func (s *HRServer) rejectAccessRequest(w http.ResponseWriter, r *http.Request) {
+	s.decideAccessRequest(w, r, "rejected")
+}
+func (s *HRServer) provisionAccessRequest(w http.ResponseWriter, r *http.Request) {
+	s.decideAccessRequest(w, r, "identity_provisioning")
+}
+func (s *HRServer) decideAccessRequest(w http.ResponseWriter, r *http.Request, action string) {
+	actor, ok := s.authorizeRoot(w, r)
+	if !ok {
+		return
+	}
+	_, corr, idem, valid := requiredMutationHeaders(w, r)
+	if !valid {
+		return
+	}
+	var input struct {
+		ExpectedVersion int    `json:"expectedVersion"`
+		Reason          string `json:"reason"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := hr.DecideAccessRequest(r.Context(), s.db, r.PathValue("requestId"), action, input.Reason, input.ExpectedVersion, actor, corr, idem)
+	if err != nil {
+		writeHRError(w, err)
+		return
+	}
+	writeJSON(w, 200, result)
+}
 func (s *HRServer) linkAccessRequest(w http.ResponseWriter, r *http.Request) {
-	actor, ok := s.authorize(w, r)
+	actor, ok := s.authorizeRoot(w, r)
 	if !ok {
 		return
 	}

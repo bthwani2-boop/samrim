@@ -60,6 +60,24 @@ func (s *HRServer) authorize(w http.ResponseWriter, r *http.Request) (string, bo
 	}
 	return acting, true
 }
+
+// A separate Root authorization via the Identity canonical administrator check.
+func (s *HRServer) authorizeRoot(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if !s.auth.Authorized(r) {
+		writeError(w, 401, "UNAUTHENTICATED", "service authentication required")
+		return "", false
+	}
+	actor := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actor == "" || len(actor) > 128 {
+		writeError(w, 400, "INVALID_INPUT", "operator identity required")
+		return "", false
+	}
+	if err := s.identity.RequireOperatorProfileAdministrator(r.Context(), actor); err != nil {
+		writeError(w, 403, "FORBIDDEN", "initial operator authorization required")
+		return "", false
+	}
+	return actor, true
+}
 func writeHRError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, hr.ErrInvalid):
