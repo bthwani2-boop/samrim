@@ -320,11 +320,11 @@ func collectEligiblePublishedStores(
 		scannedRows += len(raw.Stores)
 		result.Stores = append(result.Stores, eligible.Stores...)
 		result.NextCursor = raw.NextCursor
+		if raw.NextCursor != "" && raw.NextCursor == cursor {
+			return postgres.PublicStorePage{}, errors.New("published Store cursor did not advance")
+		}
 		if len(result.Stores) >= limit || raw.NextCursor == "" || scannedRows >= maxRawRows || batch+1 >= maxFetchBatches {
 			return result, nil
-		}
-		if raw.NextCursor == cursor {
-			return postgres.PublicStorePage{}, errors.New("published Store cursor did not advance")
 		}
 		cursor = raw.NextCursor
 	}

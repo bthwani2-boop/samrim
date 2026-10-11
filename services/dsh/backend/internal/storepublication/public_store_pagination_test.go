@@ -165,3 +165,21 @@ func TestPublishedStoreScanningIsBoundedAndKeepsContinuation(t *testing.T) {
 		t.Fatalf("batch budget did not bound repeated identity/WLT reads: %+v calls=%d err=%v", one, calls, err)
 	}
 }
+
+func TestPublishedStorePageRejectsStalledCursorWhenPageIsFull(t *testing.T) {
+	// A stale cursor must never escape to the client, even when a batch happens
+	// to fill the requested page. Otherwise the next request repeats this page.
+	fetch := func(_ context.Context, query postgres.PublicStoreListQuery) (postgres.PublicStorePage, error) {
+		return postgres.PublicStorePage{
+			Stores:     []postgres.PublicStoreRecord{{ID: "visible-one"}},
+			NextCursor: query.Cursor,
+		}, nil
+	}
+	eligible := func(_ context.Context, page postgres.PublicStorePage) (postgres.PublicStorePage, error) {
+		return page, nil
+	}
+	_, err := collectEligiblePublishedStores(context.Background(), postgres.PublicStoreListQuery{Limit: 1, Cursor: "stale"}, fetch, eligible)
+	if err == nil || !strings.Contains(err.Error(), "did not advance") {
+		t.Fatalf("filled page with a stalled cursor must fail closed: %v", err)
+	}
+}
