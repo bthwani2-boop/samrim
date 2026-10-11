@@ -446,9 +446,13 @@ func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *h
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog search scope or query is invalid")
 		return
 	}
-	result, err := postgres.SearchPublicCatalog(r.Context(), s.db, serviceCityID, verticalID, categoryID, query, limit, cursor)
+	if s.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "public catalog search is unavailable")
+		return
+	}
+	result, err := s.service.SearchPublicCatalog(r.Context(), serviceCityID, verticalID, categoryID, query, limit, cursor)
 	if err != nil {
-		writeStorageError(w, err)
+		writeStorePublicationError(w, err)
 		return
 	}
 	offers := make([]contract.CatalogStoreOffer, 0, len(result.Offers))

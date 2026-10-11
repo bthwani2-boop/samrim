@@ -635,6 +635,9 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
   if (productSearch.kind === "error") {
     return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" style={styles.cardTitle}>تعذر البحث عن المنتجات</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void runProductSearch()} /></BthwaniSurface></View>;
   }
+  if (productSearch.offers.length === 0 && productSearch.nextCursor) {
+    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>لا توجد نتائج مؤهلة في الجزء المفحوص</Text><Text style={styles.muted}>قد تظهر منتجات من متاجر أخرى عند متابعة البحث.</Text>{loadMoreProductsError ? <Text accessibilityRole="alert" style={styles.error}>تعذر متابعة البحث. أعد المحاولة.</Text> : null}<BthwaniButton disabled={loadingMoreProducts} label={loadingMoreProducts ? "جارٍ البحث" : "متابعة البحث"} onPress={() => void loadMoreProductOffers()} variant="secondary" /></BthwaniSurface></View>;
+  }
   if (productSearch.offers.length === 0) {
     return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>لا توجد منتجات مطابقة</Text><Text style={styles.muted}>جرّب كلمة أقصر أو اختر فئة أخرى.</Text><BthwaniButton label="مسح الفئة" onPress={onClearCategory} variant="quiet" /></BthwaniSurface></View>;
   }
