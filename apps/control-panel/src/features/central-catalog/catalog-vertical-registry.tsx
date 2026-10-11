@@ -100,9 +100,7 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
   return (
     <section className="catalog-taxonomy-section" aria-labelledby="catalog-vertical-registry-title">
       <div className="access-card-heading">
-        <span className="step-chip">قاموس التجارة</span>
         <h3 id="catalog-vertical-registry-title">المجالات التجارية</h3>
-        <p className="muted">تُدار المنتجات المشتركة ومنتجات المتاجر معًا داخل كل مجال تجاري.</p>
         {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit} onClick={() => { setSelected(null); setNameAr(""); setNameEn(""); setActive(true); setReason(""); setEditorOpen(true); }}>إضافة مجال تجاري</button> : null}
       </div>
       {editorOpen ? <div className="access-form">

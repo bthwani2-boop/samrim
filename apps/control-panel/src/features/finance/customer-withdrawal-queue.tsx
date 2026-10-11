@@ -246,17 +246,13 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
   const showReason = Boolean(intake && (intake.status === "REQUESTED" || intake.status === "DESTINATION_PENDING" || intake.status === "PAYOUT_HELD"));
 
   return (
-    <section aria-labelledby="customer-withdrawals-title">
+    <section className="work-stack" aria-label="سجل سحوبات العملاء">
       <div className="finance-toolbar">
-        <div>
-          <p className="eyebrow">طابور مالي · حالات فردية</p>
-          <h2 id="customer-withdrawals-title">طلبات سحب العملاء الاستثنائية</h2>
-        </div>
         <button className="button button-secondary" type="button" onClick={() => void loadRegistry(initialQuery, new AbortController().signal)} disabled={loading}>
           تحديث السجل
         </button>
       </div>
-      <p className="muted">العمليات تسجل التفويض؛ المالية تتحقق من الوجهة وتقبل الطلب أو ترفضه. قبول الطلب يحجز الرصيد في السجل المالي، ثم ينتقل التنفيذ الخارجي والإيصال والمطابقة إلى مكتب الدفعات المشترك.</p>
+
 
       <form className="finance-toolbar" noValidate onSubmit={(event) => {
         event.preventDefault();
@@ -282,7 +278,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
 
       {error ? <p className="state-error" role="alert">{error}</p> : null}
       {notice ? <p className="state-success" role="status">{notice}</p> : null}
-      <p className="muted" aria-live="polite">السجلات في هذه الصفحة: {items.length.toLocaleString("ar-YE")}{loading ? " · جارٍ التحديث" : ""}</p>
+      <p className="muted" aria-live="polite">{loading ? "جارٍ قراءة السجل…" : error ? "تعذر قراءة السجل" : `${items.length.toLocaleString("ar-YE")} سجلًا في الصفحة`}</p>
 
       <div className="finance-table-wrap">
         <table className="finance-table">
@@ -301,14 +297,14 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
             ))}
           </tbody>
         </table>
-        {!loading && items.length === 0 ? <p className="muted">لا توجد طلبات مطابقة لهذه المرشحات.</p> : null}
+        {!loading && !error && items.length === 0 ? <p className="muted">لا توجد طلبات مطابقة لهذه المرشحات.</p> : null}
       </div>
       {nextCursor ? <button className="button button-quiet" type="button" onClick={() => navigate({ ...initialQuery, cursor: nextCursor, intakeId: "" })} disabled={loading}>تحميل السجلات التالية</button> : null}
 
       {initialQuery.intakeId ? (
         <section className="access-card" aria-labelledby="customer-withdrawal-detail-title">
           <div className="finance-toolbar">
-            <div><p className="eyebrow">تفاصيل الطلب · قراءة حديثة من السجل المالي</p><h3 id="customer-withdrawal-detail-title">{intake ? `${intake.beneficiaryName} · ${intakeStatusLabels[intake.status]}` : "مراجعة طلب السحب"}</h3></div>
+            <div><h3 id="customer-withdrawal-detail-title">{intake ? `${intake.beneficiaryName} · ${intakeStatusLabels[intake.status]}` : "مراجعة طلب السحب"}</h3></div>
             <button className="button button-quiet" type="button" onClick={() => navigate({ ...initialQuery, intakeId: "" })}>إغلاق التفاصيل</button>
           </div>
           {detailLoading ? <p className="muted" role="status">جارٍ تحميل بيانات الطلب والرصيد والوجهة…</p> : null}
@@ -323,7 +319,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
             {showReason ? <label className="field-label" htmlFor="customer-withdrawal-reason">سبب الإجراء
  <input id="customer-withdrawal-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={512} disabled={loading} />
             </label> : null}
-            {intake.status === "REQUESTED" ? <div className="finance-actions"><button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void act("prepare-destination")}>تهيئة وجهة الصرف</button><button className="button button-quiet" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void act("reject")}>رفض الطلب</button></div> : null}
+            {intake.status === "REQUESTED" ? <div className="action-row"><button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void act("prepare-destination")}>تهيئة وجهة الصرف</button><button className="button button-quiet" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void act("reject")}>رفض الطلب</button></div> : null}
             {intake.status === "DESTINATION_PENDING" && destination?.verificationStatus === "PENDING_VERIFICATION" ? <><label className="field-label" htmlFor="customer-withdrawal-verification-evidence">مرجع دليل التحقق المستقل
  <input id="customer-withdrawal-verification-evidence" value={verificationEvidence} onChange={(event) => setVerificationEvidence(event.target.value)} maxLength={512} disabled={loading} />
             </label><button className="button button-secondary" type="button" disabled={loading || !verificationEvidence.trim()} onClick={() => void act("verify-destination")}>تأكيد التحقق</button></> : null}

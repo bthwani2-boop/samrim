@@ -1,13 +1,12 @@
 "use client";
 
+import { PageHeader } from "../../shell/page-header";
+
 import { type OperatorStoreSummary, fulfillmentModeLabel, publicationStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 import { downloadRegistryCsv } from "./registry-csv";
-import "./partner-directory.module.css";
-import "./store-workspace.module.css";
-
 type StorePage = Readonly<{ stores: ReadonlyArray<OperatorStoreSummary>; nextCursor?: string }>;
 type StoreHistory = Readonly<{ partnerStoreCursors?: ReadonlyArray<string> }>;
 const pageSize = 10;
@@ -122,11 +121,7 @@ export function StoreRegistry() {
 
   return (
     <section className="workspace-page store-registry" aria-labelledby="store-registry-title">
-      <div className="workspace-page-heading">
-        <p className="eyebrow">الشركاء · سجل المتاجر</p>
-        <h1 id="store-registry-title">المتاجر</h1>
-        <p className="lead">سجل النظام الموحّد لكل المتاجر، بما فيها غير المنشورة. افتح ملف المتجر لمراجعة الجاهزية والنشر وأوضاع الطلب.</p>
-      </div>
+      <PageHeader id="store-registry-title" title="المتاجر" />
 
       <div className="workspace-toolbar store-registry-toolbar">
         <search className="store-registry-search" aria-label="البحث في المتاجر">

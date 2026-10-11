@@ -216,7 +216,7 @@ export function StoreCatalogImportWorkspace() {
 
   return <section className="access-card" aria-labelledby="store-catalog-import-title" data-testid="store-catalog-import-workspace">
     <div className="access-card-heading">
-      <span className="step-chip">أسعار المتجر</span>
+
       <h2 id="store-catalog-import-title">استيراد كتالوج المتجر</h2>
       <p className="muted">ارفع ملف CSV أو Excel لمراجعة المنتجات والأسعار قبل الحفظ. الحد 5000 صف و20 ميغابايت.</p>
     </div>

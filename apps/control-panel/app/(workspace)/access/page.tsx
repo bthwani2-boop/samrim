@@ -1,5 +1,7 @@
 "use client";
 
+import { PageHeader } from "../../../src/shell/page-header";
+
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState, type MouseEvent } from "react";
@@ -37,12 +39,7 @@ function AccessWorkspace() {
   };
 
   return <section className="workspace-page access-page" aria-labelledby="access-page-title">
-    <header className="access-page-heading">
-      <div>
-        <p className="eyebrow">إدارة الفريق</p>
-        <h1 id="access-page-title">المشغّلون</h1>
-      </div>
-    </header>
+    <PageHeader id="access-page-title" title="المشغّلون" />
 
     <nav className="access-view-nav" aria-label="إدارة المشغّلين">
       {canManageProfiles ? <Link href={viewHref(new URLSearchParams(searchParams.toString()), "profiles")} onClick={(event) => navigateView(event, "profiles")} aria-current={view === "profiles" ? "page" : undefined} className={view === "profiles" ? "is-active" : undefined}>ملفات المشغّلين</Link> : null}

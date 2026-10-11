@@ -306,10 +306,10 @@ export function StoreCommercialAgreementWorkspace() {
 
   return <section className="access-card" aria-labelledby="store-commercial-agreement-title">
     <div className="finance-toolbar">
-      <div><p className="eyebrow">قرار صريح بصلاحية المالية · سجل الاتفاقات /السجل المالي</p><h2 id="store-commercial-agreement-title">اتفاقات المتاجر التجارية</h2></div>
+      <div><h2 id="store-commercial-agreement-title">اتفاقات المتاجر التجارية</h2></div>
       <button className="button button-secondary" type="button" onClick={() => void readQueue()} disabled={busy !== null}>{busy === "queue" ? "جارٍ التحديث…" : "تحديث طابور المالية"}</button>
     </div>
-    <p className="muted">يعرض هذا الطابور الاتفاقات التي قبلها مالك المتجر وتنتظر قرار المالية. نسب الاتفاق ملزمة كما أرسلها الميدان؛ القيم الافتراضية ظاهرة كمرجع منفصل ولا تُنسخ أو تعتمد تلقائيًا. لا يحدث اعتماد أو رفض دون اختيار المالية الصريح وإدخال سبب موثق.</p>
+    <p className="muted">نسب الاتفاق كما قبلها المالك. النسب المقترحة مرجع فقط؛ القرار يتطلب سببًا.</p>
 
     {pendingStorageError ? <p className="validation-error" role="alert">{pendingStorageError}</p> : null}
     {!pendingStorageReady && operatorActorId ? <p role="status">جارٍ التحقق من المحاولة المحفوظة لهذه الجلسة…</p> : null}
@@ -328,7 +328,7 @@ export function StoreCommercialAgreementWorkspace() {
     {busy === "queue" && agreements.length === 0 ? <p role="status">جارٍ تحميل الاتفاقات…</p> : null}
     {agreements.length ? <section className="form-grid" aria-label="اتفاقات بانتظار المالية">
       {agreements.map((agreement) => <article className="access-card" key={agreement.agreementId}>
-        <div className="finance-toolbar"><div><p className="eyebrow">اتفاقية تجارية</p><h3>{agreement.storeName || "متجر بثواني"}</h3></div><strong>{statusLabel(agreement.status)}</strong></div>
+        <div className="finance-toolbar"><div><h3>{agreement.storeName || "متجر بثواني"}</h3></div><strong>{statusLabel(agreement.status)}</strong></div>
         <p className="muted">نوع المتجر: {agreement.commercialStoreTypeNameAr} · الملكية: {agreement.currentStoreOwnerActorId === agreement.partnerActorId ? "مالك الاتفاق هو المالك الحالي" : "تغيّر مالك المتجر بعد الاتفاق"}</p>
         <p className="muted">الأنماط الحالية: {agreement.fulfillmentModes.map(modeLabel).join("، ") || "غير محددة"}</p>
         <p className="muted">أُرسل الاتفاق للمراجعة في {formatTimestamp(agreement.proposedAt)}</p>
@@ -342,7 +342,7 @@ export function StoreCommercialAgreementWorkspace() {
     {nextCursor ? <button className="button button-secondary" type="button" onClick={() => void readQueue(nextCursor, true)} disabled={busy !== null}>{busy === "more" ? "جارٍ تحميل المزيد…" : "تحميل الاتفاقات التالية"}</button> : null}
 
     {selected ? <section className="access-card" aria-labelledby="selected-store-commercial-agreement-title">
-      <p className="eyebrow">الاتفاقية التجارية</p>
+
       <h3 id="selected-store-commercial-agreement-title">{selected.storeName || "متجر بثواني"}</h3>
       <p className="muted">الحالة الحالية: {statusLabel(selected.status)}</p>
       <p className="muted">نوع المتجر: {selected.commercialStoreTypeNameAr} · الملكية: {selected.currentStoreOwnerActorId === selected.partnerActorId ? "مالك الاتفاق هو المالك الحالي" : "تغيّر مالك المتجر بعد الاتفاق"}</p>

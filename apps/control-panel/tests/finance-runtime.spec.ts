@@ -14,8 +14,8 @@ test("@live operator reads the real bounded COD cash-custody journey", async ({ 
   test.setTimeout(30_000);
   await page.goto("/finance/cash-custody");
   await expect(page.getByRole("heading", { name: "حفظ النقد" })).toBeVisible();
-  await expect(page.getByText("التزامات نقدية مفتوحة ضمن المرشحات الحالية")).toBeVisible();
-  await expect(page.getByText("تظل العهدة مفتوحة بعد إرسال الكابتن للمرجع. يرفق موظف المالية إيصال التوريد المحفوظ والمشفّر ويطابقه هنا؛ عندها فقط يقيد السجل المالي الاستلام ويحرر الحجز.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "النقد المحصل عند التسليم", level: 2 })).toBeVisible();
+  await expect(page.getByLabel("مرجع التحصيل", { exact: true })).toBeVisible();
 
   const cashCustodyRead = await page.evaluate(async () => {
     const response = await fetch("/api/finance/cash-custody", { cache: "no-store" });
@@ -30,11 +30,11 @@ test("@live operator reads the real bounded COD cash-custody journey", async ({ 
 test("@live operator reads the WLT-owned delivery-fee policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
   await page.goto("/policies/delivery-fees");
-  await expect(page.getByRole("heading", { name: "رسوم التوصيل", level: 2 })).toBeVisible();
-  await expect(page.getByText("تُحسب الرسوم خادميًا من المسافة، ومدينة الخدمة كمنطقة، ووحدات السلة.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "رسوم التوصيل", level: 1 })).toBeVisible();
+  await expect(page.getByRole("region", { name: "إعداد رسوم التوصيل", exact: true })).toBeVisible();
   await expect(page.getByLabel("النطاق / مدينة الخدمة")).toBeVisible();
   await expect(page.getByLabel("الرسوم الأساسية (ريال)")).toBeEnabled();
-  await expect(page.getByText(/التقريب ثابت عند 50 ريال/)).toBeVisible();
+  await expect(page.getByText("الحالة: نشطة · التقريب: 50 ريال", { exact: true })).toBeVisible();
 
   const policyRead = await page.evaluate(async () => {
     const response = await fetch("/api/finance/delivery-fee-policy", { cache: "no-store" });
@@ -51,7 +51,7 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
   const workspace = page.locator(".beneficiary-settlement-workspace");
   await expect(page.getByRole("heading", { name: "مستحقات وتسويات الشركاء والكباتن والميدان", level: 2 })).toBeVisible();
   await expect(workspace.getByRole("navigation", { name: "مسارات مكتب التسويات" })).toBeVisible();
-  await expect(workspace.getByRole("navigation", { name: "سجلات مستحقات المستفيدين" }).getByRole("link", { name: "الشركاء" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "مستحقات الشركاء", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(workspace.getByText(/سجلات الصفحة الحالية:/)).toBeVisible();
 
   const registryRead = await page.evaluate(async () => {
@@ -65,8 +65,9 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
 test("@live operator sees the WLT-managed Field acquisition reward store-type policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
   await page.goto("/policies/field-acquisition");
-  await expect(page.getByRole("heading", { name: "إعداد مبلغ الاستحقاق", level: 2 })).toBeVisible();
-  await expect(page.getByText(/لكل نوع متجر مبلغ مستقل يُحتسب مرة واحدة/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "إعداد مبلغ الاستحقاق", exact: true })).toBeVisible();
+  await expect(page.locator('label[for="field-reward-vertical"]')).toContainText("المجال التجاري");
+  await expect(page.locator("#field-reward-vertical")).toBeVisible();
 
   const fixture = await page.evaluate(async () => {
     const suffix = crypto.randomUUID();
@@ -110,14 +111,15 @@ test("@live operator sees the WLT-managed Field acquisition reward store-type po
   expect(fixture.storeTypeId, JSON.stringify(fixture)).toBeTruthy();
 
   await page.reload();
-  const vertical = page.getByLabel("المجال التجاري");
+  const vertical = page.locator("#field-reward-vertical");
   await expect(vertical).toBeVisible();
   await vertical.selectOption(fixture.verticalId as string);
 
-  const storeType = page.getByLabel("نوع المتجر التجاري");
+  const storeType = page.locator("#field-reward-commercial-type");
+  await expect(page.locator('label[for="field-reward-commercial-type"]')).toContainText("نوع المتجر التجاري");
   await expect(storeType).toBeVisible();
   await storeType.selectOption(fixture.storeTypeId as string);
 
-  await expect(page.getByLabel("مبلغ الاستحقاق", { exact: true })).toBeEnabled();
-  await expect(page.locator("#field-acquisition-rounding")).toContainText("بمضاعفات ٥٠");
+  await expect(page.getByLabel(/^مبلغ الاستحقاق \(ريال\)/)).toBeEnabled();
+  await expect(page.locator("#field-acquisition-rounding")).toContainText("مضاعفات ٥٠؛ مرة واحدة عند ظهور أول متجر مؤهل.");
 });

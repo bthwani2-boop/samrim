@@ -439,7 +439,7 @@ func ListFieldAdmissionsByCity(ctx context.Context, db *sql.DB, query, state, so
 		cursorCreatedAt = cursor.CreatedAt
 		cursorID = cursor.ID
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),all_service_cities,state,requires_profile_review,version,created_at,updated_at
+	rows, err := db.QueryContext(ctx, `SELECT id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),COALESCE(wallet_provider_key,''),all_service_cities,state,requires_profile_review,version,created_at,updated_at
 		FROM dsh.field_admissions
 		WHERE ($1='' OR full_name_ar ILIKE '%'||$1||'%' OR COALESCE(contact_phone_e164,'') ILIKE '%'||$1||'%')
 		AND ($2='all' OR ($2='pending' AND state IN ('pending_review','pending_identity')) OR ($2='review_required' AND requires_profile_review) OR state=$2)
@@ -455,7 +455,7 @@ func ListFieldAdmissionsByCity(ctx context.Context, db *sql.DB, query, state, so
 	items := make([]FieldAdmission, 0, limit+1)
 	for rows.Next() {
 		var v FieldAdmission
-		if err := rows.Scan(&v.ID, &v.ActorID, &v.FullNameAr, &v.PhoneE164, &v.AllServiceCities, &v.State, &v.RequiresProfileReview, &v.Version, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.ActorID, &v.FullNameAr, &v.PhoneE164, &v.WalletProviderKey, &v.AllServiceCities, &v.State, &v.RequiresProfileReview, &v.Version, &v.CreatedAt, &v.UpdatedAt); err != nil {
 			return FieldAdmissionPage{}, err
 		}
 		items = append(items, v)

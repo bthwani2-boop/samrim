@@ -347,9 +347,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   return <section className="access-card catalog-taxonomy-workbench" aria-labelledby="catalog-category-registry-title">
     <div className="catalog-taxonomy-workbench-heading">
       <div>
-        <span className="eyebrow">سجل تصنيف المنتجات</span>
         <h3 id="catalog-category-registry-title">الفئات</h3>
-        <p className="muted">ابحث ورتّب سجل الفئات من الخادم، وافتح تفاصيل الفئة عند الحاجة.</p>
       </div>
       <button type="button" className="button button-primary catalog-taxonomy-main-action" disabled={!canEdit || busy} onClick={() => { if (verticalReady) openCreate(); else if (selectedVertical || verticals.length === 0) { const settings = verticalSettingsRef.current; settings?.querySelector("summary")?.click(); settings?.scrollIntoView({ behavior: "smooth", block: "center" }); } else onVerticalChange(verticals.find((vertical) => vertical.active)?.id ?? ""); }}>{mainActionLabel}</button>
     </div>
@@ -359,7 +357,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
         {verticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr} · {vertical.nameEn}</option>)}
       </select>
     </label>
-    <p className="catalog-taxonomy-vertical-note">تبدأ شجرة الفئات من المجال المحدد. أقسام قوائم المطاعم تُدار داخل المتجر ولا تختلط بفئات المنتجات المشتركة.</p>
+    <p className="catalog-taxonomy-vertical-note">فئات المجال المحدد؛ أقسام المطاعم تُدار من المتجر.</p>
     {error ? <p className="identity-error" role="alert">{error}</p> : null}
     {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
 
@@ -374,7 +372,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       </form>
       <label className="field-label" htmlFor="catalog-category-parent">تتبع الفئة<select id="catalog-category-parent" disabled={busy || !canEdit || !verticalId} value={parentCategoryId} onChange={(event) => setParentCategoryId(event.target.value)}><option value="">فئة رئيسية</option>{parentOptions.filter((category) => category.id !== editingCategory?.id).map((category) => <option value={category.id} key={category.id}>{category.pathAr}{category.active ? "" : " · متوقفة"}</option>)}</select></label>
       {parentNextCursor ? <button type="button" className="button button-quiet" disabled={parentLoading} onClick={() => void searchParents(parentNextCursor, true)}>تحميل المزيد من الفئات الأعلى</button> : null}
-      <p className="muted">يتحقق النظام عند الحفظ من المجال ومنع وضع الفئة تحت نفسها أو أحد فروعها.</p>
+
       <label className="field-label" htmlFor="catalog-category-name-ar">الاسم بالعربية<input id="catalog-category-name-ar" disabled={busy || !canEdit} value={nameAr} onChange={(event) => setNameAr(event.target.value)} maxLength={160} autoComplete="off" /></label>
       <label className="field-label" htmlFor="catalog-category-name-en">الاسم بالإنجليزية<input id="catalog-category-name-en" disabled={busy || !canEdit} value={nameEn} onChange={(event) => setNameEn(event.target.value)} maxLength={160} dir="auto" autoComplete="off" /></label>
       {editingCategory ? <label className="catalog-category-active-toggle"><input id="catalog-category-active" type="checkbox" disabled={busy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> إظهار الفئة للمنتجات</label> : null}
@@ -402,7 +400,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
           </ul> : null}
           {detachedCategories.length ? <section className="catalog-taxonomy-detached" aria-labelledby="catalog-taxonomy-detached-title">
             <h5 id="catalog-taxonomy-detached-title">فروع لم يظهر أبوها في النتائج الحالية</h5>
-            <p>هذه الفئات ليست جذورًا للمجال. يعرضها البحث أو تقسيم الصفحات منفصلة عن الشجرة لأن الفئة الأعلى غير محمّلة؛ ويظل مسارها الكامل ظاهرًا مع كل فئة.</p>
+            <p>فئات ذات أب خارج الصفحة الحالية؛ يظهر المسار الكامل لكل فئة.</p>
             <ul aria-label="فروع أبوها خارج النتائج الحالية" className="catalog-taxonomy-tree">
               {detachedCategories.map(renderCategoryNode)}
             </ul>

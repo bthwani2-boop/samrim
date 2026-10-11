@@ -301,13 +301,12 @@ export function CatalogImportWorkspace() {
   return (
     <section className="access-card" aria-labelledby="catalog-import-title" data-testid="catalog-import-workspace">
       <div className="access-card-heading">
-        <span className="step-chip">مصدر ملف</span>
-        <p className="eyebrow">CSV أو XLSX أو JSONL</p>
+
         <h2 id="catalog-import-title">استيراد آمن: معاينة ثم اعتماد</h2>
         <p className="muted">اختر ملف المنتجات، ثم راجع نتيجة المعاينة قبل حفظ الصفوف الجاهزة.</p>
       </div>
       <label className="field-label" htmlFor="catalog-import-file">ملف المنتجات<input id="catalog-import-file" type="file" accept=".csv,.xlsx,.jsonl,.ndjson,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/jsonl" disabled={Boolean(busy)} onChange={(event) => void selectFile(event.target.files?.[0])} /></label>
-      <p className="muted">اتبع نموذج الملف المدعوم. الحد 5000 صف و20 ميغابايت. ستبقى الصفوف التي تحتاج مراجعة دون حفظ.</p>
+      <p className="muted">حتى 5000 صف و20 ميغابايت. تُحفظ الصفوف الجاهزة فقط.</p>
       {sourceFile ? <div className="managed-status managed-status-info"><strong>{sourceFile.name}</strong><p>الصفوف الصالحة: {rows.length} · الصفوف المرفوضة محليًا: {parseErrors.length}</p></div> : null}
       {parseErrors.length ? <div className="managed-status managed-status-warning" role="alert"><strong>صفوف تحتاج تصحيحًا قبل المعاينة</strong><ul>{parseErrors.map((message) => <li key={message}>{message}</li>)}</ul></div> : null}
       <button type="button" className="button button-primary" disabled={Boolean(busy) || !rows.length} onClick={() => void preview()}>{busy === "preview" ? "جارٍ إنشاء المعاينة…" : "معاينة الملف"}</button>

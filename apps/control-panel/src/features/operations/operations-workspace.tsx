@@ -5,8 +5,6 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { responseMessage } from "../access/identity-error-message";
-import "./operations-workspace.module.css";
-
 type LaneId = "orders" | "attention" | "dispatch" | "execution" | "exceptions" | "history";
 type Lane = Readonly<{ id: LaneId; label: string; summary: string }>;
 type SubLane = Readonly<{ id: string; label: string; state: string }>;
@@ -157,10 +155,10 @@ export function OperationsWorkspace() {
         </nav>
       ) : null}
 
-      <div className="operations-view-heading">
+      <div className="section-heading">
         <div>
           <h2 id="operations-list-title">{laneSubTabs.length && subLane ? subLane.label : lane.label}</h2>
-          <p>{lane.summary}</p>
+
         </div>
         <button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading}>
           {loading ? "جارٍ القراءة…" : "إعادة القراءة"}

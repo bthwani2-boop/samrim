@@ -7,7 +7,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
 import { useWalletProviders, type WalletProviderOption } from "../wallet-provider/use-wallet-providers";
-import styles from "./field-workbench.module.css";
 
 type LatestStore = Readonly<{ storeId: string; storeName: string; joiningCaseId: string; createdAt: string }>;
 type FieldAccount = ActorRoleView & Readonly<{ admission: FieldAdmission | null; latestStore?: LatestStore | null; joiningCaseCount?: number; latestJoiningCase?: OperatorFieldLatestJoiningCase | null }>;
@@ -207,7 +206,6 @@ function FieldAccountProfileActions({ field, serviceCities, walletProviders, bus
 }
 
 type FieldAccountAccessActionsProps = Readonly<Pick<FieldAccountMutationActionsProps, "field" | "busy" | "reason" | "onMutate"> & Readonly<{
-  waitingForFirstActivation: boolean;
   waitingForReenrollment: boolean;
   shouldDisable: boolean;
   requiresProfileReview: boolean;
@@ -215,19 +213,19 @@ type FieldAccountAccessActionsProps = Readonly<Pick<FieldAccountMutationActionsP
   reasonIsValid: boolean;
 }>>;
 
-function FieldAccountAccessActions({ field, busy, reason, onMutate, waitingForFirstActivation, waitingForReenrollment, shouldDisable, requiresProfileReview, mustDisable, reasonIsValid }: FieldAccountAccessActionsProps) {
+function FieldAccountAccessActions({ field, busy, onMutate, waitingForReenrollment, shouldDisable, requiresProfileReview, mustDisable, reasonIsValid }: FieldAccountAccessActionsProps) {
   const accessAction: FieldAccountAction = shouldDisable ? "disable" : "activate";
   const canDisable = shouldDisable;
   const canReactivate = !field.enabled && !requiresProfileReview && field.securityEnabled && (field.admission?.state === "eligible" || field.admission?.state === "suspended");
   return <>
-    {waitingForFirstActivation ? <p className="muted" role="status">الدور جاهز. الخطوة التالية للميداني: يفتح تطبيق الميدان، يدخل رقم الهاتف المسجل، ثم يختار «تفعيل الجهاز» لإثبات الهاتف وإنشاء كلمة المرور.</p> : null}
+
     {waitingForReenrollment ? <button type="button" className="button button-primary" disabled={Boolean(busy) || !reasonIsValid} onClick={() => onMutate(field, "reenroll")}>{busy === field.actorId ? "جارٍ الإجازة…" : "إجازة إعادة التسجيل"}</button> : null}
     {canDisable || canReactivate ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || !reasonIsValid} onClick={() => onMutate(field, accessAction)}>{accessActionButtonLabel(busy === field.actorId, shouldDisable)}</button> : null}
     {requiresProfileReview && !mustDisable && !field.enabled ? <span className="muted">أكمل مراجعة الملف قبل إعادة التفعيل.</span> : null}
   </>;
 }
 
-function FieldAccountMutationActions({ field, name, reason, busy, serviceCities, walletProviders, onNameChange, onReasonChange, onMutate }: FieldAccountMutationActionsProps) {
+function FieldAccountMutationActions({ field, reason, busy, serviceCities, walletProviders, onReasonChange, onMutate }: FieldAccountMutationActionsProps) {
   const admission = field.admission;
   const requiresProfileReview = admission?.requiresProfileReview === true;
   const mustDisable = requiresProfileReview && admission?.state === "eligible";
@@ -237,9 +235,12 @@ function FieldAccountMutationActions({ field, name, reason, busy, serviceCities,
   const reasonIsValid = Array.from(reason.trim()).length >= 5;
 
   return admission ? <div className="field-agent-controls">
+    {waitingForFirstActivation ? <p className="muted" role="status">بانتظار تفعيل الجهاز من تطبيق الميدان برقم الهاتف المسجّل.</p> : null}
     <details className="field-agent-edit" open={admission.requiresProfileReview}><summary className="button button-secondary">تعديل الملف والتغطية</summary><div className="field-row-actions"><FieldAccountProfileActions key={admission.version} field={field} serviceCities={serviceCities} walletProviders={walletProviders} busy={busy} onMutate={onMutate} /></div></details>
+    <details className="field-agent-edit" open={mustDisable}><summary className="button button-secondary">إدارة الوصول</summary><div className="field-row-actions">
     <label className="field-label field-agent-reason" htmlFor={`field-reason-${field.actorId}`}>سبب الإجراء<input id={`field-reason-${field.actorId}`} maxLength={500} value={reason} onChange={(event) => onReasonChange(event.target.value)} disabled={Boolean(busy)} placeholder="مطلوب لتغيير الوصول" /></label>
-    <FieldAccountAccessActions field={field} busy={busy} reason={reason} onMutate={onMutate} waitingForFirstActivation={waitingForFirstActivation} waitingForReenrollment={waitingForReenrollment} shouldDisable={shouldDisable} requiresProfileReview={requiresProfileReview} mustDisable={mustDisable} reasonIsValid={reasonIsValid} />
+    <FieldAccountAccessActions field={field} busy={busy} reason={reason} onMutate={onMutate} waitingForReenrollment={waitingForReenrollment} shouldDisable={shouldDisable} requiresProfileReview={requiresProfileReview} mustDisable={mustDisable} reasonIsValid={reasonIsValid} />
+    </div></details>
   </div> : <span className="muted">راجع الأهلية قبل إتاحة العمل الميداني.</span>;
 }
 
@@ -304,7 +305,7 @@ function FieldAccountRow({ field, serviceCities, walletProviders, name, reason, 
     <td><span className={`field-agent-badge ${field.enabled ? "is-enabled" : "is-disabled"}`}>{identityStatusLabel(field)}</span><br /><span className="muted">{field.activatedAt ? "سبق تفعيله" : "لم يفعّل الجهاز"}</span></td>
     <td>{field.lastAppOpenedAt ? <time dateTime={field.lastAppOpenedAt}>{fieldTimestamp(field.lastAppOpenedAt)}</time> : <span className="muted">لم يفتح التطبيق بعد</span>}</td>
     <td>{field.latestStore ? <><a href={`/partners/${encodeURIComponent(field.latestStore.joiningCaseId)}`}>{field.latestStore.storeName}</a><br /><time className="muted" dateTime={field.latestStore.createdAt}>{fieldTimestamp(field.latestStore.createdAt)}</time></> : <span className="muted">لا يوجد متجر مسجل</span>}</td>
-    <td><FieldJourneySummary field={field} /><FieldAcquisitionDisclosure fieldActorId={field.actorId} page={acquisitionPage} error={acquisitionError} busy={acquisitionBusy} onLoad={onLoadAcquisitionCases} /></td>
+    <td><FieldJourneySummary field={field} /><details className="field-agent-edit"><summary>ملفات ضم الشركاء</summary><FieldAcquisitionDisclosure fieldActorId={field.actorId} page={acquisitionPage} error={acquisitionError} busy={acquisitionBusy} onLoad={onLoadAcquisitionCases} /></details></td>
     <td><a className="button button-secondary" href={`/finance/beneficiary-settlement/field?search=${encodeURIComponent(field.actorId)}`}>الملف المالي</a></td>
     <td>{busy === field.actorId ? <output className="muted">جارٍ تنفيذ الإجراء وإعادة القراءة…</output> : null}{rowNotice ? <output className="success-inline">{rowNotice}</output> : null}{rowError ? <p className="identity-error" role="alert">{rowError}</p> : null}<FieldAccountMutationActions field={field} name={name} reason={reason} busy={busy} serviceCities={serviceCities} walletProviders={walletProviders} onNameChange={onNameChange} onReasonChange={onReasonChange} onMutate={onMutate} /></td>
   </tr>;
@@ -317,7 +318,8 @@ type FieldAdmissionRosterProps = Readonly<{
   notice: string;
   error: string;
   loading: boolean;
-  loadingMore: boolean;
+  cursor: string;
+  previousPageKnown: boolean;
   nextCursor: string;
   busy: string;
   feedbackActorId: string;
@@ -332,7 +334,8 @@ type FieldAdmissionRosterProps = Readonly<{
   onQueryChange: (value: string) => void;
   onCityFilterChange: (value: string) => void;
   onRefresh: () => void;
-  onLoadMore: () => void;
+  onNextPage: () => void;
+  onPreviousPage: () => void;
   onCandidateNameChange: (admissionId: string, value: FieldProfileDraft) => void;
   onCandidateMutate: (admission: FieldAdmission, action: FieldCandidateAction) => void;
   onProfileNameChange: (actorId: string, value: string) => void;
@@ -341,13 +344,13 @@ type FieldAdmissionRosterProps = Readonly<{
   onLoadAcquisitionCases: (fieldActorId: string, cursor?: string, append?: boolean) => void;
 }>;
 
-function FieldEmptyRoster({ query }: Readonly<{ query: string }>) {
-  const title = query ? "لا توجد نتائج مطابقة" : "لا توجد ملفات أو حسابات ميدانية";
+function FieldEmptyRoster({ query, pageScoped }: Readonly<{ query: string; pageScoped: boolean }>) {
+  const title = pageScoped ? "لا توجد نتائج في هذه الصفحة" : query ? "لا توجد نتائج مطابقة" : "لا توجد ملفات أو حسابات ميدانية";
   const description = query ? "امسح البحث لعرض السجل كاملًا." : "أنشئ ملفًا جديدًا لبدء مسار الأهلية.";
-  return <div className="collection-state"><strong>{title}</strong><p>{description}</p></div>;
+  return <div className="collection-state"><strong>{title}</strong>{pageScoped ? null : <p>{description}</p>}</div>;
 }
 
-function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading, loadingMore, nextCursor, busy, feedbackActorId, serviceCities, walletProviders, candidateEdits, profileEdits, reasons, acquisitionCases, acquisitionCaseErrors, acquisitionCaseBusy, onQueryChange, onCityFilterChange, onRefresh, onLoadMore, onCandidateNameChange, onCandidateMutate, onProfileNameChange, onReasonChange, onAccountMutate, onLoadAcquisitionCases }: FieldAdmissionRosterProps) {
+function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading, cursor, previousPageKnown, nextCursor, busy, feedbackActorId, serviceCities, walletProviders, candidateEdits, profileEdits, reasons, acquisitionCases, acquisitionCaseErrors, acquisitionCaseBusy, onQueryChange, onCityFilterChange, onRefresh, onNextPage, onPreviousPage, onCandidateNameChange, onCandidateMutate, onProfileNameChange, onReasonChange, onAccountMutate, onLoadAcquisitionCases }: FieldAdmissionRosterProps) {
   const [admissionFilter, setAdmissionFilter] = useState("");
   const [accessFilter, setAccessFilter] = useState("");
   const [activityFilter, setActivityFilter] = useState("");
@@ -435,20 +438,21 @@ function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading
     if (sortBy === column) setSortDirection((value) => value === "asc" ? "desc" : "asc");
     else { setSortBy(column); setSortDirection("asc"); }
   }
-  const sortButton = (column: "name" | "city" | "provider" | "admission" | "access" | "activity" | "store" | "journey", label: string) => <button type="button" className="field-column-sort" onClick={() => toggleSort(column)} aria-label={`ترتيب حسب ${label}`} aria-pressed={sortBy === column}>{label}{sortBy === column ? <span aria-hidden="true"> {sortDirection === "asc" ? "↑" : "↓"}</span> : null}</button>;
+  const sortButton = (column: "name" | "city" | "provider" | "admission" | "access" | "activity" | "store" | "journey", label: string) => <button type="button" className="field-column-sort" onClick={() => toggleSort(column)} aria-label={`ترتيب الصفحة حسب ${label}`} aria-pressed={sortBy === column}>{label}{sortBy === column ? <span aria-hidden="true"> {sortDirection === "asc" ? "↑" : "↓"}</span> : null}</button>;
   const hasFilters = Boolean(query || cityFilter || admissionFilter || accessFilter || activityFilter || storeFilter || storeQuery || journeyFilter || journeyQuery || providerFilter);
   const activeFilterCount = [cityFilter, admissionFilter, accessFilter, activityFilter, storeFilter, storeQuery, journeyFilter, journeyQuery, providerFilter].filter(Boolean).length;
+  const previousLabel = cursor && !previousPageKnown ? "الأولى" : "السابقة";
   return <div className="field-workbench-pane">
-    <div className="field-roster-tools">
+    <div className="field-roster-tools registry-toolbar">
       <label className="field-roster-search" htmlFor="field-search">
-        <span>بحث بالاسم أو الهاتف</span>
-        <input id="field-search" type="search" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="اسم أو هاتف" />
+        <span>بحث بالهاتف</span>
+        <input id="field-search" type="search" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="رقم الهاتف" />
       </label>
       <details className="field-roster-filter-disclosure">
         <summary aria-label={activeFilterCount ? `المرشحات، ${activeFilterCount} مرشح نشط` : "المرشحات"}>المرشحات{activeFilterCount ? <span className="field-filter-active-count" aria-hidden="true">{activeFilterCount}</span> : null}</summary>
-        <fieldset className="field-roster-filter-panel">
+        <fieldset className="field-roster-filter-panel form-grid">
           <legend className="visually-hidden">مرشحات سجل الميدانيين</legend>
-          <p className="field-roster-filter-note">البحث بالاسم أو الهاتف والمدينة يصل إلى السجل عبر الخدمة. بقية المرشحات والترتيب تطبّق على الصفحات المحمّلة.</p>
+          <p className="field-roster-filter-note">بقية المرشحات والترتيب للصفحة الحالية.</p>
           <label htmlFor="field-city-filter">مدينة الخدمة<select id="field-city-filter" value={cityFilter} onChange={(event) => onCityFilterChange(event.target.value)}><option value="">كل المدن</option>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
           <label htmlFor="field-provider-filter">مزوّد المحفظة<select id="field-provider-filter" value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}><option value="">كل المزوّدين</option>{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select></label>
           <label htmlFor="field-admission-filter">أهلية النظام<select id="field-admission-filter" value={admissionFilter} onChange={(event) => setAdmissionFilter(event.target.value)}><option value="">كل الحالات</option><option value="none">لا توجد أهلية مرتبطة</option><option value="pending_review">بانتظار المراجعة</option><option value="pending_identity">بانتظار إنشاء الحساب</option><option value="eligible">مؤهل</option><option value="suspended">موقوفة</option></select></label>
@@ -465,13 +469,13 @@ function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading
     </div>
     {notice && !feedbackActorId ? <output className="success-inline">{notice}</output> : null}{error && !feedbackActorId ? <p className="identity-error" role="alert">{error}</p> : null}
     {loading && items.length === 0 ? <output>جارٍ قراءة سجل الميدانيين…</output> : null}
-    {!loading && !error && items.length === 0 ? <FieldEmptyRoster query={query} /> : null}
+    {!loading && !error && items.length === 0 ? <FieldEmptyRoster query={query} pageScoped={Boolean(nextCursor || cursor || cityFilter)} /> : null}
     {items.length > 0 ? <>
       {/* biome-ignore lint/a11y/noNoninteractiveTabindex: Keep the horizontally scrollable roster reachable by keyboard. */}
-      <section className="operations-table-wrap field-agent-table-wrap" aria-label="سجل الميدانيين" tabIndex={0} aria-describedby="field-roster-scroll-hint">
-      <p className="field-filter-count" aria-live="polite">{visibleItems.length} من {items.length} سجلًا محمّلًا</p>
-      <p id="field-roster-scroll-hint" className="field-roster-scroll-hint">مرّر السجل أفقيًا لعرض بقية الأعمدة. على الشاشات الواسعة يبقى الاسم والإجراءات ظاهرين.</p>
-      <table className="operations-table field-agent-table"><caption className="visually-hidden">سجل الميدانيين، اختر عنوان العمود للترتيب وحرك السجل أفقيًا لعرض بقية الأعمدة</caption><thead><tr>
+      <section className="operations-table-wrap field-agent-table-wrap table-wrap" aria-label="سجل الميدانيين" tabIndex={0} aria-describedby="field-roster-scroll-hint">
+      <p className="field-filter-count" aria-live="polite">{visibleItems.length} من {items.length} في هذه الصفحة</p>
+      <p id="field-roster-scroll-hint" className="visually-hidden">مرّر السجل أفقيًا لعرض بقية الأعمدة. على الشاشات الواسعة يبقى الاسم والإجراءات ظاهرين.</p>
+      <table className="data-table data-table-pinned data-table-wide-actions field-agent-table"><caption className="visually-hidden">سجل الميدانيين، اختر عنوان العمود لترتيب الصفحة وحرك السجل أفقيًا لعرض بقية الأعمدة</caption><thead><tr>
       <th scope="col"><div className="field-column-heading">{sortButton("name", "الميداني والهاتف")}</div></th>
       <th scope="col"><div className="field-column-heading">{sortButton("city", "مدينة الخدمة")}{sortButton("provider", "مزوّد المحفظة")}</div></th>
       <th scope="col"><div className="field-column-heading">{sortButton("admission", "أهلية النظام")}</div></th>
@@ -483,14 +487,18 @@ function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading
       {visibleItems.map((item) => item.kind === "candidate"
         ? <FieldCandidateRow key={`candidate:${item.admission.id}`} profile={item.admission} draft={candidateEdits[item.admission.id] ?? fieldProfile(item.admission)} changed={!sameFieldProfile(candidateEdits[item.admission.id] ?? fieldProfile(item.admission), fieldProfile(item.admission))} busy={busy} rowNotice={feedbackActorId === item.admission.id ? notice : ""} rowError={feedbackActorId === item.admission.id ? error : ""} serviceCities={serviceCities} walletProviders={walletProviders} onDraftChange={(value) => onCandidateNameChange(item.admission.id, value)} onMutate={onCandidateMutate} />
         : <FieldAccountRow key={`account:${item.account.actorId}`} field={item.account} serviceCities={serviceCities} walletProviders={walletProviders} name={profileEdits[item.account.actorId] ?? item.account.admission?.fullNameAr ?? ""} reason={reasons[item.account.actorId] ?? ""} busy={busy} rowNotice={feedbackActorId === item.account.actorId ? notice : ""} rowError={feedbackActorId === item.account.actorId ? error : ""} acquisitionPage={acquisitionCases[item.account.actorId]} acquisitionError={acquisitionCaseErrors[item.account.actorId] ?? ""} acquisitionBusy={acquisitionCaseBusy[item.account.actorId] ?? false} onNameChange={(value) => onProfileNameChange(item.account.actorId, value)} onReasonChange={(value) => onReasonChange(item.account.actorId, value)} onMutate={onAccountMutate} onLoadAcquisitionCases={onLoadAcquisitionCases} />)}
-    </tbody></table>{visibleItems.length === 0 && !loading ? <output className="field-filter-empty">لا تطابق السجلات المحمّلة هذه المرشحات.</output> : null}</section></> : null}
-    {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" disabled={loadingMore || Boolean(busy)} onClick={onLoadMore}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
+    </tbody></table>{visibleItems.length === 0 && !loading ? <output className="field-filter-empty">لا تطابق سجلات هذه الصفحة المرشحات.</output> : null}</section></> : null}
+    <nav className="action-row" aria-label="صفحات الميدانيين"><button type="button" className="button button-secondary" disabled={!cursor || loading || Boolean(busy)} onClick={onPreviousPage}>{previousLabel}</button><button type="button" className="button button-secondary" disabled={!nextCursor || loading || Boolean(busy)} onClick={onNextPage}>التالية</button></nav>
   </div>;
 }
 
 export function FieldAdmissionPanel() {
   const { walletProviders, walletProvidersLoading, walletProvidersError } = useWalletProviders();
   const [query, setQuery] = useState("");
+  const [cursor, setCursor] = useState("");
+  const [navigationVersion, setNavigationVersion] = useState(0);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [previousPageKnown, setPreviousPageKnown] = useState(false);
   const [items, setItems] = useState<ReadonlyArray<FieldWorkbenchItem>>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [fullNameAr, setFullNameAr] = useState("");
@@ -507,7 +515,6 @@ export function FieldAdmissionPanel() {
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState("");
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [feedbackActorId, setFeedbackActorId] = useState("");
@@ -528,9 +535,9 @@ export function FieldAdmissionPanel() {
     return () => { current = false; };
   }, []);
 
-  const load = useCallback(async (cursor = "", append = false) => {
+  const load = useCallback(async () => {
     const requestID = ++loadRequestID.current;
-    if (append) setLoadingMore(true); else setLoading(true);
+    setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams({ scope: "workbench", limit: "25", q: query.trim() });
@@ -538,22 +545,22 @@ export function FieldAdmissionPanel() {
       if (cursor) params.set("cursor", cursor);
       const response = await identityFetch(`/api/fields?${params}`, { cache: "no-store" });
       if (!response.ok) {
-        const message = await fieldResponseMessage(response);
-        if (loadRequestID.current === requestID) {
-          setError(message);
-        }
-        return;
+        throw new Error(await fieldResponseMessage(response));
       }
       const page = await response.json() as FieldPage;
       if (loadRequestID.current !== requestID) return;
-      setItems((current) => append ? [...current, ...page.items] : page.items);
+      setItems(page.items);
       setNextCursor(page.nextCursor ?? "");
     } catch (cause) {
-      if (loadRequestID.current === requestID) setError(fieldRequestError(cause, "تعذرت قراءة سجل الميدانيين."));
+      if (loadRequestID.current === requestID) {
+        setItems([]);
+        setNextCursor("");
+        setError(fieldRequestError(cause, "تعذرت قراءة سجل الميدانيين."));
+      }
     } finally {
-      if (loadRequestID.current === requestID) { setLoading(false); setLoadingMore(false); }
+      if (loadRequestID.current === requestID) setLoading(false);
     }
-  }, [query, cityFilter]);
+  }, [query, cityFilter, cursor]);
 
   async function loadAcquisitionCases(fieldActorId: string, cursor = "", append = false) {
     setAcquisitionCaseBusy((current) => ({ ...current, [fieldActorId]: true }));
@@ -578,28 +585,77 @@ export function FieldAdmissionPanel() {
     }
   }
 
-  useEffect(() => { const timer = window.setTimeout(() => { void load(); }, 250); return () => window.clearTimeout(timer); }, [load]);
   useEffect(() => {
-    const syncQuery = () => setQuery(new URLSearchParams(window.location.search).get("q") ?? "");
+    if (navigationVersion === 0) return;
+    const timer = window.setTimeout(() => { void load(); }, 250);
+    return () => window.clearTimeout(timer);
+  }, [load, navigationVersion]);
+  useEffect(() => {
+    const syncQuery = (event?: PopStateEvent) => {
+      const params = new URLSearchParams(window.location.search);
+      const state = event?.state ?? window.history.state;
+      const saved = state?.fieldRegistry;
+      const url = `${window.location.pathname}${window.location.search}`;
+      const restored = !params.has("q") && !params.has("cursor") && saved?.url === url && typeof saved.query === "string" && typeof saved.cursor === "string" && Number.isSafeInteger(saved.page) && saved.page >= 1 && (saved.page === 1 ? saved.cursor === "" && !params.has("fieldPage") : Boolean(saved.cursor) && params.get("fieldPage") === String(saved.page));
+      ++loadRequestID.current;
+      setNavigationVersion((current) => current + 1);
+      setLoading(true);
+      setItems([]);
+      setNextCursor("");
+      setError("");
+      setFeedbackActorId("");
+      setQuery(restored ? saved.query : "");
+      setCityFilter(params.get("serviceCityId") ?? "");
+      setCursor(restored ? saved.cursor : "");
+      setPageNumber(restored ? saved.page : 1);
+      setPreviousPageKnown(restored && saved.previous === true);
+      // Bookmarks cannot restore private search or server cursors without this tab's history state.
+      if (!restored) {
+        params.delete("q"); params.delete("cursor"); params.delete("fieldPage");
+        const firstURL = `${window.location.pathname}${params.size ? `?${params}` : ""}`;
+        window.history.replaceState({ ...state, fieldPageURL: undefined, fieldRegistry: { url: firstURL, query: "", cursor: "", page: 1, previous: false } }, "", firstURL);
+      }
+    };
     syncQuery();
     window.addEventListener("popstate", syncQuery);
     return () => window.removeEventListener("popstate", syncQuery);
   }, []);
 
-  function updateQuery(value: string) {
-    setQuery(value);
+  function writePage(nextQuery: string, nextCity: string, nextCursor: string, page: number, previous: boolean, replace: boolean) {
     const params = new URLSearchParams(window.location.search);
-    if (value.trim()) params.set("q", value); else params.delete("q");
-    params.delete("cursor");
-    window.history.replaceState(window.history.state, "", window.location.pathname + (params.size ? `?${params.toString()}` : ""));
+    params.delete("q"); params.delete("cursor"); params.delete("fieldPage");
+    if (nextCity) params.set("serviceCityId", nextCity); else params.delete("serviceCityId");
+    if (page > 1) params.set("fieldPage", String(page));
+    const url = `${window.location.pathname}${params.size ? `?${params}` : ""}`;
+    const state = { ...window.history.state, fieldPageURL: undefined, fieldRegistry: { url, query: nextQuery, cursor: nextCursor, page, previous } };
+    if (replace) window.history.replaceState(state, "", url); else window.history.pushState(state, "", url);
+    ++loadRequestID.current;
+    setNavigationVersion((current) => current + 1);
+    setLoading(true); setItems([]); setNextCursor(""); setError(""); setFeedbackActorId("");
+    setQuery(nextQuery); setCityFilter(nextCity); setCursor(nextCursor); setPageNumber(page); setPreviousPageKnown(previous);
+  }
+
+  function updateQuery(value: string) {
+    if (value === query && !cursor) return;
+    writePage(value, cityFilter, "", 1, false, true);
   }
 
   function updateCityFilter(value: string) {
-    setCityFilter(value);
-    const params = new URLSearchParams(window.location.search);
-    if (value) params.set("serviceCityId", value); else params.delete("serviceCityId");
-    params.delete("cursor");
-    window.history.replaceState(null, "", `${window.location.pathname}${params.size ? `?${params.toString()}` : ""}`);
+    if (value === cityFilter && !cursor) return;
+    writePage(window.history.state?.fieldRegistry?.query ?? query, value, "", 1, false, false);
+  }
+
+  function nextPage() {
+    if (!nextCursor || loading || busy) return;
+    writePage(query, cityFilter, nextCursor, pageNumber + 1, true, false);
+  }
+
+  function previousPage() {
+    if (previousPageKnown) {
+      window.history.back();
+      return;
+    }
+    writePage(query, cityFilter, "", 1, false, true);
   }
 
   async function createProfile() {
@@ -714,10 +770,10 @@ export function FieldAdmissionPanel() {
   const candidateProviderValid = walletProviders.some((provider) => provider.key === walletProviderKey);
   const candidateCityValid = allServiceCities || serviceCityIds.length > 0 && serviceCityIds.every((id) => serviceCities.some((city) => city.id === id && city.active));
 
-  return <section className={`access-card field-workbench ${styles.root}`} aria-label="إدارة الميدانيين">
+  return <section className="access-card field-workbench work-stack" aria-label="إدارة الميدانيين">
     <header className="field-workbench-heading">
-      <details className="field-create-disclosure"><summary className="button button-primary">إنشاء ملف ميداني</summary><div className="field-create-content"><div className="access-card-heading"><h3>ملف ميداني جديد</h3><p className="muted">إنشاء الملف يحفظ أهلية النظام للمراجعة فقط؛ لا ينشئ حساب الدخول ولا يرسل رمز التفعيل.</p></div><form className="access-form" noValidate onSubmit={(event) => { event.preventDefault(); void createProfile(); }}><label className="field-label" htmlFor="field-candidate-name">الاسم الكامل بالعربية<input id="field-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} /></label><label className="field-label" htmlFor="field-candidate-phone">رقم الجوال<input id="field-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="مثال: 777 765 432 أو +967 777 765 432" aria-invalid={Boolean(phone.trim()) && !candidatePhoneValid} aria-describedby="field-candidate-phone-help" /><span id="field-candidate-phone-help" className={phone.trim() && !candidatePhoneValid ? "identity-error" : "muted"}>{phone.trim() && !candidatePhoneValid ? "أدخل رقمًا يمنيًا صحيحًا، محليًا مثل 777 765 432 أو دوليًا مثل +967 777 765 432." : "يُستخدم هذا الرقم لإثبات الهاتف وتفعيل الدخول، ثم لتسجيل الدخول اليومي."}</span></label><label className="field-label" htmlFor="field-candidate-wallet-provider">مزوّد المحفظة الذي حدده الميداني<select id="field-candidate-wallet-provider" value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)} disabled={Boolean(busy) || walletProvidersLoading || Boolean(walletProvidersError)}><option value="">اختر محفظة رسمية</option>{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select><small>المزوّد فقط؛ لا تدخل رقم محفظة أو اسمًا قانونيًا.</small></label>{walletProvidersError ? <p className="identity-error" role="alert">{walletProvidersError}</p> : null}<label className="field-label" htmlFor="field-candidate-all-cities"><input id="field-candidate-all-cities" type="checkbox" checked={allServiceCities} onChange={(event) => setAllServiceCities(event.target.checked)} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)} /> جميع المدن النشطة، بما فيها المدن التي ستضاف لاحقًا</label>{!allServiceCities ? <label className="field-label" htmlFor="field-candidate-cities">مدن الخدمة<select id="field-candidate-cities" multiple value={serviceCityIds} onChange={(event) => setServiceCityIds(Array.from(event.currentTarget.selectedOptions, (option) => option.value))} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)}>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label> : null}{serviceCitiesError ? <p className="identity-error" role="alert">{serviceCitiesError}</p> : null}<button type="submit" className="button button-primary" disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError) || walletProvidersLoading || Boolean(walletProvidersError) || !candidateNameValid || !candidatePhoneValid || !candidateProviderValid || !candidateCityValid}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ للمراجعة"}</button></form></div></details>
+      <details className="field-create-disclosure"><summary className="button button-primary">إنشاء ملف ميداني</summary><div className="field-create-content"><div className="access-card-heading"><h3>ملف ميداني جديد</h3><p className="muted">ملف للمراجعة؛ إنشاء حساب الدخول بعد الاعتماد.</p></div><form className="access-form" noValidate onSubmit={(event) => { event.preventDefault(); void createProfile(); }}><label className="field-label" htmlFor="field-candidate-name">الاسم الكامل بالعربية<input id="field-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} /></label><label className="field-label" htmlFor="field-candidate-phone">رقم الجوال<input id="field-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="مثال: 777 765 432 أو +967 777 765 432" aria-invalid={Boolean(phone.trim()) && !candidatePhoneValid} aria-describedby="field-candidate-phone-help" /><span id="field-candidate-phone-help" className={phone.trim() && !candidatePhoneValid ? "identity-error" : "muted"}>{phone.trim() && !candidatePhoneValid ? "أدخل رقمًا يمنيًا صحيحًا، محليًا مثل 777 765 432 أو دوليًا مثل +967 777 765 432." : "يُستخدم هذا الرقم لإثبات الهاتف وتفعيل الدخول، ثم لتسجيل الدخول اليومي."}</span></label><label className="field-label" htmlFor="field-candidate-wallet-provider">مزوّد المحفظة الذي حدده الميداني<select id="field-candidate-wallet-provider" value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)} disabled={Boolean(busy) || walletProvidersLoading || Boolean(walletProvidersError)}><option value="">اختر محفظة رسمية</option>{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select><small>المزوّد فقط؛ لا تدخل رقم محفظة أو اسمًا قانونيًا.</small></label>{walletProvidersError ? <p className="identity-error" role="alert">{walletProvidersError}</p> : null}<label className="field-label" htmlFor="field-candidate-all-cities"><input id="field-candidate-all-cities" type="checkbox" checked={allServiceCities} onChange={(event) => setAllServiceCities(event.target.checked)} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)} /> جميع المدن النشطة، بما فيها المدن التي ستضاف لاحقًا</label>{!allServiceCities ? <label className="field-label" htmlFor="field-candidate-cities">مدن الخدمة<select id="field-candidate-cities" multiple value={serviceCityIds} onChange={(event) => setServiceCityIds(Array.from(event.currentTarget.selectedOptions, (option) => option.value))} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)}>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label> : null}{serviceCitiesError ? <p className="identity-error" role="alert">{serviceCitiesError}</p> : null}<button type="submit" className="button button-primary" disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError) || walletProvidersLoading || Boolean(walletProvidersError) || !candidateNameValid || !candidatePhoneValid || !candidateProviderValid || !candidateCityValid}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ للمراجعة"}</button></form></div></details>
     </header>
-    <FieldAdmissionRoster items={items} query={query} cityFilter={cityFilter} notice={notice} error={error} loading={loading} loadingMore={loadingMore} nextCursor={nextCursor} busy={busy} feedbackActorId={feedbackActorId} serviceCities={serviceCities} walletProviders={walletProviders} candidateEdits={candidateEdits} profileEdits={profileEdits} reasons={reasons} acquisitionCases={acquisitionCases} acquisitionCaseErrors={acquisitionCaseErrors} acquisitionCaseBusy={acquisitionCaseBusy} onQueryChange={updateQuery} onCityFilterChange={updateCityFilter} onRefresh={() => { setFeedbackActorId(""); void load(); }} onLoadMore={() => { void load(nextCursor, true); }} onCandidateNameChange={(id, value) => setCandidateEdits((current) => ({ ...current, [id]: value }))} onCandidateMutate={mutateCandidate} onProfileNameChange={(id, value) => setProfileEdits((current) => ({ ...current, [id]: value }))} onReasonChange={(id, value) => setReasons((current) => ({ ...current, [id]: value }))} onAccountMutate={mutateAccount} onLoadAcquisitionCases={loadAcquisitionCases} />
+    <FieldAdmissionRoster items={items} query={query} cityFilter={cityFilter} notice={notice} error={error} loading={loading} cursor={cursor} previousPageKnown={previousPageKnown} nextCursor={nextCursor} busy={busy} feedbackActorId={feedbackActorId} serviceCities={serviceCities} walletProviders={walletProviders} candidateEdits={candidateEdits} profileEdits={profileEdits} reasons={reasons} acquisitionCases={acquisitionCases} acquisitionCaseErrors={acquisitionCaseErrors} acquisitionCaseBusy={acquisitionCaseBusy} onQueryChange={updateQuery} onCityFilterChange={updateCityFilter} onRefresh={() => { setFeedbackActorId(""); void load(); }} onNextPage={nextPage} onPreviousPage={previousPage} onCandidateNameChange={(id, value) => setCandidateEdits((current) => ({ ...current, [id]: value }))} onCandidateMutate={mutateCandidate} onProfileNameChange={(id, value) => setProfileEdits((current) => ({ ...current, [id]: value }))} onReasonChange={(id, value) => setReasons((current) => ({ ...current, [id]: value }))} onAccountMutate={mutateAccount} onLoadAcquisitionCases={loadAcquisitionCases} />
   </section>;
 }

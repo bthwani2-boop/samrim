@@ -1,7 +1,8 @@
-import { FinanceOverview, FinanceWorkspace } from "../../../src/features/finance/finance-workspace";
+import { redirect } from "next/navigation";
+import { workspaceFinanceResources } from "../../../src/navigation/workspace-registry";
 
 export default function FinancePage() {
-  return <FinanceWorkspace resource="overview"><FinanceOverview /></FinanceWorkspace>;
+  redirect(workspaceFinanceResources[0].href);
 }
 
 export const metadata = { title: "المالية" };

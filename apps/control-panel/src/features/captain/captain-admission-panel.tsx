@@ -1,8 +1,9 @@
 "use client";
 
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { type CaptainAdmission, captainAdmissionStateLabel, captainAvailabilityStateLabel } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CaptainCandidatePanel } from "./captain-candidate-panel";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
@@ -18,37 +19,48 @@ export function CaptainAdmissionPanel() {
   const [sort, setSort] = useState<"phone_asc" | "phone_desc">("phone_asc");
   const [items, setItems] = useState<ReadonlyArray<CaptainRecord>>([]);
   const [nextCursor, setNextCursor] = useState("");
+  const cursorPage = useCursorPage("captainCursor", JSON.stringify([query, enabledFilter, sort]), true, (key) => {
+    try {
+      const [savedQuery, enabled, savedSort] = JSON.parse(key);
+      if (typeof savedQuery !== "string" || !["", "true", "false"].includes(enabled) || !["phone_asc", "phone_desc"].includes(savedSort)) return;
+      setQuery(savedQuery); setEnabledFilter(enabled); setSort(savedSort);
+    } catch { /* An unrelated history entry starts at the first page. */ }
+  });
   const [busy, setBusy] = useState("");
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const loadRequestID = useRef(0);
 
-  const load = useCallback(async (cursor = "", append = false): Promise<boolean> => {
-    if (append) setLoadingMore(true);
-    else setLoading(true);
+  const load = useCallback(async (cursor = cursorPage.cursor): Promise<boolean> => {
+    const requestID = ++loadRequestID.current;
+    setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams({ limit: "25", q: query.trim(), sort });
       if (cursor) params.set("cursor", cursor);
       if (enabledFilter) params.set("enabled", enabledFilter);
       const response = await identityFetch(`/api/captains?${params}`);
-      if (!response.ok) { setError(await responseMessage(response)); return false; }
+      if (!response.ok) throw new Error(await responseMessage(response));
       const page = await response.json() as CaptainPage;
-      setItems((current) => append ? [...current, ...page.items] : page.items);
+      if (requestID !== loadRequestID.current) return false;
+      setItems(page.items);
       setNextCursor(page.nextCursor ?? "");
       return true;
     } catch (cause) {
-      setError(isRequestFailure(cause) ? cause.message : "تعذر قراءة سجل الكباتن.");
+      if (requestID !== loadRequestID.current) return false;
+      setError(isRequestFailure(cause) ? cause.message : cause instanceof Error ? cause.message : "تعذر قراءة سجل الكباتن.");
+      setItems([]);
+      setNextCursor("");
       return false;
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  }, [enabledFilter, query, sort]);
+      if (requestID === loadRequestID.current) setLoading(false);
 
-  useEffect(() => { void load(); }, [load]);
+    }
+  }, [enabledFilter, query, sort, cursorPage.cursor]);
+
+  useEffect(() => { if (cursorPage.ready) void load(); }, [load, cursorPage.ready]);
 
   async function changeStatus(captain: CaptainRecord) {
     const reason = reasons[captain.actorId]?.trim() ?? "";
@@ -222,7 +234,7 @@ export function CaptainAdmissionPanel() {
     <>
       <CaptainCandidatePanel />
       <section className="access-card" aria-labelledby="captain-roster-title">
-        <div className="access-card-heading"><span className="step-chip">سجل العمليات</span><h2 id="captain-roster-title">قائمة الكباتن وأهليتهم وتوفرهم</h2><p className="muted">تُقرأ بيانات الحساب وحالة الأهلية والتوفر من السجلات المعتمدة. تسجّل إدارة التوفر سبب الإجراء في سجل النظام، وإيقاف الأهلية التشغيلية لا يغيّر هوية الكابتن.</p></div>
+        <div className="access-card-heading"><h2 id="captain-roster-title">قائمة الكباتن وأهليتهم وتوفرهم</h2><p className="muted">إيقاف التشغيل يوقف الأهلية فقط؛ الهوية تبقى محفوظة.</p></div>
         <div className="workspace-toolbar">
           <label className="field-label" htmlFor="captain-search">بحث برقم الهاتف<input id="captain-search" inputMode="tel" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث في أرقام الكباتن" /></label>
           <label className="field-label" htmlFor="captain-status-filter">حالة الدور<select id="captain-status-filter" value={enabledFilter} onChange={(event) => setEnabledFilter(event.target.value)}><option value="">كل الحالات</option><option value="true">مفعّل</option><option value="false">موقوف</option></select></label>
@@ -264,16 +276,16 @@ export function CaptainAdmissionPanel() {
             <td>{identityStatusLabel}</td>
             <td>{requiresProfileReview ? "الملف يحتاج استكمالًا ومراجعة" : admissionLabel(captain.admission)}</td>
             <td>{captain.admission ? captainAvailabilityStateLabel(captain.admission.availabilityState) : "—"}</td>
-            <td>{captain.admission && (captain.activatedAt || shouldDisable) ? <div className="access-form">
+            <td>{captain.admission && (captain.activatedAt || shouldDisable) ? <details open={mustDisableForProfileReview}><summary>إدارة التشغيل</summary><div className="access-form">
               <label className="field-label" htmlFor={`captain-reason-${index}`}>سبب الإجراء<input id={`captain-reason-${index}`} maxLength={500} value={reasons[captain.actorId] ?? ""} onChange={(event) => setReasons((current) => ({ ...current, [captain.actorId]: event.target.value }))} disabled={Boolean(busy)} /></label>
               {shouldDisable || !requiresProfileReview ? <button type="button" className={statusActionClass} disabled={Boolean(busy) || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void changeStatus(captain)}>{statusActionLabel}</button> : <span className="muted">استكمل الملف واعتمده قبل إعادة التفعيل.</span>}
               {canReenroll ? <button type="button" className="button button-secondary" disabled={Boolean(busy) || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void reenroll(captain)}>{busy === captain.actorId + ":reenroll" ? "جارٍ التحقق وإجازة التسجيل…" : "إجازة إعادة التسجيل"}</button> : null}
               <button type="button" className="button button-secondary" disabled={Boolean(busy) || !canChangeAvailability || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void changeAvailability(captain)}>{availabilityActionLabel}</button>
-            </div> : <span className="muted">يبدأ التحكم بعد اكتمال التسجيل ووجود أهلية النظام.</span>}</td>
+            </div></details> : <span className="muted">بانتظار اكتمال التسجيل والأهلية.</span>}</td>
           </tr>;
           })}
         </tbody></table></div> : null}
-        {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" disabled={loadingMore || Boolean(busy)} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
+    <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات الكباتن" />
       </section>
     </>
   );

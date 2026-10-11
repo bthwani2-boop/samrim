@@ -1,8 +1,9 @@
 "use client";
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { TextArea } from "@bthwani/design-system/web";
 
 import { type CatalogCategoryListItem, type CatalogProductProposal, type CommerceVertical, catalogProductProposalStateLabel } from "@bthwani/dsh";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type ProposalDecision = "approved" | "needs_correction" | "rejected";
 
@@ -36,16 +37,19 @@ export function CatalogProposalReview() {
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [nextCursor, setNextCursor] = useState("");
+  const cursorPage = useCursorPage("proposalCursor", "");
   const [busy, setBusy] = useState<ProposalDecision | "">("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [conflict, setConflict] = useState(false);
+  const loadRequestID = useRef(0);
 
   const selected = useMemo(() => proposals.find((proposal) => proposal.id === selectedId) ?? null, [proposals, selectedId]);
   const selectedCategoryId = selected?.categoryId ?? "";
   const vertical = selected ? verticals.find((item) => item.id === selected.verticalId) : undefined;
 
-  const loadQueue = useCallback(async (cursor = "", append = false) => {
+  const loadQueue = useCallback(async (cursor = cursorPage.cursor) => {
+    const requestID = ++loadRequestID.current;
     setLoading(true);
     setError("");
     try {
@@ -53,22 +57,26 @@ export function CatalogProposalReview() {
       if (cursor) params.set("cursor", cursor);
       const response = await fetch(`/api/catalog/proposals?${params.toString()}`, { cache: "no-store" });
       const payload = await readJson<{ proposals?: ReadonlyArray<CatalogProductProposal>; nextCursor?: string }>(response);
+      if (requestID !== loadRequestID.current) return;
       const nextProposals = payload.proposals ?? [];
-      setProposals((current) => append ? [...current, ...nextProposals] : nextProposals);
+      setProposals(nextProposals);
       setNextCursor(payload.nextCursor ?? "");
       const requestedId = new URLSearchParams(window.location.search).get("proposalId") ?? "";
-      if (!append) setSelectedId((current) => {
+      setSelectedId((current) => {
         if (requestedId && nextProposals.some((proposal) => proposal.id === requestedId)) return requestedId;
         return current && nextProposals.some((proposal) => proposal.id === current) ? current : "";
       });
     } catch (cause) {
+      if (requestID !== loadRequestID.current) return;
+      setProposals([]);
+      setNextCursor("");
       setError(cause instanceof Error ? cause.message : "تعذر قراءة طابور مقترحات المنتجات.");
     } finally {
-      setLoading(false);
+      if (requestID === loadRequestID.current) setLoading(false);
     }
-  }, []);
+  }, [cursorPage.cursor]);
 
-  useEffect(() => { void loadQueue(); }, [loadQueue]);
+  useEffect(() => { if (cursorPage.ready) void loadQueue(); }, [loadQueue, cursorPage.ready]);
 
   useEffect(() => {
     function syncSelectionFromUrl() {
@@ -83,7 +91,7 @@ export function CatalogProposalReview() {
     if (proposalId) params.set("proposalId", proposalId);
     else params.delete("proposalId");
     const query = params.toString();
-    window.history.pushState({}, "", window.location.pathname + (query ? `?${query}` : ""));
+    window.history.pushState(window.history.state, "", window.location.pathname + (query ? `?${query}` : ""));
     setSelectedId(proposalId);
     setError("");
     setNotice("");
@@ -149,8 +157,6 @@ export function CatalogProposalReview() {
     <div className="central-catalog-grid" data-testid="catalog-proposal-review">
       <section className="access-card central-catalog-list" aria-labelledby="catalog-proposals-title">
         <div className="access-card-heading">
-          <span className="step-chip">المراجعة</span>
-          <p className="eyebrow">طابور المراجعة</p>
           <h2 id="catalog-proposals-title">المقترحات المقدمة</h2>
           <p className="muted">اختر مقترحًا لقراءة حقائقه كاملة قبل اعتماد القرار.</p>
         </div>
@@ -167,14 +173,12 @@ export function CatalogProposalReview() {
           </ul>
         )}
         <button type="button" className="button button-secondary" disabled={loading} onClick={() => void loadQueue()}>إعادة قراءة الطابور</button>
-        {nextCursor ? <button type="button" className="button button-secondary" disabled={loading} onClick={() => void loadQueue(nextCursor, true)}>تحميل المزيد</button> : null}
+    <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات مقترحات المنتجات" />
       </section>
 
       <article className="access-card central-catalog-editor" aria-labelledby="catalog-proposal-detail-title">
         <div className="access-card-heading">
-          <p className="eyebrow">تفاصيل القرار</p>
           <h2 id="catalog-proposal-detail-title">{selected ? selected.proposedName : "اختر مقترحًا"}</h2>
-          <p className="muted">القرار محمي من التعارض تلقائيًا، وتُعاد قراءة الحالة الحالية بعد التنفيذ.</p>
         </div>
         {selected ? (
           <>

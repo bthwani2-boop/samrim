@@ -1,5 +1,6 @@
 "use client";
 
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
 import type { OperatorProfile, OperatorProfileInvitationResponse, OperatorProfilePage } from "@bthwani/identity";
 import type { FormEvent } from "react";
@@ -55,8 +56,8 @@ export function OperatorProfilePanel() {
   const [items, setItems] = useState<ReadonlyArray<OperatorProfile>>([]);
   const [edits, setEdits] = useState<Record<string, ProfileEdit>>({});
   const [nextCursor, setNextCursor] = useState("");
+  const cursorPage = useCursorPage("operatorProfileCursor", appliedQuery, true, (value) => { setQuery(value); setAppliedQuery(value); });
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -76,8 +77,6 @@ export function OperatorProfilePanel() {
     const requestedSort = params.get("profileSort");
     setState(requestedState === "pending_review" || requestedState === "approved" || requestedState === "admitted" ? requestedState : "all");
     setSort(requestedSort === "created_asc" ? "created_asc" : "created_desc");
-    setItems([]);
-    setNextCursor("");
   }, []);
 
   useEffect(() => {
@@ -93,17 +92,19 @@ export function OperatorProfilePanel() {
     if (nextSort !== "created_desc") params.set("profileSort", nextSort); else params.delete("profileSort");
     const search = params.toString();
     window.history.pushState(window.history.state, "", window.location.pathname + (search ? `?${search}` : ""));
+    cursorPage.reset();
     setState(nextState);
     setSort(nextSort);
-    setItems([]);
-    setNextCursor("");
-    setError("");
-  }, []);
+    if (nextState !== state || nextSort !== sort) {
+      setItems([]);
+      setNextCursor("");
+      setError("");
+    }
+  }, [cursorPage.reset, sort, state]);
 
-  const load = useCallback(async (cursor = "", append = false) => {
+  const load = useCallback(async (cursor = cursorPage.cursor) => {
     const requestId = ++loadRequestId.current;
-    if (append) setLoadingMore(true);
-    else setLoading(true);
+    setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams({ q: appliedQuery, state, sort, limit: "25" });
@@ -113,28 +114,29 @@ export function OperatorProfilePanel() {
       if (!response.ok) throw new Error(await responseMessage(response));
       const page = await response.json() as OperatorProfilePage;
       if (loadRequestId.current !== requestId) return;
-      setItems((current) => append ? [...current, ...page.items] : page.items);
+      setItems(page.items);
       setNextCursor(page.nextCursor ?? "");
     } catch (cause) {
       if (loadRequestId.current !== requestId) return;
       setError(isRequestFailure(cause) ? cause.message : cause instanceof Error ? cause.message : "تعذرت قراءة ملفات المشغّلين.");
-      if (!append) setItems([]);
+      setItems([]);
       setNextCursor("");
     } finally {
       if (loadRequestId.current === requestId) {
         setLoading(false);
-        setLoadingMore(false);
+
       }
     }
-  }, [appliedQuery, sort, state]);
+  }, [appliedQuery, sort, state, cursorPage.cursor]);
 
-  useEffect(() => { if (urlReady) void load(); }, [load, urlReady]);
+  useEffect(() => { if (urlReady && cursorPage.ready) void load(); }, [load, urlReady, cursorPage.ready]);
 
   function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    // Name and phone searches stay out of the URL and browser history because they contain personal data.
+    // Private searches stay in tab state, never in the URL.
     const nextQuery = query.trim().slice(0, 100);
     setQuery(nextQuery);
+    if (nextQuery === appliedQuery) { void load(); return; }
     setAppliedQuery(nextQuery);
     setItems([]);
     setNextCursor("");
@@ -144,9 +146,7 @@ export function OperatorProfilePanel() {
   function clearSearch() {
     setQuery("");
     setAppliedQuery("");
-    setItems([]);
-    setNextCursor("");
-    setError("");
+    if (appliedQuery) { setItems([]); setNextCursor(""); setError(""); }
     searchInput.current?.focus();
   }
 
@@ -298,7 +298,7 @@ export function OperatorProfilePanel() {
               <th scope="col">المشغّل</th>
               <th scope="col">الحالة</th>
               <th scope="col" aria-sort={sort === "created_asc" ? "ascending" : "descending"}>
-                <button type="button" className="access-sort-button" onClick={() => navigate(state, sort === "created_desc" ? "created_asc" : "created_desc")}>تاريخ الإضافة <span aria-hidden="true">{sort === "created_desc" ? "↓" : "↑"}</span></button>
+                <button type="button" className="button button-quiet access-sort-button" onClick={() => navigate(state, sort === "created_desc" ? "created_asc" : "created_desc")}>تاريخ الإضافة <span aria-hidden="true">{sort === "created_desc" ? "↓" : "↑"}</span></button>
               </th>
               <th scope="col">الخطوة التالية</th>
             </tr>
@@ -307,8 +307,8 @@ export function OperatorProfilePanel() {
                 <form className="access-column-search" onSubmit={search} noValidate>
                   <label className="visually-hidden" htmlFor="operator-profile-search">بحث بالاسم أو الهاتف</label>
                   <input ref={searchInput} id="operator-profile-search" maxLength={100} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="اسم أو هاتف" />
-                  {query ? <button type="button" className="access-input-clear" aria-label="مسح البحث" onClick={clearSearch}>×</button> : null}
-                  <button type="submit" className="access-search-submit" disabled={loading}>بحث</button>
+                  {query ? <button type="button" className="button button-quiet access-input-clear" aria-label="مسح البحث" onClick={clearSearch}>×</button> : null}
+                  <button type="submit" className="button button-secondary access-search-submit" disabled={loading}>بحث</button>
                 </form>
               </th>
               <th scope="col">
@@ -362,6 +362,6 @@ export function OperatorProfilePanel() {
           </tbody>
         </table>
     </div>
-    {items.length > 0 && nextCursor ? <div className="access-load-more"><button type="button" className="button button-secondary" disabled={loading || loadingMore || Boolean(busy)} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
+    <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات ملفات المشغّلين" />
   </section>;
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
 import { type CaptainAdmission, captainAdmissionStateLabel } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -20,35 +21,40 @@ export function CaptainCandidatePanel() {
   const [items, setItems] = useState<ReadonlyArray<CaptainAdmission>>([]);
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [nextCursor, setNextCursor] = useState("");
+  const cursorPage = useCursorPage("captainCandidateCursor", JSON.stringify([query, state, sort]), true, (key) => {
+    try {
+      const [savedQuery, savedState, savedSort] = JSON.parse(key);
+      if (typeof savedQuery !== "string" || typeof savedState !== "string" || !["created_asc", "created_desc"].includes(savedSort)) return;
+      setQuery(savedQuery); setState(savedState); setSort(savedSort);
+    } catch { /* An unrelated history entry starts at the first page. */ }
+  });
   const [busy, setBusy] = useState("");
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const loadRequestID = useRef(0);
 
-  const load = useCallback(async (cursor = "", append = false) => {
+  const load = useCallback(async (cursor = cursorPage.cursor) => {
     const requestID = ++loadRequestID.current;
-    if (append) setLoadingMore(true);
-    else setLoading(true);
+    setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams({ scope: "candidates", state, candidateSort: sort, q: query.trim(), limit: "25" });
       if (cursor) params.set("cursor", cursor);
       const response = await identityFetch("/api/captains?" + params);
-      if (!response.ok) { const message = await responseMessage(response); if (loadRequestID.current === requestID) setError(message); return; }
+      if (!response.ok) throw new Error(await responseMessage(response));
       const page = await response.json() as CandidatePage;
       if (loadRequestID.current !== requestID) return;
-      setItems((current) => append ? [...current, ...page.items] : page.items);
+      setItems(page.items);
       setNextCursor(page.nextCursor ?? "");
     } catch (cause) {
-      if (loadRequestID.current === requestID) setError(isRequestFailure(cause) ? cause.message : "تعذرت قراءة ملفات الكباتن.");
+      if (loadRequestID.current === requestID) { setError(isRequestFailure(cause) ? cause.message : cause instanceof Error ? cause.message : "تعذرت قراءة ملفات الكباتن."); setItems([]); setNextCursor(""); }
     } finally {
-      if (loadRequestID.current === requestID) { setLoading(false); setLoadingMore(false); }
+      if (loadRequestID.current === requestID) { setLoading(false);  }
     }
-  }, [query, sort, state]);
+  }, [query, sort, state, cursorPage.cursor]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (cursorPage.ready) void load(); }, [load, cursorPage.ready]);
 
   async function createProfile() {
     const name = fullNameAr.trim();
@@ -125,8 +131,8 @@ export function CaptainCandidatePanel() {
   }
 
   return <>
-    <section className="access-card" aria-labelledby="captain-candidate-create-title">
-      <div className="access-card-heading"><span className="step-chip">الخطوة الأولى · ملف بلا دور</span><h2 id="captain-candidate-create-title">ملف كابتن جديد</h2><p className="muted">سجّل اسم العرض بالعربية ورقم الاتصال؛ الاسم خاص بملف الكابتن وليس اسمًا قانونيًا موثّقًا. بعد المراجعة والاعتماد فقط يُمنح الدور في التطبيق. ارتباطه بمتجر شريك إجراء مستقل.</p></div>
+    <details className="access-card create-disclosure"><summary className="button button-primary">ملف كابتن جديد</summary>
+      <div className="access-card-heading"><h2 id="captain-candidate-create-title">ملف كابتن جديد</h2><p className="muted">اسم عرض للملف؛ يُمنح دور الدخول بعد المراجعة والاعتماد.</p></div>
       <div className="access-form">
         <label className="field-label" htmlFor="captain-candidate-name">اسم العرض الكامل بالعربية<input id="captain-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} placeholder="مثال: مروان أحمد صالح الحضرمي" /></label>
         <label className="field-label" htmlFor="captain-candidate-phone">رقم الهاتف<input id="captain-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="777000100 أو +967777000100" /></label>
@@ -134,9 +140,9 @@ export function CaptainCandidatePanel() {
         {walletProvidersError ? <p className="identity-error" role="alert">{walletProvidersError}</p> : null}
         <button type="button" className="button button-primary" disabled={Boolean(busy) || walletProvidersLoading || Boolean(walletProvidersError) || !fullNameAr.trim() || !phone.trim() || !walletProviderKey} onClick={() => void createProfile()}>{busy === "create" ? "جارٍ حفظ الملف…" : "حفظ الملف للمراجعة"}</button>
       </div>
-    </section>
+    </details>
     <section className="access-card" aria-labelledby="captain-candidate-registry-title">
-      <div className="access-card-heading"><span className="step-chip">سجل ملفات النظام</span><h2 id="captain-candidate-registry-title">ملفات الكباتن قبل منح الدور</h2><p className="muted">بحث وترتيب وصفحات خادمية؛ المراجعة تسبق إنشاء دور الحسابات، والتفعيل الذاتي يأتي بعد منح الدور.</p></div>
+      <div className="access-card-heading"><h2 id="captain-candidate-registry-title">ملفات الكباتن قبل منح الدور</h2></div>
       <div className="workspace-toolbar">
         <label className="field-label" htmlFor="captain-candidate-search">بحث بالاسم أو الهاتف<input id="captain-candidate-search" value={query} disabled={Boolean(busy)} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث في ملفات الكباتن" /></label>
         <label className="field-label" htmlFor="captain-candidate-state">مرحلة الملف<select id="captain-candidate-state" value={state} disabled={Boolean(busy)} onChange={(event) => setState(event.target.value)}><option value="review_required">يحتاج استكمالًا ومراجعة</option><option value="pending_review">ملف جديد بانتظار المراجعة</option><option value="pending_identity">معتمد وينتظر منح الدور</option><option value="eligible">مؤهل</option><option value="suspended">موقوف</option><option value="all">كل المراحل</option></select></label>
@@ -170,7 +176,7 @@ export function CaptainCandidatePanel() {
           </tr>;
         })}
       </tbody></table></div> : null}
-      {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" disabled={loadingMore || Boolean(busy)} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
+    <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات ملفات الكباتن" />
     </section>
   </>;
 }

@@ -106,9 +106,9 @@ export function DeliveryFeePolicyWorkspace() {
     }
   };
 
-  return <section className="access-card" aria-labelledby="delivery-fee-policy-title">
-    <div className="finance-toolbar"><div><p className="eyebrow">مركز السياسات · السجل المالي</p><h2 id="delivery-fee-policy-title">رسوم التوصيل</h2></div><button className="button button-secondary" type="button" onClick={() => void read(serviceCityId)} disabled={busy || readState === "loading"}>إعادة القراءة</button></div>
-    <p className="muted">تُحسب الرسوم خادميًا من المسافة، ومدينة الخدمة كمنطقة، ووحدات السلة. كل تعديل يصدر نسخة جديدة، والتقريب ثابت عند 50 ريال.</p>
+  return <section className="form-section" aria-label="إعداد رسوم التوصيل">
+    <div className="action-row"><button className="button button-secondary" type="button" onClick={() => void read(serviceCityId)} disabled={busy || readState === "loading"}>إعادة القراءة</button></div>
+
     <label className="field-label" htmlFor="delivery-fee-city">النطاق / مدينة الخدمة<select id="delivery-fee-city" value={serviceCityId} onChange={(event) => { const next = event.target.value; setServiceCityId(next); void read(next); }} disabled={busy}><option value="">السياسة العامة</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}{city.active ? "" : " · غير نشطة"}</option>)}</select></label>
     {readState === "loading" ? <p role="status">جارٍ قراءة السجل المالي لهذا النطاق…</p> : null}
     {readState === "missing" ? <p className="managed-status managed-status-warning" role="status">لا توجد سياسة نشطة لهذا النطاق. املأ القيم صراحةً لإنشاء أول إصدار.</p> : null}
@@ -124,9 +124,9 @@ export function DeliveryFeePolicyWorkspace() {
         <label className="field-label" htmlFor="delivery-size-rate">رسوم كل وحدة حجم (ريال)<input id="delivery-size-rate" type="number" min="0" value={form.orderSizeRateMinor} onChange={(event) => update("orderSizeRateMinor", event.target.value)} disabled={busy || !canEdit} /></label>
         <label className="field-label" htmlFor="delivery-zone">بدل المنطقة (ريال)<input id="delivery-zone" type="number" min="0" value={form.zoneSurchargeMinor} onChange={(event) => update("zoneSurchargeMinor", event.target.value)} disabled={busy || !canEdit} /></label>
       </div>
-      <label className="field-label" htmlFor="delivery-policy-reason">سبب التغيير<TextArea className="resize-none" id="delivery-policy-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} disabled={busy || !canEdit} /></label>
+      <label className="field-label" htmlFor="delivery-policy-reason">سبب التغيير<TextArea aria-describedby="delivery-policy-reason-hint" className="resize-none" id="delivery-policy-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} rows={3} disabled={busy || !canEdit} /><small id="delivery-policy-reason-hint">٥–٥٠٠ حرف؛ تُفعّل نسخة جديدة.</small></label>
       {error ? <p className="validation-error" role="alert">{error}</p> : null}
-      <button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || !canEdit || !validForm(form) || reason.trim().length < 5 || reason.trim().length > 500}>{busy ? "جارٍ التفعيل والتحقق…" : policy ? "تفعيل نسخة معدلة" : "إنشاء السياسة الأولى"}</button>
+      <div className="action-row"><button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || !canEdit || !validForm(form) || reason.trim().length < 5 || reason.trim().length > 500}>{busy ? "جارٍ التفعيل والتحقق…" : policy ? "تفعيل نسخة معدلة" : "إنشاء السياسة الأولى"}</button></div>
     </> : null}
   </section>;
 }

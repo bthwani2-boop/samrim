@@ -16,17 +16,17 @@ async function stubAuthenticatedSession(page: Page) {
   });
 }
 
-test("catalog center opens its product registry and exposes resource tabs", async ({ page }) => {
+test("catalog center opens its product registry and exposes sidebar resources", async ({ page }) => {
   await stubAuthenticatedSession(page);
   await page.goto("/catalog");
   await expect(page).toHaveURL(/\/catalog\/products$/);
   await expect(page.getByRole("heading", { name: "المنتجات", exact: true, level: 1 })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الكتالوج", exact: true })).toHaveAttribute("aria-current", "location");
   const sideNavigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
-  const catalogTabs = page.getByRole("navigation", { name: "مسارات الكتالوج" });
+  const catalogTabs = sideNavigation.getByRole("list", { name: "مسارات الكتالوج" });
   for (const [label, href] of [["المنتجات", "/catalog/products"], ["الفئات", "/catalog/categories"], ["المراجعة", "/catalog/proposals"], ["الاستيراد", "/catalog/import"]] as const) {
     await expect(catalogTabs.getByRole("link", { name: label, exact: true })).toHaveAttribute("href", href);
-    await expect(sideNavigation.getByRole("link", { name: label, exact: true })).toHaveCount(0);
+    await expect(sideNavigation.getByRole("link", { name: label, exact: true })).toHaveCount(1);
   }
   await expect(catalogTabs.getByRole("link", { name: "المنتجات", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: "اختر مورد الكتالوج" })).toHaveCount(0);

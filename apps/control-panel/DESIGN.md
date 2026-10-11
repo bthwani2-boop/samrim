@@ -1,136 +1,46 @@
----
-version: alpha
-name: "BThwani Control Panel"
-description: "Arabic-first operator workspace for moving canonical partner, catalog, fulfillment and platform work forward with a calm, high-signal shell."
-colors:
-  primary: "#0A2F5C"
-  background: "#FFFCF8"
-  surface: "#FFFFFF"
-  focus: "#B73809"
-typography:
-  arabic:
-    fontFamily: "system-ui, sans-serif"
-    fontSize: "15px"
-    lineHeight: "24px"
-  display:
-    fontFamily: "system-ui, sans-serif"
-    fontSize: "36px"
-    lineHeight: "44px"
-  mono:
-    fontFamily: "ui-monospace, monospace"
-    fontSize: "13px"
-    lineHeight: "19px"
-rounded:
-  DEFAULT: "12px"
-  sm: "8px"
-  md: "12px"
-  lg: "16px"
-  xl: "20px"
-spacing:
-  control: "44px"
-  page-gap: "24px"
-  shell-gap: "32px"
-  content-max: "1280px"
-components:
-  navigation:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.primary}"
-    padding: "12px 16px"
-    rounded: "{rounded.md}"
-  card:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.primary}"
-    padding: "24px"
-    rounded: "{rounded.lg}"
-  focus:
-    backgroundColor: "{colors.focus}"
-    textColor: "{colors.surface}"
-    size: "3px"
-  button:
-    backgroundColor: "{colors.focus}"
-    textColor: "{colors.surface}"
-    rounded: "{rounded.md}"
----
+# Control Panel design
 
-# BThwani Control Panel Design System
+Arabic RTL operations console. The approved refoundation replaces the previous presentation system across the application. Domain services, permissions, financial invariants and persisted data retain their canonical owners.
 
-## Overview
+## Ownership
 
-### Creative North Star
+- `packages/design-system/src/tokens` owns semantic colors, themes and foundational tokens; generated `theme.css` is consumed rather than copied.
+- `app/globals.css` is the **only Control Panel stylesheet**, imported only by `app/layout.tsx`. `web.css` supplies shared native controls used by other applications too.
+- `src/shell/page-header.tsx` owns page titles/actions. `workspace-icon.tsx` owns the shell's stroke icon family.
+- `src/navigation/workspace-registry.ts` owns destination names, hierarchy and search. Every center uses the same contextual sidebar. Only the current center's children are expanded. Object/workflow tabs belong to the object; a second competing center menu is forbidden.
+- Resource-only center roots open their first canonical resource directly. Never repeat the sidebar as a grid of destination cards in the work area. Small reference registries show readable rows; creation is disclosed and only one selected record is edited at a time, using a compact form.
+- `UX-CONTRACT.md` owns observable behavior. Domain services remain the authorization/query/state owners.
 
-The control panel is a dispatch desk for a busy Arabic RTL operation: a warm, quiet work surface, a deep blue orientation rail, and one orange action signal that tells the operator where movement is possible. It should feel like a well-marked operations room, not a campaign landing page.
+## Visual direction
 
-### Product context and register
+Quiet, compact work surfaces; clear scan lines and restrained action emphasis. Light mode uses shared muted/base surfaces, navy text and accessible orange actions. Dark mode consumes the same semantic roles. No theme values copied into page code, gradients, hero sections or giant heading panels.
 
-- **Audience and primary job:** Authenticated operators route work across partners, catalog, operations, finance, marketing and platform controls without losing the canonical state of a case or resource.
-- **Target market(s) and evidence:** BThwani operator workspace; the durable center taxonomy is routed by `../../docs/governance/policies/experience.md`.
-- **Locale(s) and language policy:** Arabic RTL is the primary web locale. User-facing labels name the operator's job, while API and backend identifiers stay out of normal UI copy.
-- **Usage scene:** Desktop-first operations with narrow laptop and phone access during review, admission and recovery work. Navigation must remain reachable when the viewport is short or the browser is zoomed.
-- **Register:** Product. Familiarity, hierarchy, focus and recovery lead; brand expression is concentrated in the orange action signal and deep-blue orientation structure.
-- **Memorable signature:** A calm blue navigation spine with indented child routes and a restrained orange focus/action accent.
-- **Restraint:** Tables, forms, error states and financial screens use quiet surfaces, clear labels and stable geometry. No decorative animation competes with a pending or destructive action.
-- **Anti-references:** Do not resemble a marketing hero, neon analytics dashboard, or dense admin wall of tiny controls. Those registers hide the next safe operator action.
-- **Token ownership/runtime mapping:** Model B. `packages/design-system/src/tokens` and generated `packages/design-system/theme.css` remain canonical; `apps/control-panel/app/globals.css` imports the generated projection. This file mirrors accepted values and does not define a second token registry. `pnpm theme:verify` is the drift gate.
+Typography uses the shared Arabic system font; titles 24px (21px on phone), section titles 17px, text 14px/1.6, labels and tables 13px. Numerical values use tabular figures and correct bidirectional isolation. Buttons fit their action; full-width is an explicit task choice rather than a global default.
 
-## Colors
+The header is 64px on desktop. A 224px right orientation rail gives way to a focus-managed drawer below 820px. Content uses 24px desktop and 12px phone inline padding. Work sections use 16px gaps, thin boundaries and modest 7–12px radii. Controls are 40px; actions are at least 36px on desktop and 44px on touch layouts. Compact does not mean inaccessible text or crowded targets.
 
-Deep blue (`#0A2F5C`) carries orientation and primary text. Orange (`#FF500D`) is expressive brand energy; the darker action role (`#B73809`) is used for readable controls and focus. Warm surfaces keep long sessions comfortable in light mode. Dark mode remaps the same semantic roles to near-black navy surfaces and light text without changing hierarchy. Borders, focus rings and status tones remain semantic rather than decorative; color is never the only state signal.
+## Composition
 
-## Typography
+- **Registry:** `PageHeader`, `registry-toolbar`, active filters/selection scope, `table-wrap` with a semantic table, then `pagination`. Tables and paged card lists use at most 70dvh with internal scrolling; table headings stick as a group. Tables compare essential facts and next safe actions. Growing collections use canonical server query/paging; page-local controls must name their scope. Secondary record actions and relationship lists open on demand.
+- **Object:** `PageHeader`, current state/next safe action, `facts-grid` and relevant object tabs/sections. Avoid stacks of cards inside cards. Preserve registry context through the existing query/back path.
+- **Form:** `form-section` and `form-grid`, visible labels, validation and a concise `action-row`. Related independent facts can share two columns on desktop; phone is one column. Only the facts required at the current stage block completion.
+- **Home:** real actionable queues linking to their canonical workspaces. Never manufacture summary numbers or claim collection-wide absence from a bounded sample.
+- **Public identity:** the same controls, an isolated constrained authentication composition. It cannot resize workspace actions.
 
-The runtime uses the design-system `system-ui` Arabic-capable stack for stable browser rendering and mixed Arabic/Latin identifiers. Display headings use the existing 36/44 role with restrained weight; body text uses 15/24; captions and technical values use the existing label/caption/code roles. Arabic copy is sentence-like and action-led. Long labels wrap or ellipsize only when the full value remains available; route labels preserve the current page and nearest useful ancestor.
+Use standard elements first. Introduce a shared React primitive only where repeated semantics require one. Do not create screen-local styles, duplicate controls, route-specific tokens or a separate UI framework. Existing domain class names can remain as interaction/test hooks; all visual rules live in the sole stylesheet's base, shell, components and composition layers.
 
-## Layout
+## Content and states
 
-The authenticated shell uses a 1280px maximum frame, a persistent desktop navigation spine, and a fixed mobile drawer that becomes the only navigation surface below 820px. The main content keeps a 24px page rhythm and a 32px shell gap. Child routes are visibly indented under their owning center. At narrow widths the breadcrumb remains present and truncates only the current segment, while the drawer traps focus and closes with Escape. Scroll ownership stays with the document except for deliberate navigation overlays and data surfaces.
+No introductory essays, decorative eyebrows, source-service vocabulary, transport versions or opaque IDs in ordinary operator tasks. Keep concise labels, units, necessary constraints, error/recovery, authorization and consequential confirmation. Required meaning must not be deleted to shorten a page.
 
-## Elevation & Depth
+Loading/unknown differs from zero/empty. Native `[hidden]` remains hidden irrespective of display rules. No success, balance or readiness claim before canonical readback. Theme, hover, focus, disabled/busy, selected, reduced motion, keyboard, Arabic/RTL and mobile are part of the component contract.
 
-Hierarchy comes first from surface tone and borders. Cards are flat by default; the navigation drawer and account menu may use the existing shadow token because they float above content. Dark mode deepens the surface rather than adding glow. Avoid shadow on ordinary content blocks and never use elevation to signal a dangerous action.
+The document owns scrolling. Navigation and wide data tables have deliberate bounded overflow; page ancestors never crop long forms. Forms retain native accessibility and associated descriptions. Data surfaces stay within the page, including on phone and at increased text size.
 
-## Shapes
+## Verification
 
-Controls use the design-system 12px radius, cards use the 16px family, and compact labels use the 8px family. The child navigation rail is a one-pixel semantic border, not a decorative rule. Focus uses the shared three-pixel ring with three-pixel offset. Rounded shapes support grouping and touch targeting; they do not turn every item into a pill.
+`tests/presentation-contract.spec.ts` guards single stylesheet ownership, contextual navigation, route-order stability, hidden states and responsive geometry. Existing workflow tests own permission, action, validation and recovery regressions. Render representative real authenticated screens in both supported themes; source/typechecks and mocked UI proofs do not prove real persistent workflows or thousands-record performance.
 
-## Components
+The presentation contract also rejects inline presentation and competing style engines; the taxonomy owner's numeric `--tree-depth` is the sole data-driven exception. Four approved visual baselines cover the shared operational registry at desktop/mobile sizes in light/dark themes, using Chromium with reduced motion and isolated read fixtures. Baselines are platform-specific because system fonts differ; update only intentional reviewed changes with Playwright's explicit `--update-snapshots` command. The existing `control-panel:e2e` dependency of `browser-live-proof` runs these checks inside the required `repository-backend-integration` gate; no additional CI service or design registry is introduced.
 
-### Foundational visual states
-
-Every interactive target has default, hover, focus-visible, active/current, disabled and busy treatment where applicable. Loading preserves geometry; errors explain recovery inline or in an app-owned alert. Reduced motion collapses transitions to the runtime reduced duration.
-
-### Buttons and actions
-
-Solid orange is the primary action, outline/neutral is secondary, and text links are navigation. Dangerous actions remain visually separated and use explicit verbs. Busy labels do not widen controls. The same action vocabulary is used from page heading through success and error feedback.
-
-### Navigation and data display
-
-The workspace registry is the sole owner of top-level destinations and nested navigation labels; each route page or its server layout owns localized document metadata. Breadcrumbs represent real hierarchy and never turn the current page into a self-link. Lists and tables retain semantic HTML and expose loading, empty, error and recovery states through their owning feature.
-
-Large registries are a normal operating condition. Search, filters, sort and cursor pagination stay with the domain API and remain in the URL; the browser receives only a bounded page. Native selects contain only a small, bounded result set. Larger entity lookups require server-backed search and paging, and keep the chosen entity visible when the query changes. Labels distinguish the visible page from a server-reported total, and selection scope is stated before a bulk action.
-
-The notification inbox is a cursor-backed activity stream over DSH pages. Its unread summary is the server's full unread count; read/unread groups and page counts describe only the currently loaded page.
-
-The operator directory uses Identity's bounded role search for name, phone, title, and department queries, enabled-state and permission-coverage filters, stable sorting, and cursors. Enabled permission counts are returned by Identity in the same page query; opening an account loads its individual versioned permission records on demand.
-
-### Forms and overlays
-
-Forms use real labels, app-owned validation and explicit recovery. Browser controls use the shared Design System sizing and native-control rules; the shared web `TextArea` keeps resize behavior usable without allowing horizontal page growth. Selects remain native where the browser-owned popup is accepted by the product; dialogs and account surfaces keep focus and Escape behavior visible. The navigation drawer makes the background inert and restores focus to its trigger.
-
-### Iconography
-
-The shell uses text labels for every destination and reserves symbols for compact, named controls such as the mobile menu and close action. Icons never carry a business meaning without an accessible label.
-
-### Motion
-
-Motion is short, calm and structural: drawer entry, hover and focus feedback only. It never delays navigation or hides an error. `prefers-reduced-motion` is honored globally.
-
-### Content and data visualization
-
-Copy names what the operator controls: الشركاء، الكتالوج، العمليات، الكباتن، الميدان. Backend vocabulary and raw state codes are translated at the feature boundary. Numeric and identifier values keep their semantic direction and remain copyable where relevant.
-
-## Do's and Don'ts
-
-- **Do:** Keep one route owner for each center and let child routes remain bookmarkable.
-- **Do:** Preserve RTL, keyboard focus, theme semantics and readable density as correctness requirements.
-- **Don't:** Reintroduce screen-local navigation registries or combine Partners and Catalog into one label.
-- **Don't:** Add empty Finance/Marketing tabs or decorative controls that do not lead to real pages.
+External interaction references: Shopify App Design layout/navigation guidelines and Carbon data-table usage. References inform patterns; they do not assign BThwani domain ownership or authorize new business features.

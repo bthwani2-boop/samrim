@@ -15,8 +15,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWalletProviders, walletProviderLabel } from "../wallet-provider/use-wallet-providers";
 
-import styles from "./partner-earnings.module.css";
-
 export type PartnerEarningsInitialQuery = Readonly<{
   cursor: string;
   partnerActorId: string;
@@ -362,71 +360,70 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
   const selectedPayoutRecipients = initialQuery.partnerActorId === payoutRecipientsActorId ? payoutRecipients : null;
 
   return (
-    <section className={styles.workspace} aria-labelledby="partner-receivables-title">
-      <header className={styles.heading}>
-        <div><p className="eyebrow">المالية · سجل تشغيلي</p><h2 id="partner-receivables-title">مستحقات الشركاء</h2></div>
-        <p className="muted">يعرض السجل أرصدة عمولات الاستلام المفتوحة من السجل المالي، مع اسم النشاط والهاتف المقنّع والحسابات.</p>
+    <section className="work-stack" aria-labelledby="partner-receivables-title">
+      <header className="section-heading">
+        <div><h2 id="partner-receivables-title">مستحقات الشركاء</h2></div>
       </header>
 
       {error ? <p className="state-error" role="alert">{error}</p> : null}
       <p className="muted" aria-live="polite">سجلات الصفحة الحالية: {items.length.toLocaleString("ar-YE")}{registryLoading ? " · جارٍ التحديث" : ""}</p>
 
-      <div className={styles.tableWrap}>
-        <table className={styles.table}>
+      <div className="table-wrap">
+        <table className="data-table">
           <caption className="sr-only">سجل أرصدة عمولات الشركاء المفتوحة</caption>
           <thead><tr><th scope="col">الشريك</th><th scope="col">حالة الملف المالي</th><th scope="col">المبلغ المستحق</th><th scope="col">التفاصيل</th></tr></thead>
           <tbody>{items.map((item) => {
             const displayName = item.businessName?.trim() || "شريك بثواني";
             const accessibleName = [displayName, item.partnerPhoneMasked?.trim()].filter(Boolean).join("، ");
             return <tr key={item.partnerActorId}>
-              <th scope="row"><span className={styles.partnerIdentity}><strong>{displayName}</strong>{item.partnerPhoneMasked ? <bdi dir="ltr">{item.partnerPhoneMasked}</bdi> : <span className="muted">الهاتف غير متاح</span>}</span></th>
+              <th scope="row"><span className="identity-copy"><strong>{displayName}</strong>{item.partnerPhoneMasked ? <bdi dir="ltr">{item.partnerPhoneMasked}</bdi> : <span className="muted">الهاتف غير متاح</span>}</span></th>
               <td>{financialProfileStateLabel(item.profileState as PartnerFinancialSummary["profileState"])}</td>
               <td>{formatMoney(item.outstandingCommissionReceivableMinor, item.currency)}</td>
               <td><button className="button button-quiet" type="button" onClick={() => navigate({ cursor: initialQuery.cursor, partnerActorId: item.partnerActorId })} aria-label={`فتح مستحقات ${accessibleName}`}>فتح التفاصيل</button></td>
             </tr>;
           })}</tbody>
         </table>
-        {!registryLoading && items.length === 0 ? <p className={styles.empty}>لا توجد مستحقات مفتوحة مطابقة لهذا البحث.</p> : null}
+        {!registryLoading && items.length === 0 ? <p className="state-message">لا توجد مستحقات مفتوحة مطابقة لهذا البحث.</p> : null}
       </div>
 
-      <nav className={styles.pagination} aria-label="صفحات سجل مستحقات الشركاء">
+      <nav className="pagination" aria-label="صفحات سجل مستحقات الشركاء">
         <button className="button button-quiet" type="button" onClick={previousPage} disabled={registryLoading || cursorHistory.current.length === 0}>السجلات السابقة</button>
         <button className="button button-quiet" type="button" onClick={nextPage} disabled={registryLoading || !nextCursor}>السجلات التالية</button>
       </nav>
 
-      {initialQuery.partnerActorId ? <section className={styles.detail} aria-labelledby="partner-receivable-detail-title">
-        <div className={styles.detailHeading}>
-          <div><p className="eyebrow">تفاصيل عند الطلب</p><h3 id="partner-receivable-detail-title">{(() => { const selected = items.find((item) => item.partnerActorId === initialQuery.partnerActorId); return selected?.businessName?.trim() ? `مستحقات ${selected.businessName.trim()}` : "تفاصيل مستحقات الشريك"; })()}</h3></div>
+      {initialQuery.partnerActorId ? <section className="panel" aria-labelledby="partner-receivable-detail-title">
+        <div className="section-heading">
+          <div><h3 id="partner-receivable-detail-title">{(() => { const selected = items.find((item) => item.partnerActorId === initialQuery.partnerActorId); return selected?.businessName?.trim() ? `مستحقات ${selected.businessName.trim()}` : "تفاصيل مستحقات الشريك"; })()}</h3></div>
           <button className="button button-quiet" type="button" onClick={() => navigate({ cursor: initialQuery.cursor, partnerActorId: "" })}>إغلاق التفاصيل</button>
         </div>
         {detailLoading ? <p className="muted" role="status">جارٍ قراءة الملخص المالي من السجل المالي…</p> : null}
         {selectedSummary ? <>
-          <dl className={styles.metrics}>
+          <dl className="facts-grid">
             <div><dt>صافي المستحق</dt><dd>{formatMoney(selectedSummary.earnedMinor, selectedSummary.currency)}</dd></div>
             <div><dt>عمولة المنصة</dt><dd>{formatMoney(selectedSummary.commissionMinor, selectedSummary.currency)}</dd></div>
             <div><dt>عمولة الاستلام المفتوحة</dt><dd>{formatMoney(selectedSummary.outstandingCommissionReceivableMinor, selectedSummary.currency)}</dd></div>
             <div><dt>الطلبات المسلّمة</dt><dd>{selectedSummary.orderCount.toLocaleString("ar-YE")}</dd></div>
           </dl>
           <p className="muted">فترة التسوية: {settlementPeriodLabel(selectedSummary.settlementPeriod)} · الحالة المالية: {financialProfileStateLabel(selectedSummary.profileState)}</p>
-          <section className={styles.recipientReadback} aria-labelledby="partner-payout-recipients-title">
-            <div className={styles.subheading}>
-              <div><h4 id="partner-payout-recipients-title">مستلمو صرف المتاجر</h4><p className="muted">يعرض السجل اسم المستلم ورقم محفظته المقنّع لمراجعة التحصيل بأمان.</p></div>
+          <section className="panel" aria-labelledby="partner-payout-recipients-title">
+            <div className="section-heading">
+              <div><h4 id="partner-payout-recipients-title">مستلمو صرف المتاجر</h4></div>
               <button className="button button-quiet" type="button" disabled={payoutRecipientsLoading} onClick={() => void loadPayoutRecipients(initialQuery.partnerActorId)}>{payoutRecipientsLoading ? "جارٍ القراءة…" : "إعادة القراءة"}</button>
             </div>
             {payoutRecipientsError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت قراءة مستلمي الصرف</strong><p>{payoutRecipientsError}</p></div> : null}
             {payoutRecipientsLoading && !selectedPayoutRecipients ? <p className="muted" role="status">جارٍ قراءة مستلمي الصرف من السجل المالي…</p> : null}
-            {selectedPayoutRecipients?.readback.recipients.length ? <div className={styles.tableWrap}><table className={styles.table}><caption className="sr-only">مستلمو صرف متاجر الشريك</caption><thead><tr><th scope="col">المتجر</th><th scope="col">المستلم</th><th scope="col">جهة المحفظة</th><th scope="col">الحالة</th><th scope="col">المستحقات المسندة</th></tr></thead><tbody>{selectedPayoutRecipients.readback.recipients.map((record) => {
+            {selectedPayoutRecipients?.readback.recipients.length ? <div className="table-wrap"><table className="data-table"><caption className="sr-only">مستلمو صرف متاجر الشريك</caption><thead><tr><th scope="col">المتجر</th><th scope="col">المستلم</th><th scope="col">جهة المحفظة</th><th scope="col">الحالة</th><th scope="col">المستحقات المسندة</th></tr></thead><tbody>{selectedPayoutRecipients.readback.recipients.map((record) => {
               const profile = selectedPayoutRecipients.beneficiaryProfiles[record.beneficiaryActorId ?? ""];
               const stateLabel = record.state === "SELECTED_VERIFIED_STAFF" ? "موظف مختار" : record.state === "RECIPIENT_REVIEW_REQUIRED" ? "تحتاج مراجعة المالك" : "المالك الافتراضي";
               return <tr key={record.storeId}><th scope="row">{selectedPayoutRecipients.storeNames[record.storeId] ?? "متجر"}</th><td>{payoutRecipientSummary(record, selectedPayoutRecipients.beneficiaryProfiles)}</td><td>{profile?.providerKey ? <>{walletProviderLabel(profile.providerKey, walletProviders)}{profile.walletIdentifierMasked ? <> · <bdi dir="ltr">{profile.walletIdentifierMasked}</bdi></> : null}</> : "غير جاهزة"}</td><td>{stateLabel}</td><td>{formatMoney(record.partnerNetMinor, selectedPayoutRecipients.readback.currency)}</td></tr>;
             })}</tbody></table></div> : null}
-            {selectedPayoutRecipients && selectedPayoutRecipients.readback.recipients.length === 0 ? <p className={styles.empty}>لا توجد متاجر مرتبطة بهذا الشريك في قراءة الصرف الحالية.</p> : null}
+            {selectedPayoutRecipients && selectedPayoutRecipients.readback.recipients.length === 0 ? <p className="state-message">لا توجد متاجر مرتبطة بهذا الشريك في قراءة الصرف الحالية.</p> : null}
           </section>
           {receipt?.partnerActorId === initialQuery.partnerActorId ? <p className="state-success" role="status">سُجلت الحوالة {receipt.response.remittance.remittanceReference} بمبلغ {formatMoney(receipt.response.remittance.amountMinor, receipt.response.remittance.currency)}. {receipt.response.remittance.evidenceDocumentId ? <a href={`/api/finance/evidence/${encodeURIComponent(receipt.response.remittance.evidenceDocumentId)}`}>فتح إيصال الحوالة</a> : null}</p> : null}
-          {selectedSummary.outstandingCommissionReceivableMinor > 0 || pending ? <section className={styles.remittance} aria-labelledby="partner-remittance-title">
+          {selectedSummary.outstandingCommissionReceivableMinor > 0 || pending ? <section className="panel" aria-labelledby="partner-remittance-title">
             <h4 id="partner-remittance-title">{pending ? "استعادة محاولة حوالة عمولة الاستلام" : "تسجيل حوالة عمولة الاستلام"}</h4>
-            {selectedSummary.outstandingCommissionReceivableMinor > 0 ? <p className="muted">أرفق إيصال الحوالة الذي راجعته ثم سجّل المبلغ المتحقق منه. السجل المالي يحفظ الدليل ويربطه بالقيد المالي. هذه الحوالة تخص عمولة بثواني فقط ولا تسجل قيمة مبيعات المتجر.</p> : <p className="muted">لا يوجد رصيد مفتوح حالياً، لكن توجد محاولة سابقة غير محسومة. أعد إرسال البيانات المحفوظة ليعيد السجل المالي النتيجة المؤكدة دون إنشاء قيد مكرر.</p>}
-            <div className={styles.formFields}>
+            {selectedSummary.outstandingCommissionReceivableMinor > 0 ? <p className="muted">توريد عمولة بثواني فقط؛ أرفق الإيصال والمبلغ المتحقق منه.</p> : <p className="muted">محاولة غير محسومة؛ استأنف بالبيانات المحفوظة لتجنب تكرار القيد.</p>}
+            <div className="form-grid">
               <label className="field-label" htmlFor="commission-remittance-amount">المبلغ بالريال اليمني<input id="commission-remittance-amount" inputMode="numeric" pattern="[0-9]*" value={pending?.amountMinor ?? amount} onChange={(event) => setAmount(event.target.value.replace(/[^0-9]/g, ""))} disabled={mutationBusy || Boolean(pending)} /></label>
               <label className="field-label" htmlFor="commission-remittance-reference">مرجع الحوالة<input id="commission-remittance-reference" value={pending?.remittanceReference ?? reference} onChange={(event) => setReference(event.target.value)} maxLength={128} disabled={mutationBusy || Boolean(pending)} /></label>
               <label className="field-label" htmlFor="commission-remittance-evidence">إيصال الحوالة (PDF أو صورة أو CSV أو Excel، بحد أقصى 10 ميغابايت)<input id="commission-remittance-evidence" type="file" accept="application/pdf,image/jpeg,image/png,text/csv,.csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => setEvidenceFile(event.target.files?.[0] ?? null)} disabled={mutationBusy || Boolean(pending?.evidenceDocumentId)} /></label>

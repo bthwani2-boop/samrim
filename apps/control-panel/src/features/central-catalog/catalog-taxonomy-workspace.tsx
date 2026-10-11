@@ -89,7 +89,7 @@ export function CatalogTaxonomyWorkspace() {
     {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" disabled={loadingVerticals || loadingCategories} onClick={() => { void loadVerticals(); if (verticalId) void loadCategories(verticalId); }}>إعادة قراءة السجل</button></p> : null}
     <CatalogCategoryRegistry key={verticalId} verticals={sharedVerticals} verticalId={verticalId} onVerticalChange={chooseVertical} categories={categories} nextCursor={nextCursor} onFilter={(query, status, sort, cursor, append) => loadCategories(verticalId, query, status, sort, cursor, append)} categoryId={categoryId} onCategoryChange={setCategoryId} loading={loadingVerticals || loadingCategories} onSaved={() => loadCategories(verticalId, "", "all", "name_asc", "", false, true)} management={<details className="catalog-vertical-settings">
       <summary><span>إدارة المجالات التجارية</span><small>{verticals.length} مجال</small></summary>
-      <p className="muted">إعدادات مصادر شجرة الفئات ومسار المنتجات.</p>
+
       <CatalogVerticalRegistry verticals={verticals} selectedVerticalId={verticalId} onSelectVertical={chooseVertical} onSaved={loadVerticals} />
       <CatalogCommercialStoreTypeRegistry verticals={verticals} verticalId={verticalId} />
     </details>} />

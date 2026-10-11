@@ -1,5 +1,7 @@
 "use client";
 
+import { PageHeader } from "../../../../src/shell/page-header";
+
 import { useParams } from "next/navigation";
 import { JoiningCaseDetail } from "../../../../src/features/partner-onboarding/joining-case-detail";
 import { PartnerOperatorBoundary } from "../../../../src/features/partner-onboarding/partner-workspace";
@@ -10,11 +12,7 @@ export default function PartnerCasePage() {
   return (
     <PartnerOperatorBoundary>
       <section className="workspace-page" aria-labelledby="partner-case-page-title">
-        <div className="workspace-page-heading">
-          <p className="eyebrow">الشركاء / حالة انضمام</p>
-          <h1 id="partner-case-page-title">تفاصيل حالة الانضمام</h1>
-          <p className="lead">اقرأ الحالة الحالية ثم نفذ العملية المسموحة فقط باستخدام النسخة المقروءة.</p>
-        </div>
+        <PageHeader id="partner-case-page-title" title="تفاصيل حالة الانضمام" />
         {caseId ? <JoiningCaseDetail caseId={caseId} /> : <p className="identity-error" role="alert">معرّف الحالة غير صالح.</p>}
       </section>
     </PartnerOperatorBoundary>

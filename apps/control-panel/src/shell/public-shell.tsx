@@ -1,9 +1,6 @@
 "use client";
 
 import { type ReactNode } from "react";
-import "./public-shell.module.css";
-import "./responsive-shell.module.css";
-
 function BrandHeader() {
   return (
     <header className="brand-header">
@@ -16,26 +13,15 @@ function BrandHeader() {
   );
 }
 
-function QuietFooter() {
-  return (
-    <footer className="quiet-footer">
-      <span>هوية موثقة</span>
-      <span className="footer-separator" aria-hidden="true" />
-      <span>بيئة تشغيل محكومة</span>
-    </footer>
-  );
-}
-
 export function ControlShell({
   children,
   className = "",
   surface = "public",
   header = <BrandHeader />,
-  footer = <QuietFooter />,
+  footer = null,
 }: Readonly<{ children: ReactNode; className?: string; surface?: "public" | "workspace" | "state"; header?: ReactNode; footer?: ReactNode }>) {
   return (
     <div className={"control-shell control-shell-" + surface + " " + className}>
-      {surface !== "workspace" ? <><div className="ambient-orb ambient-orb-one" aria-hidden="true" /><div className="ambient-orb ambient-orb-two" aria-hidden="true" /></> : null}
       <div className="control-frame">
         {header}
         {children}
@@ -51,7 +37,6 @@ export function LoadingState({ title = "جارٍ تجهيز لوحة التحك�
       <main className="state-content" aria-live="polite">
         <section className="state-card">
           <span className="loading-mark" aria-hidden="true" />
-          <p className="eyebrow">بثواني</p>
           <h1>{title}</h1>
           <p className="muted">{message}</p>
         </section>
