@@ -274,11 +274,59 @@ func storeRegistryPermissions(state string) []string {
 	return []string{"partners"}
 }
 
+// ListPublished paginates *eligible* Stores, not raw published rows. A Store
+// may cease to be customer-visible when its owner loses eligibility or its
+// commercial agreement becomes inactive, even though the persisted Store is
+// still marked published.
 func (s *Service) ListPublished(ctx context.Context, input postgres.PublicStoreListQuery) (postgres.PublicStorePage, error) {
-	page, err := postgres.ListPublishedStorePage(ctx, s.db, input)
-	if err != nil {
-		return postgres.PublicStorePage{}, err
+	return collectEligiblePublishedStores(ctx, input,
+		func(ctx context.Context, query postgres.PublicStoreListQuery) (postgres.PublicStorePage, error) {
+			return postgres.ListPublishedStorePage(ctx, s.db, query)
+		},
+		s.filterPublishedBatch,
+	)
+}
+
+// collectEligiblePublishedStores advances the original query cursor over
+// ineligible records so that a customer never receives a short/empty page
+// merely because earlier published Stores failed Identity/WLT gates.
+func collectEligiblePublishedStores(
+	ctx context.Context,
+	input postgres.PublicStoreListQuery,
+	fetch func(context.Context, postgres.PublicStoreListQuery) (postgres.PublicStorePage, error),
+	filter func(context.Context, postgres.PublicStorePage) (postgres.PublicStorePage, error),
+) (postgres.PublicStorePage, error) {
+	limit := input.Limit
+	if limit == 0 {
+		limit = 20
 	}
+	result := postgres.PublicStorePage{Stores: []postgres.PublicStoreRecord{}, Limit: limit}
+	cursor := input.Cursor
+	for {
+		query := input
+		query.Limit = limit - len(result.Stores)
+		query.Cursor = cursor
+		raw, err := fetch(ctx, query)
+		if err != nil {
+			return postgres.PublicStorePage{}, err
+		}
+		eligible, err := filter(ctx, raw)
+		if err != nil {
+			return postgres.PublicStorePage{}, err
+		}
+		result.Stores = append(result.Stores, eligible.Stores...)
+		result.NextCursor = raw.NextCursor
+		if len(result.Stores) >= limit || raw.NextCursor == "" {
+			return result, nil
+		}
+		if raw.NextCursor == cursor {
+			return postgres.PublicStorePage{}, errors.New("published Store cursor did not advance")
+		}
+		cursor = raw.NextCursor
+	}
+}
+
+func (s *Service) filterPublishedBatch(ctx context.Context, page postgres.PublicStorePage) (postgres.PublicStorePage, error) {
 	if len(page.Stores) == 0 {
 		return page, nil
 	}
