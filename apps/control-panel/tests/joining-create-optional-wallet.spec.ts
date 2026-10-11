@@ -41,12 +41,24 @@ test("joining case accepts missing optional wallet provider without blocking req
   await expect(page.locator("#joining-commercial-type")).toBeEnabled();
   await page.locator("#joining-commercial-type").selectOption("type-1");
   await page.getByRole("checkbox", { name: "الاثنين" }).check();
+  await page.getByRole("button", { name: "إضافة فترة ليوم الاثنين" }).click();
+  await page.getByLabel("الاثنين نهاية الفترة 1").fill("14:00");
+  await page.getByLabel("الاثنين بداية الفترة 2").fill("13:00");
+  await page.getByLabel("الاثنين نهاية الفترة 2").fill("22:00");
   await page.locator("#joining-proof-number").fill("DOC-TEST-9001");
   await page.locator("#joining-latitude").fill("15.369445");
   await page.locator("#joining-longitude").fill("44.191006");
   await page.getByRole("checkbox", { name: /توصيل بثواني/ }).check();
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
+  await expect(page.locator(".identity-error[role=alert]")).toContainText("ساعات العمل غير صحيحة أو متداخلة");
+  expect(received).toBeUndefined();
+  await page.getByLabel("الاثنين بداية الفترة 2").fill("17:00");
+  await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
   await expect.poll(() => received?.walletProviderKey).toBe("");
+  expect(received?.firstStoreWorkingHours).toEqual({ intervals: [
+    { dayOfWeek: 1, opensAt: "09:00", closesAt: "14:00", closesNextDay: false },
+    { dayOfWeek: 1, opensAt: "17:00", closesAt: "22:00", closesNextDay: false },
+  ] });
   expect(received?.firstStoreName).toBe("مطعم النخيل");
   expect(received?.firstStoreFulfillmentModes).toEqual(["BTHWANI_CAPTAIN"]);
   await expect(page).toHaveURL(/\/partners\/case-optional-wallet/);
@@ -56,4 +68,12 @@ test("joining case accepts missing optional wallet provider without blocking req
   await expect(page.locator("#joining-proof-number")).toHaveValue("");
   await expect(page.getByRole("button", { name: "إنشاء حالة انضمام" })).toBeVisible();
   await expect(page.getByText("وجدنا محاولة سابقة غير محسومة")).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("checkbox", { name: "الاثنين" }).check();
+  const addShift = page.getByRole("button", { name: "إضافة فترة ليوم الاثنين" });
+  await addShift.click();
+  await expect.poll(() => addShift.evaluate((node) => node.getBoundingClientRect().width < (node.parentElement?.getBoundingClientRect().width ?? 0))).toBe(true);
+  await page.getByRole("button", { name: "حذف الفترة 2" }).click();
+  await expect(page.getByLabel("الاثنين بداية الفترة 2")).toHaveCount(0);
+  await expect.poll(() => page.locator(".access-form").evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
 });

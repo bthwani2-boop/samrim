@@ -84,7 +84,6 @@ export function JoiningCaseCreate() {
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [fulfillmentModes, setFulfillmentModes] = useState<ReadonlyArray<"BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP">>([]);
-  const [workingDays, setWorkingDays] = useState<ReadonlyArray<number>>([]);
   const [workingHours, setWorkingHours] = useState<ReadonlyArray<StoreWorkingHoursInterval>>(emptyWorkingHours);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [walletProviders, setWalletProviders] = useState<ReadonlyArray<WalletProviderOption>>([]);
@@ -199,7 +198,11 @@ export function JoiningCaseCreate() {
     const input = pendingAttempt?.input ?? currentInput;
     const isResumedAttempt = pendingAttempt !== null && pendingAttempt.input === null;
     const attempt: PendingJoiningCaseCreate = { ...metadata, input };
-    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.ownerFullName.trim().length < 2 || Array.from(input.walletProviderKey.trim()).length > 64 || /\p{Cc}/u.test(input.walletProviderKey) || input.businessName.length < 2 || input.firstStoreName.length < 2 || input.firstStoreAddress.trim().length < 4 || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreProofNumber.length < 1 || !isValidStoreWorkingHours(input.firstStoreWorkingHours.intervals) || input.firstStoreFulfillmentModes.length === 0 || !latitude.trim() || !longitude.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
+    if (!isValidStoreWorkingHours(input.firstStoreWorkingHours.intervals)) {
+      setError("ساعات العمل غير صحيحة أو متداخلة؛ راجع أوقات الفترات وأيامها.");
+      return;
+    }
+    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.ownerFullName.trim().length < 2 || Array.from(input.walletProviderKey.trim()).length > 64 || /\p{Cc}/u.test(input.walletProviderKey) || input.businessName.length < 2 || input.firstStoreName.length < 2 || input.firstStoreAddress.trim().length < 4 || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreProofNumber.length < 1 || input.firstStoreFulfillmentModes.length === 0 || !latitude.trim() || !longitude.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
       setError("أكمل اسم المالك ورقم جواله وبيانات المتجر والموقع وساعات العمل والإثبات وطريقة التوصيل. المحفظة اختيارية.");
       return;
     }
@@ -263,13 +266,32 @@ export function JoiningCaseCreate() {
   const hasNoActiveCommercialTypes = Boolean(verticalId && !commercialTypesBusy && !commercialTypesError && activeCommercialTypes.length === 0);
   const pendingRequestLocked = Boolean(pendingAttempt?.input);
   function setWorkingDayOpen(dayOfWeek: number, open: boolean) {
-    setWorkingDays((current) => open ? [...new Set([...current, dayOfWeek])] : current.filter((day) => day !== dayOfWeek));
     setWorkingHours((current) => open
       ? current.some((interval) => interval.dayOfWeek === dayOfWeek) ? current : [...current, { dayOfWeek, opensAt: "09:00", closesAt: "17:00", closesNextDay: false }]
       : current.filter((interval) => interval.dayOfWeek !== dayOfWeek));
   }
-  function updateWorkingInterval(dayOfWeek: number, patch: Partial<StoreWorkingHoursInterval>) {
-    setWorkingHours((current) => current.map((interval) => interval.dayOfWeek === dayOfWeek ? { ...interval, ...patch } : interval));
+  function addWorkingInterval(dayOfWeek: number) {
+    setWorkingHours((current) => [...current, { dayOfWeek, opensAt: "17:00", closesAt: "22:00", closesNextDay: false }]);
+  }
+  function updateWorkingInterval(dayOfWeek: number, intervalIndex: number, patch: Partial<StoreWorkingHoursInterval>) {
+    setWorkingHours((current) => {
+      let position = -1;
+      return current.map((interval) => {
+        if (interval.dayOfWeek !== dayOfWeek) return interval;
+        position += 1;
+        return position === intervalIndex ? { ...interval, ...patch } : interval;
+      });
+    });
+  }
+  function removeWorkingInterval(dayOfWeek: number, intervalIndex: number) {
+    setWorkingHours((current) => {
+      let position = -1;
+      return current.filter((interval) => {
+        if (interval.dayOfWeek !== dayOfWeek) return true;
+        position += 1;
+        return position !== intervalIndex;
+      });
+    });
   }
   return (
     <section className="access-card" aria-labelledby="joining-case-create-title">
@@ -297,13 +319,18 @@ export function JoiningCaseCreate() {
           <legend>ساعات العمل الأسبوعية · توقيت المدينة</legend>
           {weekdays.map((label, index) => {
             const dayOfWeek = index + 1;
-            const interval = workingHours.find((item) => item.dayOfWeek === dayOfWeek);
-            return <div key={dayOfWeek} className="action-row">
-              <label className="action-row"><input type="checkbox" checked={workingDays.includes(dayOfWeek)} onChange={(event) => setWorkingDayOpen(dayOfWeek, event.target.checked)} />{label}</label>
-              {interval ? <>
-                <label className="field-label">من<input type="time" value={interval.opensAt} onChange={(event) => updateWorkingInterval(dayOfWeek, { opensAt: event.target.value })} /></label>
-                <label className="field-label">إلى<input type="time" value={interval.closesAt} onChange={(event) => updateWorkingInterval(dayOfWeek, { closesAt: event.target.value })} /></label>
-                <label className="action-row"><input type="checkbox" checked={interval.closesNextDay} onChange={(event) => updateWorkingInterval(dayOfWeek, { closesNextDay: event.target.checked })} />ينتهي في اليوم التالي</label>
+            const intervals = workingHours.filter((item) => item.dayOfWeek === dayOfWeek);
+            return <div key={dayOfWeek} className="field-label">
+              <label className="action-row"><input type="checkbox" checked={intervals.length > 0} onChange={(event) => setWorkingDayOpen(dayOfWeek, event.target.checked)} />{label}</label>
+              {intervals.length > 0 ? <>
+                {intervals.map((interval, intervalIndex) => <div key={`${dayOfWeek}-${intervalIndex}`} className="action-row">
+                  <span className="muted">الفترة {intervalIndex + 1}</span>
+                  <label className="field-label">من<input type="time" aria-label={`${label} بداية الفترة ${intervalIndex + 1}`} value={interval.opensAt} onChange={(event) => updateWorkingInterval(dayOfWeek, intervalIndex, { opensAt: event.target.value })} /></label>
+                  <label className="field-label">إلى<input type="time" aria-label={`${label} نهاية الفترة ${intervalIndex + 1}`} value={interval.closesAt} onChange={(event) => updateWorkingInterval(dayOfWeek, intervalIndex, { closesAt: event.target.value })} /></label>
+                  <label className="action-row"><input type="checkbox" checked={interval.closesNextDay} onChange={(event) => updateWorkingInterval(dayOfWeek, intervalIndex, { closesNextDay: event.target.checked })} />ينتهي في اليوم التالي</label>
+                  {intervals.length > 1 ? <button type="button" className="button button-secondary" onClick={() => removeWorkingInterval(dayOfWeek, intervalIndex)}>حذف الفترة {intervalIndex + 1}</button> : null}
+                </div>)}
+                <div className="action-row"><button type="button" className="button button-secondary" onClick={() => addWorkingInterval(dayOfWeek)}>إضافة فترة ليوم {label}</button></div>
               </> : <span className="muted">مغلق</span>}
             </div>;
           })}
