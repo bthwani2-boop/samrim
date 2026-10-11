@@ -169,7 +169,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     if (!selectedCityID || state.kind !== "ready" || directoryLoading) return;
     let active = true;
     const refreshOrderability = async () => {
-      const statuses = new Map<string, PublicStoreView["orderabilityByMode"]>();
+      const statuses = new Map<string, NonNullable<PublicStoreView["orderabilityByMode"]>>();
       let cursor = "";
       const pages = Math.max(1, Math.ceil(displayedStoreCount / 20));
       try {
@@ -185,13 +185,16 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
             location: directoryLocation,
           });
           if (!active) return;
-          for (const store of page.stores) statuses.set(store.id, store.orderabilityByMode);
+          for (const store of page.stores) if (store.orderabilityByMode !== undefined) statuses.set(store.id, store.orderabilityByMode);
           cursor = page.nextCursor ?? "";
           if (!cursor) break;
         }
         if (active) setState((current) => current.kind === "ready" ? {
           ...current,
-          stores: current.stores.map((store) => statuses.has(store.id) ? { ...store, orderabilityByMode: statuses.get(store.id) } : store),
+          stores: current.stores.map((store) => {
+            const latest = statuses.get(store.id);
+            return latest === undefined ? store : { ...store, orderabilityByMode: latest };
+          }),
         } : current);
       } catch {
         // Retain last confirmed availability when the periodic read is unavailable.
