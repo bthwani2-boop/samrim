@@ -76,6 +76,16 @@ Database migrations: while a local feature is still unadopted, migrations not me
 
 ## 5. Development and proof
 
+### Outcome-first autonomous engineering — default for authorized work
+
+Own the complete usable outcome of each authorized feature, defect, catalog operation or vertical slice, not just code, a passing isolated test or a test report. Infer the required implementation, UX, data, roles and proof from the user objective and canonical Product contracts. Within the proven affected cone, discover and repair material gaps without requiring the user to repeatedly request browsing, interaction, testing or fixes.
+
+Choose the simplest capable existing path for each claim: native Go/API and owner readback for services and data; Maestro/ADB for affected Android interaction; Playwright/current browser tools for web; actual rendered states and the Design System for affected UX. Use native batch/import APIs for large data operations and real browser/device interaction for representative end-user proof. Do not run every tool ritualistically or add a dependency, agent framework, MCP server or abstraction without demonstrated need.
+
+Where a workflow crosses actors or surfaces, exercise distinct authorized roles and materially affected handoffs using isolated, task-owned fixtures and canonical persisted readback. Mocks and successful screens do not prove the real journey. For visual work, inspect the materially relevant rendered states, responsiveness, Arabic/RTL, usability and recovery. If a check fails, repair the causal owner and repeat only the invalidated affected proof.
+
+Proceed autonomously through routine authorized edits, application interaction, diagnosis and verification until the objective is demonstrably usable or a real blocker is established. Preserve valid sessions and user data, maintain useful regression proof, and finish with an exact-HEAD closure claim and concise results rather than a test-only handoff. Existing authorization, financial, destructive-change, external-publication, deployment and merge boundaries remain in force; this default grants no new authority. Never claim unproven or perpetual 100% correctness.
+
 Default small-change loop:
 
 `SMALL CHANGE -> AFFECTED CHECK -> IMPLEMENT -> DIRECT PROOF -> DONE`
