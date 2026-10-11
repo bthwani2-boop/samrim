@@ -66,7 +66,7 @@ test("operator profile filters stay mounted when search has no matches", async (
     });
   });
 
-  await page.goto("/access");
+  await page.goto("/access?view=operators");
   const search = page.getByLabel("بحث بالاسم أو الهاتف");
   await expect(search).toBeVisible();
   await search.fill("لا يوجد");
@@ -90,7 +90,7 @@ test("operator profile mutation errors label list refresh accurately", async ({ 
     await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "DSH_UNAVAILABLE", message: "الخدمة غير متاحة" } }) });
   });
 
-  await page.goto("/access");
+  await page.goto("/access?view=operators");
   await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
   const populatedError = page.locator(".profile-workspace > .managed-status-warning[role='alert']");
   await expect(populatedError.getByRole("button", { name: "تحديث القائمة", exact: true })).toBeVisible();
@@ -102,15 +102,9 @@ test("operator profile mutation errors label list refresh accurately", async ({ 
   await search.fill("لا يوجد");
   await search.press("Enter");
   await expect(page.getByText("لا توجد ملفات مطابقة")).toBeVisible();
-  await page.getByText("مشغّل جديد", { exact: true }).click();
-  await page.locator("#operator-profile-name").fill("مشغّل جديد");
-  await page.locator("#operator-profile-phone").fill("+96777000111");
-  await page.locator("#operator-profile-title").fill("مشرف");
-  await page.locator("#operator-profile-department").fill("العمليات");
-  await page.getByRole("button", { name: "حفظ للمراجعة", exact: true }).click();
-  const emptyError = page.locator(".access-table-wrap tbody .managed-status-warning[role='alert']");
-  await expect(emptyError.getByRole("button", { name: "تحديث القائمة", exact: true })).toBeVisible();
-  await expect(emptyError.getByRole("button", { name: "إعادة المحاولة", exact: true })).toHaveCount(0);
+  await expect(page.getByText("مشغّل جديد", { exact: true })).toHaveCount(0);
+  await expect(page.locator("#operator-profile-name")).toHaveCount(0);
+
 });
 
 test("notification refresh errors preserve the page being read", async ({ page }) => {

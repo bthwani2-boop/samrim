@@ -34,6 +34,7 @@ type AccessRequest struct {
 	RequestedPermissions []string   `json:"requestedPermissions"`
 	State                string     `json:"state"`
 	OperatorProfileID    string     `json:"operatorProfileId,omitempty"`
+	OperatorActorID      string     `json:"operatorActorId,omitempty"`
 	RequestedByActorID   string     `json:"requestedByActorId"`
 	CreatedAt            time.Time  `json:"createdAt"`
 	RejectedAt           *time.Time `json:"rejectedAt,omitempty"`
@@ -80,13 +81,13 @@ func normalizeAccessRequest(in AccessRequestInput) (AccessRequestInput, error) {
 }
 
 const accessSelect = `SELECT r.id,r.employee_id,r.employee_name_snapshot,r.phone_e164_snapshot,r.department_snapshot,r.job_title_snapshot,
- r.reason,r.requested_permissions,r.state,COALESCE(r.operator_profile_id,''),r.requested_by_actor_id,r.created_at,r.rejected_at,COALESCE(r.rejection_reason,''),COALESCE(r.rejected_by_actor_id,''),r.version
+ r.reason,r.requested_permissions,r.state,COALESCE(r.operator_profile_id,''),r.requested_by_actor_id,r.created_at,r.rejected_at,COALESCE(r.rejection_reason,''),COALESCE(r.rejected_by_actor_id,''),r.version,COALESCE(e.operator_actor_id,'')
  FROM dsh.hr_operator_access_requests r JOIN dsh.hr_employees e ON e.id=r.employee_id`
 
 func scanAccess(row rowScanner) (AccessRequest, error) {
 	var a AccessRequest
 	err := row.Scan(&a.ID, &a.EmployeeID, &a.EmployeeName, &a.PhoneE164, &a.Department, &a.JobTitle,
-		&a.Reason, pq.Array(&a.RequestedPermissions), &a.State, &a.OperatorProfileID, &a.RequestedByActorID, &a.CreatedAt, &a.RejectedAt, &a.RejectionReason, &a.RejectedByActorID, &a.Version)
+		&a.Reason, pq.Array(&a.RequestedPermissions), &a.State, &a.OperatorProfileID, &a.RequestedByActorID, &a.CreatedAt, &a.RejectedAt, &a.RejectionReason, &a.RejectedByActorID, &a.Version, &a.OperatorActorID)
 	return a, err
 }
 func ReadAccessRequest(ctx context.Context, db *sql.DB, id string) (AccessRequest, error) {

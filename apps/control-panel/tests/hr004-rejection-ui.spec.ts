@@ -36,7 +36,7 @@ test("Root rejects a pending HR request with an attributed reason and updated re
     current = { ...request, state: "rejected", version: 2 } as typeof request;
     return route.fulfill({ json: { request: { ...current, rejectionReason: payload.reason } } });
   });
-  await page.goto("/access?view=profiles");
+  await page.goto("/access?view=requests");
   await expect(page.getByRole("button", { name: "رفض الطلب" })).toBeVisible();
   await page.getByRole("button", { name: "رفض الطلب" }).click();
   await expect(page.getByRole("textbox", { name: "سبب الرفض" })).toBeVisible();

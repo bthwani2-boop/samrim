@@ -428,6 +428,11 @@ paths:
   /dsh/hr/access-requests/{requestId}/provision:
     $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}~1provision"
 
+  /dsh/hr/access-requests/by-profile/{profileId}:
+    $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1by-profile~1{profileId}"
+  /dsh/hr/access-requests/{requestId}/admit:
+    $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}~1admit"
+
   /dsh/hr/employees:
     $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees"
 
@@ -4930,6 +4935,8 @@ components:
           enum: [pending_review, identity_provisioning, identity_profile_created, rejected]
         operatorProfileId:
           type: string
+        operatorActorId:
+          type: string
         requestedByActorId:
           type: string
         createdAt:
@@ -4994,6 +5001,17 @@ components:
       properties:
         request:
           $ref: "#/components/schemas/HRAccessRequest"
+        idempotentReplay:
+          type: boolean
+    HROperatorAdmissionResponse:
+      type: object
+      additionalProperties: false
+      required: [request, employee, idempotentReplay]
+      properties:
+        request:
+          $ref: "#/components/schemas/HRAccessRequest"
+        employee:
+          $ref: "#/components/schemas/HREmployee"
         idempotentReplay:
           type: boolean
     HRAccessRequestReadResponse:

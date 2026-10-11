@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
 import { NextResponse } from "next/server";
 
-import { createOperatorProfile, identityErrorPayload, identityHttpStatus, listOperatorProfiles, readOperatorSession } from "../../../../src/server/identity/identity-bff";
-import { verifySameOrigin } from "../../../../src/server/security/csrf";
+import { identityErrorPayload, identityHttpStatus, listOperatorProfiles, readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 const noStore = { "Cache-Control": "no-store" };
 
@@ -32,26 +30,6 @@ export async function GET(request: Request) {
   try {
     const page = await listOperatorProfiles(query, state, sort as "created_asc" | "created_desc", limit, cursor, { operatorActorId: access.identity.subject, correlationId: randomUUID() });
     return NextResponse.json(page, { headers: noStore });
-  } catch (error) {
-    const payload = identityErrorPayload(error);
-    return denied(identityHttpStatus(error), payload.code, payload.message);
-  }
-}
-
-export async function POST(request: Request) {
-  if (!verifySameOrigin(request)) return denied(403, "FORBIDDEN", "cross-site requests are forbidden");
-  const access = await operatorAdministrator();
-  if ("response" in access) return access.response;
-  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  const fullNameAr = typeof body?.fullNameAr === "string" ? body.fullNameAr.trim() : "";
-  const phoneE164 = typeof body?.phoneE164 === "string" ? normalizeYemenPhoneE164(body.phoneE164) : "";
-  const jobTitle = typeof body?.jobTitle === "string" ? body.jobTitle.trim() : "";
-  const department = typeof body?.department === "string" ? body.department.trim() : "";
-  if (!body || Object.keys(body).some((key) => !["fullNameAr", "phoneE164", "jobTitle", "department"].includes(key)) || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || Array.from(jobTitle).length < 1 || Array.from(jobTitle).length > 80 || Array.from(department).length < 1 || Array.from(department).length > 80 || !/^\+[1-9][0-9]{7,14}$/.test(phoneE164)) return denied(400, "INVALID_INPUT", "a full Arabic name, job title, department, and valid Yemeni local or international phone number are required");
-  const context = { operatorActorId: access.identity.subject, correlationId: randomUUID(), idempotencyKey: randomUUID() };
-  try {
-    const result = await createOperatorProfile({ fullNameAr, phoneE164, jobTitle, department }, context);
-    return NextResponse.json(result, { status: result.idempotentReplay ? 200 : 201, headers: noStore });
   } catch (error) {
     const payload = identityErrorPayload(error);
     return denied(identityHttpStatus(error), payload.code, payload.message);

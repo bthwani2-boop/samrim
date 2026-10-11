@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HRAccessRequest, HRAccessRequestPage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
@@ -60,6 +61,13 @@ export function HROperatorAccessQueue() {
    <div><h2>طلبات الوصول من الموارد البشرية</h2><p>يقدّم HR الطلب، والمشغّل الأساسي يحوّله إلى ملف مراجعة Identity. الصلاحيات المقترحة ليست منحًا فعليًا.</p></div>
    <button type="button" className="button button-secondary" disabled={loading||!!busy} onClick={()=>void reload()}>تحديث</button>
   </div>
+  <div className="access-summary-grid">
+   <article><span>طلبات الصفحة</span><strong>{items.length}</strong></article>
+   <article><span>بانتظار القرار</span><strong>{items.filter((item)=>item.state==="pending_review").length}</strong></article>
+   <article><span>قيد إنشاء الهوية</span><strong>{items.filter((item)=>item.state==="identity_provisioning").length}</strong></article>
+   <article><span>حسابات مرتبطة</span><strong>{items.filter((item)=>Boolean(item.operatorActorId)).length}</strong></article>
+  </div>
+  <p className="muted">الأرقام تخص الطلبات المعروضة في الصفحة الحالية فقط، وليست إجماليات جميع السجلات.</p>
   {notice?<p role="status">{notice}</p>:null}
   {error?<p role="alert">{error}</p>:null}
   <div className="access-table-wrap"><table className="operations-table access-table">
@@ -68,7 +76,7 @@ export function HROperatorAccessQueue() {
     {items.map((item)=><tr key={item.id}>
      <th scope="row">{item.employeeName}</th><td>{item.jobTitle} — {item.department}</td><td>{item.reason}</td>
      <td>{item.requestedPermissions.join("، ")||"بدون اقتراح"}</td>
-     <td>{item.state==="pending_review"?"بانتظار المشغّل الأساسي":item.state==="rejected"?"مرفوض":item.state==="identity_provisioning"?"جارٍ إنشاء ملف المراجعة":"أُحيل إلى Identity"}</td>
+     <td>{item.operatorActorId ? "تم ربط حساب المشغّل" : item.state==="pending_review"?"بانتظار المشغّل الأساسي":item.state==="rejected"?"مرفوض":item.state==="identity_provisioning"?"جارٍ إنشاء ملف المراجعة":"أُحيل إلى Identity"}</td>
      <td>{item.state==="pending_review"?<>
       <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>void openProfile(item.id)}>{busy===item.id?"جارٍ التحويل…":"إنشاء ملف مراجعة"}</button>
       <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>{setRejecting(item.id);setRejectReason("");rejectMutation.current=null;}}>رفض الطلب</button>
@@ -83,9 +91,9 @@ export function HROperatorAccessQueue() {
       </div>:null}
      </>:item.state==="identity_provisioning"?
        <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>void openProfile(item.id)}>استكمال التحويل</button>:
-       item.state==="rejected"?<span>{item.rejectionReason||"مرفوض"}</span>:"تابع الاعتماد في القائمة أدناه"}</td>
+       item.state==="rejected"?<span>{item.rejectionReason||"مرفوض"}</span>:item.state==="identity_profile_created"?<Link href="/access?view=operators">{item.operatorActorId ? "إدارة حساب المشغّل" : "متابعة اعتماد الحساب"}</Link>:"تابع الاعتماد في القائمة أدناه"}</td>
     </tr>)}
-    {!loading&&items.length===0?<tr><td colSpan={6}>لا توجد طلبات وصول.</td></tr>:null}
+    {!loading&&items.length===0?<tr><td colSpan={6}>لا توجد طلبات وصول. <Link href="/hr/employees">إدارة الموظفين من الموارد البشرية</Link></td></tr>:null}
     {loading?<tr><td colSpan={6}>جارٍ تحميل الطلبات…</td></tr>:null}
    </tbody>
   </table></div>

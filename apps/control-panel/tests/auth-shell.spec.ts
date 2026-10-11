@@ -815,76 +815,50 @@ test("operator permission coverage filters the server page and starts a fresh cu
   await expect(page.getByRole("row", { name: /مشغّل تجريبي/ })).toContainText("4");
 });
 
-test("operator profile is created, reviewed, admitted, and invited in separate steps", async ({ page }) => {
+test("an HR-linked operator profile is approved, admitted, and invited without duplicate creation", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
   const profileId = "oprof_browser_review";
   const actorId = "act_operator_browser_review";
-  const phoneE164 = "+96777000123";
-  const initialName = "محمود أحمد";
-  const reviewedName = "محمود أحمد علي الدوبحي";
-  const initialJobTitle = "مشرف عمليات";
-  const initialDepartment = "العمليات";
-  const reviewedJobTitle = "مشرف خدمات";
-  const reviewedDepartment = "خدمة العملاء";
-  const writes: Record<string, unknown>[] = [];
-  let profile: { id: string; actorId?: string; fullNameAr: string; phoneE164: string; jobTitle: string; department: string; roleEnabled?: boolean; securityEnabled?: boolean; activatedAt?: string; state: string; version: number } | null = null;
-
+  let profile = {
+    id: profileId, fullNameAr: "محمود علي الصنعاني", phoneE164: "+96777000123",
+    jobTitle: "مشرف العمليات", department: "العمليات",
+    state: "pending_review", version: 1, createdAt: "2026-10-12T00:00:00.000Z",
+    roleEnabled: false, securityEnabled: true, activatedAt: null as string | null,
+  };
+  const actions: string[] = [];
   await page.route("**/api/access/operator-profiles**", async (route) => {
     const request = route.request();
     if (request.method() === "GET") {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: profile ? [profile] : [], limit: 25, nextCursor: "" }) });
+      await route.fulfill({ json: { items: [profile], nextCursor: "" } });
       return;
     }
-    const body = request.postDataJSON() as Record<string, unknown>;
-    writes.push(body);
-    if (new URL(request.url()).pathname === "/api/access/operator-profiles") {
-      profile = { id: profileId, fullNameAr: String(body.fullNameAr), phoneE164: String(body.phoneE164), jobTitle: String(body.jobTitle), department: String(body.department), state: "pending_review", version: 1 };
-      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ profile, idempotentReplay: false }) });
-      return;
+    const body = request.postDataJSON() as { action: string; expectedVersion?: number };
+    actions.push(body.action);
+    if (body.action === "approve" && body.expectedVersion === 1) {
+      profile = { ...profile, state: "approved", version: 2 };
+      return route.fulfill({ json: { profile } });
     }
-    if (body.action === "update-profile" && profile) profile = { ...profile, fullNameAr: String(body.fullNameAr), phoneE164: String(body.phoneE164), jobTitle: String(body.jobTitle), department: String(body.department), state: "pending_review", version: profile.version + 1 };
-    else if (body.action === "approve" && profile) profile = { ...profile, state: "approved", version: profile.version + 1 };
-    else if (body.action === "grant" && profile) profile = { ...profile, actorId, roleEnabled: true, securityEnabled: true, state: "admitted", version: profile.version + 1 };
-    else if (body.action === "invitation" && profile) {
-      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ profile, enrollmentToken: { code: "operator-enrollment-proof-code-123456", maskedPhone: "+967••••0123", role: "operator", expiresAt: "2099-01-01T00:00:00.000Z" } }) });
-      return;
-    } else {
-      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: { code: "INVALID_INPUT" } }) });
-      return;
+    if (body.action === "grant" && body.expectedVersion === 2) {
+      profile = { ...profile, state: "admitted", version: 3, roleEnabled: true };
+      return route.fulfill({ status: 201, json: { profile, role: { actorId, role: "operator", actorCreated: true, roleCreated: true } } });
     }
-    await route.fulfill({ status: body.action === "grant" ? 201 : 200, contentType: "application/json", body: JSON.stringify({ profile, role: { actorId, role: "operator", actorCreated: true, roleCreated: true }, idempotentReplay: false }) });
+    if (body.action === "invitation") {
+      return route.fulfill({ status: 201, json: {
+        profile, enrollmentToken: { code: "operator-enrollment-proof-code-123456", maskedPhone: "+967*******123",
+          role: "operator", expiresAt: "2099-01-01T00:00:00.000Z" },
+      } });
+    }
+    return route.fulfill({ status: 400, json: { error: { code: "INVALID_INPUT" } } });
   });
 
-  await page.goto("/access?view=profiles");
-  await page.getByText("مشغّل جديد", { exact: true }).click();
-  await page.locator("#operator-profile-name").fill(initialName);
-  await page.locator("#operator-profile-phone").fill(phoneE164);
-  await page.locator("#operator-profile-title").fill(initialJobTitle);
-  await page.locator("#operator-profile-department").fill(initialDepartment);
-  await page.getByRole("button", { name: "حفظ للمراجعة", exact: true }).click();
-  await expect(page.locator(`#operator-profile-name-${profileId}`)).toHaveValue(initialName);
-  await expect(page.locator(`#operator-profile-title-${profileId}`)).toHaveValue(initialJobTitle);
-  await expect(page.locator(`#operator-profile-department-${profileId}`)).toHaveValue(initialDepartment);
-  await expect(page.getByRole("status").getByText("أُنشئ الملف وبات بانتظار المراجعة.")).toBeVisible();
-  await page.getByText("تعديل الملف", { exact: true }).click();
-  await page.locator(`#operator-profile-name-${profileId}`).fill(reviewedName);
-  await page.locator(`#operator-profile-title-${profileId}`).fill(reviewedJobTitle);
-  await page.locator(`#operator-profile-department-${profileId}`).fill(reviewedDepartment);
-  await page.getByRole("button", { name: "حفظ التعديل", exact: true }).click();
+  await page.goto("/access?view=operators");
+  await expect(page.getByText(profile.fullNameAr)).toBeVisible();
+  await expect(page.locator("#operator-profile-name")).toHaveCount(0);
   await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
-  await expect(page.getByText("اعتُمد الملف. الخطوة التالية منح الدور.")).toBeVisible();
   await page.getByRole("button", { name: "منح دور المشغّل", exact: true }).click();
-  await expect(page.getByText("مُنح دور المشغّل. أصدر دعوة التفعيل عند الجاهزية.")).toBeVisible();
   await page.getByRole("button", { name: "إصدار دعوة التفعيل", exact: true }).click();
   await expect(page.getByText("operator-enrollment-proof-code-123456", { exact: true })).toBeVisible();
-  await expect(page.getByText("+967••••0123", { exact: true })).toBeVisible();
-  expect(writes).toEqual([
-    { fullNameAr: initialName, phoneE164, jobTitle: initialJobTitle, department: initialDepartment },
-    { action: "update-profile", fullNameAr: reviewedName, phoneE164, jobTitle: reviewedJobTitle, department: reviewedDepartment, expectedVersion: 1 },
-    { action: "approve", expectedVersion: 2 },
-    { action: "grant", expectedVersion: 3 },
-    { action: "invitation" },
-  ]);
+  expect(actions).toEqual(["approve", "grant", "invitation"]);
 });
 
 test("operator access keeps phone discovery separate from actorId mutation", async ({ page }) => {

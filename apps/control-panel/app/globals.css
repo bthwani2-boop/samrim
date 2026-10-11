@@ -291,3 +291,9 @@
   .print-surface[data-print-active="true"] :is(th,td) { color: CanvasText; background: Canvas; min-inline-size: 0; overflow-wrap: anywhere; font-size: 10pt; }
   .print-surface[data-print-active="true"] tr { break-inside: avoid; }
 }
+
+/* The access review shows page-scoped counts without visually dominant full-width controls. */
+.access-summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:10px;min-inline-size:0; }
+.access-summary-grid > article { display:flex;flex-direction:column;gap:6px;min-inline-size:0;padding:14px;border:1px solid var(--border-subtle);border-radius:10px;background:var(--surface-base); }
+.access-summary-grid > article span { font-size:12px;color:var(--text-muted); }
+.access-summary-grid > article strong { font-size:22px;font-variant-numeric:tabular-nums; }

@@ -15,6 +15,8 @@ func (s *HRServer) registerAccessRequests(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/hr/access-requests/{requestId}/link", s.linkAccessRequest)
 	mux.HandleFunc("POST /dsh/hr/access-requests/{requestId}/reject", s.rejectAccessRequest)
 	mux.HandleFunc("POST /dsh/hr/access-requests/{requestId}/provision", s.provisionAccessRequest)
+	mux.HandleFunc("GET /dsh/hr/access-requests/by-profile/{profileId}", s.readAccessRequestByProfile)
+	mux.HandleFunc("POST /dsh/hr/access-requests/{requestId}/admit", s.admitAccessRequest)
 }
 func (s *HRServer) createAccessRequest(w http.ResponseWriter, r *http.Request) {
 	actor, ok := s.authorize(w, r)
@@ -152,4 +154,61 @@ func (s *HRServer) linkAccessRequest(w http.ResponseWriter, r *http.Request) {
 		status = 200
 	}
 	writeJSON(w, status, result)
+}
+
+func (s *HRServer) readAccessRequestByProfile(w http.ResponseWriter, r *http.Request) {
+	_, ok := s.authorizeRoot(w, r)
+	if !ok {
+		return
+	}
+	record, err := hr.ReadAccessRequestByProfile(r.Context(), s.db, r.PathValue("profileId"))
+	if err != nil {
+		writeHRError(w, err)
+		return
+	}
+	writeJSON(w, 200, struct {
+		Request hr.AccessRequest `json:"request"`
+	}{record})
+}
+
+// The actor ID and phone are read directly from Identity; an HTTP caller
+// cannot supply or substitute an actor during the final HR link.
+func (s *HRServer) admitAccessRequest(w http.ResponseWriter, r *http.Request) {
+	acting, ok := s.authorizeRoot(w, r)
+	if !ok {
+		return
+	}
+	_, corr, idem, valid := requiredMutationHeaders(w, r)
+	if !valid {
+		return
+	}
+	record, err := hr.ReadAccessRequest(r.Context(), s.db, r.PathValue("requestId"))
+	if err != nil {
+		writeHRError(w, err)
+		return
+	}
+	if record.State != "identity_profile_created" || record.OperatorProfileID == "" {
+		writeHRError(w, hr.ErrConflict)
+		return
+	}
+	profile, err := s.identity.ReadOperatorProfileForAdministrator(r.Context(), acting, record.OperatorProfileID)
+	if err != nil {
+		writeError(w, 403, "FORBIDDEN", "Identity profile authorization required")
+		return
+	}
+	if profile.Profile.ID != record.OperatorProfileID || profile.Profile.State != "admitted" || profile.Profile.ActorID == "" {
+		writeHRError(w, hr.ErrConflict)
+		return
+	}
+	role, err := s.identity.ReadActorRole(r.Context(), profile.Profile.ActorID, "operator")
+	if err != nil || role.Role != "operator" || !role.Enabled || !role.SecurityEnabled || role.PhoneE164 != record.PhoneE164 {
+		writeError(w, 409, "CONFLICT", "Identity actor does not match HR access request")
+		return
+	}
+	result, err := hr.AdmitAccessRequest(r.Context(), s.db, record.ID, record.OperatorProfileID, profile.Profile.ActorID, acting, corr, idem)
+	if err != nil {
+		writeHRError(w, err)
+		return
+	}
+	writeJSON(w, 200, result)
 }

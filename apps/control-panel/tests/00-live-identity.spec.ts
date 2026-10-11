@@ -121,26 +121,44 @@ async function createOperatorThroughControlPanel(
   baseUrl: string,
   input: { fullNameAr: string; phone: string; jobTitle: string; department: string },
 ): Promise<PreparedOperator> {
-  await page.goto(baseUrl + "/access?view=profiles");
-  await expect(page.getByRole("heading", { name: "ملفات المشغّلين" })).toBeVisible();
-  await page.getByText("مشغّل جديد", { exact: true }).click();
-  await page.locator("#operator-profile-name").fill(input.fullNameAr);
-  await page.locator("#operator-profile-phone").fill(input.phone);
-  await page.locator("#operator-profile-title").fill(input.jobTitle);
-  await page.locator("#operator-profile-department").fill(input.department);
-
-  const creationResponsePromise = page.waitForResponse((response) =>
-    response.url().endsWith("/api/access/operator-profiles") && response.request().method() === "POST",
-  );
-  await page.getByRole("button", { name: "حفظ للمراجعة", exact: true }).click();
-  const creationResponse = await creationResponsePromise;
-  expect(creationResponse.status()).toBe(201);
+  await page.goto(baseUrl + "/access?view=requests");
+  async function post(pathName: string, body: unknown, key: string) {
+    return page.evaluate(async ({ pathName, body, key }) => {
+      const response = await fetch(pathName, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+        body: JSON.stringify(body),
+      });
+      return { status: response.status, data: await response.json() as Record<string, any> };
+    }, { pathName, body, key });
+  }
+  const employee = await post("/api/hr/employees", {
+    fullNameAr: input.fullNameAr, phoneE164: input.phone,
+    department: input.department, jobTitle: input.jobTitle,
+    managerEmployeeId: "", workLocation: "صنعاء",
+    startDate: new Date().toISOString().slice(0, 10),
+  }, randomUUID());
+  expect(employee.status).toBe(201);
+  const employeeId = String(employee.data?.employee?.id || "");
+  expect(employeeId).toMatch(/^emp_/);
+  const access = await post("/api/hr/access-requests", {
+    employeeId, reason: "يتطلب العمل الوظيفي الوصول إلى العمليات",
+    requestedPermissions: ["operations"],
+  }, randomUUID());
+  expect(access.status).toBe(201);
+  const accessId = String(access.data?.request?.id || "");
+  expect(accessId).toMatch(/^hreq_/);
+  const linked = await post("/api/access/hr-requests/" + encodeURIComponent(accessId) + "/profile", {}, randomUUID());
+  expect(linked.status).toBe(200);
+  const expectedProfileId = String(linked.data?.profile?.id || "");
+  expect(expectedProfileId).toMatch(/^oprof_/);
+  await page.goto(baseUrl + "/access?view=operators");
   const controlToken = requiredEnv("PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN");
   const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
   const profile = await findOperatorProfileByPhone(identityBase, controlToken, (await findInitialOperator(identityBase, controlToken))!.actorId, input.phone);
   expect(profile).toMatchObject({ fullNameAr: input.fullNameAr, phoneE164: input.phone, jobTitle: input.jobTitle, department: input.department, state: "pending_review", version: 1 });
   const profileId = String(profile?.id || "");
-  expect(profileId).toMatch(/^oprof_/);
+  expect(profileId).toBe(expectedProfileId);
 
   const profileRow = page.getByRole("row").filter({ hasText: input.fullNameAr });
   await expect(profileRow).toContainText(input.phone);
@@ -188,7 +206,7 @@ async function signOutOperator(page: Page): Promise<void> {
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
 }
 
-test("@live Control Panel creates two operators in Identity and proves founder recovery plus both operator logins", async ({ browser, page }) => {
+test("@live HR-led Control Panel admission creates two operators and proves founder recovery plus logins", async ({ browser, page }) => {
   test.setTimeout(180_000);
   const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
   const mailpitBase = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");

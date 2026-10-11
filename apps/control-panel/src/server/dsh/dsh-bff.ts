@@ -85,6 +85,21 @@ export async function listHRAccessRequests(context: DshOperatorReadContext, empl
   const response = await requestDshJson<HRAccessRequestPage>("GET", `/dsh/hr/access-requests?${params}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId });
   return response.payload;
 }
+export async function readHRAccessRequestByProfile(profileId: string, context: DshOperatorReadContext): Promise<DshHRAccessRequestReadResponse> {
+  return (await requestDshJson<DshHRAccessRequestReadResponse>("GET",
+    "/dsh/hr/access-requests/by-profile/" + encodeURIComponent(profileId), undefined,
+    { "X-Acting-Actor-ID": context.operatorActorId })).payload;
+}
+
+export async function admitHROperator(requestId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ employee: HREmployee; request: HRAccessRequest; idempotentReplay: boolean }>> {
+  validateAttributedMutationContext(context);
+  return (await requestDshJson<Readonly<{ employee: HREmployee; request: HRAccessRequest; idempotentReplay: boolean }>>("POST",
+    "/dsh/hr/access-requests/" + encodeURIComponent(requestId) + "/admit", {}, {
+      "X-Acting-Actor-ID": context.operatorActorId,
+      "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey,
+    })).payload;
+}
+
 export async function readHRAccessRequest(id: string, context: DshOperatorReadContext): Promise<DshHRAccessRequestReadResponse> {
   const response = await requestDshJson<DshHRAccessRequestReadResponse>("GET", `/dsh/hr/access-requests/${encodeURIComponent(id)}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId });
   return response.payload;
