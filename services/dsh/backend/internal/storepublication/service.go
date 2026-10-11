@@ -302,9 +302,12 @@ func collectEligiblePublishedStores(
 	}
 	result := postgres.PublicStorePage{Stores: []postgres.PublicStoreRecord{}, Limit: limit}
 	cursor := input.Cursor
-	for {
+	const maxRawRows = 200
+	const maxFetchBatches = 20
+	scannedRows := 0
+	for batch := 0; batch < maxFetchBatches; batch++ {
 		query := input
-		query.Limit = limit - len(result.Stores)
+		query.Limit = min(limit-len(result.Stores), maxRawRows-scannedRows)
 		query.Cursor = cursor
 		raw, err := fetch(ctx, query)
 		if err != nil {
@@ -314,9 +317,10 @@ func collectEligiblePublishedStores(
 		if err != nil {
 			return postgres.PublicStorePage{}, err
 		}
+		scannedRows += len(raw.Stores)
 		result.Stores = append(result.Stores, eligible.Stores...)
 		result.NextCursor = raw.NextCursor
-		if len(result.Stores) >= limit || raw.NextCursor == "" {
+		if len(result.Stores) >= limit || raw.NextCursor == "" || scannedRows >= maxRawRows || batch+1 >= maxFetchBatches {
 			return result, nil
 		}
 		if raw.NextCursor == cursor {
@@ -324,6 +328,7 @@ func collectEligiblePublishedStores(
 		}
 		cursor = raw.NextCursor
 	}
+	return result, nil
 }
 
 func (s *Service) filterPublishedBatch(ctx context.Context, page postgres.PublicStorePage) (postgres.PublicStorePage, error) {

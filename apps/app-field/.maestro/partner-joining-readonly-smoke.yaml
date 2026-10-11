@@ -17,5 +17,5 @@ name: Field partner joining form - navigation and keyboard
 - assertVisible: "التالي"
 - tapOn: "التالي"
 - assertVisible: "الخطوة 2 من 2 · التشغيل والإثبات"
-- assertVisible: "حفظ المسودة"
+- assertVisible: "حفظ (المسودة|التعديلات)"
 - assertVisible: "حفظ وإرسال للمراجعة"

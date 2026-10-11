@@ -116,3 +116,52 @@ func TestPublishedStorePageFailsClosedOnEligibilityOrCursorError(t *testing.T) {
 		t.Fatalf("repeated cursor must stop rather than spin: %v", err)
 	}
 }
+
+func TestPublishedStoreScanningIsBoundedAndKeepsContinuation(t *testing.T) {
+	records := make([]postgres.PublicStoreRecord, 201)
+	for i := 0; i < 200; i++ {
+		records[i] = postgres.PublicStoreRecord{ID: fmt.Sprintf("blocked-%03d", i)}
+	}
+	records[200] = postgres.PublicStoreRecord{ID: "visible-after-budget", Name: "متجر مؤهل بعد الميزانية"}
+	calls := 0
+	fetch := func(_ context.Context, query postgres.PublicStoreListQuery) (postgres.PublicStorePage, error) {
+		calls++
+		start := 0
+		if query.Cursor != "" {
+			var err error
+			start, err = strconv.Atoi(query.Cursor)
+			if err != nil {
+				return postgres.PublicStorePage{}, err
+			}
+		}
+		end := min(start+query.Limit, len(records))
+		page := postgres.PublicStorePage{Stores: records[start:end]}
+		if end < len(records) {
+			page.NextCursor = strconv.Itoa(end)
+		}
+		return page, nil
+	}
+	filter := func(_ context.Context, page postgres.PublicStorePage) (postgres.PublicStorePage, error) {
+		visible := []postgres.PublicStoreRecord{}
+		for _, record := range page.Stores {
+			if strings.HasPrefix(record.ID, "visible-") {
+				visible = append(visible, record)
+			}
+		}
+		page.Stores = visible
+		return page, nil
+	}
+	first, err := collectEligiblePublishedStores(context.Background(), postgres.PublicStoreListQuery{Limit: 25}, fetch, filter)
+	if err != nil || len(first.Stores) != 0 || first.NextCursor != "200" || calls != 8 {
+		t.Fatalf("unbounded raw scan or missing continuation: page=%+v calls=%d err=%v", first, calls, err)
+	}
+	second, err := collectEligiblePublishedStores(context.Background(), postgres.PublicStoreListQuery{Limit: 25, Cursor: first.NextCursor}, fetch, filter)
+	if err != nil || len(second.Stores) != 1 || second.Stores[0].ID != "visible-after-budget" || second.NextCursor != "" {
+		t.Fatalf("continuation lost a later eligible store: %+v err=%v", second, err)
+	}
+	calls = 0
+	one, err := collectEligiblePublishedStores(context.Background(), postgres.PublicStoreListQuery{Limit: 1}, fetch, filter)
+	if err != nil || len(one.Stores) != 0 || one.NextCursor != "20" || calls != 20 {
+		t.Fatalf("batch budget did not bound repeated identity/WLT reads: %+v calls=%d err=%v", one, calls, err)
+	}
+}
