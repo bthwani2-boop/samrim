@@ -543,8 +543,8 @@ export function CentralCatalog() {
             </tbody>
           </table>
         </div>
-        {notice ? <p className="success-inline" role="status">{notice}</p> : null}
-        {error ? <p className="identity-error" role="alert">{error}</p> : null}
+        {!editorOpen && notice ? <p className="success-inline" role="status">{notice}</p> : null}
+        {!editorOpen && error ? <p className="identity-error" role="alert">{error}</p> : null}
     <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات المنتجات" />
       </section>
       {editorOpen ? <section className="access-card central-catalog-editor" aria-labelledby="central-catalog-editor-title">
