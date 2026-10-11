@@ -64,11 +64,15 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		initialModes := []string{postgres.FulfillmentModeBthwaniCaptain}
 		workHours := []byte(`{"intervals":[{"dayOfWeek":1,"opensAt":"12:00","closesAt":"05:00","closesNextDay":true},{"dayOfWeek":2,"opensAt":"12:00","closesAt":"05:00","closesNextDay":true},{"dayOfWeek":3,"opensAt":"12:00","closesAt":"05:00","closesNextDay":true},{"dayOfWeek":4,"opensAt":"12:00","closesAt":"05:00","closesNextDay":true},{"dayOfWeek":5,"opensAt":"12:00","closesAt":"05:00","closesNextDay":true},{"dayOfWeek":6,"opensAt":"12:00","closesAt":"05:00","closesNextDay":true},{"dayOfWeek":7,"opensAt":"12:00","closesAt":"05:00","closesNextDay":true}]}`)
 		evidenceKeys := testJoiningCaseEvidenceKeyring(t)
-		createRequest := postgres.JoiningCaseRequest{Phone: "+967700000101", WalletProviderKey: "provider-test", OwnerFullName: "مالك بحث مميز", BusinessName: "نشاط التصحيح", FirstStoreName: "متجر التصحيح", FirstStoreAddress: "الشارع الرئيسي", FirstStoreWorkingHours: workHours, FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "123456789", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
+		createRequest := postgres.JoiningCaseRequest{Phone: "+967700000101", WalletProviderKey: "", OwnerFullName: "مالك بحث مميز", BusinessName: "نشاط التصحيح", FirstStoreName: "متجر التصحيح", FirstStoreAddress: "الشارع الرئيسي", FirstStoreWorkingHours: workHours, FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "123456789", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
 		createHash := postgres.HashJoiningCaseRequest(createRequest)
 		created, err := postgres.CreateJoiningCaseForField(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: "idem-join-field-create", RequestHash: createHash, ActingActorID: fieldActorID, CorrelationID: "corr-join-field-create", EvidenceKeyring: evidenceKeys, Request: createRequest})
-		if err != nil || created.Case.Origin != "field" || created.Case.PartnerActorID != "" {
-			t.Fatalf("create Field-originated joining case failed: %+v err=%v", created, err)
+		if err != nil || created.Case.Origin != "field" || created.Case.PartnerActorID != "" || created.Case.WalletProviderKey != "" {
+			t.Fatalf("create Field-originated joining case without optional wallet failed: %+v err=%v", created, err)
+		}
+		var persistedWalletProvider sql.NullString
+		if err := db.QueryRowContext(ctx, `SELECT wallet_provider_key FROM dsh.joining_cases WHERE id=$1`, created.Case.ID).Scan(&persistedWalletProvider); err != nil || persistedWalletProvider.Valid {
+			t.Fatalf("unset wallet preference must persist as NULL, got %+v err=%v", persistedWalletProvider, err)
 		}
 		provenance := media.Provenance{Creator: "مالك المتجر", SourceDescription: "صورة من المالك", RightsStatement: "إذن الاستخدام للمتجر", RightsAttested: true}
 		mediaDigest := strings.Repeat("a", 64)

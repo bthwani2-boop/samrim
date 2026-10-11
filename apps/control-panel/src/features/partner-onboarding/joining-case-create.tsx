@@ -134,17 +134,17 @@ export function JoiningCaseCreate() {
       const [citiesResponse, verticalsResponse, providersResponse] = await Promise.all([
         fetch("/api/service-cities", { cache: "no-store" }),
         fetch("/api/catalog/verticals", { cache: "no-store" }),
-        fetch("/api/wallet-providers", { cache: "no-store" }),
+        fetch("/api/wallet-providers", { cache: "no-store" }).catch(() => null),
       ]);
-      if (!citiesResponse.ok || !verticalsResponse.ok || !providersResponse.ok) {
-        setOptionsError("تعذر قراءة المدن أو الفئات الرئيسية أو المحافظ الرسمية.");
+      if (!citiesResponse.ok || !verticalsResponse.ok) {
+        setOptionsError("تعذر قراءة مدن الخدمة أو الأنشطة الرئيسية.");
         return;
       }
       setCities((await citiesResponse.json() as { cities: ReadonlyArray<ServiceCity> }).cities);
       setVerticals((await verticalsResponse.json() as { verticals: ReadonlyArray<CommerceVertical> }).verticals);
-      setWalletProviders((await providersResponse.json() as { walletProviders: ReadonlyArray<WalletProviderOption> }).walletProviders);
+      setWalletProviders(providersResponse?.ok ? ((await providersResponse.json().catch(() => ({ walletProviders: [] })) as { walletProviders: ReadonlyArray<WalletProviderOption> }).walletProviders ?? []) : []);
     } catch {
-      setOptionsError("تعذر قراءة المدن أو الفئات الرئيسية أو المحافظ الرسمية.");
+      setOptionsError("تعذر قراءة مدن الخدمة أو الأنشطة الرئيسية.");
     } finally {
       setOptionsBusy(false);
     }
@@ -199,8 +199,8 @@ export function JoiningCaseCreate() {
     const input = pendingAttempt?.input ?? currentInput;
     const isResumedAttempt = pendingAttempt !== null && pendingAttempt.input === null;
     const attempt: PendingJoiningCaseCreate = { ...metadata, input };
-    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.ownerFullName.trim().length < 2 || Array.from(input.walletProviderKey.trim()).length < 1 || Array.from(input.walletProviderKey.trim()).length > 64 || /\p{Cc}/u.test(input.walletProviderKey) || input.businessName.length < 2 || input.firstStoreName.length < 2 || input.firstStoreAddress.trim().length < 4 || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreProofNumber.length < 1 || !isValidStoreWorkingHours(input.firstStoreWorkingHours.intervals) || input.firstStoreFulfillmentModes.length === 0 || !latitude.trim() || !longitude.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
-      setError("أكمل مزوّد المحفظة الذي حدده المالك، واسمه ورقم جواله وبيانات المتجر والموقع وساعات العمل والإثبات وطريقة التوصيل.");
+    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.ownerFullName.trim().length < 2 || Array.from(input.walletProviderKey.trim()).length > 64 || /\p{Cc}/u.test(input.walletProviderKey) || input.businessName.length < 2 || input.firstStoreName.length < 2 || input.firstStoreAddress.trim().length < 4 || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreProofNumber.length < 1 || !isValidStoreWorkingHours(input.firstStoreWorkingHours.intervals) || input.firstStoreFulfillmentModes.length === 0 || !latitude.trim() || !longitude.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
+      setError("أكمل اسم المالك ورقم جواله وبيانات المتجر والموقع وساعات العمل والإثبات وطريقة التوصيل. المحفظة اختيارية.");
       return;
     }
     setBusy(true);
@@ -276,7 +276,7 @@ export function JoiningCaseCreate() {
       <div className="access-card-heading">
 
         <h2 id="joining-case-create-title">إنشاء حالة انضمام جديدة</h2>
-        <p className="muted">تُضاف صور الإثبات والمتجر بعد حفظ المسودة.</p>
+        <p className="muted">تكفي بيانات نوع الإثبات ورقمه دون رفع صورة الوثيقة. يمكن إضافة شعار المتجر قبل نشره.</p>
       </div>
       {storageError ? <p className="identity-error" role="alert">{storageError} <Link href="/partners">افتح طابور الانضمام</Link></p> : null}
       {optionsError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر تحميل الخيارات</strong><p>{optionsError}</p><button type="button" className="button button-secondary" disabled={optionsBusy || busy} onClick={() => void loadOptions()}>إعادة قراءة الخيارات</button></div> : null}
@@ -286,7 +286,7 @@ export function JoiningCaseCreate() {
       <div className="access-form">
         <label className="field-label" htmlFor="joining-owner">اسم المالك الكامل<input id="joining-owner" autoComplete="name" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={ownerFullName} onChange={(event) => setOwnerFullName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-phone">رقم جوال المالك<input id="joining-phone" autoComplete="tel" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} placeholder="مثال: 777000100 أو +967777000100" /></label>
-        <label className="field-label" htmlFor="joining-wallet-provider">مزوّد المحفظة الذي حدده المالك<select id="joining-wallet-provider" aria-required="true" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)}><option value="">اختر محفظة رسمية</option>{walletProviderKey && !walletProviders.some((provider) => provider.key === walletProviderKey) ? <option value={walletProviderKey}>{walletProviderKey} · قيمة سابقة محفوظة</option> : null}{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select><small>سجّل المزوّد فقط. لا تدخل رقم المحفظة أو الاسم القانوني هنا.</small></label>
+        <label className="field-label" htmlFor="joining-wallet-provider">مزوّد المحفظة الذي حدده المالك (اختياري)<select id="joining-wallet-provider" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)}><option value="">غير محددة حاليًا</option>{walletProviderKey && !walletProviders.some((provider) => provider.key === walletProviderKey) ? <option value={walletProviderKey}>{walletProviderKey} · قيمة سابقة محفوظة</option> : null}{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select><small>سجّل المزوّد فقط. لا تدخل رقم المحفظة أو الاسم القانوني هنا.</small></label>
         <label className="field-label" htmlFor="joining-business">الاسم القانوني للنشاط<input id="joining-business" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={businessName} onChange={(event) => setBusinessName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-store">اسم المتجر الأول<input id="joining-store" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={storeName} onChange={(event) => setStoreName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-address">عنوان المتجر<TextArea className="resize-none" id="joining-address" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={storeAddress} onChange={(event) => setStoreAddress(event.target.value)} placeholder="الحي والشارع وأقرب معلم" rows={3} /></label>
