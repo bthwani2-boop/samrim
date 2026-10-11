@@ -66,7 +66,8 @@ test("@live operator sees the WLT-managed Field acquisition reward store-type po
   test.setTimeout(30_000);
   await page.goto("/policies/field-acquisition");
   await expect(page.getByRole("region", { name: "إعداد مبلغ الاستحقاق", exact: true })).toBeVisible();
-  await expect(page.getByLabel("المجال التجاري", { exact: true })).toBeVisible();
+  await expect(page.locator('label[for="field-reward-vertical"]')).toContainText("المجال التجاري");
+  await expect(page.locator("#field-reward-vertical")).toBeVisible();
 
   const fixture = await page.evaluate(async () => {
     const suffix = crypto.randomUUID();
@@ -110,11 +111,12 @@ test("@live operator sees the WLT-managed Field acquisition reward store-type po
   expect(fixture.storeTypeId, JSON.stringify(fixture)).toBeTruthy();
 
   await page.reload();
-  const vertical = page.getByLabel("المجال التجاري");
+  const vertical = page.locator("#field-reward-vertical");
   await expect(vertical).toBeVisible();
   await vertical.selectOption(fixture.verticalId as string);
 
-  const storeType = page.getByLabel("نوع المتجر التجاري");
+  const storeType = page.locator("#field-reward-commercial-type");
+  await expect(page.locator('label[for="field-reward-commercial-type"]')).toContainText("نوع المتجر التجاري");
   await expect(storeType).toBeVisible();
   await storeType.selectOption(fixture.storeTypeId as string);
 
