@@ -202,7 +202,7 @@ func main() {
 		marketingServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
-		return postgres.VerifySchema(ctx, database, records)
+		return postgres.VerifyOperationalReadiness(ctx, database, records)
 	}
 	if err := serviceruntime.RunWithRoutesAndReadinessAndWorker("dsh", "/dsh", "18080", register, readiness, func(ctx context.Context) {
 		go runFinancialProfileReconciliationLoop(ctx, time.Minute, joiningCaseServer.ReconcileFinancialProfiles)

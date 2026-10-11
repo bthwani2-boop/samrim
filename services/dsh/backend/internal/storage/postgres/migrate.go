@@ -317,6 +317,34 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 	return nil
 }
 
+// VerifyOperationalReadiness is a bounded ongoing probe. The owning migrate
+// one-shot proves every migration checksum and schema relation before API startup;
+// repeating that full catalog audit on each Docker healthcheck is unnecessary.
+func VerifyOperationalReadiness(ctx context.Context, db *sql.DB, records []MigrationRecord) error {
+	if db == nil || len(records) != SchemaVersion {
+		return errors.New("invalid DSH operational readiness input")
+	}
+	if err := db.PingContext(ctx); err != nil {
+		return fmt.Errorf("DSH readiness database ping: %w", err)
+	}
+	var count, latest int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*), COALESCE(MAX(version),0) FROM dsh.schema_migrations").Scan(&count, &latest); err != nil {
+		return fmt.Errorf("DSH readiness migration history: %w", err)
+	}
+	if count != SchemaVersion || latest != SchemaVersion {
+		return fmt.Errorf("DSH readiness migration versions: count=%d latest=%d expected=%d", count, latest, SchemaVersion)
+	}
+	last := records[len(records)-1]
+	var name, digest string
+	if err := db.QueryRowContext(ctx, "SELECT name, sha256 FROM dsh.schema_migrations WHERE version=$1", last.Version).Scan(&name, &digest); err != nil {
+		return fmt.Errorf("DSH readiness latest migration: %w", err)
+	}
+	if name != last.Name || digest != last.SHA256 {
+		return errors.New("DSH readiness latest migration checksum mismatch")
+	}
+	return nil
+}
+
 func VerifyDeliveryProofKeyring(ctx context.Context, db *sql.DB, keys *DeliveryProofKeyring) error {
 	if db == nil || keys == nil {
 		return errors.New("DSH delivery proof keyring is unavailable")
