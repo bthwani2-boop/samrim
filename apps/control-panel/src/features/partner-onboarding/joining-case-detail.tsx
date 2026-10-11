@@ -345,7 +345,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
         </>
       )}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
-      <div className="button-row"><Link className="button button-secondary" href="/partners">العودة إلى طابور الحالات</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readCase()}>إعادة قراءة الحالة</button></div>
+      <div className="button-row"><Link className="button button-secondary" href="/partners/joining">العودة إلى طلبات الانضمام</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readCase()}>إعادة قراءة الحالة</button></div>
     </section>
   );
 }

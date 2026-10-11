@@ -11,15 +11,37 @@ import "./joining-case-queue.module.css";
 type QueueState = "" | JoiningCaseState;
 type QueueSort = "created_asc" | "created_desc";
 type QueueHistory = Readonly<{ joiningCaseCursors?: ReadonlyArray<string> }>;
-const pageSize = 10;
+const pageSize = 25;
 const stateOptions: ReadonlyArray<{ value: QueueState; label: string }> = [
-  { value: "", label: "كل الحالات" },
-  { value: "draft", label: "مسودة" },
-  { value: "admission_requested", label: "بانتظار قبول المشغّل" },
-  { value: "submitted", label: "مقدمة للمراجعة" },
+  { value: "", label: "كل الطلبات" },
+  { value: "submitted", label: "للمراجعة" },
+  { value: "admission_requested", label: "بانتظار القبول" },
   { value: "needs_correction", label: "تحتاج تصحيحًا" },
-  { value: "approved", label: "معتمدة" },
+  { value: "draft", label: "المسودات" },
+  { value: "approved", label: "المعتمدة" },
 ];
+
+function caseAction(state: JoiningCaseState): string {
+  switch (state) {
+    case "submitted": return "مراجعة الطلب";
+    case "admission_requested": return "مراجعة القبول";
+    case "needs_correction": return "عرض التصحيح";
+    case "approved": return "متابعة الطلب";
+    default: return "عرض المسودة";
+  }
+}
+
+function caseHint(state: JoiningCaseState): string {
+  switch (state) {
+    case "submitted": return "بانتظار قرار المراجعة";
+    case "admission_requested": return "بانتظار قبول المشغّل";
+    case "needs_correction": return "بانتظار استكمال صاحب الطلب";
+    case "approved": return "تابع جاهزية المتجر من الملف";
+    default: return "لم تُرسل للمراجعة";
+  }
+}
+
+const dateFormatter = new Intl.DateTimeFormat("ar-YE", { dateStyle: "medium", timeStyle: "short" });
 
 export function JoiningCaseQueue() {
   const [cases, setCases] = useState<JoiningCaseListResponse["cases"]>([]);
@@ -66,8 +88,8 @@ export function JoiningCaseQueue() {
     if (nextQuery) params.set("q", nextQuery); else params.delete("q");
     if (nextSort !== "created_asc") params.set("sort", nextSort); else params.delete("sort");
     if (pageCursor) params.set("cursor", pageCursor); else params.delete("cursor");
-    const query = params.toString();
-    window.history.pushState({ joiningCaseCursors: pageCursors }, "", window.location.pathname + (query ? `?${query}` : ""));
+    const search = params.toString();
+    window.history.pushState({ joiningCaseCursors: pageCursors }, "", window.location.pathname + (search ? `?${search}` : ""));
     setNotice("");
     setState(nextState);
     setQuery(nextQuery);
@@ -91,7 +113,7 @@ export function JoiningCaseQueue() {
       if (sequence !== requestSequence.current) return;
       if (response.status === 400 && cursor) {
         navigate(state, appliedQuery, sort);
-        setNotice("انتهت صلاحية مؤشر الصفحة؛ أعدنا طابور الانضمام إلى الصفحة الأولى بنفس التصفية.");
+        setNotice("انتهت صلاحية الصفحة السابقة؛ عدنا إلى أول صفحة مع الاحتفاظ بالبحث والمرشحات.");
         return;
       }
       if (!response.ok) throw new Error(await partnerErrorMessage(response));
@@ -102,7 +124,7 @@ export function JoiningCaseQueue() {
       setSelectedIds(new Set());
     } catch (cause) {
       if (sequence !== requestSequence.current) return;
-      setError(cause instanceof Error ? cause.message : "تعذر قراءة طابور حالات الانضمام.");
+      setError(cause instanceof Error ? cause.message : "تعذر قراءة طلبات الانضمام.");
       setCases([]);
       setNextCursor("");
       setSelectedIds(new Set());
@@ -123,6 +145,8 @@ export function JoiningCaseQueue() {
 
   const selectedCases = cases.filter((item) => selectedIds.has(item.id));
   const allSelected = cases.length > 0 && selectedCases.length === cases.length;
+  const isFiltered = Boolean(state || appliedQuery);
+  const currentFilterLabel = stateOptions.find((option) => option.value === state)?.label ?? "كل الطلبات";
 
   function exportSelected() {
     if (!selectedCases.length) return;
@@ -130,27 +154,62 @@ export function JoiningCaseQueue() {
   }
 
   return <section className="joining-case-queue" aria-label="طابور طلبات انضمام الشركاء">
+    <nav className="joining-case-status-nav" aria-label="تصفية طلبات الانضمام حسب المرحلة">
+      {stateOptions.map((option) => <button key={option.value || "all"} type="button" className={state === option.value ? "joining-case-status-tab is-active" : "joining-case-status-tab"} aria-pressed={state === option.value} onClick={() => navigate(option.value, appliedQuery, sort)}>{option.label}</button>)}
+    </nav>
+
     <div className="joining-case-queue-toolbar">
-      <search className="joining-case-queue-search" aria-label="البحث في طلبات الانضمام"><form noValidate onSubmit={(event) => { event.preventDefault(); navigate(state, query.trim().slice(0, 128), sort); }}><label className="field-label" htmlFor="joining-case-search">الطلب أو الهاتف أو المتجر<input id="joining-case-search" type="search" value={query} maxLength={128} onChange={(event) => setQuery(event.target.value)} placeholder="بحث بالاسم أو رقم الهاتف" /></label><button type="submit" className="button button-secondary" disabled={busy}>بحث</button></form></search>
-      <label className="field-label" htmlFor="joining-case-state">حالة الطلب<select id="joining-case-state" value={state} onChange={(event) => navigate(event.target.value as QueueState, appliedQuery, sort)} disabled={busy}>{stateOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-      <label className="field-label" htmlFor="joining-case-sort">ترتيب الإنشاء<select id="joining-case-sort" value={sort} onChange={(event) => navigate(state, appliedQuery, event.target.value as QueueSort)} disabled={busy}><option value="created_asc">الأقدم أولًا</option><option value="created_desc">الأحدث أولًا</option></select></label>
-      <button type="button" className="button button-secondary" disabled={busy} onClick={() => void loadQueue()}>{busy ? "جارٍ القراءة…" : "إعادة القراءة"}</button>
+      <search className="joining-case-queue-search" aria-label="البحث في طلبات الانضمام">
+        <form noValidate onSubmit={(event) => { event.preventDefault(); navigate(state, query.trim().slice(0, 128), sort); }}>
+          <label className="field-label" htmlFor="joining-case-search">ابحث عن طلب<input id="joining-case-search" type="search" value={query} maxLength={128} onChange={(event) => setQuery(event.target.value)} placeholder="اسم الشريك أو المتجر أو رقم الهاتف" /></label>
+          <button type="submit" className="button button-primary" disabled={busy}>بحث</button>
+        </form>
+      </search>
+      <label className="field-label" htmlFor="joining-case-sort">الترتيب<select id="joining-case-sort" value={sort} onChange={(event) => navigate(state, appliedQuery, event.target.value as QueueSort)} disabled={busy}><option value="created_asc">الأقدم أولًا</option><option value="created_desc">الأحدث أولًا</option></select></label>
+      <button type="button" className="button button-secondary joining-case-refresh" disabled={busy} onClick={() => void loadQueue()}>{busy ? "جارٍ التحديث…" : "تحديث"}</button>
     </div>
 
-    {state || appliedQuery ? <section className="partner-active-filters" aria-label="التصفية النشطة">{state ? <button type="button" className="filter-chip" onClick={() => navigate("", appliedQuery, sort)}>الحالة: {stateOptions.find((option) => option.value === state)?.label}<span aria-hidden="true"> ×</span><span className="visually-hidden">مسح تصفية الحالة</span></button> : null}{appliedQuery ? <button type="button" className="filter-chip" onClick={() => navigate(state, "", sort)}>البحث: {appliedQuery}<span aria-hidden="true"> ×</span><span className="visually-hidden">مسح البحث</span></button> : null}<button type="button" className="button button-secondary" onClick={() => navigate("", "", "created_asc")}>مسح الكل</button></section> : null}
-    {busy && cases.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تحميل حالات النظام</strong></div> : null}
-    {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة طابور الانضمام</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void loadQueue()}>إعادة المحاولة</button></div> : null}
-    {notice ? <p role="status">{notice}</p> : null}
-    {!busy && !error && cases.length === 0 ? <div className="collection-state"><strong>لا توجد حالات مطابقة</strong><p>غيّر حالة الطلب أو امسح التصفية.</p></div> : null}
+    {isFiltered ? <section className="partner-active-filters" aria-label="المرشحات النشطة">
+      {state ? <button type="button" className="filter-chip" onClick={() => navigate("", appliedQuery, sort)}>الحالة: {currentFilterLabel}<span aria-hidden="true"> ×</span></button> : null}
+      {appliedQuery ? <button type="button" className="filter-chip" onClick={() => navigate(state, "", sort)}>البحث: <bdi>{appliedQuery}</bdi><span aria-hidden="true"> ×</span></button> : null}
+      <button type="button" className="button button-secondary" onClick={() => navigate("", "", sort)}>مسح المرشحات</button>
+    </section> : null}
+    {busy && cases.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تحميل الطلبات…</strong></div> : null}
+    {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة طلبات الانضمام</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void loadQueue()}>إعادة المحاولة</button></div> : null}
+    {notice ? <p className="joining-case-notice" role="status">{notice}</p> : null}
+    {!busy && !error && cases.length === 0 ? <div className="collection-state"><strong>{isFiltered ? "لا توجد طلبات مطابقة" : "لا توجد طلبات حتى الآن"}</strong><p>{isFiltered ? "جرّب بحثًا مختلفًا أو امسح المرشحات." : "ستظهر طلبات الانضمام هنا عند تسجيلها."}</p></div> : null}
 
     {cases.length > 0 ? <>
-      <div className="partner-registry-summary"><span>الصفحة الحالية · {cases.length} طلبات</span><fieldset className="partner-registry-bulk-actions"><legend className="visually-hidden">إجراءات الطلبات المحددة</legend><span aria-live="polite">المحدد: {selectedCases.length}</span><button type="button" className="button button-secondary" onClick={exportSelected} disabled={selectedCases.length === 0}>تصدير المحدد</button><button type="button" className="button button-secondary" onClick={() => setSelectedIds(new Set())} disabled={selectedCases.length === 0}>إلغاء التحديد</button></fieldset></div>
-      <div className="joining-case-table-wrap" aria-busy={busy}><table className="operations-table partner-registry-table">
-        <caption className="visually-hidden">حالات انضمام الشركاء </caption>
-        <thead><tr><th scope="col"><span className="visually-hidden">تحديد</span><input type="checkbox" aria-label={allSelected ? "إلغاء تحديد كل الطلبات" : "تحديد كل الطلبات في الصفحة"} checked={allSelected} onChange={(event) => setSelectedIds(event.target.checked ? new Set(cases.map((item) => item.id)) : new Set())} /></th><th scope="col">الشريك</th><th scope="col">الهاتف</th><th scope="col">متجر الانضمام</th><th scope="col">الحالة</th><th scope="col">آخر تحديث</th><th scope="col">الإجراء</th></tr></thead>
-        <tbody>{cases.map((item) => <tr key={item.id}><td><input type="checkbox" aria-label={`تحديد طلب ${item.businessName}`} checked={selectedIds.has(item.id)} onChange={() => toggleSelected(item.id)} /></td><th scope="row">{item.businessName}</th><td><bdi dir="ltr">{item.contactPhoneE164}</bdi></td><td>{item.firstStoreName}</td><td>{joiningCaseStateLabel(item.state)}</td><td><time dateTime={item.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.updatedAt))}</time></td><td><Link className="partner-row-action" href={`/partners/${encodeURIComponent(item.id)}`}>فتح الحالة <span aria-hidden="true">←</span></Link></td></tr>)}</tbody>
-      </table></div>
-        <nav className="partner-registry-pagination" aria-label="صفحات طلبات الانضمام"><button type="button" className="button button-secondary" disabled={busy || cursorStack.length === 0} onClick={() => navigate(state, appliedQuery, sort, cursorStack.at(-1) ?? "", cursorStack.slice(0, -1))}>السابق</button><span>{cursorStack.length + 1}</span><button type="button" className="button button-secondary" disabled={busy || !nextCursor} onClick={() => navigate(state, appliedQuery, sort, nextCursor, [...cursorStack, cursor])}>التالي</button></nav>
+      <div className="joining-case-queue-summary">
+        <div className="joining-case-queue-summary-copy"><strong>{currentFilterLabel}</strong><span>المعروض في هذه الصفحة: {cases.length} طلبًا{nextCursor ? " · توجد صفحة تالية" : ""}</span>{busy ? <span role="status">جارٍ تحديث النتائج…</span> : null}</div>
+        {selectedCases.length > 0 ? <fieldset className="partner-registry-bulk-actions"><legend className="visually-hidden">إجراءات الطلبات المحددة في الصفحة</legend><span aria-live="polite">{selectedCases.length} محدد</span><button type="button" className="button button-secondary" onClick={exportSelected}>تصدير المحدد</button><button type="button" className="button button-secondary" onClick={() => setSelectedIds(new Set())}>إلغاء التحديد</button></fieldset> : null}
+      </div>
+      <div className="joining-case-table-wrap" aria-busy={busy}>
+        <table className="operations-table joining-case-table">
+          <caption className="visually-hidden">طلبات الانضمام المعروضة في الصفحة الحالية، مع نوع المصدر والحالة والإجراء المناسب</caption>
+          <thead><tr>
+            <th scope="col"><input type="checkbox" aria-label={allSelected ? "إلغاء تحديد كل الطلبات في الصفحة" : "تحديد كل الطلبات في الصفحة"} checked={allSelected} onChange={(event) => setSelectedIds(event.target.checked ? new Set(cases.map((item) => item.id)) : new Set())} /></th>
+            <th scope="col">الشريك / الهاتف</th>
+            <th scope="col">المتجر / المصدر</th>
+            <th scope="col">الحالة والخطوة التالية</th>
+            <th scope="col">آخر تحديث</th>
+            <th scope="col">الإجراء</th>
+          </tr></thead>
+          <tbody>{cases.map((item) => <tr key={item.id}>
+            <td><input type="checkbox" aria-label={`تحديد طلب ${item.businessName}`} checked={selectedIds.has(item.id)} onChange={() => toggleSelected(item.id)} /></td>
+            <th scope="row"><div className="joining-case-row-main"><span>{item.businessName}</span><bdi dir="ltr">{item.contactPhoneE164}</bdi></div></th>
+            <td><div className="joining-case-row-main"><span>{item.firstStoreName || "متجر بدون اسم"}</span><small>{item.origin === "field" ? "عبر الميداني" : "عبر لوحة التحكم"}</small></div></td>
+            <td><div className="joining-case-row-state"><span className={`joining-case-state-pill state-${item.state}`}>{joiningCaseStateLabel(item.state)}</span><small>{caseHint(item.state)}</small></div></td>
+            <td><time dateTime={item.updatedAt}>{dateFormatter.format(new Date(item.updatedAt))}</time></td>
+            <td><Link className="partner-row-action joining-case-row-action" href={`/partners/${encodeURIComponent(item.id)}`}>{caseAction(item.state)}<span aria-hidden="true">←</span></Link></td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      <nav className="partner-registry-pagination joining-case-pagination" aria-label="صفحات طلبات الانضمام">
+        <button type="button" className="button button-secondary" disabled={busy || cursorStack.length === 0} onClick={() => navigate(state, appliedQuery, sort, cursorStack.at(-1) ?? "", cursorStack.slice(0, -1))}>السابق</button>
+        <span aria-current="page">الصفحة {cursorStack.length + 1}</span>
+        <button type="button" className="button button-secondary" disabled={busy || !nextCursor} onClick={() => navigate(state, appliedQuery, sort, nextCursor, [...cursorStack, cursor])}>التالي</button>
+      </nav>
     </> : null}
   </section>;
 }

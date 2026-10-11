@@ -4,11 +4,11 @@ import { PartnerOperatorBoundary } from "../../../../src/features/partner-onboar
 export default function PartnerJoiningPage() {
   return (
     <PartnerOperatorBoundary>
-      <section className="workspace-page" aria-labelledby="partner-joining-page-title">
+      <section className="workspace-page partner-joining-page" aria-labelledby="partner-joining-page-title">
         <div className="workspace-page-heading">
           <p className="eyebrow">الشركاء / الانضمام</p>
           <h1 id="partner-joining-page-title">طلبات انضمام الشركاء</h1>
-          <p className="lead">راجع الحالات الواردة وافتح كل حالة لتنفيذ قرارها من السجل المعتمد.</p>
+          <p className="lead">ابحث عن طلبات الانضمام وراجع ما يحتاج إجراءً، ثم تابع كل طلب من ملفه المعتمد.</p>
         </div>
         <JoiningCaseQueue />
       </section>
