@@ -152,6 +152,9 @@ for (const [device, viewport] of [["desktop", { width: 1368, height: 900 }], ["m
       await page.setViewportSize(viewport);
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
       await page.goto("/partners/stores");
+      // Linux runner and local Docker use different system-ui font aliases.
+      // Pin a packaged Arabic-capable font for comparable Linux rendering.
+      if (process.platform === "linux") await page.addStyleTag({ content: 'body { font-family: "FreeSerif", serif !important; }' });
       await expect(page.locator(".store-registry tbody tr")).toHaveCount(10);
       await expect(page.getByRole("heading", { name: "المتاجر", level: 1, exact: true })).toBeVisible();
       await expect(page).toHaveScreenshot(`store-registry-${device}-${theme}.png`, { animations: "disabled" });

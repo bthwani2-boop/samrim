@@ -302,7 +302,11 @@ jobs:
 
       - name: Install Chromium
         if: steps.scope.outputs.browser == 'true'
-        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends fonts-freefont-ttf
+          test "$(fc-match -f '%{family}' FreeSerif)" = FreeSerif
+          pnpm --dir apps/control-panel exec playwright install --with-deps chromium
 
       - name: Start Control Panel
         if: steps.scope.outputs.browser == 'true'

@@ -45,7 +45,7 @@ export function ActorLegalNameWorkspace({ actorId }: Readonly<{ actorId: string 
   const nameReady = [name.givenName, name.secondName, name.thirdName, name.familyName, name.evidenceReference].every((value) => value.trim().length > 0);
   return <section className="partner-detail-section" aria-labelledby="actor-legal-name-title">
     <div className="partner-detail-section-heading"><div><h2 id="actor-legal-name-title">الاسم الرباعي القانوني</h2></div><button type="button" className="button button-secondary" onClick={() => void read()} disabled={busy}>إعادة القراءة</button></div>
-    <p className="muted">الاسم بانتظار مراجعة موظف مستقل قبل اعتماده ماليًا.</p>
+    <p className="muted">{pending ? "الاسم بانتظار مراجعة موظف مستقل قبل اعتماده ماليًا." : "أدخل الاسم القانوني الرباعي ومرجع مستند الهوية، ثم أرسله للمراجعة المستقلة."}</p>
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}
     {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال الإجراء</strong><p>{error}</p></div> : null}
     {pending ? <div className="managed-status"><strong>مرشح الاسم</strong><p>{[pending.legalName.givenName, pending.legalName.secondName, pending.legalName.thirdName, pending.legalName.familyName].join(" ")}</p><p>مرجع دليل التقديم: <bdi>{pending.legalName.evidenceReference}</bdi></p>
