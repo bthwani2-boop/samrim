@@ -34,6 +34,11 @@ var journeyRefoundationRelations = []schemaRelationExpectation{
 		constraints: []string{"stores_address_text_chk", "stores_business_working_hours_chk"},
 	},
 	{
+		name:        "dsh.joining_case_review_photos",
+		columns:     []string{"joining_case_id", "image_bytes", "content_type", "content_sha256", "uploaded_by_field_actor_id", "updated_at"},
+		constraints: []string{"joining_case_review_photos_pkey", "joining_case_review_photos_joining_case_id_fkey", "joining_case_review_photos_size_chk", "joining_case_review_photos_content_chk", "joining_case_review_photos_sha_chk"},
+	},
+	{
 		name:        "dsh.joining_cases",
 		columns:     []string{"owner_full_name", "first_store_address", "first_store_working_hours", "first_store_proof_type", "first_store_notes"},
 		constraints: []string{"joining_cases_owner_full_name_chk", "joining_cases_first_store_address_chk", "joining_cases_first_store_working_hours_chk", "joining_cases_first_store_proof_type_chk", "joining_cases_first_store_notes_chk"},

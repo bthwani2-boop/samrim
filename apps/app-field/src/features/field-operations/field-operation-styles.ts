@@ -4,6 +4,7 @@ import { StyleSheet } from "react-native";
 export function createFieldOperationStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     container: { alignSelf: "stretch", backgroundColor: theme.background, gap: spacing[4], paddingBottom: spacing[5] },
+    compactContainer: { alignSelf: "stretch", backgroundColor: theme.background, gap: spacing[2], paddingBottom: spacing[3] },
     caseList: { flex: 1, width: "100%" },
     caseListContent: { flexGrow: 1, gap: spacing[4], paddingBottom: spacing[5], paddingHorizontal: spacing[5], paddingTop: spacing[4] },
     caseListFooter: { alignItems: "stretch", gap: spacing[3], paddingTop: spacing[2] },
@@ -12,6 +13,8 @@ export function createFieldOperationStyles(theme: ReturnType<typeof resolveTheme
     muted: { ...typography.bodySm, color: theme.colorMuted },
     state: { alignItems: "center", gap: spacing[2], paddingVertical: spacing[2] },
     card: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] },
+    compactCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    progressCard: { backgroundColor: theme.surface, gap: spacing[2], paddingHorizontal: spacing[2], paddingVertical: spacing[3] },
     summaryCard: { backgroundColor: theme.actionSoft, borderRadius: radius.xl, gap: spacing[3], padding: spacing[4] },
     cardTitle: { ...typography.bodyStrong, color: theme.color },
     label: { ...typography.label, color: theme.color },

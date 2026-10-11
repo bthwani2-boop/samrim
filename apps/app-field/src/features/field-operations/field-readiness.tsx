@@ -1,6 +1,7 @@
 import { sizing } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type Href, Link, useNavigation } from "expo-router";
+import * as Crypto from "expo-crypto";
+import { type Href, useNavigation, useRouter } from "expo-router";
 import { useEffect, useMemo } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
@@ -14,6 +15,7 @@ export function FieldReadiness() {
   const { state, verification, refresh } = useOwnFieldAdmission();
   const actionability = state.kind === "ready" ? fieldAdmissionActionability(state.admission) : null;
   const navigation = useNavigation();
+  const router = useRouter();
 
   useEffect(() => { return () => navigation.setOptions({ headerRight: undefined }); }, [navigation]);
   useEffect(() => {
@@ -29,7 +31,7 @@ export function FieldReadiness() {
       {verification === "verified" && actionability === "not_eligible" ? <Text accessibilityLiveRegion="polite" style={styles.muted}>إضافة الشريك غير متاحة الآن؛ راجع أهلية الميدان من صفحة الحساب.</Text> : null}
       {state.kind === "missing" ? <Text style={styles.muted} accessibilityLiveRegion="polite">أكمل ملف الميدان من صفحة الحساب لإضافة شريك.</Text> : null}
       {state.kind === "error" ? <View style={styles.card} accessibilityLiveRegion="polite"><Text accessibilityRole="alert" style={styles.error}>تعذر التحقق من أهلية حسابك الميداني الآن. أعد المحاولة لاحقًا.</Text></View> : null}
-      {verification === "verified" && actionability === "available" ? <Link href={"/new-case" as Href} asChild><BthwaniButton label="إضافة شريك" variant="primary" /></Link> : null}
+      {verification === "verified" && actionability === "available" ? <BthwaniButton label="إضافة شريك" variant="primary" onPress={() => router.push({ pathname: "/new-case", params: { fresh: Crypto.randomUUID() } } as Href)} /> : null}
     </View>
   );
 }

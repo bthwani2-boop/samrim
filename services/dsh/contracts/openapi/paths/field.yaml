@@ -842,24 +842,16 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
-
-  /dsh/field/joining-cases/{caseId}/proof-image:
+  /dsh/field/joining-cases/{caseId}/review-photo:
     post:
-      operationId: uploadFieldJoiningCaseProofImage
-      summary: Upload a private encrypted proof image for a Field-originated draft
-      security:
-        - userBearer: []
+      operationId: uploadFieldJoiningCaseReviewPhoto
+      summary: Upload optional private premises photograph for internal joining review only
+      security: [{ userBearer: [] }]
       parameters:
-        - name: caseId
-          in: path
-          required: true
-          schema:
-            type: string
-            minLength: 1
-            maxLength: 128
-        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - { name: caseId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
       requestBody:
         required: true
         content:
@@ -867,15 +859,11 @@ paths:
             schema:
               type: object
               required: [file]
-              additionalProperties: false
               properties:
                 file: { type: string, format: binary }
       responses:
-        "200": { description: Private proof image attached and joining-case readback returned., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
-        "201": { description: Private proof image attached and joining-case readback returned., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "200": { description: Private review photo saved., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
-        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
-        "503": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

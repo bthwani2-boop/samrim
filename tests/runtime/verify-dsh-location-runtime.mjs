@@ -164,28 +164,12 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
   });
   if (created?.case?.state !== "draft" || created.case.firstStoreVerticalId !== verticalID || created.case.firstStoreCommercialTypeId !== commercialStoreTypeID || created.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case create readback failed");
   const caseID = String(created.case.id);
-  const runtimePNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
-  const casePath = `/dsh/operator/joining-cases/${encodeURIComponent(caseID)}`;
-  const upload = async (pathname, expectedVersion, form) => request(dshBase, "POST", pathname, {
-    token: controlPanelToken,
-    headers: serviceHeaders(operatorID, expectedVersion),
-    rawBody: form,
-  });
-  const proofForm = new FormData();
-  proofForm.set("file", new Blob([runtimePNG], { type: "image/png" }), "location-proof.png");
-  const proofImage = await upload(`${casePath}/proof-image`, Number(created.case.version), proofForm);
-  if (proofImage.status !== 201 || proofImage.body?.case?.version !== Number(created.case.version) + 1 || proofImage.body?.case?.firstStoreProofImageUploaded !== true) throw new Error(`location joining case proof upload failed: ${JSON.stringify(proofImage)}`);
-  const storeImageForm = new FormData();
-  storeImageForm.set("creator", "DSH Location Core runtime proof fixture generator");
-  storeImageForm.set("sourceDescription", "One-pixel PNG generated for the isolated DSH Location Core runtime proof");
-  storeImageForm.set("rightsStatement", "Generated solely for this disposable runtime proof and permitted for its test");
-  storeImageForm.set("rightsAttested", "true");
-  storeImageForm.set("file", new Blob([runtimePNG], { type: "image/png" }), "location-store.png");
-  const storeImage = await upload(`${casePath}/store-image`, Number(proofImage.body.case.version), storeImageForm);
-  if (storeImage.status !== 201 || storeImage.body?.case?.version !== Number(proofImage.body.case.version) + 1) throw new Error(`location joining case store image upload failed: ${JSON.stringify(storeImage)}`);
-  const mediaReadback = await request(dshBase, "GET", `/dsh/joining-cases/${encodeURIComponent(caseID)}`, { token: controlPanelToken, headers: { "X-Acting-Actor-ID": operatorID } });
-  if (mediaReadback.status !== 200 || mediaReadback.body?.case?.version !== storeImage.body.case.version || !mediaReadback.body?.case?.storeProfileImage) throw new Error(`location joining case evidence readback failed: ${JSON.stringify(mediaReadback)}`);
-  const evidenceVersion = Number(mediaReadback.body.case.version);
+  // Intake no longer requires document media or a Store logo.
+  const draftReadback = await request(dshBase, "GET", `/dsh/joining-cases/${encodeURIComponent(caseID)}`, { token: controlPanelToken, headers: { "X-Acting-Actor-ID": operatorID } });
+  if (draftReadback.status !== 200 || draftReadback.body?.case?.state !== "draft" || draftReadback.body.case.version !== created.case.version) {
+    throw new Error(`location joining draft readback failed: ${JSON.stringify(draftReadback)}`);
+  }
+  const evidenceVersion = Number(draftReadback.body.case.version);
   const submitted = await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(caseID)}/submit`, 200, {
     token: controlPanelToken,
     headers: serviceHeaders(operatorID, evidenceVersion),
@@ -202,6 +186,25 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
     body: { decision: "approved", expectedTermsPolicyVersion: terms.policy.policyVersion },
   });
   if (approved?.case?.state !== "approved" || approved.case.financialProfileState !== "ACTIVE" || approved.case.settlementPeriod !== "MONTHLY" || typeof approved.case.financialProfileId !== "string" || !approved.case.store?.id || approved.case.firstStoreCommercialTypeId !== commercialStoreTypeID || approved.case.store.commercialStoreTypeId !== commercialStoreTypeID || approved.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || approved.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || approved.case.store.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.case.store.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case approval did not bind financial terms, commercial type, or store origin");
+  // Approved partners may attach the logo afterwards; publication still requires it.
+  const runtimePNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  const storeImageForm = new FormData();
+  storeImageForm.set("creator", "DSH Location Core runtime proof fixture generator");
+  storeImageForm.set("sourceDescription", "One-pixel PNG generated for the isolated DSH Location Core runtime proof");
+  storeImageForm.set("rightsStatement", "Generated solely for this disposable runtime proof and permitted for its test");
+  storeImageForm.set("rightsAttested", "true");
+  storeImageForm.set("file", new Blob([runtimePNG], { type: "image/png" }), "location-store.png");
+  const storeImage = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(caseID)}/store-image`, {
+    token: fixture.pair.accessToken,
+    headers: userHeaders(`location-approved-store-logo-${suffix}-${caseID}`, Number(approved.case.version)),
+    rawBody: storeImageForm,
+  });
+  const imageReadback = await request(dshBase, "GET", `/dsh/joining-cases/${encodeURIComponent(caseID)}`, { token: controlPanelToken, headers: { "X-Acting-Actor-ID": operatorID } });
+  if (storeImage.status !== 201 || storeImage.body?.case?.version !== Number(approved.case.version) + 1 ||
+    !storeImage.body?.case?.storeProfileImage || imageReadback.status !== 200 ||
+    imageReadback.body?.case?.version !== storeImage.body.case.version || !imageReadback.body?.case?.storeProfileImage) {
+    throw new Error(`location approved Store logo upload/readback failed: ${JSON.stringify({ storeImage, imageReadback })}`);
+  }
   return { ...fixture, caseID, storeID: String(approved.case.store.id) };
 }
 

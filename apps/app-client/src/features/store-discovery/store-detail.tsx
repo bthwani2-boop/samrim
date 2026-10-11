@@ -374,7 +374,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     <View style={styles.container} accessibilityLabel={`كتالوج ${state.store.name}`}>
       <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتاجر" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>المتاجر المتاحة</Text></Pressable>
       <BthwaniSurface tone="raised" style={styles.merchantHero}>
-        {state.store.storeProfileImage?.uri ? <Image accessibilityLabel={`صورة متجر ${state.store.name}`} source={{ uri: state.store.storeProfileImage.uri }} style={styles.merchantImage} resizeMode="cover" /> : <View style={styles.merchantIcon}><BthwaniIcon name="store" color={theme.onAction} size={sizing.iconXl} /></View>}
+        {state.store.storeProfileImage?.uri ? <Image accessibilityLabel={`شعار متجر ${state.store.name}`} source={{ uri: state.store.storeProfileImage.uri }} style={styles.merchantImage} resizeMode="cover" /> : <View style={styles.merchantIcon}><BthwaniIcon name="store" color={theme.onAction} size={sizing.iconXl} /></View>}
         <View style={styles.merchantCopy}><Text style={styles.eyebrow}>متجر منشور</Text><Text style={styles.title}>{state.store.name}</Text><Text style={styles.muted}>{serviceCityDisplayName(state.store.serviceCity.displayNameAr)}</Text><Text accessibilityLabel="تقييم المتجر" style={styles.rating}>{state.store.ratingCount > 0 ? `★ ${state.store.ratingAverage.toFixed(1)} من 5 · ${state.store.ratingCount} تقييم` : "لا توجد تقييمات بعد"}</Text></View>
         <BthwaniIconButton
           disabled={favoriteBusy}

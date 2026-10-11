@@ -1,7 +1,7 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, type PublicCommerceVertical, type PublicDiscoveryContentView, formatMoney, fulfillmentModeLabel, type PublicPromotionView, type PublicStoreView } from "@bthwani/dsh";
-import { type Href, useLocalSearchParams, useRouter } from "expo-router";
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, I18nManager, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
@@ -69,6 +69,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const directorySort = storeFilter === "newest" || storeFilter === "nearest" ? storeFilter : "all";
   const directoryFavoritesOnly = directoryMode && storeFilter === "favorites";
   const currentDirectoryKey = JSON.stringify([selectedCityID, directoryQuery, selectedVerticalID, directoryMode ? selectedCategoryID : "", directorySort, directoryFavoritesOnly, directoryLocation?.latitude ?? null, directoryLocation?.longitude ?? null]);
+  const displayedStoreCount = state.kind === "ready" ? state.stores.length : 0;
 
   const load = useCallback(async () => {
     const requestID = ++discoveryLoadRequestID.current;
@@ -161,6 +162,48 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       directoryRequestID.current += 1;
     };
   }, [currentDirectoryKey, directoryFavoritesOnly, directoryLocation, directoryMode, directoryQuery, directorySort, selectedCategoryID, selectedCityID, selectedVerticalID, state.kind]);
+
+  // Orderability is evaluated server-side against the current Sana'a clock.
+  // Re-read displayed stores on focus and periodically without resetting filters or scroll.
+  useFocusEffect(useCallback(() => {
+    if (!selectedCityID || state.kind !== "ready" || directoryLoading) return;
+    let active = true;
+    const refreshOrderability = async () => {
+      const statuses = new Map<string, NonNullable<PublicStoreView["orderabilityByMode"]>>();
+      let cursor = "";
+      const pages = Math.max(1, Math.ceil(displayedStoreCount / 20));
+      try {
+        for (let index = 0; index < pages; index += 1) {
+          const page = await listPublishedStores(selectedCityID, {
+            q: directoryQuery,
+            verticalId: selectedVerticalID,
+            categoryId: directoryMode ? selectedCategoryID : "",
+            favoritesOnly: directoryFavoritesOnly,
+            sort: directorySort,
+            limit: 20,
+            ...(cursor ? { cursor } : {}),
+            location: directoryLocation,
+          });
+          if (!active) return;
+          for (const store of page.stores) if (store.orderabilityByMode !== undefined) statuses.set(store.id, store.orderabilityByMode);
+          cursor = page.nextCursor ?? "";
+          if (!cursor) break;
+        }
+        if (active) setState((current) => current.kind === "ready" ? {
+          ...current,
+          stores: current.stores.map((store) => {
+            const latest = statuses.get(store.id);
+            return latest === undefined ? store : { ...store, orderabilityByMode: latest };
+          }),
+        } : current);
+      } catch {
+        // Retain last confirmed availability when the periodic read is unavailable.
+      }
+    };
+    void refreshOrderability();
+    const timer = setInterval(() => void refreshOrderability(), 60_000);
+    return () => { active = false; clearInterval(timer); };
+  }, [selectedCityID, state.kind, displayedStoreCount, directoryLoading, directoryQuery, selectedVerticalID, selectedCategoryID, directoryMode, directoryFavoritesOnly, directorySort, directoryLocation]));
 
   async function loadMoreStores() {
     if (state.kind !== "ready" || !state.nextCursor || loadingMoreStores || !selectedCityID) return;
@@ -478,14 +521,20 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         const fulfillmentModes = availableCustomerFulfillmentModes(store.fulfillmentModes);
         const fulfillmentModeLabels = fulfillmentModes.map(fulfillmentModeLabel);
         const modeSummary = fulfillmentModeLabels.length ? `، طرق الطلب المتاحة: ${fulfillmentModeLabels.join("، ")}` : "";
-        return <Pressable accessibilityRole="button" accessibilityLabel={`فتح متجر ${store.name}${modeSummary}`} onPress={() => router.push(`/store/${encodeURIComponent(store.id)}` as Href)} style={({ pressed }) => [styles.storeCard, pressed && styles.pressed]}>
-          {store.storeProfileImage?.uri ? <Image accessibilityLabel={`صورة متجر ${store.name}`} source={{ uri: store.storeProfileImage.uri }} style={styles.storeImage} resizeMode="cover" /> : <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
+        const modesForCustomer = new Set<string>(fulfillmentModes);
+        const orderability = (store.orderabilityByMode ?? []).filter((state) => modesForCustomer.has(state.fulfillmentMode));
+        const acceptsOrders = orderability.some((state) => state.state === "OPEN_FOR_ORDERS");
+        const paused = orderability.some((state) => state.state === "PAUSED");
+        const closedBySchedule = orderability.length > 0 && orderability.every((state) => state.state === "CLOSED_BY_SCHEDULE");
+        const availabilityLabel = acceptsOrders ? "مفتوح الآن" : paused ? "متوقف مؤقتًا" : closedBySchedule ? "مغلق حسب ساعات العمل" : orderability.length ? "غير متاح للطلبات" : "تحقق من التوفر";
+        return <Pressable accessibilityRole="button" accessibilityLabel={`فتح متجر ${store.name}، ${availabilityLabel}${modeSummary}`} onPress={() => router.push(`/store/${encodeURIComponent(store.id)}` as Href)} style={({ pressed }) => [styles.storeCard, pressed && styles.pressed]}>
+          {store.storeProfileImage?.uri ? <Image accessibilityLabel={`شعار متجر ${store.name}`} source={{ uri: store.storeProfileImage.uri }} style={styles.storeImage} resizeMode="cover" /> : <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
           <View style={styles.storeCopy}>
             <Text style={styles.storeTitle} numberOfLines={2}>{store.name}</Text>
             <Text style={styles.storeMeta}>{typeof store.distanceMeters === "number" ? `${(store.distanceMeters / 1000).toFixed(2)} كم` : selectedCityName || "مدينة الخدمة"}</Text>
             <Text style={styles.storeRating}>{store.ratingCount > 0 ? `★ ${store.ratingAverage.toFixed(1)} (${store.ratingCount})` : "لا توجد تقييمات بعد"}</Text>
             {fulfillmentModeLabels.length ? <Text style={styles.storeModes}>طرق الطلب المتاحة: {fulfillmentModeLabels.join(" · ")}</Text> : null}
-            <Text style={styles.storeHint}>افتح المتجر لاختيار الوضع والتحقق من التوفر</Text>
+            <Text style={[styles.storeHint, { color: acceptsOrders ? theme.success : theme.colorMuted }]}>{availabilityLabel}</Text>
           </View>
           <View style={styles.storeActions}><BthwaniIconButton disabled={Boolean(favoriteBusyStoreID)} icon="favorite" label={isFavorite ? `إزالة ${store.name} من المفضلة` : `إضافة ${store.name} إلى المفضلة`} onPress={(event) => { event.stopPropagation(); void toggleFavorite(store.id); }} tone={isFavorite ? "primary" : "soft"} /><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
         </Pressable>;

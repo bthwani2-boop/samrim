@@ -937,6 +937,11 @@ test("Field center reads DSH eligibility and routes operational controls to the 
   await page.goto("/fields");
   await expect(page.getByRole("heading", { name: "الميدانيون" })).toBeVisible();
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator("tr.field-agent-row > th").first()).toHaveCSS("position", "sticky");
+  await expect(page.locator("tr.field-agent-row > td").last()).toHaveCSS("position", "sticky");
+  await page.setViewportSize({ width: 800, height: 800 });
+  await expect(page.locator("tr.field-agent-row > td").last()).toHaveCSS("position", "static");
   await page.getByLabel("سبب الإجراء").fill("تجميد أهلية الميدان");
   await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", action: "disable", expectedVersion: 2, reason: "تجميد أهلية الميدان" });
@@ -1730,7 +1735,7 @@ test("operator creates a canonical commerce vertical before onboarding partners"
 
 test("operator creates and reads back the reward policy for the selected commercial store type", async ({ page }) => {
   await stubAuthenticatedSession(page);
-  let savedPolicy: { scopeType: string; scopeId: string; rewardMinor: number; roundingUnitMinor: number; expectedVersion: number; reason: string; version: number } | null = null;
+  let savedPolicy: { id: string; state: "ACTIVE"; scopeType: string; scopeId: string; rewardMinor: number; roundingUnitMinor: number; version: number } | null = null;
   let mutation: Record<string, unknown> | undefined;
   await page.route("**/api/catalog/verticals**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "restaurants", nameAr: "مطاعم", nameEn: "Restaurants", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
@@ -1748,7 +1753,7 @@ test("operator creates and reads back the reward policy for the selected commerc
       return;
     }
     mutation = route.request().postDataJSON() as Record<string, unknown>;
-    savedPolicy = { ...(mutation as Omit<NonNullable<typeof savedPolicy>, "version">), version: 1 };
+    savedPolicy = { ...(mutation as Pick<NonNullable<typeof savedPolicy>, "scopeType" | "scopeId" | "rewardMinor" | "roundingUnitMinor">), id: "field-policy-test", state: "ACTIVE", version: 1 };
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ policy: savedPolicy }) });
   });
 
@@ -1756,13 +1761,13 @@ test("operator creates and reads back the reward policy for the selected commerc
   await expect(page.locator("#field-acquisition-policy-title")).toBeVisible();
   await page.getByLabel("المجال التجاري").selectOption("restaurants");
   await page.getByLabel("نوع المتجر التجاري").selectOption("grocery-market");
-  await expect(page.getByText(/لا توجد سياسة مفعّلة/)).toBeVisible();
-  await page.getByLabel("مبلغ الاستحقاق لهذا النوع (ريال يمني)").fill("250");
-  await page.getByLabel("سبب إنشاء السياسة أو تغيير المبلغ").fill("سياسة اختبار نوع المطعم");
-  await page.getByRole("button", { name: "إنشاء سياسة لهذا النوع" }).click();
+  await expect(page.getByRole("status").getByText(/لا توجد سياسة لنوع/)).toBeVisible();
+  await page.getByLabel("مبلغ الاستحقاق", { exact: true }).fill("250");
+  await page.getByLabel("سبب الإنشاء أو التغيير").fill("سياسة اختبار نوع المطعم");
+  await page.getByRole("button", { name: "إنشاء السياسة", exact: true }).click();
   await expect(page.locator("output.success")).toContainText("تم حفظ السياسة ومطابقة مبلغها وإصدارها مع السجل المالي.");
   expect(mutation).toMatchObject({ scopeType: "STORE_TYPE", scopeId: "grocery-market", rewardMinor: 250, roundingUnitMinor: 50, expectedVersion: 0, reason: "سياسة اختبار نوع المطعم" });
-  await expect(page.getByText(/المبلغ الفعّال لنوع/)).toBeVisible();
+  await expect(page.getByRole("status").getByText("المبلغ الفعّال")).toBeVisible();
 });
 
 test("operator creates a product category under its commerce vertical", async ({ page }) => {
@@ -1932,7 +1937,7 @@ test("operator resumes a canonical joining case from the DSH queue", async ({ pa
     });
   });
   await page.goto("/partners/joining");
-  await page.getByRole("link", { name: "فتح الحالة" }).click();
+  await page.getByRole("row", { name: /نشاط مستعاد/ }).getByRole("link", { name: "مراجعة الطلب" }).click();
   await expect(page.getByRole("status").first()).toContainText("الحالة: قيد المراجعة");
   await expect(page.getByRole("status").first()).toContainText("نشاط مستعاد");
 });
@@ -2031,6 +2036,7 @@ test("partner Store publication exposes the canonical readiness block", async ({
     { code: "PARTNER_IDENTITY_NOT_ELIGIBLE", label: "هوية الشريك أو صلاحية دوره غير جاهزة للنشر" },
     { code: "SERVICE_CITY_NOT_ELIGIBLE", label: "مدينة خدمة المتجر غير مؤهلة للنشر" },
     { code: "CATALOG_NOT_READY", label: "لا يوجد كتالوج أو عرض منشور صالح يجعل المتجر جاهزًا" },
+    { code: "STORE_LOGO_NOT_READY", label: "شعار المتجر غير جاهز؛ أضفه من ملف المتجر قبل النشر للعملاء" },
   ] as const;
   let blockedReason: (typeof publicationReasons)[number]["code"] = publicationReasons[0].code;
   await page.route("**/api/service-cities**", async (route) => {

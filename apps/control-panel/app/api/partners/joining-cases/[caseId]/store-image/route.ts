@@ -23,7 +23,7 @@ export async function POST(request: Request, context: { params: Promise<{ caseId
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
   const provenance = form ? readMediaProvenanceInput(form) : null;
-  if (!(file instanceof File) || file.size < 1 || file.size > 10 * 1024 * 1024 || !["image/jpeg", "image/png"].includes(file.type) || !provenance) return errorResponse("INVALID_INPUT", "اختر صورة واجهة JPG أو PNG، وأكمل بيانات المصدر وحق الاستخدام.", 400);
+  if (!(file instanceof File) || file.size < 1 || file.size > 10 * 1024 * 1024 || !["image/jpeg", "image/png"].includes(file.type) || !provenance) return errorResponse("INVALID_INPUT", "اختر شعار المتجر JPG أو PNG وأكّد حق استخدامه.", 400);
   try {
     const { caseId } = await context.params;
     const result = await uploadOperatorJoiningCaseStoreImage(caseId, file, provenance, {
@@ -34,7 +34,7 @@ export async function POST(request: Request, context: { params: Promise<{ caseId
     });
     return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "تعذر رفع صورة واجهة المتجر.", 500);
+    if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "تعذر حفظ شعار المتجر.", 500);
     const payload = dshErrorPayload(error);
     return errorResponse(payload.code, payload.message, dshHttpStatus(error));
   }

@@ -14,7 +14,7 @@ function errorResponse(code: string, message: string, status: number) {
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
 const fulfillmentModes = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"] as const;
-const proofTypes = ["COMMERCIAL_REGISTRATION", "IDENTITY_DOCUMENT", "FREELANCE_WORK_DOCUMENT"] as const;
+const proofTypes = ["COMMERCIAL_REGISTRATION", "IDENTITY_DOCUMENT", "PASSPORT"] as const;
 const joiningCaseStates = new Set<JoiningCaseState>(["draft", "admission_requested", "submitted", "needs_correction", "approved"]);
 const localTimePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 

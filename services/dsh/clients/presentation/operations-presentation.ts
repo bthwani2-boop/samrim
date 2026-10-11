@@ -36,6 +36,7 @@ const publicationReadinessBlockedReasonLabels: Record<StorePublicationBlockedRea
   FINANCIAL_PROFILE_NOT_READY: "الشروط المالية للشريك لم تُثبت بعد في النظام المالي",
   SERVICE_CITY_NOT_ELIGIBLE: "مدينة خدمة المتجر غير مؤهلة للنشر",
   CATALOG_NOT_READY: "لا يوجد كتالوج أو عرض منشور صالح يجعل المتجر جاهزًا",
+  STORE_LOGO_NOT_READY: "شعار المتجر غير جاهز؛ أضفه من ملف المتجر قبل النشر للعملاء",
 };
 
 const storeOfferPublicationLabels: Record<StoreOfferPublicationState, string> = {
