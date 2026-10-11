@@ -12,6 +12,7 @@ import { useSession } from "../../src/session/session-provider";
 import { AppearanceControl } from "../../src/shell/appearance-control";
 import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/public-shell";
 import { WorkspaceIcon } from "../../src/shell/workspace-icon";
+
 function currentChild(pathname: string, destination: (typeof workspaceDestinations)[number]) {
   const child = currentWorkspaceChild(pathname, destination);
   if (child) return child;
@@ -423,7 +424,8 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
   if (state.kind === "signed_out") return <LoadingState title="جارٍ الرجوع إلى بوابة الهوية" message="انتهت الجلسة المحلية أو لم تعد متاحة." />;
 
   const currentDestination = currentWorkspaceDestination(pathname);
-  const destinationAccessGranted = canOpenWorkspaceDestination(state.identity, currentDestination);
+  const trashAccess = pathname === "/catalog/trash" && state.identity.permissions?.some((permission) => permission === "catalog" || permission === "partners") === true;
+  const destinationAccessGranted = trashAccess || canOpenWorkspaceDestination(state.identity, currentDestination);
 
   return (
     <ControlShell className="workspace-app-shell" surface="workspace" footer={null} header={<WorkspaceHeader busy={busy} navOpen={navigationOpen} navTriggerRef={navTriggerRef} onLogout={() => { setLocalSignOut(true); void logout(); }} onOpenNavigation={() => setNavigationOpen(true)} pathname={pathname} />}>

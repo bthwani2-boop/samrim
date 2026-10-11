@@ -31,6 +31,8 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [confirmTrash, setConfirmTrash] = useState(false);
+  const [trashReason, setTrashReason] = useState("");
   const requestSequence = useRef(0);
 
   const readStore = useCallback(async (showLoading = true): Promise<StorePublicationResponse | null> => {
@@ -67,6 +69,28 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
     const message = await partnerErrorMessage(response);
     await readStore(false);
     setError(message || fallback);
+  }
+
+  async function archiveStore() {
+    const current = publication?.store;
+    if (!current || busy || Array.from(trashReason.trim()).length < 5) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/stores/trash/${encodeURIComponent(current.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Expected-Version": String(current.version), "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ action: "trash", reason: trashReason.trim() }),
+      });
+      if (!response.ok) {
+        await reconcileFailure(response, "تعذرت أرشفة المتجر. اقرأ الحالة الحالية وحاول مجددًا.");
+        return;
+      }
+      setConfirmTrash(false); setTrashReason("");
+      window.location.assign("/catalog/trash");
+    } catch {
+      await readStore(false);
+      setError("تعذرت أرشفة المتجر؛ تحقّق من الاتصال ثم أعد المحاولة.");
+    } finally { setBusy(false); }
   }
 
   async function changePublication() {
@@ -225,6 +249,22 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
             <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || !selectedCommercialTypeID || commercialTypeReason.trim().length < 5} onClick={() => void saveCommercialType()}>{busy ? "جارٍ الحفظ…" : "تعيين نوع المتجر"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setSelectedCommercialTypeID(""); setCommercialTypeReason(""); }}>إلغاء التغييرات</button></div>
              <output className="managed-status managed-status-warning">لا تُحتسب العمولة أو استحقاق الميداني لهذا المتجر قبل تثبيت نوعه التجاري وتفعيل السياسة المناسبة لهذا النوع.</output>
           </>}
+        </section>
+
+        <section className="store-detail-section" aria-labelledby="store-recycle-title">
+          <div className="store-detail-heading"><h2 id="store-recycle-title">سلة المحذوفات</h2></div>
+          <p className="muted">نقل المتجر إلى السلة يُخفيه عن العملاء، ولا يحذف طلباته أو اتفاقياته أو بياناته المالية. الاستعادة لاحقًا لا تنشر المتجر تلقائيًا.</p>
+          {!confirmTrash ? <div className="button-row"><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setConfirmTrash(true); setTrashReason(""); }}>نقل المتجر إلى السلة</button></div> :
+            <div className="store-fulfillment-options">
+              <label className="field-label" htmlFor="store-trash-reason">سبب النقل إلى السلة
+                <TextArea className="resize-none" id="store-trash-reason" disabled={busy || loading} value={trashReason} onChange={(event) => setTrashReason(event.target.value)} minLength={5} maxLength={500} rows={2} />
+              </label>
+              <p className="muted">هل تريد إخفاء هذا المتجر الآن؟ لا يمكن نقل المتجر إلى السلة قبل إغلاق الطلبات الجارية.</p>
+              <div className="button-row">
+                <button type="button" className="button button-primary" disabled={busy || loading || Array.from(trashReason.trim()).length < 5} onClick={() => void archiveStore()}>تأكيد النقل إلى السلة</button>
+                <button type="button" className="button button-secondary" disabled={busy} onClick={() => setConfirmTrash(false)}>إلغاء</button>
+              </div>
+            </div>}
         </section>
 
         <section className="store-detail-section" aria-labelledby="store-catalog-title">

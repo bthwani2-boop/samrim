@@ -121,7 +121,7 @@ export function StoreRegistry() {
 
   return (
     <section className="workspace-page store-registry" aria-labelledby="store-registry-title">
-      <PageHeader id="store-registry-title" title="المتاجر" />
+      <PageHeader id="store-registry-title" title="المتاجر" actions={!loading && stores.length === 0 ? <Link className="button button-secondary" href="/catalog/trash">سلة المحذوفات</Link> : null} />
 
       <div className="workspace-toolbar store-registry-toolbar">
         <search className="store-registry-search" aria-label="البحث في المتاجر">

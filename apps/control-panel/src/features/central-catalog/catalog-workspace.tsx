@@ -22,7 +22,9 @@ export function CatalogWorkspace({ resource, children }: { resource: CatalogReso
 
   if (state.kind !== "authenticated") return null;
   if (state.identity.role !== "operator") return accessDenied();
-  if (!state.identity.permissions?.includes("catalog")) return accessDenied();
+  if (resource === "trash") {
+    if (!state.identity.permissions?.some((permission) => permission === "catalog" || permission === "partners")) return accessDenied();
+  } else if (!state.identity.permissions?.includes("catalog")) return accessDenied();
 
   const selected = workspaceCatalogResources.find((item) => item.key === resource) ?? workspaceCatalogResources[0]!;
   return (

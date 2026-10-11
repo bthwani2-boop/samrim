@@ -665,7 +665,7 @@ func readCatalogCategoryForUpdateTx(ctx context.Context, tx *sql.Tx, id string) 
 	var parent sql.NullString
 	err := tx.QueryRowContext(ctx, `SELECT category.id,category.vertical_id,category.parent_category_id,category.name_ar,category.name_en,
 		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=category.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),
-		category.active,category.version,category.created_at,category.updated_at FROM dsh.catalog_categories category WHERE category.id=$1 FOR UPDATE`, id).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+		category.active,category.version,category.created_at,category.updated_at FROM dsh.catalog_categories category WHERE category.id=$1 AND category.deleted_at IS NULL FOR UPDATE`, id).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CatalogCategoryRecord{}, ErrCatalogCategoryNotFound
 	}
@@ -687,7 +687,7 @@ func readCatalogCategoryTx(ctx context.Context, tx *sql.Tx, id string) (CatalogC
 	var parent sql.NullString
 	err := tx.QueryRowContext(ctx, `SELECT category.id,category.vertical_id,category.parent_category_id,category.name_ar,category.name_en,
 		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=category.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),
-		category.active,category.version,category.created_at,category.updated_at FROM dsh.catalog_categories category WHERE category.id=$1`, id).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+		category.active,category.version,category.created_at,category.updated_at FROM dsh.catalog_categories category WHERE category.id=$1 AND category.deleted_at IS NULL`, id).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if parent.Valid {
 		item.ParentCategoryID = parent.String
 	}
@@ -791,7 +791,7 @@ func ListCatalogCategoryPage(ctx context.Context, db *sql.DB, verticalID, query,
 		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=category.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),'') AS image_uri,
 		category.active,category.version,category.created_at,category.updated_at
 		FROM dsh.catalog_categories category
-		WHERE category.vertical_id=$1 AND ($2='all' OR category.active=($2='active'))
+		WHERE category.vertical_id=$1 AND category.deleted_at IS NULL AND ($2='all' OR category.active=($2='active'))
 		AND ($3='' OR category.name_ar ILIKE $3 ESCAPE '!' OR category.name_en ILIKE $3 ESCAPE '!')
 		AND (NOT $7::boolean
 			OR ($8='updated_desc' AND (category.updated_at,category.id)<($4::timestamptz,$6::text))
@@ -872,7 +872,7 @@ func ReadCatalogCategoryForRegistry(ctx context.Context, db *sql.DB, categoryID 
 		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=category.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),category.active,category.version,category.created_at,category.updated_at,
 		COALESCE((SELECT string_agg(ancestor.name_ar,' / ' ORDER BY ancestor.depth DESC) FROM ancestors ancestor WHERE ancestor.leaf_id=category.id),category.name_ar),
 		COALESCE((SELECT string_agg(ancestor.name_en,' / ' ORDER BY ancestor.depth DESC) FROM ancestors ancestor WHERE ancestor.leaf_id=category.id),category.name_en)
-	FROM dsh.catalog_categories category WHERE category.id=$1`, categoryID).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.PathAr, &item.PathEn)
+	FROM dsh.catalog_categories category WHERE category.id=$1 AND category.deleted_at IS NULL`, categoryID).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.PathAr, &item.PathEn)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CatalogCategoryListItem{}, ErrCatalogCategoryNotFound
 	}
@@ -953,7 +953,7 @@ func finishCatalogProductPage(ctx context.Context, db *sql.DB, items []CatalogPr
 }
 
 func ReadCatalogProduct(ctx context.Context, db *sql.DB, productID string) (CatalogProductRecord, error) {
-	item, err := readCatalogProductRow(db.QueryRowContext(ctx, catalogProductSelect+" WHERE p.id=$1", strings.TrimSpace(productID)))
+	item, err := readCatalogProductRow(db.QueryRowContext(ctx, catalogProductSelect+" WHERE p.id=$1 AND p.deleted_at IS NULL", strings.TrimSpace(productID)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return CatalogProductRecord{}, ErrCatalogProductNotFound
 	}
@@ -1009,6 +1009,7 @@ func listCatalogProducts(ctx context.Context, db *sql.DB, query, verticalID, par
 	rows, err := db.QueryContext(ctx, `SELECT p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.description,p.brand,p.active,p.version,p.created_at,p.updated_at
 		FROM dsh.catalog_products p
 		WHERE (($1='' AND p.scope='SHARED') OR ($1<>'' AND ((p.scope='SHARED') OR (p.scope='STORE_SCOPED' AND EXISTS (SELECT 1 FROM dsh.stores owned_store WHERE owned_store.id=p.store_id AND owned_store.partner_actor_id=$1 AND owned_store.primary_vertical_id=p.vertical_id)))))
+		AND p.deleted_at IS NULL
 		AND ($2='' OR p.vertical_id=$2)
 		AND ($3='' OR lower(p.canonical_name) LIKE lower($3))
 		AND (NOT $6::boolean OR (lower(p.canonical_name),p.id)>($4::text,$5::text))
@@ -1290,7 +1291,7 @@ func UpdateCatalogProduct(ctx context.Context, db *sql.DB, productID string, inp
 		}
 	}
 	var result sql.Result
-	if result, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_products SET vertical_id=$2,scope=$3,store_id=NULLIF($4,''),canonical_name=$5,description=$6,brand=$7,active=$8,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$9", productID, input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, input.Description, input.Brand, input.Active, expectedVersion); err != nil {
+	if result, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_products SET vertical_id=$2,scope=$3,store_id=NULLIF($4,''),canonical_name=$5,description=$6,brand=$7,active=$8,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$9 AND deleted_at IS NULL", productID, input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, input.Description, input.Brand, input.Active, expectedVersion); err != nil {
 		return CatalogProductResult{}, err
 	}
 	if affected, affectedErr := result.RowsAffected(); affectedErr != nil || affected != 1 {
@@ -1693,7 +1694,7 @@ func UpdateCatalogVariant(ctx context.Context, db *sql.DB, variantID string, inp
 func validateCatalogProductModelTx(ctx context.Context, tx *sql.Tx, productID string) error {
 	var scope string
 	err := tx.QueryRowContext(ctx, `SELECT p.scope FROM dsh.catalog_products p
-		JOIN dsh.commerce_verticals cv ON cv.id=p.vertical_id WHERE p.id=$1 AND cv.active=true FOR SHARE OF cv`, productID).Scan(&scope)
+		JOIN dsh.commerce_verticals cv ON cv.id=p.vertical_id WHERE p.id=$1 AND cv.active=true AND p.deleted_at IS NULL FOR SHARE OF cv`, productID).Scan(&scope)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrCatalogProductNotFound
 	}
@@ -1795,7 +1796,7 @@ func CreateCatalogOfferWithProvenance(ctx context.Context, db *sql.DB, input Cat
 		return CatalogStoreOfferResult{}, err
 	}
 	var storeVertical, productVertical, productScope, productStore, kind, baseUnit string
-	if err = tx.QueryRowContext(ctx, "SELECT s.primary_vertical_id,p.vertical_id,p.scope,COALESCE(p.store_id,''),v.measurement_kind,v.base_unit FROM dsh.stores s JOIN dsh.commerce_verticals cv ON cv.id=s.primary_vertical_id AND cv.active=true JOIN dsh.catalog_product_variants v ON v.id=$2 JOIN dsh.catalog_products p ON p.id=v.product_id WHERE s.id=$1 FOR SHARE OF s,cv", input.StoreID, input.VariantID).Scan(&storeVertical, &productVertical, &productScope, &productStore, &kind, &baseUnit); errors.Is(err, sql.ErrNoRows) {
+	if err = tx.QueryRowContext(ctx, "SELECT s.primary_vertical_id,p.vertical_id,p.scope,COALESCE(p.store_id,''),v.measurement_kind,v.base_unit FROM dsh.stores s JOIN dsh.commerce_verticals cv ON cv.id=s.primary_vertical_id AND cv.active=true JOIN dsh.catalog_product_variants v ON v.id=$2 JOIN dsh.catalog_products p ON p.id=v.product_id WHERE s.id=$1 AND p.deleted_at IS NULL FOR SHARE OF s,cv", input.StoreID, input.VariantID).Scan(&storeVertical, &productVertical, &productScope, &productStore, &kind, &baseUnit); errors.Is(err, sql.ErrNoRows) {
 		return CatalogStoreOfferResult{}, ErrCatalogVariantNotFound
 	} else if err != nil {
 		return CatalogStoreOfferResult{}, err
@@ -2102,7 +2103,7 @@ func readCatalogMediaAssetByIdempotencyTx(ctx context.Context, db queryer, idemp
 }
 
 func readCatalogProductTx(ctx context.Context, tx *sql.Tx, id string) (CatalogProductRecord, error) {
-	item, err := readCatalogProductRow(tx.QueryRowContext(ctx, catalogProductSelect+" WHERE p.id=$1", id))
+	item, err := readCatalogProductRow(tx.QueryRowContext(ctx, catalogProductSelect+" WHERE p.id=$1 AND p.deleted_at IS NULL", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return CatalogProductRecord{}, ErrCatalogProductNotFound
 	}

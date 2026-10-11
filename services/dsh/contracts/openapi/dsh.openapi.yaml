@@ -93,6 +93,33 @@ paths:
   /dsh/catalog/product-registry:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1product-registry"
 
+  /dsh/catalog/trash:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1trash"
+
+  /dsh/catalog/category-trash:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1category-trash"
+
+  /dsh/catalog/categories/{categoryId}/trash:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories~1{categoryId}~1trash"
+
+  /dsh/catalog/categories/{categoryId}/restore:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories~1{categoryId}~1restore"
+
+  /dsh/catalog/products/{productId}/trash:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1trash"
+
+  /dsh/catalog/products/{productId}/restore:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1restore"
+
+  /dsh/stores/{storeId}/trash:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1trash"
+
+  /dsh/stores/{storeId}/products/{productId}/trash:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1products~1{productId}~1trash"
+
+  /dsh/stores/{storeId}/products/{productId}/restore:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1products~1{productId}~1restore"
+
   /dsh/catalog/products/{productId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}"
 
@@ -281,6 +308,15 @@ paths:
 
   /dsh/stores:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores"
+
+  /dsh/operator/stores/trash:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1stores~1trash"
+
+  /dsh/operator/stores/{storeId}/trash:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1trash"
+
+  /dsh/operator/stores/{storeId}/restore:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1restore"
 
   /dsh/stores/{storeId}/fulfillment-modes:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1fulfillment-modes"

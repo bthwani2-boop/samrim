@@ -40,6 +40,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   const { state } = useSession();
   const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("catalog") === true;
   const [editingCategory, setEditingCategory] = useState<CatalogCategoryListItem | null>(null);
+  const [confirmTrash, setConfirmTrash] = useState(false);
   const [categoryDetail, setCategoryDetail] = useState<CatalogCategoryListItem | null>(null);
   const [parentCategoryId, setParentCategoryId] = useState("");
   const [parentSearch, setParentSearch] = useState("");
@@ -114,6 +115,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   function openCreate(nextParentCategoryId = "") {
     parentSearchSequence.current += 1;
     setEditingCategory(null);
+    setConfirmTrash(false);
     setParentCategoryId(nextParentCategoryId);
     const parent = categoryIndex.get(nextParentCategoryId);
     setParentOptions(parent ? [parent] : categories);
@@ -131,6 +133,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   function edit(category: CatalogCategoryListItem) {
     const parentRequestId = ++parentSearchSequence.current;
     setEditingCategory(category);
+    setConfirmTrash(false);
     setEditorOpen(true);
     onCategoryChange(category.id);
     setParentCategoryId(category.parentCategoryId ?? "");
@@ -154,6 +157,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   function closeEditor() {
     parentSearchSequence.current += 1;
     setEditingCategory(null);
+    setConfirmTrash(false);
     setEditorOpen(false);
     setParentCategoryId("");
     setParentSearch("");
@@ -189,6 +193,26 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
     } finally {
       if (requestId === parentSearchSequence.current) setParentLoading(false);
     }
+  }
+
+  async function trashCategory() {
+    if (!editingCategory || !canEdit || busy || Array.from(reason.trim()).length < 5) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/catalog/category-trash/${encodeURIComponent(editingCategory.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Expected-Version": String(editingCategory.version), "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ action: "trash", reason: reason.trim() }),
+      });
+      await parseResponse(response);
+      closeEditor();
+      setCategoryQuery(""); setCategoryStatus("all"); setCategorySort("name_asc");
+      onCategoryChange("");
+      setNotice("نُقلت الفئة إلى سلة المحذوفات. يمكن استعادتها من صفحة السلة.");
+      await onSaved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "تعذر نقل الفئة إلى السلة. تأكد من نقل الفئات الفرعية أولًا.");
+    } finally { setBusy(false); }
   }
 
   async function saveCategory() {
@@ -378,6 +402,13 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       {editingCategory ? <label className="catalog-category-active-toggle"><input id="catalog-category-active" type="checkbox" disabled={busy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> إظهار الفئة للمنتجات</label> : null}
       <label className="field-label" htmlFor="catalog-category-reason">سبب التغيير<TextArea id="catalog-category-reason" className="resize-none" disabled={busy || !canEdit} minLength={5} maxLength={500} rows={2} value={reason} onChange={(event) => setReason(event.target.value)} aria-describedby="catalog-category-reason-help" /></label>
       <small id="catalog-category-reason-help" className="muted">مطلوب للتوثيق · {reason.trim().length}/500</small>
+      {editingCategory && canEdit ? <div className="catalog-category-editor-actions">
+        {!confirmTrash ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => setConfirmTrash(true)}>نقل الفئة إلى سلة المحذوفات</button> : <>
+          <p className="muted">سيتوقف ظهور الفئة في الكتالوج دون حذف المنتجات. انقل الفئات الفرعية أولًا. استخدم حقل سبب التغيير أعلاه.</p>
+          <button type="button" className="button button-primary" disabled={busy || Array.from(reason.trim()).length < 5} onClick={() => void trashCategory()}>تأكيد النقل إلى السلة</button>
+          <button type="button" className="button button-secondary" disabled={busy} onClick={() => setConfirmTrash(false)}>إلغاء</button>
+        </>}
+      </div> : null}
       <div className="catalog-category-editor-actions"><button type="button" className="button button-primary" disabled={busy || !canEdit || reason.trim().length < 5} onClick={() => void saveCategory()}>{categoryEditorActionLabel}</button><button type="button" className="button button-secondary" disabled={busy} onClick={closeEditor}>إلغاء</button></div>
     </div> : null}
 

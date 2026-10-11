@@ -52,6 +52,9 @@ func (s *StorePublicationServer) serviceDB() *sql.DB { return s.db }
 
 func (s *StorePublicationServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/stores", s.listForOperator)
+	mux.HandleFunc("GET /dsh/operator/stores/trash", s.listStoreTrash)
+	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/trash", s.trashStore)
+	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/restore", s.restoreStore)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/publication", s.publish)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/fulfillment-modes", s.setFulfillmentModes)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/commercial-type", s.setCommercialStoreType)
@@ -512,6 +515,14 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "STORE_AGREEMENT_MODES_REQUIRED", "published store fulfillment modes require a matching active store commercial agreement version")
 	case errors.Is(err, storepublication.ErrPartnerIdentityUnavailable):
 		writeError(w, http.StatusBadGateway, "IDENTITY_UNAVAILABLE", "partner publication eligibility is unavailable")
+	case errors.Is(err, postgres.ErrStoreTrashInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "store trash input is invalid")
+	case errors.Is(err, postgres.ErrStoreTrashOpenOrders):
+		writeError(w, http.StatusConflict, "STORE_HAS_ACTIVE_ORDERS", "store has unfinished customer orders")
+	case errors.Is(err, postgres.ErrStoreTrashConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "store version is stale or store was archived")
+	case errors.Is(err, postgres.ErrCatalogIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "idempotency key was used with different store trash facts")
 	case errors.Is(err, postgres.ErrStoreNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "store was not found")
 	case errors.Is(err, postgres.ErrOperatorStoreInvalidLimit), errors.Is(err, postgres.ErrOperatorStoreInvalidActor), errors.Is(err, postgres.ErrOperatorStoreInvalidQuery), errors.Is(err, postgres.ErrOperatorStoreInvalidState), errors.Is(err, postgres.ErrOperatorStoreInvalidSort), errors.Is(err, postgres.ErrOperatorStoreInvalidCursor):

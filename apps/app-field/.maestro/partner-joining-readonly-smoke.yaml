@@ -1,0 +1,21 @@
+# Non-persistent live-device proof: the Field joining form and keyboard/navigation.
+# Prerequisite: authorized Field session already at onboarding step 2.
+# Do not save, submit, clear app state or change persisted business data.
+appId: com.bthwani.field
+name: Field partner joining form - navigation and keyboard
+---
+- launchApp:
+    stopApp: false
+    clearState: false
+- assertVisible: "الخطوة 2 من 2 · التشغيل والإثبات"
+- assertVisible: "حفظ وإرسال للمراجعة"
+- tapOn: "السابق"
+- assertVisible: "الخطوة 1 من 2 · المالك والمتجر"
+- assertVisible: "رقم جوال المالك"
+- tapOn: "رقم جوال المالك"
+- hideKeyboard
+- assertVisible: "التالي"
+- tapOn: "التالي"
+- assertVisible: "الخطوة 2 من 2 · التشغيل والإثبات"
+- assertVisible: "حفظ (المسودة|التعديلات)"
+- assertVisible: "حفظ وإرسال للمراجعة"

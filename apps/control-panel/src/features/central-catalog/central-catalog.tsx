@@ -107,6 +107,8 @@ export function CentralCatalog() {
   const [attributeDrafts, setAttributeDrafts] = useState<AttributeDrafts>({});
   const [attributeReadState, setAttributeReadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [selected, setSelected] = useState<CatalogProduct | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [query, setQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
@@ -304,6 +306,7 @@ export function CentralCatalog() {
 
   async function selectProduct(productId: string, updateLocation = true) {
     const requestSequence = ++detailRequestSequence.current;
+    setConfirmDelete(false); setDeleteReason("");
     if (updateLocation) writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort, mode: "edit", productId });
     setDetailLoading(true); setSelected(null); setEditorOpen(true); setNotice(""); setError("");
     try {
@@ -417,6 +420,29 @@ export function CentralCatalog() {
     } finally { setBusy(false); }
   }
 
+  async function trashSelected() {
+    if (!selected || busy || Array.from(deleteReason.trim()).length < 5) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/catalog/trash/" + encodeURIComponent(selected.id), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Expected-Version": String(selected.version), "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ action: "trash", reason: deleteReason.trim() }),
+      });
+      await parseResponse(response);
+      setConfirmDelete(false); setDeleteReason(""); setSelected(null); setEditorOpen(false);
+      writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort });
+      setNotice("نُقل المنتج إلى سلة المحذوفات، ويمكن استعادته من صفحة السلة.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "تعذر نقل المنتج إلى السلة.");
+      if (cause && typeof cause === "object" && (cause as { status?: number }).status === 409) {
+        await load();
+        if (selected) await selectProduct(selected.id, false);
+      }
+    } finally { setBusy(false); }
+  }
+
   async function uploadMedia() {
     if (!selected || !uploadFile || busy || !isMediaProvenanceInputValid(uploadProvenance)) return;
     setBusy(true); setError(""); setNotice("");
@@ -517,7 +543,8 @@ export function CentralCatalog() {
             </tbody>
           </table>
         </div>
-        {error ? <p className="identity-error" role="alert">{error}</p> : null}
+        {!editorOpen && notice ? <p className="success-inline" role="status">{notice}</p> : null}
+        {!editorOpen && error ? <p className="identity-error" role="alert">{error}</p> : null}
     <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات المنتجات" />
       </section>
       {editorOpen ? <section className="access-card central-catalog-editor" aria-labelledby="central-catalog-editor-title">
@@ -546,6 +573,8 @@ export function CentralCatalog() {
           {selected ? <><div className="catalog-product-media-gallery">{[...selected.media].sort((left, right) => left.ordinal - right.ordinal).map((media) => <figure key={`${media.role}:${media.ordinal}:${media.uri}`}><img className="catalog-media-preview" src={media.uri} alt={`${media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} لمنتج ${form.canonicalName}`} loading="lazy" /><figcaption>{media.role === "primary" ? "الصورة الأساسية" : `صورة المعرض ${media.ordinal}`}</figcaption></figure>)}{selected.media.length === 0 ? <p className="muted">لا توجد صور بعد. أنشئ المنتج أولًا ثم ارفع صورته هنا.</p> : null}</div><div className="catalog-media-upload"><label className="field-label" htmlFor="catalog-upload-role">موضع الصورة<select id="catalog-upload-role" disabled={busy} value={uploadRole} onChange={(event) => setUploadRole(event.target.value as "primary" | "gallery")}><option value="primary">الصورة الأساسية</option><option value="gallery">المعرض</option></select></label><label className="field-label" htmlFor="catalog-upload-file">ملف الصورة<input key={uploadInputKey} id="catalog-upload-file" disabled={busy} type="file" accept="image/jpeg,image/png" onChange={(event) => { setUploadFile(event.target.files?.[0] ?? null); setUploadProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); }} /></label><CatalogMediaProvenanceFields idPrefix="catalog-product-media" disabled={busy} value={uploadProvenance} onChange={setUploadProvenance} /><button type="button" className="button button-secondary" disabled={busy || !uploadFile || !isMediaProvenanceInputValid(uploadProvenance)} onClick={() => void uploadMedia()}>رفع الصورة وربطها</button></div></> : <p className="muted">بعد حفظ المنتج، افتح تفاصيله لإرفاق صورة من خلال مخزن الوسائط.</p>}
           {selected ? <label className="central-active-toggle"><input type="checkbox" disabled={busy} checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> المنتج نشط وقابل للاختيار</label> : null}
           <button type="button" className="button button-primary" disabled={busy || form.scope !== "SHARED" || attributeReadState !== "ready" || !form.canonicalName.trim() || !form.verticalId || form.categoryIds.length === 0} onClick={() => void saveProduct()}>{saveProductLabel}</button>
+           {selected && !confirmDelete ? <div className="catalog-category-filters"><button type="button" className="button button-secondary" disabled={busy} onClick={() => { setConfirmDelete(true); setDeleteReason(""); }}>نقل إلى سلة المحذوفات</button></div> : null}
+           {selected && confirmDelete ? <div className="catalog-category-filters"><span className="muted">تأكيد نقل المنتج إلى السلة</span><label className="field-label" htmlFor="catalog-delete-reason">سبب الحذف<input id="catalog-delete-reason" value={deleteReason} maxLength={500} disabled={busy} onChange={(event) => setDeleteReason(event.target.value)} placeholder="سبب واضح من 5 أحرف على الأقل" /></label><button type="button" className="button button-primary" disabled={busy || Array.from(deleteReason.trim()).length < 5} onClick={() => void trashSelected()}>{busy ? "جارٍ النقل…" : "تأكيد النقل إلى السلة"}</button><button type="button" className="button button-secondary" disabled={busy} onClick={() => setConfirmDelete(false)}>إلغاء</button></div> : null}
           <button type="button" className="button button-secondary" disabled={busy} onClick={() => { writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); detailRequestSequence.current += 1; setDetailLoading(false); setEditorOpen(false); setSelected(null); }}>إغلاق التفاصيل</button>
         </div>
         {notice ? <p className="success-inline" role="status">{notice}</p> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}

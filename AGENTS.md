@@ -60,7 +60,7 @@ Never reset credentials, revoke unrelated sessions, grant permissions, mutate ac
 
 Do not use direct SQL, ad-hoc seed data or hidden state mutation to manufacture success. Test-fixture setup is acceptable only when the task explicitly owns it and the resulting proof remains representative of the real path.
 
-Keep synthetic setup limited to the current development/proof need, using existing service owners and isolated, task-owned fixtures. Do not create a persistent synthetic world, global fixture registry or automatic startup reseeding. Required system/reference records, role and permission definitions, and useful actors/business state are preserved according to their owning contracts; they are not disposable merely because they are used locally.
+Progressive Lean Synthetic Data: during local development, create realistic, coherent synthetic records incrementally only when needed; reuse minimal, idempotent, owner-backed fixtures instead of bulk or startup reseeding. Preserve useful persistent fixtures and manually created data; isolate and clean disposable test fixtures. Keep the protected Root Owner outside synthetic seeding/cleanup, and never expose synthetic data to production or trigger real external transactions. Do not create a persistent synthetic world or global fixture registry. System/reference records and role/permission definitions remain governed by their owning contracts.
 
 An authorized local cleanup may delete or recreate proven synthetic, unshared data that is no longer needed or is reproducible. Before mutation, identify the exact local target, creating owner, dependent records and effect on active sessions/business state; preserve useful state and read back through the canonical owner. This applies equally to accounts, memberships, categories, products, media and transactions. A test/demo name is not proof of disposability. Real, shared, durable or unknown-origin state remains protected until its ownership and disposition are established.
 
@@ -75,6 +75,16 @@ Sonar is Cloud-only for this repository. Do not introduce a local Sonar server o
 Database migrations: while a local feature is still unadopted, migrations not merged to `main` and not applied to any durable database state that must be preserved may be rewritten, merged or deleted to keep a clean canonical baseline. Once a migration is merged to `main` or applied to a database whose state must be preserved or shared, treat it as immutable; every later schema change requires a new migration. Rebaseline/squash only at an explicit safe boundary where affected databases can be recreated or reconciled, preferably after a domain stabilizes and before Stage/Production. Before accepting migration changes, prove both fresh bootstrap and upgrade from the prior baseline with required data preserved.
 
 ## 5. Development and proof
+
+### Outcome-first autonomous engineering — default for authorized work
+
+Own the complete usable outcome of each authorized feature, defect, catalog operation or vertical slice, not just code, a passing isolated test or a test report. Infer the required implementation, UX, data, roles and proof from the user objective and canonical Product contracts. Within the proven affected cone, discover and repair material gaps without requiring the user to repeatedly request browsing, interaction, testing or fixes.
+
+Choose the simplest capable existing path for each claim: native Go/API and owner readback for services and data; Maestro/ADB for affected Android interaction; Playwright/current browser tools for web; actual rendered states and the Design System for affected UX. Use native batch/import APIs for large data operations and real browser/device interaction for representative end-user proof. Do not run every tool ritualistically or add a dependency, agent framework, MCP server or abstraction without demonstrated need.
+
+Where a workflow crosses actors or surfaces, exercise distinct authorized roles and materially affected handoffs using isolated, task-owned fixtures and canonical persisted readback. Mocks and successful screens do not prove the real journey. For visual work, inspect the materially relevant rendered states, responsiveness, Arabic/RTL, usability and recovery. If a check fails, repair the causal owner and repeat only the invalidated affected proof.
+
+Proceed autonomously through routine authorized edits, application interaction, diagnosis and verification until the objective is demonstrably usable or a real blocker is established. Preserve valid sessions and user data, maintain useful regression proof, and finish with an exact-HEAD closure claim and concise results rather than a test-only handoff. Existing authorization, financial, destructive-change, external-publication, deployment and merge boundaries remain in force; this default grants no new authority. Never claim unproven or perpetual 100% correctness.
 
 Default small-change loop:
 
