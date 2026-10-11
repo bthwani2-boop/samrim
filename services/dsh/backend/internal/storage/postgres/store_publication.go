@@ -480,8 +480,12 @@ func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 		return PublicationResult{}, ErrPublicationVersionConflict
 	}
 	var archived bool
-	if err := tx.QueryRowContext(ctx, "SELECT deleted_at IS NOT NULL FROM dsh.stores WHERE id=$1", storeID).Scan(&archived); err != nil { return PublicationResult{}, err }
-	if archived { return PublicationResult{}, ErrStoreTrashConflict }
+	if err := tx.QueryRowContext(ctx, "SELECT deleted_at IS NOT NULL FROM dsh.stores WHERE id=$1", storeID).Scan(&archived); err != nil {
+		return PublicationResult{}, err
+	}
+	if archived {
+		return PublicationResult{}, ErrStoreTrashConflict
+	}
 	if guard != nil {
 		if err := guard(ctx, store); err != nil {
 			return PublicationResult{}, fmt.Errorf("validate store publication readiness: %w", err)
