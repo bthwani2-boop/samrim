@@ -4,11 +4,9 @@ import { PageHeader } from "../../shell/page-header";
 
 import { formatMoney, isMediaProvenanceInputValid, type CommerceVertical, type CreatePromotionRequest, type DiscoveryContentAnalytics, type DiscoveryContentView, type MediaProvenanceInput, type OperatorDiscoveryContentRegistryResponse, type OperatorPromotionRegistryResponse, type PromotionView, type ServiceCity } from "@bthwani/dsh";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { type MarketingResourceKey, workspaceMarketingResources } from "../../navigation/workspace-registry";
 import { useSession } from "../../session/session-provider";
-import { WorkspaceResourceIndex } from "../workspace/workspace-resource-index";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
 type ApiError = { error?: { message?: string } };
 
@@ -229,10 +227,6 @@ async function readActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {
   return (body.cities ?? []).filter((city) => city.active);
 }
 
-function resourceForPath(pathname: string): MarketingResourceKey {
-  if (pathname === "/marketing") return "overview";
-  return workspaceMarketingResources.find((resource) => resource.href !== "/marketing" && (pathname === resource.href || pathname.startsWith(`${resource.href}/`)))?.key ?? "overview";
-}
 
 function accessDenied() {
   return (
@@ -248,29 +242,19 @@ function accessDenied() {
 
 export function MarketingWorkspace({ resource, children }: { resource: MarketingResourceKey; children: ReactNode }) {
   const { state } = useSession();
-  const pathname = usePathname() ?? "/marketing";
-  const activeResource = resource === "overview" ? resourceForPath(pathname) : resource;
 
   if (state.kind !== "authenticated") return null;
   if (state.identity.role !== "operator") return accessDenied();
 
-  const selected = workspaceMarketingResources.find((item) => item.key === activeResource) ?? workspaceMarketingResources[0]!;
+  const selected = workspaceMarketingResources.find((item) => item.key === resource) ?? workspaceMarketingResources[0]!;
   return (
     <section className="workspace-page" aria-labelledby="marketing-page-title">
-      <PageHeader id="marketing-page-title" title={selected.key === "overview" ? "التسويق والمحتوى" : selected.label} />
+      <PageHeader id="marketing-page-title" title={selected.label} />
       {children}
     </section>
   );
 }
 
-export function MarketingOverview() {
-  return (
-    <WorkspaceResourceIndex
-      title="موارد التسويق والمحتوى"
-      resources={workspaceMarketingResources.slice(1)}
-    />
-  );
-}
 
 export function MarketingPromotionsWorkspace() {
   const { state: sessionState } = useSession();

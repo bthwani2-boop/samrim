@@ -3,15 +3,8 @@
 import { PageHeader } from "../../shell/page-header";
 
 import type { ReactNode } from "react";
-import { usePathname } from "next/navigation";
 import { useSession } from "../../session/session-provider";
 import { type FinanceResourceKey, workspaceFinanceResources } from "../../navigation/workspace-registry";
-import { WorkspaceResourceIndex } from "../workspace/workspace-resource-index";
-
-function resourceForPath(pathname: string): FinanceResourceKey {
-  if (pathname === "/finance") return "overview";
-  return workspaceFinanceResources.find((resource) => resource.href !== "/finance" && (pathname === resource.href || pathname.startsWith(`${resource.href}/`)))?.key ?? "overview";
-}
 
 function accessDenied() {
   return (
@@ -27,26 +20,15 @@ function accessDenied() {
 
 export function FinanceWorkspace({ resource, children }: { resource: FinanceResourceKey; children: ReactNode }) {
   const { state } = useSession();
-  const pathname = usePathname() ?? "/finance";
-  const activeResource = resource === "overview" ? resourceForPath(pathname) : resource;
 
   if (state.kind !== "authenticated") return null;
   if (state.identity.role !== "operator" || !state.identity.permissions?.includes("finance")) return accessDenied();
 
-  const selected = workspaceFinanceResources.find((item) => item.key === activeResource) ?? workspaceFinanceResources[0]!;
+  const selected = workspaceFinanceResources.find((item) => item.key === resource) ?? workspaceFinanceResources[0]!;
   return (
     <section className="workspace-page" aria-labelledby="finance-page-title">
-      <PageHeader id="finance-page-title" title={selected.key === "overview" ? "المالية" : selected.label} />
+      <PageHeader id="finance-page-title" title={selected.label} />
       {children}
     </section>
-  );
-}
-
-export function FinanceOverview() {
-  return (
-    <WorkspaceResourceIndex
-      title="موارد المالية"
-      resources={workspaceFinanceResources.slice(1)}
-    />
   );
 }

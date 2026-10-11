@@ -27,7 +27,6 @@ export type CatalogResourceKey = (typeof workspaceCatalogResources)[number]["key
 const catalogChildren: readonly WorkspaceChild[] = workspaceCatalogResources.map(({ href, label }) => ({ href, label }));
 
 export const workspacePolicyResources = [
-  { key: "overview", href: "/policies", label: "نظرة عامة", description: "إدارة سياسات المنصة من ملاكها القانونيين." },
   { key: "service-cities", href: "/policies/service-cities", label: "مدن الخدمة", description: "إدارة المدن المعتمدة المستخدمة في أهلية الخدمة والانضمام." },
   { key: "wallet-providers", href: "/policies/wallet-providers", label: "مزودو المحافظ الرسمية", description: "إدارة أسماء المحافظ الرسمية التي تظهر في قوائم الاختيار." },
   { key: "delivery-fees", href: "/policies/delivery-fees", label: "رسوم التوصيل", description: "إدارة سياسة الرسوم المحسوبة خادميًا في السجل المالي." },
@@ -35,10 +34,9 @@ export const workspacePolicyResources = [
   { key: "partner-financial-terms", href: "/policies/partner-financial-terms", label: "شروط الشريك المالية", description: "تحديد العمولة وفترة التسوية المعتمدتين مركزيًا في السجل المالي لملفات الشركاء الجديدة والعالقة." }
 ] as const;
 export type PolicyResourceKey = (typeof workspacePolicyResources)[number]["key"];
-const policyChildren: readonly WorkspaceChild[] = workspacePolicyResources.slice(1).map(({ href, label }) => ({ href, label }));
+const policyChildren: readonly WorkspaceChild[] = workspacePolicyResources.map(({ href, label }) => ({ href, label }));
 
 export const workspaceFinanceResources = [
-  { key: "overview", href: "/finance", label: "نظرة عامة", description: "اختر مورد المالية المطلوب." },
   { key: "cash-custody", href: "/finance/cash-custody", label: "حفظ النقد", description: "قراءة الالتزامات النقدية المحصلة عند الاستلام." },
   { key: "partner-store-commissions", href: "/finance/partner-store-commissions", label: "اتفاقات المتاجر", description: "إدارة اتفاقية كل متجر ومراجعة النسب المقترحة للتفاوض حسب نوع المتجر." },
   { key: "beneficiary-settlement-partners", href: "/finance/beneficiary-settlement/partners", label: "مستحقات الشركاء", description: "سجل الشركاء وطلبات الصرف وتنفيذ الدفعات ومطابقتها." },
@@ -50,17 +48,16 @@ export const workspaceFinanceResources = [
 
 export type FinanceResourceKey = (typeof workspaceFinanceResources)[number]["key"];
 
-const financeChildren: readonly WorkspaceChild[] = workspaceFinanceResources.slice(1).map(({ href, label }) => ({ href, label }));
+const financeChildren: readonly WorkspaceChild[] = workspaceFinanceResources.map(({ href, label }) => ({ href, label }));
 
 export const workspaceMarketingResources = [
-  { key: "overview", href: "/marketing", label: "نظرة عامة", description: "اختر مورد التسويق المطلوب." },
   { key: "promotions", href: "/marketing/promotions", label: "العروض", description: "إنشاء العروض ومراجعة نشرها وإيقافها." },
   { key: "content", href: "/marketing/content", label: "محتوى الاكتشاف", description: "إنشاء بطاقات الاكتشاف ومراجعة نشرها." }
 ] as const;
 
 export type MarketingResourceKey = (typeof workspaceMarketingResources)[number]["key"];
 
-const marketingChildren: readonly WorkspaceChild[] = workspaceMarketingResources.slice(1).map(({ href, label }) => ({ href, label }));
+const marketingChildren: readonly WorkspaceChild[] = workspaceMarketingResources.map(({ href, label }) => ({ href, label }));
 
 export const workspaceDestinations: readonly WorkspaceDestination[] = [
   { href: "/workspace", label: "الرئيسية", children: [] },

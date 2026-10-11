@@ -123,6 +123,12 @@
   .form-grid, .workspace-form-grid, .central-product-form, .access-create-form, .access-form, .admission-form, .partner-profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px 16px; max-inline-size: 960px; }
   :is(.form-grid,.access-form,.access-create-form,.admission-form,.central-product-form) > :is(h2,h3,p,fieldset,header,.form-actions,.action-row,.managed-status,.validation-error,.field-error) { grid-column: 1 / -1; }
   .form-section { display: grid; gap: 12px; max-inline-size: 960px; }
+  .compact-form { inline-size: 100%; max-inline-size: 480px; padding: 12px; }
+  .disclosure.create-disclosure { inline-size: min(100%,480px); }
+  .disclosure.create-disclosure:not([open]) { inline-size: fit-content; }
+  .checkbox-field { display: flex; align-items: center; gap: 8px; }
+  .record-edit-field { max-inline-size: 320px; }
+  .reference-table { min-inline-size: 540px; }
   .registry-toolbar, .workspace-toolbar, .finance-toolbar, .partner-registry-toolbar, .catalog-registry-toolbar, .joining-case-queue-toolbar, .operations-toolbar, .field-roster-tools { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; padding: 12px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-base); min-inline-size: 0; }
   :is(.registry-toolbar,.workspace-toolbar,.finance-toolbar,.partner-registry-toolbar,.catalog-registry-toolbar,.joining-case-queue-toolbar) > label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; flex: 1 1 160px; max-inline-size: 260px; }
   :is(.registry-toolbar,.workspace-toolbar,.partner-registry-toolbar,.catalog-registry-toolbar,.joining-case-queue-toolbar) > search { flex: 2 1 280px; min-inline-size: 0; }
@@ -171,10 +177,6 @@
   .access-permission-count { display: inline-flex; align-items: baseline; gap: 4px; }
 }
 @layer composition {
-  .resource-index { display: grid; gap: 12px; }
-  .resource-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px,100%),1fr)); gap: 10px; padding: 0; margin: 0; list-style: none; }
-  .resource-link { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-base); font-weight: 650; }
-  .resource-link:hover { border-color: var(--border-strong); text-decoration: none; }
   .home-work-areas, .workspace-resource-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
   .home-work-area-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; margin-block-end: 12px; }
   .home-list { list-style: none; margin: 0; padding: 0; }

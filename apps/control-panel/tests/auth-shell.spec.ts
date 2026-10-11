@@ -475,11 +475,11 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
     ["/access", "المشغّلون"],
     ["/partners", "الشركاء"],
     ["/operations", "العمليات"],
-    ["/finance", "المالية"],
+    ["/finance", "حفظ النقد"],
     ["/captains", "قبول الكباتن"],
     ["/fields", "الميدانيون"],
     ["/catalog", "المنتجات"],
-    ["/policies", "مركز السياسات"],
+    ["/policies", "مدن الخدمة"],
   ] as const;
 
   for (const [path, heading] of routes) {
@@ -497,7 +497,7 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
         await expect(navigation.getByRole("list", { name: `مسارات ${owner}` }).getByRole("link", { name: tab, exact: true })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
       } else {
         const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : path === "/access" ? "الوصول والصلاحيات" : path === "/partners" ? "الشركاء" : path === "/operations" ? "العمليات" : path === "/finance" ? "المالية" : path === "/policies" ? "السياسات" : "الكتالوج";
-        const currentState = path === "/catalog" ? "location" : "page";
+        const currentState = ["/catalog", "/finance", "/policies"].includes(path) ? "location" : "page";
         await expect(navigation.getByRole("link", { name: navigationLabel, exact: true })).toHaveAttribute("aria-current", currentState, { timeout: 30_000 });
       }
     }
@@ -559,7 +559,8 @@ test("finance and marketing centers expose only real independent resource routes
   const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
 
   await page.goto("/finance");
-  await expect(page.getByRole("heading", { name: "المالية", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/finance\/cash-custody$/);
+  await expect(page.getByRole("heading", { name: "حفظ النقد", exact: true, level: 1 })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "حفظ النقد", exact: true })).toHaveAttribute("href", "/finance/cash-custody");
   await expect(navigation.getByRole("link", { name: "اتفاقات المتاجر", exact: true })).toHaveAttribute("href", "/finance/partner-store-commissions");
 
@@ -1683,6 +1684,7 @@ test("operator city creation delegates the stable id to DSH", async ({ page }) =
   });
 
   await page.goto("/policies/service-cities");
+  await page.locator("details.create-disclosure > summary").click();
   await page.getByLabel("الاسم العربي").fill("صنعاء");
   await page.getByRole("button", { name: "إضافة مدينة" }).click();
 
@@ -1704,6 +1706,7 @@ test("operator city creation rejects non-Arabic names before mutation", async ({
     await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: { code: "UNEXPECTED_MUTATION" } }) });
   });
   await page.goto("/policies/service-cities");
+  await page.locator("details.create-disclosure > summary").click();
   await page.getByLabel("الاسم العربي").fill("Sana'a");
   await page.getByRole("button", { name: "إضافة مدينة" }).click();
   await expect(page.locator("p.identity-error")).toContainText("باللغة العربية فقط");

@@ -8,6 +8,7 @@ Arabic RTL operations console. The approved refoundation replaces the previous p
 - `app/globals.css` is the **only Control Panel stylesheet**, imported only by `app/layout.tsx`. `web.css` supplies shared native controls used by other applications too.
 - `src/shell/page-header.tsx` owns page titles/actions. `workspace-icon.tsx` owns the shell's stroke icon family.
 - `src/navigation/workspace-registry.ts` owns destination names, hierarchy and search. Every center uses the same contextual sidebar. Only the current center's children are expanded. Object/workflow tabs belong to the object; a second competing center menu is forbidden.
+- Resource-only center roots open their first canonical resource directly. Never repeat the sidebar as a grid of destination cards in the work area. Small reference registries show readable rows; creation is disclosed and only one selected record is edited at a time, using a compact form.
 - `UX-CONTRACT.md` owns observable behavior. Domain services remain the authorization/query/state owners.
 
 ## Visual direction
