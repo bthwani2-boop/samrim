@@ -126,9 +126,9 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: Re
 
   return <section className="catalog-taxonomy-section" aria-labelledby="commercial-store-type-title">
     <div className="access-card-heading">
-      <span className="step-chip">تصنيف النشاط</span>
+
       <h3 id="commercial-store-type-title">أنواع المتاجر التجارية</h3>
-      <p className="muted">هذا النوع يصف طبيعة المتجر ويحدد نطاق سياساته المالية. يبقى مستقلًا عن فئات المنتجات في الكتالوج.</p>
+
       {vertical ? <p className="muted">المجال التجاري: <strong>{vertical.nameAr}</strong></p> : <p className="muted">اختر مجالًا تجاريًا لعرض أنواعه.</p>}
       {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit || !verticalId || !vertical?.active || busy} onClick={() => { clearEditor(); setEditorOpen(true); setNotice(""); }}>نوع متجر جديد</button> : null}
     </div>

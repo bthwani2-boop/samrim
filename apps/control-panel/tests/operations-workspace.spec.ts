@@ -13,6 +13,8 @@ const operatorIdentity = {
 };
 
 test("operations lanes, order detail routes, and operator recovery follow URL state", async ({ page }) => {
+  // Multi-route scenario includes mutations, recovery and screenshots; individual assertions retain their 5-second timeout.
+  test.setTimeout(90_000);
   const listRequests: URL[] = [];
   const actions: Array<Record<string, unknown>> = [];
   const evidenceDirectory = await mkdtemp(path.join(tmpdir(), "bthwani-operations-"));
@@ -201,15 +203,24 @@ test("operations lanes, order detail routes, and operator recovery follow URL st
   const brandBounds = await page.locator(".workspace-header > .brand-link").boundingBox();
   const toolsBounds = await page.locator(".workspace-header > .workspace-header-tools").boundingBox();
   const contextBounds = await page.locator(".workspace-header > .workspace-actor-context").boundingBox();
+  const headerBounds = await page.locator(".workspace-header").boundingBox();
   await page.screenshot({ path: path.join(evidenceDirectory, "operations-narrow.png") });
-  if (!brandBounds || !toolsBounds || !contextBounds) throw new Error("Expected the narrow workspace header regions to render.");
-  expect(
-    brandBounds.x + brandBounds.width <= toolsBounds.x ||
-      toolsBounds.x + toolsBounds.width <= brandBounds.x ||
-      brandBounds.y + brandBounds.height <= toolsBounds.y ||
-      toolsBounds.y + toolsBounds.height <= brandBounds.y,
-  ).toBe(true);
-  expect(contextBounds.y).toBeGreaterThanOrEqual(Math.max(brandBounds.y + brandBounds.height, toolsBounds.y + toolsBounds.height));
+  if (!brandBounds || !toolsBounds || !contextBounds || !headerBounds) throw new Error("Expected the narrow workspace header regions to render.");
+  expect(headerBounds.height).toBeLessThanOrEqual(80);
+  const headerRegions = [brandBounds, contextBounds, toolsBounds];
+  for (const region of headerRegions) {
+    expect(region.x).toBeGreaterThanOrEqual(0);
+    expect(region.x + region.width).toBeLessThanOrEqual(390);
+    expect(region.y).toBeGreaterThanOrEqual(headerBounds.y);
+    expect(region.y + region.height).toBeLessThanOrEqual(headerBounds.y + headerBounds.height);
+  }
+  for (let index = 0; index < headerRegions.length; index += 1) {
+    const first = headerRegions[index]!;
+    for (const second of headerRegions.slice(index + 1)) {
+      expect(first.x + first.width <= second.x || second.x + second.width <= first.x ||
+        first.y + first.height <= second.y || second.y + second.height <= first.y).toBe(true);
+    }
+  }
   console.log(`OPERATIONS_SCREENSHOTS=${evidenceDirectory}`);
 });
 

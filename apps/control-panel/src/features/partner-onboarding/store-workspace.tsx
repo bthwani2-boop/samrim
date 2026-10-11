@@ -1,4 +1,6 @@
 "use client";
+
+import { PageHeader } from "../../shell/page-header";
 import { TextArea } from "@bthwani/design-system/web";
 
 import { publicationReadinessBlockedReasonLabel, publicationStateLabel, type CommercialStoreType, type CommercialStoreTypeListResponse, type SetStoreCommercialTypeResponse, type StoreFulfillmentMode, type StoreFulfillmentModesResponse, type StorePublicationResponse } from "@bthwani/dsh";
@@ -6,8 +8,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 import { partnerMutationHeaders } from "./partner-request";
-import "./store-workspace.module.css";
-
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
   { value: "BTHWANI_CAPTAIN", label: "توصيل بثواني", description: "تتولى المنصة إسناد التوصيل وإدارته." },
   { value: "PARTNER_CAPTAIN", label: "توصيل المتجر", description: "يعيّن المتجر كابتنًا من كباتنه النشطين." },
@@ -171,11 +171,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
   const store = publication?.store;
   return (
     <section className="workspace-page store-workspace" aria-labelledby="store-workspace-title">
-      <div className="workspace-page-heading">
-        <p className="eyebrow">الشركاء · المتاجر · النظام</p>
-        <h1 id="store-workspace-title">{store?.name ?? "ملف المتجر"}</h1>
-        <Link className="button button-secondary" href="/partners/stores">العودة إلى سجل المتاجر</Link>
-      </div>
+      <PageHeader id="store-workspace-title" title={store?.name ?? "ملف المتجر"} actions={<Link className="button button-secondary" href="/partners/stores">سجل المتاجر</Link>} />
 
       {loading ? <output className="collection-state"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة الملف المعتمد </strong></output> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readStore()}>إعادة قراءة المتجر</button></div> : null}
@@ -183,7 +179,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
 
       {store ? <>
         <section className="store-detail-section" aria-labelledby="store-detail-context-title">
-          <div className="store-detail-heading"><div><p className="eyebrow">ملكية النظام</p><h2 id="store-detail-context-title">معلومات المتجر والعلاقات</h2></div><button type="button" className="button button-secondary" disabled={loading || busy} onClick={() => void readStore()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
+          <div className="store-detail-heading"><div><h2 id="store-detail-context-title">معلومات المتجر والعلاقات</h2></div><button type="button" className="button button-secondary" disabled={loading || busy} onClick={() => void readStore()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
           <div className="store-detail-overview">
             <dl className="store-detail-facts">
               <div><dt>الشريك المالك</dt><dd><Link href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}>{store.partnerName || "ملف الشريك"}</Link></dd></div>
@@ -201,13 +197,13 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
         </section>
 
         <section className="store-detail-section" aria-labelledby="store-publication-title">
-          <div className="store-detail-heading"><div><p className="eyebrow">حالة العرض للعميل</p><h2 id="store-publication-title">النشر والجاهزية</h2></div><span className={`status-badge status-${store.publicationState}`}>{publicationStateLabel(store.publicationState)}</span></div>
+          <div className="store-detail-heading"><div><h2 id="store-publication-title">النشر والجاهزية</h2></div><span className={`status-badge status-${store.publicationState}`}>{publicationStateLabel(store.publicationState)}</span></div>
           <p>{store.publicationReadiness.ready ? "المتجر مستوفٍ لشروط النشر الحالية." : `الجاهزية: ${publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason)}`}</p>
           <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || (!store.publicationReadiness.ready && store.publicationState !== "published")} onClick={() => void changePublication()}>{busy ? "جارٍ الحفظ…" : store.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void readStore()}>إعادة قراءة النشر</button></div>
         </section>
 
         <section className="store-detail-section" aria-labelledby="store-fulfillment-title">
-          <div className="store-detail-heading"><div><p className="eyebrow">الطلبات</p><h2 id="store-fulfillment-title">أوضاع التنفيذ</h2></div></div>
+          <div className="store-detail-heading"><div><h2 id="store-fulfillment-title">أوضاع التنفيذ</h2></div></div>
           <fieldset className="store-fulfillment-options" disabled={busy || loading}>
             <legend>الأوضاع التي يتيحها المتجر</legend>
             {fulfillmentModeOptions.map((option) => <label key={option.value} className="store-fulfillment-option"><input type="checkbox" checked={selectedModes.includes(option.value)} onChange={() => setSelectedModes((current) => current.includes(option.value) ? current.filter((mode) => mode !== option.value) : [...current, option.value])} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}
@@ -216,7 +212,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
         </section>
 
         <section className="store-detail-section" aria-labelledby="store-commercial-type-title">
-          <div className="store-detail-heading"><div><p className="eyebrow">الهوية التجارية والسياسات</p><h2 id="store-commercial-type-title">نوع المتجر التجاري</h2></div></div>
+          <div className="store-detail-heading"><div><h2 id="store-commercial-type-title">نوع المتجر التجاري</h2></div></div>
           <p className="muted">هذا التصنيف التجاري يحدد سياسة عمولة المنصة لهذا المتجر. لا يغيّر فئة منتجات الكتالوج.</p>
            {store.commercialStoreTypeId ? <output className="managed-status managed-status-info">{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr || "نوع المتجر محدد"} · تُحتسب العمولة وفق الاتفاقية المعتمدة للمتجر.</output> : <>
             <label className="field-label" htmlFor="store-commercial-type"><span>اختر نوعًا تجاريًا نشطًا</span>
@@ -232,8 +228,8 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
         </section>
 
         <section className="store-detail-section" aria-labelledby="store-catalog-title">
-          <div className="store-detail-heading"><div><p className="eyebrow">حدود بيانات المنتجات</p><h2 id="store-catalog-title">المركزي والمحلي</h2></div><Link href="/catalog/products">فتح المنتجات المركزية</Link></div>
-          <p className="muted">الهوية والبيانات المشتركة تُدار في الكتالوج المركزي. أما عروض المتجر المحلية وأسعارها وتوفرها فيديرها الشريك من تطبيقه. لا يحمل ملف التشغيل قوائم المنتجات أو العروض.</p>
+          <div className="store-detail-heading"><div><h2 id="store-catalog-title">المركزي والمحلي</h2></div><Link href="/catalog/products">فتح المنتجات المركزية</Link></div>
+          <p className="muted">المنتجات المشتركة في الكتالوج؛ أسعار المتجر وتوفره في تطبيق الشريك.</p>
         </section>
       </> : null}
     </section>

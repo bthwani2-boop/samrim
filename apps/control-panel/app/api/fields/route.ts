@@ -147,7 +147,7 @@ export async function GET(request: Request) {
           return NextResponse.json({ items, nextCursor: firstAccount.items.length ? encodeWorkbenchCursor({ version: 1, phase: "accounts", sourceCursor: "" }) : undefined }, { headers: { "Cache-Control": "no-store" } });
         }
       } else accountsCursor = workbenchCursor?.sourceCursor ?? "";
-      const accountLimit = serviceCityId ? 50 : Math.max(1, limit - items.length);
+      const accountLimit = Math.max(1, limit - items.length);
       const accounts = await searchIdentityRoles("field", query, accountLimit, accountsCursor, enabled ?? undefined, sort);
       const roster = await Promise.all(accounts.items.map(async (role) => {
         try {

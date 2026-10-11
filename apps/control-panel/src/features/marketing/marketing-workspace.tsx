@@ -1,5 +1,7 @@
 "use client";
 
+import { PageHeader } from "../../shell/page-header";
+
 import { formatMoney, isMediaProvenanceInputValid, type CommerceVertical, type CreatePromotionRequest, type DiscoveryContentAnalytics, type DiscoveryContentView, type MediaProvenanceInput, type OperatorDiscoveryContentRegistryResponse, type OperatorPromotionRegistryResponse, type PromotionView, type ServiceCity } from "@bthwani/dsh";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -8,8 +10,6 @@ import { type MarketingResourceKey, workspaceMarketingResources } from "../../na
 import { useSession } from "../../session/session-provider";
 import { WorkspaceResourceIndex } from "../workspace/workspace-resource-index";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
-import styles from "./marketing-workspace.module.css";
-
 type ApiError = { error?: { message?: string } };
 
 function discoveryContentStateLabel(state: DiscoveryContentView["state"]): string {
@@ -257,11 +257,7 @@ export function MarketingWorkspace({ resource, children }: { resource: Marketing
   const selected = workspaceMarketingResources.find((item) => item.key === activeResource) ?? workspaceMarketingResources[0]!;
   return (
     <section className="workspace-page" aria-labelledby="marketing-page-title">
-      <div className="workspace-page-heading">
-        <p className="eyebrow">إدارة النمو</p>
-        <h1 id="marketing-page-title">{selected.key === "overview" ? "التسويق والمحتوى" : selected.label}</h1>
-        <p className="lead">{selected.description}</p>
-      </div>
+      <PageHeader id="marketing-page-title" title={selected.key === "overview" ? "التسويق والمحتوى" : selected.label} />
       {children}
     </section>
   );
@@ -271,7 +267,6 @@ export function MarketingOverview() {
   return (
     <WorkspaceResourceIndex
       title="موارد التسويق والمحتوى"
-      description="العروض ومحتوى الاكتشاف مساران مستقلان، ولكل منهما قراءة ونشر من مالكه القانوني."
       resources={workspaceMarketingResources.slice(1)}
     />
   );
@@ -598,12 +593,12 @@ export function MarketingPromotionsWorkspace() {
   const selectedTargetLabel = promotionForm.targetId ? targetOptions.find((item) => item.id === promotionForm.targetId)?.label ?? "هدف معتمد" : "";
 
   return (
-    <div className={styles.workspace} data-testid="marketing-promotions-workspace">
+    <div className="work-stack" data-testid="marketing-promotions-workspace">
       {storageError ? <p className="managed-status managed-status-warning" role="alert">{storageError}</p> : null}
       {pendingCreate ? <p className="managed-status managed-status-warning" role="status">{attemptChecking ? "جارٍ التحقق من نتيجة المحاولة المحفوظة …" : "المحاولة لم تُحسم بعد. الحقول مقفلة وستعيد المحاولة بالبيانات والمفتاح نفسيهما."}</p> : null}
       <details className="access-card" open={Boolean(pendingCreate)}>
-        <summary className={styles.createSummary}>إنشاء عرض أو حملة</summary>
-        <div className="access-card-heading"><span className="step-chip">العروض</span><p className="eyebrow">تسويق مضبوط</p><h2>إنشاء عرض</h2><p className="muted">مصدر التمويل والنطاق والمشاركة حقائق صريحة؛ العرض يُنشأ كمسودة ثم يُنشر بعد المراجعة.</p></div>
+        <summary className="section-heading">إنشاء عرض أو حملة</summary>
+        <div className="access-card-heading"><h2>إنشاء عرض</h2><p className="muted">مصدر التمويل والنطاق والمشاركة حقائق صريحة؛ العرض يُنشأ كمسودة ثم يُنشر بعد المراجعة.</p></div>
         <div className="workspace-form-grid">
           <input aria-label="رمز العرض" placeholder="WELCOME10" disabled={formLocked} value={promotionForm.code} onChange={(event) => setPromotionForm((current) => ({ ...current, code: event.target.value }))} />
           <input aria-label="اسم العرض" placeholder="خصم العملاء الجدد" disabled={formLocked} value={promotionForm.nameAr} onChange={(event) => setPromotionForm((current) => ({ ...current, nameAr: event.target.value }))} />
@@ -640,7 +635,7 @@ export function MarketingPromotionsWorkspace() {
 
       <section className="access-card" aria-labelledby="marketing-promotions-title">
         <div className="access-card-heading"><h2 id="marketing-promotions-title">سجل العروض</h2>{message ? <p role="status" className="muted">{message}</p> : null}</div>
-        <form className={styles.filters} noValidate onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0, 128)); setCursor(""); setCursorStack([]); }}>
+        <form className="registry-toolbar" noValidate onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0, 128)); setCursor(""); setCursorStack([]); }}>
           <label className="field-label" htmlFor="promotion-search">رمز العرض أو الاسم<input id="promotion-search" type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
           <label className="field-label" htmlFor="promotion-state">الحالة<select id="promotion-state" value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option><option value="ENDED">منتهٍ</option></select></label>
           <label className="field-label" htmlFor="promotion-sort">ترتيب البداية<select id="promotion-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="starts_desc">الأحدث بداية</option><option value="starts_asc">الأقدم بداية</option></select></label>
@@ -650,7 +645,7 @@ export function MarketingPromotionsWorkspace() {
         {registry?.promotions.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr><th scope="col">العرض</th><th scope="col">الرمز</th><th scope="col">القيمة</th><th scope="col">التمويل والنطاق</th><th scope="col">الحالة</th><th scope="col">البداية</th><th scope="col">الإجراء</th></tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}</th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? item.valueMinor + "%" : formatMoney(item.valueMinor, "YER")}</td><td>{item.fundingSource === "SHARED" ? "مشترك · حصة الشريك " + (item.fundingSharePartnerPercent ?? 0) + "%" : item.fundingSource === "BTHWANI" ? "بثواني" : "الشريك"}<br />{item.storeId ? "متجر محدد" : item.serviceCityId ? "حملة مدينة" : "حملة منصة"}{item.requiresPartnerOptIn ? " · تتطلب موافقة" : ""}<br />{promotionTargetSummary(item)}{item.minOrderSubtotalMinor ? <><br />حد الطلب {formatMoney(item.minOrderSubtotalMinor, "YER")}</> : null}</td><td>{promotionStateLabel(item.state)}</td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td>{item.state === "ENDED" ? <span className="muted">لا إجراء</span> : <button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button>}</td></tr>)}</tbody></table></div> : null}
         {!registry?.promotions.length && loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة العروض…</p> : null}
         {!registry?.promotions.length && !loading ? <p className="collection-state">لا توجد عروض مطابقة.</p> : null}
-        <nav className={styles.pagination} aria-label="صفحات سجل العروض"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
+        <nav className="pagination" aria-label="صفحات سجل العروض"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
       </section>
     </div>
   );
@@ -990,16 +985,16 @@ export function MarketingContentWorkspace() {
     } else if (analytics) {
       analyticsContent = <dl><div><dt>الظهور</dt><dd>{analytics.find((item) => item.eventType === "IMPRESSION")?.count ?? 0}</dd></div><div><dt>النقر</dt><dd>{analytics.find((item) => item.eventType === "CLICK")?.count ?? 0}</dd></div><div><dt>التحويل</dt><dd>{analytics.find((item) => item.eventType === "CONVERSION")?.count ?? 0}</dd></div></dl>;
     }
-    analyticsPanel = <aside className={styles.analyticsPanel} aria-live="polite"><strong>تحليلات المحتوى</strong>{analyticsContent}<button className="button button-quiet" type="button" onClick={() => { setAnalyticsContentId(""); setAnalytics(null); }}>إغلاق التحليلات</button></aside>;
+    analyticsPanel = <aside className="panel" aria-live="polite"><strong>تحليلات المحتوى</strong>{analyticsContent}<button className="button button-quiet" type="button" onClick={() => { setAnalyticsContentId(""); setAnalytics(null); }}>إغلاق التحليلات</button></aside>;
   }
 
   return (
-    <div className={styles.workspace} data-testid="marketing-content-workspace">
+    <div className="work-stack" data-testid="marketing-content-workspace">
       {storageError ? <p className="managed-status managed-status-warning" role="alert">{storageError}</p> : null}
       {pendingCreate ? <p className="managed-status managed-status-warning" role="status">{pendingCreateStatusMessage}</p> : null}
       <details className="access-card" open={Boolean(pendingCreate)}>
-        <summary className={styles.createSummary}>إنشاء محتوى اكتشاف</summary>
-        <div className="access-card-heading"><span className="step-chip">الاكتشاف</span><p className="eyebrow">محتوى منشور</p><h2>إنشاء بطاقة اكتشاف</h2><p className="muted">المحتوى العام لا يظهر إلا بعد نشره ومن خلال مسار النظام القانوني.</p></div>
+        <summary className="section-heading">إنشاء محتوى اكتشاف</summary>
+        <div className="access-card-heading"><h2>إنشاء بطاقة اكتشاف</h2></div>
         <div className="workspace-form-grid">
           <input aria-label="عنوان المحتوى" placeholder="مختارات الأسبوع" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.titleAr} onChange={(event) => setContentForm((current) => ({ ...current, titleAr: event.target.value }))} />
           <input aria-label="نص المحتوى" placeholder="اكتشف الجديد في مدينتك" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.bodyAr} onChange={(event) => setContentForm((current) => ({ ...current, bodyAr: event.target.value }))} />
@@ -1014,10 +1009,10 @@ export function MarketingContentWorkspace() {
               <option value="">{targetLoading ? "جارٍ تحميل الوجهات…" : "اختر وجهة من السجلات"}</option>
               {targetOptions.map((option) => <option key={option.id} value={option.id}>{option.detail ? `${option.label} · ${option.detail}` : option.label}</option>)}
             </select></label>
-            {!["CATEGORY", "INFO"].includes(contentForm.targetType) ? <nav className={styles.pagination} aria-label="صفحات وجهات المحتوى"><button className="button button-quiet" type="button" disabled={targetLoading || targetCursorStack.length === 0} onClick={() => { const next = [...targetCursorStack]; setTargetCursor(next.pop() ?? ""); setTargetCursorStack(next); }}>السابق</button><span>{targetCursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={targetLoading || !targetNextCursor} onClick={() => { setTargetCursorStack((items) => [...items, targetCursor]); setTargetCursor(targetNextCursor); }}>تحميل المزيد</button></nav> : null}
-            {contentForm.targetType === "CATEGORY" ? <nav className={styles.pagination} aria-label="صفحات فئات المحتوى"><button className="button button-quiet" type="button" disabled={targetLoading || targetCursorStack.length === 0} onClick={() => { const next = [...targetCursorStack]; setTargetCursor(next.pop() ?? ""); setTargetCursorStack(next); }}>السابق</button><span>{targetCursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={targetLoading || !targetNextCursor} onClick={() => { setTargetCursorStack((items) => [...items, targetCursor]); setTargetCursor(targetNextCursor); }}>تحميل المزيد</button></nav> : null}
+            {!["CATEGORY", "INFO"].includes(contentForm.targetType) ? <nav className="pagination" aria-label="صفحات وجهات المحتوى"><button className="button button-quiet" type="button" disabled={targetLoading || targetCursorStack.length === 0} onClick={() => { const next = [...targetCursorStack]; setTargetCursor(next.pop() ?? ""); setTargetCursorStack(next); }}>السابق</button><span>{targetCursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={targetLoading || !targetNextCursor} onClick={() => { setTargetCursorStack((items) => [...items, targetCursor]); setTargetCursor(targetNextCursor); }}>تحميل المزيد</button></nav> : null}
+            {contentForm.targetType === "CATEGORY" ? <nav className="pagination" aria-label="صفحات فئات المحتوى"><button className="button button-quiet" type="button" disabled={targetLoading || targetCursorStack.length === 0} onClick={() => { const next = [...targetCursorStack]; setTargetCursor(next.pop() ?? ""); setTargetCursorStack(next); }}>السابق</button><span>{targetCursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={targetLoading || !targetNextCursor} onClick={() => { setTargetCursorStack((items) => [...items, targetCursor]); setTargetCursor(targetNextCursor); }}>تحميل المزيد</button></nav> : null}
             {targetMessage ? <p className="muted" role="status">{targetMessage}</p> : null}
-            <p className="muted">تُختار الوجهة من السجلات المعتمدة، ويعيد النظام التحقق من صلاحيتها حسب المدينة ووقت العرض.</p>
+
           </> : null}
           <label className="field-label" htmlFor="marketing-content-city">مدينة الخدمة<select id="marketing-content-city" aria-label="مدينة خدمة المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.serviceCityId} onChange={(event) => { setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, serviceCityId: event.target.value, targetId: "" })); }}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
           <input aria-label="بداية المحتوى" type="datetime-local" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentStartsAt} onChange={(event) => setContentStartsAt(event.target.value)} />
@@ -1028,7 +1023,7 @@ export function MarketingContentWorkspace() {
       </details>
       <section className="access-card" aria-labelledby="marketing-content-title">
         <div className="access-card-heading"><h2 id="marketing-content-title">سجل محتوى الاكتشاف</h2>{message ? <p role="status" className="muted">{message}</p> : null}</div>
-        <form className={styles.filters} noValidate onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0, 128)); setCursor(""); setCursorStack([]); }}>
+        <form className="registry-toolbar" noValidate onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0, 128)); setCursor(""); setCursorStack([]); }}>
           <label className="field-label" htmlFor="content-search">عنوان المحتوى<input id="content-search" aria-label="البحث في سجل المحتوى" type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
           <label className="field-label" htmlFor="content-state">الحالة<select id="content-state" value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option></select></label>
           <label className="field-label" htmlFor="content-kind-filter">النوع<select id="content-kind-filter" value={kind} onChange={(event) => { setKind(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الأنواع</option><option value="BANNER">بنر</option><option value="CAROUSEL">كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
@@ -1036,10 +1031,10 @@ export function MarketingContentWorkspace() {
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
           <button className="button button-quiet" type="button" onClick={() => void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل محتوى الاكتشاف."))} disabled={loading}>{loading ? "جارٍ القراءة…" : "تحديث"}</button>
         </form>
-        {registry?.items.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل محتوى الاكتشاف</caption><thead><tr><th scope="col">المحتوى</th><th scope="col">النوع والوجهة</th><th scope="col">الحالة</th><th scope="col">الأولوية والبداية</th><th scope="col">الإجراءات</th></tr></thead><tbody>{registry.items.map((item) => <tr key={item.id}><th scope="row">{item.mediaUri ? <img className={styles.mediaPreview} src={item.mediaUri} alt="" loading="lazy" /> : null}{item.titleAr}</th><td>{({ BANNER: "صورة رئيسية", CAROUSEL: "شريحة صور", SHORT_FORM: "قصة قصيرة" } as const)[item.kind]} · {({ STORE: "متجر", PRODUCT: "منتج", CATEGORY: "فئة", PROMOTION: "عرض", INFO: "معلومات عامة" } as const)[item.targetType]}</td><td>{discoveryContentStateLabel(item.state)}</td><td>{item.ordinal}<br /><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className={styles.actions}><button className="button button-quiet" type="button" disabled={analyticsLoading} onClick={() => void readAnalytics(item.id)}>{analyticsLoading && analyticsContentId === item.id ? "جارٍ قراءة التحليلات…" : "قراءة التحليلات"}</button><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishContent(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف المحتوى" : "نشر المحتوى"}</button></div></td></tr>)}</tbody></table></div> : null}
+        {registry?.items.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل محتوى الاكتشاف</caption><thead><tr><th scope="col">المحتوى</th><th scope="col">النوع والوجهة</th><th scope="col">الحالة</th><th scope="col">الأولوية والبداية</th><th scope="col">الإجراءات</th></tr></thead><tbody>{registry.items.map((item) => <tr key={item.id}><th scope="row">{item.mediaUri ? <img className="media-preview" src={item.mediaUri} alt="" loading="lazy" /> : null}{item.titleAr}</th><td>{({ BANNER: "صورة رئيسية", CAROUSEL: "شريحة صور", SHORT_FORM: "قصة قصيرة" } as const)[item.kind]} · {({ STORE: "متجر", PRODUCT: "منتج", CATEGORY: "فئة", PROMOTION: "عرض", INFO: "معلومات عامة" } as const)[item.targetType]}</td><td>{discoveryContentStateLabel(item.state)}</td><td>{item.ordinal}<br /><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className="action-row"><button className="button button-quiet" type="button" disabled={analyticsLoading} onClick={() => void readAnalytics(item.id)}>{analyticsLoading && analyticsContentId === item.id ? "جارٍ قراءة التحليلات…" : "قراءة التحليلات"}</button><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishContent(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف المحتوى" : "نشر المحتوى"}</button></div></td></tr>)}</tbody></table></div> : null}
         {!registry?.items.length && loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة المحتوى…</p> : null}
         {!registry?.items.length && !loading ? <p className="collection-state">لا يوجد محتوى مطابق.</p> : null}
-        <nav className={styles.pagination} aria-label="صفحات سجل محتوى الاكتشاف"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
+        <nav className="pagination" aria-label="صفحات سجل محتوى الاكتشاف"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
         {analyticsPanel}
       </section>
     </div>

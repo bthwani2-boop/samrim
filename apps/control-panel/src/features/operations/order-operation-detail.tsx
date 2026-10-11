@@ -1,5 +1,7 @@
 "use client";
 
+import { PageHeader } from "../../shell/page-header";
+
 import { captainAssignmentStateLabel, captainHandoffStateLabel, formatMoney, formatOrderDate, fulfillmentModeLabel, type OperatorOperation, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -8,8 +10,6 @@ import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
 import { operationActionLabel, resolveOperatorAction } from "./operator-actions";
 import { OperationLocationMap } from "./operation-location-map";
-import "./operations-workspace.module.css";
-
 type DetailTab = "overview" | "items" | "store" | "fulfillment" | "payment" | "assignment" | "recovery";
 const detailTabs: ReadonlyArray<Readonly<{ id: DetailTab; label: string }>> = [
   { id: "overview", label: "نظرة عامة" },
@@ -116,12 +116,7 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
 
   return (
     <section className="order-detail-workspace" aria-labelledby="order-operation-title">
-      <div className="workspace-page-heading order-detail-heading">
-        <Link href={returnHref()}>العودة إلى مسار الطلبات</Link>
-        <p className="eyebrow">مساحة الطلب</p>
-        <h1 id="order-operation-title">طلب من {operation.storeName}</h1>
-        <p className="lead">{operation.storeName} · {orderStateLabel(order.state)}</p>
-      </div>
+      <PageHeader id="order-operation-title" title={<>طلب من {operation.storeName}</>} status={<span className="status-badge">{orderStateLabel(order.state)}</span>} actions={<Link className="button button-secondary" href={returnHref()}>الطلبات</Link>} />
 
       <nav className="order-detail-tabs" aria-label="مساحات تفاصيل الطلب">
         {visibleTabs.map((item) => <Link key={item.id} href={tabHref(item.id)} aria-current={item.id === tab ? "page" : undefined} className={item.id === tab ? "order-detail-tab is-active" : "order-detail-tab"}>{item.label}</Link>)}
@@ -140,7 +135,7 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
         <section className="order-detail-panel" aria-labelledby="order-overview-title">
           <h2 id="order-overview-title">ملخص الطلب</h2>
           <dl className="order-detail-facts">
-            <div><dt>الحالة الحالية</dt><dd><span className={`status-badge status-${order.state.toLowerCase()}`}>{orderStateLabel(order.state)}</span></dd></div>
+
             <div><dt>المتجر</dt><dd><Link href={`/partners/stores/${encodeURIComponent(order.storeId)}`}>{operation.storeName}</Link></dd></div>
             <div><dt>عدد العناصر</dt><dd>{countLabel}</dd></div>
             <div><dt>تاريخ الطلب</dt><dd><time dateTime={order.createdAt}>{formatOrderDate(order.createdAt)}</time></dd></div>

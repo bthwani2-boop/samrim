@@ -80,24 +80,23 @@ export function PartnerFinancialTermsPolicyWorkspace() {
     }
   }
 
-  return <section className="access-card" aria-labelledby="partner-financial-terms-title">
-    <div className="finance-toolbar">
-      <div><p className="eyebrow">مركز السياسات · السجل المالي · يتطلب المالية</p><h2 id="partner-financial-terms-title">فترة تسوية الشريك</h2></div>
+  return <section className="form-section" aria-label="إعداد فترة تسوية الشريك">
+    <div className="action-row">
       <button className="button button-secondary" type="button" onClick={() => void read()} disabled={busy || readState === "loading"}>إعادة القراءة</button>
     </div>
-    <p className="muted">تحدد هذه السياسة فترة تسوية ملف الشريك عند اعتماده. أما عمولة كل متجر فتحسمها اتفاقيته الخاصة بعد تفاوض المالك وموافقة المالية.</p>
+
     {readState === "loading" ? <p role="status">جارٍ قراءة الشروط المعتمدة من السجل المالي…</p> : null}
-    {readState === "missing" ? <p className="managed-status managed-status-warning" role="status">لا توجد سياسة مالية نشطة. أدخل القيم المعتمدة هنا قبل اعتماد أو استكمال ربط أي ملف شريك.</p> : null}
+    {readState === "missing" ? <p className="managed-status managed-status-warning" role="status">لم تُحدّد فترة التسوية؛ يلزم تفعيلها قبل اعتماد الشريك.</p> : null}
     {readState === "error" ? <p className="validation-error" role="alert">{error || "تعذرت القراءة؛ التعديل متوقف حتى نجاح القراءة."}</p> : null}
     {policy ? <p className="muted">فترة التسوية: {settlementLabels[policy.settlementPeriod]}</p> : null}
     {(readState === "ready" || readState === "missing") ? <>
       <div className="form-grid">
         <label className="field-label" htmlFor="partner-terms-settlement">فترة تسوية الشريك<select id="partner-terms-settlement" value={settlementPeriod} onChange={(event) => setSettlementPeriod(event.target.value as SettlementPeriod | "")} disabled={busy || !canEdit}><option value="">اختر الفترة</option><option value="DAILY">يومية</option><option value="WEEKLY">أسبوعية</option><option value="MONTHLY">شهرية</option></select></label>
       </div>
-      <label className="field-label" htmlFor="partner-terms-reason">سبب التفعيل أو التغيير<TextArea className="resize-none" id="partner-terms-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} rows={3} disabled={busy || !canEdit} /></label>
+      <label className="field-label" htmlFor="partner-terms-reason">سبب التفعيل أو التغيير<TextArea aria-describedby="partner-terms-reason-hint" className="resize-none" id="partner-terms-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} rows={3} disabled={busy || !canEdit} /><small id="partner-terms-reason-hint">٥–٥٠٠ حرف؛ عمولة المتجر تبقى وفق اتفاقيته.</small></label>
       {error ? <p className="validation-error" role="alert">{error}</p> : null}
       {message ? <p className="success" role="status">{message}</p> : null}
-      <button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || !canEdit || !settlementPeriod || !validReason}>{saveLabel}</button>
+      <div className="action-row"><button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || !canEdit || !settlementPeriod || !validReason}>{saveLabel}</button></div>
     </> : null}
   </section>;
 }

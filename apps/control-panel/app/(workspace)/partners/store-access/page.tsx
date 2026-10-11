@@ -1,14 +1,11 @@
+import { PageHeader } from "../../../../src/shell/page-header";
 import { PartnerOperatorBoundary } from "../../../../src/features/partner-onboarding/partner-workspace";
 import { StoreAccessAdmissionQueue } from "../../../../src/features/partner-onboarding/store-access-admission-queue";
 
 export default function PartnerStoreAccessPage() {
   return <PartnerOperatorBoundary>
     <section className="workspace-page" aria-labelledby="partner-store-access-title">
-      <div className="workspace-page-heading">
-        <p className="eyebrow">الشركاء / الوصول للمتاجر</p>
-        <h1 id="partner-store-access-title">اعتماد وصول الشريك إلى متجر</h1>
-        <p className="lead">تحقق من دعوة مالك المتجر واعتمد دور الشريك للحساب المسجل فقط. قبول الدعوة يظل بيد المدعو.</p>
-      </div>
+      <PageHeader id="partner-store-access-title" title="اعتماد وصول الشريك إلى متجر" />
       <StoreAccessAdmissionQueue />
     </section>
   </PartnerOperatorBoundary>;

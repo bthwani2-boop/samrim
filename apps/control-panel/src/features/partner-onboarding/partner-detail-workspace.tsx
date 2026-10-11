@@ -1,5 +1,7 @@
 "use client";
 
+import { PageHeader } from "../../shell/page-header";
+
 import { type JoiningCaseView, fulfillmentModeLabel, joiningCaseStateLabel, type PartnerManagedStore, publicationStateLabel } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
 import Link from "next/link";
@@ -7,9 +9,6 @@ import { useCallback, useEffect, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { partnerErrorMessage } from "./partner-error-message";
 import { ActorLegalNameWorkspace } from "./actor-legal-name-workspace";
-import "./partner-detail-workspace.module.css";
-import "./partner-directory.module.css";
-
 type PartnerDetail = Readonly<{ partner: ActorRoleView; joiningCase: JoiningCaseView | null }>;
 type PartnerStoresPage = Readonly<{ stores: ReadonlyArray<PartnerManagedStore>; nextCursor?: string }>;
 type PartnerDetailTab = "profile" | "stores";
@@ -235,10 +234,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
   if (busy) statusActionLabel = "جارٍ التحديث والتحقق…";
 
   return <section className="workspace-page partner-detail-workspace" aria-labelledby="partner-detail-title">
-    <div className="workspace-page-heading partner-detail-page-heading">
-      <div><p className="eyebrow">الشركاء · ملف تشغيلي</p><h1 id="partner-detail-title">{partner?.phoneE164 ? <bdi dir="ltr">{partner.phoneE164}</bdi> : "تفاصيل الشريك"}</h1></div>
-      <Link className="button button-secondary" href="/partners">العودة للسجل</Link>
-    </div>
+    <PageHeader id="partner-detail-title" title={partner?.phoneE164 ? <bdi dir="ltr">{partner.phoneE164}</bdi> : "تفاصيل الشريك"} actions={<Link className="button button-secondary" href="/partners">سجل الشركاء</Link>} />
 
     <nav className="partner-detail-tabs" aria-label="أقسام ملف الشريك">
       <button type="button" aria-current={activeTab === "profile" ? "page" : undefined} onClick={() => navigateTab("profile")}>الحساب والانضمام</button>
@@ -252,7 +248,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
 
     {detail && activeTab === "profile" ? <div className="partner-profile-grid">
       <section className="partner-detail-section" aria-labelledby="partner-identity-title">
-        <div className="partner-detail-section-heading"><div><p className="eyebrow">بيانات الحساب والانضمام</p><h2 id="partner-identity-title">الحساب والانضمام</h2></div><button type="button" className="button button-secondary" onClick={() => void loadDetail()} disabled={loading || busy}>إعادة القراءة</button></div>
+        <div className="partner-detail-section-heading"><div><h2 id="partner-identity-title">الحساب والانضمام</h2></div><button type="button" className="button button-secondary" onClick={() => void loadDetail()} disabled={loading || busy}>إعادة القراءة</button></div>
         <dl className="partner-detail-facts">
           <div><dt>الهاتف</dt><dd><bdi dir="ltr">{detail.partner.phoneE164}</bdi></dd></div>
           <div><dt>حالة الهوية</dt><dd>{detail.partner.securityEnabled ? "نشطة" : "موقوفة"}</dd></div>
@@ -261,7 +257,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
         </dl>
       </section>
       <section className="partner-detail-section partner-status-action" aria-labelledby="partner-status-action-title">
-        <div><p className="eyebrow">إجراء موثق</p><h2 id="partner-status-action-title">{detail.partner.enabled ? "إيقاف دور الشريك" : "تفعيل دور الشريك"}</h2><p className="muted">يتطلب السبب ويُحفظ عبر الحسابات مع نسخة الدور الحالية.</p></div>
+        <div><h2 id="partner-status-action-title">{detail.partner.enabled ? "إيقاف دور الشريك" : "تفعيل دور الشريك"}</h2></div>
         <label className="field-label" htmlFor="partner-status-reason">سبب الإجراء<input id="partner-status-reason" value={reason} minLength={5} maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder="اكتب سببًا واضحًا للتغيير" disabled={!(canChangeStatus || canReenroll) || busy} /></label>
         <button type="button" className={statusActionClass} disabled={!canChangeStatus || busy || reason.trim().length < 5} onClick={() => void changeStatus()}>{statusActionLabel}</button>
         {canReenroll ? <button type="button" className="button button-secondary" disabled={busy || Array.from(reason.trim()).length < 5} onClick={() => void reenroll()}>{busy ? "جارٍ التحقق وإجازة التسجيل…" : "إجازة إعادة التسجيل"}</button> : null}
@@ -271,7 +267,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
     </div> : null}
 
     {detail && activeTab === "stores" ? <section className="partner-detail-section" aria-labelledby="partner-stores-title">
-      <div className="partner-detail-section-heading"><div><p className="eyebrow">العلاقة المعتمدة · النظام</p><h2 id="partner-stores-title">متاجر الشريك</h2></div><button type="button" className="button button-secondary" disabled={loadingStores} onClick={() => void loadStores(storesPageStack.length ? new URLSearchParams(window.location.search).get("cursor") ?? "" : "", storesPageStack)}>{loadingStores ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
+      <div className="partner-detail-section-heading"><div><h2 id="partner-stores-title">متاجر الشريك</h2></div><button type="button" className="button button-secondary" disabled={loadingStores} onClick={() => void loadStores(storesPageStack.length ? new URLSearchParams(window.location.search).get("cursor") ?? "" : "", storesPageStack)}>{loadingStores ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
       {storesError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت قراءة المتاجر</strong><p>{storesError}</p><button type="button" className="button button-secondary" onClick={() => void loadStores(new URLSearchParams(window.location.search).get("cursor") ?? "", storesPageStack)} disabled={loadingStores}>إعادة المحاولة</button></div> : null}
       {loadingStores && stores.length === 0 ? <div className="collection-state" role="status"><strong>جارٍ قراءة المتاجر </strong></div> : null}
       {!loadingStores && !storesError && stores.length === 0 ? <div className="collection-state"><strong>لا توجد متاجر مرتبطة بهذا الشريك</strong><p>هذه نتيجة القراءة الحالية .</p></div> : null}

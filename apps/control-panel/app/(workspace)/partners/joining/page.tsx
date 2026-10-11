@@ -1,3 +1,4 @@
+import { PageHeader } from "../../../../src/shell/page-header";
 import { JoiningCaseQueue } from "../../../../src/features/partner-onboarding/joining-case-queue";
 import { PartnerOperatorBoundary } from "../../../../src/features/partner-onboarding/partner-workspace";
 
@@ -5,11 +6,7 @@ export default function PartnerJoiningPage() {
   return (
     <PartnerOperatorBoundary>
       <section className="workspace-page partner-joining-page" aria-labelledby="partner-joining-page-title">
-        <div className="workspace-page-heading">
-          <p className="eyebrow">الشركاء / الانضمام</p>
-          <h1 id="partner-joining-page-title">طلبات انضمام الشركاء</h1>
-          <p className="lead">ابحث عن طلبات الانضمام وراجع ما يحتاج إجراءً، ثم تابع كل طلب من ملفه المعتمد.</p>
-        </div>
+        <PageHeader id="partner-joining-page-title" title="طلبات انضمام الشركاء" />
         <JoiningCaseQueue />
       </section>
     </PartnerOperatorBoundary>

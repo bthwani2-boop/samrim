@@ -274,10 +274,9 @@ export function JoiningCaseCreate() {
   return (
     <section className="access-card" aria-labelledby="joining-case-create-title">
       <div className="access-card-heading">
-        <span className="step-chip">المورد: حالة انضمام</span>
-        <p className="eyebrow">بيانات البداية</p>
+
         <h2 id="joining-case-create-title">إنشاء حالة انضمام جديدة</h2>
-        <p className="muted">أدخل معلومات المالك والمتجر. بعد حفظ المسودة تُرفع صورة الإثبات الخاصة وصورة واجهة المتجر في شاشة الحالة عبر المسارات المخصصة لكل منهما.</p>
+        <p className="muted">تُضاف صور الإثبات والمتجر بعد حفظ المسودة.</p>
       </div>
       {storageError ? <p className="identity-error" role="alert">{storageError} <Link href="/partners">افتح طابور الانضمام</Link></p> : null}
       {optionsError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر تحميل الخيارات</strong><p>{optionsError}</p><button type="button" className="button button-secondary" disabled={optionsBusy || busy} onClick={() => void loadOptions()}>إعادة قراءة الخيارات</button></div> : null}
@@ -299,12 +298,12 @@ export function JoiningCaseCreate() {
           {weekdays.map((label, index) => {
             const dayOfWeek = index + 1;
             const interval = workingHours.find((item) => item.dayOfWeek === dayOfWeek);
-            return <div key={dayOfWeek} className="flex flex-wrap items-center gap-2 border-b border-slate-200 py-2">
-              <label className="flex min-w-24 items-center gap-2"><input type="checkbox" checked={workingDays.includes(dayOfWeek)} onChange={(event) => setWorkingDayOpen(dayOfWeek, event.target.checked)} />{label}</label>
+            return <div key={dayOfWeek} className="action-row">
+              <label className="action-row"><input type="checkbox" checked={workingDays.includes(dayOfWeek)} onChange={(event) => setWorkingDayOpen(dayOfWeek, event.target.checked)} />{label}</label>
               {interval ? <>
                 <label className="field-label">من<input type="time" value={interval.opensAt} onChange={(event) => updateWorkingInterval(dayOfWeek, { opensAt: event.target.value })} /></label>
                 <label className="field-label">إلى<input type="time" value={interval.closesAt} onChange={(event) => updateWorkingInterval(dayOfWeek, { closesAt: event.target.value })} /></label>
-                <label className="flex items-center gap-2"><input type="checkbox" checked={interval.closesNextDay} onChange={(event) => updateWorkingInterval(dayOfWeek, { closesNextDay: event.target.checked })} />ينتهي في اليوم التالي</label>
+                <label className="action-row"><input type="checkbox" checked={interval.closesNextDay} onChange={(event) => updateWorkingInterval(dayOfWeek, { closesNextDay: event.target.checked })} />ينتهي في اليوم التالي</label>
               </> : <span className="muted">مغلق</span>}
             </div>;
           })}
@@ -312,7 +311,7 @@ export function JoiningCaseCreate() {
         <label className="field-label" htmlFor="joining-proof-type">نوع الإثبات<select id="joining-proof-type" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={proofType} onChange={(event) => setProofType(event.target.value as JoiningCaseProofType)}>{proofTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         <label className="field-label" htmlFor="joining-proof-number">رقم الإثبات<input id="joining-proof-number" autoComplete="off" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={proofNumber} onChange={(event) => setProofNumber(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-notes">ملاحظات (اختياري)<TextArea className="resize-none" id="joining-notes" maxLength={1000} disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} /></label>
-        <p className="muted">حدّد الموقع من تطبيق الميدان أو من خريطة خارجية ثم أدخل الإحداثيات هنا. سترتبط النقطة بحالة الانضمام والمتجر عند الاعتماد.</p>
+        <p className="muted">أدخل إحداثيات المتجر من الخريطة أو تطبيق الميدان.</p>
         <label className="field-label" htmlFor="joining-latitude">خط عرض موقع المتجر<input id="joining-latitude" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} inputMode="decimal" value={latitude} onChange={(event) => setLatitude(toAsciiDigits(event.target.value))} placeholder="مثال: 15.369445" /></label>
         <label className="field-label" htmlFor="joining-longitude">خط طول موقع المتجر<input id="joining-longitude" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} inputMode="decimal" value={longitude} onChange={(event) => setLongitude(toAsciiDigits(event.target.value))} placeholder="مثال: 44.191006" /></label>
         {Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude)) && latitude.trim() && longitude.trim() ? <a className="button button-secondary" href={`https://www.openstreetmap.org/?mlat=${encodeURIComponent(latitude)}&mlon=${encodeURIComponent(longitude)}#map=18/${encodeURIComponent(latitude)}/${encodeURIComponent(longitude)}`} target="_blank" rel="noreferrer">معاينة موقع المتجر على الخريطة</a> : null}

@@ -80,23 +80,24 @@ test("store type commission defaults remain suggestions, read back, and reject s
 
   await page.goto("/finance/partner-store-commissions");
   await expect(page.getByRole("heading", { name: "نسب مقترحة حسب نوع المتجر" })).toBeVisible();
-  await expect(page.getByText("هذه النسب تساعد على بدء التفاوض فقط.", { exact: false })).toBeVisible();
+  await expect(page.getByText("نسب مقترحة للتفاوض؛ لا تغيّر الاتفاقيات النافذة", { exact: false })).toBeVisible();
   const storeTypeSelect = page.getByLabel("نوع المتجر التجاري");
   await expect(storeTypeSelect).toBeEnabled();
   await storeTypeSelect.selectOption(storeType.id);
   await page.getByRole("button", { name: "قراءة النسب المقترحة" }).click();
   await expect(page.getByText("تمت قراءة النسب المقترحة من السجل المالي.", { exact: false })).toBeVisible();
-  await expect(page.getByText("لا يوجد اقتراح محفوظ بعد").first()).toBeVisible();
+  const deliverySuggestion = page.getByRole("group", { name: "نسب مقترحة حسب وضع التنفيذ" }).locator(".form-section").filter({ has: page.getByRole("heading", { name: "توصيل بثواني", exact: true }) });
+  await expect(deliverySuggestion.locator(".status-badge")).toHaveText("بلا اقتراح");
 
   await page.locator("#commission-default-rate-BTHWANI_CAPTAIN").fill("8.50");
-  await page.getByLabel("سبب التغيير (إلزامي، 8 إلى 500 حرف)").fill("اقتراح افتتاح المطعم");
+  await page.getByLabel("سبب التغيير").fill("اقتراح افتتاح المطعم");
   await page.getByRole("button", { name: "حفظ اقتراح توصيل بثواني" }).click();
   await expect(page.getByText("تم حفظ النسبة المقترحة مع سجل التدقيق.", { exact: false })).toBeVisible();
   expect(writes[0]).toMatchObject({ commercialStoreTypeId: storeType.id, fulfillmentMode: "BTHWANI_CAPTAIN", suggestedCommissionRateBps: 850, expectedDefaultVersion: 0, reason: "اقتراح افتتاح المطعم" });
-  await expect(page.getByText("اقتراح محفوظ", { exact: true }).first()).toBeVisible();
+  await expect(deliverySuggestion.locator(".status-badge")).toHaveText("8.50%");
   await expect(page.getByText("8.50%", { exact: true })).toBeVisible();
 
-  await page.getByLabel("سبب التغيير (إلزامي، 8 إلى 500 حرف)").fill("محاولة مكررة");
+  await page.getByLabel("سبب التغيير").fill("محاولة مكررة");
   await page.getByRole("button", { name: "حفظ النسبة المقترحة · توصيل بثواني" }).click();
   await expect(page.locator(".validation-error[role=alert]")).toContainText("مطابقة للاقتراح الحالي");
   expect(writes).toHaveLength(1);
@@ -105,6 +106,7 @@ test("store type commission defaults remain suggestions, read back, and reject s
   await page.getByRole("button", { name: "حفظ النسبة المقترحة · توصيل بثواني" }).click();
   await expect(page.getByText("تغير إصدار الاقتراح", { exact: false })).toBeVisible();
   expect(writes).toHaveLength(2);
+  expect(writes[1]).toMatchObject({ commercialStoreTypeId: storeType.id, fulfillmentMode: "BTHWANI_CAPTAIN", suggestedCommissionRateBps: 875, expectedDefaultVersion: 1, reason: "محاولة مكررة" });
 });
 
 test("catalog taxonomy creates and revises a commercial store type under its vertical", async ({ page }) => {

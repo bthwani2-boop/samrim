@@ -1,5 +1,6 @@
 "use client";
 
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import type { ActorRoleView } from "@bthwani/identity";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -33,8 +34,8 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
   const [coverage, setCoverage] = useState<CoverageFilter>("all");
   const [items, setItems] = useState<ReadonlyArray<OperatorRow>>([]);
   const [nextCursor, setNextCursor] = useState("");
+  const cursorPage = useCursorPage("operatorCursor", appliedQuery, true, (value) => { setQuery(value); setAppliedQuery(value); });
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [urlReady, setUrlReady] = useState(false);
   const loadRequestId = useRef(0);
@@ -64,6 +65,7 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
     if (nextCoverage !== "all") params.set("operatorCoverage", nextCoverage); else params.delete("operatorCoverage");
     const search = params.toString();
     window.history.pushState(window.history.state, "", window.location.pathname + (search ? `?${search}` : ""));
+    cursorPage.reset();
     setEnabled(nextEnabled);
     setSort(nextSort);
     setCoverage(nextCoverage);
@@ -72,12 +74,11 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
       setNextCursor("");
       setError("");
     }
-  }, [coverage, enabled, sort]);
+  }, [coverage, enabled, sort, cursorPage.reset]);
 
-  const load = useCallback(async (cursor = "", append = false) => {
+  const load = useCallback(async (cursor = cursorPage.cursor) => {
     const requestId = ++loadRequestId.current;
-    if (append) setLoadingMore(true);
-    else setLoading(true);
+    setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams({ q: appliedQuery, limit: String(pageSize), sort });
@@ -89,30 +90,31 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
       if (!response.ok) throw new Error(await responseMessage(response));
       const page = await response.json() as OperatorPage;
       if (loadRequestId.current !== requestId) return;
-      setItems((current) => append ? [...current, ...page.items] : page.items);
+      setItems(page.items);
       setNextCursor(page.nextCursor ?? "");
     } catch (cause) {
       if (loadRequestId.current !== requestId) return;
       setError(isRequestFailure(cause) ? cause.message : cause instanceof Error ? cause.message : "تعذرت قراءة قائمة المشغّلين.");
-      if (!append) setItems([]);
+      setItems([]);
       setNextCursor("");
     } finally {
       if (loadRequestId.current === requestId) {
         setLoading(false);
-        setLoadingMore(false);
+
       }
     }
-  }, [appliedQuery, coverage, enabled, sort]);
+  }, [appliedQuery, coverage, enabled, sort, cursorPage.cursor]);
 
-  useEffect(() => { if (urlReady) void load(); }, [load, urlReady]);
+  useEffect(() => { if (urlReady && cursorPage.ready) void load(); }, [load, urlReady, cursorPage.ready]);
 
   const activeFilterCount = Number(Boolean(appliedQuery)) + Number(Boolean(enabled)) + Number(coverage !== "all");
 
   function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    // Phone searches stay out of the URL and browser history because they contain personal data.
+    // Private searches stay out of the URL; navigation restores the tab-local query.
     const nextQuery = query.trim().slice(0, 100);
     setQuery(nextQuery);
+    if (nextQuery === appliedQuery) { void load(); return; }
     setAppliedQuery(nextQuery);
     setItems([]);
     setNextCursor("");
@@ -122,9 +124,7 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
   function clearSearch() {
     setQuery("");
     setAppliedQuery("");
-    setItems([]);
-    setNextCursor("");
-    setError("");
+    if (appliedQuery) { setItems([]); setNextCursor(""); setError(""); }
     queryInput.current?.focus();
   }
 
@@ -139,7 +139,6 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
     <header className="access-section-heading">
       <div>
         <h2 id="operator-directory-title">حسابات المشغّلين</h2>
-        <p>اختر الحساب لفتح تفاصيله وإدارة الوصول.</p>
       </div>
     </header>
 
@@ -158,7 +157,7 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
           <thead>
             <tr>
               <th scope="col" aria-sort={sort === "phone_asc" ? "ascending" : "descending"}>
-                <button type="button" className="access-sort-button" onClick={() => navigate(enabled, sort === "phone_asc" ? "phone_desc" : "phone_asc", coverage)}>
+                <button type="button" className="button button-quiet access-sort-button" onClick={() => navigate(enabled, sort === "phone_asc" ? "phone_desc" : "phone_asc", coverage)}>
                   المشغّل <span aria-hidden="true">{sort === "phone_asc" ? "↑" : "↓"}</span>
                 </button>
               </th>
@@ -171,8 +170,8 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
                 <form className="access-column-search" onSubmit={search} noValidate>
                   <label className="visually-hidden" htmlFor="operator-search">بحث بالاسم أو الهاتف أو المسمى أو القسم</label>
                   <input ref={queryInput} id="operator-search" maxLength={100} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="الاسم أو الهاتف أو المسمى أو القسم" />
-                  {query ? <button type="button" className="access-input-clear" aria-label="مسح البحث" onClick={clearSearch}>×</button> : null}
-                  <button type="submit" className="access-search-submit" disabled={loading}>بحث</button>
+                  {query ? <button type="button" className="button button-quiet access-input-clear" aria-label="مسح البحث" onClick={clearSearch}>×</button> : null}
+                  <button type="submit" className="button button-secondary access-search-submit" disabled={loading}>بحث</button>
                 </form>
               </th>
               <th scope="col">
@@ -209,6 +208,6 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
           </tbody>
         </table>
     </div>
-    {items.length > 0 && nextCursor ? <div className="access-load-more"><button type="button" className="button button-secondary" disabled={loading || loadingMore} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل دفعة أخرى…" : "تحميل المزيد"}</button></div> : null}
+    <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading} label="صفحات حسابات المشغّلين" />
   </section>;
 }

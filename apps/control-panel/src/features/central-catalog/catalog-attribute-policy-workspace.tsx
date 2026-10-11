@@ -166,7 +166,6 @@ export function CatalogAttributePolicyWorkspace({ verticalId, categoryId }: { ve
     <label className="field-label" htmlFor="attribute-rule-reason">سبب التغيير<TextArea id="attribute-rule-reason" className="resize-none" value={changeReason} onChange={(event) => setChangeReason(event.target.value)} disabled={busy || !canEdit} minLength={5} maxLength={500} /></label>
     <div className="catalog-attribute-definition">
         <strong>خاصية جديدة للمجال</strong>
-        <p className="muted">تُعاد الاستفادة من تعريف الخاصية داخل فئات المجال.</p>
         <label className="field-label" htmlFor="attribute-name-ar">الاسم العربي<input id="attribute-name-ar" value={nameAr} onChange={(event) => setNameAr(event.target.value)} disabled={busy || !canEdit || !verticalId} maxLength={160} /></label>
         <label className="field-label" htmlFor="attribute-kind">نوع القيمة<select id="attribute-kind" value={valueKind} onChange={(event) => setValueKind(event.target.value as ValueKind)} disabled={busy || !canEdit || !verticalId}>{(Object.keys(valueKindLabels) as ValueKind[]).map((kind) => <option key={kind} value={kind}>{valueKindLabels[kind]}</option>)}</select></label>
         <button type="button" className="button button-secondary" disabled={busy || !canEdit || !verticalId || !nameAr.trim() || !code.trim() || changeReason.trim().length < 5} onClick={() => void createDefinition()}>إضافة الخاصية</button>

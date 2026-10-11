@@ -274,16 +274,14 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
   return (
     <section className="access-card" aria-labelledby="joining-case-detail-title">
       <div className="access-card-heading">
-        <span className="step-chip">المورد: تفاصيل حالة الانضمام</span>
-        <p className="eyebrow">مراجعة الحالة المعتمدة</p>
+
         <h2 id="joining-case-detail-title">تفاصيل حالة انضمام الشريك</h2>
-        <p className="muted">كل عملية تستخدم نسخة الحالة المقروءة وتعيد القراءة بعد التعارض أو الرفض .</p>
       </div>
       {!current ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر العثور على الحالة</strong><p>{error || "الحالة غير متاحة."}</p><button type="button" className="button button-secondary" onClick={() => void readCase()}>إعادة القراءة</button></div> : (
         <>
           <div className="managed-status managed-status-info" role="status">
             <strong>الحالة: {joiningCaseStateLabel(current.state)}</strong>
-            <dl>
+            <dl className="facts-grid">
               <div><dt>اسم المالك</dt><dd>{current.ownerFullName || "غير مسجل في هذه الحالة"}</dd></div>
               <div><dt>رقم جوال المالك</dt><dd dir="ltr">{current.contactPhoneE164 || "غير مسجل"}</dd></div>
               <div><dt>اسم النشاط</dt><dd>{current.businessName || "غير مسجل"}</dd></div>
@@ -300,10 +298,10 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>ملاحظات</dt><dd>{current.firstStoreNotes === undefined ? "غير متاحة في بيانات الحالة القديمة" : current.firstStoreNotes?.trim() || "لا توجد ملاحظات"}</dd></div>
               <div><dt>مصدر الحالة</dt><dd>{current.origin === "field" ? "تطبيق الميداني" : "لوحة التحكم"}</dd></div>
               <div><dt>فترة التسوية</dt><dd>{current.settlementPeriod ? settlementPeriodLabel(current.settlementPeriod) : "لم تُثبت بعد"}</dd></div>
-              <div><dt>إصدار شروط السياسة</dt><dd>{current.termsPolicyVersion ?? "لم يُربط بعد"}</dd></div>
+              <div><dt>شروط السياسة</dt><dd>{current.termsPolicyVersion ? <details><summary>مرجع السياسة المعتمدة</summary><bdi dir="ltr">{current.termsPolicyVersion}</bdi></details> : "لم تُربط بعد"}</dd></div>
               <div><dt>الحالة المالية</dt><dd>{financialProfileStateLabel(current.financialProfileState)}</dd></div>
             </dl>
-            {current.storeProfileImage?.uri ? <figure className="mt-4 overflow-hidden rounded-xl border border-slate-200"><img src={current.storeProfileImage.uri} alt={`شعار متجر ${current.firstStoreName}`} className="h-48 w-full object-cover" /><figcaption className="p-2 text-sm text-slate-600">شعار المتجر المحفوظ من الميدان</figcaption></figure> : <p className="muted">لم يُرفع شعار متجر لهذا الملف بعد.</p>}
+            {current.storeProfileImage?.uri ? <figure className="work-stack"><img src={current.storeProfileImage.uri} alt={`شعار متجر ${current.firstStoreName}`} className="media-preview" /><figcaption className="muted">شعار المتجر المحفوظ من الميدان</figcaption></figure> : <p className="muted">لم يُرفع شعار متجر لهذا الملف بعد.</p>}
             {current.reviewPhotoUploaded ? <p><a className="button button-secondary" href={`/api/partners/joining-cases/${encodeURIComponent(caseId)}/review-photo`} target="_blank" rel="noreferrer">عرض صورة المتجر الداخلية للمراجعة</a></p> : <p className="muted">لا توجد صورة داخلية اختيارية لهذا الطلب.</p>}
             {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}
           </div>
@@ -313,13 +311,12 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
             {(current.state === "draft" || (current.state === "approved" && Boolean(current.store?.id))) ? <div className="managed-status managed-status-info">
               <strong>مرفقات ملف الانضمام</strong>
               <>
-                {current.storeProfileImage ? <p>الشعار الحالي محفوظ. يمكنك رفع شعار أوضح لتحسين بطاقات المتجر وإشعاراته.</p> : null}
-                <p>ارفع شعار المتجر ليظهر في بطاقته وفي تطبيق العميل.</p>
+                {current.storeProfileImage ? <p>يوجد شعار محفوظ.</p> : null}
                 <label className="field-label" htmlFor="joining-storefront-file">شعار المتجر<input id="joining-storefront-file" type="file" accept="image/jpeg,image/png" disabled={busy} onChange={(event) => setStoreImageFile(event.target.files?.[0] ?? null)} /></label>
                 <label className="field-label" htmlFor="joining-storefront-creator">منشئ الصورة<input id="joining-storefront-creator" disabled={busy} value={storeImageProvenance.creator} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, creator: event.target.value }))} /></label>
                 <label className="field-label" htmlFor="joining-storefront-source">مصدر الصورة<input id="joining-storefront-source" disabled={busy} value={storeImageProvenance.sourceDescription} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, sourceDescription: event.target.value }))} /></label>
                 <label className="field-label" htmlFor="joining-storefront-rights">حق الاستخدام<input id="joining-storefront-rights" disabled={busy} value={storeImageProvenance.rightsStatement} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, rightsStatement: event.target.value }))} /></label>
-                <label className="flex items-center gap-2"><input type="checkbox" disabled={busy} checked={storeImageProvenance.rightsAttested} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, rightsAttested: event.target.checked }))} /> أؤكد صحة مصدر الصورة وحق استخدامه</label>
+                <label className="action-row"><input type="checkbox" disabled={busy} checked={storeImageProvenance.rightsAttested} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, rightsAttested: event.target.checked }))} /> أؤكد صحة مصدر الصورة وحق استخدامه</label>
                 {storeImageFile ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void uploadIntakeImage()}>رفع شعار المتجر</button> : null}
               </>
             </div> : null}
@@ -333,7 +330,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
             </> : null}
             {current.state === "needs_correction" ? <p>الحالة بانتظار تصحيح بيانات الشريك عبر المسار القانوني المتاح.</p> : null}
             {current.state === "approved" ? <>
-              <p>تم اعتماد الحالة. تُستخدم نسخة الشروط المثبتة في الملف، ولا يؤدي تغيير السياسة النشطة إلى تعديل ملف معتمد سابقًا.</p>
+              <p>معتمد بشروطه المثبتة؛ تغيير السياسة لا يعدّل هذا الملف.</p>
               {current.financialProfileState === "REQUIRED" ? <>
                 <p className="managed-status managed-status-warning" role="status">{activeTermsPolicy ? "ستُربط شروط التسوية بهذه الحالة العالقة." : policyReadMessage || "يلزم وجود سياسة مالية نشطة وصلاحية المالية."}</p>
                 {!activeTermsPolicy ? <><Link className="button button-secondary" href="/policies/partner-financial-terms">فتح سياسة الشريك المالية</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة السياسة النشطة</button></> : null}

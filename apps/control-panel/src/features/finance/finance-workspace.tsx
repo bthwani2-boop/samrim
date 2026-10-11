@@ -1,5 +1,7 @@
 "use client";
 
+import { PageHeader } from "../../shell/page-header";
+
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { useSession } from "../../session/session-provider";
@@ -34,11 +36,7 @@ export function FinanceWorkspace({ resource, children }: { resource: FinanceReso
   const selected = workspaceFinanceResources.find((item) => item.key === activeResource) ?? workspaceFinanceResources[0]!;
   return (
     <section className="workspace-page" aria-labelledby="finance-page-title">
-      <div className="workspace-page-heading">
-        <p className="eyebrow">الحقيقة والسياسات المالية المعتمدة</p>
-        <h1 id="finance-page-title">{selected.key === "overview" ? "المالية" : selected.label}</h1>
-        <p className="lead">{selected.description}</p>
-      </div>
+      <PageHeader id="finance-page-title" title={selected.key === "overview" ? "المالية" : selected.label} />
       {children}
     </section>
   );
@@ -48,7 +46,6 @@ export function FinanceOverview() {
   return (
     <WorkspaceResourceIndex
       title="موارد المالية"
-      description="افتح السجل أو السياسة التي تعمل عليها. تبقى الأرصدة والإجراءات من السجل المالي هي الحقيقة المعتمدة."
       resources={workspaceFinanceResources.slice(1)}
     />
   );

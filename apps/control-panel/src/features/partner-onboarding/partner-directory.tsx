@@ -6,8 +6,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { partnerErrorMessage } from "./partner-error-message";
 import { downloadRegistryCsv } from "./registry-csv";
-import "./partner-directory.module.css";
-
 type PartnerRecord = ActorRoleView;
 type PartnerPage = Readonly<{ items: ReadonlyArray<PartnerRecord>; nextCursor?: string }>;
 type NavigationState = Readonly<{ partnerRosterCursors?: ReadonlyArray<string> }>;

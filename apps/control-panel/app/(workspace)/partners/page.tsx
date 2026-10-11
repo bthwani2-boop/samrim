@@ -1,20 +1,12 @@
+import { PageHeader } from "../../../src/shell/page-header";
 import Link from "next/link";
 import { PartnerDirectory } from "../../../src/features/partner-onboarding/partner-directory";
 import { PartnerOperatorBoundary } from "../../../src/features/partner-onboarding/partner-workspace";
-import "../../../src/features/partner-onboarding/partner-directory.module.css";
-
 export default function PartnersPage() {
   return (
     <PartnerOperatorBoundary>
       <section className="workspace-page" aria-labelledby="partners-page-title">
-        <div className="workspace-page-heading partner-page-heading">
-          <div className="workspace-page-heading-copy">
-            <p className="eyebrow">إدارة الشركاء</p>
-            <h1 id="partners-page-title">الشركاء</h1>
-            <p className="lead">حسابات الشركاء المقبولين وحالات الانضمام.</p>
-          </div>
-          <Link className="button button-primary" href="/partners/new">إضافة شريك</Link>
-        </div>
+        <PageHeader id="partners-page-title" title="الشركاء" actions={<Link className="button button-primary" href="/partners/new">إضافة شريك</Link>} />
         <PartnerDirectory />
       </section>
     </PartnerOperatorBoundary>

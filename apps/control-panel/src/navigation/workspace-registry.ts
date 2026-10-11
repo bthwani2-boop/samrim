@@ -10,7 +10,6 @@ export type WorkspaceDestination = Readonly<{
   href: string;
   label: string;
   children: readonly WorkspaceChild[];
-  childrenNavigation?: "sidebar" | "top";
   permission?: OperatorPermission;
   initialOperatorAdminOnly?: boolean;
   showInWorkspaceNavigation?: boolean;
@@ -70,14 +69,12 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
     href: "/operations",
     label: "العمليات",
     permission: "operations",
-    childrenNavigation: "top",
     children: [{ href: "/captains", label: "الكباتن" }, { href: "/operations/customer-withdrawals", label: "طلبات سحب العملاء الاستثنائية" }]
   },
   {
     href: "/partners",
     label: "الشركاء",
     permission: "partners",
-    childrenNavigation: "top",
     children: [
       { href: "/partners/joining", label: "طلبات الانضمام" },
       { href: "/partners/stores", label: "المتاجر" },
@@ -85,7 +82,7 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
       { href: "/fields", label: "الميدان" }
     ]
   },
-  { href: "/catalog", label: "الكتالوج", children: catalogChildren, childrenNavigation: "top", permission: "catalog" },
+  { href: "/catalog", label: "الكتالوج", children: catalogChildren, permission: "catalog" },
   { href: "/marketing", label: "التسويق والمحتوى", children: marketingChildren, permission: "marketing" },
   { href: "/finance", label: "المالية", children: financeChildren, permission: "finance" },
   { href: "/policies", label: "السياسات", children: policyChildren, permission: "platform_policies" },

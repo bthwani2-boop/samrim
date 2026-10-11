@@ -2,9 +2,8 @@
 
 import type { Notification, NotificationKind } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PageHeader } from "../../shell/page-header";
 import { notificationKindLabel } from "./notification-presentation";
-import "./operator-notifications.module.css";
-
 type NotificationListPayload = Readonly<{ notifications?: ReadonlyArray<Notification>; unreadCount?: number; nextCursor?: string }>;
 type NotificationReadPayload = Readonly<{ notificationId: string; readAt: string }>;
 type NotificationHistory = Readonly<{ operatorNotificationCursors?: ReadonlyArray<string> }>;
@@ -12,7 +11,7 @@ const notificationPageSize = 50;
 
 export function OperatorNotifications() {
   const [items, setItems] = useState<ReadonlyArray<Notification>>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pendingId, setPendingId] = useState("");
@@ -93,7 +92,7 @@ export function OperatorNotifications() {
       }
       const payload = await response.json() as NotificationReadPayload;
       setItems((current) => current.map((candidate) => candidate.id === payload.notificationId ? { ...candidate, readAt: payload.readAt } : candidate));
-      setUnreadCount((current) => Math.max(0, current - 1));
+      setUnreadCount((current) => current === null ? null : Math.max(0, current - 1));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر تحديث حالة الإشعار.");
     } finally {
@@ -106,32 +105,17 @@ export function OperatorNotifications() {
 
   return (
     <section className="workspace-page operator-notifications" aria-labelledby="notifications-title">
-      <div className="workspace-page-heading">
-        <p className="eyebrow">مركز المتابعة</p>
-        <h1 id="notifications-title">الإشعارات</h1>
-        <p className="lead">تحديثات التشغيل التي تساعد المشغّل على التقاط الأعمال الجديدة ومتابعة تغيّر حالتها.</p>
-      </div>
-
-      <div className="operator-notifications-summary" aria-live="polite">
-        <div>
-          <p className="eyebrow">الحالة الحالية</p>
-          <strong>{unreadCount} إشعارات غير مقروءة</strong>
-          <p>{unreadCount ? "ابدأ بالأحدث لتبقى على اطلاع بمسار التشغيل." : "لا توجد إشعارات جديدة تحتاج إلى متابعة."}</p>
-        </div>
-        <button type="button" className="button button-secondary" disabled={loading || refreshing} onClick={() => void load(cursor, true)}>
-          {refreshing ? "جارٍ التحديث…" : "تحديث الإشعارات"}
-        </button>
-      </div>
+      <PageHeader title="الإشعارات" id="notifications-title" status={!loading && !error && unreadCount !== null ? <span className="state-pill">{unreadCount} إشعارات غير مقروءة</span> : null} actions={<button type="button" className="button button-secondary" disabled={loading || refreshing} onClick={() => void load(cursor, true)}>{refreshing ? "جارٍ التحديث…" : "تحديث الإشعارات"}</button>} />
 
       {loading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تجهيز الإشعارات</strong></div> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة الإشعارات</strong><p>{error}</p></div> : null}
-      {!loading && !error && !items.length ? <div className="access-card operator-notifications-empty"><p className="eyebrow">لا توجد تحديثات</p><h2>لا توجد إشعارات حالياً</h2><p className="muted">ستظهر هنا تحديثات العمليات وطلبات الانضمام عند تسجيل أحداث جديدة.</p></div> : null}
-      {!loading && items.length ? <p className="operator-notification-page-status" role="status">الصفحة الحالية: {items.length} إشعارًا · حد القراءة {notificationPageSize} لكل طلب</p> : null}
+      {!loading && !error && !items.length ? <div className="access-card operator-notifications-empty"><h2>لا توجد إشعارات حالياً</h2></div> : null}
+      {!loading && items.length ? <p className="operator-notification-page-status" role="status">{items.length} إشعارًا في الصفحة</p> : null}
       {!loading && unreadItems.length ? <NotificationGroup title="الجديدة" count={unreadItems.length} items={unreadItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
       {!loading && readItems.length ? <NotificationGroup title="المقروءة" count={readItems.length} items={readItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
       {!loading && (cursor || cursorStack.length > 0 || nextCursor) ? <nav className="operator-notification-pagination" aria-label="صفحات الإشعارات">
         <button type="button" className="button button-secondary" disabled={loading || refreshing || (cursorStack.length === 0 && !cursor)} onClick={() => { const previous = [...cursorStack]; const previousCursor = previous.pop() ?? ""; navigatePage(previousCursor, previous); }}>الأحدث</button>
-        <span>كل صفحة تعرض حتى {notificationPageSize} إشعارًا</span>
+        <span>صفحة {cursorStack.length + 1}</span>
         <button type="button" className="button button-secondary" disabled={loading || refreshing || !nextCursor} onClick={() => navigatePage(nextCursor, [...cursorStack, cursor])}>الأقدم</button>
       </nav> : null}
     </section>

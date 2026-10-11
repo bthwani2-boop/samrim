@@ -113,7 +113,7 @@ func TestFieldCityAssignmentCutoverPreservesExistingAssignment(t *testing.T) {
 			t.Fatalf("preserved admission is not readable in its assigned city: page=%+v err=%v", page, err)
 		}
 		admission := page.Admissions[0]
-		if admission.ID != admissionID || admission.FullNameAr != "مندوب محفوظ قبل الترقية" || admission.PhoneE164 != "+967770099991" || admission.Version != 7 || admission.AllServiceCities || len(admission.ServiceCityIDs) != 1 || admission.ServiceCityIDs[0] != city.City.ID {
+		if admission.ID != admissionID || admission.FullNameAr != "مندوب محفوظ قبل الترقية" || admission.PhoneE164 != "+967770099991" || admission.WalletProviderKey != "wallet-preserved" || admission.Version != 7 || admission.AllServiceCities || len(admission.ServiceCityIDs) != 1 || admission.ServiceCityIDs[0] != city.City.ID {
 			t.Fatalf("legacy admission facts or city assignment changed during cutover: %+v", admission)
 		}
 		var legacyColumnCount int
@@ -201,7 +201,7 @@ func (s *catalogRefoundationScenario) verifyFieldCityAssignments() {
 	}
 	newCity := createCity("مدينة مضافة لاحقًا", "field-city-added-later", true)
 	allPage, err := postgres.ListFieldAdmissionsByCity(s.ctx, s.db, "ميداني اختبار", "all", "created_desc", newCity.ID, 10, "")
-	if err != nil || len(allPage.Admissions) != 1 || allPage.Admissions[0].ID != all.ID {
+	if err != nil || len(allPage.Admissions) != 1 || allPage.Admissions[0].ID != all.ID || allPage.Admissions[0].WalletProviderKey != "wallet-test" {
 		s.t.Fatalf("all-active assignment did not include a newly active city: %+v err=%v", allPage, err)
 	}
 	selectedPage, err := postgres.ListFieldAdmissionsByCity(s.ctx, s.db, "ميداني اختبار", "all", "created_desc", newCity.ID, 10, "")

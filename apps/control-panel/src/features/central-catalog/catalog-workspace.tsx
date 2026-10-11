@@ -1,10 +1,10 @@
 "use client";
 
+import { PageHeader } from "../../shell/page-header";
+
 import type { ReactNode } from "react";
 import { useSession } from "../../session/session-provider";
 import { type CatalogResourceKey, workspaceCatalogResources } from "../../navigation/workspace-registry";
-import "./catalog-workspace.module.css";
-
 function accessDenied() {
   return (
     <section className="state-content workspace-restricted">
@@ -27,11 +27,7 @@ export function CatalogWorkspace({ resource, children }: { resource: CatalogReso
   const selected = workspaceCatalogResources.find((item) => item.key === resource) ?? workspaceCatalogResources[0]!;
   return (
     <section className="workspace-page" aria-labelledby="catalog-page-title">
-      <div className="workspace-page-heading">
-        <p className="eyebrow">إدارة الكتالوج</p>
-        <h1 id="catalog-page-title">{selected.label}</h1>
-        <p className="lead">{selected.description}</p>
-      </div>
+      <PageHeader id="catalog-page-title" title={selected.label} />
       {children}
     </section>
   );

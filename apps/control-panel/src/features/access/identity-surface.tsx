@@ -97,19 +97,13 @@ export function IdentitySurface() {
   const [pendingIdentity, setPendingIdentity] = useState<ActorIdentity | null>(null);
   const flowPresentation = {
     access: {
-      eyebrow: developmentPasswordLoginEnabled ? "دخول محلي" : "دخول آمن",
       title: developmentPasswordLoginEnabled ? "الدخول بكلمة المرور" : "الدخول بمفتاح المرور",
-      description: developmentPasswordLoginEnabled ? "أدخل كلمة مرور التطوير المحلية." : "استخدم native passkey gesture للوصول إلى لوحة التحكم.",
     },
     enrollment: {
-      eyebrow: "تفعيل حساب المشغل",
       title: "تفعيل بمفتاح مرور",
-      description: "تحتاج إلى دعوة محكومة ورمز إثبات الهاتف، ثم يسجّل المتصفح مفتاح مرور جديداً.",
     },
     recovery: {
-      eyebrow: "استرداد وصول محكوم",
       title: "اطلب إعادة التسجيل",
-      description: "لا يعيد الهاتف وحده إنشاء وصول المشغل. اطلب إعادة التسجيل من مشغل مخول أو استخدم اعتماد الاسترداد المحكوم.",
     },
   }[flow];
 
@@ -249,44 +243,24 @@ export function IdentitySurface() {
     <ControlShell className="auth-shell">
       {recoveryCredential ? (
         <section className="state-card" aria-labelledby="recovery-credential-title">
-          <p className="eyebrow">اعتماد استرداد محكوم</p>
+
           <h1 id="recovery-credential-title">احفظ هذا الاعتماد الآن</h1>
-          <p className="muted">يُعرض مرة واحدة فقط. خزّنه في مدير أسرار محكوم؛ لا نحتفظ بالنص الخام على الخادم.</p>
+          <p className="muted">يُعرض مرة واحدة؛ احفظه في مدير كلمات المرور.</p>
           <code className="code-output">{recoveryCredential}</code>
           <button className="button button-primary" type="button" onClick={() => { setRecoveryCredential(""); if (pendingIdentity) authenticate(pendingIdentity); setPendingIdentity(null); router.replace("/workspace"); }}>حفظت الاعتماد وفتح لوحة التحكم</button>
         </section>
       ) : null}
       <main className="auth-layout">
-        <div className="auth-context">
-          {developmentPasswordLoginEnabled ? (
-            <>
-              <span className="context-kicker">بيئة التطوير</span>
-              <h1>لوحة التحكم</h1>
-              <p>دخول محلي بسيط بكلمة مرور.</p>
-            </>
-          ) : (
-            <>
-              <span className="context-kicker">بوابة التشغيل</span>
-              <h1>وصول واضح،<br /><em>وحماية أقوى.</em></h1>
-              <p>يفتح المشغل لوحة التحكم بمفتاح مرور موثّق من المتصفح، دون كلمة مرور أو رسالة SMS في الدخول اليومي.</p>
-              <div className="context-list">
-                <div><span className="context-check">01</span><span>مفتاح مرور مقاوم للتصيد</span></div>
-                <div><span className="context-check">02</span><span>تحقق مستخدم مطلوب</span></div>
-                <div><span className="context-check">03</span><span>جلسة خادم محمية</span></div>
-              </div>
-            </>
-          )}
-        </div>
         <section className="auth-card" aria-labelledby="identity-surface-title" hidden={Boolean(recoveryCredential)}>
           <div className="auth-card-header">
-            <span className="step-chip">{developmentPasswordLoginEnabled ? "تطوير محلي" : "هوية المشغل"}</span>
-            <p className="eyebrow">{flowPresentation.eyebrow}</p>
-            <h2 id="identity-surface-title">{flowPresentation.title}</h2>
-            <p className="muted">{flowPresentation.description}</p>
+
+
+            <h1 id="identity-surface-title">{flowPresentation.title}</h1>
+
             {sessionState.kind === "signed_out" && sessionState.notice ? <p className="success-inline" role="status">{sessionState.notice}</p> : null}
           </div>
           {flow === "access" && developmentPasswordLoginEnabled ? (
-            <form onSubmit={(event) => { event.preventDefault(); void authenticateWithDevelopmentPassword(); }} noValidate>
+            <form className="form-section" onSubmit={(event) => { event.preventDefault(); void authenticateWithDevelopmentPassword(); }} noValidate>
               <label className="field-label" htmlFor="development-password">كلمة المرور<input id="development-password" type="password" autoComplete="current-password" disabled={busy} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
               <div className="form-actions">
                 <button className="button button-primary" disabled={busy || !password} type="submit">{busy ? "جارٍ الدخول…" : "دخول"}</button>
@@ -307,8 +281,8 @@ export function IdentitySurface() {
             </div>
           ) : null}
           {flow === "recovery" ? (
-            <form onSubmit={(event) => { event.preventDefault(); if (challengeStarted) void beginRecoveryRegistration(); else void requestOperatorRecovery(); }} noValidate>
-              <p className="security-note">أدخل اعتماد الاسترداد الذي عُرض مرة واحدة بعد تفعيل المشغل. يلزم أيضًا إثبات الهاتف؛ الهاتف وحده لا يمنح وصولًا.</p>
+            <form className="form-section" onSubmit={(event) => { event.preventDefault(); if (challengeStarted) void beginRecoveryRegistration(); else void requestOperatorRecovery(); }} noValidate>
+              <p className="security-note">اعتماد الاسترداد وإثبات الهاتف مطلوبان.</p>
               <label className="field-label" htmlFor="operator-recovery-phone">رقم الهاتف<input id="operator-recovery-phone" autoComplete="tel" disabled={challengeStarted || busy} inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} placeholder="مثال: 777 000 100 أو +967 777 000 100" /></label>
               <label className="field-label" htmlFor="operator-recovery-credential">اعتماد الاسترداد<input id="operator-recovery-credential" autoComplete="one-time-code" disabled={challengeStarted || busy} value={recoveryInput} onChange={(event) => setRecoveryInput(event.target.value.trim())} /></label>
               {challengeStarted ? <label className="field-label" htmlFor="operator-recovery-code">رمز إثبات الهاتف<input id="operator-recovery-code" autoComplete="one-time-code" disabled={busy} inputMode="numeric" maxLength={6} value={code} onChange={(event) => setCode(toAsciiDigits(event.target.value).replace(/\D/g, "").slice(0, 6))} /></label> : null}
@@ -323,7 +297,7 @@ export function IdentitySurface() {
             </form>
           ) : null}
           {flow === "enrollment" ? (
-            <form onSubmit={(event) => { event.preventDefault(); if (challengeStarted) void beginEnrollmentRegistration(); else void requestEnrollment(); }} noValidate>
+            <form className="form-section" onSubmit={(event) => { event.preventDefault(); if (challengeStarted) void beginEnrollmentRegistration(); else void requestEnrollment(); }} noValidate>
               <label className="field-label" htmlFor="operator-phone">رقم الهاتف<input id="operator-phone" autoComplete="tel" disabled={challengeStarted || busy} inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} placeholder="مثال: 777 000 100 أو +967 777 000 100" /></label>
               <label className="field-label" htmlFor="operator-enrollment-token">دعوة التفعيل عالية الأمان<input id="operator-enrollment-token" autoComplete="one-time-code" disabled={challengeStarted || busy} maxLength={256} value={token} onChange={(event) => setToken(event.target.value.trim())} /></label>
               {challengeStarted ? <label className="field-label" htmlFor="operator-code">رمز إثبات الهاتف<input id="operator-code" autoComplete="one-time-code" disabled={busy} inputMode="numeric" maxLength={6} value={code} onChange={(event) => setCode(toAsciiDigits(event.target.value).replace(/\D/g, "").slice(0, 6))} /></label> : null}

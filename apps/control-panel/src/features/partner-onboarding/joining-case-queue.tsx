@@ -5,9 +5,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 import { downloadRegistryCsv } from "./registry-csv";
-import "./partner-directory.module.css";
-import "./joining-case-queue.css";
-
 type QueueState = "" | JoiningCaseState;
 type QueueSort = "created_asc" | "created_desc";
 type QueueHistory = Readonly<{ joiningCaseCursors?: ReadonlyArray<string> }>;
@@ -185,7 +182,7 @@ export function JoiningCaseQueue() {
         {selectedCases.length > 0 ? <fieldset className="partner-registry-bulk-actions"><legend className="visually-hidden">إجراءات الطلبات المحددة في الصفحة</legend><span aria-live="polite">{selectedCases.length} محدد</span><button type="button" className="button button-secondary" onClick={exportSelected}>تصدير المحدد</button><button type="button" className="button button-secondary" onClick={() => setSelectedIds(new Set())}>إلغاء التحديد</button></fieldset> : null}
       </div>
       <div className="joining-case-table-wrap" aria-busy={busy}>
-        <table className="operations-table joining-case-table">
+        <table className="data-table data-table-pinned joining-case-table">
           <caption className="visually-hidden">طلبات الانضمام المعروضة في الصفحة الحالية، مع نوع المصدر والحالة والإجراء المناسب</caption>
           <thead><tr>
             <th scope="col"><input type="checkbox" aria-label={allSelected ? "إلغاء تحديد كل الطلبات في الصفحة" : "تحديد كل الطلبات في الصفحة"} checked={allSelected} onChange={(event) => setSelectedIds(event.target.checked ? new Set(cases.map((item) => item.id)) : new Set())} /></th>

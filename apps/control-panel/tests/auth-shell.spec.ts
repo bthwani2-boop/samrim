@@ -1,5 +1,13 @@
 import { expect, type Page, test } from "./coverage-fixtures";
 
+async function fillActionReason(page: Page, reason: string) {
+  const input = page.getByLabel("سبب الإجراء");
+  await expect(input).toBeAttached();
+  const disclosure = input.locator("xpath=ancestor::details[1]");
+  if (await disclosure.count() && !await input.isVisible()) await disclosure.locator("summary").first().click();
+  await input.fill(reason);
+}
+
 async function stubSession(page: Page, status: number) {
   await page.route("**/api/auth/session**", async (route) => {
     await route.fulfill({
@@ -158,6 +166,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   });
 
   await page.goto(`/${surface}`);
+  if (role === "captain") await page.locator("details.create-disclosure > summary").click();
   await expect(page.getByRole("heading", { name: role === "captain" ? "ملف كابتن جديد" : "الميدانيون" })).toBeVisible();
   if (role === "field") await page.getByText("إنشاء ملف ميداني").click();
   await page.locator(`#${role}-candidate-name`).fill(initialName);
@@ -307,7 +316,7 @@ test("authenticated operator discovers the platform centers through workspace na
   await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
   await expect.poll(() => homeRequestsActionableOrders).toBe(true);
   await expect.poll(() => homeRequestsCatalogQueue).toBe(true);
-  await expect(page.getByRole("heading", { name: "مقترحات منتجات للمراجعة" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "مقترحات المنتجات" })).toBeVisible();
   await expect(page.getByRole("link", { name: /قهوة للمراجعة/ })).toHaveAttribute("href", "/catalog/proposals?proposalId=proposal-home");
   await expect(page.getByRole("heading", { name: "إشعارات غير مقروءة" })).toBeVisible();
   const navigationToggle = page.getByRole("button", { name: "فتح مسارات العمل" });
@@ -369,7 +378,7 @@ test("operator home reads only work queues covered by the current session permis
   expect([...deniedQueueRequests]).toEqual([]);
   await expect(page.getByRole("heading", { name: "طلبات تحتاج إجراءً" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "طلبات الانضمام المقدمة" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "مقترحات منتجات للمراجعة" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "مقترحات المنتجات" })).toHaveCount(0);
 });
 
 test("authenticated operator can open the notification center from the workspace header", async ({ page }) => {
@@ -429,7 +438,7 @@ test("operator notification inbox reads bounded cursor pages and restores browse
   await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
   await expect(page.getByRole("button", { name: "طلب قيد المتابعة، مقروء" })).toBeVisible();
   await expect(page.getByText("2 إشعارات غير مقروءة", { exact: true })).toBeVisible();
-  await expect(page.getByRole("status")).toContainText("الصفحة الحالية: 2 إشعارًا");
+  await expect(page.getByRole("status")).toContainText("2 إشعارًا في الصفحة");
   expect(requests[0]).toEqual({ limit: "50", cursor: null });
 
   const pagination = page.getByRole("navigation", { name: "صفحات الإشعارات" });
@@ -485,7 +494,7 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
         const owner = path === "/captains" ? "العمليات" : "الشركاء";
         const tab = path === "/captains" ? "الكباتن" : "الميدان";
         await expect(navigation.getByRole("link", { name: owner, exact: true })).toHaveAttribute("aria-current", "location", { timeout: 30_000 });
-        await expect(page.getByRole("navigation", { name: `مسارات ${owner}` }).getByRole("link", { name: tab, exact: true })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
+        await expect(navigation.getByRole("list", { name: `مسارات ${owner}` }).getByRole("link", { name: tab, exact: true })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
       } else {
         const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : path === "/access" ? "الوصول والصلاحيات" : path === "/partners" ? "الشركاء" : path === "/operations" ? "العمليات" : path === "/finance" ? "المالية" : path === "/policies" ? "السياسات" : "الكتالوج";
         const currentState = path === "/catalog" ? "location" : "page";
@@ -500,22 +509,22 @@ test("workspace navigation keeps captain operations and field partners in their 
   const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
 
   await page.goto("/operations");
-  const operationsTabs = page.getByRole("navigation", { name: "مسارات العمليات" });
+  const operationsTabs = navigation.getByRole("list", { name: "مسارات العمليات" });
   await expect(navigation.getByRole("link", { name: "العمليات", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(operationsTabs.getByRole("link", { name: "العمليات", exact: true })).toHaveCount(0);
-  await expect(navigation.getByRole("link", { name: "الكباتن", exact: true })).toHaveCount(0);
+  await expect(navigation.getByRole("link", { name: "الكباتن", exact: true })).toHaveCount(1);
   await expect(operationsTabs.getByRole("link", { name: "الكباتن", exact: true })).toHaveAttribute("href", "/captains");
 
   await page.goto("/captains");
   await expect(navigation.getByRole("link", { name: "العمليات", exact: true })).toHaveAttribute("aria-current", "location");
-  await expect(navigation.getByRole("link", { name: "الكباتن", exact: true })).toHaveCount(0);
+  await expect(navigation.getByRole("link", { name: "الكباتن", exact: true })).toHaveCount(1);
   await expect(operationsTabs.getByRole("link", { name: "الكباتن", exact: true })).toHaveAttribute("aria-current", "page");
 
   await page.goto("/fields");
   await expect(navigation.getByRole("link", { name: "الشركاء", exact: true })).toHaveAttribute("aria-current", "location");
-  const partnerTabs = page.getByRole("navigation", { name: "مسارات الشركاء" });
+  const partnerTabs = navigation.getByRole("list", { name: "مسارات الشركاء" });
   await expect(partnerTabs.getByRole("link", { name: "الميدان", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(navigation.getByRole("link", { name: "الميدان", exact: true })).toHaveCount(0);
+  await expect(navigation.getByRole("link", { name: "الميدان", exact: true })).toHaveCount(1);
   await expect(navigation.getByRole("link", { name: "الشركاء", exact: true })).toHaveCount(1);
 });
 
@@ -528,11 +537,11 @@ test("partner registry, joining queue, and stores are separate workspace destina
   await expect(page.getByRole("region", { name: "سجل الشركاء التشغيلي" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "طابور حالات انضمام الشركاء" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "إضافة شريك", exact: true })).toHaveAttribute("href", "/partners/new");
-  const partnerTabs = page.getByRole("navigation", { name: "مسارات الشركاء" });
+  const partnerTabs = navigation.getByRole("list", { name: "مسارات الشركاء" });
   await expect(partnerTabs.getByRole("link", { name: "طلبات الانضمام", exact: true })).toHaveAttribute("href", "/partners/joining");
   await expect(partnerTabs.getByRole("link", { name: "المتاجر", exact: true })).toHaveAttribute("href", "/partners/stores");
-  await expect(navigation.getByRole("link", { name: "طلبات الانضمام", exact: true })).toHaveCount(0);
-  await expect(navigation.getByRole("link", { name: "المتاجر", exact: true })).toHaveCount(0);
+  await expect(navigation.getByRole("link", { name: "طلبات الانضمام", exact: true })).toHaveCount(1);
+  await expect(navigation.getByRole("link", { name: "المتاجر", exact: true })).toHaveCount(1);
   await expect(navigation.getByRole("link", { name: "إضافة شريك", exact: true })).toHaveCount(0);
 
   await page.goto("/partners/joining");
@@ -541,8 +550,8 @@ test("partner registry, joining queue, and stores are separate workspace destina
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "قبول إحالات الميدانيين", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "فتح الشركاء" }).first()).toHaveAttribute("href", "/partners/joining?state=admission_requested");
-  await expect(page.getByRole("link", { name: "فتح الشركاء" }).nth(1)).toHaveAttribute("href", "/partners/joining?state=submitted");
+  await expect(page.locator('[aria-labelledby="home-joining-admission-title"]').getByRole("link", { name: "عرض الكل" })).toHaveAttribute("href", "/partners/joining?state=admission_requested");
+  await expect(page.locator('[aria-labelledby="home-joining-title"]').getByRole("link", { name: "عرض الكل" })).toHaveAttribute("href", "/partners/joining?state=submitted");
 });
 
 test("finance and marketing centers expose only real independent resource routes", async ({ page }) => {
@@ -942,7 +951,7 @@ test("Field center reads DSH eligibility and routes operational controls to the 
   await expect(page.locator("tr.field-agent-row > td").last()).toHaveCSS("position", "sticky");
   await page.setViewportSize({ width: 800, height: 800 });
   await expect(page.locator("tr.field-agent-row > td").last()).toHaveCSS("position", "static");
-  await page.getByLabel("سبب الإجراء").fill("تجميد أهلية الميدان");
+  await fillActionReason(page, "تجميد أهلية الميدان");
   await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", action: "disable", expectedVersion: 2, reason: "تجميد أهلية الميدان" });
 });
@@ -963,7 +972,7 @@ test("legacy Field role with a missing profile is suspended before Identity acce
   await page.goto("/fields");
   await expect(page.getByText("الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
-  await page.getByLabel("سبب الإجراء").fill("إيقاف حتى مراجعة الملف");
+  await fillActionReason(page, "إيقاف حتى مراجعة الملف");
   await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
   await expect(page.locator("output.success-inline")).toContainText("أُوقف دور الدخول وأُعيدت قراءة حالة الحساب وأهلية النظام.");
@@ -989,11 +998,11 @@ test("legacy Captain profile review never offers role activation before review",
   });
   await page.goto("/captains");
   await expect(page.getByText("الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
-  await page.getByLabel("سبب الإجراء").fill("إيقاف حتى مراجعة الملف");
+  await fillActionReason(page, "إيقاف حتى مراجعة الملف");
   await page.getByRole("button", { name: "إيقاف التشغيل" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_captain_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
   enabled = false;
-  await page.getByLabel("سبب الإجراء").fill("استكمال الملف قبل الإعادة");
+  await fillActionReason(page, "استكمال الملف قبل الإعادة");
   await expect(page.getByText("استكمل الملف واعتمده قبل إعادة التفعيل.")).toBeVisible();
   await expect(page.getByRole("button", { name: "إعادة التفعيل" })).toHaveCount(0);
 });
@@ -1013,10 +1022,10 @@ test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and
   });
   await page.goto("/fields");
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
-  await page.getByLabel("سبب الإجراء").fill("استرداد جهاز الميدان");
+  await fillActionReason(page, "استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
   await expect(page.locator("output.success-inline")).toContainText("أُجيزت إعادة تسجيل دور سبق تفعيله");
-  await expect(page.getByText("الدور جاهز. الخطوة التالية للميداني: يفتح تطبيق الميدان", { exact: false })).toContainText("يختار «تفعيل الجهاز» لإثبات الهاتف وإنشاء كلمة المرور");
+  await expect(page.locator("tr.field-agent-row").getByRole("status").filter({ hasText: /^بانتظار تفعيل الجهاز/ })).toHaveText("بانتظار تفعيل الجهاز من تطبيق الميدان برقم الهاتف المسجّل.");
   expect(reenrollmentBody).toMatchObject({
     actorId: "act_field_reenroll",
     action: "reenroll",
@@ -1046,7 +1055,7 @@ test("Captain reenrollment goes through DSH eligibility and verifies the Identit
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_reenroll", phoneE164: "+96777000111", role: "captain", enabled: true, securityEnabled: true, activatedAt: reauthorized ? null : "2026-09-20T08:00:00.000Z", actorVersion: 4, roleVersion: reauthorized ? 3 : 2, admission: { id: "cap_adm_reenroll", actorId: "act_captain_reenroll", state: "eligible", availabilityState: "unavailable", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
   });
   await page.goto("/captains");
-  await page.getByLabel("سبب الإجراء").fill("استعادة وصول الكابتن");
+  await fillActionReason(page, "استعادة وصول الكابتن");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
   await expect(page.getByRole("status")).toContainText("تمت إجازة إعادة تسجيل الكابتن بعد تحقق النظام");
   expect(reenrollmentBody).toMatchObject({
@@ -1077,7 +1086,7 @@ test("Captain reenrollment reconciles a server error against the current Identit
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_unknown_result", phoneE164: "+96777000113", role: "captain", enabled: true, securityEnabled: true, activatedAt: reenrollmentReachedCanonicalWriter ? null : "2026-09-20T08:00:00.000Z", actorVersion: 4, roleVersion: reenrollmentReachedCanonicalWriter ? 3 : 2, admission: { id: "cap_adm_unknown_result", actorId: "act_captain_unknown_result", state: "eligible", availabilityState: "unavailable", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
   });
   await page.goto("/captains");
-  await page.getByLabel("سبب الإجراء").fill("تسوية نتيجة إعادة التسجيل");
+  await fillActionReason(page, "تسوية نتيجة إعادة التسجيل");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
   await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة المعتمدة قبل أي محاولة أخرى");
   await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
@@ -1144,7 +1153,7 @@ test("Field reenrollment conflicts reload the canonical DSH-owned roster before 
   });
   await page.goto("/fields");
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
-  await page.getByLabel("سبب الإجراء").fill("استرداد جهاز الميدان");
+  await fillActionReason(page, "استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
   await expect(page.getByText(/^تغيرت حالة الحساب بالتزامن\. أُعيد تحميل الحالة الحالية/)).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toBeVisible();
@@ -1158,7 +1167,7 @@ test("Field first activation is distinct from reenrollment and explains the next
   await page.goto("/fields");
   await expect(page.getByText("الدور جاهز؛ بانتظار تفعيل الجهاز")).toBeVisible();
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
-  await expect(page.getByRole("status")).toContainText("يدخل رقم الهاتف المسجل");
+  await expect(page.locator("tr.field-agent-row").getByRole("status")).toContainText("برقم الهاتف المسجّل");
   await expect(page.getByRole("status")).toContainText("تفعيل الجهاز");
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
@@ -1213,7 +1222,7 @@ test("captain center owns DSH eligibility and operational availability", async (
   });
   await page.goto("/captains");
   await expect(page.getByRole("heading", { name: "قائمة الكباتن وأهليتهم وتوفرهم" })).toBeVisible();
-  await page.getByLabel("سبب الإجراء").fill("تحديث توافر الكابتن");
+  await fillActionReason(page, "تحديث توافر الكابتن");
   await page.getByRole("button", { name: "جعله غير متاح" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_captain_admitted", action: "availability", available: false, expectedVersion: 7, reason: "تحديث توافر الكابتن" });
 });
@@ -1292,7 +1301,7 @@ test("operator operations uses the DSH read model and resource actions", async (
   await detailTabs.getByRole("link", { name: "العناصر" }).click();
   await expect(page.getByRole("heading", { name: "عناصر الطلب" })).toBeVisible();
   await expect(page.getByText("قهوة", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "العودة إلى مسار الطلبات" }).click();
+  await page.locator("#workspace-main").getByRole("link", { name: "الطلبات", exact: true }).click();
   await expect(page.getByRole("heading", { name: "العمليات" })).toBeVisible();
   const restoredSearchBox = page.getByRole("searchbox");
   await restoredSearchBox.fill("");
@@ -1346,7 +1355,8 @@ test("operator finance reads only the bounded COD cash-custody projection", asyn
   await expect(cashRow).toBeVisible();
   await expect(cashRow.getByRole("cell").nth(1)).toContainText("12,500");
   await expect(page.getByRole("heading", { name: "النقد المحصل عند التسليم" })).toBeVisible();
-  await expect(page.getByText("تظل العهدة مفتوحة بعد إرسال الكابتن للمرجع. يرفق موظف المالية إيصال التوريد المحفوظ والمشفّر ويطابقه هنا؛ عندها فقط يقيد السجل المالي الاستلام ويحرر الحجز.")).toBeVisible();
+  await expect(cashRow.getByRole("button", { name: "رفع الإيصال ومطابقة التوريد" })).toBeDisabled();
+  await expect(cashRow.getByRole("button", { name: "رفع الإيصال ومطابقة التوريد" })).toHaveAccessibleDescription("مطابقة الإيصال تغلق العهدة.");
   await expect(page.getByText("dsh-order-1")).toBeVisible();
   await expect(page.getByText("بانتظار مطابقة المالية")).toBeVisible();
   await expect(page.getByText("captain-slip-1")).toBeVisible();
@@ -1440,7 +1450,10 @@ test("partner commission remittance resumes with its stored receipt after an unc
   await page.reload();
   await expect(page.getByText(/بقيت محاولة غير محسومة/)).toBeVisible();
   await expect(page.getByText("الإيصال المحفوظ:")).toBeVisible();
-  await expect(page.getByText("لا يوجد رصيد مفتوح حالياً، لكن توجد محاولة سابقة غير محسومة.")).toBeVisible();
+  await expect(page.getByText("محاولة غير محسومة؛ استأنف بالبيانات المحفوظة لتجنب تكرار القيد.")).toBeVisible();
+  await expect(page.locator("dl > div").filter({ hasText: "عمولة الاستلام المفتوحة" }).locator("dd")).toHaveText("0 ريال يمني");
+  await expect(page.getByLabel("المبلغ بالريال اليمني")).toHaveValue("5000");
+  await expect(page.getByLabel("المبلغ بالريال اليمني")).toBeDisabled();
   await page.getByRole("button", { name: "إعادة المحاولة بنفس العملية" }).click();
   await expect(page.getByRole("status")).toContainText("سُجلت الحوالة bank-transfer-1");
   await expect(page.getByRole("link", { name: "فتح إيصال الحوالة" })).toHaveAttribute("href", "/api/finance/evidence/finance-receipt-1");
@@ -1758,11 +1771,11 @@ test("operator creates and reads back the reward policy for the selected commerc
   });
 
   await page.goto("/policies/field-acquisition");
-  await expect(page.locator("#field-acquisition-policy-title")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "استحقاق ضم الشريك للميداني", exact: true, level: 1 })).toBeVisible();
   await page.getByLabel("المجال التجاري").selectOption("restaurants");
   await page.getByLabel("نوع المتجر التجاري").selectOption("grocery-market");
   await expect(page.getByRole("status").getByText(/لا توجد سياسة لنوع/)).toBeVisible();
-  await page.getByLabel("مبلغ الاستحقاق", { exact: true }).fill("250");
+  await page.getByLabel(/^مبلغ الاستحقاق \(ريال\)/).fill("250");
   await page.getByLabel("سبب الإنشاء أو التغيير").fill("سياسة اختبار نوع المطعم");
   await page.getByRole("button", { name: "إنشاء السياسة", exact: true }).click();
   await expect(page.locator("output.success")).toContainText("تم حفظ السياسة ومطابقة مبلغها وإصدارها مع السجل المالي.");
@@ -1962,7 +1975,7 @@ test("Partner reenrollment verifies DSH joining eligibility and the Identity rea
     await route.fulfill({ status: 204 });
   });
   await page.goto("/partners/actors/act_partner_reenroll");
-  await page.getByLabel("سبب الإجراء").fill("استعادة وصول الشريك");
+  await fillActionReason(page, "استعادة وصول الشريك");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
   await expect(page.getByRole("status")).toContainText("تمت إجازة إعادة تسجيل الشريك بعد تحقق النظام");
   expect(reenrollmentBody).toMatchObject({
@@ -1993,7 +2006,7 @@ test("Partner reenrollment reconciles a server error against the current Identit
     await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "DEPENDENCY_UNAVAILABLE" } }) });
   });
   await page.goto("/partners/actors/act_partner_unknown_result");
-  await page.getByLabel("سبب الإجراء").fill("تسوية نتيجة إعادة التسجيل");
+  await fillActionReason(page, "تسوية نتيجة إعادة التسجيل");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
   await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة المعتمدة قبل أي محاولة أخرى");
   await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
