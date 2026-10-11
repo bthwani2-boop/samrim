@@ -93,6 +93,15 @@ paths:
   /dsh/catalog/product-registry:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1product-registry"
 
+  /dsh/catalog/trash:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1trash"
+
+  /dsh/catalog/products/{productId}/trash:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1trash"
+
+  /dsh/catalog/products/{productId}/restore:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1restore"
+
   /dsh/catalog/products/{productId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}"
 

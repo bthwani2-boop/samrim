@@ -973,6 +973,20 @@ export async function upsertCatalogCategoryAttributeRule(categoryId: string, att
   return requestDshJson<CatalogAttributeRuleListResponse>(dshOperationPaths.upsertCatalogCategoryAttributeRule.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
+export type CatalogTrashProduct = Readonly<{ id: string; canonicalName: string; version: number; deletedAt?: string; deletedBy?: string; deletionReason?: string }>;
+export type CatalogTrashPage = Readonly<{ products: ReadonlyArray<CatalogTrashProduct>; nextCursor: string }>;
+export async function listDeletedCatalogProducts(cursor: string, context: DshOperatorReadContext): Promise<CatalogTrashPage> {
+  if (!context.operatorActorId.trim()) throw new Error("DSH_TRASH_READ_INPUT_INVALID");
+  const params = new URLSearchParams({ limit: "50" });
+  if (cursor) params.set("cursor", cursor);
+  return (await requestDshJson<CatalogTrashPage>("GET", "/dsh/catalog/trash?" + params.toString(), undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+export async function mutateCatalogProductTrash(productId: string, action: "trash" | "restore", expectedVersion: number, reason: string, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: { product: CatalogTrashProduct; idempotentReplay: boolean } }>> {
+  if (!productId.trim() || !Number.isInteger(expectedVersion) || expectedVersion < 1) throw new Error("DSH_TRASH_INPUT_INVALID");
+  validateVersionedMutationContext({ ...context, expectedVersion });
+  return requestDshJson("POST", "/dsh/catalog/products/" + encodeURIComponent(productId) + "/" + action, { reason }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
 export async function listCatalogProducts(query: string, verticalId: string, cursor: string, context: DshOperatorReadContext): Promise<CatalogProductListResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_PRODUCT_READ_INPUT_INVALID");
   const params = new URLSearchParams({ limit: "50" });

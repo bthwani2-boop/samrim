@@ -67,6 +67,9 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /dsh/catalog/attributes/{attributeId}", s.updateAttributeDefinition)
 	mux.HandleFunc("GET /dsh/catalog/products", s.listProducts)
 	mux.HandleFunc("GET /dsh/catalog/product-registry", s.listProductRegistry)
+	mux.HandleFunc("GET /dsh/catalog/trash", s.listProductTrash)
+	mux.HandleFunc("POST /dsh/catalog/products/{productId}/trash", s.trashProduct)
+	mux.HandleFunc("POST /dsh/catalog/products/{productId}/restore", s.restoreProduct)
 	mux.HandleFunc("POST /dsh/catalog/products", s.createProduct)
 	mux.HandleFunc("GET /dsh/catalog/products/{productId}", s.readProduct)
 	mux.HandleFunc("PATCH /dsh/catalog/products/{productId}", s.updateProduct)
@@ -948,6 +951,8 @@ func toCatalogAttributeValue(item postgres.CatalogAttributeValueRecord) contract
 
 func writeCatalogError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrCatalogTrashInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog trash input is invalid")
 	case errors.Is(err, postgres.ErrCatalogProductRegistryInvalidCursor):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Product registry cursor, filters, status, or sort order are invalid")
 	case errors.Is(err, postgres.ErrCatalogCategoryInvalidCursor):

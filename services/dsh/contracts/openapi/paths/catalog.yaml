@@ -1,4 +1,84 @@
 paths:
+  /dsh/catalog/trash:
+    get:
+      operationId: listDeletedCatalogProducts
+      summary: List deleted shared products without exposing them in the active catalog
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 512 } }
+      responses:
+        "200":
+          description: Deleted shared products with deletion evidence and bounded keyset pagination.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [products, nextCursor]
+                properties:
+                  products:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, canonicalName, version]
+                      properties:
+                        id: { type: string }
+                        canonicalName: { type: string }
+                        version: { type: integer }
+                        deletedAt: { type: string, format: date-time }
+                        deletedBy: { type: string }
+                        deletionReason: { type: string }
+                  nextCursor: { type: string }
+  /dsh/catalog/products/{productId}/trash:
+    post:
+      operationId: trashCatalogProduct
+      summary: Soft-delete an active shared product without deleting its offers, audit, or order history
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        "200": { description: Product was moved to trash or operation replayed. }
+        "409": { description: Current version differs or idempotency conflict. }
+  /dsh/catalog/products/{productId}/restore:
+    post:
+      operationId: restoreCatalogProduct
+      summary: Restore a deleted shared product without bypassing the existing offer publication rules
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, enum: [""] }
+      responses:
+        "200": { description: Product was restored or operation replayed. }
+        "409": { description: Current version differs or idempotency conflict. }
   /dsh/catalog/product-registry:
     get:
       operationId: listCatalogProductRegistry

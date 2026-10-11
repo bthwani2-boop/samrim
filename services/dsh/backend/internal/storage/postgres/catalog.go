@@ -953,7 +953,7 @@ func finishCatalogProductPage(ctx context.Context, db *sql.DB, items []CatalogPr
 }
 
 func ReadCatalogProduct(ctx context.Context, db *sql.DB, productID string) (CatalogProductRecord, error) {
-	item, err := readCatalogProductRow(db.QueryRowContext(ctx, catalogProductSelect+" WHERE p.id=$1", strings.TrimSpace(productID)))
+	item, err := readCatalogProductRow(db.QueryRowContext(ctx, catalogProductSelect+" WHERE p.id=$1 AND p.deleted_at IS NULL", strings.TrimSpace(productID)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return CatalogProductRecord{}, ErrCatalogProductNotFound
 	}
@@ -1009,6 +1009,7 @@ func listCatalogProducts(ctx context.Context, db *sql.DB, query, verticalID, par
 	rows, err := db.QueryContext(ctx, `SELECT p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.description,p.brand,p.active,p.version,p.created_at,p.updated_at
 		FROM dsh.catalog_products p
 		WHERE (($1='' AND p.scope='SHARED') OR ($1<>'' AND ((p.scope='SHARED') OR (p.scope='STORE_SCOPED' AND EXISTS (SELECT 1 FROM dsh.stores owned_store WHERE owned_store.id=p.store_id AND owned_store.partner_actor_id=$1 AND owned_store.primary_vertical_id=p.vertical_id)))))
+		AND p.deleted_at IS NULL
 		AND ($2='' OR p.vertical_id=$2)
 		AND ($3='' OR lower(p.canonical_name) LIKE lower($3))
 		AND (NOT $6::boolean OR (lower(p.canonical_name),p.id)>($4::text,$5::text))
@@ -1290,7 +1291,7 @@ func UpdateCatalogProduct(ctx context.Context, db *sql.DB, productID string, inp
 		}
 	}
 	var result sql.Result
-	if result, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_products SET vertical_id=$2,scope=$3,store_id=NULLIF($4,''),canonical_name=$5,description=$6,brand=$7,active=$8,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$9", productID, input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, input.Description, input.Brand, input.Active, expectedVersion); err != nil {
+	if result, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_products SET vertical_id=$2,scope=$3,store_id=NULLIF($4,''),canonical_name=$5,description=$6,brand=$7,active=$8,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$9 AND deleted_at IS NULL", productID, input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, input.Description, input.Brand, input.Active, expectedVersion); err != nil {
 		return CatalogProductResult{}, err
 	}
 	if affected, affectedErr := result.RowsAffected(); affectedErr != nil || affected != 1 {
@@ -1795,7 +1796,7 @@ func CreateCatalogOfferWithProvenance(ctx context.Context, db *sql.DB, input Cat
 		return CatalogStoreOfferResult{}, err
 	}
 	var storeVertical, productVertical, productScope, productStore, kind, baseUnit string
-	if err = tx.QueryRowContext(ctx, "SELECT s.primary_vertical_id,p.vertical_id,p.scope,COALESCE(p.store_id,''),v.measurement_kind,v.base_unit FROM dsh.stores s JOIN dsh.commerce_verticals cv ON cv.id=s.primary_vertical_id AND cv.active=true JOIN dsh.catalog_product_variants v ON v.id=$2 JOIN dsh.catalog_products p ON p.id=v.product_id WHERE s.id=$1 FOR SHARE OF s,cv", input.StoreID, input.VariantID).Scan(&storeVertical, &productVertical, &productScope, &productStore, &kind, &baseUnit); errors.Is(err, sql.ErrNoRows) {
+	if err = tx.QueryRowContext(ctx, "SELECT s.primary_vertical_id,p.vertical_id,p.scope,COALESCE(p.store_id,''),v.measurement_kind,v.base_unit FROM dsh.stores s JOIN dsh.commerce_verticals cv ON cv.id=s.primary_vertical_id AND cv.active=true JOIN dsh.catalog_product_variants v ON v.id=$2 JOIN dsh.catalog_products p ON p.id=v.product_id WHERE s.id=$1 AND p.deleted_at IS NULL FOR SHARE OF s,cv", input.StoreID, input.VariantID).Scan(&storeVertical, &productVertical, &productScope, &productStore, &kind, &baseUnit); errors.Is(err, sql.ErrNoRows) {
 		return CatalogStoreOfferResult{}, ErrCatalogVariantNotFound
 	} else if err != nil {
 		return CatalogStoreOfferResult{}, err
@@ -2102,7 +2103,7 @@ func readCatalogMediaAssetByIdempotencyTx(ctx context.Context, db queryer, idemp
 }
 
 func readCatalogProductTx(ctx context.Context, tx *sql.Tx, id string) (CatalogProductRecord, error) {
-	item, err := readCatalogProductRow(tx.QueryRowContext(ctx, catalogProductSelect+" WHERE p.id=$1", id))
+	item, err := readCatalogProductRow(tx.QueryRowContext(ctx, catalogProductSelect+" WHERE p.id=$1 AND p.deleted_at IS NULL", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return CatalogProductRecord{}, ErrCatalogProductNotFound
 	}
