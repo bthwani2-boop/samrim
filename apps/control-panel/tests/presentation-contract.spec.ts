@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { expect, type Page, test } from "./coverage-fixtures";
 
 // Rendering fixtures isolate presentation proof from durable business data.
@@ -64,6 +65,35 @@ async function expectNoOuterOverflow(page: Page) {
   expect(dimensions.body, "body width stays within the mobile viewport").toBeLessThanOrEqual(dimensions.viewport + 1);
 }
 
+function presentationViolations(source: string, path: string): string[] {
+  const violations: string[] = [];
+  const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const visit = (node: ts.Node) => {
+    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(file) === "style") violations.push("style element");
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) && /^(styled-components|styled-jsx|@emotion)(\/|$)/.test(node.moduleSpecifier.text)) violations.push("competing style engine");
+    if (ts.isJsxAttribute(node) && node.name.getText(file) === "style") {
+      let expression = node.initializer && ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
+      while (expression && ts.isAsExpression(expression)) expression = expression.expression;
+      const properties = expression && ts.isObjectLiteralExpression(expression) ? expression.properties : [];
+      const depth = properties.length === 1 && ts.isPropertyAssignment(properties[0]!) && properties[0]!.name.getText(file) === '"--tree-depth"';
+      if (path !== "src/features/central-catalog/central-catalog.tsx" || !depth) violations.push("inline presentation");
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return violations;
+}
+
+test("presentation guard rejects competing styles and restricts the tree-depth exception", () => {
+  for (const source of ['<input style={{width:"100%"}} />', '<div style={customStyle} />', '<style>{"input {width:100%}"}</style>', 'import styled from "styled-components";']) {
+    expect(presentationViolations(source, "src/new-page.tsx").length).toBeGreaterThan(0);
+  }
+  const depth = '<li style={{"--tree-depth": depth} as CSSProperties} />';
+  expect(presentationViolations(depth, "src/features/central-catalog/central-catalog.tsx")).toEqual([]);
+  expect(presentationViolations(depth, "src/new-page.tsx")).toEqual(["inline presentation"]);
+  expect(presentationViolations('<li style={{"--tree-depth": depth, color: "red"}} />', "src/features/central-catalog/central-catalog.tsx")).toEqual(["inline presentation"]);
+});
+
 test("application presentation has one stylesheet and one import owner", () => {
   const appRoot = fileURLToPath(new URL("..", import.meta.url));
   const walk = (directory: string): string[] => readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -72,7 +102,8 @@ test("application presentation has one stylesheet and one import owner", () => {
   });
   const files = [...walk(join(appRoot, "app")), ...walk(join(appRoot, "src"))];
   const relativePath = (path: string) => relative(appRoot, path).replaceAll("\\", "/");
-  expect(files.filter((path) => path.endsWith(".css")).map(relativePath)).toEqual(["app/globals.css"]);
+  expect(files.filter((path) => /\.(css|scss|sass|less)$/.test(path)).map(relativePath)).toEqual(["app/globals.css"]);
+  expect(files.filter((path) => /\.[cm]?[jt]sx?$/.test(path)).flatMap((path) => presentationViolations(readFileSync(path, "utf8"), relativePath(path)).map((violation) => `${relativePath(path)}: ${violation}`))).toEqual([]);
   const styleImportOwners = files.filter((path) => /\.[cm]?[jt]sx?$/.test(path) && /^\s*import\s+(?:[^;\n]+\s+from\s+)?["'][^"']+\.css["']/m.test(readFileSync(path, "utf8"))).map(relativePath);
   expect(styleImportOwners).toEqual(["app/layout.tsx"]);
   const css = [join(appRoot, "app/globals.css"), join(appRoot, "../../packages/design-system/theme.css"), join(appRoot, "../../packages/design-system/web.css")].map((path) => readFileSync(path, "utf8")).join("\n");
@@ -114,6 +145,19 @@ test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await stubPresentationReads(page);
 });
+
+for (const [device, viewport] of [["desktop", { width: 1368, height: 900 }], ["mobile", { width: 390, height: 844 }]] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`visual baseline: store registry ${device} ${theme}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      await page.goto("/partners/stores");
+      await expect(page.locator(".store-registry tbody tr")).toHaveCount(10);
+      await expect(page.getByRole("heading", { name: "المتاجر", level: 1, exact: true })).toBeVisible();
+      await expect(page).toHaveScreenshot(`store-registry-${device}-${theme}.png`, { animations: "disabled" });
+    });
+  }
+}
 
 test("store registry geometry is stable on direct load, client navigation and reload", async ({ page }) => {
   const registry = page.locator(".store-registry");

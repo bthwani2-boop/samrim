@@ -36,11 +36,13 @@ test("reference rows stay bounded at desktop and mobile sizes and editing restor
     await expect(page.getByLabel("اسم المحفظة بالعربية")).toBeHidden();
     await expect(page.locator("tbody input")).toHaveCount(0);
     const first = page.locator("tbody tr").first();
+    const columns = await page.locator("thead th").evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().width));
     const edit = first.getByRole("button", { name: "تعديل", exact: true });
     await edit.click();
     const input = first.getByLabel("اسم المزوّد");
     await expect(input).toBeFocused();
     await expect(page.locator("tbody input")).toHaveCount(1);
+    expect(await page.locator("thead th").evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().width))).toEqual(columns);
     expect((await input.boundingBox())!.width).toBeLessThanOrEqual(320);
     await input.press("Escape");
     await expect(edit).toBeFocused();
@@ -50,6 +52,59 @@ test("reference rows stay bounded at desktop and mobile sizes and editing restor
     await page.locator("details.create-disclosure > summary").click();
     expect((await page.locator(".compact-form").boundingBox())!.width).toBeLessThanOrEqual(480);
   }
+});
+
+test("reference search and status filters show a precise subset and reset without mutations", async ({ page }) => {
+  let mutations = 0;
+  const records = [{ key: "sanaa", id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1 }, { key: "aden", id: "aden", displayNameAr: "عدن", active: false, version: 1 }];
+  for (const [resource, property] of [["wallet-providers", "walletProviders"], ["service-cities", "cities"]] as const) {
+    await page.route(`**/api/${resource}**`, (route) => {
+      if (route.request().method() !== "GET") mutations++;
+      return route.fulfill({ status: 200, json: { [property]: records } });
+    });
+    await page.goto(`/policies/${resource}`);
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+    const search = page.getByRole("searchbox");
+    await search.fill("عدن");
+    await expect(page.locator("tbody th")).toHaveText("عدن");
+    await page.locator("search select").selectOption("active");
+    await expect(page.locator("tbody")).toContainText(resource === "wallet-providers" ? "لا توجد محافظ مطابقة." : "لا توجد مدن مطابقة.");
+    await expect(page.locator("search ~ .muted")).toContainText("0 من 2");
+    await page.getByRole("button", { name: "مسح المرشحات", exact: true }).click();
+    await expect(search).toHaveValue("");
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+    await page.locator("search select").selectOption("inactive");
+    await expect(page.locator("tbody th")).toHaveText("عدن");
+  }
+  expect(mutations).toBe(0);
+});
+
+test("a filtered edit stays visible across conflict refresh and returns focus when its saved name leaves the filter", async ({ page }) => {
+  let current = { ...wallets[0]! };
+  let attempts = 0;
+  await page.route("**/api/wallet-providers**", (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ status: 200, json: { walletProviders: [current] } });
+    attempts++;
+    current = { ...current, displayNameAr: attempts === 1 ? "اسم متزامن" : "الاسم الجديد", version: current.version + 1 };
+    return route.fulfill(attempts === 1 ? { status: 409, json: { error: { code: "VERSION_CONFLICT" } } } : { status: 200, json: { walletProvider: current } });
+  });
+  await page.goto("/policies/wallet-providers");
+  const search = page.getByRole("searchbox");
+  await search.fill("محفظة 1");
+  await page.getByRole("button", { name: "تعديل", exact: true }).click();
+  await expect(search).toBeDisabled();
+  const editor = page.getByLabel("اسم المزوّد");
+  await editor.fill("الاسم الجديد");
+  await editor.press("Enter");
+  await expect(page.locator("#workspace-main").getByRole("alert")).toContainText("تعذر تحديث الاسم");
+  await page.getByRole("button", { name: "إعادة المحاولة", exact: true }).click();
+  await expect(editor).toHaveValue("الاسم الجديد");
+  await expect(page.getByRole("button", { name: "حفظ الاسم", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "حفظ الاسم", exact: true }).click();
+  await expect(page.locator("tbody")).toContainText("لا توجد محافظ مطابقة.");
+  await expect(search).toBeFocused();
+  await page.getByRole("button", { name: "مسح المرشحات", exact: true }).click();
+  await expect(page.locator("tbody th")).toHaveText("الاسم الجديد");
 });
 
 test("a conflicting wallet edit keeps its draft and a successful retry reads the canonical version", async ({ page }) => {

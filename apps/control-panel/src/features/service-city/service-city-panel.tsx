@@ -15,6 +15,8 @@ export function ServiceCityPanel() {
   const { state } = useSession();
   const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("platform_policies") === true;
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
   const [displayNameAr, setDisplayNameAr] = useState("");
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -83,6 +85,8 @@ export function ServiceCityPanel() {
     }
   }
 
+  const visibleCities = cities.filter((city) => city.displayNameAr.includes(query.trim()) && (!status || city.active === (status === "active")));
+
   return <section className="work-stack" aria-label="إدارة مدن الخدمة">
     {canEdit ? <details className="disclosure create-disclosure"><summary>إضافة مدينة</summary>
       <form className="form-section compact-form" noValidate onSubmit={(event) => { event.preventDefault(); void create(); }}>
@@ -96,10 +100,16 @@ export function ServiceCityPanel() {
     {loading ? <p role="status">جارٍ قراءة المدن…</p> : null}
     {!loading && !error && !cities.length ? <p className="collection-state">لا توجد مدن بعد.</p> : null}
     {cities.length > 0 ? <>
-      <div className="section-heading"><span className="muted">{cities.length} مدينة{loading || error ? " · آخر قراءة" : ""}</span><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void load()}>تحديث</button></div>
+      <search className="registry-toolbar" aria-label="تصفية المدن">
+        <label htmlFor="service-city-search">بحث في المدن<input id="service-city-search" type="search" maxLength={160} value={query} disabled={busy || loading} onChange={(event) => setQuery(event.target.value)} /></label>
+        <label htmlFor="service-city-status">حالة المدينة<select id="service-city-status" value={status} disabled={busy || loading} onChange={(event) => setStatus(event.target.value)}><option value="">كل الحالات</option><option value="active">نشطة</option><option value="inactive">متوقفة</option></select></label>
+        {query || status ? <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setQuery(""); setStatus(""); }}>مسح المرشحات</button> : null}
+        <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void load()}>تحديث</button>
+      </search>
+      <span className="muted" role="status">{visibleCities.length} من {cities.length} مدينة{loading || error ? " · آخر قراءة" : ""}</span>
       <div className="table-wrap" aria-busy={loading}><table className="reference-table"><caption className="visually-hidden">مدن الخدمة</caption>
         <thead><tr><th scope="col">المدينة</th><th scope="col">الحالة</th><th scope="col">الإجراء</th></tr></thead>
-        <tbody>{cities.map((city) => <tr key={city.id}><th scope="row">{city.displayNameAr}</th><td><span className="state-pill">{city.active ? "نشطة" : "متوقفة"}</span></td><td>{canEdit ? <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void toggle(city)}>{city.active ? "تعطيل" : "تفعيل"}</button> : null}</td></tr>)}</tbody>
+        <tbody>{visibleCities.map((city) => <tr key={city.id}><th scope="row">{city.displayNameAr}</th><td><span className="state-pill">{city.active ? "نشطة" : "متوقفة"}</span></td><td>{canEdit ? <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void toggle(city)}>{city.active ? "تعطيل" : "تفعيل"}</button> : null}</td></tr>)}{!visibleCities.length ? <tr><td colSpan={3} className="collection-state">لا توجد مدن مطابقة.</td></tr> : null}</tbody>
       </table></div>
     </> : null}
   </section>;

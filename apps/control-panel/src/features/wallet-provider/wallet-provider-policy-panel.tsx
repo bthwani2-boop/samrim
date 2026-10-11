@@ -15,6 +15,8 @@ export function WalletProviderPolicyPanel() {
   const { state } = useSession();
   const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("platform_policies") === true;
   const [providers, setProviders] = useState<ReadonlyArray<WalletProvider>>([]);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
   const [displayNameAr, setDisplayNameAr] = useState("");
   const [editingKey, setEditingKey] = useState("");
   const [renamedValue, setRenamedValue] = useState("");
@@ -28,7 +30,7 @@ export function WalletProviderPolicyPanel() {
   const returnFocusKey = useRef("");
   useEffect(() => {
     if (!editingKey && !busy && !loading && returnFocusKey.current) {
-      document.getElementById(`wallet-provider-edit-${returnFocusKey.current}`)?.focus();
+      (document.getElementById(`wallet-provider-edit-${returnFocusKey.current}`) ?? document.getElementById("wallet-provider-search"))?.focus();
       returnFocusKey.current = "";
     }
   }, [editingKey, busy, loading]);
@@ -96,6 +98,8 @@ export function WalletProviderPolicyPanel() {
     finally { setBusy(false); }
   }
 
+  const visibleProviders = providers.filter((provider) => provider.key === editingKey || (provider.displayNameAr.includes(query.trim()) && (!status || provider.active === (status === "active"))));
+
   return <section className="work-stack" aria-label="إدارة مزودي المحافظ">
     {canEdit ? <details className="disclosure create-disclosure">
       <summary>إضافة محفظة</summary>
@@ -110,11 +114,17 @@ export function WalletProviderPolicyPanel() {
     {loading ? <p role="status">جارٍ قراءة المحافظ…</p> : null}
     {!loading && !error && !providers.length ? <p className="collection-state">لا توجد محافظ مسجلة.</p> : null}
     {providers.length > 0 ? <>
-      <div className="section-heading"><span className="muted">{providers.length} مزوّدًا{loading || error ? " · آخر قراءة" : ""}</span><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void load()}>تحديث</button></div>
+      <search className="registry-toolbar" aria-label="تصفية المحافظ">
+        <label htmlFor="wallet-provider-search">بحث في المحافظ<input id="wallet-provider-search" type="search" maxLength={80} value={query} disabled={busy || loading || Boolean(editingKey)} onChange={(event) => setQuery(event.target.value)} /></label>
+        <label htmlFor="wallet-provider-status">حالة المحفظة<select id="wallet-provider-status" value={status} disabled={busy || loading || Boolean(editingKey)} onChange={(event) => setStatus(event.target.value)}><option value="">كل الحالات</option><option value="active">نشطة</option><option value="inactive">متوقفة</option></select></label>
+        {query || status ? <button type="button" className="button button-secondary" disabled={busy || loading || Boolean(editingKey)} onClick={() => { setQuery(""); setStatus(""); }}>مسح المرشحات</button> : null}
+        <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void load()}>تحديث</button>
+      </search>
+      <span className="muted" role="status">{visibleProviders.length} من {providers.length} مزوّدًا{loading || error ? " · آخر قراءة" : ""}</span>
       <div className="table-wrap" aria-busy={loading}>
         <table className="reference-table"><caption className="visually-hidden">مزودو المحافظ الرسمية</caption>
           <thead><tr><th scope="col">المزوّد</th><th scope="col">الحالة</th><th scope="col">الإجراء</th></tr></thead>
-          <tbody>{providers.map((provider) => <tr key={provider.key}>
+          <tbody>{visibleProviders.map((provider) => <tr key={provider.key}>
             <th scope="row">{editingKey === provider.key ? <label className="field-label record-edit-field" htmlFor={`wallet-provider-name-${provider.key}`}>اسم المزوّد<input ref={renameInput} id={`wallet-provider-name-${provider.key}`} maxLength={80} value={renamedValue} disabled={busy || loading} onChange={(event) => setRenamedValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") closeEdit(provider.key); if (event.key === "Enter" && !busy && !loading) { event.preventDefault(); void rename(provider); } }} /></label> : provider.displayNameAr}</th>
             <td><span className="state-pill">{provider.active ? "نشطة" : "متوقفة"}</span></td>
             <td><div className="action-row">{canEdit ? editingKey === provider.key ? <>
@@ -124,7 +134,7 @@ export function WalletProviderPolicyPanel() {
               <button id={`wallet-provider-edit-${provider.key}`} type="button" className="button button-secondary" disabled={busy || loading || Boolean(editingKey)} onClick={() => { setEditingKey(provider.key); setRenamedValue(provider.displayNameAr); }}>تعديل</button>
               <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void toggle(provider)}>{provider.active ? "تعطيل" : "تفعيل"}</button>
             </> : null}</div></td>
-          </tr>)}</tbody>
+          </tr>)}{!visibleProviders.length ? <tr><td colSpan={3} className="collection-state">لا توجد محافظ مطابقة.</td></tr> : null}</tbody>
         </table>
       </div>
     </> : null}

@@ -128,7 +128,9 @@
   .disclosure.create-disclosure:not([open]) { inline-size: fit-content; }
   .checkbox-field { display: flex; align-items: center; gap: 8px; }
   .record-edit-field { max-inline-size: 320px; }
-  .reference-table { min-inline-size: 540px; }
+  .reference-table { min-inline-size: 540px; table-layout: fixed; }
+  .reference-table thead th:first-child { inline-size: 44%; }
+  .reference-table thead th:nth-child(2) { inline-size: 20%; }
   .registry-toolbar, .workspace-toolbar, .finance-toolbar, .partner-registry-toolbar, .catalog-registry-toolbar, .joining-case-queue-toolbar, .operations-toolbar, .field-roster-tools { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; padding: 12px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-base); min-inline-size: 0; }
   :is(.registry-toolbar,.workspace-toolbar,.finance-toolbar,.partner-registry-toolbar,.catalog-registry-toolbar,.joining-case-queue-toolbar) > label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; flex: 1 1 160px; max-inline-size: 260px; }
   :is(.registry-toolbar,.workspace-toolbar,.partner-registry-toolbar,.catalog-registry-toolbar,.joining-case-queue-toolbar) > search { flex: 2 1 280px; min-inline-size: 0; }
