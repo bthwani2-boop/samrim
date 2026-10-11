@@ -27,7 +27,7 @@ const surface = app;
 const configPath = path.join(appDir, "mobile.config.json");
 assert.ok(fs.existsSync(configPath), `${app}: missing mobile.config.json`);
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-assert.equal(Object.prototype.hasOwnProperty.call(config, "nativeCapabilities"), false, `${app}: nativeCapabilities shadow registry survived`);
+assert.equal(Object.hasOwn(config, "nativeCapabilities"), false, `${app}: nativeCapabilities shadow registry survived`);
 
 // 2. Current native/config contract verification.
 const pkgPath = path.join(appDir, "package.json");
@@ -133,7 +133,15 @@ import { pathToFileURL } from "node:url";
 register(pathToFileURL(path.join(root, "packages/design-system/tools/ts-resolver.mjs")).href, import.meta.url);
 if (app === "app-field") {
   const newCaseRoute = fs.readFileSync(path.join(appDir, "app/(app)/new-case.tsx"), "utf8");
-  assert.match(newCaseRoute, /key=\{`field-case:\$\{caseId\}`\}/, "app-field: changing the edited case identity must remount the draft editor rather than reuse another partner's state");
+  assert.match(newCaseRoute, /field-case:\$\{caseId\}/, "app-field: reopening a different draft must remount the editor");
+  assert.match(newCaseRoute, /field-new:\$\{fresh\}/, "app-field: Add Partner must mount a fresh form even after viewing a submitted case");
+  assert.match(newCaseRoute, /caseId = fresh \? ""/, "app-field: a fresh-entry request must ignore any retained draft case ID");
+  const fieldReadinessSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-readiness.tsx"), "utf8");
+  assert.match(fieldReadinessSource, /fresh: Crypto\.randomUUID\(\)/, "app-field: each Add Partner tap must create a distinct form identity");
+  const newCaseSourceForNavigation = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-new-case.tsx"), "utf8");
+  assert.match(newCaseSourceForNavigation, /router\.replace\(\{ pathname: "\/cases", params: \{ caseId: submitted\.case\.id \} \}/, "app-field: after confirmed submission, return to the saved case list");
+  const hoursEditorSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-working-hours-editor.tsx"), "utf8");
+  assert.doesNotMatch(hoursEditorSource, /applyYemenDaytimePreset|8 صباحًا – 10 مساءً · كل الأسبوع|أيام · \$\{intervals\.length\} فترات/, "app-field: the removed quick preset and counts must not reappear in the working-hours form");
   const admissionProviderOpen = layoutContent.indexOf("<FieldAdmissionProvider>");
   const authenticatedBoundaryOpen = layoutContent.indexOf("<AuthenticatedMobileBoundary");
   const authenticatedBoundaryClose = layoutContent.indexOf("</AuthenticatedMobileBoundary>");
@@ -175,9 +183,123 @@ if (app === "app-field") {
   const { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-draft-readback.ts")).href
   );
+  const { wrapDayMinutes, parseClockTime, formatClockTime, formatClockDisplay, clockHandAtRadius, finishClockHour, rotateClockMinutes, clockHandDegrees, clockDarkness } = await import(
+    "../../apps/app-field/src/features/field-operations/field-circular-clock.ts"
+  );
+  assert.equal(parseClockTime("21:57"), 1317, "Field dial must reopen at the exact persisted time");
+  assert.equal(parseClockTime("garbage"), 540, "Invalid legacy time should fall back to 09:00");
+  assert.equal(formatClockTime(-1), "23:59", "Minute decrement must wrap to the preceding day");
+  assert.equal(formatClockTime(1440), "00:00", "Midnight must persist as a valid HH:mm time");
+  assert.equal(clockHandDegrees(9 * 60), 270, "Nine o'clock should aim at the nine on the dial");
+  assert.equal(formatClockDisplay("00:00"), "12:00 صباحًا", "Midnight must be 12 AM on screen");
+  assert.equal(formatClockDisplay("12:00"), "12:00 مساءً", "Noon must be 12 PM on screen");
+  assert.equal(formatClockDisplay("21:57"), "9:57 مساءً", "Evening must be shown in 12-hour format");
+  assert.equal(formatClockDisplay("09:15"), "9:15 صباحًا", "Morning must be shown in 12-hour format");
+  assert.equal(clockHandAtRadius(52), "hour", "Inner dial touch must control the short hour hand");
+  assert.equal(clockHandAtRadius(91), "minute", "Outer dial touch must control the long minute hand");
+  assert.equal(formatClockTime(rotateClockMinutes(10 * 60, -Math.PI / 2, 0, "minute")), "10:15", "Quarter minute-hand revolution must advance 15 minutes");
+  assert.equal(formatClockTime(rotateClockMinutes(10 * 60, 0, Math.PI / 2, "hour")), "13:00", "Quarter hour-hand revolution must advance three hours");
+  assert.equal(formatClockTime(finishClockHour(13 * 60 + 37, 12)), "13:12", "Hour-hand release must preserve original minute precision");
+  assert.equal(formatClockTime(finishClockHour(13 * 60 + 45, 12)), "14:12", "Hour-hand release must round to nearest hour");
+  let rotated = parseClockTime("21:57");
+  const quarterAngles = [-Math.PI / 2, 0, Math.PI / 2, Math.PI, 3 * Math.PI / 2];
+  for (let pass = 0; pass < 2; pass++) {
+    for (let index = 1; index < quarterAngles.length; index++) {
+      rotated = rotateClockMinutes(rotated, quarterAngles[index - 1], quarterAngles[index]);
+    }
+    assert.equal(formatClockTime(rotated), pass === 0 ? "09:57" : "21:57", "Each complete turn must advance exactly twelve hours");
+  }
+  assert.equal(formatClockTime(rotateClockMinutes(0, Math.PI - 0.01, -Math.PI + 0.01)), "00:02", "Dial crossing at the angle seam must advance, not jump backwards");
+  assert.equal(wrapDayMinutes(-1441), 1439);
+  assert.equal(clockDarkness(5 * 60), 1);
+  assert.equal(clockDarkness(6 * 60 + 30), 0.5);
+  assert.equal(clockDarkness(7 * 60), 0);
+  assert.equal(clockDarkness(18 * 60), 0);
+  assert.equal(clockDarkness(19 * 60 + 30), 0.5);
+  assert.equal(clockDarkness(21 * 60), 1);
+  const dialSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-circular-time-picker.tsx"), "utf8");
+  assert.ok(dialSource.includes(".onUpdate((event) =>"), "Clock hands must respond to UI-thread drag gestures");
+  assert.ok(dialSource.includes("GestureHandlerRootView"), "Modal gestures must have a native gesture-handler root");
+  assert.ok(dialSource.includes("onChange(formatClockTime(minutes.value))"), "Field time must be persisted from precise hand position via existing DSH schema");
+  assert.match(dialSource, /useSharedValue/, "Both clock hands must be driven by native-thread shared values");
+  assert.match(dialSource, /Gesture\.Pan\(\)/, "Clock must handle native gestures without React event rerenders");
+  assert.match(dialSource, /useAnimatedStyle/, "Clock must render hand rotations on the UI thread");
+  assert.doesNotMatch(dialSource, /clockQuarterHour|QUARTERS|label=\{`:[0-9]|label="[+−] دقيقة"/, "The old quarter-minute boxes and buttons must be removed");
+  assert.doesNotMatch(dialSource, /\(24 ساعة\)|يُحفظ الوقت:/, "The picker must not expose 24-hour notation to field staff");
+  assert.doesNotMatch(dialSource, /react-native-svg/, "Circular clock must need no additional native dependency");
+  console.log("MOBILE_FIELD_CIRCULAR_CLOCK=PASS twelve-hour rotations, minute precision, midnight and day-night transitions");
   const intervals = [{ dayOfWeek: 1, opensAt: "09:00", closesAt: "17:00", closesNextDay: false }, { dayOfWeek: 2, opensAt: "10:00", closesAt: "18:00", closesNextDay: false }];
   const draft = { contactPhoneE164: "+967777123456", ownerFullName: "مالك النشاط", businessName: "نشاط الاختبار", firstStoreName: "المتجر الأول", walletProviderKey: "wallet_provider_test", firstStoreAddress: "صنعاء", serviceCityId: "city-1", firstStoreVerticalId: "vertical-1", firstStoreCommercialTypeId: "type-1", firstStoreProofType: "COMMERCIAL_REGISTRATION", firstStoreNotes: "ملاحظات", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreWorkingHours: { intervals }, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP", "BTHWANI_CAPTAIN"] };
   const saved = { ...draft, state: "draft", origin: "field", version: 3, firstStoreWorkingHours: { intervals: [...intervals].reverse() }, firstStoreFulfillmentModes: [...draft.firstStoreFulfillmentModes].reverse() };
+  const { fieldStoreImageProvenance } = await import(
+    pathToFileURL(path.join(appDir, "src/features/field-operations/field-store-image-provenance.ts")).href
+  );
+  const employeeImage = fieldStoreImageProvenance("camera", "مالك المتجر", "موظف الميدان");
+  const ownerImage = fieldStoreImageProvenance("library", "مالك المتجر");
+  assert.equal(employeeImage.rightsAttested, false, "Store image consent must never be fabricated or prechecked");
+  assert.equal(ownerImage.rightsAttested, false, "Gallery media requires the field worker's explicit owner-permission confirmation");
+  assert.equal(ownerImage.creator, "مالك المتجر", "Gallery media must record the supplied owner source");
+  assert.match(employeeImage.sourceDescription, /موظف الميدان/, "Camera provenance must retain the actual capture context");
+  const { getFieldJoiningRequirements } = await import(
+    pathToFileURL(path.join(appDir, "src/features/field-operations/field-joining-readiness.ts")).href
+  );
+  const completeReadback = {
+    ...saved,
+    firstStoreProofNumberPresent: true,
+    firstStoreProofImageUploaded: true,
+    storeProfileImage: { uri: "https://example.test/store.png" },
+  };
+  assert.deepEqual(getFieldJoiningRequirements(completeReadback).filter((item) => !item.saved), [], "Complete canonical draft must have no phantom missing fields");
+  assert.deepEqual(getFieldJoiningRequirements({ ...completeReadback, firstStoreLatitude: 0, firstStoreLongitude: 0 }).filter((item) => !item.saved).map((item) => item.key), ["location"], "DSH zeroed unset coordinates must not be accepted as a selected store location");
+  assert.deepEqual(
+    getFieldJoiningRequirements({ ...completeReadback, firstStoreProofImageUploaded: false, storeProfileImage: null }).filter((item) => !item.saved).map((item) => item.key),
+    [],
+    "Optional document photos and Store logos must not prevent submitting a joining case for review",
+  );
+  assert.deepEqual(
+    getFieldJoiningRequirements(null).filter((item) => !item.saved).length,
+    10,
+    "Unsaved local inputs must not be reported as persisted",
+  );
+  const threeModes = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"];
+  // One coherent, entirely synthetic Sana'a restaurant. This is a simulation
+  // against the real app's draft/readback rules, not a published merchant.
+  const simulatedHours = Array.from({ length: 7 }, (_, i) => ({
+    dayOfWeek: i + 1,
+    opensAt: i === 6 ? "12:00" : "09:00",
+    closesAt: i === 6 ? "22:00" : "23:15",
+    closesNextDay: false,
+  }));
+  const simulatedStore = {
+    ...draft,
+    contactPhoneE164: "+967700000171",
+    ownerFullName: "سالم ناصر القيسي (شخصية تجريبية)",
+    businessName: "مؤسسة الساحة اليمنية الغذائية (تجريبية)",
+    firstStoreName: "مطعم الساحة اليمنية (تجريبي)",
+    firstStoreAddress: "صنعاء، شارع الزبيري، قرب جولة المصباحي (عنوان افتراضي)",
+    firstStoreNotes: "مطعم وجبات يمنية؛ بيانات داخلية للاختبار فقط، غير معتمد للنشر.",
+    firstStoreLatitude: 15.369445,
+    firstStoreLongitude: 44.191006,
+    firstStoreWorkingHours: { intervals: simulatedHours },
+    firstStoreFulfillmentModes: threeModes,
+  };
+  const simulatedReadback = {
+    ...simulatedStore, state: "draft", origin: "field", version: 3,
+    firstStoreWorkingHours: { intervals: [...simulatedHours].reverse() },
+    firstStoreFulfillmentModes: [...threeModes].reverse(),
+    firstStoreProofNumberPresent: true,
+    firstStoreProofImageUploaded: true,
+    storeProfileImage: { id: "synthetic-storefront-fixture", uri: "https://example.test/storefront-fixture.png" },
+  };
+  assert.equal(fieldDraftMatchesReadback(simulatedStore, simulatedReadback, 3), true, "Synthetic restaurant must roundtrip all fields and three delivery modes");
+  assert.deepEqual(getFieldJoiningRequirements(simulatedReadback).filter((item) => !item.saved), [], "Synthetic restaurant must pass the shared canonical readiness checklist");
+  assert.equal(simulatedHours.length, 7, "Synthetic restaurant must have an explicit schedule for every day");
+  assert.ok(simulatedHours.every((item) => item.opensAt === "09:00" && item.closesAt === "23:15" || item.dayOfWeek === 7), "Every simulated weekday must follow its chosen opening hours");
+  assert.equal(formatClockDisplay(simulatedHours[0].closesAt), "11:15 مساءً", "Synthetic store closing must display as an evening time");
+  console.log("MOBILE_FIELD_SYNTHETIC_STORE=PASS realistic Sana'a draft, seven-day hours, three delivery modes, canonical readiness (no persisted merchant)");
+  assert.equal(fieldDraftMatchesReadback({ ...draft, firstStoreFulfillmentModes: threeModes }, {
+    ...saved, firstStoreFulfillmentModes: [...threeModes].reverse(),
+  }, 3), true, "A trial restaurant must preserve all three fulfillment modes in canonical readback");
   assert.equal(fieldDraftMatchesReadback(draft, saved, 3), true, "Field draft readback should allow server-normalized set ordering");
   for (const key of ["ownerFullName", "businessName", "firstStoreName", "walletProviderKey", "firstStoreAddress", "serviceCityId", "firstStoreVerticalId", "firstStoreCommercialTypeId", "firstStoreProofType", "firstStoreNotes"]) {
     assert.equal(fieldDraftMatchesReadback(draft, { ...saved, [key]: "different" }, 3), false, `Field draft readback missed ${key} divergence`);
@@ -190,11 +312,16 @@ if (app === "app-field") {
   const partial = { contactPhoneE164: draft.contactPhoneE164 };
   const partialSaved = { ...saved, ownerFullName: null, businessName: "", firstStoreName: "", walletProviderKey: "", firstStoreAddress: null, serviceCityId: null, firstStoreVerticalId: "", firstStoreCommercialTypeId: null, firstStoreProofType: null, firstStoreNotes: null, firstStoreLatitude: null, firstStoreLongitude: null, firstStoreWorkingHours: null, firstStoreFulfillmentModes: [] };
   assert.equal(fieldDraftMatchesReadback(partial, partialSaved, 3), true, "Omitted fields in a partial snapshot may read back as null or empty");
+  assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreLatitude: 0, firstStoreLongitude: 0 }, 3), true, "Omitted draft coordinates projected as 0,0 must be accepted without treating them as a real map pin");
   assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, walletProviderKey: "obsolete-wallet" }, 3), false, "Clearing an omitted wallet must be reflected in canonical readback");
   assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] }, 3), false, "Clearing modes must not silently retain old modes");
   assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreWorkingHours: { intervals: [intervals[0]] } }, 3), false, "Clearing hours must not silently retain old intervals");
   assert.equal(fieldDraftMatchesReadback(partial, { ...partialSaved, firstStoreLatitude: 15.3, firstStoreLongitude: 44.2 }, 3), false, "Clearing a map pin must not silently retain old coordinates");
   const newCaseSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-new-case.tsx"), "utf8");
+  assert.match(newCaseSource, /keyboardDidShow/, "Field form must observe the keyboard appearing");
+  assert.match(newCaseSource, /ensureFocusedInputVisible/, "Field form must scroll focused inputs clear of the keyboard");
+  assert.match(newCaseSource, /onFocus=\{focusField\}/, "Form fields must request keyboard-safe positioning");
+  assert.match(newCaseSource, /current\.firstStoreLatitude !== 0 \|\| current\.firstStoreLongitude !== 0/, "An unset 0,0 location must not become a selected map pin after draft reload");
   assert.match(newCaseSource, /cause\.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH"/, "Field readback mismatch must retain the original idempotency identity for a safe retry");
   assert.match(newCaseSource, /cause\.message === "FIELD_JOINING_CASE_CANONICAL_READBACK_UNAVAILABLE"/, "A failed post-write draft readback must preserve the original attempt identity");
   assert.match(newCaseSource, /readOwnFieldJoiningCase\(token, response\.case\.id\)\.catch\(\(cause: unknown\) => \{ throw markFieldDraftReadbackUncertain\(cause\); \}\)/, "Post-write readback errors must not be classified as draft write failures");
@@ -208,79 +335,42 @@ if (app === "app-field") {
   console.log("MOBILE_FIELD_DRAFT_READBACK=PASS complete and cleared drafts, normalized sets, mismatches, version and uncertain retry");
   const uploadedMedia = { ...saved, id: "field-case-1", version: 4, storeProfileImage: { uri: "https://media.example/store-1.png", contentSha256: "digest-one" }, firstStoreProofImageUploaded: true };
   assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia }, "store", 3), true, "Field store image needs canonical confirmation");
-  assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia }, "proof", 3), true, "Field private proof image needs canonical confirmation");
   for (const [name, changed] of [
-    ["case identity", { id: "other-case" }], ["version", { version: 3 }],
+    ["case identity", { id: "other-case" }],
+    ["version", { version: 3 }],
     ["lost store image", { storeProfileImage: null }],
     ["changed media URI", { storeProfileImage: { uri: "https://media.example/store-2.png", contentSha256: "digest-one" } }],
     ["missing canonical digest", { storeProfileImage: { uri: "https://media.example/store-1.png" } }],
     ["image digest divergence", { storeProfileImage: { uri: "https://media.example/store-1.png", contentSha256: "digest-two" } }],
-  ]) assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia, ...changed }, "store", 3), false, `Field media confirmation missed ${name}`);
-  assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, storeProfileImage: { uri: "https://media.example/store-1.png" } }, uploadedMedia, "store", 3), false, "A response lacking an upload digest cannot prove the same media was persisted");
-  assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, version: 3 }, uploadedMedia, "store", 3), false, "A non-advancing upload version cannot prove media persistence");
-  assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia, firstStoreProofImageUploaded: false }, "proof", 3), false, "Private proof confirmation requires canonical uploaded flag");
+  ]) assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia, ...changed }, "store", 3), false, "Field logo upload confirmation missed " + name);
+  assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, storeProfileImage: { uri: "https://media.example/store-1.png" } }, uploadedMedia, "store", 3), false, "A response without media digest cannot prove upload");
+  assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, version: 3 }, uploadedMedia, "store", 3), false, "A stale upload version cannot prove persistence");
   for (const status of [401, 403, 404]) {
     const readFailure = Object.assign(new Error("Readback failed"), { kind: "http", status });
     const uncertain = markFieldMediaReadbackUncertain(readFailure);
-    assert.equal(uncertain.message, "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE", "Post-upload readback failure must remain uncertain");
-    assert.equal(uncertain.cause, readFailure, "Preserve original readback failure for diagnosis");
+    assert.equal(uncertain.message, "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE");
+    assert.equal(uncertain.cause, readFailure);
   }
   const casesSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-cases.tsx"), "utf8");
   for (const source of [newCaseSource, casesSource]) {
-    assert.match(source, /fieldDraftMediaUploadConfirmed\([^\n]+"store"/, "Field store upload must use canonical readback before discarding selected media");
-    assert.match(source, /fieldDraftMediaUploadConfirmed\([^\n]+"proof"/, "Field proof upload must use canonical readback before discarding selected media");
-    assert.match(source, /cause\.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH"/, "Unconfirmed media upload must retain original idempotency identity for retry");
-    assert.match(source, /cause\.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE"/, "Failed post-upload readback must retain the same pending upload identity");
-    assert.equal([...source.matchAll(/readOwnFieldJoiningCase\(token, attempt\.caseID\)\.catch\(\(cause: unknown\) => \{ throw markFieldMediaReadbackUncertain\(cause\); \}\)/g)].length, 2, "Both media flows must classify post-upload read failures separately from upload request failures");
+    assert.match(source, /fieldDraftMediaUploadConfirmed\([^\n]+"store"/, "Logo upload must use canonical readback");
+    assert.match(source, /readOwnFieldJoiningCase\(token, attempt\.caseID\)\.catch\(\(cause: unknown\) => \{ throw markFieldMediaReadbackUncertain\(cause\); \}\)/, "Logo upload readback failure must be classified as uncertain");
   }
-  assert.match(casesSource, /if \(busy \|\| item\.state !== "draft" \|\| storeImage \|\| proofImage \|\| pendingImageAttempt \|\| pendingProofImageAttempt\) return;/, "Field submission must reject unsaved media even if directly invoked");
-  assert.match(casesSource, /disabled=\{Boolean\(busy\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\) \|\| Boolean\(storeImage\) \|\| Boolean\(proofImage\)\} label="إرسال للمراجعة"/, "Field must not submit a case while unsaved store or proof images are selected");
-  assert.match(casesSource, /if \(busy \|\| storeImage \|\| proofImage \|\| pendingImageAttempt \|\| pendingProofImageAttempt \|\| item\.state !== "draft"\) return;/, "Opening other media details must not replace a pending proof image or upload attempt");
-  assert.equal([...casesSource.matchAll(/disabled=\{Boolean\(busy\) \|\| Boolean\(storeImage\) \|\| Boolean\(proofImage\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\)\}/g)].length, 2, "Draft editing and media navigation must both protect unsaved proof selection");
-  assert.match(casesSource, /setMediaCase\(null\); setStoreImage\(null\); setProofImage\(null\);/, "Closing media details must discard both uncommitted image selections");
-  assert.match(newCaseSource, /if \(!createdCase \|\| !storeImage \|\| busy \|\| pendingProofImageAttempt\) return;/, "Store retry must not overtake unresolved proof upload in draft editor");
-  assert.match(newCaseSource, /if \(!createdCase \|\| !proofImage \|\| busy \|\| pendingImageAttempt\) return;/, "Proof retry must not overtake unresolved store upload in draft editor");
-  assert.match(newCaseSource, /if \(busy \|\| pendingImageAttempt \|\| pendingProofImageAttempt\) return;/, "Store selection must remain locked during either pending upload");
-  assert.match(newCaseSource, /if \(busy \|\| pendingProofImageAttempt \|\| pendingImageAttempt\) return;/, "Proof selection must remain locked during either pending upload");
-  assert.match(casesSource, /if \(!mediaCase \|\| !storeImage \|\| busy \|\| pendingProofImageAttempt\) return;/, "Store upload must not overtake unresolved proof upload in cases");
-  assert.match(casesSource, /if \(!mediaCase \|\| !proofImage \|\| busy \|\| pendingImageAttempt\) return;/, "Proof upload must not overtake unresolved store upload in cases");
-  assert.match(casesSource, /if \(!mediaCase \|\| busy \|\| pendingImageAttempt \|\| pendingProofImageAttempt\) return;/, "Cases store picker must guard both pending uploads");
-  assert.match(casesSource, /if \(!mediaCase \|\| mediaCase\.case\.state !== "draft" \|\| busy \|\| pendingProofImageAttempt \|\| pendingImageAttempt\) return;/, "Cases proof picker must guard both pending uploads");
-  assert.equal([...casesSource.matchAll(/disabled=\{Boolean\(busy\) \|\| Boolean\(pendingImageAttempt\) \|\| Boolean\(pendingProofImageAttempt\)\} label=/g)].length, 3, "Cases store image, camera and close-detail actions must protect pending uploads");
-  assert.match(newCaseSource, /disabled=\{busy \|\| Boolean\(pendingImageAttempt\)\} label=\{pendingProofImageAttempt \?/, "Draft proof retry must be visibly blocked by pending store upload");
-  assert.match(newCaseSource, /disabled=\{busy \|\| Boolean\(pendingProofImageAttempt\)\} label=\{pendingImageAttempt \?/, "Draft store retry must be visibly blocked by pending proof upload");
-  for (const [surface, source] of [["new-case", newCaseSource], ["cases", casesSource]]) {
-    const start = source.indexOf("async function pickStoreImage(");
-    const end = source.indexOf("async function pickProofImage()", start);
-    assert.ok(start !== -1 && end > start, "Field " + surface + " must expose store-image selection");
-    const picker = source.slice(start, end);
-    assert.match(picker, /if \(asset\.fileSize && asset\.fileSize > 10 \* 1024 \* 1024\) throw new Error\("STORE_IMAGE_SIZE_INVALID"\);/, "Field " + surface + " must reject oversized picker metadata before loading bytes");
-    assert.match(picker, /if \(!blob\.size \|\| blob\.size > 10 \* 1024 \* 1024\) throw new Error\("STORE_IMAGE_SIZE_INVALID"\);/, "Field " + surface + " must reject empty and oversized image bytes even without picker metadata");
-    assert.match(picker, /cause\.message === "STORE_IMAGE_SIZE_INVALID" \? "يجب ألا يتجاوز حجم صورة المتجر 10 ميغابايت\."/, "Field " + surface + " must explain the DSH size limit in Arabic");
-    assert.ok(picker.indexOf('throw new Error("STORE_IMAGE_SIZE_INVALID")') < picker.indexOf("setStoreImage("), "Field " + surface + " must reject invalid media before storing a selected image");
-  }
+  assert.match(casesSource, /if \(busy \|\| item\.state !== "draft"\) return;/, "Submission must reject non-draft cases");
+  assert.match(casesSource, /disabled=\{Boolean\(busy\)\} label="إرسال للمراجعة"/, "Optional logo upload cannot disable submission");
+  assert.doesNotMatch(casesSource, /pendingProofImageAttempt|pickProofImage|uploadProofImage/, "Removed identity-proof photo workflow must stay absent");
+  assert.match(newCaseSource, /if \(!createdCase \|\| !storeImage \|\| busy\) return;/, "Store-logo retry requires a saved draft and selection");
+  assert.match(newCaseSource, /if \(busy \|\| pendingImageAttempt\) return;/, "Store-logo picker must not override a pending upload");
   const { fieldJoiningImageDimensionsSupported } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-image-dimensions.ts")).href
   );
   for (const [width, height] of [[1, 1], [6000, 6000], [1, 6000], [6000, 1]]) {
-    assert.equal(fieldJoiningImageDimensionsSupported(width, height), true, "DSH-valid boundary dimensions must remain selectable");
+    assert.equal(fieldJoiningImageDimensionsSupported(width, height), true);
   }
   for (const [width, height] of [[0, 1], [1, 0], [6001, 1], [1, 6001], [-1, 2], [1.5, 2], [NaN, 2], [2, Infinity], [undefined, 2]]) {
-    assert.equal(fieldJoiningImageDimensionsSupported(width, height), false, "Invalid image dimensions must be rejected before upload");
+    assert.equal(fieldJoiningImageDimensionsSupported(width, height), false);
   }
-  for (const [surface, source] of [["new-case", newCaseSource], ["cases", casesSource]]) {
-    const storeStart = source.indexOf("async function pickStoreImage(");
-    const proofStart = source.indexOf("async function pickProofImage()", storeStart);
-    const proofEnd = source.indexOf("async function uploadProofImage(", proofStart);
-    assert.ok(storeStart !== -1 && proofStart > storeStart && proofEnd > proofStart, "Field " + surface + " must have bounded store and proof pickers");
-    for (const [kind, picker] of [["STORE", source.slice(storeStart, proofStart)], ["PROOF", source.slice(proofStart, proofEnd)]]) {
-      assert.ok(picker.includes(`if (!fieldJoiningImageDimensionsSupported(asset.width, asset.height)) throw new Error("${kind}_IMAGE_DIMENSIONS_INVALID");`), `Field ${surface} ${kind} picker must use the tested dimensions guard`);
-      assert.ok(picker.indexOf("fieldJoiningImageDimensionsSupported(asset.width, asset.height)") < picker.indexOf("await fetch(asset.uri)"), `Field ${surface} ${kind} must reject dimensions before reading bytes`);
-      assert.ok(picker.includes(`cause.message === "${kind}_IMAGE_DIMENSIONS_INVALID"`), `Field ${surface} ${kind} must show a distinct dimensions error`);
-      assert.match(picker, /يجب أن تكون أبعاد صورة (المتجر|الإثبات) بين 1 و6000 بكسل للعرض والارتفاع/, `Field ${surface} ${kind} must explain accepted dimensions in Arabic`);
-    }
-  }
-  console.log("MOBILE_FIELD_MEDIA_READBACK=PASS image marker, private proof, version, isolation, recovery and both Field surfaces");
+  console.log("MOBILE_FIELD_MEDIA_READBACK=PASS logo readback, version, retry, no identity-photo blocker");
   const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-commercial-agreement-rate.ts")).href
   );

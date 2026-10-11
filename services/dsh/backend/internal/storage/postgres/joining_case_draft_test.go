@@ -38,7 +38,7 @@ func TestFieldJoiningCaseDraftCreateUpdateOwnershipIdempotencyAndMedia(t *testin
 		}
 		keys := testJoiningCaseEvidenceKeyring(t)
 		const fieldActor = "act_field_draft_owner"
-		request := postgres.JoiningCaseRequest{Phone: "+967700000171"}
+		request := postgres.JoiningCaseRequest{Phone: "+967700000171", FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "123456789"}
 		createHash := "field-draft-create-hash"
 		created, err := postgres.CreateFieldJoiningCaseDraft(ctx, db, postgres.CreateJoiningCaseInput{
 			IdempotencyKey: "idem-field-draft-create", RequestHash: createHash, ActingActorID: fieldActor,
@@ -79,13 +79,13 @@ func TestFieldJoiningCaseDraftCreateUpdateOwnershipIdempotencyAndMedia(t *testin
 		updatedRequest := postgres.JoiningCaseRequest{
 			Phone: request.Phone, OwnerFullName: "مالك المتجر", BusinessName: "نشاط المتجر", FirstStoreName: "متجر الاختبار",
 			WalletProviderKey: "provider-test", FirstStoreAddress: "الشارع الرئيسي", FirstStoreWorkingHours: []byte(`{"intervals":[{"dayOfWeek":1,"opensAt":"09:00","closesAt":"17:00","closesNextDay":false}]}`),
-			FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "123456789", FirstStoreNotes: "ملاحظات", Latitude: 15.369445, Longitude: 44.191006,
+			FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "", FirstStoreNotes: "ملاحظات", Latitude: 15.369445, Longitude: 44.191006,
 			FulfillmentModes: []string{postgres.FulfillmentModeBthwaniCaptain},
 		}
 		update := postgres.UpdateFieldJoiningCaseDraftInput{
 			CaseID: created.Case.ID, FieldActorID: fieldActor, IdempotencyKey: "idem-field-draft-update",
 			CorrelationID: "corr-field-draft-update", ExpectedVersion: proofResult.Case.Version,
-			EvidenceKeyring: keys, PreserveProofNumber: false, Request: updatedRequest,
+			EvidenceKeyring: keys, PreserveProofNumber: true, Request: updatedRequest,
 		}
 		update.RequestHash = hashDraftUpdate(t, keys, update)
 		updated, err := postgres.UpdateFieldJoiningCaseDraft(ctx, db, update)
@@ -107,6 +107,19 @@ func TestFieldJoiningCaseDraftCreateUpdateOwnershipIdempotencyAndMedia(t *testin
 		if err != nil || !replayUpdate.Replayed || replayUpdate.Case.Version != preserved.Case.Version {
 			t.Fatalf("draft update retry was not idempotent: case=%+v err=%v", replayUpdate.Case, err)
 		}
+		// Repeating the exact encrypted proof number must not invalidate an
+		// already uploaded image or re-encrypt the unchanged number.
+		sameNumber := preserveUpdate
+		sameNumber.ExpectedVersion = preserved.Case.Version
+		sameNumber.IdempotencyKey = "idem-field-draft-same-proof-number"
+		sameNumber.CorrelationID = "corr-field-draft-same-proof-number"
+		sameNumber.PreserveProofNumber = false
+		sameNumber.Request.FirstStoreProofNumber = "123456789"
+		sameNumber.RequestHash = hashDraftUpdate(t, keys, sameNumber)
+		sameNumberSaved, err := postgres.UpdateFieldJoiningCaseDraft(ctx, db, sameNumber)
+		if err != nil || !sameNumberSaved.Case.FirstStoreProofNumberPresent || !sameNumberSaved.Case.FirstStoreProofImageUploaded {
+			t.Fatalf("unchanged encrypted proof number must retain its image: case=%+v err=%v", sameNumberSaved.Case, err)
+		}
 		stale := preserveUpdate
 		stale.IdempotencyKey = "idem-field-draft-stale"
 		stale.RequestHash = hashDraftUpdate(t, keys, stale)
@@ -121,8 +134,36 @@ func TestFieldJoiningCaseDraftCreateUpdateOwnershipIdempotencyAndMedia(t *testin
 		if _, err := postgres.UpdateFieldJoiningCaseDraft(ctx, db, wrongOwner); !errors.Is(err, postgres.ErrJoiningCasePartnerAccess) {
 			t.Fatalf("foreign actor draft update error = %v, want ownership denial", err)
 		}
-		if _, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, created.Case.ID, fieldActor, preserved.Case.Version, "idem-field-draft-incomplete-submit", postgres.HashFieldJoiningCaseAdmission(created.Case.ID, fieldActor, preserved.Case.Version), "corr-draft-incomplete-submit"); !errors.Is(err, postgres.ErrJoiningCaseServiceCity) {
+		// Changing private proof details must not discard historical photo evidence.
+		changedProof := preserveUpdate
+		changedProof.ExpectedVersion = sameNumberSaved.Case.Version
+		changedProof.IdempotencyKey = "idem-field-draft-proof-change"
+		changedProof.CorrelationID = "corr-field-draft-proof-change"
+		changedProof.PreserveProofNumber = false
+		changedProof.Request.FirstStoreProofNumber = "987654321"
+		changedProof.RequestHash = hashDraftUpdate(t, keys, changedProof)
+		changed, err := postgres.UpdateFieldJoiningCaseDraft(ctx, db, changedProof)
+		if err != nil || !changed.Case.FirstStoreProofNumberPresent || !changed.Case.FirstStoreProofImageUploaded {
+			t.Fatalf("new proof number discarded historical image: case=%+v err=%v", changed.Case, err)
+		}
+		changedType := changedProof
+		changedType.ExpectedVersion = changed.Case.Version
+		changedType.IdempotencyKey = "idem-field-draft-type-change"
+		changedType.CorrelationID = "corr-field-draft-type-change"
+		changedType.PreserveProofNumber = true
+		changedType.Request.FirstStoreProofNumber = ""
+		changedType.Request.FirstStoreProofType = "IDENTITY_DOCUMENT"
+		changedType.RequestHash = hashDraftUpdate(t, keys, changedType)
+		typeUpdated, err := postgres.UpdateFieldJoiningCaseDraft(ctx, db, changedType)
+		if err != nil || !typeUpdated.Case.FirstStoreProofImageUploaded {
+			t.Fatalf("changed proof type discarded a protected historical image: case=%+v err=%v", typeUpdated.Case, err)
+		}
+		// A document image is no longer a submission prerequisite; the missing city remains the first blocker.
+		if _, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, created.Case.ID, fieldActor, typeUpdated.Case.Version, "idem-field-draft-incomplete-submit", postgres.HashFieldJoiningCaseAdmission(created.Case.ID, fieldActor, typeUpdated.Case.Version), "corr-draft-incomplete-submit"); !errors.Is(err, postgres.ErrJoiningCaseServiceCity) {
 			t.Fatalf("incomplete draft submit error = %v, want missing-city rejection", err)
+		}
+		if _, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, created.Case.ID, fieldActor, typeUpdated.Case.Version, "idem-field-draft-missing-city", postgres.HashFieldJoiningCaseAdmission(created.Case.ID, fieldActor, typeUpdated.Case.Version), "corr-draft-missing-city"); !errors.Is(err, postgres.ErrJoiningCaseServiceCity) {
+			t.Fatalf("missing city without image requirement = %v, want missing-city rejection", err)
 		}
 	})
 }

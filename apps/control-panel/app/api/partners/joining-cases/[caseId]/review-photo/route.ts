@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, downloadJoiningCaseProofImage, isDshClientError } from "../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, downloadJoiningCaseReviewPhoto, isDshClientError } from "../../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../../src/server/security/csrf";
@@ -23,8 +23,8 @@ export async function GET(request: Request, context: { params: Promise<{ caseId:
   if ("error" in authorization) return authorization.error;
   try {
     const { caseId } = await context.params;
-    const image = await downloadJoiningCaseProofImage(caseId, { operatorActorId: authorization.identity.subject });
-    return new Response(Buffer.from(image.content), { status: 200, headers: { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Content-Type": image.contentType, "Content-Disposition": "attachment; filename=joining-case-proof" } });
+    const image = await downloadJoiningCaseReviewPhoto(caseId, { operatorActorId: authorization.identity.subject });
+    return new Response(Buffer.from(image.content), { status: 200, headers: { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Content-Type": image.contentType, "Content-Disposition": "attachment; filename=joining-review-photo" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "تعذر قراءة صورة الإثبات الخاصة.", 500);
     const payload = dshErrorPayload(error);

@@ -1,0 +1,134 @@
+.panel {
+  display: grid;
+  gap: 18px;
+  padding: clamp(18px, 2.4vw, 26px);
+}
+
+.header,
+.headerActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.heading { display: grid; gap: 4px; }
+.heading h2 { margin: 0; color: var(--color-primary); font-size: clamp(20px, 2vw, 24px); line-height: 1.35; }
+.heading p { margin: 0; }
+
+.source {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.description {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.scope,
+.settings {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.scope {
+  padding: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sectionHeading h3 { margin: 0; color: var(--color-primary); font-size: 16px; line-height: 1.4; }
+.sectionHeading p { margin: 2px 0 0; color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+
+.step {
+  display: grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface-base);
+  color: var(--interactive-text);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.scopeFields,
+.settingsGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 12px 16px;
+  min-width: 0;
+}
+
+.scopeFieldsWithType { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.field { min-width: 0; margin: 0; }
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: var(--color-primary);
+  padding: 8px 12px;
+}
+
+.field textarea { min-height: 84px; resize: vertical; }
+.reasonField { grid-row: span 2; }
+.helper { margin: -4px 0 0; font-size: 12px; line-height: 1.5; }
+
+.feedback,
+.notice { margin: 0; }
+
+.policyReadout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border-inline-start: 3px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--surface-base);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.policyReadout strong { color: var(--color-primary); font-size: 15px; font-variant-numeric: tabular-nums; }
+.settings { padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.saveButton { width: fit-content; min-width: 170px; min-height: 46px; padding-inline: 20px; }
+
+@media (max-width: 720px) {
+  .panel { gap: 16px; }
+  .header { align-items: flex-start; flex-direction: column; }
+  .headerActions { width: 100%; justify-content: space-between; }
+  .scopeFields,
+  .settingsGrid { grid-template-columns: minmax(0, 1fr); }
+  .reasonField { grid-row: auto; }
+  .helper { margin-top: -8px; }
+  .saveButton { width: 100%; }
+}

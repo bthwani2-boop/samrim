@@ -46,6 +46,8 @@ When replacing or refounding a canonical path, migrate every materially affected
 
 Preserve required Product behavior, security, authorization, privacy, data integrity, contract integrity and operational safety throughout simplification.
 
+For every materially affected workflow, enforce the effort-minimal, high-volume actor experience in `docs/governance/policies/experience.md`: require only necessary facts at the current stage, reuse canonical data, make optional inputs non-blocking, minimize repeated user actions and expose clear completion/recovery. Reject unjustified UX or technical machinery; retain essential safety in its existing owner and prove the simpler real task, not just fewer screens.
+
 ## 4. Local development state
 
 The current project phase is local development, before Stage/Production adoption. Entry into shared Stage/Production requires an explicit governed transition. Local phase alone does not make existing state disposable.

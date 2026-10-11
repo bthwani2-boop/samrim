@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
@@ -52,6 +53,7 @@ type JoiningCaseRecord struct {
 	FirstStoreProofType          string
 	FirstStoreProofNumberPresent bool
 	FirstStoreProofImageUploaded bool
+	ReviewPhotoUploaded          bool
 	FirstStoreNotes              string
 	FirstStoreServiceCityID      string
 	FirstStoreVerticalID         string
@@ -384,6 +386,35 @@ func UpdateFieldJoiningCaseDraft(ctx context.Context, db *sql.DB, input UpdateFi
 		return JoiningCaseResult{}, ErrJoiningCaseVersion
 	}
 	request := input.Request
+	// Compare the encrypted number without leaking it into the public case view.
+	// An identical resubmission must not erase an already uploaded proof image.
+	proofNumber := strings.TrimSpace(request.FirstStoreProofNumber)
+	numberChanged := false
+	if !input.PreserveProofNumber && proofNumber != "" {
+		if input.EvidenceKeyring == nil {
+			return JoiningCaseResult{}, errors.New("DSH joining-case evidence keyring is required")
+		}
+		var previousKeyID sql.NullString
+		var previousCiphertext []byte
+		readErr := tx.QueryRowContext(ctx, `SELECT proof_number_key_id,proof_number_ciphertext
+			FROM dsh.joining_case_private_evidence WHERE joining_case_id=$1`, input.CaseID).Scan(&previousKeyID, &previousCiphertext)
+		switch {
+		case errors.Is(readErr, sql.ErrNoRows):
+			numberChanged = true
+		case readErr != nil:
+			return JoiningCaseResult{}, fmt.Errorf("read existing encrypted proof number: %w", readErr)
+		default:
+			if !previousKeyID.Valid || len(previousCiphertext) == 0 {
+				numberChanged = true
+				break
+			}
+			previous, decryptErr := input.EvidenceKeyring.Decrypt(input.CaseID, "proof-number", previousKeyID.String, previousCiphertext)
+			if decryptErr != nil {
+				return JoiningCaseResult{}, decryptErr
+			}
+			numberChanged = subtle.ConstantTimeCompare(previous, []byte(proofNumber)) != 1
+		}
+	}
 	if request.Phone != current.Case.ContactPhoneE164 {
 		phones := []string{current.Case.ContactPhoneE164, request.Phone}
 		sort.Strings(phones)
@@ -420,10 +451,7 @@ func UpdateFieldJoiningCaseDraft(ctx context.Context, db *sql.DB, input UpdateFi
 	if count, err := updated.RowsAffected(); err != nil || count != 1 {
 		return JoiningCaseResult{}, ErrJoiningCaseVersion
 	}
-	if !input.PreserveProofNumber && strings.TrimSpace(request.FirstStoreProofNumber) != "" {
-		if input.EvidenceKeyring == nil {
-			return JoiningCaseResult{}, errors.New("DSH joining-case evidence keyring is required")
-		}
+	if numberChanged {
 		keyID, ciphertext, encryptErr := input.EvidenceKeyring.Encrypt(input.CaseID, "proof-number", []byte(strings.TrimSpace(request.FirstStoreProofNumber)))
 		if encryptErr != nil {
 			return JoiningCaseResult{}, encryptErr
@@ -643,7 +671,7 @@ func ValidateJoiningCaseSubmissionReadiness(current JoiningCaseRecord, expectedV
 }
 
 func ValidateJoiningCaseIntakeReadiness(current JoiningCaseRecord) error {
-	if _, validProvider := NormalizeWalletProviderKey(current.WalletProviderKey); strings.TrimSpace(current.OwnerFullName) == "" || strings.TrimSpace(current.BusinessName) == "" || strings.TrimSpace(current.FirstStoreName) == "" || !validProvider || strings.TrimSpace(current.FirstStoreAddress) == "" || !ValidateStoreWorkingHours(current.FirstStoreWorkingHours) || strings.TrimSpace(current.FirstStoreProofType) == "" || !current.FirstStoreProofNumberPresent || !current.FirstStoreProofImageUploaded || current.StoreProfileImage == nil {
+	if _, validProvider := NormalizeWalletProviderKey(current.WalletProviderKey); strings.TrimSpace(current.OwnerFullName) == "" || strings.TrimSpace(current.BusinessName) == "" || strings.TrimSpace(current.FirstStoreName) == "" || !validProvider || strings.TrimSpace(current.FirstStoreAddress) == "" || !ValidateStoreWorkingHours(current.FirstStoreWorkingHours) || strings.TrimSpace(current.FirstStoreProofType) == "" || !current.FirstStoreProofNumberPresent {
 		return ErrJoiningCaseState
 	}
 	if strings.TrimSpace(current.FirstStoreServiceCityID) == "" {
@@ -778,15 +806,8 @@ func correctAndResubmitJoiningCase(ctx context.Context, db *sql.DB, input Correc
 	if current.Case.PartnerActorID == "" || current.Case.PartnerActorID != actorID {
 		return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
 	}
-	if !current.Case.FirstStoreProofImageUploaded {
-		return JoiningCaseResult{}, ErrJoiningCaseProofImageRequired
-	}
-	var freshProofImage bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.joining_case_private_evidence_audit WHERE joining_case_id=$1 AND event_type='proof_image_uploaded' AND authority_source='partner' AND acting_actor_id=$2 AND result_version=$3)`, caseID, actorID, expectedVersion).Scan(&freshProofImage); err != nil {
-		return JoiningCaseResult{}, fmt.Errorf("verify fresh partner proof image for correction: %w", err)
-	}
-	if !freshProofImage {
-		return JoiningCaseResult{}, ErrJoiningCaseProofImageRequired
+	if strings.TrimSpace(input.FirstStoreProofNumber) == "" && !current.Case.FirstStoreProofNumberPresent {
+		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
 	if strings.TrimSpace(input.FirstStoreProofNumber) != "" && input.EvidenceKeyring == nil {
 		return JoiningCaseResult{}, errors.New("DSH joining-case evidence keyring is required")
@@ -1090,6 +1111,10 @@ func ReviewJoiningCase(ctx context.Context, db *sql.DB, input ReviewJoiningCaseI
 		return JoiningCaseResult{}, err
 	}
 	if decision == "approved" {
+		// The optional premises photo is for intake review only, never a Store asset.
+		if _, err := tx.ExecContext(ctx, "DELETE FROM dsh.joining_case_review_photos WHERE joining_case_id=$1", caseID); err != nil {
+			return JoiningCaseResult{}, err
+		}
 		outboxID, outboxErr := newID("joining_financial")
 		if outboxErr != nil {
 			return JoiningCaseResult{}, outboxErr
@@ -1150,6 +1175,22 @@ func createJoiningCaseReviewStoreTx(ctx context.Context, tx *sql.Tx, current Joi
 	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,commercial_store_type_id,address_text,business_working_hours,delivery_origin_latitude,delivery_origin_longitude,delivery_origin_version,delivery_origin_updated_at,fulfillment_modes) VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),NULLIF($8,'')::jsonb,$9,$10,1,clock_timestamp(),$11)", storeID, current.PartnerActorID, current.FirstStoreName, current.FirstStoreServiceCityID, current.FirstStoreVerticalID, current.FirstStoreCommercialTypeID, current.FirstStoreAddress, string(current.FirstStoreWorkingHours), *current.FirstStoreLatitude, *current.FirstStoreLongitude, pq.Array(current.FirstStoreFulfillmentModes)); err != nil {
 		return "", fmt.Errorf("create canonical store: %w", err)
+	}
+	// Seed the actual orderability owner from the accepted intake schedule in
+	// the same transaction as Store creation. Never default this Store to 24/7.
+	windows, err := operationalWindowsFromJoiningHours(current.FirstStoreWorkingHours)
+	if err != nil {
+		return "", fmt.Errorf("convert joining-case operating hours: %w", err)
+	}
+	scheduleJSON, err := json.Marshal(windows)
+	if err != nil {
+		return "", fmt.Errorf("encode initial operating hours: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_operational_availability
+		(store_id,schedule_mode,schedule_timezone,weekly_schedule,paused,unavailable_fulfillment_modes,version,updated_by_actor_id)
+		VALUES($1,'WEEKLY',$2,$3::jsonb,false,ARRAY[]::text[],1,$4)`,
+		storeID, StoreScheduleTimezone, string(scheduleJSON), "system:joining-case"); err != nil {
+		return "", fmt.Errorf("initialize canonical Store orderability: %w", err)
 	}
 	if err := AttachStoreProfileMediaToStoreTx(ctx, tx, caseID, storeID); err != nil {
 		return "", fmt.Errorf("attach canonical store profile image: %w", err)
@@ -1382,6 +1423,7 @@ func ListJoiningCasesForField(ctx context.Context, db *sql.DB, fieldActorID, que
 const joiningCaseSelect = `SELECT c.id,c.contact_phone_e164,c.owner_full_name,c.business_name,c.first_store_name,c.first_store_address,c.first_store_working_hours,c.first_store_proof_type,c.first_store_notes,
 	EXISTS(SELECT 1 FROM dsh.joining_case_private_evidence e WHERE e.joining_case_id=c.id AND e.proof_number_ciphertext IS NOT NULL),
 	EXISTS(SELECT 1 FROM dsh.joining_case_private_evidence e WHERE e.joining_case_id=c.id AND e.proof_image_ciphertext IS NOT NULL),
+	EXISTS(SELECT 1 FROM dsh.joining_case_review_photos p WHERE p.joining_case_id=c.id),
 	c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.settlement_period,c.financial_profile_id,c.financial_profile_state,c.correction_reason,c.reviewed_by,c.store_id,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_commercial_type_id,c.first_store_latitude,c.first_store_longitude,c.first_store_fulfillment_modes,c.terms_policy_version,COALESCE(c.wallet_provider_key,''),
 	 s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.commercial_store_type_id,s.version,s.publication_state,s.publication_changed_at,s.created_at,s.updated_at,s.delivery_origin_latitude,s.delivery_origin_longitude,s.delivery_origin_version,s.delivery_origin_updated_at,s.fulfillment_modes FROM dsh.joining_cases c LEFT JOIN dsh.stores s ON s.id=c.store_id`
 
@@ -1418,7 +1460,7 @@ func readJoiningCaseRow(ctx context.Context, row rowScanner, _ bool) (JoiningCas
 	var storeChanged, storeCreated, storeUpdated, storeOriginUpdated sql.NullTime
 	var storeOriginLatitude, storeOriginLongitude sql.NullFloat64
 	var storeOriginVersion sql.NullInt64
-	err := row.Scan(&record.ID, &record.ContactPhoneE164, &ownerFullName, &record.BusinessName, &record.FirstStoreName, &firstStoreAddress, &workingHours, &firstStoreProofType, &firstStoreNotes, &proofNumberPresent, &proofImageUploaded, &actorID, &originatingFieldActorID, &origin, &record.State, &settlementPeriod, &financialProfileID, &financialProfileState, &correctionReason, &reviewedBy, &storeID, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID, &verticalID, &commercialTypeID, &latitude, &longitude, pq.Array(&record.FirstStoreFulfillmentModes), &termsPolicyVersion, &record.WalletProviderKey,
+	err := row.Scan(&record.ID, &record.ContactPhoneE164, &ownerFullName, &record.BusinessName, &record.FirstStoreName, &firstStoreAddress, &workingHours, &firstStoreProofType, &firstStoreNotes, &proofNumberPresent, &proofImageUploaded, &record.ReviewPhotoUploaded, &actorID, &originatingFieldActorID, &origin, &record.State, &settlementPeriod, &financialProfileID, &financialProfileState, &correctionReason, &reviewedBy, &storeID, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID, &verticalID, &commercialTypeID, &latitude, &longitude, pq.Array(&record.FirstStoreFulfillmentModes), &termsPolicyVersion, &record.WalletProviderKey,
 		&storeIDValue, &storePartner, &storeName, &storeCityID, &storeVerticalID, &storeCommercialTypeID, &storeVersion, &storeState, &storeChanged, &storeCreated, &storeUpdated, &storeOriginLatitude, &storeOriginLongitude, &storeOriginVersion, &storeOriginUpdated, pq.Array(&store.FulfillmentModes))
 	if err != nil {
 		return JoiningCaseRecord{}, err

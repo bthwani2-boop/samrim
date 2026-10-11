@@ -23,6 +23,17 @@ The durable BThwani experience must remain:
 
 Visual identity, color, typography, shape, iconography, imagery, elevation and motion language are governed by `docs/governance/policies/design.md` and implemented through the canonical reusable Design System where reuse is proven.
 
+## Effort-minimal experience at operational scale
+
+**No avoidable technical or user-experience complexity.** Across Customer, Partner, Captain, Field and Operator work, the default is the shortest clear, safe, recoverable path to the actor's real outcome. Thousands of Stores, products, records or daily actions must not turn routine work into repeated forms, navigation or technical troubleshooting. Simplicity means removing unnecessary work, not concealing missing functionality or weakening canonical controls.
+
+- **Ask only for what is needed now.** Collect the minimum facts required for the current authorized transition; defer unrelated catalog, publication or operational setup to its actual owner and stage. An optional field or attachment never silently blocks progress. Use progressive disclosure instead of showing every future decision at intake.
+- **Enter a fact once.** Reuse canonical verified facts and appropriate safe defaults; do not make actors re-enter saved data, repeat uploads or re-confirm the same unchanged decision. Allow short drafts, continuation and recovery from interrupted work without duplicate records or silent overwrites. Never prefill fabricated identities or unverified facts.
+- **Keep the next action obvious.** Give each task a clear primary action, understandable requirements and immediate actionable feedback. Validate early where useful; preserve entered work and provide a straightforward retry or correction when a dependency fails. Hide technical versions, transport tokens and implementation vocabulary from normal workflows.
+- **Support repeated work efficiently.** For materially growing collections, use the appropriate server-owned search, filtering, bounded results and compact in-context actions. Offer scanning, import, batch operations or keyboard-friendly editing only when they materially reduce real work, with explicit scope, permissions and per-record outcome when applicable; never manufacture bulk complexity for a small task.
+- **Make complexity earn its place.** An added screen, approval, mandatory field, confirmation, service, state or abstraction requires a present, provable user, business, legal or safety need that a simpler existing path cannot satisfy. Remove obsolete paths after safe cutover; keep essential authorization, privacy, integrity, audit, financial and recovery guarantees enforced behind the experience.
+- **Prove simplicity with real actors.** Verify the repeated end-to-end job (entry, save, submit, review, correction and next-owner readback as applicable) on representative data and actual interaction. When claiming a workflow is faster or simpler, compare meaningful steps, re-entry, failure/retry burden or task time against its previous behavior rather than relying only on screen count or appearance.
+
 ## Information architecture and application shell
 
 A materially developed surface requires a coherent information architecture before isolated page styling or feature depth.

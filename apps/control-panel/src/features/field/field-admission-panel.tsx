@@ -470,7 +470,7 @@ function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading
       {/* biome-ignore lint/a11y/noNoninteractiveTabindex: Keep the horizontally scrollable roster reachable by keyboard. */}
       <section className="operations-table-wrap field-agent-table-wrap" aria-label="سجل الميدانيين" tabIndex={0} aria-describedby="field-roster-scroll-hint">
       <p className="field-filter-count" aria-live="polite">{visibleItems.length} من {items.length} سجلًا محمّلًا</p>
-      <p id="field-roster-scroll-hint" className="field-roster-scroll-hint">مرّر السجل أفقيًا لعرض بقية الأعمدة؛ يبقى اسم الميداني والهاتف ظاهرين.</p>
+      <p id="field-roster-scroll-hint" className="field-roster-scroll-hint">مرّر السجل أفقيًا لعرض بقية الأعمدة. على الشاشات الواسعة يبقى الاسم والإجراءات ظاهرين.</p>
       <table className="operations-table field-agent-table"><caption className="visually-hidden">سجل الميدانيين، اختر عنوان العمود للترتيب وحرك السجل أفقيًا لعرض بقية الأعمدة</caption><thead><tr>
       <th scope="col"><div className="field-column-heading">{sortButton("name", "الميداني والهاتف")}</div></th>
       <th scope="col"><div className="field-column-heading">{sortButton("city", "مدينة الخدمة")}{sortButton("provider", "مزوّد المحفظة")}</div></th>

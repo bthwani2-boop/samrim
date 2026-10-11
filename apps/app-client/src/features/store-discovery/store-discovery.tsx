@@ -478,14 +478,20 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         const fulfillmentModes = availableCustomerFulfillmentModes(store.fulfillmentModes);
         const fulfillmentModeLabels = fulfillmentModes.map(fulfillmentModeLabel);
         const modeSummary = fulfillmentModeLabels.length ? `، طرق الطلب المتاحة: ${fulfillmentModeLabels.join("، ")}` : "";
-        return <Pressable accessibilityRole="button" accessibilityLabel={`فتح متجر ${store.name}${modeSummary}`} onPress={() => router.push(`/store/${encodeURIComponent(store.id)}` as Href)} style={({ pressed }) => [styles.storeCard, pressed && styles.pressed]}>
-          {store.storeProfileImage?.uri ? <Image accessibilityLabel={`صورة متجر ${store.name}`} source={{ uri: store.storeProfileImage.uri }} style={styles.storeImage} resizeMode="cover" /> : <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
+        const modesForCustomer = new Set<string>(fulfillmentModes);
+        const orderability = (store.orderabilityByMode ?? []).filter((state) => modesForCustomer.has(state.fulfillmentMode));
+        const acceptsOrders = orderability.some((state) => state.state === "OPEN_FOR_ORDERS");
+        const paused = orderability.some((state) => state.state === "PAUSED");
+        const closedBySchedule = orderability.length > 0 && orderability.every((state) => state.state === "CLOSED_BY_SCHEDULE");
+        const availabilityLabel = acceptsOrders ? "مفتوح الآن" : paused ? "متوقف مؤقتًا" : closedBySchedule ? "مغلق حسب ساعات العمل" : orderability.length ? "غير متاح للطلبات" : "تحقق من التوفر";
+        return <Pressable accessibilityRole="button" accessibilityLabel={`فتح متجر ${store.name}، ${availabilityLabel}${modeSummary}`} onPress={() => router.push(`/store/${encodeURIComponent(store.id)}` as Href)} style={({ pressed }) => [styles.storeCard, pressed && styles.pressed]}>
+          {store.storeProfileImage?.uri ? <Image accessibilityLabel={`شعار متجر ${store.name}`} source={{ uri: store.storeProfileImage.uri }} style={styles.storeImage} resizeMode="cover" /> : <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
           <View style={styles.storeCopy}>
             <Text style={styles.storeTitle} numberOfLines={2}>{store.name}</Text>
             <Text style={styles.storeMeta}>{typeof store.distanceMeters === "number" ? `${(store.distanceMeters / 1000).toFixed(2)} كم` : selectedCityName || "مدينة الخدمة"}</Text>
             <Text style={styles.storeRating}>{store.ratingCount > 0 ? `★ ${store.ratingAverage.toFixed(1)} (${store.ratingCount})` : "لا توجد تقييمات بعد"}</Text>
             {fulfillmentModeLabels.length ? <Text style={styles.storeModes}>طرق الطلب المتاحة: {fulfillmentModeLabels.join(" · ")}</Text> : null}
-            <Text style={styles.storeHint}>افتح المتجر لاختيار الوضع والتحقق من التوفر</Text>
+            <Text style={[styles.storeHint, { color: acceptsOrders ? theme.success : theme.colorMuted }]}>{availabilityLabel}</Text>
           </View>
           <View style={styles.storeActions}><BthwaniIconButton disabled={Boolean(favoriteBusyStoreID)} icon="favorite" label={isFavorite ? `إزالة ${store.name} من المفضلة` : `إضافة ${store.name} إلى المفضلة`} onPress={(event) => { event.stopPropagation(); void toggleFavorite(store.id); }} tone={isFavorite ? "primary" : "soft"} /><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
         </Pressable>;

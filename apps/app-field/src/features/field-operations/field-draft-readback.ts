@@ -7,12 +7,12 @@ function matchesDraftText(expected: string | undefined, actual: string | null | 
 function hoursSignature(intervals: ReadonlyArray<StoreWorkingHoursInterval>): string {
   return intervals
     .map(({ dayOfWeek, opensAt, closesAt, closesNextDay }) => `${dayOfWeek}:${opensAt}:${closesAt}:${closesNextDay}`)
-    .sort()
+    .sort((left, right) => left.localeCompare(right))
     .join("|");
 }
 
 function modesSignature(modes: ReadonlyArray<string>): string {
-  return [...modes].sort().join("|");
+  return [...modes].sort((left, right) => left.localeCompare(right)).join("|");
 }
 
 // DSH draft create/update replaces the full snapshot; omitted fields clear to null or empty.
@@ -39,7 +39,10 @@ export function fieldDraftMatchesReadback(
   const latitude = requested.firstStoreLatitude ?? 0;
   const longitude = requested.firstStoreLongitude ?? 0;
   if (latitude === 0 && longitude === 0) {
-    if (actual.firstStoreLatitude != null || actual.firstStoreLongitude != null) return false;
+    // DSH currently projects absent coordinates (NULL in PostgreSQL) as 0,0.
+    // Both forms represent an unset draft location, never a chosen point.
+    if ((actual.firstStoreLatitude != null && actual.firstStoreLatitude !== 0) ||
+        (actual.firstStoreLongitude != null && actual.firstStoreLongitude !== 0)) return false;
   } else if (actual.firstStoreLatitude == null || actual.firstStoreLongitude == null ||
     Math.abs(actual.firstStoreLatitude - latitude) > 0.000001 ||
     Math.abs(actual.firstStoreLongitude - longitude) > 0.000001) return false;
@@ -60,12 +63,11 @@ export function markFieldMediaReadbackUncertain(cause: unknown): Error {
 export function fieldDraftMediaUploadConfirmed(
   uploaded: JoiningCaseView,
   canonical: JoiningCaseView,
-  kind: "store" | "proof",
+  kind: "store",
   previousVersion: number,
 ): boolean {
   if (uploaded.id !== canonical.id || uploaded.origin !== "field" ||
     uploaded.version <= previousVersion || canonical.version < uploaded.version) return false;
-  if (kind === "proof") return uploaded.firstStoreProofImageUploaded && canonical.firstStoreProofImageUploaded;
   const submittedImage = uploaded.storeProfileImage;
   const savedImage = canonical.storeProfileImage;
   // The private DSH media readback includes the persisted URI and SHA-256.

@@ -65,7 +65,7 @@ func (s *Service) Create(ctx context.Context, input contract.CreateJoiningCaseRe
 
 func validJoiningCaseProofType(value string) bool {
 	switch value {
-	case "COMMERCIAL_REGISTRATION", "IDENTITY_DOCUMENT", "FREELANCE_WORK_DOCUMENT":
+	case "COMMERCIAL_REGISTRATION", "IDENTITY_DOCUMENT", "FREELANCE_WORK_DOCUMENT", "PASSPORT":
 		return true
 	default:
 		return false
@@ -330,7 +330,7 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	latitude := input.FirstStoreLatitude
 	longitude := input.FirstStoreLongitude
 	workingHours, hoursErr := json.Marshal(input.FirstStoreWorkingHours)
-	if caseID == "" || hoursErr != nil || !postgres.ValidateStoreWorkingHours(workingHours) || len([]rune(ownerFullName)) < 2 || len([]rune(ownerFullName)) > 160 || len([]rune(businessName)) < 2 || len([]rune(businessName)) > 160 || len([]rune(firstStoreName)) < 2 || len([]rune(firstStoreName)) > 160 || len([]rune(firstStoreAddress)) < 4 || len([]rune(firstStoreAddress)) > 500 || !validJoiningCaseProofNumber(proofNumber) || len([]rune(notes)) > 1000 || !validJoiningCaseProofType(proofType) || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || expectedVersion < 1 || !validCoordinates(latitude, longitude) || len(input.FirstStoreFulfillmentModes) == 0 {
+	if caseID == "" || hoursErr != nil || !postgres.ValidateStoreWorkingHours(workingHours) || len([]rune(ownerFullName)) < 2 || len([]rune(ownerFullName)) > 160 || len([]rune(businessName)) < 2 || len([]rune(businessName)) > 160 || len([]rune(firstStoreName)) < 2 || len([]rune(firstStoreName)) > 160 || len([]rune(firstStoreAddress)) < 4 || len([]rune(firstStoreAddress)) > 500 || (proofNumber != "" && !validJoiningCaseProofNumber(proofNumber)) || len([]rune(notes)) > 1000 || !validJoiningCaseProofType(proofType) || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || expectedVersion < 1 || !validCoordinates(latitude, longitude) || len(input.FirstStoreFulfillmentModes) == 0 {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
 	rawModes := make([]string, len(input.FirstStoreFulfillmentModes))
@@ -350,20 +350,11 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	return postgres.CorrectAndResubmitJoiningCase(ctx, s.db, mutation)
 }
 
-func (s *Service) UploadProofImageForPartner(ctx context.Context, accessToken, caseID, idempotencyKey, correlationID string, expectedVersion int, declaredContentType string, data []byte) (postgres.JoiningCaseResult, error) {
-	identity, err := s.requirePartner(ctx, accessToken)
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	return UploadPrivateProofImage(ctx, s.db, s.evidenceKeys, caseID, identity.Subject, "partner", "partner-proof-image-upload", idempotencyKey, correlationID, expectedVersion, declaredContentType, data)
-}
-
-func (s *Service) UploadProofImageForOperator(ctx context.Context, caseID, actingActorID, idempotencyKey, correlationID string, expectedVersion int, declaredContentType string, data []byte) (postgres.JoiningCaseResult, error) {
+func (s *Service) ReadReviewPhotoForOperator(ctx context.Context, caseID, actingActorID string) ([]byte, string, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
-		return postgres.JoiningCaseResult{}, err
+		return nil, "", err
 	}
-	actingActorID = strings.TrimSpace(actingActorID)
-	return UploadPrivateProofImage(ctx, s.db, s.evidenceKeys, caseID, actingActorID, "operator", "operator-proof-image-upload", idempotencyKey, correlationID, expectedVersion, declaredContentType, data)
+	return postgres.ReadJoiningCaseReviewPhotoForOperator(ctx, s.db, caseID)
 }
 
 func (s *Service) ReadProofDetailsForOperator(ctx context.Context, caseID, actingActorID, correlationID string) (postgres.JoiningCaseProofDetails, error) {

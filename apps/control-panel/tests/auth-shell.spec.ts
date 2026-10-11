@@ -937,6 +937,11 @@ test("Field center reads DSH eligibility and routes operational controls to the 
   await page.goto("/fields");
   await expect(page.getByRole("heading", { name: "الميدانيون" })).toBeVisible();
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator("tr.field-agent-row > th").first()).toHaveCSS("position", "sticky");
+  await expect(page.locator("tr.field-agent-row > td").last()).toHaveCSS("position", "sticky");
+  await page.setViewportSize({ width: 800, height: 800 });
+  await expect(page.locator("tr.field-agent-row > td").last()).toHaveCSS("position", "static");
   await page.getByLabel("سبب الإجراء").fill("تجميد أهلية الميدان");
   await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", action: "disable", expectedVersion: 2, reason: "تجميد أهلية الميدان" });
@@ -2031,6 +2036,7 @@ test("partner Store publication exposes the canonical readiness block", async ({
     { code: "PARTNER_IDENTITY_NOT_ELIGIBLE", label: "هوية الشريك أو صلاحية دوره غير جاهزة للنشر" },
     { code: "SERVICE_CITY_NOT_ELIGIBLE", label: "مدينة خدمة المتجر غير مؤهلة للنشر" },
     { code: "CATALOG_NOT_READY", label: "لا يوجد كتالوج أو عرض منشور صالح يجعل المتجر جاهزًا" },
+    { code: "STORE_LOGO_NOT_READY", label: "شعار المتجر غير جاهز؛ أضفه من ملف المتجر قبل النشر للعملاء" },
   ] as const;
   let blockedReason: (typeof publicationReasons)[number]["code"] = publicationReasons[0].code;
   await page.route("**/api/service-cities**", async (route) => {

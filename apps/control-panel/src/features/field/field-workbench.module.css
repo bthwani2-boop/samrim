@@ -48,6 +48,12 @@
 :global(.field-workbench .field-agent-table thead tr > :nth-child(1)), :global(.field-workbench .field-agent-table tbody tr > :nth-child(1)) { position: sticky; inset-inline-start: 0; background: var(--surface-base); box-shadow: -5px 0 8px -7px var(--text-muted); }
 :global(.field-workbench .field-agent-table thead tr > :nth-child(1)) { z-index: 3; }
 :global(.field-workbench .field-agent-table tbody tr > :nth-child(1)) { z-index: 1; }
+@media (min-width: 901px) {
+  :global(.field-workbench .field-agent-table thead tr > :last-child),
+  :global(.field-workbench .field-agent-table tbody tr > :last-child) { position: sticky; inset-inline-end: 0; background: var(--surface-base); box-shadow: 5px 0 8px -7px var(--text-muted); }
+  :global(.field-workbench .field-agent-table thead tr > :last-child) { z-index: 3; }
+  :global(.field-workbench .field-agent-table tbody tr > :last-child) { z-index: 1; }
+}
 :global(.field-workbench .field-filter-empty) { display: block; padding: 10px 4px; color: var(--text-muted); }
 :global(.field-workbench .field-filter-count) { display: block; padding: 4px 14px 10px; color: var(--text-muted); font-size: 12px; }
 :global(.field-workbench .field-agent-row > th), :global(.field-workbench .field-agent-row > td) { vertical-align: top; white-space: normal; overflow-wrap: anywhere; }

@@ -2,6 +2,13 @@ import type { StoreWorkingHoursInterval } from "./generated/dsh-types";
 
 export type JoiningCaseImageContentType = "image/jpeg" | "image/png";
 
+// React Native FormData uploads local images by URI, not by appending a fetched Blob.
+// Browser uploads retain the Blob representation.
+export function joiningCaseImageMultipartPart(uri: string, name: string, type: string, blob?: Blob): Blob {
+  if (/^(?:file|content):\/\//i.test(uri)) return { uri, name, type } as unknown as Blob;
+  return blob ?? ({ uri, name, type } as unknown as Blob);
+}
+
 export function resolveJoiningCaseImageContentType(
   assetType: string | null | undefined,
   blobType: string | null | undefined,
@@ -17,6 +24,14 @@ export function resolveJoiningCaseImageContentType(
   if (/\.png(?:\s|$)/.test(path)) return "image/png";
   if (/\.(?:jpe?g)(?:\s|$)/.test(path)) return "image/jpeg";
   return null;
+}
+
+// Field staff should not need to mark the next day manually when a Store closes
+// after midnight. The backend still validates 24-hour length and overlaps.
+export function normalizeOvernightWorkingHours(interval: StoreWorkingHoursInterval): StoreWorkingHoursInterval {
+  const open = parseClock(interval.opensAt);
+  const close = parseClock(interval.closesAt);
+  return { ...interval, closesNextDay: interval.closesNextDay || (open !== null && close !== null && close < open) };
 }
 
 export function isValidStoreWorkingHours(intervals: readonly StoreWorkingHoursInterval[]): boolean {
