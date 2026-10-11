@@ -14,7 +14,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/migrate
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/schema-verify ./cmd/schema-verify
 
 FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
-RUN apk add --no-cache ca-certificates && addgroup -S dsh && adduser -S -G dsh dsh
+RUN apk add --no-cache ca-certificates tzdata && addgroup -S dsh && adduser -S -G dsh dsh
 WORKDIR /app
 COPY --from=build /out/api /api
 COPY --from=build /out/migrate /migrate
