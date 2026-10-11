@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HREmployee, HREmployeeInput, HREmployeePage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
+import { EmployeeAccessRequest } from "./employee-access-request";
 
 const blank: HREmployeeInput = {
   fullNameAr: "", phoneE164: "",
@@ -159,6 +160,7 @@ export function EmployeeDirectory() {
         <dt>موقع العمل</dt><dd>{selected.workLocation}</dd>
         <dt>الوصول للوحة التحكم</dt><dd>{selected.operatorActorId ? "مرتبط بمشغّل" : "لا يوجد حساب مرتبط في HR"}</dd>
       </dl>
+      <EmployeeAccessRequest key={selected.id} employee={selected} />
     </section> : null}
   </section>;
 }

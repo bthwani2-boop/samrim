@@ -32,6 +32,15 @@ func (s *Server) listOperatorProfiles(w http.ResponseWriter, r *http.Request, ca
 	writeJSON(w, http.StatusOK, page)
 }
 
+func (s *Server) readOperatorProfile(w http.ResponseWriter, r *http.Request, caller string) {
+	profile, err := s.actors.ReadOperatorProfile(r.Context(), caller, strings.TrimSpace(r.Header.Get(operatorProfileActingActorHeader)), r.PathValue("profileId"))
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, domain.OperatorProfileResponse{Profile: profile})
+}
+
 func (s *Server) createOperatorProfile(w http.ResponseWriter, r *http.Request, caller string) {
 	var input domain.OperatorProfileCreateRequest
 	if !decodeJSON(w, r, &input) {

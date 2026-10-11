@@ -417,6 +417,13 @@ paths:
   /dsh/stores/{storeId}/delivery-origin:
     $ref: "./paths/location-core.yaml#/paths/~1dsh~1stores~1{storeId}~1delivery-origin"
 
+  /dsh/hr/access-requests:
+    $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests"
+  /dsh/hr/access-requests/{requestId}:
+    $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}"
+  /dsh/hr/access-requests/{requestId}/link:
+    $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}~1link"
+
   /dsh/hr/employees:
     $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees"
 
@@ -4858,6 +4865,89 @@ components:
       properties:
         employee:
           $ref: "#/components/schemas/HREmployee"
+
+    HRAccessRequest:
+      type: object
+      additionalProperties: false
+      required: [id, employeeId, employeeName, phoneE164, department, jobTitle, reason, requestedPermissions, state, requestedByActorId, createdAt, version]
+      properties:
+        id:
+          type: string
+        employeeId:
+          type: string
+        employeeName:
+          type: string
+        phoneE164:
+          type: string
+        department:
+          type: string
+        jobTitle:
+          type: string
+        reason:
+          type: string
+        requestedPermissions:
+          type: array
+          items:
+            type: string
+        state:
+          type: string
+          enum: [pending_review, identity_profile_created]
+        operatorProfileId:
+          type: string
+        requestedByActorId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+    HRAccessRequestInput:
+      type: object
+      additionalProperties: false
+      required: [employeeId, reason, requestedPermissions]
+      properties:
+        employeeId:
+          type: string
+        reason:
+          type: string
+        requestedPermissions:
+          type: array
+          items:
+            type: string
+    HRAccessLinkInput:
+      type: object
+      additionalProperties: false
+      required: [operatorProfileId]
+      properties:
+        operatorProfileId:
+          type: string
+    HRAccessRequestPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HRAccessRequest"
+        nextCursor:
+          type: string
+    HRAccessRequestMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [request, idempotentReplay]
+      properties:
+        request:
+          $ref: "#/components/schemas/HRAccessRequest"
+        idempotentReplay:
+          type: boolean
+    HRAccessRequestReadResponse:
+      type: object
+      additionalProperties: false
+      required: [request]
+      properties:
+        request:
+          $ref: "#/components/schemas/HRAccessRequest"
 
     ServiceCity:
       type: object

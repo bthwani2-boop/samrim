@@ -53,6 +53,7 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("POST /auth/managed/recover", s.recoverManaged)
 	mux.HandleFunc("POST /auth/managed/login", s.loginManaged)
 	mux.HandleFunc("GET /internal/operator-profiles", s.internal(s.listOperatorProfiles))
+	mux.HandleFunc("GET /internal/operator-profiles/{profileId}", s.internal(s.readOperatorProfile))
 	mux.HandleFunc("POST /internal/operator-profiles", s.internal(s.createOperatorProfile))
 	mux.HandleFunc("PATCH /internal/operator-profiles/{profileId}", s.internal(s.updateOperatorProfile))
 	mux.HandleFunc("PATCH /internal/operators/{actorId}/details", s.internal(s.updateOperatorRoleDetails))

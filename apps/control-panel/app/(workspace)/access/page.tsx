@@ -8,6 +8,7 @@ import { Suspense, useState, type MouseEvent } from "react";
 
 import { AccountAccessPanel } from "../../../src/features/access/account-access-panel";
 import { OperatorDirectory } from "../../../src/features/access/operator-directory";
+import { HROperatorAccessQueue } from "../../../src/features/access/hr-operator-access-queue";
 import { OperatorProfilePanel } from "../../../src/features/access/operator-profile-panel";
 import { useSession } from "../../../src/session/session-provider";
 
@@ -46,7 +47,7 @@ function AccessWorkspace() {
       <Link href={viewHref(new URLSearchParams(searchParams.toString()), "permissions")} onClick={(event) => navigateView(event, "permissions")} aria-current={view === "permissions" ? "page" : undefined} className={view === "permissions" ? "is-active" : undefined}>الوصول والصلاحيات</Link>
     </nav>
 
-    {view === "profiles" ? <OperatorProfilePanel /> : <div className="access-permissions-view">
+    {view === "profiles" ? <><HROperatorAccessQueue /><OperatorProfilePanel /></> : <div className="access-permissions-view">
       <OperatorDirectory onSelectPhone={setSelectedPhone} selectedPhone={selectedPhone} selectionDisabled={accountMutationBusy} />
       {selectedPhone ? <AccountAccessPanel selectedPhone={selectedPhone} onClear={() => setSelectedPhone("")} onBusyChange={setAccountMutationBusy} /> : null}
     </div>}

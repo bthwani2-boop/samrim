@@ -90,6 +90,12 @@ func (c *Client) ProvisionExistingRoleWithContext(ctx context.Context, actorID, 
 	err := c.doWithContext(ctx, IdentityOperationProvisionExistingActorRole.Method, pathname, correlationID, "", strings.TrimSpace(operatorActorID), 0, nil, &result)
 	return result, err
 }
+func (c *Client) ReadOperatorProfileForAdministrator(ctx context.Context, actingActorID, profileID string) (OperatorProfileResponse, error) {
+	var result OperatorProfileResponse
+	path := identityRoute(IdentityOperationReadOperatorProfile.Path, "profileId", url.PathEscape(strings.TrimSpace(profileID)))
+	err := c.doWithContext(ctx, IdentityOperationReadOperatorProfile.Method, path, "", "", strings.TrimSpace(actingActorID), 0, nil, &result)
+	return result, err
+}
 func (c *Client) ReadRole(ctx context.Context, actorID, role string) (ActorRoleView, error) {
 	var result ActorRoleView
 	pathname := identityRoute(IdentityOperationReadActorRole.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))

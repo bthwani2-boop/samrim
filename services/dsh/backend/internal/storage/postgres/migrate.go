@@ -16,7 +16,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 114
+const SchemaVersion = 115
 
 type MigrationRecord struct {
 	Version int
@@ -26,6 +26,8 @@ type MigrationRecord struct {
 
 var requiredTables = []schemaRelationExpectation{
 	{name: "dsh.hr_employees", columns: []string{"id", "full_name_ar", "phone_e164", "department", "job_title", "manager_employee_id", "start_date", "work_location", "status", "operator_actor_id", "version", "created_by_actor_id", "created_at", "updated_at"}, constraints: []string{"hr_employees_pkey", "hr_employee_name_chk", "hr_employee_phone_chk", "hr_employee_dept_chk", "hr_employee_title_chk", "hr_employee_status_chk"}, indexes: []string{"hr_employees_recent_idx", "hr_employees_department_idx", "hr_employees_manager_idx", "hr_employees_phone_uq"}},
+	{name: "dsh.hr_operator_access_requests", columns: []string{"id", "employee_id", "reason", "requested_permissions", "state", "operator_profile_id", "requested_by_actor_id", "linked_by_actor_id", "created_at", "updated_at", "version"}, constraints: []string{"hr_operator_access_requests_pkey", "hr_access_state_chk", "hr_access_permissions_chk"}, indexes: []string{"hr_access_pending_idx"}},
+	{name: "dsh.hr_operator_access_events", columns: []string{"idempotency_key", "request_id", "event_type", "request_hash", "acting_actor_id", "correlation_id", "created_at"}, constraints: []string{"hr_operator_access_events_pkey", "hr_access_event_hash_chk"}},
 	{name: "dsh.hr_employee_events", columns: []string{"idempotency_key", "employee_id", "event_type", "request_hash", "acting_actor_id", "correlation_id", "created_at"}, constraints: []string{"hr_employee_events_pkey", "hr_employee_event_type_chk", "hr_employee_event_hash_chk"}, indexes: []string{"hr_employee_events_employee_idx"}},
 	{name: "dsh.schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, constraints: []string{"schema_migrations_pkey"}},
 	{name: "dsh.stores", columns: []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at", "publication_state", "publication_changed_at", "delivery_origin_latitude", "delivery_origin_longitude", "delivery_origin_version", "delivery_origin_updated_at", "service_city_id", "primary_vertical_id", "fulfillment_modes", "commercial_store_type_id", "deleted_at", "deleted_by", "deletion_reason"}, constraints: []string{"stores_pkey", "stores_id_partner_actor_uq", "stores_name_length_chk", "stores_version_positive_chk", "stores_publication_state_chk", "stores_delivery_origin_pair_chk", "stores_delivery_origin_latitude_chk", "stores_delivery_origin_longitude_chk", "stores_delivery_origin_version_chk", "stores_delivery_origin_updated_at_chk", "stores_service_city_fk", "stores_primary_vertical_fk", "stores_fulfillment_modes_chk", "stores_commercial_type_vertical_fk", "store_deletion_facts_chk"}, indexes: []string{"stores_partner_actor_idx", "stores_publication_state_idx", "stores_service_city_idx", "stores_primary_vertical_idx", "stores_commercial_type_idx", "stores_operator_updated_idx", "stores_published_city_name_registry_idx", "stores_published_city_name_prefix_registry_idx", "stores_published_city_created_registry_idx", "stores_published_city_name_search_idx", "stores_trash_idx"}},

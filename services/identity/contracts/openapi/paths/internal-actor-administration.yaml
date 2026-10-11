@@ -51,6 +51,19 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
 
   /internal/operator-profiles/{profileId}:
+    get:
+      tags: [internal-actor-roles]
+      operationId: readOperatorProfile
+      security: [{ internalServiceToken: [] }]
+      parameters:
+        - { name: profileId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+      responses:
+        "200": { description: Initial-Operator-authorized profile readback., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     patch:
       tags: [internal-actor-roles]
       operationId: updateOperatorProfile

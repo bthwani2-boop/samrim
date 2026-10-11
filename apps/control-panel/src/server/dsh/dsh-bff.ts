@@ -1,4 +1,5 @@
 import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
+import type { HRAccessRequest as DshHRAccessRequest, HRAccessRequestInput as DshHRAccessRequestInput, HRAccessRequestPage as DshHRAccessRequestPage, HRAccessRequestReadResponse as DshHRAccessRequestReadResponse, HRAccessRequestMutationResponse as DshHRAccessRequestMutationResponse } from "@bthwani/dsh";
 import type { HREmployee as DshHREmployee, HREmployeePage as DshHREmployeePage, HRCreateEmployeeRequest } from "@bthwani/dsh";
 import type { StoreTypeCommissionDefaultsResponse as DshStoreTypeCommissionDefaultsResponse, FinanceStoreCommercialAgreementQueueResponse, JoiningCaseProofDetailsResponse, OperatorFieldActivityResponse, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreCommercialAgreementListResponse, StoreCommercialAgreementMutationResponse, StorePayoutRecipientListResponse, UpdateCatalogAttributeDefinitionRequest, UpdateCatalogAttributeEnumOptionRequest } from "@bthwani/dsh";
 import { type ActorLegalName, type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionListResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogAttributeDefinitionListResponse, type CatalogAttributeDefinitionResponse, type CatalogAttributeEnumOptionListResponse, type CatalogAttributeEnumOptionResponse, type CatalogAttributeRuleListResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProduct, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductRegistryResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CommercialStoreTypeListResponse, type CommercialStoreTypeResponse, type CreateCatalogAttributeDefinitionRequest, type CreateCatalogAttributeEnumOptionRequest, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateCommercialStoreTypeRequest, type CreateCustomerWithdrawalIntakeRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type CustomerWithdrawalDecisionRequest, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAcquisitionRewardPolicy, type FieldAdmissionListResponse, type FieldAdmissionRequest, type FieldAdmissionResponse, type FinanceEvidenceDocument, isMediaProvenanceInputValid, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedCaptainAvailabilityRequest, type ManagedRoleMutationRequest, type ManagedRoleReenrollmentRequest, type MarketingPublicationRequest, type MediaProvenanceInput, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorFieldFinanceRosterResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreListResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreCommercialTypeRequest, type SetStoreCommercialTypeResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type StoreTypeCommissionDefaultsResponse, type StoreTypeCommissionDefaultUpdateResponse, type SubmitActorLegalNameRequest, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateCommercialStoreTypeRequest, type UpdateServiceCityRequest, type UpdateStoreTypeCommissionDefaultRequest, type UpsertCatalogAttributeRuleRequest, type VerifyActorLegalNameRequest } from "@bthwani/dsh";
@@ -68,6 +69,33 @@ export function createHREmployee(input: HREmployeeInput, context: JoiningCaseMut
     "X-Correlation-ID": context.correlationId,
     "Idempotency-Key": context.idempotencyKey,
   });
+}
+
+export type HRAccessRequest = DshHRAccessRequest;
+export type HRAccessRequestInput = DshHRAccessRequestInput;
+export type HRAccessRequestPage = DshHRAccessRequestPage;
+export async function listHRAccessRequests(context: DshOperatorReadContext, employeeId = "", cursor = ""): Promise<HRAccessRequestPage> {
+  const params = new URLSearchParams({ employeeId, cursor, limit: "25" });
+  const response = await requestDshJson<HRAccessRequestPage>("GET", `/dsh/hr/access-requests?${params}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId });
+  return response.payload;
+}
+export async function readHRAccessRequest(id: string, context: DshOperatorReadContext): Promise<DshHRAccessRequestReadResponse> {
+  const response = await requestDshJson<DshHRAccessRequestReadResponse>("GET", `/dsh/hr/access-requests/${encodeURIComponent(id)}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId });
+  return response.payload;
+}
+export async function createHRAccessRequest(input: HRAccessRequestInput, context: JoiningCaseMutationContext): Promise<HRAccessRequest> {
+  validateAttributedMutationContext(context);
+  const response = await requestDshJson<DshHRAccessRequestMutationResponse>("POST", "/dsh/hr/access-requests", input, {
+    "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey,
+  });
+  return response.payload.request;
+}
+export async function linkHRAccessRequest(id: string, profileId: string, context: JoiningCaseMutationContext): Promise<HRAccessRequest> {
+  validateAttributedMutationContext(context);
+  const response = await requestDshJson<DshHRAccessRequestMutationResponse>("POST", `/dsh/hr/access-requests/${encodeURIComponent(id)}/link`, { operatorProfileId: profileId }, {
+    "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey,
+  });
+  return response.payload.request;
 }
 
 export type CreateFieldAcquisitionRewardPolicyRequest = Readonly<{
