@@ -219,7 +219,7 @@ export function FieldAcquisitionPolicyWorkspace() {
         <p id="field-acquisition-rounding" className={`muted ${styles.helper}`}>بالريال اليمني، وبمضاعفات ٥٠. يخص نوع المتجر ولا يُعدّل من ملف الميداني أو المتجر.</p>
         <p id="field-reward-reason-hint" className={`muted ${styles.helper}`}>من ٥ إلى ٥٠٠ حرف.</p>
       </div>
-      {message ? <output className={`success ${styles.notice}`} role="status">{message}</output> : null}
+      {message ? <output className={`success ${styles.notice}`}>{message}</output> : null}
       {error ? <p className={`validation-error ${styles.notice}`} role="alert">{error}</p> : null}
       <button className={`button button-primary ${styles.saveButton}`} type="button" onClick={() => void save()} disabled={busy || !canEdit || !Number.isInteger(Number(rewardMinor)) || Number(rewardMinor) < 50 || reason.trim().length < 5 || reason.trim().length > 500}>{saveButtonLabel(busy, Boolean(policy))}</button>
     </section> : null}
