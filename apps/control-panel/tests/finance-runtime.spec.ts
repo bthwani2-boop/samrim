@@ -65,8 +65,8 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
 test("@live operator sees the WLT-managed Field acquisition reward store-type policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
   await page.goto("/policies/field-acquisition");
-  await expect(page.getByRole("heading", { name: "استحقاق ضم الشريك للميداني", level: 2 })).toBeVisible();
-  await expect(page.getByText(/لكل نوع متجر تجاري سياسة مبلغ مستقلة/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "إعداد مبلغ الاستحقاق", level: 2 })).toBeVisible();
+  await expect(page.getByText(/لكل نوع متجر مبلغ مستقل يُحتسب مرة واحدة/)).toBeVisible();
 
   const fixture = await page.evaluate(async () => {
     const suffix = crypto.randomUUID();
@@ -118,6 +118,6 @@ test("@live operator sees the WLT-managed Field acquisition reward store-type po
   await expect(storeType).toBeVisible();
   await storeType.selectOption(fixture.storeTypeId as string);
 
-  await expect(page.getByLabel("مبلغ الاستحقاق لهذا النوع (ريال يمني)")).toBeEnabled();
-  await expect(page.getByText(/وحدة التقريب ثابتة عند ٥٠ ريالًا/)).toBeVisible();
+  await expect(page.getByLabel("مبلغ الاستحقاق", { exact: true })).toBeEnabled();
+  await expect(page.locator("#field-acquisition-rounding")).toContainText("بمضاعفات ٥٠");
 });
