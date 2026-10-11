@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { HREmployee, HREmployeeInput, HREmployeePage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { EmployeeAccessRequest } from "./employee-access-request";
+import { EmployeeProfileEditor } from "./employee-profile-editor";
 
 const blank: HREmployeeInput = {
   fullNameAr: "", phoneE164: "",
@@ -160,7 +161,8 @@ export function EmployeeDirectory() {
         <dt>موقع العمل</dt><dd>{selected.workLocation}</dd>
         <dt>الوصول للوحة التحكم</dt><dd>{selected.operatorActorId ? "مرتبط بمشغّل" : "لا يوجد حساب مرتبط في HR"}</dd>
       </dl>
-      <EmployeeAccessRequest key={selected.id} employee={selected} />
+      <EmployeeProfileEditor key={selected.id} employee={selected} colleagues={items} onSaved={(next)=>{setSelected(next);setItems((list)=>list.map((person)=>person.id===next.id?next:person))}} />
+      <EmployeeAccessRequest key={`${selected.id}-access`} employee={selected} />
     </section> : null}
   </section>;
 }

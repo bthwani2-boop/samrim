@@ -59,6 +59,7 @@ func TestHRDirectoryRequiresExplicitHRGrantOnEveryPath(t *testing.T) {
 		{"directory", http.MethodGet, "/dsh/hr/employees", ""},
 		{"detail", http.MethodGet, "/dsh/hr/employees/emp_a", ""},
 		{"create", http.MethodPost, "/dsh/hr/employees", `{"fullNameAr":"Test","department":"Ops","jobTitle":"Agent","startDate":"2026-10-01","workLocation":"Sanaa"}`},
+		{"employee_update", http.MethodPatch, "/dsh/hr/employees/emp_00000000000000000000000000000000", `{"fullNameAr":"Test","department":"Ops","jobTitle":"Agent","startDate":"2026-10-01","workLocation":"Sanaa","expectedVersion":1}`},
 		{"access_queue", http.MethodGet, "/dsh/hr/access-requests", ""},
 		{"access_details", http.MethodGet, "/dsh/hr/access-requests/hreq_00000000000000000000000000000000", ""},
 		{"access_submit", http.MethodPost, "/dsh/hr/access-requests", `{"employeeId":"emp_00000000000000000000000000000000","reason":"Needs workspace access","requestedPermissions":["operations"]}`},

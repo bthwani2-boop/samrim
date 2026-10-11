@@ -4866,6 +4866,38 @@ components:
         employee:
           $ref: "#/components/schemas/HREmployee"
 
+    HRUpdateEmployeeRequest:
+      type: object
+      additionalProperties: false
+      required: [fullNameAr, phoneE164, department, jobTitle, managerEmployeeId, startDate, workLocation, expectedVersion]
+      properties:
+        fullNameAr:
+          type: string
+        phoneE164:
+          type: string
+        department:
+          type: string
+        jobTitle:
+          type: string
+        managerEmployeeId:
+          type: string
+        startDate:
+          type: string
+          format: date
+        workLocation:
+          type: string
+        expectedVersion:
+          type: integer
+    HRUpdateEmployeeResponse:
+      type: object
+      additionalProperties: false
+      required: [employee, idempotentReplay]
+      properties:
+        employee:
+          $ref: "#/components/schemas/HREmployee"
+        idempotentReplay:
+          type: boolean
+
     HRAccessRequest:
       type: object
       additionalProperties: false

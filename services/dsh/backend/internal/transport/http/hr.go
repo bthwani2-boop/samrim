@@ -32,6 +32,7 @@ func (s *HRServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/hr/employees", s.listEmployees)
 	mux.HandleFunc("POST /dsh/hr/employees", s.createEmployee)
 	mux.HandleFunc("GET /dsh/hr/employees/{employeeId}", s.readEmployee)
+	mux.HandleFunc("PATCH /dsh/hr/employees/{employeeId}", s.updateEmployee)
 	s.registerAccessRequests(mux)
 }
 func (s *HRServer) authorize(w http.ResponseWriter, r *http.Request) (string, bool) {

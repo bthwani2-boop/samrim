@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, linkHRAccessRequest, readHRAccessRequest } from "../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, linkHRAccessRequest, readHRAccessRequest, readHREmployee } from "../../../../../../src/server/dsh/dsh-bff";
 import { createOperatorProfile, identityErrorPayload, identityHttpStatus, readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../../../src/server/security/csrf";
 
@@ -18,6 +18,11 @@ export async function POST(request: Request, context: {params: Promise<{requestI
   }
   if (record.state !== "pending_review" || !record.phoneE164 || !record.employeeName || !record.jobTitle || !record.department)
    return NextResponse.json({error:{code:"CONFLICT",message:"Employee is not eligible for operator review"}},{status:409});
+  const {employee: current}=await readHREmployee(record.employeeId,{operatorActorId:identity.subject});
+  if(current.fullNameAr!==record.employeeName || current.phoneE164!==record.phoneE164 ||
+     current.department!==record.department || current.jobTitle!==record.jobTitle){
+    return NextResponse.json({error:{code:"CONFLICT",message:"Employee details changed after the access request; new review is required."}},{status:409});
+  }
   // First irreversible operation is solely Identity-owned and Root Owner-authorized.
   // Stable idempotency protects a partial failure between Identity and DSH.
   const result=await createOperatorProfile({

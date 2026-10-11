@@ -76,7 +76,7 @@ func normalizeAccessRequest(in AccessRequestInput) (AccessRequestInput, error) {
 	return in, nil
 }
 
-const accessSelect = `SELECT r.id,r.employee_id,e.full_name_ar,COALESCE(e.phone_e164,''),e.department,e.job_title,
+const accessSelect = `SELECT r.id,r.employee_id,r.employee_name_snapshot,r.phone_e164_snapshot,r.department_snapshot,r.job_title_snapshot,
  r.reason,r.requested_permissions,r.state,COALESCE(r.operator_profile_id,''),r.requested_by_actor_id,r.created_at,r.version
  FROM dsh.hr_operator_access_requests r JOIN dsh.hr_employees e ON e.id=r.employee_id`
 
@@ -178,9 +178,9 @@ func CreateAccessRequest(ctx context.Context, db *sql.DB, input AccessRequestInp
 	if !errors.Is(err, sql.ErrNoRows) {
 		return AccessRequestResult{}, err
 	}
-	var phone, status string
+	var phone, status, name, department, title string
 	var linked sql.NullString
-	err = tx.QueryRowContext(ctx, "SELECT COALESCE(phone_e164,''),status,operator_actor_id FROM dsh.hr_employees WHERE id=$1 FOR SHARE", input.EmployeeID).Scan(&phone, &status, &linked)
+	err = tx.QueryRowContext(ctx, "SELECT COALESCE(phone_e164,''),status,operator_actor_id,full_name_ar,department,job_title FROM dsh.hr_employees WHERE id=$1 FOR SHARE", input.EmployeeID).Scan(&phone, &status, &linked, &name, &department, &title)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AccessRequestResult{}, ErrNotFound
 	}
@@ -196,8 +196,8 @@ func CreateAccessRequest(ctx context.Context, db *sql.DB, input AccessRequestInp
 	}
 	id := "hreq_" + hex.EncodeToString(token)
 	_, err = tx.ExecContext(ctx, `INSERT INTO dsh.hr_operator_access_requests
- (id,employee_id,reason,requested_permissions,requested_by_actor_id)
- VALUES($1,$2,$3,$4,$5)`, id, input.EmployeeID, input.Reason, pq.Array(input.RequestedPermissions), acting)
+ (id,employee_id,reason,requested_permissions,requested_by_actor_id,employee_name_snapshot,phone_e164_snapshot,department_snapshot,job_title_snapshot)
+ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, id, input.EmployeeID, input.Reason, pq.Array(input.RequestedPermissions), acting, name, phone, department, title)
 	if err != nil {
 		var pg *pq.Error
 		if errors.As(err, &pg) && pg.Code == "23505" {
