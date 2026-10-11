@@ -389,6 +389,9 @@ func UpdateFieldJoiningCaseDraft(ctx context.Context, db *sql.DB, input UpdateFi
 	// Compare the encrypted number without leaking it into the public case view.
 	// An identical resubmission must not erase an already uploaded proof image.
 	proofNumber := strings.TrimSpace(request.FirstStoreProofNumber)
+	if current.Case.FirstStoreProofNumberPresent && request.FirstStoreProofType != current.Case.FirstStoreProofType && proofNumber == "" {
+		return JoiningCaseResult{}, ErrJoiningCaseState
+	}
 	numberChanged := false
 	if !input.PreserveProofNumber && proofNumber != "" {
 		if input.EvidenceKeyring == nil {
@@ -806,7 +809,7 @@ func correctAndResubmitJoiningCase(ctx context.Context, db *sql.DB, input Correc
 	if current.Case.PartnerActorID == "" || current.Case.PartnerActorID != actorID {
 		return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
 	}
-	if strings.TrimSpace(input.FirstStoreProofNumber) == "" && !current.Case.FirstStoreProofNumberPresent {
+	if strings.TrimSpace(input.FirstStoreProofNumber) == "" && (!current.Case.FirstStoreProofNumberPresent || strings.TrimSpace(input.FirstStoreProofType) != current.Case.FirstStoreProofType) {
 		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
 	if strings.TrimSpace(input.FirstStoreProofNumber) != "" && input.EvidenceKeyring == nil {

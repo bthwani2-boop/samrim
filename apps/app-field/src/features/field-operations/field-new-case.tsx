@@ -23,7 +23,7 @@ import { useOwnFieldAdmission } from "./use-field-admission";
 type PendingDraftAttempt =
   | Readonly<{ kind: "create"; request: CreateFieldJoiningCaseDraftRequest; idempotencyKey: string; correlationID: string }>
   | Readonly<{ kind: "update"; caseID: string; expectedVersion: number; request: CreateFieldJoiningCaseDraftRequest; idempotencyKey: string; correlationID: string }>;
-type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput }>;
+type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput; source: "camera" | "library" }>;
 type WalletProvider = Awaited<ReturnType<ReturnType<typeof fieldClient>["listWalletProviders"]>>["walletProviders"][number];
 type PendingImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: StoreImageDraft; idempotencyKey: string; correlationID: string }>;
 const joiningSteps = ["المالك والمتجر", "التشغيل والإثبات"] as const;
@@ -349,6 +349,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         [Boolean(store) && (Array.from(store).length < 2 || Array.from(store).length > 160), "اسم المتجر: أدخل حرفين على الأقل (حتى 160 حرفًا).", 0],
         [Boolean(address) && (Array.from(address).length < 4 || Array.from(address).length > 500), "العنوان: اكتب الحي والشارع أو أقرب معلم بأربعة أحرف على الأقل.", 1],
         [Array.from(proof).length > 128, "رقم الإثبات: الحد الأقصى 128 حرفًا.", 1],
+        [Boolean(createdCase?.case.firstStoreProofNumberPresent && selectedProofType !== createdCase.case.firstStoreProofType && !proof), "عند تغيير نوع الإثبات يجب إدخال رقم الإثبات الجديد.", 1],
         [enteredHours.length > 0 && !isValidStoreWorkingHours(enteredHours), "ساعات العمل: راجع الفترات المتداخلة أو غير الصحيحة.", 1],
       ];
       const issue = issues.find(([invalid]) => invalid);
@@ -541,7 +542,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("STORE_IMAGE_SIZE_INVALID");
       const type = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
       if (!type) throw new Error("STORE_IMAGE_TYPE_INVALID");
-      setStoreImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "store-image.png" : "store-image.jpg"), type, blob, provenance: fieldStoreImageProvenance(source, input.ownerFullName, admissionState.kind === "ready" ? admissionState.admission.fullNameAr ?? "" : "") });
+      setStoreImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "store-image.png" : "store-image.jpg"), type, blob, source, provenance: fieldStoreImageProvenance(source, input.ownerFullName, admissionState.kind === "ready" ? admissionState.admission.fullNameAr ?? "" : "") });
       setError("");
     } catch (cause) {
       console.warn("Field store image preparation failed", cause);
@@ -576,7 +577,9 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   }
 
   async function uploadReviewPhoto(current: JoiningCaseResponse, photo: DshImageUploadInput) {
-    const attempt = pendingReviewPhotoAttempt ?? { caseID: current.case.id, version: current.case.version, key: "field_review_photo_" + Crypto.randomUUID(), correlation: "field_review_corr_" + Crypto.randomUUID() };
+    const attempt = pendingReviewPhotoAttempt?.caseID === current.case.id && pendingReviewPhotoAttempt.version === current.case.version
+      ? pendingReviewPhotoAttempt
+      : { caseID: current.case.id, version: current.case.version, key: "field_review_photo_" + Crypto.randomUUID(), correlation: "field_review_corr_" + Crypto.randomUUID() };
     setPendingReviewPhotoAttempt(attempt);
     try {
       const token = await getUsableIdentityAccessToken();
@@ -789,7 +792,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         <Text style={styles.sectionTitle}>شعار (لوجو) المتجر · اختياري عند الانضمام</Text>
         <Text style={styles.muted}>يمكن إرفاق الشعار الآن أو إضافته لاحقًا من الإدارة. لا يمنع إرساله للمراجعة، لكنه مطلوب قبل نشر المتجر للعملاء.</Text>
         {storeImage ? <Image accessibilityLabel="معاينة شعار المتجر" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="cover" /> : null}
-        {storeImage ? <FieldMediaProvenanceEditor key={storeImage.uri} creatorName={admissionState.kind === "ready" ? admissionState.admission.fullNameAr ?? "" : ""} disabled={formLocked} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} value={storeImage.provenance} /> : null}
+        {storeImage ? <FieldMediaProvenanceEditor key={storeImage.uri} creatorName={admissionState.kind === "ready" ? admissionState.admission.fullNameAr ?? "" : ""} disabled={formLocked} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} source={storeImage.source} value={storeImage.provenance} /> : null}
         <View style={styles.optionList}>
           <BthwaniButton disabled={formLocked} label={storeImage ? "تغيير الصورة" : "من الجهاز"} onPress={() => void pickStoreImage("library")} variant="secondary" />
           <BthwaniButton disabled={formLocked} label="الكاميرا" onPress={() => void pickStoreImage("camera")} variant="secondary" />

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 import { downloadRegistryCsv } from "./registry-csv";
 import "./partner-directory.module.css";
-import "./joining-case-queue.module.css";
+import "./joining-case-queue.css";
 
 type QueueState = "" | JoiningCaseState;
 type QueueSort = "created_asc" | "created_desc";

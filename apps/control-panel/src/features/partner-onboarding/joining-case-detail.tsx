@@ -303,7 +303,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>إصدار شروط السياسة</dt><dd>{current.termsPolicyVersion ?? "لم يُربط بعد"}</dd></div>
               <div><dt>الحالة المالية</dt><dd>{financialProfileStateLabel(current.financialProfileState)}</dd></div>
             </dl>
-            {current.storeProfileImage?.uri ? <figure className="mt-4 overflow-hidden rounded-xl border border-slate-200"><img src={current.storeProfileImage.uri} alt={`شعار متجر ${current.firstStoreName}`} className="h-48 w-full object-cover" /><figcaption className="p-2 text-sm text-slate-600">شعار المتجر المحفوظ من الميدان</figcaption></figure> : <p className="muted">لم تُرفع شعار متجر لهذا الملف بعد.</p>}
+            {current.storeProfileImage?.uri ? <figure className="mt-4 overflow-hidden rounded-xl border border-slate-200"><img src={current.storeProfileImage.uri} alt={`شعار متجر ${current.firstStoreName}`} className="h-48 w-full object-cover" /><figcaption className="p-2 text-sm text-slate-600">شعار المتجر المحفوظ من الميدان</figcaption></figure> : <p className="muted">لم يُرفع شعار متجر لهذا الملف بعد.</p>}
             {current.reviewPhotoUploaded ? <p><a className="button button-secondary" href={`/api/partners/joining-cases/${encodeURIComponent(caseId)}/review-photo`} target="_blank" rel="noreferrer">عرض صورة المتجر الداخلية للمراجعة</a></p> : <p className="muted">لا توجد صورة داخلية اختيارية لهذا الطلب.</p>}
             {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}
           </div>

@@ -99,7 +99,7 @@
 }
 
 .field textarea { min-height: 84px; resize: vertical; }
-.reasonField { grid-row: span 2; }
+.reasonField { grid-row: auto; }
 .helper { margin: -4px 0 0; font-size: 12px; line-height: 1.5; }
 
 .feedback,

@@ -217,7 +217,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     const nextLongitude = parseCoordinate(longitude);
     const nextWorkingHours = storeWorkingHours(workingIntervals);
     const hoursError = workingHoursIssue(nextWorkingHours.intervals);
-    if (nextOwnerName.length < 2 || nextOwnerName.length > 160 || nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || nextAddress.length < 4 || nextAddress.length > 500 || (proofNumberLength < 1 && !current.firstStoreProofNumberPresent) || proofNumberLength > 128 || nextNotes.length > 1000 || !proofType || !serviceCityId || !verticalId || !commercialTypeId || nextLatitude === null || nextLongitude === null || nextLatitude < -90 || nextLatitude > 90 || nextLongitude < -180 || nextLongitude > 180 || fulfillmentModes.length === 0 || hoursError) {
+    if (nextOwnerName.length < 2 || nextOwnerName.length > 160 || nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || nextAddress.length < 4 || nextAddress.length > 500 || (proofNumberLength < 1 && (!current.firstStoreProofNumberPresent || proofType !== current.firstStoreProofType)) || proofNumberLength > 128 || nextNotes.length > 1000 || !proofType || !serviceCityId || !verticalId || !commercialTypeId || nextLatitude === null || nextLongitude === null || nextLatitude < -90 || nextLatitude > 90 || nextLongitude < -180 || nextLongitude > 180 || fulfillmentModes.length === 0 || hoursError) {
       setError(hoursError || "أكمل اسم المالك والمتجر والنشاط والعنوان والمدينة والتصنيف والإثبات وطريقة توصيل واحدة على الأقل ضمن الحدود الموضحة.");
       return;
     }

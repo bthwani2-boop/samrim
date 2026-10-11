@@ -7,15 +7,16 @@ import { createFieldOperationStyles } from "./field-operation-styles";
 
 // Keep provenance and permissions in DSH, not as a multi-page field form.
 // Capture choice determines the claimed source; the worker must still attest.
-export function FieldMediaProvenanceEditor({ value, disabled, onChange }: Readonly<{
+export function FieldMediaProvenanceEditor({ value, source, disabled, onChange }: Readonly<{
   value: MediaProvenanceInput;
+  source: "camera" | "library";
   disabled: boolean;
   onChange: (value: MediaProvenanceInput) => void;
   creatorName?: string;
 }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
-  const isCamera = value.sourceDescription.includes("كاميرته");
+  const isCamera = source === "camera";
   return <View style={{ gap: 6 }}>
     <View style={[styles.optionList, { alignItems: "center" }]}>
       <Switch

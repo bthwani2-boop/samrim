@@ -1,7 +1,7 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, type PublicCommerceVertical, type PublicDiscoveryContentView, formatMoney, fulfillmentModeLabel, type PublicPromotionView, type PublicStoreView } from "@bthwani/dsh";
-import { type Href, useLocalSearchParams, useRouter } from "expo-router";
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, I18nManager, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
@@ -161,6 +161,45 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       directoryRequestID.current += 1;
     };
   }, [currentDirectoryKey, directoryFavoritesOnly, directoryLocation, directoryMode, directoryQuery, directorySort, selectedCategoryID, selectedCityID, selectedVerticalID, state.kind]);
+
+  // Orderability is evaluated server-side against the current Sana'a clock.
+  // Re-read displayed stores on focus and periodically without resetting filters or scroll.
+  useFocusEffect(useCallback(() => {
+    if (!selectedCityID || state.kind !== "ready" || directoryLoading) return;
+    let active = true;
+    const refreshOrderability = async () => {
+      const statuses = new Map<string, PublicStoreView["orderabilityByMode"]>();
+      let cursor = "";
+      const pages = Math.max(1, Math.ceil(state.stores.length / 20));
+      try {
+        for (let index = 0; index < pages; index += 1) {
+          const page = await listPublishedStores(selectedCityID, {
+            q: directoryQuery,
+            verticalId: selectedVerticalID,
+            categoryId: directoryMode ? selectedCategoryID : "",
+            favoritesOnly: directoryFavoritesOnly,
+            sort: directorySort,
+            limit: 20,
+            ...(cursor ? { cursor } : {}),
+            location: directoryLocation,
+          });
+          if (!active) return;
+          for (const store of page.stores) statuses.set(store.id, store.orderabilityByMode);
+          cursor = page.nextCursor ?? "";
+          if (!cursor) break;
+        }
+        if (active) setState((current) => current.kind === "ready" ? {
+          ...current,
+          stores: current.stores.map((store) => statuses.has(store.id) ? { ...store, orderabilityByMode: statuses.get(store.id) } : store),
+        } : current);
+      } catch {
+        // Retain last confirmed availability when the periodic read is unavailable.
+      }
+    };
+    void refreshOrderability();
+    const timer = setInterval(() => void refreshOrderability(), 60_000);
+    return () => { active = false; clearInterval(timer); };
+  }, [selectedCityID, state.kind, state.kind === "ready" ? state.stores.length : 0, directoryLoading, directoryQuery, selectedVerticalID, selectedCategoryID, directoryMode, directoryFavoritesOnly, directorySort, directoryLocation]));
 
   async function loadMoreStores() {
     if (state.kind !== "ready" || !state.nextCursor || loadingMoreStores || !selectedCityID) return;

@@ -120,8 +120,8 @@ export function FieldWorkingHoursEditor({ value, disabled, onChange }: Readonly<
           {dayIntervals.map((interval, index) => <View key={interval.id} style={{ gap: 6 }}>
             <Text style={styles.muted}>الفترة {index + 1}</Text>
             <View style={styles.optionList}>
-              <TimePickerField label={`${label} · بداية الفترة ${index + 1}`} disabled={disabled} value={interval.opensAt} onChange={(nextOpensAt) => updateDay(day, dayIntervals.map((item, itemIndex) => itemIndex === index ? { ...item, opensAt: nextOpensAt } : item))} />
-              <TimePickerField label={`${label} · نهاية الفترة ${index + 1}`} disabled={disabled} value={interval.closesAt} onChange={(nextClosesAt) => updateDay(day, dayIntervals.map((item, itemIndex) => itemIndex === index ? { ...item, closesAt: nextClosesAt } : item))} />
+              <TimePickerField label={`${label} · بداية الفترة ${index + 1}`} disabled={disabled} value={interval.opensAt} onChange={(nextOpensAt) => updateDay(day, dayIntervals.map((item, itemIndex) => itemIndex === index ? { ...item, opensAt: nextOpensAt, closesNextDay: item.closesAt ? item.closesAt < nextOpensAt || (item.closesAt === nextOpensAt && item.closesNextDay) : item.closesNextDay } : item))} />
+              <TimePickerField label={`${label} · نهاية الفترة ${index + 1}`} disabled={disabled} value={interval.closesAt} onChange={(nextClosesAt) => updateDay(day, dayIntervals.map((item, itemIndex) => itemIndex === index ? { ...item, closesAt: nextClosesAt, closesNextDay: item.opensAt ? nextClosesAt < item.opensAt || (nextClosesAt === item.opensAt && item.closesNextDay) : item.closesNextDay } : item))} />
             </View>
             <View style={styles.optionList}>
               <Switch disabled={disabled} value={interval.closesNextDay} onValueChange={(nextClosesNextDay) => updateDay(day, dayIntervals.map((item, itemIndex) => itemIndex === index ? { ...item, closesNextDay: nextClosesNextDay } : item))} />

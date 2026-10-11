@@ -22,7 +22,7 @@ function missingFieldIntake(caseData: JoiningCaseView): string[] {
   return getFieldJoiningRequirements(caseData).filter((item) => !item.saved).map((item) => item.label);
 }
 
-type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput }>;
+type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput; source: "camera" | "library" }>;
 type WalletProvider = Awaited<ReturnType<ReturnType<typeof fieldClient>["listWalletProviders"]>>["walletProviders"][number];
 type PendingStoreImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: StoreImageDraft; idempotencyKey: string; correlationID: string }>;
 type FieldCasePagination = { sequence: number; query: string; cursor: string; loadingMore: boolean };
@@ -285,7 +285,7 @@ export function FieldCases() {
       if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("STORE_IMAGE_SIZE_INVALID");
       const type = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
       if (!type) throw new Error("STORE_IMAGE_TYPE_INVALID");
-      setStoreImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "store-image.png" : "store-image.jpg"), type, blob, provenance: fieldStoreImageProvenance(source, mediaCase.case.ownerFullName ?? "") });
+      setStoreImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "store-image.png" : "store-image.jpg"), type, blob, source, provenance: fieldStoreImageProvenance(source, mediaCase.case.ownerFullName ?? "") });
       setError("");
     } catch (cause) {
       console.warn("Field store image preparation failed", cause);
@@ -393,7 +393,7 @@ export function FieldCases() {
         {mediaCase.case.storeProfileImage ? <Image accessibilityLabel="شعار المتجر المحفوظ" source={{ uri: mediaCase.case.storeProfileImage.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : <Text style={styles.muted}>لم يُحفظ شعار المتجر بعد.</Text>}
         {storeImage ? <Image accessibilityLabel="معاينة شعار المتجر الجديد" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="cover" /> : null}
         {storeImage ? <View style={styles.card}>
-          <FieldMediaProvenanceEditor key={storeImage.uri} disabled={Boolean(busy) || Boolean(pendingImageAttempt)} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} value={storeImage.provenance} />
+          <FieldMediaProvenanceEditor key={storeImage.uri} disabled={Boolean(busy) || Boolean(pendingImageAttempt)} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} source={storeImage.source} value={storeImage.provenance} />
         </View> : null}
         <View style={styles.optionList}>
           <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label={storeImageButtonLabel} onPress={() => void pickStoreImage("library")} variant="secondary" />

@@ -215,8 +215,8 @@ export function FieldAcquisitionPolicyWorkspace() {
       <div className={styles.sectionHeading}><span className={styles.step} aria-hidden="true">٢</span><div><h3 id="field-acquisition-settings-title">قيمة السياسة</h3><p>تُحفظ كتغيير جديد في السجل المالي.</p></div></div>
       <div className={styles.settingsGrid}>
         <label className={`field-label ${styles.field}`} htmlFor="field-acquisition-reward">مبلغ الاستحقاق<input id="field-acquisition-reward" type="number" min="50" step="50" value={rewardMinor} onChange={(event) => setRewardMinor(event.target.value)} aria-describedby="field-acquisition-rounding" disabled={busy || !canEdit} /></label>
-        <label className={`field-label ${styles.field} ${styles.reasonField}`} htmlFor="field-reward-reason">سبب الإنشاء أو التغيير<TextArea id="field-reward-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} aria-describedby="field-reward-reason-hint" disabled={busy || !canEdit} /></label>
         <p id="field-acquisition-rounding" className={`muted ${styles.helper}`}>بالريال اليمني، وبمضاعفات ٥٠. يخص نوع المتجر ولا يُعدّل من ملف الميداني أو المتجر.</p>
+        <label className={`field-label ${styles.field} ${styles.reasonField}`} htmlFor="field-reward-reason">سبب الإنشاء أو التغيير<TextArea id="field-reward-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} aria-describedby="field-reward-reason-hint" disabled={busy || !canEdit} /></label>
         <p id="field-reward-reason-hint" className={`muted ${styles.helper}`}>من ٥ إلى ٥٠٠ حرف.</p>
       </div>
       {message ? <output className={`success ${styles.notice}`}>{message}</output> : null}
