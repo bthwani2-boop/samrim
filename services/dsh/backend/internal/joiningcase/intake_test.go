@@ -31,6 +31,15 @@ func TestNormalizeCreateRequestCountsProofNumberRunes(t *testing.T) {
 		t.Fatalf("128-codepoint proof number rejected: %v", err)
 	}
 
+	request.WalletProviderKey = ""
+	if normalized, err := NormalizeCreateRequest(request); err != nil || normalized.WalletProviderKey != "" {
+		t.Fatalf("optional wallet provider rejected: normalized=%+v error=%v", normalized, err)
+	}
+	request.WalletProviderKey = "invalid\nprovider"
+	if _, err := NormalizeCreateRequest(request); err != ErrInvalidInput {
+		t.Fatalf("invalid wallet provider error = %v, want %v", err, ErrInvalidInput)
+	}
+	request.WalletProviderKey = "wallet_provider_floosak"
 	request.FirstStoreProofNumber = strings.Repeat("文", 129)
 	if _, err := NormalizeCreateRequest(request); err != ErrInvalidInput {
 		t.Fatalf("129-codepoint proof number error = %v, want %v", err, ErrInvalidInput)

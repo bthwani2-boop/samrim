@@ -35,3 +35,14 @@ func TestValidateStoreWorkingHoursAllowsExactlyOneDay(t *testing.T) {
 		t.Fatal("valid 24-hour working-hours schedule rejected")
 	}
 }
+
+func TestValidateStoreWorkingHoursSupportsSplitShiftsWithoutOverlap(t *testing.T) {
+	split := []byte(`{"intervals":[{"dayOfWeek":1,"opensAt":"09:00","closesAt":"14:00","closesNextDay":false},{"dayOfWeek":1,"opensAt":"17:00","closesAt":"22:00","closesNextDay":false}]}`)
+	if !ValidateStoreWorkingHours(split) {
+		t.Fatal("a valid two-shift working day must be accepted")
+	}
+	overlap := []byte(`{"intervals":[{"dayOfWeek":1,"opensAt":"09:00","closesAt":"14:00","closesNextDay":false},{"dayOfWeek":1,"opensAt":"13:00","closesAt":"22:00","closesNextDay":false}]}`)
+	if ValidateStoreWorkingHours(overlap) {
+		t.Fatal("overlapping shifts for the same day must be rejected")
+	}
+}

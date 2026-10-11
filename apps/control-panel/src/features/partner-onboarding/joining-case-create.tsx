@@ -84,7 +84,6 @@ export function JoiningCaseCreate() {
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [fulfillmentModes, setFulfillmentModes] = useState<ReadonlyArray<"BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP">>([]);
-  const [workingDays, setWorkingDays] = useState<ReadonlyArray<number>>([]);
   const [workingHours, setWorkingHours] = useState<ReadonlyArray<StoreWorkingHoursInterval>>(emptyWorkingHours);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [walletProviders, setWalletProviders] = useState<ReadonlyArray<WalletProviderOption>>([]);
@@ -134,17 +133,17 @@ export function JoiningCaseCreate() {
       const [citiesResponse, verticalsResponse, providersResponse] = await Promise.all([
         fetch("/api/service-cities", { cache: "no-store" }),
         fetch("/api/catalog/verticals", { cache: "no-store" }),
-        fetch("/api/wallet-providers", { cache: "no-store" }),
+        fetch("/api/wallet-providers", { cache: "no-store" }).catch(() => null),
       ]);
-      if (!citiesResponse.ok || !verticalsResponse.ok || !providersResponse.ok) {
-        setOptionsError("تعذر قراءة المدن أو الفئات الرئيسية أو المحافظ الرسمية.");
+      if (!citiesResponse.ok || !verticalsResponse.ok) {
+        setOptionsError("تعذر قراءة مدن الخدمة أو الأنشطة الرئيسية.");
         return;
       }
       setCities((await citiesResponse.json() as { cities: ReadonlyArray<ServiceCity> }).cities);
       setVerticals((await verticalsResponse.json() as { verticals: ReadonlyArray<CommerceVertical> }).verticals);
-      setWalletProviders((await providersResponse.json() as { walletProviders: ReadonlyArray<WalletProviderOption> }).walletProviders);
+      setWalletProviders(providersResponse?.ok ? ((await providersResponse.json().catch(() => ({ walletProviders: [] })) as { walletProviders: ReadonlyArray<WalletProviderOption> }).walletProviders ?? []) : []);
     } catch {
-      setOptionsError("تعذر قراءة المدن أو الفئات الرئيسية أو المحافظ الرسمية.");
+      setOptionsError("تعذر قراءة مدن الخدمة أو الأنشطة الرئيسية.");
     } finally {
       setOptionsBusy(false);
     }
@@ -199,8 +198,12 @@ export function JoiningCaseCreate() {
     const input = pendingAttempt?.input ?? currentInput;
     const isResumedAttempt = pendingAttempt !== null && pendingAttempt.input === null;
     const attempt: PendingJoiningCaseCreate = { ...metadata, input };
-    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.ownerFullName.trim().length < 2 || Array.from(input.walletProviderKey.trim()).length < 1 || Array.from(input.walletProviderKey.trim()).length > 64 || /\p{Cc}/u.test(input.walletProviderKey) || input.businessName.length < 2 || input.firstStoreName.length < 2 || input.firstStoreAddress.trim().length < 4 || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreProofNumber.length < 1 || !isValidStoreWorkingHours(input.firstStoreWorkingHours.intervals) || input.firstStoreFulfillmentModes.length === 0 || !latitude.trim() || !longitude.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
-      setError("أكمل مزوّد المحفظة الذي حدده المالك، واسمه ورقم جواله وبيانات المتجر والموقع وساعات العمل والإثبات وطريقة التوصيل.");
+    if (!isValidStoreWorkingHours(input.firstStoreWorkingHours.intervals)) {
+      setError("ساعات العمل غير صحيحة أو متداخلة؛ راجع أوقات الفترات وأيامها.");
+      return;
+    }
+    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.ownerFullName.trim().length < 2 || Array.from(input.walletProviderKey.trim()).length > 64 || /\p{Cc}/u.test(input.walletProviderKey) || input.businessName.length < 2 || input.firstStoreName.length < 2 || input.firstStoreAddress.trim().length < 4 || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreProofNumber.length < 1 || input.firstStoreFulfillmentModes.length === 0 || !latitude.trim() || !longitude.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
+      setError("أكمل اسم المالك ورقم جواله وبيانات المتجر والموقع وساعات العمل والإثبات وطريقة التوصيل. المحفظة اختيارية.");
       return;
     }
     setBusy(true);
@@ -263,20 +266,39 @@ export function JoiningCaseCreate() {
   const hasNoActiveCommercialTypes = Boolean(verticalId && !commercialTypesBusy && !commercialTypesError && activeCommercialTypes.length === 0);
   const pendingRequestLocked = Boolean(pendingAttempt?.input);
   function setWorkingDayOpen(dayOfWeek: number, open: boolean) {
-    setWorkingDays((current) => open ? [...new Set([...current, dayOfWeek])] : current.filter((day) => day !== dayOfWeek));
     setWorkingHours((current) => open
       ? current.some((interval) => interval.dayOfWeek === dayOfWeek) ? current : [...current, { dayOfWeek, opensAt: "09:00", closesAt: "17:00", closesNextDay: false }]
       : current.filter((interval) => interval.dayOfWeek !== dayOfWeek));
   }
-  function updateWorkingInterval(dayOfWeek: number, patch: Partial<StoreWorkingHoursInterval>) {
-    setWorkingHours((current) => current.map((interval) => interval.dayOfWeek === dayOfWeek ? { ...interval, ...patch } : interval));
+  function addWorkingInterval(dayOfWeek: number) {
+    setWorkingHours((current) => [...current, { dayOfWeek, opensAt: "17:00", closesAt: "22:00", closesNextDay: false }]);
+  }
+  function updateWorkingInterval(dayOfWeek: number, intervalIndex: number, patch: Partial<StoreWorkingHoursInterval>) {
+    setWorkingHours((current) => {
+      let position = -1;
+      return current.map((interval) => {
+        if (interval.dayOfWeek !== dayOfWeek) return interval;
+        position += 1;
+        return position === intervalIndex ? { ...interval, ...patch } : interval;
+      });
+    });
+  }
+  function removeWorkingInterval(dayOfWeek: number, intervalIndex: number) {
+    setWorkingHours((current) => {
+      let position = -1;
+      return current.filter((interval) => {
+        if (interval.dayOfWeek !== dayOfWeek) return true;
+        position += 1;
+        return position !== intervalIndex;
+      });
+    });
   }
   return (
     <section className="access-card" aria-labelledby="joining-case-create-title">
       <div className="access-card-heading">
 
         <h2 id="joining-case-create-title">إنشاء حالة انضمام جديدة</h2>
-        <p className="muted">تُضاف صور الإثبات والمتجر بعد حفظ المسودة.</p>
+        <p className="muted">تكفي بيانات نوع الإثبات ورقمه دون رفع صورة الوثيقة. يمكن إضافة شعار المتجر قبل نشره.</p>
       </div>
       {storageError ? <p className="identity-error" role="alert">{storageError} <Link href="/partners">افتح طابور الانضمام</Link></p> : null}
       {optionsError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر تحميل الخيارات</strong><p>{optionsError}</p><button type="button" className="button button-secondary" disabled={optionsBusy || busy} onClick={() => void loadOptions()}>إعادة قراءة الخيارات</button></div> : null}
@@ -286,7 +308,7 @@ export function JoiningCaseCreate() {
       <div className="access-form">
         <label className="field-label" htmlFor="joining-owner">اسم المالك الكامل<input id="joining-owner" autoComplete="name" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={ownerFullName} onChange={(event) => setOwnerFullName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-phone">رقم جوال المالك<input id="joining-phone" autoComplete="tel" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} placeholder="مثال: 777000100 أو +967777000100" /></label>
-        <label className="field-label" htmlFor="joining-wallet-provider">مزوّد المحفظة الذي حدده المالك<select id="joining-wallet-provider" aria-required="true" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)}><option value="">اختر محفظة رسمية</option>{walletProviderKey && !walletProviders.some((provider) => provider.key === walletProviderKey) ? <option value={walletProviderKey}>{walletProviderKey} · قيمة سابقة محفوظة</option> : null}{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select><small>سجّل المزوّد فقط. لا تدخل رقم المحفظة أو الاسم القانوني هنا.</small></label>
+        <label className="field-label" htmlFor="joining-wallet-provider">مزوّد المحفظة الذي حدده المالك (اختياري)<select id="joining-wallet-provider" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)}><option value="">غير محددة حاليًا</option>{walletProviderKey && !walletProviders.some((provider) => provider.key === walletProviderKey) ? <option value={walletProviderKey}>{walletProviderKey} · قيمة سابقة محفوظة</option> : null}{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select><small>سجّل المزوّد فقط. لا تدخل رقم المحفظة أو الاسم القانوني هنا.</small></label>
         <label className="field-label" htmlFor="joining-business">الاسم القانوني للنشاط<input id="joining-business" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={businessName} onChange={(event) => setBusinessName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-store">اسم المتجر الأول<input id="joining-store" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={storeName} onChange={(event) => setStoreName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-address">عنوان المتجر<TextArea className="resize-none" id="joining-address" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={storeAddress} onChange={(event) => setStoreAddress(event.target.value)} placeholder="الحي والشارع وأقرب معلم" rows={3} /></label>
@@ -297,13 +319,18 @@ export function JoiningCaseCreate() {
           <legend>ساعات العمل الأسبوعية · توقيت المدينة</legend>
           {weekdays.map((label, index) => {
             const dayOfWeek = index + 1;
-            const interval = workingHours.find((item) => item.dayOfWeek === dayOfWeek);
-            return <div key={dayOfWeek} className="action-row">
-              <label className="action-row"><input type="checkbox" checked={workingDays.includes(dayOfWeek)} onChange={(event) => setWorkingDayOpen(dayOfWeek, event.target.checked)} />{label}</label>
-              {interval ? <>
-                <label className="field-label">من<input type="time" value={interval.opensAt} onChange={(event) => updateWorkingInterval(dayOfWeek, { opensAt: event.target.value })} /></label>
-                <label className="field-label">إلى<input type="time" value={interval.closesAt} onChange={(event) => updateWorkingInterval(dayOfWeek, { closesAt: event.target.value })} /></label>
-                <label className="action-row"><input type="checkbox" checked={interval.closesNextDay} onChange={(event) => updateWorkingInterval(dayOfWeek, { closesNextDay: event.target.checked })} />ينتهي في اليوم التالي</label>
+            const intervals = workingHours.filter((item) => item.dayOfWeek === dayOfWeek);
+            return <div key={dayOfWeek} className="field-label">
+              <label className="action-row"><input type="checkbox" checked={intervals.length > 0} onChange={(event) => setWorkingDayOpen(dayOfWeek, event.target.checked)} />{label}</label>
+              {intervals.length > 0 ? <>
+                {intervals.map((interval, intervalIndex) => <div key={`${dayOfWeek}-${intervalIndex}`} className="action-row">
+                  <span className="muted">الفترة {intervalIndex + 1}</span>
+                  <label className="field-label">من<input type="time" aria-label={`${label} بداية الفترة ${intervalIndex + 1}`} value={interval.opensAt} onChange={(event) => updateWorkingInterval(dayOfWeek, intervalIndex, { opensAt: event.target.value })} /></label>
+                  <label className="field-label">إلى<input type="time" aria-label={`${label} نهاية الفترة ${intervalIndex + 1}`} value={interval.closesAt} onChange={(event) => updateWorkingInterval(dayOfWeek, intervalIndex, { closesAt: event.target.value })} /></label>
+                  <label className="action-row"><input type="checkbox" checked={interval.closesNextDay} onChange={(event) => updateWorkingInterval(dayOfWeek, intervalIndex, { closesNextDay: event.target.checked })} />ينتهي في اليوم التالي</label>
+                  {intervals.length > 1 ? <button type="button" className="button button-secondary" onClick={() => removeWorkingInterval(dayOfWeek, intervalIndex)}>حذف الفترة {intervalIndex + 1}</button> : null}
+                </div>)}
+                <div className="action-row"><button type="button" className="button button-secondary" onClick={() => addWorkingInterval(dayOfWeek)}>إضافة فترة ليوم {label}</button></div>
               </> : <span className="muted">مغلق</span>}
             </div>;
           })}

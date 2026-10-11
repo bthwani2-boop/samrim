@@ -1,9 +1,12 @@
 package storepublication
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
@@ -59,5 +62,40 @@ func TestEvaluatePartnerReadiness(t *testing.T) {
 				t.Fatalf("readiness = %+v, want ready=%t blockedReason=%q", got, tt.wantReady, tt.wantBlock)
 			}
 		})
+	}
+}
+
+func TestPublicationReadinessGuardSkipsExternalDependenciesForHiddenStore(t *testing.T) {
+	called := false
+	readiness, err := evaluatePublicationGuard(context.Background(), "hidden", postgres.StoreRecord{ID: "store-1"}, func(context.Context, postgres.StoreRecord) (PublicationReadiness, error) {
+		called = true
+		return PublicationReadiness{}, errors.New("WLT unavailable")
+	})
+	if called || err != nil || readiness.Ready {
+		t.Fatalf("hiding a Store must not require partner or WLT readiness: called=%v readiness=%+v err=%v", called, readiness, err)
+	}
+}
+
+func TestPublicationReadinessGuardRequiresLiveReadinessForPublishing(t *testing.T) {
+	outage := errors.New("WLT unavailable")
+	calls := 0
+	read := func(context.Context, postgres.StoreRecord) (PublicationReadiness, error) {
+		calls++
+		return PublicationReadiness{}, outage
+	}
+	if _, err := evaluatePublicationGuard(context.Background(), "published", postgres.StoreRecord{ID: "store-1"}, read); !errors.Is(err, outage) || calls != 1 {
+		t.Fatalf("publishing must fail closed when external readiness fails: calls=%d err=%v", calls, err)
+	}
+	rejected, err := evaluatePublicationGuard(context.Background(), "published", postgres.StoreRecord{ID: "store-1"}, func(context.Context, postgres.StoreRecord) (PublicationReadiness, error) {
+		return PublicationReadiness{BlockedReason: CommercialAgreementNotReadyReason}, nil
+	})
+	if !errors.Is(err, ErrPublicationReadinessBlocked) || rejected.BlockedReason != CommercialAgreementNotReadyReason {
+		t.Fatalf("publishing must reject unmet commercial readiness: readiness=%+v err=%v", rejected, err)
+	}
+	ready, err := evaluatePublicationGuard(context.Background(), "published", postgres.StoreRecord{ID: "store-1"}, func(context.Context, postgres.StoreRecord) (PublicationReadiness, error) {
+		return PublicationReadiness{Ready: true}, nil
+	})
+	if err != nil || !ready.Ready {
+		t.Fatalf("publishing must accept confirmed readiness: readiness=%+v err=%v", ready, err)
 	}
 }

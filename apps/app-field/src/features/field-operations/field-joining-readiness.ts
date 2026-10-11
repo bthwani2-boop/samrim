@@ -1,7 +1,7 @@
 import { isValidStoreWorkingHours, type JoiningCaseView } from "@bthwani/dsh";
 
 export type FieldJoiningRequirement = Readonly<{
-  key: "basic" | "wallet" | "city" | "vertical" | "storeType" | "address" | "location" | "hours" | "fulfillment" | "proofNumber";
+  key: "basic" | "city" | "vertical" | "storeType" | "address" | "location" | "hours" | "fulfillment" | "proofNumber";
   label: string;
   saved: boolean;
 }>;
@@ -15,7 +15,6 @@ export function getFieldJoiningRequirements(saved: JoiningCaseView | null): Read
       label: "بيانات المالك والمتجر",
       saved: Boolean(saved?.ownerFullName?.trim() && saved.businessName.trim() && saved.firstStoreName.trim() && saved.contactPhoneE164),
     },
-    { key: "wallet", label: "المحفظة الرسمية", saved: Boolean(saved?.walletProviderKey) },
     { key: "city", label: "مدينة الخدمة", saved: Boolean(saved?.serviceCityId) },
     { key: "vertical", label: "النشاط التجاري", saved: Boolean(saved?.firstStoreVerticalId) },
     { key: "storeType", label: "نوع المتجر", saved: Boolean(saved?.firstStoreCommercialTypeId) },

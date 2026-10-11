@@ -1185,9 +1185,9 @@ components:
           maxLength: 160
         walletProviderKey:
           type: string
-          minLength: 1
+          minLength: 0
           maxLength: 64
-          description: Provider selected by the beneficiary at admission. Do not enter a wallet number or name here.
+          description: Optional provider preference. Empty when the beneficiary has not selected one; do not enter a wallet number or name here.
         firstStoreAddress:
           type: string
           minLength: 4

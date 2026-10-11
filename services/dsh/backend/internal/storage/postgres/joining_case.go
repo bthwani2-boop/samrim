@@ -573,7 +573,7 @@ func createJoiningCase(ctx context.Context, db *sql.DB, input CreateJoiningCaseI
 	if strings.TrimSpace(input.Request.FirstStoreProofNumber) != "" && input.EvidenceKeyring == nil {
 		return JoiningCaseResult{}, errors.New("DSH joining-case evidence keyring is required")
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,owner_full_name,business_name,first_store_name,first_store_address,first_store_working_hours,first_store_proof_type,first_store_notes,first_store_service_city_id,first_store_vertical_id,first_store_commercial_type_id,first_store_latitude,first_store_longitude,first_store_fulfillment_modes,originating_field_actor_id,origin,wallet_provider_key) VALUES($1,$2,NULLIF($3,''),$4,$5,NULLIF($6,''),NULLIF($7,'')::jsonb,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),$12,$13,$14,$15,NULLIF($16,''),$17,$18)`, caseID, phone, input.Request.OwnerFullName, businessName, firstStoreName, input.Request.FirstStoreAddress, string(input.Request.FirstStoreWorkingHours), input.Request.FirstStoreProofType, input.Request.FirstStoreNotes, serviceCityID, verticalID, commercialTypeID, latitude, longitude, pq.Array(fulfillmentModes), originatingFieldActorID, origin, input.Request.WalletProviderKey); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,owner_full_name,business_name,first_store_name,first_store_address,first_store_working_hours,first_store_proof_type,first_store_notes,first_store_service_city_id,first_store_vertical_id,first_store_commercial_type_id,first_store_latitude,first_store_longitude,first_store_fulfillment_modes,originating_field_actor_id,origin,wallet_provider_key) VALUES($1,$2,NULLIF($3,''),$4,$5,NULLIF($6,''),NULLIF($7,'')::jsonb,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),$12,$13,$14,$15,NULLIF($16,''),$17,NULLIF($18,''))`, caseID, phone, input.Request.OwnerFullName, businessName, firstStoreName, input.Request.FirstStoreAddress, string(input.Request.FirstStoreWorkingHours), input.Request.FirstStoreProofType, input.Request.FirstStoreNotes, serviceCityID, verticalID, commercialTypeID, latitude, longitude, pq.Array(fulfillmentModes), originatingFieldActorID, origin, input.Request.WalletProviderKey); err != nil {
 		return JoiningCaseResult{}, fmt.Errorf("create joining case: %w", err)
 	}
 	if strings.TrimSpace(input.Request.FirstStoreProofNumber) != "" {
@@ -674,7 +674,12 @@ func ValidateJoiningCaseSubmissionReadiness(current JoiningCaseRecord, expectedV
 }
 
 func ValidateJoiningCaseIntakeReadiness(current JoiningCaseRecord) error {
-	if _, validProvider := NormalizeWalletProviderKey(current.WalletProviderKey); strings.TrimSpace(current.OwnerFullName) == "" || strings.TrimSpace(current.BusinessName) == "" || strings.TrimSpace(current.FirstStoreName) == "" || !validProvider || strings.TrimSpace(current.FirstStoreAddress) == "" || !ValidateStoreWorkingHours(current.FirstStoreWorkingHours) || strings.TrimSpace(current.FirstStoreProofType) == "" || !current.FirstStoreProofNumberPresent {
+	if current.WalletProviderKey != "" {
+		if _, validProvider := NormalizeWalletProviderKey(current.WalletProviderKey); !validProvider {
+			return ErrJoiningCaseState
+		}
+	}
+	if strings.TrimSpace(current.OwnerFullName) == "" || strings.TrimSpace(current.BusinessName) == "" || strings.TrimSpace(current.FirstStoreName) == "" || strings.TrimSpace(current.FirstStoreAddress) == "" || !ValidateStoreWorkingHours(current.FirstStoreWorkingHours) || strings.TrimSpace(current.FirstStoreProofType) == "" || !current.FirstStoreProofNumberPresent {
 		return ErrJoiningCaseState
 	}
 	if strings.TrimSpace(current.FirstStoreServiceCityID) == "" {
