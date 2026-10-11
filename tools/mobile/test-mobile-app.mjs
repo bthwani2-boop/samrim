@@ -184,7 +184,7 @@ if (app === "app-field") {
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-draft-readback.ts")).href
   );
   const { wrapDayMinutes, parseClockTime, formatClockTime, formatClockDisplay, clockHandAtRadius, finishClockHour, rotateClockMinutes, clockHandDegrees, clockDarkness } = await import(
-    pathToFileURL(path.join(appDir, "src/features/field-operations/field-circular-clock.ts")).href
+    "../../apps/app-field/src/features/field-operations/field-circular-clock.ts"
   );
   assert.equal(parseClockTime("21:57"), 1317, "Field dial must reopen at the exact persisted time");
   assert.equal(parseClockTime("garbage"), 540, "Invalid legacy time should fall back to 09:00");
