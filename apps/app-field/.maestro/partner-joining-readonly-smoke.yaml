@@ -1,0 +1,12 @@
+# Read-only smoke of the Field partner onboarding form on a real Android device.
+# Prerequisite: open "إضافة شريك" in an already authorized Field session.
+# Never save, submit, reset the app or alter persisted state.
+appId: com.bthwani.field
+name: Field partner joining form - read-only smoke
+---
+- launchApp:
+    stopApp: false
+    clearState: false
+- assertVisible: "إضافة شريك"
+- assertVisible: "حفظ المسودة"
+- assertVisible: "حفظ وإرسال للمراجعة"
