@@ -1,4 +1,64 @@
 paths:
+  /dsh/catalog/category-trash:
+    get:
+      operationId: listDeletedCatalogCategories
+      summary: Operator-only list of soft-deleted taxonomy leaf categories
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 512 } }
+      responses:
+        "200": { description: Deleted categories with audit facts and pagination. }
+  /dsh/catalog/categories/{categoryId}/trash:
+    post:
+      operationId: trashCatalogCategory
+      summary: Soft-delete a leaf category without deleting products or media
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: categoryId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        "200": { description: Category was moved to trash. }
+        "409": { description: Category still has subcategories or version changed. }
+  /dsh/catalog/categories/{categoryId}/restore:
+    post:
+      operationId: restoreCatalogCategory
+      summary: Restore a deleted category as inactive until explicitly reactivated
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: categoryId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, enum: [""] }
+      responses:
+        "200": { description: Category restored as inactive, with explicit reactivation available through category editor. }
+        "409": { description: Version conflict. }
   /dsh/stores/{storeId}/trash:
     get:
       operationId: listStoreDeletedCatalogProducts

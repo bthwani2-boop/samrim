@@ -1,4 +1,62 @@
 paths:
+  /dsh/operator/stores/trash:
+    get:
+      operationId: listDeletedStores
+      summary: Operator-only list of recoverable archived stores
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 512 } }
+      responses:
+        "200": { description: Keyset-paginated archived stores. }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+  /dsh/operator/stores/{storeId}/trash:
+    post:
+      operationId: archiveStore
+      summary: Reversibly archive an operational store and atomically hide it from customers without removing related records
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/StoreId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        "200": { description: Store archived and hidden, with audit record. }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+  /dsh/operator/stores/{storeId}/restore:
+    post:
+      operationId: restoreArchivedStore
+      summary: Recover an archived store without automatically republishing
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/StoreId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, enum: [""] }
+      responses:
+        "200": { description: Store restored as hidden; normal publication workflow required before customer visibility. }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
   /dsh/stores:
     get:
       operationId: listOperatorStores

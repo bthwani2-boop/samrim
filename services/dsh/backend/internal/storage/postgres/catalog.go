@@ -665,7 +665,7 @@ func readCatalogCategoryForUpdateTx(ctx context.Context, tx *sql.Tx, id string) 
 	var parent sql.NullString
 	err := tx.QueryRowContext(ctx, `SELECT category.id,category.vertical_id,category.parent_category_id,category.name_ar,category.name_en,
 		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=category.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),
-		category.active,category.version,category.created_at,category.updated_at FROM dsh.catalog_categories category WHERE category.id=$1 FOR UPDATE`, id).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+		category.active,category.version,category.created_at,category.updated_at FROM dsh.catalog_categories category WHERE category.id=$1 AND category.deleted_at IS NULL FOR UPDATE`, id).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CatalogCategoryRecord{}, ErrCatalogCategoryNotFound
 	}
@@ -687,7 +687,7 @@ func readCatalogCategoryTx(ctx context.Context, tx *sql.Tx, id string) (CatalogC
 	var parent sql.NullString
 	err := tx.QueryRowContext(ctx, `SELECT category.id,category.vertical_id,category.parent_category_id,category.name_ar,category.name_en,
 		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=category.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),
-		category.active,category.version,category.created_at,category.updated_at FROM dsh.catalog_categories category WHERE category.id=$1`, id).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+		category.active,category.version,category.created_at,category.updated_at FROM dsh.catalog_categories category WHERE category.id=$1 AND category.deleted_at IS NULL`, id).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if parent.Valid {
 		item.ParentCategoryID = parent.String
 	}
@@ -791,7 +791,7 @@ func ListCatalogCategoryPage(ctx context.Context, db *sql.DB, verticalID, query,
 		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=category.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),'') AS image_uri,
 		category.active,category.version,category.created_at,category.updated_at
 		FROM dsh.catalog_categories category
-		WHERE category.vertical_id=$1 AND ($2='all' OR category.active=($2='active'))
+		WHERE category.vertical_id=$1 AND category.deleted_at IS NULL AND ($2='all' OR category.active=($2='active'))
 		AND ($3='' OR category.name_ar ILIKE $3 ESCAPE '!' OR category.name_en ILIKE $3 ESCAPE '!')
 		AND (NOT $7::boolean
 			OR ($8='updated_desc' AND (category.updated_at,category.id)<($4::timestamptz,$6::text))
@@ -872,7 +872,7 @@ func ReadCatalogCategoryForRegistry(ctx context.Context, db *sql.DB, categoryID 
 		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=category.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),category.active,category.version,category.created_at,category.updated_at,
 		COALESCE((SELECT string_agg(ancestor.name_ar,' / ' ORDER BY ancestor.depth DESC) FROM ancestors ancestor WHERE ancestor.leaf_id=category.id),category.name_ar),
 		COALESCE((SELECT string_agg(ancestor.name_en,' / ' ORDER BY ancestor.depth DESC) FROM ancestors ancestor WHERE ancestor.leaf_id=category.id),category.name_en)
-	FROM dsh.catalog_categories category WHERE category.id=$1`, categoryID).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.PathAr, &item.PathEn)
+	FROM dsh.catalog_categories category WHERE category.id=$1 AND category.deleted_at IS NULL`, categoryID).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.PathAr, &item.PathEn)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CatalogCategoryListItem{}, ErrCatalogCategoryNotFound
 	}

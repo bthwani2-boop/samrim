@@ -35,6 +35,8 @@ func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testi
 		"109_partner_passport_proof_type.sql",
 		"110_joining_case_review_photos.sql",
 		"111_catalog_product_recycle_bin.sql",
+		"112_catalog_category_recycle_bin.sql",
+		"113_store_recycle_bin.sql",
 	} {
 		if _, ok := migrationByName[required]; !ok {
 			t.Fatalf("canonical DSH migration missing: %s", required)

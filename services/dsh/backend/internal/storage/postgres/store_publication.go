@@ -300,7 +300,7 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 		LEFT JOIN dsh.joining_cases j ON j.partner_actor_id=s.partner_actor_id
 		LEFT JOIN dsh.service_cities c ON c.id=s.service_city_id
 		LEFT JOIN dsh.commerce_verticals v ON v.id=s.primary_vertical_id
-		WHERE ($1::text='' OR s.publication_state=$1)
+		WHERE s.deleted_at IS NULL AND ($1::text='' OR s.publication_state=$1)
 		  AND ($2::text='' OR (($4::text='name_prefix' AND lower(s.name) LIKE $5::text ESCAPE '!') OR ($4::text='contains' AND (s.id ILIKE $6::text ESCAPE '!' OR s.name ILIKE $6::text ESCAPE '!' OR s.partner_actor_id ILIKE $6::text ESCAPE '!' OR j.owner_full_name ILIKE $6::text ESCAPE '!'))))
 		  AND ($3::text='' OR s.service_city_id=$3)
 		  AND (NOT $7::boolean OR ($8::text='name_asc' AND (lower(s.name),s.id)>(lower($9::text),$10::text)) OR ($8::text='updated_asc' AND (s.updated_at,s.id)>($11::timestamptz,$10::text)) OR ($8::text='updated_desc' AND (s.updated_at,s.id)<($11::timestamptz,$10::text)))
@@ -479,6 +479,9 @@ func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 	if store.Version != expectedVersion {
 		return PublicationResult{}, ErrPublicationVersionConflict
 	}
+	var archived bool
+	if err := tx.QueryRowContext(ctx, "SELECT deleted_at IS NOT NULL FROM dsh.stores WHERE id=$1", storeID).Scan(&archived); err != nil { return PublicationResult{}, err }
+	if archived { return PublicationResult{}, ErrStoreTrashConflict }
 	if guard != nil {
 		if err := guard(ctx, store); err != nil {
 			return PublicationResult{}, fmt.Errorf("validate store publication readiness: %w", err)
