@@ -507,6 +507,37 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
   return { accessToken, actorID, caseID, storeID, activeAgreement };
 }
 
+async function prepareApprovedStoreLogo(caseID, partnerAccessToken, fixtureName) {
+  const path = `/dsh/joining-cases/${encodeURIComponent(caseID)}`;
+  const readOperatorCase = () => request(dshBase, "GET", path, {
+    token: dshToken,
+    headers: { "X-Acting-Actor-ID": actingOperatorID },
+  });
+  const before = await readOperatorCase();
+  const expectedVersion = Number(before.body?.case?.version);
+  if (before.status !== 200 || before.body?.case?.state !== "approved" || !Number.isSafeInteger(expectedVersion)) {
+    fail("Approved joining case missing before deferred Store logo upload", JSON.stringify({ fixtureName, before }));
+  }
+  const form = new FormData();
+  form.set("creator", "DSH runtime proof fixture generator");
+  form.set("sourceDescription", "One-pixel PNG generated for the isolated Store publication proof");
+  form.set("rightsStatement", "Generated solely for this disposable runtime proof and permitted for its test");
+  form.set("rightsAttested", "true");
+  form.set("file", new Blob([runtimePNG], { type: "image/png" }), "runtime-store-logo.png");
+  const uploaded = await request(dshBase, "POST", `${path}/store-image`, {
+    token: partnerAccessToken,
+    headers: partnerHeaders(`runtime-publish-logo-${suffix}-${fixtureName}`, expectedVersion),
+    rawBody: form,
+  });
+  const canonical = await readOperatorCase();
+  if (uploaded.status !== 201 || uploaded.body?.case?.version !== expectedVersion + 1 ||
+      !uploaded.body?.case?.storeProfileImage || canonical.status !== 200 ||
+      canonical.body?.case?.version !== uploaded.body.case.version || !canonical.body?.case?.storeProfileImage) {
+    fail("Partner deferred Store logo upload or operator readback failed", JSON.stringify({ fixtureName, uploaded, canonical }));
+  }
+  return canonical.body.case;
+}
+
 async function ensureCommissionDefault(commercialStoreTypeID, fulfillmentMode, suggestedCommissionRateBps) {
   const path = "/wlt/v1/operator/commercial-store-type-commission-defaults";
   const readDefaults = () => request(wltBase, "GET", `${path}?commercialStoreTypeId=${encodeURIComponent(commercialStoreTypeID)}`, { token: wltToken });
@@ -1051,6 +1082,8 @@ const storeLocalFieldRewardPolicy = await request(dshBase, "POST", "/dsh/operato
 const storeLocalFieldRewardPolicyRead = await request(dshBase, "GET", `/dsh/operator/field-acquisition-reward-policies?scopeType=STORE_TYPE&scopeId=${encodeURIComponent(storeLocalCommercialStoreTypeID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (storeLocalFieldRewardPolicy.status !== 201 || storeLocalFieldRewardPolicy.body?.policy?.scopeId !== storeLocalCommercialStoreTypeID || storeLocalFieldRewardPolicy.body?.policy?.state !== "ACTIVE" || storeLocalFieldRewardPolicyRead.status !== 200 || storeLocalFieldRewardPolicyRead.body?.policy?.id !== storeLocalFieldRewardPolicy.body?.policy?.id || storeLocalFieldRewardPolicyRead.body?.policy?.state !== "ACTIVE") fail("Field acquisition reward policy did not activate and read back for the Store-local commercial type", JSON.stringify({ storeLocalFieldRewardPolicy, storeLocalFieldRewardPolicyRead }));
 console.log("DSH_FIELD_ACQUISITION_REWARD_POLICY=PASS");
+await prepareApprovedStoreLogo(first.caseID, first.accessToken, "catalog-a");
+await prepareApprovedStoreLogo(second.caseID, second.accessToken, "catalog-b");
 const publishA = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-a-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const publishB = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 if (publishA.status !== 200 || publishB.status !== 200) {
@@ -1219,6 +1252,7 @@ const modifierOptionCreate = await request(dshBase, "POST", `/dsh/stores/${store
 if (modifierOptionCreate.status !== 201 || !modifierOptionCreate.body?.option?.id) fail("modifier option creation failed", JSON.stringify(modifierOptionCreate));
 const modifierOptionID = String(modifierOptionCreate.body.option.id);
 const storeLocalOfferPublished = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/offers/${storeLocalOfferID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-local-offer-publish-${suffix}`, 1), body: discreteOffer(1000, "published") });
+await prepareApprovedStoreLogo(storeLocal.caseID, storeLocal.accessToken, "store-local");
 const storeLocalPublished = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-local-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const storeLocalFieldEntitlementQuery = `SELECT count(*) || ':' || count(DISTINCT store_id) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}','${sqlLiteral(storeLocal.storeID)}')`;
 await waitForSQL(storeLocalFieldEntitlementQuery, "3:3", "Field acquisition entitlement did not post once for the newly published Field-origin store", 120_000);
@@ -1816,6 +1850,7 @@ if (fieldPayoutAgreement.status !== "ACTIVE" || fieldPayoutAgreement.rates?.leng
 const fieldPayoutOffer = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/offers`, { token: fieldPayoutPartnerAccessToken, headers: partnerHeaders(`field-payout-offer-${suffix}`), body: discreteCreateOffer(variantID, 1250) });
 const fieldPayoutOfferID = String(fieldPayoutOffer.body?.offer?.offerId || "");
 const fieldPayoutOfferPublished = await request(dshBase, "PATCH", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/offers/${encodeURIComponent(fieldPayoutOfferID)}`, { token: fieldPayoutPartnerAccessToken, headers: partnerHeaders(`field-payout-offer-publish-${suffix}`, 1), body: discreteOffer(1250, "published") });
+await prepareApprovedStoreLogo(fieldPayoutCaseID, fieldPayoutPartnerAccessToken, "field-payout");
 const fieldPayoutPublication = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-payout-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const fieldPayoutSummaryDeadline = Date.now() + 95_000;
 let fieldPayoutSummary = null;
