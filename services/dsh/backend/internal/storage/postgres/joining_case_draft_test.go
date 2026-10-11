@@ -154,8 +154,16 @@ func TestFieldJoiningCaseDraftCreateUpdateOwnershipIdempotencyAndMedia(t *testin
 		changedType.Request.FirstStoreProofNumber = ""
 		changedType.Request.FirstStoreProofType = "IDENTITY_DOCUMENT"
 		changedType.RequestHash = hashDraftUpdate(t, keys, changedType)
+		if _, err := postgres.UpdateFieldJoiningCaseDraft(ctx, db, changedType); !errors.Is(err, postgres.ErrJoiningCaseState) {
+			t.Fatalf("changing proof type without a replacement number must be rejected: %v", err)
+		}
+		changedType.IdempotencyKey = "idem-field-draft-type-change-number"
+		changedType.CorrelationID = "corr-field-draft-type-change-number"
+		changedType.PreserveProofNumber = false
+		changedType.Request.FirstStoreProofNumber = "PASS-123456"
+		changedType.RequestHash = hashDraftUpdate(t, keys, changedType)
 		typeUpdated, err := postgres.UpdateFieldJoiningCaseDraft(ctx, db, changedType)
-		if err != nil || !typeUpdated.Case.FirstStoreProofImageUploaded {
+		if err != nil || !typeUpdated.Case.FirstStoreProofImageUploaded || !typeUpdated.Case.FirstStoreProofNumberPresent {
 			t.Fatalf("changed proof type discarded a protected historical image: case=%+v err=%v", typeUpdated.Case, err)
 		}
 		// A document image is no longer a submission prerequisite; the missing city remains the first blocker.

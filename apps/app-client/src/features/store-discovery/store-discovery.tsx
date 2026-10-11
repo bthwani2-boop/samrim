@@ -69,6 +69,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const directorySort = storeFilter === "newest" || storeFilter === "nearest" ? storeFilter : "all";
   const directoryFavoritesOnly = directoryMode && storeFilter === "favorites";
   const currentDirectoryKey = JSON.stringify([selectedCityID, directoryQuery, selectedVerticalID, directoryMode ? selectedCategoryID : "", directorySort, directoryFavoritesOnly, directoryLocation?.latitude ?? null, directoryLocation?.longitude ?? null]);
+  const displayedStoreCount = state.kind === "ready" ? state.stores.length : 0;
 
   const load = useCallback(async () => {
     const requestID = ++discoveryLoadRequestID.current;
@@ -170,7 +171,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     const refreshOrderability = async () => {
       const statuses = new Map<string, PublicStoreView["orderabilityByMode"]>();
       let cursor = "";
-      const pages = Math.max(1, Math.ceil(state.stores.length / 20));
+      const pages = Math.max(1, Math.ceil(displayedStoreCount / 20));
       try {
         for (let index = 0; index < pages; index += 1) {
           const page = await listPublishedStores(selectedCityID, {
@@ -199,7 +200,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     void refreshOrderability();
     const timer = setInterval(() => void refreshOrderability(), 60_000);
     return () => { active = false; clearInterval(timer); };
-  }, [selectedCityID, state.kind, state.kind === "ready" ? state.stores.length : 0, directoryLoading, directoryQuery, selectedVerticalID, selectedCategoryID, directoryMode, directoryFavoritesOnly, directorySort, directoryLocation]));
+  }, [selectedCityID, state.kind, displayedStoreCount, directoryLoading, directoryQuery, selectedVerticalID, selectedCategoryID, directoryMode, directoryFavoritesOnly, directorySort, directoryLocation]));
 
   async function loadMoreStores() {
     if (state.kind !== "ready" || !state.nextCursor || loadingMoreStores || !selectedCityID) return;
