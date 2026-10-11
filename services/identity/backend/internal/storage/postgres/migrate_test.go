@@ -748,7 +748,7 @@ func TestMigrationV13ToV28Upgrade(t *testing.T) {
 	}
 	afterSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	assertMigrationNoOpSnapshotUnchanged(t, beforeSecondRun, afterSecondRun)
-	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 28 {
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 29 {
 		t.Fatalf("schema version changed during second canonical migration run: version=%d err=%v", version, err)
 	}
 

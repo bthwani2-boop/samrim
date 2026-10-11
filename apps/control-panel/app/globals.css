@@ -122,6 +122,8 @@
   :is(.panel,.access-card,.order-detail-panel,.partner-detail-section,.store-detail-section,.review-panel) > :last-child { margin-block-end: 0; }
   .form-grid, .workspace-form-grid, .central-product-form, .access-create-form, .access-form, .admission-form, .partner-profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px 16px; max-inline-size: 960px; }
   :is(.form-grid,.access-form,.access-create-form,.admission-form,.central-product-form) > :is(h2,h3,p,fieldset,header,.form-actions,.action-row,.managed-status,.validation-error,.field-error) { grid-column: 1 / -1; }
+  .hr-directory .access-create-form { max-inline-size: 720px; }
+  .hr-directory .form-actions > button { inline-size: auto; }
   .form-section { display: grid; gap: 12px; max-inline-size: 960px; }
   .compact-form { inline-size: 100%; max-inline-size: 480px; padding: 12px; }
   .disclosure.create-disclosure { inline-size: min(100%,480px); }

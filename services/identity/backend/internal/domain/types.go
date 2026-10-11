@@ -124,11 +124,12 @@ const (
 	OperatorPermissionMarketing        = "marketing"
 	OperatorPermissionFinance          = "finance"
 	OperatorPermissionPlatformPolicies = "platform_policies"
+	OperatorPermissionHR               = "hr"
 )
 
 func IsOperatorPermission(permission string) bool {
 	switch permission {
-	case OperatorPermissionOperations, OperatorPermissionPartners, OperatorPermissionCatalog, OperatorPermissionMarketing, OperatorPermissionFinance, OperatorPermissionPlatformPolicies:
+	case OperatorPermissionOperations, OperatorPermissionPartners, OperatorPermissionCatalog, OperatorPermissionMarketing, OperatorPermissionFinance, OperatorPermissionPlatformPolicies, OperatorPermissionHR:
 		return true
 	default:
 		return false
@@ -143,6 +144,7 @@ func OperatorPermissions() []string {
 		OperatorPermissionMarketing,
 		OperatorPermissionFinance,
 		OperatorPermissionPlatformPolicies,
+		OperatorPermissionHR,
 	}
 }
 

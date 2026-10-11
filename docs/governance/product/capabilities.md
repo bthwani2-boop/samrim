@@ -8,6 +8,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 Routing only; behavior remains in each capability owner. Journey participation is owned exclusively by `docs/governance/product/journeys.md`.
 
 `IDENTITY_ACTIVATION_SESSIONS` → `capabilities/access/identity-activation-sessions.md`
+`EMPLOYEE_HR` → `capabilities/access/employee-hr.md`
 `PARTNER_ONBOARDING_STORE_PUBLICATION` → `capabilities/partner/partner-onboarding-store-publication.md`
 `STORE_OPERATIONAL_AVAILABILITY` → `capabilities/partner/store-operational-availability.md`
 `CENTRAL_CATALOG` → `capabilities/partner/central-catalog.md`

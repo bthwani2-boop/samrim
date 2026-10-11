@@ -1,4 +1,5 @@
 import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
+import type { HREmployee as DshHREmployee, HREmployeePage as DshHREmployeePage, HRCreateEmployeeRequest } from "@bthwani/dsh";
 import type { StoreTypeCommissionDefaultsResponse as DshStoreTypeCommissionDefaultsResponse, FinanceStoreCommercialAgreementQueueResponse, JoiningCaseProofDetailsResponse, OperatorFieldActivityResponse, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreCommercialAgreementListResponse, StoreCommercialAgreementMutationResponse, StorePayoutRecipientListResponse, UpdateCatalogAttributeDefinitionRequest, UpdateCatalogAttributeEnumOptionRequest } from "@bthwani/dsh";
 import { type ActorLegalName, type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionListResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogAttributeDefinitionListResponse, type CatalogAttributeDefinitionResponse, type CatalogAttributeEnumOptionListResponse, type CatalogAttributeEnumOptionResponse, type CatalogAttributeRuleListResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProduct, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductRegistryResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CommercialStoreTypeListResponse, type CommercialStoreTypeResponse, type CreateCatalogAttributeDefinitionRequest, type CreateCatalogAttributeEnumOptionRequest, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateCommercialStoreTypeRequest, type CreateCustomerWithdrawalIntakeRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type CustomerWithdrawalDecisionRequest, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAcquisitionRewardPolicy, type FieldAdmissionListResponse, type FieldAdmissionRequest, type FieldAdmissionResponse, type FinanceEvidenceDocument, isMediaProvenanceInputValid, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedCaptainAvailabilityRequest, type ManagedRoleMutationRequest, type ManagedRoleReenrollmentRequest, type MarketingPublicationRequest, type MediaProvenanceInput, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorFieldFinanceRosterResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreListResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreCommercialTypeRequest, type SetStoreCommercialTypeResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type StoreTypeCommissionDefaultsResponse, type StoreTypeCommissionDefaultUpdateResponse, type SubmitActorLegalNameRequest, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateCommercialStoreTypeRequest, type UpdateServiceCityRequest, type UpdateStoreTypeCommissionDefaultRequest, type UpsertCatalogAttributeRuleRequest, type VerifyActorLegalNameRequest } from "@bthwani/dsh";
 import { validateServiceUrl } from "@bthwani/identity";
@@ -47,6 +48,26 @@ export async function updateOperatorWalletProvider(providerKey: string, input: R
   const key = providerKey.trim();
   if (!key || key.length > 128) throw new Error("DSH_WALLET_PROVIDER_KEY_INVALID");
   return requestDshJson<WalletProviderResponse>("PATCH", `/dsh/wallet-providers/${encodeURIComponent(key)}`, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export type HREmployee = DshHREmployee;
+export type HREmployeeInput = HRCreateEmployeeRequest;
+export type HREmployeePage = DshHREmployeePage;
+export function listHREmployees(q: string, cursor: string, context: DshOperatorReadContext): Promise<HREmployeePage> {
+  const search = new URLSearchParams({ q, cursor, limit: "25" });
+  return requestDshJson<HREmployeePage>("GET", `/dsh/hr/employees?${search}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId }).then((response) => response.payload);
+}
+export function readHREmployee(id: string, context: DshOperatorReadContext): Promise<Readonly<{ employee: HREmployee }>> {
+  return requestDshJson<Readonly<{ employee: HREmployee }>>("GET", `/dsh/hr/employees/${encodeURIComponent(id)}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId }).then((response) => response.payload);
+}
+export function createHREmployee(input: HREmployeeInput, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: Readonly<{ employee: HREmployee; idempotentReplay: boolean }> }>> {
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_IDEMPOTENCY_KEY_MISSING");
+  return requestDshJson<Readonly<{ employee: HREmployee; idempotentReplay: boolean }>>("POST", "/dsh/hr/employees", input, {
+    "X-Acting-Actor-ID": context.operatorActorId,
+    "X-Correlation-ID": context.correlationId,
+    "Idempotency-Key": context.idempotencyKey,
+  });
 }
 
 export type CreateFieldAcquisitionRewardPolicyRequest = Readonly<{

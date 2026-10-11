@@ -7,4 +7,5 @@ export const operatorWorkspacePermissions = [
   { key: "marketing", label: "التسويق والمحتوى" },
   { key: "finance", label: "المالية" },
   { key: "platform_policies", label: "سياسات المنصة" },
+  { key: "hr", label: "الموارد البشرية" },
 ] as const satisfies ReadonlyArray<Readonly<{ key: OperatorPermission; label: string }>>;

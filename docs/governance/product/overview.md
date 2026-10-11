@@ -57,6 +57,7 @@ For materially costly-to-reverse identity, relation, state, ownership or public-
 ## Admitted capabilities
 
 - `IDENTITY_ACTIVATION_SESSIONS`
+- `EMPLOYEE_HR`
 - `PARTNER_ONBOARDING_STORE_PUBLICATION`
 - `STORE_OPERATIONAL_AVAILABILITY`
 - `CENTRAL_CATALOG`

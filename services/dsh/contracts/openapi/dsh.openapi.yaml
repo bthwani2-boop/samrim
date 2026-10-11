@@ -417,6 +417,12 @@ paths:
   /dsh/stores/{storeId}/delivery-origin:
     $ref: "./paths/location-core.yaml#/paths/~1dsh~1stores~1{storeId}~1delivery-origin"
 
+  /dsh/hr/employees:
+    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees"
+
+  /dsh/hr/employees/{employeeId}:
+    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees~1{employeeId}"
+
   /dsh/service-cities:
     $ref: "./paths/service-city.yaml#/paths/~1dsh~1service-cities"
 
@@ -4751,6 +4757,107 @@ components:
           type: string
           minLength: 2
           maxLength: 160
+
+    HREmployee:
+      type: object
+      additionalProperties: false
+      required: [id, fullNameAr, department, jobTitle, startDate, workLocation, status, version, createdAt]
+      properties:
+        id:
+          type: string
+        fullNameAr:
+          type: string
+          minLength: 2
+          maxLength: 120
+        phoneE164:
+          type: string
+        department:
+          type: string
+          minLength: 1
+          maxLength: 80
+        jobTitle:
+          type: string
+          minLength: 1
+          maxLength: 80
+        managerEmployeeId:
+          type: string
+        startDate:
+          type: string
+          format: date
+        workLocation:
+          type: string
+          minLength: 1
+          maxLength: 100
+        status:
+          type: string
+          enum: [active, inactive]
+        operatorActorId:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+
+    HRCreateEmployeeRequest:
+      type: object
+      additionalProperties: false
+      required: [fullNameAr, phoneE164, department, jobTitle, managerEmployeeId, startDate, workLocation]
+      properties:
+        fullNameAr:
+          type: string
+          minLength: 2
+          maxLength: 120
+        phoneE164:
+          type: string
+        department:
+          type: string
+          minLength: 1
+          maxLength: 80
+        jobTitle:
+          type: string
+          minLength: 1
+          maxLength: 80
+        managerEmployeeId:
+          type: string
+        startDate:
+          type: string
+          format: date
+        workLocation:
+          type: string
+          minLength: 1
+          maxLength: 100
+
+    HREmployeePage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HREmployee"
+        nextCursor:
+          type: string
+
+    HREmployeeCreateResponse:
+      type: object
+      additionalProperties: false
+      required: [employee, idempotentReplay]
+      properties:
+        employee:
+          $ref: "#/components/schemas/HREmployee"
+        idempotentReplay:
+          type: boolean
+
+    HREmployeeReadResponse:
+      type: object
+      additionalProperties: false
+      required: [employee]
+      properties:
+        employee:
+          $ref: "#/components/schemas/HREmployee"
 
     ServiceCity:
       type: object
