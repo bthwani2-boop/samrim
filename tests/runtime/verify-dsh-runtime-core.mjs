@@ -441,7 +441,7 @@ function joiningCaseDetails(businessName, firstStoreName, serviceCityId, vertica
     firstStoreName,
     walletProviderKey: "wallet_provider_floosak",
     firstStoreAddress: `${firstStoreName} street, building 1`,
-    firstStoreWorkingHours: { intervals: [{ dayOfWeek: 1, opensAt: "08:00", closesAt: "16:00", closesNextDay: false }] },
+    firstStoreWorkingHours: { intervals: Array.from({ length: 7 }, (_, day) => ({ dayOfWeek: day + 1, opensAt: "00:00", closesAt: "00:00", closesNextDay: true })) },
     firstStoreProofType: "COMMERCIAL_REGISTRATION",
     firstStoreProofNumber: `CR-${crypto.randomUUID()}`,
     serviceCityId,
@@ -462,56 +462,17 @@ function joiningCaseCorrectionBody(businessName, firstStoreName, serviceCityId, 
   return body;
 }
 
-async function uploadPartnerProofImage(caseID, partnerToken, name, expectedVersion) {
-  const form = new FormData();
-  form.set("file", new Blob([runtimePNG], { type: "image/png" }), "runtime-proof-correction.png");
-  const response = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(caseID)}/proof-image`, {
-    token: partnerToken,
-    headers: partnerHeaders(`runtime-partner-proof-${suffix}-${name}`, expectedVersion),
-    rawBody: form,
-  });
-  if (response.status !== 201 || response.body?.case?.version !== expectedVersion + 1 || response.body?.case?.firstStoreProofImageUploaded !== true) {
-    fail("Partner correction proof image upload failed", JSON.stringify(response));
-  }
-  return response.body.case.version;
-}
-
-async function uploadRequiredJoiningCaseMedia(caseID, origin, name, initialVersion, fieldToken = fieldAccessToken) {
+async function readJoiningCaseDraftForSubmission(caseID, origin, expectedVersion, fieldToken = fieldAccessToken) {
+  // Joining documents and store logos are optional at intake. Read back the
+  // real draft instead of inventing image uploads through retired endpoints.
   const fieldOrigin = origin === "field";
-  const token = fieldOrigin ? fieldToken : dshToken;
-  const casePath = `/dsh/${fieldOrigin ? "field/" : "operator/"}joining-cases/${encodeURIComponent(caseID)}`;
-  const requestUpload = async (path, key, expectedVersion, form) => request(dshBase, "POST", path, {
-    token,
-    headers: fieldOrigin ? partnerHeaders(key, expectedVersion) : serviceHeaders(actingOperatorID, key, crypto.randomUUID(), expectedVersion),
-    rawBody: form,
-  });
-  const proofForm = new FormData();
-  proofForm.set("file", new Blob([runtimePNG], { type: "image/png" }), "runtime-proof.png");
-  const proofUpload = await requestUpload(`${casePath}/proof-image`, `runtime-proof-${suffix}-${name}`, initialVersion, proofForm);
-  if (proofUpload.status !== 201 || proofUpload.body?.case?.version !== initialVersion + 1) {
-    fail(`${origin} joining-case proof image upload failed`, JSON.stringify(proofUpload));
-  }
-
-  const storeImageForm = new FormData();
-  storeImageForm.set("creator", "DSH runtime proof fixture generator");
-  storeImageForm.set("sourceDescription", "One-pixel PNG generated for the isolated DSH runtime proof");
-  storeImageForm.set("rightsStatement", "Generated solely for this disposable runtime proof and permitted for its test");
-  storeImageForm.set("rightsAttested", "true");
-  storeImageForm.set("file", new Blob([runtimePNG], { type: "image/png" }), "runtime-store.png");
-  const storeImagePath = fieldOrigin
-    ? `/dsh/joining-cases/${encodeURIComponent(caseID)}/store-image`
-    : `${casePath}/store-image`;
-  const storeImageUpload = await requestUpload(storeImagePath, `runtime-store-image-${suffix}-${name}`, proofUpload.body.case.version, storeImageForm);
-  if (storeImageUpload.status !== 201 || storeImageUpload.body?.case?.version !== proofUpload.body.case.version + 1) {
-    fail(`${origin} joining-case store image upload failed`, JSON.stringify(storeImageUpload));
-  }
-
-  const readback = await request(dshBase, "GET", `/dsh/joining-cases/${encodeURIComponent(caseID)}`, {
-    token: dshToken,
-    headers: { "X-Acting-Actor-ID": actingOperatorID },
-  });
-  if (readback.status !== 200 || readback.body?.case?.version !== storeImageUpload.body.case.version || readback.body?.case?.firstStoreProofImageUploaded !== true || !readback.body?.case?.storeProfileImage) {
-    fail(`${origin} joining-case evidence readback failed`, JSON.stringify(readback));
+  const readback = await request(dshBase, "GET",
+    fieldOrigin ? `/dsh/field/joining-cases/${encodeURIComponent(caseID)}` : `/dsh/joining-cases/${encodeURIComponent(caseID)}`, {
+      token: fieldOrigin ? fieldToken : dshToken,
+      ...(fieldOrigin ? {} : { headers: { "X-Acting-Actor-ID": actingOperatorID } }),
+    });
+  if (readback.status !== 200 || readback.body?.case?.version !== expectedVersion || readback.body?.case?.state !== "draft") {
+    fail(`${origin} joining-case draft canonical readback failed`, JSON.stringify(readback));
   }
   return readback.body.case.version;
 }
@@ -526,7 +487,7 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
   });
   if (created.status !== 201 || created.body?.case?.state !== "draft" || created.body?.case?.origin !== origin || created.body?.case?.firstStoreVerticalId !== partnerVerticalID || created.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case creation did not preserve source provenance or fixed store origin", JSON.stringify(created));
   const caseID = String(created.body.case.id);
-  const evidenceVersion = await uploadRequiredJoiningCaseMedia(caseID, origin, name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-"), Number(created.body.case.version));
+  const evidenceVersion = await readJoiningCaseDraftForSubmission(caseID, origin, Number(created.body.case.version));
   let submitted;
   if (fieldOrigin) {
     submitted = (await requestFieldPartnerAdmission(caseID, fieldAccessToken, evidenceVersion, "catalog-runtime-" + name)).operatorSubmitted;
@@ -544,6 +505,37 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
     activeAgreement = await activateStoreCommercialAgreement(caseID, storeID, actorID, accessToken, fieldActorID, fieldAccessToken, approved.body?.case?.store?.fulfillmentModes ?? fulfillmentModes, partnerCommercialStoreTypeID);
   }
   return { accessToken, actorID, caseID, storeID, activeAgreement };
+}
+
+async function prepareApprovedStoreLogo(caseID, partnerAccessToken, fixtureName) {
+  const path = `/dsh/joining-cases/${encodeURIComponent(caseID)}`;
+  const readOperatorCase = () => request(dshBase, "GET", path, {
+    token: dshToken,
+    headers: { "X-Acting-Actor-ID": actingOperatorID },
+  });
+  const before = await readOperatorCase();
+  const expectedVersion = Number(before.body?.case?.version);
+  if (before.status !== 200 || before.body?.case?.state !== "approved" || !Number.isSafeInteger(expectedVersion)) {
+    fail("Approved joining case missing before deferred Store logo upload", JSON.stringify({ fixtureName, before }));
+  }
+  const form = new FormData();
+  form.set("creator", "DSH runtime proof fixture generator");
+  form.set("sourceDescription", "One-pixel PNG generated for the isolated Store publication proof");
+  form.set("rightsStatement", "Generated solely for this disposable runtime proof and permitted for its test");
+  form.set("rightsAttested", "true");
+  form.set("file", new Blob([runtimePNG], { type: "image/png" }), "runtime-store-logo.png");
+  const uploaded = await request(dshBase, "POST", `${path}/store-image`, {
+    token: partnerAccessToken,
+    headers: partnerHeaders(`runtime-publish-logo-${suffix}-${fixtureName}`, expectedVersion),
+    rawBody: form,
+  });
+  const canonical = await readOperatorCase();
+  if (uploaded.status !== 201 || uploaded.body?.case?.version !== expectedVersion + 1 ||
+      !uploaded.body?.case?.storeProfileImage || canonical.status !== 200 ||
+      canonical.body?.case?.version !== uploaded.body.case.version || !canonical.body?.case?.storeProfileImage) {
+    fail("Partner deferred Store logo upload or operator readback failed", JSON.stringify({ fixtureName, uploaded, canonical }));
+  }
+  return canonical.body.case;
 }
 
 async function ensureCommissionDefault(commercialStoreTypeID, fulfillmentMode, suggestedCommissionRateBps) {
@@ -723,7 +715,7 @@ const fieldCaseRead = await request(dshBase, "GET", `/dsh/field/joining-cases/${
 const secondFieldCaseRead = await request(dshBase, "GET", `/dsh/field/joining-cases/${encodeURIComponent(fieldCaseID)}`, { token: secondFieldAccessToken });
 const secondFieldCases = await request(dshBase, "GET", "/dsh/field/joining-cases?limit=25", { token: secondFieldAccessToken });
 if (fieldCases.status !== 200 || !fieldCases.body?.cases?.some((item) => item.id === fieldCaseID && item.state === "draft" && item.firstStoreLatitude === firstStoreOrigin.firstStoreLatitude && item.firstStoreLongitude === firstStoreOrigin.firstStoreLongitude) || fieldPageOne.status !== 200 || fieldPageOne.body?.cases?.length !== 1 || !fieldPageOne.body?.nextCursor || fieldPageTwo?.status !== 200 || fieldPageTwo.body?.cases?.length !== 1 || fieldPageTwo.body?.nextCursor || observedFieldPageOrder !== expectedFieldPageOrder || new Set([...(fieldPageOne.body?.cases || []), ...(fieldPageTwo?.body?.cases || [])].map((item) => item.id)).size !== 2 || fieldPageChangedQuery?.status !== 400 || fieldPageOtherActor?.status !== 400 || operatorFieldPageOne.status !== 200 || operatorFieldPageOne.body?.cases?.length !== 1 || !operatorFieldPageOne.body?.nextCursor || operatorFieldPageTwo?.status !== 200 || operatorFieldPageTwo.body?.cases?.length !== 1 || operatorFieldPageTwo.body?.nextCursor || observedOperatorFieldPageOrder !== expectedFieldPageOrder || operatorFieldPageChangedState?.status !== 400 || fieldCaseRead.status !== 200 || fieldCaseRead.body?.case?.id !== fieldCaseID || fieldCaseRead.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldCaseRead.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || secondFieldCaseRead.status !== 404 || secondFieldCases.status !== 200 || secondFieldCases.body?.cases?.some((item) => item.id === fieldCaseID)) fail("Field or operator joining-case pagination, cursor scope, search, or fixed store origin readback failed", JSON.stringify({ fieldCases, fieldPageOne, fieldPageTwo, fieldPageChangedQuery, fieldPageOtherActor, expectedFieldPageOrder, operatorFieldPageOne, operatorFieldPageTwo, operatorFieldPageChangedState, observedFieldPageOrder, observedOperatorFieldPageOrder, fieldCaseRead, secondFieldCaseRead, secondFieldCases }));
-const fieldCaseEvidenceVersion = await uploadRequiredJoiningCaseMedia(fieldCaseID, "field", `field-main-${suffix}`, Number(fieldCaseCreated.body.case.version));
+const fieldCaseEvidenceVersion = await readJoiningCaseDraftForSubmission(fieldCaseID, "field", Number(fieldCaseCreated.body.case.version));
 const fieldAdmissionFlow = await requestFieldPartnerAdmission(fieldCaseID, fieldAccessToken, fieldCaseEvidenceVersion, "field-main-" + suffix);
 const fieldAdmissionRequested = fieldAdmissionFlow.fieldAdmissionRequested;
 const fieldCaseAdmissionReplay = fieldAdmissionFlow.fieldAdmissionReplay;
@@ -754,14 +746,14 @@ const correctionCreateBody = joiningCaseCreateBody(correctionPhone, "Correction 
 const correctionCreated = await request(dshBase, "POST", "/dsh/joining-cases", { token: dshToken, headers: serviceHeaders(actingOperatorID, `joining-correction-${suffix}`), body: correctionCreateBody });
 if (correctionCreated.status !== 201 || correctionCreated.body?.case?.state !== "draft" || correctionCreated.body?.case?.origin !== "control_panel" || correctionCreated.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || correctionCreated.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("control-panel correction case creation did not preserve provenance or fixed store origin", JSON.stringify(correctionCreated));
 const correctionCaseID = String(correctionCreated.body.case.id);
-const correctionEvidenceVersion = await uploadRequiredJoiningCaseMedia(correctionCaseID, "control_panel", `correction-${suffix}`, Number(correctionCreated.body.case.version));
+const correctionEvidenceVersion = await readJoiningCaseDraftForSubmission(correctionCaseID, "control_panel", Number(correctionCreated.body.case.version));
 const correctionSubmitted = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/submit`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `submit-correction-${suffix}`, crypto.randomUUID(), correctionEvidenceVersion) });
 if (correctionSubmitted.status !== 200 || correctionSubmitted.body?.case?.state !== "submitted" || !correctionSubmitted.body?.case?.partnerActorId) fail("correction joining case submission failed", JSON.stringify(correctionSubmitted));
 const correctionActorID = String(correctionSubmitted.body.case.partnerActorId);
 const correctionAccessToken = await activatePartner(correctionPhone, `Corr${suffix.slice(0, 4)}`);
 const needsCorrection = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `needs-correction-${suffix}`, crypto.randomUUID(), Number(correctionSubmitted.body.case.version)), body: { decision: "needs_correction", correctionReason: "صحح اسم المتجر قبل الاعتماد" } });
 if (needsCorrection.status !== 200 || needsCorrection.body?.case?.state !== "needs_correction" || needsCorrection.body.case.version !== correctionSubmitted.body.case.version + 1) fail("joining case correction review failed", JSON.stringify(needsCorrection));
-const correctionProofVersion = await uploadPartnerProofImage(correctionCaseID, correctionAccessToken, `control-panel-correction-${suffix}`, Number(needsCorrection.body.case.version));
+const correctionProofVersion = Number(needsCorrection.body.case.version);
 const correctionBody = joiningCaseCorrectionBody("Correction business fixed", "Correction store fixed", cityA, verticalID, commercialStoreTypeID, correctedStoreOrigin);
 const corrected = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/correct-and-resubmit`, { token: correctionAccessToken, headers: partnerHeaders(`correct-and-resubmit-${suffix}`, correctionProofVersion), body: correctionBody });
 if (corrected.status !== 200 || corrected.body?.case?.state !== "submitted" || corrected.body.case.version !== correctionProofVersion + 1 || corrected.body.case.firstStoreVerticalId !== verticalID || corrected.body.case.firstStoreLatitude !== correctedStoreOrigin.firstStoreLatitude || corrected.body.case.firstStoreLongitude !== correctedStoreOrigin.firstStoreLongitude) fail("joining case correct-and-resubmit did not preserve the corrected store origin", JSON.stringify(corrected));
@@ -778,14 +770,14 @@ const fieldCorrectionCreated = await request(dshBase, "POST", "/dsh/field/joinin
 const fieldCorrectionCaseID = String(fieldCorrectionCreated.body?.case?.id || "");
 if (fieldCorrectionCreated.status !== 201 || fieldCorrectionCreated.body?.case?.origin !== "field" || fieldCorrectionCreated.body?.case?.state !== "draft") fail("Field correction fixture creation did not preserve provenance", JSON.stringify(fieldCorrectionCreated));
 
-const fieldCorrectionEvidenceVersion = await uploadRequiredJoiningCaseMedia(fieldCorrectionCaseID, "field", `field-correction-${suffix}`, Number(fieldCorrectionCreated.body.case.version), secondFieldAccessToken);
+const fieldCorrectionEvidenceVersion = await readJoiningCaseDraftForSubmission(fieldCorrectionCaseID, "field", Number(fieldCorrectionCreated.body.case.version), secondFieldAccessToken);
 const fieldCorrectionFlow = await requestFieldPartnerAdmission(fieldCorrectionCaseID, secondFieldAccessToken, fieldCorrectionEvidenceVersion, "field-correction-" + suffix);
 const fieldCorrectionSubmitted = fieldCorrectionFlow.operatorSubmitted;
 const fieldNeedsCorrection = await request(dshBase, "POST", `/dsh/joining-cases/${fieldCorrectionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-needs-correction-${suffix}`, crypto.randomUUID(), Number(fieldCorrectionSubmitted.body.case.version)), body: { decision: "needs_correction", correctionReason: "أكمل بيانات ملف الميداني" } });
 const fieldCorrectionBody = joiningCaseCorrectionBody("Field correction business fixed", "Field correction store fixed", cityA, verticalID, commercialStoreTypeID, correctedStoreOrigin);
 const fieldCorrectionAsField = await request(dshBase, "POST", `/dsh/joining-cases/${fieldCorrectionCaseID}/correct-and-resubmit`, { token: secondFieldAccessToken, headers: partnerHeaders(`field-correction-as-field-${suffix}`, Number(fieldNeedsCorrection.body?.case?.version)), body: fieldCorrectionBody });
 const fieldCorrectionPartnerAccessToken = await activatePartner(fieldCorrectionPhone, "FCor" + suffix.slice(0, 4));
-const fieldCorrectionProofVersion = await uploadPartnerProofImage(fieldCorrectionCaseID, fieldCorrectionPartnerAccessToken, `field-correction-${suffix}`, Number(fieldNeedsCorrection.body.case.version));
+const fieldCorrectionProofVersion = Number(fieldNeedsCorrection.body.case.version);
 const fieldCorrectionAsPartner = await request(dshBase, "POST", `/dsh/joining-cases/${fieldCorrectionCaseID}/correct-and-resubmit`, { token: fieldCorrectionPartnerAccessToken, headers: partnerHeaders(`field-correction-as-partner-${suffix}`, fieldCorrectionProofVersion), body: fieldCorrectionBody });
 const fieldCorrectionReadback = await request(dshBase, "GET", `/dsh/field/joining-cases/${fieldCorrectionCaseID}`, { token: secondFieldAccessToken });
 if (fieldCorrectionCreated.status !== 201 || fieldCorrectionSubmitted.status !== 200 || fieldNeedsCorrection.status !== 200 || fieldNeedsCorrection.body?.case?.state !== "needs_correction" || fieldNeedsCorrection.body?.case?.version !== fieldCorrectionSubmitted.body?.case?.version + 1 || fieldCorrectionAsField.status !== 403 || fieldCorrectionAsPartner.status !== 200 || fieldCorrectionAsPartner.body?.case?.state !== "submitted" || fieldCorrectionAsPartner.body?.case?.version !== fieldCorrectionProofVersion + 1 || fieldCorrectionReadback.status !== 200 || fieldCorrectionReadback.body?.case?.state !== "submitted" || fieldCorrectionReadback.body?.case?.version !== fieldCorrectionProofVersion + 1 || fieldCorrectionReadback.body?.case?.businessName !== "Field correction business fixed" || fieldCorrectionReadback.body?.case?.firstStoreLatitude !== correctedStoreOrigin.firstStoreLatitude || fieldCorrectionReadback.body?.case?.firstStoreLongitude !== correctedStoreOrigin.firstStoreLongitude) fail("Field admission, Partner-owned correction, or canonical readback failed", JSON.stringify({ fieldCorrectionCreated, fieldCorrectionFlow, fieldCorrectionSubmitted, fieldNeedsCorrection, fieldCorrectionAsField, fieldCorrectionAsPartner, fieldCorrectionReadback }));
@@ -1090,6 +1082,8 @@ const storeLocalFieldRewardPolicy = await request(dshBase, "POST", "/dsh/operato
 const storeLocalFieldRewardPolicyRead = await request(dshBase, "GET", `/dsh/operator/field-acquisition-reward-policies?scopeType=STORE_TYPE&scopeId=${encodeURIComponent(storeLocalCommercialStoreTypeID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (storeLocalFieldRewardPolicy.status !== 201 || storeLocalFieldRewardPolicy.body?.policy?.scopeId !== storeLocalCommercialStoreTypeID || storeLocalFieldRewardPolicy.body?.policy?.state !== "ACTIVE" || storeLocalFieldRewardPolicyRead.status !== 200 || storeLocalFieldRewardPolicyRead.body?.policy?.id !== storeLocalFieldRewardPolicy.body?.policy?.id || storeLocalFieldRewardPolicyRead.body?.policy?.state !== "ACTIVE") fail("Field acquisition reward policy did not activate and read back for the Store-local commercial type", JSON.stringify({ storeLocalFieldRewardPolicy, storeLocalFieldRewardPolicyRead }));
 console.log("DSH_FIELD_ACQUISITION_REWARD_POLICY=PASS");
+await prepareApprovedStoreLogo(first.caseID, first.accessToken, "catalog-a");
+await prepareApprovedStoreLogo(second.caseID, second.accessToken, "catalog-b");
 const publishA = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-a-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const publishB = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 if (publishA.status !== 200 || publishB.status !== 200) {
@@ -1258,6 +1252,7 @@ const modifierOptionCreate = await request(dshBase, "POST", `/dsh/stores/${store
 if (modifierOptionCreate.status !== 201 || !modifierOptionCreate.body?.option?.id) fail("modifier option creation failed", JSON.stringify(modifierOptionCreate));
 const modifierOptionID = String(modifierOptionCreate.body.option.id);
 const storeLocalOfferPublished = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/offers/${storeLocalOfferID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-local-offer-publish-${suffix}`, 1), body: discreteOffer(1000, "published") });
+await prepareApprovedStoreLogo(storeLocal.caseID, storeLocal.accessToken, "store-local");
 const storeLocalPublished = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-local-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const storeLocalFieldEntitlementQuery = `SELECT count(*) || ':' || count(DISTINCT store_id) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}','${sqlLiteral(storeLocal.storeID)}')`;
 await waitForSQL(storeLocalFieldEntitlementQuery, "3:3", "Field acquisition entitlement did not post once for the newly published Field-origin store", 120_000);
@@ -1834,7 +1829,7 @@ const fieldPayoutCreateBody = joiningCaseCreateBody(fieldPayoutPhone, "Field pay
 const fieldPayoutCase = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: secondFieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": `field-payout-case-${suffix}` }, body: fieldPayoutCreateBody });
 const fieldPayoutCaseID = String(fieldPayoutCase.body?.case?.id || "");
 if (fieldPayoutCase.status !== 201 || fieldPayoutCase.body?.case?.origin !== "field" || fieldPayoutCase.body?.case?.state !== "draft") fail("Field payout case fixture creation failed", JSON.stringify(fieldPayoutCase));
-const fieldPayoutEvidenceVersion = await uploadRequiredJoiningCaseMedia(fieldPayoutCaseID, "field", `field-payout-${suffix}`, Number(fieldPayoutCase.body.case.version), secondFieldAccessToken);
+const fieldPayoutEvidenceVersion = await readJoiningCaseDraftForSubmission(fieldPayoutCaseID, "field", Number(fieldPayoutCase.body.case.version), secondFieldAccessToken);
 const fieldPayoutFlow = await requestFieldPartnerAdmission(fieldPayoutCaseID, secondFieldAccessToken, fieldPayoutEvidenceVersion, "field-payout-" + suffix);
 const fieldPayoutSubmitted = fieldPayoutFlow.operatorSubmitted;
 const fieldPayoutApproved = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldPayoutCaseID)}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-payout-approve-${suffix}`, crypto.randomUUID(), Number(fieldPayoutSubmitted.body?.case?.version)), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
@@ -1855,6 +1850,7 @@ if (fieldPayoutAgreement.status !== "ACTIVE" || fieldPayoutAgreement.rates?.leng
 const fieldPayoutOffer = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/offers`, { token: fieldPayoutPartnerAccessToken, headers: partnerHeaders(`field-payout-offer-${suffix}`), body: discreteCreateOffer(variantID, 1250) });
 const fieldPayoutOfferID = String(fieldPayoutOffer.body?.offer?.offerId || "");
 const fieldPayoutOfferPublished = await request(dshBase, "PATCH", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/offers/${encodeURIComponent(fieldPayoutOfferID)}`, { token: fieldPayoutPartnerAccessToken, headers: partnerHeaders(`field-payout-offer-publish-${suffix}`, 1), body: discreteOffer(1250, "published") });
+await prepareApprovedStoreLogo(fieldPayoutCaseID, fieldPayoutPartnerAccessToken, "field-payout");
 const fieldPayoutPublication = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-payout-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const fieldPayoutSummaryDeadline = Date.now() + 95_000;
 let fieldPayoutSummary = null;
