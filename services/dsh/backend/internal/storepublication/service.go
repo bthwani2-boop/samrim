@@ -134,26 +134,35 @@ func (s *Service) Publish(ctx context.Context, storeID, requestedState string, e
 	requestHash := postgres.HashStorePublicationRequest(storeID, requestedState, expectedVersion)
 	var readiness PublicationReadiness
 	result, err := postgres.SetStorePublicationWithGuard(ctx, s.db, storeID, requestedState, expectedVersion, idempotencyKey, requestHash, actingActorID, correlationID, func(guardCtx context.Context, store postgres.StoreRecord) error {
-		current, readinessErr := s.ReadinessForStore(guardCtx, store)
-		readiness = current
-		if readinessErr != nil {
-			return readinessErr
-		}
-		if requestedState == "published" && !current.Ready {
-			return ErrPublicationReadinessBlocked
-		}
-		return nil
+		var readinessErr error
+		readiness, readinessErr = evaluatePublicationGuard(guardCtx, requestedState, store, s.ReadinessForStore)
+		return readinessErr
 	})
 	if err != nil {
 		return postgres.PublicationResult{}, readiness, err
 	}
-	if result.Replayed {
+	if result.Replayed && requestedState == "published" {
 		readiness, err = s.ReadinessForStore(ctx, result.Store)
 		if err != nil {
 			return postgres.PublicationResult{}, PublicationReadiness{}, err
 		}
 	}
 	return result, readiness, nil
+}
+
+func evaluatePublicationGuard(ctx context.Context, requestedState string, store postgres.StoreRecord, readReadiness func(context.Context, postgres.StoreRecord) (PublicationReadiness, error)) (PublicationReadiness, error) {
+	if requestedState != "published" {
+		// Hiding must remain possible when Partner Identity, WLT, or catalog readiness is unavailable.
+		return PublicationReadiness{}, nil
+	}
+	readiness, err := readReadiness(ctx, store)
+	if err != nil {
+		return readiness, err
+	}
+	if !readiness.Ready {
+		return readiness, ErrPublicationReadinessBlocked
+	}
+	return readiness, nil
 }
 
 func (s *Service) SetFulfillmentModes(ctx context.Context, storeID string, modes []string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.StoreFulfillmentModesResult, error) {
