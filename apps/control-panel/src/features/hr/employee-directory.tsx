@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { HREmployee, HREmployeeInput, HREmployeePage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { EmployeeAccessRequest } from "./employee-access-request";
+import { EmployeeEmploymentStatus } from "./employee-employment-status";
 import { EmployeeOperatorAccess } from "./employee-operator-access";
 import { EmployeeProfileEditor } from "./employee-profile-editor";
 
@@ -165,6 +166,7 @@ export function EmployeeDirectory() {
       <EmployeeProfileEditor key={selected.id} employee={selected} colleagues={items} onSaved={(next)=>{setSelected(next);setItems((list)=>list.map((person)=>person.id===next.id?next:person))}} />
       <EmployeeAccessRequest key={`${selected.id}-access`} employee={selected} />
       <EmployeeOperatorAccess key={`${selected.id}-operator-access`} employee={selected} />
+      <EmployeeEmploymentStatus key={`${selected.id}-employment-status`} employee={selected} onSaved={(next)=>{setSelected(next);setItems((list)=>list.map((person)=>person.id===next.id?next:person));}} />
     </section> : null}
   </section>;
 }

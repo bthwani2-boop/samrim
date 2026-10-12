@@ -207,6 +207,16 @@ func read(ctx context.Context, db rowQueryer, id string) (Employee, error) {
 	}
 	return result, err
 }
+func ReadByOperatorActor(ctx context.Context, db *sql.DB, actorID string) (Employee, error) {
+	if db == nil || !strings.HasPrefix(actorID, "act_") || len(actorID) > 128 {
+		return Employee{}, ErrInvalid
+	}
+	result, err := scan(db.QueryRowContext(ctx, "SELECT "+employeeColumns+" FROM dsh.hr_employees WHERE operator_actor_id=$1", actorID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Employee{}, ErrNotFound
+	}
+	return result, err
+}
 func Read(ctx context.Context, db *sql.DB, id string) (Employee, error) {
 	if db == nil || !strings.HasPrefix(id, "emp_") || len(id) != 36 {
 		return Employee{}, ErrInvalid

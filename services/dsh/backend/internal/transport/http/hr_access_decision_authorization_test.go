@@ -72,7 +72,15 @@ func TestHRDecisionMutationsRequireIdentityAuthorizedInitialOperator(t *testing.
 	if res.Code != http.StatusForbidden {
 		t.Fatalf("profile-provenance lookup by HR-only actor: got %d, want 403", res.Code)
 	}
-	if calls.Load() != 5 {
-		t.Fatalf("Root authority checks=%d, expected 5", calls.Load())
+	lookup := httptest.NewRequest("GET", "/dsh/hr/employees/by-actor/act_existing", nil)
+	lookup.Header.Set("Authorization", "Bearer "+token)
+	lookup.Header.Set("X-Acting-Actor-ID", "act_hr_only")
+	lookupResponse := httptest.NewRecorder()
+	mux.ServeHTTP(lookupResponse, lookup)
+	if lookupResponse.Code != http.StatusForbidden {
+		t.Fatalf("employee-by-actor lookup by HR-only actor: got %d, want 403", lookupResponse.Code)
+	}
+	if calls.Load() != 6 {
+		t.Fatalf("Root authority checks=%d, expected 6", calls.Load())
 	}
 }

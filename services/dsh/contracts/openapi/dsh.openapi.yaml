@@ -436,6 +436,12 @@ paths:
   /dsh/hr/employees:
     $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees"
 
+  /dsh/hr/employees/by-actor/{actorId}:
+    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees~1by-actor~1{actorId}"
+
+  /dsh/hr/employees/{employeeId}/employment-status:
+    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees~1{employeeId}~1employment-status"
+
   /dsh/hr/employees/{employeeId}:
     $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees~1{employeeId}"
 
@@ -4874,6 +4880,31 @@ components:
       properties:
         employee:
           $ref: "#/components/schemas/HREmployee"
+
+    HREmploymentStatusInput:
+      type: object
+      additionalProperties: false
+      required: [status, reason, expectedVersion]
+      properties:
+        status:
+          type: string
+          enum: [active, inactive]
+        reason:
+          type: string
+          minLength: 8
+          maxLength: 500
+        expectedVersion:
+          type: integer
+          minimum: 1
+    HREmploymentStatusResponse:
+      type: object
+      additionalProperties: false
+      required: [employee, idempotentReplay]
+      properties:
+        employee:
+          $ref: "#/components/schemas/HREmployee"
+        idempotentReplay:
+          type: boolean
 
     HRUpdateEmployeeRequest:
       type: object

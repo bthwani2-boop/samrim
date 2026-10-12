@@ -72,3 +72,41 @@ paths:
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/hr/employees/{employeeId}/employment-status:
+    post:
+      operationId: setHREmployeeEmploymentStatus
+      summary: Audited HR employment change, distinct from optional operator access
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { name: employeeId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HREmploymentStatusInput" } }
+      responses:
+        "200": { description: Employee status changed or replayed., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HREmploymentStatusResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+
+  /dsh/hr/employees/by-actor/{actorId}:
+    get:
+      operationId: readHREmployeeByOperatorActor
+      summary: Root Owner resolves the canonical employee of an existing Identity actor
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { name: actorId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Linked employee, if any., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HREmployeeReadResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }

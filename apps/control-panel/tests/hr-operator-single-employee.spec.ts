@@ -41,7 +41,7 @@ test("the same employee retains HR status when Root disables operator access", a
   await expect(page.getByText(employee.fullNameAr).first()).toBeVisible();
   await page.getByRole("button", { name: "إدارة صلاحية تشغيل الموظف" }).click();
   await expect(page.getByText("وصول التشغيل مفعّل")).toBeVisible();
-  await page.getByLabel("سبب القرار").fill("إيقاف صلاحية تشغيل الموظف مؤقتًا للتحقق");
+  await page.getByLabel("سبب قرار صلاحية التشغيل").fill("إيقاف صلاحية تشغيل الموظف مؤقتًا للتحقق");
   await page.getByRole("button", { name: "إيقاف وصول التشغيل وإبطال الجلسات" }).click();
   await expect(page.getByText("وصول التشغيل موقوف")).toBeVisible();
   await expect(page.getByText("أوقف وصول التشغيل وأبطلت جلساته النشطة.", { exact: false })).toBeVisible();

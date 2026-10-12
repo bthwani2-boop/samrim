@@ -60,3 +60,17 @@ The HR employee detail page reads Identity to show actual role status; a linked
 actor ID alone must never be mistaken for currently enabled access.
 Employment separation and historical record retention are separate HR lifecycle
 work, not automatic consequences of removing an operational permission.
+
+### Employment lifecycle and safe operator offboarding
+
+Employment status is owned by HR; being an operator remains an optional Identity
+role of the same employee. A linked operator must be disabled in Identity and
+their sessions revoked before HR commits inactive status. Root Owner authorization
+is required for linked employees; HR operators may change non-operator employees'
+employment status. If Identity succeeds but HR is unavailable, the operator is
+already safely disabled and the same attributed HR operation can be retried using
+its idempotency key. Reopening employment does not restore operator access or
+revoked sessions automatically. An active manager with active direct reports cannot
+be marked inactive until those reports are reassigned. The audit retains the
+employment decision reason and before/after HR facts. No identity or HR record is
+deleted by this transition.

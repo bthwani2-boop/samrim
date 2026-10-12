@@ -77,6 +77,19 @@ export async function updateHREmployee(id: string, input: HRUpdateEmployeeInput,
  });
  return response.payload;
 }
+export async function readHREmployeeByOperatorActor(actorId:string,context:DshOperatorReadContext):Promise<Readonly<{employee:HREmployee}>> {
+ return (await requestDshJson<Readonly<{employee:HREmployee}>>("GET",
+  `/dsh/hr/employees/by-actor/${encodeURIComponent(actorId)}`,undefined,
+  {"X-Acting-Actor-ID":context.operatorActorId})).payload;
+}
+export type HREmploymentStatusInput = Readonly<{status:"active"|"inactive";reason:string;expectedVersion:number}>;
+export async function setHREmploymentStatus(id:string,input:HREmploymentStatusInput,context:JoiningCaseMutationContext):Promise<Readonly<{employee:HREmployee;idempotentReplay:boolean}>> {
+ validateAttributedMutationContext(context);
+ const response=await requestDshJson<Readonly<{employee:HREmployee;idempotentReplay:boolean}>>("POST",
+  `/dsh/hr/employees/${encodeURIComponent(id)}/employment-status`,input,
+  {"X-Acting-Actor-ID":context.operatorActorId,"X-Correlation-ID":context.correlationId,"Idempotency-Key":context.idempotencyKey});
+ return response.payload;
+}
 export type HRAccessRequest = DshHRAccessRequest;
 export type HRAccessRequestInput = DshHRAccessRequestInput;
 export type HRAccessRequestPage = DshHRAccessRequestPage;
