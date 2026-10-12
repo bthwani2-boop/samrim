@@ -58,3 +58,22 @@ test("operations restores bounded pages and retains the first-page recovery when
   await expect(page.getByRole("cell", { name: "متجر الصفحة الأولى", exact: true })).toBeVisible();
   expect(requests.every((url) => url.searchParams.get("limit") === "50" && url.searchParams.get("q") === "متجر" && url.searchParams.get("actionableOnly") === "true" && url.searchParams.get("sort") === "updated_asc")).toBe(true);
 });
+
+test("operation detail links retain the current page and resubmitting the same search resets it", async ({ page }) => {
+  await session(page);
+  await page.route("**/api/operations?**", (route) => {
+    const next = new URL(route.request().url()).searchParams.has("cursor");
+    return route.fulfill({ json: { operations: [{ orderId: next ? "second-order" : "first-order", storeName: next ? "متجر الصفحة الثانية" : "متجر الصفحة الأولى", state: "READY_FOR_DISPATCH", updatedAt: "2026-10-12T00:00:00Z", assignment: null }], nextCursor: next ? "" : "second-page" } });
+  });
+  await page.goto("/operations?lane=attention&q=متجر&sort=updated_asc");
+  await page.getByRole("navigation", { name: "صفحات الطلبات" }).getByRole("button", { name: "التالي", exact: true }).click();
+  await expect(page.getByRole("cell", { name: "متجر الصفحة الثانية", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "فتح الطلب", exact: true })).toHaveAttribute("href", /cursor=second-page/);
+  await page.getByRole("button", { name: "بحث", exact: true }).click();
+  await expect(page.getByRole("cell", { name: "متجر الصفحة الأولى", exact: true })).toBeVisible();
+  const query = new URL(page.url()).searchParams;
+  expect(query.has("cursor")).toBe(false);
+  expect(query.get("q")).toBe("متجر");
+  expect(query.get("lane")).toBe("attention");
+  expect(query.get("sort")).toBe("updated_asc");
+});

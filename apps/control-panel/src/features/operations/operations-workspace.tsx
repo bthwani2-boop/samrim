@@ -63,6 +63,7 @@ export function OperationsWorkspace() {
   useEffect(() => setSearch(searchFromUrl), [searchFromUrl]);
 
   const navigate = useCallback((changes: Readonly<{ lane?: LaneId; sub?: string; q?: string; sort?: string }>) => {
+    cursorPage.reset();
     const next = new URLSearchParams(queryString);
     if (changes.lane) next.set("lane", changes.lane);
     if (changes.sub) next.set("sub", changes.sub);
@@ -78,7 +79,7 @@ export function OperationsWorkspace() {
     next.delete("cursor");
     const serialized = next.toString();
     router.push(pathname + (serialized ? `?${serialized}` : ""), { scroll: false });
-  }, [pathname, queryString, router]);
+  }, [cursorPage.reset, pathname, queryString, router]);
 
   const viewHref = useCallback((nextLane: LaneId, nextSub?: string) => {
     const next = new URLSearchParams(queryString);
@@ -92,11 +93,12 @@ export function OperationsWorkspace() {
 
   const orderHref = useCallback((id: string) => {
     const next = new URLSearchParams(queryString);
+    if (cursor) next.set("cursor", cursor); else next.delete("cursor");
     next.set("tab", "overview");
     const serialized = next.toString();
     const base = `/operations/${encodeURIComponent(id)}`;
     return serialized ? `${base}?${serialized}` : base;
-  }, [queryString]);
+  }, [cursor, queryString]);
 
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
