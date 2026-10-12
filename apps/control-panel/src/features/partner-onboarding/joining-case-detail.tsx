@@ -331,6 +331,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
             {current.state === "needs_correction" ? <p>الحالة بانتظار تصحيح بيانات الشريك عبر المسار القانوني المتاح.</p> : null}
             {current.state === "approved" ? <>
               <p>معتمد بشروطه المثبتة؛ تغيير السياسة لا يعدّل هذا الملف.</p>
+              <p>الخطوة التالية لصاحب المتجر: يفتح تطبيق الشريك برقم الجوال المسجّل. عند أول تفعيل يختار «أول دخول»؛ وإن سبق تفعيل الحساب يسجّل الدخول أو يستعيد كلمة المرور. لا يحتاج إلى دعوة وصول من تطبيق الميدان، ولا يعني الاعتماد نشر المتجر للعملاء.</p>
               {current.financialProfileState === "REQUIRED" ? <>
                 <p className="managed-status managed-status-warning" role="status">{activeTermsPolicy ? "ستُربط شروط التسوية بهذه الحالة العالقة." : policyReadMessage || "يلزم وجود سياسة مالية نشطة وصلاحية المالية."}</p>
                 {!activeTermsPolicy ? <><Link className="button button-secondary" href="/policies/partner-financial-terms">فتح سياسة الشريك المالية</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة السياسة النشطة</button></> : null}
