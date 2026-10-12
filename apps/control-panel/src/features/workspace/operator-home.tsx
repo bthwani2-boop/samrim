@@ -39,7 +39,7 @@ export function OperatorHome() {
       { key: "notifications", url: "/api/notifications?limit=50" },
     ] as const;
     const results = await Promise.allSettled(requests.map(async ({ key, url }) => {
-      const response = await fetch(url, { cache: "no-store" });
+      const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
       if (!response.ok) throw new Error(await responseMessage(response));
       return { key, body: await response.json() as unknown };
     }));
@@ -57,18 +57,18 @@ export function OperatorHome() {
         if (key === "notifications") setUnreadTotal(null);
         return;
       }
-      if (key === "operations") setOperations((body as { operations?: ReadonlyArray<OperatorOperationListItem> }).operations ?? []);
-      else if (key === "joiningCases") setJoiningCases((body as { cases?: ReadonlyArray<JoiningCaseSummary> }).cases ?? []);
-      else if (key === "joiningAdmissions") setJoiningAdmissions((body as { cases?: ReadonlyArray<JoiningCaseSummary> }).cases ?? []);
-      else if (key === "proposals") setProposals((body as { proposals?: ReadonlyArray<CatalogProductProposal> }).proposals ?? []);
+      const collectionKey = key === "operations" ? "operations" : key === "proposals" ? "proposals" : key === "notifications" ? "notifications" : "cases";
+      if (!Array.isArray((body as Record<string, unknown>)[collectionKey])) {
+        nextErrors[key] = "استجابة قائمة العمل غير صالحة.";
+        if (key === "notifications") { setUnreadNotifications([]); setUnreadTotal(null); }
+        return;
+      }
+      if (key === "operations") setOperations((body as { operations: ReadonlyArray<OperatorOperationListItem> }).operations);
+      else if (key === "joiningCases") setJoiningCases((body as { cases: ReadonlyArray<JoiningCaseSummary> }).cases);
+      else if (key === "joiningAdmissions") setJoiningAdmissions((body as { cases: ReadonlyArray<JoiningCaseSummary> }).cases);
+      else if (key === "proposals") setProposals((body as { proposals: ReadonlyArray<CatalogProductProposal> }).proposals);
       else if (key === "notifications") {
-        const payload = body as { notifications?: ReadonlyArray<Notification>; unreadCount?: unknown };
-        if (!Array.isArray(payload.notifications)) {
-          nextErrors.notifications = "استجابة الإشعارات غير صالحة.";
-          setUnreadNotifications([]);
-          setUnreadTotal(null);
-          return;
-        }
+        const payload = body as { notifications: ReadonlyArray<Notification>; unreadCount?: unknown };
         setUnreadNotifications(payload.notifications.filter((item) => !item.readAt).slice(0, 4));
         setUnreadTotal(typeof payload.unreadCount === "number" && Number.isSafeInteger(payload.unreadCount) && payload.unreadCount >= 0 ? payload.unreadCount : null);
       }
