@@ -70,6 +70,7 @@ export function FieldCases() {
   const [storeImage, setStoreImage] = useState<StoreImageDraft | null>(null);
   const [pendingImageAttempt, setPendingImageAttempt] = useState<PendingStoreImageAttempt | null>(null);
   const [caseToSubmit, setCaseToSubmit] = useState<JoiningCaseSummary | null>(null);
+  const [agreementCaseID, setAgreementCaseID] = useState<string | null>(null);
   const pagination = useRef<FieldCasePagination>({ sequence: 0, query: routeQuery.trim(), cursor: "", loadingMore: false });
 
   useEffect(() => {
@@ -380,7 +381,8 @@ export function FieldCases() {
       {item.state === "needs_correction" && item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}
       <Text style={styles.muted}>{nextStepText}</Text>
       {item.state === "approved" ? <>
-        <FieldCommercialAgreement caseID={item.id} />
+        <BthwaniButton disabled={Boolean(busy)} label={agreementCaseID === item.id ? "إخفاء اتفاقية عمولة المتجر" : "عرض اتفاقية عمولة المتجر"} onPress={() => setAgreementCaseID((current) => current === item.id ? null : item.id)} variant="secondary" />
+        {agreementCaseID === item.id ? <FieldCommercialAgreement caseID={item.id} /> : null}
         <BthwaniButton disabled={Boolean(busy)} label="إعداد كتالوج المتجر الأولي" onPress={() => router.push(`/(app)/catalog/${encodeURIComponent(item.id)}` as Href)} variant="secondary" />
       </> : null}
       {item.state === "draft" ? <View style={styles.optionList}>
