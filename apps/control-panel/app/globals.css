@@ -161,6 +161,7 @@
   .workspace-main :is(th,td):has(> input[type="checkbox"]) { min-inline-size: 42px; inline-size: 42px; }
   .workspace-main td .field-label { min-inline-size: 150px; }
   .pagination, .partner-registry-pagination, .joining-case-pagination, .cash-custody-pagination, .operator-notification-pagination, .catalog-import-store-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: 10px; padding-block: 12px; font-size: 13px; }
+  .store-registry-name { flex-wrap: nowrap; min-inline-size: 160px; }
   .workspace-tabs, .detail-tabs, .workspace-route-tabs, .order-detail-tabs, .partner-detail-tabs, .joining-case-status-nav, .operations-sub-lanes, .access-view-nav { display: flex; gap: 4px; overflow-x: auto; min-inline-size: 0; border-block-end: 1px solid var(--border-subtle); padding-block-end: 4px; }
   .workspace-tab, .workspace-route-tab, .order-detail-tab, .joining-case-status-tab, .operations-sub-lane, .access-view-nav > :is(a,button) { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; min-block-size: 40px; padding: 8px 14px; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 13px; font-weight: 600; }
   :is(.workspace-tab,.workspace-route-tab,.order-detail-tab,.joining-case-status-tab,.operations-sub-lane).is-active, .access-view-nav [aria-current] { background: var(--surface-base); color: var(--interactive-text); box-shadow: inset 0 -2px var(--action-bg); }

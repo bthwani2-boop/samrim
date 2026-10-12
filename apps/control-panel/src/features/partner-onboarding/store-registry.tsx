@@ -4,11 +4,13 @@ import { PageHeader } from "../../shell/page-header";
 
 import { type OperatorStoreSummary, fulfillmentModeLabel, publicationStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
+import { StoreInspector } from "./store-inspector";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 import { downloadRegistryCsv } from "./registry-csv";
 type StorePage = Readonly<{ stores: ReadonlyArray<OperatorStoreSummary>; nextCursor?: string }>;
-type StoreHistory = Readonly<{ partnerStoreCursors?: ReadonlyArray<string> }>;
 const pageSize = 10;
 const publicationFilters = [
   { value: "", label: "كل حالات النشر" },
@@ -19,56 +21,60 @@ const publicationFilters = [
 
 export function StoreRegistry() {
   const [stores, setStores] = useState<ReadonlyArray<OperatorStoreSummary>>([]);
-  const [filter, setFilter] = useState("");
-  const [search, setSearch] = useState("");
-  const [appliedSearch, setAppliedSearch] = useState("");
-  const [sort, setSort] = useState("updated_desc");
-  const [cursor, setCursor] = useState("");
-  const [cursorStack, setCursorStack] = useState<ReadonlyArray<string>>([]);
+  const router = useRouter();
+  const pathname = usePathname();
+  const queryString = useSearchParams().toString();
+  const params = new URLSearchParams(queryString);
+  const requestedState = params.get("state") ?? "";
+  const filter = publicationFilters.some((option) => option.value === requestedState) ? requestedState : "";
+  const appliedSearch = (params.get("q") ?? "").trim().slice(0, 128);
+  const sort = params.get("sort") === "updated_asc" ? "updated_asc" : "updated_desc";
+  const inspectId = (params.get("inspect") ?? "").slice(0, 128);
+  const [search, setSearch] = useState(appliedSearch);
+  const cursorPage = useCursorPage("cursor", JSON.stringify([filter, appliedSearch, sort]));
+  const cursor = cursorPage.cursor;
+  const inspectorOrigin = useRef<HTMLElement | null>(null);
   const [nextCursor, setNextCursor] = useState("");
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
-  const [urlReady, setUrlReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const requestSequence = useRef(0);
 
-  const syncFromUrl = useCallback(() => {
-    const params = new URLSearchParams(window.location.search);
-    const requestedState = params.get("state") ?? "";
-    const requestedSearch = params.get("q")?.trim().slice(0, 128) ?? "";
-    setFilter(publicationFilters.some((option) => option.value === requestedState) ? requestedState : "");
-    setSearch(requestedSearch);
-    setAppliedSearch(requestedSearch);
-    setSort(params.get("sort") === "updated_asc" ? "updated_asc" : "updated_desc");
-    setCursor(params.get("cursor") ?? "");
-    const state = window.history.state as StoreHistory | null;
-    setCursorStack(state?.partnerStoreCursors ?? []);
-    setSelectedIds(new Set());
-  }, []);
+  useEffect(() => setSearch(appliedSearch), [appliedSearch]);
 
-  useEffect(() => {
-    syncFromUrl();
-    setUrlReady(true);
-    window.addEventListener("popstate", syncFromUrl);
-    return () => window.removeEventListener("popstate", syncFromUrl);
-  }, [syncFromUrl]);
-
-  const navigate = useCallback((state: string, queryText: string, nextSort: string, pageCursor = "", pageCursors: ReadonlyArray<string> = []) => {
-    const params = new URLSearchParams(window.location.search);
-    if (state) params.set("state", state); else params.delete("state");
-    if (queryText) params.set("q", queryText); else params.delete("q");
-    if (nextSort !== "updated_desc") params.set("sort", nextSort); else params.delete("sort");
-    if (pageCursor) params.set("cursor", pageCursor); else params.delete("cursor");
-    const query = params.toString();
-    window.history.pushState({ partnerStoreCursors: pageCursors }, "", window.location.pathname + (query ? `?${query}` : ""));
-    setFilter(state);
-    setSearch(queryText);
-    setAppliedSearch(queryText);
-    setSort(nextSort);
-    setCursor(pageCursor);
-    setCursorStack(pageCursors);
+  const navigate = useCallback((state: string, queryText: string, nextSort: string) => {
+    cursorPage.reset();
+    const next = new URLSearchParams(window.location.search);
+    if (state) next.set("state", state); else next.delete("state");
+    if (queryText) next.set("q", queryText); else next.delete("q");
+    if (nextSort !== "updated_desc") next.set("sort", nextSort); else next.delete("sort");
+    next.delete("cursor"); next.delete("inspect");
+    router.push(`${pathname}${next.size ? `?${next}` : ""}`, { scroll: false });
     setSelectedIds(new Set());
-  }, []);
+  }, [cursorPage.reset, pathname, router]);
+
+  function storeHref(id: string) {
+    const next = new URLSearchParams(queryString);
+    if (cursor) next.set("cursor", cursor); else next.delete("cursor");
+    next.set("inspect", id);
+    return `/partners/stores/${encodeURIComponent(id)}?${next}`;
+  }
+
+  function inspectStore(id: string) {
+    inspectorOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const next = new URLSearchParams(window.location.search); next.set("inspect", id);
+    router.push(`${pathname}?${next}`, { scroll: false });
+  }
+
+  function closeInspector() {
+    const id = inspectId;
+    const next = new URLSearchParams(window.location.search); next.delete("inspect");
+    router.replace(`${pathname}${next.size ? `?${next}` : ""}`, { scroll: false });
+    requestAnimationFrame(() => {
+      const trigger = inspectorOrigin.current?.isConnected ? inspectorOrigin.current : document.getElementById(`store-inspection-${id}`);
+      (trigger ?? document.getElementById("partner-store-search"))?.focus();
+    });
+  }
 
   const load = useCallback(async () => {
     const sequence = ++requestSequence.current;
@@ -80,11 +86,12 @@ export function StoreRegistry() {
       if (appliedSearch) params.set("q", appliedSearch);
       if (sort !== "updated_desc") params.set("sort", sort);
       if (cursor) params.set("cursor", cursor);
-      const response = await fetch(`/api/partners/stores?${params.toString()}`, { cache: "no-store" });
+      const response = await fetch(`/api/partners/stores?${params.toString()}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
       if (sequence !== requestSequence.current) return;
       if (!response.ok) throw new Error(await partnerErrorMessage(response));
       const page = await response.json() as StorePage;
       if (sequence !== requestSequence.current) return;
+      if (!Array.isArray(page?.stores) || (page.nextCursor !== undefined && typeof page.nextCursor !== "string")) throw new Error("استجابة سجل المتاجر غير صالحة. أعد القراءة.");
       setStores(page.stores);
       setNextCursor(page.nextCursor ?? "");
       setSelectedIds(new Set());
@@ -116,12 +123,15 @@ export function StoreRegistry() {
   }
 
   useEffect(() => {
-    if (urlReady) void load();
-  }, [load, urlReady]);
+    if (cursorPage.ready) void load();
+    return () => { requestSequence.current += 1; };
+  }, [load, cursorPage.ready]);
 
   return (
     <section className="workspace-page store-registry" aria-labelledby="store-registry-title">
       <PageHeader id="store-registry-title" title="المتاجر" actions={!loading && stores.length === 0 ? <Link className="button button-secondary" href="/catalog/trash">سلة المحذوفات</Link> : null} />
+
+      {inspectId ? <StoreInspector key={inspectId} storeId={inspectId} detailHref={storeHref(inspectId)} onClose={closeInspector} /> : null}
 
       <div className="workspace-toolbar store-registry-toolbar">
         <search className="store-registry-search" aria-label="البحث في المتاجر">
@@ -152,7 +162,7 @@ export function StoreRegistry() {
           <thead><tr><th scope="col"><span className="visually-hidden">تحديد</span><input aria-label={allSelected ? "إلغاء تحديد كل المتاجر" : "تحديد كل المتاجر في الصفحة"} type="checkbox" checked={allSelected} onChange={(event) => setSelectedIds(event.target.checked ? new Set(stores.map((store) => store.id)) : new Set())} /></th><th scope="col">المتجر</th><th scope="col">الشريك</th><th scope="col">مدينة الخدمة</th><th scope="col">النشاط الرئيسي</th><th scope="col">النشر</th><th scope="col">أوضاع الطلب</th><th scope="col">آخر تحديث</th></tr></thead>
           <tbody>{stores.map((store) => <tr key={store.id}>
             <td><input type="checkbox" aria-label={`تحديد متجر ${store.name}`} checked={selectedIds.has(store.id)} onChange={() => toggleSelected(store.id)} /></td>
-            <th scope="row"><Link href={`/partners/stores/${encodeURIComponent(store.id)}`}>{store.name}</Link></th>
+            <th scope="row"><div className="action-row store-registry-name"><Link href={storeHref(store.id)}>{store.name}</Link><button id={`store-inspection-${store.id}`} className="button button-quiet" type="button" aria-label={`معاينة متجر ${store.name}`} onClick={() => inspectStore(store.id)}>معاينة</button></div></th>
             <td><Link href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}>{store.partnerName || "ملف الشريك"}</Link></td>
             <td>{store.serviceCityName || "غير محددة"}</td>
             <td>{store.primaryVerticalName || "غير محددة"}</td>
@@ -161,8 +171,9 @@ export function StoreRegistry() {
             <td><time dateTime={store.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.updatedAt))}</time></td>
           </tr>)}</tbody>
         </table></div>
-        <nav className="partner-registry-pagination" aria-label="صفحات سجل المتاجر"><button type="button" className="button button-secondary" disabled={loading || cursorStack.length === 0} onClick={() => navigate(filter, appliedSearch, sort, cursorStack.at(-1) ?? "", cursorStack.slice(0, -1))}>السابق</button><span>{cursorStack.length + 1}</span><button type="button" className="button button-secondary" disabled={loading || !nextCursor} onClick={() => navigate(filter, appliedSearch, sort, nextCursor, [...cursorStack, cursor])}>التالي</button></nav>
+
       </> : null}
+      <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading} label="صفحات سجل المتاجر" />
     </section>
   );
 }

@@ -595,7 +595,7 @@ export function CentralCatalog() {
             <button type="button" className="button button-quiet" aria-pressed={viewMode === "gallery"} onClick={() => changeView("gallery")}>معرض الصور</button>
           </fieldset>
           <div className="catalog-selection-bar" aria-live="polite"><span>{selectionSummary}</span>{selectedIds.size ? <button type="button" className="button button-quiet" onClick={() => setSelectedIds(new Set())}>إلغاء التحديد</button> : null}</div>
-          {!loading && !error ? <div className="catalog-selection-bar" aria-live="polite"><span>إجمالي المنتجات المطابقة للفلاتر: {registrySummary ? registrySummary.totalCount.toLocaleString("ar-YE") : "غير متاح"}</span>{registrySummary ? <small>المصدر: DSH · لقطة حالية عند <time dateTime={registrySummary.measuredAt}>{new Date(registrySummary.measuredAt).toLocaleString("ar-YE", { timeZone: "UTC" })}</time> UTC</small> : null}</div> : null}
+          {!loading && !error ? <div className="catalog-selection-bar" aria-live="polite"><span>إجمالي المنتجات المطابقة للفلاتر: {registrySummary ? registrySummary.totalCount.toLocaleString("ar-YE") : "غير متاح"}</span>{registrySummary ? <small>المصدر: الكتالوج المركزي · لقطة حالية عند <time dateTime={registrySummary.measuredAt}>{new Date(registrySummary.measuredAt).toLocaleString("ar-YE", { timeZone: "UTC" })}</time> UTC</small> : null}</div> : null}
         </div>
         {viewMode === "table" ? <div className="catalog-registry-table-wrap">
           <table className="catalog-registry-table">

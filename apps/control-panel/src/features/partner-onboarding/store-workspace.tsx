@@ -5,6 +5,7 @@ import { TextArea } from "@bthwani/design-system/web";
 
 import { publicationReadinessBlockedReasonLabel, publicationStateLabel, type CommercialStoreType, type CommercialStoreTypeListResponse, type SetStoreCommercialTypeResponse, type StoreFulfillmentMode, type StoreFulfillmentModesResponse, type StorePublicationResponse } from "@bthwani/dsh";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 import { partnerMutationHeaders } from "./partner-request";
@@ -22,6 +23,13 @@ async function readCommercialStoreTypes(verticalId?: string | null): Promise<Rea
 }
 
 export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
+  const searchParams = useSearchParams();
+  const registryParams = new URLSearchParams();
+  for (const key of ["state", "q", "sort", "cursor", "inspect"]) {
+    const value = searchParams.get(key);
+    if (value) registryParams.set(key, value);
+  }
+  const registryHref = `/partners/stores${registryParams.size ? `?${registryParams}` : ""}`;
   const [publication, setPublication] = useState<StorePublicationResponse | null>(null);
   const [selectedModes, setSelectedModes] = useState<ReadonlyArray<StoreFulfillmentMode>>([]);
   const [commercialTypes, setCommercialTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
@@ -195,7 +203,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
   const store = publication?.store;
   return (
     <section className="workspace-page store-workspace" aria-labelledby="store-workspace-title">
-      <PageHeader id="store-workspace-title" title={store?.name ?? "ملف المتجر"} actions={<Link className="button button-secondary" href="/partners/stores">سجل المتاجر</Link>} />
+      <PageHeader id="store-workspace-title" title={store?.name ?? "ملف المتجر"} actions={<Link className="button button-secondary" href={registryHref}>سجل المتاجر</Link>} />
 
       {loading ? <output className="collection-state"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة الملف المعتمد </strong></output> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readStore()}>إعادة قراءة المتجر</button></div> : null}

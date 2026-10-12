@@ -71,6 +71,7 @@
 - Unsaved-changes behavior: Preserve entered values and guard only flows that can actually lose user work.
 - Product editing recovery: A failed detail read remains a retryable read rather than a creation form. Version conflicts retain the draft and selected upload; explicitly loading the current version discards them. Unchanged save/upload retries retain their idempotency key. Upload success updates canonical media/version without replacing unsaved product fields; save success follows a fresh detail read.
 - Product image review: The optional gallery and default table use the same registry query. Review uses the selected product's canonical media order in a native modal dialog, with image navigation, load failure/retry, bounded viewport, keyboard isolation, Escape and trigger focus restoration.
+- Store inspection: The registry opens a read-only, nonmodal region on demand from the existing publication/readiness owner. Loading, forbidden, invalid response and retry remain distinct from readiness. Escape/close restores the originating control. The shared cursor pagination and whitelisted query context preserve search, publication filter, sort, page and selected inspection across reload and the full store file return; no alternate publication writer is introduced.
 - Layer/z-index contract: Drawer/overlay above shell; account menu below modal overlays; tokens come from the shared z-index scale.
 
 ## Async and resilience
