@@ -3,6 +3,7 @@ package transporthttp
 import (
 	"database/sql"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -422,10 +423,10 @@ func (s *FieldServer) readJoiningCase(w http.ResponseWriter, r *http.Request) {
 	if result.Case.Store != nil {
 		value, err := s.publication.ReadinessForStore(r.Context(), *result.Case.Store)
 		if err != nil {
-			writeStorePublicationError(w, err)
-			return
+			log.Printf("Field Store publication readiness unavailable: %v", err)
 		}
-		readiness = &value
+		resolved := fieldStoreReadiness(value, err)
+		readiness = &resolved
 	}
 	writeJSON(w, http.StatusOK, contract.JoiningCaseResponse{Case: toFieldJoiningCaseView(result, readiness), IdempotentReplay: result.Replayed})
 }
@@ -480,6 +481,15 @@ func authorizedFieldSession(w http.ResponseWriter, r *http.Request) bool {
 	}
 	writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
 	return false
+}
+
+// Store readiness is advisory in the Field joining-case read. A downstream
+// readiness outage must not hide the canonical approved Store or imply readiness.
+func fieldStoreReadiness(value storepublication.PublicationReadiness, err error) storepublication.PublicationReadiness {
+	if err != nil {
+		return storepublication.PublicationReadiness{BlockedReason: "READINESS_UNAVAILABLE"}
+	}
+	return value
 }
 
 func toFieldJoiningCaseView(result postgres.JoiningCaseResult, readiness *storepublication.PublicationReadiness) contract.JoiningCaseView {

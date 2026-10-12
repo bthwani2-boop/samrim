@@ -1,6 +1,7 @@
 package transporthttp
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -31,6 +32,13 @@ func TestFieldJoiningCaseViewIncludesCanonicalStoreWhenReadinessIsKnown(t *testi
 	}
 	if view.Store.PublicationReadiness.Ready || view.Store.PublicationReadiness.BlockedReason != "CATALOG_NOT_READY" {
 		t.Fatalf("readiness must match the owner evaluation: %+v", view.Store.PublicationReadiness)
+	}
+	degraded := fieldStoreReadiness(storepublication.PublicationReadiness{Ready: true}, errors.New("readiness dependency unavailable"))
+	if degraded.Ready || degraded.BlockedReason != "READINESS_UNAVAILABLE" {
+		t.Fatalf("readiness outage must fail closed without pretending the Store is not owned: %+v", degraded)
+	}
+	if retained := toFieldJoiningCaseView(result, &degraded); retained.Store == nil || retained.Store.ID != "store-approved" || retained.Store.PublicationReadiness.Ready || retained.Store.PublicationReadiness.BlockedReason != "READINESS_UNAVAILABLE" {
+		t.Fatalf("readiness outage must preserve canonical Store with explicit unknown readiness: %+v", retained.Store)
 	}
 	if noReadiness := toFieldJoiningCaseView(result, nil); noReadiness.Store != nil {
 		t.Fatal("store readiness must not be fabricated for other response paths")
