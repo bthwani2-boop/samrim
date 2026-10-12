@@ -35,7 +35,10 @@ func (s *Service) CreateOperatorProfile(ctx context.Context, caller, actingActor
 	caller, actingActorID = strings.ToLower(strings.TrimSpace(caller)), strings.TrimSpace(actingActorID)
 	input.FullNameAr = strings.TrimSpace(input.FullNameAr)
 	input.JobTitle, input.Department = strings.TrimSpace(input.JobTitle), strings.TrimSpace(input.Department)
-	if caller != "control-panel" || actingActorID == "" || !operatorProfileMutationValid(correlationID, idempotencyKey) || utf8.RuneCountInString(input.FullNameAr) < 2 || utf8.RuneCountInString(input.FullNameAr) > 120 || !validOperatorDetails(input.JobTitle, input.Department) {
+	if caller != "dsh" {
+		return domain.OperatorProfileResponse{}, domain.ErrForbidden
+	}
+	if actingActorID == "" || !operatorProfileMutationValid(correlationID, idempotencyKey) || utf8.RuneCountInString(input.FullNameAr) < 2 || utf8.RuneCountInString(input.FullNameAr) > 120 || !validOperatorDetails(input.JobTitle, input.Department) {
 		return domain.OperatorProfileResponse{}, domain.ErrInvalidInput
 	}
 	phone, err := identitysecurity.NormalizePhoneE164(input.PhoneE164)

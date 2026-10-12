@@ -34,7 +34,7 @@ paths:
       tags: [internal-actor-roles]
       operationId: createOperatorProfile
       security: [{ internalServiceToken: [] }]
-      description: Creates an Identity-owned operator candidate profile only. No actor or role is created until an authorized reviewer approves and grants the role.
+      description: DSH-only HR-provenance operation. The DSH service authenticates the Root Owner and verifies a claimed HR employee request before creation. Control Panel internal service calls cannot create profiles directly.
       parameters:
         - { $ref: "#/components/parameters/ControlPanelActingActorId" }
         - { $ref: "#/components/parameters/CorrelationId" }

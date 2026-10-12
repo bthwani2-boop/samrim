@@ -49,7 +49,7 @@ func TestHRDecisionMutationsRequireIdentityAuthorizedInitialOperator(t *testing.
 	}
 	mux := http.NewServeMux()
 	server.Register(mux)
-	for _, action := range []string{"reject", "provision", "link", "admit"} {
+	for _, action := range []string{"reject", "create-profile", "admit"} {
 		t.Run(action, func(t *testing.T) {
 			req := httptest.NewRequest("POST", "/dsh/hr/access-requests/hreq_00000000000000000000000000000000/"+action,
 				strings.NewReader("{\"expectedVersion\":1,\"reason\":\"Incorrect request\"}"))
@@ -80,7 +80,16 @@ func TestHRDecisionMutationsRequireIdentityAuthorizedInitialOperator(t *testing.
 	if lookupResponse.Code != http.StatusForbidden {
 		t.Fatalf("employee-by-actor lookup by HR-only actor: got %d, want 403", lookupResponse.Code)
 	}
-	if calls.Load() != 6 {
-		t.Fatalf("Root authority checks=%d, expected 6", calls.Load())
+	for _, removed := range []string{"provision", "link"} {
+		request := httptest.NewRequest("POST", "/dsh/hr/access-requests/hreq_00000000000000000000000000000000/"+removed, nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		result := httptest.NewRecorder()
+		mux.ServeHTTP(result, request)
+		if result.Code != http.StatusNotFound {
+			t.Fatalf("removed parallel %s route responded %d instead of 404", removed, result.Code)
+		}
+	}
+	if calls.Load() != 5 {
+		t.Fatalf("Root authority checks=%d, expected 5", calls.Load())
 	}
 }

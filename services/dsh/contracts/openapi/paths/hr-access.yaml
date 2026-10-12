@@ -45,25 +45,22 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
-  /dsh/hr/access-requests/{requestId}/link:
+  /dsh/hr/access-requests/{requestId}/create-profile:
     post:
-      operationId: linkHRAccessRequest
-      summary: Root Owner links an Identity profile after independently-authorized Identity creation
+      operationId: createHRIdentityProfile
+      summary: Root Owner provisions an Identity profile only through its canonical HR access request
       security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
         - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
         - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
         - { name: requestId, in: path, required: true, schema: { type: string } }
-      requestBody:
-        required: true
-        content:
-          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HRAccessLinkInput" } }
       responses:
-        "200": { description: Identity profile linked., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HRAccessRequestMutationResponse" } } } }
+        "200": { description: Canonical HR and Identity profile readback or idempotent retry., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HRIdentityProfileCreationResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
   /dsh/hr/access-requests/{requestId}/reject:
     post:
@@ -86,28 +83,6 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
-  /dsh/hr/access-requests/{requestId}/provision:
-    post:
-      operationId: provisionHRAccessRequest
-      summary: Initial Operator decision, serialized before Identity provisioning
-      security: [{ serviceBearer: [] }]
-      parameters:
-        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
-        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
-        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
-        - { name: requestId, in: path, required: true, schema: { type: string } }
-      requestBody:
-        required: true
-        content:
-          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HRAccessDecisionInput" } }
-      responses:
-        "200": { description: Decision recorded or idempotently replayed, content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HRAccessRequestMutationResponse" } } } }
-        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
-        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
-        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
-        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
-        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
-
   /dsh/hr/access-requests/by-profile/{profileId}:
     get:
       operationId: readHRAccessRequestByProfile

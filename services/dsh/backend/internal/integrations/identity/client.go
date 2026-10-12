@@ -131,6 +131,9 @@ func (c *Client) ReadActorRoles(ctx context.Context, role string, actorIDs []str
 func (c *Client) RequireOperatorProfileAdministrator(ctx context.Context, actingActorID string) error {
 	return c.inner.RequireOperatorProfileAdministrator(ctx, actingActorID)
 }
+func (c *Client) CreateOperatorProfileForHR(ctx context.Context, actingActorID string, input identityclient.OperatorProfileCreateRequest, correlationID, idempotencyKey string) (identityclient.OperatorProfileResponse, error) {
+	return c.inner.CreateOperatorProfileForHR(ctx, actingActorID, input, correlationID, idempotencyKey)
+}
 func (c *Client) ReadOperatorProfileForAdministrator(ctx context.Context, actingActorID, profileID string) (identityclient.OperatorProfileResponse, error) {
 	return c.inner.ReadOperatorProfileForAdministrator(ctx, actingActorID, profileID)
 }

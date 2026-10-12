@@ -323,13 +323,15 @@ export function JoiningCaseCreate() {
             return <div key={dayOfWeek} className="field-label">
               <label className="action-row"><input type="checkbox" checked={intervals.length > 0} onChange={(event) => setWorkingDayOpen(dayOfWeek, event.target.checked)} />{label}</label>
               {intervals.length > 0 ? <>
-                {intervals.map((interval, intervalIndex) => <div key={`${dayOfWeek}-${intervalIndex}`} className="action-row">
+                {intervals.map((interval, intervalIndex) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: Work periods are explicitly position-addressed controlled slots, without row-local state.
+                  <div key={`${dayOfWeek}-${intervalIndex}`} className="action-row">
                   <span className="muted">الفترة {intervalIndex + 1}</span>
                   <label className="field-label">من<input type="time" aria-label={`${label} بداية الفترة ${intervalIndex + 1}`} value={interval.opensAt} onChange={(event) => updateWorkingInterval(dayOfWeek, intervalIndex, { opensAt: event.target.value })} /></label>
                   <label className="field-label">إلى<input type="time" aria-label={`${label} نهاية الفترة ${intervalIndex + 1}`} value={interval.closesAt} onChange={(event) => updateWorkingInterval(dayOfWeek, intervalIndex, { closesAt: event.target.value })} /></label>
                   <label className="action-row"><input type="checkbox" checked={interval.closesNextDay} onChange={(event) => updateWorkingInterval(dayOfWeek, intervalIndex, { closesNextDay: event.target.checked })} />ينتهي في اليوم التالي</label>
                   {intervals.length > 1 ? <button type="button" className="button button-secondary" onClick={() => removeWorkingInterval(dayOfWeek, intervalIndex)}>حذف الفترة {intervalIndex + 1}</button> : null}
-                </div>)}
+                </div>))}
                 <div className="action-row"><button type="button" className="button button-secondary" onClick={() => addWorkingInterval(dayOfWeek)}>إضافة فترة ليوم {label}</button></div>
               </> : <span className="muted">مغلق</span>}
             </div>;

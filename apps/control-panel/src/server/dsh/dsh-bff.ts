@@ -139,14 +139,16 @@ export async function decideHRAccessRequest(id: string, operation: "reject" | "p
  });
  return response.payload.request;
 }
-export async function linkHRAccessRequest(id: string, profileId: string, context: JoiningCaseMutationContext): Promise<HRAccessRequest> {
+export async function createHRIdentityProfile(id: string, context: JoiningCaseMutationContext): Promise<Readonly<{request: HRAccessRequest; profile?: Readonly<{id: string}>}>> {
   validateAttributedMutationContext(context);
-  const response = await requestDshJson<DshHRAccessRequestMutationResponse>("POST", `/dsh/hr/access-requests/${encodeURIComponent(id)}/link`, { operatorProfileId: profileId }, {
-    "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey,
-  });
-  return response.payload.request;
+  const response = await requestDshJson<Readonly<{request: HRAccessRequest; profile?: Readonly<{id: string}>}>>("POST",
+    `/dsh/hr/access-requests/${encodeURIComponent(id)}/create-profile`, {}, {
+      "X-Acting-Actor-ID": context.operatorActorId,
+      "X-Correlation-ID": context.correlationId,
+      "Idempotency-Key": context.idempotencyKey,
+    });
+  return response.payload;
 }
-
 export type CreateFieldAcquisitionRewardPolicyRequest = Readonly<{
   scopeType: "STORE_TYPE";
   scopeId: string;

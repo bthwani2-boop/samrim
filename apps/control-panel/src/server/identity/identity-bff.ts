@@ -15,7 +15,6 @@ import {
   type OperatorPasskeyRegistrationResponse,
   type OperatorPermission,
   type OperatorPermissionAccess,
-  type OperatorProfileCreateRequest,
   type OperatorProfileGrantResponse,
   type OperatorProfileInvitationResponse,
   type OperatorProfileMutationContext,
@@ -167,10 +166,6 @@ export async function finishOperatorRecoveryPasskeyRegistration(ceremonyId: stri
 
 export async function listOperatorProfiles(query: string, state: string, sort: "created_asc" | "created_desc", limit: number, cursor: string, context: AttributedMutationContext): Promise<OperatorProfilePage> {
   return identityInternalClient().listOperatorProfiles(query, state, sort, limit, cursor, context);
-}
-
-export async function createOperatorProfile(request: OperatorProfileCreateRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse> {
-  return identityInternalClient().createOperatorProfile(request, context);
 }
 
 export async function updateOperatorProfile(profileId: string, request: OperatorProfileUpdateRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse> {
