@@ -7,8 +7,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
-import { responseMessage } from "../access/identity-error-message";
-import { operationActionLabel, resolveOperatorAction } from "./operator-actions";
+import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 import { OperationLocationMap } from "./operation-location-map";
 type DetailTab = "overview" | "items" | "store" | "fulfillment" | "payment" | "assignment" | "recovery";
 const detailTabs: ReadonlyArray<Readonly<{ id: DetailTab; label: string }>> = [
@@ -43,7 +42,7 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
       const response = await fetch(`/api/operations/${encodeURIComponent(orderId)}`, { cache: "no-store" });
       if (!response.ok) {
         setErrorStatus(response.status);
-        setError(await responseMessage(response));
+        setError(await operationResponseMessage(response));
         setOperation(null);
         return false;
       }
@@ -93,7 +92,7 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
         }),
       });
       if (!response.ok) {
-        setActionError(response.status === 409 ? "تغيرت حالة الطلب منذ فتحه. أعد قراءة الحالة قبل اتخاذ قرار آخر." : await responseMessage(response));
+        setActionError(response.status === 409 ? "تغيرت حالة الطلب منذ فتحه. أعد قراءة الحالة قبل اتخاذ قرار آخر." : await operationResponseMessage(response));
         return;
       }
       const readbackSucceeded = await load();

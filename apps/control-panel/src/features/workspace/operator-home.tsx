@@ -6,6 +6,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
 import { responseMessage } from "../access/identity-error-message";
+import { operationResponseMessage } from "../operations/operator-actions";
 import { notificationKindLabel } from "../notifications/notification-presentation";
 export function OperatorHome() {
   const { state: sessionState } = useSession();
@@ -40,7 +41,7 @@ export function OperatorHome() {
     ] as const;
     const results = await Promise.allSettled(requests.map(async ({ key, url }) => {
       const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
-      if (!response.ok) throw new Error(await responseMessage(response));
+      if (!response.ok) throw new Error(await (key === "operations" ? operationResponseMessage(response) : responseMessage(response)));
       return { key, body: await response.json() as unknown };
     }));
     if (sequence !== requestSequence.current) return;
@@ -89,7 +90,7 @@ export function OperatorHome() {
       {!loading ? (
         <div className="home-work-areas">
           {canReadOperations ? <section className="home-work-area" aria-labelledby="home-operations-title">
-            <div className="home-work-area-heading"><div><h2 id="home-operations-title">طلبات تحتاج إجراءً</h2></div><Link href="/operations">عرض الكل</Link></div>
+            <div className="home-work-area-heading"><div><h2 id="home-operations-title">طلبات تحتاج إجراءً</h2></div><Link href="/operations?lane=attention">عرض الكل</Link></div>
             <QueueContent error={errors.operations} emptyMessage="لا توجد طلبات في هذه القائمة." hasItems={operations.length > 0}>
               <ul className="home-list">{operations.slice(0, 4).map((item) => <li key={item.orderId}><Link href={`/operations/${encodeURIComponent(item.orderId)}`}><span><strong>{item.storeName}</strong></span><strong>{orderStateLabel(item.state)}</strong></Link></li>)}</ul>
             </QueueContent>

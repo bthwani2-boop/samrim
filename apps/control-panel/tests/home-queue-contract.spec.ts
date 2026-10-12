@@ -28,6 +28,7 @@ test("home does not mistake malformed owner queue responses for no work, and rec
   }));
 
   await page.goto("/workspace");
+  await expect(page.locator("section[aria-labelledby=home-operations-title]").getByRole("link", { name: "عرض الكل" })).toHaveAttribute("href", "/operations?lane=attention");
   await expect(page.locator(".home-queue-error")).toHaveCount(4);
   await expect(page.getByText("لا توجد طلبات في هذه القائمة.")).toHaveCount(0);
   await expect(page.getByText("لا توجد إحالات في هذه القائمة.")).toHaveCount(0);

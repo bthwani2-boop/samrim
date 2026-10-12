@@ -4,7 +4,8 @@ import { captainAssignmentStateLabel, formatOrderDate, type OperatorOperationLis
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { responseMessage } from "../access/identity-error-message";
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
+import { operationResponseMessage } from "./operator-actions";
 type LaneId = "orders" | "attention" | "dispatch" | "execution" | "exceptions" | "history";
 type Lane = Readonly<{ id: LaneId; label: string; summary: string }>;
 type SubLane = Readonly<{ id: string; label: string; state: string }>;
@@ -46,7 +47,8 @@ export function OperationsWorkspace() {
   const actionableOnly = lane.id === "attention";
   const searchFromUrl = (params.get("q") ?? "").trim().slice(0, 128);
   const sort = params.get("sort") === "updated_asc" ? "updated_asc" : "updated_desc";
-  const cursor = params.get("cursor") ?? "";
+  const cursorPage = useCursorPage("cursor", JSON.stringify([state, actionableOnly, searchFromUrl, sort]));
+  const cursor = cursorPage.cursor;
   const hasSearch = Boolean(searchFromUrl);
 
   const [operations, setOperations] = useState<ReadonlyArray<OperatorOperationListItem>>([]);
@@ -60,7 +62,7 @@ export function OperationsWorkspace() {
 
   useEffect(() => setSearch(searchFromUrl), [searchFromUrl]);
 
-  const navigate = useCallback((changes: Readonly<{ lane?: LaneId; sub?: string; q?: string; sort?: string; cursor?: string }>) => {
+  const navigate = useCallback((changes: Readonly<{ lane?: LaneId; sub?: string; q?: string; sort?: string }>) => {
     const next = new URLSearchParams(queryString);
     if (changes.lane) next.set("lane", changes.lane);
     if (changes.sub) next.set("sub", changes.sub);
@@ -73,8 +75,7 @@ export function OperationsWorkspace() {
       if (changes.sort === "updated_desc") next.delete("sort");
       else next.set("sort", changes.sort);
     }
-    if (changes.cursor) next.set("cursor", changes.cursor);
-    else next.delete("cursor");
+    next.delete("cursor");
     const serialized = next.toString();
     router.push(pathname + (serialized ? `?${serialized}` : ""), { scroll: false });
   }, [pathname, queryString, router]);
@@ -111,26 +112,29 @@ export function OperationsWorkspace() {
       if (searchFromUrl) query.set("q", searchFromUrl);
       if (sort !== "updated_desc") query.set("sort", sort);
       if (cursor) query.set("cursor", cursor);
-      const response = await fetch(`/api/operations?${query.toString()}`, { cache: "no-store" });
+      const response = await fetch(`/api/operations?${query.toString()}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
       if (sequence !== loadSequence.current) return;
       if (!response.ok) {
-        setErrorStatus(response.status);
-        setError(await responseMessage(response));
-        return;
+        throw Object.assign(new Error(await operationResponseMessage(response)), { status: response.status });
       }
       const body = await response.json() as { operations?: ReadonlyArray<OperatorOperationListItem>; nextCursor?: string };
       if (sequence !== loadSequence.current) return;
-      setOperations(body.operations ?? []);
+      if (!body || !Array.isArray(body.operations) || (body.nextCursor !== undefined && typeof body.nextCursor !== "string")) throw new Error("استجابة قائمة الطلبات غير صالحة. أعد المحاولة.");
+      setOperations(body.operations);
       setNextCursor(body.nextCursor ?? "");
     } catch (cause) {
       if (sequence !== loadSequence.current) return;
+      setErrorStatus(cause && typeof cause === "object" && "status" in cause && typeof cause.status === "number" ? cause.status : 0);
       setError(cause instanceof Error ? cause.message : "تعذر قراءة مركز العمليات.");
     } finally {
       if (sequence === loadSequence.current) setLoading(false);
     }
   }, [actionableOnly, cursor, searchFromUrl, sort, state]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (cursorPage.ready) void load();
+    return () => { loadSequence.current += 1; };
+  }, [load, cursorPage.ready]);
   useEffect(() => {
     lanesNavigationRef.current?.querySelector<HTMLElement>(`[data-ops-lane="${lane.id}"]`)?.scrollIntoView({ block: "nearest", inline: "center" });
   }, [lane.id]);
@@ -207,7 +211,7 @@ export function OperationsWorkspace() {
           </table>
         </section>
       ) : null}
-      {nextCursor ? <div className="operations-pagination"><span>تُقرأ السجلات على صفحات محدودة.</span><button type="button" className="button button-secondary" onClick={() => navigate({ cursor: nextCursor })} disabled={loading}>الصفحة التالية</button></div> : null}
+      <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading} label="صفحات الطلبات" />
     </section>
   );
 }
