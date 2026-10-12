@@ -977,8 +977,9 @@ test("legacy Captain profile review never offers role activation before review",
   await page.getByRole("button", { name: "إيقاف التشغيل" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_captain_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
   enabled = false;
-  await fillActionReason(page, "استكمال الملف قبل الإعادة");
-  await expect(page.getByText("استكمل الملف واعتمده قبل إعادة التفعيل.")).toBeVisible();
+  const reviewWarning = page.getByText("استكمل الملف واعتمده قبل إعادة التفعيل.");
+  if (!await reviewWarning.isVisible()) await reviewWarning.locator("xpath=ancestor::details[1]").locator("summary").click();
+  await expect(reviewWarning).toBeVisible();
   await expect(page.getByRole("button", { name: "إعادة التفعيل" })).toHaveCount(0);
 });
 
