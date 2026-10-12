@@ -97,9 +97,33 @@ test("operation detail links retain the current page and resubmitting the same s
   await expect(page.getByRole("link", { name: "فتح الطلب", exact: true })).toHaveAttribute("href", /cursor=second-page/);
   await page.getByRole("button", { name: "بحث", exact: true }).click();
   await expect(page.getByRole("cell", { name: "متجر الصفحة الأولى", exact: true })).toBeVisible();
+  await expect(page).not.toHaveURL(/cursor=/);
   const query = new URL(page.url()).searchParams;
-  expect(query.has("cursor")).toBe(false);
   expect(query.get("q")).toBe("متجر");
   expect(query.get("lane")).toBe("attention");
   expect(query.get("sort")).toBe("updated_asc");
+});
+
+test("changing an operations filter preserves the prior cursor page on Back", async ({ page }) => {
+  await session(page);
+  const requestedCursors: string[] = [];
+  await page.route("**/api/operations?**", (route) => {
+    const url = new URL(route.request().url());
+    requestedCursors.push(url.searchParams.get("cursor") ?? "");
+    const next = url.searchParams.has("cursor");
+    return route.fulfill({ json: { operations: [{
+      orderId: next ? "second-order" : "first-order", storeName: next ? "متجر الصفحة الثانية" : "متجر الصفحة الأولى",
+      state: "READY_FOR_DISPATCH", updatedAt: "2026-10-12T00:00:00Z", assignment: null,
+    }], nextCursor: next ? "" : "second-page" } });
+  });
+  await page.goto("/operations?lane=attention&q=متجر&sort=updated_asc");
+  await page.getByRole("navigation", { name: "صفحات الطلبات" }).getByRole("button", { name: "التالي", exact: true }).click();
+  await expect(page.getByRole("cell", { name: "متجر الصفحة الثانية", exact: true })).toBeVisible();
+  await page.locator("#operations-sort").selectOption("updated_desc");
+  await expect(page).not.toHaveURL(/cursor=/);
+  await page.goBack();
+  await expect(page).toHaveURL(/cursor=second-page/);
+  await expect(page.locator("#operations-sort")).toHaveValue("updated_asc");
+  await expect(page.getByRole("cell", { name: "متجر الصفحة الثانية", exact: true })).toBeVisible();
+  expect(requestedCursors.at(-1)).toBe("second-page");
 });

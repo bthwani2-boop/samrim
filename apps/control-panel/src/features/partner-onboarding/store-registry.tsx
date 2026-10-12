@@ -1,15 +1,15 @@
 "use client";
 
-import { PageHeader } from "../../shell/page-header";
-
-import { type OperatorStoreSummary, fulfillmentModeLabel, publicationStateLabel } from "@bthwani/dsh";
+import { fulfillmentModeLabel, type OperatorStoreSummary, publicationStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
-import { StoreInspector } from "./store-inspector";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
+import { PageHeader } from "../../shell/page-header";
 import { partnerErrorMessage } from "./partner-error-message";
 import { downloadRegistryCsv } from "./registry-csv";
+import { StoreInspector } from "./store-inspector";
+
 type StorePage = Readonly<{ stores: ReadonlyArray<OperatorStoreSummary>; nextCursor?: string }>;
 const pageSize = 10;
 const publicationFilters = [
@@ -43,7 +43,7 @@ export function StoreRegistry() {
   useEffect(() => setSearch(appliedSearch), [appliedSearch]);
 
   const navigate = useCallback((state: string, queryText: string, nextSort: string) => {
-    cursorPage.reset();
+    cursorPage.clearForNavigation();
     const next = new URLSearchParams(window.location.search);
     if (state) next.set("state", state); else next.delete("state");
     if (queryText) next.set("q", queryText); else next.delete("q");
@@ -51,7 +51,7 @@ export function StoreRegistry() {
     next.delete("cursor"); next.delete("inspect");
     router.push(`${pathname}${next.size ? `?${next}` : ""}`, { scroll: false });
     setSelectedIds(new Set());
-  }, [cursorPage.reset, pathname, router]);
+  }, [cursorPage.clearForNavigation, pathname, router]);
 
   function storeHref(id: string) {
     const next = new URLSearchParams(queryString);

@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { operationResponseMessage } from "./operator-actions";
+
 type LaneId = "orders" | "attention" | "dispatch" | "execution" | "exceptions" | "history";
 type Lane = Readonly<{ id: LaneId; label: string; summary: string }>;
 type SubLane = Readonly<{ id: string; label: string; state: string }>;
@@ -75,7 +76,7 @@ export function OperationsWorkspace() {
   useEffect(() => setSearch(searchFromUrl), [searchFromUrl]);
 
   const navigate = useCallback((changes: Readonly<{ lane?: LaneId; sub?: string; q?: string; sort?: string }>) => {
-    cursorPage.reset();
+    cursorPage.clearForNavigation();
     const next = new URLSearchParams(queryString);
     if (changes.lane) next.set("lane", changes.lane);
     if (changes.sub) next.set("sub", changes.sub);
@@ -91,7 +92,7 @@ export function OperationsWorkspace() {
     next.delete("cursor");
     const serialized = next.toString();
     router.push(pathname + (serialized ? `?${serialized}` : ""), { scroll: false });
-  }, [cursorPage.reset, pathname, queryString, router]);
+  }, [cursorPage.clearForNavigation, pathname, queryString, router]);
 
   const viewHref = useCallback((nextLane: LaneId, nextSub?: string) => {
     const next = new URLSearchParams(queryString);

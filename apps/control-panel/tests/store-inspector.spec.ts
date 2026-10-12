@@ -117,3 +117,24 @@ test("a failed next store page remains recoverable through the first page", asyn
   await expect(page.getByRole("button", { name: "معاينة متجر متجر الاختبار", exact: true })).toBeVisible();
   expect(new URL(page.url()).searchParams.get("q")).toBe("اختبار");
 });
+
+test("changing a store registry filter preserves the prior cursor page on Back", async ({ page }) => {
+  await setup(page);
+  const requestedCursors: string[] = [];
+  await page.route("**/api/partners/stores**", (route) => {
+    const url = new URL(route.request().url());
+    requestedCursors.push(url.searchParams.get("cursor") ?? "");
+    return route.fulfill({ json: url.searchParams.has("cursor") ? { stores: [second] } : { stores: [first], nextCursor: "store-page-two" } });
+  });
+  await page.goto("/partners/stores?q=اختبار&state=published&sort=updated_asc");
+  await page.getByRole("navigation", { name: "صفحات سجل المتاجر" }).getByRole("button", { name: "التالي", exact: true }).click();
+  await expect(page.getByRole("button", { name: "معاينة متجر المتجر الثاني", exact: true })).toBeVisible();
+  await page.locator("#partner-store-publication-filter").selectOption("unpublished");
+  await expect(page).toHaveURL(/state=unpublished/);
+  await expect(page).not.toHaveURL(/cursor=/);
+  await page.goBack();
+  await expect(page).toHaveURL(/cursor=store-page-two/);
+  await expect(page.locator("#partner-store-publication-filter")).toHaveValue("published");
+  await expect(page.getByRole("button", { name: "معاينة متجر المتجر الثاني", exact: true })).toBeVisible();
+  expect(requestedCursors.at(-1)).toBe("store-page-two");
+});
