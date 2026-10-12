@@ -227,6 +227,21 @@ test("only the current center owns one visible child navigation", async ({ page 
   }
 });
 
+test("compact phone header keeps the page title and keyboard navigation usable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/partners/stores");
+  await expect(page.locator(".workspace-actor-context")).toBeHidden();
+  await expect(page.getByRole("heading", { name: "المتاجر", exact: true, level: 1 })).toBeVisible();
+
+  const toggle = page.getByRole("button", { name: "فتح مسارات العمل" });
+  const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
+  await toggle.click();
+  await expect(navigation).toHaveAttribute("data-open", "true");
+  await page.keyboard.press("Escape");
+  await expect(navigation).toHaveAttribute("data-open", "false");
+  await expect(toggle).toBeFocused();
+});
+
 test("populated mobile tables scroll inside their wrapper without widening the page", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const [path, wrapper] of [["/partners/stores", ".store-registry-table-wrap"], ["/catalog/products", ".catalog-registry-table-wrap"]]) {

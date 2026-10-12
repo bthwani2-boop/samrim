@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type FormEvent, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { IdentitySurface } from "../../src/features/access/identity-surface";
-import { currentWorkspaceChild, currentWorkspaceDestination, dynamicWorkspaceRouteLabel, isCurrentWorkspaceDestination, isCurrentWorkspacePath, workspaceDestinations, workspaceSearchEntries } from "../../src/navigation/workspace-registry";
+import { currentWorkspaceChild, currentWorkspaceDestination, dynamicWorkspaceRouteLabel, isCurrentWorkspaceDestination, isCurrentWorkspacePath, workspaceCatalogResources, workspaceDestinations, workspaceSearchEntries } from "../../src/navigation/workspace-registry";
 import { identityFetch } from "../../src/session/identity-fetch";
 import { operatorWorkspacePermissions } from "../../src/session/operator-permissions";
 import { useSession } from "../../src/session/session-provider";
@@ -25,9 +25,29 @@ function canOpenWorkspaceDestination(identity: ActorIdentity, destination: (type
   return !destination.permission || identity.permissions?.includes(destination.permission) === true;
 }
 
-function WorkspaceBreadcrumbs({ pathname }: Readonly<{ pathname: string }>) {
-  const current = currentWorkspaceDestination(pathname);
-  const child = currentChild(pathname, current);
+function canOpenWorkspaceRoute(identity: ActorIdentity, href: string) {
+  // The shared recovery page serves partners as well as catalog operators.
+  if (href === "/catalog/trash" && identity.permissions?.includes("partners")) return true;
+  const destination = workspaceDestinations.find((candidate) => isCurrentWorkspaceDestination(href, candidate));
+  return !destination || canOpenWorkspaceDestination(identity, destination);
+}
+
+function workspaceNavigationContext(pathname: string, identity: ActorIdentity | null) {
+  // A partners-only operator enters the shared recovery workspace through Partners.
+  const partnersRecovery = pathname === "/catalog/trash"
+    && identity?.permissions?.includes("partners") === true
+    && !identity.permissions?.includes("catalog");
+  const destination = partnersRecovery
+    ? (workspaceDestinations.find((entry) => entry.href === "/partners") ?? currentWorkspaceDestination(pathname))
+    : currentWorkspaceDestination(pathname);
+  const child = partnersRecovery
+    ? { href: pathname, label: workspaceCatalogResources.find((entry) => entry.key === "trash")?.label ?? "سلة المحذوفات" }
+    : currentChild(pathname, destination);
+  return { destination, child };
+}
+
+function WorkspaceBreadcrumbs({ pathname, identity }: Readonly<{ pathname: string; identity: ActorIdentity | null }>) {
+  const { destination: current, child } = workspaceNavigationContext(pathname, identity);
   const isHome = current.href === "/workspace";
 
   return (
@@ -134,10 +154,7 @@ function WorkspaceHeader({
   const searchTriggerRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchEntries = identity
-    ? workspaceSearchEntries.filter((entry) => {
-        const destination = workspaceDestinations.find((candidate) => isCurrentWorkspaceDestination(entry.href, candidate));
-        return !destination || canOpenWorkspaceDestination(identity, destination);
-      })
+    ? workspaceSearchEntries.filter((entry) => canOpenWorkspaceRoute(identity, entry.href))
     : [];
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase("ar");
   const searchResults = normalizedSearch
@@ -188,7 +205,7 @@ function WorkspaceHeader({
         <span className="brand-name">بثواني</span>
       </Link>
       <div className="workspace-actor-context">
-        <WorkspaceBreadcrumbs pathname={pathname} />
+        <WorkspaceBreadcrumbs pathname={pathname} identity={identity} />
       </div>
       <div className="workspace-header-tools">
         <Link className="workspace-notifications-link" href="/notifications" aria-label="الإشعارات" title="الإشعارات" aria-current={pathname === "/notifications" ? "page" : undefined}>
@@ -309,6 +326,7 @@ function WorkspaceNavigation({
   const visibleDestinations = state.kind === "authenticated"
     ? workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false && canOpenWorkspaceDestination(state.identity, destination))
     : [];
+  const activeDestination = workspaceNavigationContext(pathname, state.kind === "authenticated" ? state.identity : null).destination;
   return (
     <nav ref={navRef} id="workspace-navigation" className="workspace-nav" data-open={open} aria-label="تنقل مساحة المشغل">
       <div className="workspace-nav-header">
@@ -316,7 +334,7 @@ function WorkspaceNavigation({
         <button type="button" className="workspace-nav-close" onClick={onClose} aria-label="إغلاق مسارات العمل">×</button>
       </div>
       {visibleDestinations.map((destination, index) => {
-        const current = isCurrentWorkspaceDestination(pathname, destination);
+        const current = activeDestination.href === destination.href;
         const activeChild = currentWorkspaceChild(pathname, destination);
         return (
             <div className="workspace-nav-group" key={destination.href}>
@@ -324,7 +342,7 @@ function WorkspaceNavigation({
                 ref={index === 0 ? firstLinkRef : undefined}
                 className="workspace-nav-link"
                 href={destination.href}
-                aria-current={current ? (activeChild ? "location" : "page") : undefined}
+                aria-current={current ? (activeChild || pathname !== destination.href ? "location" : "page") : undefined}
                 onClick={onClose}
               >
                 <WorkspaceIcon href={destination.href} />{destination.label}
@@ -435,9 +453,7 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
   if (state.kind === "signed_out" && (state.notice || localSignOut)) return <IdentitySurface />;
   if (state.kind === "signed_out") return <LoadingState title="جارٍ الرجوع إلى بوابة الهوية" message="انتهت الجلسة المحلية أو لم تعد متاحة." />;
 
-  const currentDestination = currentWorkspaceDestination(pathname);
-  const trashAccess = pathname === "/catalog/trash" && state.identity.permissions?.some((permission) => permission === "catalog" || permission === "partners") === true;
-  const destinationAccessGranted = trashAccess || canOpenWorkspaceDestination(state.identity, currentDestination);
+  const destinationAccessGranted = canOpenWorkspaceRoute(state.identity, pathname);
 
   return (
     <ControlShell className="workspace-app-shell" surface="workspace" footer={null} header={<WorkspaceHeader busy={busy} navOpen={navigationOpen} navTriggerRef={navTriggerRef} onLogout={() => { setLocalSignOut(true); void logout(); }} onOpenNavigation={() => setNavigationOpen(true)} pathname={pathname} />}>

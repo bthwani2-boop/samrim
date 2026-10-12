@@ -48,6 +48,21 @@ test("workspace search hides child destinations when their parent permission is 
   await expect(page.locator(".workspace-search-results").getByRole("link", { name: "المنتجات" })).toBeVisible();
 });
 
+test("workspace search offers shared store recovery to partners without exposing catalog-only resources", async ({ page }) => {
+  await stubAuthenticatedSession(page, ["partners"]);
+  await page.goto("/workspace");
+  await page.getByRole("button", { name: "البحث في صفحات لوحة التحكم" }).click();
+  const search = page.getByRole("searchbox", { name: "البحث في صفحات لوحة التحكم" });
+
+  await search.fill("سلة المحذوفات");
+  const trash = page.locator(".workspace-search-results").getByRole("link", { name: "سلة المحذوفات" });
+  await expect(trash).toBeVisible();
+  await expect(trash).toHaveAttribute("href", "/catalog/trash");
+
+  await search.fill("المنتجات");
+  await expect(page.getByText("لا توجد صفحات مطابقة.")).toBeVisible();
+});
+
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/wallet-providers**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ walletProviders: [
