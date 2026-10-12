@@ -290,8 +290,8 @@
     .workspace-nav-toggle { display: inline-flex; }
     .workspace-layout { display: block; }
     .workspace-main { padding: 16px 12px; }
-    .workspace-nav { position: fixed; inset-block: 0; inset-inline-start: 0; z-index: 60; inline-size: min(300px,calc(100vw - 48px)); max-block-size: 100dvh; background: var(--surface-base); transform: translateX(105%); transition: transform .18s ease; }
-    .workspace-nav[data-open="true"] { transform: translateX(0); }
+    .workspace-nav { position: fixed; inset-block: 0; inset-inline-start: 0; z-index: 60; inline-size: min(300px,calc(100vw - 48px)); max-block-size: 100dvh; background: var(--surface-base); transform: translateX(105%); transition: transform .18s ease; visibility: hidden; pointer-events: none; }
+    .workspace-nav[data-open="true"] { transform: translateX(0); visibility: visible; pointer-events: auto; }
     .workspace-nav-header { display: flex; align-items: center; justify-content: space-between; margin-block-end: 12px; }
     .workspace-nav-label { font-weight: 700; }
     .workspace-nav-backdrop { display: block; position: fixed; inset: 0; z-index: 55; padding: 0; border: 0; background: color-mix(in srgb, var(--color-primary) 50%, transparent); }

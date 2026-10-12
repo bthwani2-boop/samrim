@@ -234,11 +234,14 @@ test("compact phone header keeps the page title and keyboard navigation usable",
   await expect(page.getByRole("heading", { name: "المتاجر", exact: true, level: 1 })).toBeVisible();
 
   const toggle = page.getByRole("button", { name: "فتح مسارات العمل" });
-  const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
+  const navigation = page.locator("#workspace-navigation");
+  await expect(navigation).toBeHidden();
   await toggle.click();
   await expect(navigation).toHaveAttribute("data-open", "true");
+  await expect(navigation).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(navigation).toHaveAttribute("data-open", "false");
+  await expect(navigation).toBeHidden();
   await expect(toggle).toBeFocused();
 });
 
