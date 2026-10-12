@@ -45,3 +45,40 @@ func TestInvalidAccessRequestNeverTouchesDatabase(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestAccessRequestEmployeeSnapshotCannotChangeDuringProvisioning(t *testing.T) {
+	request := AccessRequest{
+		EmployeeID:   "emp_0123456789abcdef0123456789abcdef",
+		EmployeeName: "أحمد سالم علي", PhoneE164: "+967777111222",
+		Department: "العمليات", JobTitle: "مشرف",
+	}
+	employee := Employee{
+		ID: request.EmployeeID, FullNameAr: request.EmployeeName,
+		PhoneE164: request.PhoneE164, Department: request.Department,
+		JobTitle: request.JobTitle, Status: "active",
+	}
+	if !AccessRequestMatchesEmployee(request, employee) {
+		t.Fatal("unchanged active employee must match")
+	}
+	cases := []struct {
+		name   string
+		mutate func(*Employee)
+	}{
+		{"inactive", func(e *Employee) { e.Status = "inactive" }},
+		{"already linked", func(e *Employee) { a := "act_other"; e.OperatorActorID = &a }},
+		{"name", func(e *Employee) { e.FullNameAr = "اسم مختلف" }},
+		{"phone", func(e *Employee) { e.PhoneE164 = "+967777111223" }},
+		{"department", func(e *Employee) { e.Department = "المالية" }},
+		{"job title", func(e *Employee) { e.JobTitle = "مدير" }},
+		{"employee ID", func(e *Employee) { e.ID = "emp_other" }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			current := employee
+			tc.mutate(&current)
+			if AccessRequestMatchesEmployee(request, current) {
+				t.Fatal("mismatch accepted")
+			}
+		})
+	}
+}

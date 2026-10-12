@@ -50,17 +50,25 @@ func DecideAccessRequest(ctx context.Context, db *sql.DB, id, action, reason str
 	if !errors.Is(err, sql.ErrNoRows) {
 		return AccessRequestResult{}, err
 	}
-	var state string
-	var version int
-	err = tx.QueryRowContext(ctx, "SELECT state,version FROM dsh.hr_operator_access_requests WHERE id=$1 FOR UPDATE", id).Scan(&state, &version)
+	request, err := scanAccess(tx.QueryRowContext(ctx, accessSelect+" WHERE r.id=$1 FOR UPDATE OF r", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return AccessRequestResult{}, ErrNotFound
 	}
 	if err != nil {
 		return AccessRequestResult{}, err
 	}
-	if state != "pending_review" || version != expectedVersion {
+	if request.State != "pending_review" || request.Version != expectedVersion {
 		return AccessRequestResult{}, ErrConflict
+	}
+	if action == "identity_provisioning" {
+		// The share lock prevents employment changes from racing the durable claim.
+		employee, e := scan(tx.QueryRowContext(ctx, "SELECT "+employeeColumns+" FROM dsh.hr_employees WHERE id=$1 FOR SHARE", request.EmployeeID))
+		if e != nil {
+			return AccessRequestResult{}, e
+		}
+		if !AccessRequestMatchesEmployee(request, employee) {
+			return AccessRequestResult{}, ErrConflict
+		}
 	}
 	if action == "rejected" {
 		_, err = tx.ExecContext(ctx, `UPDATE dsh.hr_operator_access_requests

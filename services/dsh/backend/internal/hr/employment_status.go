@@ -73,6 +73,18 @@ func SetEmploymentStatus(ctx context.Context, db *sql.DB, id string, input Emplo
 		return EmploymentStatusResult{}, ErrConflict
 	}
 	if input.Status == "inactive" {
+		// An unlinked Operator request must be resolved first. Otherwise HR could
+		// make a claimed request impossible to admit while Identity is provisioning.
+		if before.OperatorActorID == nil {
+			var openRequest bool
+			err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM dsh.hr_operator_access_requests WHERE employee_id=$1 AND state<>'rejected')", id).Scan(&openRequest)
+			if err != nil {
+				return EmploymentStatusResult{}, err
+			}
+			if openRequest {
+				return EmploymentStatusResult{}, ErrConflict
+			}
+		}
 		var activeReports bool
 		if err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM dsh.hr_employees WHERE manager_employee_id=$1 AND status='active')", id).Scan(&activeReports); err != nil {
 			return EmploymentStatusResult{}, err

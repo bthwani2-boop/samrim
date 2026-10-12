@@ -46,9 +46,7 @@ func (s *HRServer) createHRIdentityProfile(w http.ResponseWriter, r *http.Reques
 		writeHRError(w, err)
 		return
 	}
-	if employee.Status != "active" || employee.OperatorActorID != nil ||
-		employee.FullNameAr != record.EmployeeName || employee.PhoneE164 != record.PhoneE164 ||
-		employee.JobTitle != record.JobTitle || employee.Department != record.Department {
+	if !hr.AccessRequestMatchesEmployee(record, employee) {
 		writeHRError(w, hr.ErrConflict)
 		return
 	}

@@ -224,6 +224,17 @@ func CreateAccessRequest(ctx context.Context, db *sql.DB, input AccessRequestInp
 	}
 	return AccessRequestResult{Request: a}, nil
 }
+
+// AccessRequestMatchesEmployee rejects a stale HR snapshot before any Identity link.
+func AccessRequestMatchesEmployee(request AccessRequest, employee Employee) bool {
+	return employee.ID == request.EmployeeID &&
+		employee.Status == "active" && employee.OperatorActorID == nil &&
+		employee.FullNameAr == request.EmployeeName &&
+		employee.PhoneE164 == request.PhoneE164 &&
+		employee.Department == request.Department &&
+		employee.JobTitle == request.JobTitle
+}
+
 func LinkAccessRequest(ctx context.Context, db *sql.DB, id, profileID, acting, correlation, idem string) (AccessRequestResult, error) {
 	if db == nil || !strings.HasPrefix(id, "hreq_") || len(id) != 37 ||
 		!strings.HasPrefix(profileID, "oprof_") || len(profileID) > 128 || len(acting) < 1 || len(acting) > 128 ||
@@ -267,6 +278,19 @@ func LinkAccessRequest(ctx context.Context, db *sql.DB, id, profileID, acting, c
 		return AccessRequestResult{}, err
 	}
 	if state != "identity_provisioning" || oldProfile != "" {
+		return AccessRequestResult{}, ErrConflict
+	}
+	// The employee row lock serializes HR status/fact changes with linking.
+	// A profile created from an older HR snapshot must never be linked silently.
+	request, err := scanAccess(tx.QueryRowContext(ctx, accessSelect+" WHERE r.id=$1", id))
+	if err != nil {
+		return AccessRequestResult{}, err
+	}
+	employee, err := scan(tx.QueryRowContext(ctx, "SELECT "+employeeColumns+" FROM dsh.hr_employees WHERE id=$1 FOR UPDATE", request.EmployeeID))
+	if err != nil {
+		return AccessRequestResult{}, err
+	}
+	if !AccessRequestMatchesEmployee(request, employee) {
 		return AccessRequestResult{}, ErrConflict
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE dsh.hr_operator_access_requests SET state='identity_profile_created',
