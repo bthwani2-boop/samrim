@@ -106,3 +106,47 @@ test("Field registry replaces cursor pages and restores query and city on browse
   expect(requests.at(-1)?.get("q")).toBe("");
   expect(requests.at(-1)?.get("cursor")).toBeNull();
 });
+
+test("Field access filter applies before paging and survives reload and browser navigation", async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.route("**/api/auth/session**", (route) => route.fulfill({ status: 200, json: { identity: { subject: "actor-operator", sessionId: "session-operator", role: "operator", permissions: ["partners"], surface: "control-panel", expiresAt: "2099-01-01T00:00:00.000Z" } } }));
+  await page.route("**/api/service-cities**", (route) => route.fulfill({ status: 200, json: { cities: [{ id: "city-a", displayNameAr: "مدينة أ", active: true, version: 1 }] } }));
+  await page.route("**/api/wallet-providers**", (route) => route.fulfill({ status: 200, json: { walletProviders: [{ key: "wallet-a", displayNameAr: "محفظة أ", active: true, version: 1 }] } }));
+  const admission = (id: string, name: string) => ({ id, fullNameAr: name, contactPhoneE164: "+967770020001", walletProviderKey: "wallet-a", allServiceCities: true, serviceCityIds: [], state: "eligible", version: 1 });
+  const candidate = { kind: "candidate", admission: { ...admission("candidate", "مرشح للمراجعة"), state: "pending_review" } };
+  const account = (id: string, name: string) => ({ kind: "account", account: { actorId: id, role: "field", phoneE164: "+967770000001", enabled: false, securityEnabled: true, admission: admission(id, name), latestStore: null, joiningCaseCount: 0, latestJoiningCase: null } });
+  const requests: URLSearchParams[] = [];
+  const nextToken = "identity-disabled-next";
+  await page.route("**/api/fields?**", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    requests.push(params);
+    if (params.get("enabled") === "false") {
+      const isNext = params.get("cursor") === nextToken;
+      return route.fulfill({ status: 200, json: { items: [isNext ? account("disabled-b", "ميداني موقوف ثانٍ") : account("disabled-a", "ميداني موقوف أول")], nextCursor: isNext ? undefined : nextToken } });
+    }
+    return route.fulfill({ status: 200, json: { items: [candidate] } });
+  });
+  await page.goto("/fields");
+  await expect(page.getByText("مرشح للمراجعة", { exact: true })).toBeVisible();
+  await page.locator(".field-roster-filter-disclosure > summary").click();
+  const access = page.getByRole("combobox", { name: "دخول التطبيق", exact: true });
+  await access.selectOption("disabled");
+  await expect(page.getByText("ميداني موقوف أول", { exact: true })).toBeVisible();
+  await expect(page.getByText("مرشح للمراجعة", { exact: true })).toHaveCount(0);
+  await expect.poll(() => requests.at(-1)?.get("enabled")).toBe("false");
+  await page.getByRole("button", { name: "التالية", exact: true }).click();
+  await expect(page.getByText("ميداني موقوف ثانٍ", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/fieldPage=2/);
+  await page.reload();
+  await expect(page.getByText("ميداني موقوف ثانٍ", { exact: true })).toBeVisible();
+  await page.locator(".field-roster-filter-disclosure > summary").click();
+  await expect(page.getByRole("combobox", { name: "دخول التطبيق", exact: true })).toHaveValue("disabled");
+  expect(requests.at(-1)?.get("enabled")).toBe("false");
+  expect(requests.at(-1)?.get("cursor")).toBe(nextToken);
+  await page.getByRole("button", { name: "السابقة", exact: true }).click();
+  await expect(page.getByText("ميداني موقوف أول", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "مسح البحث والمرشحات", exact: true }).click();
+  await expect(page.getByText("مرشح للمراجعة", { exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "دخول التطبيق", exact: true })).toHaveValue("");
+  expect(requests.at(-1)?.get("enabled")).toBeNull();
+});

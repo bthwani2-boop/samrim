@@ -135,7 +135,8 @@ export async function GET(request: Request) {
     if (params.get("scope") === "workbench") {
       const workbenchCursor = decodeWorkbenchCursor(cursor);
       if (cursor && !workbenchCursor) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "field workbench cursor is invalid" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
-      const phase = workbenchCursor?.phase ?? "candidates";
+      if (enabled !== undefined && workbenchCursor?.phase === "candidates") return NextResponse.json({ error: { code: "INVALID_INPUT", message: "field access filter requires an account cursor" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      const phase = enabled !== undefined ? "accounts" : workbenchCursor?.phase ?? "candidates";
       const items: Array<Readonly<{ kind: "candidate"; admission: Awaited<ReturnType<typeof listFieldAdmissions>>["admissions"][number] }> | Readonly<{ kind: "account"; account: Awaited<ReturnType<typeof searchIdentityRoles>>["items"][number] & { admission: Awaited<ReturnType<typeof readFieldAdmissionByActor>>["admission"] | null; latestStore: Awaited<ReturnType<typeof listOperatorFieldActivity>>["items"][number]["latestStore"]; joiningCaseCount: number; latestJoiningCase: Awaited<ReturnType<typeof listOperatorFieldActivity>>["items"][number]["latestJoiningCase"] } }>> = [];
       let accountsCursor = "";
       if (phase === "candidates") {
