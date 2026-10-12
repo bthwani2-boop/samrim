@@ -66,6 +66,7 @@ test("Root reviews requested against actual Identity permissions, then applies a
       permissions: [{ permission: "operations", enabled: true, version: 2 }, { permission: "partners", enabled: false, version: 1 }] } });
   });
   await page.goto("/access?view=requests");
+  await page.getByRole("button", { name: "مراجعة التفاصيل" }).click();
   await page.getByRole("button", { name: "مراجعة الصلاحيات" }).click();
   await expect(page.getByText("الممنوحة فعليًا:", { exact: false })).toBeVisible();
   const checkbox = page.getByRole("checkbox", { name: "العمليات" });

@@ -12,6 +12,7 @@ export function HROperatorAccessQueue() {
  const [next,setNext]=useState("");
  const [loading,setLoading]=useState(true);
  const [busy,setBusy]=useState("");
+ const [selectedId,setSelectedId]=useState("");
  const [rejecting,setRejecting]=useState("");
  const [rejectReason,setRejectReason]=useState("");
  const rejectMutation=useRef<{signature:string;key:string}|null>(null);
@@ -57,6 +58,7 @@ export function HROperatorAccessQueue() {
   }catch(e){setError(e instanceof Error?e.message:"تعذر رفض الطلب");}
   finally{setBusy("")}
  }
+ const selected=items.find((item)=>item.id===selectedId);
  return <section className="access-workspace-section">
   <div className="access-section-heading">
    <div><h2>طلبات الوصول من الموارد البشرية</h2><p>يقدّم HR الطلب، والمشغّل الأساسي يحوّله إلى ملف مراجعة Identity. الصلاحيات المقترحة ليست منحًا فعليًا.</p></div>
@@ -78,27 +80,41 @@ export function HROperatorAccessQueue() {
      <th scope="row">{item.employeeName}</th><td>{item.jobTitle} — {item.department}</td><td>{item.reason}</td>
      <td>{item.requestedPermissions.join("، ")||"بدون اقتراح"}</td>
      <td>{item.operatorActorId ? "تم ربط حساب المشغّل" : item.state==="pending_review"?"بانتظار المشغّل الأساسي":item.state==="rejected"?"مرفوض":item.state==="identity_provisioning"?"جارٍ إنشاء ملف المراجعة":"أُحيل إلى Identity"}</td>
-     <td>{item.state==="pending_review"?<>
-      <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>void openProfile(item.id)}>{busy===item.id?"جارٍ التحويل…":"إنشاء ملف مراجعة"}</button>
-      <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>{setRejecting(item.id);setRejectReason("");rejectMutation.current=null;}}>رفض الطلب</button>
-      {rejecting===item.id?<div className="form-section" style={{maxInlineSize:320}}>
-       <label className="field-label">سبب الرفض
-        <textarea required minLength={8} maxLength={500} rows={3} value={rejectReason} onChange={(e)=>{setRejectReason(e.target.value);rejectMutation.current=null}}/>
-       </label>
-       <div className="form-actions">
-        <button type="button" className="button button-secondary" disabled={!!busy||rejectReason.trim().length<8} onClick={()=>void rejectRequest(item)}>تأكيد الرفض</button>
-        <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>setRejecting("")}>إلغاء</button>
-       </div>
-      </div>:null}
-     </>:item.state==="identity_provisioning"?
-       <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>void openProfile(item.id)}>استكمال التحويل</button>:
-       item.state==="rejected"?<span>{item.rejectionReason||"مرفوض"}</span>:item.state==="identity_profile_created"?<><Link href="/access?view=operators">{item.operatorActorId ? "إدارة حساب المشغّل" : "متابعة اعتماد الحساب"}</Link>{item.operatorActorId ? <HRPermissionReview request={item}/> : null}</>:"تابع الاعتماد في القائمة أدناه"}</td>
+      <td><button type="button" className="button button-secondary"
+       aria-expanded={selectedId===item.id} onClick={()=>{setSelectedId((id)=>id===item.id?"":item.id);setRejecting("");setError("");}}>
+       {selectedId===item.id?"إغلاق التفاصيل":"مراجعة التفاصيل"}
+      </button></td>
     </tr>)}
     {!loading&&items.length===0?<tr><td colSpan={6}>لا توجد طلبات وصول. <Link href="/hr/employees">إدارة الموظفين من الموارد البشرية</Link></td></tr>:null}
     {loading?<tr><td colSpan={6}>جارٍ تحميل الطلبات…</td></tr>:null}
    </tbody>
-  </table></div>
-  <div className="form-actions">
+   </table></div>
+   {selected?<section className="form-section" aria-label="تفاصيل طلب الوصول" style={{maxInlineSize:760}}>
+    <h3>مراجعة طلب {selected.employeeName}</h3>
+    <p>المسمى الوظيفي: {selected.jobTitle} — القسم: {selected.department}</p>
+    <p>مبرر الوصول: {selected.reason}</p>
+    <p>الصلاحيات التي اقترحتها HR: {selected.requestedPermissions.join("، ")||"لم تقترح صلاحيات"}</p>
+    <p>حالة الطلب: <strong>{selected.state==="pending_review"?"بانتظار قرار المشغّل الأساسي":selected.state==="rejected"?"مرفوض":selected.state==="identity_provisioning"?"إنشاء ملف Identity قيد الاستكمال":selected.operatorActorId?"تم منح دور المشغّل وربطه بالموظف":"ينتظر اعتماد هوية المشغّل"}</strong></p>
+    {selected.rejectionReason?<p>سبب الرفض: {selected.rejectionReason}</p>:null}
+    <p className="muted">الخطوة التالية: {selected.state==="pending_review"?"مراجعة البيانات والسبب ثم تحويل الطلب أو رفضه":selected.state==="rejected"?"يمكن لمسؤول HR تصحيح الموظف وإعادة تقديم طلب جديد":selected.state==="identity_provisioning"?"استكمال إنشاء ملف Identity باستخدام الطلب نفسه":selected.operatorActorId?"مراجعة الصلاحيات الممنوحة فعليًا وإدارة الوصول":"اعتماد الملف ومنح الدور وإصدار الدعوة من قائمة المشغّلين"}</p>
+    {selected.state==="pending_review"?<div className="form-actions">
+     <button type="button" className="button button-primary" disabled={!!busy} onClick={()=>void openProfile(selected.id)}>{busy===selected.id?"جارٍ التحويل…":"تحويل إلى مراجعة Identity"}</button>
+     <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>{setRejecting(selected.id);setRejectReason("");rejectMutation.current=null;}}>رفض الطلب</button>
+    </div>:null}
+    {selected.state==="identity_provisioning"?<button type="button" className="button button-primary" disabled={!!busy} onClick={()=>void openProfile(selected.id)}>استكمال إنشاء ملف المراجعة</button>:null}
+    {rejecting===selected.id&&selected.state==="pending_review"?<div className="form-section" style={{maxInlineSize:420}}>
+     <label className="field-label">سبب الرفض
+      <textarea required minLength={8} maxLength={500} rows={3} value={rejectReason} onChange={(e)=>{setRejectReason(e.target.value);rejectMutation.current=null}}/>
+     </label>
+     <div className="form-actions">
+      <button type="button" className="button button-secondary" disabled={!!busy||rejectReason.trim().length<8} onClick={()=>void rejectRequest(selected)}>تأكيد الرفض</button>
+      <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>setRejecting("")}>إلغاء</button>
+     </div>
+    </div>:null}
+    {selected.state==="identity_profile_created"?<Link href="/access?view=operators">متابعة إدارة حساب المشغّل</Link>:null}
+    {selected.operatorActorId?<HRPermissionReview key={selected.id} request={selected}/>:null}
+   </section>:null}
+   <div className="form-actions">
    <button type="button" className="button button-secondary" disabled={loading||previous.length===0} onClick={()=>{const history=[...previous];setCursor(history.pop()??"");setPrevious(history)}}>السابق</button>
    <button type="button" className="button button-secondary" disabled={loading||!next} onClick={()=>{setPrevious((v)=>[...v,cursor]);setCursor(next)}}>التالي</button>
   </div>

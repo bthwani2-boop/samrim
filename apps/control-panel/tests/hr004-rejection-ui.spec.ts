@@ -37,6 +37,9 @@ test("Root rejects a pending HR request with an attributed reason and updated re
     return route.fulfill({ json: { request: { ...current, rejectionReason: payload.reason } } });
   });
   await page.goto("/access?view=requests");
+  await expect(page.getByRole("button", { name: "مراجعة التفاصيل" })).toHaveCount(1);
+  await page.getByRole("button", { name: "مراجعة التفاصيل" }).click();
+  await expect(page.getByRole("region", { name: "تفاصيل طلب الوصول" })).toContainText("الصلاحيات التي اقترحتها HR");
   await expect(page.getByRole("button", { name: "رفض الطلب" })).toBeVisible();
   await page.getByRole("button", { name: "رفض الطلب" }).click();
   await expect(page.getByRole("textbox", { name: "سبب الرفض" })).toBeVisible();
@@ -45,4 +48,32 @@ test("Root rejects a pending HR request with an attributed reason and updated re
   await expect(page.getByText("رُفض طلب الوصول وسُجل السبب.", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "رفض الطلب" })).toHaveCount(0);
   expect(mutationCalls).toBe(1);
+});
+
+test("Root can inspect a full page of 50 access requests and paginate without mass action buttons", async ({ page }) => {
+  await page.route("**/api/auth/session**", (route) => route.fulfill({ json: { identity: rootSession } }));
+  await page.route("**/api/access/operator-profiles?**", (route) => route.fulfill({ json: { items: [], nextCursor: "" } }));
+  const records = Array.from({ length: 62 }, (_, index) => ({
+    ...request,
+    id: "hreq_" + (index + 1).toString(16).padStart(32, "0"),
+    employeeId: "emp_" + (index + 1).toString(16).padStart(32, "0"),
+    employeeName: "موظف اختبار " + (index + 1),
+    state: index % 3 === 0 ? "rejected" : index % 3 === 1 ? "pending_review" : "identity_profile_created",
+    rejectionReason: index % 3 === 0 ? "تحتاج البيانات إلى مراجعة" : undefined,
+  }));
+  await page.route("**/api/access/hr-requests?**", (route) => {
+    const second = new URL(route.request().url()).searchParams.get("cursor") === "page-two";
+    return route.fulfill({ json: { items: second ? records.slice(50) : records.slice(0, 50), nextCursor: second ? "" : "page-two" } });
+  });
+  await page.goto("/access?view=requests");
+  const section = page.locator(".access-workspace-section").filter({ has: page.getByRole("heading", { name: "طلبات الوصول من الموارد البشرية" }) });
+  await expect(section.locator("table tbody tr")).toHaveCount(50);
+  await expect(section.getByRole("button", { name: "رفض الطلب" })).toHaveCount(0);
+  await section.getByRole("button", { name: "مراجعة التفاصيل" }).nth(1).click();
+  await expect(section.getByRole("region", { name: "تفاصيل طلب الوصول" })).toContainText("موظف اختبار 2");
+  await section.getByRole("button", { name: "التالي", exact: true }).click();
+  await expect(section.locator("table tbody tr")).toHaveCount(12);
+  await expect(section.getByRole("region", { name: "تفاصيل طلب الوصول" })).toHaveCount(0);
+  await section.getByRole("button", { name: "مراجعة التفاصيل" }).first().click();
+  await expect(section.getByRole("region", { name: "تفاصيل طلب الوصول" })).toContainText("موظف اختبار 51");
 });
