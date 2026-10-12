@@ -23,6 +23,9 @@ SELECT format('ALTER ROLE %I WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NORE
 GRANT CONNECT ON DATABASE :"db_name" TO samrim_identity_runtime, samrim_identity_maintenance, samrim_dsh_runtime, samrim_wlt_runtime;
 GRANT USAGE ON SCHEMA public TO samrim_identity_runtime, samrim_identity_maintenance, samrim_dsh_runtime, samrim_wlt_runtime;
 GRANT USAGE ON SCHEMA dsh TO samrim_dsh_runtime;
+-- WLT reconciles posted financial handoffs using read-only commerce projections.
+-- Do not grant WLT general DSH table, write, or DDL access.
+GRANT USAGE ON SCHEMA dsh TO samrim_wlt_runtime;
 GRANT USAGE ON SCHEMA wlt TO samrim_wlt_runtime;
 
 -- Explicit Identity table privileges mirror identityRuntimePrivileges and identityMaintenancePrivileges.
@@ -49,6 +52,7 @@ GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA dsh TO samrim_dsh_runtime
 ALTER DEFAULT PRIVILEGES FOR ROLE :"admin_user" IN SCHEMA dsh GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO samrim_dsh_runtime;
 ALTER DEFAULT PRIVILEGES FOR ROLE :"admin_user" IN SCHEMA dsh GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO samrim_dsh_runtime;
 
+GRANT SELECT ON TABLE dsh.commerce_financial_handoff_outbox, dsh.commerce_orders TO samrim_wlt_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA wlt TO samrim_wlt_runtime;
 GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA wlt TO samrim_wlt_runtime;
 ALTER DEFAULT PRIVILEGES FOR ROLE :"admin_user" IN SCHEMA wlt GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO samrim_wlt_runtime;
@@ -77,6 +81,10 @@ BEGIN
     OR NOT has_table_privilege('samrim_dsh_runtime','dsh.stores','SELECT,INSERT,UPDATE,DELETE')
     OR NOT has_table_privilege('samrim_wlt_runtime','wlt.payment_intents','SELECT,INSERT,UPDATE,DELETE')
     OR has_table_privilege('samrim_dsh_runtime','wlt.payment_intents','SELECT')
+    OR NOT has_table_privilege('samrim_wlt_runtime','dsh.commerce_financial_handoff_outbox','SELECT')
+    OR NOT has_table_privilege('samrim_wlt_runtime','dsh.commerce_orders','SELECT')
+    OR has_table_privilege('samrim_wlt_runtime','dsh.commerce_financial_handoff_outbox','INSERT,UPDATE,DELETE')
+    OR has_table_privilege('samrim_wlt_runtime','dsh.commerce_orders','INSERT,UPDATE,DELETE')
     OR has_table_privilege('samrim_wlt_runtime','dsh.stores','SELECT')
     OR has_table_privilege('samrim_identity_runtime','dsh.stores','SELECT')
     OR has_table_privilege('samrim_identity_runtime','wlt.payment_intents','SELECT')
