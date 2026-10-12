@@ -5,6 +5,37 @@ const updatedAt = "2026-10-11T12:00:00.000Z";
 const coffee = { id: "coffee", verticalId: "grocery", canonicalName: "قهوة عربية", brand: "محمصة صنعاء", categoryIds: [], variantCount: 1, storeCount: 3, active: true, updatedAt, primaryImageUri: image };
 const tea = { id: "tea", verticalId: "grocery", canonicalName: "شاي عدني", brand: "", categoryIds: [], variantCount: 1, storeCount: 1, active: true, updatedAt, primaryImageUri: null };
 
+test("catalog rejects malformed product rows without crashing and retries the registry independently", async ({ page }) => {
+  await page.route("**/api/auth/session**", (route) => route.fulfill({ status: 200, json: { identity: {
+    subject: "catalog-row-proof", sessionId: "catalog-row-proof", role: "operator", permissions: ["catalog"], surface: "control-panel", expiresAt: "2099-01-01T00:00:00Z",
+  } } }));
+  await page.route("**/api/catalog/verticals**", (route) => route.fulfill({ status: 200, json: { verticals: [] } }));
+  const malformed: unknown[][] = [
+    [null],
+    [{ ...coffee, canonicalName: null }],
+    [{ ...coffee, categoryIds: null }],
+    [{ ...coffee, updatedAt: "not-a-date" }],
+  ];
+  let reads = 0;
+  await page.route("**/api/catalog/product-registry**", (route) => {
+    const products = reads < malformed.length ? malformed[reads] : [coffee];
+    reads += 1;
+    return route.fulfill({ status: 200, json: { products, nextCursor: "" } });
+  });
+  await page.goto("/catalog/products");
+  for (let index = 0; index < malformed.length; index += 1) {
+    const error = page.locator(".central-catalog-list").getByRole("alert");
+    await expect(error).toContainText("استجابة سجل المنتجات غير صالحة");
+    await expect(page.getByRole("button", { name: "تفاصيل وتعديل" })).toHaveCount(0);
+    await error.getByRole("button", { name: "إعادة قراءة سجل المنتجات" }).click();
+  }
+  await expect(page.getByRole("button", { name: "تفاصيل وتعديل" })).toBeVisible();
+  await expect(page.locator(".central-catalog-list").getByRole("alert")).toHaveCount(0);
+  await page.getByRole("button", { name: "معرض الصور", exact: true }).click();
+  await expect(page.getByRole("button", { name: "تفاصيل وصور قهوة عربية" })).toBeVisible();
+  expect(reads).toBe(malformed.length + 1);
+});
+
 test("catalog summary uses the complete owner count, while a missing summary stays unknown", async ({ page }) => {
   await page.route("**/api/auth/session**", (route) => route.fulfill({ status: 200, json: { identity: {
     subject: "catalog-summary", sessionId: "catalog-summary", role: "operator", permissions: ["catalog"], surface: "control-panel", expiresAt: "2099-01-01T00:00:00Z",
@@ -163,7 +194,7 @@ test("gallery preserves server errors rather than presenting them as empty resul
     : { status: 200, contentType: "application/json", body: JSON.stringify({ products: [coffee], nextCursor: "" }) }));
   await page.goto("/catalog/products?view=gallery");
   await expect(page.getByRole("button", { name: "معرض الصور" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator(".central-catalog-list .identity-error")).toContainText("خدمة الكتالوج غير متاحة");
+  await expect(page.locator(".central-catalog-list").getByRole("alert")).toContainText("خدمة الكتالوج غير متاحة");
   await expect(page.getByText("لا توجد منتجات مطابقة للفلاتر.")).toHaveCount(0);
 
   unavailable = false;
@@ -171,7 +202,7 @@ test("gallery preserves server errors rather than presenting them as empty resul
   await page.getByRole("button", { name: "بحث", exact: true }).click();
   const gallery = page.getByRole("list", { name: "المنتجات في الصفحة الحالية" });
   await expect(gallery.getByRole("listitem")).toHaveCount(1);
-  await expect(page.locator(".central-catalog-list .identity-error")).toHaveCount(0);
+  await expect(page.locator(".central-catalog-list").getByRole("alert")).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole("button", { name: "معرض الصور" })).toHaveAttribute("aria-pressed", "true");
   await expect(gallery.getByRole("listitem")).toHaveCount(1);

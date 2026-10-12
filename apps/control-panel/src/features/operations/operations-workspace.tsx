@@ -33,6 +33,18 @@ const subLanes: Partial<Record<LaneId, ReadonlyArray<SubLane>>> = {
   ],
 };
 
+function isRenderableOperation(value: unknown): value is OperatorOperationListItem {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  const assignment = item.assignment;
+  return typeof item.orderId === "string" && item.orderId.trim().length > 0
+    && typeof item.storeName === "string"
+    && typeof item.state === "string" && item.state.length > 0
+    && typeof item.updatedAt === "string" && Number.isFinite(Date.parse(item.updatedAt))
+    && (assignment == null || (typeof assignment === "object" && !Array.isArray(assignment)
+      && typeof (assignment as Record<string, unknown>).state === "string"));
+}
+
 export function OperationsWorkspace() {
   const pathname = usePathname();
   const router = useRouter();
@@ -121,7 +133,8 @@ export function OperationsWorkspace() {
       }
       const body = await response.json() as { operations?: ReadonlyArray<OperatorOperationListItem>; nextCursor?: string };
       if (sequence !== loadSequence.current) return;
-      if (!body || !Array.isArray(body.operations) || (body.nextCursor !== undefined && typeof body.nextCursor !== "string")) throw new Error("استجابة قائمة الطلبات غير صالحة. أعد المحاولة.");
+      if (!body || !Array.isArray(body.operations) || !body.operations.every(isRenderableOperation)
+        || (body.nextCursor !== undefined && typeof body.nextCursor !== "string")) throw new Error("استجابة قائمة الطلبات غير صالحة. أعد المحاولة.");
       setOperations(body.operations);
       setNextCursor(body.nextCursor ?? "");
     } catch (cause) {

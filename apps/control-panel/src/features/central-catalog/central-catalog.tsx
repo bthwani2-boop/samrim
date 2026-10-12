@@ -67,6 +67,21 @@ function categoryPath(categoryId: string, categories: ReadonlyArray<CatalogCateg
   return categories.find((category) => category.id === categoryId)?.pathAr ?? categoryId;
 }
 
+function isRenderableRegistryProduct(value: unknown): value is CatalogProductRegistryResponse["products"][number] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const product = value as Record<string, unknown>;
+  return typeof product.id === "string" && product.id.length > 0
+    && typeof product.canonicalName === "string" && product.canonicalName.trim().length > 0
+    && typeof product.verticalId === "string"
+    && Array.isArray(product.categoryIds) && product.categoryIds.every((id: unknown) => typeof id === "string")
+    && typeof product.active === "boolean"
+    && Number.isSafeInteger(product.variantCount) && (product.variantCount as number) >= 0
+    && Number.isSafeInteger(product.storeCount) && (product.storeCount as number) >= 0
+    && typeof product.updatedAt === "string" && Number.isFinite(Date.parse(product.updatedAt))
+    && (product.brand == null || typeof product.brand === "string")
+    && (product.primaryImageUri == null || typeof product.primaryImageUri === "string");
+}
+
 function ProductGalleryImage({ uri, name }: { uri: string | null | undefined; name: string }) {
   const [failedUri, setFailedUri] = useState("");
   if (!uri || uri === failedUri) return <span className="catalog-gallery-no-image" role="img" aria-label={`لا توجد صورة متاحة لمنتج ${name}`}>لا توجد صورة</span>;
@@ -141,6 +156,7 @@ export function CentralCatalog() {
   const [loading, setLoading] = useState(true);
   const [nextCursor, setNextCursor] = useState("");
   const [registrySummary, setRegistrySummary] = useState<{ totalCount: number; measuredAt: string } | null>(null);
+  const [registryError, setRegistryError] = useState("");
   const cursorPage = useCursorPage("productCursor");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -233,7 +249,7 @@ export function CentralCatalog() {
     const requestSequence = ++listRequestSequence.current;
     setLoading(true);
     setRegistrySummary(null);
-    setError("");
+    setRegistryError("");
     try {
       const suffix = new URLSearchParams({ limit: "50", active: statusFilter, sort });
       if (appliedQuery.trim()) suffix.set("q", appliedQuery.trim());
@@ -243,14 +259,15 @@ export function CentralCatalog() {
       const response = await fetch(`/api/catalog/product-registry?${suffix.toString()}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
       const payload = await parseResponse<CatalogProductRegistryResponse>(response);
       if (requestSequence !== listRequestSequence.current) return;
-      if (!Array.isArray(payload?.products) || (payload.nextCursor !== undefined && typeof payload.nextCursor !== "string")) throw new Error("استجابة سجل المنتجات غير صالحة. أعد القراءة.");
+      if (!Array.isArray(payload?.products) || !payload.products.every(isRenderableRegistryProduct)
+        || (payload.nextCursor !== undefined && typeof payload.nextCursor !== "string")) throw new Error("استجابة سجل المنتجات غير صالحة. أعد القراءة.");
       if (payload.totalCount !== undefined && (!Number.isSafeInteger(payload.totalCount) || payload.totalCount < payload.products.length || !Number.isFinite(Date.parse(payload.measuredAt)))) throw new Error("تعذر التحقق من ملخص المنتجات. أعد القراءة.");
       setRegistrySummary(payload.totalCount === undefined ? null : { totalCount: payload.totalCount, measuredAt: payload.measuredAt });
       setProducts(payload.products);
       setSelectedIds(new Set());
       setNextCursor(payload.nextCursor ?? "");
     } catch (nextError) {
-      if (requestSequence === listRequestSequence.current) { setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الكتالوج."); setProducts([]); setSelectedIds(new Set()); setNextCursor(""); }
+      if (requestSequence === listRequestSequence.current) { setRegistryError(nextError instanceof Error ? nextError.message : "تعذر قراءة الكتالوج."); setProducts([]); setSelectedIds(new Set()); setNextCursor(""); }
     } finally {
       if (requestSequence === listRequestSequence.current) setLoading(false);
     }
@@ -595,14 +612,14 @@ export function CentralCatalog() {
             <button type="button" className="button button-quiet" aria-pressed={viewMode === "gallery"} onClick={() => changeView("gallery")}>معرض الصور</button>
           </fieldset>
           <div className="catalog-selection-bar" aria-live="polite"><span>{selectionSummary}</span>{selectedIds.size ? <button type="button" className="button button-quiet" onClick={() => setSelectedIds(new Set())}>إلغاء التحديد</button> : null}</div>
-          {!loading && !error ? <div className="catalog-selection-bar" aria-live="polite"><span>إجمالي المنتجات المطابقة للفلاتر: {registrySummary ? registrySummary.totalCount.toLocaleString("ar-YE") : "غير متاح"}</span>{registrySummary ? <small>المصدر: الكتالوج المركزي · لقطة حالية عند <time dateTime={registrySummary.measuredAt}>{new Date(registrySummary.measuredAt).toLocaleString("ar-YE", { timeZone: "UTC" })}</time> UTC</small> : null}</div> : null}
+          {!loading && !registryError ? <div className="catalog-selection-bar" aria-live="polite"><span>إجمالي المنتجات المطابقة للفلاتر: {registrySummary ? registrySummary.totalCount.toLocaleString("ar-YE") : "غير متاح"}</span>{registrySummary ? <small>المصدر: الكتالوج المركزي · لقطة حالية عند <time dateTime={registrySummary.measuredAt}>{new Date(registrySummary.measuredAt).toLocaleString("ar-YE", { timeZone: "UTC" })}</time> UTC</small> : null}</div> : null}
         </div>
         {viewMode === "table" ? <div className="catalog-registry-table-wrap">
           <table className="catalog-registry-table">
             <thead><tr><th><input aria-label="تحديد جميع سجلات الصفحة" type="checkbox" checked={products.length > 0 && selectedIds.size === products.length} onChange={(event) => setSelectedIds(event.target.checked ? new Set(products.map((item) => item.id)) : new Set())} /></th><th>المنتج</th><th>المجال التجاري</th><th>الفئات</th><th>النسخ</th><th>متاجر تعرضه</th><th>الحالة</th><th>آخر تحديث</th><th>الإجراء</th></tr></thead>
             <tbody>
               {loading && products.length === 0 ? <tr><td colSpan={9} className="catalog-table-state">جارٍ قراءة السجل…</td></tr> : null}
-              {!loading && !error && products.length === 0 ? <tr><td colSpan={9} className="catalog-table-state">لا توجد منتجات مطابقة للفلاتر.</td></tr> : null}
+              {!loading && !registryError && products.length === 0 ? <tr><td colSpan={9} className="catalog-table-state">لا توجد منتجات مطابقة للفلاتر.</td></tr> : null}
               {products.map((product) => <tr key={product.id} className={selected?.id === product.id ? "is-open" : ""}>
                 <td><input type="checkbox" aria-label={`تحديد ${product.canonicalName}`} checked={selectedIds.has(product.id)} onChange={(event) => setSelectedIds((current) => { const next = new Set(current); if (event.target.checked) next.add(product.id); else next.delete(product.id); return next; })} /></td>
                 <td><div className="catalog-registry-product">{product.primaryImageUri ? <img className="catalog-registry-product-image" src={product.primaryImageUri} alt="" loading="lazy" /> : <span className="catalog-registry-product-placeholder" aria-hidden="true">{product.canonicalName.trim().slice(0, 1) || "•"}</span>}<span><strong>{product.canonicalName}</strong>{product.brand ? <small>{product.brand}</small> : null}</span></div></td>
@@ -616,7 +633,7 @@ export function CentralCatalog() {
           </table>
         </div> : <div className="catalog-gallery-pane" aria-busy={loading}>
           {loading && products.length === 0 ? <p role="status">جارٍ قراءة السجل…</p> : null}
-          {!loading && !error && products.length === 0 ? <p className="catalog-gallery-empty">لا توجد منتجات مطابقة للفلاتر.</p> : null}
+          {!loading && !registryError && products.length === 0 ? <p className="catalog-gallery-empty">لا توجد منتجات مطابقة للفلاتر.</p> : null}
           <ul className="catalog-product-gallery" aria-label="المنتجات في الصفحة الحالية">
           {products.map((product) => <li className="catalog-gallery-card" key={product.id}>
             <label className="catalog-gallery-select"><input type="checkbox" aria-label={`تحديد ${product.canonicalName}`} checked={selectedIds.has(product.id)} onChange={(event) => setSelectedIds((current) => { const next = new Set(current); if (event.target.checked) next.add(product.id); else next.delete(product.id); return next; })} /> تحديد</label>
@@ -630,6 +647,7 @@ export function CentralCatalog() {
           </li>)}
           </ul>
         </div>}
+        {!editorOpen && registryError ? <div className="managed-status managed-status-warning" role="alert"><p>{registryError}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>إعادة قراءة سجل المنتجات</button></div> : null}
         {!editorOpen && notice ? <p className="success-inline" role="status">{notice}</p> : null}
         {!editorOpen && error ? <p className="identity-error" role="alert">{error}</p> : null}
     <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات المنتجات" />

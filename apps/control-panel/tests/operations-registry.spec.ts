@@ -23,6 +23,32 @@ for (const body of [{}, { operations: null }, { operations: [], nextCursor: 7 }]
   });
 }
 
+test("operations rejects malformed rows before rendering and recovers with a valid owner response", async ({ page }) => {
+  await session(page);
+  const good = { orderId: "valid-order", storeName: "متجر صالح", state: "READY_FOR_DISPATCH", updatedAt: "2026-10-12T00:00:00Z", assignment: null };
+  const malformed: unknown[][] = [
+    [null],
+    [{ ...good, updatedAt: "not-a-date" }],
+    [{ ...good, assignment: { state: 25 } }],
+    [{ ...good, orderId: null }],
+  ];
+  let readCount = 0;
+  await page.route("**/api/operations?**", (route) => {
+    const operations = readCount < malformed.length ? malformed[readCount] : [good];
+    readCount += 1;
+    return route.fulfill({ status: 200, json: { operations, nextCursor: "" } });
+  });
+  await page.goto("/operations");
+  for (let index = 0; index < malformed.length; index += 1) {
+    await expect(page.locator(".operations-workspace").getByRole("alert")).toContainText("استجابة قائمة الطلبات غير صالحة");
+    await expect(page.locator(".operations-table")).toHaveCount(0);
+    await page.getByRole("button", { name: "إعادة المحاولة", exact: true }).click();
+  }
+  await expect(page.getByRole("cell", { name: "متجر صالح", exact: true })).toBeVisible();
+  await expect(page.locator(".operations-workspace").getByRole("alert")).toHaveCount(0);
+  expect(readCount).toBe(malformed.length + 1);
+});
+
 test("operations restores bounded pages and retains the first-page recovery when the next read fails", async ({ page }) => {
   await session(page);
   const requests: URL[] = [];
