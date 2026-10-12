@@ -67,6 +67,12 @@ function categoryPath(categoryId: string, categories: ReadonlyArray<CatalogCateg
   return categories.find((category) => category.id === categoryId)?.pathAr ?? categoryId;
 }
 
+function ProductGalleryImage({ uri, name }: { uri: string | null | undefined; name: string }) {
+  const [failedUri, setFailedUri] = useState("");
+  if (!uri || uri === failedUri) return <span className="catalog-gallery-no-image" role="img" aria-label={`لا توجد صورة متاحة لمنتج ${name}`}>لا توجد صورة</span>;
+  return <img className="catalog-gallery-thumbnail" src={uri} alt={`الصورة الأساسية لمنتج ${name}`} loading="lazy" onError={() => setFailedUri(uri)} />;
+}
+
 function attributeDraftsFromValues(product: CatalogProduct | null): AttributeDrafts {
   if (!product) return {};
   const drafts: Record<string, string> = {};
@@ -116,6 +122,11 @@ export function CentralCatalog() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sort, setSort] = useState("name_asc");
+  const [viewMode, setViewMode] = useState<"table" | "gallery">("table");
+  const [previewMedia, setPreviewMedia] = useState<{ uri: string; alt: string } | null>(null);
+  const [failedPreviewUri, setFailedPreviewUri] = useState("");
+  const previewCloseRef = useRef<HTMLButtonElement | null>(null);
+  const previewOriginRef = useRef<HTMLElement | null>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [detailLoading, setDetailLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -304,6 +315,36 @@ export function CentralCatalog() {
     cursorPage.reset();
   }
 
+  function closePreview() {
+    setPreviewMedia(null);
+    previewOriginRef.current?.focus();
+  }
+
+  function openPreview(uri: string, alt: string) {
+    previewOriginRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setPreviewMedia({ uri, alt });
+  }
+
+  useEffect(() => {
+    if (!previewMedia) return;
+    previewCloseRef.current?.focus();
+    function handlePreviewKey(event: KeyboardEvent) {
+      if (event.key === "Escape") { event.preventDefault(); setPreviewMedia(null); previewOriginRef.current?.focus(); }
+      if (event.key === "Tab") { event.preventDefault(); previewCloseRef.current?.focus(); }
+    }
+    window.addEventListener("keydown", handlePreviewKey);
+    return () => window.removeEventListener("keydown", handlePreviewKey);
+  }, [previewMedia]);
+
+  function changeView(nextView: "table" | "gallery") {
+    if (viewMode === nextView) return;
+    const url = new URL(window.location.href);
+    if (nextView === "gallery") url.searchParams.set("view", "gallery");
+    else url.searchParams.delete("view");
+    window.history.pushState({ ...window.history.state, catalogRegistry: true }, "", `${url.pathname}${url.search}${url.hash}`);
+    setViewMode(nextView);
+  }
+
   async function selectProduct(productId: string, updateLocation = true) {
     const requestSequence = ++detailRequestSequence.current;
     setConfirmDelete(false); setDeleteReason("");
@@ -327,6 +368,7 @@ export function CentralCatalog() {
     const nextActive = params.get("active") ?? "all";
     const nextSort = params.get("sort") ?? "name_asc";
     setQuery(nextQuery); setAppliedQuery(nextQuery); setVerticalFilter(nextVertical); setCategoryFilter(nextCategory); setStatusFilter(nextActive); setSort(nextSort);
+    setViewMode(params.get("view") === "gallery" ? "gallery" : "table");
     const mode = params.get("mode");
     const productId = params.get("productId");
     if (mode === "edit" && productId) void selectProduct(productId, false);
@@ -524,13 +566,19 @@ export function CentralCatalog() {
           <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
           {query || appliedQuery ? <button type="button" className="button button-quiet" onClick={() => { changeFilters({ query: "", verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); setQuery(""); setAppliedQuery(""); }}>مسح البحث</button> : null}
         </form>
-        <div className="catalog-selection-bar" aria-live="polite"><span>{selectionSummary}</span>{selectedIds.size ? <button type="button" className="button button-quiet" onClick={() => setSelectedIds(new Set())}>إلغاء التحديد</button> : null}</div>
-        <div className="catalog-registry-table-wrap">
+        <div className="catalog-registry-view-bar">
+          <fieldset className="catalog-view-switch" aria-label="طريقة عرض المنتجات">
+            <button type="button" className="button button-quiet" aria-pressed={viewMode === "table"} onClick={() => changeView("table")}>جدول المنتجات</button>
+            <button type="button" className="button button-quiet" aria-pressed={viewMode === "gallery"} onClick={() => changeView("gallery")}>معرض الصور</button>
+          </fieldset>
+          <div className="catalog-selection-bar" aria-live="polite"><span>{selectionSummary}</span>{selectedIds.size ? <button type="button" className="button button-quiet" onClick={() => setSelectedIds(new Set())}>إلغاء التحديد</button> : null}</div>
+        </div>
+        {viewMode === "table" ? <div className="catalog-registry-table-wrap">
           <table className="catalog-registry-table">
             <thead><tr><th><input aria-label="تحديد جميع سجلات الصفحة" type="checkbox" checked={products.length > 0 && selectedIds.size === products.length} onChange={(event) => setSelectedIds(event.target.checked ? new Set(products.map((item) => item.id)) : new Set())} /></th><th>المنتج</th><th>المجال التجاري</th><th>الفئات</th><th>النسخ</th><th>متاجر تعرضه</th><th>الحالة</th><th>آخر تحديث</th><th>الإجراء</th></tr></thead>
             <tbody>
               {loading && products.length === 0 ? <tr><td colSpan={9} className="catalog-table-state">جارٍ قراءة السجل…</td></tr> : null}
-              {!loading && products.length === 0 ? <tr><td colSpan={9} className="catalog-table-state">لا توجد منتجات مطابقة للفلاتر.</td></tr> : null}
+              {!loading && !error && products.length === 0 ? <tr><td colSpan={9} className="catalog-table-state">لا توجد منتجات مطابقة للفلاتر.</td></tr> : null}
               {products.map((product) => <tr key={product.id} className={selected?.id === product.id ? "is-open" : ""}>
                 <td><input type="checkbox" aria-label={`تحديد ${product.canonicalName}`} checked={selectedIds.has(product.id)} onChange={(event) => setSelectedIds((current) => { const next = new Set(current); if (event.target.checked) next.add(product.id); else next.delete(product.id); return next; })} /></td>
                 <td><div className="catalog-registry-product">{product.primaryImageUri ? <img className="catalog-registry-product-image" src={product.primaryImageUri} alt="" loading="lazy" /> : <span className="catalog-registry-product-placeholder" aria-hidden="true">{product.canonicalName.trim().slice(0, 1) || "•"}</span>}<span><strong>{product.canonicalName}</strong>{product.brand ? <small>{product.brand}</small> : null}</span></div></td>
@@ -542,7 +590,22 @@ export function CentralCatalog() {
               </tr>)}
             </tbody>
           </table>
-        </div>
+        </div> : <div className="catalog-gallery-pane" aria-busy={loading}>
+          {loading && products.length === 0 ? <p role="status">جارٍ قراءة السجل…</p> : null}
+          {!loading && !error && products.length === 0 ? <p className="catalog-gallery-empty">لا توجد منتجات مطابقة للفلاتر.</p> : null}
+          <ul className="catalog-product-gallery" aria-label="المنتجات في الصفحة الحالية">
+          {products.map((product) => <li className="catalog-gallery-card" key={product.id}>
+            <label className="catalog-gallery-select"><input type="checkbox" aria-label={`تحديد ${product.canonicalName}`} checked={selectedIds.has(product.id)} onChange={(event) => setSelectedIds((current) => { const next = new Set(current); if (event.target.checked) next.add(product.id); else next.delete(product.id); return next; })} /> تحديد</label>
+            <button type="button" className="catalog-gallery-open" disabled={detailLoading} onClick={() => void selectProduct(product.id)} aria-label={`تفاصيل وصور ${product.canonicalName}`}>
+              <ProductGalleryImage uri={product.primaryImageUri} name={product.canonicalName} />
+              <strong>{product.canonicalName}</strong>
+              {product.brand ? <small>{product.brand}</small> : null}
+              <span className="catalog-gallery-meta">{sharedVerticals.find((vertical) => vertical.id === product.verticalId)?.nameAr ?? "غير محدد"} · {product.variantCount} نسخ · {product.storeCount} متاجر</span>
+              <span className={`catalog-state-pill ${product.active ? "is-active" : "is-inactive"}`}>{product.active ? "نشط" : "معطل"}</span>
+            </button>
+          </li>)}
+          </ul>
+        </div>}
         {!editorOpen && notice ? <p className="success-inline" role="status">{notice}</p> : null}
         {!editorOpen && error ? <p className="identity-error" role="alert">{error}</p> : null}
     <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات المنتجات" />
@@ -570,7 +633,7 @@ export function CentralCatalog() {
           <label className="field-label" htmlFor="catalog-base-unit">الوحدة الأساسية<select id="catalog-base-unit" disabled={busy || selected !== null} value={form.baseUnit} onChange={(event) => setForm({ ...form, baseUnit: event.target.value as BaseUnit })}><option value="COUNT">قطعة</option><option value="GRAM">غرام</option><option value="MILLILITER">مل</option></select></label>
           <label className="field-label" htmlFor="catalog-identifier">نوع الباركود أو رمز الصنف<select id="catalog-identifier" disabled={busy || selected !== null} value={form.identifierType} onChange={(event) => setForm({ ...form, identifierType: event.target.value })}><option value="GTIN">رقم المنتج العالمي</option><option value="EAN">باركود أوروبي</option><option value="UPC">باركود أمريكي</option><option value="SKU">رمز الصنف لدى المتجر</option><option value="LEGACY_BARCODE">باركود قديم</option></select></label>
           <label className="field-label" htmlFor="catalog-identifier-value">الباركود أو رمز الصنف<input id="catalog-identifier-value" disabled={busy || selected !== null} value={form.identifierValue} onChange={(event) => setForm({ ...form, identifierValue: event.target.value })} /></label>
-          {selected ? <><div className="catalog-product-media-gallery">{[...selected.media].sort((left, right) => left.ordinal - right.ordinal).map((media) => <figure key={`${media.role}:${media.ordinal}:${media.uri}`}><img className="catalog-media-preview" src={media.uri} alt={`${media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} لمنتج ${form.canonicalName}`} loading="lazy" /><figcaption>{media.role === "primary" ? "الصورة الأساسية" : `صورة المعرض ${media.ordinal}`}</figcaption></figure>)}{selected.media.length === 0 ? <p className="muted">لا توجد صور بعد. أنشئ المنتج أولًا ثم ارفع صورته هنا.</p> : null}</div><div className="catalog-media-upload"><label className="field-label" htmlFor="catalog-upload-role">موضع الصورة<select id="catalog-upload-role" disabled={busy} value={uploadRole} onChange={(event) => setUploadRole(event.target.value as "primary" | "gallery")}><option value="primary">الصورة الأساسية</option><option value="gallery">المعرض</option></select></label><label className="field-label" htmlFor="catalog-upload-file">ملف الصورة<input key={uploadInputKey} id="catalog-upload-file" disabled={busy} type="file" accept="image/jpeg,image/png" onChange={(event) => { setUploadFile(event.target.files?.[0] ?? null); setUploadProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); }} /></label><CatalogMediaProvenanceFields idPrefix="catalog-product-media" disabled={busy} value={uploadProvenance} onChange={setUploadProvenance} /><button type="button" className="button button-secondary" disabled={busy || !uploadFile || !isMediaProvenanceInputValid(uploadProvenance)} onClick={() => void uploadMedia()}>رفع الصورة وربطها</button></div></> : <p className="muted">بعد حفظ المنتج، افتح تفاصيله لإرفاق صورة من خلال مخزن الوسائط.</p>}
+          {selected ? <><div className="catalog-product-media-gallery">{[...selected.media].sort((left, right) => left.ordinal - right.ordinal).map((media) => <figure key={`${media.role}:${media.ordinal}:${media.uri}`}><button type="button" className="catalog-media-preview-button" onClick={() => openPreview(media.uri, `${media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} لمنتج ${form.canonicalName}`)} aria-label={`تكبير ${media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} لمنتج ${form.canonicalName}`}><img className="catalog-media-preview" src={media.uri} alt={`${media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} لمنتج ${form.canonicalName}`} loading="lazy" /></button><figcaption>{media.role === "primary" ? "الصورة الأساسية" : `صورة المعرض ${media.ordinal}`}</figcaption></figure>)}{selected.media.length === 0 ? <p className="muted">لا توجد صور بعد. أنشئ المنتج أولًا ثم ارفع صورته هنا.</p> : null}</div><div className="catalog-media-upload"><label className="field-label" htmlFor="catalog-upload-role">موضع الصورة<select id="catalog-upload-role" disabled={busy} value={uploadRole} onChange={(event) => setUploadRole(event.target.value as "primary" | "gallery")}><option value="primary">الصورة الأساسية</option><option value="gallery">المعرض</option></select></label><label className="field-label" htmlFor="catalog-upload-file">ملف الصورة<input key={uploadInputKey} id="catalog-upload-file" disabled={busy} type="file" accept="image/jpeg,image/png" onChange={(event) => { setUploadFile(event.target.files?.[0] ?? null); setUploadProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); }} /></label><CatalogMediaProvenanceFields idPrefix="catalog-product-media" disabled={busy} value={uploadProvenance} onChange={setUploadProvenance} /><button type="button" className="button button-secondary" disabled={busy || !uploadFile || !isMediaProvenanceInputValid(uploadProvenance)} onClick={() => void uploadMedia()}>رفع الصورة وربطها</button></div></> : <p className="muted">بعد حفظ المنتج، افتح تفاصيله لإرفاق صورة من خلال مخزن الوسائط.</p>}
           {selected ? <label className="central-active-toggle"><input type="checkbox" disabled={busy} checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> المنتج نشط وقابل للاختيار</label> : null}
           <button type="button" className="button button-primary" disabled={busy || form.scope !== "SHARED" || attributeReadState !== "ready" || !form.canonicalName.trim() || !form.verticalId || form.categoryIds.length === 0} onClick={() => void saveProduct()}>{saveProductLabel}</button>
            {selected && !confirmDelete ? <div className="catalog-category-filters"><button type="button" className="button button-secondary" disabled={busy} onClick={() => { setConfirmDelete(true); setDeleteReason(""); }}>نقل إلى سلة المحذوفات</button></div> : null}
@@ -579,6 +642,12 @@ export function CentralCatalog() {
         </div>
         {notice ? <p className="success-inline" role="status">{notice}</p> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}
       </section> : null}
+      {previewMedia ? <div className="catalog-image-overlay">
+        <div className="catalog-image-dialog" role="dialog" aria-modal="true" aria-label={previewMedia.alt}>
+          <button ref={previewCloseRef} type="button" className="button button-secondary" onClick={closePreview}>إغلاق الصورة</button>
+          {failedPreviewUri === previewMedia.uri ? <p role="alert">تعذر عرض الصورة بالحجم الكبير.</p> : <img src={previewMedia.uri} alt={previewMedia.alt} onError={() => setFailedPreviewUri(previewMedia.uri)} />}
+        </div>
+      </div> : null}
     </div>
   );
 }
