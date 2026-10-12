@@ -377,7 +377,7 @@ export function FieldCases() {
       {selectedByRoute ? <Text accessibilityLiveRegion="polite" style={styles.cardTitle}>الطلب المحدد من التنبيه</Text> : null}
       <View style={styles.orderHeader}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><BthwaniStatusBadge icon={badgeIcon} label={joiningCaseStateLabel(item.state)} tone={badgeTone} /></View>
       <Text style={styles.muted}>المحفظة الرسمية: {walletProviderName || "غير محددة"}</Text>
-      {item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}
+      {item.state === "needs_correction" && item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}
       <Text style={styles.muted}>{nextStepText}</Text>
       {item.state === "approved" ? <>
         <FieldCommercialAgreement caseID={item.id} />

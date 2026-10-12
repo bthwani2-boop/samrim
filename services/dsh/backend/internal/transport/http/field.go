@@ -13,12 +13,14 @@ import (
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storepublication"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
 type FieldServer struct {
-	auth    *auth.ServiceToken
-	service *field.Service
+	auth        *auth.ServiceToken
+	service     *field.Service
+	publication *storepublication.Service
 }
 
 type fieldJoiningCaseDraftRequest struct {
@@ -58,7 +60,10 @@ func (input fieldJoiningCaseDraftRequest) createRequest() contract.CreateJoining
 	}
 }
 
-func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB, evidenceKeys *postgres.JoiningCaseEvidenceKeyring) (*FieldServer, error) {
+func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB, publication *storepublication.Service, evidenceKeys *postgres.JoiningCaseEvidenceKeyring) (*FieldServer, error) {
+	if publication == nil {
+		return nil, errors.New("Field publication service is required")
+	}
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
@@ -67,7 +72,7 @@ func NewField(identityClient *identityintegration.Client, accessToken string, db
 	if err != nil {
 		return nil, err
 	}
-	return &FieldServer{auth: authorizer, service: service}, nil
+	return &FieldServer{auth: authorizer, service: service, publication: publication}, nil
 }
 
 func (s *FieldServer) Register(mux *http.ServeMux) {
@@ -413,7 +418,16 @@ func (s *FieldServer) readJoiningCase(w http.ResponseWriter, r *http.Request) {
 		writeFieldError(w, err)
 		return
 	}
-	writeFieldCaseResult(w, http.StatusOK, result)
+	var readiness *storepublication.PublicationReadiness
+	if result.Case.Store != nil {
+		value, err := s.publication.ReadinessForStore(r.Context(), *result.Case.Store)
+		if err != nil {
+			writeStorePublicationError(w, err)
+			return
+		}
+		readiness = &value
+	}
+	writeJSON(w, http.StatusOK, contract.JoiningCaseResponse{Case: toFieldJoiningCaseView(result, readiness), IdempotentReplay: result.Replayed})
 }
 
 func (s *FieldServer) submitJoiningCase(w http.ResponseWriter, r *http.Request) {
@@ -468,12 +482,20 @@ func authorizedFieldSession(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-func writeFieldCaseResult(w http.ResponseWriter, status int, result postgres.JoiningCaseResult) {
+func toFieldJoiningCaseView(result postgres.JoiningCaseResult, readiness *storepublication.PublicationReadiness) contract.JoiningCaseView {
 	view := toJoiningCaseView(result.Case)
 	view.PartnerActorID = result.Case.PartnerActorID
 	view.ReviewedBy = result.Case.ReviewedBy
 	view.StoreProfileImage = toStoreProfileImage(result.Case.StoreProfileImage)
-	writeJSON(w, status, contract.JoiningCaseResponse{Case: view, IdempotentReplay: result.Replayed})
+	if result.Case.Store != nil && readiness != nil {
+		storeView := toStoreView(*result.Case.Store, *readiness)
+		view.Store = &storeView
+	}
+	return view
+}
+
+func writeFieldCaseResult(w http.ResponseWriter, status int, result postgres.JoiningCaseResult) {
+	writeJSON(w, status, contract.JoiningCaseResponse{Case: toFieldJoiningCaseView(result, nil), IdempotentReplay: result.Replayed})
 }
 
 func requiredFieldMutationHeaders(w http.ResponseWriter, r *http.Request) (string, string, bool) {
