@@ -5,6 +5,82 @@ const updatedAt = "2026-10-11T12:00:00.000Z";
 const coffee = { id: "coffee", verticalId: "grocery", canonicalName: "قهوة عربية", brand: "محمصة صنعاء", categoryIds: [], variantCount: 1, storeCount: 3, active: true, updatedAt, primaryImageUri: image };
 const tea = { id: "tea", verticalId: "grocery", canonicalName: "شاي عدني", brand: "", categoryIds: [], variantCount: 1, storeCount: 1, active: true, updatedAt, primaryImageUri: null };
 
+test("catalog summary uses the complete owner count, while a missing summary stays unknown", async ({ page }) => {
+  await page.route("**/api/auth/session**", (route) => route.fulfill({ status: 200, json: { identity: {
+    subject: "catalog-summary", sessionId: "catalog-summary", role: "operator", permissions: ["catalog"], surface: "control-panel", expiresAt: "2099-01-01T00:00:00Z",
+  } } }));
+  await page.route("**/api/catalog/verticals**", (route) => route.fulfill({ status: 200, json: { verticals: [] } }));
+  await page.route("**/api/catalog/product-registry**", (route) => {
+    const query = new URL(route.request().url()).searchParams.get("q");
+    return route.fulfill({ status: 200, json: query === "unknown" ? { products: [coffee], nextCursor: "" }
+      : query === "empty" ? { products: [], totalCount: 0, measuredAt: updatedAt }
+      : { products: [coffee], nextCursor: "more", totalCount: 321, measuredAt: updatedAt } });
+  });
+  await page.goto("/catalog/products");
+  await expect(page.getByText("إجمالي المنتجات المطابقة للفلاتر: ٣٢١", { exact: true })).toBeVisible();
+  await expect(page.getByText("سجلات هذه الصفحة: ١", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "معرض الصور", exact: true }).click();
+  await expect(page.getByText("إجمالي المنتجات المطابقة للفلاتر: ٣٢١", { exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "البحث في المنتجات" }).fill("unknown");
+  await page.getByRole("button", { name: "بحث", exact: true }).click();
+  await expect(page.getByText("إجمالي المنتجات المطابقة للفلاتر: غير متاح", { exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "البحث في المنتجات" }).fill("empty");
+  await page.getByRole("button", { name: "بحث", exact: true }).click();
+  await expect(page.getByText("إجمالي المنتجات المطابقة للفلاتر: ٠", { exact: true })).toBeVisible();
+});
+
+test("product image review navigates canonical images in an isolated keyboard dialog and recovers a failed image", async ({ page }) => {
+  await page.route("**/api/auth/session**", (route) => route.fulfill({ status: 200, json: { identity: {
+    subject: "catalog-image-review", sessionId: "catalog-image-review", role: "operator", permissions: ["catalog"], surface: "control-panel", expiresAt: "2099-01-01T00:00:00Z",
+  } } }));
+  await page.route("**/api/catalog/verticals**", (route) => route.fulfill({ status: 200, json: { verticals: [] } }));
+  await page.route("**/api/catalog/product-registry**", (route) => route.fulfill({ status: 200, json: { products: [coffee], nextCursor: "" } }));
+  await page.route("**/api/catalog/products/coffee", (route) => route.fulfill({ status: 200, json: {
+    ...coffee, scope: "SHARED", version: 1, description: "", attributes: [], variants: [],
+    media: [{ role: "primary", ordinal: 0, uri: image }, { role: "gallery", ordinal: 1, uri: "/catalog-review-image.png" }],
+  } }));
+  let imageAvailable = false;
+  await page.route("**/catalog-review-image.png", (route) => imageAvailable
+    ? route.fulfill({ status: 200, contentType: "image/png", body: Buffer.from(image.split(",")[1]!, "base64") })
+    : route.fulfill({ status: 503 }));
+  await page.goto("/catalog/products?view=gallery");
+  await page.getByRole("button", { name: "تفاصيل وصور قهوة عربية" }).click();
+  const trigger = page.getByRole("button", { name: "تكبير الصورة الأساسية لمنتج قهوة عربية" });
+  await trigger.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
+  const next = dialog.getByRole("button", { name: "الصورة التالية", exact: true });
+  await next.click();
+  await expect(dialog.getByRole("alert")).toContainText("تعذر عرض الصورة");
+  imageAvailable = true;
+  await dialog.getByRole("button", { name: "إعادة تحميل الصورة", exact: true }).click();
+  await expect(dialog.getByRole("img")).toBeVisible();
+  await expect(dialog.getByRole("img")).toHaveJSProperty("naturalWidth", 1);
+  await expect(next).toBeDisabled();
+  await dialog.getByRole("button", { name: "الصورة السابقة", exact: true }).click();
+  await expect(dialog.getByRole("img")).toHaveAttribute("src", image);
+  await expect(dialog.getByRole("button", { name: "الصورة السابقة", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "منتج جديد", exact: true }).click({ timeout: 500 })).rejects.toThrow();
+  await dialog.getByRole("button", { name: "إغلاق الصورة", exact: true }).focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(next).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "إغلاق الصورة", exact: true })).toBeFocused();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const bounds = await dialog.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "الاسم القياسي" })).toHaveValue("قهوة عربية");
+  await page.getByRole("textbox", { name: "الاسم القياسي" }).fill("قهوة في المسودة");
+  await page.getByRole("button", { name: "جدول المنتجات", exact: true }).click();
+  await page.goBack();
+  await expect(page.getByRole("textbox", { name: "الاسم القياسي" })).toHaveValue("قهوة في المسودة");
+});
+
 test("catalog keeps the table default and uses the same bounded registry for an optional gallery", async ({ page }) => {
   const requests: Array<{ cursor: string | null; limit: string | null; query: string | null }> = [];
   await page.route("**/api/auth/session**", (route) => route.fulfill({

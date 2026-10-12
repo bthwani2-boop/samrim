@@ -2829,13 +2829,22 @@ components:
 
     CatalogProductRegistryResponse:
       type: object
-      required: [products]
+      required: [products, totalCount, measuredAt]
       additionalProperties: false
       properties:
         products:
           type: array
           items:
             $ref: "#/components/schemas/CatalogProductRegistryItem"
+        totalCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Complete shared-product count matching this registry query, excluding the cursor, from the same database snapshot as products.
+        measuredAt:
+          type: string
+          format: date-time
+          description: UTC timestamp of the registry and count database snapshot; a current registry summary rather than a historical analytics window.
         nextCursor:
           type: string
           maxLength: 2048

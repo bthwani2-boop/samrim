@@ -123,16 +123,24 @@ export function CentralCatalog() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [sort, setSort] = useState("name_asc");
   const [viewMode, setViewMode] = useState<"table" | "gallery">("table");
-  const [previewMedia, setPreviewMedia] = useState<{ uri: string; alt: string } | null>(null);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const orderedMedia = useMemo(() => [...(selected?.media ?? [])].sort((left, right) => left.ordinal - right.ordinal), [selected]);
+  const previewMedia = previewIndex === null ? undefined : orderedMedia[previewIndex];
+  const previewAlt = previewMedia ? `${previewMedia.role === "primary" ? "الصورة الأساسية" : `صورة المعرض ${previewMedia.ordinal}`} لمنتج ${selected?.canonicalName}` : "";
   const [failedPreviewUri, setFailedPreviewUri] = useState("");
-  const previewCloseRef = useRef<HTMLButtonElement | null>(null);
+  const previewDialogRef = useRef<HTMLDialogElement | null>(null);
   const previewOriginRef = useRef<HTMLElement | null>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailProductId, setDetailProductId] = useState("");
+  const [versionConflict, setVersionConflict] = useState(false);
+  const saveAttempt = useRef<{ intent: string; key: string } | null>(null);
+  const mediaAttempt = useRef<{ file: File; intent: string; key: string } | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [nextCursor, setNextCursor] = useState("");
+  const [registrySummary, setRegistrySummary] = useState<{ totalCount: number; measuredAt: string } | null>(null);
   const cursorPage = useCursorPage("productCursor");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -224,6 +232,7 @@ export function CentralCatalog() {
   const load = useCallback(async (cursor = cursorPage.cursor) => {
     const requestSequence = ++listRequestSequence.current;
     setLoading(true);
+    setRegistrySummary(null);
     setError("");
     try {
       const suffix = new URLSearchParams({ limit: "50", active: statusFilter, sort });
@@ -234,6 +243,9 @@ export function CentralCatalog() {
       const response = await fetch(`/api/catalog/product-registry?${suffix.toString()}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
       const payload = await parseResponse<CatalogProductRegistryResponse>(response);
       if (requestSequence !== listRequestSequence.current) return;
+      if (!Array.isArray(payload?.products) || (payload.nextCursor !== undefined && typeof payload.nextCursor !== "string")) throw new Error("استجابة سجل المنتجات غير صالحة. أعد القراءة.");
+      if (payload.totalCount !== undefined && (!Number.isSafeInteger(payload.totalCount) || payload.totalCount < payload.products.length || !Number.isFinite(Date.parse(payload.measuredAt)))) throw new Error("تعذر التحقق من ملخص المنتجات. أعد القراءة.");
+      setRegistrySummary(payload.totalCount === undefined ? null : { totalCount: payload.totalCount, measuredAt: payload.measuredAt });
       setProducts(payload.products);
       setSelectedIds(new Set());
       setNextCursor(payload.nextCursor ?? "");
@@ -316,25 +328,27 @@ export function CentralCatalog() {
   }
 
   function closePreview() {
-    setPreviewMedia(null);
+    previewDialogRef.current?.close();
+    setPreviewIndex(null);
     previewOriginRef.current?.focus();
   }
 
-  function openPreview(uri: string, alt: string) {
+  function openPreview(index: number) {
     previewOriginRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setPreviewMedia({ uri, alt });
+    setPreviewIndex(index);
   }
 
   useEffect(() => {
     if (!previewMedia) return;
-    previewCloseRef.current?.focus();
-    function handlePreviewKey(event: KeyboardEvent) {
-      if (event.key === "Escape") { event.preventDefault(); setPreviewMedia(null); previewOriginRef.current?.focus(); }
-      if (event.key === "Tab") { event.preventDefault(); previewCloseRef.current?.focus(); }
-    }
-    window.addEventListener("keydown", handlePreviewKey);
-    return () => window.removeEventListener("keydown", handlePreviewKey);
+    const dialog = previewDialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
   }, [previewMedia]);
+
+  function closeEditor() {
+    writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort });
+    detailRequestSequence.current += 1;
+    setDetailLoading(false); setDetailProductId(""); setVersionConflict(false); setEditorOpen(false); setSelected(null); setPreviewIndex(null);
+  }
 
   function changeView(nextView: "table" | "gallery") {
     if (viewMode === nextView) return;
@@ -346,19 +360,23 @@ export function CentralCatalog() {
   }
 
   async function selectProduct(productId: string, updateLocation = true) {
+    setPreviewIndex(null);
+    setDetailProductId(productId); setVersionConflict(false);
     const requestSequence = ++detailRequestSequence.current;
     setConfirmDelete(false); setDeleteReason("");
     if (updateLocation) writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort, mode: "edit", productId });
     setDetailLoading(true); setSelected(null); setEditorOpen(true); setNotice(""); setError("");
     try {
-      const response = await fetch(`/api/catalog/products/${encodeURIComponent(productId)}`, { cache: "no-store" });
+      const response = await fetch(`/api/catalog/products/${encodeURIComponent(productId)}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
       const detail = await parseResponse<CatalogProduct>(response);
-      if (requestSequence !== detailRequestSequence.current) return;
+      if (requestSequence !== detailRequestSequence.current) return false;
+      if (!detail || detail.id !== productId || !Array.isArray(detail.categoryIds) || !Array.isArray(detail.variants) || !Array.isArray(detail.attributes) || !Array.isArray(detail.media)) throw new Error("استجابة تفاصيل المنتج غير صالحة. أعد القراءة.");
       setSelected(detail); setForm(toForm(detail)); setAttributeDrafts(attributeDraftsFromValues(detail)); setUploadFile(null); setUploadRole("primary");
-    } catch (nextError) { if (requestSequence === detailRequestSequence.current) setError(nextError instanceof Error ? nextError.message : "تعذر قراءة تفاصيل المنتج."); }
+      return true;
+    } catch (nextError) { if (requestSequence === detailRequestSequence.current) setError(nextError instanceof Error ? nextError.message : "تعذر قراءة تفاصيل المنتج."); return false; }
     finally { if (requestSequence === detailRequestSequence.current) setDetailLoading(false); }
   }
-  function startCreate(updateLocation = true) { detailRequestSequence.current += 1; if (updateLocation) writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort, mode: "create" }); setDetailLoading(false); setSelected(null); setEditorOpen(true); setForm(emptyForm); setAttributeDrafts({}); setUploadFile(null); setUploadRole("primary"); setNotice(""); setError(""); }
+  function startCreate(updateLocation = true) { setDetailProductId(""); setVersionConflict(false); saveAttempt.current = null; setPreviewIndex(null); detailRequestSequence.current += 1; if (updateLocation) writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort, mode: "create" }); setDetailLoading(false); setSelected(null); setEditorOpen(true); setForm(emptyForm); setAttributeDrafts({}); setUploadFile(null); setUploadRole("primary"); setNotice(""); setError(""); }
 
   const restoreCatalogLocation = useEffectEvent(() => {
     const params = new URL(window.location.href).searchParams;
@@ -371,7 +389,7 @@ export function CentralCatalog() {
     setViewMode(params.get("view") === "gallery" ? "gallery" : "table");
     const mode = params.get("mode");
     const productId = params.get("productId");
-    if (mode === "edit" && productId) void selectProduct(productId, false);
+    if (mode === "edit" && productId) { if (selected?.id !== productId || !editorOpen) void selectProduct(productId, false); }
     else if (mode === "create") startCreate(false);
     else { detailRequestSequence.current += 1; setEditorOpen(false); setSelected(null); setDetailLoading(false); }
   });
@@ -435,7 +453,7 @@ export function CentralCatalog() {
   }
 
   async function saveProduct() {
-    if (busy || form.scope !== "SHARED" || !form.canonicalName.trim() || !form.verticalId || form.categoryIds.length === 0) return;
+    if (busy || detailLoading || versionConflict || (detailProductId && !selected) || form.scope !== "SHARED" || !form.canonicalName.trim() || !form.verticalId || form.categoryIds.length === 0) return;
     if (attributeReadState !== "ready") { setError("تعذر التحقق من خصائص الفئات. أعد قراءة القواعد قبل الحفظ."); return; }
     const productAttributes = buildAttributeValues(attributeRules, attributeDrafts);
     const createVariantAttributes = selected ? null : buildAttributeValues(attributeRules, attributeDrafts, "new");
@@ -443,19 +461,22 @@ export function CentralCatalog() {
     if (!productAttributes || (!selected && !createVariantAttributes) || (selected && (!updateVariantAttributes?.length || updateVariantAttributes.some((set) => set.values === null)))) { setError("أكمل الخصائص المطلوبة لكل نسخة وتحقق من أنواع القيم قبل الحفظ."); return; }
     setBusy(true); setError(""); setNotice("");
     const body = { canonicalName: form.canonicalName.trim(), description: form.description.trim(), verticalId: form.verticalId, scope: "SHARED" as const, measurementKind: form.measurementKind, baseUnit: form.baseUnit, categoryIds: [...form.categoryIds], attributeValues: productAttributes, variantAttributeValues: createVariantAttributes ?? [], ...(form.variantTitle.trim() ? { variantTitle: form.variantTitle.trim() } : {}), ...(form.brand.trim() ? { brand: form.brand.trim() } : {}), ...(form.identifierValue.trim() ? { identifierType: form.identifierType, identifierValue: form.identifierValue.trim() } : {}), active: form.active };
+    const intent = JSON.stringify({ productId: selected?.id, version: selected?.version, body, updateVariantAttributes });
+    if (saveAttempt.current?.intent !== intent) saveAttempt.current = { intent, key: crypto.randomUUID() };
+    const idempotencyKey = saveAttempt.current.key;
     try {
       const response = selected
-        ? await fetch(`/api/catalog/products/${encodeURIComponent(selected.id)}`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(selected.version) }, body: JSON.stringify({ canonicalName: body.canonicalName, description: body.description, verticalId: body.verticalId, scope: body.scope, categoryIds: body.categoryIds, attributeValues: body.attributeValues, variantAttributeValues: updateVariantAttributes?.map((set) => ({ variantId: set.variantId, values: set.values ?? [] })), active: body.active, ...(body.brand ? { brand: body.brand } : {}) }) })
-        : await fetch("/api/catalog/products", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) });
+        ? await fetch(`/api/catalog/products/${encodeURIComponent(selected.id)}`, { method: "POST", signal: AbortSignal.timeout(12_000), headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey, "X-Expected-Version": String(selected.version) }, body: JSON.stringify({ canonicalName: body.canonicalName, description: body.description, verticalId: body.verticalId, scope: body.scope, categoryIds: body.categoryIds, attributeValues: body.attributeValues, variantAttributeValues: updateVariantAttributes?.map((set) => ({ variantId: set.variantId, values: set.values ?? [] })), active: body.active, ...(body.brand ? { brand: body.brand } : {}) }) })
+        : await fetch("/api/catalog/products", { method: "POST", signal: AbortSignal.timeout(12_000), headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) });
       const payload = await parseResponse<{ product: CatalogProduct }>(response);
-      setSelected(payload.product); setForm(toForm(payload.product)); setAttributeDrafts(attributeDraftsFromValues(payload.product));
+      if (!payload?.product?.id) throw new Error("أُرسل الحفظ لكن تعذر تأكيد نتيجته. أعد المحاولة بنفس البيانات.");
       writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort, mode: "edit", productId: payload.product.id });
-      setNotice(selected ? "تم تحديث المنتج." : "تم إنشاء المنتج والنسخة الافتراضية."); await load();
+      saveAttempt.current = null;
+      if (await selectProduct(payload.product.id, false)) { setNotice(selected ? "تم تحديث المنتج." : "تم إنشاء المنتج والنسخة الافتراضية."); await load(); }
     } catch (nextError) {
       if (nextError && typeof nextError === "object" && (nextError as { status?: number }).status === 409) {
-        setError("تغير المنتج قبل حفظك. أُعيدت قراءة السجل الحالي؛ راجع البيانات ثم أعد المحاولة.");
-        await load();
-        if (selected) await selectProduct(selected.id, false);
+        setVersionConflict(Boolean(selected));
+        setError("تغير المنتج قبل حفظك. احتفظنا بتعديلاتك في النموذج؛ حمّل النسخة الحالية عند الاستعداد لإلغاء هذه التعديلات ومراجعة السجل.");
       } else {
         setError(nextError instanceof Error ? nextError.message : "تعذر حفظ المنتج.");
       }
@@ -463,7 +484,7 @@ export function CentralCatalog() {
   }
 
   async function trashSelected() {
-    if (!selected || busy || Array.from(deleteReason.trim()).length < 5) return;
+    if (!selected || busy || versionConflict || Array.from(deleteReason.trim()).length < 5) return;
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await fetch("/api/catalog/trash/" + encodeURIComponent(selected.id), {
@@ -479,28 +500,31 @@ export function CentralCatalog() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر نقل المنتج إلى السلة.");
       if (cause && typeof cause === "object" && (cause as { status?: number }).status === 409) {
-        await load();
-        if (selected) await selectProduct(selected.id, false);
+        setVersionConflict(true); setConfirmDelete(false);
+        setError("تغير المنتج قبل نقله إلى السلة. احتفظنا بتعديلاتك؛ حمّل النسخة الحالية لمراجعة السجل قبل إعادة المحاولة.");
       }
     } finally { setBusy(false); }
   }
 
   async function uploadMedia() {
-    if (!selected || !uploadFile || busy || !isMediaProvenanceInputValid(uploadProvenance)) return;
+    if (!selected || !uploadFile || busy || versionConflict || !isMediaProvenanceInputValid(uploadProvenance)) return;
     setBusy(true); setError(""); setNotice("");
     const body = new FormData();
     body.set("role", uploadRole);
     body.set("file", uploadFile, uploadFile.name);
     appendMediaProvenance(body, uploadProvenance);
+    const intent = JSON.stringify({ productId: selected.id, version: selected.version, role: uploadRole, provenance: uploadProvenance });
+    if (mediaAttempt.current?.file !== uploadFile || mediaAttempt.current.intent !== intent) mediaAttempt.current = { file: uploadFile, intent, key: crypto.randomUUID() };
     try {
-      const response = await fetch(`/api/catalog/products/${encodeURIComponent(selected.id)}/media`, { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(selected.version) }, body });
+      const response = await fetch(`/api/catalog/products/${encodeURIComponent(selected.id)}/media`, { method: "POST", headers: { "Idempotency-Key": mediaAttempt.current.key, "X-Expected-Version": String(selected.version) }, body, signal: AbortSignal.timeout(30_000) });
       const payload = await parseResponse<{ product: CatalogProduct }>(response);
-      setSelected(payload.product); setForm(toForm(payload.product)); setUploadFile(null); setUploadProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); setUploadInputKey((value) => value + 1); setNotice(uploadRole === "primary" ? "تم رفع الصورة الأساسية وربطها بالمنتج." : "تم رفع الصورة وإضافتها إلى المعرض.");
+      if (payload?.product?.id !== selected.id || !Array.isArray(payload.product.media)) throw new Error("أُرسل رفع الصورة لكن تعذر تأكيد نتيجته. أعد المحاولة بنفس الملف والبيانات.");
+      mediaAttempt.current = null;
+      setSelected(payload.product); setUploadFile(null); setUploadProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); setUploadInputKey((value) => value + 1); setNotice(uploadRole === "primary" ? "تم رفع الصورة الأساسية وربطها بالمنتج." : "تم رفع الصورة وإضافتها إلى المعرض.");
     } catch (nextError) {
       if (nextError && typeof nextError === "object" && (nextError as { status?: number }).status === 409) {
-        setError("تغير المنتج قبل رفع الصورة. أُعيدت قراءة السجل الحالي؛ راجع البيانات ثم أعد المحاولة.");
-        await load();
-        await selectProduct(selected.id, false);
+        setVersionConflict(true);
+        setError("تغير المنتج قبل رفع الصورة. احتفظنا بتعديلاتك والملف؛ حمّل النسخة الحالية عند الاستعداد لإلغاء هذه التعديلات ومراجعة السجل.");
       } else {
         setError(nextError instanceof Error ? nextError.message : "تعذر رفع صورة المنتج.");
       }
@@ -542,8 +566,7 @@ export function CentralCatalog() {
   if (selectedIds.size > 0) {
     selectionSummary = `تم تحديد ${selectedIds.size} من هذه الصفحة`;
   } else {
-    const cursorSuffix = nextCursor ? "+" : "";
-    selectionSummary = loading ? "جارٍ قراءة السجل…" : `${products.length}${cursorSuffix} سجل في النتيجة الحالية`;
+    selectionSummary = loading ? "جارٍ قراءة السجل…" : `سجلات هذه الصفحة: ${products.length.toLocaleString("ar-YE")}`;
   }
 
   let saveProductLabel = "إنشاء المنتج";
@@ -572,6 +595,7 @@ export function CentralCatalog() {
             <button type="button" className="button button-quiet" aria-pressed={viewMode === "gallery"} onClick={() => changeView("gallery")}>معرض الصور</button>
           </fieldset>
           <div className="catalog-selection-bar" aria-live="polite"><span>{selectionSummary}</span>{selectedIds.size ? <button type="button" className="button button-quiet" onClick={() => setSelectedIds(new Set())}>إلغاء التحديد</button> : null}</div>
+          {!loading && !error ? <div className="catalog-selection-bar" aria-live="polite"><span>إجمالي المنتجات المطابقة للفلاتر: {registrySummary ? registrySummary.totalCount.toLocaleString("ar-YE") : "غير متاح"}</span>{registrySummary ? <small>المصدر: DSH · لقطة حالية عند <time dateTime={registrySummary.measuredAt}>{new Date(registrySummary.measuredAt).toLocaleString("ar-YE", { timeZone: "UTC" })}</time> UTC</small> : null}</div> : null}
         </div>
         {viewMode === "table" ? <div className="catalog-registry-table-wrap">
           <table className="catalog-registry-table">
@@ -610,7 +634,11 @@ export function CentralCatalog() {
         {!editorOpen && error ? <p className="identity-error" role="alert">{error}</p> : null}
     <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات المنتجات" />
       </section>
-      {editorOpen ? <section className="access-card central-catalog-editor" aria-labelledby="central-catalog-editor-title">
+      {editorOpen && detailProductId && !selected ? <section className="access-card central-catalog-editor" aria-labelledby="central-catalog-editor-title">
+        <h2 id="central-catalog-editor-title">تفاصيل المنتج</h2>
+        {detailLoading ? <p role="status">جارٍ قراءة التفاصيل والعلاقات من الخادم…</p> : <p className="identity-error" role="alert">{error || "تعذرت قراءة تفاصيل المنتج. أعد المحاولة."}</p>}
+        <div className="action-row"><button type="button" className="button button-secondary" disabled={detailLoading} onClick={() => void selectProduct(detailProductId, false)}>إعادة قراءة المنتج</button><button type="button" className="button button-secondary" onClick={closeEditor}>إغلاق التفاصيل</button></div>
+      </section> : editorOpen ? <section className="access-card central-catalog-editor" aria-labelledby="central-catalog-editor-title">
         {detailLoading ? <p className="muted" role="status">جارٍ قراءة التفاصيل والعلاقات من الخادم…</p> : null}
         <div className="access-card-heading"><h2 id="central-catalog-editor-title">{selected ? "تعديل المنتج" : "إنشاء منتج"}</h2></div>
         <div className="central-product-form">
@@ -633,21 +661,33 @@ export function CentralCatalog() {
           <label className="field-label" htmlFor="catalog-base-unit">الوحدة الأساسية<select id="catalog-base-unit" disabled={busy || selected !== null} value={form.baseUnit} onChange={(event) => setForm({ ...form, baseUnit: event.target.value as BaseUnit })}><option value="COUNT">قطعة</option><option value="GRAM">غرام</option><option value="MILLILITER">مل</option></select></label>
           <label className="field-label" htmlFor="catalog-identifier">نوع الباركود أو رمز الصنف<select id="catalog-identifier" disabled={busy || selected !== null} value={form.identifierType} onChange={(event) => setForm({ ...form, identifierType: event.target.value })}><option value="GTIN">رقم المنتج العالمي</option><option value="EAN">باركود أوروبي</option><option value="UPC">باركود أمريكي</option><option value="SKU">رمز الصنف لدى المتجر</option><option value="LEGACY_BARCODE">باركود قديم</option></select></label>
           <label className="field-label" htmlFor="catalog-identifier-value">الباركود أو رمز الصنف<input id="catalog-identifier-value" disabled={busy || selected !== null} value={form.identifierValue} onChange={(event) => setForm({ ...form, identifierValue: event.target.value })} /></label>
-          {selected ? <><div className="catalog-product-media-gallery">{[...selected.media].sort((left, right) => left.ordinal - right.ordinal).map((media) => <figure key={`${media.role}:${media.ordinal}:${media.uri}`}><button type="button" className="catalog-media-preview-button" onClick={() => openPreview(media.uri, `${media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} لمنتج ${form.canonicalName}`)} aria-label={`تكبير ${media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} لمنتج ${form.canonicalName}`}><img className="catalog-media-preview" src={media.uri} alt={`${media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} لمنتج ${form.canonicalName}`} loading="lazy" /></button><figcaption>{media.role === "primary" ? "الصورة الأساسية" : `صورة المعرض ${media.ordinal}`}</figcaption></figure>)}{selected.media.length === 0 ? <p className="muted">لا توجد صور بعد. أنشئ المنتج أولًا ثم ارفع صورته هنا.</p> : null}</div><div className="catalog-media-upload"><label className="field-label" htmlFor="catalog-upload-role">موضع الصورة<select id="catalog-upload-role" disabled={busy} value={uploadRole} onChange={(event) => setUploadRole(event.target.value as "primary" | "gallery")}><option value="primary">الصورة الأساسية</option><option value="gallery">المعرض</option></select></label><label className="field-label" htmlFor="catalog-upload-file">ملف الصورة<input key={uploadInputKey} id="catalog-upload-file" disabled={busy} type="file" accept="image/jpeg,image/png" onChange={(event) => { setUploadFile(event.target.files?.[0] ?? null); setUploadProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); }} /></label><CatalogMediaProvenanceFields idPrefix="catalog-product-media" disabled={busy} value={uploadProvenance} onChange={setUploadProvenance} /><button type="button" className="button button-secondary" disabled={busy || !uploadFile || !isMediaProvenanceInputValid(uploadProvenance)} onClick={() => void uploadMedia()}>رفع الصورة وربطها</button></div></> : <p className="muted">بعد حفظ المنتج، افتح تفاصيله لإرفاق صورة من خلال مخزن الوسائط.</p>}
+          {selected ? <><div className="catalog-product-media-gallery">{orderedMedia.map((media, mediaIndex) => <figure key={`${media.role}:${media.ordinal}:${media.uri}`}><button type="button" className="catalog-media-preview-button" onClick={() => openPreview(mediaIndex)} aria-label={`تكبير ${media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} لمنتج ${form.canonicalName}`}><img className="catalog-media-preview" src={media.uri} alt={`${media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} لمنتج ${form.canonicalName}`} loading="lazy" /></button><figcaption>{media.role === "primary" ? "الصورة الأساسية" : `صورة المعرض ${media.ordinal}`}</figcaption></figure>)}{selected.media.length === 0 ? <p className="muted">لا توجد صور بعد. أنشئ المنتج أولًا ثم ارفع صورته هنا.</p> : null}</div><div className="catalog-media-upload"><label className="field-label" htmlFor="catalog-upload-role">موضع الصورة<select id="catalog-upload-role" disabled={busy} value={uploadRole} onChange={(event) => setUploadRole(event.target.value as "primary" | "gallery")}><option value="primary">الصورة الأساسية</option><option value="gallery">المعرض</option></select></label><label className="field-label" htmlFor="catalog-upload-file">ملف الصورة<input key={uploadInputKey} id="catalog-upload-file" disabled={busy} type="file" accept="image/jpeg,image/png" onChange={(event) => { setUploadFile(event.target.files?.[0] ?? null); setUploadProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); }} /></label><CatalogMediaProvenanceFields idPrefix="catalog-product-media" disabled={busy} value={uploadProvenance} onChange={setUploadProvenance} /><button type="button" className="button button-secondary" disabled={busy || versionConflict || !uploadFile || !isMediaProvenanceInputValid(uploadProvenance)} onClick={() => void uploadMedia()}>رفع الصورة وربطها</button></div></> : <p className="muted">بعد حفظ المنتج، افتح تفاصيله لإرفاق صورة من خلال مخزن الوسائط.</p>}
           {selected ? <label className="central-active-toggle"><input type="checkbox" disabled={busy} checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> المنتج نشط وقابل للاختيار</label> : null}
-          <button type="button" className="button button-primary" disabled={busy || form.scope !== "SHARED" || attributeReadState !== "ready" || !form.canonicalName.trim() || !form.verticalId || form.categoryIds.length === 0} onClick={() => void saveProduct()}>{saveProductLabel}</button>
-           {selected && !confirmDelete ? <div className="catalog-category-filters"><button type="button" className="button button-secondary" disabled={busy} onClick={() => { setConfirmDelete(true); setDeleteReason(""); }}>نقل إلى سلة المحذوفات</button></div> : null}
-           {selected && confirmDelete ? <div className="catalog-category-filters"><span className="muted">تأكيد نقل المنتج إلى السلة</span><label className="field-label" htmlFor="catalog-delete-reason">سبب الحذف<input id="catalog-delete-reason" value={deleteReason} maxLength={500} disabled={busy} onChange={(event) => setDeleteReason(event.target.value)} placeholder="سبب واضح من 5 أحرف على الأقل" /></label><button type="button" className="button button-primary" disabled={busy || Array.from(deleteReason.trim()).length < 5} onClick={() => void trashSelected()}>{busy ? "جارٍ النقل…" : "تأكيد النقل إلى السلة"}</button><button type="button" className="button button-secondary" disabled={busy} onClick={() => setConfirmDelete(false)}>إلغاء</button></div> : null}
-          <button type="button" className="button button-secondary" disabled={busy} onClick={() => { writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); detailRequestSequence.current += 1; setDetailLoading(false); setEditorOpen(false); setSelected(null); }}>إغلاق التفاصيل</button>
+          <button type="button" className="button button-primary" disabled={busy || versionConflict || detailLoading || form.scope !== "SHARED" || attributeReadState !== "ready" || !form.canonicalName.trim() || !form.verticalId || form.categoryIds.length === 0} onClick={() => void saveProduct()}>{saveProductLabel}</button>
+          {versionConflict && !error ? <p className="identity-error" role="alert">تغير المنتج. احتفظنا بتعديلاتك؛ تحميل النسخة الحالية يلغي التعديلات والملف المحدد.</p> : null}
+          {versionConflict && selected ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void selectProduct(selected.id, false)}>تحميل النسخة الحالية وإلغاء تعديلاتي</button> : null}
+           {selected && !confirmDelete ? <div className="catalog-category-filters"><button type="button" className="button button-secondary" disabled={busy || versionConflict} onClick={() => { setConfirmDelete(true); setDeleteReason(""); }}>نقل إلى سلة المحذوفات</button></div> : null}
+           {selected && confirmDelete ? <div className="catalog-category-filters"><span className="muted">تأكيد نقل المنتج إلى السلة</span><label className="field-label" htmlFor="catalog-delete-reason">سبب الحذف<input id="catalog-delete-reason" value={deleteReason} maxLength={500} disabled={busy} onChange={(event) => setDeleteReason(event.target.value)} placeholder="سبب واضح من 5 أحرف على الأقل" /></label><button type="button" className="button button-primary" disabled={busy || versionConflict || Array.from(deleteReason.trim()).length < 5} onClick={() => void trashSelected()}>{busy ? "جارٍ النقل…" : "تأكيد النقل إلى السلة"}</button><button type="button" className="button button-secondary" disabled={busy} onClick={() => setConfirmDelete(false)}>إلغاء</button></div> : null}
+          <button type="button" className="button button-secondary" disabled={busy} onClick={closeEditor}>إغلاق التفاصيل</button>
         </div>
         {notice ? <p className="success-inline" role="status">{notice}</p> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}
       </section> : null}
-      {previewMedia ? <div className="catalog-image-overlay">
-        <div className="catalog-image-dialog" role="dialog" aria-modal="true" aria-label={previewMedia.alt}>
-          <button ref={previewCloseRef} type="button" className="button button-secondary" onClick={closePreview}>إغلاق الصورة</button>
-          {failedPreviewUri === previewMedia.uri ? <p role="alert">تعذر عرض الصورة بالحجم الكبير.</p> : <img src={previewMedia.uri} alt={previewMedia.alt} onError={() => setFailedPreviewUri(previewMedia.uri)} />}
+      {previewMedia ? <dialog ref={previewDialogRef} className="catalog-image-dialog" aria-modal="true" aria-label={previewAlt} onCancel={(event) => { event.preventDefault(); closePreview(); }} onKeyDown={(event) => {
+        if (event.key !== "Tab") return;
+        const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+        const first = controls[0];
+        const last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }}>
+        <div className="action-row">
+          <button type="button" className="button button-secondary" onClick={closePreview}>إغلاق الصورة</button>
+          <button type="button" className="button button-secondary" disabled={previewIndex === 0} onClick={() => setPreviewIndex((index) => index === null ? null : index - 1)}>الصورة السابقة</button>
+          <button type="button" className="button button-secondary" disabled={previewIndex === orderedMedia.length - 1} onClick={() => setPreviewIndex((index) => index === null ? null : index + 1)}>الصورة التالية</button>
         </div>
-      </div> : null}
+        <p className="muted" aria-live="polite">{previewAlt} · {new Intl.NumberFormat("ar-YE").format((previewIndex ?? 0) + 1)} من {new Intl.NumberFormat("ar-YE").format(orderedMedia.length)}</p>
+        {failedPreviewUri === previewMedia.uri ? <div><p role="alert">تعذر عرض الصورة بالحجم الكبير.</p><button type="button" className="button button-secondary" onClick={() => setFailedPreviewUri("")}>إعادة تحميل الصورة</button></div> : <img key={previewMedia.uri} src={previewMedia.uri} alt={previewAlt} onError={() => setFailedPreviewUri(previewMedia.uri)} />}
+      </dialog> : null}
     </div>
   );
 }

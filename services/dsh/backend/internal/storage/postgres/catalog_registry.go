@@ -27,6 +27,8 @@ type CatalogProductRegistryItem struct {
 type CatalogProductRegistryPage struct {
 	Products   []CatalogProductRegistryItem
 	NextCursor string
+	TotalCount int64
+	MeasuredAt time.Time
 }
 
 type catalogProductRegistryCursor struct {
@@ -70,20 +72,21 @@ func ListCatalogProductRegistry(ctx context.Context, db *sql.DB, query, vertical
 		}
 		cursorProductID = cursor.ProductID
 	}
-	const querySQL = `SELECT product.id,product.vertical_id,product.canonical_name,product.brand,product.active,product.version,COUNT(DISTINCT variant.id),
-		ARRAY(SELECT pc.category_id FROM dsh.catalog_product_categories pc WHERE pc.product_id=product.id ORDER BY pc.category_id),
-		(SELECT ma.uri FROM dsh.catalog_media cm JOIN dsh.catalog_media_assets ma ON ma.product_id=cm.product_id AND ma.id=cm.media_asset_id AND ma.state='active' AND ma.rights_attested_at IS NOT NULL WHERE cm.product_id=product.id AND cm.media_role='primary' ORDER BY cm.ordinal LIMIT 1),
-		(SELECT COUNT(DISTINCT o.store_id) FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id WHERE v.product_id=product.id AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)),
-		product.created_at,product.updated_at
-		FROM dsh.catalog_products product JOIN dsh.commerce_verticals cv ON cv.id=product.vertical_id LEFT JOIN dsh.catalog_product_variants variant ON variant.product_id=product.id
-		WHERE product.scope='SHARED' AND cv.active=true AND product.deleted_at IS NULL
+	const registryFilterSQL = `		WHERE product.scope='SHARED' AND cv.active=true AND product.deleted_at IS NULL
 		AND ($1='' OR product.canonical_name ILIKE '%'||$1||'%' OR COALESCE(product.brand,'') ILIKE '%'||$1||'%')
 		AND ($2='' OR product.vertical_id=$2)
 		AND ($3='' OR EXISTS (WITH RECURSIVE category_subtree(id) AS (
 			SELECT c.id FROM dsh.catalog_categories c WHERE c.id=$3 AND c.vertical_id=product.vertical_id AND c.active=true
 			UNION SELECT child.id FROM dsh.catalog_categories child JOIN category_subtree parent ON child.parent_category_id=parent.id WHERE child.vertical_id=product.vertical_id AND child.active=true
 		) SELECT 1 FROM dsh.catalog_product_categories pc JOIN category_subtree subtree ON subtree.id=pc.category_id WHERE pc.product_id=product.id))
-		AND ($4='all' OR product.active=($4='active'))
+		AND ($4='all' OR product.active=($4='active'))`
+	const querySQL = `SELECT product.id,product.vertical_id,product.canonical_name,product.brand,product.active,product.version,COUNT(DISTINCT variant.id),
+		ARRAY(SELECT pc.category_id FROM dsh.catalog_product_categories pc WHERE pc.product_id=product.id ORDER BY pc.category_id),
+		(SELECT ma.uri FROM dsh.catalog_media cm JOIN dsh.catalog_media_assets ma ON ma.product_id=cm.product_id AND ma.id=cm.media_asset_id AND ma.state='active' AND ma.rights_attested_at IS NOT NULL WHERE cm.product_id=product.id AND cm.media_role='primary' ORDER BY cm.ordinal LIMIT 1),
+		(SELECT COUNT(DISTINCT o.store_id) FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id WHERE v.product_id=product.id AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)),
+		product.created_at,product.updated_at
+		FROM dsh.catalog_products product JOIN dsh.commerce_verticals cv ON cv.id=product.vertical_id LEFT JOIN dsh.catalog_product_variants variant ON variant.product_id=product.id
+` + registryFilterSQL + `
 		AND (NOT $8::boolean
 			OR ($9='name_asc' AND (lower(product.canonical_name),product.id)>($5::text,$7::text))
 			OR ($9='name_desc' AND (lower(product.canonical_name),product.id)<($5::text,$7::text))
@@ -94,7 +97,18 @@ func ListCatalogProductRegistry(ctx context.Context, db *sql.DB, query, vertical
 		CASE WHEN $9='updated_asc' THEN product.updated_at END ASC,CASE WHEN $9='updated_desc' THEN product.updated_at END DESC,
 		CASE WHEN $9 IN ('name_asc','updated_asc') THEN product.id END ASC,CASE WHEN $9 IN ('name_desc','updated_desc') THEN product.id END DESC
 		LIMIT $10`
-	rows, err := db.QueryContext(ctx, querySQL, query, verticalID, categoryID, active, cursorNameKey, cursorUpdatedAt, cursorProductID, cursor != nil, sort, limit+1)
+	// Count and page share one snapshot and exactly the same filter owner.
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return CatalogProductRegistryPage{}, err
+	}
+	defer tx.Rollback()
+	var totalCount int64
+	var measuredAt time.Time
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*), CURRENT_TIMESTAMP FROM dsh.catalog_products product JOIN dsh.commerce_verticals cv ON cv.id=product.vertical_id `+registryFilterSQL, query, verticalID, categoryID, active).Scan(&totalCount, &measuredAt); err != nil {
+		return CatalogProductRegistryPage{}, err
+	}
+	rows, err := tx.QueryContext(ctx, querySQL, query, verticalID, categoryID, active, cursorNameKey, cursorUpdatedAt, cursorProductID, cursor != nil, sort, limit+1)
 	if err != nil {
 		return CatalogProductRegistryPage{}, err
 	}
@@ -112,7 +126,13 @@ func ListCatalogProductRegistry(ctx context.Context, db *sql.DB, query, vertical
 	if err := rows.Err(); err != nil {
 		return CatalogProductRegistryPage{}, err
 	}
-	page := CatalogProductRegistryPage{Products: items}
+	if err := rows.Close(); err != nil {
+		return CatalogProductRegistryPage{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return CatalogProductRegistryPage{}, err
+	}
+	page := CatalogProductRegistryPage{Products: items, TotalCount: totalCount, MeasuredAt: measuredAt}
 	if len(items) > limit {
 		page.Products = items[:limit]
 		last := page.Products[len(page.Products)-1]

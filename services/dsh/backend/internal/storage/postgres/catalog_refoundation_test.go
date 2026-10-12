@@ -56,7 +56,47 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		scenario.verifyProposalPagination()
 		scenario.verifyAdmissionPagination()
 		scenario.verifyFieldCityAssignments()
+		scenario.verifyRegistryScale()
 	})
+}
+
+func (s *catalogRefoundationScenario) verifyRegistryScale() {
+	s.t.Helper()
+	// Coherent fixtures exist only in withFreshDatabase's disposable database.
+	if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.catalog_products(id,vertical_id,scope,canonical_name,brand,active)
+		SELECT 'registry_scale_'||n,$1,'SHARED','Registry proof product '||n,'Isolated registry proof',true FROM generate_series(1,1000) n`, s.verticalID); err != nil {
+		s.t.Fatalf("create isolated registry scale products: %v", err)
+	}
+	if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.catalog_product_variants(id,product_id,title,measurement_kind,base_unit,active)
+		SELECT 'registry_scale_variant_'||n,'registry_scale_'||n,'250 g','MEASURED','GRAM',true FROM generate_series(1,1000) n`); err != nil {
+		s.t.Fatalf("create isolated registry scale variants: %v", err)
+	}
+	if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.catalog_product_categories(product_id,category_id)
+		SELECT 'registry_scale_'||n,$1 FROM generate_series(1,1000) n`, s.categoryID); err != nil {
+		s.t.Fatalf("create isolated registry scale categories: %v", err)
+	}
+	started := time.Now()
+	page, err := postgres.ListCatalogProductRegistry(s.ctx, s.db, "Registry proof product", s.verticalID, s.categoryID, "active", "name_asc", 50, "")
+	firstDuration := time.Since(started)
+	if err != nil || page.TotalCount != 1000 || len(page.Products) != 50 || page.NextCursor == "" {
+		s.t.Fatalf("bounded registry and summary over 1000 isolated products: count=%d rows=%d err=%v", page.TotalCount, len(page.Products), err)
+	}
+	started = time.Now()
+	next, err := postgres.ListCatalogProductRegistry(s.ctx, s.db, "Registry proof product", s.verticalID, s.categoryID, "active", "name_asc", 50, page.NextCursor)
+	nextDuration := time.Since(started)
+	if err != nil || next.TotalCount != 1000 || len(next.Products) != 50 {
+		s.t.Fatalf("registry scale next page lost complete count: count=%d rows=%d err=%v", next.TotalCount, len(next.Products), err)
+	}
+	seen := make(map[string]bool, 50)
+	for _, item := range page.Products {
+		seen[item.ID] = true
+	}
+	for _, item := range next.Products {
+		if seen[item.ID] {
+			s.t.Fatalf("registry pages repeat product %s", item.ID)
+		}
+	}
+	s.t.Logf("REGISTRY_SCALE products=1000 page=50 first=%s next=%s; local measurement, not a throughput guarantee", firstDuration, nextDuration)
 }
 
 func TestFieldCityAssignmentCutoverPreservesExistingAssignment(t *testing.T) {
@@ -437,12 +477,26 @@ func (s *catalogRefoundationScenario) verifySharedProducts() {
 func (s *catalogRefoundationScenario) verifySharedProductPagination() {
 	s.t.Helper()
 	registryPage, err := postgres.ListCatalogProductRegistry(s.ctx, s.db, "", s.verticalID, "", "all", "name_asc", 1, "")
-	if err != nil || len(registryPage.Products) != 1 || registryPage.NextCursor == "" {
+	if err != nil || len(registryPage.Products) != 1 || registryPage.NextCursor == "" || registryPage.TotalCount != 2 || registryPage.MeasuredAt.IsZero() {
 		s.t.Fatalf("catalog product registry first page failed: %+v err=%v", registryPage, err)
 	}
 	registryNextPage, err := postgres.ListCatalogProductRegistry(s.ctx, s.db, "", s.verticalID, "", "all", "name_asc", 1, registryPage.NextCursor)
-	if err != nil || len(registryNextPage.Products) != 1 || registryNextPage.NextCursor != "" || registryNextPage.Products[0].ID == registryPage.Products[0].ID {
+	if err != nil || len(registryNextPage.Products) != 1 || registryNextPage.NextCursor != "" || registryNextPage.Products[0].ID == registryPage.Products[0].ID || registryNextPage.TotalCount != 2 {
 		s.t.Fatalf("catalog product registry cursor failed: first=%+v second=%+v err=%v", registryPage, registryNextPage, err)
+	}
+	for _, status := range []string{"active", "inactive"} {
+		filtered, err := postgres.ListCatalogProductRegistry(s.ctx, s.db, "", s.verticalID, "", status, "updated_desc", 1, "")
+		if err != nil || len(filtered.Products) != 1 || filtered.TotalCount != 1 || filtered.Products[0].Active != (status == "active") {
+			s.t.Fatalf("catalog summary must share the status filter %s: %+v err=%v", status, filtered, err)
+		}
+	}
+	empty, err := postgres.ListCatalogProductRegistry(s.ctx, s.db, "no-product-matches-this-query", s.verticalID, "", "all", "name_asc", 1, "")
+	if err != nil || len(empty.Products) != 0 || empty.TotalCount != 0 || empty.MeasuredAt.IsZero() {
+		s.t.Fatalf("catalog empty summary must return measured zero: %+v err=%v", empty, err)
+	}
+	filteredCategory, err := postgres.ListCatalogProductRegistry(s.ctx, s.db, "", s.verticalID, s.categoryID, "all", "name_asc", 1, "")
+	if err != nil || filteredCategory.TotalCount != 2 || len(filteredCategory.Products) != 1 {
+		s.t.Fatalf("catalog category summary must count beyond this page: %+v err=%v", filteredCategory, err)
 	}
 	sharedProductPage, err := postgres.ListCatalogProducts(s.ctx, s.db, "", s.verticalID, false, 1, "")
 	if err != nil || len(sharedProductPage.Products) != 1 || sharedProductPage.NextCursor == "" {
