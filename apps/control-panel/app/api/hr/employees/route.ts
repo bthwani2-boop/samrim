@@ -26,9 +26,12 @@ export async function GET(request: Request) {
   const search = new URL(request.url).searchParams;
   const q = search.get("q")?.trim() ?? "";
   const cursor = search.get("cursor") ?? "";
-  if (q.length > 80 || cursor.length > 1024) return denied(400, "INVALID_INPUT", "invalid search query");
+  const requestedLimit = search.get("limit") ?? "25";
+  const limit = Number(requestedLimit);
+  if (q.length > 80 || cursor.length > 1024 || !/^[1-9][0-9]?$/.test(requestedLimit) || !Number.isSafeInteger(limit) || limit > 50)
+    return denied(400, "INVALID_INPUT", "invalid HR directory query");
   try {
-    const result = await listHREmployees(q, cursor, { operatorActorId: access.identity.subject });
+    const result = await listHREmployees(q, cursor, { operatorActorId: access.identity.subject }, limit);
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return fail(error); }
 }

@@ -63,3 +63,25 @@ test("employee edit retains and resolves an off-page reporting line",async({page
  await expect(selection.getByRole("option",{name:manager.fullNameAr})).toBeAttached();
  await expect(selection).toHaveValue(manager.id);
 });
+
+test("manager lookup continues across cursor pages without losing its selection",async({page})=>{
+ await page.route("**/api/hr/employees?**",route=>{
+   const url=new URL(route.request().url());
+   const query=url.searchParams.get("q");
+   const cursor=url.searchParams.get("cursor");
+   if(query!=="سليم")return route.fulfill({json:{items:[employee],nextCursor:""}});
+   expect(url.searchParams.get("limit")).toBe("50");
+   if(cursor==="next")return route.fulfill({json:{items:[manager],nextCursor:""}});
+   return route.fulfill({json:{items:[{...manager,id:"emp_44444444444444444444444444444444",fullNameAr:"سليم أول"}],nextCursor:"next"}});
+ });
+ await page.goto("/hr/employees");
+ await page.getByRole("button",{name:"إضافة موظف"}).click();
+ await page.getByRole("textbox",{name:"البحث عن المسؤول المباشر"}).fill("سليم");
+ await page.getByRole("button",{name:"بحث عن مسؤول"}).click();
+ await page.getByRole("button",{name:"عرض المزيد من نتائج البحث"}).click();
+ const selection=page.getByRole("combobox",{name:"المسؤول المباشر (اختياري)"});
+ await expect(selection.getByRole("option",{name:manager.fullNameAr})).toBeAttached();
+ await selection.selectOption(manager.id);
+ await expect(selection).toHaveValue(manager.id);
+ await expect(page.getByRole("button",{name:"عرض المزيد من نتائج البحث"})).toHaveCount(0);
+});

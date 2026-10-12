@@ -52,8 +52,8 @@ export async function updateOperatorWalletProvider(providerKey: string, input: R
 export type HREmployee = DshHREmployee;
 export type HREmployeeInput = HRCreateEmployeeRequest;
 export type HREmployeePage = DshHREmployeePage;
-export function listHREmployees(q: string, cursor: string, context: DshOperatorReadContext): Promise<HREmployeePage> {
-  const search = new URLSearchParams({ q, cursor, limit: "25" });
+export function listHREmployees(q: string, cursor: string, context: DshOperatorReadContext, limit = 25): Promise<HREmployeePage> {
+  const search = new URLSearchParams({ q, cursor, limit: String(limit) });
   return requestDshJson<HREmployeePage>("GET", `/dsh/hr/employees?${search}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId }).then((response) => response.payload);
 }
 export function readHREmployee(id: string, context: DshOperatorReadContext): Promise<Readonly<{ employee: HREmployee }>> {
