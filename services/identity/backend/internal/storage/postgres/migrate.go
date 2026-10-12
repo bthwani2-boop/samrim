@@ -44,6 +44,21 @@ var identitySchemaRequirements = []schemaRequirement{
 	{table: "identity_operator_profile_events", columns: []string{"id", "profile_id", "event_type", "acting_actor_id", "idempotency_key", "request_hash", "correlation_id", "created_at"}, indexes: []string{"identity_operator_profile_events_pkey", "identity_operator_profile_events_idempotency_key_key", "identity_operator_profile_events_profile_idx"}},
 }
 
+// Previous local environments may have applied v29 before its NULL bootstrap guard
+// was corrected. Accept only its exact published checksum, never arbitrary drift.
+// Its successfully applied permission rows have the same effective semantics.
+const historicalV29HRPermissionSHA256 = "b19d72a8d69516f397f648c16c81369d91cc77f5f6406165b3743bcff6fd0748"
+
+func migrationChecksumMatches(record MigrationRecord, name, digest string) bool {
+	if name != record.Name {
+		return false
+	}
+	return digest == record.SHA256 ||
+		(record.Version == 29 &&
+			record.Name == "029_operator_hr_permission.sql" &&
+			digest == historicalV29HRPermissionSHA256)
+}
+
 type queryer interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
@@ -161,7 +176,7 @@ func SynchronizeMigrationHistory(ctx context.Context, db *sql.DB, records []Migr
 			}
 			continue
 		}
-		if name != record.Name || sha256 != record.SHA256 {
+		if !migrationChecksumMatches(record, name, sha256) {
 			return fmt.Errorf("migration history checksum mismatch at v%d: name=%q sha256=%q", record.Version, name, sha256)
 		}
 	}
@@ -196,7 +211,7 @@ func VerifyMigrationHistory(ctx context.Context, db *sql.DB, records []Migration
 		if err != nil {
 			return fmt.Errorf("migration history read version %d: %w", record.Version, err)
 		}
-		if !name.Valid || !sha256.Valid || name.String != record.Name || sha256.String != record.SHA256 {
+		if !name.Valid || !sha256.Valid || !migrationChecksumMatches(record, name.String, sha256.String) {
 			return fmt.Errorf("migration history checksum mismatch at v%d", record.Version)
 		}
 	}

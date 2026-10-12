@@ -7,7 +7,7 @@ ALTER TABLE identity_operator_permissions
 
 INSERT INTO identity_operator_permissions(actor_id,permission,enabled,version,changed_by_actor_id,reason)
 SELECT r.actor_id,'hr',
-       r.actor_id = bootstrap.initial_operator_actor_id,
+       COALESCE(r.actor_id = bootstrap.initial_operator_actor_id, false),
        1,
        CASE WHEN r.actor_id=bootstrap.initial_operator_actor_id THEN r.actor_id ELSE NULL END,
        CASE WHEN r.actor_id=bootstrap.initial_operator_actor_id THEN 'initial operator HR access'
