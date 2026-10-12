@@ -90,6 +90,22 @@ export async function listHREmployeeEvents(id:string,cursor:string,context:DshOp
   `/dsh/hr/employees/${encodeURIComponent(id)}/events?${params}`,undefined,
   {"X-Acting-Actor-ID":context.operatorActorId})).payload;
 }
+export type HRAttendanceStatus = "present" | "absent" | "late" | "leave";
+export type HRAttendanceInput = Readonly<{date:string;status:HRAttendanceStatus;note:string;checkInAt?:string;checkOutAt?:string;expectedVersion:number}>;
+export type HRAttendanceRecord = Readonly<{employeeId:string;date:string;status:HRAttendanceStatus;note:string;checkInAt?:string;checkOutAt?:string;version:number;recordedByActorId:string;recordedAt:string}>;
+export type HRAttendancePage = Readonly<{items:readonly HRAttendanceRecord[]}>;
+export async function listHRAttendance(id:string,from:string,to:string,context:DshOperatorReadContext):Promise<HRAttendancePage>{
+ const qs=new URLSearchParams({from,to});
+ return (await requestDshJson<HRAttendancePage>("GET",`/dsh/hr/employees/${encodeURIComponent(id)}/attendance?${qs}`,undefined,
+ {"X-Acting-Actor-ID":context.operatorActorId})).payload;
+}
+export async function recordHRAttendance(id:string,input:HRAttendanceInput,context:JoiningCaseMutationContext):Promise<Readonly<{record:HRAttendanceRecord;idempotentReplay:boolean}>>{
+ validateAttributedMutationContext(context);
+ return (await requestDshJson<Readonly<{record:HRAttendanceRecord;idempotentReplay:boolean}>>("POST",
+ `/dsh/hr/employees/${encodeURIComponent(id)}/attendance`,input,
+ {"X-Acting-Actor-ID":context.operatorActorId,"X-Correlation-ID":context.correlationId,
+ "Idempotency-Key":context.idempotencyKey})).payload;
+}
 export type HREmploymentStatusInput = Readonly<{status:"active"|"inactive";reason:string;expectedVersion:number}>;
 export async function setHREmploymentStatus(id:string,input:HREmploymentStatusInput,context:JoiningCaseMutationContext):Promise<Readonly<{employee:HREmployee;idempotentReplay:boolean}>> {
  validateAttributedMutationContext(context);

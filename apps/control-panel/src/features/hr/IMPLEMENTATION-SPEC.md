@@ -1,6 +1,15 @@
 # BThwani — Employee HR, Operator Admission, Attendance & Payroll Specification
 
-**Status:** Phased delivery. HR employee directory, explicit HR Operator permission, and Root-governed role administration have source implementation in progress; HR-to-Root access requests and Root-triggered creation of a pending-review Identity Operator profile are implemented in source (HR-002), with server-side Identity administrator checks and idempotent retry. Version-checked HR employee profile edits with before/after audit snapshots are implemented in source (HR-003); identity-relevant fields cannot be changed while an operator access request exists, to prevent cross-service mismatches. HR-004 introduces a source implementation of Root-only rejection with durable reason/audit, a safe pre-Identity provisioning claim, and a new request cycle after rejection. Withdrawals and automatic linking from an admitted Operator actor to its HR employee remain unimplemented. Live HR migrations and the complete runtime/browser journey, biometrics, compensation, payroll and custody remain UNPROVEN or NOT IMPLEMENTED.
+**Current-source notice (12 October 2026):** This file originated as a phased design brief at
+baseline e0f0fae8 and is *not* an authoritative live status report.
+Current branch 14 contains HR-001 through HR-004, employee/Identity links, Root-governed
+operator admission, employee status and history, and manual attendance candidate
+migration 120 (subject to current-HEAD proof). The two original HR employees are
+preserved. Passkey activation of the second linked operator, full leave approval,
+confidential salary contracts, payroll/WLT payout, physical custody, biometric
+devices, and advanced reporting are not claimed completed. Use the canonical
+governance capability owner and current source/tests for implementation truth.
+
 **Location:** Control Panel HR feature; outside governance. **Authority:** user approval and canonical service contracts prevail; this file is a future implementation brief, not production policy.
 **Audit basis:** branch `14`, execution baseline `e0f0fae8a412cfb1965cf1cfdb780b7295c3f8d2` (2026-10-12). SQL migrations were verified in rollback-only transactions; production/runtime data remains unchanged, and no live end-to-end closure is claimed.
 **Scope:** employees of BThwani only: operators and non-operator employees (e.g., security staff or cleaners). No captains, field acquisition representatives, partners, clients, or store employees are automatically part of this register.
@@ -15,7 +24,7 @@
 - **Department / قسم**, **job title / مسمى**, **direct manager / المسؤول المباشر**, **work location / موقع العمل**, **access permissions / الصلاحيات** are separate facts. Titles and management seniority never confer permissions. Prevent cyclic manager relationships and self-reporting. Employee management chain does not automatically reveal salaries.
 - Any person who already has a canonical `actor_id` keeps it. Existing `identity_operator_profiles` and `identity_actor_roles` must not be replaced or duplicated.
 
-## 2. Current evidence (do not call these implemented HR features)
+## 2. Historical baseline observations (superseded for current implementation)
 
 - `apps/control-panel/src/features/access/operator-profile-panel.tsx` creates operator pre-admission profiles with `fullNameAr`, `phoneE164`, `jobTitle`, `department`; profiles have pending-review, approved, admitted transitions.
 - `apps/control-panel/app/api/access/operator-profiles/route.ts` and `services/identity/backend/internal/actor/operator_profiles.go` enforce operator-administrator privilege and preserve audit/idempotency; Identity `IsOperatorPermissionAdministrator` resolves the canonical initial operator.

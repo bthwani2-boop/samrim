@@ -443,6 +443,9 @@ paths:
   /dsh/hr/employees/{employeeId}/employment-status:
     $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees~1{employeeId}~1employment-status"
 
+  /dsh/hr/employees/{employeeId}/attendance:
+    $ref: "./paths/hr-attendance.yaml#/paths/~1dsh~1hr~1employees~1{employeeId}~1attendance"
+
   /dsh/hr/employees/{employeeId}:
     $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees~1{employeeId}"
 
@@ -4908,6 +4911,78 @@ components:
             $ref: "#/components/schemas/HREmployeeEvent"
         nextCursor:
           type: string
+
+    HRAttendanceInput:
+      type: object
+      additionalProperties: false
+      required: [date, status, note, expectedVersion]
+      properties:
+        date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [present, absent, late, leave]
+        note:
+          type: string
+          minLength: 8
+          maxLength: 500
+        checkInAt:
+          type: string
+          format: date-time
+        checkOutAt:
+          type: string
+          format: date-time
+        expectedVersion:
+          type: integer
+          minimum: 0
+    HRAttendanceRecord:
+      type: object
+      additionalProperties: false
+      required: [employeeId, date, status, note, version, recordedByActorId, recordedAt]
+      properties:
+        employeeId:
+          type: string
+        date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [present, absent, late, leave]
+        note:
+          type: string
+        checkInAt:
+          type: string
+          format: date-time
+        checkOutAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+        recordedByActorId:
+          type: string
+        recordedAt:
+          type: string
+          format: date-time
+    HRAttendancePage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HRAttendanceRecord"
+    HRAttendanceResponse:
+      type: object
+      additionalProperties: false
+      required: [record, idempotentReplay]
+      properties:
+        record:
+          $ref: "#/components/schemas/HRAttendanceRecord"
+        idempotentReplay:
+          type: boolean
 
     HREmploymentStatusInput:
       type: object

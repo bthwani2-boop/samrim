@@ -18,6 +18,18 @@ An HR-authorized Operator can create and manage the employee directory and submi
 
 The employee has one durable HR record with stable employment identifier, personal/work facts, job history, reporting line and start/end state. Non-operator staff can be recorded without a platform account. HR read and mutating privileges are scoped and independently enforced by backend authorization. Compensation, payout destinations and sensitive employment documents are not part of the general employee registry and require dedicated, narrower authority.
 
+### Manual attendance initial implementation
+
+HR-authorized Operators may explicitly record dated presence, absence, lateness or
+a leave notation for active employees. An unrecorded day remains unknown, not absent.
+Each correction requires the current record version and a reason; the canonical
+HR owner retains every version in append-only attendance events with the actor
+and correlation ID. Optional time intervals support overnight shifts but do not
+derive lateness or employment deductions. A leave notation is not an approved
+leave request or an automatic payroll instruction. Shift planning, leave
+approvals, compensation, biometric devices and finance reconciliation remain
+separate bounded capabilities; this section confers no salary or payment authority.
+
 ## Attendance, compensation and custody
 
 When adopted, verified device attendance is evidence to HR scheduling/leave rules, not final salary deductions. Source events are attributable, idempotent, chronologically preserved and correctable only by audited adjustments; missing device data is not automatically absence. Biometric templates are not centrally copied as ordinary HR data.

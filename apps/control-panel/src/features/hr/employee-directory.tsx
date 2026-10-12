@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { HREmployee, HREmployeeInput, HREmployeePage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { EmployeeAccessRequest } from "./employee-access-request";
+import { EmployeeAttendance } from "./employee-attendance";
 import { EmployeeAuditHistory } from "./employee-audit-history";
 import { EmployeeEmploymentStatus } from "./employee-employment-status";
 import { EmployeeManagerSelect } from "./employee-manager-select";
@@ -169,6 +170,7 @@ export function EmployeeDirectory() {
       <EmployeeAccessRequest key={`${selected.id}-access`} employee={selected} />
       <EmployeeOperatorAccess key={`${selected.id}-operator-access`} employee={selected} />
       <EmployeeEmploymentStatus key={`${selected.id}-employment-status`} employee={selected} onSaved={(next)=>{setSelected(next);setItems((list)=>list.map((person)=>person.id===next.id?next:person));}} />
+      <EmployeeAttendance key={selected.id + "-attendance"} employeeId={selected.id} />
       <EmployeeAuditHistory key={`${selected.id}-audit`} employee={selected} />
     </section> : null}
   </section>;
