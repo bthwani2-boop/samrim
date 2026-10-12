@@ -44,3 +44,19 @@ the affected operator's existing Identity sessions.
 Local development may keep direct Root Owner password login while exposing the
 normal invite, passkey and recovery journeys for testing. These additional
 options must never bypass the Identity enrollment token and challenge.
+
+
+### Single employee; conditional operator access
+
+Operator is not a separate HR employee category or a second person. Each
+employee has exactly one HR record regardless of whether they can operate the
+platform. The optional Identity operator role grants access to the Control Panel;
+it does not define employment or create a second employment relationship.
+Suspending the employee's operator role is a Root Owner decision using Identity's
+existing role state, which revokes active operator sessions and pending
+invitations but leaves the HR employee record and employment status unchanged.
+Restoring this role is permitted only while the employee remains active.
+The HR employee detail page reads Identity to show actual role status; a linked
+actor ID alone must never be mistaken for currently enabled access.
+Employment separation and historical record retention are separate HR lifecycle
+work, not automatic consequences of removing an operational permission.
