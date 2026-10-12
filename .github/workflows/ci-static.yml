@@ -29,6 +29,11 @@ jobs:
       GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
       GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
       GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
+      # Static Compose interpolation only; this job does not start a database.
+      SAMRIM_IDENTITY_DB_PASSWORD: ci-static-placeholder
+      SAMRIM_IDENTITY_MAINTENANCE_DB_PASSWORD: ci-static-placeholder
+      SAMRIM_DSH_DB_PASSWORD: ci-static-placeholder
+      SAMRIM_WLT_DB_PASSWORD: ci-static-placeholder
     steps:
       - name: Checkout candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
