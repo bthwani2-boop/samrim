@@ -65,7 +65,7 @@ export function EmployeeAttendance({employeeId}:{employeeId:string}){
   }catch(cause){setError(cause instanceof Error?cause.message:"تعذر حفظ الحضور")}
   finally{setBusy(false)}
  }
- return <section className="form-section" style={{maxInlineSize:620}} aria-label="الحضور اليدوي">
+ return <section className="form-section form-section--w620" aria-label="الحضور اليدوي">
   <h3>الحضور اليومي</h3>
   <p className="muted">تسجيل يدوي مع سجل تصحيحات؛ عدم وجود تسجيل لا يعني الغياب، ولا تُحسب خصومات أو رواتب تلقائيًا.</p>
   <form onSubmit={e=>void submit(e)}>

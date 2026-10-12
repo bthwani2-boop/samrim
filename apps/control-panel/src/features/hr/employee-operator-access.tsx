@@ -47,7 +47,7 @@ export function EmployeeOperatorAccess({ employee }: Readonly<{ employee: HREmpl
     } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر تطبيق القرار"); }
     finally { setSaving(false); }
   }
-  return <section className="form-section" aria-label="صلاحية تشغيل الموظف" style={{ maxInlineSize: 480 }}>
+  return <section className="form-section form-section--w480" aria-label="صلاحية تشغيل الموظف">
     <div className="form-actions">
       <button type="button" className="button button-secondary" disabled={saving} onClick={() => {
         if (expanded) { setExpanded(false); return; }

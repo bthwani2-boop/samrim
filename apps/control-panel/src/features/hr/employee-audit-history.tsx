@@ -25,7 +25,7 @@ export function EmployeeAuditHistory({employee}:Readonly<{employee:HREmployee}>)
   }catch(cause){setError(cause instanceof Error?cause.message:"تعذر تحميل السجل");}
   finally{setBusy(false)}
  }
- return <section className="form-section" aria-label="سجل تغييرات الموظف" style={{maxInlineSize:720}}>
+ return <section className="form-section form-section--w720" aria-label="سجل تغييرات الموظف">
   <button type="button" className="button button-secondary" disabled={busy} onClick={()=>{
    if(open){setOpen(false);return}
    setOpen(true);void load();

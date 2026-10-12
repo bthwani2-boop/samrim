@@ -89,7 +89,7 @@ export function HROperatorAccessQueue() {
     {loading?<tr><td colSpan={6}>جارٍ تحميل الطلبات…</td></tr>:null}
    </tbody>
    </table></div>
-   {selected?<section className="form-section" aria-label="تفاصيل طلب الوصول" style={{maxInlineSize:760}}>
+   {selected?<section className="form-section form-section--w760" aria-label="تفاصيل طلب الوصول">
     <h3>مراجعة طلب {selected.employeeName}</h3>
     <p>المسمى الوظيفي: {selected.jobTitle} — القسم: {selected.department}</p>
     <p>مبرر الوصول: {selected.reason}</p>
@@ -102,7 +102,7 @@ export function HROperatorAccessQueue() {
      <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>{setRejecting(selected.id);setRejectReason("");rejectMutation.current=null;}}>رفض الطلب</button>
     </div>:null}
     {selected.state==="identity_provisioning"?<button type="button" className="button button-primary" disabled={!!busy} onClick={()=>void openProfile(selected.id)}>استكمال إنشاء ملف المراجعة</button>:null}
-    {rejecting===selected.id&&selected.state==="pending_review"?<div className="form-section" style={{maxInlineSize:420}}>
+    {rejecting===selected.id&&selected.state==="pending_review"?<div className="form-section form-section--w420">
      <label className="field-label">سبب الرفض
       <textarea required minLength={8} maxLength={500} rows={3} value={rejectReason} onChange={(e)=>{setRejectReason(e.target.value);rejectMutation.current=null}}/>
      </label>

@@ -29,7 +29,7 @@ export function EmployeeManagerSelect({value,initial,excludeId="",onChange,disab
   }catch(e){setError(e instanceof Error?e.message:"تعذر البحث");}
   finally{setLoading(false)}
  }
- return <div className="form-section" style={{maxInlineSize:400}}>
+ return <div className="form-section form-section--w400">
   <label className="field-label">البحث عن المسؤول المباشر
    <input value={search} maxLength={80} disabled={disabled||loading} onChange={e=>setSearch(e.target.value)} placeholder="اسم الموظف أو القسم"/>
   </label>

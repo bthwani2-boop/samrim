@@ -327,26 +327,25 @@ test("authenticated operator discovers the platform centers through workspace na
   await accessLink.click();
   await expect(page).toHaveURL(/\/access$/);
   await expect(page.locator('#workspace-navigation a[href="/access"][aria-current="page"]')).toHaveAttribute("href", "/access");
-  await expect(page.getByRole("heading", { name: "المشغّلون", exact: true, level: 1 })).toBeVisible();
-  await page.locator(".access-create-disclosure > summary").click();
-  await expect(page.getByRole("heading", { name: "ملف جديد" })).toBeVisible();
-  await expect(page.getByLabel("الاسم بالعربية")).toBeVisible();
-  await expect(page.locator(".access-create-disclosure > summary")).toBeFocused();
-  await page.getByRole("navigation", { name: "إدارة المشغّلين" }).getByRole("link", { name: "الوصول والصلاحيات" }).click();
+  await expect(page.getByRole("heading", { name: "الوصول والصلاحيات", exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "طلبات الوصول من الموارد البشرية", level: 2 })).toBeVisible();
+  const accessTabs = page.getByRole("navigation", { name: "أقسام الوصول والصلاحيات" });
+  await accessTabs.getByRole("link", { name: "حسابات المشغّلين" }).click();
+  await expect(page).toHaveURL(/\/access\?view=operators$/);
+  await expect(page.getByRole("heading", { name: "ملفات المشغّلين", level: 2 })).toBeVisible();
+  await accessTabs.getByRole("link", { name: "الصلاحيات", exact: true }).click();
+  await expect(page).toHaveURL(/\/access\?view=permissions$/);
   await expect(page.getByRole("heading", { name: "حسابات المشغّلين", level: 2 })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "بحث بالاسم أو الهاتف أو المسمى أو القسم" })).toBeVisible();
   await expect(page.locator(".access-table")).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.getByRole("navigation", { name: "إدارة المشغّلين" }).getByRole("link", { name: "الوصول والصلاحيات" })).toBeFocused();
-
   await page.reload();
   await expect(page).toHaveURL(/\/access\?view=permissions$/);
-  await expect(page.getByRole("heading", { name: "المشغّلون", exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "الوصول والصلاحيات", exact: true, level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "حسابات المشغّلين", level: 2 })).toBeVisible();
-  await page.getByRole("navigation", { name: "إدارة المشغّلين" }).getByRole("link", { name: "ملفات المشغّلين" }).click();
-  await expect(page).toHaveURL(/\/access\?view=profiles$/);
-  await page.locator(".access-create-disclosure > summary").click();
-  await expect(page.getByRole("heading", { name: "ملف جديد" })).toBeVisible();
+  await page.getByRole("navigation", { name: "أقسام الوصول والصلاحيات" }).getByRole("link", { name: "حسابات المشغّلين" }).click();
+  await expect(page).toHaveURL(/\/access\?view=operators$/);
+  await expect(page.getByRole("heading", { name: "ملفات المشغّلين", level: 2 })).toBeVisible();
 });
 
 test("operator without operator-administration authority cannot open access or profile controls", async ({ page }) => {
@@ -472,7 +471,7 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
   const routes = [
     ["/workspace", "الرئيسية"],
     ["/notifications", "الإشعارات"],
-    ["/access", "المشغّلون"],
+    ["/access", "الوصول والصلاحيات"],
     ["/partners", "الشركاء"],
     ["/operations", "العمليات"],
     ["/finance", "حفظ النقد"],
@@ -778,13 +777,14 @@ test("operator direct navigation to access exposes the canonical access capabili
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 10, nextCursor: "" }) });
   });
   await page.goto("/access");
-  await expect(page.getByRole("heading", { name: "المشغّلون", exact: true, level: 1 })).toBeVisible();
-  const createProfile = page.locator("details.access-create-disclosure > summary");
-  await expect(createProfile).toBeVisible();
-  await createProfile.click();
-  await expect(page.getByRole("heading", { name: "ملف جديد" })).toBeVisible();
-  await page.getByRole("navigation", { name: "إدارة المشغّلين" }).getByRole("link", { name: "الوصول والصلاحيات", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "حسابات المشغّلين" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "الوصول والصلاحيات", exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "طلبات الوصول من الموارد البشرية", level: 2 })).toBeVisible();
+  await expect(page.locator("details.access-create-disclosure")).toHaveCount(0);
+  const sections = page.getByRole("navigation", { name: "أقسام الوصول والصلاحيات" });
+  await sections.getByRole("link", { name: "حسابات المشغّلين" }).click();
+  await expect(page.getByRole("heading", { name: "ملفات المشغّلين", level: 2 })).toBeVisible();
+  await sections.getByRole("link", { name: "الصلاحيات", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "حسابات المشغّلين", level: 2 })).toBeVisible();
 });
 
 test("operator permission coverage filters the server page and starts a fresh cursor", async ({ page }) => {

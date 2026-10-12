@@ -128,6 +128,13 @@
   .hr-directory .access-create-form { max-inline-size: 720px; }
   .hr-directory .form-actions > button { inline-size: auto; }
   .form-section { display: grid; gap: 12px; max-inline-size: 960px; }
+  .form-section--w380 { max-inline-size: 380px; }
+  .form-section--w400 { max-inline-size: 400px; }
+  .form-section--w420 { max-inline-size: 420px; }
+  .form-section--w480 { max-inline-size: 480px; }
+  .form-section--w620 { max-inline-size: 620px; }
+  .form-section--w720 { max-inline-size: 720px; }
+  .form-section--w760 { max-inline-size: 760px; }
   .compact-form { inline-size: 100%; max-inline-size: 480px; padding: 12px; }
   .disclosure.create-disclosure { inline-size: min(100%,480px); }
   .disclosure.create-disclosure:not([open]) { inline-size: fit-content; }

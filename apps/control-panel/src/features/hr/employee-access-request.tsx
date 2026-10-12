@@ -63,7 +63,7 @@ export function EmployeeAccessRequest({ employee }: { employee: HREmployee }) {
  }
  if(employee.operatorActorId) return <p>هذا الموظف مرتبط بالفعل بحساب مشغّل.</p>;
  if(!employee.phoneE164) return <p>يجب تسجيل رقم هاتف الموظف الموثوق قبل تقديم طلب الوصول.</p>;
- return <form onSubmit={(event)=>void submit(event)} className="form-section" style={{maxInlineSize:620}}>
+ return <form onSubmit={(event)=>void submit(event)} className="form-section form-section--w620">
   <h3>طلب منح وصول للوحة التحكم</h3>
   <p className="muted">هذا طلب للمشغّل الأساسي فقط؛ لا يتم منح أي صلاحيات عند الإرسال.</p>
   {rejected?<p role="status">رُفض الطلب السابق: {rejected.rejectionReason||"راجع المشغّل الأساسي"}. يمكنك تصحيح بيانات الموظف وإرسال طلب جديد.</p>:null}

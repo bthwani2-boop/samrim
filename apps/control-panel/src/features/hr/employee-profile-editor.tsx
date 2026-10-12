@@ -51,7 +51,7 @@ export function EmployeeProfileEditor({employee, colleagues, onSaved}:{
   }catch(e){setError(e instanceof Error?e.message:"تعذر حفظ التعديل")}
   finally{setPending(false)}
  }
- return <section className="form-section" style={{maxInlineSize:720}}>
+ return <section className="form-section form-section--w720">
   <div className="access-section-heading">
    <h3>البيانات الوظيفية</h3>
    <button type="button" className="button button-secondary" disabled={pending} onClick={()=>setEditing((v)=>!v)}>{editing?"إغلاق التعديل":"تعديل البيانات"}</button>

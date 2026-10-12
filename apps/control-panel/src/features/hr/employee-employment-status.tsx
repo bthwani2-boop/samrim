@@ -32,7 +32,7 @@ export function EmployeeEmploymentStatus({employee,onSaved}: Readonly<{employee:
   }catch(cause){setError(cause instanceof Error?cause.message:"تعذر تحديث الحالة الوظيفية");}
   finally{setSaving(false)}
  }
- return <section className="form-section" aria-label="الحالة الوظيفية" style={{maxInlineSize:480}}>
+ return <section className="form-section form-section--w480" aria-label="الحالة الوظيفية">
   <h3>الحالة الوظيفية</h3>
   <p>الحالة الحالية: <strong>{employee.status==="active"?"على رأس العمل":"غير نشط"}</strong>.</p>
   <p className="muted">الحالة الوظيفية مستقلة عن صلاحية تشغيل المنصة. عند إيقاف موظف لديه وصول تشغيل، تُسحب صلاحية تشغيله وجلساته أولًا.</p>

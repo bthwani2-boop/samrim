@@ -59,7 +59,7 @@ export function HRPermissionReview({ request }: Props) {
     <button type="button" className="button button-secondary" onClick={() => void expand()} disabled={saving}>
       {open ? "إغلاق مراجعة الصلاحيات" : "مراجعة الصلاحيات"}
     </button>
-    {open ? <section className="form-section" aria-label="مراجعة صلاحيات الموظف" style={{ maxInlineSize: 380 }}>
+    {open ? <section className="form-section form-section--w380" aria-label="مراجعة صلاحيات الموظف">
       {loading ? <p role="status">جارٍ قراءة الصلاحيات الممنوحة…</p> : null}
       {review ? <>
         <p>طلبت HR: {review.requestedPermissions.map(labelOf).join("، ") || "بدون صلاحيات مقترحة"}.</p>
