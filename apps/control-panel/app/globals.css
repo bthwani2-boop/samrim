@@ -53,7 +53,9 @@
   .workspace-breadcrumbs li { display: flex; gap: 8px; align-items: center; }
   .workspace-header-tools { display: flex; align-items: center; gap: 8px; }
   .workspace-header-tools svg, .workspace-icon { inline-size: 20px; block-size: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-  .workspace-notifications-link, .workspace-search-trigger, .account-menu > summary, .workspace-nav-toggle, .workspace-search-close, .workspace-nav-close { display: inline-flex; align-items: center; justify-content: center; inline-size: 40px; block-size: 40px; padding: 8px; border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--color-primary); background: var(--surface-base); }
+  .workspace-notifications-link, .workspace-trash-link, .workspace-search-trigger, .account-menu > summary, .workspace-nav-toggle, .workspace-search-close, .workspace-nav-close { display: inline-flex; align-items: center; justify-content: center; inline-size: 40px; block-size: 40px; padding: 8px; border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--color-primary); background: var(--surface-base); }
+  .workspace-trash-link { inline-size: auto; padding-inline: 12px; gap: 6px; white-space: nowrap; font-size: 13px; font-weight: 650; }
+  .workspace-trash-link[aria-current="page"] { background: var(--surface-muted); }
   .workspace-header-tools :is(button, a, summary):hover { background: var(--surface-muted); text-decoration: none; }
   .workspace-nav-toggle { display: none; }
   .workspace-layout { display: grid; grid-template-columns: 224px minmax(0, 1fr); max-inline-size: 1920px; margin-inline: auto; }
@@ -253,6 +255,8 @@
     .workspace-actor-context { overflow: hidden; }
     .workspace-breadcrumbs { white-space: nowrap; overflow: hidden; }
     .workspace-header-tools { gap: 4px; }
+    .workspace-trash-link { inline-size: 40px; padding-inline: 8px; }
+    .workspace-trash-label { display: none; }
     .workspace-nav-toggle { display: inline-flex; }
     .workspace-layout { display: block; }
     .workspace-main { padding: 16px 12px; }

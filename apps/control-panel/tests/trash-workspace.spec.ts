@@ -53,6 +53,10 @@ test("operator sees one lazy-loading trash screen and safely restores categories
   });
 
   await page.goto("/catalog/trash");
+  const trashLink = page.getByRole("link", { name: "فتح سلة المحذوفات" });
+  await expect(trashLink).toBeVisible();
+  await expect(trashLink).toHaveAttribute("href", "/catalog/trash");
+  await expect(trashLink).toContainText("المحذوفات");
   await expect(page.getByRole("heading", { name: "سلة المحذوفات", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "المنتجات المحذوفة" })).toBeVisible();
   await expect(page.getByText("قهوة يمنية")).toBeVisible();
