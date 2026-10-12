@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
 import { NextResponse } from "next/server";
 
@@ -7,7 +7,7 @@ import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchId
 import { operatorWorkspacePermissionDenied } from "../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../src/server/security/csrf";
 
-type WorkbenchCursor = Readonly<{ version: 1; phase: "candidates" | "accounts"; sourceCursor: string }>;
+type WorkbenchCursor = Readonly<{ version: 2; phase: "candidates" | "accounts"; sourceCursor: string; scope: string }>;
 
 function encodeWorkbenchCursor(cursor: WorkbenchCursor): string {
   return Buffer.from(JSON.stringify(cursor)).toString("base64url");
@@ -17,8 +17,8 @@ function decodeWorkbenchCursor(value: string): WorkbenchCursor | null {
   if (!value) return null;
   try {
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Partial<WorkbenchCursor>;
-    if (parsed.version !== 1 || (parsed.phase !== "candidates" && parsed.phase !== "accounts") || typeof parsed.sourceCursor !== "string" || parsed.sourceCursor.length > 512) return null;
-    return { version: 1, phase: parsed.phase, sourceCursor: parsed.sourceCursor };
+    if (parsed.version !== 2 || (parsed.phase !== "candidates" && parsed.phase !== "accounts") || typeof parsed.sourceCursor !== "string" || parsed.sourceCursor.length > 512 || typeof parsed.scope !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(parsed.scope)) return null;
+    return { version: 2, phase: parsed.phase, sourceCursor: parsed.sourceCursor, scope: parsed.scope };
   } catch { return null; }
 }
 
@@ -130,11 +130,12 @@ export async function GET(request: Request) {
   const sort = rawSort === "phone_asc" || rawSort === "phone_desc" ? rawSort : null;
   const rawEnabled = params.get("enabled");
   const enabled = rawEnabled === null ? undefined : rawEnabled === "true" ? true : rawEnabled === "false" ? false : null;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || enabled === null || sort === null || query.trim().length > 100 || cursor.length > 512 || serviceCityId.length > 128) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "valid search, city, cursor, sort, limit, and enabled filters are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || enabled === null || sort === null || query.trim().length > 100 || cursor.length > (params.get("scope") === "workbench" ? 2048 : 512) || serviceCityId.length > 128) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "valid search, city, cursor, sort, limit, and enabled filters are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   try {
     if (params.get("scope") === "workbench") {
+      const scope = createHash("sha256").update(JSON.stringify({ operatorActorId: identity.subject, query, serviceCityId, enabled: enabled ?? null, sort, limit })).digest("base64url");
       const workbenchCursor = decodeWorkbenchCursor(cursor);
-      if (cursor && !workbenchCursor) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "field workbench cursor is invalid" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      if (cursor && (!workbenchCursor || workbenchCursor.scope !== scope)) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "field workbench cursor is invalid for these filters" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
       if (enabled !== undefined && workbenchCursor?.phase === "candidates") return NextResponse.json({ error: { code: "INVALID_INPUT", message: "field access filter requires an account cursor" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
       const phase = enabled !== undefined ? "accounts" : workbenchCursor?.phase ?? "candidates";
       const items: Array<Readonly<{ kind: "candidate"; admission: Awaited<ReturnType<typeof listFieldAdmissions>>["admissions"][number] }> | Readonly<{ kind: "account"; account: Awaited<ReturnType<typeof searchIdentityRoles>>["items"][number] & { admission: Awaited<ReturnType<typeof readFieldAdmissionByActor>>["admission"] | null; latestStore: Awaited<ReturnType<typeof listOperatorFieldActivity>>["items"][number]["latestStore"]; joiningCaseCount: number; latestJoiningCase: Awaited<ReturnType<typeof listOperatorFieldActivity>>["items"][number]["latestJoiningCase"] } }>> = [];
@@ -142,10 +143,10 @@ export async function GET(request: Request) {
       if (phase === "candidates") {
         const candidates = await listFieldAdmissions(query, "pending", "created_desc", limit, workbenchCursor?.sourceCursor ?? "", { operatorActorId: identity.subject }, serviceCityId);
         items.push(...candidates.admissions.map((admission) => ({ kind: "candidate" as const, admission })));
-        if (candidates.nextCursor) return NextResponse.json({ items, nextCursor: encodeWorkbenchCursor({ version: 1, phase: "candidates", sourceCursor: candidates.nextCursor }) }, { headers: { "Cache-Control": "no-store" } });
+        if (candidates.nextCursor) return NextResponse.json({ items, nextCursor: encodeWorkbenchCursor({ version: 2, phase: "candidates", sourceCursor: candidates.nextCursor, scope }) }, { headers: { "Cache-Control": "no-store" } });
         if (items.length >= limit) {
           const firstAccount = await searchIdentityRoles("field", query, 1, "", enabled ?? undefined, sort);
-          return NextResponse.json({ items, nextCursor: firstAccount.items.length ? encodeWorkbenchCursor({ version: 1, phase: "accounts", sourceCursor: "" }) : undefined }, { headers: { "Cache-Control": "no-store" } });
+          return NextResponse.json({ items, nextCursor: firstAccount.items.length ? encodeWorkbenchCursor({ version: 2, phase: "accounts", sourceCursor: "", scope }) : undefined }, { headers: { "Cache-Control": "no-store" } });
         }
       } else accountsCursor = workbenchCursor?.sourceCursor ?? "";
       const accountLimit = Math.max(1, limit - items.length);
@@ -166,7 +167,7 @@ export async function GET(request: Request) {
         const summary = activityByActor.get(item.account.actorId);
         return { ...item, account: { ...item.account, latestStore: summary?.latestStore ?? null, joiningCaseCount: summary?.joiningCaseCount ?? 0, latestJoiningCase: summary?.latestJoiningCase ?? null } };
       }));
-      const nextCursor = accounts.nextCursor ? encodeWorkbenchCursor({ version: 1, phase: "accounts", sourceCursor: accounts.nextCursor }) : undefined;
+      const nextCursor = accounts.nextCursor ? encodeWorkbenchCursor({ version: 2, phase: "accounts", sourceCursor: accounts.nextCursor, scope }) : undefined;
       return NextResponse.json({ items, nextCursor }, { headers: { "Cache-Control": "no-store" } });
     }
     const page = await searchIdentityRoles("field", query, limit, cursor, enabled, sort);

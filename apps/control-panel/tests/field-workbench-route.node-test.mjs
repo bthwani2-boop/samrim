@@ -106,3 +106,43 @@ test("access filter rejects stale candidate cursors instead of mixing filter sco
   assert.equal(response.status, 400);
   assert.deepEqual(fixture.accountRequests, []);
 });
+
+test("account cursor must not cross city or search scopes", async () => {
+  const fixture = routeFixture({
+    accountPages: [[role("first")], [role("second")]],
+    cityByActor: { first: ["city-a", "city-b"], second: ["city-a", "city-b"] },
+  });
+  const response = await fixture.GET(request("limit=1&q=777&serviceCityId=city-a"));
+  assert.equal(response.status, 200);
+  const first = await response.json();
+  assert.ok(first.nextCursor);
+  const continued = await fixture.GET(request(`limit=1&q=777&serviceCityId=city-a&cursor=${encodeURIComponent(first.nextCursor)}`));
+  assert.equal(continued.status, 200);
+  assert.deepEqual((await continued.json()).items.map((item) => item.account.actorId), ["second"]);
+  for (const changed of ["limit=1&q=777&serviceCityId=city-b", "limit=1&q=778&serviceCityId=city-a", "limit=2&q=777&serviceCityId=city-a"]) {
+    const stale = await fixture.GET(request(`${changed}&cursor=${encodeURIComponent(first.nextCursor)}`));
+    assert.equal(stale.status, 400, `cursor must reject changed scope: ${changed}`);
+  }
+});
+
+test("account cursor rejects changed access and sort scope", async () => {
+  const fixture = routeFixture({ accountPages: [[role("first")], [role("second")]] });
+  const first = await (await fixture.GET(request("limit=1&enabled=true&sort=phone_asc"))).json();
+  assert.ok(first.nextCursor);
+  for (const changed of ["limit=1&enabled=false&sort=phone_asc", "limit=1&enabled=true&sort=phone_desc", "limit=1&sort=phone_asc"]) {
+    const stale = await fixture.GET(request(`${changed}&cursor=${encodeURIComponent(first.nextCursor)}`));
+    assert.equal(stale.status, 400, `cursor must reject changed scope: ${changed}`);
+  }
+});
+
+test("wrapped owner cursor supports long but bounded encoded source cursors", async () => {
+  const fixture = routeFixture({ candidates: [{ id: "candidate" }], candidatesNextCursor: "x".repeat(500) });
+  const first = await fixture.GET(request("limit=1"));
+  assert.equal(first.status, 200);
+  const page = await first.json();
+  assert.ok(page.nextCursor.length > 512);
+  const second = await fixture.GET(request(`limit=1&cursor=${encodeURIComponent(page.nextCursor)}`));
+  assert.equal(second.status, 200);
+  const oversized = await fixture.GET(request(`limit=1&cursor=${"a".repeat(2049)}`));
+  assert.equal(oversized.status, 400);
+});
