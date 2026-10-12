@@ -274,6 +274,10 @@ jobs:
           const example = fs.readFileSync("infra/local/.env.example", "utf8");
           const names = [
             "SAMRIM_POSTGRES_PASSWORD",
+            "SAMRIM_IDENTITY_DB_PASSWORD",
+            "SAMRIM_IDENTITY_MAINTENANCE_DB_PASSWORD",
+            "SAMRIM_DSH_DB_PASSWORD",
+            "SAMRIM_WLT_DB_PASSWORD",
             "IDENTITY_CHALLENGE_HMAC_SECRET",
             "IDENTITY_DSH_SERVICE_TOKEN",
             "CONTROL_PANEL_SERVICE_TOKEN",
@@ -292,7 +296,11 @@ jobs:
             const name = line.slice(0, separator).trim();
             return values.has(name) ? `${name}=${values.get(name)}` : line;
           }).join("\n");
-          fs.writeFileSync(path, output.endsWith("\n") ? output : `${output}\n`, { mode: 0o600 });
+          const declared = new Set(example.split(/\r?\n/).map((line) => line.split("=")[0].trim()));
+          const extraPasswords = ["SAMRIM_IDENTITY_DB_PASSWORD", "SAMRIM_IDENTITY_MAINTENANCE_DB_PASSWORD", "SAMRIM_DSH_DB_PASSWORD", "SAMRIM_WLT_DB_PASSWORD"]
+            .filter((name) => !declared.has(name))
+            .map((name) => `${name}=${values.get(name)}`);
+          fs.writeFileSync(path, `${output.trimEnd()}\n${extraPasswords.join("\n")}\n`, { mode: 0o600 });
           NODE
 
       - name: Start backend runtime
