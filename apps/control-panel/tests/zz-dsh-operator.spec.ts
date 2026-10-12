@@ -97,7 +97,18 @@ async function findOrBootstrapPrimaryOperator(
   if (existing) {
     expect(existing.actorId).toMatch(/^act_/);
     expect(existing.phone).toMatch(/^\+9677/);
-    return existing;
+    const roleResponse = await fetch(identityBase + "/internal/actors/" + encodeURIComponent(existing.actorId) + "/roles/operator", {
+      headers: { Authorization: "Bearer " + controlToken },
+      signal: AbortSignal.timeout(5_000),
+    });
+    expect(roleResponse.status, "canonical initial Operator role must be readable").toBe(200);
+    const role = await roleResponse.json() as { activatedAt?: string | null };
+    if (role.activatedAt) return existing;
+    const enrollment = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: existing.phone, role: "operator" });
+    expect(enrollment.response.status, "disposable initial Operator enrollment must be available").toBe(200);
+    const token = String(enrollment.body?.enrollmentToken?.code || "");
+    expect(token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+    return { ...existing, token };
   }
 
   if (process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci" || process.env.CI !== "true") {
@@ -139,10 +150,24 @@ test("@live provision and activate an independent operator for downstream DSH se
   const baseUrl = requiredEnv("PLAYWRIGHT_BASE_URL").replace(/\/+$/, "");
   const mailpitBase = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
   const primaryOperator = await findOrBootstrapPrimaryOperator(identityBase, controlToken, bootstrapToken);
-  const independentOperator = await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId);
+  const browser = page.context().browser();
+  if (!browser) throw new Error("live Identity proof requires a browser instance for the independent operator fixture");
+  // Root must activate before DSH accepts attributed HR creation.
+  if (primaryOperator.token) {
+    const primaryContext = await browser.newContext({ baseURL: baseUrl, locale: "ar-YE" });
+    try {
+      const primaryPage = await primaryContext.newPage();
+      await enableVirtualAuthenticator(primaryPage);
+      await registerOperator(primaryPage, primaryOperator, baseUrl, mailpitBase);
+      console.log("DSH_PRIMARY_OPERATOR_ACTIVATION=PASS");
+    } finally {
+      await primaryContext.close();
+    }
+  }
+  const independentOperator = await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId, ["operations", "finance"]);
   const fixturePath = dshRuntimeFixturePath;
   const actingProofOperator = fixturePath
-    ? await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId)
+    ? await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId, ["operations", "partners", "catalog", "marketing", "finance", "platform_policies"])
     : null;
   if (actingProofOperator) {
     for (const permission of ["operations", "partners", "catalog", "marketing", "finance", "platform_policies"]) {
@@ -152,19 +177,6 @@ test("@live provision and activate an independent operator for downstream DSH se
   if (fixturePath) {
     await enableOperatorPermission(identityBase, controlToken, primaryOperator.actorId, independentOperator.actorId, "operations");
     await enableOperatorPermission(identityBase, controlToken, primaryOperator.actorId, independentOperator.actorId, "finance");
-  }
-  const browser = page.context().browser();
-  if (!browser) throw new Error("live Identity proof requires a browser instance for the independent operator fixture");
-  if (primaryOperator.token) {
-    const primaryContext = await browser.newContext({ baseURL: baseUrl, locale: "ar-YE" });
-    const primaryPage = await primaryContext.newPage();
-    try {
-      await enableVirtualAuthenticator(primaryPage);
-      await registerOperator(primaryPage, primaryOperator, baseUrl, mailpitBase);
-      console.log("DSH_PRIMARY_OPERATOR_ACTIVATION=PASS");
-    } finally {
-      await primaryContext.close();
-    }
   }
   if (actingProofOperator) {
     const actingContext = await browser.newContext({ baseURL: baseUrl, locale: "ar-YE" });
