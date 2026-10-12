@@ -318,7 +318,7 @@ test("authenticated operator discovers the platform centers through workspace na
   await expect.poll(() => homeRequestsCatalogQueue).toBe(true);
   await expect(page.getByRole("heading", { name: "مقترحات المنتجات" })).toBeVisible();
   await expect(page.getByRole("link", { name: /قهوة للمراجعة/ })).toHaveAttribute("href", "/catalog/proposals?proposalId=proposal-home");
-  await expect(page.getByRole("heading", { name: "إشعارات غير مقروءة" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "أحدث الإشعارات غير المقروءة" })).toBeVisible();
   const navigationToggle = page.getByRole("button", { name: "فتح مسارات العمل" });
   await navigationToggle.click();
   await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" })).toHaveAttribute("data-open", "true");
@@ -373,7 +373,7 @@ test("operator home reads only work queues covered by the current session permis
 
   await page.goto("/workspace");
   await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "إشعارات غير مقروءة" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "أحدث الإشعارات غير المقروءة" })).toBeVisible();
   expect([...deniedQueueRequests]).toEqual([]);
   await expect(page.getByRole("heading", { name: "طلبات تحتاج إجراءً" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "طلبات الانضمام المقدمة" })).toHaveCount(0);
