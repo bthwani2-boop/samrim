@@ -150,3 +150,19 @@ test("Field access filter applies before paging and survives reload and browser 
   await expect(page.getByRole("combobox", { name: "دخول التطبيق", exact: true })).toHaveValue("");
   expect(requests.at(-1)?.get("enabled")).toBeNull();
 });
+
+test("Field registry reports malformed successful reads and recovers without claiming an empty registry", async ({ page }) => {
+  test.setTimeout(35_000);
+  await page.route("**/api/auth/session**", (route) => route.fulfill({ status: 200, json: { identity: { subject: "actor-operator", sessionId: "session-operator", role: "operator", permissions: ["partners"], surface: "control-panel", expiresAt: "2099-01-01T00:00:00.000Z" } } }));
+  await page.route("**/api/service-cities**", (route) => route.fulfill({ status: 200, json: { cities: [] } }));
+  await page.route("**/api/wallet-providers**", (route) => route.fulfill({ status: 200, json: { walletProviders: [] } }));
+  let invalid = true;
+  await page.route("**/api/fields?**", (route) => route.fulfill({ status: 200, json: invalid ? { items: [{ kind: "candidate" }] } : { items: [{ kind: "candidate", admission: { id: "field-candidate", fullNameAr: "ميداني صالح", contactPhoneE164: "+967770000001", walletProviderKey: "wallet-a", allServiceCities: true, serviceCityIds: [], state: "pending_review", version: 1 } }] } }));
+  await page.goto("/fields");
+  await expect(page.locator(".field-workbench-pane > p.identity-error[role=alert]")).toContainText("استجابة سجل الميدانيين غير مكتملة");
+  await expect(page.getByText("لا توجد ملفات أو حسابات ميدانية")).toHaveCount(0);
+  invalid = false;
+  await page.getByRole("button", { name: "تحديث السجل", exact: true }).click();
+  await expect(page.getByText("ميداني صالح", { exact: true })).toBeVisible();
+  await expect(page.locator(".field-workbench-pane > p.identity-error[role=alert]")).toHaveCount(0);
+});

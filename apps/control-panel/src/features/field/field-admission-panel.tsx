@@ -12,6 +12,21 @@ type LatestStore = Readonly<{ storeId: string; storeName: string; joiningCaseId:
 type FieldAccount = ActorRoleView & Readonly<{ admission: FieldAdmission | null; latestStore?: LatestStore | null; joiningCaseCount?: number; latestJoiningCase?: OperatorFieldLatestJoiningCase | null }>;
 type FieldWorkbenchItem = Readonly<{ kind: "candidate"; admission: FieldAdmission }> | Readonly<{ kind: "account"; account: FieldAccount }>;
 type FieldPage = Readonly<{ items: ReadonlyArray<FieldWorkbenchItem>; nextCursor?: string }>;
+
+function parseFieldPage(payload: unknown): FieldPage {
+  const page = payload as FieldPage | null;
+  const validItems = Array.isArray(page?.items) && page.items.every((item) => {
+    if (!item) return false;
+    if (item.kind === "candidate") return typeof item.admission?.id === "string" && typeof item.admission?.fullNameAr === "string" && typeof item.admission?.state === "string";
+    if (item.kind === "account") return typeof item.account?.actorId === "string" && typeof item.account?.phoneE164 === "string" && typeof item.account?.enabled === "boolean" && typeof item.account?.securityEnabled === "boolean" && (item.account.admission === null || typeof item.account.admission?.id === "string");
+    return false;
+  });
+  if (!validItems || (page?.nextCursor !== undefined && (typeof page.nextCursor !== "string" || page.nextCursor.length > 2048))) {
+    throw new Error("استجابة سجل الميدانيين غير مكتملة. أعد المحاولة.");
+  }
+  return page as FieldPage;
+}
+
 type FieldAcquisitionCase = JoiningCaseListResponse["cases"][number];
 type FieldCandidateAction = "update-profile" | "approve" | "provision";
 type FieldAccountAction = "update-profile" | "review-profile" | "activate" | "disable" | "reenroll";
@@ -81,7 +96,7 @@ function readbackQuery(query: string, limit = 25): string {
 async function readWorkbench(currentQuery: string): Promise<FieldPage> {
   const response = await identityFetch(readbackQuery(currentQuery, 50), { cache: "no-store" });
   if (!response.ok) throw new Error(await fieldResponseMessage(response));
-  return await response.json() as FieldPage;
+  return parseFieldPage(await response.json());
 }
 
 function expectedCandidateState(action: FieldCandidateAction, currentState: FieldAdmission["state"]): FieldAdmission["state"] {
@@ -549,7 +564,7 @@ export function FieldAdmissionPanel() {
       if (!response.ok) {
         throw new Error(await fieldResponseMessage(response));
       }
-      const page = await response.json() as FieldPage;
+      const page = parseFieldPage(await response.json());
       if (loadRequestID.current !== requestID) return;
       setItems(page.items);
       setNextCursor(page.nextCursor ?? "");
