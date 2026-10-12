@@ -127,3 +127,17 @@ test("changing an operations filter preserves the prior cursor page on Back", as
   await expect(page.getByRole("cell", { name: "متجر الصفحة الثانية", exact: true })).toBeVisible();
   expect(requestedCursors.at(-1)).toBe("second-page");
 });
+
+test("operations describes a timed-out read in Arabic without exposing browser errors", async ({ page }) => {
+  await session(page);
+  await page.addInitScript(() => {
+    const original = AbortSignal.timeout.bind(AbortSignal);
+    AbortSignal.timeout = (ms: number) => original(ms === 12_000 ? 30 : ms);
+  });
+  await page.route("**/api/operations?**", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 160));
+    await route.fulfill({ json: { operations: [], nextCursor: "" } }).catch(() => {});
+  });
+  await page.goto("/operations");
+  await expect(page.locator(".operations-workspace").getByRole("alert")).toContainText("استغرقت القراءة وقتًا طويلًا. أعد المحاولة.");
+});

@@ -141,7 +141,8 @@ export function OperationsWorkspace() {
     } catch (cause) {
       if (sequence !== loadSequence.current) return;
       setErrorStatus(cause && typeof cause === "object" && "status" in cause && typeof cause.status === "number" ? cause.status : 0);
-      setError(cause instanceof Error ? cause.message : "تعذر قراءة مركز العمليات.");
+      const timedOut = cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError");
+      setError(timedOut ? "استغرقت القراءة وقتًا طويلًا. أعد المحاولة." : cause instanceof Error ? cause.message : "تعذر قراءة مركز العمليات.");
     } finally {
       if (sequence === loadSequence.current) setLoading(false);
     }

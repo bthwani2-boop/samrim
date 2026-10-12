@@ -6,8 +6,8 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
 import { responseMessage } from "../access/identity-error-message";
-import { operationResponseMessage } from "../operations/operator-actions";
 import { notificationKindLabel } from "../notifications/notification-presentation";
+import { operationResponseMessage } from "../operations/operator-actions";
 export function OperatorHome() {
   const { state: sessionState } = useSession();
   const permissions = sessionState.kind === "authenticated" ? sessionState.identity.permissions ?? [] : [];
@@ -42,7 +42,7 @@ export function OperatorHome() {
     const results = await Promise.allSettled(requests.map(async ({ key, url }) => {
       const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
       if (!response.ok) throw new Error(await (key === "operations" ? operationResponseMessage(response) : responseMessage(response)));
-      return { key, body: await response.json() as unknown };
+      return { key, body: await response.json().catch(() => null) as unknown };
     }));
     if (sequence !== requestSequence.current) return;
     const nextErrors: Record<string, string> = {};
