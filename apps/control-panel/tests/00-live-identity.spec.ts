@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, request, test } from "@playwright/test";
 import { assertIdentityProofScope, enableVirtualAuthenticator, findInitialOperator, findOperatorProfileByPhone, jsonRequest, type PreparedOperator, provisionIndependentOperator, readCanonicalRuntime, registerOperator, requiredEnv, waitForMailpitCode } from "./live-identity-proof-helpers";
@@ -224,19 +224,27 @@ test("@live HR-led Control Panel admission creates two operators and proves foun
     assertIdentityProofScope();
     const runnerTemp = path.resolve(requiredEnv("RUNNER_TEMP"));
     const checkerDir = path.resolve(path.dirname(checkerPath));
+    const checkerStats = lstatSync(checkerDir);
     if (!checkerDir.startsWith(runnerTemp + path.sep) ||
         path.basename(checkerPath) !== "dsh-checker-fixture.json" ||
-        (statSync(checkerDir).mode & 0o777) !== 0o700) {
+        !checkerStats.isDirectory() || checkerStats.isSymbolicLink() ||
+        (checkerStats.mode & 0o777) !== 0o700) {
       throw new Error("founder proof handoff must remain inside the private CI fixture directory");
     }
     const proofPath = path.join(checkerDir, "identity-founder-recovery-proof.json");
-    if (!existsSync(proofPath) || (statSync(proofPath).mode & 0o777) !== 0o600) {
-      throw new Error("the DSH checker did not provide a private one-use founder recovery proof");
-    }
+    // Open once without following symlinks, then verify and read the same
+    // descriptor. Checking the filename before reading it is a TOCTOU hazard.
+    const proofFD = openSync(proofPath, constants.O_RDONLY | constants.O_NOFOLLOW);
     let handoff: { actorId?: string; phone?: string; recoveryCredential?: string };
     try {
-      handoff = JSON.parse(readFileSync(proofPath, "utf8")) as typeof handoff;
+      const proofStats = fstatSync(proofFD);
+      if (!proofStats.isFile() || (proofStats.mode & 0o777) !== 0o600 ||
+          proofStats.size < 60 || proofStats.size > 1024) {
+        throw new Error("the DSH checker did not provide a private one-use founder recovery proof");
+      }
+      handoff = JSON.parse(readFileSync(proofFD, "utf8")) as typeof handoff;
     } finally {
+      closeSync(proofFD);
       unlinkSync(proofPath);
     }
     expect(handoff.actorId).toBe(root!.actorId);
