@@ -198,10 +198,13 @@ function WorkspaceHeader({
         {identity?.permissions?.some((permission) => permission === "catalog" || permission === "partners") ? (
           <Link className="workspace-trash-link" href="/catalog/trash" aria-label="فتح سلة المحذوفات" title="فتح سلة المحذوفات" aria-current={pathname === "/catalog/trash" ? "page" : undefined}>
             <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
-              <path d="M3 6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z" />
-              <path d="M8 12h8M8 16h6" />
+              <path d="M4 6h16M9 6V4h6v2M6 6l1 14h10l1-14M10 10v6M14 10v6" />
+              <g className="workspace-trash-restore-arrow">
+                <path d="M8.3 13.5a4.5 4.5 0 1 1 1.6 3.5" />
+                <path d="M7 10.5V14h3.5" />
+              </g>
             </svg>
-            <span className="workspace-trash-label">المحذوفات</span>
+            <span className="visually-hidden">سلة المحذوفات</span>
           </Link>
         ) : null}
         <search className="workspace-search-control" aria-label="البحث في صفحات لوحة التحكم">
