@@ -1,14 +1,12 @@
 "use client";
 
-import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
-import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
 import type { OperatorProfile, OperatorProfileInvitationResponse, OperatorProfilePage } from "@bthwani/identity";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "./identity-error-message";
 
-type ProfileEdit = Readonly<{ fullNameAr: string; phoneE164: string; jobTitle: string; department: string }>;
 type ProfileState = "all" | "pending_review" | "approved" | "admitted";
 type ProfileSort = "created_asc" | "created_desc";
 
@@ -28,7 +26,7 @@ function stateTone(profile: OperatorProfile): string {
   return "is-active";
 }
 
-function mutationSuccessLabel(action: "update-profile" | "approve" | "grant" | "invitation"): string {
+function mutationSuccessLabel(action: "approve" | "grant" | "invitation"): string {
   if (action === "approve") return "اعتُمد الملف. الخطوة التالية منح الدور.";
   if (action === "grant") return "مُنح دور المشغّل. أصدر دعوة التفعيل عند الجاهزية.";
   return "تم تحديث الملف.";
@@ -40,21 +38,11 @@ function profileDate(value: string): string {
 }
 
 export function OperatorProfilePanel() {
-  const [fullNameAr, setFullNameAr] = useState("");
-  const [phoneE164, setPhoneE164] = useState("");
-  const [jobTitle, setJobTitle] = useState("");
-  const [department, setDepartment] = useState("");
-  const [createNameInvalid, setCreateNameInvalid] = useState(false);
-  const [createPhoneInvalid, setCreatePhoneInvalid] = useState(false);
-  const [createJobTitleInvalid, setCreateJobTitleInvalid] = useState(false);
-  const [createDepartmentInvalid, setCreateDepartmentInvalid] = useState(false);
-  const [createValidationError, setCreateValidationError] = useState("");
   const [query, setQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
   const [state, setState] = useState<ProfileState>("all");
   const [sort, setSort] = useState<ProfileSort>("created_desc");
   const [items, setItems] = useState<ReadonlyArray<OperatorProfile>>([]);
-  const [edits, setEdits] = useState<Record<string, ProfileEdit>>({});
   const [nextCursor, setNextCursor] = useState("");
   const cursorPage = useCursorPage("operatorProfileCursor", appliedQuery, true, (value) => { setQuery(value); setAppliedQuery(value); });
   const [loading, setLoading] = useState(true);
@@ -65,12 +53,6 @@ export function OperatorProfilePanel() {
   const [urlReady, setUrlReady] = useState(false);
   const loadRequestId = useRef(0);
   const searchInput = useRef<HTMLInputElement>(null);
-  const createDisclosure = useRef<HTMLDetailsElement>(null);
-  const createNameInput = useRef<HTMLInputElement>(null);
-  const createPhoneInput = useRef<HTMLInputElement>(null);
-  const createJobTitleInput = useRef<HTMLInputElement>(null);
-  const createDepartmentInput = useRef<HTMLInputElement>(null);
-
   const syncFromUrl = useCallback(() => {
     const params = new URLSearchParams(window.location.search);
     const requestedState = params.get("profileState");
@@ -157,78 +139,7 @@ export function OperatorProfilePanel() {
     searchInput.current?.focus();
   }
 
-  async function createProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = fullNameAr.trim();
-    const phone = normalizeYemenPhoneE164(phoneE164);
-    const title = jobTitle.trim();
-    const unit = department.trim();
-    const nameValid = Array.from(name).length >= 2 && Array.from(name).length <= 120;
-    const phoneValid = /^\+[1-9][0-9]{7,14}$/.test(phone);
-    const titleValid = Array.from(title).length >= 1 && Array.from(title).length <= 80;
-    const departmentValid = Array.from(unit).length >= 1 && Array.from(unit).length <= 80;
-    setCreateNameInvalid(!nameValid);
-    setCreatePhoneInvalid(!phoneValid);
-    setCreateJobTitleInvalid(!titleValid);
-    setCreateDepartmentInvalid(!departmentValid);
-    if (!nameValid || !phoneValid || !titleValid || !departmentValid) {
-      setError("");
-      setCreateValidationError(!nameValid ? "أدخل الاسم بالعربية (حرفان على الأقل)." : !phoneValid ? "أدخل رقم هاتف يمنيًا صحيحًا." : !titleValid ? "أدخل المسمى الوظيفي (حتى 80 حرفًا)." : "أدخل القسم (حتى 80 حرفًا).");
-      if (!nameValid) createNameInput.current?.focus();
-      else if (!phoneValid) createPhoneInput.current?.focus();
-      else if (!titleValid) createJobTitleInput.current?.focus();
-      else createDepartmentInput.current?.focus();
-      return;
-    }
-    setCreateValidationError("");
-    setBusy("create");
-    setError("");
-    setNotice("");
-    setInvitation(null);
-    try {
-      const response = await identityFetch("/api/access/operator-profiles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullNameAr: name, phoneE164: phone, jobTitle: title, department: unit }),
-      });
-      if (!response.ok) {
-        const message = await responseMessage(response);
-        await load();
-        setError(message);
-        return;
-      }
-      setFullNameAr("");
-      setPhoneE164("");
-      setJobTitle("");
-      setDepartment("");
-      setCreateNameInvalid(false);
-      setCreatePhoneInvalid(false);
-      setCreateJobTitleInvalid(false);
-      setCreateDepartmentInvalid(false);
-      setCreateValidationError("");
-      if (createDisclosure.current) createDisclosure.current.open = false;
-      setNotice("أُنشئ الملف وبات بانتظار المراجعة.");
-      await load();
-    } catch (cause) {
-      const message = isRequestFailure(cause) ? cause.message : "تعذر حفظ ملف المشغّل.";
-      await load();
-      setError(message);
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function updateProfile(profile: OperatorProfile) {
-    const edit = edits[profile.id] ?? { fullNameAr: profile.fullNameAr, phoneE164: profile.phoneE164 ?? "", jobTitle: profile.jobTitle ?? "", department: profile.department ?? "" };
-    const phone = normalizeYemenPhoneE164(edit.phoneE164);
-    if (Array.from(edit.fullNameAr.trim()).length < 2 || Array.from(edit.jobTitle.trim()).length < 1 || Array.from(edit.jobTitle.trim()).length > 80 || Array.from(edit.department.trim()).length < 1 || Array.from(edit.department.trim()).length > 80 || !/^\+[1-9][0-9]{7,14}$/.test(phone)) {
-      setError("تحقق من الاسم ورقم الهاتف والمسمى والقسم قبل الحفظ.");
-      return;
-    }
-    await mutate(profile, "update-profile", { fullNameAr: edit.fullNameAr.trim(), phoneE164: phone, jobTitle: edit.jobTitle.trim(), department: edit.department.trim(), expectedVersion: profile.version }, "حُدّث الملف قبل المراجعة.");
-  }
-
-  async function mutate(profile: OperatorProfile, action: "update-profile" | "approve" | "grant" | "invitation", extra: Record<string, unknown> = {}, successMessage = "") {
+  async function mutate(profile: OperatorProfile, action: "approve" | "grant" | "invitation", extra: Record<string, unknown> = {}, successMessage = "") {
     setBusy(`${profile.id}:${action}`);
     setError("");
     setNotice("");
@@ -265,18 +176,6 @@ export function OperatorProfilePanel() {
         <h2 id="operator-profile-registry-title">ملفات المشغّلين</h2>
         <p>راجع الملف ثم نفّذ خطوته التالية.</p>
       </div>
-      <details className="access-create-disclosure" ref={createDisclosure}>
-        <summary className="button button-primary">مشغّل جديد</summary>
-        <form className="access-create-form" onSubmit={(event) => void createProfile(event)} noValidate>
-          <div className="access-create-form-heading"><h3>ملف جديد</h3><p>تُراجع البيانات قبل إنشاء حساب المشغّل.</p></div>
-          <label className="field-label" htmlFor="operator-profile-name">الاسم بالعربية<input ref={createNameInput} id="operator-profile-name" autoComplete="name" maxLength={120} minLength={2} required aria-invalid={createNameInvalid} aria-describedby={createValidationError ? "operator-profile-create-validation" : undefined} value={fullNameAr} onChange={(event) => { setFullNameAr(event.target.value); setCreateNameInvalid((current) => current && Array.from(event.target.value.trim()).length < 2); setCreateValidationError(""); }} disabled={Boolean(busy)} /></label>
-          <label className="field-label" htmlFor="operator-profile-phone">رقم الهاتف<input ref={createPhoneInput} id="operator-profile-phone" autoComplete="tel" inputMode="tel" required aria-invalid={createPhoneInvalid} aria-describedby={createValidationError ? "operator-profile-create-validation" : undefined} value={phoneE164} onChange={(event) => { const next = toAsciiDigits(event.target.value); setPhoneE164(next); setCreatePhoneInvalid((current) => current && !/^\+[1-9][0-9]{7,14}$/.test(normalizeYemenPhoneE164(next))); setCreateValidationError(""); }} disabled={Boolean(busy)} placeholder="مثال: 777 000 100" /></label>
-          <label className="field-label" htmlFor="operator-profile-title">المسمى الوظيفي<input ref={createJobTitleInput} id="operator-profile-title" required minLength={1} maxLength={80} aria-invalid={createJobTitleInvalid} aria-describedby={createValidationError ? "operator-profile-create-validation" : undefined} value={jobTitle} onChange={(event) => { setJobTitle(event.target.value); setCreateJobTitleInvalid((current) => current && (event.target.value.trim().length < 1 || event.target.value.trim().length > 80)); setCreateValidationError(""); }} disabled={Boolean(busy)} placeholder="مثال: مدير عمليات" /></label>
-          <label className="field-label" htmlFor="operator-profile-department">القسم<input ref={createDepartmentInput} id="operator-profile-department" required minLength={1} maxLength={80} aria-invalid={createDepartmentInvalid} aria-describedby={createValidationError ? "operator-profile-create-validation" : undefined} value={department} onChange={(event) => { setDepartment(event.target.value); setCreateDepartmentInvalid((current) => current && (event.target.value.trim().length < 1 || event.target.value.trim().length > 80)); setCreateValidationError(""); }} disabled={Boolean(busy)} placeholder="مثال: العمليات" /></label>
-          {createValidationError ? <p id="operator-profile-create-validation" className="validation-error" role="alert">{createValidationError}</p> : null}
-          <button type="submit" className="button button-primary" disabled={Boolean(busy)}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ للمراجعة"}</button>
-        </form>
-      </details>
     </header>
 
     {activeFilterCount > 0 ? <fieldset className="access-active-filters"><legend className="visually-hidden">المرشّحات النشطة</legend>
@@ -328,30 +227,18 @@ export function OperatorProfilePanel() {
                   : <div className="collection-state"><strong>لا توجد ملفات مطابقة</strong><p>غيّر البحث أو أنشئ ملفًا جديدًا.</p></div>}
             </td></tr> : null}
             {items.map((profile) => {
-              const edit = edits[profile.id] ?? { fullNameAr: profile.fullNameAr, phoneE164: profile.phoneE164 ?? "", jobTitle: profile.jobTitle ?? "", department: profile.department ?? "" };
-              const changed = edit.fullNameAr.trim() !== profile.fullNameAr || edit.phoneE164.replace(/\s+/g, "") !== profile.phoneE164 || edit.jobTitle.trim() !== (profile.jobTitle ?? "") || edit.department.trim() !== (profile.department ?? "");
               const active = profile.state === "admitted" && profile.roleEnabled === true && profile.securityEnabled === true && Boolean(profile.activatedAt);
               const canInvite = profile.state === "admitted" && profile.roleEnabled === true && profile.securityEnabled === true && !profile.activatedAt;
-              const detailsComplete = Array.from(edit.jobTitle.trim()).length > 0 && Array.from(edit.department.trim()).length > 0;
-              const nextLabel = profile.state === "pending_review" ? !detailsComplete ? "أكمل المسمى والقسم" : changed ? "احفظ التعديل أولًا" : "اعتماد الملف" : profile.state === "approved" ? "منح دور المشغّل" : canInvite ? "إصدار دعوة التفعيل" : active ? "اكتمل التفعيل" : "لا إجراء متاح";
+              const detailsComplete = Array.from((profile.jobTitle ?? "").trim()).length > 0 && Array.from((profile.department ?? "").trim()).length > 0;
+              const nextLabel = profile.state === "pending_review" ? !detailsComplete ? "أكمل المسمى والقسم" : "اعتماد الملف" : profile.state === "approved" ? "منح دور المشغّل" : canInvite ? "إصدار دعوة التفعيل" : active ? "اكتمل التفعيل" : "لا إجراء متاح";
               return <tr key={profile.id}>
                 <th scope="row">
                   <div className="access-profile-identity"><strong>{profile.fullNameAr}</strong><bdi dir="ltr">{profile.phoneE164 || "رقم الهاتف غير متاح"}</bdi><small>{[profile.jobTitle || "المسمى غير مسجل", profile.department || "القسم غير مسجل"].join(" · ")}</small></div>
-                  {profile.state === "pending_review" ? <details className="access-row-edit">
-                    <summary>تعديل الملف</summary>
-                    <div className="access-row-edit-fields">
-                      <label className="field-label" htmlFor={`operator-profile-name-${profile.id}`}>الاسم<input id={`operator-profile-name-${profile.id}`} value={edit.fullNameAr} maxLength={120} disabled={Boolean(busy)} onChange={(event) => setEdits((current) => ({ ...current, [profile.id]: { ...edit, fullNameAr: event.target.value } }))} /></label>
-                      <label className="field-label" htmlFor={`operator-profile-phone-${profile.id}`}>الهاتف<input id={`operator-profile-phone-${profile.id}`} inputMode="tel" value={edit.phoneE164} disabled={Boolean(busy)} onChange={(event) => setEdits((current) => ({ ...current, [profile.id]: { ...edit, phoneE164: toAsciiDigits(event.target.value) } }))} /></label>
-                      <label className="field-label" htmlFor={`operator-profile-title-${profile.id}`}>المسمى الوظيفي<input id={`operator-profile-title-${profile.id}`} required minLength={1} maxLength={80} value={edit.jobTitle} disabled={Boolean(busy)} onChange={(event) => setEdits((current) => ({ ...current, [profile.id]: { ...edit, jobTitle: event.target.value } }))} /></label>
-                      <label className="field-label" htmlFor={`operator-profile-department-${profile.id}`}>القسم<input id={`operator-profile-department-${profile.id}`} required minLength={1} maxLength={80} value={edit.department} disabled={Boolean(busy)} onChange={(event) => setEdits((current) => ({ ...current, [profile.id]: { ...edit, department: event.target.value } }))} /></label>
-                      <button type="button" className="button button-secondary" disabled={Boolean(busy) || !changed} onClick={() => void updateProfile(profile)}>حفظ التعديل</button>
-                    </div>
-                  </details> : null}
                 </th>
                 <td><span className={`access-state-pill ${stateTone(profile)}`}>{stateLabel(profile)}</span></td>
                 <td><time dateTime={profile.createdAt}>{profileDate(profile.createdAt)}</time></td>
                 <td>
-              {profile.state === "pending_review" ? <button type="button" className="button button-primary access-row-action" disabled={Boolean(busy) || changed || !detailsComplete} onClick={() => void mutate(profile, "approve")}>{busy === `${profile.id}:approve` ? "جارٍ الاعتماد…" : nextLabel}</button> : null}
+              {profile.state === "pending_review" ? <button type="button" className="button button-primary access-row-action" disabled={Boolean(busy) || !detailsComplete} onClick={() => void mutate(profile, "approve")}>{busy === `${profile.id}:approve` ? "جارٍ الاعتماد…" : nextLabel}</button> : null}
                   {profile.state === "approved" ? <button type="button" className="button button-primary access-row-action" disabled={Boolean(busy)} onClick={() => void mutate(profile, "grant")}>{busy === `${profile.id}:grant` ? "جارٍ منح الدور…" : nextLabel}</button> : null}
                   {canInvite ? <button type="button" className="button button-primary access-row-action" disabled={Boolean(busy)} onClick={() => void mutate(profile, "invitation")}>{busy === `${profile.id}:invitation` ? "جارٍ إصدار الدعوة…" : nextLabel}</button> : null}
                   {profile.state === "admitted" && profile.activatedAt ? <span className="access-next-step">{active ? "مكتمل" : nextLabel}</span> : null}

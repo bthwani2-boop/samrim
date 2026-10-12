@@ -22,6 +22,7 @@ const env = Object.fromEntries(fs.readFileSync(envFile, "utf8").split(/\r?\n/).f
   return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
 }));
 const baseUrl = `http://${runtimeHost}:${env.SAMRIM_IDENTITY_PORT}`;
+const dshBaseUrl = `http://${runtimeHost}:${env.SAMRIM_DSH_PORT}`;
 const mailpitPort = env.SAMRIM_MAILPIT_WEB_PORT;
 const dshToken = env.IDENTITY_DSH_SERVICE_TOKEN;
 const bootstrapToken = env.OPERATOR_BOOTSTRAP_SECRET;
@@ -32,7 +33,7 @@ const assert = (condition, message) => { if (!condition) fail(message); };
 const sql = (query) => execFileSync(resolveTrustedExecutable("docker"), [...composeArgs, "exec", "-T", "postgres", "psql", "-U", env.SAMRIM_POSTGRES_USER, "-d", env.SAMRIM_POSTGRES_DB, "-Atc", query], { encoding: "utf8" }).trim();
 const sqlLiteral = (value) => String(value).replaceAll("'", "''");
 const request = async (method, pathname, options = {}) => {
-  const response = await fetch(baseUrl + pathname, {
+  const response = await fetch((options.baseUrl || baseUrl) + pathname, {
     method,
     headers: { Accept: "application/json", ...(options.body === undefined ? {} : { "Content-Type": "application/json" }), ...(options.token ? { Authorization: "Bearer " + options.token } : {}), ...(options.headers || {}) },
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
@@ -93,14 +94,34 @@ const operatorActorID = operator[0];
 
 const admitReviewedOperatorCandidate = async (candidatePhone, fullNameAr, expectedActorID = "") => {
   const mutationHeaders = () => ({ "X-Acting-Actor-ID": operatorActorID, "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() });
-  const created = await expect("POST", "/internal/operator-profiles", 201, {
+  // Operator candidates must originate from a live HR employee and a Root-reviewed request.
+  // Direct Control Panel calls into Identity are forbidden by the production contract.
+  await expect("POST", "/internal/operator-profiles", 403, {
     token: controlToken,
     headers: mutationHeaders(),
     body: { fullNameAr, phoneE164: candidatePhone, jobTitle: "مسؤول العمليات", department: "العمليات" },
   });
-  const profileID = created?.profile?.id;
-  assert(typeof profileID === "string" && profileID.startsWith("oprof_"), "operator candidate profile was not created");
-  assert(created.profile.state === "pending_review" && !created.profile.actorId, "operator candidate received an actor or role before review");
+  const employeeCreated = await expect("POST", "/dsh/hr/employees", 201, {
+    baseUrl: dshBaseUrl, token: controlToken, headers: mutationHeaders(),
+    body: { fullNameAr, phoneE164: candidatePhone, jobTitle: "مسؤول العمليات",
+      department: "العمليات", managerEmployeeId: "", workLocation: "صنعاء",
+      startDate: new Date().toISOString().slice(0, 10) },
+  });
+  const employeeID = employeeCreated?.employee?.id;
+  assert(typeof employeeID === "string" && /^emp_[a-f0-9]{32}$/.test(employeeID), "HR employee was not created");
+  const accessCreated = await expect("POST", "/dsh/hr/access-requests", 201, {
+    baseUrl: dshBaseUrl, token: controlToken, headers: mutationHeaders(),
+    body: { employeeId: employeeID, reason: "إعداد حساب مشغل معتمد لاختبار دورة الوصول",
+      requestedPermissions: ["operations"] },
+  });
+  const accessRequestID = accessCreated?.request?.id;
+  assert(typeof accessRequestID === "string" && /^hreq_[a-f0-9]{32}$/.test(accessRequestID), "HR operator access request was not created");
+  const created = await expect("POST", "/dsh/hr/access-requests/" + encodeURIComponent(accessRequestID) + "/create-profile", 200, {
+    baseUrl: dshBaseUrl, token: controlToken, headers: mutationHeaders(),
+  });
+  const profileID = created?.profile?.id || created?.request?.operatorProfileId;
+  assert(typeof profileID === "string" && profileID.startsWith("oprof_"), "DSH did not create an HR-backed operator candidate");
+  assert(sql("SELECT count(*) FROM identity_operator_profiles WHERE id='" + sqlLiteral(profileID) + "' AND state='pending_review' AND actor_id IS NULL") === "1", "operator candidate received actor or role before review");
   if (expectedActorID) {
     assert(sql("SELECT count(*) FROM identity_actors WHERE id='" + sqlLiteral(expectedActorID) + "' AND phone_e164='" + sqlLiteral(candidatePhone) + "'") === "1", "shared actor readback changed before operator profile review");
   } else {
@@ -125,6 +146,10 @@ const admitReviewedOperatorCandidate = async (candidatePhone, fullNameAr, expect
   assert(grant?.profile?.state === "admitted" && grant.profile.actorId === grant.role?.actorId, "approved profile and Identity role did not bind atomically");
   assert(!expectedActorID || grant.role.actorId === expectedActorID, "operator role grant changed the existing canonical actor");
   assert(sql("SELECT count(*) FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE a.phone_e164='" + sqlLiteral(candidatePhone) + "' AND r.role='operator'") === "1", "reviewed operator role was not persisted");
+  const admission = await expect("POST", "/dsh/hr/access-requests/" + encodeURIComponent(accessRequestID) + "/admit", 200, {
+    baseUrl: dshBaseUrl, token: controlToken, headers: mutationHeaders(),
+  });
+  assert(admission?.employee?.operatorActorId === grant.role.actorId, "Identity admission not linked to its canonical HR employee");
   return { profileID, profile: grant.profile, role: grant.role };
 };
 

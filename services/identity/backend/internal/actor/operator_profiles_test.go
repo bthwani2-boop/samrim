@@ -17,6 +17,16 @@ import (
 	_ "github.com/lib/pq"
 )
 
+func TestDirectControlPanelOperatorCreationForbidden(t *testing.T) {
+	service := New(nil, "")
+	_, err := service.CreateOperatorProfile(context.Background(), "control-panel", "act_root", "security-correlation", "security-idempotency", domain.OperatorProfileCreateRequest{
+		FullNameAr: "مشغل غير مصرح", PhoneE164: "+967777777777", JobTitle: "مشرف", Department: "العمليات",
+	})
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("Control Panel service must not bypass the HR provisioning owner: %v", err)
+	}
+}
+
 func TestListOperatorProfilesKeysetDatabase(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
@@ -117,7 +127,10 @@ func TestListOperatorProfilesKeysetDatabase(t *testing.T) {
 		t.Fatalf("operator profile state/search filters failed: %+v err=%v", filtered, err)
 	}
 
-	created, err := service.CreateOperatorProfile(ctx, "control-panel", adminID, "operator-details-correlation-create", "operator-details-idempotency-create", domain.OperatorProfileCreateRequest{
+	if _, err := service.CreateOperatorProfile(ctx, "control-panel", adminID, "operator-details-correlation-bypass", "operator-details-idempotency-bypass", domain.OperatorProfileCreateRequest{FullNameAr: "إنشاء مباشر مرفوض", PhoneE164: "+967770009998", JobTitle: "مشرف", Department: "العمليات"}); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("Control Panel must not directly create Identity operator profiles: %v", err)
+	}
+	created, err := service.CreateOperatorProfile(ctx, "dsh", adminID, "operator-details-correlation-create", "operator-details-idempotency-create", domain.OperatorProfileCreateRequest{
 		FullNameAr: "مشغل اختبار التفاصيل", PhoneE164: "+967770009999", JobTitle: "محلل عمليات", Department: "العمليات",
 	})
 	if err != nil || created.Profile.JobTitle != "محلل عمليات" || created.Profile.Department != "العمليات" {

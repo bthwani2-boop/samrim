@@ -659,6 +659,37 @@ func (s *catalogRefoundationScenario) verifyPublicStoreDiscovery() {
 	if err != nil || len(wrongVerticalSearch.Offers) != 0 {
 		s.t.Fatalf("public catalog search crossed its vertical scope: %+v err=%v", wrongVerticalSearch, err)
 	}
+	s.verifyFinancialEligibilityConsistentForPublicStore()
+}
+
+func (s *catalogRefoundationScenario) verifyFinancialEligibilityConsistentForPublicStore() {
+	s.t.Helper()
+	const caseID = "joining_store_discovery_v1"
+	if _, err := s.db.ExecContext(s.ctx, "UPDATE dsh.joining_cases SET financial_profile_state='REQUIRED' WHERE id=$1", caseID); err != nil {
+		s.t.Fatalf("suspend joining financial profile fixture: %v", err)
+	}
+	page, err := postgres.ListPublishedStorePage(s.ctx, s.db, postgres.PublicStoreListQuery{ServiceCityID: s.cityID, Limit: 10})
+	if err != nil || len(page.Stores) != 0 {
+		s.t.Fatalf("financially ineligible Store must disappear from public list: %+v err=%v", page, err)
+	}
+	if _, err := postgres.ReadPublishedStore(s.ctx, s.db, "store_catalog_v1", s.cityID); !errors.Is(err, postgres.ErrStoreNotFound) {
+		s.t.Fatalf("financially ineligible Store must be hidden from direct customer detail too: %v", err)
+	}
+	results, err := postgres.SearchPublicCatalog(s.ctx, s.db, s.cityID, s.verticalID, s.categoryID, "قهوة", 10, "")
+	if err != nil || len(results.Offers) != 0 {
+		s.t.Fatalf("financially ineligible Store must not leak through public product search: %+v err=%v", results, err)
+	}
+	if _, err := s.db.ExecContext(s.ctx, "UPDATE dsh.joining_cases SET financial_profile_state='ACTIVE' WHERE id=$1", caseID); err != nil {
+		s.t.Fatalf("restore joining financial profile fixture: %v", err)
+	}
+	restored, err := postgres.ReadPublishedStore(s.ctx, s.db, "store_catalog_v1", s.cityID)
+	if err != nil || restored.ID != "store_catalog_v1" {
+		s.t.Fatalf("restoring financial eligibility must restore public Store details: %+v err=%v", restored, err)
+	}
+	restoredSearch, err := postgres.SearchPublicCatalog(s.ctx, s.db, s.cityID, s.verticalID, s.categoryID, "قهوة", 10, "")
+	if err != nil || len(restoredSearch.Offers) != 2 {
+		s.t.Fatalf("restored financial eligibility must restore public product search: %+v err=%v", restoredSearch, err)
+	}
 }
 
 func (s *catalogRefoundationScenario) verifyPublishedStorePagination() {

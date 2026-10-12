@@ -35,7 +35,10 @@ func (s *Service) CreateOperatorProfile(ctx context.Context, caller, actingActor
 	caller, actingActorID = strings.ToLower(strings.TrimSpace(caller)), strings.TrimSpace(actingActorID)
 	input.FullNameAr = strings.TrimSpace(input.FullNameAr)
 	input.JobTitle, input.Department = strings.TrimSpace(input.JobTitle), strings.TrimSpace(input.Department)
-	if caller != "control-panel" || actingActorID == "" || !operatorProfileMutationValid(correlationID, idempotencyKey) || utf8.RuneCountInString(input.FullNameAr) < 2 || utf8.RuneCountInString(input.FullNameAr) > 120 || !validOperatorDetails(input.JobTitle, input.Department) {
+	if caller != "dsh" {
+		return domain.OperatorProfileResponse{}, domain.ErrForbidden
+	}
+	if actingActorID == "" || !operatorProfileMutationValid(correlationID, idempotencyKey) || utf8.RuneCountInString(input.FullNameAr) < 2 || utf8.RuneCountInString(input.FullNameAr) > 120 || !validOperatorDetails(input.JobTitle, input.Department) {
 		return domain.OperatorProfileResponse{}, domain.ErrInvalidInput
 	}
 	phone, err := identitysecurity.NormalizePhoneE164(input.PhoneE164)
@@ -170,7 +173,7 @@ func (s *Service) UpdateOperatorProfile(ctx context.Context, caller, actingActor
 func (s *Service) ListOperatorProfiles(ctx context.Context, caller, actingActorID, query, state, sort string, limit int, cursor string) (domain.OperatorProfilePage, error) {
 	caller, actingActorID = strings.ToLower(strings.TrimSpace(caller)), strings.TrimSpace(actingActorID)
 	query, state, sort = strings.TrimSpace(query), strings.TrimSpace(state), strings.TrimSpace(sort)
-	if caller != "control-panel" || actingActorID == "" || queryRuneCount(query) > 100 {
+	if (caller != "control-panel" && caller != "dsh") || actingActorID == "" || queryRuneCount(query) > 100 {
 		return domain.OperatorProfilePage{}, domain.ErrInvalidInput
 	}
 	if limit == 0 {
@@ -244,7 +247,7 @@ func (s *Service) ListOperatorProfiles(ctx context.Context, caller, actingActorI
 }
 
 func (s *Service) ReadOperatorProfile(ctx context.Context, caller, actingActorID, profileID string) (domain.OperatorProfile, error) {
-	if strings.ToLower(strings.TrimSpace(caller)) != "control-panel" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(profileID) == "" {
+	if (strings.ToLower(strings.TrimSpace(caller)) != "control-panel" && strings.ToLower(strings.TrimSpace(caller)) != "dsh") || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(profileID) == "" {
 		return domain.OperatorProfile{}, domain.ErrInvalidInput
 	}
 	if err := s.requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {

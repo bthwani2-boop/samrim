@@ -417,6 +417,38 @@ paths:
   /dsh/stores/{storeId}/delivery-origin:
     $ref: "./paths/location-core.yaml#/paths/~1dsh~1stores~1{storeId}~1delivery-origin"
 
+  /dsh/hr/access-requests:
+    $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests"
+  /dsh/hr/access-requests/{requestId}:
+    $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}"
+  /dsh/hr/access-requests/{requestId}/create-profile:
+    $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}~1create-profile"
+  /dsh/hr/access-requests/{requestId}/reject:
+    $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}~1reject"
+
+  /dsh/hr/access-requests/by-profile/{profileId}:
+    $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1by-profile~1{profileId}"
+  /dsh/hr/access-requests/{requestId}/admit:
+    $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}~1admit"
+
+  /dsh/hr/employees:
+    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees"
+
+  /dsh/hr/operator-employees/{actorId}:
+    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1operator-employees~1{actorId}"
+
+  /dsh/hr/employees/{employeeId}/events:
+    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees~1{employeeId}~1events"
+
+  /dsh/hr/employees/{employeeId}/employment-status:
+    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees~1{employeeId}~1employment-status"
+
+  /dsh/hr/employees/{employeeId}/attendance:
+    $ref: "./paths/hr-attendance.yaml#/paths/~1dsh~1hr~1employees~1{employeeId}~1attendance"
+
+  /dsh/hr/employees/{employeeId}:
+    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees~1{employeeId}"
+
   /dsh/service-cities:
     $ref: "./paths/service-city.yaml#/paths/~1dsh~1service-cities"
 
@@ -1172,9 +1204,9 @@ components:
           maxLength: 160
         walletProviderKey:
           type: string
-          minLength: 1
+          minLength: 0
           maxLength: 64
-          description: Provider selected by the beneficiary at admission. Do not enter a wallet number or name here.
+          description: Optional provider preference. Empty when the beneficiary has not selected one; do not enter a wallet number or name here.
         firstStoreAddress:
           type: string
           minLength: 4
@@ -4751,6 +4783,391 @@ components:
           type: string
           minLength: 2
           maxLength: 160
+
+    HREmployee:
+      type: object
+      additionalProperties: false
+      required: [id, fullNameAr, department, jobTitle, startDate, workLocation, status, version, createdAt]
+      properties:
+        id:
+          type: string
+        fullNameAr:
+          type: string
+          minLength: 2
+          maxLength: 120
+        phoneE164:
+          type: string
+        department:
+          type: string
+          minLength: 1
+          maxLength: 80
+        jobTitle:
+          type: string
+          minLength: 1
+          maxLength: 80
+        managerEmployeeId:
+          type: string
+        startDate:
+          type: string
+          format: date
+        workLocation:
+          type: string
+          minLength: 1
+          maxLength: 100
+        status:
+          type: string
+          enum: [active, inactive]
+        operatorActorId:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+
+    HRCreateEmployeeRequest:
+      type: object
+      additionalProperties: false
+      required: [fullNameAr, phoneE164, department, jobTitle, managerEmployeeId, startDate, workLocation]
+      properties:
+        fullNameAr:
+          type: string
+          minLength: 2
+          maxLength: 120
+        phoneE164:
+          type: string
+        department:
+          type: string
+          minLength: 1
+          maxLength: 80
+        jobTitle:
+          type: string
+          minLength: 1
+          maxLength: 80
+        managerEmployeeId:
+          type: string
+        startDate:
+          type: string
+          format: date
+        workLocation:
+          type: string
+          minLength: 1
+          maxLength: 100
+
+    HREmployeePage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HREmployee"
+        nextCursor:
+          type: string
+
+    HREmployeeCreateResponse:
+      type: object
+      additionalProperties: false
+      required: [employee, idempotentReplay]
+      properties:
+        employee:
+          $ref: "#/components/schemas/HREmployee"
+        idempotentReplay:
+          type: boolean
+
+    HREmployeeReadResponse:
+      type: object
+      additionalProperties: false
+      required: [employee]
+      properties:
+        employee:
+          $ref: "#/components/schemas/HREmployee"
+
+    HREmployeeEvent:
+      type: object
+      additionalProperties: false
+      required: [eventType, actingActorId, createdAt]
+      properties:
+        eventType:
+          type: string
+          enum: [created, updated, status_changed]
+        actingActorId:
+          type: string
+        reason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    HREmployeeEventsPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HREmployeeEvent"
+        nextCursor:
+          type: string
+
+    HRAttendanceInput:
+      type: object
+      additionalProperties: false
+      required: [date, status, note, expectedVersion]
+      properties:
+        date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [present, absent, late, leave]
+        note:
+          type: string
+          minLength: 8
+          maxLength: 500
+        checkInAt:
+          type: string
+          format: date-time
+        checkOutAt:
+          type: string
+          format: date-time
+        expectedVersion:
+          type: integer
+          minimum: 0
+    HRAttendanceRecord:
+      type: object
+      additionalProperties: false
+      required: [employeeId, date, status, note, version, recordedByActorId, recordedAt]
+      properties:
+        employeeId:
+          type: string
+        date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [present, absent, late, leave]
+        note:
+          type: string
+        checkInAt:
+          type: string
+          format: date-time
+        checkOutAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+        recordedByActorId:
+          type: string
+        recordedAt:
+          type: string
+          format: date-time
+    HRAttendancePage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HRAttendanceRecord"
+    HRAttendanceResponse:
+      type: object
+      additionalProperties: false
+      required: [record, idempotentReplay]
+      properties:
+        record:
+          $ref: "#/components/schemas/HRAttendanceRecord"
+        idempotentReplay:
+          type: boolean
+
+    HREmploymentStatusInput:
+      type: object
+      additionalProperties: false
+      required: [status, reason, expectedVersion]
+      properties:
+        status:
+          type: string
+          enum: [active, inactive]
+        reason:
+          type: string
+          minLength: 8
+          maxLength: 500
+        expectedVersion:
+          type: integer
+          minimum: 1
+    HREmploymentStatusResponse:
+      type: object
+      additionalProperties: false
+      required: [employee, idempotentReplay]
+      properties:
+        employee:
+          $ref: "#/components/schemas/HREmployee"
+        idempotentReplay:
+          type: boolean
+
+    HRUpdateEmployeeRequest:
+      type: object
+      additionalProperties: false
+      required: [fullNameAr, phoneE164, department, jobTitle, managerEmployeeId, startDate, workLocation, expectedVersion]
+      properties:
+        fullNameAr:
+          type: string
+        phoneE164:
+          type: string
+        department:
+          type: string
+        jobTitle:
+          type: string
+        managerEmployeeId:
+          type: string
+        startDate:
+          type: string
+          format: date
+        workLocation:
+          type: string
+        expectedVersion:
+          type: integer
+    HRUpdateEmployeeResponse:
+      type: object
+      additionalProperties: false
+      required: [employee, idempotentReplay]
+      properties:
+        employee:
+          $ref: "#/components/schemas/HREmployee"
+        idempotentReplay:
+          type: boolean
+
+    HRAccessRequest:
+      type: object
+      additionalProperties: false
+      required: [id, employeeId, employeeName, phoneE164, department, jobTitle, reason, requestedPermissions, state, requestedByActorId, createdAt, version]
+      properties:
+        id:
+          type: string
+        employeeId:
+          type: string
+        employeeName:
+          type: string
+        phoneE164:
+          type: string
+        department:
+          type: string
+        jobTitle:
+          type: string
+        reason:
+          type: string
+        requestedPermissions:
+          type: array
+          items:
+            type: string
+        state:
+          type: string
+          enum: [pending_review, identity_provisioning, identity_profile_created, rejected]
+        operatorProfileId:
+          type: string
+        operatorActorId:
+          type: string
+        requestedByActorId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+        rejectedAt:
+          type: string
+          format: date-time
+        rejectedByActorId:
+          type: string
+        rejectionReason:
+          type: string
+    HRAccessRequestInput:
+      type: object
+      additionalProperties: false
+      required: [employeeId, reason, requestedPermissions]
+      properties:
+        employeeId:
+          type: string
+        reason:
+          type: string
+        requestedPermissions:
+          type: array
+          items:
+            type: string
+    HRAccessDecisionInput:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 8
+          maxLength: 500
+    HRAccessLinkInput:
+      type: object
+      additionalProperties: false
+      required: [operatorProfileId]
+      properties:
+        operatorProfileId:
+          type: string
+    HRAccessRequestPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HRAccessRequest"
+        nextCursor:
+          type: string
+    HRAccessRequestMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [request, idempotentReplay]
+      properties:
+        request:
+          $ref: "#/components/schemas/HRAccessRequest"
+        idempotentReplay:
+          type: boolean
+    HRIdentityProfileCreationResponse:
+      type: object
+      additionalProperties: false
+      required: [request]
+      properties:
+        request:
+          $ref: "#/components/schemas/HRAccessRequest"
+        profile:
+          type: object
+          additionalProperties: false
+          required: [id]
+          properties:
+            id: { type: string }
+    HROperatorAdmissionResponse:
+      type: object
+      additionalProperties: false
+      required: [request, employee, idempotentReplay]
+      properties:
+        request:
+          $ref: "#/components/schemas/HRAccessRequest"
+        employee:
+          $ref: "#/components/schemas/HREmployee"
+        idempotentReplay:
+          type: boolean
+    HRAccessRequestReadResponse:
+      type: object
+      additionalProperties: false
+      required: [request]
+      properties:
+        request:
+          $ref: "#/components/schemas/HRAccessRequest"
 
     ServiceCity:
       type: object

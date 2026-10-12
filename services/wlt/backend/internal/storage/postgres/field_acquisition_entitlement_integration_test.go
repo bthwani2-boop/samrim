@@ -349,3 +349,49 @@ func (s *fieldAcquisitionScenario) verifyInvalidCursors(t *testing.T, before tim
 		t.Fatalf("oversized entitlement page error = %v", err)
 	}
 }
+
+func TestConcurrentFieldAcquisitionReplayHasOneLedgerEffect(t *testing.T) {
+	s := newFieldAcquisitionScenario(t)
+	s.registerCleanup(t)
+	s.activePolicy = s.createAndReplacePolicy(t)
+	input := s.awardInput(s.caseOne, s.storeOne, "partner-one-"+s.suffix, s.caseOneKey)
+
+	type outcome struct {
+		entitlement FieldAcquisitionEntitlementRecord
+		replayed    bool
+		err         error
+	}
+	start := make(chan struct{})
+	results := make(chan outcome, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			<-start
+			entitlement, replayed, err := FinalizeFieldAcquisitionReward(s.ctx, s.db, input)
+			results <- outcome{entitlement: entitlement, replayed: replayed, err: err}
+		}()
+	}
+	close(start)
+	one, two := <-results, <-results
+	if one.err != nil || two.err != nil {
+		t.Fatalf("concurrent WLT requests failed: first=%v second=%v", one.err, two.err)
+	}
+	if one.replayed == two.replayed {
+		t.Fatalf("concurrent WLT replay flags=%t,%t; want exactly one initial commit", one.replayed, two.replayed)
+	}
+	if one.entitlement.LedgerTransactionID == "" || one.entitlement.LedgerTransactionID != two.entitlement.LedgerTransactionID {
+		t.Fatalf("two WLT callers observed different ledger transactions: %+v / %+v", one.entitlement, two.entitlement)
+	}
+	var entitlements, ledgerTransactions, creditEntries int
+	if err := s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.field_acquisition_entitlements WHERE joining_case_id=$1", s.caseOne).Scan(&entitlements); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.ledger_transactions WHERE id=$1", one.entitlement.LedgerTransactionID).Scan(&ledgerTransactions); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.ledger_entries WHERE transaction_id=$1 AND account_code='FIELD_WALLET' AND direction='CREDIT' AND amount_minor=1250", one.entitlement.LedgerTransactionID).Scan(&creditEntries); err != nil {
+		t.Fatal(err)
+	}
+	if entitlements != 1 || ledgerTransactions != 1 || creditEntries != 1 {
+		t.Fatalf("WLT persisted effects entitlements=%d ledgerTransactions=%d walletCredits=%d; want one each", entitlements, ledgerTransactions, creditEntries)
+	}
+}

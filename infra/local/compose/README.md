@@ -1,6 +1,8 @@
 # Local runtime ownership
 
-Compose owns PostgreSQL, Mailpit, Identity, DSH and migration one-shots. It does not own Control Panel, Metro, ADB or scrcpy.
+Compose owns PostgreSQL, Mailpit, Identity, DSH, WLT, the migration one-shots and local database-access provisioning. It does not own Control Panel, Metro, ADB or scrcpy.
+
+On `pnpm dev`, missing per-service database passwords are generated once in the ignored `infra/local/.env` and never printed. A post-migration one-shot creates restricted Identity runtime/maintenance, DSH and WLT runtime roles, grants owner-scoped access and verifies real logins and cross-owner denial before starting the APIs. Migration and first-operator bootstrap jobs continue to use the local administrator, never exposed to runtime containers. No existing tables, actor IDs, sessions, or volumes are reset by this change.
 
 Daily backend lifecycle:
 

@@ -142,6 +142,7 @@ export async function provisionIndependentOperator(
   identityBase: string,
   controlToken: string,
   actingOperatorID: string,
+  requestedPermissions: string[] = ["operations"],
 ): Promise<PreparedOperator> {
   const phone = "+9677" + String(randomInt(10_000_000, 99_999_999));
   await assertNoExistingActorForPhone(identityBase, controlToken, phone);
@@ -150,15 +151,32 @@ export async function provisionIndependentOperator(
   const fullNameAr = "محمود أحمد علي الدوبحي";
   const jobTitle = "مشغل عمليات";
   const department = "العمليات";
-  const creation = await jsonRequest(identityBase, "/internal/operator-profiles", controlToken, { fullNameAr, phoneE164: phone, jobTitle, department }, mutationHeaders(randomUUID()));
-  operator.profileId = String(creation.body?.profile?.id || "");
-  if (!operator.profileId) {
-    const createdProfile = await findOperatorProfileByPhone(identityBase, controlToken, actingOperatorID, phone).catch(() => null);
-    if (createdProfile) operator.profileId = createdProfile.id;
-  }
-  expect(creation.response.status, "operator candidate profile creation must succeed").toBe(201);
+  // New Operator identity must have HR provenance before the Identity candidate exists.
+  // The disposable CI fixture crosses the same DSH owner boundary as the real workspace.
+  const dshBase = requiredEnv("PLAYWRIGHT_DSH_API_BASE_URL").replace(/\/+$/, "");
+  const employment = await jsonRequest(dshBase, "/dsh/hr/employees", controlToken, {
+    fullNameAr, phoneE164: phone, jobTitle, department,
+    managerEmployeeId: "", workLocation: "صنعاء", startDate: new Date().toISOString().slice(0, 10),
+  }, mutationHeaders(randomUUID()));
+  expect(employment.response.status, "fixture employee creation must use HR").toBe(201);
+  const employeeId = String(employment.body?.employee?.id || "");
+  expect(employeeId).toMatch(/^emp_[a-f0-9]{32}$/);
+  const request = await jsonRequest(dshBase, "/dsh/hr/access-requests", controlToken, {
+    employeeId, reason: "مهمة اختبار حساب تشغيل مستقل عبر مسار الموارد البشرية",
+    requestedPermissions,
+  }, mutationHeaders(randomUUID()));
+  expect(request.response.status, "fixture operator admission requires HR request").toBe(201);
+  const requestId = String(request.body?.request?.id || "");
+  expect(requestId).toMatch(/^hreq_[a-f0-9]{32}$/);
+  const creation = await jsonRequest(
+    dshBase, "/dsh/hr/access-requests/" + encodeURIComponent(requestId) + "/create-profile",
+    controlToken, undefined, mutationHeaders("hr-create-profile-" + requestId),
+  );
+  expect(creation.response.status, "DSH must create Identity profile from the claimed HR request").toBe(200);
+  operator.profileId = String(creation.body?.profile?.id || creation.body?.request?.operatorProfileId || "");
   expect(operator.profileId).toMatch(/^oprof_/);
-  expect(creation.body?.profile).toMatchObject({ state: "pending_review", fullNameAr, jobTitle, department, phoneE164: phone });
+  const candidate = await findOperatorProfileByPhone(identityBase, controlToken, actingOperatorID, phone);
+  expect(candidate).toMatchObject({ id: operator.profileId, state: "pending_review", fullNameAr, jobTitle, department, phoneE164: phone });
 
   const approval = await jsonRequest(identityBase, "/internal/operator-profiles/" + encodeURIComponent(operator.profileId) + "/approve", controlToken, { expectedVersion: 1 }, mutationHeaders(randomUUID()));
   expect(approval.response.status, "operator profile review must precede role admission").toBe(200);
@@ -188,6 +206,14 @@ export async function provisionIndependentOperator(
   expect(operator.actorId).toMatch(/^act_/);
   expect(operator.actorCreatedByTest).toBe(true);
   expect(grant.body?.profile?.state).toBe("admitted");
+
+  // Only DSH may bind the approved Identity actor to its canonical HR employee.
+  const admission = await jsonRequest(
+    dshBase, "/dsh/hr/access-requests/" + encodeURIComponent(requestId) + "/admit",
+    controlToken, undefined, mutationHeaders("hr-admit-" + requestId),
+  );
+  expect(admission.response.status, "Identity admission must be written back to HR before invitation").toBe(200);
+  expect(admission.body?.employee?.operatorActorId).toBe(operator.actorId);
 
   const invitation = await jsonRequest(identityBase, "/internal/operator-profiles/" + encodeURIComponent(operator.profileId) + "/invitation", controlToken, undefined, { "X-Acting-Actor-ID": actingOperatorID, "X-Correlation-ID": randomUUID() });
   expect(invitation.response.status, "operator invitation should be issued after profile review and role grant").toBe(201);
@@ -266,9 +292,9 @@ export async function enableVirtualAuthenticator(page: Page): Promise<void> {
 
 export async function registerOperator(page: Page, operator: PreparedOperator, baseUrl: string, mailpitBase: string): Promise<string> {
   await page.goto(baseUrl + "/");
-  const signInHeading = page.getByRole("heading", { name: "الدخول بمفتاح المرور" });
+  const signInHeading = page.getByRole("heading", { name: /الدخول بمفتاح المرور|الدخول بكلمة المرور/ });
   const workspaceHeading = page.getByRole("heading", { name: "الرئيسية", exact: true });
-  await expect.poll(async () => await signInHeading.isVisible() || await workspaceHeading.isVisible()).toBe(true);
+  await expect.poll(async () => await signInHeading.isVisible() || await workspaceHeading.isVisible(), { timeout: 20_000 }).toBe(true);
   if (await workspaceHeading.isVisible()) {
     const currentSession = await page.evaluate(async () => {
       const response = await fetch("/api/auth/session", { cache: "no-store" });

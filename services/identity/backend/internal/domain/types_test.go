@@ -108,7 +108,7 @@ func TestControlPanelRoleBoundary(t *testing.T) {
 }
 
 func TestOperatorWorkspacePermissionRegistry(t *testing.T) {
-	want := []string{"operations", "partners", "catalog", "marketing", "finance", "platform_policies"}
+	want := []string{"operations", "partners", "catalog", "marketing", "finance", "platform_policies", "hr"}
 	got := OperatorPermissions()
 	if len(got) != len(want) {
 		t.Fatalf("operator workspace permission count = %d; want %d", len(got), len(want))

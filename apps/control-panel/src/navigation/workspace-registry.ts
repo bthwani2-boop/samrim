@@ -83,6 +83,7 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
   { href: "/catalog", label: "الكتالوج", children: catalogChildren, permission: "catalog" },
   { href: "/marketing", label: "التسويق والمحتوى", children: marketingChildren, permission: "marketing" },
   { href: "/finance", label: "المالية", children: financeChildren, permission: "finance" },
+  { href: "/hr", label: "الموارد البشرية", children: [{ href: "/hr/employees", label: "الموظفون" }], permission: "hr" },
   { href: "/policies", label: "السياسات", children: policyChildren, permission: "platform_policies" },
   { href: "/access", label: "الوصول والصلاحيات", children: [], initialOperatorAdminOnly: true }
 ];

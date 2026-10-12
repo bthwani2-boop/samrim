@@ -16,7 +16,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 113
+const SchemaVersion = 120
 
 type MigrationRecord struct {
 	Version int
@@ -25,6 +25,10 @@ type MigrationRecord struct {
 }
 
 var requiredTables = []schemaRelationExpectation{
+	{name: "dsh.hr_employees", columns: []string{"id", "full_name_ar", "phone_e164", "department", "job_title", "manager_employee_id", "start_date", "work_location", "status", "operator_actor_id", "version", "created_by_actor_id", "created_at", "updated_at"}, constraints: []string{"hr_employees_pkey", "hr_employee_name_chk", "hr_employee_phone_chk", "hr_employee_dept_chk", "hr_employee_title_chk", "hr_employee_status_chk"}, indexes: []string{"hr_employees_recent_idx", "hr_employees_department_idx", "hr_employees_manager_idx", "hr_employees_phone_uq"}},
+	{name: "dsh.hr_operator_access_requests", columns: []string{"id", "employee_id", "reason", "requested_permissions", "state", "operator_profile_id", "requested_by_actor_id", "linked_by_actor_id", "created_at", "updated_at", "version", "employee_name_snapshot", "phone_e164_snapshot", "department_snapshot", "job_title_snapshot", "rejected_at", "rejected_by_actor_id", "rejection_reason", "provisioning_at", "provisioning_by_actor_id"}, constraints: []string{"hr_operator_access_requests_pkey", "hr_access_state_chk", "hr_access_permissions_chk", "hr_access_snapshot_chk"}, indexes: []string{"hr_access_pending_idx"}},
+	{name: "dsh.hr_operator_access_events", columns: []string{"idempotency_key", "request_id", "event_type", "request_hash", "acting_actor_id", "correlation_id", "created_at"}, constraints: []string{"hr_operator_access_events_pkey", "hr_access_event_hash_chk"}},
+	{name: "dsh.hr_employee_events", columns: []string{"idempotency_key", "employee_id", "event_type", "request_hash", "acting_actor_id", "correlation_id", "created_at", "before_snapshot", "after_snapshot", "reason"}, constraints: []string{"hr_employee_events_pkey", "hr_employee_event_type_chk", "hr_employee_event_hash_chk", "hr_employee_update_snapshots_chk", "hr_employee_status_reason_chk"}, indexes: []string{"hr_employee_events_employee_idx", "hr_employee_events_recent_idx"}},
 	{name: "dsh.schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, constraints: []string{"schema_migrations_pkey"}},
 	{name: "dsh.stores", columns: []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at", "publication_state", "publication_changed_at", "delivery_origin_latitude", "delivery_origin_longitude", "delivery_origin_version", "delivery_origin_updated_at", "service_city_id", "primary_vertical_id", "fulfillment_modes", "commercial_store_type_id", "deleted_at", "deleted_by", "deletion_reason"}, constraints: []string{"stores_pkey", "stores_id_partner_actor_uq", "stores_name_length_chk", "stores_version_positive_chk", "stores_publication_state_chk", "stores_delivery_origin_pair_chk", "stores_delivery_origin_latitude_chk", "stores_delivery_origin_longitude_chk", "stores_delivery_origin_version_chk", "stores_delivery_origin_updated_at_chk", "stores_service_city_fk", "stores_primary_vertical_fk", "stores_fulfillment_modes_chk", "stores_commercial_type_vertical_fk", "store_deletion_facts_chk"}, indexes: []string{"stores_partner_actor_idx", "stores_publication_state_idx", "stores_service_city_idx", "stores_primary_vertical_idx", "stores_commercial_type_idx", "stores_operator_updated_idx", "stores_published_city_name_registry_idx", "stores_published_city_name_prefix_registry_idx", "stores_published_city_created_registry_idx", "stores_published_city_name_search_idx", "stores_trash_idx"}},
 	{name: "dsh.joining_cases", columns: []string{"id", "contact_phone_e164", "business_name", "first_store_name", "partner_actor_id", "originating_field_actor_id", "origin", "state", "correction_reason", "reviewed_by", "store_id", "version", "created_at", "updated_at", "first_store_service_city_id", "first_store_vertical_id", "first_store_fulfillment_modes", "first_store_latitude", "first_store_longitude", "settlement_period", "financial_profile_id", "financial_profile_state", "terms_policy_version", "first_store_commercial_type_id", "wallet_provider_key"}, constraints: []string{"joining_cases_pkey", "joining_cases_phone_length_chk", "joining_cases_business_name_chk", "joining_cases_store_name_chk", "joining_cases_state_chk", "joining_cases_version_positive_chk", "joining_cases_store_fk", "joining_cases_service_city_fk", "joining_cases_first_store_vertical_fk", "joining_cases_first_store_commercial_type_fk", "joining_cases_origin_chk", "joining_cases_field_actor_chk", "joining_cases_store_origin_pair_chk", "joining_cases_store_origin_latitude_chk", "joining_cases_store_origin_longitude_chk", "joining_cases_settlement_period_chk", "joining_cases_financial_profile_state_chk", "joining_cases_first_store_fulfillment_modes_chk", "joining_cases_terms_policy_version_chk", "joining_cases_wallet_provider_key_chk"}, indexes: []string{"joining_cases_active_phone_uq", "joining_cases_partner_actor_uq", "joining_cases_state_idx", "joining_cases_service_city_idx", "joining_cases_first_store_vertical_idx", "joining_cases_field_actor_idx", "joining_cases_financial_profile_id_uq", "joining_cases_financial_profile_state_idx"}},
@@ -313,6 +317,34 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 	}
 	if drift > 30*time.Second {
 		return fmt.Errorf("DSH database clock drift exceeds 30s: %s", drift)
+	}
+	return nil
+}
+
+// VerifyOperationalReadiness is a bounded ongoing probe. The owning migrate
+// one-shot proves every migration checksum and schema relation before API startup;
+// repeating that full catalog audit on each Docker healthcheck is unnecessary.
+func VerifyOperationalReadiness(ctx context.Context, db *sql.DB, records []MigrationRecord) error {
+	if db == nil || len(records) != SchemaVersion {
+		return errors.New("invalid DSH operational readiness input")
+	}
+	if err := db.PingContext(ctx); err != nil {
+		return fmt.Errorf("DSH readiness database ping: %w", err)
+	}
+	var count, latest int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*), COALESCE(MAX(version),0) FROM dsh.schema_migrations").Scan(&count, &latest); err != nil {
+		return fmt.Errorf("DSH readiness migration history: %w", err)
+	}
+	if count != SchemaVersion || latest != SchemaVersion {
+		return fmt.Errorf("DSH readiness migration versions: count=%d latest=%d expected=%d", count, latest, SchemaVersion)
+	}
+	last := records[len(records)-1]
+	var name, digest string
+	if err := db.QueryRowContext(ctx, "SELECT name, sha256 FROM dsh.schema_migrations WHERE version=$1", last.Version).Scan(&name, &digest); err != nil {
+		return fmt.Errorf("DSH readiness latest migration: %w", err)
+	}
+	if name != last.Name || digest != last.SHA256 {
+		return errors.New("DSH readiness latest migration checksum mismatch")
 	}
 	return nil
 }

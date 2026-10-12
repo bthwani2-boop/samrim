@@ -31,6 +31,12 @@ DSH
 → promotion eligibility and discovery-content publication
 → operational tracking / delivery/pickup evidence relationship / exception state
 
+HR (logical owner within the current backend runtime; not a new Identity role or deployable)
+→ BThwani employee registry and employment/manager relationships
+→ work schedules, verified attendance and leave (when implemented)
+→ confidential salary terms, payroll entitlement computation and employee equipment custody (when implemented)
+→ authorized Operator access requests, never account grants
+
 WLT
 → all internal financial truth
 → payment intent / customer payment allocation

@@ -178,6 +178,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	hrServer, err := transporthttp.NewHR(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	if err != nil {
+		log.Fatal(err)
+	}
 	register := func(mux *http.ServeMux) {
 		joiningCaseServer.Register(mux)
 		catalogServer.Register(mux)
@@ -199,10 +203,11 @@ func main() {
 		notificationServer.Register(mux)
 		fieldServer.Register(mux)
 		clientFavoritesServer.Register(mux)
+		hrServer.Register(mux)
 		marketingServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
-		return postgres.VerifySchema(ctx, database, records)
+		return postgres.VerifyOperationalReadiness(ctx, database, records)
 	}
 	if err := serviceruntime.RunWithRoutesAndReadinessAndWorker("dsh", "/dsh", "18080", register, readiness, func(ctx context.Context) {
 		go runFinancialProfileReconciliationLoop(ctx, time.Minute, joiningCaseServer.ReconcileFinancialProfiles)

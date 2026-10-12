@@ -39,6 +39,24 @@ function Stop-RepositoryHosts {
     }
 }
 
+function Ensure-DatabaseRuntimePasswords {
+    if (-not (Test-Path -LiteralPath $EnvPath)) { throw "Missing ignored local configuration: $EnvPath" }
+    $content = [System.IO.File]::ReadAllText($EnvPath)
+    $changed = $false
+    foreach ($key in @('SAMRIM_IDENTITY_DB_PASSWORD', 'SAMRIM_IDENTITY_MAINTENANCE_DB_PASSWORD', 'SAMRIM_DSH_DB_PASSWORD', 'SAMRIM_WLT_DB_PASSWORD')) {
+        $match = [regex]::Match($content, "(?m)^$([regex]::Escape($key))=(.*)$")
+        if ($match.Success -and -not [string]::IsNullOrWhiteSpace($match.Groups[1].Value)) { continue }
+        if ($match.Success) { throw "Empty existing local database credential: $key" }
+        $bytes = [byte[]]::new(32)
+        $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+        try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+        $password = [Convert]::ToHexString($bytes).ToLowerInvariant()
+        $content += "`n$key=$password`n"
+        $changed = $true
+    }
+    if ($changed) { [System.IO.File]::WriteAllText($EnvPath, $content, [System.Text.UTF8Encoding]::new($false)) }
+}
+
 switch ($Target) {
     'down' {
         Stop-RepositoryHosts
@@ -47,6 +65,7 @@ switch ($Target) {
     }
     'status' { Compose @('ps', '-a') }
     default {
+        Ensure-DatabaseRuntimePasswords
         # BuildKit owns build-input invalidation; Compose owns image, environment and health reconciliation.
         Compose @('up', '-d', '--build', '--wait', '--wait-timeout', '300', '--remove-orphans')
         Write-Host 'RUNTIME_UP=PASS state=compose-reconciled'

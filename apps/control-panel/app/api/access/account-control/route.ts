@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, readHREmployeeByOperatorActor } from "../../../../src/server/dsh/dsh-bff";
 
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, setIdentityRoleEnabled, setIdentitySecurityEnabled } from "../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
@@ -31,6 +32,18 @@ export async function POST(request: Request) {
 
   try {
     const mutationOptions = { operatorActorId: identity.subject, correlationId: randomUUID(), idempotencyKey: randomUUID(), expectedVersion };
+    if (action === "enable-role" && actorId !== identity.subject) {
+      try {
+        const result = await readHREmployeeByOperatorActor(actorId,{operatorActorId:identity.subject});
+        if (result.employee.status !== "active") return jsonError("EMPLOYEE_INACTIVE","employment must be active before enabling operator access",409);
+      } catch (error) {
+        if (!isDshClientError(error) || error.kind !== "http" || error.status !== 404) {
+          const payload=dshErrorPayload(error);
+          return jsonError(payload.code,payload.message,dshHttpStatus(error));
+        }
+        // Legacy operator profiles without an HR employee record remain manageable.
+      }
+    }
     if (action === "disable-role" || action === "enable-role") {
       await setIdentityRoleEnabled(actorId, "operator", action === "enable-role", reason, mutationOptions);
     } else {

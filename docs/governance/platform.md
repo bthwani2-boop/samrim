@@ -29,6 +29,8 @@ One Human Actor may hold multiple roles. Role admission, credentials and session
 
 `operator` is the human persona for the Operator workspace. First-Operator bootstrap is a one-time Identity lifecycle, not a second role or Product layer.
 
+A BThwani **employee** is an HR employment relationship with a stable employee record, not an Identity role. A staff employee needs no platform account. Employee title, department and managerial seniority never grant Operator permissions. Captains, field-acquisition representatives, Partners and Store staff are not enrolled in BThwani HR merely because they participate in the platform. An employee approved for Operator access keeps any existing canonical Human Actor identity and receives only the separately authorized `operator` role.
+
 `partner` means Identity admission to the merchant-side Partner workspace. It does not by itself prove ownership of any Store. Store ownership and bounded Store operational authority are DSH-owned resource relationships. A Partner actor may own one Store, own several Stores, hold an explicit Store-scoped access grant for another Store, or combine those relationships without creating another role or identity.
 
 A Partner Captain is not a sixth Identity role. The Human Actor remains a canonical `captain`; Store-scoped affiliation/membership/eligibility is a DSH-owned relationship around that actor. The same Captain actor may hold multiple permitted relationships without creating duplicate identity.

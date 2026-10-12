@@ -90,6 +90,29 @@ func (c *Client) ProvisionExistingRoleWithContext(ctx context.Context, actorID, 
 	err := c.doWithContext(ctx, IdentityOperationProvisionExistingActorRole.Method, pathname, correlationID, "", strings.TrimSpace(operatorActorID), 0, nil, &result)
 	return result, err
 }
+
+// Identity alone verifies the canonical initial Operator.
+func (c *Client) RequireOperatorProfileAdministrator(ctx context.Context, actingActorID string) error {
+	var result OperatorProfilePage
+	return c.doWithContext(ctx, IdentityOperationListOperatorProfiles.Method,
+		IdentityOperationListOperatorProfiles.Path+"?limit=1", "", "", strings.TrimSpace(actingActorID), 0, nil, &result)
+}
+
+// CreateOperatorProfileForHR is restricted by Identity to the DSH service principal.
+// DSH owns the admitted HR request and the idempotent link to its employee.
+func (c *Client) CreateOperatorProfileForHR(ctx context.Context, actingActorID string, input OperatorProfileCreateRequest, correlationID, idempotencyKey string) (OperatorProfileResponse, error) {
+	var result OperatorProfileResponse
+	err := c.doWithIdempotency(ctx, IdentityOperationCreateOperatorProfile.Method, IdentityOperationCreateOperatorProfile.Path,
+		c.token, correlationID, "", actingActorID, 0, 0, idempotencyKey, input, &result)
+	return result, err
+}
+
+func (c *Client) ReadOperatorProfileForAdministrator(ctx context.Context, actingActorID, profileID string) (OperatorProfileResponse, error) {
+	var result OperatorProfileResponse
+	path := identityRoute(IdentityOperationReadOperatorProfile.Path, "profileId", url.PathEscape(strings.TrimSpace(profileID)))
+	err := c.doWithContext(ctx, IdentityOperationReadOperatorProfile.Method, path, "", "", strings.TrimSpace(actingActorID), 0, nil, &result)
+	return result, err
+}
 func (c *Client) ReadRole(ctx context.Context, actorID, role string) (ActorRoleView, error) {
 	var result ActorRoleView
 	pathname := identityRoute(IdentityOperationReadActorRole.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))

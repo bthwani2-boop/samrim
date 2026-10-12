@@ -7,8 +7,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/actor"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/authentication"
@@ -53,6 +55,7 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("POST /auth/managed/recover", s.recoverManaged)
 	mux.HandleFunc("POST /auth/managed/login", s.loginManaged)
 	mux.HandleFunc("GET /internal/operator-profiles", s.internal(s.listOperatorProfiles))
+	mux.HandleFunc("GET /internal/operator-profiles/{profileId}", s.internal(s.readOperatorProfile))
 	mux.HandleFunc("POST /internal/operator-profiles", s.internal(s.createOperatorProfile))
 	mux.HandleFunc("PATCH /internal/operator-profiles/{profileId}", s.internal(s.updateOperatorProfile))
 	mux.HandleFunc("PATCH /internal/operators/{actorId}/details", s.internal(s.updateOperatorRoleDetails))
@@ -556,6 +559,27 @@ func (s *Server) readOperatorPermission(w http.ResponseWriter, r *http.Request, 
 	}
 	writeJSON(w, http.StatusOK, access)
 }
+
+// Identity accepts a plain legacy reason or an explicitly percent-encoded UTF-8
+// reason. The encoded form is needed because browser/Node HTTP APIs reject
+// Arabic and other non-Latin-1 values in request headers.
+func operatorReasonHeader(w http.ResponseWriter, r *http.Request) (string, bool) {
+	raw := strings.TrimSpace(r.Header.Get("X-Reason"))
+	encoding := strings.TrimSpace(r.Header.Get("X-Reason-Encoding"))
+	if encoding == "" {
+		return raw, true
+	}
+	if encoding != "percent-utf8" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "unsupported X-Reason-Encoding"))
+		return "", false
+	}
+	decoded, err := url.QueryUnescape(raw)
+	if err != nil || !utf8.ValidString(decoded) {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "malformed UTF-8 reason"))
+		return "", false
+	}
+	return strings.TrimSpace(decoded), true
+}
 func (s *Server) setOperatorPermission(w http.ResponseWriter, r *http.Request, caller string) {
 	if r.Header.Get("X-Actor-ID") != "" {
 		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
@@ -567,7 +591,10 @@ func (s *Server) setOperatorPermission(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	reason := strings.TrimSpace(r.Header.Get("X-Reason"))
+	reason, ok := operatorReasonHeader(w, r)
+	if !ok {
+		return
+	}
 	if actingActorID == "" {
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required"))
 		return
@@ -656,7 +683,11 @@ func (s *Server) setRoleEnabled(w http.ResponseWriter, r *http.Request, caller s
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for administrative operations and must be a positive integer >= 1"))
 		return
 	}
-	if err := s.actors.SetRoleEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil {
+	reason, ok := operatorReasonHeader(w, r)
+	if !ok {
+		return
+	}
+	if err := s.actors.SetRoleEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), reason, expectedVersion, operatorActorID); err != nil {
 		writeDomainError(w, err)
 		return
 	}
@@ -678,7 +709,10 @@ func (s *Server) authorizeReenrollment(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	reason := strings.TrimSpace(r.Header.Get("X-Reason"))
+	reason, ok := operatorReasonHeader(w, r)
+	if !ok {
+		return
+	}
 	if operatorActorID == "" {
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for reenrollment operations"))
 		return
@@ -714,7 +748,11 @@ func (s *Server) setActorSecurityEnabled(w http.ResponseWriter, r *http.Request,
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for control-panel operations and must be a positive integer >= 1"))
 		return
 	}
-	if err := s.actors.SetSecurityEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil {
+	reason, ok := operatorReasonHeader(w, r)
+	if !ok {
+		return
+	}
+	if err := s.actors.SetSecurityEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), reason, expectedVersion, operatorActorID); err != nil {
 		writeDomainError(w, err)
 		return
 	}

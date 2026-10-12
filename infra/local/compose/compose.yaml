@@ -18,6 +18,42 @@ services:
       start_period: 20s
       start_interval: 2s
 
+  postgres-access:
+    image: postgis/postgis:16-3.4-alpine@sha256:681931a625df344215e9b8998bf34daf146b6a395ceacee4439eb9c85869239f
+    restart: "no"
+    depends_on:
+      identity-bootstrap:
+        condition: service_completed_successfully
+      dsh-migrate:
+        condition: service_completed_successfully
+      wlt-migrate:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: "postgres"
+      PGPORT: "5432"
+      PGUSER: "${SAMRIM_POSTGRES_USER}"
+      PGPASSWORD: "${SAMRIM_POSTGRES_PASSWORD}"
+      PGDATABASE: "${SAMRIM_POSTGRES_DB}"
+      SAMRIM_IDENTITY_DB_PASSWORD: "${SAMRIM_IDENTITY_DB_PASSWORD:?run pnpm dev to generate local database credentials}"
+      SAMRIM_IDENTITY_MAINTENANCE_DB_PASSWORD: "${SAMRIM_IDENTITY_MAINTENANCE_DB_PASSWORD:?run pnpm dev to generate local database credentials}"
+      SAMRIM_DSH_DB_PASSWORD: "${SAMRIM_DSH_DB_PASSWORD:?run pnpm dev to generate local database credentials}"
+      SAMRIM_WLT_DB_PASSWORD: "${SAMRIM_WLT_DB_PASSWORD:?run pnpm dev to generate local database credentials}"
+    volumes:
+      - ./runtime-roles.sql:/etc/samrim/runtime-roles.sql:ro
+      - ./verify-runtime-access.sh:/etc/samrim/verify-runtime-access.sh:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        psql -X -v ON_ERROR_STOP=1
+        -v "db_name=$$PGDATABASE"
+        -v "admin_user=$$PGUSER"
+        -v "identity_pwd=$$SAMRIM_IDENTITY_DB_PASSWORD"
+        -v "maintenance_pwd=$$SAMRIM_IDENTITY_MAINTENANCE_DB_PASSWORD"
+        -v "dsh_pwd=$$SAMRIM_DSH_DB_PASSWORD"
+        -v "wlt_pwd=$$SAMRIM_WLT_DB_PASSWORD"
+        -f /etc/samrim/runtime-roles.sql
+        && exec /bin/sh /etc/samrim/verify-runtime-access.sh
+
   mailpit:
     image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
     restart: unless-stopped
@@ -93,6 +129,8 @@ services:
       context: ../../..
       dockerfile: services/identity/backend/Dockerfile
     depends_on:
+      postgres-access:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       mailpit:
@@ -110,12 +148,12 @@ services:
       IDENTITY_DEVELOPMENT_CAPTAIN_ACTOR_ID: "${IDENTITY_DEVELOPMENT_CAPTAIN_ACTOR_ID:-}"
       IDENTITY_DEVELOPMENT_FIELD_ACTOR_ID: "${IDENTITY_DEVELOPMENT_FIELD_ACTOR_ID:-}"
       IDENTITY_DEVELOPMENT_OPERATOR_ACTOR_ID: "${IDENTITY_DEVELOPMENT_OPERATOR_ACTOR_ID:-}"
-      IDENTITY_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
-      IDENTITY_MAINTENANCE_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      IDENTITY_DATABASE_URL: "postgres://samrim_identity_runtime:${SAMRIM_IDENTITY_DB_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      IDENTITY_MAINTENANCE_DATABASE_URL: "postgres://samrim_identity_maintenance:${SAMRIM_IDENTITY_MAINTENANCE_DB_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
       BTHWANI_EXPECTED_DATABASE_HOST: "postgres"
       BTHWANI_EXPECTED_DATABASE_PORT: "5432"
       BTHWANI_EXPECTED_DATABASE_NAME: "${SAMRIM_POSTGRES_DB}"
-      BTHWANI_EXPECTED_DATABASE_USER: "${SAMRIM_POSTGRES_USER}"
+      BTHWANI_EXPECTED_DATABASE_USER: "samrim_identity_runtime"
       IDENTITY_AUTO_MIGRATE: "false"
       IDENTITY_RETENTION_CHALLENGE_DAYS: "${IDENTITY_RETENTION_CHALLENGE_DAYS:-30}"
       IDENTITY_RETENTION_PASSWORD_ATTEMPT_DAYS: "${IDENTITY_RETENTION_PASSWORD_ATTEMPT_DAYS:-30}"
@@ -172,6 +210,8 @@ services:
       context: ../../..
       dockerfile: services/dsh/backend/Dockerfile
     depends_on:
+      postgres-access:
+        condition: service_completed_successfully
       identity:
         condition: service_healthy
       media:
@@ -186,13 +226,12 @@ services:
       BTHWANI_ENV: "development"
       DSH_IDENTITY_API_BASE_URL: "http://identity:8082"
       DSH_WLT_API_BASE_URL: "http://wlt:8083"
-      DSH_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
-      DSH_MIGRATION_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
-      DSH_SCHEMA_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      DSH_DATABASE_URL: "postgres://samrim_dsh_runtime:${SAMRIM_DSH_DB_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      DSH_SCHEMA_DATABASE_URL: "postgres://samrim_dsh_runtime:${SAMRIM_DSH_DB_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
       BTHWANI_EXPECTED_DATABASE_HOST: "postgres"
       BTHWANI_EXPECTED_DATABASE_PORT: "5432"
       BTHWANI_EXPECTED_DATABASE_NAME: "${SAMRIM_POSTGRES_DB}"
-      BTHWANI_EXPECTED_DATABASE_USER: "${SAMRIM_POSTGRES_USER}"
+      BTHWANI_EXPECTED_DATABASE_USER: "samrim_dsh_runtime"
       IDENTITY_DSH_SERVICE_TOKEN: "${IDENTITY_DSH_SERVICE_TOKEN}"
       CONTROL_PANEL_SERVICE_TOKEN: "${CONTROL_PANEL_SERVICE_TOKEN}"
       WLT_DSH_SERVICE_TOKEN: "${WLT_DSH_SERVICE_TOKEN}"
@@ -243,6 +282,8 @@ services:
       context: ../../..
       dockerfile: services/wlt/backend/Dockerfile
     depends_on:
+      postgres-access:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       wlt-migrate:
@@ -251,12 +292,12 @@ services:
       PORT: "8083"
       BTHWANI_LISTEN_HOST: "0.0.0.0"
       BTHWANI_ENV: "development"
-      WLT_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
-      WLT_SCHEMA_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      WLT_DATABASE_URL: "postgres://samrim_wlt_runtime:${SAMRIM_WLT_DB_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      WLT_SCHEMA_DATABASE_URL: "postgres://samrim_wlt_runtime:${SAMRIM_WLT_DB_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
       BTHWANI_EXPECTED_DATABASE_HOST: "postgres"
       BTHWANI_EXPECTED_DATABASE_PORT: "5432"
       BTHWANI_EXPECTED_DATABASE_NAME: "${SAMRIM_POSTGRES_DB}"
-      BTHWANI_EXPECTED_DATABASE_USER: "${SAMRIM_POSTGRES_USER}"
+      BTHWANI_EXPECTED_DATABASE_USER: "samrim_wlt_runtime"
       WLT_MIGRATION_DIR: "/app/migrations"
       WLT_DSH_SERVICE_TOKEN: "${WLT_DSH_SERVICE_TOKEN}"
       WLT_DESTINATION_ENCRYPTION_KEY: "${WLT_DESTINATION_ENCRYPTION_KEY:-}"

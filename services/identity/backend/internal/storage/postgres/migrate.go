@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 28
+const SchemaVersion = 29
 
 type MigrationRecord struct {
 	Version int
@@ -42,6 +42,21 @@ var identitySchemaRequirements = []schemaRequirement{
 	{table: "identity_operator_permissions", columns: []string{"actor_id", "role", "permission", "enabled", "version", "changed_by_actor_id", "reason", "created_at", "updated_at"}, indexes: []string{"identity_operator_permissions_pkey"}},
 	{table: "identity_operator_profiles", columns: []string{"id", "full_name_ar", "phone_e164", "actor_id", "state", "version", "job_title", "department", "created_by_actor_id", "reviewed_by_actor_id", "reviewed_at", "created_at", "updated_at"}, indexes: []string{"identity_operator_profiles_pkey", "identity_operator_profiles_actor_id_key", "identity_operator_profiles_pending_phone_uq", "identity_operator_profiles_registry_idx"}},
 	{table: "identity_operator_profile_events", columns: []string{"id", "profile_id", "event_type", "acting_actor_id", "idempotency_key", "request_hash", "correlation_id", "created_at"}, indexes: []string{"identity_operator_profile_events_pkey", "identity_operator_profile_events_idempotency_key_key", "identity_operator_profile_events_profile_idx"}},
+}
+
+// Previous local environments may have applied v29 before its NULL bootstrap guard
+// was corrected. Accept only its exact published checksum, never arbitrary drift.
+// Its successfully applied permission rows have the same effective semantics.
+const historicalV29HRPermissionSHA256 = "b19d72a8d69516f397f648c16c81369d91cc77f5f6406165b3743bcff6fd0748"
+
+func migrationChecksumMatches(record MigrationRecord, name, digest string) bool {
+	if name != record.Name {
+		return false
+	}
+	return digest == record.SHA256 ||
+		(record.Version == 29 &&
+			record.Name == "029_operator_hr_permission.sql" &&
+			digest == historicalV29HRPermissionSHA256)
 }
 
 type queryer interface {
@@ -161,7 +176,7 @@ func SynchronizeMigrationHistory(ctx context.Context, db *sql.DB, records []Migr
 			}
 			continue
 		}
-		if name != record.Name || sha256 != record.SHA256 {
+		if !migrationChecksumMatches(record, name, sha256) {
 			return fmt.Errorf("migration history checksum mismatch at v%d: name=%q sha256=%q", record.Version, name, sha256)
 		}
 	}
@@ -196,7 +211,7 @@ func VerifyMigrationHistory(ctx context.Context, db *sql.DB, records []Migration
 		if err != nil {
 			return fmt.Errorf("migration history read version %d: %w", record.Version, err)
 		}
-		if !name.Valid || !sha256.Valid || name.String != record.Name || sha256.String != record.SHA256 {
+		if !name.Valid || !sha256.Valid || !migrationChecksumMatches(record, name.String, sha256.String) {
 			return fmt.Errorf("migration history checksum mismatch at v%d", record.Version)
 		}
 	}

@@ -250,6 +250,7 @@ if (app === "app-field") {
     storeProfileImage: { uri: "https://example.test/store.png" },
   };
   assert.deepEqual(getFieldJoiningRequirements(completeReadback).filter((item) => !item.saved), [], "Complete canonical draft must have no phantom missing fields");
+  assert.deepEqual(getFieldJoiningRequirements({ ...completeReadback, walletProviderKey: "" }).filter((item) => !item.saved), [], "Optional wallet preference must not block Field submission");
   assert.deepEqual(getFieldJoiningRequirements({ ...completeReadback, firstStoreLatitude: 0, firstStoreLongitude: 0 }).filter((item) => !item.saved).map((item) => item.key), ["location"], "DSH zeroed unset coordinates must not be accepted as a selected store location");
   assert.deepEqual(
     getFieldJoiningRequirements({ ...completeReadback, firstStoreProofImageUploaded: false, storeProfileImage: null }).filter((item) => !item.saved).map((item) => item.key),
@@ -258,7 +259,7 @@ if (app === "app-field") {
   );
   assert.deepEqual(
     getFieldJoiningRequirements(null).filter((item) => !item.saved).length,
-    10,
+    9,
     "Unsaved local inputs must not be reported as persisted",
   );
   const threeModes = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"];

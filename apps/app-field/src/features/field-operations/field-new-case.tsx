@@ -168,7 +168,6 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
     hours.map((item) => [item.dayOfWeek, item.opensAt, item.closesAt, item.closesNextDay].join(":")).sort().join("|");
   const pendingReadiness: Record<(typeof joiningReadiness)[number]["key"], boolean> = {
     basic: Boolean(stepComplete[0]),
-    wallet: Boolean(input.walletProviderKey),
     city: Boolean(input.serviceCityId),
     vertical: Boolean(input.firstStoreVerticalId),
     storeType: Boolean(input.firstStoreCommercialTypeId),
@@ -181,7 +180,6 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   const readinessLabels = joiningReadiness.map(({ key, label, saved }) => {
     const changed = Boolean(savedDraft) && ({
       basic: basicChanged,
-      wallet: walletChanged,
       city: input.serviceCityId !== (savedDraft?.serviceCityId ?? ""),
       vertical: input.firstStoreVerticalId !== (savedDraft?.firstStoreVerticalId ?? ""),
       storeType: input.firstStoreCommercialTypeId !== (savedDraft?.firstStoreCommercialTypeId ?? ""),
@@ -195,7 +193,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
     const confirmed = saved && !changed;
     return { key, label, confirmed, pending: !confirmed && pendingReadiness[key] };
   });
-  const needsSave = readinessLabels.some((item) => !item.confirmed);
+  const needsSave = walletChanged || readinessLabels.some((item) => !item.confirmed);
 
   useEffect(() => { navigation.setOptions({ headerTitle }); }, [headerTitle, navigation]);
 
@@ -423,7 +421,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         const latest = await fieldClient().readOwnFieldJoiningCase(token, canonical.case.id);
         const missing = getFieldJoiningRequirements(latest.case).filter((item) => !item.saved);
         if (missing.length > 0) {
-          setActiveStep(missing.some((item) => item.key === "basic" || item.key === "wallet") ? 0 : 1);
+          setActiveStep(missing.some((item) => item.key === "basic") ? 0 : 1);
           const missingLabels = missing.map((item) => item.label);
           setError(`حُفظت المسودة. أكمل فقط: ${missingLabels.join("، ")} ثم أرسلها للمراجعة.`);
           return;

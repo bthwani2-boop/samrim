@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, request, test } from "@playwright/test";
 import { assertIdentityProofScope, enableVirtualAuthenticator, findInitialOperator, findOperatorProfileByPhone, jsonRequest, type PreparedOperator, provisionIndependentOperator, readCanonicalRuntime, registerOperator, requiredEnv, waitForMailpitCode } from "./live-identity-proof-helpers";
@@ -54,6 +54,8 @@ function restartIdentity(): void {
       path.join(runtime.repoRoot, "infra/local/compose/compose.yaml"),
       "up",
       "-d",
+      "--no-deps",
+      "--force-recreate",
       "--wait",
       "--wait-timeout",
       "300",
@@ -121,26 +123,44 @@ async function createOperatorThroughControlPanel(
   baseUrl: string,
   input: { fullNameAr: string; phone: string; jobTitle: string; department: string },
 ): Promise<PreparedOperator> {
-  await page.goto(baseUrl + "/access?view=profiles");
-  await expect(page.getByRole("heading", { name: "ملفات المشغّلين" })).toBeVisible();
-  await page.getByText("مشغّل جديد", { exact: true }).click();
-  await page.locator("#operator-profile-name").fill(input.fullNameAr);
-  await page.locator("#operator-profile-phone").fill(input.phone);
-  await page.locator("#operator-profile-title").fill(input.jobTitle);
-  await page.locator("#operator-profile-department").fill(input.department);
-
-  const creationResponsePromise = page.waitForResponse((response) =>
-    response.url().endsWith("/api/access/operator-profiles") && response.request().method() === "POST",
-  );
-  await page.getByRole("button", { name: "حفظ للمراجعة", exact: true }).click();
-  const creationResponse = await creationResponsePromise;
-  expect(creationResponse.status()).toBe(201);
+  await page.goto(baseUrl + "/access?view=requests");
+  async function post(pathName: string, body: unknown, key: string) {
+    return page.evaluate(async ({ pathName, body, key }) => {
+      const response = await fetch(pathName, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+        body: JSON.stringify(body),
+      });
+      return { status: response.status, data: await response.json() as Record<string, any> };
+    }, { pathName, body, key });
+  }
+  const employee = await post("/api/hr/employees", {
+    fullNameAr: input.fullNameAr, phoneE164: input.phone,
+    department: input.department, jobTitle: input.jobTitle,
+    managerEmployeeId: "", workLocation: "صنعاء",
+    startDate: new Date().toISOString().slice(0, 10),
+  }, randomUUID());
+  expect(employee.status).toBe(201);
+  const employeeId = String(employee.data?.employee?.id || "");
+  expect(employeeId).toMatch(/^emp_/);
+  const access = await post("/api/hr/access-requests", {
+    employeeId, reason: "يتطلب العمل الوظيفي الوصول إلى العمليات",
+    requestedPermissions: ["operations"],
+  }, randomUUID());
+  expect(access.status).toBe(201);
+  const accessId = String(access.data?.request?.id || "");
+  expect(accessId).toMatch(/^hreq_/);
+  const linked = await post("/api/access/hr-requests/" + encodeURIComponent(accessId) + "/profile", {}, randomUUID());
+  expect(linked.status).toBe(200);
+  const expectedProfileId = String(linked.data?.profile?.id || "");
+  expect(expectedProfileId).toMatch(/^oprof_/);
+  await page.goto(baseUrl + "/access?view=operators");
   const controlToken = requiredEnv("PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN");
   const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
   const profile = await findOperatorProfileByPhone(identityBase, controlToken, (await findInitialOperator(identityBase, controlToken))!.actorId, input.phone);
   expect(profile).toMatchObject({ fullNameAr: input.fullNameAr, phoneE164: input.phone, jobTitle: input.jobTitle, department: input.department, state: "pending_review", version: 1 });
   const profileId = String(profile?.id || "");
-  expect(profileId).toMatch(/^oprof_/);
+  expect(profileId).toBe(expectedProfileId);
 
   const profileRow = page.getByRole("row").filter({ hasText: input.fullNameAr });
   await expect(profileRow).toContainText(input.phone);
@@ -188,7 +208,7 @@ async function signOutOperator(page: Page): Promise<void> {
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
 }
 
-test("@live Control Panel creates two operators in Identity and proves founder recovery plus both operator logins", async ({ browser, page }) => {
+test("@live HR-led Control Panel admission creates two operators and proves founder recovery plus logins", async ({ browser, page }) => {
   test.setTimeout(180_000);
   const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
   const mailpitBase = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
@@ -197,17 +217,68 @@ test("@live Control Panel creates two operators in Identity and proves founder r
   const baseUrl = requiredEnv("PLAYWRIGHT_BASE_URL").replace(/\/+$/, "");
   const root = await findInitialOperator(identityBase, controlToken);
   expect(root, "the isolated Identity database must contain its canonical founder").not.toBeNull();
-  configureDisposableDevelopmentOperator(root!.actorId);
-  const rootEnrollment = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: root!.phone, role: "operator" });
-  expect(rootEnrollment.response.status, "the isolated founder must be enrolled through the Identity bootstrap owner").toBe(200);
-  const founder: PreparedOperator = { ...root!, token: String(rootEnrollment.body?.enrollmentToken?.code || "") };
-  expect(founder.token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
-
   await enableVirtualAuthenticator(page);
-  const founderRecoveryCredential = await registerOperator(page, founder, baseUrl, mailpitBase);
+  const checkerPath = process.env.DSH_RUNTIME_CHECKER_FIXTURE_PATH?.trim() || "";
+  let founderRecoveryCredential: string;
+  if (checkerPath) {
+    assertIdentityProofScope();
+    const runnerTemp = path.resolve(requiredEnv("RUNNER_TEMP"));
+    const checkerDir = path.resolve(path.dirname(checkerPath));
+    const checkerStats = lstatSync(checkerDir);
+    if (!checkerDir.startsWith(runnerTemp + path.sep) ||
+        path.basename(checkerPath) !== "dsh-checker-fixture.json" ||
+        !checkerStats.isDirectory() || checkerStats.isSymbolicLink() ||
+        (checkerStats.mode & 0o777) !== 0o700) {
+      throw new Error("founder proof handoff must remain inside the private CI fixture directory");
+    }
+    const proofPath = path.join(checkerDir, "identity-founder-recovery-proof.json");
+    // Open once without following symlinks, then verify and read the same
+    // descriptor. Checking the filename before reading it is a TOCTOU hazard.
+    const proofFD = openSync(proofPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    let handoff: { actorId?: string; phone?: string; recoveryCredential?: string };
+    try {
+      const proofStats = fstatSync(proofFD);
+      if (!proofStats.isFile() || (proofStats.mode & 0o777) !== 0o600 ||
+          proofStats.size < 60 || proofStats.size > 1024) {
+        throw new Error("the DSH checker did not provide a private one-use founder recovery proof");
+      }
+      handoff = JSON.parse(readFileSync(proofFD, "utf8")) as typeof handoff;
+    } finally {
+      closeSync(proofFD);
+      unlinkSync(proofPath);
+    }
+    expect(handoff.actorId).toBe(root!.actorId);
+    expect(handoff.phone).toBe(root!.phone);
+    expect(handoff.recoveryCredential).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+    // The Root was activated by the DSH checker; a second bootstrap must be denied.
+    const denied = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: root!.phone, role: "operator" });
+    expect(denied.response.status).toBe(409);
+    await page.goto(baseUrl + "/");
+    await page.getByRole("button", { name: "استرداد الوصول" }).click();
+    await page.getByLabel("رقم الهاتف").fill(root!.phone);
+    await page.getByLabel("اعتماد الاسترداد").fill(handoff.recoveryCredential!);
+    const sentAt = Date.now();
+    await page.getByRole("button", { name: "إرسال رمز إثبات الهاتف" }).click();
+    const code = await waitForMailpitCode(mailpitBase, root!.phone, "operator_recover", sentAt);
+    await page.getByLabel("رمز إثبات الهاتف").fill(code);
+    await page.getByRole("button", { name: "إثبات الهاتف وتسجيل مفتاح مرور بديل" }).click();
+    await expect(page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" })).toBeVisible();
+    founderRecoveryCredential = String(await page.locator(".code-output").textContent() || "");
+    expect(founderRecoveryCredential).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+    expect(founderRecoveryCredential).not.toBe(handoff.recoveryCredential);
+    await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
+  } else {
+    // Standalone isolated proof: Root has not yet been activated.
+    configureDisposableDevelopmentOperator(root!.actorId);
+    const enrollment = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: root!.phone, role: "operator" });
+    expect(enrollment.response.status, "fresh Root enrollment must use Identity bootstrap").toBe(200);
+    const founder: PreparedOperator = { ...root!, token: String(enrollment.body?.enrollmentToken?.code || "") };
+    expect(founder.token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+    founderRecoveryCredential = await registerOperator(page, founder, baseUrl, mailpitBase);
+  }
   const founderSession = await readBrowserSession(page);
   expect(founderSession.status).toBe(200);
-  expect(founderSession.body.identity.subject).toBe(founder.actorId);
+  expect(founderSession.body.identity.subject).toBe(root!.actorId);
 
   const operatorInputs = [
     { fullNameAr: "مشغل اختبار مباشر أول", phone: "+9677" + String(randomInt(10_000_000, 99_999_999)), jobTitle: "مشرف العمليات", department: "العمليات" },
@@ -217,17 +288,17 @@ test("@live Control Panel creates two operators in Identity and proves founder r
   for (const input of operatorInputs) operators.push(await createOperatorThroughControlPanel(page, baseUrl, input));
 
   // Revoke only the isolated founder session to prove lost-session recovery without touching persistent local Identity state.
-  mutateOperatorSessions(founder.actorId, "revoked_at=clock_timestamp()");
+  mutateOperatorSessions(root!.actorId, "revoked_at=clock_timestamp()");
   const lostFounderSession = await readBrowserSession(page);
   expect(lostFounderSession.status).toBe(401);
   await page.reload();
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
   await page.getByRole("button", { name: "استرداد الوصول" }).click();
-  await page.getByLabel("رقم الهاتف").fill(founder.phone);
+  await page.getByLabel("رقم الهاتف").fill(root!.phone);
   await page.getByLabel("اعتماد الاسترداد").fill(founderRecoveryCredential);
   const recoveryChallengeSentAt = Date.now();
   await page.getByRole("button", { name: "إرسال رمز إثبات الهاتف" }).click();
-  const recoveryCode = await waitForMailpitCode(mailpitBase, founder.phone, "operator_recover", recoveryChallengeSentAt);
+  const recoveryCode = await waitForMailpitCode(mailpitBase, root!.phone, "operator_recover", recoveryChallengeSentAt);
   await page.getByLabel("رمز إثبات الهاتف").fill(recoveryCode);
   await page.getByRole("button", { name: "إثبات الهاتف وتسجيل مفتاح مرور بديل" }).click();
   await expect(page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" })).toBeVisible();
@@ -237,7 +308,7 @@ test("@live Control Panel creates two operators in Identity and proves founder r
   await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
   const recoveredFounderSession = await readBrowserSession(page);
   expect(recoveredFounderSession.status).toBe(200);
-  expect(recoveredFounderSession.body.identity.subject).toBe(founder.actorId);
+  expect(recoveredFounderSession.body.identity.subject).toBe(root!.actorId);
 
   for (const operator of operators) {
     const operatorContext = await browser.newContext({ baseURL: baseUrl });
