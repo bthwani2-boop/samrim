@@ -282,7 +282,7 @@ test("signed-out access to a protected workspace route returns to the identity s
   await stubSession(page, 401);
   await page.goto("/workspace");
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^الدخول (بمفتاح المرور|بكلمة المرور)$/ })).toBeVisible();
 });
 
 test("authenticated operator discovers the platform centers through workspace navigation", async ({ page }) => {
@@ -1283,9 +1283,11 @@ test("operator operations uses the DSH read model and resource actions", async (
   await restoredSearchBox.press("Enter");
   await expect.poll(() => requestedSearch).toBe("");
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBeNull();
-  await page.getByRole("button", { name: "الصفحة التالية" }).click();
+  const operationsPagination = page.getByRole("navigation", { name: "صفحات الطلبات" });
+  await operationsPagination.getByRole("button", { name: "التالي", exact: true }).click();
   await expect(page.getByText("لا توجد طلبات في هذا المسار")).toBeVisible();
-  await expect(page.getByRole("button", { name: "الصفحة التالية" })).toHaveCount(0);
+  await expect(operationsPagination.getByRole("button", { name: "التالي", exact: true })).toBeDisabled();
+  await expect(operationsPagination.getByRole("button", { name: "السابق", exact: true })).toBeEnabled();
   expect(requestedCursor).toBe("cursor-page-2");
   await expect(page.getByRole("searchbox")).toHaveCount(1);
 });
@@ -1848,7 +1850,7 @@ test("operator replaces the primary product image and adds a gallery image throu
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [category], nextCursor: "" }) });
   });
   await page.route("**/api/catalog/product-registry**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{ id: currentProduct.id, verticalId: currentProduct.verticalId, canonicalName: currentProduct.canonicalName, brand: currentProduct.brand, active: currentProduct.active, version: currentProduct.version, variantCount: currentProduct.variants.length, categoryIds: currentProduct.categoryIds, primaryImageUri: currentProduct.media.find((media) => media.role === "primary")?.uri ?? null, createdAt: currentProduct.createdAt, updatedAt: currentProduct.updatedAt }], nextCursor: "" }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{ id: currentProduct.id, verticalId: currentProduct.verticalId, canonicalName: currentProduct.canonicalName, brand: currentProduct.brand, active: currentProduct.active, version: currentProduct.version, variantCount: currentProduct.variants.length, storeCount: 0, categoryIds: currentProduct.categoryIds, primaryImageUri: currentProduct.media.find((media) => media.role === "primary")?.uri ?? null, createdAt: currentProduct.createdAt, updatedAt: currentProduct.updatedAt }], nextCursor: "" }) });
   });
   await page.route("**/api/catalog/products/product_media_upload_test", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(currentProduct) });
@@ -2088,11 +2090,11 @@ test("authenticated workspace keeps navigation meaning across light and dark the
   await expect(page.getByRole("link", { name: "الوصول والصلاحيات" })).toBeVisible();
 });
 
-test("operator access exposes passkey-first sign-in and no human-role selector", async ({ page }) => {
+test("operator access offers passkey and optional local password without a human-role selector", async ({ page }) => {
   await stubSession(page, 401);
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^الدخول (بمفتاح المرور|بكلمة المرور)$/ })).toBeVisible();
   await expect(page.getByLabel("الدور")).toHaveCount(0);
   await expect(page.getByText("مالك المنصة", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "الدخول بمفتاح المرور" })).toBeVisible();
@@ -2117,7 +2119,7 @@ test("development operator readiness conflict returns to passkey access", async 
   });
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^الدخول (بمفتاح المرور|بكلمة المرور)$/ })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("حساب المشغل غير جاهز لإنشاء جلسة آمنة");
   await expect(page.getByRole("button", { name: "الدخول بمفتاح المرور" })).toBeVisible();
 });
@@ -2151,7 +2153,7 @@ test("remote logout failure keeps local sign-out and remains observable", async 
   await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
   await page.locator('summary[aria-label="الحساب"]').click();
   await page.getByRole("button", { name: "تسجيل الخروج" }).click();
-  await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^الدخول (بمفتاح المرور|بكلمة المرور)$/ })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("تعذر تأكيد إبطال الجلسة");
   await expect(page.locator("p.identity-error")).toHaveCount(0);
 });
@@ -2191,7 +2193,7 @@ test("security headers and cross-origin mutation guard are active", async ({ pag
   }
 
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.getByRole("heading", { name: /الدخول بمفتاح المرور|تعذر الوصول إلى الهوية/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /الدخول (بمفتاح المرور|بكلمة المرور)|تعذر الوصول إلى الهوية/ })).toBeVisible();
   expect(cspMessages).toEqual([]);
 
   const crossOriginResponse = await page.request.post("/api/catalog/verticals", {
