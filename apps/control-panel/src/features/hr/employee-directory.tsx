@@ -140,7 +140,7 @@ export function EmployeeDirectory() {
         <thead><tr><th scope="col">الموظف</th><th scope="col">القسم</th><th scope="col">المسمى</th><th scope="col">النوع</th><th scope="col">الحالة</th><th scope="col">التفاصيل</th></tr></thead>
         <tbody>{items.map((person) => <tr key={person.id}>
           <th scope="row">{person.fullNameAr}</th><td>{person.department}</td><td>{person.jobTitle}</td>
-          <td>{person.operatorActorId ? "مشغّل" : "موظف"}</td>
+          <td>{person.operatorActorId ? "مرتبط بهوية تشغيل" : "بلا هوية تشغيل"}</td>
           <td>{person.status === "active" ? "نشط" : "غير نشط"}</td>
           <td><button className="button button-quiet" type="button" onClick={() => setSelected(person)}>التفاصيل</button></td>
         </tr>)}
@@ -160,7 +160,7 @@ export function EmployeeDirectory() {
         <dt>المسمى</dt><dd>{selected.jobTitle}</dd>
         <dt>تاريخ الانضمام</dt><dd>{selected.startDate}</dd>
         <dt>موقع العمل</dt><dd>{selected.workLocation}</dd>
-        <dt>الوصول للوحة التحكم</dt><dd>{selected.operatorActorId ? "مرتبط بمشغّل" : "لا يوجد حساب مرتبط في HR"}</dd>
+        <dt>الوصول للوحة التحكم</dt><dd>{selected.operatorActorId ? "هوية تشغيل مرتبطة؛ تحقق من حالة الوصول أدناه" : "لا توجد هوية تشغيل مرتبطة"}</dd>
       </dl>
       <EmployeeProfileEditor key={selected.id} employee={selected} colleagues={items} onSaved={(next)=>{setSelected(next);setItems((list)=>list.map((person)=>person.id===next.id?next:person))}} />
       <EmployeeAccessRequest key={`${selected.id}-access`} employee={selected} />
