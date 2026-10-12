@@ -5,8 +5,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { HREmployee, HREmployeeInput, HREmployeePage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { EmployeeAccessRequest } from "./employee-access-request";
-import { EmployeeEmploymentStatus } from "./employee-employment-status";
 import { EmployeeAuditHistory } from "./employee-audit-history";
+import { EmployeeEmploymentStatus } from "./employee-employment-status";
+import { EmployeeManagerSelect } from "./employee-manager-select";
 import { EmployeeOperatorAccess } from "./employee-operator-access";
 import { EmployeeProfileEditor } from "./employee-profile-editor";
 
@@ -124,7 +125,7 @@ export function EmployeeDirectory() {
       <label className="field-label">تاريخ بدء العمل<input required type="date" value={form.startDate} onChange={(e) => update("startDate", e.target.value)} /></label>
       <label className="field-label">موقع العمل<input required maxLength={100} value={form.workLocation} onChange={(e) => update("workLocation", e.target.value)} /></label>
       <label className="field-label">رقم الهاتف (اختياري)<input type="tel" inputMode="tel" autoComplete="tel" dir="ltr" placeholder="+967777000100" value={form.phoneE164} onChange={(e) => update("phoneE164", e.target.value)} /></label>
-      <label className="field-label">المسؤول المباشر (اختياري)<select value={form.managerEmployeeId} onChange={(e) => update("managerEmployeeId", e.target.value)}><option value="">غير محدد</option>{items.filter((item) => item.status === "active").map((item) => <option key={item.id} value={item.id}>{item.fullNameAr}</option>)}</select></label>
+      <EmployeeManagerSelect value={form.managerEmployeeId} initial={items} onChange={(id)=>update("managerEmployeeId",id)} disabled={saving}/>
       <div className="form-actions">
         <button type="submit" className="button button-primary" disabled={saving}>{saving ? "جارٍ الحفظ…" : "حفظ الموظف"}</button>
         <button type="button" className="button button-secondary" disabled={saving} onClick={() => setFormOpen(false)}>إلغاء</button>

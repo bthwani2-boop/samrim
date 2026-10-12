@@ -3,6 +3,7 @@
 import { type FormEvent, useRef, useState } from "react";
 import type { HREmployee, HRUpdateEmployeeInput } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
+import { EmployeeManagerSelect } from "./employee-manager-select";
 
 export function EmployeeProfileEditor({employee, colleagues, onSaved}:{
  employee:HREmployee;
@@ -50,7 +51,6 @@ export function EmployeeProfileEditor({employee, colleagues, onSaved}:{
   }catch(e){setError(e instanceof Error?e.message:"تعذر حفظ التعديل")}
   finally{setPending(false)}
  }
- const managerExists=colleagues.some((person)=>person.id===form.managerEmployeeId);
  return <section className="form-section" style={{maxInlineSize:720}}>
   <div className="access-section-heading">
    <h3>البيانات الوظيفية</h3>
@@ -65,13 +65,8 @@ export function EmployeeProfileEditor({employee, colleagues, onSaved}:{
    <label className="field-label">المسمى الوظيفي<input required maxLength={80} value={form.jobTitle} onChange={(e)=>change("jobTitle",e.target.value)}/></label>
    <label className="field-label">تاريخ بدء العمل<input required type="date" value={form.startDate} onChange={(e)=>change("startDate",e.target.value)}/></label>
    <label className="field-label">موقع العمل<input required maxLength={100} value={form.workLocation} onChange={(e)=>change("workLocation",e.target.value)}/></label>
-   <label className="field-label">المسؤول المباشر
-    <select value={form.managerEmployeeId} onChange={(e)=>change("managerEmployeeId",e.target.value)}>
-     <option value="">غير محدد</option>
-     {form.managerEmployeeId&&!managerExists?<option value={form.managerEmployeeId}>المسؤول الحالي (خارج الصفحة)</option>:null}
-     {colleagues.filter((p)=>p.id!==employee.id&&p.status==="active").map((p)=><option key={p.id} value={p.id}>{p.fullNameAr}</option>)}
-    </select>
-   </label>
+   <EmployeeManagerSelect value={form.managerEmployeeId} initial={colleagues} excludeId={employee.id}
+     onChange={(id)=>change("managerEmployeeId",id)} disabled={pending}/>
    <div className="form-actions"><button type="submit" className="button button-primary" disabled={pending}>{pending?"جارٍ الحفظ…":"حفظ التغييرات"}</button></div>
   </form>:null}
  </section>;
