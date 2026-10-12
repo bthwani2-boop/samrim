@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, request, test } from "@playwright/test";
 import { assertIdentityProofScope, enableVirtualAuthenticator, findInitialOperator, findOperatorProfileByPhone, jsonRequest, type PreparedOperator, provisionIndependentOperator, readCanonicalRuntime, registerOperator, requiredEnv, waitForMailpitCode } from "./live-identity-proof-helpers";
@@ -54,6 +54,8 @@ function restartIdentity(): void {
       path.join(runtime.repoRoot, "infra/local/compose/compose.yaml"),
       "up",
       "-d",
+      "--no-deps",
+      "--force-recreate",
       "--wait",
       "--wait-timeout",
       "300",
@@ -215,14 +217,57 @@ test("@live HR-led Control Panel admission creates two operators and proves foun
   const baseUrl = requiredEnv("PLAYWRIGHT_BASE_URL").replace(/\/+$/, "");
   const root = await findInitialOperator(identityBase, controlToken);
   expect(root, "the isolated Identity database must contain its canonical founder").not.toBeNull();
-  configureDisposableDevelopmentOperator(root!.actorId);
-  const rootEnrollment = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: root!.phone, role: "operator" });
-  expect(rootEnrollment.response.status, "the isolated founder must be enrolled through the Identity bootstrap owner").toBe(200);
-  const founder: PreparedOperator = { ...root!, token: String(rootEnrollment.body?.enrollmentToken?.code || "") };
-  expect(founder.token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
-
   await enableVirtualAuthenticator(page);
-  const founderRecoveryCredential = await registerOperator(page, founder, baseUrl, mailpitBase);
+  const checkerPath = process.env.DSH_RUNTIME_CHECKER_FIXTURE_PATH?.trim() || "";
+  let founderRecoveryCredential: string;
+  if (checkerPath) {
+    assertIdentityProofScope();
+    const runnerTemp = path.resolve(requiredEnv("RUNNER_TEMP"));
+    const checkerDir = path.resolve(path.dirname(checkerPath));
+    if (!checkerDir.startsWith(runnerTemp + path.sep) ||
+        path.basename(checkerPath) !== "dsh-checker-fixture.json" ||
+        (statSync(checkerDir).mode & 0o777) !== 0o700) {
+      throw new Error("founder proof handoff must remain inside the private CI fixture directory");
+    }
+    const proofPath = path.join(checkerDir, "identity-founder-recovery-proof.json");
+    if (!existsSync(proofPath) || (statSync(proofPath).mode & 0o777) !== 0o600) {
+      throw new Error("the DSH checker did not provide a private one-use founder recovery proof");
+    }
+    let handoff: { actorId?: string; phone?: string; recoveryCredential?: string };
+    try {
+      handoff = JSON.parse(readFileSync(proofPath, "utf8")) as typeof handoff;
+    } finally {
+      unlinkSync(proofPath);
+    }
+    expect(handoff.actorId).toBe(root!.actorId);
+    expect(handoff.phone).toBe(root!.phone);
+    expect(handoff.recoveryCredential).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+    // The Root was activated by the DSH checker; a second bootstrap must be denied.
+    const denied = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: root!.phone, role: "operator" });
+    expect(denied.response.status).toBe(409);
+    await page.goto(baseUrl + "/");
+    await page.getByRole("button", { name: "استرداد الوصول" }).click();
+    await page.getByLabel("رقم الهاتف").fill(root!.phone);
+    await page.getByLabel("اعتماد الاسترداد").fill(handoff.recoveryCredential!);
+    const sentAt = Date.now();
+    await page.getByRole("button", { name: "إرسال رمز إثبات الهاتف" }).click();
+    const code = await waitForMailpitCode(mailpitBase, root!.phone, "operator_recover", sentAt);
+    await page.getByLabel("رمز إثبات الهاتف").fill(code);
+    await page.getByRole("button", { name: "إثبات الهاتف وتسجيل مفتاح مرور بديل" }).click();
+    await expect(page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" })).toBeVisible();
+    founderRecoveryCredential = String(await page.locator(".code-output").textContent() || "");
+    expect(founderRecoveryCredential).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+    expect(founderRecoveryCredential).not.toBe(handoff.recoveryCredential);
+    await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
+  } else {
+    // Standalone isolated proof: Root has not yet been activated.
+    configureDisposableDevelopmentOperator(root!.actorId);
+    const enrollment = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: root!.phone, role: "operator" });
+    expect(enrollment.response.status, "fresh Root enrollment must use Identity bootstrap").toBe(200);
+    const founder: PreparedOperator = { ...root!, token: String(enrollment.body?.enrollmentToken?.code || "") };
+    expect(founder.token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+    founderRecoveryCredential = await registerOperator(page, founder, baseUrl, mailpitBase);
+  }
   const founderSession = await readBrowserSession(page);
   expect(founderSession.status).toBe(200);
   expect(founderSession.body.identity.subject).toBe(founder.actorId);

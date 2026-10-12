@@ -158,7 +158,13 @@ test("@live provision and activate an independent operator for downstream DSH se
     try {
       const primaryPage = await primaryContext.newPage();
       await enableVirtualAuthenticator(primaryPage);
-      await registerOperator(primaryPage, primaryOperator, baseUrl, mailpitBase);
+      const recoveryCredential = await registerOperator(primaryPage, primaryOperator, baseUrl, mailpitBase);
+      // Private disposable-CI handoff for the later Root recovery browser proof.
+      if (dshRuntimeFixturePath) {
+        writeFileSync(path.join(path.dirname(dshRuntimeFixturePath), "identity-founder-recovery-proof.json"),
+          JSON.stringify({ actorId: primaryOperator.actorId, phone: primaryOperator.phone, recoveryCredential }),
+          { encoding: "utf8", mode: 0o600, flag: "wx" });
+      }
       console.log("DSH_PRIMARY_OPERATOR_ACTIVATION=PASS");
     } finally {
       await primaryContext.close();
