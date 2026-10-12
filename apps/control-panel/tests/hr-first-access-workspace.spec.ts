@@ -35,3 +35,43 @@ test("legacy direct operator profile creation endpoint is absent", async ({ page
   });
   expect(result).toBe(405);
 });
+
+test("Root reviews requested against actual Identity permissions, then applies an explicit subset", async ({ page }) => {
+  const id = "hreq_11111111111111111111111111111111";
+  const request = {
+    id, employeeId: "emp_11111111111111111111111111111111",
+    employeeName: "محمود علي", phoneE164: "+967777104052",
+    department: "العمليات", jobTitle: "مشرف العمليات",
+    requestedPermissions: ["operations", "partners"],
+    reason: "إدارة العمليات اليومية", state: "identity_profile_created",
+    operatorProfileId: "oprof_proof", operatorActorId: "act_proof",
+    version: 4, requestedByActorId: "act_hr", createdAt: "2026-10-12T00:00:00Z",
+  };
+  await page.route("**/api/auth/session**", (route) => route.fulfill({ json: { identity: root } }));
+  await page.route("**/api/access/hr-requests?**", (route) => route.fulfill({ json: { items: [request], nextCursor: "" } }));
+  let changed = 0;
+  await page.route("**/api/access/hr-requests/*/permissions", (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({ json: { requestId: id, actorId: "act_proof", requestVersion: 4,
+        requestedPermissions: request.requestedPermissions, grantedPermissions: [],
+        permissions: [{ permission: "operations", enabled: false, version: 1 }, { permission: "partners", enabled: false, version: 1 }] } });
+    }
+    const body = route.request().postDataJSON() as { approvedPermissions: string[]; reason: string; expectedVersion: number };
+    expect(body.approvedPermissions).toEqual(["operations"]);
+    expect(body.expectedVersion).toBe(4);
+    expect(body.reason.length).toBeGreaterThanOrEqual(8);
+    changed += 1;
+    return route.fulfill({ json: { requestId: id, actorId: "act_proof", requestVersion: 4,
+      requestedPermissions: request.requestedPermissions, grantedPermissions: ["operations"],
+      permissions: [{ permission: "operations", enabled: true, version: 2 }, { permission: "partners", enabled: false, version: 1 }] } });
+  });
+  await page.goto("/access?view=requests");
+  await page.getByRole("button", { name: "مراجعة الصلاحيات" }).click();
+  await expect(page.getByText("الممنوحة فعليًا:", { exact: false })).toBeVisible();
+  const checkbox = page.getByRole("checkbox", { name: "العمليات" });
+  await expect(checkbox).not.toBeChecked();
+  await checkbox.check();
+  await page.getByRole("button", { name: "تطبيق الصلاحيات المحددة" }).click();
+  await expect(page.getByText("تم تطبيق القرار في Identity وتأكيد الصلاحيات الممنوحة.")).toBeVisible();
+  expect(changed).toBe(1);
+});

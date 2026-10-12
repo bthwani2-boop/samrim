@@ -1,8 +1,26 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { dshErrorPayload, dshHttpStatus, type HRUpdateEmployeeInput, isDshClientError, updateHREmployee } from "../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, type HRUpdateEmployeeInput, isDshClientError, readHREmployee, updateHREmployee } from "../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../../src/server/security/csrf";
+
+export async function GET(_request: Request, context: {params: Promise<{employeeId: string}>}) {
+  const identity = await readOperatorSession();
+  if (!identity) return NextResponse.json({error:{code:"UNAUTHENTICATED"}},{status:401});
+  if (identity.role !== "operator" || !identity.permissions?.includes("hr"))
+    return NextResponse.json({error:{code:"FORBIDDEN"}},{status:403});
+  const id = (await context.params).employeeId;
+  if (!/^emp_[a-f0-9]{32}$/.test(id))
+    return NextResponse.json({error:{code:"INVALID_INPUT"}},{status:400});
+  try {
+    const result = await readHREmployee(id,{operatorActorId:identity.subject});
+    return NextResponse.json(result,{headers:{"Cache-Control":"no-store"}});
+  } catch (error) {
+    if (!isDshClientError(error))
+      return NextResponse.json({error:{code:"HR_UNAVAILABLE"}},{status:502});
+    return NextResponse.json({error:dshErrorPayload(error)},{status:dshHttpStatus(error),headers:{"Cache-Control":"no-store"}});
+  }
+}
 
 export async function PATCH(request: Request, context: {params: Promise<{employeeId: string}>}) {
  if(!verifySameOrigin(request))return NextResponse.json({error:{code:"FORBIDDEN"}},{status:403});

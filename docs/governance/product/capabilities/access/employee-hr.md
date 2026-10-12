@@ -26,3 +26,21 @@ HR owns employment terms and salary entitlement calculation; WLT exclusively own
 ## Experience and safe evolution
 
 The Operator workspace includes an HR directory, with one employee creation flow and readback, and separate initial-Operator-only access administration. Show only relevant and authorized data; entering employees is not delayed by optional financial or biometric information. Deliver optional attendance, salary, payroll, device integration, equipment custody and audit projections in proven bounded slices; a planned capability is not a claim of current implementation.
+
+### HR-requested versus Identity-granted permissions
+
+The HR access request records recommended workspace permissions only. Those do not
+enable any Identity permissions automatically. After Root Owner admits and links
+the operator, the access review reads live Identity permission state and permits
+Root Owner to explicitly approve or revoke only a subset of the permissions
+proposed on that request, with an attributed reason. Identity's permission audit
+is the authority for applied rights; HR request IDs are retained in reasons.
+On partial failures, the review can be retried: each applied permission is
+read back, and unchanged permission values are not written again. Permissions
+outside the HR request are never changed by this review; they remain subject to
+the separate canonical access-administration flow. A permission change revokes
+the affected operator's existing Identity sessions.
+
+Local development may keep direct Root Owner password login while exposing the
+normal invite, passkey and recovery journeys for testing. These additional
+options must never bypass the Identity enrollment token and challenge.

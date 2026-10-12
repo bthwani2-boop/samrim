@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HRAccessRequest, HRAccessRequestPage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
+import { HRPermissionReview } from "./hr-permission-review";
 
 export function HROperatorAccessQueue() {
  const [items,setItems]=useState<readonly HRAccessRequest[]>([]);
@@ -91,7 +92,7 @@ export function HROperatorAccessQueue() {
       </div>:null}
      </>:item.state==="identity_provisioning"?
        <button type="button" className="button button-secondary" disabled={!!busy} onClick={()=>void openProfile(item.id)}>استكمال التحويل</button>:
-       item.state==="rejected"?<span>{item.rejectionReason||"مرفوض"}</span>:item.state==="identity_profile_created"?<Link href="/access?view=operators">{item.operatorActorId ? "إدارة حساب المشغّل" : "متابعة اعتماد الحساب"}</Link>:"تابع الاعتماد في القائمة أدناه"}</td>
+       item.state==="rejected"?<span>{item.rejectionReason||"مرفوض"}</span>:item.state==="identity_profile_created"?<><Link href="/access?view=operators">{item.operatorActorId ? "إدارة حساب المشغّل" : "متابعة اعتماد الحساب"}</Link>{item.operatorActorId ? <HRPermissionReview request={item}/> : null}</>:"تابع الاعتماد في القائمة أدناه"}</td>
     </tr>)}
     {!loading&&items.length===0?<tr><td colSpan={6}>لا توجد طلبات وصول. <Link href="/hr/employees">إدارة الموظفين من الموارد البشرية</Link></td></tr>:null}
     {loading?<tr><td colSpan={6}>جارٍ تحميل الطلبات…</td></tr>:null}

@@ -1,14 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import type { ActorIdentity, PasskeyOptions, WebAuthnJSON } from "@bthwani/identity";
 import { toAsciiDigits } from "@bthwani/design-system";
-
-import { responseMessage } from "./identity-error-message";
+import type { ActorIdentity, PasskeyOptions, WebAuthnJSON } from "@bthwani/identity";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { identityFetch } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
 import { ControlShell } from "../../shell/public-shell";
+import { responseMessage } from "./identity-error-message";
 
 type Flow = "access" | "enrollment" | "recovery";
 
@@ -267,9 +266,9 @@ export function IdentitySurface() {
               </div>
             </form>
           ) : null}
-          {flow === "access" && !developmentPasswordLoginEnabled ? (
+          {flow === "access" ? (
             <div className="form-actions">
-              <button className="button button-primary" disabled={busy} type="button" onClick={() => void authenticateWithPasskey()}>
+              <button className={developmentPasswordLoginEnabled ? "text-button" : "button button-primary"} disabled={busy} type="button" onClick={() => void authenticateWithPasskey()}>
                 {busy ? "جارٍ التحقق…" : "الدخول بمفتاح المرور"}
               </button>
               <button className="text-button" disabled={busy} type="button" onClick={() => { setFlow("enrollment"); setError(""); setNotice(""); }}>

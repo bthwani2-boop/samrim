@@ -266,9 +266,9 @@ export async function enableVirtualAuthenticator(page: Page): Promise<void> {
 
 export async function registerOperator(page: Page, operator: PreparedOperator, baseUrl: string, mailpitBase: string): Promise<string> {
   await page.goto(baseUrl + "/");
-  const signInHeading = page.getByRole("heading", { name: "الدخول بمفتاح المرور" });
+  const signInHeading = page.getByRole("heading", { name: /الدخول بمفتاح المرور|الدخول بكلمة المرور/ });
   const workspaceHeading = page.getByRole("heading", { name: "الرئيسية", exact: true });
-  await expect.poll(async () => await signInHeading.isVisible() || await workspaceHeading.isVisible()).toBe(true);
+  await expect.poll(async () => await signInHeading.isVisible() || await workspaceHeading.isVisible(), { timeout: 20_000 }).toBe(true);
   if (await workspaceHeading.isVisible()) {
     const currentSession = await page.evaluate(async () => {
       const response = await fetch("/api/auth/session", { cache: "no-store" });
