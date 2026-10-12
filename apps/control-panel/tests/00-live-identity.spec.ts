@@ -270,7 +270,7 @@ test("@live HR-led Control Panel admission creates two operators and proves foun
   }
   const founderSession = await readBrowserSession(page);
   expect(founderSession.status).toBe(200);
-  expect(founderSession.body.identity.subject).toBe(founder.actorId);
+  expect(founderSession.body.identity.subject).toBe(root!.actorId);
 
   const operatorInputs = [
     { fullNameAr: "مشغل اختبار مباشر أول", phone: "+9677" + String(randomInt(10_000_000, 99_999_999)), jobTitle: "مشرف العمليات", department: "العمليات" },
@@ -280,17 +280,17 @@ test("@live HR-led Control Panel admission creates two operators and proves foun
   for (const input of operatorInputs) operators.push(await createOperatorThroughControlPanel(page, baseUrl, input));
 
   // Revoke only the isolated founder session to prove lost-session recovery without touching persistent local Identity state.
-  mutateOperatorSessions(founder.actorId, "revoked_at=clock_timestamp()");
+  mutateOperatorSessions(root!.actorId, "revoked_at=clock_timestamp()");
   const lostFounderSession = await readBrowserSession(page);
   expect(lostFounderSession.status).toBe(401);
   await page.reload();
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
   await page.getByRole("button", { name: "استرداد الوصول" }).click();
-  await page.getByLabel("رقم الهاتف").fill(founder.phone);
+  await page.getByLabel("رقم الهاتف").fill(root!.phone);
   await page.getByLabel("اعتماد الاسترداد").fill(founderRecoveryCredential);
   const recoveryChallengeSentAt = Date.now();
   await page.getByRole("button", { name: "إرسال رمز إثبات الهاتف" }).click();
-  const recoveryCode = await waitForMailpitCode(mailpitBase, founder.phone, "operator_recover", recoveryChallengeSentAt);
+  const recoveryCode = await waitForMailpitCode(mailpitBase, root!.phone, "operator_recover", recoveryChallengeSentAt);
   await page.getByLabel("رمز إثبات الهاتف").fill(recoveryCode);
   await page.getByRole("button", { name: "إثبات الهاتف وتسجيل مفتاح مرور بديل" }).click();
   await expect(page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" })).toBeVisible();
@@ -300,7 +300,7 @@ test("@live HR-led Control Panel admission creates two operators and proves foun
   await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
   const recoveredFounderSession = await readBrowserSession(page);
   expect(recoveredFounderSession.status).toBe(200);
-  expect(recoveredFounderSession.body.identity.subject).toBe(founder.actorId);
+  expect(recoveredFounderSession.body.identity.subject).toBe(root!.actorId);
 
   for (const operator of operators) {
     const operatorContext = await browser.newContext({ baseURL: baseUrl });
