@@ -20,10 +20,10 @@ export function useCursorPage(parameter: string, filterKey = "", privateCursor =
       const previous = Array.isArray(saved?.previous) && saved.previous.every((value: unknown) => typeof value === "string") ? saved.previous : [];
       const marker = new URLSearchParams(window.location.search).get(parameter) ?? "";
       const cursor = privateCursor ? (marker === `page-${previous.length + 1}` && typeof saved?.cursor === "string" ? saved.cursor : "") : marker;
+      const restoredFilters = typeof saved?.filterKey === "string" ? saved.filterKey : initialFilters.current;
+      setFilters(restoredFilters);
       if (privateCursor) {
-        const restoredFilters = typeof saved?.filterKey === "string" ? saved.filterKey : initialFilters.current;
         restoreSavedFilters(restoredFilters);
-        setFilters(restoredFilters);
         const url = new URL(window.location.href);
         if (!cursor) url.searchParams.delete(parameter);
         window.history.replaceState({ ...state, [historyKey]: { cursor, previous: cursor ? previous : [], filterKey: restoredFilters } }, "", `${url.pathname}${url.search}${url.hash}`);
@@ -49,15 +49,23 @@ export function useCursorPage(parameter: string, filterKey = "", privateCursor =
   const filtersChanged = filters !== filterKey;
   useEffect(() => {
     if (!filtersChanged) return;
+    if (!privateCursor) {
+      // Filter links already drop public cursors. Never erase a restored Back entry.
+      if (new URLSearchParams(window.location.search).has(parameter)) return;
+      setPosition({ cursor: "", previous: [] });
+      setFilters(filterKey);
+      return;
+    }
     navigate("", [], true);
     setFilters(filterKey);
-  }, [filterKey, filtersChanged, navigate]);
+  }, [filterKey, filtersChanged, navigate, parameter, privateCursor]);
 
   const cursor = filtersChanged ? "" : position.cursor;
   const previous = filtersChanged ? [] : position.previous;
   const reset = useCallback(() => navigate("", [], true), [navigate]);
+  const clearForNavigation = useCallback(() => setPosition({ cursor: "", previous: [] }), []);
   return {
-    cursor, ready, canPrevious: Boolean(cursor) || previous.length > 0,
+    cursor, clearForNavigation, ready, canPrevious: Boolean(cursor) || previous.length > 0,
     previousLabel: previous.length > 0 ? "السابق" : "الأولى",
     reset,
     next: (nextCursor: string) => navigate(nextCursor, [...previous, cursor]),

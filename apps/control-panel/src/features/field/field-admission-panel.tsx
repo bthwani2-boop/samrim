@@ -12,6 +12,21 @@ type LatestStore = Readonly<{ storeId: string; storeName: string; joiningCaseId:
 type FieldAccount = ActorRoleView & Readonly<{ admission: FieldAdmission | null; latestStore?: LatestStore | null; joiningCaseCount?: number; latestJoiningCase?: OperatorFieldLatestJoiningCase | null }>;
 type FieldWorkbenchItem = Readonly<{ kind: "candidate"; admission: FieldAdmission }> | Readonly<{ kind: "account"; account: FieldAccount }>;
 type FieldPage = Readonly<{ items: ReadonlyArray<FieldWorkbenchItem>; nextCursor?: string }>;
+
+function parseFieldPage(payload: unknown): FieldPage {
+  const page = payload as FieldPage | null;
+  const validItems = Array.isArray(page?.items) && page.items.every((item) => {
+    if (!item) return false;
+    if (item.kind === "candidate") return typeof item.admission?.id === "string" && typeof item.admission?.fullNameAr === "string" && typeof item.admission?.state === "string";
+    if (item.kind === "account") return typeof item.account?.actorId === "string" && typeof item.account?.phoneE164 === "string" && typeof item.account?.enabled === "boolean" && typeof item.account?.securityEnabled === "boolean" && (item.account.admission === null || typeof item.account.admission?.id === "string");
+    return false;
+  });
+  if (!validItems || (page?.nextCursor !== undefined && (typeof page.nextCursor !== "string" || page.nextCursor.length > 2048))) {
+    throw new Error("استجابة سجل الميدانيين غير مكتملة. أعد المحاولة.");
+  }
+  return page as FieldPage;
+}
+
 type FieldAcquisitionCase = JoiningCaseListResponse["cases"][number];
 type FieldCandidateAction = "update-profile" | "approve" | "provision";
 type FieldAccountAction = "update-profile" | "review-profile" | "activate" | "disable" | "reenroll";
@@ -81,7 +96,7 @@ function readbackQuery(query: string, limit = 25): string {
 async function readWorkbench(currentQuery: string): Promise<FieldPage> {
   const response = await identityFetch(readbackQuery(currentQuery, 50), { cache: "no-store" });
   if (!response.ok) throw new Error(await fieldResponseMessage(response));
-  return await response.json() as FieldPage;
+  return parseFieldPage(await response.json());
 }
 
 function expectedCandidateState(action: FieldCandidateAction, currentState: FieldAdmission["state"]): FieldAdmission["state"] {
@@ -315,6 +330,7 @@ type FieldAdmissionRosterProps = Readonly<{
   items: ReadonlyArray<FieldWorkbenchItem>;
   query: string;
   cityFilter: string;
+  accessFilter: string;
   notice: string;
   error: string;
   loading: boolean;
@@ -333,6 +349,8 @@ type FieldAdmissionRosterProps = Readonly<{
   acquisitionCaseBusy: Record<string, boolean>;
   onQueryChange: (value: string) => void;
   onCityFilterChange: (value: string) => void;
+  onAccessFilterChange: (value: string) => void;
+  onResetServerFilters: () => void;
   onRefresh: () => void;
   onNextPage: () => void;
   onPreviousPage: () => void;
@@ -350,9 +368,8 @@ function FieldEmptyRoster({ query, pageScoped }: Readonly<{ query: string; pageS
   return <div className="collection-state"><strong>{title}</strong>{pageScoped ? null : <p>{description}</p>}</div>;
 }
 
-function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading, cursor, previousPageKnown, nextCursor, busy, feedbackActorId, serviceCities, walletProviders, candidateEdits, profileEdits, reasons, acquisitionCases, acquisitionCaseErrors, acquisitionCaseBusy, onQueryChange, onCityFilterChange, onRefresh, onNextPage, onPreviousPage, onCandidateNameChange, onCandidateMutate, onProfileNameChange, onReasonChange, onAccountMutate, onLoadAcquisitionCases }: FieldAdmissionRosterProps) {
+function FieldAdmissionRoster({ items, query, cityFilter, accessFilter, notice, error, loading, cursor, previousPageKnown, nextCursor, busy, feedbackActorId, serviceCities, walletProviders, candidateEdits, profileEdits, reasons, acquisitionCases, acquisitionCaseErrors, acquisitionCaseBusy, onQueryChange, onCityFilterChange, onAccessFilterChange, onResetServerFilters, onRefresh, onNextPage, onPreviousPage, onCandidateNameChange, onCandidateMutate, onProfileNameChange, onReasonChange, onAccountMutate, onLoadAcquisitionCases }: FieldAdmissionRosterProps) {
   const [admissionFilter, setAdmissionFilter] = useState("");
-  const [accessFilter, setAccessFilter] = useState("");
   const [activityFilter, setActivityFilter] = useState("");
   const [storeFilter, setStoreFilter] = useState("");
   const [storeQuery, setStoreQuery] = useState("");
@@ -364,13 +381,11 @@ function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading
   const visibleItems = useMemo(() => {
     const matches = items.filter((item) => {
       if (item.kind === "candidate") {
-        if (accessFilter || activityFilter || storeFilter || storeQuery.trim()) return false;
+        if (activityFilter || storeFilter || storeQuery.trim()) return false;
         if (admissionFilter && (admissionFilter === "none" || item.admission.state !== admissionFilter)) return false;
         if (journeyFilter === "has" || journeyFilter === "needs_correction" || journeyQuery.trim()) return false;
         return !providerFilter || item.admission.walletProviderKey === providerFilter;
       }
-      if (accessFilter === "enabled" && !item.account.enabled) return false;
-      if (accessFilter === "disabled" && item.account.enabled) return false;
       if (admissionFilter === "none" && item.account.admission) return false;
       if (admissionFilter && admissionFilter !== "none" && item.account.admission?.state !== admissionFilter) return false;
       if (providerFilter && item.account.admission?.walletProviderKey !== providerFilter) return false;
@@ -433,7 +448,7 @@ function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading
       const stateB = b.kind === "candidate" ? b.admission.state : b.account.admission?.state ?? "";
       return direction * stateA.localeCompare(stateB, "ar");
     });
-  }, [items, admissionFilter, accessFilter, activityFilter, storeFilter, storeQuery, journeyFilter, journeyQuery, providerFilter, sortBy, sortDirection, serviceCities, walletProviders]);
+  }, [items, admissionFilter, activityFilter, storeFilter, storeQuery, journeyFilter, journeyQuery, providerFilter, sortBy, sortDirection, serviceCities, walletProviders]);
   function toggleSort(column: "name" | "city" | "provider" | "admission" | "access" | "activity" | "store" | "journey") {
     if (sortBy === column) setSortDirection((value) => value === "asc" ? "desc" : "asc");
     else { setSortBy(column); setSortDirection("asc"); }
@@ -452,11 +467,11 @@ function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading
         <summary aria-label={activeFilterCount ? `المرشحات، ${activeFilterCount} مرشح نشط` : "المرشحات"}>المرشحات{activeFilterCount ? <span className="field-filter-active-count" aria-hidden="true">{activeFilterCount}</span> : null}</summary>
         <fieldset className="field-roster-filter-panel form-grid">
           <legend className="visually-hidden">مرشحات سجل الميدانيين</legend>
-          <p className="field-roster-filter-note">بقية المرشحات والترتيب للصفحة الحالية.</p>
+          <p className="field-roster-filter-note">تُطبَّق المدينة ودخول التطبيق على السجل الكامل؛ بقية المرشحات والترتيب للصفحة الحالية.</p>
           <label htmlFor="field-city-filter">مدينة الخدمة<select id="field-city-filter" value={cityFilter} onChange={(event) => onCityFilterChange(event.target.value)}><option value="">كل المدن</option>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
           <label htmlFor="field-provider-filter">مزوّد المحفظة<select id="field-provider-filter" value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}><option value="">كل المزوّدين</option>{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select></label>
           <label htmlFor="field-admission-filter">أهلية النظام<select id="field-admission-filter" value={admissionFilter} onChange={(event) => setAdmissionFilter(event.target.value)}><option value="">كل الحالات</option><option value="none">لا توجد أهلية مرتبطة</option><option value="pending_review">بانتظار المراجعة</option><option value="pending_identity">بانتظار إنشاء الحساب</option><option value="eligible">مؤهل</option><option value="suspended">موقوفة</option></select></label>
-          <label htmlFor="field-access-filter">دخول التطبيق<select id="field-access-filter" value={accessFilter} onChange={(event) => setAccessFilter(event.target.value)}><option value="">كل الحسابات</option><option value="enabled">الدخول مفعّل</option><option value="disabled">الدخول موقوف</option></select></label>
+          <label htmlFor="field-access-filter">دخول التطبيق<select id="field-access-filter" value={accessFilter} onChange={(event) => onAccessFilterChange(event.target.value)}><option value="">كل الحسابات</option><option value="enabled">الدخول مفعّل</option><option value="disabled">الدخول موقوف</option></select></label>
           <label htmlFor="field-activity-filter">فتح التطبيق<select id="field-activity-filter" value={activityFilter} onChange={(event) => setActivityFilter(event.target.value)}><option value="">كل الأنشطة</option><option value="opened">سبق فتح التطبيق</option><option value="recent">خلال 30 يومًا</option><option value="never">لم يفتح التطبيق</option></select></label>
           <label htmlFor="field-store-filter">أحدث متجر<select id="field-store-filter" value={storeFilter} onChange={(event) => setStoreFilter(event.target.value)}><option value="">كل المتاجر</option><option value="has">أضاف متجرًا</option><option value="recent">خلال 30 يومًا</option><option value="none">لم يضف متجرًا</option></select></label>
           <label htmlFor="field-store-search">بحث باسم أحدث متجر<input id="field-store-search" type="search" placeholder="اسم المتجر" value={storeQuery} onChange={(event) => setStoreQuery(event.target.value)} /></label>
@@ -464,7 +479,7 @@ function FieldAdmissionRoster({ items, query, cityFilter, notice, error, loading
           <label htmlFor="field-journey-search">بحث باسم آخر شريك<input id="field-journey-search" type="search" placeholder="اسم الشريك" value={journeyQuery} onChange={(event) => setJourneyQuery(event.target.value)} /></label>
         </fieldset>
       </details>
-      {hasFilters ? <button type="button" className="button button-secondary" onClick={() => { onQueryChange(""); onCityFilterChange(""); setAdmissionFilter(""); setAccessFilter(""); setActivityFilter(""); setStoreFilter(""); setStoreQuery(""); setJourneyFilter(""); setJourneyQuery(""); setProviderFilter(""); }}>مسح البحث والمرشحات</button> : null}
+      {hasFilters ? <button type="button" className="button button-secondary" onClick={() => { onResetServerFilters(); setAdmissionFilter(""); setActivityFilter(""); setStoreFilter(""); setStoreQuery(""); setJourneyFilter(""); setJourneyQuery(""); setProviderFilter(""); }}>مسح البحث والمرشحات</button> : null}
       <button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={onRefresh}>{loading ? "جارٍ التحديث…" : "تحديث السجل"}</button>
     </div>
     {notice && !feedbackActorId ? <output className="success-inline">{notice}</output> : null}{error && !feedbackActorId ? <p className="identity-error" role="alert">{error}</p> : null}
@@ -507,6 +522,7 @@ export function FieldAdmissionPanel() {
   const [allServiceCities, setAllServiceCities] = useState(true);
   const [serviceCityIds, setServiceCityIds] = useState<string[]>([]);
   const [cityFilter, setCityFilter] = useState(() => new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("serviceCityId") ?? "");
+  const [accessFilter, setAccessFilter] = useState("");
   const [serviceCities, setServiceCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [serviceCitiesLoading, setServiceCitiesLoading] = useState(true);
   const [serviceCitiesError, setServiceCitiesError] = useState("");
@@ -542,12 +558,13 @@ export function FieldAdmissionPanel() {
     try {
       const params = new URLSearchParams({ scope: "workbench", limit: "25", q: query.trim() });
       if (cityFilter) params.set("serviceCityId", cityFilter);
+      if (accessFilter) params.set("enabled", accessFilter === "enabled" ? "true" : "false");
       if (cursor) params.set("cursor", cursor);
       const response = await identityFetch(`/api/fields?${params}`, { cache: "no-store" });
       if (!response.ok) {
         throw new Error(await fieldResponseMessage(response));
       }
-      const page = await response.json() as FieldPage;
+      const page = parseFieldPage(await response.json());
       if (loadRequestID.current !== requestID) return;
       setItems(page.items);
       setNextCursor(page.nextCursor ?? "");
@@ -560,7 +577,7 @@ export function FieldAdmissionPanel() {
     } finally {
       if (loadRequestID.current === requestID) setLoading(false);
     }
-  }, [query, cityFilter, cursor]);
+  }, [query, cityFilter, accessFilter, cursor]);
 
   async function loadAcquisitionCases(fieldActorId: string, cursor = "", append = false) {
     setAcquisitionCaseBusy((current) => ({ ...current, [fieldActorId]: true }));
@@ -596,7 +613,7 @@ export function FieldAdmissionPanel() {
       const state = event?.state ?? window.history.state;
       const saved = state?.fieldRegistry;
       const url = `${window.location.pathname}${window.location.search}`;
-      const restored = !params.has("q") && !params.has("cursor") && saved?.url === url && typeof saved.query === "string" && typeof saved.cursor === "string" && Number.isSafeInteger(saved.page) && saved.page >= 1 && (saved.page === 1 ? saved.cursor === "" && !params.has("fieldPage") : Boolean(saved.cursor) && params.get("fieldPage") === String(saved.page));
+      const restored = !params.has("q") && !params.has("cursor") && saved?.url === url && typeof saved.query === "string" && typeof saved.cursor === "string" && [undefined, "", "enabled", "disabled"].includes(saved.accessFilter) && Number.isSafeInteger(saved.page) && saved.page >= 1 && (saved.page === 1 ? saved.cursor === "" && !params.has("fieldPage") : Boolean(saved.cursor) && params.get("fieldPage") === String(saved.page));
       ++loadRequestID.current;
       setNavigationVersion((current) => current + 1);
       setLoading(true);
@@ -606,6 +623,7 @@ export function FieldAdmissionPanel() {
       setFeedbackActorId("");
       setQuery(restored ? saved.query : "");
       setCityFilter(params.get("serviceCityId") ?? "");
+      setAccessFilter(restored ? saved.accessFilter ?? "" : "");
       setCursor(restored ? saved.cursor : "");
       setPageNumber(restored ? saved.page : 1);
       setPreviousPageKnown(restored && saved.previous === true);
@@ -613,7 +631,7 @@ export function FieldAdmissionPanel() {
       if (!restored) {
         params.delete("q"); params.delete("cursor"); params.delete("fieldPage");
         const firstURL = `${window.location.pathname}${params.size ? `?${params}` : ""}`;
-        window.history.replaceState({ ...state, fieldPageURL: undefined, fieldRegistry: { url: firstURL, query: "", cursor: "", page: 1, previous: false } }, "", firstURL);
+        window.history.replaceState({ ...state, fieldPageURL: undefined, fieldRegistry: { url: firstURL, query: "", accessFilter: "", cursor: "", page: 1, previous: false } }, "", firstURL);
       }
     };
     syncQuery();
@@ -621,33 +639,42 @@ export function FieldAdmissionPanel() {
     return () => window.removeEventListener("popstate", syncQuery);
   }, []);
 
-  function writePage(nextQuery: string, nextCity: string, nextCursor: string, page: number, previous: boolean, replace: boolean) {
+  function writePage(nextQuery: string, nextCity: string, nextAccess: string, nextCursor: string, page: number, previous: boolean, replace: boolean) {
     const params = new URLSearchParams(window.location.search);
     params.delete("q"); params.delete("cursor"); params.delete("fieldPage");
     if (nextCity) params.set("serviceCityId", nextCity); else params.delete("serviceCityId");
     if (page > 1) params.set("fieldPage", String(page));
     const url = `${window.location.pathname}${params.size ? `?${params}` : ""}`;
-    const state = { ...window.history.state, fieldPageURL: undefined, fieldRegistry: { url, query: nextQuery, cursor: nextCursor, page, previous } };
+    const state = { ...window.history.state, fieldPageURL: undefined, fieldRegistry: { url, query: nextQuery, accessFilter: nextAccess, cursor: nextCursor, page, previous } };
     if (replace) window.history.replaceState(state, "", url); else window.history.pushState(state, "", url);
     ++loadRequestID.current;
     setNavigationVersion((current) => current + 1);
     setLoading(true); setItems([]); setNextCursor(""); setError(""); setFeedbackActorId("");
-    setQuery(nextQuery); setCityFilter(nextCity); setCursor(nextCursor); setPageNumber(page); setPreviousPageKnown(previous);
+    setQuery(nextQuery); setCityFilter(nextCity); setAccessFilter(nextAccess); setCursor(nextCursor); setPageNumber(page); setPreviousPageKnown(previous);
   }
 
   function updateQuery(value: string) {
     if (value === query && !cursor) return;
-    writePage(value, cityFilter, "", 1, false, true);
+    writePage(value, cityFilter, accessFilter, "", 1, false, true);
   }
 
   function updateCityFilter(value: string) {
     if (value === cityFilter && !cursor) return;
-    writePage(window.history.state?.fieldRegistry?.query ?? query, value, "", 1, false, false);
+    writePage(window.history.state?.fieldRegistry?.query ?? query, value, accessFilter, "", 1, false, false);
+  }
+
+  function updateAccessFilter(value: string) {
+    if (value === accessFilter && !cursor) return;
+    writePage(query, cityFilter, value, "", 1, false, false);
+  }
+
+  function resetServerFilters() {
+    writePage("", "", "", "", 1, false, true);
   }
 
   function nextPage() {
     if (!nextCursor || loading || busy) return;
-    writePage(query, cityFilter, nextCursor, pageNumber + 1, true, false);
+    writePage(query, cityFilter, accessFilter, nextCursor, pageNumber + 1, true, false);
   }
 
   function previousPage() {
@@ -655,7 +682,7 @@ export function FieldAdmissionPanel() {
       window.history.back();
       return;
     }
-    writePage(query, cityFilter, "", 1, false, true);
+    writePage(query, cityFilter, accessFilter, "", 1, false, true);
   }
 
   async function createProfile() {
@@ -774,6 +801,6 @@ export function FieldAdmissionPanel() {
     <header className="field-workbench-heading">
       <details className="field-create-disclosure"><summary className="button button-primary">إنشاء ملف ميداني</summary><div className="field-create-content"><div className="access-card-heading"><h3>ملف ميداني جديد</h3><p className="muted">ملف للمراجعة؛ إنشاء حساب الدخول بعد الاعتماد.</p></div><form className="access-form" noValidate onSubmit={(event) => { event.preventDefault(); void createProfile(); }}><label className="field-label" htmlFor="field-candidate-name">الاسم الكامل بالعربية<input id="field-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} /></label><label className="field-label" htmlFor="field-candidate-phone">رقم الجوال<input id="field-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="مثال: 777 765 432 أو +967 777 765 432" aria-invalid={Boolean(phone.trim()) && !candidatePhoneValid} aria-describedby="field-candidate-phone-help" /><span id="field-candidate-phone-help" className={phone.trim() && !candidatePhoneValid ? "identity-error" : "muted"}>{phone.trim() && !candidatePhoneValid ? "أدخل رقمًا يمنيًا صحيحًا، محليًا مثل 777 765 432 أو دوليًا مثل +967 777 765 432." : "يُستخدم هذا الرقم لإثبات الهاتف وتفعيل الدخول، ثم لتسجيل الدخول اليومي."}</span></label><label className="field-label" htmlFor="field-candidate-wallet-provider">مزوّد المحفظة الذي حدده الميداني<select id="field-candidate-wallet-provider" value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)} disabled={Boolean(busy) || walletProvidersLoading || Boolean(walletProvidersError)}><option value="">اختر محفظة رسمية</option>{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select><small>المزوّد فقط؛ لا تدخل رقم محفظة أو اسمًا قانونيًا.</small></label>{walletProvidersError ? <p className="identity-error" role="alert">{walletProvidersError}</p> : null}<label className="field-label" htmlFor="field-candidate-all-cities"><input id="field-candidate-all-cities" type="checkbox" checked={allServiceCities} onChange={(event) => setAllServiceCities(event.target.checked)} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)} /> جميع المدن النشطة، بما فيها المدن التي ستضاف لاحقًا</label>{!allServiceCities ? <label className="field-label" htmlFor="field-candidate-cities">مدن الخدمة<select id="field-candidate-cities" multiple value={serviceCityIds} onChange={(event) => setServiceCityIds(Array.from(event.currentTarget.selectedOptions, (option) => option.value))} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)}>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label> : null}{serviceCitiesError ? <p className="identity-error" role="alert">{serviceCitiesError}</p> : null}<button type="submit" className="button button-primary" disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError) || walletProvidersLoading || Boolean(walletProvidersError) || !candidateNameValid || !candidatePhoneValid || !candidateProviderValid || !candidateCityValid}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ للمراجعة"}</button></form></div></details>
     </header>
-    <FieldAdmissionRoster items={items} query={query} cityFilter={cityFilter} notice={notice} error={error} loading={loading} cursor={cursor} previousPageKnown={previousPageKnown} nextCursor={nextCursor} busy={busy} feedbackActorId={feedbackActorId} serviceCities={serviceCities} walletProviders={walletProviders} candidateEdits={candidateEdits} profileEdits={profileEdits} reasons={reasons} acquisitionCases={acquisitionCases} acquisitionCaseErrors={acquisitionCaseErrors} acquisitionCaseBusy={acquisitionCaseBusy} onQueryChange={updateQuery} onCityFilterChange={updateCityFilter} onRefresh={() => { setFeedbackActorId(""); void load(); }} onNextPage={nextPage} onPreviousPage={previousPage} onCandidateNameChange={(id, value) => setCandidateEdits((current) => ({ ...current, [id]: value }))} onCandidateMutate={mutateCandidate} onProfileNameChange={(id, value) => setProfileEdits((current) => ({ ...current, [id]: value }))} onReasonChange={(id, value) => setReasons((current) => ({ ...current, [id]: value }))} onAccountMutate={mutateAccount} onLoadAcquisitionCases={loadAcquisitionCases} />
+    <FieldAdmissionRoster items={items} query={query} cityFilter={cityFilter} accessFilter={accessFilter} notice={notice} error={error} loading={loading} cursor={cursor} previousPageKnown={previousPageKnown} nextCursor={nextCursor} busy={busy} feedbackActorId={feedbackActorId} serviceCities={serviceCities} walletProviders={walletProviders} candidateEdits={candidateEdits} profileEdits={profileEdits} reasons={reasons} acquisitionCases={acquisitionCases} acquisitionCaseErrors={acquisitionCaseErrors} acquisitionCaseBusy={acquisitionCaseBusy} onQueryChange={updateQuery} onCityFilterChange={updateCityFilter} onAccessFilterChange={updateAccessFilter} onResetServerFilters={resetServerFilters} onRefresh={() => { setFeedbackActorId(""); void load(); }} onNextPage={nextPage} onPreviousPage={previousPage} onCandidateNameChange={(id, value) => setCandidateEdits((current) => ({ ...current, [id]: value }))} onCandidateMutate={mutateCandidate} onProfileNameChange={(id, value) => setProfileEdits((current) => ({ ...current, [id]: value }))} onReasonChange={(id, value) => setReasons((current) => ({ ...current, [id]: value }))} onAccountMutate={mutateAccount} onLoadAcquisitionCases={loadAcquisitionCases} />
   </section>;
 }

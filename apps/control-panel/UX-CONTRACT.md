@@ -39,6 +39,7 @@
 | Scrollbar | Global application stylesheet | `DESIGN.md` + generated theme | Default app surface | Computed style + rendered browser check |
 | Form | Feature-owned semantic form and API adapter | Feature contract/API | Create / edit | Targeted E2E |
 | High-cardinality registries and lookups | Domain feature over its existing bounded server API | Owning API contract | Server search/filter/sort/cursor; no unbounded option list; URL carries applied query and current cursor | Boundary-sized API/E2E plus rendered recovery states |
+| Product registry summary | Existing DSH product-registry response | DSH count and page from one database snapshot, with one shared filter definition | Complete filtered total, current-page count and UTC measurement time; absent total remains unknown; the adjacent registry is the drilldown | Isolated persisted count/filter/page proof and BFF/browser readback |
 | Operator notification inbox | DSH notifications through the authenticated Control Panel BFF | DSH notification cursor and complete unread count | Bounded cursor pages in the URL; server unread count is global, card groups and page counts describe the current page | Cursor/readback E2E and browser back/forward |
 | Operator account directory | Identity role search through the authenticated Control Panel BFF | Identity actor role and permission grants | Search, enabled state, permission coverage, stable sort, and cursor are filtered by Identity before page limiting; enabled permission count is part of the bounded result | Identity database filter/count test and Control Panel query E2E |
 | Table selection | `src/features/finance/use-page-selection.ts` | This contract | Visible page only; bulk operations submit only selected canonical record IDs | Keyboard + E2E |
@@ -68,6 +69,9 @@
 - Alert/banner scope and persistence: Inline errors stay with the field/resource; session or service outages use a page alert with retry.
 - Tooltip delay/dismissal: Tooltips are optional enhancement; visible labels remain the primary affordance.
 - Unsaved-changes behavior: Preserve entered values and guard only flows that can actually lose user work.
+- Product editing recovery: A failed detail read remains a retryable read rather than a creation form. Version conflicts retain the draft and selected upload; explicitly loading the current version discards them. Unchanged save/upload retries retain their idempotency key. Upload success updates canonical media/version without replacing unsaved product fields; save success follows a fresh detail read.
+- Product image review: The optional gallery and default table use the same registry query. Review uses the selected product's canonical media order in a native modal dialog, with image navigation, load failure/retry, bounded viewport, keyboard isolation, Escape and trigger focus restoration.
+- Store inspection: The registry opens a read-only, nonmodal region on demand from the existing publication/readiness owner. Loading, forbidden, invalid response and retry remain distinct from readiness. Escape/close restores the originating control. The shared cursor pagination and whitelisted query context preserve search, publication filter, sort, page and selected inspection across reload and the full store file return; no alternate publication writer is introduced.
 - Layer/z-index contract: Drawer/overlay above shell; account menu below modal overlays; tokens come from the shared z-index scale.
 
 ## Async and resilience

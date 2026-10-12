@@ -503,7 +503,7 @@ func (s *CatalogServer) listProductRegistry(w http.ResponseWriter, r *http.Reque
 		}
 		items = append(items, contract.CatalogProductRegistryItem{ID: product.ID, VerticalID: product.VerticalID, CanonicalName: product.CanonicalName, Brand: brand, Active: product.Active, Version: product.Version, VariantCount: product.VariantCount, StoreCount: product.StoreCount, CategoryIds: product.CategoryIDs, PrimaryImageUri: image, CreatedAt: product.CreatedAt, UpdatedAt: product.UpdatedAt})
 	}
-	writeJSON(w, http.StatusOK, contract.CatalogProductRegistryResponse{Products: items, NextCursor: page.NextCursor})
+	writeJSON(w, http.StatusOK, contract.CatalogProductRegistryResponse{Products: items, NextCursor: page.NextCursor, TotalCount: int(page.TotalCount), MeasuredAt: page.MeasuredAt})
 }
 
 func (s *CatalogServer) readProduct(w http.ResponseWriter, r *http.Request) {

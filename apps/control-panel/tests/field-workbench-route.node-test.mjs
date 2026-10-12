@@ -22,8 +22,8 @@ function routeFixture({ candidates = [], candidatesNextCursor, accountPages = [[
   };
   const identity = {
     readOperatorSession: async () => ({ subject: "operator", role: "operator", permissions: ["partners"] }),
-    searchIdentityRoles: async (_role, _query, limit, cursor) => {
-      accountRequests.push({ limit, cursor });
+    searchIdentityRoles: async (_role, _query, limit, cursor, enabled) => {
+      accountRequests.push({ limit, cursor, ...(enabled === undefined ? {} : { enabled }) });
       const pageIndex = cursor ? Number(cursor) : 0;
       const page = accountPages[pageIndex] ?? [];
       assert.ok(page.length <= limit, "fixture page must honor the canonical Identity bound");
@@ -76,4 +76,73 @@ test("candidate source cursor does not query or append accounts prematurely", as
   assert.equal(page.items.length, 1);
   assert.equal(JSON.parse(Buffer.from(page.nextCursor, "base64url").toString()).phase, "candidates");
   assert.deepEqual(fixture.accountRequests, []);
+});
+
+test("access filter excludes pending candidates and is evaluated by Identity before cursor paging", async () => {
+  const disabled = { ...role("disabled-actor"), enabled: false };
+  const fixture = routeFixture({
+    candidates: [{ id: "pending-candidate" }],
+    accountPages: [[disabled], [{ ...role("disabled-next"), enabled: false }]],
+  });
+  const first = await fixture.GET(request("limit=2&enabled=false"));
+  assert.equal(first.status, 200);
+  const firstPage = await first.json();
+  assert.deepEqual(firstPage.items.map((item) => item.account.actorId), ["disabled-actor"]);
+  assert.ok(firstPage.nextCursor);
+  const second = await fixture.GET(request(`limit=2&enabled=false&cursor=${encodeURIComponent(firstPage.nextCursor)}`));
+  assert.equal(second.status, 200);
+  assert.deepEqual((await second.json()).items.map((item) => item.account.actorId), ["disabled-next"]);
+  assert.deepEqual(fixture.accountRequests, [
+    { limit: 2, cursor: "", enabled: false },
+    { limit: 2, cursor: "1", enabled: false },
+  ]);
+  assert.deepEqual(fixture.admissionRequests, ["disabled-actor", "disabled-next"]);
+});
+
+test("access filter rejects stale candidate cursors instead of mixing filter scopes", async () => {
+  const fixture = routeFixture();
+  const cursor = Buffer.from(JSON.stringify({ version: 1, phase: "candidates", sourceCursor: "next" })).toString("base64url");
+  const response = await fixture.GET(request(`limit=2&enabled=true&cursor=${cursor}`));
+  assert.equal(response.status, 400);
+  assert.deepEqual(fixture.accountRequests, []);
+});
+
+test("account cursor must not cross city or search scopes", async () => {
+  const fixture = routeFixture({
+    accountPages: [[role("first")], [role("second")]],
+    cityByActor: { first: ["city-a", "city-b"], second: ["city-a", "city-b"] },
+  });
+  const response = await fixture.GET(request("limit=1&q=777&serviceCityId=city-a"));
+  assert.equal(response.status, 200);
+  const first = await response.json();
+  assert.ok(first.nextCursor);
+  const continued = await fixture.GET(request(`limit=1&q=777&serviceCityId=city-a&cursor=${encodeURIComponent(first.nextCursor)}`));
+  assert.equal(continued.status, 200);
+  assert.deepEqual((await continued.json()).items.map((item) => item.account.actorId), ["second"]);
+  for (const changed of ["limit=1&q=777&serviceCityId=city-b", "limit=1&q=778&serviceCityId=city-a", "limit=2&q=777&serviceCityId=city-a"]) {
+    const stale = await fixture.GET(request(`${changed}&cursor=${encodeURIComponent(first.nextCursor)}`));
+    assert.equal(stale.status, 400, `cursor must reject changed scope: ${changed}`);
+  }
+});
+
+test("account cursor rejects changed access and sort scope", async () => {
+  const fixture = routeFixture({ accountPages: [[role("first")], [role("second")]] });
+  const first = await (await fixture.GET(request("limit=1&enabled=true&sort=phone_asc"))).json();
+  assert.ok(first.nextCursor);
+  for (const changed of ["limit=1&enabled=false&sort=phone_asc", "limit=1&enabled=true&sort=phone_desc", "limit=1&sort=phone_asc"]) {
+    const stale = await fixture.GET(request(`${changed}&cursor=${encodeURIComponent(first.nextCursor)}`));
+    assert.equal(stale.status, 400, `cursor must reject changed scope: ${changed}`);
+  }
+});
+
+test("wrapped owner cursor supports long but bounded encoded source cursors", async () => {
+  const fixture = routeFixture({ candidates: [{ id: "candidate" }], candidatesNextCursor: "x".repeat(500) });
+  const first = await fixture.GET(request("limit=1"));
+  assert.equal(first.status, 200);
+  const page = await first.json();
+  assert.ok(page.nextCursor.length > 512);
+  const second = await fixture.GET(request(`limit=1&cursor=${encodeURIComponent(page.nextCursor)}`));
+  assert.equal(second.status, 200);
+  const oversized = await fixture.GET(request(`limit=1&cursor=${"a".repeat(2049)}`));
+  assert.equal(oversized.status, 400);
 });

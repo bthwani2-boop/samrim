@@ -3,7 +3,7 @@ import { BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/na
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { identityErrorMessage, type IdentityErrorMessages } from "../errors";
+import { type IdentityErrorMessages, identityErrorMessage } from "../errors";
 import type { IdentitySessionState } from "../index";
 import { limitPasswordInput, validatePasswordInputShape } from "../password";
 
@@ -181,7 +181,7 @@ export function ManagedIdentityFlow({ managedRole, surface, binding, authenticat
       else await binding.requestManagedRecovery(phone);
       setVerificationCode("");
       setChallengeRequested(true);
-      setNotice("تحقق من الرسائل.");
+      setNotice(step === "setup" ? "إذا كان هذا أول تفعيل لحساب مؤهل، فسيصلك رمز التحقق. سبق لك التفعيل؟ سجّل الدخول أو استعد كلمة المرور." : "إذا كان الحساب مؤهلًا للاستعادة، فسيصلك رمز التحقق.");
     } catch (cause) {
       setError(identityErrorMessage(cause, "general", messages));
     } finally {
@@ -256,6 +256,13 @@ export function ManagedIdentityFlow({ managedRole, surface, binding, authenticat
   return shell(
     <View style={styles.card}>
       <Text style={styles.title}>{login ? "تسجيل الدخول" : step === "setup" ? "تعيين كلمة المرور" : "استعادة كلمة المرور"}</Text>
+      {step === "setup" ? <>
+        <Text style={styles.notice}>هذا الخيار لأول تفعيل فقط. إذا سبق أن فعّلت حسابك:</Text>
+        <View style={styles.links}>
+          <Pressable accessibilityRole="button" disabled={busy} onPress={() => changeStep("login")} style={styles.linkButton}><Text style={styles.linkText}>تسجيل الدخول</Text></Pressable>
+          <Pressable accessibilityRole="button" disabled={busy} onPress={() => changeStep("recovery")} style={styles.linkButton}><Text style={styles.linkText}>استعادة كلمة المرور</Text></Pressable>
+        </View>
+      </> : null}
       <Text style={styles.fieldLabel}>رقم الجوال</Text>
       <TextInput accessibilityLabel="رقم الجوال" autoComplete="tel" keyboardType="phone-pad" editable={!busy} onChangeText={(value) => {
         setPhone(toAsciiDigits(value));
@@ -267,6 +274,7 @@ export function ManagedIdentityFlow({ managedRole, surface, binding, authenticat
       {!login ? <Pressable accessibilityRole="button" accessibilityState={{ busy, disabled: busy || !phoneReady }} disabled={busy || !phoneReady} onPress={() => void requestCode()} style={[styles.secondaryButton, (busy || !phoneReady) && styles.disabledButton]}>
         <Text style={[styles.secondaryButtonText, (busy || !phoneReady) && styles.disabledButtonText]}>{challengeRequested ? "إعادة إرسال الرمز" : "إرسال الرمز"}</Text>
       </Pressable> : null}
+      {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
       {!login && challengeRequested ? <>
         <Text style={styles.fieldLabel}>رمز التحقق</Text>
         <TextInput accessibilityLabel="رمز التحقق" autoComplete="one-time-code" keyboardType="number-pad" maxLength={6} editable={!busy} onChangeText={(value) => { setVerificationCode(toAsciiDigits(value).replace(/\D/g, "").slice(0, 6)); setError(""); setNotice(""); }} style={[styles.input, styles.numericInput]} value={verificationCode} />
@@ -281,8 +289,7 @@ export function ManagedIdentityFlow({ managedRole, surface, binding, authenticat
       {login ? <View style={styles.links}>
         <Pressable accessibilityRole="button" disabled={busy} onPress={() => changeStep("setup")} style={styles.linkButton}><Text style={[styles.linkText, busy && styles.disabledButtonText]}>أول دخول؟</Text></Pressable>
         <Pressable accessibilityRole="button" disabled={busy} onPress={() => changeStep("recovery")} style={styles.linkButton}><Text style={[styles.linkText, busy && styles.disabledButtonText]}>نسيت كلمة المرور؟</Text></Pressable>
-      </View> : <Pressable accessibilityRole="button" disabled={busy} onPress={() => changeStep("login")} style={styles.linkButton}><Text style={[styles.linkText, busy && styles.disabledButtonText]}>رجوع</Text></Pressable>}
-      {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
+      </View> : step === "recovery" ? <Pressable accessibilityRole="button" disabled={busy} onPress={() => changeStep("login")} style={styles.linkButton}><Text style={[styles.linkText, busy && styles.disabledButtonText]}>العودة لتسجيل الدخول</Text></Pressable> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>,
   );

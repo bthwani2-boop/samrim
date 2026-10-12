@@ -50,7 +50,7 @@ export function OperatorNotifications() {
       const payload = await response.json() as NotificationListPayload;
       if (sequence !== requestSequence.current) return;
       setItems(payload.notifications ?? []);
-      setUnreadCount(payload.unreadCount ?? 0);
+      setUnreadCount(typeof payload.unreadCount === "number" && Number.isSafeInteger(payload.unreadCount) && payload.unreadCount >= 0 ? payload.unreadCount : null);
       setNextCursor(payload.nextCursor ?? "");
     } catch (cause) {
       if (sequence !== requestSequence.current) return;
