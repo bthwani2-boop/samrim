@@ -3,6 +3,7 @@ package transporthttp
 import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/hr"
 	"net/http"
+	"strconv"
 )
 
 // Employment is always an HR record. Identity owns the optional operator role.
@@ -51,6 +52,27 @@ func (s *HRServer) setEmploymentStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, result)
 }
 
+func (s *HRServer) listEmployeeEvents(w http.ResponseWriter, r *http.Request) {
+	_, ok := s.authorize(w, r)
+	if !ok {
+		return
+	}
+	limit := 25
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, 400, "INVALID_INPUT", "invalid limit")
+			return
+		}
+		limit = n
+	}
+	page, err := hr.ListEmployeeEvents(r.Context(), s.db, r.PathValue("employeeId"), r.URL.Query().Get("cursor"), limit)
+	if err != nil {
+		writeHRError(w, err)
+		return
+	}
+	writeJSON(w, 200, page)
+}
 func (s *HRServer) readEmployeeByOperatorActor(w http.ResponseWriter, r *http.Request) {
 	_, ok := s.authorizeRoot(w, r)
 	if !ok {

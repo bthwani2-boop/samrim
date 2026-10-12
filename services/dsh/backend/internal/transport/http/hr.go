@@ -31,8 +31,9 @@ func NewHR(identity *identityintegration.Client, serviceToken string, db *sql.DB
 func (s *HRServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/hr/employees", s.listEmployees)
 	mux.HandleFunc("POST /dsh/hr/employees", s.createEmployee)
-	mux.HandleFunc("GET /dsh/hr/employees/by-actor/{actorId}", s.readEmployeeByOperatorActor)
+	mux.HandleFunc("GET /dsh/hr/operator-employees/{actorId}", s.readEmployeeByOperatorActor)
 	mux.HandleFunc("GET /dsh/hr/employees/{employeeId}", s.readEmployee)
+	mux.HandleFunc("GET /dsh/hr/employees/{employeeId}/events", s.listEmployeeEvents)
 	mux.HandleFunc("PATCH /dsh/hr/employees/{employeeId}", s.updateEmployee)
 	mux.HandleFunc("POST /dsh/hr/employees/{employeeId}/employment-status", s.setEmploymentStatus)
 	s.registerAccessRequests(mux)

@@ -436,8 +436,11 @@ paths:
   /dsh/hr/employees:
     $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees"
 
-  /dsh/hr/employees/by-actor/{actorId}:
-    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees~1by-actor~1{actorId}"
+  /dsh/hr/operator-employees/{actorId}:
+    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1operator-employees~1{actorId}"
+
+  /dsh/hr/employees/{employeeId}/events:
+    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees~1{employeeId}~1events"
 
   /dsh/hr/employees/{employeeId}/employment-status:
     $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees~1{employeeId}~1employment-status"
@@ -4880,6 +4883,33 @@ components:
       properties:
         employee:
           $ref: "#/components/schemas/HREmployee"
+
+    HREmployeeEvent:
+      type: object
+      additionalProperties: false
+      required: [eventType, actingActorId, createdAt]
+      properties:
+        eventType:
+          type: string
+          enum: [created, updated, status_changed]
+        actingActorId:
+          type: string
+        reason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    HREmployeeEventsPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HREmployeeEvent"
+        nextCursor:
+          type: string
 
     HREmploymentStatusInput:
       type: object

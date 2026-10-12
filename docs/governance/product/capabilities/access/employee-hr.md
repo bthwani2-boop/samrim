@@ -74,3 +74,14 @@ revoked sessions automatically. An active manager with active direct reports can
 be marked inactive until those reports are reassigned. The audit retains the
 employment decision reason and before/after HR facts. No identity or HR record is
 deleted by this transition.
+
+
+### HR employee audit readback
+
+The employee detail view reads the existing append-only HR employee events,
+including creation, changes to employment facts and changes to employment status.
+Events are attributed to the acting operator with the original reason and
+timestamp; the history is paginated without creating a second audit owner.
+Only the existing HR read permission may read an employee's HR audit history.
+Status changes retain before/after snapshots in the canonical store, while the
+general employee interface displays only necessary audit metadata.

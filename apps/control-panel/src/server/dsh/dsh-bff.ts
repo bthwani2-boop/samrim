@@ -79,7 +79,15 @@ export async function updateHREmployee(id: string, input: HRUpdateEmployeeInput,
 }
 export async function readHREmployeeByOperatorActor(actorId:string,context:DshOperatorReadContext):Promise<Readonly<{employee:HREmployee}>> {
  return (await requestDshJson<Readonly<{employee:HREmployee}>>("GET",
-  `/dsh/hr/employees/by-actor/${encodeURIComponent(actorId)}`,undefined,
+  `/dsh/hr/operator-employees/${encodeURIComponent(actorId)}`,undefined,
+  {"X-Acting-Actor-ID":context.operatorActorId})).payload;
+}
+export type HREmployeeEvent = Readonly<{eventType:"created"|"updated"|"status_changed";actingActorId:string;reason?:string;createdAt:string}>;
+export type HREmployeeEventsPage = Readonly<{items:readonly HREmployeeEvent[];nextCursor?:string}>;
+export async function listHREmployeeEvents(id:string,cursor:string,context:DshOperatorReadContext):Promise<HREmployeeEventsPage>{
+ const params=new URLSearchParams({limit:"25",cursor});
+ return (await requestDshJson<HREmployeeEventsPage>("GET",
+  `/dsh/hr/employees/${encodeURIComponent(id)}/events?${params}`,undefined,
   {"X-Acting-Actor-ID":context.operatorActorId})).payload;
 }
 export type HREmploymentStatusInput = Readonly<{status:"active"|"inactive";reason:string;expectedVersion:number}>;
