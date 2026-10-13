@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-nativ
 
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
+import { storeInvitationReadbackConfirmed } from "./store-access-invite-readback";
 import { storeAccessPermissionsMutationIdentity, storeAccessPermissionsReadbackConfirmed, toggleStoreAccessPermission } from "./store-access-permission-toggle";
 import { createOwnStoreAccessInvitation, listOwnStoreAccessGrants, transitionOwnStoreAccessGrant, updateOwnStoreAccessPermissions } from "./store-readback-client";
 
@@ -75,7 +76,7 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
   const filteredOwnedStores = useMemo(() => ownedStores.filter((store) => store.name.toLocaleLowerCase().includes(storeSearch.trim().toLocaleLowerCase())), [ownedStores, storeSearch]);
   useEffect(() => {
     setSelectedStoreIDs([storeID]);
-    inviteAttempt.current = null;
+    // Preserve an unconfirmed invitation identity across store navigation.
     setNotice("");
   }, [storeID]);
 
@@ -127,32 +128,46 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
     setError("");
     setNotice("");
     try {
-      const identity = `${phone.trim()}|${[...selectedStoreIDs].sort((left, right) => left.localeCompare(right)).join(",")}|${[...selectedPermissions].sort((left, right) => left.localeCompare(right)).join(",")}`;
+      const targetStoreIDs = [...selectedStoreIDs];
+      const requestedPermissions = [...selectedPermissions];
+      const delegatePhone = phone.trim();
+      const identity = `${delegatePhone}|${[...targetStoreIDs].sort((left, right) => left.localeCompare(right)).join(",")}|${[...requestedPermissions].sort((left, right) => left.localeCompare(right)).join(",")}`;
       if (inviteAttempt.current?.identity !== identity) {
         inviteAttempt.current = {
           identity,
-          headersByStore: Object.fromEntries(selectedStoreIDs.map((targetStoreID) => [targetStoreID, attemptHeaders("store_access_invite")])),
+          headersByStore: Object.fromEntries(targetStoreIDs.map((targetStoreID) => [targetStoreID, attemptHeaders("store_access_invite")])),
         };
       }
-      const results = await Promise.allSettled(selectedStoreIDs.map((targetStoreID) => {
-        const headers = inviteAttempt.current?.headersByStore[targetStoreID];
+      const attempt = inviteAttempt.current;
+      if (!attempt) throw new Error("STORE_ACCESS_INVITE_ATTEMPT_MISSING");
+      const results = await Promise.allSettled(targetStoreIDs.map(async (targetStoreID) => {
+        const headers = attempt.headersByStore[targetStoreID];
         if (!headers) throw new Error("STORE_ACCESS_INVITE_ATTEMPT_MISSING");
-        return createOwnStoreAccessInvitation(targetStoreID, { delegatePhoneE164: phone.trim(), permissions: [...selectedPermissions] }, headers.idempotencyKey, headers.correlationID);
+        const mutation = await createOwnStoreAccessInvitation(targetStoreID, { delegatePhoneE164: delegatePhone, permissions: requestedPermissions }, headers.idempotencyKey, headers.correlationID);
+        const persisted = await listOwnStoreAccessGrants(targetStoreID);
+        return storeInvitationReadbackConfirmed(targetStoreID, mutation.grant, requestedPermissions, persisted.items.find((item) => item.id === mutation.grant.id));
       }));
-      const createdCount = results.filter((result) => result.status === "fulfilled").length;
-      const failedCount = results.length - createdCount;
-      setNotice(`أُكدت الدعوة على ${createdCount} من ${results.length} متاجر مختارة.`);
-      if (failedCount === 0) {
+      // Mutation receipts and unconfirmed network responses are not durable proof.
+      const confirmedCount = results.filter((result) => result.status === "fulfilled" && result.value === true).length;
+      const unconfirmedCount = results.length - confirmedCount;
+      if (activeStoreID.current !== storeID) return;
+      await reload();
+      if (activeStoreID.current !== storeID) return;
+      setNotice(`تأكدت ${confirmedCount} دعوات من أصل ${results.length} من القراءة المعتمدة.`);
+      if (unconfirmedCount > 0) {
+        setError(`لم يتأكد حفظ ${unconfirmedCount} دعوات. أعد المحاولة بنفس البيانات لإعادة استخدام مفاتيح المحاولات الأصلية.`);
+      } else {
         inviteAttempt.current = null;
         setPhone("");
         setSelectedPermissions(["orders"]);
         setSelectedStoreIDs([storeID]);
       }
-      await reload();
-      if (failedCount > 0) setError(`تعذر تأكيد ${failedCount} دعوات. أعد المحاولة بنفس البيانات لإعادة قراءة المحاولات المحفوظة بأمان.`);
-    } catch {
-      await reload();
-      setError("تعذر إنشاء الدعوة. تحقق من رقم الهاتف وأن صاحبه فعّل حسابه، ثم أعد قراءة القائمة.");
+    } catch (cause) {
+      console.warn("DSH Store access invitation verification failed", cause);
+      if (activeStoreID.current === storeID) {
+        await reload();
+        setError("تعذر تأكيد إنشاء الدعوة. أعد المحاولة بنفس البيانات للحفاظ على مفاتيح الطلب الأصلية.");
+      }
     } finally {
       setBusy(false);
     }
