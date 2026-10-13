@@ -104,6 +104,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   const [promotionCode, setPromotionCode] = useState("");
   const [recipient, setRecipient] = useState<DeliveryRecipientInput>({ mode: "SELF" });
   const quoteRequestID = useRef(0);
+  const checkoutSubmitting = useRef(false);
   const loadRequestID = useRef(0);
   const walletRequestID = useRef(0);
   const mounted = useRef(false);
@@ -290,6 +291,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   }
 
   async function checkout() {
+    if (checkoutSubmitting.current) return;
     const addressID = pickupMode ? "" : serviceableAddressId ?? "";
     if (mutationBusy || state.kind !== "ready" || !state.cart.lines.length || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || quote.quote.cartVersion !== state.cart.version || quote.quote.addressId !== addressID) return;
     const internalBalanceAmountMinor = parseMinorAmount(internalBalanceInput);
@@ -305,49 +307,56 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
       setError("أدخل اسمًا ورقمًا يمنيًا صحيحًا للمستلم، محليًا أو دوليًا، قبل تأكيد الطلب.");
       return;
     }
-    setError("");
-    let token: string;
-    let actorID: string;
-    try {
-      token = await getUsableIdentityAccessToken();
-      const identity = currentIdentityState();
-      if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("CLIENT_SESSION_REQUIRED");
-      actorID = identity.identity.subject.trim();
-    } catch {
-      setError("تعذر التحقق من جلسة العميل؛ لم يُرسل الطلب.");
-      return;
-    }
-    const request: CheckoutRequest = { cartId: state.cart.id, storeId, addressId: addressID, fulfillmentMode, internalBalanceAmountMinor, recipient: checkoutRecipient(recipient, !pickupMode), ...(promotionCode.trim() ? { promotionCode: promotionCode.trim().toUpperCase() } : {}) };
-    const storageKey = pendingCartCheckoutKey(actorID, storeId);
-    const attempt: PendingCartCheckoutAttempt = {
-      version: 1, actorID, storeID: storeId, cartID: state.cart.id, expectedCartVersion: state.cart.version,
-      idempotencyKey: `cart_checkout_${Crypto.randomUUID()}`, correlationID: `cart_checkout_corr_${Crypto.randomUUID()}`, request,
-    };
-    try {
-      await SecureStore.setItemAsync(storageKey, JSON.stringify(attempt));
-    } catch {
-      setError("تعذر حفظ محاولة الطلب بأمان؛ لم يُرسل الطلب.");
-      return;
-    }
-    setPendingCheckout(attempt);
+    // Acquire synchronously before session/storage awaits so rapid taps cannot create a second checkout identity.
+    checkoutSubmitting.current = true;
     setBusy(true);
     try {
-      const result = await client().checkoutCart(token, request, attempt.expectedCartVersion, attempt.idempotencyKey, attempt.correlationID);
-      await finishCheckout(result.order, token, storageKey);
-    } catch (cause) {
-      console.error("DSH checkout failed", cause);
-      let existingOrder: Order | null = null;
-      try { existingOrder = await readOrderForCart(token, attempt.cartID); } catch { /* Preserve the attempt whenever canonical readback is unavailable. */ }
-      if (existingOrder) await finishCheckout(existingOrder, token, storageKey);
-      else if (definitiveCheckoutRejection(cause)) {
-        try { await SecureStore.deleteItemAsync(storageKey); } catch { /* A future entry still checks canonical orders before retrying. */ }
-        setPendingCheckout(null);
-        if (errorCode(cause) === "STALE_CHECKOUT") await refreshAfterConflict(cartMutationErrorMessage(cause));
-        else setError(cartMutationErrorMessage(cause));
-      } else {
-        setError("تعذر تأكيد نتيجة الطلب. بقيت محاولة واحدة محفوظة؛ تحقق من حالتها ولا تبدأ طلبًا جديدًا.");
+      setError("");
+      let token: string;
+      let actorID: string;
+      try {
+        token = await getUsableIdentityAccessToken();
+        const identity = currentIdentityState();
+        if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("CLIENT_SESSION_REQUIRED");
+        actorID = identity.identity.subject.trim();
+      } catch {
+        setError("تعذر التحقق من جلسة العميل؛ لم يُرسل الطلب.");
+        return;
       }
-    } finally { setBusy(false); }
+      const request: CheckoutRequest = { cartId: state.cart.id, storeId, addressId: addressID, fulfillmentMode, internalBalanceAmountMinor, recipient: checkoutRecipient(recipient, !pickupMode), ...(promotionCode.trim() ? { promotionCode: promotionCode.trim().toUpperCase() } : {}) };
+      const storageKey = pendingCartCheckoutKey(actorID, storeId);
+      const attempt: PendingCartCheckoutAttempt = {
+        version: 1, actorID, storeID: storeId, cartID: state.cart.id, expectedCartVersion: state.cart.version,
+        idempotencyKey: `cart_checkout_${Crypto.randomUUID()}`, correlationID: `cart_checkout_corr_${Crypto.randomUUID()}`, request,
+      };
+      try {
+        await SecureStore.setItemAsync(storageKey, JSON.stringify(attempt));
+      } catch {
+        setError("تعذر حفظ محاولة الطلب بأمان؛ لم يُرسل الطلب.");
+        return;
+      }
+      setPendingCheckout(attempt);
+      try {
+        const result = await client().checkoutCart(token, request, attempt.expectedCartVersion, attempt.idempotencyKey, attempt.correlationID);
+        await finishCheckout(result.order, token, storageKey);
+      } catch (cause) {
+        console.error("DSH checkout failed", cause);
+        let existingOrder: Order | null = null;
+        try { existingOrder = await readOrderForCart(token, attempt.cartID); } catch { /* Preserve the attempt whenever canonical readback is unavailable. */ }
+        if (existingOrder) await finishCheckout(existingOrder, token, storageKey);
+        else if (definitiveCheckoutRejection(cause)) {
+          try { await SecureStore.deleteItemAsync(storageKey); } catch { /* A future entry still checks canonical orders before retrying. */ }
+          setPendingCheckout(null);
+          if (errorCode(cause) === "STALE_CHECKOUT") await refreshAfterConflict(cartMutationErrorMessage(cause));
+          else setError(cartMutationErrorMessage(cause));
+        } else {
+          setError("تعذر تأكيد نتيجة الطلب. بقيت محاولة واحدة محفوظة؛ تحقق من حالتها ولا تبدأ طلبًا جديدًا.");
+        }
+      }
+    } finally {
+      checkoutSubmitting.current = false;
+      setBusy(false);
+    }
   }
 
   const selectedAddress = addresses.find((address) => address.id === serviceableAddressId);
