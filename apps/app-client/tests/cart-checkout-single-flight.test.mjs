@@ -10,18 +10,24 @@ const source = fs.readFileSync(path.resolve(import.meta.dirname, "../src/feature
 const ast = ts.createSourceFile("cart-checkout.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 let checkoutNode;
 let quoteNode;
+let verifiedQuoteNode;
 function visit(node) {
   if (ts.isFunctionDeclaration(node) && node.name?.text === "checkout") checkoutNode = node;
   if (ts.isFunctionDeclaration(node) && node.name?.text === "quoteMatchesCheckout") quoteNode = node;
+  if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "verifiedQuote") verifiedQuoteNode = node;
   ts.forEachChild(node, visit);
 }
 visit(ast);
 assert.ok(checkoutNode, "checkout handler is required");
 assert.ok(quoteNode, "checkout quote identity guard is required");
+assert.ok(verifiedQuoteNode?.initializer, "visible checkout quote derivation is required");
 const compilerOptions = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None };
 const runnableQuote = ts.transpileModule(quoteNode.getText(ast), { compilerOptions }).outputText;
 const runnableHandler = ts.transpileModule(checkoutNode.getText(ast), { compilerOptions }).outputText;
 const quoteMatchesCheckout = vm.runInNewContext(`${runnableQuote}\nquoteMatchesCheckout`);
+const visibleQuoteExpression = verifiedQuoteNode.initializer.getText(ast);
+const runnableVisibleQuote = ts.transpileModule(`function readVisibleQuote(readyCart, quote, storeId, pickupMode, serviceableAddressId, fulfillmentMode, promotionCode) { return ${visibleQuoteExpression}; }`, { compilerOptions }).outputText;
+const readVisibleQuote = vm.runInNewContext(`${runnableQuote}\n${runnableVisibleQuote}\nreadVisibleQuote`);
 
 function scenario({ accessToken, persist, submit, recover } = {}) {
   const counts = { token: 0, persist: 0, submit: 0, generatedIds: 0, pending: [], busy: [], errors: [] };
@@ -151,4 +157,25 @@ test("quote guard rejects stale cart, store, address, fulfillment mode and promo
   context.quote = { kind: "ready", quote: withCoupon };
   await checkout();
   assert.equal(counts.submit, 1, "matching recalculated quote permits one checkout");
+});
+
+test("payment summary exposes only the quote matching the current checkout context", () => {
+  const { context } = scenario();
+  const derive = (quote, mode = context.fulfillmentMode, coupon = context.promotionCode) =>
+    readVisibleQuote(context.state.cart, { kind: "ready", quote }, context.storeId, mode === "CUSTOMER_PICKUP", undefined, mode, coupon);
+  const current = context.quote.quote;
+  assert.equal(derive(current), current);
+  for (const stale of [
+    { ...current, cartId: "other-cart" },
+    { ...current, storeId: "other-store" },
+    { ...current, cartVersion: 4 },
+    { ...current, addressId: "other-address" },
+    { ...current, fulfillmentMode: "PARTNER_CAPTAIN" },
+    { ...current, promotionCode: "OLD" },
+  ]) {
+    assert.equal(derive(stale), null);
+  }
+  assert.equal(derive(current, "CUSTOMER_PICKUP", "NEW"), null);
+  assert.equal(readVisibleQuote(context.state.cart, { kind: "loading" }, context.storeId, true, undefined, context.fulfillmentMode, ""), null);
+  assert.equal(readVisibleQuote(null, { kind: "ready", quote: current }, context.storeId, true, undefined, context.fulfillmentMode, ""), null);
 });
