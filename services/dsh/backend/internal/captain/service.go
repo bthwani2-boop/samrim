@@ -267,7 +267,11 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 	if err != nil {
 		return postgres.CaptainOfferResult{}, err
 	}
-	if offer.State != "offered" || !time.Now().UTC().Before(offer.ExpiresAt) {
+	reserveEligible, err := captainOfferAcceptancePreflight(offer, identity.Subject, expectedVersion, time.Now().UTC())
+	if err != nil {
+		return postgres.CaptainOfferResult{}, err
+	}
+	if !reserveEligible {
 		return postgres.RespondToCaptainOffer(ctx, s.db, offerID, identity.Subject, decision, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, strings.TrimSpace(correlationID))
 	}
 	order, err := postgres.ReadOrder(ctx, s.db, offer.OrderID)
@@ -294,6 +298,21 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 		}
 	}
 	return result, respondErr
+}
+
+// A Captain must own a current, actionable offer before any external COD reserve.
+// Terminal/expired offers continue through the canonical replay/expiry path.
+func captainOfferAcceptancePreflight(offer postgres.CaptainOffer, captainActorID string, expectedVersion int, now time.Time) (bool, error) {
+	if offer.CaptainActorID != captainActorID {
+		return false, postgres.ErrCaptainOfferForbidden
+	}
+	if offer.State != "offered" || !now.Before(offer.ExpiresAt) {
+		return false, nil
+	}
+	if offer.Version != expectedVersion {
+		return false, postgres.ErrCaptainVersionConflict
+	}
+	return true, nil
 }
 
 func (s *Service) ListAssignments(ctx context.Context, accessToken string, limit int) ([]postgres.CaptainAssignment, error) {
