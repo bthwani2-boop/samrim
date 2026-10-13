@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { partnerErrorMessage } from "../partners/partner-error-message";
 import { downloadRegistryCsv } from "../shared/registry-csv";
+import { useReadOnReturn } from "../shared/use-read-on-return";
+import { rememberJoiningQueueReturn } from "./joining-return-context";
 type QueueState = "" | JoiningCaseState;
 type QueueSort = "created_asc" | "created_desc";
 type QueueHistory = Readonly<{ joiningCaseCursors?: ReadonlyArray<string> }>;
@@ -55,6 +57,7 @@ export function JoiningCaseQueue() {
   const [notice, setNotice] = useState("");
   const [urlReady, setUrlReady] = useState(false);
   const requestSequence = useRef(0);
+  const activeRequest = useRef<AbortController | null>(null);
 
   const syncFromUrl = useCallback(() => {
     const params = new URLSearchParams(window.location.search);
@@ -98,6 +101,9 @@ export function JoiningCaseQueue() {
   }, []);
 
   const loadQueue = useCallback(async () => {
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
     const sequence = ++requestSequence.current;
     setBusy(true);
     setError("");
@@ -106,7 +112,7 @@ export function JoiningCaseQueue() {
       if (state) params.set("state", state);
       if (appliedQuery) params.set("q", appliedQuery);
       if (cursor) params.set("cursor", cursor);
-      const response = await fetch(`/api/partners/joining-cases?${params.toString()}`, { cache: "no-store" });
+      const response = await fetch(`/api/partners/joining-cases?${params.toString()}`, { cache: "no-store", signal: controller.signal });
       if (sequence !== requestSequence.current) return;
       if (response.status === 400 && cursor) {
         navigate(state, appliedQuery, sort);
@@ -118,9 +124,10 @@ export function JoiningCaseQueue() {
       if (sequence !== requestSequence.current) return;
       setCases(page.cases);
       setNextCursor(page.nextCursor ?? "");
-      setSelectedIds(new Set());
+      // A background read must not discard selections that still belong to this page.
+      setSelectedIds((current) => new Set(page.cases.filter((item) => current.has(item.id)).map((item) => item.id)));
     } catch (cause) {
-      if (sequence !== requestSequence.current) return;
+      if (sequence !== requestSequence.current || controller.signal.aborted) return;
       setError(cause instanceof Error ? cause.message : "تعذر قراءة طلبات الانضمام.");
       setCases([]);
       setNextCursor("");
@@ -130,7 +137,11 @@ export function JoiningCaseQueue() {
     }
   }, [appliedQuery, cursor, navigate, sort, state]);
 
-  useEffect(() => { if (urlReady) void loadQueue(); }, [loadQueue, urlReady]);
+  useEffect(() => {
+    if (urlReady) void loadQueue();
+    return () => { activeRequest.current?.abort(); };
+  }, [loadQueue, urlReady]);
+  useReadOnReturn(loadQueue, urlReady && !busy);
 
   function toggleSelected(caseId: string) {
     setSelectedIds((current) => {
@@ -152,15 +163,15 @@ export function JoiningCaseQueue() {
 
   return <section className="joining-case-queue" aria-label="طابور طلبات انضمام الشركاء">
     <div className="joining-case-queue-toolbar">
-      <label className="field-label" htmlFor="joining-case-state-filter">حالة الطلب<select id="joining-case-state-filter" value={state} onChange={(event) => navigate(event.target.value as QueueState, appliedQuery, sort)} disabled={busy}>{stateOptions.map((option) => <option key={option.value || "all"} value={option.value}>{option.label}</option>)}</select></label>
+      <label className="field-label" htmlFor="joining-case-state-filter">حالة الطلب<select id="joining-case-state-filter" value={state} onChange={(event) => navigate(event.target.value as QueueState, appliedQuery, sort)}>{stateOptions.map((option) => <option key={option.value || "all"} value={option.value}>{option.label}</option>)}</select></label>
       <search className="joining-case-queue-search" aria-label="البحث في طلبات الانضمام">
         <form noValidate onSubmit={(event) => { event.preventDefault(); navigate(state, query.trim().slice(0, 128), sort); }}>
           <label className="field-label" htmlFor="joining-case-search">ابحث عن طلب<input id="joining-case-search" type="search" value={query} maxLength={128} onChange={(event) => setQuery(event.target.value)} placeholder="اسم الشريك أو المتجر أو رقم الهاتف" /></label>
-          <button type="submit" className="button button-primary" disabled={busy}>بحث</button>
+          <button type="submit" className="button button-primary">بحث</button>
         </form>
       </search>
-      <label className="field-label" htmlFor="joining-case-sort">الترتيب<select id="joining-case-sort" value={sort} onChange={(event) => navigate(state, appliedQuery, event.target.value as QueueSort)} disabled={busy}><option value="created_asc">الأقدم أولًا</option><option value="created_desc">الأحدث أولًا</option></select></label>
-      <button type="button" className="button button-secondary joining-case-refresh" disabled={busy} onClick={() => void loadQueue()}>{busy ? "جارٍ التحديث…" : "تحديث"}</button>
+      <label className="field-label" htmlFor="joining-case-sort">الترتيب<select id="joining-case-sort" value={sort} onChange={(event) => navigate(state, appliedQuery, event.target.value as QueueSort)}><option value="created_asc">الأقدم أولًا</option><option value="created_desc">الأحدث أولًا</option></select></label>
+
     </div>
 
     {isFiltered ? <section className="partner-active-filters" aria-label="المرشحات النشطة">
@@ -191,11 +202,11 @@ export function JoiningCaseQueue() {
           </tr></thead>
           <tbody>{cases.map((item) => <tr key={item.id}>
             <td><input type="checkbox" aria-label={`تحديد طلب ${item.businessName}`} checked={selectedIds.has(item.id)} onChange={() => toggleSelected(item.id)} /></td>
-            <th scope="row"><div className="joining-case-row-main"><span>{item.businessName}</span><bdi dir="ltr">{item.contactPhoneE164}</bdi></div></th>
+            <th scope="row"><div className="joining-case-row-main"><span>{item.businessName}</span><a href={`tel:${item.contactPhoneE164}`} title={`اتصال بالشريك ${item.businessName}`}><bdi dir="ltr">{item.contactPhoneE164}</bdi></a></div></th>
             <td><div className="joining-case-row-main"><span>{item.firstStoreName || "متجر بدون اسم"}</span><small>{item.origin === "field" ? "عبر الميداني" : "عبر لوحة التحكم"}</small></div></td>
             <td><div className="joining-case-row-state"><span className={`joining-case-state-pill state-${item.state}`}>{joiningCaseStateLabel(item.state)}</span><small>{caseHint(item.state)}</small></div></td>
             <td><time dateTime={item.updatedAt}>{dateFormatter.format(new Date(item.updatedAt))}</time></td>
-            <td><Link className="partner-row-action joining-case-row-action" href={`/partners/${encodeURIComponent(item.id)}`}>{caseAction(item.state)}<span aria-hidden="true">←</span></Link></td>
+            <td><Link className="partner-row-action joining-case-row-action" href={`/partners/${encodeURIComponent(item.id)}`} onClick={() => rememberJoiningQueueReturn(item.id)}>{caseAction(item.state)}<span aria-hidden="true">←</span></Link></td>
           </tr>)}</tbody>
         </table>
       </div>

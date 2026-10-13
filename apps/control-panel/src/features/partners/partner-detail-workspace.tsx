@@ -10,6 +10,7 @@ import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { partnerErrorMessage } from "./partner-error-message";
 import { ActorLegalNameWorkspace } from "./actor-legal-name-workspace";
 import { StoreLogo } from "../stores/store-logo";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 type PartnerDetail = Readonly<{ partner: ActorRoleView; joiningCase: JoiningCaseView | null }>;
 type PartnerStoresPage = Readonly<{ stores: ReadonlyArray<PartnerManagedStore>; nextCursor?: string }>;
 type PartnerDetailTab = "profile" | "stores";
@@ -34,8 +35,8 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
   const [storesError, setStoresError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const loadDetail = useCallback(async (): Promise<boolean> => {
-    setLoading(true);
+  const loadDetail = useCallback(async (showLoading = true): Promise<boolean> => {
+    if (showLoading) setLoading(true);
     setError("");
     try {
       const response = await identityFetch(`/api/partners/roster/${encodeURIComponent(actorId)}`, { cache: "no-store" });
@@ -45,7 +46,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
     } catch (cause) {
       setError(partnerRequestError(cause, "تعذرت قراءة ملف الشريك."));
       return false;
-    } finally { setLoading(false); }
+    } finally { if (showLoading) setLoading(false); }
   }, [actorId]);
 
   const loadStores = useCallback(async (cursor = "", pageStack: ReadonlyArray<string> = []) => {
@@ -81,6 +82,12 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
       void loadStores(cursor);
     }
   }, [activeTab, loadStores]);
+
+  // Returning to a record silently refreshes its canonical state but never overwrites a pending reason.
+  useReadOnReturn(() => {
+    void loadDetail(false);
+    if (activeTab === "stores") void loadStores(new URLSearchParams(window.location.search).get("cursor") ?? "", storesPageStack);
+  }, !busy && !loading && !loadingStores && !reason.trim());
 
   function navigateTab(tab: PartnerDetailTab) {
     const params = new URLSearchParams(window.location.search);
@@ -241,8 +248,8 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
       <div className="partner-case-summary-main">
         <StoreLogo name={detail.joiningCase?.firstStoreName || "الشريك"} uri={detail.joiningCase?.storeProfileImage?.uri} />
         <div>
-          <h3>{detail.joiningCase?.ownerFullName || detail.joiningCase?.businessName || "حساب الشريك"}</h3>
-          <p><bdi dir="ltr">{detail.partner.phoneE164}</bdi> · {roleStatusLabel}</p>
+          <h3>{detail.joiningCase ? (detail.joiningCase.ownerFullName?.trim() || "اسم المالك غير مسجل") : "حساب الشريك"}</h3>
+          <p><a href={`tel:${detail.partner.phoneE164}`}><bdi dir="ltr">{detail.partner.phoneE164}</bdi></a> · {roleStatusLabel}</p>
           {detail.joiningCase ? <p>{detail.joiningCase.firstStoreName === detail.joiningCase.businessName ? "متجر الانضمام مرتبط بهذا الحساب" : `متجر الانضمام: ${detail.joiningCase.firstStoreName}`}</p> : <p>لا توجد حالة انضمام مرتبطة في القراءة الحالية.</p>}
         </div>
       </div>
@@ -264,7 +271,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
 
     {detail && activeTab === "profile" ? <div className="partner-profile-grid">
       <section className="partner-detail-section" aria-labelledby="partner-identity-title">
-        <div className="partner-detail-section-heading"><div><h2 id="partner-identity-title">الحساب والانضمام</h2></div><button type="button" className="button button-secondary" onClick={() => void loadDetail()} disabled={loading || busy}>إعادة القراءة</button></div>
+        <div className="partner-detail-section-heading"><div><h2 id="partner-identity-title">الحساب والانضمام</h2></div></div>
         <dl className="partner-detail-facts">
           <div><dt>الهاتف</dt><dd><bdi dir="ltr">{detail.partner.phoneE164}</bdi></dd></div>
           <div><dt>حالة الهوية</dt><dd>{detail.partner.securityEnabled ? "نشطة" : "موقوفة"}</dd></div>
@@ -283,7 +290,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
     </div> : null}
 
     {detail && activeTab === "stores" ? <section className="partner-detail-section" aria-labelledby="partner-stores-title">
-      <div className="partner-detail-section-heading"><div><h2 id="partner-stores-title">متاجر الشريك</h2></div><button type="button" className="button button-secondary" disabled={loadingStores} onClick={() => void loadStores(storesPageStack.length ? new URLSearchParams(window.location.search).get("cursor") ?? "" : "", storesPageStack)}>{loadingStores ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
+      <div className="partner-detail-section-heading"><div><h2 id="partner-stores-title">متاجر الشريك</h2></div></div>
       {storesError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت قراءة المتاجر</strong><p>{storesError}</p><button type="button" className="button button-secondary" onClick={() => void loadStores(new URLSearchParams(window.location.search).get("cursor") ?? "", storesPageStack)} disabled={loadingStores}>إعادة المحاولة</button></div> : null}
       {loadingStores && stores.length === 0 ? <div className="collection-state" role="status"><strong>جارٍ قراءة المتاجر </strong></div> : null}
       {!loadingStores && !storesError && stores.length === 0 ? <div className="collection-state"><strong>لا توجد متاجر مرتبطة بهذا الشريك</strong><p>هذه نتيجة القراءة الحالية .</p></div> : null}

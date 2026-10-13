@@ -5,9 +5,11 @@ import { type CommerceVertical, type CommercialStoreType, financialProfileStateL
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 import { partnerErrorMessage } from "../partners/partner-error-message";
 import { stablePartnerMutationHeaders } from "../partners/partner-request";
 import { StoreLogo } from "../stores/store-logo";
+import { readJoiningQueueReturn } from "./joining-return-context";
 
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
   { value: "BTHWANI_CAPTAIN", label: "توصيل بثواني", description: "المنصة تتولى إسناد التوصيل وإدارته." },
@@ -28,6 +30,8 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
   const { state: sessionState } = useSession();
   const canManageFinancialTerms = sessionState.kind === "authenticated" && sessionState.identity.permissions?.includes("finance") === true && sessionState.identity.permissions?.includes("platform_policies") === true;
   const [result, setResult] = useState<JoiningCaseResponse | null>(null);
+  const [backHref, setBackHref] = useState("/partners/joining");
+  useEffect(() => setBackHref(readJoiningQueueReturn(caseId)), [caseId]);
   const [proofDetails, setProofDetails] = useState<JoiningCaseProofDetailsResponse | null>(null);
   const [proofDetailsError, setProofDetailsError] = useState("");
   const [storeImageFile, setStoreImageFile] = useState<File | null>(null);
@@ -107,9 +111,14 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
   useEffect(() => {
     void readCase();
     void readOptions();
-    void readFinancialTermsPolicy();
-    void readProofDetails();
-  }, [readCase, readOptions, readFinancialTermsPolicy, readProofDetails]);
+  }, [readCase, readOptions]);
+
+  // Financial terms are only needed for approval or recovery, not for every draft visit.
+  const needsTerms = result?.case.state === "submitted" || (result?.case.state === "approved" && result?.case.financialProfileState === "REQUIRED");
+  useEffect(() => {
+    if (needsTerms) void readFinancialTermsPolicy();
+  }, [needsTerms, readFinancialTermsPolicy]);
+  useReadOnReturn(() => readCase(false), !busy && !correctionReason.trim() && !storeImageFile);
 
   const currentVerticalId = result?.case.firstStoreVerticalId ?? "";
   useEffect(() => {
@@ -284,7 +293,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <StoreLogo name={current.firstStoreName} uri={current.storeProfileImage?.uri} />
               <div>
                 <h3>{current.firstStoreName}</h3>
-                <p>{current.ownerFullName || current.businessName} · <bdi dir="ltr">{current.contactPhoneE164}</bdi></p>
+                <p>{current.ownerFullName?.trim() || "اسم المالك غير مسجل"} · <a href={`tel:${current.contactPhoneE164}`}><bdi dir="ltr">{current.contactPhoneE164}</bdi></a></p>
                 <p>{cityName} · {verticalName}</p>
               </div>
             </div>
@@ -295,7 +304,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <a className="button button-primary" href="#joining-case-actions">متابعة الإجراء</a>
             </div>
           </section>
-          <details className="partner-case-details">
+          <details className="partner-case-details" onToggle={(event) => { if (event.currentTarget.open && !proofDetails && !proofDetailsError) void readProofDetails(); }}>
             <summary>تفاصيل الانضمام والتوثيق</summary>
             <dl className="facts-grid">
               <div><dt>اسم المالك</dt><dd>{current.ownerFullName || "غير مسجل في هذه الحالة"}</dd></div>
@@ -306,10 +315,10 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>العنوان</dt><dd>{current.firstStoreAddress || "غير متاح في بيانات الحالة القديمة"}</dd></div>
               <div><dt>النشاط الرئيسي</dt><dd>{verticalName}</dd></div>
               <div><dt>نوع المتجر</dt><dd>{commercialTypeName}</dd></div>
-              <div><dt>موقع المتجر على الخريطة</dt><dd dir="ltr">{current.firstStoreLatitude != null && current.firstStoreLongitude != null ? `${current.firstStoreLatitude}, ${current.firstStoreLongitude}` : "غير متاح في بيانات الحالة القديمة"}</dd></div>
+              <div><dt>موقع المتجر على الخريطة</dt><dd>{current.firstStoreLatitude != null && current.firstStoreLongitude != null ? <a href={`https://www.google.com/maps?q=${current.firstStoreLatitude},${current.firstStoreLongitude}`} target="_blank" rel="noopener noreferrer">فتح موقع المتجر على الخريطة</a> : "غير متاح في بيانات الحالة القديمة"}</dd></div>
               <div><dt>ساعات العمل</dt><dd>{current.firstStoreWorkingHours ? current.firstStoreWorkingHours.intervals.length > 0 ? <ul>{current.firstStoreWorkingHours.intervals.map((interval) => <li key={`${interval.dayOfWeek}-${interval.opensAt}-${interval.closesAt}`}>{weekdays[interval.dayOfWeek - 1] ?? `اليوم ${interval.dayOfWeek}`}: {interval.opensAt}–{interval.closesAt}{interval.closesNextDay ? " (اليوم التالي)" : ""}</li>)}</ul> : "لا توجد فترات عمل مسجلة" : "غير متاحة في بيانات الحالة القديمة"}</dd></div>
               <div><dt>نوع الإثبات</dt><dd>{current.firstStoreProofType ? proofTypeLabels[current.firstStoreProofType] ?? "وثيقة نشاط" : "غير متاح في بيانات الحالة القديمة"}</dd></div>
-              <div><dt>رقم الإثبات</dt><dd>{proofDetails?.proofNumber ?? (proofDetailsError || "جارٍ قراءة الرقم من السجل الخاص…")}</dd></div>
+              <div><dt>رقم الإثبات</dt><dd>{proofDetails?.proofNumber ?? (proofDetailsError ? <>{proofDetailsError} <button className="button button-quiet" type="button" onClick={() => void readProofDetails()}>إعادة المحاولة</button></> : "جارٍ قراءة بيانات الإثبات عند فتح التفاصيل…")}</dd></div>
               <div><dt>طريقة التوصيل</dt><dd>{current.firstStoreFulfillmentModes.map((mode) => fulfillmentModeOptions.find((option) => option.value === mode)?.label ?? mode).join("، ") || "غير متاحة في بيانات الحالة القديمة"}</dd></div>
               <div><dt>ملاحظات</dt><dd>{current.firstStoreNotes === undefined ? "غير متاحة في بيانات الحالة القديمة" : current.firstStoreNotes?.trim() || "لا توجد ملاحظات"}</dd></div>
               <div><dt>مصدر الحالة</dt><dd>{current.origin === "field" ? "تطبيق الميداني" : "لوحة التحكم"}</dd></div>
@@ -357,7 +366,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
         </>
       )}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
-      <div className="button-row"><Link className="button button-secondary" href="/partners/joining">العودة إلى طلبات الانضمام</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readCase()}>إعادة قراءة الحالة</button></div>
+      <div className="button-row"><Link className="button button-secondary" href={backHref}>العودة إلى طلبات الانضمام</Link></div>
     </section>
   );
 }
