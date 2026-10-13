@@ -19,6 +19,9 @@ WLT owns payment intent, customer payment allocation, collection state, Order-ad
 - payment method/source is independent from fulfillment mode;
 - customer funding allocation currently composes admitted WLT internal balance and/or cash semantics; external provider account balance is never directly authoritative at checkout;
 - original financial confirmation remains attributable to the original Order snapshot; an approved DSH OrderAdjustment causes a new WLT delta/reversal/additional-treatment fact rather than rewriting prior ledger movement;
+- before collection, an accepted OrderAdjustment may create one unresolved WLT reconciliation case linked to the still-uncollected payment; this is a durable handoff, not authority to alter the original payable amount, collect more money, refund, or credit a wallet. The order remains blocked from an incompatible fulfillment transition until an authorized pre-collection repricing/cancellation treatment is implemented and confirmed from WLT;
+- after collection, an accepted OrderAdjustment may create one unresolved case, but a refund or reversal is authorized only by separately verified collected facts, approved financial policy, and an idempotent balanced ledger treatment;
+- cancelled payment intents are not eligible for new OrderAdjustment reconciliation cases;
 - duplicate/retried OrderAdjustment identity cannot create a duplicate financial effect;
 - where a substitute/actual measure would require more value than the already authorized amount, WLT determines the legal additional financial treatment; DSH/Partner cannot assume extra collection authority;
 - for `CUSTOMER_PICKUP` paid with cash at the Store, the Store receives and retains the customer's sale proceeds; WLT records the Order-bound collection and the versioned commission receivable owed by the responsible Partner;

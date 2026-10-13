@@ -65,9 +65,9 @@ func TestOrderAdjustmentReconciliationPersistsWithoutMovingMoney(t *testing.T) {
 		t.Fatalf("only canonical customer can request a reconciliation case: %v", err)
 	}
 
-	// The same customer and allocation must not create a post-collection
-	// reconciliation when no payment has actually been collected. Restore the
-	// synthetic fixture before the successful/concurrent assertions below.
+	// Cancelled payments are not eligible for reconciliation, even if the
+	// original allocation and customer identity match. Restore the isolated
+	// collected fixture before the concurrent-case assertions below.
 	var amount sql.NullInt64
 	var collectedBy, collectionReference sql.NullString
 	var collectedAt sql.NullTime
@@ -79,18 +79,18 @@ func TestOrderAdjustmentReconciliationPersistsWithoutMovingMoney(t *testing.T) {
 		t.Fatal("collected fixture lacks the canonical collection facts")
 	}
 	if _, err := s.db.ExecContext(s.ctx, `UPDATE wlt.payment_intents
-		SET state='REQUIRES_COLLECTION',collected_amount_minor=NULL,collected_by_actor_id=NULL,collection_reference=NULL,collected_at=NULL
+		SET state='CANCELLED',collected_amount_minor=NULL,collected_by_actor_id=NULL,collection_reference=NULL,collected_at=NULL
 		WHERE id=$1`, intentID); err != nil {
 		t.Fatalf("prepare isolated uncollected payment: %v", err)
 	}
-	uncollected := input
-	uncollected.IdempotencyKey += "-not-collected"
-	if _, _, err := RecordOrderAdjustmentReconciliationCase(s.ctx, s.db, uncollected); !errors.Is(err, ErrOrderAdjustmentReconciliationConflict) {
-		t.Fatalf("uncollected payment must not create a financial reconciliation case: %v", err)
+	cancelled := input
+	cancelled.IdempotencyKey += "-cancelled"
+	if _, _, err := RecordOrderAdjustmentReconciliationCase(s.ctx, s.db, cancelled); !errors.Is(err, ErrOrderAdjustmentReconciliationConflict) {
+		t.Fatalf("cancelled payment must not create a financial reconciliation case: %v", err)
 	}
 	var beforeCollectCount int
 	if err := s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.order_adjustment_reconciliation_cases WHERE order_id=$1", orderID).Scan(&beforeCollectCount); err != nil || beforeCollectCount != 0 {
-		t.Fatalf("uncollected request persisted a reconciliation case: count=%d err=%v", beforeCollectCount, err)
+		t.Fatalf("cancelled payment request persisted a reconciliation case: count=%d err=%v", beforeCollectCount, err)
 	}
 	if _, err := s.db.ExecContext(s.ctx, `UPDATE wlt.payment_intents
 		SET state='COLLECTED',collected_amount_minor=$2,collected_by_actor_id=$3,collection_reference=$4,collected_at=$5
@@ -173,5 +173,56 @@ func TestOrderAdjustmentReconciliationPersistsWithoutMovingMoney(t *testing.T) {
 	}
 	if ledgerAfter != ledgerBefore || walletAfter != walletBefore {
 		t.Fatal(fmt.Sprintf("an unresolved adjustment created money: ledger entries %d -> %d, customer wallet %d -> %d", ledgerBefore, ledgerAfter, walletBefore, walletAfter))
+	}
+}
+
+// Before collection the handoff must acknowledge an unresolved operational
+// adjustment without cancelling an unpaid intent, charging, or crediting anyone.
+// Collection and financial reconciliation remain separate authorized actions.
+func TestOrderAdjustmentBeforeCollectionRemainsUnfunded(t *testing.T) {
+	s := newFieldAcquisitionScenario(t)
+	_, _, store, _, _, _, _, _, _ := setupPartnerFinanceProof(t, s, false)
+	var orderID, intentID, customerID string
+	if err := s.db.QueryRowContext(s.ctx, `SELECT a.order_id,a.payment_intent_id,p.payer_actor_id
+		FROM wlt.customer_payment_allocations a
+		JOIN wlt.payment_intents p ON p.id=a.payment_intent_id
+		WHERE a.store_id=$1`, store).Scan(&orderID, &intentID, &customerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(s.ctx, `UPDATE wlt.payment_intents
+		SET state='REQUIRES_COLLECTION',collected_amount_minor=NULL,collected_by_actor_id=NULL,collection_reference=NULL,collected_at=NULL
+		WHERE id=$1`, intentID); err != nil {
+		t.Fatal(err)
+	}
+	var before int64
+	if err := s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.ledger_entries").Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	input := OrderAdjustmentReconciliationCaseInput{
+		OrderID: orderID, AdjustmentID: "precollection-" + s.suffix, PaymentIntentID: intentID,
+		AdjustmentKind: "REMOVE_ITEM", RequestedByActor: customerID,
+		CustomerActorID: customerID, ActingActorID: customerID,
+		IdempotencyKey: "precollection-key-" + s.suffix, CorrelationID: "precollection-correlation-" + s.suffix,
+	}
+	got, replayed, err := RecordOrderAdjustmentReconciliationCase(s.ctx, s.db, input)
+	if err != nil || replayed || got.State != "RECONCILIATION_REQUIRED" ||
+		got.ReasonCode != "ORDER_ADJUSTMENT_FINANCIAL_POLICY_REQUIRED" {
+		t.Fatalf("precollection must open a single unresolved case, not refuse the handoff: %+v replay=%t err=%v", got, replayed, err)
+	}
+	again, replayed, err := RecordOrderAdjustmentReconciliationCase(s.ctx, s.db, input)
+	if err != nil || !replayed || again.ID != got.ID {
+		t.Fatalf("precollection replay created another case: %+v err=%v", again, err)
+	}
+	var after int64
+	if err := s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.ledger_entries").Scan(&after); err != nil || after != before {
+		t.Fatalf("precollection created financial movement: before=%d after=%d err=%v", before, after, err)
+	}
+	var state string
+	if err := s.db.QueryRowContext(s.ctx, "SELECT state FROM wlt.payment_intents WHERE id=$1", intentID).Scan(&state); err != nil || state != "REQUIRES_COLLECTION" {
+		t.Fatalf("precollection changed unpaid payment state: %q err=%v", state, err)
+	}
+	visible, err := ListOrderAdjustmentReconciliationCases(s.ctx, s.db, orderID, customerID)
+	if err != nil || len(visible) != 1 || visible[0].ID != got.ID {
+		t.Fatalf("precollection case not visible canonically: %+v err=%v", visible, err)
 	}
 }

@@ -138,10 +138,13 @@ func RecordOrderAdjustmentReconciliationCase(ctx context.Context, db *sql.DB, in
 		}
 		return OrderAdjustmentReconciliationCase{}, false, err
 	}
-	// Never open a post-collection reconciliation case for money that was
-	// never collected. Hold the payment row lock through case insertion
-	// so collection and adjustment cannot race this financial decision.
-	if allocatedOrderID != input.OrderID || payerActorID != input.CustomerActorID || paymentState != domain.StateCollected {
+	// An accepted pre-collection adjustment must remain unresolved without
+	// inventing a refund or changing the original payment amount. A collected
+	// adjustment is also unresolved until an authorized financial delta exists.
+	// Lock the canonical payment through insertion to classify its source
+	// consistently with concurrent collection/cancellation.
+	if allocatedOrderID != input.OrderID || payerActorID != input.CustomerActorID ||
+		(paymentState != domain.StateCollected && paymentState != domain.StateRequiresCollect) {
 		return OrderAdjustmentReconciliationCase{}, false, ErrOrderAdjustmentReconciliationConflict
 	}
 	id, err := newID("order_adjustment_case")
