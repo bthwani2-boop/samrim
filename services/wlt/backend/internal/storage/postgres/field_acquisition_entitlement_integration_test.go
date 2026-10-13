@@ -44,6 +44,10 @@ func TestFieldAcquisitionEntitlementPostgresLifecycle(t *testing.T) {
 }
 
 func newFieldAcquisitionScenario(t *testing.T) *fieldAcquisitionScenario {
+	return newFieldAcquisitionScenarioWithTimeout(t, 45*time.Second)
+}
+
+func newFieldAcquisitionScenarioWithTimeout(t *testing.T, timeout time.Duration) *fieldAcquisitionScenario {
 	t.Helper()
 	databaseURL := strings.TrimSpace(os.Getenv("WLT_TEST_DATABASE_URL"))
 	if databaseURL == "" {
@@ -62,7 +66,7 @@ func newFieldAcquisitionScenario(t *testing.T) *fieldAcquisitionScenario {
 			t.Errorf("close WLT test database: %v", err)
 		}
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	t.Cleanup(cancel)
 	if err := db.PingContext(ctx); err != nil {
 		t.Fatalf("connect WLT test database: %v", err)
