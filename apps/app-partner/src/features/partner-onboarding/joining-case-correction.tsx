@@ -116,6 +116,8 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmResubmit, setConfirmResubmit] = useState(false);
+  const verticalOptionsReadSequence = useRef(0);
+  const commercialTypeReadSequence = useRef(0);
   const preserveCorrectionDraftAtVersion = useRef<number | null>(null);
 
   useEffect(() => {
@@ -140,39 +142,54 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
   }, [current.businessName, current.firstStoreAddress, current.firstStoreCommercialTypeId, current.firstStoreFulfillmentModes, current.firstStoreLatitude, current.firstStoreLongitude, current.firstStoreName, current.firstStoreNotes, current.firstStoreProofType, current.firstStoreVerticalId, current.firstStoreWorkingHours, current.ownerFullName, current.serviceCityId, current.version]);
 
   const loadOptions = useCallback(async () => {
+    const sequence = ++verticalOptionsReadSequence.current;
     setOptionsLoading(true);
     setOptionsError(false);
+    setVerticals([]);
     try {
-      setVerticals(await listCatalogVerticals());
+      const items = await listCatalogVerticals();
+      if (sequence === verticalOptionsReadSequence.current) setVerticals(items);
     } catch (cause) {
       console.warn("DSH Partner correction options read failed", cause);
-      setVerticals([]);
-      setOptionsError(true);
+      if (sequence === verticalOptionsReadSequence.current) setOptionsError(true);
     } finally {
-      setOptionsLoading(false);
+      if (sequence === verticalOptionsReadSequence.current) setOptionsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (current.state === "needs_correction") void loadOptions();
+    return () => { verticalOptionsReadSequence.current += 1; };
   }, [current.state, loadOptions]);
 
-  useEffect(() => {
+  const loadCommercialTypes = useCallback(async (selectedVertical: string) => {
+    const sequence = ++commercialTypeReadSequence.current;
     setCommercialTypes([]);
-    if (current.firstStoreVerticalId !== verticalId) setCommercialTypeId("");
     setCommercialTypesError(false);
-    if (!verticalId || current.state !== "needs_correction") return;
-    let active = true;
+    if (!selectedVertical) {
+      setCommercialTypesLoading(false);
+      return;
+    }
     setCommercialTypesLoading(true);
-    void listCommercialStoreTypes(verticalId)
-      .then((items) => { if (active) setCommercialTypes(items.filter((item) => item.active)); })
-      .catch((cause) => {
-        console.warn("DSH Partner commercial store type read failed", cause);
-        if (active) setCommercialTypesError(true);
-      })
-      .finally(() => { if (active) setCommercialTypesLoading(false); });
-    return () => { active = false; };
-  }, [current.firstStoreVerticalId, current.state, verticalId]);
+    try {
+      const items = await listCommercialStoreTypes(selectedVertical);
+      if (sequence === commercialTypeReadSequence.current) {
+        setCommercialTypes(items.filter((item) => item.active));
+      }
+    } catch (cause) {
+      console.warn("DSH Partner commercial store type read failed", cause);
+      if (sequence === commercialTypeReadSequence.current) setCommercialTypesError(true);
+    } finally {
+      if (sequence === commercialTypeReadSequence.current) setCommercialTypesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (current.firstStoreVerticalId !== verticalId) setCommercialTypeId("");
+    if (current.state === "needs_correction") void loadCommercialTypes(verticalId);
+    else void loadCommercialTypes("");
+    return () => { commercialTypeReadSequence.current += 1; };
+  }, [current.firstStoreVerticalId, current.state, verticalId, loadCommercialTypes]);
 
   if (current.state !== "needs_correction") return null;
   const latitudeValue = parseCoordinate(latitude);
@@ -309,7 +326,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       <View style={styles.cityList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} disabled={busy} label={vertical.nameAr} onPress={() => { setVerticalId(vertical.id); setCommercialTypeId(""); }} selected={verticalId === vertical.id} />)}</View>
       <Text style={styles.label}>نوع المتجر التجاري</Text>
       {commercialTypesLoading ? <Text style={styles.muted}>جارٍ قراءة أنواع المتاجر لهذا النشاط التجاري…</Text> : null}
-      {commercialTypesError ? <View style={styles.optionError}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة أنواع المتاجر.</Text><BthwaniButton label="إعادة قراءة الأنواع" onPress={() => { const selectedVertical = verticalId; if (selectedVertical) { setCommercialTypesError(false); setCommercialTypesLoading(true); void listCommercialStoreTypes(selectedVertical).then((items) => setCommercialTypes(items.filter((item) => item.active))).catch(() => setCommercialTypesError(true)).finally(() => setCommercialTypesLoading(false)); } }} variant="secondary" /></View> : null}
+      {commercialTypesError ? <View style={styles.optionError}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة أنواع المتاجر.</Text><BthwaniButton label="إعادة قراءة الأنواع" disabled={busy || !verticalId} onPress={() => void loadCommercialTypes(verticalId)} variant="secondary" /></View> : null}
       {!commercialTypesLoading && !commercialTypesError && verticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذا النشاط التجاري. اطلب من المشغّل إعداد النوع التجاري.</Text> : null}
       <View style={styles.cityList}>{commercialTypes.map((item) => <BthwaniChip key={item.id} disabled={busy} label={item.nameAr} onPress={() => setCommercialTypeId(item.id)} selected={commercialTypeId === item.id} />)}</View>
       <View style={styles.scheduleBox}>
