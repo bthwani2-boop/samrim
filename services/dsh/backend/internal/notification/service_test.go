@@ -39,7 +39,7 @@ func TestStorePickupNotificationCopyIsSpecificToEachActor(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.eventType+"/"+test.role, func(t *testing.T) {
-			kind, title, body := message(test.eventType, test.role, "order-123")
+			kind, title, body := message(test.eventType, test.role, "order-123", "")
 			if kind != test.kind || title != test.title || body != test.body {
 				t.Fatalf("message(%q, %q) = (%q, %q, %q), want (%q, %q, %q)", test.eventType, test.role, kind, title, body, test.kind, test.title, test.body)
 			}
@@ -58,7 +58,7 @@ func TestStoreGoLiveNotificationCopyIsSpecificToEachRecipient(t *testing.T) {
 		{"field_mission_completed", "field", "FIELD_MISSION_COMPLETED", "اكتملت مهمة المتابعة"},
 	}
 	for _, test := range tests {
-		kind, title, body := message(test.eventType, test.role, "")
+		kind, title, body := message(test.eventType, test.role, "", "")
 		if kind != test.kind || title != test.title || body == "" {
 			t.Fatalf("message(%q, %q) = (%q, %q, %q)", test.eventType, test.role, kind, title, body)
 		}
@@ -70,5 +70,25 @@ func TestPresentCarriesJoiningCaseAndStoreReferences(t *testing.T) {
 	view := present(event, "field")
 	if view.JoiningCaseID != "case-17" || view.StoreID != "store-9" {
 		t.Fatalf("present dropped notification destination references: %+v", view)
+	}
+}
+
+func TestCaptainReassignmentNotificationDistinguishesRevokedFromNewOffer(t *testing.T) {
+	const orderID = "order-123"
+	previous := present(postgres.NotificationEvent{
+		EventType: "captain_assignment_reassigned",
+		OrderID:   orderID,
+		ToState:   "reassigned",
+	}, "captain")
+	if previous.Kind != "REASSIGNED" || previous.Title != "تم سحب إسناد التوصيل" {
+		t.Fatalf("previous captain must be told assignment was removed, got %+v", previous)
+	}
+	next := present(postgres.NotificationEvent{
+		EventType: "captain_assignment_reassigned",
+		OrderID:   orderID,
+		ToState:   "offered",
+	}, "captain")
+	if next.Kind != "CAPTAIN_OFFER" || next.Title != "طلب توصيل جديد" {
+		t.Fatalf("new captain must receive an offer, got %+v", next)
 	}
 }
