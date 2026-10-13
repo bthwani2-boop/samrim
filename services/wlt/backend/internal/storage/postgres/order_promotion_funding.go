@@ -74,7 +74,7 @@ func freezeOrderPromotionFundingTx(ctx context.Context, tx *sql.Tx, orderID, pay
 	case "SHARED":
 		// Integer floor split, server-owned and deterministic; the platform
 		// absorbs the fractional remainder up to the full discount.
-		partnerFunded = input.DiscountMinor * int64(*input.PartnerSharePercent) / 100
+		partnerFunded = sharedPromotionPartnerAmount(input.DiscountMinor, *input.PartnerSharePercent)
 		bthwaniFunded = input.DiscountMinor - partnerFunded
 	}
 	id, err := newID("promo-funding")
@@ -86,6 +86,13 @@ func freezeOrderPromotionFundingTx(ctx context.Context, tx *sql.Tx, orderID, pay
 		return fmt.Errorf("freeze order promotion funding: %w", err)
 	}
 	return nil
+}
+
+// sharedPromotionPartnerAmount calculates floor(discount * share / 100)
+// without overflowing int64 for valid positive discounts and shares 1..99.
+func sharedPromotionPartnerAmount(discountMinor int64, sharePercent int) int64 {
+	share := int64(sharePercent)
+	return (discountMinor/100)*share + (discountMinor%100)*share/100
 }
 
 // readOrderPromotionFunding returns the frozen funding truth for an order; the

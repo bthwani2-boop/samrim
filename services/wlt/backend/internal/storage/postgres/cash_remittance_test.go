@@ -11,6 +11,7 @@ import (
 
 func TestCashLiabilityQueryIsScopedToCOD(t *testing.T) {
 	query, args := cashLiabilityQuery("", 100)
+	allCaptainsQuery := query
 	if !strings.Contains(query, "p.method=$1") {
 		t.Fatal("cash custody query must filter by payment method")
 	}
@@ -24,6 +25,15 @@ func TestCashLiabilityQueryIsScopedToCOD(t *testing.T) {
 	}
 	if len(args) != 3 || args[0] != domain.MethodCashOnDelivery || args[1] != "captain-1" || args[2] != 25 {
 		t.Fatalf("unexpected captain cash custody parameters: %#v", args)
+	}
+	// The captain receives a capped list, but the displayed outstanding cash
+	// must account for every eligible COD collection, not just the first page.
+	for _, query := range []string{allCaptainsQuery, query} {
+		if !strings.Contains(query, "SUM(p.amount_minor) OVER()") ||
+			!strings.Contains(query, "COUNT(*) OVER()") ||
+			!strings.Contains(query, "ORDER BY p.collected_at ASC, p.id ASC LIMIT") {
+			t.Fatalf("cash liability summary must precede the list limit: %s", query)
+		}
 	}
 }
 

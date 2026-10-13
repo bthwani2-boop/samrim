@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 var (
 	ErrFundingIntentNotFound          = errors.New("cash-in funding intent was not found")
 	ErrFundingIntentState             = errors.New("cash-in funding intent does not allow this result")
+	ErrFundingProviderReferenceUsed   = errors.New("cash-in provider transaction reference is already settled")
 	ErrFundingUnavailable             = errors.New("cash-in is unavailable because no approved provider rail is configured")
 	ErrFundingActor                   = errors.New("actor is not admitted for cash-in")
 	ErrCustomerWalletBalanceInvariant = errors.New("customer wallet holds exceed its ledger balance")
@@ -245,6 +248,14 @@ func ApplyCashInFundingResult(ctx context.Context, db *sql.DB, input ApplyCashIn
 		}
 		_, err = tx.ExecContext(ctx, `UPDATE wlt.cash_in_funding_intents SET state='SETTLED',provider_transaction_reference=$2,ledger_transaction_id=$3,version=version+1,updated_at=clock_timestamp() WHERE id=$1`, item.ID, input.ProviderTransactionReference, ledgerID)
 		if err != nil {
+			// The unique(provider_key,provider_transaction_reference) constraint is
+			// the concurrency-safe arbiter across distinct funding intents.
+			// This returns a business conflict rather than leaking SQL 23505
+			// as HTTP 500. Deferred rollback removes both ledger lines.
+			var pgErr *pq.Error
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.Constraint == "cash_in_funding_intents_provider_ref_uq" {
+				return CashInFundingIntentRecord{}, false, ErrFundingProviderReferenceUsed
+			}
 			return CashInFundingIntentRecord{}, false, err
 		}
 	} else if input.Outcome != "DELAYED" {

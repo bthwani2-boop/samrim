@@ -35,8 +35,14 @@ func readPartnerStoreFinance(ctx context.Context, tx *sql.Tx, partnerActorID str
 		SELECT store_id,SUM(partner_net_minor-commission_receivable_offset_minor) earned,SUM(commission_minor) commission,COUNT(*) orders
 		FROM wlt.partner_order_earnings WHERE partner_actor_id=$1 GROUP BY store_id
 	), cash AS (
-		SELECT a.store_id,SUM(c.commission_minor) commission,COUNT(*) orders
+		SELECT a.store_id,SUM(COALESCE(wallet.earned,0)) earned,SUM(c.commission_minor) commission,COUNT(*) orders
 		FROM wlt.partner_store_cash_commissions c JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=c.payment_intent_id
+		LEFT JOIN LATERAL (
+			SELECT COALESCE(SUM(le.amount_minor),0) earned FROM wlt.ledger_entries le
+			WHERE le.transaction_id=c.ledger_transaction_id
+			AND le.account_code='PARTNER_WALLET' AND le.direction='CREDIT'
+			AND le.actor_type='partner' AND le.actor_id=c.partner_actor_id
+		) wallet ON true
 		WHERE c.partner_actor_id=$1 GROUP BY a.store_id
 	), consumed AS (
 		SELECT a.store_id,SUM(a.amount_minor) FILTER (WHERE p.status <> 'COMPLETED') held,
@@ -48,7 +54,7 @@ func readPartnerStoreFinance(ctx context.Context, tx *sql.Tx, partnerActorID str
 		UNION SELECT store_id FROM wlt.store_payout_recipient_assignments WHERE partner_actor_id=$1
 		UNION SELECT unnest($2::text[])
 	)
-	SELECT s.store_id,COALESCE(e.earned,0),COALESCE(e.commission,0)+COALESCE(c.commission,0),COALESCE(e.orders,0)+COALESCE(c.orders,0),
+	SELECT s.store_id,COALESCE(e.earned,0)+COALESCE(c.earned,0),COALESCE(e.commission,0)+COALESCE(c.commission,0),COALESCE(e.orders,0)+COALESCE(c.orders,0),
 		COALESCE(u.held,0),COALESCE(u.settled,0),COALESCE(r.state,'DEFAULT_OWNER'),
 		CASE WHEN r.state='SELECTED_VERIFIED_STAFF' THEN r.beneficiary_actor_id ELSE $1 END,COALESCE(r.version,0),
 		COALESCE(r.state,'DEFAULT_OWNER') <> 'RECIPIENT_REVIEW_REQUIRED' AND EXISTS (

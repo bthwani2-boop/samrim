@@ -164,7 +164,8 @@ func cashLiabilityRegistryQuery(filter string, filterArgs []any, sort string, af
 
 func cashLiabilityQuery(captainActorID string, limit int) (string, []any) {
 	query := `
-		SELECT p.id, p.external_reference, p.collected_by_actor_id, p.amount_minor, p.currency, p.version, p.collected_at, COALESCE(r.state,'OPEN'), COALESCE(r.remittance_reference,''), COALESCE(r.id,'')
+		SELECT p.id, p.external_reference, p.collected_by_actor_id, p.amount_minor, p.currency, p.version, p.collected_at, COALESCE(r.state,'OPEN'), COALESCE(r.remittance_reference,''), COALESCE(r.id,''),
+			SUM(p.amount_minor) OVER(), COUNT(*) OVER()
 		FROM wlt.payment_intents p
 		LEFT JOIN wlt.cash_remittances r ON r.payment_intent_id = p.id
 		WHERE p.state='COLLECTED' AND p.method=$1 AND (r.id IS NULL OR r.state='SUBMITTED')`
@@ -185,15 +186,15 @@ func listCashLiability(ctx context.Context, db *sql.DB, captainActorID string, l
 		return CashLiabilityList{}, fmt.Errorf("list cash liability: %w", err)
 	}
 	defer rows.Close()
-	result := CashLiabilityList{Items: make([]CashLiability, 0)}
+	result := CashLiabilityList{Items: make([]CashLiability, 0, limit)}
 	for rows.Next() {
 		var item CashLiability
-		if err := rows.Scan(&item.PaymentIntentID, &item.ExternalReference, &item.CaptainActorID, &item.AmountMinor, &item.Currency, &item.PaymentVersion, &item.CollectedAt, &item.RemittanceState, &item.RemittanceReference, &item.RemittanceID); err != nil {
+		if err := rows.Scan(&item.PaymentIntentID, &item.ExternalReference, &item.CaptainActorID, &item.AmountMinor, &item.Currency, &item.PaymentVersion, &item.CollectedAt, &item.RemittanceState, &item.RemittanceReference, &item.RemittanceID, &result.TotalAmountMinor, &result.TotalItems); err != nil {
 			return CashLiabilityList{}, fmt.Errorf("scan cash liability: %w", err)
 		}
 		result.Items = append(result.Items, item)
-		result.TotalAmountMinor += item.AmountMinor
 	}
+	result.HasMore = result.TotalItems > len(result.Items)
 	if err := rows.Err(); err != nil {
 		return CashLiabilityList{}, fmt.Errorf("iterate cash liability: %w", err)
 	}
