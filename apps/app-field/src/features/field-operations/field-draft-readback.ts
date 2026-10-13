@@ -1,4 +1,4 @@
-import type { CreateFieldJoiningCaseDraftRequest, JoiningCaseView, StoreWorkingHoursInterval } from "@bthwani/dsh";
+import type { CreateFieldJoiningCaseDraftRequest, JoiningCaseResponse, JoiningCaseView, StoreWorkingHoursInterval } from "@bthwani/dsh";
 
 function matchesDraftText(expected: string | undefined, actual: string | null | undefined): boolean {
   return (expected ?? "").trim() === (actual ?? "").trim();
@@ -74,4 +74,34 @@ export function fieldDraftMediaUploadConfirmed(
   // Missing evidence or another stored image cannot confirm this particular upload.
   if (!submittedImage?.uri || !savedImage?.uri || !submittedImage.contentSha256 || !savedImage.contentSha256) return false;
   return submittedImage.uri === savedImage.uri && submittedImage.contentSha256 === savedImage.contentSha256;
+}
+
+type FieldSubmitReadback =
+  | Readonly<{ kind: "confirmed"; canonical: JoiningCaseResponse }>
+  | Readonly<{ kind: "draft"; canonical: JoiningCaseResponse }>
+  | Readonly<{ kind: "unconfirmed" }>;
+
+// A lost HTTP response is not permission to send another mutation: DSH may
+// have committed the submission already. Recover from the canonical case
+// before rendering success or advising a retry from the existing case list.
+export async function submitFieldCaseWithReadback(
+  caseID: string,
+  submit: () => Promise<unknown>,
+  read: () => Promise<JoiningCaseResponse>,
+  isUncertain: (cause: unknown) => boolean,
+): Promise<FieldSubmitReadback> {
+  try {
+    await submit();
+  } catch (cause) {
+    if (!isUncertain(cause)) throw cause;
+    console.warn("DSH Field submission response uncertain", cause);
+  }
+  try {
+    const canonical = await read();
+    if (canonical.case.id !== caseID || canonical.case.origin !== "field") return { kind: "unconfirmed" };
+    return canonical.case.state === "draft" ? { kind: "draft", canonical } : { kind: "confirmed", canonical };
+  } catch (cause) {
+    console.warn("DSH Field submission readback unavailable", cause);
+    return { kind: "unconfirmed" };
+  }
 }

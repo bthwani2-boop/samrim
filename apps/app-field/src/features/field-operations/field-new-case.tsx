@@ -10,7 +10,7 @@ import { ActivityIndicator, Image, Keyboard, ScrollView, Text, TextInput, useWin
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
-import { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain } from "./field-draft-readback";
+import { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain, submitFieldCaseWithReadback } from "./field-draft-readback";
 import { fieldAdmissionActionability } from "./field-eligibility";
 import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
 import { getFieldJoiningRequirements } from "./field-joining-readiness";
@@ -436,13 +436,23 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
           setError(`حُفظت المسودة. أكمل فقط: ${missingLabels.join("، ")} ثم أرسلها للمراجعة.`);
           return;
         }
-        const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, "field-submit:" + latest.case.id + ":" + latest.case.version);
-        await fieldClient().submitFieldJoiningCase(token, latest.case.id, latest.case.version, "field_submit_" + digest, "field_submit_corr_" + digest);
-        const submitted = await fieldClient().readOwnFieldJoiningCase(token, latest.case.id);
-        if (submitted.case.state === "draft") throw new Error("FIELD_SUBMISSION_UNCONFIRMED");
-        setCreatedCase(submitted);
+        const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `field-submit:${latest.case.id}:${latest.case.version}`);
+        const outcome = await submitFieldCaseWithReadback(
+          latest.case.id,
+          () => fieldClient().submitFieldJoiningCase(token, latest.case.id, latest.case.version, `field_submit_${digest}`, `field_submit_corr_${digest}`),
+          () => fieldClient().readOwnFieldJoiningCase(token, latest.case.id),
+          isOutcomeUncertain,
+        );
+        if (outcome.kind !== "confirmed") {
+          setCreatedCase(outcome.kind === "draft" ? outcome.canonical : latest);
+          setError(outcome.kind === "draft"
+            ? "حُفظت المسودة، لكن لم يتأكد إرسالها للمراجعة. افتح قائمة الشركاء للتحقق من حالتها وإرسالها عند الحاجة."
+            : "حُفظت المسودة، لكن تعذر تأكيد الإرسال. افتح قائمة الشركاء للتحقق من الحالة قبل المحاولة مجددًا.");
+          return;
+        }
+        setCreatedCase(outcome.canonical);
         setError("");
-        router.replace({ pathname: "/cases", params: { caseId: submitted.case.id, ...(optionalMediaUnconfirmed ? { mediaWarning: "1" } : {}) } } as Href);
+        router.replace({ pathname: "/cases", params: { caseId: outcome.canonical.case.id, ...(optionalMediaUnconfirmed ? { mediaWarning: "1" } : {}) } } as Href);
       }
     } catch (cause) {
       console.warn("DSH Field joining-case draft save failed", cause);
