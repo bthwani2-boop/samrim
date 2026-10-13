@@ -10,26 +10,26 @@ type ClientSearchNavigation = {
   navigate: (screen: "home", params: { focus: "search" }) => void;
 };
 
-export function ClientPublicShell({ children }: PropsWithChildren) {
+export function ClientPublicShell({ children, hideHeader = false, hideSearchAction = false }: PropsWithChildren<{ hideHeader?: boolean; hideSearchAction?: boolean }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   return (
-    <SafeAreaView edges={["top"]} style={styles.shell}>
-      <ClientPublicHeader safeArea={false} />
+    <SafeAreaView edges={["top"]} style={[styles.shell, hideHeader && { backgroundColor: theme.interactiveText }]}>
+      {!hideHeader ? <ClientPublicHeader hideSearchAction={hideSearchAction} safeArea={false} /> : null}
       <View style={styles.content}>{children}</View>
     </SafeAreaView>
   );
 }
 
-export function ClientPublicHeader({ safeArea = true, searchOpen, searchQuery, onSearchOpenChange, onSearchQueryChange }: { safeArea?: boolean; searchOpen?: boolean; searchQuery?: string; onSearchOpenChange?: (open: boolean) => void; onSearchQueryChange?: (query: string) => void }) {
+export function ClientPublicHeader({ safeArea = true, hideSearchAction = false, searchOnCurrentRoute = false, searchOpen, searchQuery, onSearchOpenChange, onSearchQueryChange }: { safeArea?: boolean; hideSearchAction?: boolean; searchOnCurrentRoute?: boolean; searchOpen?: boolean; searchQuery?: string; onSearchOpenChange?: (open: boolean) => void; onSearchQueryChange?: (query: string) => void }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { focus, q } = useLocalSearchParams<{ focus?: string | string[]; q?: string | string[] }>();
-  const header = <ClientHeader searchOnCurrentRoute focus={searchOpen === undefined ? focus : searchOpen ? "search" : ""} searchQuery={searchQuery ?? q} onSearchOpenChange={onSearchOpenChange} onSearchQueryChange={onSearchQueryChange} styles={styles} />;
+  const header = <ClientHeader hideSearchAction={hideSearchAction} searchOnCurrentRoute={searchOnCurrentRoute} focus={searchOpen === undefined ? focus : searchOpen ? "search" : ""} searchQuery={searchQuery ?? q} onSearchOpenChange={onSearchOpenChange} onSearchQueryChange={onSearchQueryChange} styles={styles} />;
   return safeArea ? <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>{header}</SafeAreaView> : header;
 }
 
-function ClientHeader({ searchOnCurrentRoute = false, focus: rawFocus, searchQuery: rawQuery, navigation, onSearchOpenChange, onSearchQueryChange, styles }: { searchOnCurrentRoute?: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation?: ClientSearchNavigation; onSearchOpenChange?: ((open: boolean) => void) | undefined; onSearchQueryChange?: ((query: string) => void) | undefined; styles: ReturnType<typeof createStyles> }) {
+function ClientHeader({ searchOnCurrentRoute = false, hideSearchAction = false, focus: rawFocus, searchQuery: rawQuery, navigation, onSearchOpenChange, onSearchQueryChange, styles }: { searchOnCurrentRoute?: boolean; hideSearchAction?: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation?: ClientSearchNavigation; onSearchOpenChange?: ((open: boolean) => void) | undefined; onSearchQueryChange?: ((query: string) => void) | undefined; styles: ReturnType<typeof createStyles> }) {
   const router = useRouter();
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
@@ -69,7 +69,7 @@ function ClientHeader({ searchOnCurrentRoute = false, focus: rawFocus, searchQue
             <BthwaniChip accessibilityLabel={cityName} icon="location" label={cityName} onPress={() => void clearSelectedCity()} style={styles.headerCity} />
           </View>
           <View style={styles.headerActions}>
-            <BthwaniIconButton icon="search" label="البحث عن متجر أو منتج" onPress={() => { if (onSearchOpenChange) onSearchOpenChange(true); else if (searchOnCurrentRoute) router.setParams({ focus: "search" }); else if (navigation) navigation.navigate("home", { focus: "search" }); else router.push("/home?focus=search" as Href); }} size={sizing.controlMd} tone="soft" />
+            {!hideSearchAction ? <BthwaniIconButton icon="search" label="البحث عن متجر أو منتج" onPress={() => { if (onSearchOpenChange) onSearchOpenChange(true); else if (searchOnCurrentRoute) router.setParams({ focus: "search" }); else if (navigation) navigation.navigate("home", { focus: "search" }); else router.push("/home?focus=search" as Href); }} size={sizing.controlMd} tone="soft" /> : null}
             <BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlMd} tone="soft" />
             <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} tone="soft" />
             <BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push("/multi-store-checkout" as Href)} size={sizing.controlMd} tone="soft" />

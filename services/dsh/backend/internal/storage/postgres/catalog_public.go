@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -247,6 +248,153 @@ func readCustomerVisibleOffer(ctx context.Context, rowSource rowQueryer, storeID
 
 func ReadPublicCatalog(ctx context.Context, db *sql.DB, storeID, serviceCityID, categoryID, productID, query string, limit int, cursor string) (PublicCatalogRecord, error) {
 	return readPublicCatalog(ctx, db, storeID, serviceCityID, categoryID, productID, query, "", limit, cursor)
+}
+
+func ReadPublicPopularCatalog(ctx context.Context, db *sql.DB, storeID, serviceCityID, categoryID, query string, limit int, cursor string) (PublicCatalogRecord, error) {
+	storeID, serviceCityID, categoryID, query = strings.TrimSpace(storeID), strings.TrimSpace(serviceCityID), strings.TrimSpace(categoryID), strings.TrimSpace(query)
+	if db == nil || storeID == "" || serviceCityID == "" || len(categoryID) > 128 || utf8.RuneCountInString(query) > 160 || limit < 1 || limit > 100 || len(cursor) > 1024 {
+		return PublicCatalogRecord{}, ErrStoreNotFound
+	}
+	var verticalID string
+	if err := db.QueryRowContext(ctx, `SELECT s.primary_vertical_id FROM dsh.stores s JOIN dsh.service_cities c ON c.id=s.service_city_id AND c.active=true JOIN dsh.commerce_verticals v ON v.id=s.primary_vertical_id AND v.active=true WHERE s.id=$1 AND s.service_city_id=$2 AND s.publication_state='published'`, storeID, serviceCityID).Scan(&verticalID); errors.Is(err, sql.ErrNoRows) {
+		return PublicCatalogRecord{}, ErrStoreNotFound
+	} else if err != nil {
+		return PublicCatalogRecord{}, fmt.Errorf("read popular public catalog scope: %w", err)
+	}
+	categories, err := listPublicStoreCatalogCategories(ctx, db, storeID, serviceCityID, verticalID)
+	if err != nil {
+		return PublicCatalogRecord{}, err
+	}
+	sections, err := listStorefrontSections(ctx, db, storeID)
+	if err != nil {
+		return PublicCatalogRecord{}, err
+	}
+	offers, nextCursor, err := listPopularStoreOffers(ctx, db, storeID, serviceCityID, verticalID, categoryID, query, limit, cursor)
+	if err != nil {
+		return PublicCatalogRecord{}, err
+	}
+	return PublicCatalogRecord{StoreID: storeID, VerticalID: verticalID, Categories: categories, Sections: sections, Offers: offers, NextCursor: nextCursor}, nil
+}
+
+func listPopularStoreOffers(ctx context.Context, db *sql.DB, storeID, serviceCityID, verticalID, categoryID, query string, limit int, cursor string) ([]CatalogStoreOfferRecord, *string, error) {
+	conditions := []string{"o.store_id=$1", "s.service_city_id=$2", "s.primary_vertical_id=$3", "s.publication_state='published'", "EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)", "popularity.order_count>0"}
+	args := []any{storeID, serviceCityID, verticalID}
+	if categoryID != "" {
+		args = append(args, categoryID)
+		conditions = append(conditions, fmt.Sprintf(`EXISTS (WITH RECURSIVE category_subtree(id) AS (
+			SELECT c.id FROM dsh.catalog_categories c WHERE c.id=$%d AND c.active=true AND c.vertical_id=s.primary_vertical_id
+			UNION SELECT child.id FROM dsh.catalog_categories child JOIN category_subtree parent ON child.parent_category_id=parent.id WHERE child.active=true AND child.vertical_id=s.primary_vertical_id
+		) SELECT 1 FROM dsh.catalog_product_categories pc JOIN category_subtree subtree ON subtree.id=pc.category_id WHERE pc.product_id=p.id)`, len(args)))
+	}
+	if query != "" {
+		args = append(args, escapeCatalogSearchPrefix(query))
+		conditions = append(conditions, fmt.Sprintf("lower(p.canonical_name) LIKE lower($%d) ESCAPE '!'", len(args)))
+	}
+	if cursor != "" {
+		position, err := decodePopularCatalogCursor(cursor, storeID, serviceCityID, verticalID, categoryID, query)
+		if err != nil {
+			return nil, nil, err
+		}
+		args = append(args, position.orderCount, position.canonicalName, position.offerID)
+		conditions = append(conditions, fmt.Sprintf("(popularity.order_count<$%d OR (popularity.order_count=$%d AND (lower(p.canonical_name),o.id)>(lower($%d),$%d)))", len(args)-2, len(args)-2, len(args)-1, len(args)))
+	}
+	args = append(args, limit+1)
+	queryText := catalogOfferSelect + ` JOIN (
+		SELECT line.store_offer_id,COUNT(*) AS order_count FROM dsh.commerce_order_lines line
+		JOIN dsh.commerce_orders completed_order ON completed_order.id=line.order_id
+		JOIN (SELECT order_id,MAX(completed_at) AS completed_at FROM (
+			SELECT order_id,created_at AS completed_at FROM dsh.captain_audit WHERE event_type='delivery_completed' AND created_at>=clock_timestamp()-INTERVAL '30 days'
+			UNION ALL SELECT order_id,created_at AS completed_at FROM dsh.commerce_order_audit WHERE event_type='order_picked_up' AND created_at>=clock_timestamp()-INTERVAL '30 days'
+		) completion_events GROUP BY order_id) completion ON completion.order_id=completed_order.id
+		WHERE completed_order.store_id=$1 AND completed_order.state IN ('DELIVERED','PICKED_UP') AND completion.completed_at>=clock_timestamp()-INTERVAL '30 days'
+		GROUP BY line.store_offer_id
+	) popularity ON popularity.store_offer_id=o.id WHERE ` + strings.Join(conditions, " AND ") + fmt.Sprintf(" ORDER BY popularity.order_count DESC,lower(p.canonical_name),o.id LIMIT $%d", len(args))
+	rows, err := db.QueryContext(ctx, queryText, args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list popular customer-visible Store offers: %w", err)
+	}
+	items := make([]CatalogStoreOfferRecord, 0, limit+1)
+	for rows.Next() {
+		item, scanErr := scanCatalogOffer(rows)
+		if scanErr != nil {
+			_ = rows.Close()
+			return nil, nil, scanErr
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, err
+	}
+	var nextCursor *string
+	if len(items) > limit {
+		items = items[:limit]
+		last := items[len(items)-1]
+		var orderCount int64
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM dsh.commerce_order_lines line JOIN dsh.commerce_orders completed_order ON completed_order.id=line.order_id JOIN (SELECT order_id,MAX(completed_at) AS completed_at FROM (SELECT order_id,created_at AS completed_at FROM dsh.captain_audit WHERE event_type='delivery_completed' AND created_at>=clock_timestamp()-INTERVAL '30 days' UNION ALL SELECT order_id,created_at AS completed_at FROM dsh.commerce_order_audit WHERE event_type='order_picked_up' AND created_at>=clock_timestamp()-INTERVAL '30 days') completion_events GROUP BY order_id) completion ON completion.order_id=completed_order.id WHERE completed_order.store_id=$1 AND completed_order.state IN ('DELIVERED','PICKED_UP') AND line.store_offer_id=$2`, storeID, last.ID).Scan(&orderCount); err != nil {
+			return nil, nil, fmt.Errorf("read popular Store offer cursor rank: %w", err)
+		}
+		cursorValue := encodePopularCatalogCursor(orderCount, last.Product.CanonicalName, last.ID, storeID, serviceCityID, verticalID, categoryID, query)
+		nextCursor = &cursorValue
+	}
+	for i := range items {
+		items[i], err = hydrateCatalogOffer(ctx, db, items[i])
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return items, nextCursor, nil
+}
+
+type popularCatalogCursorPosition struct {
+	orderCount    int64
+	canonicalName string
+	offerID       string
+}
+
+func encodePopularCatalogCursor(orderCount int64, canonicalName, offerID, storeID, cityID, verticalID, categoryID, query string) string {
+	fingerprint := catalogSearchCursorFingerprint(storeID, cityID, verticalID, categoryID, "popular-30-days:"+query, "", "")
+	payload := fmt.Sprintf("%d\x00%s\x00%s\x00", orderCount, canonicalName, offerID)
+	return base64.RawURLEncoding.EncodeToString(append([]byte(payload), fingerprint[:]...))
+}
+
+func decodePopularCatalogCursor(cursor, storeID, cityID, verticalID, categoryID, query string) (popularCatalogCursorPosition, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return popularCatalogCursorPosition{}, errors.New("popular catalog cursor is invalid")
+	}
+	first := bytes.IndexByte(decoded, 0)
+	secondRelative := -1
+	if first >= 1 && first+1 < len(decoded) {
+		secondRelative = bytes.IndexByte(decoded[first+1:], 0)
+	}
+	if secondRelative < 1 {
+		return popularCatalogCursorPosition{}, errors.New("popular catalog cursor is invalid")
+	}
+	second := first + 1 + secondRelative
+	thirdRelative := bytes.IndexByte(decoded[second+1:], 0)
+	if thirdRelative < 1 {
+		return popularCatalogCursorPosition{}, errors.New("popular catalog cursor is invalid")
+	}
+	third := second + 1 + thirdRelative
+	if len(decoded)-third-1 != 16 {
+		return popularCatalogCursorPosition{}, errors.New("popular catalog cursor is invalid")
+	}
+	count, err := strconv.ParseInt(string(decoded[:first]), 10, 64)
+	if err != nil || count < 1 {
+		return popularCatalogCursorPosition{}, errors.New("popular catalog cursor is invalid")
+	}
+	expected := catalogSearchCursorFingerprint(storeID, cityID, verticalID, categoryID, "popular-30-days:"+query, "", "")
+	actual := decoded[third+1:]
+	for i := range expected {
+		if actual[i] != expected[i] {
+			return popularCatalogCursorPosition{}, errors.New("popular catalog cursor does not match the current query")
+		}
+	}
+	return popularCatalogCursorPosition{orderCount: count, canonicalName: string(decoded[first+1 : second]), offerID: string(decoded[second+1 : third])}, nil
 }
 
 func ReadPublicFavoriteStoreCatalog(ctx context.Context, db *sql.DB, storeID, serviceCityID, clientActorID string, limit int, cursor string) (PublicCatalogRecord, error) {

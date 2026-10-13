@@ -82,8 +82,8 @@ export async function readPublicStoreOrderability(storeID: string, serviceCityID
   return client().readPublicStoreOrderability(storeID, serviceCityID);
 }
 
-export async function readPublicStoreCatalog(storeID: string, serviceCityID: string, categoryID = "", query = "", limit = 20, cursor = "", productID = ""): Promise<PublicCatalogResponse> {
-  return client().readPublicStoreCatalog(storeID, serviceCityID, categoryID, query, limit, cursor, productID);
+export async function readPublicStoreCatalog(storeID: string, serviceCityID: string, categoryID = "", query = "", limit = 20, cursor = "", productID = "", sort: "" | "MOST_ORDERED_30_DAYS" = ""): Promise<PublicCatalogResponse> {
+  return client().readPublicStoreCatalog(storeID, serviceCityID, categoryID, query, limit, cursor, productID, sort);
 }
 
 export async function searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = ""): Promise<PublicCatalogSearchResponse> {
@@ -118,6 +118,17 @@ export async function readOwnMultiStoreCheckout(checkoutID: string): Promise<Mul
 export async function cancelMultiStoreCheckout(checkoutID: string, expectedVersion: number, idempotencyKey: string, correlationID: string): Promise<MultiStoreCheckoutResponse> {
   const accessToken = await getUsableIdentityAccessToken();
   return client().cancelMultiStoreCheckout(accessToken, checkoutID, expectedVersion, idempotencyKey, correlationID);
+}
+
+export async function readOwnStoreCart(storeID: string): Promise<CartResponse | null> {
+  const accessToken = await getUsableIdentityAccessToken();
+  try {
+    return await client().readOpenCart(accessToken, storeID);
+  } catch (error) {
+    const notFound = error && typeof error === "object" && (error as { kind?: unknown; status?: unknown }).kind === "http" && (error as { status?: unknown }).status === 404;
+    if (notFound) return null;
+    throw error;
+  }
 }
 
 export async function addCatalogOfferToCart(

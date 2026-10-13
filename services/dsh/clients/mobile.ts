@@ -1326,15 +1326,18 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = `${dshOperationPaths.readPublicStoreOrderability.path.replace("{storeId}", encodeURIComponent(normalizedStore))}?${query.toString()}`;
       return publicRequest<PublicStoreOrderabilityResponse>(path);
     },
-    async readPublicStoreCatalog(storeID: string, serviceCityID: string, categoryID = "", query = "", limit = 100, cursor = "", productID = ""): Promise<PublicCatalogResponse> {
+    async readPublicStoreCatalog(storeID: string, serviceCityID: string, categoryID = "", query = "", limit = 100, cursor = "", productID = "", sort: "" | "MOST_ORDERED_30_DAYS" = ""): Promise<PublicCatalogResponse> {
       const normalizedStore = storeID.trim();
       const normalizedCity = serviceCityID.trim();
       const normalizedProduct = productID.trim();
       if (!normalizedStore || !normalizedCity) throw new Error("DSH_STORE_SCOPE_REQUIRED");
       if (normalizedProduct.length > 128) throw new Error("DSH_CATALOG_PRODUCT_ID_INVALID");
+      if (sort && sort !== "MOST_ORDERED_30_DAYS") throw new Error("DSH_CATALOG_SORT_INVALID");
+      if (sort && normalizedProduct) throw new Error("DSH_CATALOG_SORT_PRODUCT_CONFLICT");
       const params = new URLSearchParams({ serviceCityId: normalizedCity });
       if (categoryID.trim()) params.set("categoryId", categoryID.trim());
       if (normalizedProduct) params.set("productId", normalizedProduct);
+      if (sort) params.set("sort", sort);
       if (query.trim()) params.set("q", query.trim());
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("DSH_CATALOG_LIMIT_INVALID");
       params.set("limit", String(limit));

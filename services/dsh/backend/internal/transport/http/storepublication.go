@@ -413,6 +413,7 @@ func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *htt
 	categoryID := strings.TrimSpace(r.URL.Query().Get("categoryId"))
 	productID := strings.TrimSpace(r.URL.Query().Get("productId"))
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 	limit := 100
 	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
@@ -423,7 +424,7 @@ func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *htt
 		}
 		limit = parsed
 	}
-	if serviceCityID == "" || len(categoryID) > 128 || len(productID) > 128 || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
+	if serviceCityID == "" || len(categoryID) > 128 || len(productID) > 128 || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 || (sort != "" && sort != "MOST_ORDERED_30_DAYS") || (sort != "" && productID != "") {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog scope or filter is invalid")
 		return
 	}
@@ -435,7 +436,13 @@ func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *htt
 		writeStorePublicationError(w, err)
 		return
 	}
-	result, err := postgres.ReadPublicCatalog(r.Context(), s.db, r.PathValue("storeId"), serviceCityID, categoryID, productID, query, limit, cursor)
+	var result postgres.PublicCatalogRecord
+	var err error
+	if sort == "MOST_ORDERED_30_DAYS" {
+		result, err = postgres.ReadPublicPopularCatalog(r.Context(), s.db, r.PathValue("storeId"), serviceCityID, categoryID, query, limit, cursor)
+	} else {
+		result, err = postgres.ReadPublicCatalog(r.Context(), s.db, r.PathValue("storeId"), serviceCityID, categoryID, productID, query, limit, cursor)
+	}
 	if errors.Is(err, postgres.ErrStoreNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "published store catalog was not found")
 		return

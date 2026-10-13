@@ -1523,6 +1523,7 @@ paths:
         - { name: categoryId, in: query, required: false, schema: { type: string, maxLength: 128 } }
         - { name: productId, in: query, required: false, description: Restrict the result page to one product within this Store., schema: { type: string, maxLength: 128 } }
         - { name: q, in: query, required: false, schema: { type: string, maxLength: 160 } }
+        - { name: sort, in: query, required: false, description: Rank by completed Store orders in the preceding 30 days., schema: { type: string, enum: [MOST_ORDERED_30_DAYS] } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
         - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 1024 } }
       responses:

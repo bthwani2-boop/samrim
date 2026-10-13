@@ -43,6 +43,7 @@ export default function ClientHomeRoute() {
   return (
     <View style={styles.root}>
       <ClientPublicHeader
+        hideSearchAction
         onSearchOpenChange={setSearchVisibility}
         onSearchQueryChange={setSearchQuery}
         searchOpen={searchOpen}
@@ -51,6 +52,7 @@ export default function ClientHomeRoute() {
       <StoreDiscovery
         isAuthenticated={isAuthenticated}
         onRequireAuthentication={!isAuthenticated ? () => router.replace("/?returnTo=/home" as Href) : undefined}
+        onSearchOpenChange={setSearchVisibility}
         onSearchQueryChange={setSearchQuery}
         onSearchScopeChange={setSearchScope}
         searchOpen={searchOpen}

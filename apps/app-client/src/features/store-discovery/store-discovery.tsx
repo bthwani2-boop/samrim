@@ -1,14 +1,14 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, type PublicCommerceVertical, type PublicDiscoveryContentView, formatMoney, fulfillmentModeLabel, type PublicPromotionView, type PublicStoreView } from "@bthwani/dsh";
+import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type PublicCommerceVertical, type PublicDiscoveryContentView, type PublicPromotionView, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, I18nManager, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
-import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
-import { listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
+import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { PromotionCard } from "./promotion-card";
+import { listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
 
 type DiscoveryState =
   | { kind: "loading" }
@@ -28,7 +28,7 @@ type NearbyAddressState =
   | { kind: "error" }
   | { kind: "ready"; addresses: ReadonlyArray<DeliveryAddress>; nextCursor: string; loadingMore: boolean; moreError: boolean };
 
-export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, searchOpen, searchQuery, searchScope: controlledSearchScope, onSearchScopeChange, onSearchQueryChange }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; searchOpen?: boolean; searchQuery?: string; searchScope?: "stores" | "products"; onSearchScopeChange?: (scope: "stores" | "products") => void; onSearchQueryChange?: (query: string) => void }) {
+export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, searchOpen, searchQuery, searchScope: controlledSearchScope, onSearchOpenChange, onSearchScopeChange, onSearchQueryChange }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; searchOpen?: boolean; searchQuery?: string; searchScope?: "stores" | "products"; onSearchOpenChange?: (open: boolean) => void; onSearchScopeChange?: (scope: "stores" | "products") => void; onSearchQueryChange?: (query: string) => void }) {
   const router = useRouter();
   const { q: rawQuery, focus: rawFocus, scope: rawScope } = useLocalSearchParams<{ q?: string | string[]; focus?: string | string[]; scope?: string | string[] }>();
   const routeQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
@@ -50,6 +50,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const [selectedVerticalID, setSelectedVerticalID] = useState("");
   const [selectedCategoryID, setSelectedCategoryID] = useState("");
   const [favoriteBusyStoreID, setFavoriteBusyStoreID] = useState("");
+  const [failedStoreImageIDs, setFailedStoreImageIDs] = useState<ReadonlySet<string>>(() => new Set());
   const [favoriteError, setFavoriteError] = useState("");
   const [directoryLocation, setDirectoryLocation] = useState<{ latitude: number; longitude: number } | undefined>();
   const [nearestAddress, setNearestAddress] = useState<DeliveryAddress | null>(null);
@@ -76,6 +77,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     directoryRequestID.current += 1;
     setState({ kind: "loading" });
     setFavoriteError("");
+    setMarketing({ content: [], promotions: [], error: false });
     setDirectoryLoading(false);
     setDirectoryError(false);
     setLoadingMoreStores(false);
@@ -93,23 +95,24 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       }
       const storeDirectory = await listPublishedStores(selectedCityID, { limit: 20 });
       const { verticals, categories } = normalizeDiscoveryTaxonomy(storeDirectory.verticals, storeDirectory.categories);
-      const marketingResults = await Promise.allSettled([listPublicDiscoveryContent(selectedCityID), listPublicPromotions(selectedCityID)]);
-      const content = marketingResults[0].status === "fulfilled" ? marketingResults[0].value.items : [];
-      const promotions = marketingResults[1].status === "fulfilled" ? marketingResults[1].value.promotions : [];
-      let favoriteStoreIDs: ReadonlyArray<string> = [];
-      let favoriteLoadError = "";
-      if (isAuthenticated) {
-        try {
-          favoriteStoreIDs = await listFavoriteStoreIDs();
-        } catch {
-          favoriteLoadError = "تعذر تحديث قائمة المفضلة. يمكنك متابعة تصفح المتاجر.";
-        }
-      }
       if (requestID !== discoveryLoadRequestID.current) return;
       directoryRequestKey.current = JSON.stringify([selectedCityID, "", "", "all", false, null, null]);
-      setMarketing({ content, promotions, error: marketingResults.some((result) => result.status === "rejected") });
-      if (favoriteLoadError) setFavoriteError(favoriteLoadError);
-      setState({ kind: "ready", stores: storeDirectory.stores, verticals, categories, favoriteStoreIDs, nextCursor: storeDirectory.nextCursor ?? "" });
+      setState({ kind: "ready", stores: storeDirectory.stores, verticals, categories, favoriteStoreIDs: [], nextCursor: storeDirectory.nextCursor ?? "" });
+      void Promise.allSettled([listPublicDiscoveryContent(selectedCityID), listPublicPromotions(selectedCityID)]).then((results) => {
+        if (requestID !== discoveryLoadRequestID.current) return;
+        setMarketing({
+          content: results[0].status === "fulfilled" ? results[0].value.items : [],
+          promotions: results[1].status === "fulfilled" ? results[1].value.promotions : [],
+          error: results.some((result) => result.status === "rejected"),
+        });
+      });
+      if (isAuthenticated) {
+        void listFavoriteStoreIDs().then((favoriteStoreIDs) => {
+          if (requestID === discoveryLoadRequestID.current) setState((current) => current.kind === "ready" ? { ...current, favoriteStoreIDs } : current);
+        }).catch(() => {
+          if (requestID === discoveryLoadRequestID.current) setFavoriteError("تعذر تحديث قائمة المفضلة. يمكنك متابعة تصفح المتاجر.");
+        });
+      }
     } catch {
       if (requestID === discoveryLoadRequestID.current) setState({ kind: "error" });
     }
@@ -283,8 +286,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     setSelectedCategoryID("");
   }
 
-  const mediaContent = useMemo(() => marketing.content.filter((item) => Boolean(item.mediaUri) && (item.kind === "BANNER" || item.kind === "CAROUSEL")), [marketing.content]);
-  const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri || (item.kind !== "BANNER" && item.kind !== "CAROUSEL")), [marketing.content]);
+  const mediaContent = useMemo(() => marketing.content.filter((item) => Boolean(item.mediaUri)), [marketing.content]);
+  const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri), [marketing.content]);
 
   async function openNearbyAddressChooser() {
     if (!selectedCityID || nearbyAddressState.kind === "loading") return;
@@ -393,9 +396,25 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           setDiscoveryContainerWidth((current) => Math.abs(current - nextWidth) < 1 ? current : nextWidth);
         }}
       >
-      <View style={styles.discoveryHeading}>
-        <Text style={styles.discoveryTitle}>{searchIsActive ? "ابحث في بثواني" : "اكتشف المتاجر والمنتجات"}</Text>
-        <Text style={styles.discoverySubtitle}>{selectedCityName ? `نتائج مدينة ${selectedCityName}` : "اختر مدينة الخدمة لعرض النتائج المتاحة"}</Text>
+      <View style={[styles.discoveryHeading, !searchIsActive && styles.discoveryHero]}>
+        {!searchIsActive ? <>
+          <View style={styles.discoveryHeroCopy}>
+            <Text style={styles.discoveryEyebrow}>{selectedCityName ? `تسوق في ${selectedCityName}` : "تسوق من المتاجر المتاحة"}</Text>
+            <Text style={styles.discoveryTitle}>ماذا تحتاج اليوم؟</Text>
+            <Text style={styles.discoverySubtitle}>ابحث مباشرة أو اختر نشاطًا للبدء.</Text>
+          </View>
+          <BthwaniSearchField
+          accessibilityLabel="البحث عن متجر أو منتج"
+          autoCapitalize="none"
+          autoCorrect={false}
+          onChangeText={(value) => { if (value) onSearchOpenChange?.(true); if (onSearchQueryChange) onSearchQueryChange(value); else router.setParams({ q: value, focus: value ? "search" : "" }); }}
+          onClear={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "", focus: "" }); }}
+          placeholder="ابحث عن متجر أو منتج"
+          returnKeyType="search"
+          value={query}
+          containerStyle={styles.discoverySearch}
+          />
+        </> : <View style={styles.discoverySearchHeading}><Text style={[styles.discoveryTitle, styles.discoveryTitleDefault]}>ابحث في بثواني</Text><Text style={[styles.discoverySubtitle, styles.discoverySubtitleDefault]}>{selectedCityName ? `نتائج مدينة ${selectedCityName}` : "اختر مدينة الخدمة لعرض النتائج المتاحة"}</Text></View>}
       </View>
 
       {searchIsActive ? <View accessibilityLabel="نطاق البحث" style={styles.searchScopes}>
@@ -404,10 +423,16 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       </View> : null}
 
       {taxonomy.verticals.length ? <View style={styles.categoryShortcutBlock} accessibilityLabel="الأنشطة التجارية الرئيسية">
-        <BthwaniSectionHeader title="تصفح حسب النشاط" subtitle="اختر المجال أولًا، ثم انتقل داخل فئاته أو منتجاته" />
-        <ScrollView accessibilityLabel="الأنشطة التجارية" contentContainerStyle={styles.categoryShortcutContent} horizontal showsHorizontalScrollIndicator={false}>
-          <BthwaniChip label="كل الأنشطة" selected={!selectedVerticalID} onPress={() => selectVertical("")} />
-          {taxonomy.verticals.map((vertical) => <BthwaniChip key={vertical.id} label={vertical.nameAr} selected={selectedVerticalID === vertical.id} onPress={() => selectVertical(vertical.id)} />)}
+        <BthwaniSectionHeader title="تسوق حسب النشاط" />
+        <ScrollView accessibilityLabel="الأنشطة التجارية" contentContainerStyle={styles.activityTiles} horizontal showsHorizontalScrollIndicator={false}>
+          <Pressable accessibilityRole="button" accessibilityLabel="عرض كل الأنشطة والمتاجر" accessibilityState={{ selected: !selectedVerticalID }} onPress={() => selectVertical("")} style={[styles.activityTile, !selectedVerticalID && styles.activityTileSelected]}>
+            <View style={[styles.activityMark, !selectedVerticalID && styles.activityMarkSelected]}><BthwaniIcon name="store" color={!selectedVerticalID ? theme.onAction : theme.interactiveText} size={sizing.iconLg} /></View>
+            <Text numberOfLines={1} style={[styles.activityTileName, !selectedVerticalID && styles.activityTileNameSelected]}>الكل</Text>
+          </Pressable>
+          {taxonomy.verticals.map((vertical, index) => <Pressable key={vertical.id} accessibilityRole="button" accessibilityLabel={`تصفح نشاط ${vertical.nameAr}`} accessibilityState={{ selected: selectedVerticalID === vertical.id }} onPress={() => selectVertical(vertical.id)} style={[styles.activityTile, selectedVerticalID === vertical.id && styles.activityTileSelected]}>
+            <View style={[styles.activityMark, index % 2 === 1 && styles.activityMarkWarm, selectedVerticalID === vertical.id && styles.activityMarkSelected]}><Text style={[styles.activityInitial, selectedVerticalID === vertical.id && styles.activityTileNameSelected]}>{vertical.nameAr.slice(0, 1)}</Text></View>
+            <Text numberOfLines={1} style={[styles.activityTileName, selectedVerticalID === vertical.id && styles.activityTileNameSelected]}>{vertical.nameAr}</Text>
+          </Pressable>)}
         </ScrollView>
       </View> : null}
 
@@ -448,7 +473,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           <View style={styles.marketingList}>{marketing.promotions.map((promotion) => <PromotionCard key={promotion.id} promotion={promotion} />)}</View>
         </> : null}
       </View> : null}
-      {!searchIsActive && !hasMarketingItems && marketing.error ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل بعض العروض والمحتوى. يمكنك متابعة تصفح المتاجر.</Text> : null}
+      {!searchIsActive && marketing.error ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل بعض العروض والمحتوى. يمكنك متابعة تصفح المتاجر.</Text> : null}
 
       {searchScope === "products" && searchIsActive ? (
         <ProductSearchResults
@@ -528,15 +553,17 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         const closedBySchedule = orderability.length > 0 && orderability.every((state) => state.state === "CLOSED_BY_SCHEDULE");
         const availabilityLabel = acceptsOrders ? "مفتوح الآن" : paused ? "متوقف مؤقتًا" : closedBySchedule ? "مغلق حسب ساعات العمل" : orderability.length ? "غير متاح للطلبات" : "تحقق من التوفر";
         return <Pressable accessibilityRole="button" accessibilityLabel={`فتح متجر ${store.name}، ${availabilityLabel}${modeSummary}`} onPress={() => router.push(`/store/${encodeURIComponent(store.id)}` as Href)} style={({ pressed }) => [styles.storeCard, pressed && styles.pressed]}>
-          {store.storeProfileImage?.uri ? <Image accessibilityLabel={`شعار متجر ${store.name}`} source={{ uri: store.storeProfileImage.uri }} style={styles.storeImage} resizeMode="cover" /> : <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
+          {store.storeProfileImage?.uri && !failedStoreImageIDs.has(store.id) ? <Image accessibilityLabel={`شعار متجر ${store.name}`} onError={() => setFailedStoreImageIDs((current) => new Set(current).add(store.id))} source={{ uri: store.storeProfileImage.uri }} style={styles.storeImage} resizeMode="cover" /> : <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
           <View style={styles.storeCopy}>
             <Text style={styles.storeTitle} numberOfLines={2}>{store.name}</Text>
             <Text style={styles.storeMeta}>{typeof store.distanceMeters === "number" ? `${(store.distanceMeters / 1000).toFixed(2)} كم` : selectedCityName || "مدينة الخدمة"}</Text>
-            <Text style={styles.storeRating}>{store.ratingCount > 0 ? `★ ${store.ratingAverage.toFixed(1)} (${store.ratingCount})` : "لا توجد تقييمات بعد"}</Text>
-            {fulfillmentModeLabels.length ? <Text style={styles.storeModes}>طرق الطلب المتاحة: {fulfillmentModeLabels.join(" · ")}</Text> : null}
-            <Text style={[styles.storeHint, { color: acceptsOrders ? theme.success : theme.colorMuted }]}>{availabilityLabel}</Text>
+            <View style={styles.storeFacts}>
+              {store.ratingCount > 0 ? <Text accessibilityLabel={`التقييم ${store.ratingAverage.toFixed(1)} من 5 من ${store.ratingCount} تقييم`} style={styles.storeRating}>★ {store.ratingAverage.toFixed(1)} <Text style={styles.storeRatingCount}>({store.ratingCount})</Text></Text> : null}
+              <View style={[styles.availabilityBadge, acceptsOrders && styles.availabilityBadgeOpen]}><View style={[styles.availabilityDot, acceptsOrders && styles.availabilityDotOpen]} /><Text style={[styles.storeHint, acceptsOrders && styles.storeHintOpen]}>{availabilityLabel}</Text></View>
+            </View>
+            {fulfillmentModeLabels.length ? <Text numberOfLines={1} style={styles.storeModes}>{fulfillmentModeLabels.join("  ·  ")}</Text> : null}
           </View>
-          <View style={styles.storeActions}><BthwaniIconButton disabled={Boolean(favoriteBusyStoreID)} icon="favorite" label={isFavorite ? `إزالة ${store.name} من المفضلة` : `إضافة ${store.name} إلى المفضلة`} onPress={(event) => { event.stopPropagation(); void toggleFavorite(store.id); }} tone={isFavorite ? "primary" : "soft"} /><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
+          <View style={styles.storeActions}><BthwaniIconButton disabled={Boolean(favoriteBusyStoreID)} icon="favorite" label={isFavorite ? `إزالة ${store.name} من المفضلة` : `إضافة ${store.name} إلى المفضلة`} onPress={(event) => { event.stopPropagation(); void toggleFavorite(store.id); }} tone={isFavorite ? "primary" : "soft"} /></View>
         </Pressable>;
       }}
       ListEmptyComponent={directoryMode ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} /> : null}
@@ -692,8 +719,15 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
     footer: { gap: spacing[3], paddingBottom: spacing[4] },
     discoveryHeading: { gap: spacing[1] },
-    discoveryTitle: { ...typography.titleLg, color: theme.color, textAlign: "right" },
-    discoverySubtitle: { ...typography.bodySm, color: theme.colorMuted, textAlign: "right" },
+    discoveryHero: { backgroundColor: theme.interactiveText, borderRadius: radius.xl, gap: spacing[3], padding: spacing[4], ...elevation.raised },
+    discoveryHeroCopy: { alignItems: "flex-end", gap: spacing[1] },
+    discoverySearchHeading: { alignItems: "flex-end", gap: spacing[1] },
+    discoveryEyebrow: { ...typography.label, color: theme.actionBackground, textAlign: "right" },
+    discoveryTitle: { ...typography.titleLg, color: theme.onAction, textAlign: "right" },
+    discoverySubtitle: { ...typography.bodySm, color: theme.onAction, opacity: opacity.subtle, textAlign: "right" },
+    discoveryTitleDefault: { color: theme.color },
+    discoverySubtitleDefault: { color: theme.colorMuted, opacity: 1 },
+    discoverySearch: { width: "100%" },
     searchScopes: { flexDirection: "row", gap: spacing[2] },
     productSearchSection: { gap: spacing[3] },
     productSkeletons: { gap: spacing[3] },
@@ -717,16 +751,23 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     nearestAddressOption: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
     nearestAddressOptionTitle: { ...typography.bodyStrong, color: theme.color },
     nearestAddressSummary: { ...typography.bodySm, color: theme.interactiveText },
-    storeCard: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[3], minHeight: 100, padding: spacing[3], ...elevation.raised },
+    storeCard: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[3], minHeight: 124, padding: spacing[3], ...elevation.raised },
     storeActions: { alignItems: "center", flexDirection: "row", gap: spacing[1] },
-    storeIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
-    storeImage: { borderRadius: radius.md, height: sizing.avatarLg, width: sizing.avatarLg },
-    storeCopy: { flex: 1, gap: spacing[1] },
-    storeTitle: { ...typography.titleSm, color: theme.color },
+    storeIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.lg, height: 84, justifyContent: "center", width: 84 },
+    storeImage: { backgroundColor: theme.surfaceInset, borderRadius: radius.lg, height: 84, width: 84 },
+    storeCopy: { alignItems: "flex-end", flex: 1, gap: spacing[1] },
+    storeTitle: { ...typography.titleSm, color: theme.color, textAlign: "right" },
     storeMeta: { ...typography.bodySm, color: theme.interactiveText },
     storeRating: { ...typography.bodySm, color: theme.warning },
+    storeRatingCount: { color: theme.colorMuted },
     storeModes: { ...typography.caption, color: theme.interactiveText },
+    storeFacts: { alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "flex-end", width: "100%" },
+    availabilityBadge: { alignItems: "center", backgroundColor: theme.surfaceInset, borderRadius: radius.round, flexDirection: "row", gap: spacing[1], paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
+    availabilityBadgeOpen: { backgroundColor: theme.successSoft },
+    availabilityDot: { backgroundColor: theme.colorMuted, borderRadius: radius.round, height: 6, width: 6 },
+    availabilityDotOpen: { backgroundColor: theme.success },
     storeHint: { ...typography.caption, color: theme.colorMuted },
+    storeHintOpen: { color: theme.success },
     pressed: { opacity: opacity.subtle },
     noResults: { alignItems: "center", borderRadius: radius.lg, gap: spacing[2], padding: spacing[5] },
     cardTitle: { ...typography.titleSm, color: theme.color, textAlign: "center" },
@@ -740,6 +781,15 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     error: { ...typography.bodySm, color: theme.danger },
     categoryShortcutBlock: { gap: spacing[1] },
     categoryShortcutContent: { alignItems: "flex-start", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
+    activityTiles: { alignItems: "flex-start", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
+    activityTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], minHeight: 116, justifyContent: "center", padding: spacing[2], width: 96 },
+    activityTileSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
+    activityMark: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: 56, justifyContent: "center", width: 56 },
+    activityMarkWarm: { backgroundColor: theme.surfaceInset },
+    activityMarkSelected: { backgroundColor: theme.interactiveText },
+    activityInitial: { ...typography.titleLg, color: theme.interactiveText },
+    activityTileName: { ...typography.label, color: theme.color, maxWidth: "100%", textAlign: "center" },
+    activityTileNameSelected: { color: theme.interactiveText },
     categoryTreeEmpty: { ...typography.caption, color: theme.colorMuted, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
     categoryTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2], width: 112 },
     categoryTileSelected: { borderColor: theme.interactiveText, borderWidth: 2 },
@@ -760,6 +810,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     mediaCaptionTitle: { ...typography.titleSm, color: theme.onAction, textAlign: "right" },
     mediaCaptionBody: { ...typography.caption, color: theme.onAction, textAlign: "right" },
     mediaFallback: { alignItems: "center", backgroundColor: theme.actionSoft, height: "100%", justifyContent: "center", padding: spacing[4], width: "100%" },
+    mediaFallbackHint: { ...typography.caption, color: theme.interactiveText, textAlign: "center" },
     carouselDots: { alignItems: "center", flexDirection: "row", gap: spacing[1], justifyContent: "center" },
     carouselDot: { backgroundColor: theme.borderColorStrong, borderRadius: radius.round, height: 6, width: 6 },
     carouselDotActive: { backgroundColor: theme.actionBackground, height: 8, width: 18 },
@@ -808,10 +859,9 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen }: { c
         style={styles.mediaScroll}
       >
         {items.map((item) => {
-          const actionable = item.targetType !== "INFO";
           const card = (
             <View key={item.id} style={[styles.mediaCard, { width: cardWidth }]}>
-              {failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text><Text style={styles.muted}>تعذر تحميل الصورة، افتح المحتوى النصي بدلًا منها.</Text></View> : <>
+              {failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text style={styles.muted}>{item.bodyAr}</Text> : null}<Text style={styles.mediaFallbackHint}>تعذر تحميل الصورة. اضغط لعرض التفاصيل.</Text></View> : <>
                 <Image accessibilityLabel={`صورة ${item.titleAr}`} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={styles.mediaImage} resizeMode="cover" />
                 <View pointerEvents="none" style={styles.mediaCaption}>
                   <Text numberOfLines={1} style={styles.mediaCaptionTitle}>{item.titleAr}</Text>
@@ -820,7 +870,7 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen }: { c
               </>}
             </View>
           );
-          return actionable ? <Pressable accessibilityHint="يفتح الوجهة المرتبطة بالمحتوى" accessibilityLabel={`فتح ${item.titleAr}`} accessibilityRole="button" key={item.id} onPress={() => onOpen(item)}>{card}</Pressable> : <View accessibilityLabel={item.titleAr} key={item.id}>{card}</View>;
+          return <Pressable accessibilityHint="يفتح تفاصيل المحتوى أو وجهته المرتبطة" accessibilityLabel={`عرض ${item.titleAr}`} accessibilityRole="button" key={item.id} onPress={() => onOpen(item)}>{card}</Pressable>;
         })}
       </ScrollView>
       {items.length > 1 ? <View accessibilityLabel={`اختيار شريحة العرض، ${activeIndex + 1} من ${items.length}`} style={styles.carouselDots}>{items.map((item, index) => <Pressable accessibilityLabel={`عرض الشريحة ${index + 1}: ${item.titleAr}`} accessibilityRole="button" accessibilityState={{ selected: index === activeIndex }} hitSlop={8} key={item.id} onPress={() => selectSlide(index)}><View style={[styles.carouselDot, index === activeIndex && styles.carouselDotActive]} /></Pressable>)}</View> : null}
