@@ -171,8 +171,8 @@ export function CatalogAttributePolicyWorkspace({ verticalId, categoryId }: { ve
         <button type="button" className="button button-secondary" disabled={busy || !canEdit || !verticalId || !nameAr.trim() || !code.trim() || changeReason.trim().length < 5} onClick={() => void createDefinition()}>إضافة الخاصية</button>
     </div>
     <div className="catalog-attribute-definition-list">
-      <strong>تعريفات المجال</strong>
-      {loading ? <p>جارٍ قراءة التعريفات…</p> : definitions.length === 0 ? <p>لا توجد تعريفات خصائص لهذا المجال بعد.</p> : <ul>{definitions.map((definition) => {
+      <strong>تعريفات خصائص النشاط التجاري</strong>
+      {loading ? <p>جارٍ قراءة التعريفات…</p> : definitions.length === 0 ? <p>لا توجد تعريفات خصائص لهذا النشاط التجاري بعد.</p> : <ul>{definitions.map((definition) => {
         const nameDraft = definitionNames[definition.id] ?? definition.nameAr;
         return <li key={definition.id}>
           <label className="field-label" htmlFor={`attribute-name-${definition.id}`}>اسم الخاصية<input id={`attribute-name-${definition.id}`} value={nameDraft} onChange={(event) => setDefinitionNames((current) => ({ ...current, [definition.id]: event.target.value }))} disabled={busy || !canEdit} maxLength={160} /></label>

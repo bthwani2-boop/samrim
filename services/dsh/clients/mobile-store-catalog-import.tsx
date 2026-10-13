@@ -3,8 +3,7 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import type { CatalogImportCommitResponse, CatalogImportItem, CatalogImportPreviewResponse, CatalogImportRunResponse } from "./generated/dsh-types";
-import type { DshCatalogImportFileInput } from "./mobile";
-import { createDshMobileClient } from "./mobile";
+import type { DshCatalogImportFileInput, createDshMobileClient } from "./mobile";
 
 type StoreCatalogImportScope = Readonly<{ kind: "FIELD"; joiningCaseID: string }> | Readonly<{ kind: "PARTNER"; storeID: string }>;
 type StoreCatalogImportResult = CatalogImportPreviewResponse | CatalogImportRunResponse | CatalogImportCommitResponse;
@@ -61,6 +60,13 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
   const [busy, setBusy] = useState<"preview" | "commit" | "read" | "pick" | "">("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [visibleRowCount, setVisibleRowCount] = useState(25);
+  const orderedItems = useMemo(() => {
+    if (!result) return [];
+    const needsAttention = result.items.filter((item) => item.classification !== "READY" && item.classification !== "IMPORTED" && item.classification !== "REPLAYED");
+    const others = result.items.filter((item) => item.classification === "READY" || item.classification === "IMPORTED" || item.classification === "REPLAYED");
+    return [...needsAttention, ...others];
+  }, [result]);
 
   async function chooseFile() {
     if (busy) return;
@@ -71,6 +77,7 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
       if (!selected) return;
       setFile(selected);
       setResult(null);
+      setVisibleRowCount(25);
       setNotice("");
       setAttempt({ previewKey: createUUID(), previewCorrelation: createUUID(), commitKey: createUUID(), commitCorrelation: createUUID() });
     } catch {
@@ -87,6 +94,7 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
       : attempt;
     if (currentAttempt !== attempt) setAttempt(currentAttempt);
     setResult(null);
+    setVisibleRowCount(25);
     setBusy("preview");
     setError("");
     setNotice("");
@@ -163,10 +171,12 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
     {result ? <View style={styles.status}>
       <Text style={styles.text}>حالة المعاينة: {importStateLabel(result.run.state)} · جاهز: {result.run.acceptedCount} · يحتاج مراجعة: {result.run.conflictCount}</Text>
       <Text style={styles.muted}>تبقى الباركودات غير المعروفة للمراجعة؛ لا تُنشأ منها منتجات تلقائيًا.</Text>
-      {result.items.map((item) => <View key={`${item.rowNumber}-${item.stableKey}`} style={styles.item}>
+      <Text style={styles.muted}>عرض {Math.min(visibleRowCount, orderedItems.length)} من {orderedItems.length} صف؛ النتائج التي تحتاج مراجعة تظهر أولًا.</Text>
+      {orderedItems.slice(0, visibleRowCount).map((item) => <View key={`${item.rowNumber}-${item.stableKey}`} style={styles.item}>
         <Text style={styles.text}>السطر {item.rowNumber} · {classificationLabel(item)}</Text>
         {item.errorMessage ? <Text style={styles.muted}>راجع بيانات هذا الصف.</Text> : null}
       </View>)}
+      {visibleRowCount < orderedItems.length ? <BthwaniButton label="عرض 25 صفًا إضافيًا" disabled={Boolean(busy)} onPress={() => setVisibleRowCount((count) => Math.min(count + 25, orderedItems.length))} variant="secondary" /> : null}
       {isCommitAllowed(result) ? <BthwaniButton busy={busy === "commit"} disabled={Boolean(busy)} label="اعتماد الصفوف الصالحة" onPress={() => void commit()} /> : null}
       {result.run.state === "rejected" ? <>
         <Text style={styles.muted}>تغيرت بعض البيانات منذ إعداد المعاينة. راجع الملف وأعد معاينته قبل الاعتماد.</Text>
