@@ -111,6 +111,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   const [order, setOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
   const [promotionCode, setPromotionCode] = useState("");
+  const [appliedPromotionCode, setAppliedPromotionCode] = useState("");
   const [recipient, setRecipient] = useState<DeliveryRecipientInput>({ mode: "SELF" });
   const quoteRequestID = useRef(0);
   const checkoutSubmitting = useRef(false);
@@ -242,15 +243,16 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
     setQuote({ kind: "loading" });
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await client().quoteCheckout(token, { cartId: cart.id, storeId, addressId: quoteAddressID ?? "", fulfillmentMode, ...(promotionCode.trim() ? { promotionCode: promotionCode.trim().toUpperCase() } : {}) }, cart.version);
+      const result = await client().quoteCheckout(token, { cartId: cart.id, storeId, addressId: quoteAddressID ?? "", fulfillmentMode, ...(appliedPromotionCode ? { promotionCode: appliedPromotionCode } : {}) }, cart.version);
       if (requestID === quoteRequestID.current) setQuote({ kind: "ready", quote: result.quote });
     } catch (cause) {
       console.error("DSH checkout quote failed", cause);
       if (requestID === quoteRequestID.current) setQuote({ kind: "error" });
     }
-  }, [fulfillmentMode, pickupMode, promotionCode, quoteAddressID, serviceableAddressId, storeId]);
+  }, [appliedPromotionCode, fulfillmentMode, pickupMode, quoteAddressID, serviceableAddressId, storeId]);
 
   const readyCart = state.kind === "ready" ? state.cart : null;
+  const promotionNeedsApply = promotionCode.trim().toUpperCase() !== appliedPromotionCode;
   const verifiedQuote = readyCart && quote.kind === "ready" && quoteMatchesCheckout(quote.quote, readyCart, storeId, pickupMode ? "" : serviceableAddressId ?? "", fulfillmentMode, promotionCode) ? quote.quote : null;
   useEffect(() => {
     if (readyCart) void refreshQuote(readyCart);
@@ -404,14 +406,14 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
           <Text style={styles.muted}>مجموع المنتجات: {formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}</Text>
           <View style={styles.promotionBox}>
             <Text style={styles.fulfillmentTitle}>رمز العرض</Text>
-            <View style={styles.promotionRow}><TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" editable={!mutationBusy} onChangeText={setPromotionCode} placeholder="مثال: WELCOME10" placeholderTextColor={theme.colorMuted} style={styles.promotionInput} value={promotionCode} /><BthwaniButton disabled={mutationBusy || (!pickupMode && !serviceableAddressId)} label="تطبيق" onPress={() => { if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /></View>
+            <View style={styles.promotionRow}><TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" editable={!mutationBusy} onChangeText={setPromotionCode} placeholder="مثال: WELCOME10" placeholderTextColor={theme.colorMuted} style={styles.promotionInput} value={promotionCode} /><BthwaniButton disabled={mutationBusy || (!pickupMode && !serviceableAddressId)} label="تطبيق" onPress={() => { if (promotionNeedsApply) setAppliedPromotionCode(promotionCode.trim().toUpperCase()); else if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /></View>
           </View>
           {verifiedQuote ? <>
             {verifiedQuote.discountMinor > 0 ? <Text style={styles.success}>الخصم: -{formatMoney(verifiedQuote.discountMinor, verifiedQuote.currency)}{verifiedQuote.promotionCode ? ` · ${verifiedQuote.promotionCode}` : ""}</Text> : null}
             {!pickupMode ? <Text style={styles.muted}>رسوم التوصيل: {formatMoney(verifiedQuote.deliveryFeeMinor, verifiedQuote.currency)}</Text> : <Text style={styles.muted}>رسوم التوصيل: لا توجد — الاستلام من المتجر</Text>}
             <Text style={styles.total}>الإجمالي المتوقع عند الإتمام: {formatMoney(verifiedQuote.totalAmountMinor, verifiedQuote.currency)}</Text>
           </> : null}
-          {quote.kind === "ready" && !verifiedQuote ? <Text accessibilityLiveRegion="polite" style={styles.warning}>تغيّرت تفاصيل الطلب؛ جارٍ تحديث الإجمالي والخصم قبل الإتمام.</Text> : null}
+          {promotionNeedsApply ? <Text accessibilityLiveRegion="polite" style={styles.warning}>اضغط «تطبيق» لتحديث الإجمالي بحسب رمز العرض الحالي.</Text> : quote.kind === "ready" && !verifiedQuote ? <Text accessibilityLiveRegion="polite" style={styles.warning}>تغيّرت تفاصيل الطلب؛ جارٍ تحديث الإجمالي والخصم قبل الإتمام.</Text> : null}
           <View accessibilityLabel="توزيع مصدر الدفع" style={styles.balanceBox}>
             <Text style={styles.fulfillmentTitle}>الدفع من رصيد بثواني</Text>
             <TextInput accessibilityLabel="المبلغ المدفوع من رصيد بثواني بالريال" editable={!mutationBusy} keyboardType="number-pad" maxLength={15} onChangeText={setInternalBalanceInput} placeholder="0" placeholderTextColor={theme.colorMuted} style={styles.promotionInput} value={internalBalanceInput} />

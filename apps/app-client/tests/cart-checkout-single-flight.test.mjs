@@ -11,16 +11,19 @@ const ast = ts.createSourceFile("cart-checkout.tsx", source, ts.ScriptTarget.Lat
 let checkoutNode;
 let quoteNode;
 let verifiedQuoteNode;
+let refreshQuoteNode;
 function visit(node) {
   if (ts.isFunctionDeclaration(node) && node.name?.text === "checkout") checkoutNode = node;
   if (ts.isFunctionDeclaration(node) && node.name?.text === "quoteMatchesCheckout") quoteNode = node;
   if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "verifiedQuote") verifiedQuoteNode = node;
+  if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "refreshQuote") refreshQuoteNode = node;
   ts.forEachChild(node, visit);
 }
 visit(ast);
 assert.ok(checkoutNode, "checkout handler is required");
 assert.ok(quoteNode, "checkout quote identity guard is required");
 assert.ok(verifiedQuoteNode?.initializer, "visible checkout quote derivation is required");
+assert.ok(refreshQuoteNode?.initializer, "quote request callback is required");
 const compilerOptions = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None };
 const runnableQuote = ts.transpileModule(quoteNode.getText(ast), { compilerOptions }).outputText;
 const runnableHandler = ts.transpileModule(checkoutNode.getText(ast), { compilerOptions }).outputText;
@@ -178,4 +181,41 @@ test("payment summary exposes only the quote matching the current checkout conte
   assert.equal(derive(current, "CUSTOMER_PICKUP", "NEW"), null);
   assert.equal(readVisibleQuote(context.state.cart, { kind: "loading" }, context.storeId, true, undefined, context.fulfillmentMode, ""), null);
   assert.equal(readVisibleQuote(null, { kind: "ready", quote: current }, context.storeId, true, undefined, context.fulfillmentMode, ""), null);
+});
+
+test("typing a coupon does not change the quote request until the applied coupon changes", async () => {
+  const expr = refreshQuoteNode.initializer.getText(ast);
+  const executable = ts.transpileModule(`const refreshQuote = ${expr};\nrefreshQuote;`, { compilerOptions }).outputText;
+  const requests = [];
+  const quoteStates = [];
+  let dependencies = [];
+  const context = {
+    appliedPromotionCode: "SAVE10",
+    promotionCode: "DRAFT99", // Deliberately differs: only the applied code may hit the server.
+    fulfillmentMode: "CUSTOMER_PICKUP",
+    pickupMode: true,
+    quoteAddressID: "",
+    serviceableAddressId: undefined,
+    storeId: "store-1",
+    quoteRequestID: { current: 0 },
+    setQuote: (state) => quoteStates.push(state),
+    getUsableIdentityAccessToken: async () => "token",
+    client: () => ({ quoteCheckout: async (_, request, version) => {
+      requests.push({ request, version });
+      return { quote: { cartId: request.cartId, promotionCode: request.promotionCode } };
+    } }),
+    useCallback: (callback, deps) => {
+      dependencies = deps;
+      return callback;
+    },
+    console: { error: () => {} },
+  };
+  const refreshQuote = vm.runInNewContext(executable, context);
+  await refreshQuote({ id: "cart-1", version: 3 });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].request.promotionCode, "SAVE10");
+  assert.equal(requests[0].version, 3);
+  assert.equal(quoteStates.at(-1).kind, "ready");
+  assert.ok(dependencies.includes("SAVE10"));
+  assert.ok(!dependencies.includes("DRAFT99"));
 });
