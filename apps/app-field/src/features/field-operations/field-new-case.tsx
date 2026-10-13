@@ -10,7 +10,7 @@ import { ActivityIndicator, Image, Keyboard, ScrollView, Text, TextInput, useWin
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
-import { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain, submitFieldCaseWithReadback } from "./field-draft-readback";
+import { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, fieldSubmitIdempotencyPayload, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain, submitFieldCaseWithReadback } from "./field-draft-readback";
 import { fieldAdmissionActionability } from "./field-eligibility";
 import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
 import { getFieldJoiningRequirements } from "./field-joining-readiness";
@@ -31,6 +31,7 @@ const proofTypeOptions: ReadonlyArray<{ value: JoiningCaseProofType; label: stri
   { value: "COMMERCIAL_REGISTRATION", label: "سجل تجاري" },
   { value: "IDENTITY_DOCUMENT", label: "هوية" },
   { value: "PASSPORT", label: "جواز سفر" },
+  { value: "FREELANCE_WORK_DOCUMENT", label: "وثيقة عمل حر" },
 ];
 
 function initialJoiningCaseInput(): CreateJoiningCaseRequest {
@@ -436,7 +437,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
           setError(`حُفظت المسودة. أكمل فقط: ${missingLabels.join("، ")} ثم أرسلها للمراجعة.`);
           return;
         }
-        const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `field-submit:${latest.case.id}:${latest.case.version}`);
+        const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, fieldSubmitIdempotencyPayload(latest.case.id, latest.case.version));
         const outcome = await submitFieldCaseWithReadback(
           latest.case.id,
           () => fieldClient().submitFieldJoiningCase(token, latest.case.id, latest.case.version, `field_submit_${digest}`, `field_submit_corr_${digest}`),

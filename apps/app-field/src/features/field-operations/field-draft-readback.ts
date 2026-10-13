@@ -76,6 +76,12 @@ export function fieldDraftMediaUploadConfirmed(
   return submittedImage.uri === savedImage.uri && submittedImage.contentSha256 === savedImage.contentSha256;
 }
 
+// Both Field submission entry points must reuse one idempotency identity
+// for the same joining case and version after an uncertain network outcome.
+export function fieldSubmitIdempotencyPayload(caseID: string, expectedVersion: number): string {
+  return `field-submit:${caseID}:${expectedVersion}`;
+}
+
 type FieldSubmitReadback =
   | Readonly<{ kind: "confirmed"; canonical: JoiningCaseResponse }>
   | Readonly<{ kind: "draft"; canonical: JoiningCaseResponse }>

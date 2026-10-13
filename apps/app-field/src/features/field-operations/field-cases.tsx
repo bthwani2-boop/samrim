@@ -9,7 +9,7 @@ import { ActivityIndicator, FlatList, Image, Text, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient, isMissingFieldAdmission } from "./field-client";
 import { FieldCommercialAgreement } from "./field-commercial-agreement";
-import { fieldDraftMediaUploadConfirmed, markFieldMediaReadbackUncertain } from "./field-draft-readback";
+import { fieldDraftMediaUploadConfirmed, fieldSubmitIdempotencyPayload, markFieldMediaReadbackUncertain } from "./field-draft-readback";
 import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
 import { getFieldJoiningRequirements } from "./field-joining-readiness";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
@@ -41,7 +41,7 @@ function dshErrorCode(cause: unknown): string {
 }
 
 async function fieldCaseSubmitIdentity(caseID: string, expectedVersion: number) {
-  const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `field-case-submit\u0000${caseID}\u0000${expectedVersion}`);
+  const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, fieldSubmitIdempotencyPayload(caseID, expectedVersion));
   return { idempotencyKey: `field_submit_${digest}`, correlationID: `field_submit_corr_${digest}` };
 }
 

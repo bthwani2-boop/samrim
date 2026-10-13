@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { submitFieldCaseWithReadback } from "../../apps/app-field/src/features/field-operations/field-draft-readback.ts";
+import { fieldSubmitIdempotencyPayload, submitFieldCaseWithReadback } from "../../apps/app-field/src/features/field-operations/field-draft-readback.ts";
 
 const caseResponse = (state = "admission_requested", id = "case-1", origin = "field") => ({ case: { id, origin, state } });
 const uncertain = (cause) => cause?.kind === "network" || (cause?.status ?? 0) >= 500;
+
+test("Field submit idempotency identity is stable across entry points and changes by case/version", () => {
+  const attempt = fieldSubmitIdempotencyPayload("case-1", 3);
+  assert.equal(attempt, "field-submit:case-1:3");
+  assert.equal(fieldSubmitIdempotencyPayload("case-1", 3), attempt);
+  assert.notEqual(fieldSubmitIdempotencyPayload("case-1", 4), attempt);
+  assert.notEqual(fieldSubmitIdempotencyPayload("case-2", 3), attempt);
+});
 
 test("a lost submission response resolves from the canonical DSH state without replaying the mutation", async () => {
   let submissions = 0;
