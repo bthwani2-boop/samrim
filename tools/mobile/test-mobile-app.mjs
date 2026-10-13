@@ -139,7 +139,8 @@ if (app === "app-field") {
   const fieldReadinessSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-readiness.tsx"), "utf8");
   assert.match(fieldReadinessSource, /fresh: Crypto\.randomUUID\(\)/, "app-field: each Add Partner tap must create a distinct form identity");
   const newCaseSourceForNavigation = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-new-case.tsx"), "utf8");
-  assert.match(newCaseSourceForNavigation, /router\.replace\(\{ pathname: "\/cases", params: \{ caseId: submitted\.case\.id \} \}/, "app-field: after confirmed submission, return to the saved case list");
+  assert.match(newCaseSourceForNavigation, /router\.replace\(\{ pathname: "\/cases", params: \{ caseId: submitted\.case\.id,/, "app-field: after confirmed submission, return to the saved case list");
+  assert.match(newCaseSourceForNavigation, /optionalMediaUnconfirmed \? \{ mediaWarning: "1" \}/, "app-field: the saved case must keep the optional media warning after navigation");
   const hoursEditorSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-working-hours-editor.tsx"), "utf8");
   assert.doesNotMatch(hoursEditorSource, /applyYemenDaytimePreset|8 صباحًا – 10 مساءً · كل الأسبوع|أيام · \$\{intervals\.length\} فترات/, "app-field: the removed quick preset and counts must not reappear in the working-hours form");
   const admissionProviderOpen = layoutContent.indexOf("<FieldAdmissionProvider>");

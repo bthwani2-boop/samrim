@@ -3,6 +3,7 @@ import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
 import { NextResponse } from "next/server";
 
 import { admitField, approveFieldAdmission, authorizeDshFieldReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, listFieldAdmissions, listOperatorFieldActivity, provisionFieldAdmission, readFieldAdmissionByActor, reviewFieldAdmissionProfile, setDshFieldRoleEnabled, updateFieldAdmissionProfile } from "../../../src/server/dsh/dsh-bff";
+import { collectScopedPage } from "../../../src/server/field/scoped-page";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../src/server/security/csrf";
@@ -140,34 +141,46 @@ export async function GET(request: Request) {
       const phase = enabled !== undefined ? "accounts" : workbenchCursor?.phase ?? "candidates";
       const items: Array<Readonly<{ kind: "candidate"; admission: Awaited<ReturnType<typeof listFieldAdmissions>>["admissions"][number] }> | Readonly<{ kind: "account"; account: Awaited<ReturnType<typeof searchIdentityRoles>>["items"][number] & { admission: Awaited<ReturnType<typeof readFieldAdmissionByActor>>["admission"] | null; latestStore: Awaited<ReturnType<typeof listOperatorFieldActivity>>["items"][number]["latestStore"]; joiningCaseCount: number; latestJoiningCase: Awaited<ReturnType<typeof listOperatorFieldActivity>>["items"][number]["latestJoiningCase"] } }>> = [];
       let accountsCursor = "";
+      // A city-scoped page must be filled with matching actors BEFORE returning
+      // an Identity cursor. Filtering just one Identity page hides later matches.
+      const loadAccounts = (count: number, sourceCursor: string) => collectScopedPage({
+        limit: count,
+        cursor: sourceCursor,
+        fetchPage: (size, source) => searchIdentityRoles("field", query, size, source, enabled ?? undefined, sort),
+        enrich: async (role) => {
+          try {
+            const result = await readFieldAdmissionByActor(role.actorId, { operatorActorId: identity.subject });
+            return { kind: "account" as const, account: { ...role, admission: result.admission } };
+          } catch (error) {
+            if (isDshClientError(error) && dshHttpStatus(error) === 404) return { kind: "account" as const, account: { ...role, admission: null } };
+            throw error;
+          }
+        },
+        matches: (item) => !serviceCityId || Boolean(item.account.admission?.allServiceCities || item.account.admission?.serviceCityIds?.includes(serviceCityId)),
+      });
       if (phase === "candidates") {
         const candidates = await listFieldAdmissions(query, "pending", "created_desc", limit, workbenchCursor?.sourceCursor ?? "", { operatorActorId: identity.subject }, serviceCityId);
         items.push(...candidates.admissions.map((admission) => ({ kind: "candidate" as const, admission })));
         if (candidates.nextCursor) return NextResponse.json({ items, nextCursor: encodeWorkbenchCursor({ version: 2, phase: "candidates", sourceCursor: candidates.nextCursor, scope }) }, { headers: { "Cache-Control": "no-store" } });
         if (items.length >= limit) {
-          const firstAccount = await searchIdentityRoles("field", query, 1, "", enabled ?? undefined, sort);
+          const firstAccount = await loadAccounts(1, "");
           return NextResponse.json({ items, nextCursor: firstAccount.items.length ? encodeWorkbenchCursor({ version: 2, phase: "accounts", sourceCursor: "", scope }) : undefined }, { headers: { "Cache-Control": "no-store" } });
         }
       } else accountsCursor = workbenchCursor?.sourceCursor ?? "";
       const accountLimit = Math.max(1, limit - items.length);
-      const accounts = await searchIdentityRoles("field", query, accountLimit, accountsCursor, enabled ?? undefined, sort);
-      const roster = await Promise.all(accounts.items.map(async (role) => {
-        try {
-          const result = await readFieldAdmissionByActor(role.actorId, { operatorActorId: identity.subject });
-          return { kind: "account" as const, account: { ...role, admission: result.admission } };
-        } catch (error) {
-          if (isDshClientError(error) && dshHttpStatus(error) === 404) return { kind: "account" as const, account: { ...role, admission: null } };
-          throw error;
-        }
-      }));
-      const visibleRoster = roster.filter((item) => !serviceCityId || item.account.admission?.allServiceCities || item.account.admission?.serviceCityIds?.includes(serviceCityId));
+      const accounts = await loadAccounts(accountLimit, accountsCursor);
+      const visibleRoster = accounts.items;
       const activity = visibleRoster.length ? await listOperatorFieldActivity(visibleRoster.map((item) => item.account.actorId), { operatorActorId: identity.subject }) : { items: [] };
       const activityByActor = new Map(activity.items.map((item) => [item.fieldActorId, item] as const));
       items.push(...visibleRoster.map((item) => {
         const summary = activityByActor.get(item.account.actorId);
         return { ...item, account: { ...item.account, latestStore: summary?.latestStore ?? null, joiningCaseCount: summary?.joiningCaseCount ?? 0, latestJoiningCase: summary?.latestJoiningCase ?? null } };
       }));
-      const nextCursor = accounts.nextCursor ? encodeWorkbenchCursor({ version: 2, phase: "accounts", sourceCursor: accounts.nextCursor, scope }) : undefined;
+      // Avoid an empty final page when subsequent Identity roles are all outside
+      // the selected city. The probe is read-only and preserves the source cursor.
+      const nextMatchingAccount = serviceCityId && accounts.nextCursor ? await loadAccounts(1, accounts.nextCursor) : null;
+      const hasNext = Boolean(accounts.nextCursor && (!serviceCityId || nextMatchingAccount?.items.length));
+      const nextCursor = hasNext && accounts.nextCursor ? encodeWorkbenchCursor({ version: 2, phase: "accounts", sourceCursor: accounts.nextCursor, scope }) : undefined;
       return NextResponse.json({ items, nextCursor }, { headers: { "Cache-Control": "no-store" } });
     }
     const page = await searchIdentityRoles("field", query, limit, cursor, enabled, sort);

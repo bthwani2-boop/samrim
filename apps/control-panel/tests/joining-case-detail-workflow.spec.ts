@@ -44,6 +44,8 @@ test("joining case reads private proof on demand, preserves owner identity and o
   const details = page.locator(".partner-case-details");
   await details.locator(":scope > summary").click();
   await expect(details.getByRole("link", { name: "فتح موقع المتجر على الخريطة" })).toHaveAttribute("href", "https://www.google.com/maps?q=15.35,44.2");
+  expect(proofReads).toBe(0);
+  await details.locator("dl.facts-grid button.button-secondary").click();
   await expect(details).toContainText("REG-12345");
   expect(proofReads).toBe(1);
   expect(policyReads).toBe(0);
@@ -93,6 +95,6 @@ test("case review returns to the precise originating queue filters without leaki
   const back = page.getByRole("link", { name: "العودة إلى طلبات الانضمام" });
   await expect(back).toHaveAttribute("href", "/partners/joining" + original);
   await back.click();
-  await expect(page).toHaveURL(new RegExp("/partners/joining\\?"));
+  await expect(page).toHaveURL(/\/partners\/joining\?/);
   expect(new URL(page.url()).search).toBe(original);
 });
