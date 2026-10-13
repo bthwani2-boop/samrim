@@ -1,9 +1,10 @@
 import { borders, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniConfirmDialog, useAppearanceTheme } from "@bthwani/design-system/native";
-import type { CommerceVertical, CommercialStoreType, JoiningCaseProofType, JoiningCaseResponse, ServiceCity, StoreFulfillmentMode, StoreWeeklyWorkingHours, StoreWorkingHoursInterval } from "@bthwani/dsh";
+import type { CommerceVertical, CommercialStoreType, CorrectJoiningCaseRequest, JoiningCaseProofType, JoiningCaseResponse, ServiceCity, StoreFulfillmentMode, StoreWeeklyWorkingHours, StoreWorkingHoursInterval } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { partnerCorrectionPublicReadbackMatches } from "./partner-correction-recovery";
 import { StoreProfileImageEditor } from "./store-profile-image-editor";
 import { correctAndResubmitOwnJoiningCase, listCatalogVerticals, listCommercialStoreTypes, readOwnJoiningCase } from "./store-readback-client";
 
@@ -15,6 +16,7 @@ const PROOF_TYPES: ReadonlyArray<{ value: JoiningCaseProofType; label: string }>
   { value: "COMMERCIAL_REGISTRATION", label: "سجل تجاري" },
   { value: "IDENTITY_DOCUMENT", label: "هوية" },
   { value: "PASSPORT", label: "جواز سفر" },
+  { value: "FREELANCE_WORK_DOCUMENT", label: "وثيقة عمل حر" },
 ];
 type WorkingIntervalDraft = StoreWorkingHoursInterval & Readonly<{ draftKey: string }>;
 
@@ -85,16 +87,6 @@ function workingHoursIssue(intervals: ReadonlyArray<StoreWorkingHoursInterval>):
 
 function sortedIntervals(intervals: ReadonlyArray<StoreWorkingHoursInterval>): StoreWorkingHoursInterval[] {
   return [...intervals].sort((left, right) => left.dayOfWeek - right.dayOfWeek || left.opensAt.localeCompare(right.opensAt) || left.closesAt.localeCompare(right.closesAt));
-}
-
-function weeklyHoursFingerprint(value: StoreWeeklyWorkingHours | null | undefined): string {
-  return sortedIntervals(value?.intervals ?? [])
-    .map((interval) => [interval.dayOfWeek, interval.opensAt, interval.closesAt, interval.closesNextDay ? "1" : "0"].join("|"))
-    .join(",");
-}
-
-function sameValues(left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean {
-  return [...left].sort((a, b) => a.localeCompare(b)).join("|") === [...right].sort((a, b) => a.localeCompare(b)).join("|");
 }
 
 export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: JoiningCaseResponse; cities: ReadonlyArray<ServiceCity>; onUpdated: (next: JoiningCaseResponse) => void }) {
@@ -221,50 +213,50 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       setError(hoursError || "أكمل اسم المالك والمتجر والنشاط والعنوان والمدينة والتصنيف والإثبات وطريقة توصيل واحدة على الأقل ضمن الحدود الموضحة.");
       return;
     }
+    const correctionInput: CorrectJoiningCaseRequest = {
+      ownerFullName: nextOwnerName,
+      businessName: nextBusinessName,
+      firstStoreName: nextStoreName,
+      firstStoreAddress: nextAddress,
+      serviceCityId,
+      firstStoreVerticalId: verticalId,
+      firstStoreCommercialTypeId: commercialTypeId,
+      firstStoreLatitude: nextLatitude,
+      firstStoreLongitude: nextLongitude,
+      firstStoreWorkingHours: nextWorkingHours,
+      firstStoreProofType: proofType,
+      firstStoreProofNumber: nextProofNumber,
+      ...(nextNotes ? { firstStoreNotes: nextNotes } : {}),
+      firstStoreFulfillmentModes: [...fulfillmentModes],
+    };
     setBusy(true);
     setError("");
     try {
       const resubmitted = await correctAndResubmitOwnJoiningCase({
         caseID: current.id,
-        input: {
-          ownerFullName: nextOwnerName,
-          businessName: nextBusinessName,
-          firstStoreName: nextStoreName,
-          firstStoreAddress: nextAddress,
-          serviceCityId,
-          firstStoreVerticalId: verticalId,
-          firstStoreCommercialTypeId: commercialTypeId,
-          firstStoreLatitude: nextLatitude,
-          firstStoreLongitude: nextLongitude,
-          firstStoreWorkingHours: nextWorkingHours,
-          firstStoreProofType: proofType,
-          firstStoreProofNumber: nextProofNumber,
-          ...(nextNotes ? { firstStoreNotes: nextNotes } : {}),
-          firstStoreFulfillmentModes: [...fulfillmentModes],
-        },
+        input: correctionInput,
         expectedVersion: current.version,
       });
       onUpdated(resubmitted);
     } catch (nextError) {
       try {
         const latest = await readOwnJoiningCase();
-        onUpdated(latest);
         const latestCase = latest.case;
-        const submittedMatches = latestCase.state === "submitted"
-          && latestCase.ownerFullName === nextOwnerName
-          && latestCase.businessName === nextBusinessName
-          && latestCase.firstStoreName === nextStoreName
-          && latestCase.firstStoreAddress === nextAddress
-          && latestCase.serviceCityId === serviceCityId
-          && latestCase.firstStoreVerticalId === verticalId
-          && latestCase.firstStoreCommercialTypeId === commercialTypeId
-          && latestCase.firstStoreLatitude === nextLatitude
-          && latestCase.firstStoreLongitude === nextLongitude
-          && weeklyHoursFingerprint(latestCase.firstStoreWorkingHours) === weeklyHoursFingerprint(nextWorkingHours)
-          && latestCase.firstStoreProofType === proofType
-          && (latestCase.firstStoreNotes ?? "") === nextNotes
-          && sameValues(latestCase.firstStoreFulfillmentModes, fulfillmentModes);
-        if (submittedMatches) { setError(""); return; }
+        if (latestCase.id !== current.id) throw new Error("PARTNER_CORRECTION_WRONG_CASE_READBACK");
+        // A failed write cannot discard the partner's edited form. In particular,
+        // a same-state DSH read generates fresh arrays and would otherwise reset it.
+        if (latestCase.state === "needs_correction") {
+          if (latestCase.version !== current.version) {
+            preserveCorrectionDraftAtVersion.current = latestCase.version;
+            onUpdated(latest);
+          }
+        } else {
+          onUpdated(latest);
+        }
+        if (partnerCorrectionPublicReadbackMatches(current.id, correctionInput, latestCase)) {
+          setError("");
+          return;
+        }
       } catch (readError) {
         console.warn("DSH Partner correction recovery read failed", readError);
       }
