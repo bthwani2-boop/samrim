@@ -10,6 +10,7 @@ import { ActivityIndicator, Image, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
+import { canActOnCaptainTask } from "./captain-task-eligibility";
 import { OrderConversation } from "./order-conversation";
 
 type PendingCaptainCompletionAttempt = Readonly<{
@@ -71,6 +72,7 @@ export function CaptainDeliveries() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setTasks({});
     setCompletionStorageReady(false);
     setError("");
     try {
@@ -168,7 +170,7 @@ export function CaptainDeliveries() {
   }, [activeAssignmentID]);
 
   async function pickup(assignment: CaptainAssignment) {
-    if (busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned") return;
+    if (busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
     setBusy(assignment.id);
     setError("");
     try {
@@ -184,7 +186,7 @@ export function CaptainDeliveries() {
   }
 
   async function complete(assignment: CaptainAssignment, result: "delivered" | "delivery_failed", collectedAmountMinor?: number) {
-    if (busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "in_custody") return;
+    if (busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "in_custody" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
     setBusy(assignment.id);
     setError("");
     try {
@@ -315,6 +317,7 @@ export function CaptainDeliveries() {
       {!loading && !assignments.length ? <Text style={styles.muted}>لا توجد تكليفات.</Text> : null}
       {!loading ? assignments.map((assignment) => {
         const task = tasks[assignment.id];
+        const taskReady = canActOnCaptainTask(assignment, task);
         const assignmentLabel = task ? captainAssignmentStateLabel(task.deliveryState) : captainAssignmentStateLabel(assignment.state);
         const handoffLabel = task ? captainHandoffStateLabel(task.handoffState) : captainHandoffStateLabel(assignment.handoff.state);
         const requiresCollection = task?.paymentState === "REQUIRES_COLLECTION";
@@ -387,14 +390,15 @@ export function CaptainDeliveries() {
                 ) : null}
                 <Text style={task.deliveryState === "delivery_failed" ? styles.warning : styles.progress}>{captainTaskProgressLabel(task)}</Text>
               </View>
-            ) : <Text style={styles.muted}>جارٍ تجهيز تفاصيل المهمة.</Text>}
-            {assignment.state === "assigned" && assignment.handoff.state === "store_confirmed" ? <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || !completionStorageReady || Boolean(pendingCompletion)} label="تأكيد استلام الطلب" onPress={() => void pickup(assignment)} /> : null}
+            ) : <Text style={styles.warning}>تعذر قراءة تفاصيل المهمة من الخدمة. أعد قراءة التوصيلات قبل الاستلام أو التسليم.</Text>}
+            {!taskReady && task ? <Text style={styles.warning}>تغيرت حالة المهمة بين القراءتين. أعد قراءة التوصيلات قبل أي إجراء.</Text> : null}
+            {assignment.state === "assigned" && assignment.handoff.state === "store_confirmed" ? <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || !completionStorageReady || Boolean(pendingCompletion) || !taskReady} label="تأكيد استلام الطلب" onPress={() => void pickup(assignment)} /> : null}
             {assignment.state === "assigned" && assignment.handoff.state === "pending" ? <Text style={styles.muted}>بانتظار تأكيد المتجر قبل الاستلام.</Text> : null}
             {assignment.state === "in_custody" && pendingCompletion?.assignmentID === assignment.id ? <Text style={styles.warning}>يُحسم هذا الإجراء من المحاولة المحفوظة أعلاه.</Text> : null}
             {assignment.state === "in_custody" && !pendingCompletion ? (
               <View style={styles.row}>
-                <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || !completionStorageReady || completionStorageIssue || collectionAmountInvalid || deliveryProofInvalid} label={completionLabel} onPress={() => void complete(assignment, "delivered", collectedAmountMinor)} style={styles.actionButton} />
-                <BthwaniButton disabled={Boolean(busy) || !completionStorageReady || completionStorageIssue} label="تعذر التسليم" onPress={() => void complete(assignment, "delivery_failed")} style={styles.actionButton} variant="danger" />
+                <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || !completionStorageReady || completionStorageIssue || !taskReady || collectionAmountInvalid || deliveryProofInvalid} label={completionLabel} onPress={() => void complete(assignment, "delivered", collectedAmountMinor)} style={styles.actionButton} />
+                <BthwaniButton disabled={Boolean(busy) || !completionStorageReady || completionStorageIssue || !taskReady} label="تعذر التسليم" onPress={() => void complete(assignment, "delivery_failed")} style={styles.actionButton} variant="danger" />
               </View>
             ) : null}
             {assignment.state === "delivery_failed" ? <View style={styles.warningBox}><Text style={styles.warning}>يبقى الطلب في عهدتك حتى يعالج المشغل التعذر؛ لن تُفتح لك مهمة جديدة قبل الاسترداد.</Text></View> : null}
