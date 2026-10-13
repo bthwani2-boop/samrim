@@ -1,4 +1,4 @@
-import type { CreateFieldJoiningCaseDraftRequest, JoiningCaseResponse, JoiningCaseView, StoreWorkingHoursInterval } from "@bthwani/dsh";
+import type { CreateFieldJoiningCaseDraftRequest, JoiningCaseResponse, JoiningCaseView, MediaProvenance, MediaProvenanceInput, StoreWorkingHoursInterval } from "@bthwani/dsh";
 
 function matchesDraftText(expected: string | undefined, actual: string | null | undefined): boolean {
   return (expected ?? "").trim() === (actual ?? "").trim();
@@ -60,20 +60,40 @@ export function markFieldMediaReadbackUncertain(cause: unknown): Error {
   return Object.assign(new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE"), { cause });
 }
 
+function normalizedProvenanceURI(value: string | undefined): string {
+  return (value ?? "").trim().replace(/^https?:/i, (scheme) => scheme.toLowerCase());
+}
+
+function fieldImageRightsMatch(actual: MediaProvenance | null | undefined, expected: MediaProvenanceInput): boolean {
+  return Boolean(actual && expected.rightsAttested &&
+    actual.attestedByActorId && actual.attestedAt &&
+    actual.creator === expected.creator.trim() &&
+    actual.sourceDescription === expected.sourceDescription.trim() &&
+    normalizedProvenanceURI(actual.sourceUri) === normalizedProvenanceURI(expected.sourceUri) &&
+    actual.rightsStatement === expected.rightsStatement.trim() &&
+    normalizedProvenanceURI(actual.rightsUri) === normalizedProvenanceURI(expected.rightsUri));
+}
+
 export function fieldDraftMediaUploadConfirmed(
   uploaded: JoiningCaseView,
   canonical: JoiningCaseView,
   kind: "store",
   previousVersion: number,
+  expectedCaseID: string,
+  expectedRights: MediaProvenanceInput,
 ): boolean {
-  if (uploaded.id !== canonical.id || uploaded.origin !== "field" ||
+  if (kind !== "store" || uploaded.id !== expectedCaseID || canonical.id !== expectedCaseID ||
+    uploaded.origin !== "field" || canonical.origin !== "field" ||
     uploaded.version <= previousVersion || canonical.version < uploaded.version) return false;
   const submittedImage = uploaded.storeProfileImage;
   const savedImage = canonical.storeProfileImage;
-  // The private DSH media readback includes the persisted URI and SHA-256.
-  // Missing evidence or another stored image cannot confirm this particular upload.
+  // The same image bytes and BOTH DSH rights records must match this upload.
   if (!submittedImage?.uri || !savedImage?.uri || !submittedImage.contentSha256 || !savedImage.contentSha256) return false;
-  return submittedImage.uri === savedImage.uri && submittedImage.contentSha256 === savedImage.contentSha256;
+  return submittedImage.uri === savedImage.uri &&
+    submittedImage.contentSha256 === savedImage.contentSha256 &&
+    fieldImageRightsMatch(submittedImage.provenance, expectedRights) &&
+    fieldImageRightsMatch(savedImage.provenance, expectedRights) &&
+    submittedImage.provenance?.attestedByActorId === savedImage.provenance?.attestedByActorId;
 }
 
 // Both Field submission entry points must reuse one idempotency identity

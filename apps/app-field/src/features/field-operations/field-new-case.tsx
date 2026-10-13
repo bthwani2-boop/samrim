@@ -642,7 +642,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       const token = await getUsableIdentityAccessToken();
       const uploaded = await fieldClient().uploadJoiningCaseStoreImage(token, attempt.caseID, attempt.image, attempt.image.provenance, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
       const canonical = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID).catch((cause: unknown) => { throw markFieldMediaReadbackUncertain(cause); });
-      if (!fieldDraftMediaUploadConfirmed(uploaded.case, canonical.case, "store", attempt.expectedVersion)) throw new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH");
+      if (!fieldDraftMediaUploadConfirmed(uploaded.case, canonical.case, "store", attempt.expectedVersion, attempt.caseID, attempt.image.provenance)) throw new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH");
       setCreatedCase(canonical);
       setStoreImage(null);
       setPendingImageAttempt(null);
