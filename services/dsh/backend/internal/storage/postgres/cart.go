@@ -366,7 +366,7 @@ func UpdateCartLine(ctx context.Context, db *sql.DB, clientActorID, lineID strin
 	}
 	var storeID, offerID string
 	var cart CartRecord
-	err = tx.QueryRowContext(ctx, `SELECT c.id,c.store_id,c.state,c.version,c.created_at,c.updated_at,l.store_offer_id FROM dsh.commerce_cart_lines l JOIN dsh.commerce_carts c ON c.id=l.cart_id WHERE l.id=$1 AND c.client_actor_id=$2 FOR UPDATE OF c,l`, lineID, clientActorID).Scan(&cart.ID, &storeID, &cart.State, &cart.Version, &cart.CreatedAt, &cart.UpdatedAt, &offerID)
+	err = tx.QueryRowContext(ctx, `SELECT c.id,c.store_id,c.state,c.version,c.created_at,c.updated_at,l.store_offer_id FROM dsh.commerce_cart_lines l JOIN dsh.commerce_carts c ON c.id=l.cart_id WHERE l.id=$1 AND c.client_actor_id=$2 AND l.removed_at IS NULL FOR UPDATE OF c,l`, lineID, clientActorID).Scan(&cart.ID, &storeID, &cart.State, &cart.Version, &cart.CreatedAt, &cart.UpdatedAt, &offerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CartRecord{}, false, ErrCartNotFound
 	}
@@ -451,7 +451,7 @@ func RemoveCartLine(ctx context.Context, db *sql.DB, clientActorID, lineID strin
 	}
 	var storeID string
 	var cart CartRecord
-	err = tx.QueryRowContext(ctx, `SELECT c.id,c.store_id,c.state,c.version,c.created_at,c.updated_at FROM dsh.commerce_cart_lines l JOIN dsh.commerce_carts c ON c.id=l.cart_id WHERE l.id=$1 AND c.client_actor_id=$2 FOR UPDATE OF c,l`, lineID, clientActorID).Scan(&cart.ID, &storeID, &cart.State, &cart.Version, &cart.CreatedAt, &cart.UpdatedAt)
+	err = tx.QueryRowContext(ctx, `SELECT c.id,c.store_id,c.state,c.version,c.created_at,c.updated_at FROM dsh.commerce_cart_lines l JOIN dsh.commerce_carts c ON c.id=l.cart_id WHERE l.id=$1 AND c.client_actor_id=$2 AND l.removed_at IS NULL FOR UPDATE OF c,l`, lineID, clientActorID).Scan(&cart.ID, &storeID, &cart.State, &cart.Version, &cart.CreatedAt, &cart.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CartRecord{}, false, ErrCartNotFound
 	}
