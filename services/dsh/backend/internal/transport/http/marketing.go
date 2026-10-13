@@ -740,7 +740,7 @@ func writeMarketingError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "marketing record was not found")
 	case errors.Is(err, postgres.ErrPromotionCodeConflict):
 		writeError(w, http.StatusConflict, "PROMOTION_CODE_EXISTS", "promotion code already exists")
-	case errors.Is(err, postgres.ErrPromotionIdempotencyConflict), errors.Is(err, postgres.ErrDiscoveryContentIdempotency):
+	case errors.Is(err, postgres.ErrPromotionIdempotencyConflict), errors.Is(err, postgres.ErrDiscoveryContentIdempotency), errors.Is(err, postgres.ErrDiscoveryContentEventConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "marketing mutation idempotency key conflicts with a prior request")
 	case errors.Is(err, postgres.ErrPromotionVersionConflict), errors.Is(err, postgres.ErrDiscoveryContentVersion):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "marketing record version is stale")

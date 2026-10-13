@@ -10,6 +10,7 @@ import (
 var (
 	ErrDiscoveryContentEventInvalid  = errors.New("discovery content event is invalid")
 	ErrDiscoveryContentEventNotFound = errors.New("discovery content event content was not found")
+	ErrDiscoveryContentEventConflict = errors.New("discovery content event idempotency key conflicts with canonical facts")
 )
 
 type DiscoveryContentEventInput struct {
@@ -26,6 +27,36 @@ type DiscoveryContentAnalyticsRecord struct {
 	ContentID string
 	EventType string
 	Count     int64
+}
+
+func discoveryEventFactsMatch(input DiscoveryContentEventInput, contentID, eventType, sessionID string, actorID, orderID sql.NullString) bool {
+	return input.ContentID == contentID &&
+		input.EventType == eventType &&
+		input.ClientSessionID == sessionID &&
+		input.ClientActorID == actorID.String &&
+		(input.ClientActorID != "") == actorID.Valid &&
+		input.OrderID == orderID.String &&
+		(input.OrderID != "") == orderID.Valid
+}
+
+// Replay is allowed even after a published campaign has ended. The unique
+// event identity still has to point to exactly the original immutable facts.
+func readDiscoveryContentEventReplay(ctx context.Context, db *sql.DB, input DiscoveryContentEventInput) (bool, error) {
+	var contentID, eventType, sessionID string
+	var actorID, orderID sql.NullString
+	err := db.QueryRowContext(ctx, `SELECT content_id,event_type,client_session_id,client_actor_id,order_id
+		FROM dsh.discovery_content_events WHERE client_event_id=$1`, input.ClientEventID).
+		Scan(&contentID, &eventType, &sessionID, &actorID, &orderID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !discoveryEventFactsMatch(input, contentID, eventType, sessionID, actorID, orderID) {
+		return true, ErrDiscoveryContentEventConflict
+	}
+	return true, nil
 }
 
 func RecordDiscoveryContentEvent(ctx context.Context, db *sql.DB, input DiscoveryContentEventInput) error {
@@ -57,6 +88,15 @@ func RecordDiscoveryContentEvent(ctx context.Context, db *sql.DB, input Discover
 		return err
 	}
 	if !eligible {
+		// An already-recorded event remains replayable after a campaign
+		// expires; a new event for that content must still be rejected.
+		found, err := readDiscoveryContentEventReplay(ctx, db, input)
+		if err != nil {
+			return err
+		}
+		if found {
+			return nil
+		}
 		return ErrDiscoveryContentEventNotFound
 	}
 	if input.EventType == "CONVERSION" {
@@ -67,9 +107,29 @@ func RecordDiscoveryContentEvent(ctx context.Context, db *sql.DB, input Discover
 			return ErrDiscoveryContentEventInvalid
 		}
 	}
-	_, err := db.ExecContext(ctx, `INSERT INTO dsh.discovery_content_events(id,client_event_id,content_id,event_type,client_session_id,client_actor_id,order_id)
+	result, err := db.ExecContext(ctx, `INSERT INTO dsh.discovery_content_events(id,client_event_id,content_id,event_type,client_session_id,client_actor_id,order_id)
 		VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,'')) ON CONFLICT (client_event_id) DO NOTHING`, input.ID, input.ClientEventID, input.ContentID, input.EventType, input.ClientSessionID, input.ClientActorID, input.OrderID)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 1 {
+		return nil
+	}
+	// PostgreSQL waits for the competing unique-key insert to settle before
+	// returning zero rows. Confirm it was an exact replay, not another
+	// content/session/order silently lost under the same client event ID.
+	found, err := readDiscoveryContentEventReplay(ctx, db, input)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return ErrDiscoveryContentEventConflict
+	}
+	return nil
 }
 
 func ListDiscoveryContentAnalytics(ctx context.Context, db *sql.DB, contentID string) ([]DiscoveryContentAnalyticsRecord, error) {
