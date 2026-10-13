@@ -74,7 +74,16 @@ type DeliveryFeeQuoteRecord struct {
 }
 
 func HashDeliveryFeePolicyRequest(input CreateDeliveryFeePolicyInput) string {
+	return hashDeliveryFeePolicyRequest(input, true)
+}
+
+// Keep the historic fingerprint only to verify persisted pre-fix replays.
+// New requests also bind the operator whose identity is frozen on the policy.
+func hashDeliveryFeePolicyRequest(input CreateDeliveryFeePolicyInput, includeActor bool) string {
 	parts := []string{"delivery-fee-policy", strings.TrimSpace(input.ServiceCityID), fmt.Sprintf("%d", input.BaseFeeMinor), fmt.Sprintf("%d", input.DistanceUnitMeters), fmt.Sprintf("%d", input.DistanceRateMinor), fmt.Sprintf("%d", input.OrderSizeUnitBaseUnits), fmt.Sprintf("%d", input.OrderSizeRateMinor), fmt.Sprintf("%d", input.ZoneSurchargeMinor), fmt.Sprintf("%d", input.RoundingUnitMinor), fmt.Sprintf("%d", input.ExpectedVersion), strings.TrimSpace(input.Reason)}
+	if includeActor {
+		parts = append(parts, "acting-actor:v1", strings.TrimSpace(input.ActingActorID))
+	}
 	digest := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(digest[:])
 }
@@ -100,12 +109,15 @@ func CreateDeliveryFeePolicy(ctx context.Context, db *sql.DB, input CreateDelive
 	var existingID, storedHash string
 	err = tx.QueryRowContext(ctx, "SELECT policy_id,request_hash FROM wlt.delivery_fee_policy_events WHERE idempotency_key=$1 FOR UPDATE", input.IdempotencyKey).Scan(&existingID, &storedHash)
 	if err == nil {
-		if storedHash != requestHash {
+		if storedHash != requestHash && storedHash != hashDeliveryFeePolicyRequest(input, false) {
 			return DeliveryFeePolicyRecord{}, false, ErrIdempotencyConflict
 		}
 		policy, readErr := readDeliveryFeePolicyByID(ctx, tx, existingID)
 		if readErr != nil {
 			return DeliveryFeePolicyRecord{}, false, readErr
+		}
+		if policy.CreatedBy != input.ActingActorID {
+			return DeliveryFeePolicyRecord{}, false, ErrIdempotencyConflict
 		}
 		if err := tx.Commit(); err != nil {
 			return DeliveryFeePolicyRecord{}, false, err
