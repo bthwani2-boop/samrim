@@ -147,6 +147,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   const [pendingDraftAttempt, setPendingDraftAttempt] = useState<PendingDraftAttempt | null>(null);
   const [pendingImageAttempt, setPendingImageAttempt] = useState<PendingImageAttempt | null>(null);
   const preloadedVerticalID = useRef("");
+  const commercialTypeReadSequence = useRef(0);
   const formLocked = busy || caseLoading || Boolean(pendingDraftAttempt) || Boolean(createdCase && createdCase.case.state !== "draft");
   const phoneValid = /^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(input.contactPhoneE164));
   const enteredHours = toStoreWorkingHoursIntervals(workingHoursByDay);
@@ -302,36 +303,42 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
     return () => { active = false; };
   }, [caseId, caseLoadRetry]);
 
+  const loadCommercialTypes = useCallback(async (verticalId: string) => {
+    const sequence = ++commercialTypeReadSequence.current;
+    setCommercialTypes([]);
+    setCommercialTypesError("");
+    if (!verticalId) {
+      setCommercialTypesLoading(false);
+      return;
+    }
+    setCommercialTypesLoading(true);
+    try {
+      const items = await fieldClient().listCommercialStoreTypes(verticalId);
+      if (sequence !== commercialTypeReadSequence.current) return;
+      const available = items.filter((item) => item.active);
+      setCommercialTypes(available);
+      if (available.length === 1 && available[0]) {
+        const onlyType = available[0];
+        setInput((current) => current.firstStoreVerticalId === verticalId && !current.firstStoreCommercialTypeId
+          ? { ...current, firstStoreCommercialTypeId: onlyType.id }
+          : current);
+      }
+    } catch (cause) {
+      console.warn("DSH Field commercial store type read failed", cause);
+      if (sequence === commercialTypeReadSequence.current) setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذا النشاط التجاري.");
+    } finally {
+      if (sequence === commercialTypeReadSequence.current) setCommercialTypesLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const verticalId = input.firstStoreVerticalId;
     const isPreloadedDraft = Boolean(verticalId && preloadedVerticalID.current === verticalId);
     if (isPreloadedDraft) preloadedVerticalID.current = "";
-    setCommercialTypes([]);
-    setCommercialTypesError("");
     if (!isPreloadedDraft) setInput((current) => current.firstStoreCommercialTypeId ? { ...current, firstStoreCommercialTypeId: "" } : current);
-    if (!verticalId) return;
-    let active = true;
-    setCommercialTypesLoading(true);
-    void fieldClient().listCommercialStoreTypes(verticalId)
-      .then((items) => {
-        if (!active) return;
-        const available = items.filter((item) => item.active);
-        setCommercialTypes(available);
-        // A single available type is not a decision that Field should repeat for every Store.
-        if (available.length === 1 && available[0]) {
-          const onlyType = available[0];
-          setInput((current) => current.firstStoreVerticalId === verticalId && !current.firstStoreCommercialTypeId
-            ? { ...current, firstStoreCommercialTypeId: onlyType.id }
-            : current);
-        }
-      })
-      .catch((cause: unknown) => {
-        console.warn("DSH Field commercial store type read failed", cause);
-        if (active) setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذا النشاط التجاري.");
-      })
-      .finally(() => { if (active) setCommercialTypesLoading(false); });
-    return () => { active = false; };
-  }, [input.firstStoreVerticalId]);
+    void loadCommercialTypes(verticalId);
+    return () => { commercialTypeReadSequence.current += 1; };
+  }, [input.firstStoreVerticalId, loadCommercialTypes]);
 
   async function createCase(submitAfterSave = false) {
     if (busy || draftConflictNeedsRead || (createdCase && createdCase.case.state !== "draft")) return;
@@ -755,7 +762,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         <View style={styles.optionList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} disabled={formLocked} label={vertical.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreVerticalId: vertical.id }))} selected={input.firstStoreVerticalId === vertical.id} />)}</View>
         <Text style={styles.label}>نوع المتجر</Text>
         {commercialTypesLoading ? <Text style={styles.muted}>جارٍ قراءة أنواع المتاجر لهذا النشاط التجاري…</Text> : null}
-        {commercialTypesError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{commercialTypesError}</Text><BthwaniButton label="إعادة قراءة أنواع المتاجر" onPress={() => { const verticalId = input.firstStoreVerticalId; if (verticalId) { setCommercialTypesError(""); setCommercialTypesLoading(true); void fieldClient().listCommercialStoreTypes(verticalId).then((items) => { const available = items.filter((item) => item.active); setCommercialTypes(available); if (available.length === 1 && available[0]) { const onlyType = available[0]; setInput((current) => current.firstStoreVerticalId === verticalId && !current.firstStoreCommercialTypeId ? { ...current, firstStoreCommercialTypeId: onlyType.id } : current); } }).catch(() => setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذا النشاط التجاري.")).finally(() => setCommercialTypesLoading(false)); } }} variant="secondary" /></View> : null}
+        {commercialTypesError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{commercialTypesError}</Text><BthwaniButton label="إعادة قراءة أنواع المتاجر" disabled={formLocked || !input.firstStoreVerticalId} onPress={() => void loadCommercialTypes(input.firstStoreVerticalId)} variant="secondary" /></View> : null}
         {!commercialTypesLoading && !commercialTypesError && input.firstStoreVerticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذا النشاط التجاري. اطلب من المشغّل إعداد النوع التجاري أولًا.</Text> : null}
         <View style={styles.optionList}>{commercialTypes.map((item) => <BthwaniChip key={item.id} disabled={formLocked} label={item.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreCommercialTypeId: item.id }))} selected={input.firstStoreCommercialTypeId === item.id} />)}</View>
         </View> : null}
