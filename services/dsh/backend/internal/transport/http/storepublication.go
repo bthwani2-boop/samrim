@@ -104,8 +104,10 @@ func (s *StorePublicationServer) readPartnerStorePresence(w http.ResponseWriter,
 }
 
 func operatorStoreDeliveryOrigin(store postgres.OperatorStoreSummary) *contract.DeliveryOrigin {
-  if !store.DeliveryOriginLatitude.Valid || !store.DeliveryOriginLongitude.Valid { return nil }
-  return &contract.DeliveryOrigin{Latitude: store.DeliveryOriginLatitude.Float64, Longitude: store.DeliveryOriginLongitude.Float64}
+	if !store.DeliveryOriginLatitude.Valid || !store.DeliveryOriginLongitude.Valid {
+		return nil
+	}
+	return &contract.DeliveryOrigin{Latitude: store.DeliveryOriginLatitude.Float64, Longitude: store.DeliveryOriginLongitude.Float64}
 }
 
 func (s *StorePublicationServer) listForOperator(w http.ResponseWriter, r *http.Request) {
