@@ -141,6 +141,33 @@ func ReadFinanceEvidenceDocumentForOperator(ctx context.Context, db *sql.DB, cip
 	if err != nil {
 		return FinanceEvidenceDocumentRecord{}, err
 	}
+	// A saved XLSX is still an executable payout instruction while its
+	// settlement batch is open. Re-check the current Store routing before
+	// serving those bytes, including a previously exported artifact.
+	// Completed batches remain available as immutable historical evidence.
+	if item.Purpose == "SETTLEMENT_BATCH_EXPORT" {
+		var exportBatchID, batchStatus string
+		err = tx.QueryRowContext(ctx, `SELECT b.id,b.status
+FROM wlt.settlement_batch_exports e
+JOIN wlt.settlement_batches b ON b.id=e.batch_id
+WHERE e.evidence_document_id=$1
+FOR UPDATE OF b`, id).Scan(&exportBatchID, &batchStatus)
+		if errors.Is(err, sql.ErrNoRows) {
+			return FinanceEvidenceDocumentRecord{}, ErrFinanceEvidenceNotFound
+		}
+		if err != nil {
+			return FinanceEvidenceDocumentRecord{}, err
+		}
+		if batchStatus != "COMPLETED" {
+			batch, readErr := readSettlementBatch(ctx, tx, exportBatchID)
+			if readErr != nil {
+				return FinanceEvidenceDocumentRecord{}, readErr
+			}
+			if readErr = requireCurrentSettlementExportRouting(ctx, tx, batch); readErr != nil {
+				return FinanceEvidenceDocumentRecord{}, readErr
+			}
+		}
+	}
 	var payoutID, batchID sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT
 		(SELECT e.payout_id FROM wlt.manual_transfer_executions e WHERE e.receipt_document_id=$1),

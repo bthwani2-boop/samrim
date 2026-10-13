@@ -364,3 +364,67 @@ func TestPartnerFullAvailableIncludesEveryAuthorizedStoreBeyondLegacyLimit(t *te
 		t.Fatalf("allocation total %d != canonical request %d", total, record.TotalAmountMinor)
 	}
 }
+
+// A previously generated workbook must not bypass current Store-recipient
+// eligibility through the separate finance-evidence download endpoint.
+func TestSettlementExportDownloadBlocksRevokedRecipient(t *testing.T) {
+	s := newFieldAcquisitionScenario(t)
+	owner, staff, _, storeB, _, ownerFacts, staffFacts, cipher, _ := setupPartnerFinanceProof(t, s, true)
+	request, replayed, err := CreatePartitionedPartnerPayoutRequest(s.ctx, s.db, cipher, PartnerPayoutRequestInput{
+		PartnerActorID:    owner,
+		ScopeMode:         PartnerPayoutScopeSpecified,
+		RequestedStoreIDs: []string{storeB},
+		StoreAmounts:      []PartnerPayoutStoreAmount{{StoreID: storeB, AmountMinor: 2000}},
+		BeneficiaryFacts:  map[string]IdentityFacts{owner: ownerFacts, staff: staffFacts},
+		IdempotencyKey:    "export-read-request-" + s.suffix, CorrelationID: "export-read-request-correlation-" + s.suffix,
+	})
+	if err != nil || replayed || len(request.Payouts) != 1 {
+		t.Fatalf("staff payout fixture: %+v replay=%v err=%v", request, replayed, err)
+	}
+	payout := request.Payouts[0]
+	if _, err := PreparePayout(s.ctx, s.db, cipher, PreparePayoutInput{PayoutID: payout.ID, ActorID: "finance-preparer", Reason: "historical export read check", Evidence: "proof", IdentityFacts: staffFacts, IdempotencyKey: "export-read-prepare-" + s.suffix, CorrelationID: "export-read-prepare-correlation-" + s.suffix}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApprovePayout(s.ctx, s.db, cipher, ApprovePayoutInput{PayoutID: payout.ID, ActorID: "finance-approver", Reason: "authorized export", IdentityFacts: staffFacts, IdempotencyKey: "export-read-approve-" + s.suffix, CorrelationID: "export-read-approve-correlation-" + s.suffix}); err != nil {
+		t.Fatal(err)
+	}
+	batch, err := CreateSettlementBatch(s.ctx, s.db, CreateSettlementBatchInput{PayoutIDs: []string{payout.ID}, ActorID: "finance-batch-maker", IdentityFactsByBeneficiary: []IdentityFacts{staffFacts}, DestinationCipher: cipher, IdempotencyKey: "export-read-batch-" + s.suffix, CorrelationID: "export-read-batch-correlation-" + s.suffix})
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, err = ApproveSettlementBatch(s.ctx, s.db, BatchActionInput{BatchID: batch.ID, ActorID: "finance-batch-approver", Reason: "authorized", IdentityFactsByBeneficiary: []IdentityFacts{staffFacts}, DestinationCipher: cipher, IdempotencyKey: "export-read-batch-approve-" + s.suffix, CorrelationID: "export-read-batch-approve-correlation-" + s.suffix})
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, err = FreezeSettlementBatch(s.ctx, s.db, BatchActionInput{BatchID: batch.ID, ActorID: "finance-batch-freezer", Reason: "approved export", IdentityFactsByBeneficiary: []IdentityFacts{staffFacts}, DestinationCipher: cipher, IdempotencyKey: "export-read-freeze-" + s.suffix, CorrelationID: "export-read-freeze-correlation-" + s.suffix})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exported, err := ExportSettlementBatch(s.ctx, s.db, cipher, ExportSettlementBatchInput{
+		BatchID: batch.ID, ActorID: "finance-exporter",
+		IdentityFactsByBeneficiary: []IdentityFacts{staffFacts}, DestinationCipher: cipher,
+		IdempotencyKey: "export-read-generate-" + s.suffix, CorrelationID: "export-read-generate-correlation-" + s.suffix,
+	})
+	if err != nil {
+		t.Fatalf("valid current staff export denied: %v", err)
+	}
+	if original, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-valid-"+s.suffix); err != nil || len(original.Content) == 0 {
+		t.Fatalf("valid current export download: %+v %v", original, err)
+	}
+	if applied, err := MarkStorePayoutRecipientReviewRequired(s.ctx, s.db, storeB, owner, "staff access revoked", "export-read-review-"+s.suffix); err != nil || !applied {
+		t.Fatalf("recipient review transition: applied=%v err=%v", applied, err)
+	}
+	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-revoked-"+s.suffix); !errors.Is(err, ErrPayoutRecipientReviewRequired) {
+		t.Fatalf("revoked recipient accessed stored transfer workbook: %v", err)
+	}
+	if _, err := RevertStorePayoutRecipientToOwner(s.ctx, s.db, RevertStorePayoutRecipientInput{StoreID: storeB, PartnerActorID: owner, Reason: "restore future routing", IdempotencyKey: "export-read-revert-" + s.suffix, CorrelationID: "export-read-revert-correlation-" + s.suffix}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-reverted-"+s.suffix); !errors.Is(err, ErrPayoutRecipientReviewRequired) {
+		t.Fatalf("reverting routing silently reauthorized historical staff XLSX: %v", err)
+	}
+	historical, err := ReadFinanceEvidenceDocument(s.ctx, s.db, cipher, exported.EvidenceDocumentID)
+	if err != nil || len(historical.Content) == 0 || historical.Purpose != "SETTLEMENT_BATCH_EXPORT" {
+		t.Fatalf("immutable evidence improperly deleted: %+v %v", historical, err)
+	}
+}
