@@ -414,3 +414,50 @@ test("catalog proposal review shows detail and re-reads after approval", async (
   await expect(page.getByRole("status")).toContainText("تم تسجيل القرار");
   expect(queueRead).toBeGreaterThan(1);
 });
+
+test("store import retries only failed rows with the original commit identity", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/catalog/stores**", (route) => route.fulfill({
+    status: 200, json: { stores: [{ id: "store-retry", name: "متجر الاسترداد" }], nextCursor: "" },
+  }));
+  const run = { id: "store-import-retry", sourceSha256: "a".repeat(64), acceptedCount: 2, conflictCount: 0, createdAt: "2026-10-13T00:00:00Z", purpose: "STORE_OFFERS", actorRole: "OPERATOR", storeId: "store-retry" };
+  const ready = [
+    { rowNumber: 2, stableKey: "store-offer-row-2", classification: "READY", committed: false },
+    { rowNumber: 3, stableKey: "store-offer-row-3", classification: "READY", committed: false },
+  ];
+  let current = { run: { ...run, mode: "preview", state: "previewed" }, items: ready };
+  let previews = 0;
+  const commitKeys: string[] = [];
+  await page.route("**/api/catalog/store-imports/preview", (route) => {
+    previews += 1;
+    return route.fulfill({ status: 201, json: current });
+  });
+  await page.route("**/api/catalog/store-imports/store-import-retry", (route) => {
+    if (route.request().method() === "POST") {
+      commitKeys.push(route.request().headers()["idempotency-key"] ?? "");
+      current = commitKeys.length === 1
+        ? { run: { ...run, mode: "commit", state: "rejected" }, items: [{ ...ready[0]!, classification: "IMPORTED", committed: true }, { ...ready[1]!, classification: "FAILED" }] }
+        : { run: { ...run, mode: "commit", state: "committed" }, items: [{ ...ready[0]!, classification: "IMPORTED", committed: true }, { ...ready[1]!, classification: "REPLAYED", committed: true }] };
+    }
+    return route.fulfill({ status: 200, json: current });
+  });
+  await page.goto("/catalog/import");
+  const workspace = page.getByTestId("store-catalog-import-workspace");
+  await workspace.getByLabel("المتجر المستهدف").selectOption("store-retry");
+  await workspace.getByLabel("ملف الباركود والأسعار").setInputFiles({
+    name: "retry.csv", mimeType: "text/csv", buffer: Buffer.from("barcode,price\n6291000000012,100\n6291000000013,200\n"),
+  });
+  await workspace.getByRole("button", { name: "معاينة الملف" }).click();
+  await expect(workspace.getByRole("button", { name: "اعتماد الصفوف الصالحة" })).toBeEnabled();
+  await workspace.getByRole("button", { name: "اعتماد الصفوف الصالحة" }).click();
+  const retry = workspace.getByRole("button", { name: "إعادة اعتماد الصفوف الفاشلة" });
+  await expect(retry).toBeVisible();
+  await expect(workspace.getByText(/اكتملت الصفوف الناجحة/)).toBeVisible();
+  await retry.click();
+  await expect(workspace.getByText(/الحالة: تم الاعتماد/)).toBeVisible();
+  await expect(retry).toHaveCount(0);
+  expect(previews).toBe(1);
+  expect(commitKeys).toHaveLength(2);
+  expect(commitKeys[0]).toBeTruthy();
+  expect(commitKeys[1]).toBe(commitKeys[0]);
+});

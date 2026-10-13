@@ -5427,7 +5427,7 @@ components:
 
     CartLine:
       type: object
-      required: [id, cartId, storeOfferId, variantId, productId, productName, variantTitle, measurementKind, baseUnit, pricingBasis, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits, quantityBaseUnits, selectedModifierOptionIds, selectedModifiers, unitPriceMinor, modifierAmountMinor, lineAmountMinor, currency, offerVersion, createdAt, updatedAt]
+      required: [id, cartId, storeOfferId, variantId, productId, productName, variantTitle, measurementKind, baseUnit, pricingBasis, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits, quantityBaseUnits, selectedModifierOptionIds, selectedModifiers, requiresReview, unitPriceMinor, modifierAmountMinor, lineAmountMinor, currency, offerVersion, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -5477,6 +5477,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CartLineModifier"
+        requiresReview:
+          type: boolean
+          description: Cart line has a StoreOffer no longer customer-visible, insufficient unreserved stock for its selected quantity, invalid current quantity rules, or obsolete modifier selections. Read and remove remain allowed; quote and checkout must reject it.
         unitPriceMinor:
           type: integer
           minimum: 1
@@ -5631,6 +5634,10 @@ components:
           type: integer
           minimum: 0
           description: Exact amount requested from the customer's WLT internal balance; the remaining payable is collected using the fulfillment-specific cash route.
+        expectedTotalAmountMinor:
+          type: integer
+          minimum: 1
+          description: Total YER minor units explicitly accepted from the latest checkout quote; single-store checkout rejects a missing or changed total before contacting WLT.
         promotionCode:
           type: string
           maxLength: 64

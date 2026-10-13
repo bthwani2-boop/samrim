@@ -17,11 +17,26 @@ func CatalogImportRowCountAllowed(count int) bool {
 	return count > 0 && count <= MaxCatalogImportRows
 }
 
+func validCatalogImportRowIdentity(rows []contract.CatalogImportRow) bool {
+	seen := make(map[int]struct{}, len(rows))
+	for _, row := range rows {
+		keyLength := len([]rune(strings.TrimSpace(row.StableKey)))
+		if row.RowNumber < 1 || keyLength < 1 || keyLength > 512 {
+			return false
+		}
+		if _, duplicate := seen[row.RowNumber]; duplicate {
+			return false
+		}
+		seen[row.RowNumber] = struct{}{}
+	}
+	return true
+}
+
 func (s *Service) PreviewCatalogImport(ctx context.Context, actingActorID string, input contract.CatalogImportPreviewRequest, idempotencyKey, correlationID string) (postgres.CatalogImportPreviewResult, error) {
 	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogImportPreviewResult{}, err
 	}
-	if strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.SourceSha256) == "" || !CatalogImportRowCountAllowed(len(input.Rows)) {
+	if strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.SourceSha256) == "" || !CatalogImportRowCountAllowed(len(input.Rows)) || !validCatalogImportRowIdentity(input.Rows) {
 		return postgres.CatalogImportPreviewResult{}, postgres.ErrCatalogImportInvalid
 	}
 	items := make([]postgres.CatalogImportItemRecord, 0, len(input.Rows))
@@ -31,7 +46,7 @@ func (s *Service) PreviewCatalogImport(ctx context.Context, actingActorID string
 		item := postgres.CatalogImportItemRecord{RowNumber: row.RowNumber, StableKey: strings.TrimSpace(row.StableKey), Classification: "READY"}
 		item.Input = postgres.CatalogProductInput{VerticalID: row.VerticalID, Scope: row.Scope, CanonicalName: row.CanonicalName, Brand: optionalImportPointer(row.Brand), VariantTitle: row.VariantTitle, MeasurementKind: string(row.MeasurementKind), BaseUnit: string(row.BaseUnit), CategoryIDs: row.CategoryIds, AttributeValues: catalogImportAttributeInputs(row.AttributeValues), VariantAttributeValues: catalogImportAttributeInputs(row.VariantAttributeValues), IdentifierType: row.IdentifierType, IdentifierValue: row.IdentifierValue}
 		normalized, err := normalizeCatalogProductInput(item.Input)
-		if err != nil || item.RowNumber < 1 || item.StableKey == "" {
+		if err != nil {
 			item.Classification = "INVALID_INPUT"
 			item.ErrorCode = stringPtr("INVALID_INPUT")
 			item.ErrorMessage = stringPtr(importErrorMessage(err))

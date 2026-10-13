@@ -227,15 +227,18 @@ func (s *Service) commitStoreCatalogImport(ctx context.Context, actorID, actorRo
 	if err != nil {
 		return postgres.CatalogImportCommitResult{}, err
 	}
-	if preview.Run.Purpose != "STORE_OFFERS" || preview.Run.ActorRole != actorRole || preview.Run.ActingActorID != strings.TrimSpace(actorID) || preview.Run.StoreID != strings.TrimSpace(storeID) || (preview.Run.Mode == "preview" && preview.Run.State != "previewed") {
+	if preview.Run.Purpose != "STORE_OFFERS" || preview.Run.ActorRole != actorRole || preview.Run.ActingActorID != strings.TrimSpace(actorID) || preview.Run.StoreID != strings.TrimSpace(storeID) {
 		return postgres.CatalogImportCommitResult{}, postgres.ErrCatalogImportInvalid
 	}
-	if preview.Run.Mode != "preview" || preview.Run.State != "previewed" {
+	if preview.Run.Mode == "commit" && preview.Run.State == "committed" {
+		return postgres.CompleteCatalogImport(ctx, s.db, preview.Run.ID, strings.TrimSpace(idempotencyKey), postgres.HashCatalogImportCommitRequest(preview.Run.ID), actorID, strings.TrimSpace(correlationID))
+	}
+	if !((preview.Run.Mode == "preview" && preview.Run.State == "previewed") || (preview.Run.Mode == "commit" && preview.Run.State == "rejected")) {
 		return postgres.CatalogImportCommitResult{}, postgres.ErrCatalogImportInvalid
 	}
 	provenance := map[string]string{"FIELD": "FIELD_INITIAL_CATALOG", "PARTNER": "PARTNER", "OPERATOR": "CONTROL_PANEL"}[actorRole]
 	for _, item := range preview.Items {
-		if item.Classification != "READY" {
+		if item.Classification != "READY" && item.Classification != "FAILED" {
 			continue
 		}
 		if item.StoreOfferInput == nil {
