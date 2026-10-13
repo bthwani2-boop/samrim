@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
@@ -35,5 +36,28 @@ func TestCatalogImportRowLimitIsFiveThousand(t *testing.T) {
 		if CatalogImportRowCountAllowed(count) {
 			t.Errorf("catalog import with %d rows should be rejected", count)
 		}
+	}
+}
+
+func TestCatalogImportRowIdentityMatchesPersistenceConstraints(t *testing.T) {
+	tests := []struct {
+		name    string
+		rows    []contract.CatalogImportRow
+		allowed bool
+	}{
+		{name: "distinct valid rows", rows: []contract.CatalogImportRow{{RowNumber: 1, StableKey: "sku-a"}, {RowNumber: 2, StableKey: "sku-b"}}, allowed: true},
+		{name: "duplicate stable key stays valid for row-level duplicate classification", rows: []contract.CatalogImportRow{{RowNumber: 1, StableKey: "sku-a"}, {RowNumber: 2, StableKey: "sku-a"}}, allowed: true},
+		{name: "duplicate row number violates primary key", rows: []contract.CatalogImportRow{{RowNumber: 1, StableKey: "sku-a"}, {RowNumber: 1, StableKey: "sku-b"}}},
+		{name: "zero row violates check constraint", rows: []contract.CatalogImportRow{{RowNumber: 0, StableKey: "sku-a"}}},
+		{name: "negative row violates check constraint", rows: []contract.CatalogImportRow{{RowNumber: -3, StableKey: "sku-a"}}},
+		{name: "blank stable key violates check constraint", rows: []contract.CatalogImportRow{{RowNumber: 1, StableKey: "  "}}},
+		{name: "oversized stable key violates check constraint", rows: []contract.CatalogImportRow{{RowNumber: 1, StableKey: strings.Repeat("a", 513)}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := validCatalogImportRowIdentity(tt.rows); got != tt.allowed {
+				t.Fatalf("import row identity valid=%v, want %v", got, tt.allowed)
+			}
+		})
 	}
 }
