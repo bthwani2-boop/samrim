@@ -35,6 +35,15 @@ function definitiveCheckoutRejection(error: unknown): boolean {
   return ["CHECKOUT_PAYMENT_RECONCILED", "STALE_CHECKOUT", "INVALID_INPUT", "INVALID_PAYMENT_ALLOCATION", "INVALID_RECIPIENT", "INSUFFICIENT_CUSTOMER_BALANCE", "OFFER_UNAVAILABLE", "CART_CLOSED", "CART_EMPTY", "INVENTORY_INSUFFICIENT", "INVENTORY_CONFLICT", "PROMOTION_UNAVAILABLE", "UNSERVICEABLE", "FULFILLMENT_MODE_UNAVAILABLE", "WLT_DELIVERY_FEE_UNAVAILABLE", "NOT_FOUND"].includes(code);
 }
 
+function quoteMatchesCheckout(quote: CheckoutQuote, cart: Cart, storeID: string, addressID: string, fulfillmentMode: FulfillmentMode, promotionCode: string): boolean {
+  return quote.cartId === cart.id
+    && quote.storeId === storeID
+    && quote.cartVersion === cart.version
+    && quote.addressId === addressID
+    && quote.fulfillmentMode === fulfillmentMode
+    && (quote.promotionCode ?? "") === promotionCode.trim().toUpperCase();
+}
+
 const checkoutPaymentMethods: Readonly<Record<FulfillmentMode, Order["paymentMethod"]>> = {
   BTHWANI_CAPTAIN: "CASH_ON_DELIVERY",
   PARTNER_CAPTAIN: "CASH_AT_STORE",
@@ -293,7 +302,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   async function checkout() {
     if (checkoutSubmitting.current) return;
     const addressID = pickupMode ? "" : serviceableAddressId ?? "";
-    if (mutationBusy || state.kind !== "ready" || !state.cart.lines.length || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || quote.quote.cartVersion !== state.cart.version || quote.quote.addressId !== addressID) return;
+    if (mutationBusy || state.kind !== "ready" || !state.cart.lines.length || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || !quoteMatchesCheckout(quote.quote, state.cart, storeId, addressID, fulfillmentMode, promotionCode)) return;
     const internalBalanceAmountMinor = parseMinorAmount(internalBalanceInput);
     if (internalBalanceAmountMinor !== null && internalBalanceAmountMinor > 0 && wallet.kind !== "ready") {
       setError("تعذر التحقق من الرصيد؛ أعد قراءته أو أدخل صفرًا للمتابعة دون استخدامه.");
@@ -426,7 +435,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
         <DeliveryRecipientForm allowOther={!pickupMode} onChange={setRecipient} value={recipient} />
         <Text style={styles.payment}>{paymentMethodLabel(paymentMethod, fulfillmentMode)}</Text>
         {!pickupMode && serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : null}
-        <BthwaniButton accessibilityLabel={pickupMode ? "إتمام الطلب للاستلام الذاتي من المتجر" : "إتمام الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || quote.quote.cartVersion !== state.cart.version || quote.quote.addressId !== (pickupMode ? "" : serviceableAddressId) || selectedBalanceMinor === null || balanceNeedsRead || balanceExceedsAvailable || balanceExceedsPayable} label="إتمام الطلب" onPress={() => void checkout()} />
+        <BthwaniButton accessibilityLabel={pickupMode ? "إتمام الطلب للاستلام الذاتي من المتجر" : "إتمام الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || !quoteMatchesCheckout(quote.quote, state.cart, storeId, pickupMode ? "" : serviceableAddressId ?? "", fulfillmentMode, promotionCode) || selectedBalanceMinor === null || balanceNeedsRead || balanceExceedsAvailable || balanceExceedsPayable} label="إتمام الطلب" onPress={() => void checkout()} />
       </> : null}
       {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{order.cashAmountMinor === 0 ? "مغطى بالكامل من رصيد المحفظة" : `النقد المتبقي عند الاستلام: ${formatMoney(order.cashAmountMinor, order.currency)}`} · {paymentMethodLabel(order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)} · {paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
       {orders.length ? <View style={styles.orderBox}><Text style={styles.lineTitle}>طلباتك الأخيرة</Text>{orders.map((item) => <Text key={item.id} style={styles.muted}>{orderStateLabel(item.state)} · {formatMoney(item.totalAmountMinor, item.currency)}</Text>)}</View> : null}
