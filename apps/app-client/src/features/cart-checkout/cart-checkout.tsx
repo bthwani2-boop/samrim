@@ -342,7 +342,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
         setError("تعذر التحقق من جلسة العميل؛ لم يُرسل الطلب.");
         return;
       }
-      const request: CheckoutRequest = { cartId: state.cart.id, storeId, addressId: addressID, fulfillmentMode, internalBalanceAmountMinor, recipient: checkoutRecipient(recipient, !pickupMode), ...(appliedPromotionCode ? { promotionCode: appliedPromotionCode } : {}) };
+      const request: CheckoutRequest = { cartId: state.cart.id, storeId, addressId: addressID, fulfillmentMode, expectedTotalAmountMinor: quote.quote.totalAmountMinor, internalBalanceAmountMinor, recipient: checkoutRecipient(recipient, !pickupMode), ...(appliedPromotionCode ? { promotionCode: appliedPromotionCode } : {}) };
       const storageKey = pendingCartCheckoutKey(actorID, storeId);
       const attempt: PendingCartCheckoutAttempt = {
         version: 1, actorID, storeID: storeId, cartID: state.cart.id, expectedCartVersion: state.cart.version,

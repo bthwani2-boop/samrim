@@ -275,3 +275,12 @@ test("checkout uses previously applied coupon instead of an unsubmitted draft", 
   assert.equal(counts.pending[0].request.promotionCode, "SAVE10");
   assert.equal(counts.persist, 1);
 });
+
+test("checkout persists the exact accepted quote total before submitting", async () => {
+  const { checkout, counts, context } = scenario();
+  const displayedTotal = context.quote.quote.totalAmountMinor;
+  await checkout();
+  assert.equal(counts.persist, 1);
+  assert.equal(counts.submit, 1);
+  assert.equal(counts.pending[0].request.expectedTotalAmountMinor, displayedTotal);
+});

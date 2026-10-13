@@ -5634,6 +5634,10 @@ components:
           type: integer
           minimum: 0
           description: Exact amount requested from the customer's WLT internal balance; the remaining payable is collected using the fulfillment-specific cash route.
+        expectedTotalAmountMinor:
+          type: integer
+          minimum: 1
+          description: Total YER minor units explicitly accepted from the latest checkout quote; single-store checkout rejects a missing or changed total before contacting WLT.
         promotionCode:
           type: string
           maxLength: 64

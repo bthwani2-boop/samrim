@@ -124,6 +124,7 @@ type CheckoutInput struct {
 	AddressID                   string
 	FulfillmentMode             string
 	InternalBalanceAmountMinor  int64
+	ExpectedTotalAmountMinor    *int64
 	ExpectedCartVersion         int
 	Evidence                    CheckoutEvidence
 	IdempotencyKey              string
@@ -314,6 +315,13 @@ type OperatorOperationsResult struct {
 	NextCursor string
 }
 
+// Legacy multi-store children omit a displayed total. Direct client checkout
+// requires one at the HTTP boundary; when present, the actual locked financial
+// total must match before any external payment intent can be provisioned.
+func checkoutTotalMatchesConfirmation(expected *int64, actual int64) bool {
+	return actual > 0 && (expected == nil || (*expected > 0 && *expected == actual))
+}
+
 func HashCheckoutRequest(input CheckoutInput) string {
 	facts := []string{strings.TrimSpace(input.ClientActorID), strings.TrimSpace(input.CartID), strings.TrimSpace(input.StoreID), strings.TrimSpace(input.AddressID), strings.TrimSpace(input.FulfillmentMode), strings.TrimSpace(input.PaymentMethod)}
 	if strings.EqualFold(strings.TrimSpace(input.Recipient.Mode), "OTHER") {
@@ -321,6 +329,9 @@ func HashCheckoutRequest(input CheckoutInput) string {
 	}
 	if input.InternalBalanceAmountMinor > 0 {
 		facts = append(facts, "internal-balance", strconv.FormatInt(input.InternalBalanceAmountMinor, 10))
+	}
+	if input.ExpectedTotalAmountMinor != nil {
+		facts = append(facts, "confirmed-total", strconv.FormatInt(*input.ExpectedTotalAmountMinor, 10))
 	}
 	facts = append(facts, strconv.Itoa(input.ExpectedCartVersion), input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, strconv.Itoa(input.Evidence.StoreVersion), strconv.Itoa(input.Evidence.AddressVersion), strings.TrimSpace(input.PromotionCode))
 	return hashFacts(facts...)
@@ -1308,6 +1319,9 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 		return OrderRecord{}, false, ErrDeliveryFeeUnavailable
 	}
 	totalWithDelivery := orderTotal.Int64()
+	if !checkoutTotalMatchesConfirmation(input.ExpectedTotalAmountMinor, totalWithDelivery) {
+		return OrderRecord{}, false, ErrCheckoutEvidenceStale
+	}
 	if input.InternalBalanceAmountMinor < 0 || input.InternalBalanceAmountMinor > totalWithDelivery {
 		return OrderRecord{}, false, ErrCheckoutEvidenceStale
 	}
