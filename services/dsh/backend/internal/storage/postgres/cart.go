@@ -43,6 +43,7 @@ type CartLineRecord struct {
 	QuantityBaseUnits         int64
 	SelectedModifierOptionIDs []string
 	SelectedModifiers         []CartLineModifierRecord
+	RequiresReview            bool
 	UnitPriceMinor            int64
 	ModifierAmountMinor       int64
 	LineAmountMinor           int64
@@ -199,19 +200,26 @@ WHERE l.cart_id=$1 AND l.removed_at IS NULL ORDER BY l.created_at,l.id`, cartID)
 	}
 	for index := range lines {
 		line := &lines[index]
-		selectedOptions, delta, err := ValidateCatalogModifierSelection(ctx, source, line.StoreOfferID, line.SelectedModifierOptionIDs)
+		baseAmount, err := CalculateCatalogLineAmount(line.UnitPriceMinor, line.QuantityBaseUnits, line.PricingBasis, line.PricingUnitBaseUnits)
 		if err != nil {
 			return nil, err
 		}
-		line.SelectedModifiers = make([]CartLineModifierRecord, 0, len(selectedOptions))
+		line.SelectedModifiers = make([]CartLineModifierRecord, 0, len(line.SelectedModifierOptionIDs))
+		selectedOptions, delta, err := ValidateCatalogModifierSelection(ctx, source, line.StoreOfferID, line.SelectedModifierOptionIDs)
+		if errors.Is(err, ErrCartModifierInvalid) {
+			// Keep the cart readable and the affected line removable. The base amount
+			// is not a valid checkout price and must never be quoted or displayed.
+			line.RequiresReview = true
+			line.LineAmountMinor = baseAmount
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
 		for _, option := range selectedOptions {
 			line.SelectedModifiers = append(line.SelectedModifiers, CartLineModifierRecord{OptionID: option.ID, OptionNameAr: option.NameAr, PriceDeltaMinor: option.PriceDeltaMinor})
 		}
 		line.ModifierAmountMinor, err = CalculateCatalogModifierAmount(delta, line.QuantityBaseUnits)
-		if err != nil {
-			return nil, err
-		}
-		baseAmount, err := CalculateCatalogLineAmount(line.UnitPriceMinor, line.QuantityBaseUnits, line.PricingBasis, line.PricingUnitBaseUnits)
 		if err != nil {
 			return nil, err
 		}

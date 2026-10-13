@@ -178,7 +178,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	orderSize := new(big.Int)
 	currency := ""
 	for _, line := range cart.Lines {
-		if line.LineAmountMinor <= 0 || line.QuantityBaseUnits <= 0 || strings.TrimSpace(line.Currency) != "YER" {
+		if line.RequiresReview || line.LineAmountMinor <= 0 || line.QuantityBaseUnits <= 0 || strings.TrimSpace(line.Currency) != "YER" {
 			return CheckoutQuote{}, postgres.ErrCheckoutEvidenceStale
 		}
 		if currency == "" {

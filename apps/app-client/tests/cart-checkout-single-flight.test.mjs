@@ -211,11 +211,48 @@ test("typing a coupon does not change the quote request until the applied coupon
     console: { error: () => {} },
   };
   const refreshQuote = vm.runInNewContext(executable, context);
-  await refreshQuote({ id: "cart-1", version: 3 });
+  await refreshQuote({ id: "cart-1", version: 3, lines: [] });
   assert.equal(requests.length, 1);
   assert.equal(requests[0].request.promotionCode, "SAVE10");
   assert.equal(requests[0].version, 3);
   assert.equal(quoteStates.at(-1).kind, "ready");
   assert.ok(dependencies.includes("SAVE10"));
   assert.ok(!dependencies.includes("DRAFT99"));
+});
+
+test("cart with unavailable modifier never calls the checkout quote API", async () => {
+  const callbackSource = refreshQuoteNode.initializer.getText(ast);
+  const executable = ts.transpileModule(`const refreshQuote = ${callbackSource};\nrefreshQuote;`, { compilerOptions }).outputText;
+  const states = [];
+  let requests = 0;
+  const context = {
+    appliedPromotionCode: "",
+    fulfillmentMode: "CUSTOMER_PICKUP",
+    pickupMode: true,
+    quoteAddressID: "",
+    serviceableAddressId: undefined,
+    storeId: "store-1",
+    quoteRequestID: { current: 12 },
+    setQuote: (state) => states.push(state),
+    getUsableIdentityAccessToken: async () => { throw new Error("no identity read for invalid cart"); },
+    client: () => ({ quoteCheckout: async () => { requests++; throw new Error("invalid cart must not be quoted"); } }),
+    useCallback: (callback) => callback,
+    console: { error: () => {} },
+  };
+  const refreshQuote = vm.runInNewContext(executable, context);
+  await refreshQuote({ id: "cart-1", version: 5, lines: [{ requiresReview: true }] });
+  assert.equal(requests, 0);
+  assert.equal(context.quoteRequestID.current, 13);
+  assert.equal(states.length, 1);
+  assert.equal(states[0].kind, "invalid");
+});
+
+test("previously valid quote never authorizes checkout of an invalidated modifier line", async () => {
+  const { checkout, context, counts } = scenario();
+  context.state.cart.lines = [{ requiresReview: true }];
+  await checkout();
+  assert.equal(counts.token, 0);
+  assert.equal(counts.persist, 0);
+  assert.equal(counts.submit, 0);
+  assert.equal(readVisibleQuote(context.state.cart, context.quote, context.storeId, true, undefined, context.fulfillmentMode, ""), null);
 });

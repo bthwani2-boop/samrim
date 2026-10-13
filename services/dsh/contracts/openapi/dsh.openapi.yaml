@@ -5427,7 +5427,7 @@ components:
 
     CartLine:
       type: object
-      required: [id, cartId, storeOfferId, variantId, productId, productName, variantTitle, measurementKind, baseUnit, pricingBasis, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits, quantityBaseUnits, selectedModifierOptionIds, selectedModifiers, unitPriceMinor, modifierAmountMinor, lineAmountMinor, currency, offerVersion, createdAt, updatedAt]
+      required: [id, cartId, storeOfferId, variantId, productId, productName, variantTitle, measurementKind, baseUnit, pricingBasis, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits, quantityBaseUnits, selectedModifierOptionIds, selectedModifiers, requiresReview, unitPriceMinor, modifierAmountMinor, lineAmountMinor, currency, offerVersion, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -5477,6 +5477,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CartLineModifier"
+        requiresReview:
+          type: boolean
+          description: Cart line has obsolete modifier selections; read and remove are allowed but quote and checkout must reject it.
         unitPriceMinor:
           type: integer
           minimum: 1

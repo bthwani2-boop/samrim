@@ -11,7 +11,7 @@ import { recordPendingDiscoveryConversion } from "../store-discovery/discovery-a
 import { checkoutRecipient, DeliveryRecipientForm, deliveryRecipientIsValid, type DeliveryRecipientInput } from "./delivery-recipient-form";
 
 type CartState = { kind: "loading" } | { kind: "empty" } | { kind: "ready"; cart: Cart } | { kind: "error" };
-type QuoteState = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; quote: CheckoutQuote } | { kind: "error" };
+type QuoteState = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; quote: CheckoutQuote } | { kind: "invalid" } | { kind: "error" };
 type WalletState = { kind: "loading" } | { kind: "ready"; availableMinor: number } | { kind: "error" };
 type PendingCartCheckoutAttempt = Readonly<{ version: 1; actorID: string; storeID: string; cartID: string; idempotencyKey: string; correlationID: string; request: CheckoutRequest; expectedCartVersion: number }>;
 
@@ -36,7 +36,8 @@ function definitiveCheckoutRejection(error: unknown): boolean {
 }
 
 function quoteMatchesCheckout(quote: CheckoutQuote, cart: Cart, storeID: string, addressID: string, fulfillmentMode: FulfillmentMode, promotionCode: string): boolean {
-  return quote.cartId === cart.id
+  return !cart.lines.some((line) => line.requiresReview)
+    && quote.cartId === cart.id
     && quote.storeId === storeID
     && quote.cartVersion === cart.version
     && quote.addressId === addressID
@@ -234,6 +235,11 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   }, [load]);
 
   const refreshQuote = useCallback(async (cart: Cart) => {
+    if (cart.lines.some((line) => line.requiresReview)) {
+      quoteRequestID.current += 1;
+      setQuote({ kind: "invalid" });
+      return;
+    }
     if (!pickupMode && !serviceableAddressId) {
       quoteRequestID.current += 1;
       setQuote({ kind: "idle" });
@@ -252,6 +258,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   }, [appliedPromotionCode, fulfillmentMode, pickupMode, quoteAddressID, serviceableAddressId, storeId]);
 
   const readyCart = state.kind === "ready" ? state.cart : null;
+  const cartNeedsReview = readyCart?.lines.some((line) => line.requiresReview) ?? false;
   const promotionNeedsApply = promotionCode.trim().toUpperCase() !== appliedPromotionCode;
   const verifiedQuote = readyCart && quote.kind === "ready" && quoteMatchesCheckout(quote.quote, readyCart, storeId, pickupMode ? "" : serviceableAddressId ?? "", fulfillmentMode, promotionCode) ? quote.quote : null;
   useEffect(() => {
@@ -394,16 +401,17 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
             <Text style={styles.lineTitle}>{line.productName}</Text>
             {line.variantTitle ? <Text style={styles.muted}>{line.variantTitle}</Text> : null}
             {line.selectedModifiers.length ? <Text style={styles.modifiers}>{line.selectedModifiers.map((modifier) => modifier.optionNameAr).join("، ")}</Text> : null}
-            <Text style={styles.muted}>{formatMoney(line.lineAmountMinor, line.currency)} · الكمية {formatQuantity(line.baseUnit, line.quantityBaseUnits)}</Text>
+            {line.requiresReview ? <Text accessibilityRole="alert" style={styles.warning}>خيارات هذا المنتج تغيرت أو لم تعد متاحة. احذفه وأضفه من المتجر مجددًا؛ لن يتم احتساب سعر غير مؤكد.</Text> : null}
+            <Text style={styles.muted}>{line.requiresReview ? `الكمية ${formatQuantity(line.baseUnit, line.quantityBaseUnits)} · السعر يحتاج تحديثًا` : `${formatMoney(line.lineAmountMinor, line.currency)} · الكمية ${formatQuantity(line.baseUnit, line.quantityBaseUnits)}`}</Text>
             <View style={styles.lineActions}>
-              <BthwaniButton accessibilityLabel={`إنقاص كمية ${line.productName}`} disabled={mutationBusy || !canDecrease} label="إنقاص" onPress={() => void updateLine(line, -1)} variant="secondary" />
-              <BthwaniButton accessibilityLabel={`زيادة كمية ${line.productName}`} disabled={mutationBusy || !canIncrease} label="زيادة" onPress={() => void updateLine(line, 1)} variant="secondary" />
+              <BthwaniButton accessibilityLabel={`إنقاص كمية ${line.productName}`} disabled={mutationBusy || line.requiresReview || !canDecrease} label="إنقاص" onPress={() => void updateLine(line, -1)} variant="secondary" />
+              <BthwaniButton accessibilityLabel={`زيادة كمية ${line.productName}`} disabled={mutationBusy || line.requiresReview || !canIncrease} label="زيادة" onPress={() => void updateLine(line, 1)} variant="secondary" />
               <BthwaniButton accessibilityLabel={`إزالة ${line.productName} من السلة`} busy={lineBusy} disabled={mutationBusy} label="إزالة" onPress={() => void removeLine(line)} variant="danger" />
             </View>
           </View>;
         })}</View>
         <View accessibilityLabel="ملخص الدفع" style={styles.totals}>
-          <Text style={styles.muted}>مجموع المنتجات: {formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}</Text>
+          <Text style={styles.muted}>{cartNeedsReview ? "مجموع المنتجات غير متاح حتى إزالة المنتجات التي تحتاج مراجعة." : `مجموع المنتجات: ${formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}`}</Text>
           <View style={styles.promotionBox}>
             <Text style={styles.fulfillmentTitle}>رمز العرض</Text>
             <View style={styles.promotionRow}><TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" editable={!mutationBusy} onChangeText={setPromotionCode} placeholder="مثال: WELCOME10" placeholderTextColor={theme.colorMuted} style={styles.promotionInput} value={promotionCode} /><BthwaniButton disabled={mutationBusy || (!pickupMode && !serviceableAddressId)} label="تطبيق" onPress={() => { if (promotionNeedsApply) setAppliedPromotionCode(promotionCode.trim().toUpperCase()); else if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /></View>
@@ -427,6 +435,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
             {remainingCashMinor !== null ? <Text style={styles.muted}>{remainingCashMinor === 0 ? "لا يوجد مبلغ نقدي مطلوب؛ يُسوى الطلب من الرصيد المحجوز عند إتمامه." : `المتبقي نقدًا ${paymentMethodLabel(paymentMethod, fulfillmentMode)}: ${formatMoney(remainingCashMinor, "YER")}`}</Text> : null}
           </View>
           {quote.kind === "loading" ? <Text accessibilityLiveRegion="polite" style={styles.muted}>جارٍ حساب الإجمالي النهائي…</Text> : null}
+          {quote.kind === "invalid" ? <Text accessibilityRole="alert" style={styles.warning}>لن يُحتسب إجمالي الطلب حتى تزيل العناصر ذات الخيارات غير المتاحة، ثم تضيفها من كتالوج المتجر.</Text> : null}
           {quote.kind === "error" ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>تعذر حساب الإجمالي. حدّث السلة أو أعد المحاولة قبل الإتمام.</Text> : null}
           {quote.kind === "idle" && !pickupMode && !serviceableAddressId ? <Text style={styles.warning}>اختر عنوانًا مؤهلًا لعرض رسوم التوصيل والإجمالي النهائي.</Text> : null}
           {quote.kind === "error" ? <BthwaniButton label="إعادة حساب الإجمالي" onPress={() => { if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /> : null}
