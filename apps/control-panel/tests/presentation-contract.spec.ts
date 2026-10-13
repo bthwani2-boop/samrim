@@ -14,7 +14,7 @@ const stores = Array.from({ length: 10 }, (_, index) => ({
   id: `presentation-store-${index}`, name: `متجر العرض ${index + 1}`,
   partnerActorId: `presentation-partner-${index}`, partnerName: "شريك العرض",
   serviceCityName: "صنعاء", primaryVerticalName: "البقالة", publicationState: "published",
-  fulfillmentModes: ["delivery"], updatedAt: "2026-10-01T12:00:00Z",
+  fulfillmentModes: ["BTHWANI_CAPTAIN"], updatedAt: "2026-10-01T12:00:00Z",
 }));
 const products = Array.from({ length: 10 }, (_, index) => ({
   id: `presentation-product-${index}`, canonicalName: `منتج العرض ${index + 1}`,
@@ -158,7 +158,7 @@ for (const [device, viewport] of [["desktop", { width: 1368, height: 900 }], ["m
       if (process.platform === "linux") await page.addStyleTag({ content: 'body { font-family: "FreeSerif", serif !important; }' });
       await expect(page.locator(".store-registry tbody tr")).toHaveCount(10);
       await expect(page.getByRole("heading", { name: "الشركاء والمتاجر", level: 1, exact: true })).toBeVisible();
-      // A 22px header trash/restore icon changed intentionally; keep the strict full-page baseline with a 256-pixel cap.
+      // Reviewed compact indicators and mobile cards use platform-specific baselines.
       await expect(page).toHaveScreenshot(`store-registry-${device}-${theme}.png`, { animations: "disabled", maxDiffPixels: 256 });
     });
   }
@@ -284,6 +284,7 @@ test("finance settlement groups three existing scopes without merging their rout
 test("only the current center owns one visible child navigation", async ({ page }) => {
   for (const [path, center, child] of [
     ["/partners", "الشركاء", "الشركاء والمتاجر"],
+    ["/fields", "الشركاء", "الميداني"],
     ["/finance/cash-custody", "المالية", "حفظ النقد"],
     ["/catalog/products", "الكتالوج", "المنتجات"],
   ] as const) {
@@ -317,9 +318,14 @@ test("compact phone header keeps the page title and keyboard navigation usable",
   await expect(toggle).toBeFocused();
 });
 
-test("populated mobile tables scroll inside their wrapper without widening the page", async ({ page }) => {
+test("mobile store cards and catalog overflow keep their records inside the page", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const [path, wrapper] of [["/partners/stores", ".store-registry-table-wrap"], ["/catalog/products", ".catalog-registry-table-wrap"]]) {
+  await page.goto("/partners/stores");
+  await expect(page.locator(".store-registry-mobile > li")).toHaveCount(10);
+  await expect(page.locator(".store-registry-mobile")).toBeVisible();
+  await expect(page.locator(".store-registry-table-wrap")).toBeHidden();
+  await expectNoOuterOverflow(page);
+  for (const [path, wrapper] of [["/catalog/products", ".catalog-registry-table-wrap"]]) {
     await page.goto(path!);
     const tableWrapper = page.locator(wrapper!);
     await expect(tableWrapper.locator("tbody tr")).toHaveCount(10);

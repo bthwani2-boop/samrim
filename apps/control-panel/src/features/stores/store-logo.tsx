@@ -30,7 +30,7 @@ export function StoreLogo({ name, uri }: Readonly<{ name: string; uri?: string |
             <img src={uri!} alt={`شعار متجر ${name}`} loading="lazy" decoding="async" onError={() => setFailedUri(uri!)} />
           </button>
         ) : (
-          <span className="store-list-logo-placeholder" role="img" aria-label={`لا يوجد شعار متاح لمتجر ${name}`}>متجر</span>
+          <span className="store-list-logo-placeholder" role="img" aria-label={`لا يوجد شعار متاح لمتجر ${name}`}>{name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => Array.from(word)[0]).join("") || "—"}</span>
         )}
       </span>
       {previewOpen && validImage ? (

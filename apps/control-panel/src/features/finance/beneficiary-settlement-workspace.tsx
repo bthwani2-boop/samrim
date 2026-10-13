@@ -8,6 +8,7 @@ import { downloadRegistryCsv } from "../shared/registry-csv";
 import { OfficialWalletDestinationManager } from "./official-wallet-destination-manager";
 import { usePageSelection } from "./use-page-selection";
 import { useWalletProviders, walletProviderLabel } from "../wallet-provider/use-wallet-providers";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type ActorType = "customer" | "partner" | "captain" | "field";
 type RegistryActorType = "partner" | "captain" | "field";
@@ -619,21 +620,10 @@ export function BeneficiarySettlementWorkspace({ actorType, initialQuery }: Bene
     finally { if (sequence === batchListSequence.current) setBatchListLoading(false); }
   }, []);
 
-  useEffect(() => {
-    if (actorType !== "field" || view !== "beneficiaries") return;
-    const refreshOnReturn = () => {
-      if (document.visibilityState === "visible") {
-        void read({ status, search, sort, cursor }, true);
-        void readBatches({ status: batchStatus, cursor: batchPageCursor });
-      }
-    };
-    window.addEventListener("focus", refreshOnReturn);
-    document.addEventListener("visibilitychange", refreshOnReturn);
-    return () => {
-      window.removeEventListener("focus", refreshOnReturn);
-      document.removeEventListener("visibilitychange", refreshOnReturn);
-    };
-  }, [actorType, view, status, search, sort, cursor, batchStatus, batchPageCursor, read, readBatches]);
+  useReadOnReturn(() => {
+    if (view === "beneficiaries") void read({ status, search, sort, cursor }, true);
+    else if (view === "batches") void readBatches({ status: batchStatus, cursor: batchPageCursor });
+  }, !registryLoading && !batchListLoading && !batchDetailLoading && !busy && !pendingFinanceAction && !reason && !payoutEvidenceReference && !externalReference && !receiptFile && !statementFile);
 
   const readNextBatchPage = () => {
     if (!batchCursor) return;

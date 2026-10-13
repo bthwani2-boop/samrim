@@ -40,13 +40,13 @@ test("store inspection reads canonical readiness on demand and preserves registr
   expect(reads).toBe(0);
   await trigger.click();
   const inspector = page.getByRole("region", { name: "معاينة المتجر", exact: true });
-  await expect(inspector.getByText("مخفي", { exact: true })).toBeVisible();
+  await expect(inspector.getByRole("img", { name: "النشر: مخفي", exact: true })).toBeVisible();
   await expect(inspector).toContainText("لا يوجد كتالوج أو عرض منشور صالح يجعل المتجر جاهزًا");
   await expect(inspector.getByRole("button", { name: /نشر|إخفاء المتجر/ })).toHaveCount(0);
   await expect(inspector.getByRole("link", { name: "فتح ملف المتجر الكامل", exact: true })).toHaveAttribute("href", /\/partners\/stores\/inspector-store\?.*q=/);
   expect(new URL(page.url()).searchParams.get("inspect")).toBe(first.id);
   await page.reload();
-  await expect(inspector.getByText("مخفي", { exact: true })).toBeVisible();
+  await expect(inspector.getByRole("img", { name: "النشر: مخفي", exact: true })).toBeVisible();
   await inspector.getByRole("button", { name: "إغلاق المعاينة", exact: true }).press("Escape");
   await expect(inspector).toHaveCount(0);
   await expect(trigger).toBeFocused();
@@ -156,6 +156,23 @@ test("changing a store registry filter preserves the prior cursor page on Back",
   expect(requestedCursors.at(-1)).toBe("store-page-two");
 });
 
+test("mobile filters open on demand and clearing all removes every registry restriction", async ({ page }) => {
+  await setup(page);
+  await page.route("**/api/service-cities**", (route) => route.fulfill({ json: { cities: [{ id: "sanaa", displayNameAr: "صنعاء" }] } }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/partners?state=published&serviceCityId=sanaa&mode=stores&sort=updated_asc");
+  const publication = page.locator("#partner-store-publication-filter");
+  await expect(publication).toBeHidden();
+  await page.getByRole("button", { name: "الفلاتر والترتيب · مفعلة", exact: true }).click();
+  await expect(publication).toBeVisible();
+  await page.getByRole("button", { name: "مسح الكل", exact: true }).click();
+  await expect(page).not.toHaveURL(/state=|serviceCityId=|mode=|sort=/);
+  await expect(publication).toHaveValue("");
+  await page.setViewportSize({ width: 1368, height: 900 });
+  await expect(publication).toBeVisible();
+  await expect(page.getByRole("button", { name: "الفلاتر والترتيب", exact: true })).toBeHidden();
+});
+
 test("a shared registry renders store rows and verified storeless partners without duplicate accounts", async ({ page }) => {
   await setup(page);
   const partner = { actorId: "no-store-actor", phoneE164: "+967777000001", enabled: true, securityEnabled: true, activatedAt: null };
@@ -165,7 +182,7 @@ test("a shared registry renders store rows and verified storeless partners witho
     const mode = new URL(route.request().url()).searchParams.get("mode");
     if (mode === "without_store") return route.fulfill({ json: { rows: [{ kind: "partner", actor: partner }], nextCursor: "" } });
     return route.fulfill({ json: {
-      rows: [{ kind: "store", store: first, partnerRole: { actorId: "partner", phoneE164: "+967777000002", enabled: true, activatedAt: "2026-10-01" } }],
+      rows: [{ kind: "store", store: first, partnerRole: { actorId: "partner", phoneE164: "+967777000002", enabled: true, securityEnabled: true, activatedAt: "2026-10-01" } }],
       nextCursor: "bounded-cursor-1",
     } });
   });
@@ -250,4 +267,64 @@ test("store logo opens the shared full-image review and restores keyboard focus"
   await page.keyboard.press("Escape");
   await expect(viewer).toHaveCount(0);
   await expect(trigger).toBeFocused();
+});
+
+test("compact indicators preserve independent states and a legend even without pagination", async ({ page }, testInfo) => {
+  await setup(page);
+  await page.setViewportSize({ width: 1368, height: 900 });
+  await page.route("**/api/partners/registry**", (route) => route.fulfill({ json: { rows: registryRows([{ ...first, fulfillmentModes: ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"] }]) } }));
+  await page.goto("/partners");
+  const row = page.locator(".partner-registry-table tbody tr");
+  await expect(row.getByRole("img", { name: "حالة الحساب غير متاحة", exact: true })).toBeVisible();
+  await expect(row.getByRole("img", { name: "النشر: منشور", exact: true })).toBeVisible();
+  for (const name of ["توصيل بثواني", "توصيل المتجر", "استلم بنفسك من المتجر"]) {
+    await expect(row.getByRole("img", { name, exact: true })).toBeVisible();
+  }
+  const publication = row.getByRole("img", { name: "النشر: منشور", exact: true });
+  await publication.focus();
+  await expect(publication.locator(".record-indicator-tooltip")).toBeVisible();
+  await publication.press("Escape");
+  await expect(publication).toBeFocused();
+  await expect(publication.locator(".record-indicator-tooltip")).toHaveCount(0);
+  await expect(page.getByRole("complementary", { name: "دليل رموز الحساب والنشر والتوصيل" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "صفحات الشركاء والمتاجر" })).toHaveCount(0);
+  const share = await row.evaluate((element) => {
+    const cells = Array.from(element.querySelectorAll(".indicator-column,.fulfillment-column"));
+    return cells.reduce((sum, cell) => sum + cell.getBoundingClientRect().width, 0) / element.getBoundingClientRect().width;
+  });
+  expect(share).toBeLessThan(0.3);
+  await page.screenshot({ path: testInfo.outputPath("compact-registry-desktop.png"), fullPage: true });
+});
+
+test("a security-disabled identity is never shown as an active account beside a published store", async ({ page }) => {
+  await setup(page);
+  await page.route("**/api/partners/registry**", (route) => route.fulfill({ json: { rows: [{ kind: "store", store: first, partnerRole: { actorId: "partner", role: "partner", phoneE164: "+967777000101", enabled: true, securityEnabled: false, activatedAt: "2026-10-01T00:00:00Z", createdAt: "2026-10-01T00:00:00Z", actorVersion: 1, roleVersion: 1 } }] } }));
+  await page.goto("/partners");
+  const row = page.locator(".partner-registry-table tbody tr");
+  await expect(row.getByRole("img", { name: "الحساب موقوف", exact: true })).toBeVisible();
+  await expect(row.getByRole("img", { name: "الحساب نشط", exact: true })).toHaveCount(0);
+  await expect(row.getByRole("img", { name: "النشر: منشور", exact: true })).toBeVisible();
+});
+
+test("mobile cards expose states and keep selection and preview recovery usable", async ({ page }, testInfo) => {
+  await setup(page);
+  await page.route("**/api/stores/inspector-store/publication", (route) => route.fulfill({ json: { store: { ...first, publicationReadiness: { ready: false, blockedReason: "CATALOG_NOT_READY" } } } }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/partners");
+  const cards = page.locator(".store-registry-mobile");
+  await expect(cards.locator(":scope > li")).toHaveCount(2);
+  await expect(cards.getByRole("img", { name: "النشر: منشور", exact: true })).toHaveCount(2);
+  await cards.getByRole("checkbox", { name: "تحديد متجر متجر الاختبار", exact: true }).check();
+  await expect(page.getByRole("button", { name: "تصدير المحدد" })).toBeEnabled();
+  const trigger = cards.getByRole("button", { name: "معاينة متجر متجر الاختبار", exact: true });
+  await trigger.click();
+  const inspector = page.getByRole("region", { name: "معاينة المتجر", exact: true });
+  await expect(inspector).toContainText("المطلوب قبل النشر");
+  await expect(inspector.getByRole("button", { name: "إعادة قراءة المعاينة" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(inspector).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(cards.getByRole("checkbox", { name: "تحديد متجر متجر الاختبار", exact: true })).toBeChecked();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("compact-registry-mobile.png"), fullPage: true });
 });

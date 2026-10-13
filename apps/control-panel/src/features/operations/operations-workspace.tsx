@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { operationResponseMessage } from "./operator-actions";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type LaneId = "orders" | "attention" | "dispatch" | "execution" | "exceptions" | "history";
 type Lane = Readonly<{ id: LaneId; label: string; summary: string }>;
@@ -113,10 +114,10 @@ export function OperationsWorkspace() {
     return serialized ? `${base}?${serialized}` : base;
   }, [cursor, queryString]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (retainRows = false) => {
     const sequence = ++loadSequence.current;
     setLoading(true);
-    setOperations([]);
+    if (!retainRows) setOperations([]);
     setNextCursor("");
     setError("");
     setErrorStatus(0);
@@ -140,6 +141,7 @@ export function OperationsWorkspace() {
       setNextCursor(body.nextCursor ?? "");
     } catch (cause) {
       if (sequence !== loadSequence.current) return;
+      setOperations([]);
       setErrorStatus(cause && typeof cause === "object" && "status" in cause && typeof cause.status === "number" ? cause.status : 0);
       const timedOut = cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError");
       setError(timedOut ? "استغرقت القراءة وقتًا طويلًا. أعد المحاولة." : cause instanceof Error ? cause.message : "تعذر قراءة مركز العمليات.");
@@ -152,6 +154,7 @@ export function OperationsWorkspace() {
     if (cursorPage.ready) void load();
     return () => { loadSequence.current += 1; };
   }, [load, cursorPage.ready]);
+  useReadOnReturn(() => load(true), cursorPage.ready && !loading);
   useEffect(() => {
     lanesNavigationRef.current?.querySelector<HTMLElement>(`[data-ops-lane="${lane.id}"]`)?.scrollIntoView({ block: "nearest", inline: "center" });
   }, [lane.id]);
@@ -181,9 +184,6 @@ export function OperationsWorkspace() {
           <h2 id="operations-list-title">{laneSubTabs.length && subLane ? subLane.label : lane.label}</h2>
 
         </div>
-        <button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading}>
-          {loading ? "جارٍ القراءة…" : "إعادة القراءة"}
-        </button>
       </div>
 
       <div className="operations-toolbar">

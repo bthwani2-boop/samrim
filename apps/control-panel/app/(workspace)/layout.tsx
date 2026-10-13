@@ -370,7 +370,7 @@ function WorkspaceNavigation({
                     return (
                       <li key={child.href}>
                         <Link className="workspace-nav-child-link" href={child.href} title={child.label} aria-label={child.label} aria-current={childCurrent ? "page" : undefined} onClick={onClose}>
-                          <span className="workspace-nav-child-compact-marker" aria-hidden="true">•</span><span className="workspace-nav-child-label">{child.label}</span>
+                          <span className="workspace-nav-child-compact-marker" aria-hidden="true"><WorkspaceIcon href={child.href} /></span><span className="workspace-nav-child-label">{child.label}</span>
                         </Link>
                       </li>
                     );

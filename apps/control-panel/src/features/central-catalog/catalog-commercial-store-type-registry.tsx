@@ -1,4 +1,5 @@
 "use client";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 import { TextArea } from "@bthwani/design-system/web";
 
 import type { CommercialStoreType, CommerceVertical } from "@bthwani/dsh";
@@ -93,6 +94,7 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: Re
   }, []);
 
   useEffect(() => { clearEditor(); setNotice(""); void reload(); }, [clearEditor, reload]);
+  useReadOnReturn(() => reload(), Boolean(verticalId) && !loading && !busy && !editorOpen);
 
   async function save() {
     if (!canEdit || !verticalId) return;

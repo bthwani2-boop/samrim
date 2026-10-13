@@ -3,6 +3,8 @@
 import type { ServiceCity, ServiceCityListResponse, ServiceCityResponse } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { ActivityIndicator, ActivityLegend } from "../shared/record-indicator";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 const arabicCityNamePattern = /^[\p{Script=Arabic}\p{White_Space}\p{Number}\p{Punctuation}]+$/u;
 
@@ -39,6 +41,7 @@ export function ServiceCityPanel() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useReadOnReturn(load, !busy && !loading);
 
   async function create() {
     if (!canEdit) return;
@@ -104,13 +107,13 @@ export function ServiceCityPanel() {
         <label htmlFor="service-city-search">بحث في المدن<input id="service-city-search" type="search" maxLength={160} value={query} disabled={busy || loading} onChange={(event) => setQuery(event.target.value)} /></label>
         <label htmlFor="service-city-status">حالة المدينة<select id="service-city-status" value={status} disabled={busy || loading} onChange={(event) => setStatus(event.target.value)}><option value="">كل الحالات</option><option value="active">نشطة</option><option value="inactive">متوقفة</option></select></label>
         {query || status ? <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setQuery(""); setStatus(""); }}>مسح المرشحات</button> : null}
-        <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void load()}>تحديث</button>
       </search>
       <span className="muted" role="status">{visibleCities.length} من {cities.length} مدينة{loading || error ? " · آخر قراءة" : ""}</span>
       <div className="table-wrap" aria-busy={loading}><table className="reference-table"><caption className="visually-hidden">مدن الخدمة</caption>
-        <thead><tr><th scope="col">المدينة</th><th scope="col">الحالة</th><th scope="col">الإجراء</th></tr></thead>
-        <tbody>{visibleCities.map((city) => <tr key={city.id}><th scope="row">{city.displayNameAr}</th><td><span className="state-pill">{city.active ? "نشطة" : "متوقفة"}</span></td><td>{canEdit ? <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void toggle(city)}>{city.active ? "تعطيل" : "تفعيل"}</button> : null}</td></tr>)}{!visibleCities.length ? <tr><td colSpan={3} className="collection-state">لا توجد مدن مطابقة.</td></tr> : null}</tbody>
+        <thead><tr><th scope="col">المدينة</th><th scope="col" className="indicator-column">الحالة</th><th scope="col">الإجراء</th></tr></thead>
+        <tbody>{visibleCities.map((city) => <tr key={city.id}><th scope="row">{city.displayNameAr}</th><td className="indicator-column"><ActivityIndicator active={city.active} activeLabel="نشطة" inactiveLabel="متوقفة" /></td><td>{canEdit ? <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void toggle(city)}>{city.active ? "تعطيل" : "تفعيل"}</button> : null}</td></tr>)}{!visibleCities.length ? <tr><td colSpan={3} className="collection-state">لا توجد مدن مطابقة.</td></tr> : null}</tbody>
       </table></div>
+      <ActivityLegend activeLabel="نشطة" inactiveLabel="متوقفة" />
     </> : null}
   </section>;
 }

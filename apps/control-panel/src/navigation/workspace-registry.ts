@@ -127,6 +127,7 @@ export function currentWorkspaceDestination(pathname: string) {
 
 export function currentWorkspaceChild(pathname: string, destination: WorkspaceDestination) {
   if (destination.href === "/partners") {
+    if (isCurrentWorkspacePath(pathname, "/fields")) return destination.children.find((child) => child.href === "/fields") ?? null;
     const joining = pathname === "/partners/joining" || pathname === "/partners/new" || pathname === "/partners/store-access"
       || (pathname.startsWith("/partners/") && !pathname.startsWith("/partners/actors/") && !pathname.startsWith("/partners/stores/") && pathname !== "/partners/stores");
     return destination.children.find((child) => child.href === (joining ? "/partners/joining" : "/partners")) ?? null;

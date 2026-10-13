@@ -16,6 +16,32 @@ async function shell(page: Page) {
 }
 test.beforeEach(async ({ page }) => { await shell(page); });
 
+test("automatic return reads retain reference drafts and pause while renaming", async ({ page }) => {
+  await page.clock.install();
+  let reads = 0;
+  await page.route("**/api/wallet-providers**", (route) => {
+    reads++;
+    return route.fulfill({ json: { walletProviders: [wallets[0]!] } });
+  });
+  await page.goto("/policies/wallet-providers");
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  const initialReads = reads;
+  await page.locator("details.create-disclosure > summary").click();
+  await page.getByLabel("اسم المحفظة بالعربية").fill("محفظة مسودة");
+  await page.clock.fastForward(31_000);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => reads).toBe(initialReads + 1);
+  await expect(page.getByLabel("اسم المحفظة بالعربية")).toHaveValue("محفظة مسودة");
+  await page.locator("tbody tr").getByRole("button", { name: "تعديل", exact: true }).click();
+  const rename = page.getByLabel("اسم المزوّد", { exact: true });
+  await rename.fill("اسم غير محفوظ");
+  const beforeRenameReturn = reads;
+  await page.clock.fastForward(31_000);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(rename).toHaveValue("اسم غير محفوظ");
+  expect(reads).toBe(beforeRenameReturn);
+});
+
 test("resource centers open their canonical work surface without repeated navigation cards", async ({ page }) => {
   for (const [center, destination, heading] of [["finance", "cash-custody", "حفظ النقد"], ["marketing", "promotions", "العروض"], ["policies", "service-cities", "مدن الخدمة"]] as const) {
     await page.goto(`/${center}`);

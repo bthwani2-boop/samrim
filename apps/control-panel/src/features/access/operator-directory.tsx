@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { operatorWorkspacePermissions } from "../../session/operator-permissions";
 import { responseMessage } from "./identity-error-message";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type OperatorRow = ActorRoleView;
 type OperatorPage = Readonly<{ items: ReadonlyArray<OperatorRow>; nextCursor?: string }>;
@@ -106,6 +107,7 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
   }, [appliedQuery, coverage, enabled, sort, cursorPage.cursor]);
 
   useEffect(() => { if (urlReady && cursorPage.ready) void load(); }, [load, urlReady, cursorPage.ready]);
+  useReadOnReturn(() => load(), urlReady && cursorPage.ready && !loading && !selectionDisabled && !selectedPhone);
 
   const activeFilterCount = Number(Boolean(appliedQuery)) + Number(Boolean(enabled)) + Number(coverage !== "all");
 

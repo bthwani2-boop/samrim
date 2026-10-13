@@ -44,7 +44,7 @@ type StoreRecord struct {
 func ReadStoreDisplayNames(ctx context.Context, db *sql.DB, store *StoreRecord) error {
 	return db.QueryRowContext(ctx, `SELECT COALESCE(NULLIF(btrim(j.owner_full_name),''),NULLIF(btrim(j.business_name),''),''),COALESCE(c.display_name_ar,''),COALESCE(v.name_ar,'')
 		FROM dsh.stores s
-		LEFT JOIN LATERAL (SELECT owner_full_name,business_name,contact_phone_e164 FROM dsh.joining_cases j WHERE j.partner_actor_id=s.partner_actor_id ORDER BY j.updated_at DESC,j.id DESC LIMIT 1) j ON TRUE
+		LEFT JOIN dsh.joining_cases j ON j.partner_actor_id=s.partner_actor_id
 		LEFT JOIN dsh.service_cities c ON c.id=s.service_city_id
 		LEFT JOIN dsh.commerce_verticals v ON v.id=s.primary_vertical_id
 		WHERE s.id=$1`, store.ID).Scan(&store.PartnerName, &store.ServiceCityName, &store.PrimaryVerticalName)
@@ -78,24 +78,24 @@ var (
 )
 
 type OperatorStoreSummary struct {
-	ID                    string
-	PartnerActorID        string
-	Name                  string
-	ServiceCityID         string
-	PrimaryVerticalID     string
-	CommercialStoreTypeID string
-	Version               int
-	PublicationState      string
-	FulfillmentModes      []string
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-	PartnerName           string
-	ServiceCityName       string
-	PrimaryVerticalName   string
-	StoreProfileImageURI  string
+	ID                        string
+	PartnerActorID            string
+	Name                      string
+	ServiceCityID             string
+	PrimaryVerticalID         string
+	CommercialStoreTypeID     string
+	Version                   int
+	PublicationState          string
+	FulfillmentModes          []string
+	CreatedAt                 time.Time
+	UpdatedAt                 time.Time
+	PartnerName               string
+	ServiceCityName           string
+	PrimaryVerticalName       string
+	StoreProfileImageURI      string
 	CommercialStoreTypeNameAr string
-	DeliveryOriginLatitude sql.NullFloat64
-	DeliveryOriginLongitude sql.NullFloat64
+	DeliveryOriginLatitude    sql.NullFloat64
+	DeliveryOriginLongitude   sql.NullFloat64
 }
 
 type OperatorStorePage struct {
@@ -330,7 +330,7 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 		COALESCE(NULLIF(btrim(j.owner_full_name),''),NULLIF(btrim(j.business_name),''),''),COALESCE(c.display_name_ar,''),COALESCE(v.name_ar,''),
 		COALESCE((SELECT m.uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL ORDER BY m.created_at DESC LIMIT 1),''), COALESCE(t.name_ar,''), s.delivery_origin_latitude, s.delivery_origin_longitude
 		FROM dsh.stores s
-		LEFT JOIN LATERAL (SELECT owner_full_name,business_name,contact_phone_e164 FROM dsh.joining_cases j WHERE j.partner_actor_id=s.partner_actor_id ORDER BY j.updated_at DESC,j.id DESC LIMIT 1) j ON TRUE
+		LEFT JOIN dsh.joining_cases j ON j.partner_actor_id=s.partner_actor_id
 		LEFT JOIN dsh.service_cities c ON c.id=s.service_city_id
 		LEFT JOIN dsh.commerce_verticals v ON v.id=s.primary_vertical_id
 		LEFT JOIN dsh.commercial_store_types t ON t.id=s.commercial_store_type_id

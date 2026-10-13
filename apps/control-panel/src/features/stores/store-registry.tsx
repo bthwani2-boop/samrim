@@ -11,6 +11,9 @@ import { partnerErrorMessage } from "../partners/partner-error-message";
 import { downloadRegistryCsv } from "../shared/registry-csv";
 import { StoreInspector } from "./store-inspector";
 import { StoreLogo } from "./store-logo";
+import { AccountIndicator, FulfillmentIndicators, PublicationIndicator, StoreIndicatorLegend } from "./store-indicators";
+import { OperationalIcon } from "../../shell/workspace-icon";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type RegistryRow = { kind: "store"; store: OperatorStoreSummary; partnerRole: ActorRoleView | null } | { kind: "partner"; actor: ActorRoleView };
 type StorePage = Readonly<{ rows: ReadonlyArray<RegistryRow>; nextCursor?: string }>;
@@ -39,8 +42,8 @@ export function StoreRegistry() {
   const sort = params.get("sort") === "updated_asc" ? "updated_asc" : "updated_desc";
   const inspectId = (params.get("inspect") ?? "").slice(0, 128);
   const [search, setSearch] = useState(appliedSearch);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [cities, setCities] = useState<ReadonlyArray<{ id: string; displayNameAr: string }>>([]);
-  const ownerState = (role: ActorRoleView | null): string => !role ? "غير متاحة" : !role.enabled ? "موقوف" : !role.activatedAt ? "بانتظار التفعيل" : "نشط";
   const cursorPage = useCursorPage("cursor", JSON.stringify([filter, appliedSearch, sort, mode, serviceCityId]), "mixed", (key) => {
     try { const value = JSON.parse(key) as unknown[]; if (typeof value[1] === "string" && isPhoneQuery(value[1])) setPrivateSearch(value[1]); } catch { /* invalid saved page filters */ }
   });
@@ -101,8 +104,8 @@ export function StoreRegistry() {
     return `/partners/stores/${encodeURIComponent(id)}?${next}`;
   }
 
-  function inspectStore(id: string) {
-    inspectorOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  function inspectStore(id: string, rememberOrigin = true) {
+    if (rememberOrigin) inspectorOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const next = new URLSearchParams(window.location.search); next.set("inspect", id);
     router.push(`${pathname}?${next}`, { scroll: false });
   }
@@ -112,7 +115,7 @@ export function StoreRegistry() {
     const next = new URLSearchParams(window.location.search); next.delete("inspect");
     router.replace(`${pathname}${next.size ? `?${next}` : ""}`, { scroll: false });
     requestAnimationFrame(() => {
-      const trigger = inspectorOrigin.current?.isConnected ? inspectorOrigin.current : document.getElementById(`store-inspection-${id}`);
+      const trigger = inspectorOrigin.current?.isConnected ? inspectorOrigin.current : [document.getElementById(`store-inspection-${id}`), document.getElementById(`store-inspection-${id}-mobile`)].find((element) => element && element.getClientRects().length > 0);
       (trigger ?? document.getElementById("partner-store-search"))?.focus();
     });
   }
@@ -146,9 +149,25 @@ export function StoreRegistry() {
       if (sequence === requestSequence.current) setLoading(false);
     }
   }, [appliedSearch, cursor, filter, sort, mode, serviceCityId]);
+  useReadOnReturn(load, cursorPage.ready && !loading);
 
   const selectedOnPage = stores.filter((store) => selectedIds.has(store.id)).length;
   const allSelected = stores.length > 0 && selectedOnPage === stores.length;
+  const inspectedIndex = stores.findIndex((store) => store.id === inspectId);
+
+  function storeIdentity(row: Extract<RegistryRow, { kind: "store" }>, mobile = false) {
+    return <div className="store-registry-identity">
+      <StoreLogo name={row.store.name} uri={row.store.storeProfileImage?.uri} />
+      <div className="store-registry-identity-copy">
+        <div className="store-registry-name"><Link href={storeHref(row.store.id)}>{row.store.name}</Link><button id={`store-inspection-${row.store.id}${mobile ? "-mobile" : ""}`} className="store-registry-inspect-button" type="button" title="معاينة المتجر" aria-label={`معاينة متجر ${row.store.name}`} onClick={() => inspectStore(row.store.id)}><OperationalIcon name="published" /></button></div>
+        <div className="store-registry-owner"><Link href={`/partners/actors/${encodeURIComponent(row.store.partnerActorId)}`}>{row.store.partnerName && row.store.partnerName !== row.store.name ? row.store.partnerName : "ملف الشريك"}</Link>{row.partnerRole?.phoneE164 ? <a className="store-registry-secondary" href={`tel:${row.partnerRole.phoneE164}`}><bdi dir="ltr">{row.partnerRole.phoneE164}</bdi></a> : null}</div>
+      </div>
+    </div>;
+  }
+
+  function storeLocation(store: OperatorStoreSummary) {
+    return <span className="store-registry-location"><span>{store.serviceCityName || "—"}</span>{store.deliveryOrigin ? <a className="store-registry-map" href={`https://www.google.com/maps?q=${store.deliveryOrigin.latitude},${store.deliveryOrigin.longitude}`} target="_blank" rel="noopener noreferrer" title="عرض الموقع" aria-label={`موقع متجر ${store.name} على الخريطة`}><OperationalIcon name="map" /></a> : null}</span>;
+  }
 
   function toggleSelected(storeId: string) {
     setSelectedIds((current) => {
@@ -171,25 +190,17 @@ export function StoreRegistry() {
   }, [load, cursorPage.ready, navigationVersion]);
   useEffect(() => {
     if (!cursorPage.ready) return;
-    let lastCheck = Date.now();
-    const revalidate = () => {
-      if (document.visibilityState !== "visible" || Date.now() - lastCheck < 30_000) return;
-      lastCheck = Date.now();
-      void load();
-    };
     const interval = window.setInterval(() => {
-      if (document.visibilityState === "visible") { lastCheck = Date.now(); void load(); }
+      if (document.visibilityState === "visible") void load();
     }, 120_000);
-    document.addEventListener("visibilitychange", revalidate);
-    window.addEventListener("focus", revalidate);
-    return () => { window.clearInterval(interval); document.removeEventListener("visibilitychange", revalidate); window.removeEventListener("focus", revalidate); };
+    return () => window.clearInterval(interval);
   }, [cursorPage.ready, load]);
 
   return (
-    <section className="workspace-page store-registry" aria-labelledby="store-registry-title">
+    <section className="workspace-page store-registry" data-inspecting={Boolean(inspectId)} aria-labelledby="store-registry-title">
       <PageHeader id="store-registry-title" title="الشركاء والمتاجر" />
 
-      {inspectId ? <StoreInspector key={inspectId} storeId={inspectId} detailHref={storeHref(inspectId)} onClose={closeInspector} /> : null}
+      {inspectId ? <StoreInspector key={inspectId} storeId={inspectId} detailHref={storeHref(inspectId)} onClose={closeInspector} onPrevious={inspectedIndex > 0 ? () => inspectStore(stores[inspectedIndex - 1]!.id, false) : undefined} onNext={inspectedIndex >= 0 && inspectedIndex < stores.length - 1 ? () => inspectStore(stores[inspectedIndex + 1]!.id, false) : undefined} /> : null}
 
       <div className="workspace-toolbar store-registry-toolbar">
         <search className="store-registry-search" aria-label="البحث في الشركاء والمتاجر">
@@ -198,17 +209,22 @@ export function StoreRegistry() {
             <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
           </form>
         </search>
+        <div className="store-registry-filters" data-open={filtersOpen}><button type="button" className="button button-secondary store-registry-filter-toggle" aria-expanded={filtersOpen} aria-controls="store-registry-filter-controls" onClick={() => setFiltersOpen(!filtersOpen)}>الفلاتر والترتيب{filter || serviceCityId || mode !== "all" || sort !== "updated_desc" ? " · مفعلة" : ""}</button><div id="store-registry-filter-controls">
         <label className="field-label" htmlFor="partner-registry-mode">عرض السجل<select id="partner-registry-mode" value={mode} onChange={(event) => navigate(event.target.value === "without_store" ? "" : filter, appliedSearch, sort, event.target.value, event.target.value === "without_store" ? "" : serviceCityId)} disabled={loading}><option value="all">الشركاء والمتاجر</option><option value="stores">المتاجر فقط</option><option value="without_store">شركاء دون متاجر</option></select></label>
         <label className="field-label" htmlFor="partner-store-publication-filter">حالة النشر<select id="partner-store-publication-filter" value={filter} onChange={(event) => navigate(event.target.value, appliedSearch, sort)} disabled={loading || mode === "without_store"}>{publicationFilters.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         <label className="field-label" htmlFor="partner-registry-city">المدينة<select id="partner-registry-city" value={serviceCityId} onChange={(event) => navigate(filter, appliedSearch, sort, mode, event.target.value)} disabled={loading || mode === "without_store"}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
         <label className="field-label" htmlFor="partner-store-sort">ترتيب آخر تحديث<select id="partner-store-sort" value={sort} onChange={(event) => navigate(filter, appliedSearch, event.target.value)} disabled={loading}><option value="updated_desc">الأحدث تحديثًا</option><option value="updated_asc">الأقدم تحديثًا</option></select></label>
+        </div></div>
 
       </div>
 
-      {filter || appliedSearch ? <section className="active-filter-chips" aria-label="عوامل البحث والتصفية النشطة">
+      {filter || appliedSearch || serviceCityId || mode !== "all" || sort !== "updated_desc" ? <section className="active-filter-chips" aria-label="عوامل البحث والتصفية النشطة">
         {filter ? <button type="button" className="filter-chip" onClick={() => navigate("", appliedSearch, sort)}>النشر: {publicationFilters.find((option) => option.value === filter)?.label}<span aria-hidden="true">×</span><span className="visually-hidden">مسح تصفية النشر</span></button> : null}
         {appliedSearch ? <button type="button" className="filter-chip" onClick={() => navigate(filter, "", sort)}>البحث: {appliedSearch}<span aria-hidden="true">×</span><span className="visually-hidden">مسح البحث</span></button> : null}
-        <button type="button" className="button button-secondary" onClick={() => navigate("", "", "updated_desc")}>مسح الكل</button>
+        {serviceCityId ? <button type="button" className="filter-chip" onClick={() => navigate(filter, appliedSearch, sort, mode, "")}>المدينة: {cities.find((city) => city.id === serviceCityId)?.displayNameAr || "مدينة محددة"}<span aria-hidden="true">×</span></button> : null}
+        {mode !== "all" ? <button type="button" className="filter-chip" onClick={() => navigate(filter, appliedSearch, sort, "all")}>{mode === "stores" ? "المتاجر فقط" : "شركاء دون متاجر"}<span aria-hidden="true">×</span></button> : null}
+        {sort !== "updated_desc" ? <button type="button" className="filter-chip" onClick={() => navigate(filter, appliedSearch, "updated_desc")}>الأقدم تحديثًا<span aria-hidden="true">×</span></button> : null}
+        <button type="button" className="button button-secondary" onClick={() => navigate("", "", "updated_desc", "all", "")}>مسح الكل</button>
       </section> : null}
 
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت قراءة الشركاء والمتاجر</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
@@ -219,34 +235,32 @@ export function StoreRegistry() {
         <div className="partner-registry-summary"><span>الصفحة الحالية · {rows.length} سجلًا</span><fieldset className="partner-registry-bulk-actions"><legend className="visually-hidden">إجراءات المتاجر المحددة</legend><span aria-live="polite">المحدد: {selectedOnPage}</span><button type="button" className="button button-secondary" onClick={exportSelected} disabled={selectedOnPage === 0}>تصدير المحدد</button><button type="button" className="button button-secondary" onClick={() => setSelectedIds(new Set())} disabled={selectedOnPage === 0}>إلغاء التحديد</button></fieldset></div>
         <div className="store-registry-table-wrap"><table className="operations-table partner-registry-table">
           <caption className="visually-hidden">سجل موحد يعرض صفًا لكل متجر، وصفًا للشريك الذي لا يملك متجرًا، مع عرض حالة حسابه</caption>
-          <thead><tr><th scope="col"><span className="visually-hidden">تحديد</span><input aria-label={allSelected ? "إلغاء تحديد كل المتاجر" : "تحديد كل المتاجر في الصفحة"} type="checkbox" checked={allSelected} onChange={(event) => setSelectedIds(event.target.checked ? new Set(stores.map((store) => store.id)) : new Set())} /></th><th scope="col">الشريك / المتجر</th><th scope="col">مدينة الخدمة</th><th scope="col">النشاط الرئيسي</th><th scope="col">حالة الحساب</th><th scope="col">النشر</th><th scope="col">أوضاع الطلب</th><th scope="col">آخر تحديث</th></tr></thead>
+          <thead><tr><th scope="col"><span className="visually-hidden">تحديد</span><input aria-label={allSelected ? "إلغاء تحديد كل المتاجر" : "تحديد كل المتاجر في الصفحة"} type="checkbox" checked={allSelected} onChange={(event) => setSelectedIds(event.target.checked ? new Set(stores.map((store) => store.id)) : new Set())} /></th><th scope="col">الشريك / المتجر</th><th scope="col">المدينة</th><th scope="col">النشاط والنوع</th><th scope="col" className="indicator-column">الحساب</th><th scope="col" className="indicator-column">النشر</th><th scope="col" className="fulfillment-column">التوصيل</th><th scope="col">آخر تحديث</th></tr></thead>
           <tbody>{rows.map((row) => row.kind === "store" ? <tr key={row.store.id}>
             <td><input type="checkbox" aria-label={`تحديد متجر ${row.store.name}`} checked={selectedIds.has(row.store.id)} onChange={() => toggleSelected(row.store.id)} /></td>
-            <th scope="row">
-              <div className="store-registry-identity">
-                <StoreLogo name={row.store.name} uri={row.store.storeProfileImage?.uri} />
-                <div className="store-registry-identity-copy">
-                  <div className="action-row store-registry-name"><Link href={storeHref(row.store.id)}>{row.store.name}</Link><button id={`store-inspection-${row.store.id}`} className="store-registry-inspect-button" type="button" title="معاينة المتجر" aria-label={`معاينة متجر ${row.store.name}`} onClick={() => inspectStore(row.store.id)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M2.5 12s3.6-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.6 6.5-9.5 6.5S2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="3" /></svg></button></div>
-                  <div className="store-registry-owner"><Link href={`/partners/actors/${encodeURIComponent(row.store.partnerActorId)}`}>{row.store.partnerName && row.store.partnerName !== row.store.name ? row.store.partnerName : "ملف الشريك"}</Link></div>
-                  {row.partnerRole?.phoneE164 ? <a className="store-registry-secondary" href={`tel:${row.partnerRole.phoneE164}`}><bdi dir="ltr">{row.partnerRole.phoneE164}</bdi></a> : null}
-                </div>
-              </div>
-            </th>
-            <td><div className="store-registry-cell-stack"><span>{row.store.serviceCityName || "غير محددة"}</span>{row.store.deliveryOrigin ? <a href={`https://www.google.com/maps?q=${row.store.deliveryOrigin.latitude},${row.store.deliveryOrigin.longitude}`} target="_blank" rel="noopener noreferrer" aria-label={`موقع متجر ${row.store.name} على الخريطة`}>عرض الموقع ↗</a> : null}</div></td>
-            <td><div className="store-registry-cell-stack"><span>{row.store.primaryVerticalName || "غير محددة"}</span><span className="store-registry-secondary">{row.store.commercialStoreTypeNameAr || "نوع المتجر غير محدد"}</span></div></td>
-            <td><span className="store-registry-state" data-state={row.partnerRole?.enabled === false ? "warning" : row.partnerRole?.activatedAt ? "success" : "neutral"}><span aria-hidden="true">{row.partnerRole?.activatedAt && row.partnerRole.enabled ? "✓" : "○"}</span>{ownerState(row.partnerRole)}</span></td>
-            <td><span className="store-registry-state" data-state={row.store.publicationState === "published" ? "success" : "neutral"}><span aria-hidden="true">{row.store.publicationState === "published" ? "✓" : "○"}</span>{publicationStateLabel(row.store.publicationState)}</span></td>
-            <td>{row.store.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "غير محددة"}</td>
-            <td><time dateTime={row.store.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(row.store.updatedAt))}</time></td>
+            <th scope="row">{storeIdentity(row)}</th>
+            <td>{storeLocation(row.store)}</td>
+            <td><div className="store-registry-cell-stack"><span>{row.store.primaryVerticalName || "—"}</span><span className="store-registry-secondary">{row.store.commercialStoreTypeNameAr || <><span aria-hidden="true">—</span><span className="visually-hidden">نوع المتجر غير محدد</span></>}</span></div></td>
+            <td className="indicator-column"><AccountIndicator role={row.partnerRole} /></td>
+            <td className="indicator-column"><PublicationIndicator state={row.store.publicationState} /></td>
+            <td className="fulfillment-column"><FulfillmentIndicators modes={row.store.fulfillmentModes} /></td>
+            <td><time dateTime={row.store.updatedAt} className="store-registry-time">{new Intl.DateTimeFormat("ar-YE", { dateStyle: "short" }).format(new Date(row.store.updatedAt))}<small>{new Intl.DateTimeFormat("ar-YE", { timeStyle: "short" }).format(new Date(row.store.updatedAt))}</small></time></td>
           </tr> : <tr key={`partner-${row.actor.actorId}`}>
             <td aria-label="حساب بلا متجر">—</td>
             <th scope="row"><Link href={`/partners/actors/${encodeURIComponent(row.actor.actorId)}`}><bdi dir="ltr">{row.actor.phoneE164}</bdi></Link><div className="store-registry-owner">شريك دون متجر</div></th>
-            <td>—</td><td>—</td><td>{ownerState(row.actor)}</td><td>بدون متجر</td><td>—</td><td>—</td>
+            <td>—</td><td>—</td><td className="indicator-column"><AccountIndicator role={row.actor} /></td><td><span className="store-registry-secondary">بدون متجر</span></td><td>—</td><td>—</td>
           </tr>)}</tbody>
         </table></div>
+        <ul className="store-registry-mobile" aria-label="الشركاء والمتاجر">{rows.map((row) => <li key={row.kind === "store" ? row.store.id : row.actor.actorId}>
+          {row.kind === "store" ? <>
+            <div className="store-mobile-heading"><input type="checkbox" aria-label={`تحديد متجر ${row.store.name}`} checked={selectedIds.has(row.store.id)} onChange={() => toggleSelected(row.store.id)} />{storeIdentity(row, true)}</div>
+            <div className="store-mobile-facts">{storeLocation(row.store)}<span>{row.store.primaryVerticalName || "—"}{row.store.commercialStoreTypeNameAr ? ` · ${row.store.commercialStoreTypeNameAr}` : ""}</span></div>
+            <div className="store-mobile-status"><span><AccountIndicator role={row.partnerRole} /><PublicationIndicator state={row.store.publicationState} /><FulfillmentIndicators modes={row.store.fulfillmentModes} /></span><time dateTime={row.store.updatedAt}>{new Intl.DateTimeFormat("ar-YE", { dateStyle: "short" }).format(new Date(row.store.updatedAt))}</time></div>
+          </> : <><Link href={`/partners/actors/${encodeURIComponent(row.actor.actorId)}`}><bdi dir="ltr">{row.actor.phoneE164}</bdi></Link><span className="store-registry-secondary">شريك دون متجر</span><AccountIndicator role={row.actor} /></>}
+        </li>)}</ul>
 
       </> : null}
-      <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading} label="صفحات الشركاء والمتاجر" />
+      <footer className="registry-footer"><StoreIndicatorLegend /><CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading} label="صفحات الشركاء والمتاجر" /></footer>
     </section>
   );
 }

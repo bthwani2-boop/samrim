@@ -213,6 +213,7 @@
   .field-create-content, .field-roster-filter-panel, .field-row-disclosure > :not(summary) { padding: 12px; }
   dialog { padding: 20px; max-inline-size: min(700px,calc(100vw - 32px)); max-block-size: calc(100dvh - 48px); overflow: auto; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-base); color: var(--color-primary); }
   dialog::backdrop { background: color-mix(in srgb, var(--color-primary) 50%, transparent); }
+  .employee-file-dialog { inline-size: min(640px,calc(100vw - 32px)); }
   .media-preview, .workspace-media-preview, .store-profile-media { inline-size: 80px; block-size: 80px; object-fit: cover; border-radius: 8px; }
   .catalog-registry-product { display: flex; align-items: center; gap: 10px; }
   .identity-copy, .access-profile-identity, .joining-case-row-main, .catalog-registry-product > span { display: grid; gap: 3px; min-inline-size: 0; }
@@ -311,9 +312,52 @@
   .store-registry-inspect-button:hover { background: var(--surface-muted); }
   .store-registry-secondary { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
   .store-registry-cell-stack { display: grid; gap: 3px; }
-  .store-registry-state { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-  .store-registry-state[data-state="success"] > span:first-child { color: var(--success-text); }
-  .store-registry-state[data-state="warning"] > span:first-child { color: var(--warning-text); }
+  .record-indicator { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; color: var(--text-muted); }
+  .record-indicator[data-tone="success"] .record-indicator-symbol { color: var(--success-text); }
+  .record-indicator[data-tone="warning"] .record-indicator-symbol { color: var(--warning-text); }
+  .record-indicator-symbol { position: relative; display: inline-flex; align-items: center; justify-content: center; inline-size: 28px; block-size: 28px; flex: none; border-radius: 5px; }
+  .record-indicator-symbol .workspace-icon { inline-size: 18px; block-size: 18px; }
+  .record-indicator-symbol:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+  .record-indicator-tooltip { display: none; position: absolute; inset-block-end: calc(100% + 5px); inset-inline-start: 50%; translate: 50% 0; z-index: 4; inline-size: max-content; max-inline-size: 200px; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface-base); color: var(--color-primary); font-size: 12px; font-weight: 400; white-space: normal; box-shadow: var(--shadow-card); }
+  .record-indicator-symbol:is(:hover,:focus) .record-indicator-tooltip { display: block; }
+  .fulfillment-indicators { display: inline-flex; align-items: center; gap: 2px; }
+  .store-registry .partner-registry-table :is(th,td) { vertical-align: middle; }
+  .workspace-main table .indicator-column { inline-size: 54px; min-inline-size: 54px; padding-inline: 6px; text-align: center; }
+  .store-registry .partner-registry-table .fulfillment-column { inline-size: 94px; min-inline-size: 94px; padding-inline: 4px; text-align: center; }
+  .store-registry-name { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .store-registry-owner { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12px; font-weight: 400; }
+  .store-registry-owner > a:first-child { color: var(--text-muted); }
+  .store-registry-location { display: inline-flex; align-items: center; gap: 4px; }
+  .store-registry-map { display: inline-flex; align-items: center; justify-content: center; inline-size: 32px; block-size: 32px; }
+  .store-registry-map .workspace-icon { inline-size: 17px; block-size: 17px; }
+  .store-registry-time { display: grid; gap: 2px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .store-registry-time small { color: var(--text-muted); font-size: 11px; }
+  .registry-footer { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 12px; }
+  .registry-footer .pagination { flex: none; padding-block: 4px; }
+  .record-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding-block: 4px; font-size: 11px; color: var(--text-muted); }
+  .record-legend > div { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  .record-legend strong { font-weight: 650; }
+  .record-indicator[data-legend] .record-indicator-symbol { inline-size: 18px; block-size: 22px; }
+  .record-indicator[data-legend] .workspace-icon { inline-size: 15px; block-size: 15px; }
+  .store-registry-mobile { display: none; }
+  .store-registry-filters, .store-registry-filters > div { display: contents; }
+  .store-registry-filter-toggle { display: none; }
+  .store-registry-filters > div > label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; flex: 1 1 160px; max-inline-size: 260px; }
+  .store-inspector.store-detail-section { position: fixed; inset-block-start: 84px; inset-block-end: 24px; inset-inline-end: 24px; z-index: 3; inline-size: 360px; max-inline-size: calc(100% - 48px); overflow: auto; padding: 16px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-base); box-shadow: var(--shadow-card); }
+  .store-inspector .store-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-block-end: 12px; }
+  .store-inspector .store-detail-heading h2 { margin: 0; font-size: 17px; }
+  .store-inspector-navigation { display: flex; justify-content: space-between; gap: 8px; margin-block-end: 16px; }
+  .store-inspector .partner-case-summary-main { align-items: center; }
+  .store-inspector .partner-case-summary-main > div { display: grid; gap: 5px; }
+  .store-inspector .partner-case-summary-main strong { font-size: 17px; }
+  .store-inspector .store-detail-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px; margin-block: 18px; }
+  .store-inspector .store-detail-facts > div { min-inline-size: 0; }
+  .store-inspector .store-detail-facts :is(dt,dd) { margin: 0; }
+  .store-inspector .store-detail-facts dt { font-size: 12px; color: var(--text-muted); }
+  .store-inspector .store-detail-facts dd { margin-block-start: 4px; }
+  .store-inspector-next-action { margin-block-start: 18px; padding-block: 14px; border-block: 1px solid var(--border-subtle); }
+  .store-inspector-next-action p { margin-block: 6px 12px; font-size: 13px; }
+  @media (min-width: 1300px) { .store-registry[data-inspecting="true"] { padding-inline-end: 380px; } }
   .store-logo-preview-trigger { display: grid; place-items: center; inline-size: 100%; block-size: 100%; margin: 0; padding: 0; border: none; background: transparent; cursor: zoom-in; }
   .store-logo-preview-trigger:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; border-radius: inherit; }
   @media (min-width: 820px) {
@@ -330,13 +374,38 @@
     .workspace-layout[data-nav-compact="true"] .workspace-nav-child-link { justify-content: center; gap: 0; padding-inline: 0; }
     .workspace-layout[data-nav-compact="true"] .workspace-nav-link-label,
     .workspace-layout[data-nav-compact="true"] .workspace-nav-child-label { display: none; }
-    .workspace-layout[data-nav-compact="true"] .workspace-nav-child-compact-marker { display: inline; font-size: 24px; line-height: 1; }
+    .workspace-layout[data-nav-compact="true"] .workspace-nav-child-compact-marker { display: inline-flex; }
     .workspace-layout[data-nav-compact="true"] .workspace-nav-children { margin-inline: 0; border: 0; }
     .workspace-layout[data-nav-compact="true"] .workspace-nav-child-link { margin-inline: 0; }
     .workspace-layout[data-nav-compact="true"] .workspace-nav-link[aria-current] { box-shadow: inset -2px 0 var(--action-bg); }
   }
   @media (max-width: 1100px) { .workspace-layout { grid-template-columns: 200px minmax(0,1fr); } .brand-link { min-inline-size: 176px; } .workspace-main { padding: 20px; } .catalog-taxonomy-workbench, .central-catalog-grid { grid-template-columns: 1fr; } }
   @media (max-width: 819px) {
+    .store-registry-filters { display: block; flex: 1 1 100%; }
+    .store-registry-filter-toggle { display: inline-flex; }
+    .store-registry-filters[data-open="false"] > div { display: none; }
+    .store-registry-filters[data-open="true"] > div { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-block-start: 10px; }
+    .store-registry-filters > div > label { max-inline-size: none; min-inline-size: 0; }
+    .store-registry-table-wrap { display: none; }
+    .store-registry-mobile { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-base); max-block-size: 70dvh; overflow: auto; }
+    .store-registry-mobile > li { display: grid; gap: 10px; padding: 12px; border-block-end: 1px solid var(--border-subtle); }
+    .store-registry-mobile > li:last-child { border-block-end: 0; }
+    .store-mobile-heading { display: flex; align-items: center; gap: 8px; min-inline-size: 0; }
+    .store-mobile-heading > input { flex: none; }
+    .store-mobile-heading .store-registry-identity { flex: 1; min-inline-size: 0; align-items: start; }
+    .store-mobile-heading .store-registry-identity-copy { flex: 1; }
+    .store-mobile-heading .store-registry-name > a { overflow-wrap: anywhere; }
+    .store-mobile-heading .store-registry-owner { gap: 2px; }
+    .store-mobile-heading .store-registry-owner > a { flex-basis: 100%; }
+    .store-mobile-facts, .store-mobile-status { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+    .store-mobile-status > span { display: flex; align-items: center; gap: 5px; }
+    .store-mobile-status time { color: var(--text-muted); }
+    .store-registry-inspect-button, .store-registry-map { min-inline-size: 44px; min-block-size: 44px; }
+    .record-indicator-symbol { inline-size: 32px; block-size: 36px; }
+    .registry-footer { flex-direction: column; }
+    .record-legend { gap: 8px; }
+    .record-legend > div { inline-size: 100%; }
+    .store-inspector.store-detail-section { inset-block-start: 72px; inset-block-end: 12px; inset-inline: 12px; inline-size: auto; max-inline-size: none; }
     .data-table-wide-actions :is(thead th,tbody td):last-child { position: static; box-shadow: none; }
     .workspace-header { gap: 10px; padding-inline: 12px; min-block-size: 60px; }
     .brand-link { min-inline-size: 0; }

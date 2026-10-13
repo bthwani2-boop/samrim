@@ -12,6 +12,25 @@ const (
 	testOperatorActorID = "act_operator_catalog_v1"
 )
 
+func TestAdoptedMigration117RetainsItsOriginalBytes(t *testing.T) {
+	records, _, err := postgres.LoadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This migration is already applied to preserved local data. Its original
+	// CRLF bytes, not a rewritten ledger hash, are the upgrade authority.
+	const adoptedSHA = "4d9c779902a595e1c08e5939b90f1ca6dbeb2856bbb7c281ba380d490d4ae20e"
+	for _, record := range records {
+		if record.Version == 117 {
+			if record.SHA256 != adoptedSHA {
+				t.Fatalf("adopted migration 117 changed: got %s, want %s", record.SHA256, adoptedSHA)
+			}
+			return
+		}
+	}
+	t.Fatal("adopted migration 117 is missing")
+}
+
 func assertRequiredMigrationOrder(t *testing.T, records []postgres.MigrationRecord, required ...string) {
 	t.Helper()
 	lastIndex := -1
