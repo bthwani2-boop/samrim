@@ -192,8 +192,24 @@ func cartLineQuantityAllowed(line CartLineRecord) bool {
 	return validateCatalogOfferQuantity(offer, line.QuantityBaseUnits) == nil
 }
 
+// Quotes must reject quantities that checkout cannot reserve. A quote never
+// reserves inventory, so checkout still revalidates under the offer row lock.
+func cartLineInventoryAvailable(policy string, onHand, reserved, quantity int64) bool {
+	if quantity <= 0 {
+		return false
+	}
+	switch policy {
+	case "AVAILABILITY_ONLY":
+		return true
+	case "QUANTITY_ON_HAND":
+		return onHand >= 0 && reserved >= 0 && reserved <= onHand && onHand-reserved >= quantity
+	default:
+		return false
+	}
+}
+
 func listCartLines(ctx context.Context, source queryer, cartID string) ([]CartLineRecord, error) {
-	rows, err := source.QueryContext(ctx, `SELECT l.id,l.cart_id,l.store_offer_id,l.variant_id,v.product_id,p.canonical_name,v.title,v.measurement_kind,v.base_unit,o.pricing_basis,o.quantity_policy,COALESCE(o.quantity_min_base_units,0),COALESCE(o.quantity_max_base_units,0),COALESCE(o.quantity_step_base_units,0),o.pricing_unit_base_units,l.quantity_base_units,l.selected_modifier_option_ids,o.price_minor,o.currency,o.version,EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id),l.created_at,l.updated_at
+	rows, err := source.QueryContext(ctx, `SELECT l.id,l.cart_id,l.store_offer_id,l.variant_id,v.product_id,p.canonical_name,v.title,v.measurement_kind,v.base_unit,o.pricing_basis,o.quantity_policy,COALESCE(o.quantity_min_base_units,0),COALESCE(o.quantity_max_base_units,0),COALESCE(o.quantity_step_base_units,0),o.pricing_unit_base_units,l.quantity_base_units,l.selected_modifier_option_ids,o.price_minor,o.currency,o.version,o.inventory_policy,o.inventory_on_hand_base_units,o.inventory_reserved_base_units,EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id),l.created_at,l.updated_at
 FROM dsh.commerce_cart_lines l
 JOIN dsh.catalog_store_offers o ON o.id=l.store_offer_id
 JOIN dsh.catalog_product_variants v ON v.id=l.variant_id
@@ -207,10 +223,12 @@ WHERE l.cart_id=$1 AND l.removed_at IS NULL ORDER BY l.created_at,l.id`, cartID)
 	for rows.Next() {
 		var line CartLineRecord
 		var customerVisible bool
-		if err := rows.Scan(&line.ID, &line.CartID, &line.StoreOfferID, &line.VariantID, &line.ProductID, &line.ProductName, &line.VariantTitle, &line.MeasurementKind, &line.BaseUnit, &line.PricingBasis, &line.QuantityPolicy, &line.QuantityMinBaseUnits, &line.QuantityMaxBaseUnits, &line.QuantityStepBaseUnits, &line.PricingUnitBaseUnits, &line.QuantityBaseUnits, pq.Array(&line.SelectedModifierOptionIDs), &line.UnitPriceMinor, &line.Currency, &line.OfferVersion, &customerVisible, &line.CreatedAt, &line.UpdatedAt); err != nil {
+		var inventoryPolicy string
+		var inventoryOnHand, inventoryReserved int64
+		if err := rows.Scan(&line.ID, &line.CartID, &line.StoreOfferID, &line.VariantID, &line.ProductID, &line.ProductName, &line.VariantTitle, &line.MeasurementKind, &line.BaseUnit, &line.PricingBasis, &line.QuantityPolicy, &line.QuantityMinBaseUnits, &line.QuantityMaxBaseUnits, &line.QuantityStepBaseUnits, &line.PricingUnitBaseUnits, &line.QuantityBaseUnits, pq.Array(&line.SelectedModifierOptionIDs), &line.UnitPriceMinor, &line.Currency, &line.OfferVersion, &inventoryPolicy, &inventoryOnHand, &inventoryReserved, &customerVisible, &line.CreatedAt, &line.UpdatedAt); err != nil {
 			return nil, err
 		}
-		line.RequiresReview = !customerVisible || !cartLineQuantityAllowed(line)
+		line.RequiresReview = !customerVisible || !cartLineQuantityAllowed(line) || !cartLineInventoryAvailable(inventoryPolicy, inventoryOnHand, inventoryReserved, line.QuantityBaseUnits)
 		lines = append(lines, line)
 	}
 	if err := rows.Err(); err != nil {
