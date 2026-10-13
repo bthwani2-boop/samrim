@@ -12,9 +12,11 @@ let checkoutNode;
 let quoteNode;
 let verifiedQuoteNode;
 let refreshQuoteNode;
+let pendingTotalNode;
 function visit(node) {
   if (ts.isFunctionDeclaration(node) && node.name?.text === "checkout") checkoutNode = node;
   if (ts.isFunctionDeclaration(node) && node.name?.text === "quoteMatchesCheckout") quoteNode = node;
+  if (ts.isFunctionDeclaration(node) && node.name?.text === "pendingCheckoutHasAcceptedTotal") pendingTotalNode = node;
   if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "verifiedQuote") verifiedQuoteNode = node;
   if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "refreshQuote") refreshQuoteNode = node;
   ts.forEachChild(node, visit);
@@ -24,10 +26,12 @@ assert.ok(checkoutNode, "checkout handler is required");
 assert.ok(quoteNode, "checkout quote identity guard is required");
 assert.ok(verifiedQuoteNode?.initializer, "visible checkout quote derivation is required");
 assert.ok(refreshQuoteNode?.initializer, "quote request callback is required");
+assert.ok(pendingTotalNode, "pending checkout legacy accepted-total guard is required");
 const compilerOptions = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None };
 const runnableQuote = ts.transpileModule(quoteNode.getText(ast), { compilerOptions }).outputText;
 const runnableHandler = ts.transpileModule(checkoutNode.getText(ast), { compilerOptions }).outputText;
 const quoteMatchesCheckout = vm.runInNewContext(`${runnableQuote}\nquoteMatchesCheckout`);
+const pendingCheckoutHasAcceptedTotal = vm.runInNewContext(`${ts.transpileModule(pendingTotalNode.getText(ast), { compilerOptions }).outputText}\npendingCheckoutHasAcceptedTotal`);
 const visibleQuoteExpression = verifiedQuoteNode.initializer.getText(ast);
 const runnableVisibleQuote = ts.transpileModule(`function readVisibleQuote(readyCart, quote, storeId, pickupMode, serviceableAddressId, fulfillmentMode, appliedPromotionCode) { return ${visibleQuoteExpression}; }`, { compilerOptions }).outputText;
 const readVisibleQuote = vm.runInNewContext(`${runnableQuote}\n${runnableVisibleQuote}\nreadVisibleQuote`);
@@ -283,4 +287,23 @@ test("checkout persists the exact accepted quote total before submitting", async
   assert.equal(counts.persist, 1);
   assert.equal(counts.submit, 1);
   assert.equal(counts.pending[0].request.expectedTotalAmountMinor, displayedTotal);
+});
+
+test("legacy pending checkout cannot resubmit without accepted amount", () => {
+  const attempt = (amount) => ({ request: { expectedTotalAmountMinor: amount } });
+  for (const unconfirmed of [undefined, null, 0, -1, 1.5, NaN, Infinity, "200"]) {
+    assert.equal(pendingCheckoutHasAcceptedTotal(attempt(unconfirmed)), false);
+  }
+  assert.equal(pendingCheckoutHasAcceptedTotal(attempt(200)), true);
+  assert.equal(pendingCheckoutHasAcceptedTotal(attempt(Number.MAX_SAFE_INTEGER)), true);
+
+  const loadStart = source.indexOf("const load = useCallback(async () => {");
+  const legacyGuard = source.indexOf("if (!pendingCheckoutHasAcceptedTotal(attempt))", loadStart);
+  const submitAfterGuard = source.indexOf("client().checkoutCart(token, attempt.request", loadStart);
+  assert.ok(loadStart >= 0 && legacyGuard > loadStart && submitAfterGuard > legacyGuard,
+    "check the persisted amount before any recovery submission");
+  assert.match(source.slice(legacyGuard, submitAfterGuard), /setBusy\(false\)/,
+    "a withheld legacy retry must release its loading state");
+  assert.doesNotMatch(source.slice(legacyGuard, submitAfterGuard), /deleteItemAsync/,
+    "a legacy pending attempt must not be silently erased");
 });

@@ -30,6 +30,13 @@ function parsePendingCartCheckout(raw: string | null, actorID: string, storeID: 
   }
 }
 
+// Checkout receipts predating accepted quote totals may be reconciled by
+// canonical Order readback but must never be resubmitted as a fresh charge.
+function pendingCheckoutHasAcceptedTotal(attempt: PendingCartCheckoutAttempt): boolean {
+  const total = attempt.request.expectedTotalAmountMinor;
+  return typeof total === "number" && Number.isSafeInteger(total) && total > 0;
+}
+
 function definitiveCheckoutRejection(error: unknown): boolean {
   const code = errorCode(error);
   return ["CHECKOUT_PAYMENT_RECONCILED", "STALE_CHECKOUT", "INVALID_INPUT", "INVALID_PAYMENT_ALLOCATION", "INVALID_RECIPIENT", "INSUFFICIENT_CUSTOMER_BALANCE", "OFFER_UNAVAILABLE", "CART_CLOSED", "CART_EMPTY", "INVENTORY_INSUFFICIENT", "INVENTORY_CONFLICT", "PROMOTION_UNAVAILABLE", "UNSERVICEABLE", "FULFILLMENT_MODE_UNAVAILABLE", "WLT_DELIVERY_FEE_UNAVAILABLE", "NOT_FOUND"].includes(code);
@@ -187,6 +194,13 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
           return;
         }
         if (!isCurrent()) return;
+        if (!pendingCheckoutHasAcceptedTotal(attempt)) {
+          // Keep the existing idempotency evidence until the canonical Order
+          // can be read; do not mint a new order with an unaccepted amount.
+          setBusy(false);
+          setError("هذا طلب قديم لم يثبت فيه المبلغ المؤكد. لم نُعِد إرساله لتجنب طلب أو خصم مكرر. أعد التحقق من الطلب لاحقًا أو اطلب المساعدة.");
+          return;
+        }
         try {
           const result = await client().checkoutCart(token, attempt.request, attempt.expectedCartVersion, attempt.idempotencyKey, attempt.correlationID);
           await finishCheckout(result.order, token, storageKey, isCurrent);
