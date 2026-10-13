@@ -51,7 +51,7 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
   const workspace = page.locator(".beneficiary-settlement-workspace");
   await expect(page.getByRole("heading", { name: "مستحقات وتسويات الشركاء والكباتن والميدان", level: 2 })).toBeVisible();
   await expect(workspace.getByRole("navigation", { name: "مسارات مكتب التسويات" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "مستحقات الشركاء", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "المالية", exact: true })).toHaveAttribute("aria-current", "location");
   await expect(workspace.getByText(/سجلات الصفحة الحالية:/)).toBeVisible();
 
   const registryRead = await page.evaluate(async () => {
