@@ -57,6 +57,10 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const [grants, setGrants] = useState<ReadonlyArray<StoreAccessGrant>>([]);
+  const [grantsForStoreID, setGrantsForStoreID] = useState("");
+  const grantReadSequence = useRef(0);
+  const activeStoreID = useRef(storeID);
+  activeStoreID.current = storeID;
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -71,22 +75,34 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
   const filteredOwnedStores = useMemo(() => ownedStores.filter((store) => store.name.toLocaleLowerCase().includes(storeSearch.trim().toLocaleLowerCase())), [ownedStores, storeSearch]);
   useEffect(() => {
     setSelectedStoreIDs([storeID]);
+    inviteAttempt.current = null;
+    setNotice("");
   }, [storeID]);
 
   const reload = useCallback(async () => {
+    if (activeStoreID.current !== storeID) return;
+    const sequence = ++grantReadSequence.current;
     setLoading(true);
     setError("");
     try {
       const grantsResult = await listOwnStoreAccessGrants(storeID);
+      if (sequence !== grantReadSequence.current || activeStoreID.current !== storeID) return;
       setGrants(grantsResult.items);
+      setGrantsForStoreID(storeID);
     } catch {
+      if (sequence !== grantReadSequence.current || activeStoreID.current !== storeID) return;
+      setGrants([]);
+      setGrantsForStoreID(storeID);
       setError("تعذرت قراءة صلاحيات الوصول من المنصة.");
     } finally {
-      setLoading(false);
+      if (sequence === grantReadSequence.current && activeStoreID.current === storeID) setLoading(false);
     }
   }, [storeID]);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    void reload();
+    return () => { grantReadSequence.current += 1; };
+  }, [reload]);
 
   function togglePermission(permission: StoreAccessPermission) {
     setSelectedPermissions((current) => toggleStoreAccessPermission(current, permission));
@@ -175,8 +191,8 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
   return <View style={styles.container}>
     <TeamInvitationCard busy={busy} choosePreset={choosePreset} filteredOwnedStores={filteredOwnedStores} notice={notice} onInvite={() => void invite()} onPhoneChange={(value) => { setPhone(value); inviteAttempt.current = null; }} onPermissionToggle={togglePermission} onStoreSearchChange={setStoreSearch} onTargetStoreToggle={toggleTargetStore} phone={phone} selectedPermissions={selectedPermissions} selectedStoreIDs={selectedStoreIDs} storeSearch={storeSearch} styles={styles} />
 
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    <StoreGrantsCard busy={busy} grants={grants} loading={loading} onPermissions={(grant, next) => void updatePermissions(grant, next)} onTransition={(grant, next) => void transition(grant, next)} styles={styles} />
+    {error && grantsForStoreID === storeID ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    <StoreGrantsCard busy={busy} grants={grantsForStoreID === storeID ? grants : []} loading={loading || grantsForStoreID !== storeID} onPermissions={(grant, next) => void updatePermissions(grant, next)} onTransition={(grant, next) => void transition(grant, next)} styles={styles} />
   </View>;
 }
 
