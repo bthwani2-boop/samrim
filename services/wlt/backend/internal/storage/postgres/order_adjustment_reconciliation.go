@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/domain"
 )
 
 var (
@@ -125,17 +127,21 @@ func RecordOrderAdjustmentReconciliationCase(ctx context.Context, db *sql.DB, in
 	if !errors.Is(err, sql.ErrNoRows) {
 		return OrderAdjustmentReconciliationCase{}, false, err
 	}
-	var allocatedOrderID, payerActorID string
-	if err := tx.QueryRowContext(ctx, `SELECT allocation.order_id,intent.payer_actor_id
+	var allocatedOrderID, payerActorID, paymentState string
+	if err := tx.QueryRowContext(ctx, `SELECT allocation.order_id,intent.payer_actor_id,intent.state
 		FROM wlt.customer_payment_allocations allocation
 		JOIN wlt.payment_intents intent ON intent.id=allocation.payment_intent_id
-		WHERE allocation.payment_intent_id=$1`, input.PaymentIntentID).Scan(&allocatedOrderID, &payerActorID); err != nil {
+		WHERE allocation.payment_intent_id=$1
+		FOR UPDATE OF intent`, input.PaymentIntentID).Scan(&allocatedOrderID, &payerActorID, &paymentState); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return OrderAdjustmentReconciliationCase{}, false, ErrOrderAdjustmentReconciliationNotFound
 		}
 		return OrderAdjustmentReconciliationCase{}, false, err
 	}
-	if allocatedOrderID != input.OrderID || payerActorID != input.CustomerActorID {
+	// Never open a post-collection reconciliation case for money that was
+	// never collected. Hold the payment row lock through case insertion
+	// so collection and adjustment cannot race this financial decision.
+	if allocatedOrderID != input.OrderID || payerActorID != input.CustomerActorID || paymentState != domain.StateCollected {
 		return OrderAdjustmentReconciliationCase{}, false, ErrOrderAdjustmentReconciliationConflict
 	}
 	id, err := newID("order_adjustment_case")

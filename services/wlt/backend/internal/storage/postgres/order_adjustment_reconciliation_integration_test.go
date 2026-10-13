@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"sync"
@@ -62,6 +63,39 @@ func TestOrderAdjustmentReconciliationPersistsWithoutMovingMoney(t *testing.T) {
 	mismatchedActor.ActingActorID = "unrelated-actor"
 	if _, _, err := RecordOrderAdjustmentReconciliationCase(s.ctx, s.db, mismatchedActor); !errors.Is(err, ErrOrderAdjustmentReconciliationInput) {
 		t.Fatalf("only canonical customer can request a reconciliation case: %v", err)
+	}
+
+	// The same customer and allocation must not create a post-collection
+	// reconciliation when no payment has actually been collected. Restore the
+	// synthetic fixture before the successful/concurrent assertions below.
+	var amount sql.NullInt64
+	var collectedBy, collectionReference sql.NullString
+	var collectedAt sql.NullTime
+	if err := s.db.QueryRowContext(s.ctx, `SELECT collected_amount_minor,collected_by_actor_id,collection_reference,collected_at
+		FROM wlt.payment_intents WHERE id=$1`, intentID).Scan(&amount, &collectedBy, &collectionReference, &collectedAt); err != nil {
+		t.Fatal(err)
+	}
+	if !amount.Valid || !collectedBy.Valid || !collectedAt.Valid {
+		t.Fatal("collected fixture lacks the canonical collection facts")
+	}
+	if _, err := s.db.ExecContext(s.ctx, `UPDATE wlt.payment_intents
+		SET state='REQUIRES_COLLECTION',collected_amount_minor=NULL,collected_by_actor_id=NULL,collection_reference=NULL,collected_at=NULL
+		WHERE id=$1`, intentID); err != nil {
+		t.Fatalf("prepare isolated uncollected payment: %v", err)
+	}
+	uncollected := input
+	uncollected.IdempotencyKey += "-not-collected"
+	if _, _, err := RecordOrderAdjustmentReconciliationCase(s.ctx, s.db, uncollected); !errors.Is(err, ErrOrderAdjustmentReconciliationConflict) {
+		t.Fatalf("uncollected payment must not create a financial reconciliation case: %v", err)
+	}
+	var beforeCollectCount int
+	if err := s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.order_adjustment_reconciliation_cases WHERE order_id=$1", orderID).Scan(&beforeCollectCount); err != nil || beforeCollectCount != 0 {
+		t.Fatalf("uncollected request persisted a reconciliation case: count=%d err=%v", beforeCollectCount, err)
+	}
+	if _, err := s.db.ExecContext(s.ctx, `UPDATE wlt.payment_intents
+		SET state='COLLECTED',collected_amount_minor=$2,collected_by_actor_id=$3,collection_reference=$4,collected_at=$5
+		WHERE id=$1`, intentID, amount, collectedBy, collectionReference, collectedAt); err != nil {
+		t.Fatalf("restore isolated collected payment: %v", err)
 	}
 
 	type outcome struct {
