@@ -57,9 +57,8 @@ func (s *Service) CreateOwnAddress(ctx context.Context, accessToken, serviceCity
 	if serviceCityID == "" || addressText == "" {
 		return postgres.DeliveryAddressResult{}, ErrLocationInputInvalid
 	}
-	city, err := postgres.ReadServiceCity(ctx, s.db, serviceCityID)
-	if err != nil || !city.Active {
-		return postgres.DeliveryAddressResult{}, postgres.ErrServiceCityNotFound
+	if err := s.requireActiveServiceCity(ctx, serviceCityID); err != nil {
+		return postgres.DeliveryAddressResult{}, err
 	}
 	return postgres.CreateDeliveryAddress(ctx, s.db, actorID, addressText, latitude, longitude, idempotencyKey, postgres.HashDeliveryAddressCreateRequest(actorID, addressText, latitude, longitude, serviceCityID), correlationID, serviceCityID)
 }
@@ -75,11 +74,23 @@ func (s *Service) UpdateOwnAddress(ctx context.Context, accessToken, addressID, 
 	if addressID == "" || serviceCityID == "" || addressText == "" {
 		return postgres.DeliveryAddressResult{}, ErrLocationInputInvalid
 	}
-	city, err := postgres.ReadServiceCity(ctx, s.db, serviceCityID)
-	if err != nil || !city.Active {
-		return postgres.DeliveryAddressResult{}, postgres.ErrServiceCityNotFound
+	if err := s.requireActiveServiceCity(ctx, serviceCityID); err != nil {
+		return postgres.DeliveryAddressResult{}, err
 	}
 	return postgres.UpdateDeliveryAddress(ctx, s.db, addressID, actorID, addressText, latitude, longitude, expectedVersion, idempotencyKey, postgres.HashDeliveryAddressUpdateRequest(addressID, actorID, addressText, latitude, longitude, expectedVersion, serviceCityID), correlationID, serviceCityID)
+}
+
+// requireActiveServiceCity distinguishes a missing/inactive city from a failed canonical read.
+// A database outage must remain retryable rather than masquerade as invalid user input.
+func (s *Service) requireActiveServiceCity(ctx context.Context, cityID string) error {
+	city, err := postgres.ReadServiceCity(ctx, s.db, cityID)
+	if err != nil {
+		return err
+	}
+	if !city.Active {
+		return postgres.ErrServiceCityNotFound
+	}
+	return nil
 }
 
 func (s *Service) ReadStoreOrigin(ctx context.Context, accessToken, storeID string) (postgres.StoreDeliveryOriginRecord, bool, error) {
