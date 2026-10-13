@@ -72,6 +72,8 @@ export function CaptainDeliveries() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setCashLiability(null);
+    setPendingCompletion(null);
     setTasks({});
     setCompletionStorageReady(false);
     setError("");
@@ -105,9 +107,17 @@ export function CaptainDeliveries() {
         }
       }));
       setTasks(Object.fromEntries(taskEntries.filter((entry): entry is readonly [string, CaptainDeliveryTask] => entry !== null)));
-      setCashLiability(await api.readOwnCaptainCashLiability(token));
+      try {
+        setCashLiability(await api.readOwnCaptainCashLiability(token));
+      } catch (cause) {
+        console.warn("WLT Captain cash liability readback failed", cause);
+        setError("تم تحديث التوصيلات، لكن تعذرت قراءة العهدة النقدية. أعد القراءة قبل أي توريد.");
+      }
     } catch (cause) {
       console.error("DSH Captain deliveries readback failed", cause);
+      setAssignments([]);
+      setTasks({});
+      setCashLiability(null);
       setError("تعذر قراءة التوصيلات. أعد المحاولة.");
     } finally {
       setLoading(false);
@@ -223,12 +233,14 @@ export function CaptainDeliveries() {
 
   async function retryPendingCompletion() {
     const attempt = pendingCompletion;
-    if (!attempt || busy) return;
+    if (!attempt || busy || !completionStorageReady) return;
     setBusy(attempt.assignmentID);
     setError("");
     setCompletionRejected(false);
     try {
       const token = await getUsableIdentityAccessToken();
+      const identity = currentIdentityState();
+      if (identity.kind !== "authenticated" || identity.identity.subject.trim() !== attempt.actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
       await captainClient().completeCaptainAssignment(token, attempt.assignmentID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
       await SecureStore.deleteItemAsync(pendingCaptainCompletionKey(attempt.actorID));
       setPendingCompletion(null);
@@ -250,6 +262,8 @@ export function CaptainDeliveries() {
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      const identity = currentIdentityState();
+      if (identity.kind !== "authenticated" || identity.identity.subject.trim() !== attempt.actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
       const response = await captainClient().listOwnCaptainAssignments(token);
       const current = response.assignments.find((item) => item.id === attempt.assignmentID);
       if (!current || current.state !== "in_custody" || current.version !== attempt.expectedVersion) {
@@ -271,6 +285,7 @@ export function CaptainDeliveries() {
   }
 
   async function remitCash(item: CashLiabilityItem) {
+    if (loading || !cashLiability?.items.some((current) => current.paymentIntentId === item.paymentIntentId && current.paymentVersion === item.paymentVersion)) return;
     const reference = cashRemittanceReferences[item.paymentIntentId]?.trim() ?? "";
     if (cashBusy || !reference) {
       setError("أدخل مرجع توريد العهدة لإرساله إلى المالية.");
@@ -407,7 +422,7 @@ export function CaptainDeliveries() {
       }) : null}
        {!loading ? assignments.map((assignment) => <OrderConversation key={`conversation-${assignment.id}`} orderId={assignment.orderId} />) : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <BthwaniButton busy={Boolean(busy)} disabled={Boolean(busy)} label="تحديث التوصيلات" onPress={() => void load()} variant="secondary" />
+      <BthwaniButton busy={Boolean(busy) || Boolean(cashBusy) || loading} disabled={Boolean(busy) || Boolean(cashBusy) || loading} label="تحديث التوصيلات" onPress={() => void load()} variant="secondary" />
     </View>
   );
 }
