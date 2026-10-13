@@ -136,3 +136,96 @@ func TestCaptainCashLiabilityPostgresSummaryBeyondPage(t *testing.T) {
 		t.Fatalf("cross-captain COD readback=%+v err=%v", other, err)
 	}
 }
+
+func TestFundedPromotionSettlesIntoConservedPartnerEarnings(t *testing.T) {
+	s := newFieldAcquisitionScenario(t)
+	owner, _, store, _, _, _, _, _, _ := setupPartnerFinanceProof(t, s, false)
+	captain := "finance-captain-" + s.suffix
+	tests := []struct {
+		source                   string
+		share                    *int
+		wantPartner, wantBthwani int64
+	}{
+		{source: "PARTNER", wantPartner: 1000, wantBthwani: 0},
+		{source: "BTHWANI", wantPartner: 0, wantBthwani: 1000},
+		{source: "SHARED", share: func() *int { v := 40; return &v }(), wantPartner: 400, wantBthwani: 600},
+	}
+	for _, tt := range tests {
+		t.Run(tt.source, func(t *testing.T) {
+			orderID := store + "-settled-" + tt.source
+			intent, replay, err := CreatePaymentIntent(s.ctx, s.db, CreatePaymentIntentInput{
+				ExternalReference: orderID + "-reference", PayerActorID: "customer-" + s.suffix,
+				OrderID: orderID, AmountMinor: 4000, Currency: "YER", Method: domain.MethodCashOnDelivery,
+				CustomerPaymentAllocation: &CustomerPaymentAllocationInput{
+					OrderID: orderID, StoreID: store, PartnerActorID: owner,
+					CommercialStoreTypeID: "finance-type", FulfillmentMode: "BTHWANI_CAPTAIN",
+					Currency: "YER", SubtotalMinor: 5000, DiscountMinor: 1000,
+					CashAmountMinor: 4000, CustomerPayableMinor: 4000, PolicyVersion: "proof",
+					PromotionFunding: &PromotionFundingInput{
+						PromotionID: "promotion-" + s.suffix, PromotionVersion: 1,
+						PromotionCode: "SAVE", StoreID: store,
+						FundingSource: tt.source, PartnerSharePercent: tt.share,
+						DiscountMinor: 1000,
+					},
+				},
+				IdempotencyKey: orderID + "-create", CorrelationID: orderID + "-create-correlation",
+			})
+			if err != nil || replay {
+				t.Fatalf("create canonical funded payment: replay=%t err=%v", replay, err)
+			}
+			_, replay, err = CollectPaymentIntent(s.ctx, s.db, CollectPaymentIntentInput{
+				IntentID: intent.ID, CollectedAmountMinor: 4000, CollectedByActorID: captain,
+				CollectionReference: orderID + "-collection", ExpectedVersion: intent.Version,
+				IdempotencyKey: orderID + "-collect", CorrelationID: orderID + "-collect-correlation",
+			})
+			if err != nil || replay {
+				t.Fatalf("collect funded order: replay=%t err=%v", replay, err)
+			}
+			earningInput := FinalizePartnerOrderEarningInput{
+				OrderID: orderID, PaymentIntentID: intent.ID, PartnerActorID: owner,
+				CaptainActorID: captain,
+				IdempotencyKey: orderID + "-earn", CorrelationID: orderID + "-earn-correlation",
+			}
+			earning, replay, err := FinalizePartnerOrderEarning(s.ctx, s.db, earningInput)
+			if err != nil || replay {
+				t.Fatalf("post funded merchant earning: replay=%t err=%v", replay, err)
+			}
+			if earning.GrossProductMinor != 5000-tt.wantPartner ||
+				earning.PartnerNetMinor+earning.CommissionMinor != earning.GrossProductMinor ||
+				earning.OrderID != orderID || earning.PaymentIntentID != intent.ID {
+				t.Fatalf("wrong funded merchant entitlement: %+v, partner-funded=%d", earning, tt.wantPartner)
+			}
+			frozen, found, err := readOrderPromotionFunding(s.ctx, s.db, orderID)
+			if err != nil || !found || frozen.PartnerFundedMinor != tt.wantPartner ||
+				frozen.BthwaniFundedMinor != tt.wantBthwani || frozen.PaymentIntentID != intent.ID {
+				t.Fatalf("immutable promotion funding mismatch: %+v found=%t err=%v", frozen, found, err)
+			}
+			var debits, credits, platformExpense, receivable, partnerCredit int64
+			var lines int
+			err = s.db.QueryRowContext(s.ctx, `SELECT COUNT(*),
+				COALESCE(SUM(amount_minor) FILTER (WHERE direction='DEBIT'),0),
+				COALESCE(SUM(amount_minor) FILTER (WHERE direction='CREDIT'),0),
+				COALESCE(SUM(amount_minor) FILTER (WHERE account_code='BTHWANI_PROMOTION_EXPENSE' AND direction='DEBIT'),0),
+				COALESCE(SUM(amount_minor) FILTER (WHERE account_code='CAPTAIN_CASH_RECEIVABLE' AND direction='DEBIT'),0),
+				COALESCE(SUM(amount_minor) FILTER (WHERE account_code='PARTNER_WALLET' AND direction='CREDIT'),0)
+				FROM wlt.ledger_entries WHERE transaction_id=$1`, earning.LedgerTransactionID).
+				Scan(&lines, &debits, &credits, &platformExpense, &receivable, &partnerCredit)
+			if err != nil || lines < 3 || debits != credits || debits != 4000+tt.wantBthwani ||
+				platformExpense != tt.wantBthwani || receivable != 4000 ||
+				partnerCredit != earning.PartnerNetMinor-earning.CommissionReceivableOffsetMinor {
+				t.Fatalf("incorrect funded settlement: lines=%d debit=%d credit=%d platform=%d receivable=%d partner=%d earning=%+v err=%v",
+					lines, debits, credits, platformExpense, receivable, partnerCredit, earning, err)
+			}
+			repeated, isReplay, err := FinalizePartnerOrderEarning(s.ctx, s.db, earningInput)
+			if err != nil || !isReplay || repeated.LedgerTransactionID != earning.LedgerTransactionID {
+				t.Fatalf("duplicate earning posting: %+v replay=%t err=%v", repeated, isReplay, err)
+			}
+			var ledgerCount int
+			if err := s.db.QueryRowContext(s.ctx,
+				"SELECT COUNT(*) FROM wlt.ledger_transactions WHERE source_type='ORDER_DELIVERED' AND source_id=$1",
+				orderID).Scan(&ledgerCount); err != nil || ledgerCount != 1 {
+				t.Fatalf("duplicate ledger transaction count=%d err=%v", ledgerCount, err)
+			}
+		})
+	}
+}
