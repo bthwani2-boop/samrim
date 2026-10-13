@@ -335,6 +335,12 @@ if (app === "app-field") {
   }
   assert.match(newCaseSource, /if \(isOutcomeUncertain\(cause\)\) \{\s*setError/, "Field uncertain results must remain recoverable instead of starting a duplicate draft");
   console.log("MOBILE_FIELD_DRAFT_READBACK=PASS complete and cleared drafts, normalized sets, mismatches, version and uncertain retry");
+  const fieldCatalogRetrySource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-catalog.tsx"), "utf8");
+  assert.match(fieldCatalogRetrySource, /localProductFormOpen \|\| resolution\?\.outcome === "UNKNOWN_IDENTIFIER" \|\| Boolean\(productCreateAttempt\.current\)/, "Uncertain product creation must keep the retry form reachable");
+  assert.match(fieldCatalogRetrySource, /editable=\{!busy && !proposalMutationAttempt && !productCreateAttempt\.current\}/, "Barcode edits must not change a pending product retry signature");
+  assert.match(fieldCatalogRetrySource, /if \(busy \|\| !data\.trim\(\) \|\| productCreateAttempt\.current\) return;/, "Scanner callbacks must not invalidate an uncertain product retry");
+  assert.match(fieldCatalogRetrySource, /productCreateAttempt\.current\.signature !== signature/, "Pending product attempts must reject changed request signatures");
+  console.log("MOBILE_FIELD_PRODUCT_RETRY_LOCK=PASS uncertain create retains form, identifier, and signature");
   const uploadedMedia = { ...saved, id: "field-case-1", version: 4, storeProfileImage: { uri: "https://media.example/store-1.png", contentSha256: "digest-one" }, firstStoreProofImageUploaded: true };
   assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia }, "store", 3), true, "Field store image needs canonical confirmation");
   for (const [name, changed] of [

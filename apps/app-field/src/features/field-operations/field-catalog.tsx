@@ -292,7 +292,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
 
   async function resolveIdentifier(value = identifier) {
     const normalized = value.trim();
-    if (!normalized || busy) return;
+    if (!normalized || busy || productCreateAttempt.current) return;
     if (proposalMutationAttempt) {
       setProposalError("أكمل إعادة محاولة المقترح الحالية قبل بدء عملية باركود أخرى.");
       return;
@@ -485,7 +485,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   }
 
   async function onBarcode(data: string) {
-    if (busy || !data.trim()) return;
+    if (busy || !data.trim() || productCreateAttempt.current) return;
     setIdentifier(data.trim());
     await resolveIdentifier(data.trim());
   }
@@ -655,7 +655,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <Text style={styles.muted}>يظهر هذا المسار للحالة المعتمدة فقط. يتحقق النظام في كل قراءة وكتابة من الإسناد والارتباط بالمتجر وعدم إتمام إطلاق المتجر.</Text>
     {snapshot ? <View style={styles.card}><Text style={styles.heading}>المتجر المعتمد</Text><Text style={styles.body}>المتجر: {snapshot.storeName}</Text><Text style={styles.body}>النشاط التجاري: {snapshot.verticalNameAr}</Text><BthwaniButton disabled={localProductFormLocked} label={localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER" ? "إغلاق إضافة المنتج" : "إضافة منتج لهذا المتجر دون باركود"} onPress={() => { setLocalProductFormOpen(!(localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER")); setIdentifier(""); setResolution(null); }} variant="secondary" /></View> : null}
-    {localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER" ? <View style={styles.card}>
+    {localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER" || Boolean(productCreateAttempt.current) ? <View style={styles.card}>
       <Text style={styles.heading}>تسجيل منتج محلي</Text>
       <Text style={styles.muted}>ينشئ المنتج لهذا المتجر فقط. الباركود اختياري ولا يلزم لإضافة الوجبات والمنتجات الخاصة.</Text>
       <TextInput accessibilityLabel="اسم المنتج المحلي" editable={!localProductFormLocked} onChangeText={setProductName} placeholder="اسم المنتج" value={productName} style={styles.input} />
@@ -715,9 +715,9 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
     <View style={styles.card}>
       <Text style={styles.heading}>البحث بالباركود أو رمز الصنف</Text>
       <Text style={styles.muted}>امسح الباركود على العبوة، أو أدخل رمز الصنف المستخدم في هذا المتجر.</Text>
-      <View style={styles.row}>{(["GTIN", "EAN", "UPC", "SKU"] as const).map((value) => <BthwaniChip key={value} disabled={busy || Boolean(proposalMutationAttempt)} label={identifierLabels[value]} onPress={() => { setIdentifierType(value); setResolution(null); }} selected={identifierType === value} />)}</View>
-      <TextInput accessibilityLabel="الباركود على العبوة أو رمز الصنف في هذا المتجر" autoCapitalize="characters" editable={!busy && !proposalMutationAttempt} onChangeText={(value) => { setIdentifier(value); setResolution(null); }} onSubmitEditing={() => void resolveIdentifier()} placeholder="امسح الباركود أو اكتب الرمز" value={identifier} style={styles.input} />
-      <View style={styles.row}><BthwaniButton busy={busy} disabled={busy || Boolean(proposalMutationAttempt) || !identifier.trim()} label="بحث عن المنتج" onPress={() => void resolveIdentifier()} /><BthwaniButton disabled={busy || Boolean(proposalMutationAttempt)} label={cameraOpen ? "إغلاق الكاميرا" : "مسح بالكاميرا"} onPress={async () => { if (cameraOpen) { setCameraOpen(false); return; } if (!cameraPermission?.granted) { const permission = await requestCameraPermission(); if (!permission.granted) { setError("يلزم السماح للكاميرا لمسح الباركود."); return; } } setCameraOpen(true); }} variant="secondary" /></View>
+      <View style={styles.row}>{(["GTIN", "EAN", "UPC", "SKU"] as const).map((value) => <BthwaniChip key={value} disabled={busy || Boolean(proposalMutationAttempt) || Boolean(productCreateAttempt.current)} label={identifierLabels[value]} onPress={() => { setIdentifierType(value); setResolution(null); }} selected={identifierType === value} />)}</View>
+      <TextInput accessibilityLabel="الباركود على العبوة أو رمز الصنف في هذا المتجر" autoCapitalize="characters" editable={!busy && !proposalMutationAttempt && !productCreateAttempt.current} onChangeText={(value) => { setIdentifier(value); setResolution(null); }} onSubmitEditing={() => void resolveIdentifier()} placeholder="امسح الباركود أو اكتب الرمز" value={identifier} style={styles.input} />
+      <View style={styles.row}><BthwaniButton busy={busy} disabled={busy || Boolean(proposalMutationAttempt) || Boolean(productCreateAttempt.current) || !identifier.trim()} label="بحث عن المنتج" onPress={() => void resolveIdentifier()} /><BthwaniButton disabled={busy || Boolean(proposalMutationAttempt) || Boolean(productCreateAttempt.current)} label={cameraOpen ? "إغلاق الكاميرا" : "مسح بالكاميرا"} onPress={async () => { if (cameraOpen) { setCameraOpen(false); return; } if (!cameraPermission?.granted) { const permission = await requestCameraPermission(); if (!permission.granted) { setError("يلزم السماح للكاميرا لمسح الباركود."); return; } } setCameraOpen(true); }} variant="secondary" /></View>
       {cameraOpen ? <CameraView style={styles.camera} facing="back" barcodeScannerSettings={{ barcodeTypes: ["ean13", "ean8", "upc_a", "upc_e", "code128"] }} onBarcodeScanned={({ data }) => { setCameraOpen(false); void onBarcode(data); }} /> : null}
       {resolution ? <Text style={styles.muted}>{identifierOutcomeLabels[resolution.outcome]}{resolution.productName ? ` · ${resolution.productName}` : ""}{resolution.variantTitle ? ` · ${resolution.variantTitle}` : ""}</Text> : null}
     </View>
