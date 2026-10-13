@@ -62,8 +62,8 @@ func TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay(t *testing.T) 
 		}
 
 		input := postgres.MultiStoreCheckoutInput{ID: checkoutID, ClientActorID: clientID, Children: []postgres.MultiStoreCheckoutChildInput{
-			{CartID: firstCartID, StoreID: firstStoreID, AddressID: "address-one", CartVersion: 1, FulfillmentMode: "BTHWANI_CAPTAIN"},
-			{CartID: secondCartID, StoreID: secondStoreID, AddressID: "address-two", CartVersion: 1, FulfillmentMode: "BTHWANI_CAPTAIN"},
+			{CartID: firstCartID, StoreID: firstStoreID, AddressID: "address-one", CartVersion: 1, ExpectedTotalAmountMinor: 1800, FulfillmentMode: "BTHWANI_CAPTAIN"},
+			{CartID: secondCartID, StoreID: secondStoreID, AddressID: "address-two", CartVersion: 1, ExpectedTotalAmountMinor: 1800, FulfillmentMode: "BTHWANI_CAPTAIN"},
 		}}
 		requestHash := postgres.HashMultiStoreCheckoutRequest(input)
 		checkout, replayed, err := postgres.CreateMultiStoreCheckout(ctx, db, input, createKey, requestHash)
@@ -77,6 +77,12 @@ func TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay(t *testing.T) 
 		changed := input
 		changed.Children = append([]postgres.MultiStoreCheckoutChildInput(nil), input.Children...)
 		changed.Children[1].CartVersion++
+		changedTotal := input
+		changedTotal.Children = append([]postgres.MultiStoreCheckoutChildInput(nil), input.Children...)
+		changedTotal.Children[1].ExpectedTotalAmountMinor++
+		if _, _, err := postgres.CreateMultiStoreCheckout(ctx, db, changedTotal, createKey, postgres.HashMultiStoreCheckoutRequest(changedTotal)); !errors.Is(err, postgres.ErrMultiStoreCheckoutIdempotencyConflict) {
+			t.Fatalf("different accepted amount same-key create = %v; want idempotency conflict", err)
+		}
 		if _, _, err := postgres.CreateMultiStoreCheckout(ctx, db, changed, createKey, postgres.HashMultiStoreCheckoutRequest(changed)); !errors.Is(err, postgres.ErrMultiStoreCheckoutIdempotencyConflict) {
 			t.Fatalf("changed same-key create = %v; want idempotency conflict", err)
 		}

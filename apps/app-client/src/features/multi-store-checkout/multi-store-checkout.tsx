@@ -1,6 +1,6 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, type ClientOpenCartSummary, type CustomerFulfillmentMode, type DeliveryAddress, fulfillmentModeLabel, type MultiStoreCheckout, type MultiStoreCheckoutRequest } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type ClientOpenCartSummary, type CheckoutQuote, type CustomerFulfillmentMode, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type MultiStoreCheckout, type MultiStoreCheckoutRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -8,14 +8,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { useServiceCityScope } from "../service-city/service-city-scope";
-import { cancelMultiStoreCheckout, createMultiStoreCheckout, listOwnDeliveryAddresses, listOwnOpenCarts, readOwnMultiStoreCheckout } from "../store-discovery/store-discovery-client";
+import { cancelMultiStoreCheckout, createMultiStoreCheckout, listOwnDeliveryAddresses, listOwnOpenCarts, quoteMultiStoreChildCheckout, readOwnMultiStoreCheckout } from "../store-discovery/store-discovery-client";
 import { checkoutRecipient, DeliveryRecipientForm, deliveryRecipientIsValid, type DeliveryRecipientInput } from "../cart-checkout/delivery-recipient-form";
 
 type StoreCart = Readonly<{ store: ClientOpenCartSummary; cart: Readonly<{ id: string; version: number; lineCount: number }> }>;
 type PendingMultiStoreAttempt =
-  | Readonly<{ version: 2; kind: "CREATE"; actorID: string; idempotencyKey: string; correlationID: string; request: MultiStoreCheckoutRequest }>
-  | Readonly<{ version: 2; kind: "CANCEL"; actorID: string; idempotencyKey: string; correlationID: string; checkoutID: string; expectedVersion: number }>;
-type CompactCheckoutChild = readonly [cartID: string, storeID: string, addressID: string, cartVersion: number, fulfillmentMode: CustomerFulfillmentMode, recipient: DeliveryRecipientInput];
+  | Readonly<{ version: 3; kind: "CREATE"; actorID: string; idempotencyKey: string; correlationID: string; request: MultiStoreCheckoutRequest }>
+  | Readonly<{ version: 2; kind: "LEGACY_CREATE"; actorID: string; idempotencyKey: string; correlationID: string; checkoutID: string }>
+  | Readonly<{ version: 3; kind: "CANCEL"; actorID: string; idempotencyKey: string; correlationID: string; checkoutID: string; expectedVersion: number }>;
+type CompactCheckoutChild = readonly [cartID: string, storeID: string, addressID: string, cartVersion: number, fulfillmentMode: CustomerFulfillmentMode, expectedTotalAmountMinor: number, recipient: DeliveryRecipientInput];
 type CompactCheckoutRequest = readonly [id: string, children: ReadonlyArray<CompactCheckoutChild>];
 type ScreenState =
   | { kind: "loading" }
@@ -43,24 +44,30 @@ function isCheckoutFulfillmentMode(value: unknown): value is CustomerFulfillment
 
 type MultiStoreCheckoutChildRequest = MultiStoreCheckoutRequest["children"][number];
 
+type ConfirmedMultiStoreQuotePreview = Readonly<{
+  fingerprint: string;
+  children: ReadonlyArray<Readonly<{ storeName: string; quote: CheckoutQuote }>>;
+  totalAmountMinor: number;
+}>;
+
 function parseCheckoutChild(value: unknown, compact: boolean): MultiStoreCheckoutChildRequest | null {
   let fields: ReadonlyArray<unknown>;
   let rawRecipient: unknown;
   if (compact) {
-    if (!Array.isArray(value) || (value.length !== 5 && value.length !== 6)) return null;
-    fields = value.slice(0, 5);
-    rawRecipient = value[5];
+    if (!Array.isArray(value) || value.length !== 7) return null;
+    fields = value.slice(0, 6);
+    rawRecipient = value[6];
   } else {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     const child = value as Record<string, unknown>;
-    fields = [child.cartId, child.storeId, child.addressId, child.cartVersion, child.fulfillmentMode];
+    fields = [child.cartId, child.storeId, child.addressId, child.cartVersion, child.fulfillmentMode, child.expectedTotalAmountMinor];
     rawRecipient = child.recipient;
   }
-  const [cartId, storeId, addressId, cartVersion, fulfillmentMode] = fields;
-  if (typeof cartId !== "string" || !cartId || cartId.length > 128 || typeof storeId !== "string" || !storeId || storeId.length > 128 || typeof addressId !== "string" || addressId.length > 128 || !Number.isSafeInteger(cartVersion) || Number(cartVersion) < 1 || !isCheckoutFulfillmentMode(fulfillmentMode)) return null;
+  const [cartId, storeId, addressId, cartVersion, fulfillmentMode, expectedTotalAmountMinor] = fields;
+  if (typeof cartId !== "string" || !cartId || cartId.length > 128 || typeof storeId !== "string" || !storeId || storeId.length > 128 || typeof addressId !== "string" || addressId.length > 128 || !Number.isSafeInteger(cartVersion) || Number(cartVersion) < 1 || !isCheckoutFulfillmentMode(fulfillmentMode) || !Number.isSafeInteger(expectedTotalAmountMinor) || Number(expectedTotalAmountMinor) <= 0) return null;
   const recipient = parseDeliveryRecipient(rawRecipient);
   if (!recipient) return null;
-  return { cartId, storeId, addressId, cartVersion: Number(cartVersion), fulfillmentMode, recipient };
+  return { cartId, storeId, addressId, cartVersion: Number(cartVersion), fulfillmentMode, expectedTotalAmountMinor: Number(expectedTotalAmountMinor), recipient };
 }
 
 function parseDeliveryRecipient(value: unknown): DeliveryRecipientInput | null {
@@ -99,10 +106,19 @@ function parsePendingMultiStoreAttempt(raw: string | null, actorID: string): Pen
   try {
     const value = JSON.parse(raw) as Record<string, unknown>;
     const version = value.version;
-    if ((version !== 1 && version !== 2) || value.actorID !== actorID || typeof value.idempotencyKey !== "string" || value.idempotencyKey.length < 8 || value.idempotencyKey.length > 128 || typeof value.correlationID !== "string" || value.correlationID.length < 8 || value.correlationID.length > 128) return null;
-    const common = { version: 2 as const, actorID, idempotencyKey: value.idempotencyKey, correlationID: value.correlationID };
+    if ((version !== 1 && version !== 2 && version !== 3) || value.actorID !== actorID || typeof value.idempotencyKey !== "string" || value.idempotencyKey.length < 8 || value.idempotencyKey.length > 128 || typeof value.correlationID !== "string" || value.correlationID.length < 8 || value.correlationID.length > 128) return null;
+    const common = { version: 3 as const, actorID, idempotencyKey: value.idempotencyKey, correlationID: value.correlationID };
     if (value.kind === "CREATE") {
-      const request = parseCheckoutRequest(value.request, version === 2);
+      if (version !== 3) {
+        // Historical v1/v2 CREATE attempts lack consented child amounts.
+        // Read their canonical parent by ID, but NEVER submit them again.
+        const raw = value.request;
+        const checkoutID = version === 2 && Array.isArray(raw) ? raw[0] : raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>).id : null;
+        return typeof checkoutID === "string" && checkoutID.length > 0 && checkoutID.length <= 128
+          ? { version: 2, kind: "LEGACY_CREATE", actorID, idempotencyKey: value.idempotencyKey, correlationID: value.correlationID, checkoutID }
+          : null;
+      }
+      const request = parseCheckoutRequest(value.request, true);
       return request ? { ...common, kind: "CREATE", request } : null;
     }
     if (value.kind === "CANCEL" && typeof value.checkoutID === "string" && value.checkoutID.length > 0 && value.checkoutID.length <= 128 && Number.isSafeInteger(value.expectedVersion) && Number(value.expectedVersion) > 0) {
@@ -115,10 +131,10 @@ function parsePendingMultiStoreAttempt(raw: string | null, actorID: string): Pen
 }
 
 function serializePendingMultiStoreAttempt(attempt: PendingMultiStoreAttempt): string {
-  if (attempt.kind === "CANCEL") return JSON.stringify(attempt);
+  if (attempt.kind === "CANCEL" || attempt.kind === "LEGACY_CREATE") return JSON.stringify(attempt);
   const request: CompactCheckoutRequest = [
     attempt.request.id,
-    attempt.request.children.map((child) => [child.cartId, child.storeId, child.addressId, child.cartVersion, child.fulfillmentMode, child.recipient ?? { mode: "SELF" }]),
+    attempt.request.children.map((child) => [child.cartId, child.storeId, child.addressId, child.cartVersion, child.fulfillmentMode, child.expectedTotalAmountMinor, child.recipient ?? { mode: "SELF" }]),
   ];
   return JSON.stringify({ ...attempt, request });
 }
@@ -190,6 +206,16 @@ async function resolvePendingMultiStoreCancel(attempt: Extract<PendingMultiStore
 
 async function resolvePendingMultiStoreAttempt(attempt: PendingMultiStoreAttempt): Promise<PendingMultiStoreOutcome> {
   if (attempt.kind === "CANCEL") return resolvePendingMultiStoreCancel(attempt);
+  if (attempt.kind === "LEGACY_CREATE") {
+    try {
+      const checkout = (await readOwnMultiStoreCheckout(attempt.checkoutID)).checkout;
+      return { checkout, terminal: isTerminalMultiStoreCheckout(checkout) };
+    } catch (error) {
+      // Keep the historical receipt for future canonical reconciliation;
+      // never resubmit an unconsented child amount.
+      return { terminal: false, error };
+    }
+  }
   let checkout: MultiStoreCheckout | undefined;
   try {
     checkout = (await readOwnMultiStoreCheckout(attempt.request.id)).checkout;
@@ -218,10 +244,12 @@ export default function MultiStoreCheckoutScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<ScreenState>({ kind: "loading" });
   const [pendingAttempt, setPendingAttempt] = useState<PendingMultiStoreAttempt | null>(null);
+  const [quotePreview, setQuotePreview] = useState<ConfirmedMultiStoreQuotePreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [recipient, setRecipient] = useState<DeliveryRecipientInput>({ mode: "SELF" });
   const loadRequestID = useRef(0);
+  const submitInFlight = useRef(false);
 
   const load = useCallback(async () => {
     const requestID = ++loadRequestID.current;
@@ -230,6 +258,7 @@ export default function MultiStoreCheckoutScreen() {
       return;
     }
     setState({ kind: "loading" });
+    setQuotePreview(null);
     setError("");
     try {
       const actorID = await authenticatedClientActorID();
@@ -280,7 +309,7 @@ export default function MultiStoreCheckoutScreen() {
   }, [load]);
 
   async function submit() {
-    if (busy || pendingAttempt || state.kind !== "ready" || state.checkout || state.selectedStoreIDs.length < 2 || state.selectedStoreIDs.length > 10) return;
+    if (submitInFlight.current || busy || pendingAttempt || state.kind !== "ready" || state.checkout || state.selectedStoreIDs.length < 2 || state.selectedStoreIDs.length > 10) return;
     const selectedStoreCarts = state.storeCarts.flatMap(({ store, cart }) => {
       if (!state.selectedStoreIDs.includes(store.storeId)) return [];
       const fulfillmentMode = selectedFulfillmentMode(store, state.fulfillmentModes);
@@ -293,17 +322,48 @@ export default function MultiStoreCheckoutScreen() {
       setError("أدخل اسمًا ورقمًا يمنيًا صحيحًا للمستلم، محليًا أو دوليًا، قبل تأكيد الطلب.");
       return;
     }
+    submitInFlight.current = true;
     setBusy(true);
     setError("");
     let attemptPersisted = false;
     try {
       const actorID = await authenticatedClientActorID();
+      const fingerprint = JSON.stringify({
+        actorID,
+        stores: selectedStoreCarts.map(({ store, cart, fulfillmentMode }) => [store.storeId, cart.id, cart.version, fulfillmentMode, fulfillmentMode === "CUSTOMER_PICKUP" ? "" : state.selectedAddressID]),
+        recipient,
+      });
+      if (!quotePreview || quotePreview.fingerprint !== fingerprint) {
+        const quotes = await Promise.all(selectedStoreCarts.map(async ({ store, cart, fulfillmentMode }) => {
+          const addressId = fulfillmentMode === "CUSTOMER_PICKUP" ? "" : state.selectedAddressID;
+          const response = await quoteMultiStoreChildCheckout({ cartId: cart.id, storeId: store.storeId, addressId, fulfillmentMode }, cart.version);
+          const quote = response.quote;
+          if (quote.cartId !== cart.id || quote.storeId !== store.storeId || quote.addressId !== addressId || quote.fulfillmentMode !== fulfillmentMode || quote.cartVersion !== cart.version || quote.currency !== "YER" || !Number.isSafeInteger(quote.totalAmountMinor) || quote.totalAmountMinor <= 0) {
+            throw new Error("INVALID_MULTI_STORE_QUOTE");
+          }
+          return { storeName: store.storeName, quote };
+        }));
+        const totalAmountMinor = quotes.reduce((sum, item) => sum + item.quote.totalAmountMinor, 0);
+        if (!Number.isSafeInteger(totalAmountMinor)) throw new Error("INVALID_MULTI_STORE_TOTAL");
+        // First action only displays the amount. No order or payment is created
+        // before the customer confirms this complete cross-store quote.
+        setQuotePreview({ fingerprint, children: quotes, totalAmountMinor });
+        return;
+      }
       const request: MultiStoreCheckoutRequest = {
         id: `multi_${Crypto.randomUUID()}`,
-        children: selectedStoreCarts.map(({ store, cart, fulfillmentMode }) => ({ cartId: cart.id, storeId: store.storeId, addressId: fulfillmentMode === "CUSTOMER_PICKUP" ? "" : state.selectedAddressID, cartVersion: cart.version, fulfillmentMode, recipient: checkoutRecipient(recipient, fulfillmentMode !== "CUSTOMER_PICKUP") })),
+        children: selectedStoreCarts.map(({ store, cart, fulfillmentMode }, index) => {
+          const accepted = quotePreview.children[index]?.quote;
+          const addressId = fulfillmentMode === "CUSTOMER_PICKUP" ? "" : state.selectedAddressID;
+          if (!accepted || accepted.cartId !== cart.id || accepted.storeId !== store.storeId || accepted.addressId !== addressId || accepted.cartVersion !== cart.version || accepted.fulfillmentMode !== fulfillmentMode || !Number.isSafeInteger(accepted.totalAmountMinor) || accepted.totalAmountMinor <= 0) {
+            throw new Error("STALE_MULTI_STORE_ACCEPTED_QUOTE");
+          }
+          return { cartId: cart.id, storeId: store.storeId, addressId, cartVersion: cart.version, fulfillmentMode, expectedTotalAmountMinor: accepted.totalAmountMinor, recipient: checkoutRecipient(recipient, fulfillmentMode !== "CUSTOMER_PICKUP") };
+        }),
       };
+      setQuotePreview(null);
       const attempt: PendingMultiStoreAttempt = {
-        version: 2, kind: "CREATE", actorID, idempotencyKey: `multi_idem_${Crypto.randomUUID()}`, correlationID: `multi_corr_${Crypto.randomUUID()}`,
+        version: 3, kind: "CREATE", actorID, idempotencyKey: `multi_idem_${Crypto.randomUUID()}`, correlationID: `multi_corr_${Crypto.randomUUID()}`,
         request,
       };
       await SecureStore.setItemAsync(pendingMultiStoreAttemptKey(actorID), serializePendingMultiStoreAttempt(attempt));
@@ -325,6 +385,7 @@ export default function MultiStoreCheckoutScreen() {
     } catch {
       setError(attemptPersisted ? "تعذر تأكيد نتيجة المحاولة المحفوظة. لا تبدأ طلبًا جديدًا؛ تحقق من حالتها." : "تعذر حفظ محاولة الطلب محليًا؛ لم يُرسل الطلب. حاول مرة أخرى لاحقًا.");
     } finally {
+      submitInFlight.current = false;
       setBusy(false);
     }
   }
@@ -336,7 +397,7 @@ export default function MultiStoreCheckoutScreen() {
     try {
       const actorID = await authenticatedClientActorID();
       const attempt: PendingMultiStoreAttempt = {
-        version: 2, kind: "CANCEL", actorID, idempotencyKey: `multi_cancel_${Crypto.randomUUID()}`, correlationID: `multi_cancel_corr_${Crypto.randomUUID()}`,
+        version: 3, kind: "CANCEL", actorID, idempotencyKey: `multi_cancel_${Crypto.randomUUID()}`, correlationID: `multi_cancel_corr_${Crypto.randomUUID()}`,
         checkoutID: state.checkout.id, expectedVersion: state.checkout.version,
       };
       await SecureStore.setItemAsync(pendingMultiStoreAttemptKey(actorID), serializePendingMultiStoreAttempt(attempt));
@@ -380,7 +441,7 @@ export default function MultiStoreCheckoutScreen() {
       <BthwaniSectionHeader title="عنوان التوصيل" subtitle="يُعاد التحقق من الأهلية لكل متجر اخترت توصيله عند الإتمام." />
       <View style={styles.list}>{state.addresses.map((address) => {
         const selected = address.id === state.selectedAddressID;
-        return <Pressable key={address.id} accessibilityRole="button" accessibilityState={{ selected }} onPress={() => setState((current) => current.kind === "ready" ? { ...current, selectedAddressID: address.id } : current)} style={[styles.address, selected && styles.addressSelected]}>
+        return <Pressable key={address.id} accessibilityRole="button" accessibilityState={{ selected }} onPress={() => { setQuotePreview(null); setState((current) => current.kind === "ready" ? { ...current, selectedAddressID: address.id } : current); }} style={[styles.address, selected && styles.addressSelected]}>
           <Text style={styles.addressText}>{address.addressText}</Text>
           <Text style={styles.muted}>{selected ? "العنوان المختار" : "استخدام هذا العنوان"}</Text>
         </Pressable>;
@@ -401,7 +462,14 @@ export default function MultiStoreCheckoutScreen() {
   if (checkout) {
     checkoutActionContent = <CheckoutSummary checkout={checkout} styles={styles} theme={theme} />;
   } else if (selectedStoreCarts.length >= 2) {
-    checkoutActionContent = <BthwaniButton accessibilityLabel="إتمام الطلب من عدة متاجر" busy={busy} disabled={busy || !canSubmitCheckout || hasUnsupportedStore || selectedStoreCarts.some(({ store }) => !state.fulfillmentModes[store.storeId]) || (requiresDeliveryAddress && !state.selectedAddressID) || invalidRecipient} label={`إتمام الطلب من ${selectedStoreCarts.length} متاجر`} onPress={() => void submit()} />;
+    checkoutActionContent = <>
+      {quotePreview ? <BthwaniSurface tone="inset" style={styles.summary}>
+        <Text style={styles.cardTitle}>مراجعة المبالغ قبل تأكيد الطلب</Text>
+        {quotePreview.children.map((child) => <Text key={child.quote.storeId} style={styles.muted}>{child.storeName}: {formatMoney(child.quote.totalAmountMinor, child.quote.currency)}</Text>)}
+        <Text style={styles.cardTitle}>الإجمالي الموافق عليه: {formatMoney(quotePreview.totalAmountMinor, "YER")}</Text>
+      </BthwaniSurface> : null}
+      <BthwaniButton accessibilityLabel="إتمام الطلب من عدة متاجر" busy={busy} disabled={busy || !canSubmitCheckout || hasUnsupportedStore || selectedStoreCarts.some(({ store }) => !state.fulfillmentModes[store.storeId]) || (requiresDeliveryAddress && !state.selectedAddressID) || invalidRecipient} label={quotePreview ? "تأكيد الطلب بالمبلغ المعروض" : `مراجعة إجمالي ${selectedStoreCarts.length} متاجر`} onPress={() => void submit()} />
+    </>;
   }
 
   return (
@@ -420,7 +488,7 @@ export default function MultiStoreCheckoutScreen() {
 
         let fulfillmentModeOptions = null;
         if (selected && eligible && availableModes.length > 0) {
-          fulfillmentModeOptions = availableModes.map((mode) => <BthwaniChip key={mode} disabled={busy || Boolean(checkout)} label={fulfillmentModeLabel(mode)} onPress={() => setState((current) => current.kind === "ready" && !current.checkout ? { ...current, fulfillmentModes: { ...current.fulfillmentModes, [store.storeId]: mode } } : current)} selected={selectedMode === mode} />);
+          fulfillmentModeOptions = availableModes.map((mode) => <BthwaniChip key={mode} disabled={busy || Boolean(checkout)} label={fulfillmentModeLabel(mode)} onPress={() => { setQuotePreview(null); setState((current) => current.kind === "ready" && !current.checkout ? { ...current, fulfillmentModes: { ...current.fulfillmentModes, [store.storeId]: mode } } : current); }} selected={selectedMode === mode} />);
         }
 
         let fulfillmentModeStatus = null;
@@ -430,12 +498,12 @@ export default function MultiStoreCheckoutScreen() {
         return <BthwaniSurface key={store.storeId} tone="inset" style={styles.storeCard}>
           <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>
           <View style={styles.storeCopy}><Text style={styles.cardTitle}>{store.storeName}</Text><Text style={styles.muted}>{cart.lineCount} منتجات في السلة</Text></View>
-          <BthwaniChip disabled={busy || Boolean(checkout) || (!selected && (!eligible || state.selectedStoreIDs.length >= 10))} label={selected ? "ضمن الطلب" : "أضف للطلب"} onPress={() => setState((current) => {
+          <BthwaniChip disabled={busy || Boolean(checkout) || (!selected && (!eligible || state.selectedStoreIDs.length >= 10))} label={selected ? "ضمن الطلب" : "أضف للطلب"} onPress={() => { setQuotePreview(null); setState((current) => {
             if (current.kind !== "ready" || current.checkout) return current;
             const isSelected = current.selectedStoreIDs.includes(store.storeId);
             if (!isSelected && (!eligible || current.selectedStoreIDs.length >= 10)) return current;
             return { ...current, selectedStoreIDs: isSelected ? current.selectedStoreIDs.filter((id) => id !== store.storeId) : [...current.selectedStoreIDs, store.storeId] };
-          })} selected={selected} />
+          }); }} selected={selected} />
           <View style={styles.storeModes} accessibilityLabel={`طريقة استلام الطلب من ${store.storeName}`}>
             {!eligible && unavailableStoreMessage ? <Text accessibilityRole="alert" style={styles.error}>{unavailableStoreMessage}</Text> : null}
             {fulfillmentModeOptions}
@@ -447,7 +515,7 @@ export default function MultiStoreCheckoutScreen() {
       {selectedStoreCarts.length === 1 ? <BthwaniButton label="فتح سلة المتجر المحدد" onPress={() => { const only = selectedStoreCarts[0]; if (only) router.push(`/cart/${encodeURIComponent(only.store.storeId)}` as Href); }} /> : null}
       {selectedStoreCarts.length < 2 ? <BthwaniSurface tone="inset" style={styles.summary}><Text style={styles.cardTitle}>حدد سلتين على الأقل</Text><Text style={styles.muted}>يمكنك معالجة سلتين إلى 10 سلال في كل طلب متعدد.</Text></BthwaniSurface> : null}
       {deliveryAddressContent}
-      {requiresDeliveryAddress ? <DeliveryRecipientForm allowOther onChange={setRecipient} value={recipient} /> : null}
+      {requiresDeliveryAddress ? <DeliveryRecipientForm allowOther onChange={(next) => { setQuotePreview(null); setRecipient(next); }} value={recipient} /> : null}
       {selectedStoresStatusContent}
       {checkoutActionContent}
       {checkout && canCancel ? <BthwaniButton accessibilityLabel="إلغاء الطلب المتعدد" busy={busy} disabled={busy} label="إلغاء الطلبات التابعة" onPress={() => void cancel()} variant="secondary" /> : null}

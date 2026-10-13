@@ -64,14 +64,27 @@ test("home does not turn unknown counts or failed reads into zero", async ({ pag
   await expect(page.getByText("لا توجد إشعارات غير مقروءة.", { exact: true })).toBeVisible();
 });
 
-test("notification inbox keeps an unknown global unread total unlabeled as zero", async ({ page }) => {
+test("notification inbox rejects missing global unread count without inventing zero", async ({ page }) => {
   await auth(page);
   await page.route("**/api/notifications?**", (route) => route.fulfill({
     status: 200, contentType: "application/json",
-    body: JSON.stringify({ notifications: [readNotification], nextCursor: "" }),
+    body: JSON.stringify({ notifications: [{ ...readNotification, orderId: "order-one" }], nextCursor: "" }),
+  }));
+  await page.goto("/notifications");
+  await expect(page.locator(".operator-notifications [role='alert']")).toBeVisible();
+  await expect(page.getByText("تحديث طلب سابق")).toHaveCount(0);
+  await expect(page.getByText("0 إشعارات غير مقروءة")).toHaveCount(0);
+  await expect(page.getByText("1 إشعارًا في الصفحة")).toHaveCount(0);
+});
+
+test("notification inbox displays canonical read notifications and authoritative zero unread", async ({ page }) => {
+  await auth(page);
+  await page.route("**/api/notifications?**", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ notifications: [{ ...readNotification, orderId: "order-one" }], unreadCount: 0, nextCursor: "" }),
   }));
   await page.goto("/notifications");
   await expect(page.getByText("تحديث طلب سابق")).toBeVisible();
-  await expect(page.getByText("0 إشعارات غير مقروءة")).toHaveCount(0);
+  await expect(page.getByText("0 إشعارات غير مقروءة")).toBeVisible();
   await expect(page.getByText("1 إشعارًا في الصفحة")).toBeVisible();
 });

@@ -5703,7 +5703,7 @@ components:
 
     MultiStoreCheckoutChildRequest:
       type: object
-      required: [cartId, storeId, addressId, cartVersion, fulfillmentMode]
+      required: [cartId, storeId, addressId, cartVersion, fulfillmentMode, expectedTotalAmountMinor]
       additionalProperties: false
       properties:
         cartId:
@@ -5721,6 +5721,10 @@ components:
         cartVersion:
           type: integer
           minimum: 1
+        expectedTotalAmountMinor:
+          type: integer
+          minimum: 1
+          description: Exact YER minor units accepted from the per-child checkout quote; every child is independently checked before its Order and WLT intent are created.
         fulfillmentMode:
           $ref: "#/components/schemas/FulfillmentMode"
         promotionCode:
@@ -5795,6 +5799,7 @@ components:
         cartVersion:
           type: integer
           minimum: 1
+
         fulfillmentMode:
           $ref: "#/components/schemas/FulfillmentMode"
         promotionCode:

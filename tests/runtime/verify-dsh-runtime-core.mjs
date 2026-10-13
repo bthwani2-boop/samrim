@@ -1364,12 +1364,17 @@ const cityBScopedFeePolicyCount = sql(`SELECT count(*) FROM wlt.delivery_fee_pol
 const globalFeePolicyCount = sql("SELECT count(*) FROM wlt.delivery_fee_policies WHERE state='ACTIVE' AND service_city_id=''");
 if (cityBScopedFeePolicyCount !== "0" || globalFeePolicyCount !== "1") fail("multi-store fee fallback fixture does not match the canonical WLT global policy", JSON.stringify({ cityBScopedFeePolicyCount, globalFeePolicyCount }));
 const multiCheckoutID = `multi-store-${suffix}`; const multiCheckoutKey = `multi-store-create-${suffix}`;
+const multiAcceptedA = await acceptedCheckoutTotal(multiCartAID, first.storeID, addressAID, "BTHWANI_CAPTAIN", multiCartAResponse.body.cart.version);
+const multiAcceptedB = await acceptedCheckoutTotal(multiCartBID, second.storeID, addressBID, "BTHWANI_CAPTAIN", multiCartBResponse.body.cart.version);
 const multiCheckoutBody = { id: multiCheckoutID, children: [
-  { cartId: multiCartAID, storeId: first.storeID, addressId: addressAID, cartVersion: multiCartAResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN" },
+  { cartId: multiCartAID, storeId: first.storeID, addressId: addressAID, cartVersion: multiCartAResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: multiAcceptedA },
   // City B has no city-scoped delivery-fee policy, so WLT resolves its active
   // global policy after serviceability succeeds.
-  { cartId: multiCartBID, storeId: second.storeID, addressId: addressBID, cartVersion: multiCartBResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN" },
+  { cartId: multiCartBID, storeId: second.storeID, addressId: addressBID, cartVersion: multiCartBResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: multiAcceptedB },
 ] };
+const multiMissingChildTotalBody = { ...multiCheckoutBody, children: multiCheckoutBody.children.map((item, i) => i === 0 ? { ...item, expectedTotalAmountMinor: 0 } : item) };
+const multiMissingChildTotal = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(`multi-store-missing-total-${suffix}`), body: multiMissingChildTotalBody });
+if (multiMissingChildTotal.status !== 400 || multiMissingChildTotal.body?.error?.code !== "INVALID_INPUT") fail("multi-store accepted a child without an explicitly accepted amount", JSON.stringify(multiMissingChildTotal));
 const multiCheckout = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(multiCheckoutKey), body: multiCheckoutBody });
 const multiCheckoutChildren = multiCheckout.body?.checkout?.children || [];
 const multiChildSuccess = multiCheckout.body?.checkout?.children?.find((child) => child.storeId === first.storeID);
@@ -1379,6 +1384,9 @@ const multiChildGlobalPolicyOrderID = String(multiChildGlobalPolicy?.orderId || 
 const multiChildOrderIDs = [multiChildOrderID, multiChildGlobalPolicyOrderID].filter(Boolean);
 const multiChildOrderReads = await Promise.all([multiChildOrderID, multiChildGlobalPolicyOrderID].filter(Boolean).map((orderID) => request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}`, { token: client.accessToken })));
 const multiChildPaymentIDs = multiChildOrderReads.map((response) => String(response.body?.order?.paymentIntentId || ""));
+const multiChangedPriceBody = { ...multiCheckoutBody, children: multiCheckoutBody.children.map((item, i) => i === 0 ? { ...item, expectedTotalAmountMinor: item.expectedTotalAmountMinor + 1 } : item) };
+const multiChangedPriceReplay = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(multiCheckoutKey), body: multiChangedPriceBody });
+if (multiChangedPriceReplay.status !== 409) fail("multi-store accepted a changed child amount for the same idempotency key", JSON.stringify(multiChangedPriceReplay));
 const multiCheckoutReplay = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(multiCheckoutKey), body: multiCheckoutBody });
 const multiCheckoutRead = await request(dshBase, "GET", `/dsh/multi-store-checkouts/${encodeURIComponent(multiCheckoutID)}`, { token: client.accessToken });
 const multiChildReadbackCount = sql(`SELECT count(*) FROM dsh.commerce_multi_store_checkout_children c JOIN dsh.commerce_multi_store_checkouts p ON p.id=c.checkout_id WHERE p.id='${sqlLiteral(multiCheckoutID)}' AND c.state IN ('SUCCEEDED','FAILED') AND c.store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}')`);

@@ -1,4 +1,4 @@
-import { type CartResponse, type CatalogStoreOffer, type ClientOpenCartListResponse, createDshMobileClient, type DiscoveryContentEventRequest, type DiscoveryContentListResponse, type DiscoveryContentTargetResolution, type MultiStoreCheckoutRequest, type MultiStoreCheckoutResponse, type PromotionListResponse, type PublicCatalogResponse, type PublicCatalogSearchResponse, type PublicStoreOrderabilityResponse, type PublicStoreView, type PublishedStoreListResponse, type ServiceabilityResponse } from "@bthwani/dsh";
+import { type CartResponse, type CatalogStoreOffer, type CheckoutQuoteResponse, type CheckoutRequest, type ClientOpenCartListResponse, createDshMobileClient, type DiscoveryContentEventRequest, type DiscoveryContentListResponse, type DiscoveryContentTargetResolution, type MultiStoreCheckoutRequest, type MultiStoreCheckoutResponse, type PromotionListResponse, type PublicCatalogResponse, type PublicCatalogSearchResponse, type PublicStoreOrderabilityResponse, type PublicStoreView, type PublishedStoreListResponse, type ServiceabilityResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
@@ -98,6 +98,11 @@ export async function evaluateStoreServiceability(storeID: string, addressID: st
 export async function listOwnOpenCarts(): Promise<ClientOpenCartListResponse> {
   const accessToken = await getUsableIdentityAccessToken();
   return client().listClientOpenCarts(accessToken);
+}
+
+export async function quoteMultiStoreChildCheckout(input: CheckoutRequest, expectedCartVersion: number): Promise<CheckoutQuoteResponse> {
+  const accessToken = await getUsableIdentityAccessToken();
+  return client().quoteCheckout(accessToken, input, expectedCartVersion);
 }
 
 export async function createMultiStoreCheckout(input: MultiStoreCheckoutRequest, idempotencyKey: string, correlationID: string): Promise<MultiStoreCheckoutResponse> {
