@@ -9406,6 +9406,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StoreAccessGrant"
+        nextCursor:
+          type: string
+          description: Opaque keyset cursor for bounded operator admission pages. Empty when exhausted.
 
     StoreAccessGrantMutationResponse:
       type: object
