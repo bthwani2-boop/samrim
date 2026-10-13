@@ -9,7 +9,7 @@ import { ActivityIndicator, FlatList, Image, Text, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient, isMissingFieldAdmission } from "./field-client";
 import { FieldCommercialAgreement } from "./field-commercial-agreement";
-import { fieldDraftMediaUploadConfirmed, fieldSubmitIdempotencyPayload, markFieldMediaReadbackUncertain } from "./field-draft-readback";
+import { fieldDraftMediaUploadConfirmed, fieldSubmitIdempotencyPayload, markFieldMediaReadbackUncertain, submitFieldCaseWithReadback } from "./field-draft-readback";
 import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
 import { getFieldJoiningRequirements } from "./field-joining-readiness";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
@@ -232,14 +232,20 @@ export function FieldCases() {
         return;
       }
       const identity = await fieldCaseSubmitIdentity(item.id, current.case.version);
-      await fieldClient().submitFieldJoiningCase(token, item.id, current.case.version, identity.idempotencyKey, identity.correlationID);
-      const canonical = await fieldClient().readOwnFieldJoiningCase(token, item.id);
+      const outcome = await submitFieldCaseWithReadback(
+        item.id,
+        () => fieldClient().submitFieldJoiningCase(token, item.id, current.case.version, identity.idempotencyKey, identity.correlationID),
+        () => fieldClient().readOwnFieldJoiningCase(token, item.id),
+        isOutcomeUncertain,
+      );
       await load();
-      if (canonical.case.state === "draft") {
-        setError("تم إرسال الطلب لكن القراءة المعتمدة ما تزال مسودة. أعد القراءة قبل المحاولة مجددًا.");
-        return;
+      if (outcome.kind === "confirmed") {
+        setNotice("تأكدت حالة طلب الانضمام من المنصة: " + joiningCaseStateLabel(outcome.canonical.case.state) + ".");
+      } else if (outcome.kind === "draft") {
+        setError("ما تزال حالة الطلب مسودة. تحقق من البيانات قبل إعادة الإرسال بنفس الإصدار.");
+      } else {
+        setError("تعذر تأكيد إرسال الطلب. أعد قراءة المسودة وحالتها قبل المحاولة مجددًا.");
       }
-      setNotice("وصل طلب الانضمام إلى طابور قبول المشغّل وتم تأكيد حالته من القراءة المعتمدة.");
     } catch (cause) {
       console.warn("DSH Field joining-case submission failed", cause);
       try {
@@ -247,7 +253,7 @@ export function FieldCases() {
         const latest = await fieldClient().readOwnFieldJoiningCase(token, item.id);
         await load();
         if (latest.case.state === "draft") setError("لم يتأكد الإرسال. أعد المحاولة؛ سنحدّث الحالة قبل الإرسال.");
-        else setNotice("أُرسل الطلب للمراجعة. الحالة الحالية: " + joiningCaseStateLabel(latest.case.state) + ".");
+        else setError("تغيّرت حالة الطلب؛ لا يمكن اعتماد فشل الإرسال كدليل على نجاحه. الحالة الحالية: " + joiningCaseStateLabel(latest.case.state) + ".");
       } catch (readError) {
         console.warn("DSH Field joining-case submit recovery readback failed", readError);
         setError("تعذر تأكيد الإرسال. حدّث قائمة الشركاء قبل المحاولة مجددًا.");
