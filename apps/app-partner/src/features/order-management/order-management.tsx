@@ -5,10 +5,11 @@ import * as Crypto from "expo-crypto";
 import { useLocalSearchParams } from "expo-router";
 
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
+import { mergeOrderPageRecords } from "./order-page-records";
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -53,6 +54,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const { stores: scopedStores } = usePartnerStoreScope();
   const fulfillableStoreIDs = useMemo(() => new Set(scopedStores.filter((store) => store.owned || store.permissions.includes("fulfillment")).map((store) => store.id)), [scopedStores]);
   const canFulfillOrder = useCallback((orderStoreID: string) => fulfillableStoreIDs.has(orderStoreID), [fulfillableStoreIDs]);
+  const loadGeneration = useRef(0);
   const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
   const [assignments, setAssignments] = useState<Readonly<Record<string, CaptainAssignment>>>({});
   const [storeCaptainsByStore, setStoreCaptainsByStore] = useState<Readonly<Record<string, ReadonlyArray<StoreCaptainChoice>>>>({});
@@ -72,7 +74,19 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const normalizedSearch = searchQuery.trim();
 
   const load = useCallback(async (options: { append?: boolean; cursor?: string } = {}) => {
-    if (options.append) setLoadingMore(true); else setLoading(true);
+    const generation = options.append ? loadGeneration.current : ++loadGeneration.current;
+    if (options.append) setLoadingMore(true);
+    else {
+      setLoading(true);
+      setLoadingMore(false);
+      setOrders([]);
+      setAssignments({});
+      setStoreCaptainsByStore({});
+      setDispatchOffers({});
+      setAttention(null);
+      setCursor("");
+      setHasMore(false);
+    }
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
@@ -84,6 +98,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
         ...(options.append && options.cursor ? { cursor: options.cursor } : {}),
         limit: 50,
       });
+      if (generation !== loadGeneration.current) return;
       setOrders((current) => options.append ? [...current, ...response.orders.filter((order) => !current.some((existing) => existing.id === order.id))] : response.orders);
       setAttention(response.attention);
       setCursor(response.nextCursor ?? "");
@@ -92,12 +107,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
       const nextOrders = response.orders;
       const assignmentOrders = nextOrders.filter((order) => canFulfillOrder(order.storeId) && (order.state === "CAPTAIN_ASSIGNED" || order.state === "IN_CUSTODY"));
       const offerOrders = nextOrders.filter((order) => canFulfillOrder(order.storeId) && order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "READY_FOR_DISPATCH");
-      if (assignmentOrders.length === 0 && offerOrders.length === 0) {
-        setAssignments({});
-        setStoreCaptainsByStore({});
-        setDispatchOffers({});
-        return;
-      }
+      if (assignmentOrders.length === 0 && offerOrders.length === 0) return;
       const offerStoreIDs = [...new Set(offerOrders.map((order) => order.storeId))];
       const [membershipResults, assignmentResults, offerResults] = await Promise.all([
         Promise.allSettled(offerStoreIDs.map(async (offerStoreID) => [offerStoreID, (await client().listPartnerStoreCaptainMemberships(token, offerStoreID)).memberships] as const)),
@@ -116,17 +126,22 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
         }
         })),
       ]);
+      if (generation !== loadGeneration.current) return;
       const captainEntries = membershipResults.flatMap((entry): ReadonlyArray<readonly [string, ReadonlyArray<StoreCaptainChoice>]> => entry.status === "fulfilled"
         ? [[entry.value[0], entry.value[1].flatMap((membership: StoreCaptainMembership) => membership.state === "active" && membership.captainActorId ? [{ actorId: membership.captainActorId, label: storeCaptainChoiceLabel(membership) }] : [])]]
         : []);
-      setStoreCaptainsByStore(Object.fromEntries(captainEntries));
-      setAssignments(Object.fromEntries(assignmentResults.flatMap((entry) => entry.status === "fulfilled" && entry.value ? [entry.value] : [])));
-      setDispatchOffers(Object.fromEntries(offerResults.flatMap((entry) => entry.status === "fulfilled" && entry.value ? [entry.value] : [])));
+      setStoreCaptainsByStore((current) => mergeOrderPageRecords(current, Object.fromEntries(captainEntries), Boolean(options.append)));
+      setAssignments((current) => mergeOrderPageRecords(current, Object.fromEntries(assignmentResults.flatMap((entry) => entry.status === "fulfilled" && entry.value ? [entry.value] : [])), Boolean(options.append)));
+      setDispatchOffers((current) => mergeOrderPageRecords(current, Object.fromEntries(offerResults.flatMap((entry) => entry.status === "fulfilled" && entry.value ? [entry.value] : [])), Boolean(options.append)));
       if (membershipResults.some((entry) => entry.status === "rejected") || assignmentResults.some((entry) => entry.status === "rejected") || offerResults.some((entry) => entry.status === "rejected")) {
         setSidecarError("تم تحميل الطلبات، لكن تعذر قراءة بعض تفاصيل كباتن المتجر. يمكنك إعادة تحديث الطلبات.");
       }
-    } catch (cause) { console.error("DSH order list failed", cause); setError("تعذر قراءة الطلبات. أعد المحاولة."); }
-    finally { setLoading(false); setLoadingMore(false); }
+    } catch (cause) {
+      console.error("DSH order list failed", cause);
+      if (generation === loadGeneration.current) setError("تعذر قراءة الطلبات. أعد المحاولة.");
+    } finally {
+      if (generation === loadGeneration.current) { setLoading(false); setLoadingMore(false); }
+    }
   }, [canFulfillOrder, filter, normalizedSearch, storeId]);
 
   useEffect(() => { void load(); }, [load]);

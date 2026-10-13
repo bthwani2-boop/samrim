@@ -125,11 +125,11 @@ func validNotificationSession(subject, role, surface string) bool {
 type stringIdentity struct{ Subject string }
 
 func present(event postgres.NotificationEvent, role string) View {
-	kind, title, body := message(event.EventType, role, event.OrderID)
+	kind, title, body := message(event.EventType, role, event.OrderID, event.ToState)
 	return View{ID: event.ID, Kind: kind, Title: title, Body: body, OrderID: event.OrderID, JoiningCaseID: event.JoiningCaseID, StoreID: event.StoreID, CreatedAt: event.CreatedAt, ReadAt: event.ReadAt}
 }
 
-func message(eventType, role, orderID string) (string, string, string) {
+func message(eventType, role, orderID, toState string) (string, string, string) {
 	if role == "field" || (role == "operator" && strings.HasPrefix(eventType, "joining_case_")) {
 		switch eventType {
 		case "field_mission_completed":
@@ -190,7 +190,12 @@ func message(eventType, role, orderID string) (string, string, string) {
 		return "CAPTAIN_OFFER", "تحديث عرض التوصيل", fmt.Sprintf("تحدّث عرض توصيل الطلب رقم %s.", orderRef)
 	case "captain_assignment_reassigned":
 		if role == "captain" {
-			return "CAPTAIN_OFFER", "طلب توصيل جديد", fmt.Sprintf("لديك عرض توصيل جديد للطلب رقم %s.", orderRef)
+			if toState == "reassigned" {
+				return "REASSIGNED", "تم سحب إسناد التوصيل", fmt.Sprintf("لم يعد الطلب رقم %s مسندًا إليك.", orderRef)
+			}
+			if toState == "offered" {
+				return "CAPTAIN_OFFER", "طلب توصيل جديد", fmt.Sprintf("لديك عرض توصيل جديد للطلب رقم %s.", orderRef)
+			}
 		}
 		return "REASSIGNED", "إعادة إسناد التوصيل", fmt.Sprintf("تمت إعادة إسناد توصيل الطلب رقم %s.", orderRef)
 	case "store_handoff_confirmed":

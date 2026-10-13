@@ -1,49 +1,91 @@
 import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainAdmission, captainAdmissionStateLabel, captainAvailabilityStateLabel } from "@bthwani/dsh";
 import { type Href, Link } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
-import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
+import { isCurrentCaptainActor } from "./captain-session-scope";
 
 export function CaptainReadiness() {
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
   const [admission, setAdmission] = useState<CaptainAdmission | null>(null);
+  const [loadedActorID, setLoadedActorID] = useState("");
+  const [identityState, setIdentityState] = useState(currentIdentityState);
+  const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
+  const readSequence = useRef(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<boolean> => {
+    const sequence = ++readSequence.current;
+    const session = currentIdentityState();
+    const actorID = session.kind === "authenticated" ? session.identity.subject.trim() : "";
     setLoading(true);
+    setAdmission(null);
+    setLoadedActorID("");
     setError("");
+    if (!actorID) {
+      setLoading(false);
+      setError("سجّل الدخول لقراءة جاهزية الكابتن.");
+      return false;
+    }
     try {
       const token = await getUsableIdentityAccessToken();
       const response = await captainClient().readOwnCaptainAdmission(token);
+      const current = currentIdentityState();
+      if (sequence !== readSequence.current || current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return false;
       setAdmission(response.admission);
+      setLoadedActorID(actorID);
+      return true;
     } catch (cause) {
       console.error("DSH Captain admission readback failed", cause);
-      setError("تعذر قراءة جاهزية الكابتن. أعد المحاولة.");
+      const current = currentIdentityState();
+      if (sequence === readSequence.current && current.kind === "authenticated" && isCurrentCaptainActor(actorID, current.identity.subject.trim())) setError("تعذر قراءة جاهزية الكابتن. أعد المحاولة.");
+      return false;
     } finally {
-      setLoading(false);
+      if (sequence === readSequence.current) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => subscribeIdentitySession(setIdentityState), []);
+  useEffect(() => {
+    if (!activeActorID) {
+      readSequence.current += 1;
+      setAdmission(null);
+      setLoadedActorID("");
+      setLoading(false);
+      return;
+    }
+    void load();
+  }, [activeActorID, load]);
+  const currentAdmission = isCurrentCaptainActor(loadedActorID, activeActorID) ? admission : null;
 
   async function setAvailability(available: boolean) {
-    if (!admission || busy) return;
+    if (!currentAdmission || busy || loading || !isCurrentCaptainActor(loadedActorID, activeActorID) || currentAdmission.state !== "eligible" || currentAdmission.availabilityState === (available ? "available" : "unavailable")) return;
+    const actorID = loadedActorID;
     setBusy(true);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      await captainClient().setCaptainAvailability(token, available, admission.version);
-      await load();
+      const current = currentIdentityState();
+      if (current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return;
+      await captainClient().setCaptainAvailability(token, available, currentAdmission.version);
+      const after = currentIdentityState();
+      if (after.kind !== "authenticated" || !isCurrentCaptainActor(actorID, after.identity.subject.trim())) return;
+      if (!(await load())) setError("وصل رد تغيير التوفر، لكن تعذرت قراءة الحالة الجديدة. حدّث الجاهزية قبل إجراء آخر.");
     } catch (cause) {
       console.error("DSH Captain availability failed", cause);
-      setError("تعذر تحديث التوفر. أعد القراءة لتأكيد النسخة الحالية.");
+      const current = currentIdentityState();
+      if (current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return;
+      const verified = await load();
+      setError(verified
+        ? "لم نتأكد من نتيجة تغيير التوفر. راجع الحالة الجديدة قبل أي محاولة أخرى."
+        : "لم نتأكد من نتيجة تغيير التوفر وتعذرت قراءة الجاهزية؛ لن نرسل تغييرًا آخر حتى تنجح إعادة القراءة.");
     } finally {
       setBusy(false);
     }
@@ -54,16 +96,16 @@ const theme = useAppearanceTheme();
       <Text style={styles.title}>جاهزية الكابتن</Text>
       <Text style={styles.muted}>تحقق من جاهزيتك، حدّد توفرك، ثم انتقل مباشرة إلى المهمة التالية.</Text>
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
-      {!loading && admission ? <View style={styles.card}>
-        <View style={styles.row}><View style={styles.task}><Text style={styles.cardTitle}>قبولك</Text><Text style={styles.muted}>{captainAdmissionStateLabel(admission.state)}</Text></View><View style={styles.task}><Text style={styles.cardTitle}>التوفر</Text><BthwaniStatusBadge icon={admission.availabilityState === "available" ? "success" : "appearance"} label={captainAvailabilityStateLabel(admission.availabilityState)} tone={admission.availabilityState === "available" ? "success" : "neutral"} /></View></View>
+      {!loading && currentAdmission ? <View style={styles.card}>
+        <View style={styles.row}><View style={styles.task}><Text style={styles.cardTitle}>قبولك</Text><Text style={styles.muted}>{captainAdmissionStateLabel(currentAdmission.state)}</Text></View><View style={styles.task}><Text style={styles.cardTitle}>التوفر</Text><BthwaniStatusBadge icon={currentAdmission.availabilityState === "available" ? "success" : "appearance"} label={captainAvailabilityStateLabel(currentAdmission.availabilityState)} tone={currentAdmission.availabilityState === "available" ? "success" : "neutral"} /></View></View>
         <View style={styles.row}>
-          <BthwaniButton busy={busy} disabled={admission.state !== "eligible"} label="متاح" onPress={() => void setAvailability(true)} style={styles.actionButton} />
-          <BthwaniButton busy={busy} disabled={admission.state !== "eligible"} label="غير متاح" onPress={() => void setAvailability(false)} style={styles.actionButton} variant="secondary" />
+          <BthwaniButton busy={busy} disabled={busy || loading || currentAdmission.state !== "eligible" || currentAdmission.availabilityState === "available"} label="متاح" onPress={() => void setAvailability(true)} style={styles.actionButton} />
+          <BthwaniButton busy={busy} disabled={busy || loading || currentAdmission.state !== "eligible" || currentAdmission.availabilityState === "unavailable"} label="غير متاح" onPress={() => void setAvailability(false)} style={styles.actionButton} variant="secondary" />
         </View>
       </View> : null}
       {!loading ? <View style={styles.summaryCard}><Text style={styles.sectionTitle}>الخطوة التالية</Text><Text style={styles.muted}>افتح العروض أو التوصيلات لمعالجة المهام الحالية.</Text><View style={styles.row}><Link href={"/offers" as Href} asChild><BthwaniButton label="فتح العروض" style={styles.actionButton} variant="secondary" /></Link><Link href={"/deliveries" as Href} asChild><BthwaniButton label="فتح التوصيلات" style={styles.actionButton} variant="secondary" /></Link></View></View> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <BthwaniButton busy={busy} disabled={busy} label="تحديث الحالة" onPress={() => void load()} variant="secondary" />
+      <BthwaniButton busy={busy || loading} disabled={busy || loading} label="تحديث الحالة" onPress={() => void load()} variant="secondary" />
     </View>
   );
 }

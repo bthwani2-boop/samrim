@@ -37,6 +37,18 @@ func ParseDatabaseTarget(raw string) (DatabaseTarget, error) {
 	if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") || parsed.Hostname() == "" {
 		return DatabaseTarget{}, fmt.Errorf("database URL must be a valid postgres target")
 	}
+	options, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return DatabaseTarget{}, fmt.Errorf("database URL contains invalid connection options")
+	}
+	// The driver may also read identity from query options. Do not verify one
+	// target in the URI authority while connecting to another via overrides.
+	for key := range options {
+		switch strings.ToLower(key) {
+		case "host", "hostaddr", "port", "user", "dbname", "database", "service":
+			return DatabaseTarget{}, fmt.Errorf("database URL must not override target identity")
+		}
+	}
 	if parsed.User == nil || strings.TrimSpace(parsed.User.Username()) == "" {
 		return DatabaseTarget{}, fmt.Errorf("database URL must include a named database principal")
 	}
