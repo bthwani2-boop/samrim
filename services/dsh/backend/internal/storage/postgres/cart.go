@@ -173,8 +173,27 @@ func readCartByQuery(ctx context.Context, source rowQueryer, query string, args 
 	return cart, nil
 }
 
+// Use the canonical checkout quantity rules, not a separately maintained UI rule.
+// A stale line remains readable/removable, but never becomes a payable quote.
+func cartLineQuantityAllowed(line CartLineRecord) bool {
+	minimum, maximum, step := line.QuantityMinBaseUnits, line.QuantityMaxBaseUnits, line.QuantityStepBaseUnits
+	offer := CatalogStoreOfferRecord{
+		QuantityPolicy:        line.QuantityPolicy,
+		QuantityMinBaseUnits:  &minimum,
+		QuantityMaxBaseUnits:  &maximum,
+		QuantityStepBaseUnits: &step,
+		PricingBasis:          line.PricingBasis,
+		PricingUnitBaseUnits:  line.PricingUnitBaseUnits,
+		Variant: CatalogVariantRecord{
+			MeasurementKind: line.MeasurementKind,
+			BaseUnit:        line.BaseUnit,
+		},
+	}
+	return validateCatalogOfferQuantity(offer, line.QuantityBaseUnits) == nil
+}
+
 func listCartLines(ctx context.Context, source queryer, cartID string) ([]CartLineRecord, error) {
-	rows, err := source.QueryContext(ctx, `SELECT l.id,l.cart_id,l.store_offer_id,l.variant_id,v.product_id,p.canonical_name,v.title,v.measurement_kind,v.base_unit,o.pricing_basis,o.quantity_policy,COALESCE(o.quantity_min_base_units,0),COALESCE(o.quantity_max_base_units,0),COALESCE(o.quantity_step_base_units,0),o.pricing_unit_base_units,l.quantity_base_units,l.selected_modifier_option_ids,o.price_minor,o.currency,o.version,l.created_at,l.updated_at
+	rows, err := source.QueryContext(ctx, `SELECT l.id,l.cart_id,l.store_offer_id,l.variant_id,v.product_id,p.canonical_name,v.title,v.measurement_kind,v.base_unit,o.pricing_basis,o.quantity_policy,COALESCE(o.quantity_min_base_units,0),COALESCE(o.quantity_max_base_units,0),COALESCE(o.quantity_step_base_units,0),o.pricing_unit_base_units,l.quantity_base_units,l.selected_modifier_option_ids,o.price_minor,o.currency,o.version,EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id),l.created_at,l.updated_at
 FROM dsh.commerce_cart_lines l
 JOIN dsh.catalog_store_offers o ON o.id=l.store_offer_id
 JOIN dsh.catalog_product_variants v ON v.id=l.variant_id
@@ -187,9 +206,11 @@ WHERE l.cart_id=$1 AND l.removed_at IS NULL ORDER BY l.created_at,l.id`, cartID)
 	lines := make([]CartLineRecord, 0)
 	for rows.Next() {
 		var line CartLineRecord
-		if err := rows.Scan(&line.ID, &line.CartID, &line.StoreOfferID, &line.VariantID, &line.ProductID, &line.ProductName, &line.VariantTitle, &line.MeasurementKind, &line.BaseUnit, &line.PricingBasis, &line.QuantityPolicy, &line.QuantityMinBaseUnits, &line.QuantityMaxBaseUnits, &line.QuantityStepBaseUnits, &line.PricingUnitBaseUnits, &line.QuantityBaseUnits, pq.Array(&line.SelectedModifierOptionIDs), &line.UnitPriceMinor, &line.Currency, &line.OfferVersion, &line.CreatedAt, &line.UpdatedAt); err != nil {
+		var customerVisible bool
+		if err := rows.Scan(&line.ID, &line.CartID, &line.StoreOfferID, &line.VariantID, &line.ProductID, &line.ProductName, &line.VariantTitle, &line.MeasurementKind, &line.BaseUnit, &line.PricingBasis, &line.QuantityPolicy, &line.QuantityMinBaseUnits, &line.QuantityMaxBaseUnits, &line.QuantityStepBaseUnits, &line.PricingUnitBaseUnits, &line.QuantityBaseUnits, pq.Array(&line.SelectedModifierOptionIDs), &line.UnitPriceMinor, &line.Currency, &line.OfferVersion, &customerVisible, &line.CreatedAt, &line.UpdatedAt); err != nil {
 			return nil, err
 		}
+		line.RequiresReview = !customerVisible || !cartLineQuantityAllowed(line)
 		lines = append(lines, line)
 	}
 	if err := rows.Err(); err != nil {

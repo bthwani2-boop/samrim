@@ -401,7 +401,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
             <Text style={styles.lineTitle}>{line.productName}</Text>
             {line.variantTitle ? <Text style={styles.muted}>{line.variantTitle}</Text> : null}
             {line.selectedModifiers.length ? <Text style={styles.modifiers}>{line.selectedModifiers.map((modifier) => modifier.optionNameAr).join("، ")}</Text> : null}
-            {line.requiresReview ? <Text accessibilityRole="alert" style={styles.warning}>خيارات هذا المنتج تغيرت أو لم تعد متاحة. احذفه وأضفه من المتجر مجددًا؛ لن يتم احتساب سعر غير مؤكد.</Text> : null}
+            {line.requiresReview ? <Text accessibilityRole="alert" style={styles.warning}>تغيّر توفر هذا المنتج أو الكمية المسموحة أو خياراته. احذفه من السلة واختر منتجًا متاحًا من المتجر؛ لن نعرض سعرًا غير مؤكد.</Text> : null}
             <Text style={styles.muted}>{line.requiresReview ? `الكمية ${formatQuantity(line.baseUnit, line.quantityBaseUnits)} · السعر يحتاج تحديثًا` : `${formatMoney(line.lineAmountMinor, line.currency)} · الكمية ${formatQuantity(line.baseUnit, line.quantityBaseUnits)}`}</Text>
             <View style={styles.lineActions}>
               <BthwaniButton accessibilityLabel={`إنقاص كمية ${line.productName}`} disabled={mutationBusy || line.requiresReview || !canDecrease} label="إنقاص" onPress={() => void updateLine(line, -1)} variant="secondary" />
@@ -435,7 +435,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
             {remainingCashMinor !== null ? <Text style={styles.muted}>{remainingCashMinor === 0 ? "لا يوجد مبلغ نقدي مطلوب؛ يُسوى الطلب من الرصيد المحجوز عند إتمامه." : `المتبقي نقدًا ${paymentMethodLabel(paymentMethod, fulfillmentMode)}: ${formatMoney(remainingCashMinor, "YER")}`}</Text> : null}
           </View>
           {quote.kind === "loading" ? <Text accessibilityLiveRegion="polite" style={styles.muted}>جارٍ حساب الإجمالي النهائي…</Text> : null}
-          {quote.kind === "invalid" ? <Text accessibilityRole="alert" style={styles.warning}>لن يُحتسب إجمالي الطلب حتى تزيل العناصر ذات الخيارات غير المتاحة، ثم تضيفها من كتالوج المتجر.</Text> : null}
+          {quote.kind === "invalid" ? <Text accessibilityRole="alert" style={styles.warning}>لن يُحتسب إجمالي الطلب حتى تزيل المنتجات التي تغير توفرها أو كميتها المسموحة أو خياراتها.</Text> : null}
           {quote.kind === "error" ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>تعذر حساب الإجمالي. حدّث السلة أو أعد المحاولة قبل الإتمام.</Text> : null}
           {quote.kind === "idle" && !pickupMode && !serviceableAddressId ? <Text style={styles.warning}>اختر عنوانًا مؤهلًا لعرض رسوم التوصيل والإجمالي النهائي.</Text> : null}
           {quote.kind === "error" ? <BthwaniButton label="إعادة حساب الإجمالي" onPress={() => { if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /> : null}

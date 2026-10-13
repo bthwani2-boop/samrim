@@ -5479,7 +5479,7 @@ components:
             $ref: "#/components/schemas/CartLineModifier"
         requiresReview:
           type: boolean
-          description: Cart line has obsolete modifier selections; read and remove are allowed but quote and checkout must reject it.
+          description: Cart line has a StoreOffer no longer customer-visible, an invalid quantity under current catalog rules, or obsolete modifier selections. Read and remove remain allowed; quote and checkout must reject it.
         unitPriceMinor:
           type: integer
           minimum: 1

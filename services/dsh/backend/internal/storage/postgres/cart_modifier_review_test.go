@@ -20,6 +20,10 @@ func (c cartReviewConnector) Driver() driver.Driver                        { ret
 
 type cartReviewConn struct {
 	selectedOptions string
+	customerVisible bool
+	maximum         int64
+	minimum         int64
+	step            int64
 	lineQueries     int
 	groupQueries    int
 }
@@ -33,11 +37,14 @@ func (c *cartReviewConn) Begin() (driver.Tx, error) { return removedLineTx{}, ni
 func (c *cartReviewConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	switch {
 	case strings.Contains(query, "FROM dsh.commerce_cart_lines l"):
+		if !strings.Contains(query, "dsh.catalog_customer_visible_offers") {
+			return nil, errors.New("cart read must check the canonical customer visibility view")
+		}
 		c.lineQueries++
 		now := time.Now().UTC()
 		return &removedLineRows{
-			columns: []string{"id", "cart_id", "store_offer_id", "variant_id", "product_id", "canonical_name", "title", "measurement_kind", "base_unit", "pricing_basis", "quantity_policy", "quantity_min_base_units", "quantity_max_base_units", "quantity_step_base_units", "pricing_unit_base_units", "quantity_base_units", "selected_modifier_option_ids", "price_minor", "currency", "version", "created_at", "updated_at"},
-			values:  [][]driver.Value{{"line-1", "cart-1", "offer-1", "variant-1", "product-1", "منتج", "حجم", "COUNT", "PIECE", "PER_UNIT", "DISCRETE", int64(1), int64(100), int64(1), int64(1), int64(3), c.selectedOptions, int64(100), "YER", int64(1), now, now}},
+			columns: []string{"id", "cart_id", "store_offer_id", "variant_id", "product_id", "canonical_name", "title", "measurement_kind", "base_unit", "pricing_basis", "quantity_policy", "quantity_min_base_units", "quantity_max_base_units", "quantity_step_base_units", "pricing_unit_base_units", "quantity_base_units", "selected_modifier_option_ids", "price_minor", "currency", "version", "customer_visible", "created_at", "updated_at"},
+			values:  [][]driver.Value{{"line-1", "cart-1", "offer-1", "variant-1", "product-1", "منتج", "حجم", "DISCRETE", "COUNT", "PER_UNIT", "DISCRETE", c.minimum, c.maximum, c.step, int64(1), int64(3), c.selectedOptions, int64(100), "YER", int64(1), c.customerVisible, now, now}},
 		}, nil
 	case strings.Contains(query, "FROM dsh.catalog_store_offer_modifier_groups"):
 		c.groupQueries++
@@ -51,15 +58,22 @@ func (c *cartReviewConn) QueryContext(_ context.Context, query string, _ []drive
 
 func TestCartReadKeepsInvalidModifierLineRemovableWithoutQuotingPrice(t *testing.T) {
 	for _, tc := range []struct {
-		name           string
-		selected       string
-		requiresReview bool
+		name            string
+		selected        string
+		customerVisible bool
+		minimum         int64
+		maximum         int64
+		step            int64
+		requiresReview  bool
 	}{
-		{name: "former option group is now inactive", selected: "{option-1}", requiresReview: true},
-		{name: "valid cart without attached modifier groups", selected: "{}", requiresReview: false},
+		{name: "former option group is now inactive", selected: "{option-1}", customerVisible: true, minimum: 1, maximum: 100, step: 1, requiresReview: true},
+		{name: "valid cart without attached modifier groups", selected: "{}", customerVisible: true, minimum: 1, maximum: 100, step: 1, requiresReview: false},
+		{name: "offer no longer customer visible", selected: "{}", customerVisible: false, minimum: 1, maximum: 100, step: 1, requiresReview: true},
+		{name: "offer maximum reduced below selected quantity", selected: "{}", customerVisible: true, minimum: 1, maximum: 2, step: 1, requiresReview: true},
+		{name: "offer quantity step changed", selected: "{}", customerVisible: true, minimum: 2, maximum: 100, step: 2, requiresReview: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			conn := &cartReviewConn{selectedOptions: tc.selected}
+			conn := &cartReviewConn{selectedOptions: tc.selected, customerVisible: tc.customerVisible, minimum: tc.minimum, maximum: tc.maximum, step: tc.step}
 			db := sql.OpenDB(cartReviewConnector{conn: conn})
 			t.Cleanup(func() { _ = db.Close() })
 			lines, err := listCartLines(context.Background(), db, "cart-1")
