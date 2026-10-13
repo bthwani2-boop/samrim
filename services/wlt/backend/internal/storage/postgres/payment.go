@@ -75,12 +75,48 @@ type CancelPaymentIntentInput struct {
 }
 
 func HashCreateRequest(input CreatePaymentIntentInput) string {
+	return hashCreateRequest(input, true)
+}
+
+// The old fingerprint is retained only for validating replays of intents
+// persisted before promotion funding was included in the request hash.
+func hashCreateRequest(input CreatePaymentIntentInput, includePromotionFunding bool) string {
 	parts := []string{"create", input.ExternalReference, input.PayerActorID, input.OrderID, fmt.Sprintf("%d", input.AmountMinor), input.Currency, input.Method}
 	if input.CustomerPaymentAllocation != nil {
 		allocation := input.CustomerPaymentAllocation
 		parts = append(parts, allocation.OrderID, allocation.StoreID, allocation.PartnerActorID, allocation.CommercialStoreTypeID, allocation.FulfillmentMode, allocation.Currency, fmt.Sprintf("%d", allocation.SubtotalMinor), fmt.Sprintf("%d", allocation.DeliveryFeeMinor), fmt.Sprintf("%d", allocation.DiscountMinor), fmt.Sprintf("%d", allocation.InternalBalanceAmountMinor), fmt.Sprintf("%d", allocation.CashAmountMinor), fmt.Sprintf("%d", allocation.CustomerPayableMinor), allocation.PolicyVersion)
+		if includePromotionFunding && allocation.PromotionFunding != nil {
+			funding := allocation.PromotionFunding
+			parts = append(parts, "promotion-funding:v1", strings.TrimSpace(funding.PromotionID), fmt.Sprintf("%d", funding.PromotionVersion), strings.TrimSpace(funding.PromotionCode), strings.TrimSpace(funding.StoreID), strings.ToUpper(strings.TrimSpace(funding.FundingSource)), fmt.Sprintf("%d", funding.DiscountMinor))
+			if funding.PartnerSharePercent == nil {
+				parts = append(parts, "partner-share:nil")
+			} else {
+				parts = append(parts, "partner-share:present", fmt.Sprintf("%d", *funding.PartnerSharePercent))
+			}
+		}
 	}
 	return hashFacts(parts...)
+}
+
+// Old persisted hashes could not distinguish a promotion-funded payment from
+// its unfunded counterpart. Require the actual frozen WLT row to match before
+// accepting any historical replay.
+func promotionFundingMatches(input *PromotionFundingInput, frozen *OrderPromotionFundingRecord) bool {
+	if input == nil || frozen == nil {
+		return input == nil && frozen == nil
+	}
+	if strings.TrimSpace(input.PromotionID) != frozen.PromotionID ||
+		input.PromotionVersion != frozen.PromotionVersion ||
+		strings.TrimSpace(input.PromotionCode) != frozen.PromotionCode ||
+		strings.TrimSpace(input.StoreID) != frozen.StoreID ||
+		strings.ToUpper(strings.TrimSpace(input.FundingSource)) != frozen.FundingSource ||
+		input.DiscountMinor != frozen.DiscountMinor {
+		return false
+	}
+	if input.PartnerSharePercent == nil || frozen.PartnerSharePct == nil {
+		return input.PartnerSharePercent == nil && frozen.PartnerSharePct == nil
+	}
+	return *input.PartnerSharePercent == *frozen.PartnerSharePct
 }
 
 func HashCollectRequest(input CollectPaymentIntentInput) string {
@@ -132,8 +168,26 @@ func CreatePaymentIntent(ctx context.Context, db *sql.DB, input CreatePaymentInt
 	var storedHash, existingID string
 	err = tx.QueryRowContext(ctx, "SELECT request_hash,id FROM wlt.payment_intents WHERE idempotency_key=$1 FOR UPDATE", input.IdempotencyKey).Scan(&storedHash, &existingID)
 	if err == nil {
-		if storedHash != requestHash {
+		// A legacy fingerprint excludes funding. Never accept it on hash alone:
+		// compare the requested economics against the immutable funding row.
+		if storedHash != requestHash && storedHash != hashCreateRequest(input, false) {
 			return PaymentIntentRecord{}, false, ErrIdempotencyConflict
+		}
+		if input.CustomerPaymentAllocation != nil {
+			frozen, found, fundingErr := readOrderPromotionFunding(ctx, tx, input.CustomerPaymentAllocation.OrderID)
+			if fundingErr != nil {
+				return PaymentIntentRecord{}, false, fundingErr
+			}
+			var fundingRecord *OrderPromotionFundingRecord
+			if found {
+				if frozen.PaymentIntentID != existingID {
+					return PaymentIntentRecord{}, false, ErrIdempotencyConflict
+				}
+				fundingRecord = &frozen
+			}
+			if !promotionFundingMatches(input.CustomerPaymentAllocation.PromotionFunding, fundingRecord) {
+				return PaymentIntentRecord{}, false, ErrIdempotencyConflict
+			}
 		}
 		intent, readErr := readPaymentIntent(ctx, tx, existingID)
 		if readErr != nil {
