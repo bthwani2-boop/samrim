@@ -4,13 +4,14 @@ import { type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeli
 import * as Crypto from "expo-crypto";
 import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Text, TextInput, View } from "react-native";
 
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { canActOnCaptainTask } from "./captain-task-eligibility";
+import { canPublishCaptainLocation, isCurrentCaptainActor } from "./captain-session-scope";
 import { OrderConversation } from "./order-conversation";
 
 type PendingCaptainCompletionAttempt = Readonly<{
@@ -48,10 +49,19 @@ function captainCompletionHttpRejected(error: unknown): boolean {
   return value.kind === "http" && typeof value.status === "number" && value.status >= 400 && value.status < 500;
 }
 
+function hasCurrentDeliveryActor(actorID: string): boolean {
+  const session = currentIdentityState();
+  return session.kind === "authenticated" && isCurrentCaptainActor(actorID, session.identity.subject.trim());
+}
+
 export function CaptainDeliveries() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
   const [assignments, setAssignments] = useState<ReadonlyArray<CaptainAssignment>>([]);
+  const [loadedActorID, setLoadedActorID] = useState("");
+  const [identityState, setIdentityState] = useState(currentIdentityState);
+  const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
+  const readSequence = useRef(0);
   const [tasks, setTasks] = useState<Readonly<Record<string, CaptainDeliveryTask>>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -68,34 +78,44 @@ export function CaptainDeliveries() {
   const [completionStorageReady, setCompletionStorageReady] = useState(false);
   const [completionStorageIssue, setCompletionStorageIssue] = useState(false);
   const [completionRejected, setCompletionRejected] = useState(false);
-  const activeAssignmentID = useMemo(() => assignments.find((assignment) => assignment.state === "in_custody")?.id ?? "", [assignments]);
+  const currentActorReadback = isCurrentCaptainActor(loadedActorID, activeActorID);
+  const activeAssignmentID = useMemo(() => currentActorReadback ? assignments.find((assignment) => assignment.state === "in_custody")?.id ?? "" : "", [assignments, currentActorReadback]);
 
   const load = useCallback(async () => {
+    const sequence = ++readSequence.current;
+    const identity = currentIdentityState();
+    const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
+    const stillCurrent = () => sequence === readSequence.current && hasCurrentDeliveryActor(actorID);
     setLoading(true);
+    setLoadedActorID("");
+    setAssignments([]);
     setCashLiability(null);
     setPendingCompletion(null);
     setTasks({});
     setCompletionStorageReady(false);
     setError("");
     try {
+      if (!actorID) throw new Error("CAPTAIN_SESSION_REQUIRED");
       const token = await getUsableIdentityAccessToken();
-      const identity = currentIdentityState();
-      if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("CAPTAIN_SESSION_REQUIRED");
-      const actorID = identity.identity.subject.trim();
+      if (!stillCurrent()) return;
       const rawAttempt = await SecureStore.getItemAsync(pendingCaptainCompletionKey(actorID));
+      if (!stillCurrent()) return;
       let attempt: PendingCaptainCompletionAttempt | null;
       try {
         attempt = parsePendingCaptainCompletion(rawAttempt, actorID);
       } catch (cause) {
-        setCompletionStorageIssue(true);
+        if (stillCurrent()) setCompletionStorageIssue(true);
         throw cause;
       }
+      if (!stillCurrent()) return;
+      setLoadedActorID(actorID);
       setPendingCompletion(attempt);
       setCompletionRejected(false);
       setCompletionStorageIssue(false);
       setCompletionStorageReady(true);
       const api = captainClient();
       const response = await api.listOwnCaptainAssignments(token);
+      if (!stillCurrent()) return;
       setAssignments(response.assignments);
       const taskEntries = await Promise.all(response.assignments.map(async (assignment) => {
         try {
@@ -106,28 +126,49 @@ export function CaptainDeliveries() {
           return null;
         }
       }));
+      if (!stillCurrent()) return;
       setTasks(Object.fromEntries(taskEntries.filter((entry): entry is readonly [string, CaptainDeliveryTask] => entry !== null)));
       try {
-        setCashLiability(await api.readOwnCaptainCashLiability(token));
+        const liability = await api.readOwnCaptainCashLiability(token);
+        if (stillCurrent()) setCashLiability(liability);
       } catch (cause) {
         console.warn("WLT Captain cash liability readback failed", cause);
-        setError("تم تحديث التوصيلات، لكن تعذرت قراءة العهدة النقدية. أعد القراءة قبل أي توريد.");
+        if (stillCurrent()) setError("تم تحديث التوصيلات، لكن تعذرت قراءة العهدة النقدية. أعد القراءة قبل أي توريد.");
       }
     } catch (cause) {
       console.error("DSH Captain deliveries readback failed", cause);
-      setAssignments([]);
-      setTasks({});
-      setCashLiability(null);
-      setError("تعذر قراءة التوصيلات. أعد المحاولة.");
+      if (sequence === readSequence.current && (!actorID || hasCurrentDeliveryActor(actorID))) {
+        setAssignments([]);
+        setTasks({});
+        setCashLiability(null);
+        setError("تعذر قراءة التوصيلات. أعد المحاولة.");
+      }
     } finally {
-      setLoading(false);
+      if (sequence === readSequence.current) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => subscribeIdentitySession(setIdentityState), []);
+  useEffect(() => {
+    setCollectionAmounts({});
+    setDeliveryProofCodes({});
+    setCashRemittanceReferences({});
+    if (!activeActorID) {
+      readSequence.current += 1;
+      setLoadedActorID("");
+      setAssignments([]);
+      setTasks({});
+      setCashLiability(null);
+      setPendingCompletion(null);
+      setCompletionStorageReady(false);
+      setLoading(false);
+      return;
+    }
+    void load();
+  }, [activeActorID, load]);
 
   useEffect(() => {
-    if (!activeAssignmentID) {
+    if (!canPublishCaptainLocation(loadedActorID, activeActorID, activeAssignmentID)) {
       setLocationError("");
       setLastLocationUpdatedAt("");
       setCaptainPosition(null);
@@ -137,19 +178,20 @@ export function CaptainDeliveries() {
     let publishing = false;
     let subscription: Location.LocationSubscription | undefined;
     const publish = async (latitude: number, longitude: number) => {
-      if (publishing || disposed) return;
+      if (publishing || disposed || !hasCurrentDeliveryActor(loadedActorID)) return;
       publishing = true;
       if (!disposed) setCaptainPosition({ latitude, longitude });
       try {
         const token = await getUsableIdentityAccessToken();
+        if (disposed || !hasCurrentDeliveryActor(loadedActorID)) return;
         const result = await captainClient().updateCaptainLocation(token, activeAssignmentID, latitude, longitude);
-        if (!disposed) {
+        if (!disposed && hasCurrentDeliveryActor(loadedActorID)) {
           setLastLocationUpdatedAt(result.location.updatedAt);
           setLocationError("");
         }
       } catch (cause) {
         console.warn("DSH Captain live location update failed", cause);
-        if (!disposed) setLocationError("تعذر تحديث الموقع. فعّل إذن الموقع وأعد المحاولة.");
+        if (!disposed && hasCurrentDeliveryActor(loadedActorID)) setLocationError("تعذر تحديث الموقع. فعّل إذن الموقع وأعد المحاولة.");
       } finally {
         publishing = false;
       }
@@ -165,28 +207,34 @@ export function CaptainDeliveries() {
       if (disposed) return;
       await publish(current.coords.latitude, current.coords.longitude);
       if (disposed) return;
-      subscription = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: 30_000, distanceInterval: 100 }, (position) => {
+      const watcher = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: 30_000, distanceInterval: 100 }, (position) => {
         void publish(position.coords.latitude, position.coords.longitude);
       });
+      if (disposed || !hasCurrentDeliveryActor(loadedActorID)) {
+        watcher.remove();
+        return;
+      }
+      subscription = watcher;
     };
     void start().catch((cause) => {
       console.warn("DSH Captain live location setup failed", cause);
-      if (!disposed) setLocationError("تعذر تشغيل تحديث الموقع لهذه الرحلة.");
+      if (!disposed && hasCurrentDeliveryActor(loadedActorID)) setLocationError("تعذر تشغيل تحديث الموقع لهذه الرحلة.");
     });
     return () => {
       disposed = true;
       subscription?.remove();
     };
-  }, [activeAssignmentID]);
+  }, [activeActorID, activeAssignmentID, loadedActorID]);
 
   async function pickup(assignment: CaptainAssignment) {
-    if (busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
     setBusy(assignment.id);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentDeliveryActor(loadedActorID)) return;
       await captainClient().completeCaptainPickup(token, assignment.id, assignment.handoff.version);
-      await load();
+      if (hasCurrentDeliveryActor(loadedActorID)) await load();
     } catch (cause) {
       console.error("DSH Captain pickup failed", cause);
       setError("لا يمكن تأكيد الاستلام قبل تأكيد المتجر أو عند تعارض النسخة.");
@@ -196,13 +244,13 @@ export function CaptainDeliveries() {
   }
 
   async function complete(assignment: CaptainAssignment, result: "delivered" | "delivery_failed", collectedAmountMinor?: number) {
-    if (busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "in_custody" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "in_custody" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
     setBusy(assignment.id);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const identity = currentIdentityState();
-      if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("CAPTAIN_SESSION_REQUIRED");
+      if (identity.kind !== "authenticated" || !isCurrentCaptainActor(loadedActorID, identity.identity.subject.trim())) throw new Error("CAPTAIN_SESSION_REQUIRED");
       const deliveryProofCode = deliveryProofCodes[assignment.id]?.trim() ?? "";
       const request: CaptainCompletionRequest = { result, ...(collectedAmountMinor === undefined ? {} : { collectedAmountMinor }), ...(result === "delivered" ? { deliveryProofCode } : {}) };
       const attempt: PendingCaptainCompletionAttempt = {
@@ -215,10 +263,12 @@ export function CaptainDeliveries() {
         correlationID: `captain_complete_corr_${Crypto.randomUUID()}`,
       };
       await SecureStore.setItemAsync(pendingCaptainCompletionKey(attempt.actorID), JSON.stringify(attempt));
+      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
       setPendingCompletion(attempt);
       setCompletionRejected(false);
       await captainClient().completeCaptainAssignment(token, attempt.assignmentID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
       await SecureStore.deleteItemAsync(pendingCaptainCompletionKey(attempt.actorID));
+      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
       setPendingCompletion(null);
       setDeliveryProofCodes((current) => ({ ...current, [assignment.id]: "" }));
       await load();
@@ -233,7 +283,7 @@ export function CaptainDeliveries() {
 
   async function retryPendingCompletion() {
     const attempt = pendingCompletion;
-    if (!attempt || busy || !completionStorageReady) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || busy || !completionStorageReady) return;
     setBusy(attempt.assignmentID);
     setError("");
     setCompletionRejected(false);
@@ -243,6 +293,7 @@ export function CaptainDeliveries() {
       if (identity.kind !== "authenticated" || identity.identity.subject.trim() !== attempt.actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
       await captainClient().completeCaptainAssignment(token, attempt.assignmentID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
       await SecureStore.deleteItemAsync(pendingCaptainCompletionKey(attempt.actorID));
+      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
       setPendingCompletion(null);
       setDeliveryProofCodes((current) => ({ ...current, [attempt.assignmentID]: "" }));
       await load();
@@ -257,7 +308,7 @@ export function CaptainDeliveries() {
 
   async function replaceRejectedCompletionAfterReadback() {
     const attempt = pendingCompletion;
-    if (!attempt || !completionRejected || busy) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || !completionRejected || busy) return;
     setBusy(attempt.assignmentID);
     setError("");
     try {
@@ -265,6 +316,7 @@ export function CaptainDeliveries() {
       const identity = currentIdentityState();
       if (identity.kind !== "authenticated" || identity.identity.subject.trim() !== attempt.actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
       const response = await captainClient().listOwnCaptainAssignments(token);
+      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
       const current = response.assignments.find((item) => item.id === attempt.assignmentID);
       if (!current || current.state !== "in_custody" || current.version !== attempt.expectedVersion) {
         setCompletionRejected(false);
@@ -272,6 +324,7 @@ export function CaptainDeliveries() {
         return;
       }
       await SecureStore.deleteItemAsync(pendingCaptainCompletionKey(attempt.actorID));
+      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
       setPendingCompletion(null);
       setCompletionRejected(false);
       await load();
@@ -285,7 +338,7 @@ export function CaptainDeliveries() {
   }
 
   async function remitCash(item: CashLiabilityItem) {
-    if (loading || !cashLiability?.items.some((current) => current.paymentIntentId === item.paymentIntentId && current.paymentVersion === item.paymentVersion)) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || loading || !cashLiability?.items.some((current) => current.paymentIntentId === item.paymentIntentId && current.paymentVersion === item.paymentVersion)) return;
     const reference = cashRemittanceReferences[item.paymentIntentId]?.trim() ?? "";
     if (cashBusy || !reference) {
       setError("أدخل مرجع توريد العهدة لإرساله إلى المالية.");
@@ -295,8 +348,9 @@ export function CaptainDeliveries() {
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentDeliveryActor(loadedActorID)) return;
       await captainClient().remitOwnCaptainCash(token, item.paymentIntentId, { amountMinor: item.amountMinor, remittanceReference: reference }, item.paymentVersion);
-      await load();
+      if (hasCurrentDeliveryActor(loadedActorID)) await load();
     } catch (cause) {
       console.error("WLT Captain cash remittance submission failed", cause);
       setError("تعذر إرسال مرجع التوريد. أعد القراءة قبل المحاولة.");
@@ -304,6 +358,13 @@ export function CaptainDeliveries() {
       setCashBusy("");
     }
   }
+
+  if (!currentActorReadback) return (
+    <View style={styles.container} accessibilityLabel="التحقق من تكليفات الكابتن">
+      {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ التحقق من تكليفات الجلسة الحالية…</Text></View> : <Text style={styles.warning}>{completionStorageIssue ? "تعذر التحقق من محاولة التسليم المحفوظة. لا ترسل تأكيدًا جديدًا؛ راجع المحاولة مع المشغل." : activeActorID ? "تعذرت قراءة تكليفات هذه الجلسة. أعد القراءة." : "سجّل الدخول لعرض التوصيلات الخاصة بك."}</Text>}
+      <BthwaniButton busy={loading} disabled={loading || !activeActorID} label="إعادة قراءة التوصيلات" onPress={() => void load()} variant="secondary" />
+    </View>
+  );
 
   return (
     <View style={styles.container} accessibilityLabel="التوصيلات الحالية">
