@@ -1,16 +1,13 @@
 "use client";
 
-import { useState } from "react";
 import { OperationalIcon, type OperationalIconName } from "../../shell/workspace-icon";
 
 export function RecordIndicator({ icon, label, tone = "neutral", legend = false }: Readonly<{
   icon: OperationalIconName; label: string; tone?: "neutral" | "success" | "warning"; legend?: boolean;
 }>) {
-  const [dismissed, setDismissed] = useState(false);
   return <span className="record-indicator" data-tone={tone} data-legend={legend || undefined}>
-    <span className="record-indicator-symbol" role="img" aria-label={legend ? undefined : label} aria-hidden={legend || undefined} tabIndex={legend ? undefined : 0} onFocus={() => setDismissed(false)} onMouseEnter={() => setDismissed(false)} onKeyDown={(event) => { if (event.key === "Escape" && !legend && !dismissed) { event.stopPropagation(); setDismissed(true); } }}>
+    <span className="record-indicator-symbol" role="img" aria-label={legend ? undefined : label} aria-hidden={legend || undefined} title={legend ? undefined : label}>
       <OperationalIcon name={icon} />
-      {!legend && !dismissed ? <span className="record-indicator-tooltip" aria-hidden="true">{label}</span> : null}
     </span>
     {legend ? <span>{label}</span> : null}
   </span>;

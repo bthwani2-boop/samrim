@@ -103,7 +103,7 @@ export function ServiceCityPanel() {
     {loading ? <p role="status">جارٍ قراءة المدن…</p> : null}
     {!loading && !error && !cities.length ? <p className="collection-state">لا توجد مدن بعد.</p> : null}
     {cities.length > 0 ? <>
-      <search className="registry-toolbar" aria-label="تصفية المدن">
+      <search className="registry-toolbar reference-registry-toolbar" aria-label="تصفية المدن">
         <label htmlFor="service-city-search">بحث في المدن<input id="service-city-search" type="search" maxLength={160} value={query} disabled={busy || loading} onChange={(event) => setQuery(event.target.value)} /></label>
         <label htmlFor="service-city-status">حالة المدينة<select id="service-city-status" value={status} disabled={busy || loading} onChange={(event) => setStatus(event.target.value)}><option value="">كل الحالات</option><option value="active">نشطة</option><option value="inactive">متوقفة</option></select></label>
         {query || status ? <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setQuery(""); setStatus(""); }}>مسح المرشحات</button> : null}

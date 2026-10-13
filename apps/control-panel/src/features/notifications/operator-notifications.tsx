@@ -1,6 +1,7 @@
 "use client";
 
 import type { Notification, NotificationKind } from "@bthwani/dsh";
+import Link from "next/link";
 import { parseOperatorNotificationList } from "./notification-readback";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "../../shell/page-header";
@@ -142,19 +143,29 @@ function NotificationGroup({ title, count, items, pendingId, onMarkRead }: Reado
       </div>
       <div className="operator-notification-list">
         {items.map((item) => (
-          <button key={item.id} type="button" className={`operator-notification-card${item.readAt ? " is-read" : " is-unread"}`} disabled={pendingId === item.id} onClick={() => void onMarkRead(item)} aria-label={`${item.title}، ${item.readAt ? "مقروء" : "جديد"}`}>
+          <article key={item.id} className={`operator-notification-card${item.readAt ? " is-read" : " is-unread"}`} aria-label={`${item.title}، ${item.readAt ? "مقروء" : "جديد"}`}>
             <span className={`operator-notification-kind operator-notification-kind-${notificationKindTone(item.kind)}`} aria-hidden="true">{notificationKindLabel(item.kind)}</span>
             <span className="operator-notification-copy">
               <strong>{item.title}</strong>
               <span>{item.body}</span>
               <time dateTime={item.createdAt}>{formatNotificationDate(item.createdAt)}</time>
             </span>
-            <span className="operator-notification-state">{item.readAt ? "مقروء" : "جديد"}</span>
-          </button>
+            <div className="operator-notification-actions">
+              {notificationHref(item) ? <Link className="button button-secondary" href={notificationHref(item)!}>فتح السجل</Link> : null}
+              {item.readAt ? <span className="operator-notification-state">مقروء</span> : <button type="button" className="button button-quiet" disabled={pendingId === item.id} onClick={() => void onMarkRead(item)}>{pendingId === item.id ? "جارٍ التحديث…" : "تحديد كمقروء"}</button>}
+            </div>
+          </article>
         ))}
       </div>
     </section>
   );
+}
+
+function notificationHref(item: Notification): string | null {
+  if (item.joiningCaseId?.trim()) return `/partners/${encodeURIComponent(item.joiningCaseId.trim())}`;
+  if (item.storeId?.trim()) return `/partners/stores/${encodeURIComponent(item.storeId.trim())}`;
+  if (item.orderId.trim()) return `/operations/${encodeURIComponent(item.orderId.trim())}`;
+  return null;
 }
 
 function notificationKindTone(kind: NotificationKind) {

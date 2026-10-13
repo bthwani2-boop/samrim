@@ -117,7 +117,7 @@ export function WalletProviderPolicyPanel() {
     {loading ? <p role="status">جارٍ قراءة المحافظ…</p> : null}
     {!loading && !error && !providers.length ? <p className="collection-state">لا توجد محافظ مسجلة.</p> : null}
     {providers.length > 0 ? <>
-      <search className="registry-toolbar" aria-label="تصفية المحافظ">
+      <search className="registry-toolbar reference-registry-toolbar" aria-label="تصفية المحافظ">
         <label htmlFor="wallet-provider-search">بحث في المحافظ<input id="wallet-provider-search" type="search" maxLength={80} value={query} disabled={busy || loading || Boolean(editingKey)} onChange={(event) => setQuery(event.target.value)} /></label>
         <label htmlFor="wallet-provider-status">حالة المحفظة<select id="wallet-provider-status" value={status} disabled={busy || loading || Boolean(editingKey)} onChange={(event) => setStatus(event.target.value)}><option value="">كل الحالات</option><option value="active">نشطة</option><option value="inactive">متوقفة</option></select></label>
         {query || status ? <button type="button" className="button button-secondary" disabled={busy || loading || Boolean(editingKey)} onClick={() => { setQuery(""); setStatus(""); }}>مسح المرشحات</button> : null}

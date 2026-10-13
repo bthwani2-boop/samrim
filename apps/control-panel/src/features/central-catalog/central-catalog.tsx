@@ -373,8 +373,7 @@ export function CentralCatalog() {
   function changeView(nextView: "table" | "gallery") {
     if (viewMode === nextView) return;
     const url = new URL(window.location.href);
-    if (nextView === "gallery") url.searchParams.set("view", "gallery");
-    else url.searchParams.delete("view");
+    url.searchParams.set("view", nextView);
     window.history.pushState({ ...window.history.state, catalogRegistry: true }, "", `${url.pathname}${url.search}${url.hash}`);
     setViewMode(nextView);
   }
@@ -406,7 +405,8 @@ export function CentralCatalog() {
     const nextActive = params.get("active") ?? "all";
     const nextSort = params.get("sort") ?? "name_asc";
     setQuery(nextQuery); setAppliedQuery(nextQuery); setVerticalFilter(nextVertical); setCategoryFilter(nextCategory); setStatusFilter(nextActive); setSort(nextSort);
-    setViewMode(params.get("view") === "gallery" ? "gallery" : "table");
+    const requestedView = params.get("view");
+    setViewMode(requestedView === "gallery" || requestedView === "table" ? requestedView : "table");
     const mode = params.get("mode");
     const productId = params.get("productId");
     if (mode === "edit" && productId) { if (selected?.id !== productId || !editorOpen) void selectProduct(productId, false); }
@@ -589,6 +589,9 @@ export function CentralCatalog() {
     selectionSummary = loading ? "جارٍ قراءة السجل…" : `سجلات هذه الصفحة: ${products.length.toLocaleString("ar-YE")}`;
   }
 
+  const activeFilterCount = [verticalFilter, categoryFilter, statusFilter !== "all", sort !== "name_asc"].filter(Boolean).length;
+  const hasCatalogFilters = activeFilterCount > 0 || Boolean(query || appliedQuery);
+
   let saveProductLabel = "إنشاء المنتج";
   if (selected) saveProductLabel = "حفظ التعديل";
   if (busy) saveProductLabel = "جارٍ الحفظ…";
@@ -599,15 +602,20 @@ export function CentralCatalog() {
         <div className="action-row"><button type="button" className="button button-primary" disabled={busy || verticals.length === 0} onClick={() => startCreate()}>منتج جديد</button></div>
         <form className="catalog-registry-toolbar" noValidate onSubmit={(event) => { event.preventDefault(); const nextQuery = query.trim(); changeFilters({ query: nextQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); setAppliedQuery(nextQuery); }}>
           <label className="catalog-search-input">بحث<input aria-label="البحث في المنتجات" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="اسم المنتج أو العلامة" /></label>
-          <label>النشاط الرئيسي<select value={verticalFilter} onChange={(event) => { const verticalId = event.target.value; changeFilters({ query: appliedQuery, verticalId, categoryId: "", active: statusFilter, sort }); setVerticalFilter(verticalId); setCategoryFilter(""); }}><option value="">الكل</option>{sharedVerticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select></label>
-          <label>بحث الفئات<input disabled={!verticalFilter || filterCategoryLoading} value={filterCategoryQuery} onChange={(event) => setFilterCategoryQuery(event.target.value)} placeholder="اسم الفئة" /></label>
-          <button type="button" className="button button-quiet" disabled={!verticalFilter || filterCategoryLoading} onClick={() => void searchFilterCategories()}>{filterCategoryLoading ? "جارٍ البحث…" : "بحث الفئات"}</button>
-          <label>الفئة<select disabled={!verticalFilter} value={categoryFilter} onChange={(event) => { const categoryId = event.target.value; changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId, active: statusFilter, sort }); setCategoryFilter(categoryId); }}><option value="">كل الفئات</option>{filterCategories.map((category) => <option value={category.id} key={category.id}>{category.pathAr}</option>)}</select></label>
-          {filterCategoryNextCursor ? <button type="button" className="button button-quiet" disabled={filterCategoryLoading} onClick={() => void loadMoreFilterCategories()}>{filterCategoryLoading ? "جارٍ التحميل…" : "فئات إضافية"}</button> : null}
-          <label>الحالة<select value={statusFilter} onChange={(event) => { const active = event.target.value; changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active, sort }); setStatusFilter(active); }}><option value="all">كل الحالات</option><option value="active">نشط</option><option value="inactive">معطل</option></select></label>
-          <label>الترتيب<select value={sort} onChange={(event) => { const sort = event.target.value; changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); setSort(sort); }}><option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option><option value="updated_desc">الأحدث تعديلًا</option><option value="updated_asc">الأقدم تعديلًا</option></select></label>
           <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
-          {query || appliedQuery ? <button type="button" className="button button-quiet" onClick={() => { changeFilters({ query: "", verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); setQuery(""); setAppliedQuery(""); }}>مسح البحث</button> : null}
+          <details className="catalog-mobile-filters">
+            <summary>مرشحات إضافية <span className="catalog-filter-count">{activeFilterCount ? `${activeFilterCount} مفعّلة` : "اختياري"}</span></summary>
+            <div className="catalog-mobile-filter-fields">
+              <label>النشاط الرئيسي<select value={verticalFilter} onChange={(event) => { const verticalId = event.target.value; changeFilters({ query: appliedQuery, verticalId, categoryId: "", active: statusFilter, sort }); setVerticalFilter(verticalId); setCategoryFilter(""); }}><option value="">الكل</option>{sharedVerticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select></label>
+              <label>بحث الفئات<input disabled={!verticalFilter || filterCategoryLoading} value={filterCategoryQuery} onChange={(event) => setFilterCategoryQuery(event.target.value)} placeholder="اسم الفئة" /></label>
+              <button type="button" className="button button-quiet" disabled={!verticalFilter || filterCategoryLoading} onClick={() => void searchFilterCategories()}>{filterCategoryLoading ? "جارٍ البحث…" : "بحث الفئات"}</button>
+              <label>الفئة<select disabled={!verticalFilter} value={categoryFilter} onChange={(event) => { const categoryId = event.target.value; changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId, active: statusFilter, sort }); setCategoryFilter(categoryId); }}><option value="">كل الفئات</option>{filterCategories.map((category) => <option value={category.id} key={category.id}>{category.pathAr}</option>)}</select></label>
+              {filterCategoryNextCursor ? <button type="button" className="button button-quiet" disabled={filterCategoryLoading} onClick={() => void loadMoreFilterCategories()}>{filterCategoryLoading ? "جارٍ التحميل…" : "فئات إضافية"}</button> : null}
+              <label>الحالة<select value={statusFilter} onChange={(event) => { const active = event.target.value; changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active, sort }); setStatusFilter(active); }}><option value="all">كل الحالات</option><option value="active">نشط</option><option value="inactive">معطل</option></select></label>
+              <label>الترتيب<select value={sort} onChange={(event) => { const sort = event.target.value; changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); setSort(sort); }}><option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option><option value="updated_desc">الأحدث تعديلًا</option><option value="updated_asc">الأقدم تعديلًا</option></select></label>
+              {hasCatalogFilters ? <button type="button" className="button button-quiet catalog-clear-filters" onClick={() => { changeFilters({ query: "", verticalId: "", categoryId: "", active: "all", sort: "name_asc" }); setQuery(""); setAppliedQuery(""); setVerticalFilter(""); setCategoryFilter(""); setStatusFilter("all"); setSort("name_asc"); setFilterCategoryQuery(""); setFilterCategories([]); setFilterCategoryNextCursor(""); }}>مسح كل المرشحات</button> : null}
+            </div>
+          </details>
         </form>
         <div className="catalog-registry-view-bar">
           <fieldset className="catalog-view-switch" aria-label="طريقة عرض المنتجات">
