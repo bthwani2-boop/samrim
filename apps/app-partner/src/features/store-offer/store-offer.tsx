@@ -1,11 +1,11 @@
 import { borders, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogIdentifierResolution, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, isMediaProvenanceInputValid, type MediaProvenanceInput, formatMoney, type MeasurementKind, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
-import * as DocumentPicker from "expo-document-picker";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogIdentifierResolution, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, formatMoney, isMediaProvenanceInputValid, type MeasurementKind, type MediaProvenanceInput, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
 import { MobileStoreCatalogImportWorkspace } from "@bthwani/dsh/mobile/store-catalog-import";
 import { MobileStoreQuickPricesWorkspace } from "@bthwani/dsh/mobile/store-quick-prices";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import * as Crypto from "expo-crypto";
+import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, StyleSheet, Switch, Text, TextInput, View } from "react-native";
@@ -175,6 +175,7 @@ const theme = useAppearanceTheme();
   const [storeProductImageIdempotencyKey, setStoreProductImageIdempotencyKey] = useState("");
   const [pendingProductMedia, setPendingProductMedia] = useState<PendingProductMedia | null>(null);
   const productCreateAttempt = useRef<Readonly<{ signature: string; idempotencyKey: string; correlationID: string }> | null>(null);
+  const offerCreateAttempt = useRef<Readonly<{ signature: string; idempotencyKey: string; correlationID: string }> | null>(null);
   const [mediaDraft, setMediaDraft] = useState<ReadonlyArray<CatalogMedia>>([]);
   const [mediaUpload, setMediaUpload] = useState<DshImageUploadInput | null>(null);
   const [mediaUploadProvenance, setMediaUploadProvenance] = useState<MediaProvenanceInput>(emptyMediaProvenance());
@@ -367,14 +368,26 @@ const theme = useAppearanceTheme();
     const expectedPricingBasis = expectedPricingBasisFor(selectedVariant?.measurementKind);
     if (!selectedVariant || selectedVariant.measurementKind === "VARIABLE_MEASURE" || !quantityPolicy || pricingBasis !== expectedPricingBasis || !Number.isSafeInteger(parsedPrice) || parsedPrice < 1 || ![parsedMin, parsedMax, parsedStep, parsedPricingUnit, parsedInventoryOnHand].every(Number.isSafeInteger) || parsedMin < 1 || parsedMax < parsedMin || parsedStep < 1 || parsedPricingUnit < 1 || parsedInventoryOnHand < 0 || (inventoryPolicy === "AVAILABILITY_ONLY" && parsedInventoryOnHand !== 0) || busy) return;
     const submittedPricingBasis = pricingBasis as PricingBasis;
+    const signature = JSON.stringify([storeId, selectedVariant.id, parsedPrice, quantityPolicy, submittedPricingBasis, parsedMin, parsedMax, parsedStep, parsedPricingUnit, inventoryPolicy, parsedInventoryOnHand]);
+    const attempt = offerCreateAttempt.current?.signature === signature
+      ? offerCreateAttempt.current
+      : { signature, idempotencyKey: Crypto.randomUUID(), correlationID: Crypto.randomUUID() };
+    offerCreateAttempt.current = attempt;
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const created = await dshClient().createStoreOffer(token, storeId, selectedVariant.id, parsedPrice, quantityPolicy, submittedPricingBasis, parsedMin, parsedMax, parsedStep, parsedPricingUnit, inventoryPolicy, parsedInventoryOnHand);
+      const created = await dshClient().createStoreOffer(token, storeId, selectedVariant.id, parsedPrice, quantityPolicy, submittedPricingBasis, parsedMin, parsedMax, parsedStep, parsedPricingUnit, inventoryPolicy, parsedInventoryOnHand, attempt.idempotencyKey, attempt.correlationID);
+      offerCreateAttempt.current = null;
       setSelectedProduct(null); setSelectedVariant(null); setPriceMinor(""); setQuantityPolicy(""); setPricingBasis(""); setQuantityMinBaseUnits(""); setQuantityMaxBaseUnits(""); setQuantityStepBaseUnits(""); setPricingUnitBaseUnits(""); setInventoryPolicy("AVAILABILITY_ONLY"); setInventoryOnHandBaseUnits("0");
       const createdOffer = { ...created.offer, media: selectedProduct?.media ?? created.offer.media };
       setState((current) => current.kind === "ready" ? { ...current, offers: sortStoreOffersByCreation([...current.offers.filter((offer) => offer.offerId !== createdOffer.offerId), createdOffer]) } : current);
-    } catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
+    } catch (nextError) {
+      reportError(nextError);
+      const cause = nextError as { kind?: unknown; status?: unknown } | null;
+      const uncertain = cause?.kind === "network" || (cause?.kind === "http" && typeof cause.status === "number" && cause.status >= 500);
+      if (!uncertain) offerCreateAttempt.current = null;
+      setError(errorText(nextError) + (uncertain ? " أعد المحاولة بنفس البيانات؛ لن ينشئ النظام عرضًا مكررًا." : ""));
+    } finally { setBusy(false); }
   }
 
   async function updateOffer(offer: CatalogStoreOffer, publicationState: "draft" | "published" | "hidden", availability: boolean, nextInventoryPolicy: InventoryPolicy = offer.inventoryPolicy as InventoryPolicy, nextInventoryOnHandBaseUnits = offer.inventoryOnHandBaseUnits) {

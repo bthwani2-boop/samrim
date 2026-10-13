@@ -185,6 +185,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   const [wasCreatedLocally, setWasCreatedLocally] = useState(false);
   const [localProductFormOpen, setLocalProductFormOpen] = useState(false);
   const productCreateAttempt = useRef<Readonly<{ signature: string; idempotencyKey: string; correlationID: string }> | null>(null);
+  const offerCreateAttempt = useRef<Readonly<{ signature: string; idempotencyKey: string; correlationID: string }> | null>(null);
 
   const load = useCallback(async (search = "", priorOffer: CatalogStoreOffer | null = null) => {
     setLoading(true);
@@ -441,6 +442,11 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
     };
     const state: StoreOfferPublicationState = existingOffer?.publicationState ?? "draft";
     const updateFacts: UpdateStoreOfferRequest = { priceMinor, availability: offerDraft.available, publicationState: state, quantityPolicy, quantityMinBaseUnits: min, quantityMaxBaseUnits: max, quantityStepBaseUnits: step, pricingBasis, pricingUnitBaseUnits: pricingUnit, inventoryPolicy, inventoryOnHandBaseUnits: inventory };
+    const offerSignature = JSON.stringify([caseId, productFacts, offerDraft.available]);
+    const createAttempt = offerCreateAttempt.current?.signature === offerSignature
+      ? offerCreateAttempt.current
+      : { signature: offerSignature, ...idempotency("offer_create") };
+    if (!existingOffer) offerCreateAttempt.current = createAttempt;
     setBusy(true);
     setError("");
     setNotice("");
@@ -451,9 +457,11 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
         const attempt = idempotency("offer_update");
         offer = (await fieldClient().updateFieldInitialCatalogOffer(token, caseId, existingOffer.offerId, updateFacts, existingOffer.version, attempt.idempotencyKey, attempt.correlationID)).offer;
       } else {
-        const attempt = idempotency("offer_create");
-        const created = await fieldClient().createFieldCatalogOffer(token, caseId, productFacts, attempt.idempotencyKey, attempt.correlationID);
+        const created = await fieldClient().createFieldCatalogOffer(token, caseId, productFacts, createAttempt.idempotencyKey, createAttempt.correlationID);
         offer = created.offer;
+        offerCreateAttempt.current = null;
+        setSnapshot((current) => current ? { ...current, offers: [offer, ...current.offers.filter((item) => item.offerId !== offer.offerId)] } : current);
+        setExistingOffer(offer);
         if (!offerDraft.available) {
           const followUp = idempotency("offer_availability");
           offer = (await fieldClient().updateFieldInitialCatalogOffer(token, caseId, offer.offerId, { ...updateFacts, publicationState: "draft" }, offer.version, followUp.idempotencyKey, followUp.correlationID)).offer;
@@ -465,7 +473,8 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
       setNotice("حُفظ عرض الإعداد الأولي وسُجلت قرارات السعر والتوافر.");
     } catch (cause) {
       console.warn("DSH Field initial StoreOffer save failed", cause);
-      setError(messageFromError(cause) + " أعد قراءة الكتالوج للتأكد من الحالة قبل إعادة المحاولة.");
+      if (!isOutcomeUncertain(cause)) offerCreateAttempt.current = null;
+      setError(messageFromError(cause) + (isOutcomeUncertain(cause) ? " أعد قراءة الكتالوج للتأكد من الحالة، أو أعد المحاولة بنفس البيانات؛ لا ننشئ عرضًا جديدًا بمفتاح مختلف." : " أعد قراءة الكتالوج للتأكد من الحالة قبل إعادة المحاولة."));
     } finally {
       setBusy(false);
     }
