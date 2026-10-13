@@ -10,7 +10,7 @@ import { ActivityIndicator, Image, Keyboard, ScrollView, Text, TextInput, useWin
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
-import { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, fieldSubmitIdempotencyPayload, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain, submitFieldCaseWithReadback } from "./field-draft-readback";
+import { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, fieldReviewPhotoUploadConfirmed, fieldSubmitIdempotencyPayload, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain, submitFieldCaseWithReadback } from "./field-draft-readback";
 import { fieldAdmissionActionability } from "./field-eligibility";
 import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
 import { getFieldJoiningRequirements } from "./field-joining-readiness";
@@ -596,7 +596,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   }
 
   async function uploadReviewPhoto(current: JoiningCaseResponse, photo: DshImageUploadInput): Promise<boolean> {
-    const attempt = pendingReviewPhotoAttempt?.caseID === current.case.id && pendingReviewPhotoAttempt.version === current.case.version
+    const attempt = pendingReviewPhotoAttempt?.caseID === current.case.id
       ? pendingReviewPhotoAttempt
       : { caseID: current.case.id, version: current.case.version, key: "field_review_photo_" + Crypto.randomUUID(), correlation: "field_review_corr_" + Crypto.randomUUID() };
     setPendingReviewPhotoAttempt(attempt);
@@ -604,7 +604,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       const token = await getUsableIdentityAccessToken();
       const saved = await fieldClient().uploadFieldJoiningCaseReviewPhoto(token, attempt.caseID, photo, attempt.version, attempt.key, attempt.correlation);
       const canonical = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID);
-      if (!saved.case.reviewPhotoUploaded || !canonical.case.reviewPhotoUploaded) throw new Error("REVIEW_PHOTO_UNCONFIRMED");
+      if (!fieldReviewPhotoUploadConfirmed(saved.case, canonical.case, attempt.caseID, attempt.version)) throw new Error("REVIEW_PHOTO_UNCONFIRMED");
       setCreatedCase(canonical);
       setReviewPhoto(null);
       setPendingReviewPhotoAttempt(null);
@@ -613,8 +613,8 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       try {
         const token = await getUsableIdentityAccessToken();
         const latest = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID);
-        setCreatedCase(latest);
-        if (latest.case.reviewPhotoUploaded) { setReviewPhoto(null); setPendingReviewPhotoAttempt(null); return true; }
+        if (latest.case.id === attempt.caseID && latest.case.origin === "field") setCreatedCase(latest);
+        // The boolean may refer to an older photo; retain this attempt for safe replay.
       } catch (readError) {
         console.warn("DSH optional review photo readback unavailable", readError);
       }

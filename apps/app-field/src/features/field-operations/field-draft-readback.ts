@@ -131,3 +131,15 @@ export async function submitFieldCaseWithReadback(
     return { kind: "unconfirmed" };
   }
 }
+
+export function fieldReviewPhotoUploadConfirmed(
+  uploaded: JoiningCaseView,
+  canonical: JoiningCaseView,
+  caseID: string,
+  expectedVersion: number,
+): boolean {
+  return uploaded.id === caseID && canonical.id === caseID &&
+    uploaded.origin === "field" && canonical.origin === "field" &&
+    uploaded.version > expectedVersion && canonical.version >= uploaded.version &&
+    uploaded.reviewPhotoUploaded && canonical.reviewPhotoUploaded;
+}
