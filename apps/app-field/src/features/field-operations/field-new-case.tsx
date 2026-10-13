@@ -418,8 +418,14 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         setError("حُفظت المسودة. أكّد حق عرض شعار المتجر لإكمال رفعه.");
       }
       if (reviewPhoto) {
-        const latest = await fieldClient().readOwnFieldJoiningCase(token, canonical.case.id);
-        if (!await uploadReviewPhoto(latest, reviewPhoto)) optionalMediaUnconfirmed = true;
+        try {
+          const latest = await fieldClient().readOwnFieldJoiningCase(token, canonical.case.id);
+          if (!await uploadReviewPhoto(latest, reviewPhoto)) optionalMediaUnconfirmed = true;
+        } catch (cause) {
+          console.warn("DSH Field optional review-photo preflight unavailable", cause);
+          optionalMediaUnconfirmed = true;
+          setError("حُفظت المسودة، لكن تعذر التحقق من رفع الصورة الداخلية الاختيارية. يمكنك إرسال الطلب دونها.");
+        }
       }
       if (submitAfterSave) {
         const latest = await fieldClient().readOwnFieldJoiningCase(token, canonical.case.id);
