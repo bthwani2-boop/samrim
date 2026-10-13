@@ -32,14 +32,17 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
   const [error, setError] = useState("");
   const [errorStatus, setErrorStatus] = useState(0);
   const [actionError, setActionError] = useState("");
+  const [actionNeedsReadback, setActionNeedsReadback] = useState(false);
   const [notice, setNotice] = useState("");
 
   const load = useCallback(async (): Promise<boolean> => {
     setLoading(true);
+    setOperation(null);
+    setNotice("");
     setError("");
     setErrorStatus(0);
     try {
-      const response = await fetch(`/api/operations/${encodeURIComponent(orderId)}`, { cache: "no-store" });
+      const response = await fetch(`/api/operations/${encodeURIComponent(orderId)}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
       if (!response.ok) {
         setErrorStatus(response.status);
         setError(await operationResponseMessage(response));
@@ -47,10 +50,17 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
         return false;
       }
       const body = await response.json() as { operation?: OperatorOperation };
-      setOperation(body.operation ?? null);
-      return body.operation !== undefined;
+      if (!body?.operation || body.operation.order?.id !== orderId) {
+        setError("استجابة تفاصيل الطلب غير صالحة. أعد القراءة.");
+        return false;
+      }
+      setOperation(body.operation);
+      setActionNeedsReadback(false);
+      setActionError("");
+      return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذرت قراءة تفاصيل الطلب.");
+      const timedOut = cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError");
+      setError(timedOut ? "استغرقت قراءة تفاصيل الطلب وقتًا طويلًا. أعد المحاولة." : cause instanceof Error ? cause.message : "تعذرت قراءة تفاصيل الطلب.");
       return false;
     } finally {
       setLoading(false);
@@ -73,11 +83,12 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
   }, [queryString]);
 
   async function runAction() {
-    if (!operation || busy) return;
+    if (!operation || busy || loading || actionNeedsReadback) return;
     const { order, assignment } = operation;
     const action = resolveOperatorAction({ state: order.state, assignment });
     if (!action) return;
     setBusy(true);
+    setActionNeedsReadback(true);
     setActionError("");
     setNotice("");
     try {
@@ -92,14 +103,22 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
         }),
       });
       if (!response.ok) {
-        setActionError(response.status === 409 ? "تغيرت حالة الطلب منذ فتحه. أعد قراءة الحالة قبل اتخاذ قرار آخر." : await operationResponseMessage(response));
+        const message = response.status === 409 ? "تغيرت حالة الطلب منذ فتحه." : await operationResponseMessage(response);
+        const verified = await load();
+        setActionError(verified
+          ? `${message} تمت إعادة قراءة الحالة؛ راجعها قبل محاولة أخرى.`
+          : `${message} تعذرت إعادة قراءة الحالة؛ لن يُعاد إرسال الإجراء قبل نجاح القراءة.`);
         return;
       }
       const readbackSucceeded = await load();
       if (readbackSucceeded) setNotice("تم تحديث حالة الطلب بعد إعادة قراءتها من المصدر التشغيلي.");
       else setActionError("أُرسل الإجراء، لكن تعذرت إعادة قراءة الحالة لتأكيد النتيجة. أعد القراءة قبل اتخاذ قرار آخر.");
     } catch (cause) {
-      setActionError(isRequestFailure(cause) ? cause.message : "تعذر تنفيذ الإجراء.");
+      const message = isRequestFailure(cause) ? cause.message : "تعذر تنفيذ الإجراء.";
+      const verified = await load();
+      setActionError(verified
+        ? `${message} لم نتأكد من نتيجة الإجراء؛ راجع الحالة المعادة قبل إعادة المحاولة.`
+        : `${message} لم نتأكد من النتيجة وتعذرت إعادة القراءة؛ لن يُعاد إرسال الإجراء قبل التحقق.`);
     } finally {
       setBusy(false);
     }
@@ -122,7 +141,7 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
       </nav>
 
       <div className="order-detail-toolbar">
-        {action ? <button type="button" className={`button ${action === "recover" ? "button-secondary" : "button-primary"}`} onClick={() => void runAction()} disabled={busy || loading}>{busy ? "جارٍ تنفيذ الإجراء…" : operationActionLabel(action)}</button> : <span className="muted">لا يتطلب هذا الطلب إجراءً مباشرًا من المشغل.</span>}
+        {action ? <button type="button" className={`button ${action === "recover" ? "button-secondary" : "button-primary"}`} onClick={() => void runAction()} disabled={busy || loading || actionNeedsReadback}>{busy ? "جارٍ تنفيذ الإجراء…" : operationActionLabel(action)}</button> : <span className="muted">لا يتطلب هذا الطلب إجراءً مباشرًا من المشغل.</span>}
         <button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading || busy}>{loading ? "جارٍ القراءة…" : "إعادة قراءة الحالة"}</button>
       </div>
 
