@@ -3,11 +3,12 @@ import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSkeleton, BthwaniSurfac
 import { createDshMobileClient, formatMoney, formatOrderDate, fulfillmentModeLabel, paymentStateLabel, type Cart, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { isClientActorScopeCurrent } from "./order-session-scope";
 
-type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order> } | { kind: "error" } | { kind: "auth_required" };
+type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string } | { kind: "error" } | { kind: "auth_required" };
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -17,12 +18,19 @@ function baseUrl(): string {
 
 const client = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 
+function hasCurrentOrdersActor(actorID: string): boolean {
+  const session = currentIdentityState();
+  return session.kind === "authenticated" && isClientActorScopeCurrent(actorID, session.identity.subject.trim());
+}
+
 export default function ClientOrders() {
   const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OrdersState>({ kind: "loading" });
   const [identityState, setIdentityState] = useState(currentIdentityState);
+  const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
+  const loadSequence = useRef(0);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
   const [fulfillmentFilter, setFulfillmentFilter] = useState<"all" | "delivery" | "pickup">("all");
@@ -30,18 +38,27 @@ export default function ClientOrders() {
   const [repeatError, setRepeatError] = useState("");
 
   const load = useCallback(async (preserveCurrent = false) => {
+    const sequence = ++loadSequence.current;
+    const session = currentIdentityState();
+    if (session.kind !== "authenticated" || !session.identity.subject.trim()) { setState({ kind: "auth_required" }); return; }
+    const actorID = session.identity.subject.trim();
     if (preserveCurrent) setRefreshing(true);
     else setState({ kind: "loading" });
     setRefreshError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      setState({ kind: "ready", orders: (await client().listClientOrders(token, 50)).orders });
+      const response = await client().listClientOrders(token, 50);
+      const current = currentIdentityState();
+      if (sequence !== loadSequence.current || current.kind !== "authenticated" || !isClientActorScopeCurrent(actorID, current.identity.subject.trim())) return;
+      setState({ kind: "ready", orders: response.orders, actorID });
     } catch (error) {
       console.error("DSH client orders read failed", error);
-      if (preserveCurrent) setRefreshError("تعذر تحديث الطلبات. ما زالت القائمة الحالية معروضة.");
+      const current = currentIdentityState();
+      if (sequence !== loadSequence.current || current.kind !== "authenticated" || !isClientActorScopeCurrent(actorID, current.identity.subject.trim())) return;
+      if (preserveCurrent) setRefreshError("تعذر تحديث الطلبات. أعد القراءة قبل تنفيذ أي إجراء.");
       else setState({ kind: "error" });
     } finally {
-      setRefreshing(false);
+      if (sequence === loadSequence.current) setRefreshing(false);
     }
   }, []);
 
@@ -51,12 +68,14 @@ export default function ClientOrders() {
   }, [fulfillmentFilter, state]);
 
   const repeatOrder = useCallback(async (order: Order) => {
-    if (repeatingOrderID || !order.lines.length) return;
+    if (state.kind !== "ready" || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID) || repeatingOrderID || !order.lines.length) return;
+    const actorID = state.actorID;
     setRepeatingOrderID(order.id);
     setRepeatError("");
     let appliedCount = 0;
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrdersActor(actorID)) return;
       let cart: Cart | null = null;
       try {
         cart = (await client().readOpenCart(token, order.storeId)).cart;
@@ -65,6 +84,7 @@ export default function ClientOrders() {
         if (!missingCart) throw error;
       }
 
+      if (!hasCurrentOrdersActor(actorID)) return;
       const plan = order.lines.map((line) => {
         const existing = cart?.lines.find((cartLine) => cartLine.storeOfferId === line.storeOfferId);
         if (existing && !sameIDs(existing.selectedModifierOptionIds, line.selectedModifierOptionIds)) {
@@ -85,6 +105,7 @@ export default function ClientOrders() {
       let expectedVersion = cart?.version ?? 0;
       for (const item of plan) {
         if (item.error) continue;
+        if (!hasCurrentOrdersActor(actorID)) return;
         const response = await client().upsertCartLine(token, {
           storeId: order.storeId,
           storeOfferId: item.storeOfferId,
@@ -94,26 +115,32 @@ export default function ClientOrders() {
         expectedVersion = response.cart.version;
         appliedCount += 1;
       }
+      if (!hasCurrentOrdersActor(actorID)) return;
       router.push(`/cart/${encodeURIComponent(order.storeId)}?fulfillmentMode=${encodeURIComponent(order.fulfillmentMode)}` as Href);
     } catch (error) {
       console.error("DSH client order repeat failed", error);
+      if (!hasCurrentOrdersActor(actorID)) return;
       setRepeatError(appliedCount ? `تعذر إكمال التكرار؛ أُضيف ${appliedCount} من ${order.lines.length} منتجات. راجع السلة قبل المتابعة.` : "تعذر تكرار الطلب. قد يتغير توفر المنتجات أو خياراتها؛ حدّث القائمة وحاول مجددًا.");
     } finally {
       setRepeatingOrderID("");
     }
-  }, [repeatingOrderID, router]);
+  }, [activeActorID, repeatingOrderID, router, state]);
 
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
 
   useEffect(() => {
-    if (identityState.kind !== "authenticated") {
+    if (!activeActorID) {
+      loadSequence.current += 1;
       setState({ kind: "auth_required" });
       setRefreshError("");
       return;
     }
     void load();
-  }, [identityState.kind, load]);
+  }, [activeActorID, load]);
 
+  if (state.kind === "ready" && !isClientActorScopeCurrent(state.actorID, activeActorID)) {
+    return <View style={styles.state} accessibilityLabel="جارٍ التحقق من صاحب الطلبات"><BthwaniSkeleton height={112} /><Text style={styles.muted}>جارٍ التحقق من الجلسة وملكية الطلبات…</Text></View>;
+  }
   if (state.kind === "auth_required") {
     return <View style={styles.state}><BthwaniIcon name="account" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>سجّل الدخول لمتابعة طلباتك</Text><Text style={styles.muted}>ستظهر طلباتك وحالاتها هنا بعد تسجيل الدخول.</Text><BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/orders" as Href)} /></View>;
   }
