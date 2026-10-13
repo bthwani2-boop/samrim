@@ -59,7 +59,7 @@ export function EmployeeDirectory() {
   }, [applied, cursor]);
 
   useEffect(() => { void load(); }, [load]);
-  useReadOnReturn(() => load(), !loading && !saving && !formOpen && !selected);
+  useReadOnReturn(() => load(), !loading && !saving && !formOpen && !fileOpen && !fileDirty);
 
   useEffect(() => {
     if (fileOpen && selected && !fileRef.current?.open) fileRef.current?.showModal();

@@ -272,7 +272,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       if (code === "SERVICE_CITY_UNAVAILABLE") {
         setError("مدينة الخدمة لم تعد نشطة. أعد قراءة المدن واختر مدينة أخرى قبل إعادة الإرسال.");
       } else if (code === "VERTICAL_UNAVAILABLE") {
-        setError("النشاط التجاري لم يعد نشطًا. أعد قراءة الأنشطة واختر فئة أخرى قبل إعادة الإرسال.");
+        setError("النشاط التجاري لم يعد نشطًا. أعد قراءة الأنشطة واختر نشاطًا آخر قبل إعادة الإرسال.");
       } else if (code === "COMMERCIAL_STORE_TYPE_UNAVAILABLE") {
         setError("نوع المتجر لم يعد نشطًا لهذا النشاط التجاري. أعد قراءة الأنواع واختر نوعًا متاحًا.");
       } else if (code === "VERSION_CONFLICT" || code === "STATE_CONFLICT") {

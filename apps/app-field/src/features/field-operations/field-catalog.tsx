@@ -384,6 +384,10 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
       ...(resolution?.outcome === "UNKNOWN_IDENTIFIER" && identifier.trim() ? { identifierType: identifierType ?? null, identifierValue: identifier.trim() } : {}),
     };
     const signature = JSON.stringify(request);
+    if (productCreateAttempt.current && productCreateAttempt.current.signature !== signature) {
+      setError("لا تزال نتيجة إنشاء المنتج السابق غير مؤكدة. أعد محاولة الطلب نفسه دون تغيير البيانات.");
+      return;
+    }
     const attempt = productCreateAttempt.current?.signature === signature
       ? productCreateAttempt.current
       : { signature, ...idempotency("product") };
@@ -647,18 +651,19 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   const showProposalEditor = Boolean(activeProposal) || canProposeFromUnknownBarcode || proposalMutationAttempt?.kind === "create";
   const proposalReadOnly = Boolean(activeProposal && activeProposal.state !== "draft" && activeProposal.state !== "needs_correction");
   const proposalFormLocked = busy || Boolean(proposalMutationAttempt) || proposalReadOnly;
+  const localProductFormLocked = busy || Boolean(productCreateAttempt.current);
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <Text style={styles.muted}>يظهر هذا المسار للحالة المعتمدة فقط. يتحقق النظام في كل قراءة وكتابة من الإسناد والارتباط بالمتجر وعدم إتمام إطلاق المتجر.</Text>
-    {snapshot ? <View style={styles.card}><Text style={styles.heading}>المتجر المعتمد</Text><Text style={styles.body}>المتجر: {snapshot.storeName}</Text><Text style={styles.body}>النشاط التجاري: {snapshot.verticalNameAr}</Text><BthwaniButton disabled={busy} label={localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER" ? "إغلاق إضافة المنتج" : "إضافة منتج لهذا المتجر دون باركود"} onPress={() => { setLocalProductFormOpen(!(localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER")); setIdentifier(""); setResolution(null); }} variant="secondary" /></View> : null}
+    {snapshot ? <View style={styles.card}><Text style={styles.heading}>المتجر المعتمد</Text><Text style={styles.body}>المتجر: {snapshot.storeName}</Text><Text style={styles.body}>النشاط التجاري: {snapshot.verticalNameAr}</Text><BthwaniButton disabled={localProductFormLocked} label={localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER" ? "إغلاق إضافة المنتج" : "إضافة منتج لهذا المتجر دون باركود"} onPress={() => { setLocalProductFormOpen(!(localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER")); setIdentifier(""); setResolution(null); }} variant="secondary" /></View> : null}
     {localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER" ? <View style={styles.card}>
       <Text style={styles.heading}>تسجيل منتج محلي</Text>
       <Text style={styles.muted}>ينشئ المنتج لهذا المتجر فقط. الباركود اختياري ولا يلزم لإضافة الوجبات والمنتجات الخاصة.</Text>
-      <TextInput accessibilityLabel="اسم المنتج المحلي" editable={!busy} onChangeText={setProductName} placeholder="اسم المنتج" value={productName} style={styles.input} />
-      <TextInput accessibilityLabel="وصف المنتج المحلي" editable={!busy} maxLength={4000} multiline onChangeText={setDescription} placeholder="وصف اختياري" value={description} style={styles.input} />
-      <TextInput accessibilityLabel="علامة المنتج المحلية" editable={!busy} onChangeText={setBrand} placeholder="العلامة التجارية (اختياري)" value={brand} style={styles.input} />
-      <TextInput accessibilityLabel="خيار المنتج" editable={!busy} onChangeText={setVariantTitle} placeholder="مثال: الحجم الكبير" value={variantTitle} style={styles.input} />
-      <View style={styles.row}>{(["DISCRETE", "MEASURED"] as const).map((value) => <BthwaniChip key={value} disabled={busy} label={measurementKindLabel(value)} onPress={() => { setMeasurementKind(value); setBaseUnit(value === "DISCRETE" ? "COUNT" : "GRAM"); }} selected={measurementKind === value} />)}</View>
-      <View style={styles.row}>{(measurementKind === "DISCRETE" ? ["COUNT"] as const : ["GRAM", "MILLILITER"] as const).map((value) => <BthwaniChip key={value} disabled={busy} label={baseUnitLabel(value)} onPress={() => setBaseUnit(value)} selected={baseUnit === value} />)}</View>
+      <TextInput accessibilityLabel="اسم المنتج المحلي" editable={!localProductFormLocked} onChangeText={setProductName} placeholder="اسم المنتج" value={productName} style={styles.input} />
+      <TextInput accessibilityLabel="وصف المنتج المحلي" editable={!localProductFormLocked} maxLength={4000} multiline onChangeText={setDescription} placeholder="وصف اختياري" value={description} style={styles.input} />
+      <TextInput accessibilityLabel="علامة المنتج المحلية" editable={!localProductFormLocked} onChangeText={setBrand} placeholder="العلامة التجارية (اختياري)" value={brand} style={styles.input} />
+      <TextInput accessibilityLabel="خيار المنتج" editable={!localProductFormLocked} onChangeText={setVariantTitle} placeholder="مثال: الحجم الكبير" value={variantTitle} style={styles.input} />
+      <View style={styles.row}>{(["DISCRETE", "MEASURED"] as const).map((value) => <BthwaniChip key={value} disabled={localProductFormLocked} label={measurementKindLabel(value)} onPress={() => { setMeasurementKind(value); setBaseUnit(value === "DISCRETE" ? "COUNT" : "GRAM"); }} selected={measurementKind === value} />)}</View>
+      <View style={styles.row}>{(measurementKind === "DISCRETE" ? ["COUNT"] as const : ["GRAM", "MILLILITER"] as const).map((value) => <BthwaniChip key={value} disabled={localProductFormLocked} label={baseUnitLabel(value)} onPress={() => setBaseUnit(value)} selected={baseUnit === value} />)}</View>
       <BthwaniButton busy={busy} disabled={busy || !productName.trim() || !variantTitle.trim()} label="إنشاء منتج المتجر" onPress={() => void createLocalProduct()} />
     </View> : null}
     {snapshot ? <View style={styles.card}>

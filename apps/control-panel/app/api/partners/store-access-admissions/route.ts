@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 50 || cursor.length > 512) return errorResponse("INVALID_INPUT", "invalid admission page", 400);
   try {
     const page = await listStoreAccessRoleAdmissionsForOperator({ operatorActorId: identity.subject }, limit, cursor);
-    if (!Array.isArray(page.items) || page.items.length > limit || typeof page.nextCursor !== "string") {
+    if (!Array.isArray(page.items) || page.items.length > limit || (page.nextCursor !== undefined && typeof page.nextCursor !== "string")) {
       return errorResponse("DSH_VERSION_MISMATCH", "bounded admission pages require the current DSH service version", 502);
     }
     return NextResponse.json(page, { headers: { "Cache-Control": "no-store" } });
