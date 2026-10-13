@@ -6,11 +6,11 @@ export default function NewPartnerCasePage() {
   return (
     <PartnerOperatorBoundary>
       <section className="workspace-page" aria-labelledby="new-partner-case-page-title">
-        <PageHeader id="new-partner-case-page-title" title="إنشاء حالة انضمام" />
+        <PageHeader id="new-partner-case-page-title" title="طلب انضمام جديد" />
         <JoiningCaseCreate />
       </section>
     </PartnerOperatorBoundary>
   );
 }
 
-export const metadata = { title: "إضافة شريك" };
+export const metadata = { title: "طلب انضمام جديد" };

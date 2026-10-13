@@ -1057,7 +1057,7 @@ test("Captain reenrollment goes through DSH eligibility and verifies the Identit
     expectedAdmissionVersion: 8,
     reason: "استعادة وصول الكابتن",
   });
-  await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
+  await expect(page.getByText("بانتظار التفعيل", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
@@ -1080,7 +1080,7 @@ test("Captain reenrollment reconciles a server error against the current Identit
   await fillActionReason(page, "تسوية نتيجة إعادة التسجيل");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
   await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة المعتمدة قبل أي محاولة أخرى");
-  await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
+  await expect(page.getByText("بانتظار التفعيل", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
@@ -1947,7 +1947,7 @@ test("operator resumes a canonical joining case from the DSH queue", async ({ pa
   await page.goto("/partners/joining");
   await page.getByRole("row", { name: /نشاط مستعاد/ }).getByRole("link", { name: "مراجعة الطلب" }).click();
   await expect(page.getByRole("status").first()).toContainText("الحالة: قيد المراجعة");
-  await expect(page.getByRole("status").first()).toContainText("نشاط مستعاد");
+  await expect(page.getByRole("region", { name: "ملخص طلب الانضمام" })).toContainText("نشاط مستعاد");
 });
 
 test("Partner reenrollment verifies DSH joining eligibility and the Identity readback", async ({ page }) => {
@@ -2004,7 +2004,7 @@ test("Partner reenrollment reconciles a server error against the current Identit
   await fillActionReason(page, "تسوية نتيجة إعادة التسجيل");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
   await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة المعتمدة قبل أي محاولة أخرى");
-  await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
+  await expect(page.getByText("بانتظار التفعيل", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
@@ -2029,7 +2029,7 @@ test("operator approves joining terms with the active settlement policy", async 
   });
 
   await page.goto("/partners/join_financial");
-  await expect(page.getByRole("heading", { name: "تفاصيل حالة انضمام الشريك" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "طلب انضمام الشريك" })).toBeVisible();
   await expect(page.getByText(/ستُعتمد شروط التسوية:/)).toBeVisible();
   await page.getByRole("button", { name: "اعتماد الحالة وإنشاء المتجر بالشروط النشطة" }).click();
 

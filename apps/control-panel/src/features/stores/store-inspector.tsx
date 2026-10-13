@@ -3,7 +3,8 @@
 import { fulfillmentModeLabel, publicationReadinessBlockedReasonLabel, publicationStateLabel, type StorePublicationResponse } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { partnerErrorMessage } from "./partner-error-message";
+import { partnerErrorMessage } from "../partners/partner-error-message";
+import { StoreLogo } from "./store-logo";
 
 export function StoreInspector({ storeId, detailHref, onClose }: Readonly<{ storeId: string; detailHref: string; onClose: () => void }>) {
   const [store, setStore] = useState<StorePublicationResponse["store"] | null>(null);
@@ -41,6 +42,7 @@ export function StoreInspector({ storeId, detailHref, onClose }: Readonly<{ stor
     {loading ? <p role="status">جارٍ قراءة النشر والجاهزية الحالية…</p> : null}
     {error ? <p className="identity-error" role="alert">{error}</p> : null}
     {store ? <>
+      <div className="partner-case-summary-main"><StoreLogo name={store.name} uri={store.storeProfileImage?.uri} /><div><strong>{store.name}</strong><p>{store.publicationReadiness.ready ? "جاهز للنشر" : publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason)}</p><Link href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}>{store.partnerName || "فتح ملف الشريك"}</Link></div></div>
       <dl className="store-detail-facts">
         <div><dt>حالة النشر الحالية</dt><dd>{publicationStateLabel(store.publicationState)}</dd></div>
         <div><dt>الشريك</dt><dd>{store.partnerName || "ملف الشريك"}</dd></div>

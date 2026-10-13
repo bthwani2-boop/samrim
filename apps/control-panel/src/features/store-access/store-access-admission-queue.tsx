@@ -1,8 +1,9 @@
 "use client";
 
 import type { StoreAccessGrant, StoreAccessGrantListResponse } from "@bthwani/dsh";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { partnerErrorMessage } from "./partner-error-message";
+import { partnerErrorMessage } from "../partners/partner-error-message";
 
 type AdmissionQueueState = "loading" | "ready" | "error";
 
@@ -81,7 +82,7 @@ export function StoreAccessAdmissionQueue() {
     {items.length ? <div className="joining-case-table-wrap"><table className="operations-table partner-registry-table">
       <caption className="visually-hidden">دعوات Store Access المنتظرة لاعتماد دور Partner</caption>
       <thead><tr><th scope="col">المتجر</th><th scope="col">هاتف المدعو</th><th scope="col">الصلاحيات المطلوبة</th><th scope="col">الحالة</th><th scope="col">انتهاء الدعوة</th><th scope="col">الإجراء</th></tr></thead>
-      <tbody>{items.map((grant) => <tr key={grant.id}><th scope="row">{grant.storeName}</th><td><bdi dir="ltr">{grant.delegatePhoneMasked ?? "غير متاح"}</bdi></td><td>{grant.permissions.map((permission) => permissionLabels[permission] ?? "صلاحية إضافية").join("، ")}</td><td>{stateLabel(grant.state)}</td><td><time dateTime={grant.expiresAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(grant.expiresAt))}</time></td><td><button type="button" className="button button-primary" disabled={Boolean(busyGrantId)} onClick={() => void admit(grant)}>{busyGrantId === grant.id ? "جارٍ التحقق والاعتماد…" : "اعتماد الدور"}</button></td></tr>)}</tbody>
+      <tbody>{items.map((grant) => <tr key={grant.id}><th scope="row"><Link href={`/partners/stores/${encodeURIComponent(grant.storeId)}`}>{grant.storeName}</Link></th><td><bdi dir="ltr">{grant.delegatePhoneMasked ?? "غير متاح"}</bdi></td><td>{grant.permissions.map((permission) => permissionLabels[permission] ?? "صلاحية إضافية").join("، ")}</td><td>{stateLabel(grant.state)}</td><td><time dateTime={grant.expiresAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(grant.expiresAt))}</time></td><td><button type="button" className="button button-primary" disabled={Boolean(busyGrantId)} onClick={() => void admit(grant)}>{busyGrantId === grant.id ? "جارٍ التحقق والاعتماد…" : "اعتماد الدور"}</button></td></tr>)}</tbody>
     </table></div> : null}
   </section>;
 }

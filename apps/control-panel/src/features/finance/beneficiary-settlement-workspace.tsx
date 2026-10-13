@@ -4,7 +4,7 @@ import { type BeneficiaryPayoutState, formatMoney, fulfillmentModeLabel, officia
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { downloadRegistryCsv } from "../partner-onboarding/registry-csv";
+import { downloadRegistryCsv } from "../shared/registry-csv";
 import { OfficialWalletDestinationManager } from "./official-wallet-destination-manager";
 import { usePageSelection } from "./use-page-selection";
 import { useWalletProviders, walletProviderLabel } from "../wallet-provider/use-wallet-providers";

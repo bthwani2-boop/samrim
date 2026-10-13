@@ -61,7 +61,7 @@ export function StoreTrash() {
   return <section className="access-card" aria-label="المتاجر المحذوفة">
     <div className="access-card-heading">
       <div><h2>المتاجر المحذوفة</h2><p className="muted">الاستعادة تعيد المتجر دون نشره تلقائيًا، وتحافظ على الطلبات والاتفاقيات والسجلات المالية.</p></div>
-      <Link className="button button-secondary" href="/partners/stores">سجل المتاجر</Link>
+      <Link className="button button-secondary" href="/partners">الشركاء والمتاجر</Link>
     </div>
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}
     {error ? <p className="identity-error" role="alert">{error}</p> : null}

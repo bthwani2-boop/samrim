@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { partnerErrorMessage } from "./partner-error-message";
 import { ActorLegalNameWorkspace } from "./actor-legal-name-workspace";
+import { StoreLogo } from "../stores/store-logo";
 type PartnerDetail = Readonly<{ partner: ActorRoleView; joiningCase: JoiningCaseView | null }>;
 type PartnerStoresPage = Readonly<{ stores: ReadonlyArray<PartnerManagedStore>; nextCursor?: string }>;
 type PartnerDetailTab = "profile" | "stores";
@@ -234,7 +235,22 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
   if (busy) statusActionLabel = "جارٍ التحديث والتحقق…";
 
   return <section className="workspace-page partner-detail-workspace" aria-labelledby="partner-detail-title">
-    <PageHeader id="partner-detail-title" title={partner?.phoneE164 ? <bdi dir="ltr">{partner.phoneE164}</bdi> : "تفاصيل الشريك"} actions={<Link className="button button-secondary" href="/partners">سجل الشركاء</Link>} />
+    <PageHeader id="partner-detail-title" title={detail?.joiningCase?.businessName || "ملف الشريك"} actions={<Link className="button button-secondary" href="/partners">الشركاء والمتاجر</Link>} />
+
+    {detail ? <section className="partner-case-summary" aria-label="ملخص حساب الشريك ومتجره">
+      <div className="partner-case-summary-main">
+        <StoreLogo name={detail.joiningCase?.firstStoreName || "الشريك"} uri={detail.joiningCase?.storeProfileImage?.uri} />
+        <div>
+          <h3>{detail.joiningCase?.ownerFullName || detail.joiningCase?.businessName || "حساب الشريك"}</h3>
+          <p><bdi dir="ltr">{detail.partner.phoneE164}</bdi> · {roleStatusLabel}</p>
+          {detail.joiningCase ? <p>{detail.joiningCase.firstStoreName === detail.joiningCase.businessName ? "متجر الانضمام مرتبط بهذا الحساب" : `متجر الانضمام: ${detail.joiningCase.firstStoreName}`}</p> : <p>لا توجد حالة انضمام مرتبطة في القراءة الحالية.</p>}
+        </div>
+      </div>
+      <div className="partner-case-summary-actions">
+        {detail.joiningCase?.store?.id ? <Link className="button button-secondary" href={`/partners/stores/${encodeURIComponent(detail.joiningCase.store.id)}`}>فتح المتجر</Link> : null}
+        <button type="button" className="button button-secondary" onClick={() => navigateTab("stores")}>عرض جميع المتاجر</button>
+      </div>
+    </section> : null}
 
     <nav className="partner-detail-tabs" aria-label="أقسام ملف الشريك">
       <button type="button" aria-current={activeTab === "profile" ? "page" : undefined} onClick={() => navigateTab("profile")}>الحساب والانضمام</button>

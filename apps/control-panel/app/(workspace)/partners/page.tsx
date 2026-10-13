@@ -1,16 +1,24 @@
-import { PageHeader } from "../../../src/shell/page-header";
 import Link from "next/link";
-import { PartnerDirectory } from "../../../src/features/partner-onboarding/partner-directory";
+import { PageHeader } from "../../../src/shell/page-header";
+import { PartnerDirectory } from "../../../src/features/partners/partner-directory";
 import { PartnerOperatorBoundary } from "../../../src/features/partner-onboarding/partner-workspace";
-export default function PartnersPage() {
+import { StoreRegistry } from "../../../src/features/stores/store-registry";
+
+export default async function PartnersPage({ searchParams }: Readonly<{ searchParams: Promise<{ view?: string }> }>) {
+  const params = await searchParams;
+  const accounts = params.view === "accounts";
   return (
     <PartnerOperatorBoundary>
-      <section className="workspace-page" aria-labelledby="partners-page-title">
-        <PageHeader id="partners-page-title" title="الشركاء" actions={<Link className="button button-primary" href="/partners/new">إضافة شريك</Link>} />
-        <PartnerDirectory />
-      </section>
+      {accounts ? (
+        <section className="workspace-page" aria-labelledby="partners-page-title">
+          <PageHeader id="partners-page-title" title="حسابات الشركاء" actions={<Link className="button button-secondary" href="/partners">العودة إلى الشركاء والمتاجر</Link>} />
+          <PartnerDirectory />
+        </section>
+      ) : (
+        <StoreRegistry />
+      )}
     </PartnerOperatorBoundary>
   );
 }
 
-export const metadata = { title: "الشركاء" };
+export const metadata = { title: "الشركاء والمتاجر" };

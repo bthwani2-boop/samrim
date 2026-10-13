@@ -48,6 +48,9 @@ function workspaceNavigationContext(pathname: string, identity: ActorIdentity | 
 
 function WorkspaceBreadcrumbs({ pathname, identity }: Readonly<{ pathname: string; identity: ActorIdentity | null }>) {
   const { destination: current, child } = workspaceNavigationContext(pathname, identity);
+  const parentChild = currentWorkspaceChild(pathname, current);
+  const detailLabel = dynamicWorkspaceRouteLabel(pathname);
+  const showParentChild = Boolean(detailLabel && parentChild && parentChild.href !== current.href && parentChild.href !== pathname);
   const isHome = current.href === "/workspace";
 
   return (
@@ -61,7 +64,8 @@ function WorkspaceBreadcrumbs({ pathname, identity }: Readonly<{ pathname: strin
             <li>
               {child ? <Link href={current.href}>{current.label}</Link> : <span aria-current="page">{current.label}</span>}
             </li>
-            {child ? <li aria-current="page"><span>{child.label}</span></li> : null}
+            {showParentChild && parentChild ? <li><Link href={parentChild.href}>{parentChild.label}</Link></li> : null}
+            {child ? <li aria-current="page"><span>{detailLabel || child.label}</span></li> : null}
           </>
         )}
       </ol>
@@ -314,13 +318,21 @@ function WorkspaceNavigation({
   navRef,
   onClose,
   open,
-  pathname
+  pathname,
+  compact,
+  onToggleCompact,
+  dense,
+  onToggleDensity
 }: Readonly<{
   firstLinkRef: RefObject<HTMLAnchorElement | null>;
   navRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   open: boolean;
   pathname: string;
+  compact: boolean;
+  onToggleCompact: () => void;
+  dense: boolean;
+  onToggleDensity: () => void;
 }>) {
   const { state } = useSession();
   const visibleDestinations = state.kind === "authenticated"
@@ -331,6 +343,8 @@ function WorkspaceNavigation({
     <nav ref={navRef} id="workspace-navigation" className="workspace-nav" data-open={open} aria-label="تنقل مساحة المشغل">
       <div className="workspace-nav-header">
         <p className="workspace-nav-label">مساحة المشغل</p>
+        <button type="button" className="workspace-nav-compact-toggle" onClick={onToggleDensity} aria-label={dense ? "عرض الصفوف المريح" : "تكثيف صفوف الجداول"} title={dense ? "عرض الصفوف المريح" : "تكثيف صفوف الجداول"} aria-pressed={dense}>≡</button>
+        <button type="button" className="workspace-nav-compact-toggle" onClick={onToggleCompact} aria-label={compact ? "توسيع الشريط الجانبي" : "تصغير الشريط الجانبي"} title={compact ? "توسيع الشريط الجانبي" : "تصغير الشريط الجانبي"} aria-pressed={compact}><span aria-hidden="true">{compact ? "»" : "«"}</span></button>
         <button type="button" className="workspace-nav-close" onClick={onClose} aria-label="إغلاق مسارات العمل">×</button>
       </div>
       {visibleDestinations.map((destination, index) => {
@@ -342,19 +356,21 @@ function WorkspaceNavigation({
                 ref={index === 0 ? firstLinkRef : undefined}
                 className="workspace-nav-link"
                 href={destination.href}
+                title={destination.label}
+                aria-label={destination.label}
                 aria-current={current ? (activeChild || pathname !== destination.href ? "location" : "page") : undefined}
                 onClick={onClose}
               >
-                <WorkspaceIcon href={destination.href} />{destination.label}
+                <WorkspaceIcon href={destination.href} /><span className="workspace-nav-link-label">{destination.label}</span>
               </Link>
               {current && destination.children.length > 0 ? (
                 <ul className="workspace-nav-children" aria-label={`مسارات ${destination.label}`}>
                   {destination.children.filter((child) => child.showInWorkspaceNavigation !== false).map((child) => {
-                    const childCurrent = isCurrentWorkspacePath(pathname, child.href);
+                    const childCurrent = activeChild?.href === child.href;
                     return (
                       <li key={child.href}>
-                        <Link className="workspace-nav-child-link" href={child.href} aria-current={childCurrent ? "page" : undefined} onClick={onClose}>
-                          {child.label}
+                        <Link className="workspace-nav-child-link" href={child.href} title={child.label} aria-label={child.label} aria-current={childCurrent ? "page" : undefined} onClick={onClose}>
+                          <span className="workspace-nav-child-compact-marker" aria-hidden="true">•</span><span className="workspace-nav-child-label">{child.label}</span>
                         </Link>
                       </li>
                     );
@@ -377,6 +393,22 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
   const navFirstLinkRef = useRef<HTMLAnchorElement>(null);
   const [localSignOut, setLocalSignOut] = useState(false);
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const [navigationCompact, setNavigationCompact] = useState(false);
+  const [tableDense, setTableDense] = useState(false);
+  useEffect(() => {
+    try { setNavigationCompact(window.localStorage.getItem("bthwani-operator-compact-nav") === "true"); } catch { /* storage unavailable */ }
+    try { setTableDense(window.localStorage.getItem("bthwani-operator-dense-tables") === "true"); } catch { /* storage unavailable */ }
+  }, []);
+  const toggleTableDensity = () => setTableDense((current) => {
+    const next = !current;
+    try { window.localStorage.setItem("bthwani-operator-dense-tables", String(next)); } catch { /* storage unavailable */ }
+    return next;
+  });
+  const toggleNavigationCompact = () => setNavigationCompact((current) => {
+    const next = !current;
+    try { window.localStorage.setItem("bthwani-operator-compact-nav", String(next)); } catch { /* storage unavailable */ }
+    return next;
+  });
   const { state, busy, restore, logout } = useSession();
 
   useEffect(() => { if (state.kind === "signed_out" && !state.notice && !localSignOut) router.replace("/"); }, [localSignOut, router, state]);
@@ -458,9 +490,9 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
   return (
     <ControlShell className="workspace-app-shell" surface="workspace" footer={null} header={<WorkspaceHeader busy={busy} navOpen={navigationOpen} navTriggerRef={navTriggerRef} onLogout={() => { setLocalSignOut(true); void logout(); }} onOpenNavigation={() => setNavigationOpen(true)} pathname={pathname} />}>
       <a className="skip-link" href="#workspace-main">تخطي إلى المحتوى الرئيسي</a>
-      <div className="workspace-layout">
+      <div className="workspace-layout" data-nav-compact={navigationCompact ? "true" : "false"} data-table-density={tableDense ? "compact" : "comfortable"}>
         {navigationOpen ? <button type="button" className="workspace-nav-backdrop" aria-label="إغلاق مسارات العمل" onClick={closeNavigation} /> : null}
-        <WorkspaceNavigation firstLinkRef={navFirstLinkRef} navRef={navRef} onClose={closeNavigation} open={navigationOpen} pathname={pathname} />
+        <WorkspaceNavigation firstLinkRef={navFirstLinkRef} navRef={navRef} onClose={closeNavigation} open={navigationOpen} pathname={pathname} compact={navigationCompact} onToggleCompact={toggleNavigationCompact} dense={tableDense} onToggleDensity={toggleTableDensity} />
         <main ref={mainRef} id="workspace-main" className="workspace-main" tabIndex={-1}>
           {destinationAccessGranted ? children : <section className="collection-state" role="status"><strong>الوصول إلى هذه المساحة غير مفعّل</strong><p>تحتاج إلى صلاحية النطاق المناسبة من إدارة صلاحيات المشغّلين.</p><Link className="button button-secondary" href="/workspace">العودة إلى الرئيسية</Link></section>}
         </main>

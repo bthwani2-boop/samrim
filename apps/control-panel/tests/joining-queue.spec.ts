@@ -51,7 +51,7 @@ test("joining queue browses 37 records with server cursor, search, review stage 
   await page.getByRole("button", { name: "السابق" }).click();
   await expect(table.locator("tbody tr")).toHaveCount(25);
 
-  await page.getByRole("button", { name: "للمراجعة", exact: true }).click();
+  await page.getByRole("combobox", { name: "حالة الطلب" }).selectOption("submitted");
   await expect(page).toHaveURL(/state=submitted/);
   await expect(table.locator("tbody tr")).toHaveCount(8);
   await expect(table.getByRole("link", { name: /مراجعة الطلب/ })).toHaveCount(8);
@@ -102,7 +102,7 @@ test("joining queue keeps identity and action accessible when the table overflow
   await expect(table.getByRole("link", { name: /مراجعة الطلب/ }).first()).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("searchbox", { name: "ابحث عن طلب" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "للمراجعة", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "حالة الطلب" })).toBeVisible();
   await expect(table.locator("tbody tr")).toHaveCount(25);
 });
 

@@ -1,4 +1,4 @@
-import { StoreWorkspace } from "../../../../../src/features/partner-onboarding/store-workspace";
+import { StoreWorkspace } from "../../../../../src/features/stores/store-workspace";
 
 export default async function PartnerStorePage({ params }: { params: Promise<{ storeId: string }> }) {
   const { storeId } = await params;

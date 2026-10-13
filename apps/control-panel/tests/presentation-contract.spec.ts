@@ -32,8 +32,9 @@ async function stubPresentationReads(page: Page) {
     const responses: Record<string, unknown> = {
       "/api/auth/session": { identity },
       "/api/notifications": { notifications: [], unreadCount: 0, nextCursor: "" },
-      "/api/partners/stores": { stores, nextCursor: "presentation-next-page" },
+      "/api/partners/registry": { rows: stores.map((store) => ({ kind: "store", store, partnerRole: null })), nextCursor: "presentation-next-page" },
       "/api/partners": { partners: [], nextCursor: "" },
+      "/api/partners/roster": { items: [], nextCursor: "" },
       "/api/partners/joining-cases": { cases: [], nextCursor: "" },
       "/api/operations": { operations: [], nextCursor: "" },
       "/api/finance/beneficiaries": { beneficiaries: [], nextCursor: "" },
@@ -151,12 +152,12 @@ for (const [device, viewport] of [["desktop", { width: 1368, height: 900 }], ["m
     test(`visual baseline: store registry ${device} ${theme}`, async ({ page }) => {
       await page.setViewportSize(viewport);
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-      await page.goto("/partners/stores");
+      await page.goto("/partners");
       // Linux runner and local Docker use different system-ui font aliases.
       // Pin a packaged Arabic-capable font for comparable Linux rendering.
       if (process.platform === "linux") await page.addStyleTag({ content: 'body { font-family: "FreeSerif", serif !important; }' });
       await expect(page.locator(".store-registry tbody tr")).toHaveCount(10);
-      await expect(page.getByRole("heading", { name: "المتاجر", level: 1, exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "الشركاء والمتاجر", level: 1, exact: true })).toBeVisible();
       // A 22px header trash/restore icon changed intentionally; keep the strict full-page baseline with a 256-pixel cap.
       await expect(page).toHaveScreenshot(`store-registry-${device}-${theme}.png`, { animations: "disabled", maxDiffPixels: 256 });
     });
@@ -173,7 +174,7 @@ test("store registry geometry is stable on direct load, client navigation and re
       buttonWidth: button.getBoundingClientRect().width, buttonHeight: button.getBoundingClientRect().height,
       toolbarWidth: toolbar.getBoundingClientRect().width };
   });
-  await page.goto("/partners/stores");
+  await page.goto("/partners");
   await expect(registry.locator("tbody tr")).toHaveCount(10);
   const direct = await readGeometry();
   expect(direct.buttonWidth).toBeLessThan(160);
@@ -183,7 +184,6 @@ test("store registry geometry is stable on direct load, client navigation and re
   await navigation.getByRole("link", { name: "العمليات", exact: true }).click();
   await expect(page.getByRole("heading", { name: "العمليات", exact: true, level: 1 })).toBeVisible();
   await navigation.getByRole("link", { name: "الشركاء", exact: true }).click();
-  await navigation.getByRole("link", { name: "المتاجر", exact: true }).click();
   await expect(registry.locator("tbody tr")).toHaveCount(10);
   expect(await readGeometry()).toEqual(direct);
   await page.reload();
@@ -204,14 +204,86 @@ test("settlement controls marked hidden stay hidden after visiting other finance
   const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
   await navigation.getByRole("link", { name: "حفظ النقد", exact: true }).click();
   await expect(page.getByRole("heading", { name: "حفظ النقد", exact: true, level: 1 })).toBeVisible();
-  await navigation.getByRole("link", { name: "مستحقات الشركاء", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "مستحقات الشركاء", exact: true, level: 1 })).toBeVisible();
+  await navigation.getByRole("link", { name: "المستحقات والتسويات", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "المستحقات والتسويات", exact: true, level: 1 })).toBeVisible();
   await assertHidden();
+});
+
+test("partners have one store-first directory and one approvals workspace", async ({ page }) => {
+  await page.goto("/partners");
+  const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
+  const children = navigation.locator(".workspace-nav-children");
+  const registry = children.getByRole("link", { name: "الشركاء والمتاجر", exact: true });
+  const approvals = children.getByRole("link", { name: "الطلبات والاعتمادات", exact: true });
+  await expect(children.getByRole("link")).toHaveCount(3);
+  await expect(children.getByRole("link", { name: "الميداني", exact: true })).toHaveAttribute("href", "/fields");
+  await expect(registry).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "الشركاء والمتاجر", level: 1 })).toBeVisible();
+  await expect(page.locator(".store-registry tbody tr")).toHaveCount(10);
+  await expect(page.locator(".store-registry tbody tr").first().getByRole("link", { name: "شريك العرض" })).toHaveAttribute("href", "/partners/actors/presentation-partner-0");
+
+  await expect(page.getByRole("link", { name: "حسابات الشركاء", exact: true })).toHaveCount(0);
+  await page.locator("#partner-registry-mode").selectOption("without_store");
+  await expect(page).toHaveURL(/mode=without_store/);
+  await page.goto("/partners");
+  await expect(registry).toHaveAttribute("aria-current", "page");
+
+  await approvals.click();
+  await expect(page).toHaveURL(/\/partners\/joining$/);
+  await expect(approvals).toHaveAttribute("aria-current", "page");
+  const requestViews = page.getByRole("navigation", { name: "نوع الطلب أو الاعتماد" });
+  await expect(requestViews.getByRole("link", { name: "طلبات الانضمام" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("link", { name: "طلب انضمام جديد" })).toHaveAttribute("href", "/partners/new");
+  await requestViews.getByRole("link", { name: "اعتمادات الوصول" }).click();
+  await expect(page).toHaveURL(/\/partners\/store-access$/);
+  await expect(approvals).toHaveAttribute("aria-current", "page");
+  await expect(requestViews.getByRole("link", { name: "اعتمادات الوصول" })).toHaveAttribute("aria-current", "page");
+});
+test("partner with two stores has two rows; identical business name is not repeated", async ({ page }) => {
+  await page.route("**/api/partners/registry?**", (route) => route.fulfill({
+    json: {
+      rows: [
+        { kind: "store", store: { ...stores[0], id: "same-name", name: "متجر واحد", partnerName: "متجر واحد", partnerActorId: "shared-partner" }, partnerRole: null },
+        { kind: "store", store: { ...stores[1], id: "second-store", name: "متجر ثان", partnerName: "متجر واحد", partnerActorId: "shared-partner" }, partnerRole: null },
+      ],
+      nextCursor: "",
+    },
+  }));
+  await page.goto("/partners");
+  const rows = page.locator(".store-registry tbody tr");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0).getByRole("link", { name: "متجر واحد" })).toHaveCount(1);
+  await expect(rows.nth(0).getByRole("link", { name: "ملف الشريك" })).toHaveAttribute("href", "/partners/actors/shared-partner");
+  await expect(rows.nth(1).getByRole("link", { name: "متجر واحد" })).toHaveAttribute("href", "/partners/actors/shared-partner");
+});
+
+test("legacy store registry link preserves public filters on canonical partner registry", async ({ page }) => {
+  await page.goto("/partners/stores?state=published&sort=updated_asc");
+  await expect(page).toHaveURL(/\/partners\?state=published&sort=updated_asc$/);
+  await expect(page.getByRole("heading", { name: "الشركاء والمتاجر", level: 1 })).toBeVisible();
+  await expect(page.locator("#partner-store-publication-filter")).toHaveValue("published");
+});
+test("finance settlement groups three existing scopes without merging their routes", async ({ page }) => {
+  await page.goto("/finance/beneficiary-settlement/partners");
+  const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
+  const financeChildren = navigation.locator(".workspace-nav-children");
+  await expect(financeChildren.getByRole("link", { name: "المستحقات والتسويات" })).toHaveAttribute("aria-current", "page");
+  await expect(financeChildren.getByRole("link", { name: "مستحقات الكباتن" })).toHaveCount(0);
+  const scopes = page.getByRole("navigation", { name: "نوع المستفيد" });
+  await expect(scopes.getByRole("link", { name: "الشركاء" })).toHaveAttribute("aria-current", "page");
+  await scopes.getByRole("link", { name: "الكباتن" }).click();
+  await expect(page).toHaveURL(/\/finance\/beneficiary-settlement\/captains$/);
+  await expect(scopes.getByRole("link", { name: "الكباتن" })).toHaveAttribute("aria-current", "page");
+  await scopes.getByRole("link", { name: "الميدان" }).click();
+  await expect(page).toHaveURL(/\/finance\/beneficiary-settlement\/field$/);
+  await expect(scopes.getByRole("link", { name: "الميدان" })).toHaveAttribute("aria-current", "page");
+  await page.goto("/finance/partner-earnings");
+  await expect(page).toHaveURL(/\/finance\/beneficiary-settlement\/partners$/);
 });
 
 test("only the current center owns one visible child navigation", async ({ page }) => {
   for (const [path, center, child] of [
-    ["/partners/stores", "الشركاء", "المتاجر"],
+    ["/partners", "الشركاء", "الشركاء والمتاجر"],
     ["/finance/cash-custody", "المالية", "حفظ النقد"],
     ["/catalog/products", "الكتالوج", "المنتجات"],
   ] as const) {
@@ -229,9 +301,9 @@ test("only the current center owns one visible child navigation", async ({ page 
 
 test("compact phone header keeps the page title and keyboard navigation usable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/partners/stores");
+  await page.goto("/partners");
   await expect(page.locator(".workspace-actor-context")).toBeHidden();
-  await expect(page.getByRole("heading", { name: "المتاجر", exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "الشركاء والمتاجر", exact: true, level: 1 })).toBeVisible();
 
   const toggle = page.getByRole("button", { name: "فتح مسارات العمل" });
   const navigation = page.locator("#workspace-navigation");
@@ -303,5 +375,51 @@ test("mobile partner and captain forms fit the page and open only on demand", as
   await expect(create.locator("#captain-candidate-name")).toBeHidden();
   await create.locator("summary").click();
   await expect(create.locator("#captain-candidate-name")).toBeVisible();
+  await expectNoOuterOverflow(page);
+});
+
+test("operator can collapse desktop navigation to icons without losing field or partner routes", async ({ page }) => {
+  await stubPresentationReads(page);
+  await page.setViewportSize({ width: 1360, height: 900 });
+  await page.goto("/partners");
+  const layout = page.locator(".workspace-layout");
+  const compact = page.getByRole("button", { name: "تصغير الشريط الجانبي" });
+  await expect(compact).toBeVisible();
+  await compact.click();
+  await expect(layout).toHaveAttribute("data-nav-compact", "true");
+  const nav = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
+  await expect(nav.getByRole("link", { name: "الشركاء" , exact: true })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "الميداني", exact: true })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "الشركاء والمتاجر", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "توسيع الشريط الجانبي" })).toBeVisible();
+  await page.reload();
+  await expect(layout).toHaveAttribute("data-nav-compact", "true");
+  await page.getByRole("button", { name: "توسيع الشريط الجانبي" }).click();
+  await expect(layout).toHaveAttribute("data-nav-compact", "false");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("button", { name: "تصغير الشريط الجانبي" })).toBeHidden();
+  await page.getByRole("button", { name: "فتح مسارات العمل" }).click();
+  await expect(nav.getByRole("link", { name: "الشركاء والمتاجر", exact: true })).toBeVisible();
+  await expectNoOuterOverflow(page);
+});
+
+test("operator may choose compact table density without changing mobile touch spacing", async ({ page }) => {
+  await stubPresentationReads(page);
+  await page.setViewportSize({ width: 1360, height: 900 });
+  await page.goto("/partners");
+  const layout = page.locator(".workspace-layout");
+  await expect(layout).toHaveAttribute("data-table-density", "comfortable");
+  const button = page.getByRole("button", { name: "تكثيف صفوف الجداول" });
+  await button.click();
+  await expect(layout).toHaveAttribute("data-table-density", "compact");
+  await expect(page.getByRole("button", { name: "عرض الصفوف المريح" })).toBeVisible();
+  const compactPadding = await page.locator(".operations-table tbody td").first().evaluate((cell) => getComputedStyle(cell).paddingTop);
+  await page.reload();
+  await expect(layout).toHaveAttribute("data-table-density", "compact");
+  await page.getByRole("button", { name: "عرض الصفوف المريح" }).click();
+  const comfortablePadding = await page.locator(".operations-table tbody td").first().evaluate((cell) => getComputedStyle(cell).paddingTop);
+  expect(parseFloat(compactPadding)).toBeLessThan(parseFloat(comfortablePadding));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("button", { name: "تكثيف صفوف الجداول" })).toBeHidden();
   await expectNoOuterOverflow(page);
 });

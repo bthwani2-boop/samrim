@@ -306,6 +306,9 @@ paths:
   /dsh/stores/{storeId}/publication:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1publication"
 
+  /dsh/operator/stores/partner-presence:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1stores~1partner-presence"
+
   /dsh/stores:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores"
 
@@ -1555,6 +1558,33 @@ components:
         nextCursor:
           type: string
 
+    PartnerStorePresenceRequest:
+      type: object
+      additionalProperties: false
+      required: [actorIds]
+      properties:
+        actorIds:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+
+    PartnerStorePresenceResponse:
+      type: object
+      additionalProperties: false
+      required: [actorIds]
+      properties:
+        actorIds:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+
     OperatorStoreSummary:
       type: object
       required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, commercialStoreTypeId, version, publicationState, fulfillmentModes, createdAt, updatedAt]
@@ -1568,6 +1598,14 @@ components:
           type: string
         partnerName:
           type: string
+        storeProfileImage:
+          $ref: "#/components/schemas/StoreProfileImage"
+          nullable: true
+        commercialStoreTypeNameAr:
+          type: string
+        deliveryOrigin:
+          $ref: "#/components/schemas/DeliveryOrigin"
+          nullable: true
         serviceCityName:
           type: string
         primaryVerticalName:

@@ -3,8 +3,8 @@
 import { type JoiningCaseListResponse, type JoiningCaseState, joiningCaseStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { partnerErrorMessage } from "./partner-error-message";
-import { downloadRegistryCsv } from "./registry-csv";
+import { partnerErrorMessage } from "../partners/partner-error-message";
+import { downloadRegistryCsv } from "../shared/registry-csv";
 type QueueState = "" | JoiningCaseState;
 type QueueSort = "created_asc" | "created_desc";
 type QueueHistory = Readonly<{ joiningCaseCursors?: ReadonlyArray<string> }>;
@@ -151,11 +151,8 @@ export function JoiningCaseQueue() {
   }
 
   return <section className="joining-case-queue" aria-label="طابور طلبات انضمام الشركاء">
-    <nav className="joining-case-status-nav" aria-label="تصفية طلبات الانضمام حسب المرحلة">
-      {stateOptions.map((option) => <button key={option.value || "all"} type="button" className={state === option.value ? "joining-case-status-tab is-active" : "joining-case-status-tab"} aria-pressed={state === option.value} onClick={() => navigate(option.value, appliedQuery, sort)}>{option.label}</button>)}
-    </nav>
-
     <div className="joining-case-queue-toolbar">
+      <label className="field-label" htmlFor="joining-case-state-filter">حالة الطلب<select id="joining-case-state-filter" value={state} onChange={(event) => navigate(event.target.value as QueueState, appliedQuery, sort)} disabled={busy}>{stateOptions.map((option) => <option key={option.value || "all"} value={option.value}>{option.label}</option>)}</select></label>
       <search className="joining-case-queue-search" aria-label="البحث في طلبات الانضمام">
         <form noValidate onSubmit={(event) => { event.preventDefault(); navigate(state, query.trim().slice(0, 128), sort); }}>
           <label className="field-label" htmlFor="joining-case-search">ابحث عن طلب<input id="joining-case-search" type="search" value={query} maxLength={128} onChange={(event) => setQuery(event.target.value)} placeholder="اسم الشريك أو المتجر أو رقم الهاتف" /></label>

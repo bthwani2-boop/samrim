@@ -1,6 +1,7 @@
 import { identityOperationPaths } from "./generated/identity-operations";
 import type {
   ActorIdentity,
+  ActorRoleReadBatchResponse,
   ActorRoleSearchPage,
   ActorRoleView,
   ActorType,
@@ -94,6 +95,7 @@ export type IdentityInternalClient = Readonly<{
   provisionActorRole(request: ProvisionActorRoleRequest, context: AttributedMutationContext): Promise<ActorRoleView>;
   searchActorRoles(role: ActorType, query: string, enabled?: boolean, page?: Readonly<{ limit?: number; cursor?: string; sort?: "phone_asc" | "phone_desc"; permissionCoverage?: "none" | "some" | "complete" }>): Promise<ActorRoleSearchPage>;
   readActorRole(actorId: string, role: ActorType): Promise<ActorRoleView>;
+  readActorRoles(role: ActorType, actorIds: ReadonlyArray<string>): Promise<ActorRoleReadBatchResponse>;
   readOperatorPermission(actorId: string, permission: OperatorPermission, context: AttributedMutationContext): Promise<OperatorPermissionAccess>;
   setOperatorPermission(actorId: string, permission: OperatorPermission, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<OperatorPermissionAccess>;
   setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
@@ -237,6 +239,33 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
       }
       return (await response.json()) as ActorRoleView;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async function readActorRoles(role: ActorType, actorIds: ReadonlyArray<string>): Promise<ActorRoleReadBatchResponse> {
+    if (!actorIds.length || actorIds.length > 100 || new Set(actorIds).size !== actorIds.length || actorIds.some((id) => !id.trim() || id.length > 128)) throw new Error("IDENTITY_ROLE_BATCH_INVALID");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      let response: Response;
+      try {
+        response = await fetch(resolveUrl(baseUrl, identityOperationPaths.readActorRoles.path), {
+          method: identityOperationPaths.readActorRoles.method,
+          cache: "no-store",
+          headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({ role, actorIds }),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
+      }
+      if (!response.ok) {
+        const parsed = parseErrorPayload(await response.json().catch(() => null));
+        throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
+      }
+      return await response.json() as ActorRoleReadBatchResponse;
     } finally {
       clearTimeout(timeout);
     }
@@ -433,6 +462,7 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
       }
     },
     readActorRole,
+    readActorRoles,
     searchActorRoles: async (role, query, enabled, page) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
