@@ -230,6 +230,8 @@ func writeCashInError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Cash-In funding intent was not found")
 	case errors.Is(err, postgres.ErrFundingIntentState):
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "Cash-In funding intent cannot accept this result")
+	case errors.Is(err, postgres.ErrFundingProviderReferenceUsed):
+		writeError(w, http.StatusConflict, "PROVIDER_REFERENCE_CONFLICT", "Cash-In provider transaction is already settled")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Cash-In idempotency key conflicts with another request")
 	case errors.Is(err, cashin.ErrInvalidRequest):
