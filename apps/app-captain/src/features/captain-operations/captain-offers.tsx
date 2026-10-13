@@ -20,14 +20,17 @@ const theme = useAppearanceTheme();
 
   const load = useCallback(async () => {
     setLoading(true);
+    setOffers([]);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const response = await captainClient().listOwnCaptainOffers(token);
       setOffers(response.offers);
+      return true;
     } catch (cause) {
       console.error("DSH Captain offers readback failed", cause);
       setError("تعذر قراءة عروض التوصيل. أعد المحاولة.");
+      return false;
     } finally {
       setLoading(false);
     }
@@ -46,7 +49,10 @@ const theme = useAppearanceTheme();
       await load();
     } catch (cause) {
       console.error("DSH Captain offer response failed", cause);
-      setError("تعذر الرد على العرض. أعد القراءة فقد يكون منتهيًا أو سبق حسمه.");
+      const verified = await load();
+      setError(verified
+        ? "لم نتأكد من نتيجة الرد. راجع حالة العرض بعد إعادة القراءة، ثم تحقق من التوصيلات قبل أي محاولة جديدة."
+        : "لم نتأكد من نتيجة الرد وتعذرت إعادة قراءة العروض. لا تعِد إرسال القرار قبل نجاح تحديث العروض والتوصيلات.");
     } finally {
       setBusy("");
     }
@@ -58,7 +64,7 @@ const theme = useAppearanceTheme();
       <Text style={styles.muted}>راجع العرض، ثم احسمه مرة واحدة قبل انتهاء صلاحيته.</Text>
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
       {!loading ? <Text style={styles.sectionTitle}>العروض ({filteredOffers.length})</Text> : null}
-      {!loading && !filteredOffers.length ? <Text style={styles.muted}>{offers.length ? "لا توجد عروض مطابقة للبحث." : "لا توجد عروض حالية."}</Text> : null}
+      {!loading && !error && !filteredOffers.length ? <Text style={styles.muted}>{offers.length ? "لا توجد عروض مطابقة للبحث." : "لا توجد عروض حالية."}</Text> : null}
       {!loading ? filteredOffers.map((offer) => <View key={offer.id} style={styles.card}><View style={styles.orderHeader}><Text style={styles.cardTitle}>{offer.fulfillmentMode === "PARTNER_CAPTAIN" ? "توصيل المتجر" : "توصيل بثواني"}</Text><BthwaniStatusBadge icon={offer.state === "offered" ? "deliveries" : "orders"} label={captainOfferStateLabel(offer.state)} tone={offer.state === "offered" ? "info" : "neutral"} /></View>{offer.storeProfileImage?.uri ? <Image accessibilityLabel={`صورة متجر ${offer.storeName}`} source={{ uri: offer.storeProfileImage.uri }} style={{ borderRadius: 10, height: 100, width: "100%" }} resizeMode="cover" /> : null}<Text style={styles.muted}>تفاصيل الطلب</Text><Text style={styles.muted}>المتجر: {offer.storeName}</Text><Text style={styles.muted}>عنوان العميل: {offer.customerAddressText}</Text><Text style={styles.payment}>المطلوب نقدًا: {formatMoney(offer.amountDueMinor, offer.currency)} · {paymentMethodLabel(offer.paymentMethod, offer.fulfillmentMode, offer.amountDueMinor)} · {paymentStateLabel(offer.paymentState, offer.paymentMethod, offer.fulfillmentMode, offer.amountDueMinor)}</Text>{offer.amountDueMinor === 0 ? <Text style={styles.muted}>الطلب مغطى برصيد العميل؛ لا يوجد نقد لتحصيله.</Text> : null}<Text style={styles.muted}>ينتهي في {new Date(offer.expiresAt).toLocaleString("ar-YE")}</Text>{offer.state === "offered" ? <View style={styles.row}><BthwaniButton busy={busy === offer.id} disabled={Boolean(busy)} label="قبول العرض" onPress={() => void respond(offer, "accept")} style={styles.actionButton} /><BthwaniButton disabled={Boolean(busy)} label="رفض العرض" onPress={() => void respond(offer, "reject")} style={styles.actionButton} variant="danger" /></View> : null}</View>) : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <BthwaniButton busy={Boolean(busy)} disabled={Boolean(busy)} label="تحديث العروض" onPress={() => void load()} variant="secondary" />
