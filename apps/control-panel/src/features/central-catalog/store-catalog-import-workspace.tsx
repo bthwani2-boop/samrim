@@ -22,6 +22,12 @@ async function readJson<T>(response: Response): Promise<T> {
   return value as T;
 }
 
+function canCommitStoreImport(result: ImportResult | null): boolean {
+  if (!result) return false;
+  if (result.run.state === "previewed") return result.run.acceptedCount > 0;
+  return result.run.state === "rejected" && result.items.some((item) => item.classification === "FAILED");
+}
+
 function classificationLabel(item: CatalogImportItem): string {
   switch (item.classification) {
     case "READY": return "جاهز";
@@ -189,7 +195,7 @@ export function StoreCatalogImportWorkspace() {
   }
 
   async function commit() {
-    if (!result || !previewAttempt || busy || result.run.acceptedCount < 1 || result.run.state !== "previewed") return;
+    if (!previewAttempt || busy || !canCommitStoreImport(result) || !result) return;
     const attempt = commitAttempt?.runId === result.run.id ? commitAttempt : { runId: result.run.id, idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() };
     setCommitAttempt(attempt);
     setBusy("commit");
@@ -205,7 +211,7 @@ export function StoreCatalogImportWorkspace() {
       if (committed.run.state === "committed") setCommitAttempt(null);
       setNotice(committed.run.state === "committed"
         ? "اعتمد النظام الصفوف الصالحة، وتم حفظ الصفوف غير المعروفة للمراجعة دون إنشاء منتجات."
-        : "لم يعتمد النظام هذه المعاينة. أعد قراءة الحالة ثم أنشئ معاينة جديدة قبل أي محاولة أخرى.");
+        : "تعذر اعتماد بعض الصفوف. الصفوف المحفوظة لن تتكرر؛ أعد اعتماد الصفوف الفاشلة فقط.");
       await readRun(committed.run.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر اعتماد الأسعار.");
@@ -250,8 +256,8 @@ export function StoreCatalogImportWorkspace() {
       <strong>الحالة: {result.run.state === "previewed" ? "معاينة جاهزة" : result.run.state === "committed" ? "تم الاعتماد" : "تحتاج مراجعة"} · الجاهز: {result.run.acceptedCount} · المراجعة أو التعارض: {result.run.conflictCount}</strong>
       <p>يُحل كل باركود على الكتالوج المشترك ومحلي المتجر. الباركود غير المعروف لا ينشئ منتجًا تلقائيًا.</p>
       <ol>{result.items.map((item) => <li key={`${item.rowNumber}-${item.stableKey}`}>السطر {item.rowNumber} · {classificationLabel(item)}{item.errorMessage ? ` · ${item.errorMessage}` : item.committed ? " · كُتب " : ""}</li>)}</ol>
-      {result.run.state === "previewed" && result.run.acceptedCount > 0 ? <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void commit()}>{busy === "commit" ? "جارٍ الاعتماد…" : "اعتماد الصفوف الصالحة"}</button> : null}
-      {result.run.state === "rejected" ? <p className="muted">انتهت هذه المعاينة بعد تعارض أثناء الاعتماد. أعد معاينة الملف لقراءة البيانات الحالية قبل اعتماد الصفوف مجددًا.</p> : null}
+      {canCommitStoreImport(result) ? <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void commit()}>{busy === "commit" ? "جارٍ الاعتماد…" : result.run.state === "rejected" ? "إعادة اعتماد الصفوف الفاشلة" : "اعتماد الصفوف الصالحة"}</button> : null}
+      {result.run.state === "rejected" ? <p className="muted">اكتملت الصفوف الناجحة؛ يمكنك إعادة محاولة الصفوف الفاشلة دون تكرار ما حُفظ. راجع أسباب الفشل قبل إعادة الاعتماد.</p> : null}
       {result.run.state === "committed" ? <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void readRun(result.run.id)}>{busy === "read" ? "جارٍ إعادة القراءة…" : "إعادة قراءة النتيجة"}</button> : null}
     </div> : null}
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}

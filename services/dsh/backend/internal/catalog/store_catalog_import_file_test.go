@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -65,5 +66,27 @@ func TestParseStoreCatalogImportRejectsUnsupportedOrMalformedFiles(t *testing.T)
 		if _, err := ParseStoreCatalogImportFile(test.name, []byte(test.body)); err == nil {
 			t.Errorf("ParseStoreCatalogImportFile(%q) succeeded", test.name)
 		}
+	}
+}
+
+func TestParseStoreCatalogImportAcceptsFiveThousandRowsWithPartialErrors(t *testing.T) {
+	var csv strings.Builder
+	csv.WriteString("barcode,price\n")
+	for i := 0; i < MaxStoreCatalogImportRows; i++ {
+		if i == 253 {
+			csv.WriteString("6291000000253,invalid\n")
+		} else {
+			fmt.Fprintf(&csv, "6291000%06d,1250\n", i)
+		}
+	}
+	rows, err := ParseStoreCatalogImportFile("full-batch.csv", []byte(csv.String()))
+	if err != nil {
+		t.Fatalf("5000-row preview was rejected: %v", err)
+	}
+	if len(rows) != MaxStoreCatalogImportRows || rows[0].RowNumber != 2 || rows[len(rows)-1].RowNumber != MaxStoreCatalogImportRows+1 {
+		t.Fatalf("row count/position not retained: count=%d first=%d last=%d", len(rows), rows[0].RowNumber, rows[len(rows)-1].RowNumber)
+	}
+	if rows[253].ErrorCode != "INVALID_INPUT" || rows[252].ErrorCode != "" || rows[254].ErrorCode != "" {
+		t.Fatalf("one invalid row must not invalidate adjacent valid rows: before=%q invalid=%q after=%q", rows[252].ErrorCode, rows[253].ErrorCode, rows[254].ErrorCode)
 	}
 }
