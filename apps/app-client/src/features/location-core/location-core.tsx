@@ -5,6 +5,7 @@ import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
+import { appendDistinctDeliveryAddresses } from "./address-pagination";
 import { createOwnDeliveryAddress, isLocationHttpError, listOwnDeliveryAddresses, updateOwnDeliveryAddress } from "./delivery-address-client";
 
 type AddressState =
@@ -34,6 +35,7 @@ export default function LocationCore() {
   const [editing, setEditing] = useState<DeliveryAddress | null>(null);
   const [formOpen, setFormOpen] = useState(true);
   const firstSuccessfulLoad = useRef(true);
+  const pageGeneration = useRef(0);
   const [busy, setBusy] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [locationBusy, setLocationBusy] = useState(false);
@@ -41,16 +43,19 @@ export default function LocationCore() {
   const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
+    const generation = ++pageGeneration.current;
     setState({ kind: "loading" });
     setError("");
     try {
       const result = await listOwnDeliveryAddresses();
+      if (generation !== pageGeneration.current) return;
       setState({ kind: "ready", addresses: result.addresses, nextCursor: result.nextCursor });
       if (firstSuccessfulLoad.current) {
         setFormOpen(result.addresses.length === 0);
         firstSuccessfulLoad.current = false;
       }
     } catch (cause) {
+      if (generation !== pageGeneration.current) return;
       setState({ kind: "error" });
       setError(errorText(cause));
     }
@@ -58,13 +63,18 @@ export default function LocationCore() {
 
   async function loadMore() {
     if (loadingMore || state.kind !== "ready" || !state.nextCursor) return;
+    const generation = pageGeneration.current;
+    const cursor = state.nextCursor;
     setLoadingMore(true);
     setError("");
     try {
-      const result = await listOwnDeliveryAddresses(state.nextCursor);
-      setState((current) => current.kind === "ready" ? { kind: "ready", addresses: [...current.addresses, ...result.addresses], nextCursor: result.nextCursor } : current);
+      const result = await listOwnDeliveryAddresses(cursor);
+      if (generation !== pageGeneration.current) return;
+      setState((current) => current.kind === "ready" && current.nextCursor === cursor
+        ? { kind: "ready", addresses: appendDistinctDeliveryAddresses(current.addresses, result.addresses), nextCursor: result.nextCursor }
+        : current);
     } catch (cause) {
-      setError(errorText(cause));
+      if (generation === pageGeneration.current) setError(errorText(cause));
     } finally {
       setLoadingMore(false);
     }

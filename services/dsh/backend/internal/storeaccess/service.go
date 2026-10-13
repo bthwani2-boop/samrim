@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/http"
 	"regexp"
 	"strings"
 
@@ -154,20 +155,46 @@ func (s *Service) TransitionForOwner(ctx context.Context, accessToken, storeID, 
 	if !validMutation(idempotencyKey, correlationID) || expectedVersion < 1 {
 		return postgres.StoreAccessGrant{}, false, ErrInvalidInput
 	}
-	grant, replayed, err := postgres.TransitionStoreAccessGrant(ctx, s.db, storeID, actorID, grantID, targetState, expectedVersion, idempotencyKey, correlationID)
-	if err != nil {
-		return postgres.StoreAccessGrant{}, false, err
-	}
-	if !replayed && (targetState == "revoked" || targetState == "suspended") {
-		// Fail-closed financial gate: if the affected delegate is the Store's recorded
-		// payout recipient, future payout readiness must stop pending owner action.
-		// The call is idempotent; a WLT outage surfaces as an explicit failure so the
-		// client retries until the gate is marked.
+	if targetState == "revoked" || targetState == "suspended" {
+		release, err := s.lockPayoutRecipientStore(ctx, storeID)
+		if err != nil {
+			return postgres.StoreAccessGrant{}, false, err
+		}
+		defer release()
+		// Resolve the authorized target before touching WLT; a failed or foreign
+		// DSH grant may never put someone else's payout recipient under review.
+		grant, err := postgres.ReadStoreAccessGrant(ctx, s.db, grantID)
+		if err != nil {
+			return postgres.StoreAccessGrant{}, false, err
+		}
+		if grant.StoreID != storeID || grant.OwnerPartnerActorID != actorID {
+			return postgres.StoreAccessGrant{}, false, postgres.ErrStoreAccessForbidden
+		}
+		// The original version remains valid for a replay of a committed
+		// transition. The storage owner checks the actual idempotency hash.
+		if grant.Version != expectedVersion && !(grant.Version == expectedVersion+1 && grant.State == targetState) {
+			// A past replay may have been followed by another legal transition.
+			// Let the storage owner verify its original idempotency hash, without
+			// imposing a stale review on the current recipient.
+			return postgres.TransitionStoreAccessGrant(ctx, s.db, storeID, actorID, grantID, targetState, expectedVersion, idempotencyKey, correlationID)
+		}
+		if grant.Version == expectedVersion {
+			legal := (grant.State == "active" && (targetState == "suspended" || targetState == "revoked")) ||
+				(grant.State == "suspended" && targetState == "revoked") ||
+				((grant.State == "pending_role_admission" || grant.State == "pending_partner_activation" || grant.State == "pending_acceptance") && targetState == "revoked")
+			if !legal {
+				return postgres.StoreAccessGrant{}, false, postgres.ErrStoreAccessConflict
+			}
+		}
+		// Fail closed: WLT must acknowledge a selected staff recipient's
+		// REVIEW_REQUIRED state before DSH commits the permission withdrawal.
+		// Otherwise an outage and no caller retry leave a revoked but payable
+		// beneficiary. WLT review is idempotent for a repeated attempt.
 		if err := s.markPayoutRecipientReviewIfNeeded(ctx, storeID, actorID, grant.DelegateActorID, targetState, correlationID); err != nil {
-			return grant, replayed, err
+			return postgres.StoreAccessGrant{}, false, err
 		}
 	}
-	return grant, replayed, nil
+	return postgres.TransitionStoreAccessGrant(ctx, s.db, storeID, actorID, grantID, targetState, expectedVersion, idempotencyKey, correlationID)
 }
 
 func (s *Service) UpdatePermissionsForOwner(ctx context.Context, accessToken, storeID, grantID string, permissions []string, expectedVersion int, idempotencyKey, correlationID string) (postgres.StoreAccessGrant, bool, error) {
@@ -537,15 +564,39 @@ func (s *Service) VerifyStoreOwnerForPayoutRecipient(ctx context.Context, access
 	return actorID, nil
 }
 
+// All DSH-owned recipient selection, reversion and grant withdrawal for a
+// Store share a DB advisory lock across service instances. This prevents
+// reinstating staff routing between WLT review and the DSH revoke commit.
+func (s *Service) lockPayoutRecipientStore(ctx context.Context, storeID string) (func(), error) {
+	storeID = strings.TrimSpace(storeID)
+	if storeID == "" {
+		return nil, ErrInvalidInput
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:store-payout:"+storeID); err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	return func() { _ = tx.Rollback() }, nil
+}
+
 func (s *Service) markPayoutRecipientReviewIfNeeded(ctx context.Context, storeID, ownerActorID, delegateActorID, targetState, correlationID string) error {
 	if strings.TrimSpace(delegateActorID) == "" {
 		return nil
 	}
 	record, err := s.wlt.ReadStorePayoutRecipient(ctx, ownerActorID, storeID)
 	if err != nil {
-		// No assignment facts is the normal case for stores without a selected
-		// recipient; WLT answers NOT_FOUND for those.
-		return nil
+		// Only an explicit missing assignment means default owner routing.
+		// WLT outages, authorization errors and malformed responses must not
+		// silently bypass the staff payout review gate.
+		var wltErr *wltintegration.Error
+		if errors.As(err, &wltErr) && wltErr.Status == http.StatusNotFound && wltErr.Code == "NOT_FOUND" {
+			return nil
+		}
+		return err
 	}
 	if record.State != wltintegration.StorePayoutRecipientStateSelectedStaff || record.BeneficiaryActorID != delegateActorID {
 		return nil
@@ -562,6 +613,11 @@ func (s *Service) SelectStorePayoutRecipientForOwner(ctx context.Context, access
 	if !validMutation(idempotencyKey, correlationID) {
 		return wltintegration.StorePayoutRecipientAssignment{}, false, ErrInvalidInput
 	}
+	release, err := s.lockPayoutRecipientStore(ctx, storeID)
+	if err != nil {
+		return wltintegration.StorePayoutRecipientAssignment{}, false, err
+	}
+	defer release()
 	partnerActorID, delegateActorID, err := s.PrepareStorePayoutRecipientSelection(ctx, accessToken, storeID, grantID)
 	if err != nil {
 		return wltintegration.StorePayoutRecipientAssignment{}, false, err
@@ -579,6 +635,11 @@ func (s *Service) RevertStorePayoutRecipientForOwner(ctx context.Context, access
 	if !validMutation(idempotencyKey, correlationID) {
 		return false, ErrInvalidInput
 	}
+	release, err := s.lockPayoutRecipientStore(ctx, storeID)
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	partnerActorID, err := s.VerifyStoreOwnerForPayoutRecipient(ctx, accessToken, storeID)
 	if err != nil {
 		return false, err

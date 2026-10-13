@@ -1266,12 +1266,27 @@ if (modifierAttach.status !== 200 || !modifierOfferRead.body?.offers?.some((offe
 const storeLocalPublicCatalog = await request(dshBase, "GET", `/dsh/public/stores/${storeLocal.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}`);
 if (storeLocalOfferPublished.status !== 200 || storeLocalOfferPublished.body?.offer?.publicationState !== "published" || storeLocalPublished.status !== 200 || storeLocalPublished.body?.store?.publicationState !== "published" || storeLocalPublicCatalog.status !== 200 || !storeLocalPublicCatalog.body?.offers?.some((offer) => offer.offerId === storeLocalOfferID) || !storeLocalPublicCatalog.body?.sections?.some((section) => section.id === sectionID && section.offerIds?.includes(storeLocalOfferID))) fail("Store-local product, modifier and menu grouping were not read back together", JSON.stringify({ storeLocalOfferPublished, storeLocalPublished, storeLocalPublicCatalog }));
 
+// Resolve money from the canonical DSH quote for each successful test
+// Checkout. Negative-purpose requests carry a valid positive sentinel
+// solely to exercise the intended downstream rejection boundary.
+async function acceptedCheckoutTotal(cartIDToQuote, storeIDToQuote, addressIDToQuote, mode, version, promotionCodeToQuote = "") {
+  const quote = await request(dshBase, "POST", "/dsh/cart/quote", {
+    token: client.accessToken,
+    headers: { "X-Expected-Version": String(version) },
+    body: { cartId: cartIDToQuote, storeId: storeIDToQuote, addressId: addressIDToQuote, fulfillmentMode: mode, ...(promotionCodeToQuote ? { promotionCode: promotionCodeToQuote } : {}) },
+  });
+  const total = quote.body?.quote?.totalAmountMinor;
+  if (quote.status !== 200 || !Number.isSafeInteger(total) || total <= 0) fail("failed to obtain canonical accepted quote before test checkout", JSON.stringify({ cartIDToQuote, storeIDToQuote, mode, version, quote }));
+  return total;
+}
+
 const missingFulfillmentModeCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`checkout-missing-fulfillment-mode-${suffix}`, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID } });
-const unavailableFulfillmentModeCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`checkout-unavailable-fulfillment-mode-${suffix}`, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "PARTNER_CAPTAIN" } });
+const unavailableFulfillmentModeCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`checkout-unavailable-fulfillment-mode-${suffix}`, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "PARTNER_CAPTAIN", expectedTotalAmountMinor: 1 } });
 if (missingFulfillmentModeCheckout.status !== 400 || missingFulfillmentModeCheckout.body?.error?.code !== "INVALID_INPUT" || unavailableFulfillmentModeCheckout.status !== 409 || unavailableFulfillmentModeCheckout.body?.error?.code !== "FULFILLMENT_MODE_UNAVAILABLE") fail("checkout did not fail closed for missing or unavailable fulfillment intent", JSON.stringify({ missingFulfillmentModeCheckout, unavailableFulfillmentModeCheckout }));
-const storeLocalMissingModifierCheckout = storeLocalCartID ? await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`store-local-checkout-missing-modifier-${suffix}`, 1), body: { cartId: storeLocalCartID, storeId: storeLocal.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } }) : null;
+const storeLocalMissingModifierCheckout = storeLocalCartID ? await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`store-local-checkout-missing-modifier-${suffix}`, 1), body: { cartId: storeLocalCartID, storeId: storeLocal.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: 1 } }) : null;
 const storeLocalCartWithModifier = storeLocalCartID ? await request(dshBase, "PATCH", `/dsh/cart/lines/${encodeURIComponent(storeLocalCartCreate.body.cart.lines[0].id)}`, { token: client.accessToken, headers: partnerHeaders(`store-local-cart-modifier-${suffix}`, 1), body: { quantityBaseUnits: 1, selectedModifierOptionIds: [modifierOptionID] } }) : null;
-const storeLocalModifierCheckout = storeLocalCartID ? await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`store-local-checkout-${suffix}`, 2), body: { cartId: storeLocalCartID, storeId: storeLocal.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } }) : null;
+const storeLocalConfirmedTotal = storeLocalCartWithModifier?.status === 201 ? await acceptedCheckoutTotal(storeLocalCartID, storeLocal.storeID, addressAID, "BTHWANI_CAPTAIN", 2) : null;
+const storeLocalModifierCheckout = storeLocalCartID ? await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`store-local-checkout-${suffix}`, 2), body: { cartId: storeLocalCartID, storeId: storeLocal.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: storeLocalConfirmedTotal } }) : null;
 const storeLocalOrderID = String(storeLocalModifierCheckout?.body?.order?.id || "");
 const storeLocalCheckoutLineID = String(storeLocalModifierCheckout?.body?.order?.lines?.[0]?.id || "");
 const storeLocalPaymentIntentID = String(storeLocalModifierCheckout?.body?.order?.paymentIntentId || "");
@@ -1288,16 +1303,16 @@ await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE 
 if (storeLocalModifierCancellation.status !== 201 || storeLocalModifierCancellation.body?.order?.state !== "CANCELLED") fail("store-local modifier proof order was not cancelled", JSON.stringify(storeLocalModifierCancellation));
 const checkoutQuote = await request(dshBase, "POST", "/dsh/cart/quote", { token: client.accessToken, headers: { "X-Expected-Version": "2" }, body: { cartId: cartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
 if (checkoutQuote.status !== 200 || checkoutQuote.body?.quote?.cartId !== cartID || checkoutQuote.body.quote.storeId !== first.storeID || checkoutQuote.body.quote.addressId !== addressAID || checkoutQuote.body.quote.fulfillmentMode !== "BTHWANI_CAPTAIN" || checkoutQuote.body.quote.cartVersion !== 2 || checkoutQuote.body.quote.subtotalMinor !== mainOrderSubtotal || checkoutQuote.body.quote.deliveryFeeMinor !== deliveryFeeMinor || checkoutQuote.body.quote.totalAmountMinor !== mainOrderTotal || checkoutQuote.body.quote.currency !== "YER" || typeof checkoutQuote.body.quote.deliveryPolicyVersion !== "string" || !checkoutQuote.body.quote.deliveryPolicyVersion || typeof checkoutQuote.body.quote.quotedAt !== "string") fail("checkout quote did not expose the canonical subtotal, WLT delivery fee, and expected total", JSON.stringify(checkoutQuote));
-const cartUnserviceable = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`checkout-unserviceable-${suffix}`, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressBID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
+const cartUnserviceable = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`checkout-unserviceable-${suffix}`, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressBID, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: 1 } });
 if (cartUnserviceable.status !== 409 || cartUnserviceable.body?.error?.code !== "UNSERVICEABLE") fail("cart checkout accepted an out-of-city address", JSON.stringify(cartUnserviceable));
 const hiddenCartOffer = await request(dshBase, "PATCH", `/dsh/stores/${first.storeID}/offers/${offerAID}`, { token: first.accessToken, headers: partnerHeaders(`cart-offer-hide-${suffix}`, 3), body: discreteOffer(2100, "hidden") });
 if (hiddenCartOffer.status !== 200 || hiddenCartOffer.body?.offer?.publicationState !== "hidden" || hiddenCartOffer.body.offer.version !== 4) fail("cart offer failure fixture was not applied canonically", JSON.stringify(hiddenCartOffer));
-const unavailableCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`checkout-offer-unavailable-${suffix}`, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
+const unavailableCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`checkout-offer-unavailable-${suffix}`, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: 1 } });
 if (unavailableCheckout.status !== 409 || unavailableCheckout.body?.error?.code !== "UNSERVICEABLE") fail("checkout did not fail closed when the StoreOffer was hidden", JSON.stringify(unavailableCheckout));
 const restoredCartOffer = await request(dshBase, "PATCH", `/dsh/stores/${first.storeID}/offers/${offerAID}`, { token: first.accessToken, headers: partnerHeaders(`cart-offer-restore-${suffix}`, 4), body: discreteOffer(2100, "published") });
 if (restoredCartOffer.status !== 200 || restoredCartOffer.body?.offer?.publicationState !== "published" || restoredCartOffer.body.offer.version !== 5) fail("cart offer recovery failed", JSON.stringify(restoredCartOffer));
 const checkoutKey = `checkout-${suffix}`;
-const checkout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(checkoutKey, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
+const checkout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(checkoutKey, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: checkoutQuote.body.quote.totalAmountMinor } });
 if (checkout.status !== 201 || checkout.body?.order?.state !== "CREATED" || checkout.body.order.version !== 1 || checkout.body.order.fulfillmentMode !== "BTHWANI_CAPTAIN" || checkout.body.order.totalAmountMinor !== mainOrderTotal || checkout.body.order.paymentMethod !== "CASH_ON_DELIVERY" || checkout.body.order.paymentState !== "REQUIRES_COLLECTION" || typeof checkout.body.order.paymentIntentId !== "string" || checkout.body.order.lines?.[0]?.requestedQuantityBaseUnits !== 2 || checkout.body.order.lines?.[0]?.unitPriceMinor !== 2100 || checkout.body.order.lines?.[0]?.modifierAmountMinor !== 0 || checkout.body.order.lines?.[0]?.modifierSnapshots?.length !== 0 || checkout.body.order.lines?.[0]?.attributeSnapshots?.length !== 3 || !checkout.body.order.lines?.[0]?.attributeSnapshots?.some((snapshot) => snapshot.attributeId === enumAttributeID && snapshot.valueKind === "ENUM" && snapshot.enumValue === "Dark")) fail("cart checkout did not create an immutable Order/payment snapshot", JSON.stringify(checkout));
 const checkoutLineID = String(checkout.body.order.lines?.[0]?.id || "");
 const orderID = String(checkout.body.order.id);
@@ -1318,7 +1333,7 @@ if (promotionCartCreate.status !== 201 || !promotionCartCreate.body?.cart?.id) f
 const promotionCartID = String(promotionCartCreate.body.cart.id);
 const promotionQuote = await request(dshBase, "POST", "/dsh/cart/quote", { token: client.accessToken, headers: { "X-Expected-Version": "1" }, body: { cartId: promotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", promotionCode } });
 if (promotionQuote.status !== 200 || promotionQuote.body?.quote?.subtotalMinor !== 2100 || promotionQuote.body.quote.discountMinor !== 300 || promotionQuote.body.quote.promotionCode !== promotionCode || promotionQuote.body.quote.totalAmountMinor !== 1900) fail("promotion checkout quote did not apply the canonical discount", JSON.stringify(promotionQuote));
-const promotionCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`marketing-checkout-${suffix}`, 1), body: { cartId: promotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", promotionCode } });
+const promotionCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`marketing-checkout-${suffix}`, 1), body: { cartId: promotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", promotionCode, expectedTotalAmountMinor: promotionQuote.body.quote.totalAmountMinor } });
 if (promotionCheckout.status !== 201 || promotionCheckout.body?.order?.subtotalAmountMinor !== 2100 || promotionCheckout.body.order.discountMinor !== 300 || promotionCheckout.body.order.promotionCode !== promotionCode || promotionCheckout.body.order.totalAmountMinor !== 1900) fail("promotion checkout did not snapshot the canonical discount", JSON.stringify(promotionCheckout));
 const promotionOrderID = String(promotionCheckout.body.order.id);
 const promotionPaymentIntentID = String(promotionCheckout.body.order.paymentIntentId);
@@ -1329,7 +1344,8 @@ const reusedPromotionCart = await request(dshBase, "POST", "/dsh/cart/lines", { 
 if (reusedPromotionCart.status !== 201 || !reusedPromotionCart.body?.cart?.id) fail("promotion reuse cart fixture failed", JSON.stringify(reusedPromotionCart));
 const reusedPromotionCartID = String(reusedPromotionCart.body.cart.id);
 const reusedPromotionQuote = await request(dshBase, "POST", "/dsh/cart/quote", { token: client.accessToken, headers: { "X-Expected-Version": "1" }, body: { cartId: reusedPromotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", promotionCode } });
-const reusedPromotionFallbackCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`marketing-reuse-fallback-${suffix}`, 1), body: { cartId: reusedPromotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
+const reusedPromotionFallbackTotal = await acceptedCheckoutTotal(reusedPromotionCartID, first.storeID, addressAID, "BTHWANI_CAPTAIN", 1);
+const reusedPromotionFallbackCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`marketing-reuse-fallback-${suffix}`, 1), body: { cartId: reusedPromotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: reusedPromotionFallbackTotal } });
 const reusedPromotionFallbackOrderID = String(reusedPromotionFallbackCheckout.body?.order?.id || "");
 const reusedPromotionFallbackPaymentID = String(reusedPromotionFallbackCheckout.body?.order?.paymentIntentId || "");
 const reusedPromotionFallbackCancellation = reusedPromotionFallbackOrderID ? await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(reusedPromotionFallbackOrderID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(`marketing-reuse-fallback-cancel-${suffix}`, 1) }) : null;
@@ -1348,12 +1364,17 @@ const cityBScopedFeePolicyCount = sql(`SELECT count(*) FROM wlt.delivery_fee_pol
 const globalFeePolicyCount = sql("SELECT count(*) FROM wlt.delivery_fee_policies WHERE state='ACTIVE' AND service_city_id=''");
 if (cityBScopedFeePolicyCount !== "0" || globalFeePolicyCount !== "1") fail("multi-store fee fallback fixture does not match the canonical WLT global policy", JSON.stringify({ cityBScopedFeePolicyCount, globalFeePolicyCount }));
 const multiCheckoutID = `multi-store-${suffix}`; const multiCheckoutKey = `multi-store-create-${suffix}`;
+const multiAcceptedA = await acceptedCheckoutTotal(multiCartAID, first.storeID, addressAID, "BTHWANI_CAPTAIN", multiCartAResponse.body.cart.version);
+const multiAcceptedB = await acceptedCheckoutTotal(multiCartBID, second.storeID, addressBID, "BTHWANI_CAPTAIN", multiCartBResponse.body.cart.version);
 const multiCheckoutBody = { id: multiCheckoutID, children: [
-  { cartId: multiCartAID, storeId: first.storeID, addressId: addressAID, cartVersion: multiCartAResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN" },
+  { cartId: multiCartAID, storeId: first.storeID, addressId: addressAID, cartVersion: multiCartAResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: multiAcceptedA },
   // City B has no city-scoped delivery-fee policy, so WLT resolves its active
   // global policy after serviceability succeeds.
-  { cartId: multiCartBID, storeId: second.storeID, addressId: addressBID, cartVersion: multiCartBResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN" },
+  { cartId: multiCartBID, storeId: second.storeID, addressId: addressBID, cartVersion: multiCartBResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: multiAcceptedB },
 ] };
+const multiMissingChildTotalBody = { ...multiCheckoutBody, children: multiCheckoutBody.children.map((item, i) => i === 0 ? { ...item, expectedTotalAmountMinor: 0 } : item) };
+const multiMissingChildTotal = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(`multi-store-missing-total-${suffix}`), body: multiMissingChildTotalBody });
+if (multiMissingChildTotal.status !== 400 || multiMissingChildTotal.body?.error?.code !== "INVALID_INPUT") fail("multi-store accepted a child without an explicitly accepted amount", JSON.stringify(multiMissingChildTotal));
 const multiCheckout = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(multiCheckoutKey), body: multiCheckoutBody });
 const multiCheckoutChildren = multiCheckout.body?.checkout?.children || [];
 const multiChildSuccess = multiCheckout.body?.checkout?.children?.find((child) => child.storeId === first.storeID);
@@ -1363,6 +1384,9 @@ const multiChildGlobalPolicyOrderID = String(multiChildGlobalPolicy?.orderId || 
 const multiChildOrderIDs = [multiChildOrderID, multiChildGlobalPolicyOrderID].filter(Boolean);
 const multiChildOrderReads = await Promise.all([multiChildOrderID, multiChildGlobalPolicyOrderID].filter(Boolean).map((orderID) => request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}`, { token: client.accessToken })));
 const multiChildPaymentIDs = multiChildOrderReads.map((response) => String(response.body?.order?.paymentIntentId || ""));
+const multiChangedPriceBody = { ...multiCheckoutBody, children: multiCheckoutBody.children.map((item, i) => i === 0 ? { ...item, expectedTotalAmountMinor: item.expectedTotalAmountMinor + 1 } : item) };
+const multiChangedPriceReplay = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(multiCheckoutKey), body: multiChangedPriceBody });
+if (multiChangedPriceReplay.status !== 409) fail("multi-store accepted a changed child amount for the same idempotency key", JSON.stringify(multiChangedPriceReplay));
 const multiCheckoutReplay = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(multiCheckoutKey), body: multiCheckoutBody });
 const multiCheckoutRead = await request(dshBase, "GET", `/dsh/multi-store-checkouts/${encodeURIComponent(multiCheckoutID)}`, { token: client.accessToken });
 const multiChildReadbackCount = sql(`SELECT count(*) FROM dsh.commerce_multi_store_checkout_children c JOIN dsh.commerce_multi_store_checkouts p ON p.id=c.checkout_id WHERE p.id='${sqlLiteral(multiCheckoutID)}' AND c.state IN ('SUCCEEDED','FAILED') AND c.store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}')`);
@@ -1389,7 +1413,7 @@ const pickupQuote = await request(dshBase, "POST", "/dsh/cart/quote", { token: c
 if (pickupQuote.status !== 200 || pickupQuote.body?.quote?.fulfillmentMode !== "CUSTOMER_PICKUP" || pickupQuote.body.quote.subtotalMinor !== 1500 || pickupQuote.body.quote.deliveryFeeMinor !== 0 || pickupQuote.body.quote.totalAmountMinor !== 1500 || pickupQuote.body.quote.currency !== "YER") fail("pickup quote charged a delivery fee or diverged from the store product total", JSON.stringify(pickupQuote));
 const pickupCheckoutKey = "pickup-checkout-" + suffix;
 const pickupCheckoutHeaders = partnerHeaders(pickupCheckoutKey, pickupCartVersion);
-const pickupCheckoutBody = { cartId: pickupCartID, storeId: second.storeID, fulfillmentMode: "CUSTOMER_PICKUP" };
+const pickupCheckoutBody = { cartId: pickupCartID, storeId: second.storeID, fulfillmentMode: "CUSTOMER_PICKUP", expectedTotalAmountMinor: pickupQuote.body.quote.totalAmountMinor };
 const pickupCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: pickupCheckoutHeaders, body: pickupCheckoutBody });
 if (pickupCheckout.status !== 201 || !pickupCheckout.body?.order?.id) fail("cash-at-store pickup checkout failed", JSON.stringify(pickupCheckout));
 const pickupOrder = pickupCheckout.body.order;
@@ -1482,14 +1506,14 @@ console.log("DSH_PAYMENT_ALLOCATION=PASS");
 expectSQL(`SELECT count(*) FROM dsh.commerce_order_line_modifier_snapshots WHERE order_line_id='${sqlLiteral(checkoutLineID)}'`, "0", "shared-catalog Order unexpectedly carries store-local modifier snapshots");
 expectSQL(`SELECT count(*) FROM dsh.commerce_order_line_modifier_snapshots WHERE order_line_id='${sqlLiteral(storeLocalCheckoutLineID)}' AND option_id='${sqlLiteral(modifierOptionID)}' AND option_name_ar='حليب ${sqlLiteral(suffix)}'`, "1", "store-local Order modifier snapshot readback is not immutable canonical evidence");
 expectSQL(`SELECT count(*) FROM dsh.commerce_order_line_attribute_snapshots WHERE order_line_id='${sqlLiteral(checkoutLineID)}'`, "3", "Order typed Attribute snapshot readback is incomplete");
-const checkoutReplay = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(checkoutKey, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
+const checkoutReplay = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(checkoutKey, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: checkoutQuote.body.quote.totalAmountMinor } });
 if (checkoutReplay.status !== 200 || checkoutReplay.body?.idempotentReplay !== true || checkoutReplay.body.order.id !== orderID || checkoutReplay.body.order.version !== 1) fail("checkout idempotency replay failed", JSON.stringify(checkoutReplay));
 const closedCart = await request(dshBase, "GET", `/dsh/cart?storeId=${encodeURIComponent(first.storeID)}`, { token: client.accessToken });
 if (closedCart.status !== 404) fail("checked-out cart remained an open cart", JSON.stringify(closedCart));
 const rejectedCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`payment-reject-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (rejectedCartCreate.status !== 201 || !rejectedCartCreate.body?.cart?.id) fail("payment rejection cart fixture failed", JSON.stringify(rejectedCartCreate));
 const rejectedCartID = String(rejectedCartCreate.body.cart.id);
-const rejectedCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`payment-reject-checkout-${suffix}`, 1), body: { cartId: rejectedCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
+const rejectedCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`payment-reject-checkout-${suffix}`, 1), body: { cartId: rejectedCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: await acceptedCheckoutTotal(rejectedCartID, first.storeID, addressAID, "BTHWANI_CAPTAIN", 1) } });
 if (rejectedCheckout.status !== 201 || rejectedCheckout.body?.order?.paymentState !== "REQUIRES_COLLECTION" || rejectedCheckout.body.order.totalAmountMinor !== singleOrderTotal || typeof rejectedCheckout.body.order.paymentIntentId !== "string") fail("payment rejection checkout fixture failed", JSON.stringify(rejectedCheckout));
 const rejectedOrderID = String(rejectedCheckout.body.order.id);
 const rejectedPaymentIntentID = String(rejectedCheckout.body.order.paymentIntentId);
@@ -1505,7 +1529,7 @@ console.log("DSH_PAYMENT_REJECTION_CANCEL=PASS");
 const clientCancelCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`client-cancel-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (clientCancelCartCreate.status !== 201 || !clientCancelCartCreate.body?.cart?.id) fail("client cancellation cart fixture failed", JSON.stringify(clientCancelCartCreate));
 const clientCancelCartID = String(clientCancelCartCreate.body.cart.id);
-const clientCancelCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`client-cancel-checkout-${suffix}`, 1), body: { cartId: clientCancelCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
+const clientCancelCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`client-cancel-checkout-${suffix}`, 1), body: { cartId: clientCancelCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: await acceptedCheckoutTotal(clientCancelCartID, first.storeID, addressAID, "BTHWANI_CAPTAIN", 1) } });
 if (clientCancelCheckout.status !== 201 || clientCancelCheckout.body?.order?.state !== "CREATED" || clientCancelCheckout.body.order.version !== 1 || clientCancelCheckout.body.order.paymentState !== "REQUIRES_COLLECTION") fail("client cancellation checkout fixture failed", JSON.stringify(clientCancelCheckout));
 const clientCancelOrderID = String(clientCancelCheckout.body.order.id);
 const clientCancelPaymentIntentID = String(clientCancelCheckout.body.order.paymentIntentId);
@@ -1539,7 +1563,7 @@ if (acceptedReplay.status !== 200 || acceptedReplay.body?.idempotentReplay !== t
 const adjustmentInventoryBefore = sql(`SELECT inventory_on_hand_base_units || '|' || inventory_reserved_base_units FROM dsh.catalog_store_offers WHERE id='${sqlLiteral(offerBID)}'`);
 const adjustmentCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`adjustment-cart-${suffix}`, 0), body: { storeId: second.storeID, storeOfferId: offerBID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 const adjustmentCartID = String(adjustmentCartCreate.body?.cart?.id || "");
-const adjustmentCheckout = adjustmentCartID ? await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`adjustment-checkout-${suffix}`, 1), body: { cartId: adjustmentCartID, storeId: second.storeID, addressId: addressBID, fulfillmentMode: "BTHWANI_CAPTAIN" } }) : null;
+const adjustmentCheckout = adjustmentCartID ? await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`adjustment-checkout-${suffix}`, 1), body: { cartId: adjustmentCartID, storeId: second.storeID, addressId: addressBID, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: await acceptedCheckoutTotal(adjustmentCartID, second.storeID, addressBID, "BTHWANI_CAPTAIN", 1) } }) : null;
 const adjustmentOrderID = String(adjustmentCheckout?.body?.order?.id || "");
 const adjustmentLineID = String(adjustmentCheckout?.body?.order?.lines?.[0]?.id || "");
 const adjustmentPaymentIntentID = String(adjustmentCheckout?.body?.order?.paymentIntentId || "");
@@ -1991,7 +2015,7 @@ console.log("DSH_NOTIFICATIONS=PASS");
 const expiryCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`captain-expiry-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (expiryCartCreate.status !== 201 || !expiryCartCreate.body?.cart?.id) fail("Captain expiry order cart fixture failed", JSON.stringify(expiryCartCreate));
 const expiryCartID = String(expiryCartCreate.body.cart.id);
-const expiryCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`captain-expiry-checkout-${suffix}`, 1), body: { cartId: expiryCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
+const expiryCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`captain-expiry-checkout-${suffix}`, 1), body: { cartId: expiryCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: await acceptedCheckoutTotal(expiryCartID, first.storeID, addressAID, "BTHWANI_CAPTAIN", 1) } });
 if (expiryCheckout.status !== 201 || !expiryCheckout.body?.order?.id) fail("Captain expiry order checkout fixture failed", JSON.stringify(expiryCheckout));
 const expiryOrderID = String(expiryCheckout.body.order.id);
 for (const [next, expectedVersion] of [["PARTNER_ACCEPTED", 1], ["PREPARING", 2], ["READY_FOR_DISPATCH", 3]]) {

@@ -20,13 +20,14 @@ var (
 )
 
 type MultiStoreCheckoutChildInput struct {
-	CartID          string
-	StoreID         string
-	AddressID       string
-	CartVersion     int
-	FulfillmentMode string
-	PromotionCode   string
-	Recipient       DeliveryRecipientInput
+	CartID                   string
+	StoreID                  string
+	AddressID                string
+	CartVersion              int
+	ExpectedTotalAmountMinor int64
+	FulfillmentMode          string
+	PromotionCode            string
+	Recipient                DeliveryRecipientInput
 }
 
 type MultiStoreCheckoutInput struct {
@@ -69,17 +70,18 @@ type MultiStoreCheckoutRecord struct {
 
 func HashMultiStoreCheckoutRequest(input MultiStoreCheckoutInput) string {
 	type childIdentity struct {
-		CartID          string
-		StoreID         string
-		AddressID       string
-		CartVersion     int
-		FulfillmentMode string
-		PromotionCode   string
+		CartID                   string
+		StoreID                  string
+		AddressID                string
+		CartVersion              int
+		ExpectedTotalAmountMinor int64
+		FulfillmentMode          string
+		PromotionCode            string
 	}
 	children := make([]childIdentity, 0, len(input.Children))
 	otherRecipients := make([]string, 0)
 	for index, child := range input.Children {
-		children = append(children, childIdentity{CartID: child.CartID, StoreID: child.StoreID, AddressID: child.AddressID, CartVersion: child.CartVersion, FulfillmentMode: child.FulfillmentMode, PromotionCode: child.PromotionCode})
+		children = append(children, childIdentity{CartID: child.CartID, StoreID: child.StoreID, AddressID: child.AddressID, CartVersion: child.CartVersion, ExpectedTotalAmountMinor: child.ExpectedTotalAmountMinor, FulfillmentMode: child.FulfillmentMode, PromotionCode: child.PromotionCode})
 		if strings.EqualFold(strings.TrimSpace(child.Recipient.Mode), "OTHER") {
 			otherRecipients = append(otherRecipients, fmt.Sprint(index), strings.TrimSpace(child.Recipient.Name), phoneformat.NormalizeYemenE164(child.Recipient.PhoneE164), strings.TrimSpace(child.Recipient.Instructions))
 		}
@@ -111,7 +113,7 @@ func validateMultiStoreCheckoutChildren(children []MultiStoreCheckoutChildInput)
 		mode := strings.TrimSpace(child.FulfillmentMode)
 		pickup := mode == "CUSTOMER_PICKUP"
 		delivery := mode == "BTHWANI_CAPTAIN" || mode == "PARTNER_CAPTAIN"
-		if cartID == "" || storeID == "" || child.CartVersion < 1 || (!pickup && !delivery) || (pickup && addressID != "") || (delivery && addressID == "") {
+		if cartID == "" || storeID == "" || child.CartVersion < 1 || child.ExpectedTotalAmountMinor < 1 || (!pickup && !delivery) || (pickup && addressID != "") || (delivery && addressID == "") {
 			return ErrMultiStoreCheckoutInvalid
 		}
 		if _, exists := seenCarts[cartID]; exists {

@@ -56,6 +56,13 @@ func validateCustomerPaymentAllocation(i CustomerPaymentAllocationInput) error {
 	if i.FulfillmentMode != "BTHWANI_CAPTAIN" && i.DeliveryFeeMinor != 0 {
 		return ErrCustomerPaymentAllocationInvalidInput
 	}
+	if funding := i.PromotionFunding; funding != nil &&
+		(i.DiscountMinor <= 0 || funding.DiscountMinor != i.DiscountMinor ||
+			strings.TrimSpace(funding.StoreID) != strings.TrimSpace(i.StoreID)) {
+		// Otherwise creation can succeed without a frozen funding row, or
+		// freeze a different Store/amount than the payment allocation.
+		return ErrCustomerPaymentAllocationInvalidInput
+	}
 	for _, v := range []int64{i.SubtotalMinor, i.DeliveryFeeMinor, i.DiscountMinor, i.InternalBalanceAmountMinor, i.CashAmountMinor} {
 		if v < 0 {
 			return ErrCustomerPaymentAllocationInvalidInput

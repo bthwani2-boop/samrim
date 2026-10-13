@@ -141,7 +141,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 		return CheckoutQuote{}, postgres.ErrCheckoutEvidenceStale
 	}
 	store, err := postgres.ReadStore(ctx, s.db, storeID)
-	if err != nil || store.PublicationState != "published" || strings.TrimSpace(store.PartnerActorID) == "" || !supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode) {
+	if err != nil || !storeAllowsCheckout(store, fulfillmentMode) {
 		return CheckoutQuote{}, ErrFulfillmentModeUnavailable
 	}
 	orderability, err := postgres.EvaluateStoreOrderability(ctx, s.db, storeID, fulfillmentMode, time.Now().UTC())
@@ -178,7 +178,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	orderSize := new(big.Int)
 	currency := ""
 	for _, line := range cart.Lines {
-		if line.LineAmountMinor <= 0 || line.QuantityBaseUnits <= 0 || strings.TrimSpace(line.Currency) != "YER" {
+		if line.RequiresReview || line.LineAmountMinor <= 0 || line.QuantityBaseUnits <= 0 || strings.TrimSpace(line.Currency) != "YER" {
 			return CheckoutQuote{}, postgres.ErrCheckoutEvidenceStale
 		}
 		if currency == "" {
@@ -239,7 +239,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	}, nil
 }
 
-func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode string, recipient postgres.DeliveryRecipientInput, internalBalanceAmountMinor int64, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode string, expectedTotalAmountMinor int64, recipient postgres.DeliveryRecipientInput, internalBalanceAmountMinor int64, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	actorID, err := s.requireClient(ctx, accessToken)
 	if err != nil {
 		return postgres.OrderRecord{}, false, err
@@ -257,6 +257,13 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	if internalBalanceAmountMinor < 0 {
 		return postgres.OrderRecord{}, false, ErrCheckoutBalanceContribution
 	}
+	if expectedTotalAmountMinor < 0 {
+		return postgres.OrderRecord{}, false, postgres.ErrCheckoutEvidenceStale
+	}
+	var confirmedTotal *int64
+	if expectedTotalAmountMinor > 0 {
+		confirmedTotal = &expectedTotalAmountMinor
+	}
 	paymentExternalReference := wlt.DerivedExternalReference("checkout", idempotencyKey)
 	paymentCancellationKey := wlt.DerivedIdempotencyKey("cancel-checkout", idempotencyKey)
 	paymentRecoveryReader := s.paymentIntentRecoveryReader()
@@ -267,7 +274,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	}
 	attemptInput := postgres.CheckoutInput{
 		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID,
-		FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedCartVersion: expectedCartVersion,
+		FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedTotalAmountMinor: confirmedTotal, ExpectedCartVersion: expectedCartVersion,
 		IdempotencyKey: idempotencyKey, CorrelationID: correlationID,
 		Recipient:                recipient,
 		PaymentExternalReference: paymentExternalReference, PaymentCancellationKey: paymentCancellationKey,
@@ -288,7 +295,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		return postgres.OrderRecord{}, false, postgres.ErrCheckoutEvidenceStale
 	}
 	store, err := postgres.ReadStore(ctx, s.db, storeID)
-	if err != nil || store.PublicationState != "published" || !supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode) {
+	if err != nil || !storeAllowsCheckout(store, fulfillmentMode) {
 		return postgres.OrderRecord{}, false, ErrFulfillmentModeUnavailable
 	}
 	orderability, err := postgres.EvaluateStoreOrderability(ctx, s.db, storeID, fulfillmentMode, time.Now().UTC())
@@ -313,7 +320,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		evidence = postgres.CheckoutEvidence{ServiceCityID: facts.StoreServiceCityID, PolicyVersion: serviceability.PolicyVersion, Status: serviceabilityResult.Status, StoreVersion: facts.StoreVersion, AddressVersion: facts.AddressVersion, StoreOriginLatitude: facts.StoreOriginLatitude, StoreOriginLongitude: facts.StoreOriginLongitude, AddressLatitude: facts.AddressLatitude, AddressLongitude: facts.AddressLongitude}
 	}
 	input := postgres.CheckoutInput{
-		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID, FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), PaymentMethod: paymentMethod, DeliveryProofKeyring: s.proofKeys,
+		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID, FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedTotalAmountMinor: confirmedTotal, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), PaymentMethod: paymentMethod, DeliveryProofKeyring: s.proofKeys,
 		Evidence:       evidence,
 		IdempotencyKey: idempotencyKey, ActingActorID: actorID, CorrelationID: correlationID,
 		Recipient:                recipient,
@@ -379,6 +386,10 @@ func (s *Service) paymentIntentCanceller() postgres.PaymentIntentCanceller {
 		}
 		return nil
 	}
+}
+
+func storeAllowsCheckout(store postgres.StoreRecord, fulfillmentMode string) bool {
+	return store.PublicationState == "published" && strings.TrimSpace(store.PartnerActorID) != "" && supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode)
 }
 
 func supportsFulfillmentMode(modes []string, requested string) bool {

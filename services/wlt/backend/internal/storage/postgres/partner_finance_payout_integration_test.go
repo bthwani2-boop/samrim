@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -305,15 +306,31 @@ func setupPartnerFinanceProof(t *testing.T, s *fieldAcquisitionScenario, multiSt
 }
 
 func TestPartnerFullAvailableIncludesEveryAuthorizedStoreBeyondLegacyLimit(t *testing.T) {
-	s := newFieldAcquisitionScenario(t)
+	started := time.Now()
+	// This stress test must execute 201 full canonical Store earning journeys.
+	// The ordinary 45s fixture context expires during setup (at ~125 Stores
+	// on the isolated 1.5-CPU DB), before the actual payout request is called.
+	// Keep setup separate from the explicitly bounded finance operation.
+	s := newFieldAcquisitionScenarioWithTimeout(t, 100*time.Second)
+	t.Logf("scale phase=migrated duration=%v", time.Since(started))
 	owner, _, a, _, _, facts, _, cipher, earn := setupPartnerFinanceProof(t, s, false)
+	t.Logf("scale phase=base-setup duration=%v", time.Since(started))
 	ids := []string{a}
 	for index := range 200 {
 		id := fmt.Sprintf("finance-scale-%d-%s", index, s.suffix)
 		earn(id, "BTHWANI_CAPTAIN", 1000)
 		ids = append(ids, id)
+		if (index+1)%25 == 0 {
+			t.Logf("scale phase=earn stores=%d duration=%v", index+1, time.Since(started))
+		}
 	}
-	record, _, err := CreatePartitionedPartnerPayoutRequest(s.ctx, s.db, cipher, PartnerPayoutRequestInput{PartnerActorID: owner, ScopeMode: PartnerPayoutScopeFullAvailable, RequestedStoreIDs: ids, BeneficiaryFacts: map[string]IdentityFacts{owner: facts}, IdempotencyKey: "scale-all-" + s.suffix, CorrelationID: "scale-all-corr-" + s.suffix})
+	t.Logf("scale phase=payout-start duration=%v", time.Since(started))
+	// A short deadline applies to the 201-Store payout itself, not the
+	// unrelated sequence of 1,200+ fixture writes that precede it.
+	payoutCtx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
+	defer cancel()
+	record, _, err := CreatePartitionedPartnerPayoutRequest(payoutCtx, s.db, cipher, PartnerPayoutRequestInput{PartnerActorID: owner, ScopeMode: PartnerPayoutScopeFullAvailable, RequestedStoreIDs: ids, BeneficiaryFacts: map[string]IdentityFacts{owner: facts}, IdempotencyKey: "scale-all-" + s.suffix, CorrelationID: "scale-all-corr-" + s.suffix})
+	t.Logf("scale phase=payout-finished duration=%v err=%v", time.Since(started), err)
 	if err != nil || len(record.Stores) != 201 || record.TotalAmountMinor != 184500 {
 		t.Fatalf("full payout must cover complete authorized Store scope: stores=%d amount=%d err=%v", len(record.Stores), record.TotalAmountMinor, err)
 	}

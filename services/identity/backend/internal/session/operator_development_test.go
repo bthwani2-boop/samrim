@@ -33,6 +33,23 @@ func TestDevelopmentOperatorSessionUsesCanonicalInitialOperator(t *testing.T) {
 	if pair.Identity.Subject != view.ActorID || pair.Identity.Role != "operator" || !pair.Identity.CanManageOperatorPermissions {
 		t.Fatalf("development session identity = %+v; want canonical permission administrator %q", pair.Identity, view.ActorID)
 	}
+	// Recreate the service with the same canonical database as after an app restart.
+	// The existing session must remain valid without issuing a new operator identity.
+	restarted := New(db, secret, true, nil)
+	resolved, err := restarted.ResolveAccessToken(ctx, pair.AccessToken)
+	if err != nil || resolved.Subject != view.ActorID || resolved.SessionID != pair.Identity.SessionID || !resolved.CanManageOperatorPermissions {
+		t.Fatalf("session lost after Identity service restart: identity=%+v err=%v", resolved, err)
+	}
+	rotated, err := restarted.Refresh(ctx, domain.RefreshRequest{
+		RefreshToken: pair.RefreshToken, ClientInstanceId: "operator-development-instance",
+		RefreshRequestId: "operator_restart_refresh_attempt_001",
+	})
+	if err != nil || rotated.Identity.SessionID != pair.Identity.SessionID || rotated.Identity.Subject != view.ActorID || rotated.AccessToken == "" {
+		t.Fatalf("refresh failed after Identity restart: identity=%+v err=%v", rotated.Identity, err)
+	}
+	if verified, verifyErr := New(db, secret, true, nil).ResolveAccessToken(ctx, rotated.AccessToken); verifyErr != nil || verified.SessionID != pair.Identity.SessionID {
+		t.Fatalf("refreshed session lost across service instances: identity=%+v err=%v", verified, verifyErr)
+	}
 
 	mismatched := New(db, secret, true, map[string]string{"operator": "act_wrong_development_operator"})
 	if _, err := mismatched.CreateDevelopment(ctx, "operator", "operator-mismatch-instance"); !errors.Is(err, domain.ErrForbidden) {
@@ -52,6 +69,9 @@ func TestDevelopmentOperatorSessionUsesCanonicalInitialOperator(t *testing.T) {
 	if enabled {
 		t.Fatal("development login re-enabled the disabled operator role")
 	}
+	if _, err := restarted.ResolveAccessToken(ctx, rotated.AccessToken); !errors.Is(err, domain.ErrUnauthenticated) {
+		t.Fatalf("disabled operator role retained an active session: %v", err)
+	}
 	if _, err := db.ExecContext(ctx, "UPDATE identity_actor_roles SET enabled=true WHERE actor_id=$1 AND role='operator'", view.ActorID); err != nil {
 		t.Fatalf("restore isolated role fixture: %v", err)
 	}
@@ -67,6 +87,9 @@ func TestDevelopmentOperatorSessionUsesCanonicalInitialOperator(t *testing.T) {
 	}
 	if securityEnabled {
 		t.Fatal("development login re-enabled actor security")
+	}
+	if _, err := restarted.ResolveAccessToken(ctx, rotated.AccessToken); !errors.Is(err, domain.ErrUnauthenticated) {
+		t.Fatalf("disabled operator security retained an active session: %v", err)
 	}
 }
 

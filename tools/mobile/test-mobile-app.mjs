@@ -139,7 +139,8 @@ if (app === "app-field") {
   const fieldReadinessSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-readiness.tsx"), "utf8");
   assert.match(fieldReadinessSource, /fresh: Crypto\.randomUUID\(\)/, "app-field: each Add Partner tap must create a distinct form identity");
   const newCaseSourceForNavigation = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-new-case.tsx"), "utf8");
-  assert.match(newCaseSourceForNavigation, /router\.replace\(\{ pathname: "\/cases", params: \{ caseId: submitted\.case\.id,/, "app-field: after confirmed submission, return to the saved case list");
+  assert.match(newCaseSourceForNavigation, /if \(outcome\.kind !== "confirmed"\) \{/, "app-field: uncertain submission cannot navigate as confirmed");
+  assert.match(newCaseSourceForNavigation, /router\.replace\(\{ pathname: "\/cases", params: \{ caseId: outcome\.canonical\.case\.id,/, "app-field: only canonical confirmed submission may return to the saved case list");
   assert.match(newCaseSourceForNavigation, /optionalMediaUnconfirmed \? \{ mediaWarning: "1" \}/, "app-field: the saved case must keep the optional media warning after navigation");
   const hoursEditorSource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-working-hours-editor.tsx"), "utf8");
   assert.doesNotMatch(hoursEditorSource, /applyYemenDaytimePreset|8 صباحًا – 10 مساءً · كل الأسبوع|أيام · \$\{intervals\.length\} فترات/, "app-field: the removed quick preset and counts must not reappear in the working-hours form");
@@ -344,8 +345,11 @@ if (app === "app-field") {
   assert.match(fieldCatalogRetrySource, /accessibilityLabel="بحث منتجات الكتالوج الأولي" editable=\{!busy && !productCreateAttempt\.current\}/, "Catalog search input must stay locked until uncertain product creation resolves");
   assert.match(fieldCatalogRetrySource, /disabled=\{busy \|\| loading \|\| Boolean\(productCreateAttempt\.current\)\} label="بحث"/, "Catalog search action must not invalidate a pending retry");
   console.log("MOBILE_FIELD_PRODUCT_RETRY_LOCK=PASS uncertain create retains form, identifier, and signature");
-  const uploadedMedia = { ...saved, id: "field-case-1", version: 4, storeProfileImage: { uri: "https://media.example/store-1.png", contentSha256: "digest-one" }, firstStoreProofImageUploaded: true };
-  assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia }, "store", 3), true, "Field store image needs canonical confirmation");
+  const mediaRights = { creator: "Store owner", sourceDescription: "Original Store photo", sourceUri: "https://example.test/original", rightsStatement: "Permission granted", rightsUri: "https://example.test/rights", rightsAttested: true };
+  const persistedRights = { creator: mediaRights.creator, sourceDescription: mediaRights.sourceDescription, sourceUri: mediaRights.sourceUri, rightsStatement: mediaRights.rightsStatement, rightsUri: mediaRights.rightsUri, attestedByActorId: "field-test-actor", attestedAt: "2026-10-13T12:00:00Z" };
+  const uploadedMedia = { ...saved, id: "field-case-1", origin: "field", version: 4, storeProfileImage: { uri: "https://media.example/store-1.png", contentSha256: "digest-one", provenance: persistedRights }, firstStoreProofImageUploaded: true };
+  const logoConfirmed = (uploaded, canonical) => fieldDraftMediaUploadConfirmed(uploaded, canonical, "store", 3, "field-case-1", mediaRights);
+  assert.equal(logoConfirmed(uploadedMedia, { ...uploadedMedia }), true, "Field store image needs canonical confirmation with persisted rights");
   for (const [name, changed] of [
     ["case identity", { id: "other-case" }],
     ["version", { version: 3 }],
@@ -353,9 +357,9 @@ if (app === "app-field") {
     ["changed media URI", { storeProfileImage: { uri: "https://media.example/store-2.png", contentSha256: "digest-one" } }],
     ["missing canonical digest", { storeProfileImage: { uri: "https://media.example/store-1.png" } }],
     ["image digest divergence", { storeProfileImage: { uri: "https://media.example/store-1.png", contentSha256: "digest-two" } }],
-  ]) assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia, ...changed }, "store", 3), false, "Field logo upload confirmation missed " + name);
-  assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, storeProfileImage: { uri: "https://media.example/store-1.png" } }, uploadedMedia, "store", 3), false, "A response without media digest cannot prove upload");
-  assert.equal(fieldDraftMediaUploadConfirmed({ ...uploadedMedia, version: 3 }, uploadedMedia, "store", 3), false, "A stale upload version cannot prove persistence");
+  ]) assert.equal(logoConfirmed(uploadedMedia, { ...uploadedMedia, ...changed }), false, `Field logo upload confirmation missed ${name}`);
+  assert.equal(logoConfirmed({ ...uploadedMedia, storeProfileImage: { uri: "https://media.example/store-1.png" } }, uploadedMedia), false, "A response without media digest cannot prove upload");
+  assert.equal(logoConfirmed({ ...uploadedMedia, version: 3 }, uploadedMedia), false, "A stale upload version cannot prove persistence");
   for (const status of [401, 403, 404]) {
     const readFailure = Object.assign(new Error("Readback failed"), { kind: "http", status });
     const uncertain = markFieldMediaReadbackUncertain(readFailure);

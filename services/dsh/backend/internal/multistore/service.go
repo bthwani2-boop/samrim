@@ -68,9 +68,13 @@ func (s *Service) Checkout(ctx context.Context, accessToken string, input postgr
 			return postgres.MultiStoreCheckoutRecord{}, false, postgres.ErrMultiStoreCheckoutInvalid
 		}
 		childInput.Recipient = input.Children[child.ChildIndex].Recipient
+		// This amount was bound to the persisted parent idempotency hash. A
+		// replay must present the identical accepted child quote, otherwise
+		// CreateMultiStoreCheckout rejects it before any child is charged.
+		childInput.ExpectedTotalAmountMinor = input.Children[child.ChildIndex].ExpectedTotalAmountMinor
 		childKey := postgres.HashMarketingFacts("multi-store-child-checkout", checkout.ID, child.ID)
 		childCorrelation := postgres.HashMarketingFacts("multi-store-child-correlation", strings.TrimSpace(correlationID), checkout.ID, child.ID)
-		order, _, checkoutErr := s.cart.Checkout(ctx, accessToken, childInput.CartID, childInput.StoreID, childInput.AddressID, childInput.FulfillmentMode, childInput.PromotionCode, childInput.Recipient, 0, childInput.CartVersion, childKey, childCorrelation)
+		order, _, checkoutErr := s.cart.Checkout(ctx, accessToken, childInput.CartID, childInput.StoreID, childInput.AddressID, childInput.FulfillmentMode, childInput.PromotionCode, childInput.ExpectedTotalAmountMinor, childInput.Recipient, 0, childInput.CartVersion, childKey, childCorrelation)
 		if checkoutErr != nil {
 			if !isDefinitiveChildCheckoutError(checkoutErr) {
 				return postgres.MultiStoreCheckoutRecord{}, false, ErrCheckoutInProgress

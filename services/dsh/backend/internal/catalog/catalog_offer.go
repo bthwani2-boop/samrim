@@ -74,7 +74,7 @@ func (s *Service) applyQuickPriceChange(ctx context.Context, actorID, storeID st
 	if current.StoreID != storeID {
 		return postgres.CatalogQuickPriceUpdateResult{}, ErrStoreOwnershipForbidden
 	}
-	if change.PriceMinor == current.PriceMinor {
+	if quickPriceIsUnchanged(current, change) {
 		return postgres.CatalogQuickPriceUpdateResult{OfferID: offerID, Outcome: "UNCHANGED", Offer: &current}, nil
 	}
 	update := postgres.CatalogOfferUpdateInput{PriceMinor: change.PriceMinor, Availability: current.Availability, PublicationState: current.PublicationState, QuantityPolicy: current.QuantityPolicy, QuantityMinBaseUnits: quickPriceQuantity(current.QuantityMinBaseUnits), QuantityMaxBaseUnits: quickPriceQuantity(current.QuantityMaxBaseUnits), QuantityStepBaseUnits: quickPriceQuantity(current.QuantityStepBaseUnits), PricingBasis: current.PricingBasis, PricingUnitBaseUnits: current.PricingUnitBaseUnits, InventoryPolicy: current.InventoryPolicy, InventoryOnHandBaseUnits: current.InventoryOnHandBaseUnits}
@@ -96,6 +96,12 @@ func (s *Service) applyQuickPriceChange(ctx context.Context, actorID, storeID st
 	}
 	offer := updated.Offer
 	return postgres.CatalogQuickPriceUpdateResult{OfferID: offerID, Outcome: outcome, Offer: &offer}, nil
+}
+
+func quickPriceIsUnchanged(current postgres.CatalogStoreOfferRecord, change postgres.CatalogQuickPriceUpdateInput) bool {
+	// A stale attempt must reach the canonical idempotency/version owner:
+	// the same key can replay, while a different key must conflict.
+	return change.PriceMinor == current.PriceMinor && change.ExpectedVersion == current.Version
 }
 
 func quickPriceQuantity(value *int64) int64 {

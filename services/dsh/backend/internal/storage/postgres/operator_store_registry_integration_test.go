@@ -146,7 +146,7 @@ func TestOperatorRegistryUpgradePreservesRowsAndUniquePartnerJoiningFacts(t *tes
 		seen := map[string]bool{}
 		cursor := ""
 		for {
-			page, err := postgres.ListStoresForOperator(ctx, db, "", "", "", "contains", "updated_desc", 100, cursor)
+			page, err := postgres.ListStoresForOperator(ctx, db, "", "", "", "contains", "updated_desc", 50, cursor)
 			if err != nil {
 				t.Fatal(err)
 			}

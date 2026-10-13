@@ -645,6 +645,8 @@ type cashLiabilityItemJSON struct {
 type cashLiabilityResponse struct {
 	Items            []cashLiabilityItemJSON `json:"items"`
 	TotalAmountMinor int64                   `json:"totalAmountMinor"`
+	TotalItems       int                     `json:"totalItems"`
+	HasMore          bool                    `json:"hasMore"`
 }
 
 type cashLiabilityRegistryResponse struct {
@@ -877,7 +879,7 @@ func writeCashLiability(w http.ResponseWriter, result postgres.CashLiabilityList
 	for _, item := range result.Items {
 		items = append(items, cashLiabilityItemJSON{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: item.CollectedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00"), RemittanceState: item.RemittanceState, RemittanceReference: item.RemittanceReference, RemittanceID: item.RemittanceID})
 	}
-	writeJSON(w, http.StatusOK, cashLiabilityResponse{Items: items, TotalAmountMinor: result.TotalAmountMinor})
+	writeJSON(w, http.StatusOK, cashLiabilityResponse{Items: items, TotalAmountMinor: result.TotalAmountMinor, TotalItems: result.TotalItems, HasMore: result.HasMore})
 }
 
 func (s *Server) remitCash(w http.ResponseWriter, r *http.Request) {

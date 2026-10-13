@@ -143,6 +143,18 @@ func (s *Service) AttachModifierGroup(ctx context.Context, accessToken, storeID,
 	if ordinal < 0 || ordinal > 1000 {
 		return ErrCatalogModifierInvalid
 	}
+	offerID, groupID = strings.TrimSpace(offerID), strings.TrimSpace(groupID)
+	offer, err := postgres.ReadCatalogOffer(ctx, s.db, offerID)
+	if err != nil {
+		return err
+	}
+	group, err := postgres.ReadCatalogModifierGroup(ctx, s.db, groupID)
+	if err != nil {
+		return err
+	}
+	if !storeAttachmentMatchesOwner(storeID, offer.StoreID, group.StoreID) {
+		return ErrStoreOwnershipForbidden
+	}
 	return postgres.AttachCatalogModifierGroup(ctx, s.db, offerID, groupID, ordinal)
 }
 
@@ -187,7 +199,24 @@ func (s *Service) AttachOfferToSection(ctx context.Context, accessToken, storeID
 	if ordinal < 0 || ordinal > 1000 {
 		return ErrCatalogSectionInvalid
 	}
+	sectionID, offerID = strings.TrimSpace(sectionID), strings.TrimSpace(offerID)
+	section, err := postgres.ReadCatalogStorefrontSection(ctx, s.db, sectionID)
+	if err != nil {
+		return err
+	}
+	offer, err := postgres.ReadCatalogOffer(ctx, s.db, offerID)
+	if err != nil {
+		return err
+	}
+	if !storeAttachmentMatchesOwner(storeID, section.StoreID, offer.StoreID) {
+		return ErrStoreOwnershipForbidden
+	}
 	return postgres.AttachOfferToCatalogStorefrontSection(ctx, s.db, sectionID, offerID, ordinal)
+}
+
+func storeAttachmentMatchesOwner(storeID, firstStoreID, secondStoreID string) bool {
+	storeID = strings.TrimSpace(storeID)
+	return storeID != "" && firstStoreID == storeID && secondStoreID == storeID
 }
 
 func (s *Service) ReadStorefrontSection(ctx context.Context, accessToken, storeID, sectionID string) (postgres.CatalogStorefrontSectionRecord, error) {

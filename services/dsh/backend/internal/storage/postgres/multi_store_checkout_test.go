@@ -9,8 +9,8 @@ func TestValidateMultiStoreCheckoutChildrenSupportsCustomerFulfillmentModes(t *t
 	for _, fulfillmentMode := range []string{"BTHWANI_CAPTAIN", "PARTNER_CAPTAIN"} {
 		t.Run(fulfillmentMode, func(t *testing.T) {
 			children := []MultiStoreCheckoutChildInput{
-				{CartID: "cart-a", StoreID: "store-a", AddressID: "address-a", CartVersion: 1, FulfillmentMode: fulfillmentMode},
-				{CartID: "cart-b", StoreID: "store-b", AddressID: "address-b", CartVersion: 1, FulfillmentMode: fulfillmentMode},
+				{CartID: "cart-a", StoreID: "store-a", AddressID: "address-a", CartVersion: 1, ExpectedTotalAmountMinor: 1300, FulfillmentMode: fulfillmentMode},
+				{CartID: "cart-b", StoreID: "store-b", AddressID: "address-b", CartVersion: 1, ExpectedTotalAmountMinor: 1300, FulfillmentMode: fulfillmentMode},
 			}
 			if err := validateMultiStoreCheckoutChildren(children); err != nil {
 				t.Fatalf("valid delivery fulfillment mode rejected: %v", err)
@@ -18,8 +18,8 @@ func TestValidateMultiStoreCheckoutChildrenSupportsCustomerFulfillmentModes(t *t
 		})
 	}
 	children := []MultiStoreCheckoutChildInput{
-		{CartID: "cart-a", StoreID: "store-a", CartVersion: 1, FulfillmentMode: "CUSTOMER_PICKUP"},
-		{CartID: "cart-b", StoreID: "store-b", CartVersion: 1, FulfillmentMode: "CUSTOMER_PICKUP"},
+		{CartID: "cart-a", StoreID: "store-a", CartVersion: 1, ExpectedTotalAmountMinor: 1300, FulfillmentMode: "CUSTOMER_PICKUP"},
+		{CartID: "cart-b", StoreID: "store-b", CartVersion: 1, ExpectedTotalAmountMinor: 1300, FulfillmentMode: "CUSTOMER_PICKUP"},
 	}
 	if err := validateMultiStoreCheckoutChildren(children); err != nil {
 		t.Fatalf("valid pickup fulfillment mode rejected: %v", err)
@@ -46,12 +46,18 @@ func TestMultiStoreCheckoutRecipientHashPreservesLegacySelfReplay(t *testing.T) 
 	}
 	legacyHash := HashMarketingFacts(string(legacyJSON))
 	input := MultiStoreCheckoutInput{ID: "multi-1", ClientActorID: "client-1", Children: []MultiStoreCheckoutChildInput{
-		{CartID: "cart-a", StoreID: "store-a", AddressID: "address-a", CartVersion: 1, FulfillmentMode: "BTHWANI_CAPTAIN", Recipient: DeliveryRecipientInput{Mode: "SELF"}},
-		{CartID: "cart-b", StoreID: "store-b", AddressID: "address-b", CartVersion: 2, FulfillmentMode: "PARTNER_CAPTAIN", Recipient: DeliveryRecipientInput{Mode: "SELF"}},
+		{CartID: "cart-a", StoreID: "store-a", AddressID: "address-a", CartVersion: 1, ExpectedTotalAmountMinor: 1300, FulfillmentMode: "BTHWANI_CAPTAIN", Recipient: DeliveryRecipientInput{Mode: "SELF"}},
+		{CartID: "cart-b", StoreID: "store-b", AddressID: "address-b", CartVersion: 2, ExpectedTotalAmountMinor: 1400, FulfillmentMode: "PARTNER_CAPTAIN", Recipient: DeliveryRecipientInput{Mode: "SELF"}},
 	}}
-	if got := HashMultiStoreCheckoutRequest(input); got != legacyHash {
-		t.Fatal("SELF recipient changed the legacy multi-store idempotency identity")
+	if got := HashMultiStoreCheckoutRequest(input); got == legacyHash {
+		t.Fatal("a legacy parent without confirmed child totals must not be replayed as chargeable")
 	}
+	confirmedHash := HashMultiStoreCheckoutRequest(input)
+	input.Children[0].ExpectedTotalAmountMinor++
+	if got := HashMultiStoreCheckoutRequest(input); got == confirmedHash {
+		t.Fatal("changing an accepted child amount did not change parent idempotency identity")
+	}
+	input.Children[0].ExpectedTotalAmountMinor--
 	input.Children[0].Recipient = DeliveryRecipientInput{Mode: "OTHER", Name: "Ali", PhoneE164: "+967712345678"}
 	otherHash := HashMultiStoreCheckoutRequest(input)
 	if otherHash == legacyHash {
@@ -65,8 +71,8 @@ func TestMultiStoreCheckoutRecipientHashPreservesLegacySelfReplay(t *testing.T) 
 
 func TestValidateMultiStoreCheckoutChildrenRejectsInvalidFulfillmentFacts(t *testing.T) {
 	base := []MultiStoreCheckoutChildInput{
-		{CartID: "cart-a", StoreID: "store-a", AddressID: "address-a", CartVersion: 1, FulfillmentMode: "PARTNER_CAPTAIN"},
-		{CartID: "cart-b", StoreID: "store-b", AddressID: "address-b", CartVersion: 1, FulfillmentMode: "BTHWANI_CAPTAIN"},
+		{CartID: "cart-a", StoreID: "store-a", AddressID: "address-a", CartVersion: 1, ExpectedTotalAmountMinor: 1300, FulfillmentMode: "PARTNER_CAPTAIN"},
+		{CartID: "cart-b", StoreID: "store-b", AddressID: "address-b", CartVersion: 1, ExpectedTotalAmountMinor: 1300, FulfillmentMode: "BTHWANI_CAPTAIN"},
 	}
 	tests := map[string]func([]MultiStoreCheckoutChildInput) []MultiStoreCheckoutChildInput{
 		"missing delivery address": func(children []MultiStoreCheckoutChildInput) []MultiStoreCheckoutChildInput {
@@ -83,6 +89,10 @@ func TestValidateMultiStoreCheckoutChildrenRejectsInvalidFulfillmentFacts(t *tes
 		},
 		"duplicate cart": func(children []MultiStoreCheckoutChildInput) []MultiStoreCheckoutChildInput {
 			children[1].CartID = children[0].CartID
+			return children
+		},
+		"missing accepted child amount": func(children []MultiStoreCheckoutChildInput) []MultiStoreCheckoutChildInput {
+			children[1].ExpectedTotalAmountMinor = 0
 			return children
 		},
 		"duplicate store": func(children []MultiStoreCheckoutChildInput) []MultiStoreCheckoutChildInput {

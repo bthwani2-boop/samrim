@@ -1,11 +1,11 @@
 "use client";
 
 import type { Notification, NotificationKind } from "@bthwani/dsh";
+import { parseOperatorNotificationList } from "./notification-readback";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "../../shell/page-header";
 import { notificationKindLabel } from "./notification-presentation";
 import { useReadOnReturn } from "../shared/use-read-on-return";
-type NotificationListPayload = Readonly<{ notifications?: ReadonlyArray<Notification>; unreadCount?: number; nextCursor?: string }>;
 type NotificationReadPayload = Readonly<{ notificationId: string; readAt: string }>;
 type NotificationHistory = Readonly<{ operatorNotificationCursors?: ReadonlyArray<string> }>;
 const notificationPageSize = 50;
@@ -36,30 +36,33 @@ export function OperatorNotifications() {
     return () => window.removeEventListener("popstate", syncPageFromUrl);
   }, []);
 
-  const load = useCallback(async (pageCursor: string, preserveCurrent = false) => {
+  const load = useCallback(async (pageCursor: string, preserveCurrent = false): Promise<boolean> => {
     const sequence = ++requestSequence.current;
     if (preserveCurrent) setRefreshing(true); else setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams({ limit: String(notificationPageSize) });
       if (pageCursor) params.set("cursor", pageCursor);
-      const response = await fetch(`/api/notifications?${params.toString()}`, { cache: "no-store" });
+      const response = await fetch(`/api/notifications?${params.toString()}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
       if (!response.ok) {
         const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
         throw new Error(payload?.error?.message || "تعذر قراءة إشعارات التشغيل.");
       }
-      const payload = await response.json() as NotificationListPayload;
-      if (sequence !== requestSequence.current) return;
-      setItems(payload.notifications ?? []);
-      setUnreadCount(typeof payload.unreadCount === "number" && Number.isSafeInteger(payload.unreadCount) && payload.unreadCount >= 0 ? payload.unreadCount : null);
+      const payload = parseOperatorNotificationList(await response.json());
+      if (sequence !== requestSequence.current) return false;
+      setItems(payload.notifications);
+      setUnreadCount(payload.unreadCount);
       setNextCursor(payload.nextCursor ?? "");
+      return true;
     } catch (cause) {
-      if (sequence !== requestSequence.current) return;
+      if (sequence !== requestSequence.current) return false;
       if (!preserveCurrent) {
         setItems([]);
+        setUnreadCount(null);
         setNextCursor("");
       }
-      setError(cause instanceof Error ? cause.message : "تعذر قراءة إشعارات التشغيل.");
+      setError(cause instanceof Error && cause.message !== "INVALID_OPERATOR_NOTIFICATIONS" ? cause.message : "تعذر التحقق من قائمة إشعارات التشغيل. أعد المحاولة.");
+      return false;
     } finally {
       if (sequence === requestSequence.current) {
         if (preserveCurrent) setRefreshing(false); else setLoading(false);
@@ -94,10 +97,15 @@ export function OperatorNotifications() {
         throw new Error(payload?.error?.message || "تعذر تحديث حالة الإشعار.");
       }
       const payload = await response.json() as NotificationReadPayload;
-      setItems((current) => current.map((candidate) => candidate.id === payload.notificationId ? { ...candidate, readAt: payload.readAt } : candidate));
-      setUnreadCount((current) => current === null ? null : Math.max(0, current - 1));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذر تحديث حالة الإشعار.");
+      if (payload?.notificationId !== item.id || typeof payload.readAt !== "string" || !Number.isFinite(Date.parse(payload.readAt))) {
+        throw new Error("INVALID_NOTIFICATION_READBACK");
+      }
+      if (!(await load(cursor, true))) setError("وصل تأكيد القراءة، لكن تعذرت قراءة الحالة الحالية للإشعارات. أعد المحاولة.");
+    } catch {
+      const verified = await load(cursor, true);
+      setError(verified
+        ? "لم نتأكد من نتيجة تحديد الإشعار كمقروء؛ تم تحديث القائمة من الخادم."
+        : "لم نتأكد من نتيجة تحديد الإشعار كمقروء وتعذرت إعادة القراءة. أعد تحديث الإشعارات قبل محاولة أخرى.");
     } finally {
       setPendingId("");
     }
@@ -117,9 +125,9 @@ export function OperatorNotifications() {
       {!loading && unreadItems.length ? <NotificationGroup title="الجديدة" count={unreadItems.length} items={unreadItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
       {!loading && readItems.length ? <NotificationGroup title="المقروءة" count={readItems.length} items={readItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
       {!loading && (cursor || cursorStack.length > 0 || nextCursor) ? <nav className="operator-notification-pagination" aria-label="صفحات الإشعارات">
-        <button type="button" className="button button-secondary" disabled={loading || refreshing || (cursorStack.length === 0 && !cursor)} onClick={() => { const previous = [...cursorStack]; const previousCursor = previous.pop() ?? ""; navigatePage(previousCursor, previous); }}>الأحدث</button>
+        <button type="button" className="button button-secondary" disabled={loading || refreshing || Boolean(pendingId) || (cursorStack.length === 0 && !cursor)} onClick={() => { const previous = [...cursorStack]; const previousCursor = previous.pop() ?? ""; navigatePage(previousCursor, previous); }}>الأحدث</button>
         <span>صفحة {cursorStack.length + 1}</span>
-        <button type="button" className="button button-secondary" disabled={loading || refreshing || !nextCursor} onClick={() => navigatePage(nextCursor, [...cursorStack, cursor])}>الأقدم</button>
+        <button type="button" className="button button-secondary" disabled={loading || refreshing || Boolean(pendingId) || !nextCursor} onClick={() => navigatePage(nextCursor, [...cursorStack, cursor])}>الأقدم</button>
       </nav> : null}
     </section>
   );

@@ -170,12 +170,12 @@ func (s *CartServer) checkout(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	if strings.TrimSpace(input.CartID) == "" || strings.TrimSpace(input.StoreID) == "" || (input.FulfillmentMode != contract.FulfillmentMode("CUSTOMER_PICKUP") && strings.TrimSpace(input.AddressID) == "") || strings.TrimSpace(string(input.FulfillmentMode)) == "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId, storeId, addressId and fulfillmentMode are required")
+	if strings.TrimSpace(input.CartID) == "" || strings.TrimSpace(input.StoreID) == "" || (input.FulfillmentMode != contract.FulfillmentMode("CUSTOMER_PICKUP") && strings.TrimSpace(input.AddressID) == "") || strings.TrimSpace(string(input.FulfillmentMode)) == "" || input.ExpectedTotalAmountMinor < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId, storeId, addressId, fulfillmentMode and accepted quote total are required")
 		return
 	}
 	recipient := postgres.DeliveryRecipientInput{Mode: input.Recipient.Mode, Name: input.Recipient.Name, PhoneE164: input.Recipient.PhoneE164, Instructions: input.Recipient.Instructions}
-	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), input.PromotionCode, recipient, int64(input.InternalBalanceAmountMinor), expected, idempotency, correlation)
+	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), input.PromotionCode, int64(input.ExpectedTotalAmountMinor), recipient, int64(input.InternalBalanceAmountMinor), expected, idempotency, correlation)
 	if err != nil {
 		writeCartError(w, err)
 		return
@@ -229,7 +229,7 @@ func toCart(item postgres.CartRecord) contract.Cart {
 		for _, modifier := range line.SelectedModifiers {
 			modifiers = append(modifiers, contract.CartLineModifier{OptionID: modifier.OptionID, OptionNameAr: modifier.OptionNameAr, PriceDeltaMinor: int(modifier.PriceDeltaMinor)})
 		}
-		lines = append(lines, contract.CartLine{ID: line.ID, CartID: line.CartID, StoreOfferID: line.StoreOfferID, VariantID: line.VariantID, ProductID: line.ProductID, ProductName: line.ProductName, VariantTitle: line.VariantTitle, MeasurementKind: contract.MeasurementKind(line.MeasurementKind), BaseUnit: contract.BaseUnit(line.BaseUnit), PricingBasis: line.PricingBasis, QuantityPolicy: line.QuantityPolicy, QuantityMinBaseUnits: int(line.QuantityMinBaseUnits), QuantityMaxBaseUnits: int(line.QuantityMaxBaseUnits), QuantityStepBaseUnits: int(line.QuantityStepBaseUnits), PricingUnitBaseUnits: int(line.PricingUnitBaseUnits), QuantityBaseUnits: int(line.QuantityBaseUnits), SelectedModifierOptionIds: line.SelectedModifierOptionIDs, SelectedModifiers: modifiers, UnitPriceMinor: int(line.UnitPriceMinor), ModifierAmountMinor: int(line.ModifierAmountMinor), LineAmountMinor: int(line.LineAmountMinor), Currency: line.Currency, OfferVersion: line.OfferVersion, CreatedAt: line.CreatedAt, UpdatedAt: line.UpdatedAt})
+		lines = append(lines, contract.CartLine{ID: line.ID, CartID: line.CartID, StoreOfferID: line.StoreOfferID, VariantID: line.VariantID, ProductID: line.ProductID, ProductName: line.ProductName, VariantTitle: line.VariantTitle, MeasurementKind: contract.MeasurementKind(line.MeasurementKind), BaseUnit: contract.BaseUnit(line.BaseUnit), PricingBasis: line.PricingBasis, QuantityPolicy: line.QuantityPolicy, QuantityMinBaseUnits: int(line.QuantityMinBaseUnits), QuantityMaxBaseUnits: int(line.QuantityMaxBaseUnits), QuantityStepBaseUnits: int(line.QuantityStepBaseUnits), PricingUnitBaseUnits: int(line.PricingUnitBaseUnits), QuantityBaseUnits: int(line.QuantityBaseUnits), SelectedModifierOptionIds: line.SelectedModifierOptionIDs, SelectedModifiers: modifiers, RequiresReview: line.RequiresReview, UnitPriceMinor: int(line.UnitPriceMinor), ModifierAmountMinor: int(line.ModifierAmountMinor), LineAmountMinor: int(line.LineAmountMinor), Currency: line.Currency, OfferVersion: line.OfferVersion, CreatedAt: line.CreatedAt, UpdatedAt: line.UpdatedAt})
 	}
 	return contract.Cart{ID: item.ID, StoreID: item.StoreID, State: contract.CartState(item.State), Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }

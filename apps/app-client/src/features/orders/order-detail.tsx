@@ -3,10 +3,11 @@ import { BthwaniButton, BthwaniIcon, BthwaniMap, BthwaniSectionHeader, BthwaniSk
 import { createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, type OrderTrackingResponse, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
+import { isClientOrderScopeCurrent } from "./order-session-scope";
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -16,14 +17,21 @@ function baseUrl(): string {
 
 const client = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 
+function hasCurrentClientActor(actorID: string): boolean {
+  const session = currentIdentityState();
+  return session.kind === "authenticated" && actorID.length > 0 && session.identity.subject.trim() === actorID;
+}
+
 export default function ClientOrderDetail() {
   const { orderId: rawOrderId } = useLocalSearchParams<{ orderId?: string | string[] }>();
   const orderId = Array.isArray(rawOrderId) ? rawOrderId[0] ?? "" : rawOrderId ?? "";
   const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; order: Order } | { kind: "error" } | { kind: "auth_required" }>({ kind: "loading" });
+  const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; order: Order; actorID: string } | { kind: "error" } | { kind: "auth_required" }>({ kind: "loading" });
   const [identityState, setIdentityState] = useState(currentIdentityState);
+  const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
+  const loadSequence = useRef(0);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
   const [cancelling, setCancelling] = useState(false);
@@ -39,28 +47,37 @@ export default function ClientOrderDetail() {
   const [ratingError, setRatingError] = useState("");
 
   const refreshTracking = useCallback(async () => {
-    if (!orderId.trim()) return;
+    const session = currentIdentityState();
+    if (!orderId.trim() || session.kind !== "authenticated") return;
+    const actorID = session.identity.subject.trim();
     try {
       const token = await getUsableIdentityAccessToken();
-      setTracking({ kind: "ready", value: await client().readClientOrderTracking(token, orderId) });
+      const value = await client().readClientOrderTracking(token, orderId);
+      if (hasCurrentClientActor(actorID) && value.orderId === orderId) setTracking({ kind: "ready", value });
     } catch (error) {
       console.error("DSH client order tracking read failed", error);
-      setTracking({ kind: "error" });
+      if (hasCurrentClientActor(actorID)) setTracking({ kind: "error" });
     }
   }, [orderId]);
 
   const refreshDeliveryProof = useCallback(async () => {
-    if (!orderId.trim()) return;
+    const session = currentIdentityState();
+    if (!orderId.trim() || session.kind !== "authenticated") return;
+    const actorID = session.identity.subject.trim();
     try {
       const token = await getUsableIdentityAccessToken();
-      setDeliveryProof({ kind: "ready", value: await client().readClientDeliveryProof(token, orderId) });
+      const value = await client().readClientDeliveryProof(token, orderId);
+      if (hasCurrentClientActor(actorID)) setDeliveryProof({ kind: "ready", value });
     } catch (error) {
       console.error("DSH client delivery proof read failed", error);
-      setDeliveryProof({ kind: "error" });
+      if (hasCurrentClientActor(actorID)) setDeliveryProof({ kind: "error" });
     }
   }, [orderId]);
 
   const refreshRating = useCallback(async (orderState: Order["state"]) => {
+    const session = currentIdentityState();
+    if (session.kind !== "authenticated") return;
+    const actorID = session.identity.subject.trim();
     if (!orderId.trim() || (orderState !== "DELIVERED" && orderState !== "PICKED_UP")) {
       setOrderRating({ kind: "hidden" });
       return;
@@ -70,10 +87,12 @@ export default function ClientOrderDetail() {
     try {
       const token = await getUsableIdentityAccessToken();
       const value = await client().readClientOrderRating(token, orderId);
+      if (!hasCurrentClientActor(actorID)) return;
       setSelectedRating(value.rating.rating);
       setReview(value.rating.review);
       setOrderRating({ kind: "ready", value });
     } catch (error) {
+      if (!hasCurrentClientActor(actorID)) return;
       if (typeof error === "object" && error !== null && "status" in error && (error as { status?: unknown }).status === 404) {
         setSelectedRating(0);
         setReview("");
@@ -86,6 +105,10 @@ export default function ClientOrderDetail() {
   }, [orderId]);
 
   const load = useCallback(async (preserveCurrent = false) => {
+    const sequence = ++loadSequence.current;
+    const session = currentIdentityState();
+    if (session.kind !== "authenticated" || !session.identity.subject.trim()) { setState({ kind: "auth_required" }); return; }
+    const actorID = session.identity.subject.trim();
     if (!orderId.trim()) { setState({ kind: "error" }); return; }
     if (preserveCurrent) setRefreshing(true);
     else setState({ kind: "loading" });
@@ -97,68 +120,77 @@ export default function ClientOrderDetail() {
     try {
       const token = await getUsableIdentityAccessToken();
       const order = (await client().readOrder(token, orderId)).order;
-      setState({ kind: "ready", order });
+      const current = currentIdentityState();
+      if (sequence !== loadSequence.current || current.kind !== "authenticated" || !isClientOrderScopeCurrent(actorID, order.id, current.identity.subject.trim(), orderId)) return;
+      setState({ kind: "ready", order, actorID });
       await refreshDeliveryProof();
+      if (sequence !== loadSequence.current || !hasCurrentClientActor(actorID)) return;
       if (order.fulfillmentMode === "BTHWANI_CAPTAIN") await refreshTracking();
+      if (sequence !== loadSequence.current || !hasCurrentClientActor(actorID)) return;
       await refreshRating(order.state);
     } catch (error) {
       console.error("DSH client order detail read failed", error);
-      if (preserveCurrent) setRefreshError("تعذر تحديث الحالة. ما زالت التفاصيل الحالية معروضة.");
+      const current = currentIdentityState();
+      if (sequence !== loadSequence.current || current.kind !== "authenticated" || current.identity.subject.trim() !== actorID) return;
+      if (preserveCurrent) setRefreshError("تعذر تحديث الحالة. أعد القراءة قبل اتخاذ قرار جديد.");
       else setState({ kind: "error" });
     } finally {
-      setRefreshing(false);
+      if (sequence === loadSequence.current) setRefreshing(false);
     }
   }, [orderId, refreshDeliveryProof, refreshRating, refreshTracking]);
 
   const submitRating = useCallback(async () => {
-    if (state.kind !== "ready" || (state.order.state !== "DELIVERED" && state.order.state !== "PICKED_UP") || selectedRating < 1 || ratingSubmitting) return;
+    if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || !hasCurrentClientActor(state.actorID) || (state.order.state !== "DELIVERED" && state.order.state !== "PICKED_UP") || selectedRating < 1 || ratingSubmitting) return;
     setRatingSubmitting(true);
     setRatingError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const value = await client().createClientOrderRating(token, state.order.id, { rating: selectedRating, review }, state.order.version);
+      if (!hasCurrentClientActor(state.actorID)) return;
       setOrderRating({ kind: "ready", value });
       setReview(value.rating.review);
     } catch (error) {
       console.error("DSH client order rating create failed", error);
-      setRatingError("تعذر حفظ التقييم. قد تكون العملية سُجلت بالفعل؛ حدّث الحالة للتحقق.");
+      if (hasCurrentClientActor(state.actorID)) setRatingError("تعذر حفظ التقييم. قد تكون العملية سُجلت بالفعل؛ حدّث الحالة للتحقق.");
     } finally {
       setRatingSubmitting(false);
     }
-  }, [ratingSubmitting, review, selectedRating, state]);
+  }, [activeActorID, orderId, ratingSubmitting, review, selectedRating, state]);
 
   const cancelOrder = useCallback(async () => {
-    if (state.kind !== "ready" || state.order.state !== "CREATED" || cancelling) return;
+    if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || !hasCurrentClientActor(state.actorID) || state.order.state !== "CREATED" || cancelling) return;
     setCancelling(true);
     setCancelError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const result = await client().cancelClientOrder(token, state.order.id, state.order.version);
-      setState({ kind: "ready", order: result.order });
+      if (!hasCurrentClientActor(state.actorID) || result.order.id !== orderId) return;
+      setState({ kind: "ready", order: result.order, actorID: state.actorID });
       await refreshTracking();
     } catch (error) {
       console.error("DSH client order cancellation failed", error);
-      setCancelError("تعذر إلغاء الطلب. ربما بدأ المتجر معالجته؛ حدّث الحالة وحاول مرة أخرى.");
+      if (hasCurrentClientActor(state.actorID)) setCancelError("تعذر إلغاء الطلب. ربما بدأ المتجر معالجته؛ حدّث الحالة وحاول مرة أخرى.");
     } finally {
       setCancelling(false);
     }
-  }, [cancelling, refreshTracking, state]);
+  }, [activeActorID, cancelling, orderId, refreshTracking, state]);
 
   const decideAdjustment = useCallback(async (adjustmentId: string, decision: "ACCEPT" | "REJECT") => {
-    if (state.kind !== "ready" || adjustmentBusy) return;
+    if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || !hasCurrentClientActor(state.actorID) || adjustmentBusy) return;
     setAdjustmentBusy(adjustmentId);
     setAdjustmentError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const result = await client().decideClientOrderAdjustment(token, state.order.id, adjustmentId, { decision, expectedAdjustmentVersion: state.order.adjustments.find((item) => item.id === adjustmentId)?.version ?? 0 }, state.order.version);
-      setState({ kind: "ready", order: result.order });
+      if (!hasCurrentClientActor(state.actorID) || result.order.id !== orderId) return;
+      setState({ kind: "ready", order: result.order, actorID: state.actorID });
     } catch (error) {
       console.error("DSH client order adjustment decision failed", error);
-      setAdjustmentError("تعذر حفظ قرارك. حدّث الطلب للتحقق من الحالة قبل إعادة المحاولة.");
+      if (hasCurrentClientActor(state.actorID)) setAdjustmentError("تعذر حفظ قرارك. حدّث الطلب للتحقق من الحالة قبل إعادة المحاولة.");
     } finally {
       setAdjustmentBusy("");
     }
-  }, [adjustmentBusy, state]);
+  }, [activeActorID, adjustmentBusy, orderId, state]);
 
   function confirmAdjustmentDecision(adjustmentId: string, decision: "ACCEPT" | "REJECT") {
     if (decision === "REJECT") {
@@ -184,20 +216,22 @@ export default function ClientOrderDetail() {
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
 
   useEffect(() => {
-    if (identityState.kind !== "authenticated") {
+    if (!activeActorID) {
+      loadSequence.current += 1;
       setState({ kind: "auth_required" });
       setRefreshError("");
       return;
     }
     void load();
-  }, [identityState.kind, load]);
+  }, [activeActorID, load]);
 
   useEffect(() => {
-    if (state.kind !== "ready" || state.order.fulfillmentMode === "CUSTOMER_PICKUP" || ["DELIVERED", "DELIVERY_FAILED", "CANCELLED", "PICKED_UP"].includes(state.order.state)) return;
+    if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || state.order.fulfillmentMode === "CUSTOMER_PICKUP" || ["DELIVERED", "DELIVERY_FAILED", "CANCELLED", "PICKED_UP"].includes(state.order.state)) return;
     const timer = setInterval(() => { void refreshTracking(); }, 30_000);
     return () => clearInterval(timer);
-  }, [refreshTracking, state]);
+  }, [activeActorID, orderId, refreshTracking, state]);
 
+  if (state.kind === "ready" && !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId)) return <View style={styles.state} accessibilityLabel="جارٍ التحقق من صاحب الطلب"><BthwaniSkeleton height={128} /><Text style={styles.muted}>جارٍ التحقق من الجلسة وملكية الطلب…</Text></View>;
   if (state.kind === "auth_required") return <View style={styles.state}><BthwaniIcon name="account" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>سجّل الدخول لعرض تفاصيل الطلب</Text><Text style={styles.muted}>سجّل الدخول أولًا ثم افتح الطلب مرة أخرى.</Text><BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/orders" as Href)} /></View>;
   if (state.kind === "loading") return <View style={styles.state} accessibilityLabel="جارٍ تجهيز تفاصيل الطلب"><BthwaniSkeleton width="42%" height={28} /><BthwaniSkeleton height={128} /><BthwaniSkeleton height={180} /></View>;
   if (state.kind === "error") return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة تفاصيل الطلب</Text><Text style={styles.muted}>قد تكون الجلسة أو الطلب غير متاحين الآن.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى الطلبات" onPress={() => router.back()} variant="secondary" /></View>;
