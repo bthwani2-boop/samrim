@@ -3,9 +3,9 @@ import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/desi
 import { createDshMobileClient, createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt, type OrderConversationMessageAttempt } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 
 const conversationRole = "client" as const;
 
@@ -19,6 +19,9 @@ function senderLabel(role: string): string {
   return role === "client" ? "العميل" : role === "partner" ? "المتجر" : "الكابتن";
 }
 
+function conversationActorID(): string { const state = currentIdentityState(); return state.kind === "authenticated" ? state.identity.subject.trim() : ""; }
+function isCurrentActor(actorID: string): boolean { return Boolean(actorID) && actorID === conversationActorID(); }
+
 export function OrderConversation({ orderId }: { orderId: string }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -28,37 +31,64 @@ export function OrderConversation({ orderId }: { orderId: string }) {
   const [error, setError] = useState("");
   const [pendingAttempt, setPendingAttempt] = useState<OrderConversationMessageAttempt | null>(null);
   const [attemptStorageReady, setAttemptStorageReady] = useState(false);
+  const [identityState, setIdentityState] = useState(currentIdentityState);
+  const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
+  const [loadedActorID, setLoadedActorID] = useState("");
+  const [loadedOrderID, setLoadedOrderID] = useState("");
+  const readSequence = useRef(0);
+  const correctOwner = Boolean(loadedActorID) && loadedActorID === activeActorID && loadedOrderID === orderId && isCurrentActor(loadedActorID);
 
   const load = useCallback(async (): Promise<boolean> => {
-    if (!orderId.trim()) return false;
+    const sequence = ++readSequence.current;
+    const requestedActorID = conversationActorID();
+    if (!orderId.trim() || !requestedActorID) { setLoadedActorID(""); setState({ kind: "error" }); return false; }
+    setLoadedActorID("");
+    setLoadedOrderID("");
+    setPendingAttempt(null);
+    setState({ kind: "loading" });
     setAttemptStorageReady(false);
-    setState((current) => current.kind === "ready" ? current : { kind: "loading" });
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const identity = currentIdentityState();
       if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("CLIENT_SESSION_REQUIRED");
       const actorID = identity.identity.subject.trim();
+      if (actorID !== requestedActorID || sequence !== readSequence.current) return false;
       const rawAttempt = await SecureStore.getItemAsync(orderConversationMessageAttemptStorageKey(conversationRole, actorID, orderId));
       const attempt = parseOrderConversationMessageAttempt(rawAttempt, actorID, orderId);
+      if (sequence !== readSequence.current || !isCurrentActor(actorID)) return false;
       setPendingAttempt(attempt);
       if (attempt) setBody(attempt.body);
       setAttemptStorageReady(true);
-      setState({ kind: "ready", value: await client().readOrderConversation(token, orderId, 100) });
+      const value = await client().readOrderConversation(token, orderId, 100);
+      if (sequence !== readSequence.current || !isCurrentActor(actorID)) return false;
+      setLoadedActorID(actorID);
+      setLoadedOrderID(orderId);
+      setState({ kind: "ready", value });
       return true;
     } catch (cause) {
       console.error("DSH client order conversation read failed", cause);
-      setState({ kind: "error" });
+      if (sequence === readSequence.current && isCurrentActor(requestedActorID)) setState({ kind: "error" });
       return false;
     }
   }, [orderId]);
 
-  useEffect(() => { setBody(""); setPendingAttempt(null); void load(); }, [load]);
+  useEffect(() => subscribeIdentitySession(setIdentityState), []);
+  useEffect(() => {
+    if (!activeActorID) { readSequence.current += 1; setLoadedActorID(""); setLoadedOrderID(""); setState({ kind: "error" }); setPendingAttempt(null); setAttemptStorageReady(false); setBody(""); return; }
+    setBody("");
+    setPendingAttempt(null);
+    setAttemptStorageReady(false);
+    void load();
+  }, [activeActorID, load]);
 
   async function submitAttempt(attempt: OrderConversationMessageAttempt, token: string) {
+    if (!correctOwner || !isCurrentActor(attempt.actorID)) return;
     try {
       await client().sendOrderConversationMessage(token, attempt.orderID, { body: attempt.body }, attempt.idempotencyKey, attempt.correlationID);
+      if (!isCurrentActor(attempt.actorID)) return;
     } catch (cause) {
+      if (!isCurrentActor(attempt.actorID)) return;
       console.error("DSH client order conversation send failed", cause);
       if (isDefinitiveDshMobileClientRejection(cause)) {
         let storageCleared = false;
@@ -68,9 +98,11 @@ export function OrderConversation({ orderId }: { orderId: string }) {
         } catch (cleanupCause) {
           console.error("DSH client rejected order conversation attempt cleanup failed", cleanupCause);
         }
+        if (!isCurrentActor(attempt.actorID)) return;
         setPendingAttempt(storageCleared ? null : attempt);
         setBody(storageCleared ? "" : attempt.body);
         await load();
+        if (!isCurrentActor(attempt.actorID)) return;
         setError(storageCleared ? "رفض الخادم إرسال الرسالة؛ حدّثنا حالة المحادثة ويمكنك تعديل الرسالة والمحاولة مجددًا." : "رفض الخادم إرسال الرسالة، وتعذر حذف محاولة الاستعادة المحفوظة. أعد القراءة قبل أي محاولة جديدة.");
         return;
       }
@@ -87,24 +119,28 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     } catch (cause) {
       console.error("DSH client order conversation recovery record cleanup failed", cause);
     }
+    if (!isCurrentActor(attempt.actorID)) return;
     setPendingAttempt(storageCleared ? null : attempt);
     setBody(storageCleared ? "" : attempt.body);
     const refreshed = await load();
+    if (!isCurrentActor(attempt.actorID)) return;
     if (!storageCleared) setError("تأكد إرسال الرسالة، وبقيت المحاولة محفوظة. أعد المحاولة من الزر نفسه لتجنب تكرارها.");
     else if (!refreshed) setError("تأكد إرسال الرسالة، لكن تعذر تحديث سجل المحادثة.");
   }
 
   async function send() {
     const normalized = body.trim();
-    if (!normalized || busy || !attemptStorageReady || pendingAttempt || state.kind !== "ready" || !state.value.canSend) return;
+    if (!correctOwner || !normalized || busy || !attemptStorageReady || pendingAttempt || state.kind !== "ready" || !state.value.canSend) return;
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const identity = currentIdentityState();
       if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("CLIENT_SESSION_REQUIRED");
       const actorID = identity.identity.subject.trim();
+      if (!isCurrentActor(actorID) || actorID !== loadedActorID) return;
       const attempt = createOrderConversationMessageAttempt(actorID, orderId, normalized, `conversation_${Crypto.randomUUID()}`, `conversation_corr_${Crypto.randomUUID()}`);
       await SecureStore.setItemAsync(orderConversationMessageAttemptStorageKey(conversationRole, actorID, orderId), JSON.stringify(attempt));
+      if (!isCurrentActor(actorID)) return;
       setPendingAttempt(attempt);
       await submitAttempt(attempt, token);
     } catch (cause) {
@@ -115,7 +151,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
 
   async function retryPendingAttempt() {
     const attempt = pendingAttempt;
-    if (!attempt || busy || !attemptStorageReady) return;
+    if (!correctOwner || !attempt || !isCurrentActor(attempt.actorID) || busy || !attemptStorageReady) return;
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
@@ -129,13 +165,13 @@ export function OrderConversation({ orderId }: { orderId: string }) {
   }
 
   async function markRead() {
-    if (busy || state.kind !== "ready") return;
+    if (!correctOwner || busy || state.kind !== "ready") return;
     const last = state.value.messages.at(-1);
     if (!last || state.value.unreadCount < 1) return;
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      await client().markOrderConversationRead(token, orderId, { messageId: last.id });
+      if (!isCurrentActor(loadedActorID)) return; await client().markOrderConversationRead(token, orderId, { messageId: last.id });
       await load();
     } catch (cause) {
       console.error("DSH client order conversation read-state write failed", cause);
@@ -143,6 +179,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     } finally { setBusy(false); }
   }
 
+  if (!activeActorID || (loadedActorID && !correctOwner)) return <BthwaniSurface tone="base" style={styles.surface} accessibilityLabel="محادثة الطلب"><Text style={styles.muted}>{activeActorID ? "جارٍ التحقق من محادثة الحساب الحالي…" : "سجّل الدخول لقراءة محادثة الطلب."}</Text></BthwaniSurface>;
   return <BthwaniSurface tone="base" style={styles.surface} accessibilityLabel="محادثة الطلب">
     <View style={styles.header}><View><Text style={styles.title}>محادثة الطلب</Text><Text style={styles.muted}>تواصل تشغيلي مرتبط بهذا الطلب فقط.</Text></View>{state.kind === "ready" && state.value.unreadCount > 0 ? <Text style={styles.unread}>{state.value.unreadCount} غير مقروء</Text> : null}</View>
     {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المحادثة…</Text></View> : null}

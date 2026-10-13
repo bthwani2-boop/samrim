@@ -3,12 +3,15 @@ import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/desi
 import { createDshMobileClient, createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt, type OrderConversationMessageAttempt } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken, role } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession, role } from "../../bootstrap/identity";
 
 function client() { const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim(); if (!value) throw new Error("DSH_BASE_URL_REQUIRED"); return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() }); }
 function senderLabel(role: string): string { return role === "client" ? "العميل" : role === "partner" ? "أنت" : "الكابتن"; }
+
+function conversationActorID(): string { const state = currentIdentityState(); return state.kind === "authenticated" ? state.identity.subject.trim() : ""; }
+function isCurrentActor(actorID: string): boolean { return Boolean(actorID) && actorID === conversationActorID(); }
 
 export function OrderConversation({ orderId }: { orderId: string }) {
   const theme = useAppearanceTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
@@ -16,47 +19,77 @@ export function OrderConversation({ orderId }: { orderId: string }) {
   const [body, setBody] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const [pendingAttempt, setPendingAttempt] = useState<OrderConversationMessageAttempt | null>(null);
   const [attemptStorageReady, setAttemptStorageReady] = useState(false);
+  const [identityState, setIdentityState] = useState(currentIdentityState);
+  const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
+  const [loadedActorID, setLoadedActorID] = useState("");
+  const [loadedOrderID, setLoadedOrderID] = useState("");
+  const readSequence = useRef(0);
+  const correctOwner = Boolean(loadedActorID) && loadedActorID === activeActorID && loadedOrderID === orderId && isCurrentActor(loadedActorID);
   const load = useCallback(async (): Promise<boolean> => {
-    if (!orderId.trim()) return false;
+    const sequence = ++readSequence.current;
+    const requestedActorID = conversationActorID();
+    if (!orderId.trim() || !requestedActorID) { setLoadedActorID(""); setState({ kind: "error" }); return false; }
+    setLoadedActorID("");
+    setLoadedOrderID("");
+    setPendingAttempt(null);
+    setState({ kind: "loading" });
     setAttemptStorageReady(false); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const identity = currentIdentityState();
       if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("PARTNER_SESSION_REQUIRED");
       const actorID = identity.identity.subject.trim();
+      if (actorID !== requestedActorID || sequence !== readSequence.current) return false;
       const key = orderConversationMessageAttemptStorageKey(role, actorID, orderId);
       const attempt = parseOrderConversationMessageAttempt(await SecureStore.getItemAsync(key), actorID, orderId);
+      if (sequence !== readSequence.current || !isCurrentActor(actorID)) return false;
       setPendingAttempt(attempt);
       if (attempt) setBody(attempt.body);
       setAttemptStorageReady(true);
-      setState({ kind: "ready", value: await client().readOrderConversation(token, orderId, 100) });
+      const value = await client().readOrderConversation(token, orderId, 100);
+      if (sequence !== readSequence.current || !isCurrentActor(actorID)) return false;
+      setLoadedActorID(actorID);
+      setLoadedOrderID(orderId);
+      setState({ kind: "ready", value });
       return true;
-    } catch (cause) { console.error("DSH partner order conversation read failed", cause); setState({ kind: "error" }); return false; }
+    } catch (cause) { console.error("DSH partner order conversation read failed", cause); if (sequence === readSequence.current && isCurrentActor(requestedActorID)) setState({ kind: "error" }); return false; }
   }, [orderId]);
-  useEffect(() => { setBody(""); setPendingAttempt(null); void load(); }, [load]);
+  useEffect(() => subscribeIdentitySession(setIdentityState), []);
+  useEffect(() => {
+    if (!activeActorID) { readSequence.current += 1; setLoadedActorID(""); setLoadedOrderID(""); setState({ kind: "error" }); setPendingAttempt(null); setAttemptStorageReady(false); setBody(""); return; }
+    setBody("");
+    setPendingAttempt(null);
+    setAttemptStorageReady(false);
+    void load();
+  }, [activeActorID, load]);
 
   async function submitAttempt(attempt: OrderConversationMessageAttempt, token: string) {
-    try { await client().sendOrderConversationMessage(token, attempt.orderID, { body: attempt.body }, attempt.idempotencyKey, attempt.correlationID); }
-    catch (cause) { console.error("DSH partner order conversation send failed", cause); if (isDefinitiveDshMobileClientRejection(cause)) { let cleared = false; try { await SecureStore.deleteItemAsync(orderConversationMessageAttemptStorageKey(role, attempt.actorID, attempt.orderID)); cleared = true; } catch (cleanupCause) { console.error("DSH partner rejected order conversation attempt cleanup failed", cleanupCause); } setPendingAttempt(cleared ? null : attempt); setBody(cleared ? "" : attempt.body); await load(); setError(cleared ? "رفض الخادم إرسال الرسالة؛ حدّثنا حالة المحادثة ويمكنك تعديل الرسالة والمحاولة مجددًا." : "رفض الخادم إرسال الرسالة، وتعذر حذف المحاولة المحفوظة. أعد قراءة المحادثة قبل أي محاولة جديدة."); return; } setPendingAttempt(attempt); setBody(attempt.body); setError("لم نتأكد من نتيجة الإرسال. بقيت الرسالة محفوظة؛ أعد المحاولة من الزر نفسه لتجنب تكرارها."); return; }
+    if (!correctOwner || !isCurrentActor(attempt.actorID)) return;
+    try { await client().sendOrderConversationMessage(token, attempt.orderID, { body: attempt.body }, attempt.idempotencyKey, attempt.correlationID); if (!isCurrentActor(attempt.actorID)) return; }
+    catch (cause) { if (!isCurrentActor(attempt.actorID)) return; console.error("DSH partner order conversation send failed", cause); if (isDefinitiveDshMobileClientRejection(cause)) { let cleared = false; try { await SecureStore.deleteItemAsync(orderConversationMessageAttemptStorageKey(role, attempt.actorID, attempt.orderID)); cleared = true; } catch (cleanupCause) { console.error("DSH partner rejected order conversation attempt cleanup failed", cleanupCause); } if (!isCurrentActor(attempt.actorID)) return; setPendingAttempt(cleared ? null : attempt); setBody(cleared ? "" : attempt.body); await load(); if (!isCurrentActor(attempt.actorID)) return; setError(cleared ? "رفض الخادم إرسال الرسالة؛ حدّثنا حالة المحادثة ويمكنك تعديل الرسالة والمحاولة مجددًا." : "رفض الخادم إرسال الرسالة، وتعذر حذف المحاولة المحفوظة. أعد قراءة المحادثة قبل أي محاولة جديدة."); return; } setPendingAttempt(attempt); setBody(attempt.body); setError("لم نتأكد من نتيجة الإرسال. بقيت الرسالة محفوظة؛ أعد المحاولة من الزر نفسه لتجنب تكرارها."); return; }
     let storageCleared = false;
     try { await SecureStore.deleteItemAsync(orderConversationMessageAttemptStorageKey(role, attempt.actorID, attempt.orderID)); storageCleared = true; }
     catch (cause) { console.error("DSH partner order conversation recovery record cleanup failed", cause); }
+    if (!isCurrentActor(attempt.actorID)) return;
     setPendingAttempt(storageCleared ? null : attempt); setBody(storageCleared ? "" : attempt.body);
     const refreshed = await load();
+    if (!isCurrentActor(attempt.actorID)) return;
     if (!storageCleared) setError("تأكد إرسال الرسالة، وبقيت المحاولة محفوظة. أعد المحاولة من الزر نفسه لتجنب تكرارها.");
     else if (!refreshed) setError("تأكد إرسال الرسالة، لكن تعذر تحديث سجل المحادثة.");
   }
 
   async function send() {
-    if (!body.trim() || busy || !attemptStorageReady || pendingAttempt || state.kind !== "ready" || !state.value.canSend) return;
+    if (!correctOwner || !body.trim() || busy || !attemptStorageReady || pendingAttempt || state.kind !== "ready" || !state.value.canSend) return;
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const identity = currentIdentityState();
       if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("PARTNER_SESSION_REQUIRED");
       const actorID = identity.identity.subject.trim();
+      if (!isCurrentActor(actorID) || actorID !== loadedActorID) return;
       const attempt = createOrderConversationMessageAttempt(actorID, orderId, body, `conversation_${Crypto.randomUUID()}`, `conversation_corr_${Crypto.randomUUID()}`);
       await SecureStore.setItemAsync(orderConversationMessageAttemptStorageKey(role, actorID, orderId), JSON.stringify(attempt));
+      if (!isCurrentActor(actorID)) return;
       setPendingAttempt(attempt);
       await submitAttempt(attempt, token);
     } catch (cause) { console.error("DSH partner order conversation attempt could not be saved", cause); setError("تعذر حفظ محاولة الرسالة بأمان؛ لم تُرسل."); }
@@ -65,7 +98,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
 
   async function retryPendingAttempt() {
     const attempt = pendingAttempt;
-    if (!attempt || busy || !attemptStorageReady) return;
+    if (!correctOwner || !attempt || !isCurrentActor(attempt.actorID) || busy || !attemptStorageReady) return;
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
@@ -75,7 +108,8 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     } catch (cause) { console.error("DSH partner order conversation recovery failed", cause); setError("تعذر التحقق من جلسة صاحب المحاولة. بقيت الرسالة محفوظة كما هي."); }
     finally { setBusy(false); }
   }
-  async function markRead() { if (busy || state.kind !== "ready" || state.value.unreadCount < 1) return; const last = state.value.messages.at(-1); if (!last) return; setBusy(true); setError(""); try { const token = await getUsableIdentityAccessToken(); await client().markOrderConversationRead(token, orderId, { messageId: last.id }); await load(); } catch (cause) { console.error("DSH partner order conversation read-state write failed", cause); setError("تعذر تحديث حالة القراءة."); } finally { setBusy(false); } }
+  async function markRead() { if (!correctOwner || busy || state.kind !== "ready" || state.value.unreadCount < 1) return; const last = state.value.messages.at(-1); if (!last) return; setBusy(true); setError(""); try { const token = await getUsableIdentityAccessToken(); if (!isCurrentActor(loadedActorID)) return; await client().markOrderConversationRead(token, orderId, { messageId: last.id }); await load(); } catch (cause) { console.error("DSH partner order conversation read-state write failed", cause); setError("تعذر تحديث حالة القراءة."); } finally { setBusy(false); } }
+  if (!activeActorID || (loadedActorID && !correctOwner)) return <BthwaniSurface tone="base" style={styles.surface} accessibilityLabel="محادثة الطلب"><Text style={styles.muted}>{activeActorID ? "جارٍ التحقق من محادثة الحساب الحالي…" : "سجّل الدخول لقراءة محادثة الطلب."}</Text></BthwaniSurface>;
   return <BthwaniSurface tone="base" style={styles.surface} accessibilityLabel="محادثة الطلب">
     <View style={styles.header}><View><Text style={styles.title}>محادثة الطلب</Text><Text style={styles.muted}>تواصل تشغيلي مع العميل والكابتن المرتبط.</Text></View>{state.kind === "ready" && state.value.unreadCount > 0 ? <Text style={styles.unread}>{state.value.unreadCount} غير مقروء</Text> : null}</View>
     {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المحادثة…</Text></View> : null}
