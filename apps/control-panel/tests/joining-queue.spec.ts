@@ -132,3 +132,23 @@ test("joining queue recovers an expired server cursor without discarding the sel
   await expect(page.getByRole("status").filter({ hasText: "انتهت صلاحية الصفحة السابقة" })).toBeVisible();
   await expect(page.locator(".joining-case-table tbody tr")).toHaveCount(8);
 });
+
+test("CSV export treats malicious partner and store names as text, not spreadsheet formulas", async ({ page }) => {
+  await page.route("**/api/partners/joining-cases?**", (route) => route.fulfill({ json: {
+    cases: [{ ...cases[0], businessName: '  =HYPERLINK("https://invalid.example","click")', firstStoreName: "@SUM(1,2)" }],
+    nextCursor: "",
+  } }));
+  await page.goto("/partners/joining");
+  await expect(page.locator(".joining-case-table tbody tr")).toHaveCount(1);
+  await page.locator(".joining-case-table tbody tr").first().getByRole("checkbox").check();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "تصدير المحدد" }).click();
+  const download = await downloadPromise;
+  const chunks: Buffer[] = [];
+  const stream = await download.createReadStream();
+  for await (const chunk of stream) chunks.push(chunk);
+  const csv = Buffer.concat(chunks).toString("utf8");
+  expect(csv).toContain('"' + "'" + '  =HYPERLINK(""https://invalid.example"",""click"")"');
+  expect(csv).toContain(`"\'@SUM(1,2)"`);
+  expect(csv).not.toContain('"@SUM(1,2)"');
+});
