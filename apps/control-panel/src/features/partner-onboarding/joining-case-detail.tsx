@@ -5,8 +5,11 @@ import { type CommerceVertical, type CommercialStoreType, financialProfileStateL
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
-import { partnerErrorMessage } from "./partner-error-message";
-import { stablePartnerMutationHeaders } from "./partner-request";
+import { partnerErrorMessage } from "../partners/partner-error-message";
+import { stablePartnerMutationHeaders } from "../partners/partner-request";
+import { useReadOnReturn } from "../shared/use-read-on-return";
+import { StoreLogo } from "../stores/store-logo";
+import { readJoiningQueueReturn } from "./joining-return-context";
 
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
   { value: "BTHWANI_CAPTAIN", label: "توصيل بثواني", description: "المنصة تتولى إسناد التوصيل وإدارته." },
@@ -27,8 +30,11 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
   const { state: sessionState } = useSession();
   const canManageFinancialTerms = sessionState.kind === "authenticated" && sessionState.identity.permissions?.includes("finance") === true && sessionState.identity.permissions?.includes("platform_policies") === true;
   const [result, setResult] = useState<JoiningCaseResponse | null>(null);
-  const [proofDetails, setProofDetails] = useState<JoiningCaseProofDetailsResponse | null>(null);
-  const [proofDetailsError, setProofDetailsError] = useState("");
+  const [backHref, setBackHref] = useState("/partners/joining");
+  useEffect(() => setBackHref(readJoiningQueueReturn(caseId)), [caseId]);
+  const [proofDetails, setProofDetails] = useState<{ caseId: string; response: JoiningCaseProofDetailsResponse } | null>(null);
+  const [proofDetailsError, setProofDetailsError] = useState<{ caseId: string; message: string } | null>(null);
+  const [proofDetailsLoading, setProofDetailsLoading] = useState(false);
   const [storeImageFile, setStoreImageFile] = useState<File | null>(null);
   const [storeImageProvenance, setStoreImageProvenance] = useState<MediaProvenanceInput>({ creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false });
   const [activeTermsPolicy, setActiveTermsPolicy] = useState<PartnerFinancialTermsPolicy | null>(null);
@@ -70,14 +76,17 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
   }, []);
 
   const readProofDetails = useCallback(async () => {
-    setProofDetailsError("");
+    setProofDetailsLoading(true);
+    setProofDetailsError(null);
     try {
       const response = await fetch(`/api/partners/joining-cases/${encodeURIComponent(caseId)}/proof-details`, { cache: "no-store" });
       if (!response.ok) throw new Error("JOINING_CASE_PROOF_DETAILS_UNAVAILABLE");
-      setProofDetails(await response.json() as JoiningCaseProofDetailsResponse);
+      setProofDetails({ caseId, response: await response.json() as JoiningCaseProofDetailsResponse });
     } catch {
       setProofDetails(null);
-      setProofDetailsError("تعذر قراءة بيانات الإثبات الخاصة بصلاحية المشغّل.");
+      setProofDetailsError({ caseId, message: "تعذر قراءة بيانات الإثبات الخاصة بصلاحية المشغّل." });
+    } finally {
+      setProofDetailsLoading(false);
     }
   }, [caseId]);
 
@@ -106,9 +115,14 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
   useEffect(() => {
     void readCase();
     void readOptions();
-    void readFinancialTermsPolicy();
-    void readProofDetails();
-  }, [readCase, readOptions, readFinancialTermsPolicy, readProofDetails]);
+  }, [readCase, readOptions]);
+
+  // Financial terms are only needed for approval or recovery, not for every draft visit.
+  const needsTerms = result?.case.state === "submitted" || (result?.case.state === "approved" && result?.case.financialProfileState === "REQUIRED");
+  useEffect(() => {
+    if (needsTerms) void readFinancialTermsPolicy();
+  }, [needsTerms, readFinancialTermsPolicy]);
+  useReadOnReturn(() => readCase(false), !busy && !correctionReason.trim() && !storeImageFile);
 
   const currentVerticalId = result?.case.firstStoreVerticalId ?? "";
   useEffect(() => {
@@ -265,6 +279,8 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
   }
 
   const current = result?.case;
+  const requestedProof = proofDetails?.caseId === caseId ? proofDetails.response : null;
+  const requestedProofError = proofDetailsError?.caseId === caseId ? proofDetailsError.message : "";
   const storeId = current?.store?.id;
   const cityName = current?.serviceCityId ? cities.find((city) => city.id === current.serviceCityId)?.displayNameAr ?? "غير متاحة في القراءة الحالية" : "غير محددة";
   const verticalName = current?.firstStoreVerticalId ? verticals.find((vertical) => vertical.id === current.firstStoreVerticalId)?.nameAr ?? "غير متاح في القراءة الحالية" : "غير محدد";
@@ -274,13 +290,28 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
   return (
     <section className="access-card" aria-labelledby="joining-case-detail-title">
       <div className="access-card-heading">
-
-        <h2 id="joining-case-detail-title">تفاصيل حالة انضمام الشريك</h2>
+        <h2 id="joining-case-detail-title">طلب انضمام الشريك</h2>
       </div>
       {!current ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر العثور على الحالة</strong><p>{error || "الحالة غير متاحة."}</p><button type="button" className="button button-secondary" onClick={() => void readCase()}>إعادة القراءة</button></div> : (
         <>
-          <div className="managed-status managed-status-info" role="status">
-            <strong>الحالة: {joiningCaseStateLabel(current.state)}</strong>
+          <section className="partner-case-summary" aria-label="ملخص طلب الانضمام">
+            <div className="partner-case-summary-main">
+              <StoreLogo name={current.firstStoreName} uri={current.storeProfileImage?.uri} />
+              <div>
+                <h3>{current.firstStoreName}</h3>
+                <p>{current.ownerFullName?.trim() || "اسم المالك غير مسجل"} · <a href={`tel:${current.contactPhoneE164}`}><bdi dir="ltr">{current.contactPhoneE164}</bdi></a></p>
+                <p>{cityName} · {verticalName}</p>
+              </div>
+            </div>
+            <div className="partner-case-summary-actions">
+              <span className="status-badge" role="status">الحالة: {joiningCaseStateLabel(current.state)}</span>
+              {storeId ? <Link className="button button-secondary" href={`/partners/stores/${encodeURIComponent(storeId)}`}>فتح ملف المتجر</Link> : null}
+              {current.partnerActorId ? <Link className="button button-secondary" href={`/partners/actors/${encodeURIComponent(current.partnerActorId)}`}>فتح ملف الشريك</Link> : null}
+              <a className="button button-primary" href="#joining-case-actions">متابعة الإجراء</a>
+            </div>
+          </section>
+          <details className="partner-case-details">
+            <summary>تفاصيل الانضمام والتوثيق</summary>
             <dl className="facts-grid">
               <div><dt>اسم المالك</dt><dd>{current.ownerFullName || "غير مسجل في هذه الحالة"}</dd></div>
               <div><dt>رقم جوال المالك</dt><dd dir="ltr">{current.contactPhoneE164 || "غير مسجل"}</dd></div>
@@ -290,10 +321,10 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>العنوان</dt><dd>{current.firstStoreAddress || "غير متاح في بيانات الحالة القديمة"}</dd></div>
               <div><dt>النشاط الرئيسي</dt><dd>{verticalName}</dd></div>
               <div><dt>نوع المتجر</dt><dd>{commercialTypeName}</dd></div>
-              <div><dt>موقع المتجر على الخريطة</dt><dd dir="ltr">{current.firstStoreLatitude != null && current.firstStoreLongitude != null ? `${current.firstStoreLatitude}, ${current.firstStoreLongitude}` : "غير متاح في بيانات الحالة القديمة"}</dd></div>
+              <div><dt>موقع المتجر على الخريطة</dt><dd>{current.firstStoreLatitude != null && current.firstStoreLongitude != null ? <a href={`https://www.google.com/maps?q=${current.firstStoreLatitude},${current.firstStoreLongitude}`} target="_blank" rel="noopener noreferrer">فتح موقع المتجر على الخريطة</a> : "غير متاح في بيانات الحالة القديمة"}</dd></div>
               <div><dt>ساعات العمل</dt><dd>{current.firstStoreWorkingHours ? current.firstStoreWorkingHours.intervals.length > 0 ? <ul>{current.firstStoreWorkingHours.intervals.map((interval) => <li key={`${interval.dayOfWeek}-${interval.opensAt}-${interval.closesAt}`}>{weekdays[interval.dayOfWeek - 1] ?? `اليوم ${interval.dayOfWeek}`}: {interval.opensAt}–{interval.closesAt}{interval.closesNextDay ? " (اليوم التالي)" : ""}</li>)}</ul> : "لا توجد فترات عمل مسجلة" : "غير متاحة في بيانات الحالة القديمة"}</dd></div>
               <div><dt>نوع الإثبات</dt><dd>{current.firstStoreProofType ? proofTypeLabels[current.firstStoreProofType] ?? "وثيقة نشاط" : "غير متاح في بيانات الحالة القديمة"}</dd></div>
-              <div><dt>رقم الإثبات</dt><dd>{proofDetails?.proofNumber ?? (proofDetailsError || "جارٍ قراءة الرقم من السجل الخاص…")}</dd></div>
+              <div><dt>رقم الإثبات</dt><dd>{requestedProof ? <bdi dir="auto">{requestedProof.proofNumber}</bdi> : <><button type="button" className="button button-secondary" disabled={proofDetailsLoading} onClick={() => void readProofDetails()}>{proofDetailsLoading ? "جارٍ قراءة رقم الإثبات…" : requestedProofError ? "إعادة قراءة رقم الإثبات" : "عرض رقم الإثبات عند الحاجة"}</button>{requestedProofError ? <span role="alert">{requestedProofError}</span> : null}</>}</dd></div>
               <div><dt>طريقة التوصيل</dt><dd>{current.firstStoreFulfillmentModes.map((mode) => fulfillmentModeOptions.find((option) => option.value === mode)?.label ?? mode).join("، ") || "غير متاحة في بيانات الحالة القديمة"}</dd></div>
               <div><dt>ملاحظات</dt><dd>{current.firstStoreNotes === undefined ? "غير متاحة في بيانات الحالة القديمة" : current.firstStoreNotes?.trim() || "لا توجد ملاحظات"}</dd></div>
               <div><dt>مصدر الحالة</dt><dd>{current.origin === "field" ? "تطبيق الميداني" : "لوحة التحكم"}</dd></div>
@@ -301,15 +332,14 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>شروط السياسة</dt><dd>{current.termsPolicyVersion ? <details><summary>مرجع السياسة المعتمدة</summary><bdi dir="ltr">{current.termsPolicyVersion}</bdi></details> : "لم تُربط بعد"}</dd></div>
               <div><dt>الحالة المالية</dt><dd>{financialProfileStateLabel(current.financialProfileState)}</dd></div>
             </dl>
-            {current.storeProfileImage?.uri ? <figure className="work-stack"><img src={current.storeProfileImage.uri} alt={`شعار متجر ${current.firstStoreName}`} className="media-preview" /><figcaption className="muted">شعار المتجر المحفوظ من الميدان</figcaption></figure> : <p className="muted">لم يُرفع شعار متجر لهذا الملف بعد.</p>}
-            {current.reviewPhotoUploaded ? <p><a className="button button-secondary" href={`/api/partners/joining-cases/${encodeURIComponent(caseId)}/review-photo`} target="_blank" rel="noreferrer">عرض صورة المتجر الداخلية للمراجعة</a></p> : <p className="muted">لا توجد صورة داخلية اختيارية لهذا الطلب.</p>}
+            {current.reviewPhotoUploaded ? <p><a className="button button-secondary" href={`/api/partners/joining-cases/${encodeURIComponent(caseId)}/review-photo`} target="_blank" rel="noreferrer">عرض صورة المتجر الداخلية للمراجعة</a></p> : null}
             {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}
-          </div>
-          <div className="managed-status managed-status-info">
-            <strong>العمليات المتاحة</strong>
+          </details>
+          <section id="joining-case-actions" className="partner-case-actions" aria-labelledby="joining-case-actions-heading">
+            <h3 id="joining-case-actions-heading">الخطوة التالية والإجراءات</h3>
             {current.state === "draft" && current.origin === "field" ? <p>يستكمل الميداني الملف ثم يطلب قبول المشغّل؛ لا يُنشأ دور الشريك من تطبيق الميداني.</p> : null}
-            {(current.state === "draft" || (current.state === "approved" && Boolean(current.store?.id))) ? <div className="managed-status managed-status-info">
-              <strong>مرفقات ملف الانضمام</strong>
+            {(current.state === "draft" || (current.state === "approved" && Boolean(current.store?.id))) ? <details className="partner-case-attachments">
+              <summary>إدارة شعار المتجر ومصدر الصورة</summary>
               <>
                 {current.storeProfileImage ? <p>يوجد شعار محفوظ.</p> : null}
                 <label className="field-label" htmlFor="joining-storefront-file">شعار المتجر<input id="joining-storefront-file" type="file" accept="image/jpeg,image/png" disabled={busy} onChange={(event) => setStoreImageFile(event.target.files?.[0] ?? null)} /></label>
@@ -319,7 +349,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
                 <label className="action-row"><input type="checkbox" disabled={busy} checked={storeImageProvenance.rightsAttested} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, rightsAttested: event.target.checked }))} /> أؤكد صحة مصدر الصورة وحق استخدامه</label>
                 {storeImageFile ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void uploadIntakeImage()}>رفع شعار المتجر</button> : null}
               </>
-            </div> : null}
+            </details> : null}
             {current.state === "draft" && current.origin === "control_panel" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال الحالة للمراجعة وإنشاء دور الشريك</button> : null}
             {current.state === "admission_requested" && current.origin === "field" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>قبول الإحالة وإنشاء دور الشريك</button> : null}
             {current.state === "submitted" ? <>
@@ -330,20 +360,19 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
             </> : null}
             {current.state === "needs_correction" ? <p>الحالة بانتظار تصحيح بيانات الشريك عبر المسار القانوني المتاح.</p> : null}
             {current.state === "approved" ? <>
-              <p>معتمد بشروطه المثبتة؛ تغيير السياسة لا يعدّل هذا الملف.</p>
-              <p>الخطوة التالية لصاحب المتجر: يفتح تطبيق الشريك برقم الجوال المسجّل. عند أول تفعيل يختار «أول دخول»؛ وإن سبق تفعيل الحساب يسجّل الدخول أو يستعيد كلمة المرور. لا يحتاج إلى دعوة وصول من تطبيق الميدان، ولا يعني الاعتماد نشر المتجر للعملاء.</p>
+              <p>تم اعتماد الانضمام. يُستكمل تفعيل الحساب من تطبيق الشريك، وتُدار جاهزية المتجر ونشره من ملف المتجر؛ الاعتماد لا يعني النشر للعملاء.</p>
+              <details className="partner-case-attachments"><summary>إرشادات تفعيل حساب الشريك</summary><p>يفتح صاحب المتجر تطبيق الشريك برقم الجوال المسجّل. عند أول تفعيل يختار «أول دخول»؛ وإن سبق التفعيل يسجّل الدخول أو يستعيد كلمة المرور. لا يحتاج إلى دعوة من تطبيق الميداني.</p></details>
               {current.financialProfileState === "REQUIRED" ? <>
                 <p className="managed-status managed-status-warning" role="status">{activeTermsPolicy ? "ستُربط شروط التسوية بهذه الحالة العالقة." : policyReadMessage || "يلزم وجود سياسة مالية نشطة وصلاحية المالية."}</p>
                 {!activeTermsPolicy ? <><Link className="button button-secondary" href="/policies/partner-financial-terms">فتح سياسة الشريك المالية</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة السياسة النشطة</button></> : null}
                 <button type="button" className="button button-primary" disabled={busy || !canManageFinancialTerms || !activeTermsPolicy} onClick={() => void bindFinancialTerms()}>استكمال الربط المالي وفق السياسة النشطة</button>
               </> : null}
             </> : null}
-          </div>
-          {storeId ? <div className="managed-status managed-status-info"><strong>ملف المتجر</strong><p>تُدار حالة نشر المتجر وأوضاع التنفيذ من مساحة المتجر الموحدة.</p><Link className="button button-secondary" href={`/partners/stores/${encodeURIComponent(storeId)}`}>فتح ملف المتجر</Link></div> : null}
+          </section>
         </>
       )}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
-      <div className="button-row"><Link className="button button-secondary" href="/partners/joining">العودة إلى طلبات الانضمام</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readCase()}>إعادة قراءة الحالة</button></div>
+      <div className="button-row"><Link className="button button-secondary" href={backHref}>العودة إلى طلبات الانضمام</Link></div>
     </section>
   );
 }

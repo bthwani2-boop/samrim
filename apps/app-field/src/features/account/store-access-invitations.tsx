@@ -30,7 +30,7 @@ export function StoreAccessInvitationSummary({ compact = false, onPress }: Reado
   }, []));
   const pending = items?.filter((item) => item.state === "pending_acceptance").length ?? 0;
   const description = failed ? "تعذر قراءة الحالة؛ افتح الدعوات لإعادة المحاولة." : items === null ? "جارٍ قراءة الدعوات…" : pending ? `${pending.toLocaleString("ar-YE")} بانتظار قرارك من ${items.length.toLocaleString("ar-YE")}` : `${items.length.toLocaleString("ar-YE")} دعوة وصول · لا توجد قرارات معلّقة`;
-  return <BthwaniNavigationRow compact={compact} description={description} icon="store" title="دعوات الوصول للمتاجر" onPress={onPress} />;
+  return <BthwaniNavigationRow compact={compact} description={description} icon="store" title="دعوات إدارة المتاجر" onPress={onPress} />;
 }
 
 export function StoreAccessInvitationInbox({ showTitle = true }: Readonly<{ showTitle?: boolean }> = {}) {

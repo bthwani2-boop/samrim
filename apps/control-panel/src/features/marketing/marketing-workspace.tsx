@@ -4,10 +4,11 @@ import { PageHeader } from "../../shell/page-header";
 
 import { formatMoney, isMediaProvenanceInputValid, type CommerceVertical, type CreatePromotionRequest, type DiscoveryContentAnalytics, type DiscoveryContentView, type MediaProvenanceInput, type OperatorDiscoveryContentRegistryResponse, type OperatorPromotionRegistryResponse, type PromotionView, type ServiceCity } from "@bthwani/dsh";
 import Link from "next/link";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { type MarketingResourceKey, workspaceMarketingResources } from "../../navigation/workspace-registry";
 import { useSession } from "../../session/session-provider";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 type ApiError = { error?: { message?: string } };
 
 function discoveryContentStateLabel(state: DiscoveryContentView["state"]): string {
@@ -261,6 +262,8 @@ export function MarketingPromotionsWorkspace() {
   const operatorActorId = sessionState.kind === "authenticated" && sessionState.identity.role === "operator" ? sessionState.identity.subject : "";
   const pendingStorageKey = operatorActorId ? "bthwani.control.marketing.promotion-create.v1." + encodeURIComponent(operatorActorId) : "";
   const [registry, setRegistry] = useState<OperatorPromotionRegistryResponse | null>(null);
+  const [registryError, setRegistryError] = useState("");
+  const registrySequence = useRef(0);
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [state, setState] = useState("");
@@ -291,22 +294,31 @@ export function MarketingPromotionsWorkspace() {
   const attemptReady = Boolean(pendingStorageKey) && loadedStorageKey === pendingStorageKey && !storageError;
 
   const load = useCallback(async (query: { search?: string; state?: string; sort?: "starts_desc" | "starts_asc"; cursor?: string } = {}) => {
+    const sequence = ++registrySequence.current;
     setLoading(true);
+    setRegistryError("");
     const params = new URLSearchParams({ limit: "25", sort: query.sort ?? sort });
     if (query.search ?? appliedSearch) params.set("search", query.search ?? appliedSearch);
     if (query.state ?? state) params.set("state", query.state ?? state);
     if (query.cursor ?? cursor) params.set("cursor", query.cursor ?? cursor);
     try {
-      const response = await fetch(`/api/marketing/promotions?${params}`, { cache: "no-store" });
+      const response = await fetch(`/api/marketing/promotions?${params}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
       const body = await response.json().catch(() => null) as OperatorPromotionRegistryResponse | { error?: { message?: string } } | null;
+      if (sequence !== registrySequence.current) return;
       if (!response.ok) throw new Error(body && "error" in body ? body.error?.message ?? "تعذر قراءة سجل العروض." : "تعذر قراءة سجل العروض.");
+      if (!body || !("promotions" in body) || !Array.isArray(body.promotions) || (body.nextCursor !== undefined && typeof body.nextCursor !== "string")) throw new Error("استجابة سجل العروض غير صالحة. أعد المحاولة.");
       setRegistry(body as OperatorPromotionRegistryResponse);
+    } catch (error) {
+      if (sequence !== registrySequence.current) return;
+      setRegistry(null);
+      setRegistryError(error instanceof Error ? error.message : "تعذر قراءة سجل العروض.");
     } finally {
-      setLoading(false);
+      if (sequence === registrySequence.current) setLoading(false);
     }
   }, [appliedSearch, cursor, sort, state]);
 
   useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل العروض.")); }, [load]);
+  useReadOnReturn(() => load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل العروض.")), !loading && !busy && !pendingCreate && !attemptChecking);
   useEffect(() => { void readActiveServiceCities().then(setCities).catch(() => setMessage("تعذر قراءة مدن الخدمة؛ يمكنك إنشاء حملة على كل المدن.")); }, []);
 
   useEffect(() => {
@@ -619,16 +631,16 @@ export function MarketingPromotionsWorkspace() {
 
       <section className="access-card" aria-labelledby="marketing-promotions-title">
         <div className="access-card-heading"><h2 id="marketing-promotions-title">سجل العروض</h2>{message ? <p role="status" className="muted">{message}</p> : null}</div>
+        {registryError ? <div role="alert" className="managed-status managed-status-warning"><p>{registryError}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
         <form className="registry-toolbar" noValidate onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0, 128)); setCursor(""); setCursorStack([]); }}>
           <label className="field-label" htmlFor="promotion-search">رمز العرض أو الاسم<input id="promotion-search" type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
           <label className="field-label" htmlFor="promotion-state">الحالة<select id="promotion-state" value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option><option value="ENDED">منتهٍ</option></select></label>
           <label className="field-label" htmlFor="promotion-sort">ترتيب البداية<select id="promotion-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="starts_desc">الأحدث بداية</option><option value="starts_asc">الأقدم بداية</option></select></label>
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
-          <button className="button button-quiet" type="button" onClick={() => void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل العروض."))} disabled={loading}>{loading ? "جارٍ القراءة…" : "تحديث"}</button>
         </form>
         {registry?.promotions.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr><th scope="col">العرض</th><th scope="col">الرمز</th><th scope="col">القيمة</th><th scope="col">التمويل والنطاق</th><th scope="col">الحالة</th><th scope="col">البداية</th><th scope="col">الإجراء</th></tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}</th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? item.valueMinor + "%" : formatMoney(item.valueMinor, "YER")}</td><td>{item.fundingSource === "SHARED" ? "مشترك · حصة الشريك " + (item.fundingSharePartnerPercent ?? 0) + "%" : item.fundingSource === "BTHWANI" ? "بثواني" : "الشريك"}<br />{item.storeId ? "متجر محدد" : item.serviceCityId ? "حملة مدينة" : "حملة منصة"}{item.requiresPartnerOptIn ? " · تتطلب موافقة" : ""}<br />{promotionTargetSummary(item)}{item.minOrderSubtotalMinor ? <><br />حد الطلب {formatMoney(item.minOrderSubtotalMinor, "YER")}</> : null}</td><td>{promotionStateLabel(item.state)}</td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td>{item.state === "ENDED" ? <span className="muted">لا إجراء</span> : <button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button>}</td></tr>)}</tbody></table></div> : null}
         {!registry?.promotions.length && loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة العروض…</p> : null}
-        {!registry?.promotions.length && !loading ? <p className="collection-state">لا توجد عروض مطابقة.</p> : null}
+        {registry && !registry.promotions.length && !loading && !registryError ? <p className="collection-state">لا توجد عروض مطابقة.</p> : null}
         <nav className="pagination" aria-label="صفحات سجل العروض"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
       </section>
     </div>
@@ -640,6 +652,8 @@ export function MarketingContentWorkspace() {
   const operatorActorId = sessionState.kind === "authenticated" && sessionState.identity.role === "operator" ? sessionState.identity.subject : "";
   const pendingStorageKey = operatorActorId ? "bthwani.control.marketing.content-create.v1." + encodeURIComponent(operatorActorId) : "";
   const [registry, setRegistry] = useState<OperatorDiscoveryContentRegistryResponse | null>(null);
+  const [registryError, setRegistryError] = useState("");
+  const registrySequence = useRef(0);
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [state, setState] = useState("");
@@ -674,19 +688,27 @@ export function MarketingContentWorkspace() {
   const [mediaProvenance, setMediaProvenance] = useState<MediaProvenanceInput>(emptyMediaProvenance());
   const attemptReady = Boolean(pendingStorageKey) && loadedStorageKey === pendingStorageKey && !storageError;
   const load = useCallback(async (query: { search?: string; state?: string; kind?: string; sort?: "priority" | "created_desc"; cursor?: string } = {}) => {
+    const sequence = ++registrySequence.current;
     setLoading(true);
+    setRegistryError("");
     const params = new URLSearchParams({ limit: "25", sort: query.sort ?? sort });
     if (query.search ?? appliedSearch) params.set("search", query.search ?? appliedSearch);
     if (query.state ?? state) params.set("state", query.state ?? state);
     if (query.kind ?? kind) params.set("kind", query.kind ?? kind);
     if (query.cursor ?? cursor) params.set("cursor", query.cursor ?? cursor);
     try {
-      const response = await fetch(`/api/marketing/content?${params}`, { cache: "no-store" });
+      const response = await fetch(`/api/marketing/content?${params}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
       const body = await response.json().catch(() => null) as OperatorDiscoveryContentRegistryResponse | { error?: { message?: string } } | null;
+      if (sequence !== registrySequence.current) return;
       if (!response.ok) throw new Error(body && "error" in body ? body.error?.message ?? "تعذر قراءة سجل محتوى الاكتشاف." : "تعذر قراءة سجل محتوى الاكتشاف.");
+      if (!body || !("items" in body) || !Array.isArray(body.items) || (body.nextCursor !== undefined && typeof body.nextCursor !== "string")) throw new Error("استجابة سجل المحتوى غير صالحة. أعد المحاولة.");
       setRegistry(body as OperatorDiscoveryContentRegistryResponse);
+    } catch (error) {
+      if (sequence !== registrySequence.current) return;
+      setRegistry(null);
+      setRegistryError(error instanceof Error ? error.message : "تعذر قراءة سجل محتوى الاكتشاف.");
     } finally {
-      setLoading(false);
+      if (sequence === registrySequence.current) setLoading(false);
     }
   }, [appliedSearch, cursor, kind, sort, state]);
 
@@ -707,6 +729,7 @@ export function MarketingContentWorkspace() {
   }
 
   useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل محتوى الاكتشاف.")); }, [load]);
+  useReadOnReturn(() => load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل محتوى الاكتشاف.")), !loading && !busy && !pendingCreate && !attemptChecking);
   useEffect(() => { void readActiveServiceCities().then(setCities).catch(() => setMessage("تعذر قراءة مدن الخدمة؛ يمكنك نشر المحتوى على كل المدن.")); }, []);
   useEffect(() => {
     if (contentForm.targetType !== "CATEGORY") return;
@@ -1013,11 +1036,11 @@ export function MarketingContentWorkspace() {
           <label className="field-label" htmlFor="content-kind-filter">النوع<select id="content-kind-filter" value={kind} onChange={(event) => { setKind(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الأنواع</option><option value="BANNER">بنر</option><option value="CAROUSEL">كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
           <label className="field-label" htmlFor="content-sort">الترتيب<select id="content-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="priority">أولوية العرض</option><option value="created_desc">الأحدث إنشاءً</option></select></label>
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
-          <button className="button button-quiet" type="button" onClick={() => void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل محتوى الاكتشاف."))} disabled={loading}>{loading ? "جارٍ القراءة…" : "تحديث"}</button>
         </form>
         {registry?.items.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل محتوى الاكتشاف</caption><thead><tr><th scope="col">المحتوى</th><th scope="col">النوع والوجهة</th><th scope="col">الحالة</th><th scope="col">الأولوية والبداية</th><th scope="col">الإجراءات</th></tr></thead><tbody>{registry.items.map((item) => <tr key={item.id}><th scope="row">{item.mediaUri ? <img className="media-preview" src={item.mediaUri} alt="" loading="lazy" /> : null}{item.titleAr}</th><td>{({ BANNER: "صورة رئيسية", CAROUSEL: "شريحة صور", SHORT_FORM: "قصة قصيرة" } as const)[item.kind]} · {({ STORE: "متجر", PRODUCT: "منتج", CATEGORY: "فئة", PROMOTION: "عرض", INFO: "معلومات عامة" } as const)[item.targetType]}</td><td>{discoveryContentStateLabel(item.state)}</td><td>{item.ordinal}<br /><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className="action-row"><button className="button button-quiet" type="button" disabled={analyticsLoading} onClick={() => void readAnalytics(item.id)}>{analyticsLoading && analyticsContentId === item.id ? "جارٍ قراءة التحليلات…" : "قراءة التحليلات"}</button><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishContent(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف المحتوى" : "نشر المحتوى"}</button></div></td></tr>)}</tbody></table></div> : null}
         {!registry?.items.length && loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة المحتوى…</p> : null}
-        {!registry?.items.length && !loading ? <p className="collection-state">لا يوجد محتوى مطابق.</p> : null}
+        {registryError ? <div role="alert" className="managed-status managed-status-warning"><p>{registryError}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
+        {registry && !registry.items.length && !loading && !registryError ? <p className="collection-state">لا يوجد محتوى مطابق.</p> : null}
         <nav className="pagination" aria-label="صفحات سجل محتوى الاكتشاف"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
         {analyticsPanel}
       </section>

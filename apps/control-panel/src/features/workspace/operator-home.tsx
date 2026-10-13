@@ -8,6 +8,7 @@ import { PageHeader } from "../../shell/page-header";
 import { responseMessage } from "../access/identity-error-message";
 import { notificationKindLabel } from "../notifications/notification-presentation";
 import { operationResponseMessage } from "../operations/operator-actions";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 export function OperatorHome() {
   const { state: sessionState } = useSession();
   const permissions = sessionState.kind === "authenticated" ? sessionState.identity.permissions ?? [] : [];
@@ -77,6 +78,7 @@ export function OperatorHome() {
     setErrors(nextErrors);
     setLoading(false);
   }, [canReadCatalog, canReadOperations, canReadPartners, sessionReady]);
+  useReadOnReturn(loadQueues, sessionReady && !loading);
 
   useEffect(() => {
     void loadQueues();
@@ -85,7 +87,7 @@ export function OperatorHome() {
 
   return (
     <section className="workspace-page" aria-labelledby="workspace-title">
-      <PageHeader id="workspace-title" title="الرئيسية" actions={<button type="button" className="button button-secondary" onClick={() => void loadQueues()} disabled={loading}>تحديث</button>} />
+      <PageHeader id="workspace-title" title="الرئيسية" actions={Object.keys(errors).length ? <button type="button" className="button button-secondary" onClick={() => void loadQueues()} disabled={loading}>إعادة المحاولة</button> : null} />
       {loading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تجهيز مركز العمل</strong></div> : null}
       {!loading ? (
         <div className="home-work-areas">

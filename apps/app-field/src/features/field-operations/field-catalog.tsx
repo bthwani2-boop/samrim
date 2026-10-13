@@ -5,7 +5,7 @@ import { MobileStoreQuickPricesWorkspace } from "@bthwani/dsh/mobile/store-quick
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
@@ -183,6 +183,9 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   const [offerDraft, setOfferDraft] = useState<OfferDraft>(initialOfferDraft("DISCRETE"));
   const [availabilityOnly, setAvailabilityOnly] = useState(true);
   const [wasCreatedLocally, setWasCreatedLocally] = useState(false);
+  const [localProductFormOpen, setLocalProductFormOpen] = useState(false);
+  const productCreateAttempt = useRef<Readonly<{ signature: string; idempotencyKey: string; correlationID: string }> | null>(null);
+  const offerCreateAttempt = useRef<Readonly<{ signature: string; idempotencyKey: string; correlationID: string }> | null>(null);
 
   const load = useCallback(async (search = "", priorOffer: CatalogStoreOffer | null = null) => {
     setLoading(true);
@@ -277,6 +280,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   }, [proposalCategoryID]);
 
   async function search() {
+    if (productCreateAttempt.current) return;
     const nextQuery = queryDraft.trim();
     setQuery(nextQuery);
     setSelectedProduct(null);
@@ -289,7 +293,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
 
   async function resolveIdentifier(value = identifier) {
     const normalized = value.trim();
-    if (!normalized || busy) return;
+    if (!normalized || busy || productCreateAttempt.current) return;
     if (proposalMutationAttempt) {
       setProposalError("أكمل إعادة محاولة المقترح الحالية قبل بدء عملية باركود أخرى.");
       return;
@@ -378,26 +382,40 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
     const request: CreateFieldCatalogProductRequest = {
       canonicalName: productName.trim(), description: description.trim(), ...(brand.trim() ? { brand: brand.trim() } : {}),
       variantTitle: variantTitle.trim(), measurementKind, baseUnit,
-      ...(identifier.trim() ? { identifierType: identifierType ?? "EAN", identifierValue: identifier.trim() } : {}),
+      ...(resolution?.outcome === "UNKNOWN_IDENTIFIER" && identifier.trim() ? { identifierType: identifierType ?? null, identifierValue: identifier.trim() } : {}),
     };
+    const signature = JSON.stringify(request);
+    if (productCreateAttempt.current && productCreateAttempt.current.signature !== signature) {
+      setError("لا تزال نتيجة إنشاء المنتج السابق غير مؤكدة. أعد محاولة الطلب نفسه دون تغيير البيانات.");
+      return;
+    }
+    const attempt = productCreateAttempt.current?.signature === signature
+      ? productCreateAttempt.current
+      : { signature, ...idempotency("product") };
+    productCreateAttempt.current = attempt;
     setBusy(true);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const saved = await fieldClient().createFieldCatalogProduct(token, caseId, request, ...Object.values(idempotency("product")) as [string, string]);
+      const saved = await fieldClient().createFieldCatalogProduct(token, caseId, request, attempt.idempotencyKey, attempt.correlationID);
       const product = saved.product;
       const variant = product.variants[0];
       if (!variant) throw new Error("FIELD_CREATED_PRODUCT_HAS_NO_VARIANT");
+      productCreateAttempt.current = null;
       setSnapshot((current) => current ? { ...current, products: [product, ...current.products.filter((item) => item.id !== product.id)] } : current);
       setProductName("");
       setDescription("");
       setBrand("");
       setWasCreatedLocally(true);
+      setLocalProductFormOpen(false);
+      setResolution(null);
+      setIdentifier("");
       selectVariant(product, variant);
       setNotice("سُجل المنتج الخاص بالمتجر. أكمل السعر والتوافر لإضافته إلى التشكيلة.");
     } catch (cause) {
       console.warn("DSH Field Store-local product creation failed", cause);
-      setError(messageFromError(cause));
+      if (!isOutcomeUncertain(cause)) productCreateAttempt.current = null;
+      setError(messageFromError(cause) + (isOutcomeUncertain(cause) ? " أعد المحاولة بنفس البيانات؛ سيتحقق النظام من الطلب نفسه دون إنشاء نسخة ثانية." : ""));
     } finally {
       setBusy(false);
     }
@@ -429,6 +447,11 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
     };
     const state: StoreOfferPublicationState = existingOffer?.publicationState ?? "draft";
     const updateFacts: UpdateStoreOfferRequest = { priceMinor, availability: offerDraft.available, publicationState: state, quantityPolicy, quantityMinBaseUnits: min, quantityMaxBaseUnits: max, quantityStepBaseUnits: step, pricingBasis, pricingUnitBaseUnits: pricingUnit, inventoryPolicy, inventoryOnHandBaseUnits: inventory };
+    const offerSignature = JSON.stringify([caseId, productFacts, offerDraft.available]);
+    const createAttempt = offerCreateAttempt.current?.signature === offerSignature
+      ? offerCreateAttempt.current
+      : { signature: offerSignature, ...idempotency("offer_create") };
+    if (!existingOffer) offerCreateAttempt.current = createAttempt;
     setBusy(true);
     setError("");
     setNotice("");
@@ -439,9 +462,11 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
         const attempt = idempotency("offer_update");
         offer = (await fieldClient().updateFieldInitialCatalogOffer(token, caseId, existingOffer.offerId, updateFacts, existingOffer.version, attempt.idempotencyKey, attempt.correlationID)).offer;
       } else {
-        const attempt = idempotency("offer_create");
-        const created = await fieldClient().createFieldCatalogOffer(token, caseId, productFacts, attempt.idempotencyKey, attempt.correlationID);
+        const created = await fieldClient().createFieldCatalogOffer(token, caseId, productFacts, createAttempt.idempotencyKey, createAttempt.correlationID);
         offer = created.offer;
+        offerCreateAttempt.current = null;
+        setSnapshot((current) => current ? { ...current, offers: [offer, ...current.offers.filter((item) => item.offerId !== offer.offerId)] } : current);
+        setExistingOffer(offer);
         if (!offerDraft.available) {
           const followUp = idempotency("offer_availability");
           offer = (await fieldClient().updateFieldInitialCatalogOffer(token, caseId, offer.offerId, { ...updateFacts, publicationState: "draft" }, offer.version, followUp.idempotencyKey, followUp.correlationID)).offer;
@@ -453,14 +478,15 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
       setNotice("حُفظ عرض الإعداد الأولي وسُجلت قرارات السعر والتوافر.");
     } catch (cause) {
       console.warn("DSH Field initial StoreOffer save failed", cause);
-      setError(messageFromError(cause) + " أعد قراءة الكتالوج للتأكد من الحالة قبل إعادة المحاولة.");
+      if (!isOutcomeUncertain(cause)) offerCreateAttempt.current = null;
+      setError(messageFromError(cause) + (isOutcomeUncertain(cause) ? " أعد قراءة الكتالوج للتأكد من الحالة، أو أعد المحاولة بنفس البيانات؛ لا ننشئ عرضًا جديدًا بمفتاح مختلف." : " أعد قراءة الكتالوج للتأكد من الحالة قبل إعادة المحاولة."));
     } finally {
       setBusy(false);
     }
   }
 
   async function onBarcode(data: string) {
-    if (busy || !data.trim()) return;
+    if (busy || !data.trim() || productCreateAttempt.current) return;
     setIdentifier(data.trim());
     await resolveIdentifier(data.trim());
   }
@@ -626,9 +652,21 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   const showProposalEditor = Boolean(activeProposal) || canProposeFromUnknownBarcode || proposalMutationAttempt?.kind === "create";
   const proposalReadOnly = Boolean(activeProposal && activeProposal.state !== "draft" && activeProposal.state !== "needs_correction");
   const proposalFormLocked = busy || Boolean(proposalMutationAttempt) || proposalReadOnly;
+  const localProductFormLocked = busy || Boolean(productCreateAttempt.current);
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <Text style={styles.muted}>يظهر هذا المسار للحالة المعتمدة فقط. يتحقق النظام في كل قراءة وكتابة من الإسناد والارتباط بالمتجر وعدم إتمام إطلاق المتجر.</Text>
-    {snapshot ? <View style={styles.card}><Text style={styles.heading}>المتجر المعتمد</Text><Text style={styles.body}>المتجر: {snapshot.storeName}</Text><Text style={styles.body}>المجال: {snapshot.verticalNameAr}</Text></View> : null}
+    {snapshot ? <View style={styles.card}><Text style={styles.heading}>المتجر المعتمد</Text><Text style={styles.body}>المتجر: {snapshot.storeName}</Text><Text style={styles.body}>النشاط التجاري: {snapshot.verticalNameAr}</Text><BthwaniButton disabled={localProductFormLocked} label={localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER" ? "إغلاق إضافة المنتج" : "إضافة منتج لهذا المتجر دون باركود"} onPress={() => { setLocalProductFormOpen(!(localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER")); setIdentifier(""); setResolution(null); }} variant="secondary" /></View> : null}
+    {localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER" || Boolean(productCreateAttempt.current) ? <View style={styles.card}>
+      <Text style={styles.heading}>تسجيل منتج محلي</Text>
+      <Text style={styles.muted}>ينشئ المنتج لهذا المتجر فقط. الباركود اختياري ولا يلزم لإضافة الوجبات والمنتجات الخاصة.</Text>
+      <TextInput accessibilityLabel="اسم المنتج المحلي" editable={!localProductFormLocked} onChangeText={setProductName} placeholder="اسم المنتج" value={productName} style={styles.input} />
+      <TextInput accessibilityLabel="وصف المنتج المحلي" editable={!localProductFormLocked} maxLength={4000} multiline onChangeText={setDescription} placeholder="وصف اختياري" value={description} style={styles.input} />
+      <TextInput accessibilityLabel="علامة المنتج المحلية" editable={!localProductFormLocked} onChangeText={setBrand} placeholder="العلامة التجارية (اختياري)" value={brand} style={styles.input} />
+      <TextInput accessibilityLabel="خيار المنتج" editable={!localProductFormLocked} onChangeText={setVariantTitle} placeholder="مثال: الحجم الكبير" value={variantTitle} style={styles.input} />
+      <View style={styles.row}>{(["DISCRETE", "MEASURED"] as const).map((value) => <BthwaniChip key={value} disabled={localProductFormLocked} label={measurementKindLabel(value)} onPress={() => { setMeasurementKind(value); setBaseUnit(value === "DISCRETE" ? "COUNT" : "GRAM"); }} selected={measurementKind === value} />)}</View>
+      <View style={styles.row}>{(measurementKind === "DISCRETE" ? ["COUNT"] as const : ["GRAM", "MILLILITER"] as const).map((value) => <BthwaniChip key={value} disabled={localProductFormLocked} label={baseUnitLabel(value)} onPress={() => setBaseUnit(value)} selected={baseUnit === value} />)}</View>
+      <BthwaniButton busy={busy} disabled={busy || !productName.trim() || !variantTitle.trim()} label="إنشاء منتج المتجر" onPress={() => void createLocalProduct()} />
+    </View> : null}
     {snapshot ? <View style={styles.card}>
       <Text style={styles.heading}>عروض المتجر الأولية · {snapshot.offers.length}</Text>
       <Text style={styles.muted}>تعرض هذه القائمة صفحات عروض المتجر كلها؛ اختر أي عرض لمراجعة سعره وتوافره وتعديله.</Text>
@@ -669,8 +707,8 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
     {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
     <View style={styles.card}>
       <Text style={styles.heading}>البحث عن منتج مشترك أو خاص بالمتجر</Text>
-      <TextInput accessibilityLabel="بحث منتجات الكتالوج الأولي" editable={!busy} onChangeText={setQueryDraft} onSubmitEditing={() => void search()} placeholder="اسم المنتج" value={queryDraft} style={styles.input} />
-      <View style={styles.row}><BthwaniButton busy={loading} disabled={busy || loading} label="بحث" onPress={() => void search()} /><BthwaniButton busy={loading} disabled={busy || loading} label="تحديث النتائج" onPress={() => void load(query, existingOffer)} variant="secondary" /></View>
+      <TextInput accessibilityLabel="بحث منتجات الكتالوج الأولي" editable={!busy && !productCreateAttempt.current} onChangeText={setQueryDraft} onSubmitEditing={() => void search()} placeholder="اسم المنتج" value={queryDraft} style={styles.input} />
+      <View style={styles.row}><BthwaniButton busy={loading} disabled={busy || loading || Boolean(productCreateAttempt.current)} label="بحث" onPress={() => void search()} /><BthwaniButton busy={loading} disabled={busy || loading} label="تحديث النتائج" onPress={() => void load(query, existingOffer)} variant="secondary" /></View>
       {loading ? <View style={{ alignItems: "center", gap: 6 }}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المنتجات…</Text></View> : null}
       {!loading && filteredProducts.length === 0 ? <Text style={styles.muted}>لا توجد نتائج؛ امسح البحث أو أنشئ منتجًا خاصًا بالمتجر.</Text> : null}
       {filteredProducts.map((product) => <View key={product.id} style={styles.raised}><Text style={styles.heading}>{product.canonicalName} · {product.scope === "SHARED" ? "مشترك" : "خاص بهذا المتجر"}</Text>{product.variants.map((variant) => <View key={variant.id} style={styles.row}><BthwaniChip disabled={busy} label={`${variant.title} · ${measurementKindLabel(variant.measurementKind)} · ${baseUnitLabel(variant.baseUnit)}`} onPress={() => selectVariant(product, variant)} selected={selectedVariant?.id === variant.id} /></View>)}</View>)}
@@ -678,9 +716,9 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
     <View style={styles.card}>
       <Text style={styles.heading}>البحث بالباركود أو رمز الصنف</Text>
       <Text style={styles.muted}>امسح الباركود على العبوة، أو أدخل رمز الصنف المستخدم في هذا المتجر.</Text>
-      <View style={styles.row}>{(["GTIN", "EAN", "UPC", "SKU"] as const).map((value) => <BthwaniChip key={value} disabled={busy || Boolean(proposalMutationAttempt)} label={identifierLabels[value]} onPress={() => { setIdentifierType(value); setResolution(null); }} selected={identifierType === value} />)}</View>
-      <TextInput accessibilityLabel="الباركود على العبوة أو رمز الصنف في هذا المتجر" autoCapitalize="characters" editable={!busy && !proposalMutationAttempt} onChangeText={(value) => { setIdentifier(value); setResolution(null); }} onSubmitEditing={() => void resolveIdentifier()} placeholder="امسح الباركود أو اكتب الرمز" value={identifier} style={styles.input} />
-      <View style={styles.row}><BthwaniButton busy={busy} disabled={busy || Boolean(proposalMutationAttempt) || !identifier.trim()} label="بحث عن المنتج" onPress={() => void resolveIdentifier()} /><BthwaniButton disabled={busy || Boolean(proposalMutationAttempt)} label={cameraOpen ? "إغلاق الكاميرا" : "مسح بالكاميرا"} onPress={async () => { if (cameraOpen) { setCameraOpen(false); return; } if (!cameraPermission?.granted) { const permission = await requestCameraPermission(); if (!permission.granted) { setError("يلزم السماح للكاميرا لمسح الباركود."); return; } } setCameraOpen(true); }} variant="secondary" /></View>
+      <View style={styles.row}>{(["GTIN", "EAN", "UPC", "SKU"] as const).map((value) => <BthwaniChip key={value} disabled={busy || Boolean(proposalMutationAttempt) || Boolean(productCreateAttempt.current)} label={identifierLabels[value]} onPress={() => { setIdentifierType(value); setResolution(null); }} selected={identifierType === value} />)}</View>
+      <TextInput accessibilityLabel="الباركود على العبوة أو رمز الصنف في هذا المتجر" autoCapitalize="characters" editable={!busy && !proposalMutationAttempt && !productCreateAttempt.current} onChangeText={(value) => { setIdentifier(value); setResolution(null); }} onSubmitEditing={() => void resolveIdentifier()} placeholder="امسح الباركود أو اكتب الرمز" value={identifier} style={styles.input} />
+      <View style={styles.row}><BthwaniButton busy={busy} disabled={busy || Boolean(proposalMutationAttempt) || Boolean(productCreateAttempt.current) || !identifier.trim()} label="بحث عن المنتج" onPress={() => void resolveIdentifier()} /><BthwaniButton disabled={busy || Boolean(proposalMutationAttempt) || Boolean(productCreateAttempt.current)} label={cameraOpen ? "إغلاق الكاميرا" : "مسح بالكاميرا"} onPress={async () => { if (cameraOpen) { setCameraOpen(false); return; } if (!cameraPermission?.granted) { const permission = await requestCameraPermission(); if (!permission.granted) { setError("يلزم السماح للكاميرا لمسح الباركود."); return; } } setCameraOpen(true); }} variant="secondary" /></View>
       {cameraOpen ? <CameraView style={styles.camera} facing="back" barcodeScannerSettings={{ barcodeTypes: ["ean13", "ean8", "upc_a", "upc_e", "code128"] }} onBarcodeScanned={({ data }) => { setCameraOpen(false); void onBarcode(data); }} /> : null}
       {resolution ? <Text style={styles.muted}>{identifierOutcomeLabels[resolution.outcome]}{resolution.productName ? ` · ${resolution.productName}` : ""}{resolution.variantTitle ? ` · ${resolution.variantTitle}` : ""}</Text> : null}
     </View>
@@ -701,7 +739,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
       <Text style={styles.label}>التصنيف المطلوب</Text>
       <TextInput accessibilityLabel="البحث عن تصنيف للمقترح" editable={!proposalFormLocked} onChangeText={setProposalCategoryQuery} placeholder="ابحث باسم التصنيف" value={proposalCategoryQuery} style={styles.input} />
       <View style={styles.row}>{filteredProposalCategories.slice(0, 20).map((category) => <BthwaniChip key={category.id} disabled={proposalFormLocked} label={category.pathAr || category.nameAr} onPress={() => { setProposalCategoryID(category.id); setProposalAttributes({}); setProposalError(""); }} selected={proposalCategoryID === category.id} />)}</View>
-      {proposalCategories.length === 0 ? <Text style={styles.error}>لا يوجد تصنيف نشط لهذا المجال؛ اطلب إعداد التصنيف قبل إرسال المقترح.</Text> : null}
+      {proposalCategories.length === 0 ? <Text style={styles.error}>لا توجد فئة منتجات نشطة لهذا النشاط التجاري؛ اطلب إعداد الفئات قبل إرسال المقترح.</Text> : null}
       {filteredProposalCategories.length === 0 && proposalCategories.length > 0 ? <Text style={styles.muted}>لا توجد تصنيفات تطابق البحث الحالي.</Text> : null}
       {proposalCategoryCursor ? <BthwaniButton busy={proposalCategoriesLoadingMore} disabled={proposalCategoriesLoadingMore || proposalFormLocked} label="قراءة تصنيفات إضافية" onPress={() => void loadMoreProposalCategories()} variant="secondary" /> : null}
       <Text style={styles.label}>اسم المنتج المقترح</Text>
@@ -741,17 +779,6 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
         {activeProposal?.state === "draft" ? <BthwaniButton busy={busy} disabled={busy || proposalMutationAttempt !== null && proposalMutationAttempt.kind !== "submit"} label={proposalMutationAttempt?.kind === "submit" ? "إعادة التحقق من الإرسال" : "إرسال المقترح للمراجعة"} onPress={() => void submitSharedProductProposal()} /> : null}
       </>}
       {activeProposal ? <BthwaniButton disabled={busy || Boolean(proposalMutationAttempt)} label="إغلاق المقترح" onPress={clearProposalEditor} variant="secondary" /> : null}
-    </View> : null}
-    {resolution?.outcome === "UNKNOWN_IDENTIFIER" ? <View style={styles.card}>
-      <Text style={styles.heading}>تسجيل منتج محلي</Text>
-      <Text style={styles.muted}>ينشئ المنتج في هذا المتجر فقط. يبقى باركود المنتج مميزًا عن بقية المنتجات.</Text>
-      <TextInput accessibilityLabel="اسم المنتج المحلي" editable={!busy} onChangeText={setProductName} placeholder="اسم المنتج" value={productName} style={styles.input} />
-      <TextInput accessibilityLabel="وصف المنتج المحلي" editable={!busy} maxLength={4000} multiline onChangeText={setDescription} placeholder="وصف اختياري" value={description} style={styles.input} />
-      <TextInput accessibilityLabel="علامة المنتج المحلية" editable={!busy} onChangeText={setBrand} placeholder="العلامة التجارية (اختياري)" value={brand} style={styles.input} />
-      <TextInput accessibilityLabel="خيار المنتج" editable={!busy} onChangeText={setVariantTitle} placeholder="مثال: الحجم الكبير" value={variantTitle} style={styles.input} />
-      <View style={styles.row}>{(["DISCRETE", "MEASURED"] as const).map((value) => <BthwaniChip key={value} disabled={busy} label={measurementKindLabel(value)} onPress={() => { setMeasurementKind(value); setBaseUnit(value === "DISCRETE" ? "COUNT" : "GRAM"); }} selected={measurementKind === value} />)}</View>
-      <View style={styles.row}>{(measurementKind === "DISCRETE" ? ["COUNT"] as const : ["GRAM", "MILLILITER"] as const).map((value) => <BthwaniChip key={value} disabled={busy} label={baseUnitLabel(value)} onPress={() => setBaseUnit(value)} selected={baseUnit === value} />)}</View>
-      <BthwaniButton busy={busy} disabled={busy || !productName.trim() || !variantTitle.trim()} label="إنشاء منتج المتجر" onPress={() => void createLocalProduct()} />
     </View> : null}
     {existingOffer || (selectedVariant && selectedProduct) ? <View style={styles.card}>
       <Text style={styles.heading}>{existingOffer ? "تعديل عرض ما قبل الإطلاق" : "إضافة العرض الأولي"}</Text>

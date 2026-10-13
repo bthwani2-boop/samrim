@@ -4,6 +4,8 @@ import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HREmployee, HREmployeeInput, HREmployeePage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
+import { useReadOnReturn } from "../shared/use-read-on-return";
+import { ActivityIndicator, ActivityLegend } from "../shared/record-indicator";
 import { EmployeeAccessRequest } from "./employee-access-request";
 import { EmployeeAttendance } from "./employee-attendance";
 import { EmployeeAuditHistory } from "./employee-audit-history";
@@ -28,6 +30,11 @@ export function EmployeeDirectory() {
   const [history, setHistory] = useState<string[]>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [selected, setSelected] = useState<HREmployee | null>(null);
+  const [fileOpen, setFileOpen] = useState(false);
+  const [fileDirty, setFileDirty] = useState(false);
+  const [pendingEmployee, setPendingEmployee] = useState<HREmployee | null>(null);
+  const fileRef = useRef<HTMLDialogElement>(null);
+  const switchRef = useRef<HTMLDialogElement>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -52,6 +59,24 @@ export function EmployeeDirectory() {
   }, [applied, cursor]);
 
   useEffect(() => { void load(); }, [load]);
+  useReadOnReturn(() => load(), !loading && !saving && !formOpen && !fileOpen && !fileDirty);
+
+  useEffect(() => {
+    if (fileOpen && selected && !fileRef.current?.open) fileRef.current?.showModal();
+  }, [fileOpen, selected]);
+
+  useEffect(() => {
+    if (pendingEmployee && !switchRef.current?.open) switchRef.current?.showModal();
+  }, [pendingEmployee]);
+
+  function openEmployee(person: HREmployee) {
+    if (selected?.id !== person.id) {
+      if (fileDirty) { setPendingEmployee(person); return; }
+      setFileDirty(false);
+      setSelected(person);
+    }
+    setFileOpen(true);
+  }
 
   function update<K extends keyof HREmployeeInput>(key: K, value: HREmployeeInput[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -101,7 +126,10 @@ export function EmployeeDirectory() {
       setHistory([]);
       setApplied("");
       setQuery("");
-      setSelected(result.employee);
+      if (!fileDirty) {
+        setSelected(result.employee);
+        setFileOpen(true);
+      }
       await load({ q: "", cursor: "" });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر تسجيل الموظف. يمكنك إعادة المحاولة دون تكرار الطلب.");
@@ -141,23 +169,25 @@ export function EmployeeDirectory() {
     <div className="access-table-wrap" aria-busy={loading}>
       <table className="operations-table access-table">
         <caption className="visually-hidden">دليل موظفي بثواني</caption>
-        <thead><tr><th scope="col">الموظف</th><th scope="col">القسم</th><th scope="col">المسمى</th><th scope="col">النوع</th><th scope="col">الحالة</th><th scope="col">التفاصيل</th></tr></thead>
+        <thead><tr><th scope="col">الموظف</th><th scope="col">القسم</th><th scope="col">المسمى</th><th scope="col">النوع</th><th scope="col" className="indicator-column">الحالة</th><th scope="col">التفاصيل</th></tr></thead>
         <tbody>{items.map((person) => <tr key={person.id}>
           <th scope="row">{person.fullNameAr}</th><td>{person.department}</td><td>{person.jobTitle}</td>
           <td>{person.operatorActorId ? "مرتبط بهوية تشغيل" : "بلا هوية تشغيل"}</td>
-          <td>{person.status === "active" ? "نشط" : "غير نشط"}</td>
-          <td><button className="button button-quiet" type="button" onClick={() => setSelected(person)}>التفاصيل</button></td>
+          <td className="indicator-column"><ActivityIndicator active={person.status === "active"} inactiveLabel="غير نشط" /></td>
+          <td><button className="button button-quiet" type="button" aria-label={`فتح ملف ${person.fullNameAr}`} onClick={() => openEmployee(person)}>التفاصيل</button></td>
         </tr>)}
-        {!loading && items.length === 0 ? <tr><td colSpan={6}>لا يوجد موظفون مطابقون للبحث.</td></tr> : null}
+        {!loading && !error && items.length === 0 ? <tr><td colSpan={6}>لا يوجد موظفون مطابقون للبحث.</td></tr> : null}
         {loading ? <tr><td colSpan={6}>جارٍ تحميل الموظفين…</td></tr> : null}</tbody>
       </table>
     </div>
     <div className="form-actions">
+      <ActivityLegend inactiveLabel="غير نشط" />
       <button className="button button-secondary" type="button" disabled={history.length === 0 || loading} onClick={() => { const stack = [...history]; setCursor(stack.pop() ?? ""); setHistory(stack); }}>السابق</button>
       <button className="button button-secondary" type="button" disabled={!nextCursor || loading} onClick={() => { setHistory((current) => [...current, cursor]); setCursor(nextCursor); }}>التالي</button>
     </div>
-    {selected ? <section className="access-workspace-section" aria-label="تفاصيل الموظف">
-      <div className="access-section-heading"><h2>{selected.fullNameAr}</h2><button type="button" className="button button-quiet" onClick={() => setSelected(null)}>إغلاق</button></div>
+    {selected ? <dialog ref={fileRef} className="employee-file-dialog" aria-label="تفاصيل الموظف" onClose={() => setFileOpen(false)} onChange={() => setFileDirty(true)}>
+      <div className="access-section-heading"><h2>{selected.fullNameAr}</h2><button type="button" className="button button-quiet" onClick={() => fileRef.current?.close()}>إغلاق</button></div>
+      <p className="muted">إغلاق الملف يحفظ مسودتك في هذه الجلسة؛ افتح الموظف نفسه لاستكمالها.</p>
       <dl>
         <dt>الرقم الوظيفي</dt><dd><bdi dir="ltr">{selected.id}</bdi></dd>
         <dt>القسم</dt><dd>{selected.department}</dd>
@@ -172,6 +202,16 @@ export function EmployeeDirectory() {
       <EmployeeEmploymentStatus key={`${selected.id}-employment-status`} employee={selected} onSaved={(next)=>{setSelected(next);setItems((list)=>list.map((person)=>person.id===next.id?next:person));}} />
       <EmployeeAttendance key={selected.id + "-attendance"} employeeId={selected.id} />
       <EmployeeAuditHistory key={`${selected.id}-audit`} employee={selected} />
-    </section> : null}
+    </dialog> : null}
+    {pendingEmployee ? <dialog ref={switchRef} aria-labelledby="employee-switch-title" onClose={() => setPendingEmployee(null)}>
+      <h2 id="employee-switch-title">فتح ملف موظف آخر</h2>
+      <p>أدخلت تعديلات في الملف الحالي. إذا لم تحفظها، ستفقدها عند فتح ملف {pendingEmployee.fullNameAr}.</p>
+      <div className="form-actions">
+        <button type="button" className="button button-secondary" onClick={() => switchRef.current?.close()}>الاحتفاظ بالملف الحالي</button>
+        <button type="button" className="button button-primary" onClick={() => {
+          setFileDirty(false); setSelected(pendingEmployee); setPendingEmployee(null); setFileOpen(true);
+        }}>فتح الملف الآخر</button>
+      </div>
+    </dialog> : null}
   </section>;
 }

@@ -205,9 +205,10 @@ test("operations lanes, order detail routes, and operator recovery follow URL st
   const contextBounds = await page.locator(".workspace-header > .workspace-actor-context").boundingBox();
   const headerBounds = await page.locator(".workspace-header").boundingBox();
   await page.screenshot({ path: path.join(evidenceDirectory, "operations-narrow.png") });
-  if (!brandBounds || !toolsBounds || !contextBounds || !headerBounds) throw new Error("Expected the narrow workspace header regions to render.");
+  if (!brandBounds || !toolsBounds || !headerBounds) throw new Error("Expected the narrow workspace brand and tools to render.");
   expect(headerBounds.height).toBeLessThanOrEqual(80);
-  const headerRegions = [brandBounds, contextBounds, toolsBounds];
+  // On compact screens the current resource is identified by the main heading, not a duplicate header block.
+  const headerRegions = contextBounds ? [brandBounds, contextBounds, toolsBounds] : [brandBounds, toolsBounds];
   for (const region of headerRegions) {
     expect(region.x).toBeGreaterThanOrEqual(0);
     expect(region.x + region.width).toBeLessThanOrEqual(390);

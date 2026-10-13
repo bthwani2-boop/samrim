@@ -12,6 +12,25 @@ const (
 	testOperatorActorID = "act_operator_catalog_v1"
 )
 
+func TestAdoptedMigration117RetainsItsOriginalBytes(t *testing.T) {
+	records, _, err := postgres.LoadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This migration is already applied to preserved local data. Its original
+	// CRLF bytes, not a rewritten ledger hash, are the upgrade authority.
+	const adoptedSHA = "4d9c779902a595e1c08e5939b90f1ca6dbeb2856bbb7c281ba380d490d4ae20e"
+	for _, record := range records {
+		if record.Version == 117 {
+			if record.SHA256 != adoptedSHA {
+				t.Fatalf("adopted migration 117 changed: got %s, want %s", record.SHA256, adoptedSHA)
+			}
+			return
+		}
+	}
+	t.Fatal("adopted migration 117 is missing")
+}
+
 func assertRequiredMigrationOrder(t *testing.T, records []postgres.MigrationRecord, required ...string) {
 	t.Helper()
 	lastIndex := -1
@@ -39,12 +58,15 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "120_hr_manual_attendance.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 120_hr_manual_attendance.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "122_store_access_admission_pages.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 122_store_access_admission_pages.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
 	migrationByName := make(map[string]string, len(records))
 	for index, record := range records {
 		migrationByName[record.Name] = migrationSQL[index]
+	}
+	if !strings.Contains(migrationByName["122_store_access_admission_pages.sql"], "store_access_operator_pending_page_idx") || !strings.Contains(migrationByName["122_store_access_admission_pages.sql"], "pending_role_admission") {
+		t.Fatal("DSH migration 122 must index bounded operator admission pages")
 	}
 	if !strings.Contains(migrationByName["064_partner_captain_cash_at_store_payment.sql"], "fulfillment_mode IN ('PARTNER_CAPTAIN', 'CUSTOMER_PICKUP') AND payment_method = 'CASH_AT_STORE'") {
 		t.Fatal("DSH migration 064 does not bind partner-captain fulfillment to cash at store")

@@ -9,6 +9,7 @@ Arabic RTL operations console. The approved refoundation replaces the previous p
 - `src/shell/page-header.tsx` owns page titles/actions. `workspace-icon.tsx` owns the shell's stroke icon family.
 - `src/navigation/workspace-registry.ts` owns destination names, hierarchy and search. Every center uses the same contextual sidebar. Only the current center's children are expanded. Object/workflow tabs belong to the object; a second competing center menu is forbidden.
 - Resource-only center roots open their first canonical resource directly. Never repeat the sidebar as a grid of destination cards in the work area. Small reference registries show readable rows; creation is disclosed and only one selected record is edited at a time, using a compact form.
+- Compact operational indicators share the shell's stroke icon family through `workspace-icon.tsx` and the repeated record treatment in `features/shared/record-indicator.tsx`. Account and publication remain separate, delivery uses one shape per mode, and legends use full Arabic labels. A desktop store inspector is a 360px side surface; phone lists show concise record cards without transforming native table rows into layout containers. Compact sidebar children use recognizable destination icons instead of identical dots.
 - `UX-CONTRACT.md` owns observable behavior. Domain services remain the authorization/query/state owners.
 
 ## Visual direction

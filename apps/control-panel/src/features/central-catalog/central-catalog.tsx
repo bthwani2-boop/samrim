@@ -5,6 +5,8 @@ import { TextArea } from "@bthwani/design-system/web";
 import { isMediaProvenanceInputValid, type BaseUnit, type CatalogAttributeRule, type CatalogAttributeValue, type CatalogAttributeValueInput, type CatalogCategoryListItem, type CatalogCategoryListResponse, type CatalogProduct, type CatalogProductRegistryResponse, type CatalogVariant, type CommerceVertical, type MediaProvenanceInput, type MeasurementKind } from "@bthwani/dsh";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "./catalog-media-provenance-fields";
+import { ActivityIndicator, ActivityLegend } from "../shared/record-indicator";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type ProductForm = { verticalId: string; scope: "SHARED" | "STORE_SCOPED"; canonicalName: string; description: string; brand: string; variantTitle: string; measurementKind: MeasurementKind; baseUnit: BaseUnit; categoryIds: ReadonlyArray<string>; identifierType: string; identifierValue: string; active: boolean };
 
@@ -245,7 +247,7 @@ export function CentralCatalog() {
     try { await loadFilterCategories(filterCategoryQuery, filterCategoryNextCursor, true); }
     catch (nextError) { setError(nextError instanceof Error ? nextError.message : "تعذر تحميل فئات إضافية."); }
   }
-  const load = useCallback(async (cursor = cursorPage.cursor) => {
+  const load = useCallback(async (cursor = cursorPage.cursor, preserveSelection = false) => {
     const requestSequence = ++listRequestSequence.current;
     setLoading(true);
     setRegistrySummary(null);
@@ -264,7 +266,7 @@ export function CentralCatalog() {
       if (payload.totalCount !== undefined && (!Number.isSafeInteger(payload.totalCount) || payload.totalCount < payload.products.length || !Number.isFinite(Date.parse(payload.measuredAt)))) throw new Error("تعذر التحقق من ملخص المنتجات. أعد القراءة.");
       setRegistrySummary(payload.totalCount === undefined ? null : { totalCount: payload.totalCount, measuredAt: payload.measuredAt });
       setProducts(payload.products);
-      setSelectedIds(new Set());
+      setSelectedIds((current) => preserveSelection ? new Set(payload.products.filter((product) => current.has(product.id)).map((product) => product.id)) : new Set());
       setNextCursor(payload.nextCursor ?? "");
     } catch (nextError) {
       if (requestSequence === listRequestSequence.current) { setRegistryError(nextError instanceof Error ? nextError.message : "تعذر قراءة الكتالوج."); setProducts([]); setSelectedIds(new Set()); setNextCursor(""); }
@@ -272,6 +274,7 @@ export function CentralCatalog() {
       if (requestSequence === listRequestSequence.current) setLoading(false);
     }
   }, [appliedQuery, verticalFilter, categoryFilter, statusFilter, sort, cursorPage.cursor]);
+  useReadOnReturn(() => load(cursorPage.cursor, true), cursorPage.ready && !editorOpen && !loading && !busy);
 
   useEffect(() => { void loadVerticals().catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئات الرئيسية.")); }, [loadVerticals]);
   useEffect(() => { void loadCategories(form.verticalId, "").catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئات.")); }, [form.verticalId, loadCategories]);
@@ -625,7 +628,7 @@ export function CentralCatalog() {
                 <td><div className="catalog-registry-product">{product.primaryImageUri ? <img className="catalog-registry-product-image" src={product.primaryImageUri} alt="" loading="lazy" /> : <span className="catalog-registry-product-placeholder" aria-hidden="true">{product.canonicalName.trim().slice(0, 1) || "•"}</span>}<span><strong>{product.canonicalName}</strong>{product.brand ? <small>{product.brand}</small> : null}</span></div></td>
                 <td>{sharedVerticals.find((vertical) => vertical.id === product.verticalId)?.nameAr ?? "غير محدد"}</td>
                 <td>{product.categoryIds.length}</td><td>{product.variantCount}</td><td>{product.storeCount}</td>
-                <td><span className={`catalog-state-pill ${product.active ? "is-active" : "is-inactive"}`}>{product.active ? "نشط" : "معطل"}</span></td>
+                <td className="indicator-column"><ActivityIndicator active={product.active} inactiveLabel="معطل" /></td>
                 <td><time dateTime={product.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium" }).format(new Date(product.updatedAt))}</time></td>
                 <td><button type="button" className="catalog-row-action" disabled={detailLoading} onClick={() => void selectProduct(product.id)}>تفاصيل وتعديل</button></td>
               </tr>)}
@@ -650,7 +653,7 @@ export function CentralCatalog() {
         {!editorOpen && registryError ? <div className="managed-status managed-status-warning" role="alert"><p>{registryError}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>إعادة قراءة سجل المنتجات</button></div> : null}
         {!editorOpen && notice ? <p className="success-inline" role="status">{notice}</p> : null}
         {!editorOpen && error ? <p className="identity-error" role="alert">{error}</p> : null}
-    <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات المنتجات" />
+    <footer className="registry-footer"><ActivityLegend inactiveLabel="معطل" /><CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات المنتجات" /></footer>
       </section>
       {editorOpen && detailProductId && !selected ? <section className="access-card central-catalog-editor" aria-labelledby="central-catalog-editor-title">
         <h2 id="central-catalog-editor-title">تفاصيل المنتج</h2>

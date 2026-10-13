@@ -37,6 +37,7 @@ test("home distinguishes authoritative unread total from the visible latest page
 });
 
 test("home does not turn unknown counts or failed reads into zero", async ({ page }) => {
+  await page.clock.install();
   await auth(page);
   let mode: "missing" | "failed" | "recovered" = "missing";
   await page.route("**/api/notifications?**", (route) => {
@@ -53,11 +54,12 @@ test("home does not turn unknown counts or failed reads into zero", async ({ pag
   await expect(page.getByText("العدد الإجمالي غير متاح")).toBeVisible();
   await expect(page.getByText(/عدد الإشعارات غير معروف/)).toBeVisible();
   mode = "failed";
-  await page.getByRole("button", { name: "تحديث", exact: true }).click();
+  await page.clock.fastForward(31_000);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(page.locator(".home-queue-error")).toContainText("تعذرت القراءة");
   await expect(page.getByText("لا توجد إشعارات غير مقروءة.", { exact: true })).toHaveCount(0);
   mode = "recovered";
-  await page.getByRole("button", { name: "تحديث", exact: true }).click();
+  await page.getByRole("button", { name: "إعادة المحاولة", exact: true }).click();
   await expect(page.getByText("إجمالي غير المقروءة: 0")).toBeVisible();
   await expect(page.getByText("لا توجد إشعارات غير مقروءة.", { exact: true })).toBeVisible();
 });

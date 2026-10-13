@@ -3,6 +3,7 @@ import type { OperatorPermission } from "@bthwani/identity";
 type WorkspaceChild = Readonly<{
   href: string;
   label: string;
+  searchAliases?: string;
   showInWorkspaceNavigation?: boolean;
 }>;
 
@@ -49,7 +50,17 @@ export const workspaceFinanceResources = [
 
 export type FinanceResourceKey = (typeof workspaceFinanceResources)[number]["key"];
 
-const financeChildren: readonly WorkspaceChild[] = workspaceFinanceResources.map(({ href, label }) => ({ href, label }));
+const financeChildren: readonly WorkspaceChild[] = workspaceFinanceResources.flatMap<WorkspaceChild>(({ key, href, label }) => {
+  if (key === "beneficiary-settlement-partners") {
+    return [{
+      href: "/finance/beneficiary-settlement",
+      label: "المستحقات والتسويات",
+      searchAliases: "مستحقات الشركاء مستحقات الكباتن مستحقات الميدان دفعات المطابقة",
+    }];
+  }
+  if (key === "beneficiary-settlement-captains" || key === "beneficiary-settlement-field") return [];
+  return [{ href, label }];
+});
 
 export const workspaceMarketingResources = [
   { key: "promotions", href: "/marketing/promotions", label: "العروض", description: "إنشاء العروض ومراجعة نشرها وإيقافها." },
@@ -74,10 +85,9 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
     label: "الشركاء",
     permission: "partners",
     children: [
-      { href: "/partners/joining", label: "طلبات الانضمام" },
-      { href: "/partners/stores", label: "المتاجر" },
-      { href: "/partners/store-access", label: "اعتماد وصول المتاجر" },
-      { href: "/fields", label: "الميدان" }
+      { href: "/partners", label: "الشركاء والمتاجر", searchAliases: "سجل الشركاء سجل المتاجر حسابات الشركاء" },
+      { href: "/partners/joining", label: "الطلبات والاعتمادات", searchAliases: "طلبات الانضمام اعتماد وصول المتاجر دعوات الوصول" },
+      { href: "/fields", label: "الميداني" }
     ]
   },
   { href: "/catalog", label: "الكتالوج", children: catalogChildren, permission: "catalog" },
@@ -89,17 +99,17 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
 ];
 
 export const workspaceSearchEntries = workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false).flatMap((destination) => [
-  {
+  ...(destination.children.some((child) => child.href === destination.href) ? [] : [{
     href: destination.href,
     label: destination.label,
     context: destination.label,
     searchText: `${destination.label} ${destination.href}`,
-  },
+  }]),
   ...destination.children.map((child) => ({
     href: child.href,
     label: child.label,
     context: destination.label,
-    searchText: `${child.label} ${destination.label} ${child.href}`,
+    searchText: `${child.label} ${destination.label} ${child.href} ${child.searchAliases ?? ""}`,
   })),
 ]);
 
@@ -116,18 +126,26 @@ export function currentWorkspaceDestination(pathname: string) {
 }
 
 export function currentWorkspaceChild(pathname: string, destination: WorkspaceDestination) {
-  return destination.children.find((child) => isCurrentWorkspacePath(pathname, child.href)) ?? null;
+  if (destination.href === "/partners") {
+    if (isCurrentWorkspacePath(pathname, "/fields")) return destination.children.find((child) => child.href === "/fields") ?? null;
+    const joining = pathname === "/partners/joining" || pathname === "/partners/new" || pathname === "/partners/store-access"
+      || (pathname.startsWith("/partners/") && !pathname.startsWith("/partners/actors/") && !pathname.startsWith("/partners/stores/") && pathname !== "/partners/stores");
+    return destination.children.find((child) => child.href === (joining ? "/partners/joining" : "/partners")) ?? null;
+  }
+  return destination.children.find((child) =>
+    child.href === destination.href ? pathname === child.href : isCurrentWorkspacePath(pathname, child.href)
+  ) ?? null;
 }
 
 export function dynamicWorkspaceRouteLabel(pathname: string) {
   const segments = pathname.split("/").filter(Boolean);
   if (segments[0] === "partners" && segments.length === 2) {
-    if (segments[1] === "new") return "إضافة شريك";
-    if (["joining", "joining-cases", "stores", "actors", "service-cities"].includes(segments[1]!)) return null;
+    if (segments[1] === "new") return "طلب انضمام جديد";
+    if (["joining", "joining-cases", "store-access", "stores", "actors", "service-cities"].includes(segments[1]!)) return null;
     return "تفاصيل طلب الانضمام";
   }
   if (segments[0] === "partners" && segments[1] === "stores" && segments.length === 3) return "ملف المتجر";
-  if (segments[0] === "partners" && segments[1] === "actors" && segments.length === 3) return "الملف المالي للشريك";
+  if (segments[0] === "partners" && segments[1] === "actors" && segments.length === 3) return "ملف الشريك";
   if (segments[0] === "operations" && segments.length === 2) return "تفاصيل الطلب";
   return null;
 }

@@ -1,7 +1,9 @@
 export function downloadRegistryCsv(filename: string, headers: ReadonlyArray<string>, rows: ReadonlyArray<ReadonlyArray<string | number | boolean>>): void {
   const cell = (value: string | number | boolean) => {
-    let normalized = String(value).replace(/[\r\n]+/g, " ");
-    if (/^[=+\-@]/.test(normalized)) normalized = `'${normalized}`;
+    // Spreadsheet applications can evaluate untrusted names as formulae on import.
+    // Prefix only risky text; numeric negative amounts must remain numeric in exports.
+    let normalized = String(value).replace(/[\r\n\t]+/g, " ");
+    if (typeof value === "string" && /^[\s\u200B-\u200D\u2060\uFEFF]*[=+\-@]/u.test(normalized)) normalized = `'${normalized}`;
     return `"${normalized.replaceAll('"', '""')}"`;
   };
   const content = `\uFEFF${[headers, ...rows].map((row) => row.map(cell).join(",")).join("\r\n")}`;

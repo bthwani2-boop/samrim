@@ -51,7 +51,7 @@ test("joining queue browses 37 records with server cursor, search, review stage 
   await page.getByRole("button", { name: "السابق" }).click();
   await expect(table.locator("tbody tr")).toHaveCount(25);
 
-  await page.getByRole("button", { name: "للمراجعة", exact: true }).click();
+  await page.getByRole("combobox", { name: "حالة الطلب" }).selectOption("submitted");
   await expect(page).toHaveURL(/state=submitted/);
   await expect(table.locator("tbody tr")).toHaveCount(8);
   await expect(table.getByRole("link", { name: /مراجعة الطلب/ })).toHaveCount(8);
@@ -102,7 +102,7 @@ test("joining queue keeps identity and action accessible when the table overflow
   await expect(table.getByRole("link", { name: /مراجعة الطلب/ }).first()).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("searchbox", { name: "ابحث عن طلب" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "للمراجعة", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "حالة الطلب" })).toBeVisible();
   await expect(table.locator("tbody tr")).toHaveCount(25);
 });
 
@@ -131,4 +131,52 @@ test("joining queue recovers an expired server cursor without discarding the sel
   await expect(page).not.toHaveURL(/cursor=/);
   await expect(page.getByRole("status").filter({ hasText: "انتهت صلاحية الصفحة السابقة" })).toBeVisible();
   await expect(page.locator(".joining-case-table tbody tr")).toHaveCount(8);
+});
+
+test("joining queue exposes a contact action without a routine manual refresh", async ({ page }) => {
+  await page.goto("/partners/joining");
+  const first = page.locator(".joining-case-table tbody tr").first();
+  await expect(first.getByRole("link", { name: "+967770000001" })).toHaveAttribute("href", "tel:+967770000001");
+  await expect(page.locator(".joining-case-refresh")).toHaveCount(0);
+  await first.getByRole("checkbox", { name: "تحديد طلب شريك تجريبي 1" }).check();
+  await expect(page.getByText("1 محدد")).toBeVisible();
+});
+
+test("automatic return read preserves selection of a still-visible case", async ({ page }) => {
+  let reads = 0;
+  await page.clock.install();
+  await page.route("**/api/partners/joining-cases?**", (route) => {
+    reads++;
+    return route.fulfill({ json: { cases: cases.slice(0, 25), nextCursor: "25" } });
+  });
+  await page.goto("/partners/joining");
+  const checkbox = page.getByRole("checkbox", { name: "تحديد طلب شريك تجريبي 1", exact: true });
+  await checkbox.check();
+  await expect(checkbox).toBeChecked();
+  const before = reads;
+  await page.clock.fastForward(31_000);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => reads).toBeGreaterThan(before);
+  await expect(checkbox).toBeChecked();
+  await expect(page.getByText("1 محدد")).toBeVisible();
+});
+
+test("CSV export treats malicious partner and store names as text, not spreadsheet formulas", async ({ page }) => {
+  await page.route("**/api/partners/joining-cases?**", (route) => route.fulfill({ json: {
+    cases: [{ ...cases[0], businessName: '  =HYPERLINK("https://invalid.example","click")', firstStoreName: "@SUM(1,2)" }],
+    nextCursor: "",
+  } }));
+  await page.goto("/partners/joining");
+  await expect(page.locator(".joining-case-table tbody tr")).toHaveCount(1);
+  await page.locator(".joining-case-table tbody tr").first().getByRole("checkbox").check();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "تصدير المحدد" }).click();
+  const download = await downloadPromise;
+  const chunks: Buffer[] = [];
+  const stream = await download.createReadStream();
+  for await (const chunk of stream) chunks.push(chunk);
+  const csv = Buffer.concat(chunks).toString("utf8");
+  expect(csv).toContain('"' + "'" + '  =HYPERLINK(""https://invalid.example"",""click"")"');
+  expect(csv).toContain(`"\'@SUM(1,2)"`);
+  expect(csv).not.toContain('"@SUM(1,2)"');
 });

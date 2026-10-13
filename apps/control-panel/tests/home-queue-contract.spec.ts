@@ -36,7 +36,7 @@ test("home does not mistake malformed owner queue responses for no work, and rec
   await expect(page.getByText("لا توجد إشعارات غير مقروءة.")).toBeVisible();
 
   valid = true;
-  await page.getByRole("button", { name: "تحديث", exact: true }).click();
+  await page.getByRole("button", { name: "إعادة المحاولة", exact: true }).click();
   await expect(page.locator(".home-queue-error")).toHaveCount(0);
   await expect(page.getByText("لا توجد طلبات في هذه القائمة.")).toHaveCount(2);
   await expect(page.getByText("لا توجد إحالات في هذه القائمة.")).toBeVisible();
@@ -58,7 +58,7 @@ test("home renders invalid JSON as a localized recoverable queue error", async (
   await expect(queue.getByRole("alert")).toContainText("استجابة قائمة العمل غير صالحة.");
   await expect(queue.getByText("لا توجد طلبات في هذه القائمة.")).toHaveCount(0);
   valid = true;
-  await page.getByRole("button", { name: "تحديث", exact: true }).click();
+  await page.getByRole("button", { name: "إعادة المحاولة", exact: true }).click();
   await expect(queue.getByRole("alert")).toHaveCount(0);
   await expect(queue.getByText("لا توجد طلبات في هذه القائمة.")).toBeVisible();
 });

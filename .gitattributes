@@ -15,3 +15,5 @@
 # Preserve the byte-for-byte SQL already recorded by the local DSH migration ledger.
 # v109 was originally applied with CRLF; normalizing it breaks schema readiness.
 services/dsh/backend/internal/storage/postgres/migrations/109_partner_passport_proof_type.sql -text whitespace=cr-at-eol
+# v117 was also applied with CRLF; preserve its original adopted bytes.
+services/dsh/backend/internal/storage/postgres/migrations/117_hr_access_request_rejection.sql -text whitespace=cr-at-eol

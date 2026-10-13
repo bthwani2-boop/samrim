@@ -181,15 +181,17 @@ func (s *Service) UpdatePermissionsForOwner(ctx context.Context, accessToken, st
 	return postgres.UpdateStoreAccessGrantPermissions(ctx, s.db, storeID, actorID, grantID, permissions, expectedVersion, idempotencyKey, correlationID)
 }
 
-func (s *Service) ListRoleAdmissionsForOperator(ctx context.Context, actingActorID string) ([]postgres.StoreAccessGrant, error) {
+func (s *Service) ListRoleAdmissionsForOperator(ctx context.Context, actingActorID string, limit int, cursor string) (postgres.StoreAccessRoleAdmissionPage, error) {
 	if err := s.requirePartnerAdmissionOperator(ctx, actingActorID); err != nil {
-		return nil, err
+		return postgres.StoreAccessRoleAdmissionPage{}, err
 	}
-	grants, err := postgres.ListPendingStoreAccessRoleAdmissions(ctx, s.db)
+	page, err := postgres.ListPendingStoreAccessRoleAdmissionsPage(ctx, s.db, limit, cursor)
 	if err != nil {
-		return nil, err
+		return postgres.StoreAccessRoleAdmissionPage{}, err
 	}
-	return s.addDelegatePresentation(ctx, grants)
+	// The operator needs a masked contact, not one WLT lookup per queued grant.
+	page.Items, err = s.addMaskedDelegatePhones(ctx, page.Items)
+	return page, err
 }
 
 func (s *Service) AdmitPartnerRoleForOperator(ctx context.Context, grantID, actingActorID, idempotencyKey, correlationID string) (postgres.StoreAccessGrant, bool, error) {

@@ -16,8 +16,8 @@ async function session(page: Page) {
 
 test("store registry shows business names and exports them without internal keys", async ({ page }) => {
   await session(page);
-  await page.route("**/api/partners/stores**", (route) => route.fulfill({ json: { stores: [store] } }));
-  await page.goto("/partners/stores");
+  await page.route("**/api/partners/registry?**", (route) => route.fulfill({ json: { rows: [{ kind: "store", store, partnerRole: null }], nextCursor: "" } }));
+  await page.goto("/partners");
   const table = page.getByRole("table");
   await expect(table.getByRole("link", { name: store.partnerName })).toBeVisible();
   await expect(table.getByText("صنعاء", { exact: true })).toBeVisible();
@@ -51,8 +51,8 @@ test("store profile keeps useful facts and actions without database IDs or versi
 
 test("missing display names never fall back to opaque keys", async ({ page }) => {
   await session(page);
-  await page.route("**/api/partners/stores**", (route) => route.fulfill({ json: { stores: [{ ...store, partnerName: undefined, serviceCityName: undefined, primaryVerticalName: undefined }] } }));
-  await page.goto("/partners/stores");
+  await page.route("**/api/partners/registry?**", (route) => route.fulfill({ json: { rows: [{ kind: "store", store: { ...store, partnerName: undefined, serviceCityName: undefined, primaryVerticalName: undefined }, partnerRole: null }], nextCursor: "" } }));
+  await page.goto("/partners");
   await expect(page.getByRole("table")).not.toContainText("opaque_internal");
   await expect(page.getByRole("link", { name: "ملف الشريك", exact: true })).toBeVisible();
 });

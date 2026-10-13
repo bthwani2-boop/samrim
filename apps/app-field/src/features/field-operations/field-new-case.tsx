@@ -326,7 +326,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       })
       .catch((cause: unknown) => {
         console.warn("DSH Field commercial store type read failed", cause);
-        if (active) setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذه الفئة.");
+        if (active) setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذا النشاط التجاري.");
       })
       .finally(() => { if (active) setCommercialTypesLoading(false); });
     return () => { active = false; };
@@ -409,13 +409,23 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       setDraftConflict(false);
       setDraftConflictNeedsRead(false);
       setPendingDraftAttempt(null);
+      let optionalMediaUnconfirmed = false;
       if (storeImage && isMediaProvenanceInputValid(storeImage.provenance)) {
-        await uploadStoreImage(canonical, storeImage);
+        if (!await uploadStoreImage(canonical, storeImage)) optionalMediaUnconfirmed = true;
       }
-      if (storeImage && !isMediaProvenanceInputValid(storeImage.provenance)) setError("حُفظت المسودة. أكّد حق عرض شعار المتجر لإكمال رفعه.");
+      if (storeImage && !isMediaProvenanceInputValid(storeImage.provenance)) {
+        optionalMediaUnconfirmed = true;
+        setError("حُفظت المسودة. أكّد حق عرض شعار المتجر لإكمال رفعه.");
+      }
       if (reviewPhoto) {
-        const latest = await fieldClient().readOwnFieldJoiningCase(token, canonical.case.id);
-        await uploadReviewPhoto(latest, reviewPhoto);
+        try {
+          const latest = await fieldClient().readOwnFieldJoiningCase(token, canonical.case.id);
+          if (!await uploadReviewPhoto(latest, reviewPhoto)) optionalMediaUnconfirmed = true;
+        } catch (cause) {
+          console.warn("DSH Field optional review-photo preflight unavailable", cause);
+          optionalMediaUnconfirmed = true;
+          setError("حُفظت المسودة، لكن تعذر التحقق من رفع الصورة الداخلية الاختيارية. يمكنك إرسال الطلب دونها.");
+        }
       }
       if (submitAfterSave) {
         const latest = await fieldClient().readOwnFieldJoiningCase(token, canonical.case.id);
@@ -432,7 +442,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         if (submitted.case.state === "draft") throw new Error("FIELD_SUBMISSION_UNCONFIRMED");
         setCreatedCase(submitted);
         setError("");
-        router.replace({ pathname: "/cases", params: { caseId: submitted.case.id } } as Href);
+        router.replace({ pathname: "/cases", params: { caseId: submitted.case.id, ...(optionalMediaUnconfirmed ? { mediaWarning: "1" } : {}) } } as Href);
       }
     } catch (cause) {
       console.warn("DSH Field joining-case draft save failed", cause);
@@ -460,7 +470,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
           : code === "SERVICE_CITY_UNAVAILABLE"
             ? "مدينة الخدمة لم تعد نشطة. أعد قراءة المدن واختر مدينة أخرى."
             : code === "VERTICAL_UNAVAILABLE"
-              ? "الفئة الرئيسية لم تعد نشطة. أعد قراءة الأنشطة واختر فئة أخرى."
+              ? "النشاط التجاري لم يعد نشطًا. أعد قراءة الأنشطة واختر نشاطًا آخر."
                : code === "INVALID_INPUT" ? "رفض الخادم بعض بيانات المسودة. راجع الحقول المدخلة ثم أعد المحاولة." : "تعذر حفظ المسودة. تحقق من اتصال الخدمة وأعد المحاولة.");
       }
     } finally {
@@ -574,7 +584,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
     }
   }
 
-  async function uploadReviewPhoto(current: JoiningCaseResponse, photo: DshImageUploadInput) {
+  async function uploadReviewPhoto(current: JoiningCaseResponse, photo: DshImageUploadInput): Promise<boolean> {
     const attempt = pendingReviewPhotoAttempt?.caseID === current.case.id && pendingReviewPhotoAttempt.version === current.case.version
       ? pendingReviewPhotoAttempt
       : { caseID: current.case.id, version: current.case.version, key: "field_review_photo_" + Crypto.randomUUID(), correlation: "field_review_corr_" + Crypto.randomUUID() };
@@ -587,17 +597,19 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       setCreatedCase(canonical);
       setReviewPhoto(null);
       setPendingReviewPhotoAttempt(null);
+      return true;
     } catch (cause) {
       try {
         const token = await getUsableIdentityAccessToken();
         const latest = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID);
         setCreatedCase(latest);
-        if (latest.case.reviewPhotoUploaded) { setReviewPhoto(null); setPendingReviewPhotoAttempt(null); return; }
+        if (latest.case.reviewPhotoUploaded) { setReviewPhoto(null); setPendingReviewPhotoAttempt(null); return true; }
       } catch (readError) {
         console.warn("DSH optional review photo readback unavailable", readError);
       }
       console.warn("DSH optional review photo upload not confirmed", cause);
       setError("حُفظ ملف الانضمام. تعذّر تأكيد الصورة الاختيارية فقط؛ يمكن إعادة المحاولة دون تعطيل إرسال الطلب.");
+      return false;
     }
   }
 
@@ -612,7 +624,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
     }
   }
 
-  async function uploadStoreImage(current: JoiningCaseResponse, image: StoreImageDraft, existingAttempt?: PendingImageAttempt) {
+  async function uploadStoreImage(current: JoiningCaseResponse, image: StoreImageDraft, existingAttempt?: PendingImageAttempt): Promise<boolean> {
     const attempt = existingAttempt ?? { caseID: current.case.id, expectedVersion: current.case.version, image, idempotencyKey: `field_store_image_${Crypto.randomUUID()}`, correlationID: `field_store_image_corr_${Crypto.randomUUID()}` };
     setPendingImageAttempt(attempt);
     try {
@@ -623,16 +635,17 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       setCreatedCase(canonical);
       setStoreImage(null);
       setPendingImageAttempt(null);
+      return true;
     } catch (cause) {
       console.warn("DSH Field store image upload failed", cause);
       if (dshErrorCode(cause) === "MEDIA_STORAGE_UNAVAILABLE") {
         setPendingImageAttempt(null);
         setError("تعذر تخزين الصورة. أعد رفع الملف المختار أو اختر صورة أخرى.");
-        return;
+        return false;
       }
       if (isOutcomeUncertain(cause)) {
         setError("حُفظت المسودة، لكن لم نتأكد من رفع الصورة بعد. أعد المحاولة للتحقق من حالتها.");
-        return;
+        return false;
       }
       setPendingImageAttempt(null);
       try {
@@ -643,6 +656,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         console.warn("DSH Field case reconciliation after image upload failed", readError);
       }
       setError("حُفظ الطلب، لكن تعذر تأكيد رفع الصورة. حدّث الحالة قبل المحاولة مجددًا.");
+      return false;
     }
   }
 
@@ -729,9 +743,9 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         {!optionsLoading && !optionsError && verticals.length === 0 ? <Text style={styles.error}>لا يوجد نشاط تجاري متاح حاليًا.</Text> : null}
         <View style={styles.optionList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} disabled={formLocked} label={vertical.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreVerticalId: vertical.id }))} selected={input.firstStoreVerticalId === vertical.id} />)}</View>
         <Text style={styles.label}>نوع المتجر</Text>
-        {commercialTypesLoading ? <Text style={styles.muted}>جارٍ قراءة أنواع المتاجر لهذه الفئة…</Text> : null}
-        {commercialTypesError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{commercialTypesError}</Text><BthwaniButton label="إعادة قراءة أنواع المتاجر" onPress={() => { const verticalId = input.firstStoreVerticalId; if (verticalId) { setCommercialTypesError(""); setCommercialTypesLoading(true); void fieldClient().listCommercialStoreTypes(verticalId).then((items) => { const available = items.filter((item) => item.active); setCommercialTypes(available); if (available.length === 1 && available[0]) { const onlyType = available[0]; setInput((current) => current.firstStoreVerticalId === verticalId && !current.firstStoreCommercialTypeId ? { ...current, firstStoreCommercialTypeId: onlyType.id } : current); } }).catch(() => setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذه الفئة.")).finally(() => setCommercialTypesLoading(false)); } }} variant="secondary" /></View> : null}
-        {!commercialTypesLoading && !commercialTypesError && input.firstStoreVerticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذه الفئة. اطلب من المشغّل إعداد النوع التجاري أولًا.</Text> : null}
+        {commercialTypesLoading ? <Text style={styles.muted}>جارٍ قراءة أنواع المتاجر لهذا النشاط التجاري…</Text> : null}
+        {commercialTypesError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{commercialTypesError}</Text><BthwaniButton label="إعادة قراءة أنواع المتاجر" onPress={() => { const verticalId = input.firstStoreVerticalId; if (verticalId) { setCommercialTypesError(""); setCommercialTypesLoading(true); void fieldClient().listCommercialStoreTypes(verticalId).then((items) => { const available = items.filter((item) => item.active); setCommercialTypes(available); if (available.length === 1 && available[0]) { const onlyType = available[0]; setInput((current) => current.firstStoreVerticalId === verticalId && !current.firstStoreCommercialTypeId ? { ...current, firstStoreCommercialTypeId: onlyType.id } : current); } }).catch(() => setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذا النشاط التجاري.")).finally(() => setCommercialTypesLoading(false)); } }} variant="secondary" /></View> : null}
+        {!commercialTypesLoading && !commercialTypesError && input.firstStoreVerticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذا النشاط التجاري. اطلب من المشغّل إعداد النوع التجاري أولًا.</Text> : null}
         <View style={styles.optionList}>{commercialTypes.map((item) => <BthwaniChip key={item.id} disabled={formLocked} label={item.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreCommercialTypeId: item.id }))} selected={input.firstStoreCommercialTypeId === item.id} />)}</View>
         </View> : null}
         {activeStep === 1 ? <>

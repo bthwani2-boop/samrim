@@ -54,7 +54,7 @@ test("employee edit retains and resolves an off-page reporting line",async({page
    return r.fulfill({json:{items:query==="سليم"?[manager]:[{...employee,managerEmployeeId:manager.id}],nextCursor:""}});
  });
  await page.goto("/hr/employees");
- await page.getByRole("button",{name:"التفاصيل"}).first().click();
+ await page.getByRole("button",{name:`فتح ملف ${employee.fullNameAr}`}).click();
  await page.getByRole("button",{name:"تعديل البيانات"}).click();
  const selection=page.getByRole("combobox",{name:"المسؤول المباشر (اختياري)"});
  await expect(selection).toHaveValue(manager.id);

@@ -96,6 +96,10 @@ test("partners-only operator sees store recovery without access to catalog trash
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ stores: [], nextCursor: "" }) });
   });
   await page.goto("/catalog/trash");
+  const breadcrumbs = page.getByRole("navigation", { name: "مسار الصفحة" });
+  await expect(breadcrumbs.getByRole("link", { name: "الشركاء", exact: true })).toHaveAttribute("href", "/partners");
+  await expect(breadcrumbs.getByRole("link", { name: "الكتالوج", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الشركاء", exact: true })).toHaveAttribute("aria-current", "location");
   await expect(page.getByRole("heading", { name: "المتاجر المحذوفة" })).toBeVisible();
   await expect(page.getByRole("button", { name: "المنتجات", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "الفئات", exact: true })).toHaveCount(0);

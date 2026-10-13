@@ -20,13 +20,13 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 function verticalSelectionActionLabel(isSelected: boolean): string {
-  return isSelected ? "المحدد" : "اختيار المجال";
+  return isSelected ? "المحدد" : "اختيار النشاط";
 }
 
 function verticalSaveLabel(busy: boolean, isEditing: boolean): string {
   if (busy) return "جارٍ الحفظ…";
   if (isEditing) return "حفظ التعديل";
-  return "إضافة مجال تجاري";
+  return "إضافة نشاط تجاري";
 }
 
 export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelectVertical, onSaved }: { verticals: ReadonlyArray<CommerceVertical>; selectedVerticalId: string; onSelectVertical: (verticalId: string) => void; onSaved: () => Promise<void> }) {
@@ -62,7 +62,7 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
         body: JSON.stringify({ nameAr: normalizedNameAr, nameEn: normalizedNameEn, active, reason: normalizedReason, ...(selected ? { expectedVersion: selected.version } : {}) }),
       });
       const payload = await parseResponse<{ vertical: CommerceVertical }>(response);
-      setNotice(selected ? `تم تحديث المجال التجاري: ${payload.vertical.nameAr}.` : `تم حفظ المجال التجاري: ${payload.vertical.nameAr}.`);
+      setNotice(selected ? `تم تحديث النشاط التجاري: ${payload.vertical.nameAr}.` : `تم حفظ النشاط التجاري: ${payload.vertical.nameAr}.`);
       if (payload.vertical.active) onSelectVertical(payload.vertical.id);
       setSelected(null);
       setEditorOpen(false);
@@ -71,7 +71,7 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
       setReason("");
       await onSaved();
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "تعذر إنشاء المجال التجاري.");
+      setError(nextError instanceof Error ? nextError.message : "تعذر إنشاء النشاط التجاري.");
     } finally {
       setBusy(false);
     }
@@ -100,8 +100,8 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
   return (
     <section className="catalog-taxonomy-section" aria-labelledby="catalog-vertical-registry-title">
       <div className="access-card-heading">
-        <h3 id="catalog-vertical-registry-title">المجالات التجارية</h3>
-        {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit} onClick={() => { setSelected(null); setNameAr(""); setNameEn(""); setActive(true); setReason(""); setEditorOpen(true); }}>إضافة مجال تجاري</button> : null}
+        <h3 id="catalog-vertical-registry-title">الأنشطة التجارية</h3>
+        {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit} onClick={() => { setSelected(null); setNameAr(""); setNameEn(""); setActive(true); setReason(""); setEditorOpen(true); }}>إضافة نشاط تجاري</button> : null}
       </div>
       {editorOpen ? <div className="access-form">
         <label className="field-label" htmlFor="catalog-vertical-name-ar">الاسم العربي<input id="catalog-vertical-name-ar" disabled={busy || !canEdit} value={nameAr} onChange={(event) => setNameAr(event.target.value)} placeholder="مطاعم" /></label>
@@ -115,8 +115,8 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
       {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
       {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void onSaved()}>إعادة المحاولة</button></p> : null}
       <div className="catalog-taxonomy-inline">
-        <strong>سجل المجالات</strong>
-        {verticals.length === 0 ? <p>لا توجد مجالات تجارية بعد. أضف مجالًا قبل بناء شجرة الفئات.</p> : <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr><th>المجال التجاري</th><th>الاسم الدولي</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>{verticals.map((vertical) => <tr key={vertical.id} className={selectedVerticalId === vertical.id ? "is-selected" : undefined}><td><strong>{vertical.nameAr}</strong></td><td><bdi dir="ltr">{vertical.nameEn}</bdi></td><td>{vertical.active ? "نشط" : "متوقف"}</td><td><div className="catalog-registry-actions"><button type="button" className="catalog-row-action" aria-pressed={selectedVerticalId === vertical.id} disabled={!vertical.active} onClick={() => onSelectVertical(vertical.id)}>{verticalSelectionActionLabel(selectedVerticalId === vertical.id)}</button><button type="button" className="catalog-row-action" disabled={busy || !canEdit} onClick={() => edit(vertical)}>تعديل</button></div></td></tr>)}</tbody></table></div>}
+        <strong>سجل الأنشطة</strong>
+        {verticals.length === 0 ? <p>لا توجد أنشطة تجارية بعد. أضف نشاطًا قبل إنشاء فئات المنتجات.</p> : <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr><th>النشاط التجاري</th><th>الاسم الدولي</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>{verticals.map((vertical) => <tr key={vertical.id} className={selectedVerticalId === vertical.id ? "is-selected" : undefined}><td><strong>{vertical.nameAr}</strong></td><td><bdi dir="ltr">{vertical.nameEn}</bdi></td><td>{vertical.active ? "نشط" : "متوقف"}</td><td><div className="catalog-registry-actions"><button type="button" className="catalog-row-action" aria-pressed={selectedVerticalId === vertical.id} disabled={!vertical.active} onClick={() => onSelectVertical(vertical.id)}>{verticalSelectionActionLabel(selectedVerticalId === vertical.id)}</button><button type="button" className="catalog-row-action" disabled={busy || !canEdit} onClick={() => edit(vertical)}>تعديل</button></div></td></tr>)}</tbody></table></div>}
       </div>
     </section>
   );

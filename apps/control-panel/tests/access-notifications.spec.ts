@@ -108,6 +108,7 @@ test("operator profile mutation errors label list refresh accurately", async ({ 
 });
 
 test("notification refresh errors preserve the page being read", async ({ page }) => {
+  await page.clock.install();
   await stubAuthenticatedSession(page);
   let requestCount = 0;
   await page.route("**/api/notifications**", async (route) => {
@@ -125,7 +126,8 @@ test("notification refresh errors preserve the page being read", async ({ page }
 
   await page.goto("/notifications");
   await expect(page.getByText("طلب جديد 123")).toBeVisible();
-  await page.getByRole("button", { name: "تحديث الإشعارات" }).click();
+  await page.clock.fastForward(31_000);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(page.locator(".managed-status-warning[role='alert']")).toContainText("الخدمة غير متاحة");
   await expect(page.getByText("طلب جديد 123")).toBeVisible();
   await expect(page.getByRole("button", { name: "الأقدم" })).toBeEnabled();
