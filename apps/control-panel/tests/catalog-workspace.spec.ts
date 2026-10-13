@@ -193,9 +193,9 @@ test("operator sees shared product categories as a hierarchy under their commerc
   const rootItem = tree.getByRole("listitem").first();
   const childList = rootItem.getByRole("list");
   const childItem = childList.getByRole("listitem").first();
-  await expect(page.getByLabel("النشاط الرئيسي")).toHaveValue("grocery");
+  await expect(page.getByLabel("النشاط التجاري")).toHaveValue("grocery");
   await expect(childItem.getByRole("button", { name: /قهوة Coffee/ })).toBeVisible();
-  await expect(rootItem).toContainText("جذر المجال");
+  await expect(rootItem).toContainText("جذر النشاط التجاري");
   await expect(childItem.locator(".catalog-taxonomy-child-count")).toContainText("ضمن مشروبات");
   await rootItem.getByRole("button", { name: "طي فروع مشروبات" }).click();
   await expect(childList).toHaveCount(0);
@@ -231,7 +231,7 @@ test("vertical registry does not present a category image as a vertical image", 
 
   await page.goto("/catalog/categories?verticalId=grocery");
   await page.locator("details.catalog-vertical-settings > summary").click();
-  await expect(page.getByRole("heading", { name: "المجالات التجارية" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "الأنشطة التجارية" })).toBeVisible();
   await expect(page.getByRole("img", { name: "صورة المجال المقاضي" })).toHaveCount(0);
   await expect(page.getByText("لا توجد صورة جذر")).toHaveCount(0);
 });

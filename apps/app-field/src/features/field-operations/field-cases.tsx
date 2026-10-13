@@ -49,9 +49,10 @@ export function FieldCases() {
   const theme = useAppearanceTheme();
   const router = useRouter();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
-  const { q: rawQuery, caseId: rawCaseId } = useLocalSearchParams<{ q?: string | string[]; caseId?: string | string[] }>();
+  const { q: rawQuery, caseId: rawCaseId, mediaWarning: rawMediaWarning } = useLocalSearchParams<{ q?: string | string[]; caseId?: string | string[]; mediaWarning?: string | string[] }>();
   const routeQuery = (Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "").slice(0, 128);
   const routeCaseId = (Array.isArray(rawCaseId) ? rawCaseId[0] ?? "" : rawCaseId ?? "").trim().slice(0, 128);
+  const optionalMediaWarning = Boolean(routeCaseId) && (Array.isArray(rawMediaWarning) ? rawMediaWarning[0] : rawMediaWarning) === "1";
   const [appliedQuery, setAppliedQuery] = useState(routeQuery.trim());
   const [cases, setCases] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
   const [walletProviders, setWalletProviders] = useState<ReadonlyArray<WalletProvider>>([]);
@@ -445,6 +446,7 @@ export function FieldCases() {
       {cases.length > 0 ? <Text style={styles.sectionTitle}>عدد الشركاء: {cases.length}{nextCursor ? " · توجد نتائج أخرى" : ""}</Text> : null}
       {error && cases.length > 0 ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {caseSelectionError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{caseSelectionError}</Text><BthwaniButton label="إعادة فتح الطلب" onPress={() => setSelectionRetry((value) => value + 1)} variant="secondary" /></View> : null}
+      {optionalMediaWarning ? <Text accessibilityRole="alert" style={styles.error}>تم إرسال طلب الانضمام وحفظ حالته، لكن لم يُؤكّد رفع بعض الصور الاختيارية. لا تعتبرها محفوظة؛ يمكن استكمال الشعار قبل نشر المتجر بالتنسيق مع فريق التشغيل.</Text> : null}
       {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
       {cases.length > 0 ? <BthwaniButton disabled={Boolean(busy) || loading} label="تحديث القائمة" onPress={() => void load()} variant="secondary" /> : null}
     </View>}

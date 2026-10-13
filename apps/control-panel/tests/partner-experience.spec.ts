@@ -56,9 +56,9 @@ test("approved joining case puts identity, logo, status and direct files above e
   await expect(summary.getByRole("link", { name: "فتح ملف الشريك" })).toHaveAttribute("href", "/partners/actors/actor-experience");
   const details = page.locator(".partner-case-details");
   await expect(details).not.toHaveAttribute("open", "");
-  await expect(details.getByText("رقم الإثبات")).toBeHidden();
+  await expect(details.getByText("رقم الإثبات", { exact: true })).toBeHidden();
   await details.locator(":scope > summary").click();
-  await expect(details.getByText("رقم الإثبات")).toBeVisible();
+  await expect(details.getByText("رقم الإثبات", { exact: true })).toBeVisible();
   await summary.getByRole("link", { name: "متابعة الإجراء" }).click();
   await expect(page).toHaveURL(/#joining-case-actions$/);
   await expect(page.getByRole("heading", { name: "الخطوة التالية والإجراءات" })).toBeVisible();
@@ -100,4 +100,29 @@ test("mobile store file keeps publication primary and secondary operations colla
   await expect(advanced.getByRole("heading", { name: "سلة المحذوفات" })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
   expect(overflow).toBe(false);
+});
+
+test("joining proof number stays private until explicitly requested, and failed reads recover", async ({ page }) => {
+  await page.route("**/api/partners/joining-cases/case-experience", (route) =>
+    route.fulfill({ json: { case: joiningCase, idempotentReplay: false } }));
+  let proofReads = 0;
+  await page.route("**/api/partners/joining-cases/case-experience/proof-details", (route) => {
+    proofReads += 1;
+    return route.fulfill(proofReads === 1
+      ? { status: 503, json: { error: "temporary" } }
+      : { json: { proofNumber: "TEST-PRIVATE-123" } });
+  });
+  await page.goto("/partners/case-experience");
+  await expect(page.getByRole("region", { name: "ملخص طلب الانضمام" })).toBeVisible();
+  expect(proofReads).toBe(0);
+  const details = page.locator(".partner-case-details");
+  await details.locator(":scope > summary").click();
+  await expect(details.getByRole("button", { name: "عرض رقم الإثبات عند الحاجة" })).toBeVisible();
+  expect(proofReads).toBe(0);
+  await details.getByRole("button", { name: "عرض رقم الإثبات عند الحاجة" }).click();
+  await expect(details.getByRole("alert")).toContainText("تعذر قراءة بيانات الإثبات");
+  expect(proofReads).toBe(1);
+  await details.getByRole("button", { name: "إعادة قراءة رقم الإثبات" }).click();
+  await expect(details.getByText("TEST-PRIVATE-123")).toBeVisible();
+  expect(proofReads).toBe(2);
 });
