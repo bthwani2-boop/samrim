@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "../../session/session-provider";
-import { partnerErrorMessage } from "./partner-error-message";
+import { partnerErrorMessage } from "../partners/partner-error-message";
 import type { WalletProviderOption } from "../wallet-provider/use-wallet-providers";
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;

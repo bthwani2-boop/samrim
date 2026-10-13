@@ -1,4 +1,5 @@
 "use client";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 import { type CashCustodyRegistryResponse, formatMoney } from "@bthwani/dsh";
 import { usePathname, useRouter } from "next/navigation";
@@ -239,6 +240,8 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
     receiptDocumentIdsRef.current = recoveredDocumentIds;
     setReceiptDocumentIds(recoveredDocumentIds);
   }, []);
+
+  useReadOnReturn(() => loadRegistry(), !loading && !busyRemittanceId && !Object.values(receiptFiles).some(Boolean));
 
   return (
     <section className="work-stack" aria-labelledby="cash-custody-title">

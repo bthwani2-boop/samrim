@@ -57,6 +57,23 @@ paths:
       responses:
         "200": { description: Store restored as hidden; normal publication workflow required before customer visibility. }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+  /dsh/operator/stores/partner-presence:
+    post:
+      operationId: readOperatorPartnerStorePresence
+      summary: Bounded existence read for partner actor IDs; omits deleted stores and never returns store data
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStorePresenceRequest" }
+      responses:
+        "200": { description: Partner IDs owning at least one non-deleted store, content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStorePresenceResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+
   /dsh/stores:
     get:
       operationId: listOperatorStores

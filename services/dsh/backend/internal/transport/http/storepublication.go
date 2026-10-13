@@ -52,6 +52,7 @@ func (s *StorePublicationServer) serviceDB() *sql.DB { return s.db }
 
 func (s *StorePublicationServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/stores", s.listForOperator)
+	mux.HandleFunc("POST /dsh/operator/stores/partner-presence", s.readPartnerStorePresence)
 	mux.HandleFunc("GET /dsh/operator/stores/trash", s.listStoreTrash)
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/trash", s.trashStore)
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/restore", s.restoreStore)
@@ -64,6 +65,47 @@ func (s *StorePublicationServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/public/stores/{storeId}/orderability", s.readPublicOrderability)
 	mux.HandleFunc("GET /dsh/public/stores/{storeId}/catalog", s.readPublicCatalog)
 	mux.HandleFunc("GET /dsh/public/catalog/search", s.searchPublicCatalog)
+}
+
+func (s *StorePublicationServer) readPartnerStorePresence(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	if strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")) == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "acting operator is required")
+		return
+	}
+	var input contract.PartnerStorePresenceRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid actor IDs")
+		return
+	}
+	if len(input.ActorIds) < 1 || len(input.ActorIds) > 50 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "between 1 and 50 actor IDs are required")
+		return
+	}
+	seen := make(map[string]bool, len(input.ActorIds))
+	for _, id := range input.ActorIds {
+		if len(id) < 1 || len(id) > 128 || strings.TrimSpace(id) != id || seen[id] {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "actor IDs must be unique and valid")
+			return
+		}
+		seen[id] = true
+	}
+	ids, err := s.service.ReadPartnerStorePresence(r.Context(), r.Header.Get("X-Acting-Actor-ID"), input.ActorIds)
+	if err != nil {
+		writeStorePublicationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.PartnerStorePresenceResponse{ActorIds: ids})
+}
+
+func operatorStoreDeliveryOrigin(store postgres.OperatorStoreSummary) *contract.DeliveryOrigin {
+  if !store.DeliveryOriginLatitude.Valid || !store.DeliveryOriginLongitude.Valid { return nil }
+  return &contract.DeliveryOrigin{Latitude: store.DeliveryOriginLatitude.Float64, Longitude: store.DeliveryOriginLongitude.Float64}
 }
 
 func (s *StorePublicationServer) listForOperator(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +130,7 @@ func (s *StorePublicationServer) listForOperator(w http.ResponseWriter, r *http.
 	}
 	stores := make([]contract.OperatorStoreSummary, 0, len(page.Stores))
 	for _, store := range page.Stores {
-		stores = append(stores, contract.OperatorStoreSummary{ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, PartnerName: store.PartnerName, ServiceCityName: store.ServiceCityName, PrimaryVerticalName: store.PrimaryVerticalName, ServiceCityID: store.ServiceCityID, PrimaryVerticalID: store.PrimaryVerticalID, CommercialStoreTypeID: nullableString(store.CommercialStoreTypeID), Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), FulfillmentModes: toStoreFulfillmentModes(store.FulfillmentModes), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
+		stores = append(stores, contract.OperatorStoreSummary{ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, PartnerName: store.PartnerName, ServiceCityName: store.ServiceCityName, PrimaryVerticalName: store.PrimaryVerticalName, StoreProfileImage: toStoreProfileImageURI(store.StoreProfileImageURI), CommercialStoreTypeNameAr: store.CommercialStoreTypeNameAr, DeliveryOrigin: operatorStoreDeliveryOrigin(store), ServiceCityID: store.ServiceCityID, PrimaryVerticalID: store.PrimaryVerticalID, CommercialStoreTypeID: nullableString(store.CommercialStoreTypeID), Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), FulfillmentModes: toStoreFulfillmentModes(store.FulfillmentModes), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
 	}
 	writeJSON(w, http.StatusOK, contract.OperatorStoreListResponse{Stores: stores, NextCursor: page.NextCursor})
 }

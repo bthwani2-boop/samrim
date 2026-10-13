@@ -48,6 +48,21 @@ test("workspace search hides child destinations when their parent permission is 
   await expect(page.locator(".workspace-search-results").getByRole("link", { name: "المنتجات" })).toBeVisible();
 });
 
+test("workspace search offers shared store recovery to partners without exposing catalog-only resources", async ({ page }) => {
+  await stubAuthenticatedSession(page, ["partners"]);
+  await page.goto("/workspace");
+  await page.getByRole("button", { name: "البحث في صفحات لوحة التحكم" }).click();
+  const search = page.getByRole("searchbox", { name: "البحث في صفحات لوحة التحكم" });
+
+  await search.fill("سلة المحذوفات");
+  const trash = page.locator(".workspace-search-results").getByRole("link", { name: "سلة المحذوفات" });
+  await expect(trash).toBeVisible();
+  await expect(trash).toHaveAttribute("href", "/catalog/trash");
+
+  await search.fill("المنتجات");
+  await expect(page.getByText("لا توجد صفحات مطابقة.")).toBeVisible();
+});
+
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/wallet-providers**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ walletProviders: [
@@ -1042,7 +1057,7 @@ test("Captain reenrollment goes through DSH eligibility and verifies the Identit
     expectedAdmissionVersion: 8,
     reason: "استعادة وصول الكابتن",
   });
-  await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
+  await expect(page.getByText("بانتظار التفعيل", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
@@ -1065,7 +1080,7 @@ test("Captain reenrollment reconciles a server error against the current Identit
   await fillActionReason(page, "تسوية نتيجة إعادة التسجيل");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
   await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة المعتمدة قبل أي محاولة أخرى");
-  await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
+  await expect(page.getByText("بانتظار التفعيل", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
@@ -1932,7 +1947,7 @@ test("operator resumes a canonical joining case from the DSH queue", async ({ pa
   await page.goto("/partners/joining");
   await page.getByRole("row", { name: /نشاط مستعاد/ }).getByRole("link", { name: "مراجعة الطلب" }).click();
   await expect(page.getByRole("status").first()).toContainText("الحالة: قيد المراجعة");
-  await expect(page.getByRole("status").first()).toContainText("نشاط مستعاد");
+  await expect(page.getByRole("region", { name: "ملخص طلب الانضمام" })).toContainText("نشاط مستعاد");
 });
 
 test("Partner reenrollment verifies DSH joining eligibility and the Identity readback", async ({ page }) => {
@@ -1989,7 +2004,7 @@ test("Partner reenrollment reconciles a server error against the current Identit
   await fillActionReason(page, "تسوية نتيجة إعادة التسجيل");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
   await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة المعتمدة قبل أي محاولة أخرى");
-  await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
+  await expect(page.getByText("بانتظار التفعيل", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
@@ -2014,7 +2029,7 @@ test("operator approves joining terms with the active settlement policy", async 
   });
 
   await page.goto("/partners/join_financial");
-  await expect(page.getByRole("heading", { name: "تفاصيل حالة انضمام الشريك" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "طلب انضمام الشريك" })).toBeVisible();
   await expect(page.getByText(/ستُعتمد شروط التسوية:/)).toBeVisible();
   await page.getByRole("button", { name: "اعتماد الحالة وإنشاء المتجر بالشروط النشطة" }).click();
 

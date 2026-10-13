@@ -1,11 +1,14 @@
 "use client";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HRAccessRequest, HRAccessRequestPage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
+import { operatorWorkspacePermissions } from "../../session/operator-permissions";
 import { HRPermissionReview } from "./hr-permission-review";
 
 export function HROperatorAccessQueue() {
+ const permissionNames = (keys: readonly string[]) => keys.map((key) => operatorWorkspacePermissions.find((permission) => permission.key === key)?.label ?? "صلاحية غير معروفة").join("، ");
  const [items,setItems]=useState<readonly HRAccessRequest[]>([]);
  const [cursor,setCursor]=useState("");
  const [previous,setPrevious]=useState<string[]>([]);
@@ -29,6 +32,7 @@ export function HROperatorAccessQueue() {
   finally{setLoading(false)}
  },[cursor]);
  useEffect(()=>{void reload()},[reload]);
+ useReadOnReturn(()=>reload(), !loading && !busy && !selectedId && !rejecting && !rejectReason);
  async function openProfile(id:string){
   if(busy)return;
   setBusy(id);setError("");setNotice("");
@@ -62,7 +66,6 @@ export function HROperatorAccessQueue() {
  return <section className="access-workspace-section">
   <div className="access-section-heading">
    <div><h2>طلبات الوصول من الموارد البشرية</h2><p>يقدّم HR الطلب، والمشغّل الأساسي يحوّله إلى ملف مراجعة Identity. الصلاحيات المقترحة ليست منحًا فعليًا.</p></div>
-   <button type="button" className="button button-secondary" disabled={loading||!!busy} onClick={()=>void reload()}>تحديث</button>
   </div>
   <div className="access-summary-grid">
    <article><span>طلبات الصفحة</span><strong>{items.length}</strong></article>
@@ -78,14 +81,14 @@ export function HROperatorAccessQueue() {
    <tbody>
     {items.map((item)=><tr key={item.id}>
      <th scope="row">{item.employeeName}</th><td>{item.jobTitle} — {item.department}</td><td>{item.reason}</td>
-     <td>{item.requestedPermissions.join("، ")||"بدون اقتراح"}</td>
+     <td>{permissionNames(item.requestedPermissions)||"بدون اقتراح"}</td>
      <td>{item.operatorActorId ? "تم ربط حساب المشغّل" : item.state==="pending_review"?"بانتظار المشغّل الأساسي":item.state==="rejected"?"مرفوض":item.state==="identity_provisioning"?"جارٍ إنشاء ملف المراجعة":"أُحيل إلى Identity"}</td>
       <td><button type="button" className="button button-secondary"
        aria-expanded={selectedId===item.id} onClick={()=>{setSelectedId((id)=>id===item.id?"":item.id);setRejecting("");setError("");}}>
        {selectedId===item.id?"إغلاق التفاصيل":"مراجعة التفاصيل"}
       </button></td>
     </tr>)}
-    {!loading&&items.length===0?<tr><td colSpan={6}>لا توجد طلبات وصول. <Link href="/hr/employees">إدارة الموظفين من الموارد البشرية</Link></td></tr>:null}
+    {!loading&&!error&&items.length===0?<tr><td colSpan={6}>لا توجد طلبات وصول. <Link href="/hr/employees">إدارة الموظفين من الموارد البشرية</Link></td></tr>:null}
     {loading?<tr><td colSpan={6}>جارٍ تحميل الطلبات…</td></tr>:null}
    </tbody>
    </table></div>
@@ -93,7 +96,7 @@ export function HROperatorAccessQueue() {
     <h3>مراجعة طلب {selected.employeeName}</h3>
     <p>المسمى الوظيفي: {selected.jobTitle} — القسم: {selected.department}</p>
     <p>مبرر الوصول: {selected.reason}</p>
-    <p>الصلاحيات التي اقترحتها HR: {selected.requestedPermissions.join("، ")||"لم تقترح صلاحيات"}</p>
+    <p>الصلاحيات التي اقترحتها HR: {permissionNames(selected.requestedPermissions)||"لم تقترح صلاحيات"}</p>
     <p>حالة الطلب: <strong>{selected.state==="pending_review"?"بانتظار قرار المشغّل الأساسي":selected.state==="rejected"?"مرفوض":selected.state==="identity_provisioning"?"إنشاء ملف Identity قيد الاستكمال":selected.operatorActorId?"تم منح دور المشغّل وربطه بالموظف":"ينتظر اعتماد هوية المشغّل"}</strong></p>
     {selected.rejectionReason?<p>سبب الرفض: {selected.rejectionReason}</p>:null}
     <p className="muted">الخطوة التالية: {selected.state==="pending_review"?"مراجعة البيانات والسبب ثم تحويل الطلب أو رفضه":selected.state==="rejected"?"يمكن لمسؤول HR تصحيح الموظف وإعادة تقديم طلب جديد":selected.state==="identity_provisioning"?"استكمال إنشاء ملف Identity باستخدام الطلب نفسه":selected.operatorActorId?"مراجعة الصلاحيات الممنوحة فعليًا وإدارة الوصول":"اعتماد الملف ومنح الدور وإصدار الدعوة من قائمة المشغّلين"}</p>

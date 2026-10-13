@@ -205,6 +205,14 @@ export async function searchIdentityRoles(role: ActorType, query: string, limit:
   return identityInternalClient().searchActorRoles(role, query.trim(), enabled, { limit, cursor, sort, ...(permissionCoverage ? { permissionCoverage } : {}) });
 }
 
+export async function readManagedIdentityRolesBatch(actorIds: ReadonlyArray<string>): Promise<ActorRoleView[]> {
+  if (!actorIds.length) return [];
+  const unique = [...new Set(actorIds)];
+  if (unique.length > 100) throw new Error("IDENTITY_ROLE_BATCH_LIMIT");
+  const batch = await identityInternalClient().readActorRoles("partner", unique);
+  return batch.items.filter((item) => item.role === "partner" && unique.includes(item.actorId));
+}
+
 export async function readManagedIdentityRole(actorId: string, role: ActorType): Promise<ActorRoleView> {
   const normalizedActorId = actorId.trim();
   if (!normalizedActorId || normalizedActorId.length > 128) throw new Error("INVALID_ACTOR_ROLE_ID");

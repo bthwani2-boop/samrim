@@ -5,7 +5,7 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react"
 type Position = Readonly<{ cursor: string; previous: ReadonlyArray<string> }>;
 
 // Identity cursors can encode personal facts. Keep them and private filters in tab state.
-export function useCursorPage(parameter: string, filterKey = "", privateCursor = false, restoreFilters?: (key: string) => void) {
+export function useCursorPage(parameter: string, filterKey = "", privateCursor: boolean | "mixed" = false, restoreFilters?: (key: string) => void) {
   const [position, setPosition] = useState<Position>({ cursor: "", previous: [] });
   const [ready, setReady] = useState(false);
   const [filters, setFilters] = useState(filterKey);
@@ -19,7 +19,8 @@ export function useCursorPage(parameter: string, filterKey = "", privateCursor =
       const saved = state?.[historyKey];
       const previous = Array.isArray(saved?.previous) && saved.previous.every((value: unknown) => typeof value === "string") ? saved.previous : [];
       const marker = new URLSearchParams(window.location.search).get(parameter) ?? "";
-      const cursor = privateCursor ? (marker === `page-${previous.length + 1}` && typeof saved?.cursor === "string" ? saved.cursor : "") : marker;
+      const protectedMarker = privateCursor === true || (privateCursor === "mixed" && /^page-\d+$/.test(marker));
+      const cursor = protectedMarker ? (marker === `page-${previous.length + 1}` && typeof saved?.cursor === "string" ? saved.cursor : "") : marker;
       const restoredFilters = typeof saved?.filterKey === "string" ? saved.filterKey : initialFilters.current;
       setFilters(restoredFilters);
       if (privateCursor) {
@@ -39,7 +40,8 @@ export function useCursorPage(parameter: string, filterKey = "", privateCursor =
 
   const navigate = useCallback((cursor: string, previous: ReadonlyArray<string>, replace = false) => {
     const url = new URL(window.location.href);
-    if (cursor) url.searchParams.set(parameter, privateCursor ? `page-${previous.length + 1}` : cursor); else url.searchParams.delete(parameter);
+    const protectedCursor = privateCursor === true || (privateCursor === "mixed" && cursor.startsWith("p1."));
+    if (cursor) url.searchParams.set(parameter, protectedCursor ? `page-${previous.length + 1}` : cursor); else url.searchParams.delete(parameter);
     const state = { ...window.history.state, [historyKey]: { cursor, previous, filterKey } };
     const path = `${url.pathname}${url.search}${url.hash}`;
     if (replace) window.history.replaceState(state, "", path); else window.history.pushState(state, "", path);
@@ -49,7 +51,7 @@ export function useCursorPage(parameter: string, filterKey = "", privateCursor =
   const filtersChanged = filters !== filterKey;
   useEffect(() => {
     if (!filtersChanged) return;
-    if (!privateCursor) {
+    if (privateCursor !== true) {
       // Filter links already drop public cursors. Never erase a restored Back entry.
       if (new URLSearchParams(window.location.search).has(parameter)) return;
       setPosition({ cursor: "", previous: [] });

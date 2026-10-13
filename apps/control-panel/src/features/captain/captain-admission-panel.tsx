@@ -1,4 +1,5 @@
 "use client";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { type CaptainAdmission, captainAdmissionStateLabel, captainAvailabilityStateLabel } from "@bthwani/dsh";
@@ -61,6 +62,7 @@ export function CaptainAdmissionPanel() {
   }, [enabledFilter, query, sort, cursorPage.cursor]);
 
   useEffect(() => { if (cursorPage.ready) void load(); }, [load, cursorPage.ready]);
+  useReadOnReturn(() => load(), cursorPage.ready && !loading && !busy && !Object.values(reasons).some((value) => value.trim()));
 
   async function changeStatus(captain: CaptainRecord) {
     const reason = reasons[captain.actorId]?.trim() ?? "";

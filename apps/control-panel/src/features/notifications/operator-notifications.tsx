@@ -4,6 +4,7 @@ import type { Notification, NotificationKind } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "../../shell/page-header";
 import { notificationKindLabel } from "./notification-presentation";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 type NotificationListPayload = Readonly<{ notifications?: ReadonlyArray<Notification>; unreadCount?: number; nextCursor?: string }>;
 type NotificationReadPayload = Readonly<{ notificationId: string; readAt: string }>;
 type NotificationHistory = Readonly<{ operatorNotificationCursors?: ReadonlyArray<string> }>;
@@ -66,6 +67,8 @@ export function OperatorNotifications() {
     }
   }, []);
 
+  useReadOnReturn(() => load(cursor, true), routeStateReady && !loading && !refreshing && !pendingId);
+
   useEffect(() => {
     if (routeStateReady) void load(cursor);
   }, [cursor, load, routeStateReady]);
@@ -105,10 +108,10 @@ export function OperatorNotifications() {
 
   return (
     <section className="workspace-page operator-notifications" aria-labelledby="notifications-title">
-      <PageHeader title="الإشعارات" id="notifications-title" status={!loading && !error && unreadCount !== null ? <span className="state-pill">{unreadCount} إشعارات غير مقروءة</span> : null} actions={<button type="button" className="button button-secondary" disabled={loading || refreshing} onClick={() => void load(cursor, true)}>{refreshing ? "جارٍ التحديث…" : "تحديث الإشعارات"}</button>} />
+      <PageHeader title="الإشعارات" id="notifications-title" status={!loading && !error && unreadCount !== null ? <span className="state-pill">{unreadCount} إشعارات غير مقروءة</span> : null} />
 
       {loading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تجهيز الإشعارات</strong></div> : null}
-      {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة الإشعارات</strong><p>{error}</p></div> : null}
+      {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة الإشعارات</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading || refreshing || Boolean(pendingId)} onClick={() => void load(cursor, true)}>إعادة المحاولة</button></div> : null}
       {!loading && !error && !items.length ? <div className="access-card operator-notifications-empty"><h2>لا توجد إشعارات حالياً</h2></div> : null}
       {!loading && items.length ? <p className="operator-notification-page-status" role="status">{items.length} إشعارًا في الصفحة</p> : null}
       {!loading && unreadItems.length ? <NotificationGroup title="الجديدة" count={unreadItems.length} items={unreadItems} pendingId={pendingId} onMarkRead={markRead} /> : null}

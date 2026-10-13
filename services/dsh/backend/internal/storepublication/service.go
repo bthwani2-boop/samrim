@@ -237,6 +237,26 @@ func (s *Service) ReadForOperator(ctx context.Context, storeID, actingActorID st
 	return store, readiness, err
 }
 
+// Partner store-presence belongs to the same active-operator Partners authorization
+// boundary as the canonical store registry, independent of the caller's service token.
+func (s *Service) ReadPartnerStorePresence(ctx context.Context, actingActorID string, actorIDs []string) ([]string, error) {
+	actingActorID = strings.TrimSpace(actingActorID)
+	if actingActorID == "" || len(actingActorID) > 128 {
+		return nil, postgres.ErrOperatorStoreInvalidActor
+	}
+	operator, err := s.identity.ReadActorRole(ctx, actingActorID, "operator")
+	if err != nil {
+		return nil, err
+	}
+	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
+		return nil, ErrOperatorNotActive
+	}
+	if err := s.identity.RequireOperatorPermission(ctx, actingActorID, "partners"); err != nil {
+		return nil, err
+	}
+	return postgres.ReadPartnerStorePresence(ctx, s.db, actorIDs)
+}
+
 func (s *Service) ListForOperator(ctx context.Context, state, query, serviceCityID, searchMode, sort, actingActorID string, limit int, cursor string) (postgres.OperatorStorePage, error) {
 	actingActorID = strings.TrimSpace(actingActorID)
 	state = strings.TrimSpace(state)

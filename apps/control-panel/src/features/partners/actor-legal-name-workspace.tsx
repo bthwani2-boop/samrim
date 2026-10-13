@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { partnerErrorMessage } from "./partner-error-message";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type LegalName = Readonly<{ actorId: string; version: number; givenName: string; secondName: string; thirdName: string; familyName: string; status: string; evidenceReference: string; submittedByActorId: string }>;
 type PendingLegalName = Readonly<{ legalName: LegalName; canVerify: boolean }>;
@@ -27,6 +28,7 @@ export function ActorLegalNameWorkspace({ actorId }: Readonly<{ actorId: string 
   }, [actorId]);
 
   useEffect(() => { void read(); }, [read]);
+  useReadOnReturn(read, !busy && !verificationEvidence.trim() && !Object.values(name).some((value) => value.trim()));
 
   async function act(action: "submit" | "verify") {
     setBusy(true); setError(""); setNotice("");
@@ -44,10 +46,10 @@ export function ActorLegalNameWorkspace({ actorId }: Readonly<{ actorId: string 
 
   const nameReady = [name.givenName, name.secondName, name.thirdName, name.familyName, name.evidenceReference].every((value) => value.trim().length > 0);
   return <section className="partner-detail-section" aria-labelledby="actor-legal-name-title">
-    <div className="partner-detail-section-heading"><div><h2 id="actor-legal-name-title">الاسم الرباعي القانوني</h2></div><button type="button" className="button button-secondary" onClick={() => void read()} disabled={busy}>إعادة القراءة</button></div>
+    <div className="partner-detail-section-heading"><div><h2 id="actor-legal-name-title">الاسم الرباعي القانوني</h2></div></div>
     <p className="muted">{pending ? "الاسم بانتظار مراجعة موظف مستقل قبل اعتماده ماليًا." : "أدخل الاسم القانوني الرباعي ومرجع مستند الهوية، ثم أرسله للمراجعة المستقلة."}</p>
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}
-    {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال الإجراء</strong><p>{error}</p></div> : null}
+    {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال الإجراء</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void read()}>إعادة المحاولة</button></div> : null}
     {pending ? <div className="managed-status"><strong>مرشح الاسم</strong><p>{[pending.legalName.givenName, pending.legalName.secondName, pending.legalName.thirdName, pending.legalName.familyName].join(" ")}</p><p>مرجع دليل التقديم: <bdi>{pending.legalName.evidenceReference}</bdi></p>
       {pending.canVerify ? <><label className="field-label" htmlFor="legal-name-verification-evidence">مرجع دليل المراجعة المستقلة<input id="legal-name-verification-evidence" value={verificationEvidence} maxLength={512} onChange={(event) => setVerificationEvidence(event.target.value)} /></label><button type="button" className="button button-primary" disabled={busy || verificationEvidence.trim().length < 1} onClick={() => void act("verify")}>{busy ? "جارٍ الاعتماد…" : "اعتماد الاسم بعد المراجعة"}</button></> : <p>لا يمكن لمقدم الاسم اعتماده. على موظف عمليات مستقل فتح هذا الملف ومراجعته.</p>}
     </div> : <div className="partner-profile-grid">{(["givenName", "secondName", "thirdName", "familyName"] as const).map((field, index) => <label className="field-label" key={field} htmlFor={`actor-legal-${field}`}>{["الاسم الأول", "الاسم الثاني", "الاسم الثالث", "اسم العائلة"][index]}<input id={`actor-legal-${field}`} value={name[field]} maxLength={80} onChange={(event) => setName((current) => ({ ...current, [field]: event.target.value }))} disabled={busy} /></label>)}<label className="field-label" htmlFor="actor-legal-evidence">مرجع مستند الهوية الرسمي<input id="actor-legal-evidence" value={name.evidenceReference} maxLength={512} onChange={(event) => setName((current) => ({ ...current, evidenceReference: event.target.value }))} disabled={busy} /></label><button type="button" className="button button-primary" disabled={busy || !nameReady} onClick={() => void act("submit")}>{busy ? "جارٍ تسجيل المرشح…" : "إرسال للمراجعة المستقلة"}</button></div>}

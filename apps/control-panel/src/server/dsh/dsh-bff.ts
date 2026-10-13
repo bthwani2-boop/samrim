@@ -352,6 +352,18 @@ export async function listOperatorPartnerStores(actorId: string, limit: number, 
   return (await requestDshJson<PartnerStoreListResponse>(dshOperationPaths.listOperatorPartnerStores.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
+export async function readOperatorPartnerStorePresence(actorIds: ReadonlyArray<string>, context: DshOperatorReadContext): Promise<ReadonlyArray<string>> {
+  const unique = [...new Set(actorIds)];
+  if (!context.operatorActorId.trim() || unique.length < 1 || unique.length > 50 || unique.some((id) => !id.trim() || id.length > 128)) throw new Error("DSH_PARTNER_STORE_PRESENCE_INPUT_INVALID");
+  const response = await requestDshJson<{ actorIds: string[] }>(
+    dshOperationPaths.readOperatorPartnerStorePresence.method,
+    dshOperationPaths.readOperatorPartnerStorePresence.path,
+    { actorIds: unique },
+    { "X-Acting-Actor-ID": context.operatorActorId.trim() },
+  );
+  return response.payload.actorIds;
+}
+
 export async function listOperatorStores(state: string, search: string, serviceCityId: string, searchMode: string, sort: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<OperatorStoreListResponse> {
 	const normalizedState = state.trim();
 	const normalizedSearch = search.trim();
@@ -893,9 +905,13 @@ export async function listJoiningCases(state: string, query: string, sort: "crea
   return (await requestDshJson<JoiningCaseListResponse>(dshOperationPaths.listJoiningCases.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function listStoreAccessRoleAdmissionsForOperator(context: DshOperatorReadContext): Promise<StoreAccessGrantListResponse> {
+export async function listStoreAccessRoleAdmissionsForOperator(context: DshOperatorReadContext, limit = 25, cursor = ""): Promise<StoreAccessGrantListResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_STORE_ACCESS_OPERATOR_REQUIRED");
-  return (await requestDshJson<StoreAccessGrantListResponse>(dshOperationPaths.listStoreAccessRoleAdmissionsForOperator.method, dshOperationPaths.listStoreAccessRoleAdmissionsForOperator.path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || cursor.length > 512) throw new Error("DSH_STORE_ACCESS_PAGE_INVALID");
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (cursor) query.set("cursor", cursor);
+  const path = `${dshOperationPaths.listStoreAccessRoleAdmissionsForOperator.path}?${query}`;
+  return (await requestDshJson<StoreAccessGrantListResponse>(dshOperationPaths.listStoreAccessRoleAdmissionsForOperator.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
 export async function provisionPartnerRoleForStoreAccessForOperator(grantId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: StoreAccessGrantMutationResponse }>> {

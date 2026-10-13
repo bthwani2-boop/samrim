@@ -29,7 +29,7 @@ test("Root ends employment on the same HR record and preserves operator actor id
  await page.getByRole("textbox",{name:"سبب تغيير الحالة الوظيفية"}).fill("إنهاء خدمة الموظف وتقييد الوصول بعد المراجعة");
  await page.getByRole("button",{name:"إيقاف الحالة الوظيفية"}).click();
  await expect(page.getByText("تم إيقاف الحالة الوظيفية", {exact:false})).toBeVisible();
- await expect(page.getByText("غير نشط", {exact:true}).first()).toBeVisible();
+ await expect(page.locator(".hr-directory tbody").getByRole("img", {name:"غير نشط", exact:true})).toBeVisible();
  expect(changes).toBe(1);
 });
 

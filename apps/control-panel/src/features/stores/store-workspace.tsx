@@ -7,8 +7,8 @@ import { publicationReadinessBlockedReasonLabel, publicationStateLabel, type Com
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { partnerErrorMessage } from "./partner-error-message";
-import { partnerMutationHeaders } from "./partner-request";
+import { partnerErrorMessage } from "../partners/partner-error-message";
+import { partnerMutationHeaders } from "../partners/partner-request";
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
   { value: "BTHWANI_CAPTAIN", label: "توصيل بثواني", description: "تتولى المنصة إسناد التوصيل وإدارته." },
   { value: "PARTNER_CAPTAIN", label: "توصيل المتجر", description: "يعيّن المتجر كابتنًا من كباتنه النشطين." },
@@ -29,7 +29,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
     const value = searchParams.get(key);
     if (value) registryParams.set(key, value);
   }
-  const registryHref = `/partners/stores${registryParams.size ? `?${registryParams}` : ""}`;
+  const registryHref = `/partners${registryParams.size ? `?${registryParams}` : ""}`;
   const [publication, setPublication] = useState<StorePublicationResponse | null>(null);
   const [selectedModes, setSelectedModes] = useState<ReadonlyArray<StoreFulfillmentMode>>([]);
   const [commercialTypes, setCommercialTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
@@ -203,13 +203,19 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
   const store = publication?.store;
   return (
     <section className="workspace-page store-workspace" aria-labelledby="store-workspace-title">
-      <PageHeader id="store-workspace-title" title={store?.name ?? "ملف المتجر"} actions={<Link className="button button-secondary" href={registryHref}>سجل المتاجر</Link>} />
+      <PageHeader id="store-workspace-title" title={store?.name ?? "ملف المتجر"} actions={<Link className="button button-secondary" href={registryHref}>الشركاء والمتاجر</Link>} />
 
       {loading ? <output className="collection-state"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة الملف المعتمد </strong></output> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readStore()}>إعادة قراءة المتجر</button></div> : null}
       {notice ? <output className="managed-status managed-status-success">{notice}</output> : null}
 
       {store ? <>
+        <section className="partner-case-summary" aria-label="ملخص حالة المتجر">
+          <div className="partner-case-summary-main">
+            <div><h2>{store.name}</h2><p>الشريك: {store.partnerName || "حساب مرتبط"}</p><p>{publicationStateLabel(store.publicationState)} · {store.publicationReadiness.ready ? "جاهز للنشر" : publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason)}</p></div>
+          </div>
+          <div className="partner-case-summary-actions"><Link className="button button-secondary" href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}>ملف الشريك</Link><a className="button button-primary" href="#store-publication-title">إدارة النشر</a></div>
+        </section>
         <section className="store-detail-section" aria-labelledby="store-detail-context-title">
           <div className="store-detail-heading"><div><h2 id="store-detail-context-title">معلومات المتجر والعلاقات</h2></div><button type="button" className="button button-secondary" disabled={loading || busy} onClick={() => void readStore()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
           <div className="store-detail-overview">
@@ -243,6 +249,8 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
           <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || selectedModes.length === 0 || selectedModes.length === store.fulfillmentModes.length && selectedModes.every((mode) => store.fulfillmentModes.includes(mode))} onClick={() => void saveFulfillmentModes()}>{busy ? "جارٍ الحفظ…" : "حفظ أوضاع التنفيذ"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setSelectedModes(store.fulfillmentModes); setError(""); }}>إلغاء التغييرات</button></div>
         </section>
 
+        <details className="store-advanced-settings" open={!store.commercialStoreTypeId}>
+          <summary>{store.commercialStoreTypeId ? "إعدادات المتجر والإجراءات الإدارية" : "استكمال نوع المتجر والإعدادات الإدارية"}</summary>
         <section className="store-detail-section" aria-labelledby="store-commercial-type-title">
           <div className="store-detail-heading"><div><h2 id="store-commercial-type-title">نوع المتجر التجاري</h2></div></div>
           <p className="muted">هذا التصنيف التجاري يحدد سياسة عمولة المنصة لهذا المتجر. لا يغيّر فئة منتجات الكتالوج.</p>
@@ -279,6 +287,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
           <div className="store-detail-heading"><div><h2 id="store-catalog-title">المركزي والمحلي</h2></div><Link href="/catalog/products">فتح المنتجات المركزية</Link></div>
           <p className="muted">المنتجات المشتركة في الكتالوج؛ أسعار المتجر وتوفره في تطبيق الشريك.</p>
         </section>
+        </details>
       </> : null}
     </section>
   );

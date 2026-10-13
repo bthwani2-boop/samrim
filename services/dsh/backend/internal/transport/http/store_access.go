@@ -207,12 +207,26 @@ func (s *StoreAccessServer) listRoleAdmissionsForOperator(w http.ResponseWriter,
 	if !ok {
 		return
 	}
-	grants, err := s.service.ListRoleAdmissionsForOperator(r.Context(), actingActorID)
+	limit := 25
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 50 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "page limit must be between 1 and 50")
+			return
+		}
+		limit = parsed
+	}
+	cursor := r.URL.Query().Get("cursor")
+	if len(cursor) > 512 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid page cursor")
+		return
+	}
+	page, err := s.service.ListRoleAdmissionsForOperator(r.Context(), actingActorID, limit, cursor)
 	if err != nil {
 		writeStoreAccessError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": grants})
+	writeJSON(w, http.StatusOK, page)
 }
 
 func (s *StoreAccessServer) admitPartnerRoleForOperator(w http.ResponseWriter, r *http.Request) {
