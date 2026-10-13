@@ -304,7 +304,7 @@ function StoreGrantsCard({ styles, busy, grants, loading, onTransition, onPermis
     <Text style={styles.value}>الصلاحيات على هذا المتجر</Text>
     {loading ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة صلاحيات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الحالة المعتمدة…</Text></View> : null}
     {!loading && grants.length === 0 ? <Text style={styles.muted}>لا توجد صلاحيات مفوضة على هذا المتجر.</Text> : null}
-    {grants.map((grant) => <StoreAccessGrantCard busy={busy} grant={grant} key={grant.id} onPermissions={(next) => onPermissions(grant, next)} onTransition={(next) => onTransition(grant, next)} />)}
+    {grants.map((grant) => <StoreAccessGrantCard busy={busy} grant={grant} key={[grant.id, grant.version].join(":")} onPermissions={(next) => onPermissions(grant, next)} onTransition={(next) => onTransition(grant, next)} />)}
   </View>;
 }
 
@@ -316,7 +316,7 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
   const selected = permissions.filter((permission) => grant.permissions.includes(permission.value)).map((permission) => permission.value);
   const newlyGranted = pendingPermissions?.filter((permission) => !selected.includes(permission)) ?? [];
   const newlyRemoved = pendingPermissions ? selected.filter((permission) => !pendingPermissions.includes(permission)) : [];
-  useEffect(() => { setPendingPermissions(null); }, [grant.version]);
+
   return <View style={{ borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 }}>
     <Text style={styles.value}>{[grant.delegateBeneficiaryName?.trim() || "عضو فريق", grant.delegatePhoneMasked?.trim()].filter(Boolean).join(" · ")}</Text>
     <Text style={styles.muted}>{grantStateLabel(grant.state)} · الصلاحيات الحالية: {permissionNames(grant.permissions)}</Text>
