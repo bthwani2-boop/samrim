@@ -1043,12 +1043,16 @@ func recipientRecordValue(value *string) string {
 	return strings.TrimSpace(*value)
 }
 
+func checkoutReplayMatchesConfirmedTotal(order OrderRecord, expected *int64) bool {
+	return expected == nil || (*expected > 0 && order.TotalAmountMinor == *expected)
+}
+
 func checkoutCartVersionMatches(state string, cartVersion, expectedCartVersion int) bool {
 	return expectedCartVersion > 0 && state == "checked_out" && cartVersion == expectedCartVersion+1
 }
 
 func validateCheckoutOrderReplay(ctx context.Context, tx *sql.Tx, order OrderRecord, input CheckoutInput) error {
-	if !checkoutOrderMatchesRequest(order, input) {
+	if !checkoutOrderMatchesRequest(order, input) || !checkoutReplayMatchesConfirmedTotal(order, input.ExpectedTotalAmountMinor) {
 		return ErrCheckoutIdempotencyConflict
 	}
 	var cartState string

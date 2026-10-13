@@ -41,3 +41,18 @@ func TestCheckoutConfirmedTotalPreventsSilentPriceChange(t *testing.T) {
 }
 
 func confirmedMinor(value int64) *int64 { return &value }
+
+func TestCheckoutReplayCannotChangePreviouslyChargedTotal(t *testing.T) {
+	order := OrderRecord{TotalAmountMinor: 1200}
+	if !checkoutReplayMatchesConfirmedTotal(order, confirmedMinor(1200)) {
+		t.Fatal("original confirmed total did not replay")
+	}
+	if checkoutReplayMatchesConfirmedTotal(order, confirmedMinor(1300)) ||
+		checkoutReplayMatchesConfirmedTotal(order, confirmedMinor(1000)) ||
+		checkoutReplayMatchesConfirmedTotal(order, confirmedMinor(0)) {
+		t.Fatal("replay accepted a different or zero confirmed total")
+	}
+	if !checkoutReplayMatchesConfirmedTotal(order, nil) {
+		t.Fatal("legacy multi-store order replay was broken")
+	}
+}
