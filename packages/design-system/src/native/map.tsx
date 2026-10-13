@@ -48,10 +48,20 @@ export function BthwaniMap({ accessibilityLabel, markers = [], selection, select
   const [retryCount, setRetryCount] = useState(0);
   const selectionLatitude = selection?.latitude;
   const selectionLongitude = selection?.longitude;
+  const hasMarkerRegion = markers.length > 0 || initialCoordinate != null;
+  const markerRegion = initialRegion(markers, null, initialCoordinate);
+  const { latitude, longitude, latitudeDelta, longitudeDelta } = markerRegion;
   useEffect(() => {
     if (selectionLatitude === undefined || selectionLongitude === undefined) return;
     map.current?.animateToRegion({ latitude: selectionLatitude, longitude: selectionLongitude, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 300);
   }, [selectionLatitude, selectionLongitude]);
+
+  // Native initialRegion is not updated when API markers arrive later.
+  // Follow late-arriving pins without overriding a customer's selection.
+  useEffect(() => {
+    if (loadState !== "ready" || !hasMarkerRegion || selectionLatitude !== undefined || selectionLongitude !== undefined) return;
+    map.current?.animateToRegion({ latitude, longitude, latitudeDelta, longitudeDelta }, 300);
+  }, [loadState, hasMarkerRegion, latitude, longitude, latitudeDelta, longitudeDelta, selectionLatitude, selectionLongitude]);
 
   useEffect(() => {
     if (loadState !== "loading") return;
