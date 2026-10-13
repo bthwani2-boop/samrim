@@ -487,7 +487,7 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
     ["/workspace", "الرئيسية"],
     ["/notifications", "الإشعارات"],
     ["/access", "الوصول والصلاحيات"],
-    ["/partners", "الشركاء"],
+    ["/partners", "الشركاء والمتاجر"],
     ["/operations", "العمليات"],
     ["/finance", "حفظ النقد"],
     ["/captains", "قبول الكباتن"],
@@ -506,13 +506,14 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
       const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
       if (path === "/captains" || path === "/fields") {
         const owner = path === "/captains" ? "العمليات" : "الشركاء";
-        const tab = path === "/captains" ? "الكباتن" : "الميدان";
+        const tab = path === "/captains" ? "الكباتن" : "الميداني";
         await expect(navigation.getByRole("link", { name: owner, exact: true })).toHaveAttribute("aria-current", "location", { timeout: 30_000 });
         await expect(navigation.getByRole("list", { name: `مسارات ${owner}` }).getByRole("link", { name: tab, exact: true })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
       } else {
         const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : path === "/access" ? "الوصول والصلاحيات" : path === "/partners" ? "الشركاء" : path === "/operations" ? "العمليات" : path === "/finance" ? "المالية" : path === "/policies" ? "السياسات" : "الكتالوج";
         const currentState = ["/catalog", "/finance", "/policies"].includes(path) ? "location" : "page";
-        await expect(navigation.getByRole("link", { name: navigationLabel, exact: true })).toHaveAttribute("aria-current", currentState, { timeout: 30_000 });
+        if (path === "/partners") await expect(navigation.getByRole("link", { name: navigationLabel, exact: true })).toHaveAttribute("href", "/partners");
+        else await expect(navigation.getByRole("link", { name: navigationLabel, exact: true })).toHaveAttribute("aria-current", currentState, { timeout: 30_000 });
       }
     }
   }
@@ -537,8 +538,8 @@ test("workspace navigation keeps captain operations and field partners in their 
   await page.goto("/fields");
   await expect(navigation.getByRole("link", { name: "الشركاء", exact: true })).toHaveAttribute("aria-current", "location");
   const partnerTabs = navigation.getByRole("list", { name: "مسارات الشركاء" });
-  await expect(partnerTabs.getByRole("link", { name: "الميدان", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(navigation.getByRole("link", { name: "الميدان", exact: true })).toHaveCount(1);
+  await expect(partnerTabs.getByRole("link", { name: "الميداني", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(navigation.getByRole("link", { name: "الميداني", exact: true })).toHaveCount(1);
   await expect(navigation.getByRole("link", { name: "الشركاء", exact: true })).toHaveCount(1);
 });
 
@@ -547,20 +548,20 @@ test("partner registry, joining queue, and stores are separate workspace destina
   const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
 
   await page.goto("/partners");
-  await expect(page.getByRole("heading", { name: "الشركاء", exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "سجل الشركاء التشغيلي" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "الشركاء والمتاجر", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "الشركاء والمتاجر" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "طابور حالات انضمام الشركاء" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "إضافة شريك", exact: true })).toHaveAttribute("href", "/partners/new");
+  await expect(page.getByRole("link", { name: "إضافة شريك", exact: true })).toHaveCount(0);
   const partnerTabs = navigation.getByRole("list", { name: "مسارات الشركاء" });
-  await expect(partnerTabs.getByRole("link", { name: "طلبات الانضمام", exact: true })).toHaveAttribute("href", "/partners/joining");
-  await expect(partnerTabs.getByRole("link", { name: "المتاجر", exact: true })).toHaveAttribute("href", "/partners/stores");
-  await expect(navigation.getByRole("link", { name: "طلبات الانضمام", exact: true })).toHaveCount(1);
-  await expect(navigation.getByRole("link", { name: "المتاجر", exact: true })).toHaveCount(1);
+  await expect(partnerTabs.getByRole("link", { name: "الطلبات والاعتمادات", exact: true })).toHaveAttribute("href", "/partners/joining");
+  await expect(partnerTabs.getByRole("link", { name: "الشركاء والمتاجر", exact: true })).toHaveAttribute("href", "/partners");
+  await expect(navigation.getByRole("link", { name: "الطلبات والاعتمادات", exact: true })).toHaveCount(1);
+  await expect(navigation.getByRole("link", { name: "الشركاء والمتاجر", exact: true })).toHaveCount(1);
   await expect(navigation.getByRole("link", { name: "إضافة شريك", exact: true })).toHaveCount(0);
 
   await page.goto("/partners/joining");
-  await expect(page.getByRole("heading", { name: "طلبات انضمام الشركاء", exact: true })).toBeVisible();
-  await expect(partnerTabs.getByRole("link", { name: "طلبات الانضمام", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "الطلبات والاعتمادات", exact: true })).toBeVisible();
+  await expect(partnerTabs.getByRole("link", { name: "الطلبات والاعتمادات", exact: true })).toHaveAttribute("aria-current", "page");
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "قبول إحالات الميدانيين", exact: true })).toBeVisible();
@@ -1730,14 +1731,14 @@ test("operator creates a canonical commerce vertical before onboarding partners"
   });
   await page.goto("/catalog/categories");
   await expect(page.getByLabel("المعرف البرمجي", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "إعداد المجال التجاري" }).click();
-  await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
+  await page.locator("details.catalog-vertical-settings > summary").click();
+  await page.getByRole("button", { name: "إضافة نشاط تجاري" }).click();
   await page.locator("#catalog-vertical-name-ar").fill("مطاعم");
   await page.locator("#catalog-vertical-name-en").fill("Restaurants");
 
   await page.locator("#catalog-vertical-reason").fill("إنشاء فئة جديدة للاختبار");
-  await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
-  await expect(page.getByLabel("النشاط الرئيسي")).toHaveValue("vertical_0123456789abcdef0123456789abcdef");
+  await page.getByRole("button", { name: "إضافة نشاط تجاري" }).click();
+  await expect(page.getByLabel("النشاط التجاري")).toHaveValue("vertical_0123456789abcdef0123456789abcdef");
   expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", active: true, reason: "إنشاء فئة جديدة للاختبار" });
 });
 
@@ -1947,7 +1948,9 @@ test("operator resumes a canonical joining case from the DSH queue", async ({ pa
   await page.goto("/partners/joining");
   await page.getByRole("row", { name: /نشاط مستعاد/ }).getByRole("link", { name: "مراجعة الطلب" }).click();
   await expect(page.getByRole("status").first()).toContainText("الحالة: قيد المراجعة");
-  await expect(page.getByRole("region", { name: "ملخص طلب الانضمام" })).toContainText("نشاط مستعاد");
+  await expect(page.getByRole("region", { name: "ملخص طلب الانضمام" })).toContainText("متجر مستعاد");
+  await page.locator("details.partner-case-details > summary").click();
+  await expect(page.locator("details.partner-case-details")).toContainText("نشاط مستعاد");
 });
 
 test("Partner reenrollment verifies DSH joining eligibility and the Identity readback", async ({ page }) => {
