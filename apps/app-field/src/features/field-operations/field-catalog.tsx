@@ -280,6 +280,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   }, [proposalCategoryID]);
 
   async function search() {
+    if (productCreateAttempt.current) return;
     const nextQuery = queryDraft.trim();
     setQuery(nextQuery);
     setSelectedProduct(null);
@@ -706,8 +707,8 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
     {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
     <View style={styles.card}>
       <Text style={styles.heading}>البحث عن منتج مشترك أو خاص بالمتجر</Text>
-      <TextInput accessibilityLabel="بحث منتجات الكتالوج الأولي" editable={!busy} onChangeText={setQueryDraft} onSubmitEditing={() => void search()} placeholder="اسم المنتج" value={queryDraft} style={styles.input} />
-      <View style={styles.row}><BthwaniButton busy={loading} disabled={busy || loading} label="بحث" onPress={() => void search()} /><BthwaniButton busy={loading} disabled={busy || loading} label="تحديث النتائج" onPress={() => void load(query, existingOffer)} variant="secondary" /></View>
+      <TextInput accessibilityLabel="بحث منتجات الكتالوج الأولي" editable={!busy && !productCreateAttempt.current} onChangeText={setQueryDraft} onSubmitEditing={() => void search()} placeholder="اسم المنتج" value={queryDraft} style={styles.input} />
+      <View style={styles.row}><BthwaniButton busy={loading} disabled={busy || loading || Boolean(productCreateAttempt.current)} label="بحث" onPress={() => void search()} /><BthwaniButton busy={loading} disabled={busy || loading} label="تحديث النتائج" onPress={() => void load(query, existingOffer)} variant="secondary" /></View>
       {loading ? <View style={{ alignItems: "center", gap: 6 }}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المنتجات…</Text></View> : null}
       {!loading && filteredProducts.length === 0 ? <Text style={styles.muted}>لا توجد نتائج؛ امسح البحث أو أنشئ منتجًا خاصًا بالمتجر.</Text> : null}
       {filteredProducts.map((product) => <View key={product.id} style={styles.raised}><Text style={styles.heading}>{product.canonicalName} · {product.scope === "SHARED" ? "مشترك" : "خاص بهذا المتجر"}</Text>{product.variants.map((variant) => <View key={variant.id} style={styles.row}><BthwaniChip disabled={busy} label={`${variant.title} · ${measurementKindLabel(variant.measurementKind)} · ${baseUnitLabel(variant.baseUnit)}`} onPress={() => selectVariant(product, variant)} selected={selectedVariant?.id === variant.id} /></View>)}</View>)}

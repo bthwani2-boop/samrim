@@ -340,6 +340,9 @@ if (app === "app-field") {
   assert.match(fieldCatalogRetrySource, /editable=\{!busy && !proposalMutationAttempt && !productCreateAttempt\.current\}/, "Barcode edits must not change a pending product retry signature");
   assert.match(fieldCatalogRetrySource, /if \(busy \|\| !data\.trim\(\) \|\| productCreateAttempt\.current\) return;/, "Scanner callbacks must not invalidate an uncertain product retry");
   assert.match(fieldCatalogRetrySource, /productCreateAttempt\.current\.signature !== signature/, "Pending product attempts must reject changed request signatures");
+  assert.match(fieldCatalogRetrySource, /async function search\(\) \{\s*if \(productCreateAttempt\.current\) return;/, "Catalog search must not clear a retained product identifier readback");
+  assert.match(fieldCatalogRetrySource, /accessibilityLabel="بحث منتجات الكتالوج الأولي" editable=\{!busy && !productCreateAttempt\.current\}/, "Catalog search input must stay locked until uncertain product creation resolves");
+  assert.match(fieldCatalogRetrySource, /disabled=\{busy \|\| loading \|\| Boolean\(productCreateAttempt\.current\)\} label="بحث"/, "Catalog search action must not invalidate a pending retry");
   console.log("MOBILE_FIELD_PRODUCT_RETRY_LOCK=PASS uncertain create retains form, identifier, and signature");
   const uploadedMedia = { ...saved, id: "field-case-1", version: 4, storeProfileImage: { uri: "https://media.example/store-1.png", contentSha256: "digest-one" }, firstStoreProofImageUploaded: true };
   assert.equal(fieldDraftMediaUploadConfirmed(uploadedMedia, { ...uploadedMedia }, "store", 3), true, "Field store image needs canonical confirmation");
