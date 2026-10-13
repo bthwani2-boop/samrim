@@ -1037,6 +1037,8 @@ func toSettlementStatementRow(item postgres.SettlementStatementRowRecord) settle
 
 func writeSettlementError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrPayoutRecipientReviewRequired):
+		writeError(w, http.StatusConflict, "PAYOUT_RECIPIENT_REVIEW_REQUIRED", "current Store beneficiary routing must be reverified before settlement export")
 	case errors.Is(err, postgres.ErrReverificationRequired):
 		writeError(w, http.StatusConflict, "REVERIFICATION_REQUIRED", "current verified Identity facts do not match every payout beneficiary in the settlement batch")
 	case errors.Is(err, postgres.ErrPayoutNotFound), errors.Is(err, postgres.ErrSettlementBatchNotFound), errors.Is(err, postgres.ErrTransferNotFound):

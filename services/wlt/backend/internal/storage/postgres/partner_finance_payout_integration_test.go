@@ -53,6 +53,17 @@ func TestPartnerStoreFinanceAndRecipientSettlementLifecycle(t *testing.T) {
 			staffPayout = p
 		}
 	}
+	// The same guard must permit the effective verified recipient before
+	// revocation, not just fail closed on all Partner payouts.
+	routingTx, err := s.db.BeginTx(s.ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = requireCurrentSettlementExportRouting(s.ctx, routingTx, SettlementBatchRecord{Items: []SettlementBatchItemRecord{{PayoutID: staffPayout.ID, ActorType: "partner"}}})
+	_ = routingTx.Rollback()
+	if err != nil {
+		t.Fatalf("currently selected recipient rejected for export: %v", err)
+	}
 	prepared, err := PreparePayout(s.ctx, s.db, cipher, PreparePayoutInput{PayoutID: staffPayout.ID, ActorID: "finance-preparer", Reason: "staff settlement proof", Evidence: "verified staff evidence", IdentityFacts: staffFacts, IdempotencyKey: "prepare-staff-" + s.suffix, CorrelationID: "prepare-staff-correlation-" + s.suffix})
 	if err != nil || prepared.Status != "PREPARED" {
 		t.Fatalf("staff beneficiary prepare: %+v err=%v", prepared, err)
@@ -130,6 +141,17 @@ func TestPartnerStoreFinanceAndRecipientSettlementLifecycle(t *testing.T) {
 	batch, err = FreezeSettlementBatch(s.ctx, s.db, BatchActionInput{BatchID: batch.ID, ActorID: "finance-batch-freezer", Reason: "freeze historical settlement", IdentityFactsByBeneficiary: []IdentityFacts{staffFacts}, DestinationCipher: cipher, IdempotencyKey: "batch-freeze-" + s.suffix, CorrelationID: "batch-freeze-correlation-" + s.suffix})
 	if err != nil || batch.Status != "FROZEN" || batch.Items[0].ActorID != staff || batch.TotalAmountMinor != 2000 {
 		t.Fatalf("historical frozen settlement: %+v %v", batch, err)
+	}
+	// A frozen snapshot retains the historical staff beneficiary for audit,
+	// but is not permission to export a new manual-transfer instruction once
+	// the Store recipient has been marked REVIEW_REQUIRED or reverted.
+	_, err = ExportSettlementBatch(s.ctx, s.db, cipher, ExportSettlementBatchInput{
+		BatchID: batch.ID, ActorID: "finance-exporter",
+		IdentityFactsByBeneficiary: []IdentityFacts{staffFacts}, DestinationCipher: cipher,
+		IdempotencyKey: "blocked-export-" + s.suffix, CorrelationID: "blocked-export-corr-" + s.suffix,
+	})
+	if !errors.Is(err, ErrPayoutRecipientReviewRequired) {
+		t.Fatalf("historical frozen staff payout released new transfer export after recipient change: %v", err)
 	}
 
 	receipt, err := SaveFinanceEvidenceDocument(s.ctx, s.db, cipher, FinanceEvidenceDocumentInput{Purpose: "TRANSFER_RECEIPT", Filename: "staff-transfer.pdf", ContentType: "application/pdf", Content: []byte("isolated transfer evidence " + s.suffix), ActorID: "finance-executor", IdempotencyKey: "receipt-" + s.suffix, CorrelationID: "receipt-corr-" + s.suffix})
