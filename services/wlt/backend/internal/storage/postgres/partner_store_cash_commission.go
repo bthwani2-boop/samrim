@@ -160,6 +160,10 @@ func RecordPartnerStoreCashCommission(ctx context.Context, db *sql.DB, input Par
 		fundingTruth = &funding
 	}
 	chargeableProduct := allocation.SubtotalMinor - partnerChargedDiscount(fundingTruth, allocation.DiscountMinor)
+	bthwaniSubsidy := int64(0)
+	if hasFunding {
+		bthwaniSubsidy = funding.BthwaniFundedMinor
+	}
 	if chargeableProduct < 0 {
 		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerCashCommissionInvalid
 	}
@@ -170,7 +174,7 @@ func RecordPartnerStoreCashCommission(ctx context.Context, db *sql.DB, input Par
 	}
 
 	var ledgerTransactionID *string
-	if commission > 0 || allocation.InternalBalanceAmountMinor > 0 {
+	if commission > 0 || allocation.InternalBalanceAmountMinor > 0 || bthwaniSubsidy > 0 {
 		transactionID, idErr := newID("ledger")
 		if idErr != nil {
 			return PartnerStoreCashCommissionRecord{}, false, idErr
@@ -182,6 +186,15 @@ func RecordPartnerStoreCashCommission(ctx context.Context, db *sql.DB, input Par
 		sequence := 1
 		if allocation.InternalBalanceAmountMinor > 0 {
 			if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency) VALUES($1,$2,'liability','CUSTOMER_WALLET','customer',$3,'DEBIT',$4,$5),($1,$6,'liability','PARTNER_WALLET','partner',$7,'CREDIT',$4,$5)`, transactionID, sequence, payerActorID, allocation.InternalBalanceAmountMinor, currency, sequence+1, input.PartnerActorID); err != nil {
+				return PartnerStoreCashCommissionRecord{}, false, err
+			}
+			sequence += 2
+		}
+		if bthwaniSubsidy > 0 {
+			// The Store keeps customer cash; the platform owes the frozen
+			// subsidy separately. Credit only that subsidy to Partner wallet,
+			// balanced by a platform promotion-expense debit.
+			if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency) VALUES($1,$2,'expense','BTHWANI_PROMOTION_EXPENSE',NULL,NULL,'DEBIT',$3,$4),($1,$5,'liability','PARTNER_WALLET','partner',$6,'CREDIT',$3,$4)`, transactionID, sequence, bthwaniSubsidy, currency, sequence+1, input.PartnerActorID); err != nil {
 				return PartnerStoreCashCommissionRecord{}, false, err
 			}
 			sequence += 2
