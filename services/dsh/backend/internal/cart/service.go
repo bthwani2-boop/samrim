@@ -141,7 +141,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 		return CheckoutQuote{}, postgres.ErrCheckoutEvidenceStale
 	}
 	store, err := postgres.ReadStore(ctx, s.db, storeID)
-	if err != nil || store.PublicationState != "published" || strings.TrimSpace(store.PartnerActorID) == "" || !supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode) {
+	if err != nil || !storeAllowsCheckout(store, fulfillmentMode) {
 		return CheckoutQuote{}, ErrFulfillmentModeUnavailable
 	}
 	orderability, err := postgres.EvaluateStoreOrderability(ctx, s.db, storeID, fulfillmentMode, time.Now().UTC())
@@ -288,7 +288,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		return postgres.OrderRecord{}, false, postgres.ErrCheckoutEvidenceStale
 	}
 	store, err := postgres.ReadStore(ctx, s.db, storeID)
-	if err != nil || store.PublicationState != "published" || !supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode) {
+	if err != nil || !storeAllowsCheckout(store, fulfillmentMode) {
 		return postgres.OrderRecord{}, false, ErrFulfillmentModeUnavailable
 	}
 	orderability, err := postgres.EvaluateStoreOrderability(ctx, s.db, storeID, fulfillmentMode, time.Now().UTC())
@@ -379,6 +379,10 @@ func (s *Service) paymentIntentCanceller() postgres.PaymentIntentCanceller {
 		}
 		return nil
 	}
+}
+
+func storeAllowsCheckout(store postgres.StoreRecord, fulfillmentMode string) bool {
+	return store.PublicationState == "published" && strings.TrimSpace(store.PartnerActorID) != "" && supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode)
 }
 
 func supportsFulfillmentMode(modes []string, requested string) bool {
