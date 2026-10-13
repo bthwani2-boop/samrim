@@ -4,9 +4,10 @@ import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 
-import { createPartnerSurfaceStyles } from "./partner-surface-styles";
-import { createOwnStoreAccessInvitation, listOwnStoreAccessGrants, transitionOwnStoreAccessGrant, updateOwnStoreAccessPermissions } from "./store-readback-client";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
+import { createPartnerSurfaceStyles } from "./partner-surface-styles";
+import { toggleStoreAccessPermission } from "./store-access-permission-toggle";
+import { createOwnStoreAccessInvitation, listOwnStoreAccessGrants, transitionOwnStoreAccessGrant, updateOwnStoreAccessPermissions } from "./store-readback-client";
 
 const rolePresets = [
   { value: "STORE_MANAGER", label: "مدير متجر", permissions: ["orders", "catalog", "store_operations", "promotions", "fulfillment"] as const },
@@ -88,14 +89,7 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
   useEffect(() => { void reload(); }, [reload]);
 
   function togglePermission(permission: StoreAccessPermission) {
-    setSelectedPermissions((current) => {
-      if (current.includes(permission)) {
-        if (permission === "orders") return current.filter((item) => item !== "orders" && item !== "fulfillment");
-        return current.filter((item) => item !== permission);
-      }
-      if (permission === "fulfillment") return [...new Set<StoreAccessPermission>([...current, "orders", "fulfillment"])];
-      return [...current, permission];
-    });
+    setSelectedPermissions((current) => toggleStoreAccessPermission(current, permission));
     inviteAttempt.current = null;
   }
 
@@ -130,14 +124,14 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
       const createdCount = results.filter((result) => result.status === "fulfilled").length;
       const failedCount = results.length - createdCount;
       setNotice(`أُكدت الدعوة على ${createdCount} من ${results.length} متاجر مختارة.`);
-      if (failedCount > 0) setError(`تعذر تأكيد ${failedCount} دعوات. أعد المحاولة بنفس البيانات لإعادة قراءة المحاولات المحفوظة بأمان.`);
-      else {
+      if (failedCount === 0) {
         inviteAttempt.current = null;
         setPhone("");
         setSelectedPermissions(["orders"]);
         setSelectedStoreIDs([storeID]);
       }
       await reload();
+      if (failedCount > 0) setError(`تعذر تأكيد ${failedCount} دعوات. أعد المحاولة بنفس البيانات لإعادة قراءة المحاولات المحفوظة بأمان.`);
     } catch {
       await reload();
       setError("تعذر إنشاء الدعوة. تحقق من رقم الهاتف وأن صاحبه فعّل حسابه، ثم أعد قراءة القائمة.");
@@ -181,6 +175,7 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
   return <View style={styles.container}>
     <TeamInvitationCard busy={busy} choosePreset={choosePreset} filteredOwnedStores={filteredOwnedStores} notice={notice} onInvite={() => void invite()} onPhoneChange={(value) => { setPhone(value); inviteAttempt.current = null; }} onPermissionToggle={togglePermission} onStoreSearchChange={setStoreSearch} onTargetStoreToggle={toggleTargetStore} phone={phone} selectedPermissions={selectedPermissions} selectedStoreIDs={selectedStoreIDs} storeSearch={storeSearch} styles={styles} />
 
+    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     <StoreGrantsCard busy={busy} grants={grants} loading={loading} onPermissions={(grant, next) => void updatePermissions(grant, next)} onTransition={(grant, next) => void transition(grant, next)} styles={styles} />
   </View>;
 }
@@ -247,15 +242,11 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const [pendingPermissions, setPendingPermissions] = useState<ReadonlyArray<StoreAccessPermission> | null>(null);
   const selected = permissions.filter((permission) => grant.permissions.includes(permission.value)).map((permission) => permission.value);
-  const nextPermissions = (permission: StoreAccessPermission) => {
-    if (selected.includes(permission)) {
-      if (permission === "orders") return selected.filter((item) => item !== "orders" && item !== "fulfillment");
-      return selected.filter((item) => item !== permission);
-    }
-    if (permission === "fulfillment") return [...new Set<StoreAccessPermission>([...selected, "orders", "fulfillment"])];
-    return [...selected, permission];
-  };
+  const newlyGranted = pendingPermissions?.filter((permission) => !selected.includes(permission)) ?? [];
+  const newlyRemoved = pendingPermissions ? selected.filter((permission) => !pendingPermissions.includes(permission)) : [];
+  useEffect(() => { setPendingPermissions(null); }, [grant.version]);
   return <View style={{ borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 }}>
     <Text style={styles.value}>{[grant.delegateBeneficiaryName?.trim() || "عضو فريق", grant.delegatePhoneMasked?.trim()].filter(Boolean).join(" · ")}</Text>
     <Text style={styles.muted}>{grantStateLabel(grant.state)} · الصلاحيات الحالية: {permissionNames(grant.permissions)}</Text>
@@ -265,13 +256,28 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
       <Text style={styles.muted}>التوصيل يعتمد على الطلبات؛ إضافة التوصيل تضيف «الطلبات» تلقائيًا، وإزالة «الطلبات» تزيل التوصيل معها.</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{permissions.map((permission) => {
         const checked = selected.includes(permission.value);
-        return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked, disabled: busy || (checked && selected.length <= 1) }} disabled={busy || (checked && selected.length <= 1)} key={permission.value} onPress={() => onPermissions(nextPermissions(permission.value))} style={{ backgroundColor: checked ? theme.actionBackground : theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: checked ? theme.onAction : theme.color }}>{permission.label}</Text></Pressable>;
+        const next = toggleStoreAccessPermission(selected, permission.value);
+        const disabled = busy || next.length === 0;
+        return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked, disabled }} disabled={disabled} key={permission.value} onPress={() => setPendingPermissions(next)} style={{ backgroundColor: checked ? theme.actionBackground : theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: checked ? theme.onAction : theme.color }}>{permission.label}</Text></Pressable>;
       })}</View>
       {grant.state === "active" ? <BthwaniButton disabled={busy} label="إيقاف الوصول مؤقتًا" onPress={() => onTransition("suspended")} variant="secondary" /> : null}
       {grant.state === "suspended" ? <BthwaniButton disabled={busy} label="إعادة تفعيل الوصول" onPress={() => onTransition("active")} /> : null}
       {grant.state === "active" || grant.state === "suspended" ? <BthwaniButton disabled={busy} label="إلغاء الوصول نهائيًا" onPress={() => setConfirmRevoke(true)} variant="secondary" /> : null}
     </> : null}
     {grant.state === "pending_role_admission" || grant.state === "pending_partner_activation" || grant.state === "pending_acceptance" ? <BthwaniButton disabled={busy} label="إلغاء الدعوة" onPress={() => setConfirmRevoke(true)} variant="secondary" /> : null}
+    <BthwaniConfirmDialog
+      busy={busy}
+      confirmLabel="تأكيد تحديث الصلاحيات"
+      description={`ستتغير صلاحيات ${grant.delegateBeneficiaryName?.trim() || grant.delegatePhoneMasked || "عضو الفريق"} على ${grant.storeName || "هذا المتجر"}. ${newlyGranted.length ? `إضافة: ${permissionNames(newlyGranted)}. ` : ""}${newlyRemoved.length ? `إزالة: ${permissionNames(newlyRemoved)}.` : ""} لا يتم حفظ التغيير دون هذا التأكيد.`}
+      onCancel={() => setPendingPermissions(null)}
+      onConfirm={() => {
+        const next = pendingPermissions;
+        setPendingPermissions(null);
+        if (!busy && next?.length) onPermissions(next);
+      }}
+      title="مراجعة صلاحيات عضو الفريق"
+      visible={pendingPermissions !== null}
+    />
     <BthwaniConfirmDialog
       busy={busy}
       confirmLabel={grant.state === "active" || grant.state === "suspended" ? "إلغاء الوصول نهائيًا" : "إلغاء الدعوة"}
