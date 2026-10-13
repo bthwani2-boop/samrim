@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/http"
 	"regexp"
 	"strings"
 
@@ -158,11 +159,10 @@ func (s *Service) TransitionForOwner(ctx context.Context, accessToken, storeID, 
 	if err != nil {
 		return postgres.StoreAccessGrant{}, false, err
 	}
-	if !replayed && (targetState == "revoked" || targetState == "suspended") {
-		// Fail-closed financial gate: if the affected delegate is the Store's recorded
-		// payout recipient, future payout readiness must stop pending owner action.
-		// The call is idempotent; a WLT outage surfaces as an explicit failure so the
-		// client retries until the gate is marked.
+	if targetState == "revoked" || targetState == "suspended" {
+		// The DSH grant is already committed: a replay must still finish the WLT
+		// review gate if the first attempt lost the WLT response or connection.
+		// WLT treats an already-required review as a no-op.
 		if err := s.markPayoutRecipientReviewIfNeeded(ctx, storeID, actorID, grant.DelegateActorID, targetState, correlationID); err != nil {
 			return grant, replayed, err
 		}
@@ -543,9 +543,14 @@ func (s *Service) markPayoutRecipientReviewIfNeeded(ctx context.Context, storeID
 	}
 	record, err := s.wlt.ReadStorePayoutRecipient(ctx, ownerActorID, storeID)
 	if err != nil {
-		// No assignment facts is the normal case for stores without a selected
-		// recipient; WLT answers NOT_FOUND for those.
-		return nil
+		// Only an explicit missing assignment means default owner routing.
+		// WLT outages, authorization errors and malformed responses must not
+		// silently bypass the staff payout review gate.
+		var wltErr *wltintegration.Error
+		if errors.As(err, &wltErr) && wltErr.Status == http.StatusNotFound && wltErr.Code == "NOT_FOUND" {
+			return nil
+		}
+		return err
 	}
 	if record.State != wltintegration.StorePayoutRecipientStateSelectedStaff || record.BeneficiaryActorID != delegateActorID {
 		return nil

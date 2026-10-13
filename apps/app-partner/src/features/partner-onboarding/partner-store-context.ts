@@ -1,6 +1,5 @@
+import type { JoiningCaseResponse, ServiceCity } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-import { type JoiningCaseResponse, type ServiceCity } from "@bthwani/dsh";
 import { isJoiningCaseNotFound, listActiveServiceCities, readOwnJoiningCase } from "./store-readback-client";
 
 export type PartnerStoreContextState =
@@ -29,9 +28,12 @@ export function usePartnerStoreContext() {
 
   useEffect(() => {
     void reload();
+    return () => { reloadSequence.current += 1; };
   }, [reload]);
 
   function update(value: JoiningCaseResponse) {
+    // A canonical write/readback must outrank any older in-flight read.
+    reloadSequence.current += 1;
     setState({ kind: "ready", value });
   }
 

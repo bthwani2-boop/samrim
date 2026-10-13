@@ -2,14 +2,14 @@ import { BthwaniButton, BthwaniConfirmDialog, BthwaniStatusBadge, useAppearanceT
 import { type DshImageUploadInput, isMediaProvenanceInputValid, type JoiningCaseResponse, type JoiningCaseSummary, type JoiningCaseView, joiningCaseStateLabel, type MediaProvenanceInput, resolveJoiningCaseImageContentType } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
-import { type Href, useLocalSearchParams, useRouter } from "expo-router";
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Image, Text, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient, isMissingFieldAdmission } from "./field-client";
 import { FieldCommercialAgreement } from "./field-commercial-agreement";
-import { fieldDraftMediaUploadConfirmed, markFieldMediaReadbackUncertain } from "./field-draft-readback";
+import { fieldDraftMediaUploadConfirmed, fieldSubmitIdempotencyPayload, markFieldMediaReadbackUncertain, submitFieldCaseWithReadback } from "./field-draft-readback";
 import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
 import { getFieldJoiningRequirements } from "./field-joining-readiness";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
@@ -41,7 +41,7 @@ function dshErrorCode(cause: unknown): string {
 }
 
 async function fieldCaseSubmitIdentity(caseID: string, expectedVersion: number) {
-  const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `field-case-submit\u0000${caseID}\u0000${expectedVersion}`);
+  const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, fieldSubmitIdempotencyPayload(caseID, expectedVersion));
   return { idempotencyKey: `field_submit_${digest}`, correlationID: `field_submit_corr_${digest}` };
 }
 
@@ -127,12 +127,17 @@ export function FieldCases() {
     }
   }, [appliedQuery]);
 
-  useEffect(() => {
-    setCases([]);
-    pagination.current.cursor = "";
-    setNextCursor("");
+  // Returning from the draft editor or another actor handoff must re-read the
+  // canonical queue without requiring Field to press a routine refresh button.
+  useFocusEffect(useCallback(() => {
+    if (pagination.current.query !== appliedQuery) {
+      setCases([]);
+      pagination.current.cursor = "";
+      setNextCursor("");
+    }
     void load();
-  }, [load]);
+    return () => { pagination.current.sequence += 1; };
+  }, [appliedQuery, load]));
 
   useEffect(() => {
     if (!routeCaseId) {
@@ -227,14 +232,20 @@ export function FieldCases() {
         return;
       }
       const identity = await fieldCaseSubmitIdentity(item.id, current.case.version);
-      await fieldClient().submitFieldJoiningCase(token, item.id, current.case.version, identity.idempotencyKey, identity.correlationID);
-      const canonical = await fieldClient().readOwnFieldJoiningCase(token, item.id);
+      const outcome = await submitFieldCaseWithReadback(
+        item.id,
+        () => fieldClient().submitFieldJoiningCase(token, item.id, current.case.version, identity.idempotencyKey, identity.correlationID),
+        () => fieldClient().readOwnFieldJoiningCase(token, item.id),
+        isOutcomeUncertain,
+      );
       await load();
-      if (canonical.case.state === "draft") {
-        setError("تم إرسال الطلب لكن القراءة المعتمدة ما تزال مسودة. أعد القراءة قبل المحاولة مجددًا.");
-        return;
+      if (outcome.kind === "confirmed") {
+        setNotice("تأكدت حالة طلب الانضمام من المنصة: " + joiningCaseStateLabel(outcome.canonical.case.state) + ".");
+      } else if (outcome.kind === "draft") {
+        setError("ما تزال حالة الطلب مسودة. تحقق من البيانات قبل إعادة الإرسال بنفس الإصدار.");
+      } else {
+        setError("تعذر تأكيد إرسال الطلب. أعد قراءة المسودة وحالتها قبل المحاولة مجددًا.");
       }
-      setNotice("وصل طلب الانضمام إلى طابور قبول المشغّل وتم تأكيد حالته من القراءة المعتمدة.");
     } catch (cause) {
       console.warn("DSH Field joining-case submission failed", cause);
       try {
@@ -242,7 +253,7 @@ export function FieldCases() {
         const latest = await fieldClient().readOwnFieldJoiningCase(token, item.id);
         await load();
         if (latest.case.state === "draft") setError("لم يتأكد الإرسال. أعد المحاولة؛ سنحدّث الحالة قبل الإرسال.");
-        else setNotice("أُرسل الطلب للمراجعة. الحالة الحالية: " + joiningCaseStateLabel(latest.case.state) + ".");
+        else setError("تغيّرت حالة الطلب؛ لا يمكن اعتماد فشل الإرسال كدليل على نجاحه. الحالة الحالية: " + joiningCaseStateLabel(latest.case.state) + ".");
       } catch (readError) {
         console.warn("DSH Field joining-case submit recovery readback failed", readError);
         setError("تعذر تأكيد الإرسال. حدّث قائمة الشركاء قبل المحاولة مجددًا.");
@@ -309,7 +320,7 @@ export function FieldCases() {
       const token = await getUsableIdentityAccessToken();
       const saved = await fieldClient().uploadJoiningCaseStoreImage(token, attempt.caseID, attempt.image, attempt.image.provenance, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
       const canonical = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID).catch((cause: unknown) => { throw markFieldMediaReadbackUncertain(cause); });
-      if (!fieldDraftMediaUploadConfirmed(saved.case, canonical.case, "store", attempt.expectedVersion)) throw new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH");
+      if (!fieldDraftMediaUploadConfirmed(saved.case, canonical.case, "store", attempt.expectedVersion, attempt.caseID, attempt.image.provenance)) throw new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH");
       setMediaCase(canonical);
       setStoreImage(null);
       setPendingImageAttempt(null);
@@ -448,7 +459,6 @@ export function FieldCases() {
       {caseSelectionError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{caseSelectionError}</Text><BthwaniButton label="إعادة فتح الطلب" onPress={() => setSelectionRetry((value) => value + 1)} variant="secondary" /></View> : null}
       {optionalMediaWarning ? <Text accessibilityRole="alert" style={styles.error}>تم إرسال طلب الانضمام وحفظ حالته، لكن لم يُؤكّد رفع بعض الصور الاختيارية. لا تعتبرها محفوظة؛ يمكن استكمال الشعار قبل نشر المتجر بالتنسيق مع فريق التشغيل.</Text> : null}
       {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
-      {cases.length > 0 ? <BthwaniButton disabled={Boolean(busy) || loading} label="تحديث القائمة" onPress={() => void load()} variant="secondary" /> : null}
     </View>}
     onRefresh={() => void load()}
     refreshing={loading && cases.length > 0}
@@ -460,7 +470,7 @@ export function FieldCases() {
   <BthwaniConfirmDialog
     busy={Boolean(caseToSubmit && busy === caseToSubmit.id)}
     confirmLabel="إرسال للمراجعة"
-    description={caseToSubmit ? `سيُغلق تحرير مسودة «${caseToSubmit.businessName} · ${caseToSubmit.firstStoreName}» لدى الميدان ويُنقل الطلب إلى مراجعة التشغيل والشريك. تأكد من اكتمال البيانات وشعار المتجر قبل الإرسال.` : ""}
+    description={caseToSubmit ? `سيُغلق تحرير مسودة «${caseToSubmit.businessName} · ${caseToSubmit.firstStoreName}» لدى الميدان ويُنقل الطلب إلى مراجعة التشغيل والشريك. أكمل البيانات الأساسية؛ شعار المتجر اختياري الآن ومطلوب قبل نشر المتجر للعملاء.` : ""}
     onCancel={() => setCaseToSubmit(null)}
     onConfirm={() => {
       const item = caseToSubmit;

@@ -4,9 +4,11 @@ import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 
-import { createPartnerSurfaceStyles } from "./partner-surface-styles";
-import { createOwnStoreAccessInvitation, listOwnStoreAccessGrants, transitionOwnStoreAccessGrant, updateOwnStoreAccessPermissions } from "./store-readback-client";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
+import { createPartnerSurfaceStyles } from "./partner-surface-styles";
+import { storeInvitationReadbackConfirmed } from "./store-access-invite-readback";
+import { storeAccessPermissionsMutationIdentity, storeAccessPermissionsReadbackConfirmed, toggleStoreAccessPermission } from "./store-access-permission-toggle";
+import { createOwnStoreAccessInvitation, listOwnStoreAccessGrants, transitionOwnStoreAccessGrant, updateOwnStoreAccessPermissions } from "./store-readback-client";
 
 const rolePresets = [
   { value: "STORE_MANAGER", label: "مدير متجر", permissions: ["orders", "catalog", "store_operations", "promotions", "fulfillment"] as const },
@@ -56,6 +58,10 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const [grants, setGrants] = useState<ReadonlyArray<StoreAccessGrant>>([]);
+  const [grantsForStoreID, setGrantsForStoreID] = useState("");
+  const grantReadSequence = useRef(0);
+  const activeStoreID = useRef(storeID);
+  activeStoreID.current = storeID;
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -70,32 +76,39 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
   const filteredOwnedStores = useMemo(() => ownedStores.filter((store) => store.name.toLocaleLowerCase().includes(storeSearch.trim().toLocaleLowerCase())), [ownedStores, storeSearch]);
   useEffect(() => {
     setSelectedStoreIDs([storeID]);
+    // Preserve an unconfirmed invitation identity across store navigation.
+    setNotice("");
   }, [storeID]);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (): Promise<ReadonlyArray<StoreAccessGrant> | null> => {
+    if (activeStoreID.current !== storeID) return null;
+    const sequence = ++grantReadSequence.current;
     setLoading(true);
     setError("");
     try {
       const grantsResult = await listOwnStoreAccessGrants(storeID);
+      if (sequence !== grantReadSequence.current || activeStoreID.current !== storeID) return null;
       setGrants(grantsResult.items);
+      setGrantsForStoreID(storeID);
+      return grantsResult.items;
     } catch {
+      if (sequence !== grantReadSequence.current || activeStoreID.current !== storeID) return null;
+      setGrants([]);
+      setGrantsForStoreID(storeID);
       setError("تعذرت قراءة صلاحيات الوصول من المنصة.");
+      return null;
     } finally {
-      setLoading(false);
+      if (sequence === grantReadSequence.current && activeStoreID.current === storeID) setLoading(false);
     }
   }, [storeID]);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    void reload();
+    return () => { grantReadSequence.current += 1; };
+  }, [reload]);
 
   function togglePermission(permission: StoreAccessPermission) {
-    setSelectedPermissions((current) => {
-      if (current.includes(permission)) {
-        if (permission === "orders") return current.filter((item) => item !== "orders" && item !== "fulfillment");
-        return current.filter((item) => item !== permission);
-      }
-      if (permission === "fulfillment") return [...new Set<StoreAccessPermission>([...current, "orders", "fulfillment"])];
-      return [...current, permission];
-    });
+    setSelectedPermissions((current) => toggleStoreAccessPermission(current, permission));
     inviteAttempt.current = null;
   }
 
@@ -115,77 +128,131 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
     setError("");
     setNotice("");
     try {
-      const identity = `${phone.trim()}|${[...selectedStoreIDs].sort((left, right) => left.localeCompare(right)).join(",")}|${[...selectedPermissions].sort((left, right) => left.localeCompare(right)).join(",")}`;
+      const targetStoreIDs = [...selectedStoreIDs];
+      const requestedPermissions = [...selectedPermissions];
+      const delegatePhone = phone.trim();
+      const identity = `${delegatePhone}|${[...targetStoreIDs].sort((left, right) => left.localeCompare(right)).join(",")}|${[...requestedPermissions].sort((left, right) => left.localeCompare(right)).join(",")}`;
       if (inviteAttempt.current?.identity !== identity) {
         inviteAttempt.current = {
           identity,
-          headersByStore: Object.fromEntries(selectedStoreIDs.map((targetStoreID) => [targetStoreID, attemptHeaders("store_access_invite")])),
+          headersByStore: Object.fromEntries(targetStoreIDs.map((targetStoreID) => [targetStoreID, attemptHeaders("store_access_invite")])),
         };
       }
-      const results = await Promise.allSettled(selectedStoreIDs.map((targetStoreID) => {
-        const headers = inviteAttempt.current?.headersByStore[targetStoreID];
+      const attempt = inviteAttempt.current;
+      if (!attempt) throw new Error("STORE_ACCESS_INVITE_ATTEMPT_MISSING");
+      const results = await Promise.allSettled(targetStoreIDs.map(async (targetStoreID) => {
+        const headers = attempt.headersByStore[targetStoreID];
         if (!headers) throw new Error("STORE_ACCESS_INVITE_ATTEMPT_MISSING");
-        return createOwnStoreAccessInvitation(targetStoreID, { delegatePhoneE164: phone.trim(), permissions: [...selectedPermissions] }, headers.idempotencyKey, headers.correlationID);
+        const mutation = await createOwnStoreAccessInvitation(targetStoreID, { delegatePhoneE164: delegatePhone, permissions: requestedPermissions }, headers.idempotencyKey, headers.correlationID);
+        const persisted = await listOwnStoreAccessGrants(targetStoreID);
+        return storeInvitationReadbackConfirmed(targetStoreID, mutation.grant, requestedPermissions, persisted.items.find((item) => item.id === mutation.grant.id));
       }));
-      const createdCount = results.filter((result) => result.status === "fulfilled").length;
-      const failedCount = results.length - createdCount;
-      setNotice(`أُكدت الدعوة على ${createdCount} من ${results.length} متاجر مختارة.`);
-      if (failedCount > 0) setError(`تعذر تأكيد ${failedCount} دعوات. أعد المحاولة بنفس البيانات لإعادة قراءة المحاولات المحفوظة بأمان.`);
-      else {
+      // Mutation receipts and unconfirmed network responses are not durable proof.
+      const confirmedCount = results.filter((result) => result.status === "fulfilled" && result.value === true).length;
+      const unconfirmedCount = results.length - confirmedCount;
+      if (activeStoreID.current !== storeID) return;
+      await reload();
+      if (activeStoreID.current !== storeID) return;
+      setNotice(`تأكدت ${confirmedCount} دعوات من أصل ${results.length} من القراءة المعتمدة.`);
+      if (unconfirmedCount > 0) {
+        setError(`لم يتأكد حفظ ${unconfirmedCount} دعوات. أعد المحاولة بنفس البيانات لإعادة استخدام مفاتيح المحاولات الأصلية.`);
+      } else {
         inviteAttempt.current = null;
         setPhone("");
         setSelectedPermissions(["orders"]);
         setSelectedStoreIDs([storeID]);
       }
-      await reload();
-    } catch {
-      await reload();
-      setError("تعذر إنشاء الدعوة. تحقق من رقم الهاتف وأن صاحبه فعّل حسابه، ثم أعد قراءة القائمة.");
+    } catch (cause) {
+      console.warn("DSH Store access invitation verification failed", cause);
+      if (activeStoreID.current === storeID) {
+        await reload();
+        setError("تعذر تأكيد إنشاء الدعوة. أعد المحاولة بنفس البيانات للحفاظ على مفاتيح الطلب الأصلية.");
+      }
     } finally {
       setBusy(false);
     }
   }
 
   async function transition(grant: StoreAccessGrant, state: "active" | "suspended" | "revoked") {
-    if (busy) return;
+    if (busy || grant.storeId !== storeID) return;
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       const headers = attemptHeaders("store_access_state");
-      await transitionOwnStoreAccessGrant(storeID, grant.id, { state, expectedVersion: grant.version }, headers.idempotencyKey, headers.correlationID);
-      await reload();
-    } catch {
-      await reload();
-      setError("تغيرت الدعوة في جلسة أخرى أو تعذر تأكيد الإجراء. أُعيدت قراءة الحالة المعتمدة.");
+      const changed = await transitionOwnStoreAccessGrant(storeID, grant.id, { state, expectedVersion: grant.version }, headers.idempotencyKey, headers.correlationID);
+      const latest = await reload();
+      if (activeStoreID.current !== storeID) return;
+      const canonical = latest?.find((item) => item.id === grant.id);
+      if (changed.grant.id !== grant.id || changed.grant.storeId !== storeID || changed.grant.state !== state ||
+        changed.grant.version <= grant.version || !canonical ||
+        canonical.storeId !== storeID || canonical.delegateActorId !== grant.delegateActorId ||
+        canonical.ownerPartnerActorId !== grant.ownerPartnerActorId ||
+        canonical.version < changed.grant.version || canonical.state !== state) {
+        setError("لم يتأكد تغيير الوصول من المنصة. تحقق من الحالة المعتمدة قبل المحاولة مجددًا.");
+      } else if (changed.idempotentReplay && state !== "active") {
+        setError("تأكد تغير حالة الوصول، لكن إعادة تشغيل الطلب لا تثبت اكتمال مراجعة مستفيد الصرف لدى المالية.");
+      } else {
+        setNotice(state === "revoked" ? "تأكد إلغاء وصول الموظف."
+          : state === "suspended" ? "تأكد إيقاف وصول الموظف مؤقتًا."
+          : "تأكد إعادة تفعيل وصول الموظف.");
+      }
+    } catch (cause) {
+      console.warn("DSH Store access grant state mutation failed", cause);
+      const latest = await reload();
+      if (activeStoreID.current !== storeID) return;
+      const canonical = latest?.find((item) => item.id === grant.id);
+      if ((state === "revoked" || state === "suspended") && canonical?.storeId === storeID && canonical.state === state) {
+        setError("تغيّرت حالة وصول الموظف في المنصة، لكن لا يمكن تأكيد اكتمال مراجعة مستفيد الصرف المرتبط. يلزم التحقق من المالية قبل اعتبار الإجراء مكتملًا.");
+      } else {
+        setError("تعذر تأكيد تغيير وصول الموظف. أعد قراءة الحالة المعتمدة قبل المحاولة مجددًا.");
+      }
     } finally {
       setBusy(false);
     }
   }
 
   async function updatePermissions(grant: StoreAccessGrant, next: ReadonlyArray<StoreAccessPermission>) {
-    if (busy || next.length === 0) return;
+    if (busy || next.length === 0 || grant.storeId !== storeID) return;
     setBusy(true);
     setError("");
+    setNotice("");
     try {
-      const headers = attemptHeaders("store_access_permissions");
-      await updateOwnStoreAccessPermissions(storeID, grant.id, next, grant.version, headers.idempotencyKey, headers.correlationID);
-      await reload();
-    } catch {
-      await reload();
-      setError("تعذر تحديث الصلاحيات أو أصبحت نسخة الدعوة قديمة. أُعيدت قراءة الحالة المعتمدة.");
+      const payload = storeAccessPermissionsMutationIdentity(storeID, grant.id, grant.version, next);
+      const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, payload);
+      try {
+        await updateOwnStoreAccessPermissions(storeID, grant.id, next, grant.version, `store_access_perms_${digest}`, `store_access_perms_corr_${digest}`);
+      } catch (cause) {
+        // A lost response is not evidence that DSH rejected the update.
+        console.warn("DSH Store access permissions response uncertain", cause);
+      }
+      const latest = await reload();
+      if (activeStoreID.current !== storeID) return;
+      if (storeAccessPermissionsReadbackConfirmed(grant, latest?.find((item) => item.id === grant.id), next)) {
+        setNotice("تأكد تحديث صلاحيات الموظف من المنصة.");
+      } else {
+        setError(latest === null
+          ? "تعذر قراءة نتيجة تعديل الصلاحيات. تحقق من القائمة المعتمدة قبل المحاولة مجددًا."
+          : "لم يتأكد تعديل الصلاحيات. راجع حالة المنحة وإصدارها قبل المحاولة مجددًا.");
+      }
+    } catch (cause) {
+      console.warn("DSH Store access permissions verification failed", cause);
+      if (activeStoreID.current === storeID) setError("تعذر تأكيد تعديل الصلاحيات. أعد قراءة حالة المنحة.");
     } finally {
       setBusy(false);
     }
   }
 
   return <View style={styles.container}>
-    <TeamInvitationCard busy={busy} choosePreset={choosePreset} filteredOwnedStores={filteredOwnedStores} notice={notice} onInvite={() => void invite()} onPhoneChange={(value) => { setPhone(value); inviteAttempt.current = null; }} onPermissionToggle={togglePermission} onStoreSearchChange={setStoreSearch} onTargetStoreToggle={toggleTargetStore} phone={phone} selectedPermissions={selectedPermissions} selectedStoreIDs={selectedStoreIDs} storeSearch={storeSearch} styles={styles} />
+    <TeamInvitationCard busy={busy} choosePreset={choosePreset} filteredOwnedStores={filteredOwnedStores} onInvite={() => void invite()} onPhoneChange={(value) => { setPhone(value); inviteAttempt.current = null; }} onPermissionToggle={togglePermission} onStoreSearchChange={setStoreSearch} onTargetStoreToggle={toggleTargetStore} phone={phone} selectedPermissions={selectedPermissions} selectedStoreIDs={selectedStoreIDs} storeSearch={storeSearch} styles={styles} />
 
-    <StoreGrantsCard busy={busy} grants={grants} loading={loading} onPermissions={(grant, next) => void updatePermissions(grant, next)} onTransition={(grant, next) => void transition(grant, next)} styles={styles} />
+    {notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
+    {error && grantsForStoreID === storeID ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    <StoreGrantsCard busy={busy} grants={grantsForStoreID === storeID ? grants : []} loading={loading || grantsForStoreID !== storeID} onPermissions={(grant, next) => void updatePermissions(grant, next)} onTransition={(grant, next) => void transition(grant, next)} styles={styles} />
   </View>;
 }
 
-function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, onStoreSearchChange, filteredOwnedStores, selectedStoreIDs, onTargetStoreToggle, selectedPermissions, onPermissionToggle, choosePreset, onInvite, notice }: Readonly<{
+function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, onStoreSearchChange, filteredOwnedStores, selectedStoreIDs, onTargetStoreToggle, selectedPermissions, onPermissionToggle, choosePreset, onInvite }: Readonly<{
   styles: ReturnType<typeof createPartnerSurfaceStyles>;
   busy: boolean;
   phone: string;
@@ -199,7 +266,6 @@ function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, o
   onPermissionToggle: (permission: StoreAccessPermission) => void;
   choosePreset: (preset: typeof rolePresets[number]) => void;
   onInvite: () => void;
-  notice: string;
 }>) {
   const theme = useAppearanceTheme();
   const canInvite = !busy && phone.trim().length > 0 && selectedPermissions.length > 0 && selectedStoreIDs.length > 0;
@@ -222,7 +288,6 @@ function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, o
       return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: busy }} disabled={busy} key={permission.value} onPress={() => onPermissionToggle(permission.value)} style={{ backgroundColor: selected ? theme.actionBackground : theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: selected ? theme.onAction : theme.color }}>{permission.label}</Text></Pressable>;
     })}</View>
     <BthwaniButton busy={busy} disabled={!canInvite} label="إرسال دعوة الموظف" onPress={onInvite} />
-    {notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
   </View>;
 }
 
@@ -247,15 +312,11 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const [pendingPermissions, setPendingPermissions] = useState<ReadonlyArray<StoreAccessPermission> | null>(null);
   const selected = permissions.filter((permission) => grant.permissions.includes(permission.value)).map((permission) => permission.value);
-  const nextPermissions = (permission: StoreAccessPermission) => {
-    if (selected.includes(permission)) {
-      if (permission === "orders") return selected.filter((item) => item !== "orders" && item !== "fulfillment");
-      return selected.filter((item) => item !== permission);
-    }
-    if (permission === "fulfillment") return [...new Set<StoreAccessPermission>([...selected, "orders", "fulfillment"])];
-    return [...selected, permission];
-  };
+  const newlyGranted = pendingPermissions?.filter((permission) => !selected.includes(permission)) ?? [];
+  const newlyRemoved = pendingPermissions ? selected.filter((permission) => !pendingPermissions.includes(permission)) : [];
+  useEffect(() => { setPendingPermissions(null); }, [grant.version]);
   return <View style={{ borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 }}>
     <Text style={styles.value}>{[grant.delegateBeneficiaryName?.trim() || "عضو فريق", grant.delegatePhoneMasked?.trim()].filter(Boolean).join(" · ")}</Text>
     <Text style={styles.muted}>{grantStateLabel(grant.state)} · الصلاحيات الحالية: {permissionNames(grant.permissions)}</Text>
@@ -265,13 +326,28 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
       <Text style={styles.muted}>التوصيل يعتمد على الطلبات؛ إضافة التوصيل تضيف «الطلبات» تلقائيًا، وإزالة «الطلبات» تزيل التوصيل معها.</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{permissions.map((permission) => {
         const checked = selected.includes(permission.value);
-        return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked, disabled: busy || (checked && selected.length <= 1) }} disabled={busy || (checked && selected.length <= 1)} key={permission.value} onPress={() => onPermissions(nextPermissions(permission.value))} style={{ backgroundColor: checked ? theme.actionBackground : theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: checked ? theme.onAction : theme.color }}>{permission.label}</Text></Pressable>;
+        const next = toggleStoreAccessPermission(selected, permission.value);
+        const disabled = busy || next.length === 0;
+        return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked, disabled }} disabled={disabled} key={permission.value} onPress={() => setPendingPermissions(next)} style={{ backgroundColor: checked ? theme.actionBackground : theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: checked ? theme.onAction : theme.color }}>{permission.label}</Text></Pressable>;
       })}</View>
       {grant.state === "active" ? <BthwaniButton disabled={busy} label="إيقاف الوصول مؤقتًا" onPress={() => onTransition("suspended")} variant="secondary" /> : null}
       {grant.state === "suspended" ? <BthwaniButton disabled={busy} label="إعادة تفعيل الوصول" onPress={() => onTransition("active")} /> : null}
       {grant.state === "active" || grant.state === "suspended" ? <BthwaniButton disabled={busy} label="إلغاء الوصول نهائيًا" onPress={() => setConfirmRevoke(true)} variant="secondary" /> : null}
     </> : null}
     {grant.state === "pending_role_admission" || grant.state === "pending_partner_activation" || grant.state === "pending_acceptance" ? <BthwaniButton disabled={busy} label="إلغاء الدعوة" onPress={() => setConfirmRevoke(true)} variant="secondary" /> : null}
+    <BthwaniConfirmDialog
+      busy={busy}
+      confirmLabel="تأكيد تحديث الصلاحيات"
+      description={`ستتغير صلاحيات ${grant.delegateBeneficiaryName?.trim() || grant.delegatePhoneMasked || "عضو الفريق"} على ${grant.storeName || "هذا المتجر"}. ${newlyGranted.length ? `إضافة: ${permissionNames(newlyGranted)}. ` : ""}${newlyRemoved.length ? `إزالة: ${permissionNames(newlyRemoved)}.` : ""} لا يتم حفظ التغيير دون هذا التأكيد.`}
+      onCancel={() => setPendingPermissions(null)}
+      onConfirm={() => {
+        const next = pendingPermissions;
+        setPendingPermissions(null);
+        if (!busy && next?.length) onPermissions(next);
+      }}
+      title="مراجعة صلاحيات عضو الفريق"
+      visible={pendingPermissions !== null}
+    />
     <BthwaniConfirmDialog
       busy={busy}
       confirmLabel={grant.state === "active" || grant.state === "suspended" ? "إلغاء الوصول نهائيًا" : "إلغاء الدعوة"}

@@ -1,11 +1,12 @@
 import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { isMediaProvenanceInputValid, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput } from "@bthwani/dsh";
+import { type DshImageUploadInput, isMediaProvenanceInputValid, type JoiningCaseResponse, type MediaProvenanceInput } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { useMemo, useState } from "react";
 import { Image, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 
+import { partnerStoreImageReadbackMatches } from "./store-profile-image-readback";
 import { readOwnJoiningCase, uploadOwnJoiningCaseStoreImage } from "./store-readback-client";
 
 type StoreImageDraft = Readonly<{ image: DshImageUploadInput; contentSha256: string; provenance: MediaProvenanceInput }>;
@@ -47,7 +48,13 @@ export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCa
       setError("أكمل منشئ الصورة ومصدرها وبيان حق استخدامها، ثم أكّد صحة التصريح.");
       return;
     }
-    if (current.storeProfileImage?.contentSha256 === storeImage.contentSha256 && current.storeProfileImage.provenance) {
+    const requested = {
+      caseID: current.id,
+      partnerActorID: current.partnerActorId ?? "",
+      contentSha256: storeImage.contentSha256,
+      provenance: storeImage.provenance,
+    };
+    if (partnerStoreImageReadbackMatches(current, requested)) {
       setStoreImage(null);
       setError("");
       return;
@@ -57,14 +64,20 @@ export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCa
     try {
       const identity = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `${current.id}:${current.version}:${storeImage.contentSha256}:${JSON.stringify(storeImage.provenance)}`);
       const updated = await uploadOwnJoiningCaseStoreImage(current.id, storeImage.image, storeImage.provenance, current.version, `partner_store_image_${identity}`, `partner_store_image_corr_${identity}`);
+      if (!partnerStoreImageReadbackMatches(updated.case, requested)) {
+        throw new Error("PARTNER_STORE_IMAGE_UPLOAD_READBACK_MISMATCH");
+      }
       onUpdated(updated);
       setStoreImage(null);
     } catch (cause) {
       console.error("DSH Partner store image upload failed", cause);
       try {
         const latest = await readOwnJoiningCase();
+        if (latest.case.id !== requested.caseID || latest.case.partnerActorId !== requested.partnerActorID) {
+          throw new Error("PARTNER_STORE_IMAGE_WRONG_CASE_READBACK");
+        }
         onUpdated(latest);
-        if (latest.case.storeProfileImage?.contentSha256 === storeImage.contentSha256 && latest.case.storeProfileImage.provenance) {
+        if (partnerStoreImageReadbackMatches(latest.case, requested)) {
           setStoreImage(null);
           setError("");
           return;
