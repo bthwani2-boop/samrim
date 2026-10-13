@@ -260,7 +260,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   const readyCart = state.kind === "ready" ? state.cart : null;
   const cartNeedsReview = readyCart?.lines.some((line) => line.requiresReview) ?? false;
   const promotionNeedsApply = promotionCode.trim().toUpperCase() !== appliedPromotionCode;
-  const verifiedQuote = readyCart && quote.kind === "ready" && quoteMatchesCheckout(quote.quote, readyCart, storeId, pickupMode ? "" : serviceableAddressId ?? "", fulfillmentMode, promotionCode) ? quote.quote : null;
+  const verifiedQuote = readyCart && quote.kind === "ready" && quoteMatchesCheckout(quote.quote, readyCart, storeId, pickupMode ? "" : serviceableAddressId ?? "", fulfillmentMode, appliedPromotionCode) ? quote.quote : null;
   useEffect(() => {
     if (readyCart) void refreshQuote(readyCart);
     else {
@@ -312,7 +312,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   async function checkout() {
     if (checkoutSubmitting.current) return;
     const addressID = pickupMode ? "" : serviceableAddressId ?? "";
-    if (mutationBusy || state.kind !== "ready" || !state.cart.lines.length || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || !quoteMatchesCheckout(quote.quote, state.cart, storeId, addressID, fulfillmentMode, promotionCode)) return;
+    if (mutationBusy || state.kind !== "ready" || !state.cart.lines.length || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || !quoteMatchesCheckout(quote.quote, state.cart, storeId, addressID, fulfillmentMode, appliedPromotionCode)) return;
     const internalBalanceAmountMinor = parseMinorAmount(internalBalanceInput);
     if (internalBalanceAmountMinor !== null && internalBalanceAmountMinor > 0 && wallet.kind !== "ready") {
       setError("تعذر التحقق من الرصيد؛ أعد قراءته أو أدخل صفرًا للمتابعة دون استخدامه.");
@@ -342,7 +342,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
         setError("تعذر التحقق من جلسة العميل؛ لم يُرسل الطلب.");
         return;
       }
-      const request: CheckoutRequest = { cartId: state.cart.id, storeId, addressId: addressID, fulfillmentMode, internalBalanceAmountMinor, recipient: checkoutRecipient(recipient, !pickupMode), ...(promotionCode.trim() ? { promotionCode: promotionCode.trim().toUpperCase() } : {}) };
+      const request: CheckoutRequest = { cartId: state.cart.id, storeId, addressId: addressID, fulfillmentMode, internalBalanceAmountMinor, recipient: checkoutRecipient(recipient, !pickupMode), ...(appliedPromotionCode ? { promotionCode: appliedPromotionCode } : {}) };
       const storageKey = pendingCartCheckoutKey(actorID, storeId);
       const attempt: PendingCartCheckoutAttempt = {
         version: 1, actorID, storeID: storeId, cartID: state.cart.id, expectedCartVersion: state.cart.version,

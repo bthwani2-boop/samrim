@@ -29,7 +29,7 @@ const runnableQuote = ts.transpileModule(quoteNode.getText(ast), { compilerOptio
 const runnableHandler = ts.transpileModule(checkoutNode.getText(ast), { compilerOptions }).outputText;
 const quoteMatchesCheckout = vm.runInNewContext(`${runnableQuote}\nquoteMatchesCheckout`);
 const visibleQuoteExpression = verifiedQuoteNode.initializer.getText(ast);
-const runnableVisibleQuote = ts.transpileModule(`function readVisibleQuote(readyCart, quote, storeId, pickupMode, serviceableAddressId, fulfillmentMode, promotionCode) { return ${visibleQuoteExpression}; }`, { compilerOptions }).outputText;
+const runnableVisibleQuote = ts.transpileModule(`function readVisibleQuote(readyCart, quote, storeId, pickupMode, serviceableAddressId, fulfillmentMode, appliedPromotionCode) { return ${visibleQuoteExpression}; }`, { compilerOptions }).outputText;
 const readVisibleQuote = vm.runInNewContext(`${runnableQuote}\n${runnableVisibleQuote}\nreadVisibleQuote`);
 
 function scenario({ accessToken, persist, submit, recover } = {}) {
@@ -48,6 +48,7 @@ function scenario({ accessToken, persist, submit, recover } = {}) {
     storeId: "store-1",
     fulfillmentMode: "CUSTOMER_PICKUP",
     promotionCode: "",
+    appliedPromotionCode: "",
     deliveryRecipientIsValid: () => true,
     checkoutRecipient: () => ({ mode: "SELF" }),
     setError: (message) => counts.errors.push(message),
@@ -154,20 +155,27 @@ test("quote guard rejects stale cart, store, address, fulfillment mode and promo
   context.quote = { kind: "ready", quote: current };
   context.promotionCode = " NEWCODE ";
   await checkout();
-  assert.equal(counts.submit, 0, "edited promotion cannot use the earlier quote");
+  assert.equal(counts.submit, 1, "unapplied draft must not invalidate a matching cash-only quote");
+  assert.equal(counts.pending[0].request.promotionCode, undefined, "draft must not enter the checkout request");
+  context.appliedPromotionCode = "NEWCODE";
+  await checkout();
+  assert.equal(counts.submit, 1, "an applied coupon requires its own matching quote");
   const withCoupon = { ...current, promotionCode: "NEWCODE" };
   assert.equal(quoteMatchesCheckout(withCoupon, context.state.cart, context.storeId, "", context.fulfillmentMode, " newcode "), true);
   context.quote = { kind: "ready", quote: withCoupon };
   await checkout();
-  assert.equal(counts.submit, 1, "matching recalculated quote permits one checkout");
+  assert.equal(counts.submit, 2, "matching recalculated quote permits one checkout");
+  assert.equal(counts.pending[1].request.promotionCode, "NEWCODE", "only the applied coupon is sent");
 });
 
 test("payment summary exposes only the quote matching the current checkout context", () => {
   const { context } = scenario();
-  const derive = (quote, mode = context.fulfillmentMode, coupon = context.promotionCode) =>
+  const derive = (quote, mode = context.fulfillmentMode, coupon = context.appliedPromotionCode) =>
     readVisibleQuote(context.state.cart, { kind: "ready", quote }, context.storeId, mode === "CUSTOMER_PICKUP", undefined, mode, coupon);
   const current = context.quote.quote;
   assert.equal(derive(current), current);
+  context.promotionCode = "DRAFT_ONLY";
+  assert.equal(derive(current), current, "editing an unapplied coupon must not hide the existing quote");
   for (const stale of [
     { ...current, cartId: "other-cart" },
     { ...current, storeId: "other-store" },
@@ -255,4 +263,15 @@ test("previously valid quote never authorizes checkout of an invalidated modifie
   assert.equal(counts.persist, 0);
   assert.equal(counts.submit, 0);
   assert.equal(readVisibleQuote(context.state.cart, context.quote, context.storeId, true, undefined, context.fulfillmentMode, ""), null);
+});
+
+test("checkout uses previously applied coupon instead of an unsubmitted draft", async () => {
+  const { checkout, counts, context } = scenario();
+  context.appliedPromotionCode = "SAVE10";
+  context.promotionCode = "DRAFT99";
+  context.quote.quote.promotionCode = "SAVE10";
+  await checkout();
+  assert.equal(counts.submit, 1, "the applied quote must remain eligible");
+  assert.equal(counts.pending[0].request.promotionCode, "SAVE10");
+  assert.equal(counts.persist, 1);
 });
