@@ -2,7 +2,7 @@ import { BthwaniButton, BthwaniConfirmDialog, BthwaniStatusBadge, useAppearanceT
 import { type DshImageUploadInput, isMediaProvenanceInputValid, type JoiningCaseResponse, type JoiningCaseSummary, type JoiningCaseView, joiningCaseStateLabel, type MediaProvenanceInput, resolveJoiningCaseImageContentType } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
-import { type Href, useLocalSearchParams, useRouter } from "expo-router";
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Image, Text, View } from "react-native";
 
@@ -127,12 +127,17 @@ export function FieldCases() {
     }
   }, [appliedQuery]);
 
-  useEffect(() => {
-    setCases([]);
-    pagination.current.cursor = "";
-    setNextCursor("");
+  // Returning from the draft editor or another actor handoff must re-read the
+  // canonical queue without requiring Field to press a routine refresh button.
+  useFocusEffect(useCallback(() => {
+    if (pagination.current.query !== appliedQuery) {
+      setCases([]);
+      pagination.current.cursor = "";
+      setNextCursor("");
+    }
     void load();
-  }, [load]);
+    return () => { pagination.current.sequence += 1; };
+  }, [appliedQuery, load]));
 
   useEffect(() => {
     if (!routeCaseId) {
@@ -448,7 +453,6 @@ export function FieldCases() {
       {caseSelectionError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{caseSelectionError}</Text><BthwaniButton label="إعادة فتح الطلب" onPress={() => setSelectionRetry((value) => value + 1)} variant="secondary" /></View> : null}
       {optionalMediaWarning ? <Text accessibilityRole="alert" style={styles.error}>تم إرسال طلب الانضمام وحفظ حالته، لكن لم يُؤكّد رفع بعض الصور الاختيارية. لا تعتبرها محفوظة؛ يمكن استكمال الشعار قبل نشر المتجر بالتنسيق مع فريق التشغيل.</Text> : null}
       {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
-      {cases.length > 0 ? <BthwaniButton disabled={Boolean(busy) || loading} label="تحديث القائمة" onPress={() => void load()} variant="secondary" /> : null}
     </View>}
     onRefresh={() => void load()}
     refreshing={loading && cases.length > 0}
@@ -460,7 +464,7 @@ export function FieldCases() {
   <BthwaniConfirmDialog
     busy={Boolean(caseToSubmit && busy === caseToSubmit.id)}
     confirmLabel="إرسال للمراجعة"
-    description={caseToSubmit ? `سيُغلق تحرير مسودة «${caseToSubmit.businessName} · ${caseToSubmit.firstStoreName}» لدى الميدان ويُنقل الطلب إلى مراجعة التشغيل والشريك. تأكد من اكتمال البيانات وشعار المتجر قبل الإرسال.` : ""}
+    description={caseToSubmit ? `سيُغلق تحرير مسودة «${caseToSubmit.businessName} · ${caseToSubmit.firstStoreName}» لدى الميدان ويُنقل الطلب إلى مراجعة التشغيل والشريك. أكمل البيانات الأساسية؛ شعار المتجر اختياري الآن ومطلوب قبل نشر المتجر للعملاء.` : ""}
     onCancel={() => setCaseToSubmit(null)}
     onConfirm={() => {
       const item = caseToSubmit;
