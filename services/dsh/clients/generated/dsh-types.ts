@@ -1334,6 +1334,7 @@ export type FavoriteStoreOfferListResponse = {
 export type PublicStoreView = {
   readonly id: string;
   readonly name: string;
+  readonly addressLine?: string;
   readonly serviceCity: ServiceCity;
   readonly primaryVerticalId: string | null;
   readonly categoryIds: ReadonlyArray<string>;

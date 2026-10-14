@@ -694,7 +694,7 @@ func writeStorePublication(w http.ResponseWriter, status int, result postgres.Pu
 
 func toPublicStoreView(store postgres.PublicStoreRecord) contract.PublicStoreView {
 	return contract.PublicStoreView{
-		ID: store.ID, Name: store.Name, Version: store.Version, PublishedAt: store.PublishedAt,
+		ID: store.ID, Name: store.Name, AddressLine: store.AddressLine, Version: store.Version, PublishedAt: store.PublishedAt,
 		RatingAverage:     store.RatingAverage,
 		RatingCount:       store.RatingCount,
 		StoreProfileImage: toStoreProfileImageURI(storeProfileImageURI(store.StoreProfileImage)),

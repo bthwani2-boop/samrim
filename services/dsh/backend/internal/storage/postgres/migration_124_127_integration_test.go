@@ -53,7 +53,7 @@ func TestIntegrationMigrations124Through128FreshAndUpgrade(t *testing.T) {
 				if err := db.QueryRowContext(ctx, "SELECT count(*), max(version) FROM dsh.schema_migrations").Scan(&count, &latest); err != nil {
 					t.Fatal(err)
 				}
-				if count != 128 || latest != 128 {
+				if count != 129 || latest != 129 {
 					t.Fatalf("migration graph not committed: count=%d latest=%d", count, latest)
 				}
 				expected := []string{"124_promotion_discount_budget.sql", "125_store_cover_media.sql", "126_store_internal_photos.sql", "127_captain_presence_latest.sql", "128_captain_parallel_dispatch.sql"}

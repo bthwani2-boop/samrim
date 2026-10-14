@@ -73,8 +73,8 @@ type JoiningCaseOrigin string
 type StoreImagesResponse struct {
 	StoreID           string            `json:"storeId"`
 	Version           int               `json:"version"`
-	StoreProfileImage StoreProfileImage `json:"storeProfileImage,omitempty"`
-	StoreCoverImage   StoreCoverImage   `json:"storeCoverImage,omitempty"`
+	StoreProfileImage *StoreProfileImage `json:"storeProfileImage,omitempty"`
+	StoreCoverImage   *StoreCoverImage   `json:"storeCoverImage,omitempty"`
 	Replayed          bool              `json:"replayed,omitempty"`
 }
 
@@ -1334,6 +1334,7 @@ type FavoriteStoreOfferListResponse struct {
 type PublicStoreView struct {
 	ID                 string                 `json:"id"`
 	Name               string                 `json:"name"`
+	AddressLine        string                 `json:"addressLine,omitempty"`
 	ServiceCity        ServiceCity            `json:"serviceCity"`
 	PrimaryVerticalID  string                 `json:"primaryVerticalId"`
 	CategoryIds        []string               `json:"categoryIds"`

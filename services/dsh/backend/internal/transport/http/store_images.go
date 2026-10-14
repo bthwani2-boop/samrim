@@ -56,5 +56,5 @@ func (s *JoiningCaseServer) handleStoreImages(w http.ResponseWriter, r *http.Req
 			return
 		}
 	}
-	writeJSON(w, 200, contract.StoreImagesResponse{StoreId: store.ID, Version: store.Version, StoreProfileImage: toStoreProfileImage(store.StoreProfileImage), StoreCoverImage: toStoreCoverImage(store.StoreCoverImage), Replayed: replayed})
+	writeJSON(w, 200, contract.StoreImagesResponse{StoreID: store.ID, Version: store.Version, StoreProfileImage: toStoreProfileImage(store.StoreProfileImage), StoreCoverImage: toStoreCoverImage(store.StoreCoverImage), Replayed: replayed})
 }

@@ -4631,6 +4631,9 @@ components:
           type: string
         name:
           type: string
+        addressLine:
+          type: string
+          description: Store street address from its linked onboarding record when available.
         serviceCity:
           $ref: "#/components/schemas/ServiceCity"
         primaryVerticalId:
