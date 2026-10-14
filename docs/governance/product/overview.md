@@ -63,6 +63,7 @@ For materially costly-to-reverse identity, relation, state, ownership or public-
 - `CENTRAL_CATALOG`
 - `SERVICEABILITY_ADDRESSES`
 - `CART_CHECKOUT`
+- `CUSTOMER_STORE_CATALOG`
 - `ORDER_LIFECYCLE`
 - `CAPTAIN_DISPATCH`
 - `STORE_CAPTAIN_HANDOFF`

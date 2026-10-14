@@ -35,6 +35,7 @@ type StoreRecord struct {
 	CreatedAt               time.Time
 	UpdatedAt               time.Time
 	StoreProfileImage       *StoreProfileMediaRecord
+	StoreCoverImage         *StoreProfileMediaRecord
 	FulfillmentModes        []string
 	PartnerName             string
 	ServiceCityName         string
@@ -93,6 +94,7 @@ type OperatorStoreSummary struct {
 	ServiceCityName           string
 	PrimaryVerticalName       string
 	StoreProfileImageURI      string
+	StoreCoverImageURI        string
 	CommercialStoreTypeNameAr string
 	DeliveryOriginLatitude    sql.NullFloat64
 	DeliveryOriginLongitude   sql.NullFloat64
@@ -139,6 +141,7 @@ type PublicStoreRecord struct {
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	StoreProfileImage *StoreProfileMediaRecord
+	StoreCoverImage   *StoreProfileMediaRecord
 	DistanceMeters    *int
 	FulfillmentModes  []string
 	CategoryIDs       []string
@@ -171,6 +174,10 @@ func ReadStore(ctx context.Context, db *sql.DB, storeID string) (StoreRecord, er
 	if err != nil {
 		return StoreRecord{}, err
 	}
+	store.StoreCoverImage, err = ReadStoreCoverMedia(ctx, db, "", store.ID)
+	if err != nil {
+		return store, err
+	}
 	return store, nil
 }
 
@@ -193,6 +200,10 @@ func ReadStoreOwnedByPartner(ctx context.Context, db *sql.DB, storeID, partnerAc
 	store.StoreProfileImage, err = ReadStoreProfileMedia(ctx, db, "", store.ID)
 	if err != nil {
 		return StoreRecord{}, err
+	}
+	store.StoreCoverImage, err = ReadStoreCoverMedia(ctx, db, "", store.ID)
+	if err != nil {
+		return store, err
 	}
 	return store, nil
 }
@@ -328,7 +339,7 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 	}
 	rows, err := db.QueryContext(ctx, `SELECT s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.commercial_store_type_id,s.version,s.publication_state,s.fulfillment_modes,s.created_at,s.updated_at,
 		COALESCE(NULLIF(btrim(j.owner_full_name),''),NULLIF(btrim(j.business_name),''),''),COALESCE(c.display_name_ar,''),COALESCE(v.name_ar,''),
-		COALESCE((SELECT m.uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL ORDER BY m.created_at DESC LIMIT 1),''), COALESCE(t.name_ar,''), s.delivery_origin_latitude, s.delivery_origin_longitude
+		COALESCE((SELECT m.uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.media_role='primary' AND m.rights_attested_at IS NOT NULL ORDER BY m.created_at DESC LIMIT 1),''), COALESCE(t.name_ar,''), s.delivery_origin_latitude, s.delivery_origin_longitude
 		FROM dsh.stores s
 		LEFT JOIN dsh.joining_cases j ON j.partner_actor_id=s.partner_actor_id
 		LEFT JOIN dsh.service_cities c ON c.id=s.service_city_id
@@ -364,6 +375,13 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 		}
 		if cityID.Valid {
 			store.ServiceCityID = cityID.String
+		}
+		cover, err := ReadStoreCoverMedia(ctx, db, "", store.ID)
+		if err != nil {
+			return OperatorStorePage{}, err
+		}
+		if cover != nil {
+			store.StoreCoverImageURI = cover.URI
 		}
 		if verticalID.Valid {
 			store.PrimaryVerticalID = verticalID.String
@@ -604,6 +622,10 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string, service
 	}
 	store.ServiceCity = &city
 	store.StoreProfileImage, err = ReadStoreProfileMedia(ctx, db, "", store.ID)
+	if err != nil {
+		return PublicStoreRecord{}, err
+	}
+	store.StoreCoverImage, err = ReadStoreCoverMedia(ctx, db, "", store.ID)
 	if err != nil {
 		return PublicStoreRecord{}, err
 	}

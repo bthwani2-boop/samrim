@@ -59,6 +59,8 @@ func (s *CaptainServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/captains/me/cash-liability", s.readCashLiability)
 	mux.HandleFunc("POST /dsh/captains/me/cash-liability/{paymentIntentId}/remit", s.remitCash)
 	mux.HandleFunc("GET /dsh/captains/me/assignments/{assignmentId}/delivery-task", s.readDeliveryTask)
+	mux.HandleFunc("POST /dsh/captains/me/presence", s.updatePresence)
+	mux.HandleFunc("GET /dsh/captains/presence/heatmap", s.readPresenceHeatmap)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/location", s.updateLocation)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/pickup", s.pickup)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/complete", s.complete)

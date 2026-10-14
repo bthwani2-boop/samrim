@@ -45,7 +45,7 @@ Every funded discount records an explicit funding source/allocation: `PARTNER`, 
 - checkout revalidates promotion eligibility server-side;
 - each applicable Order freezes the exact promotion/version, Store scope, discount amount and funding allocation required for reconciliation;
 - later StoreOffer price changes or promotion edits never reinterpret a committed Order;
-- cancellation/refund uses frozen transaction evidence rather than current promotion state.
+- cancellation/customer-wallet compensation uses frozen transaction evidence rather than current promotion state; WLT reconciles Store and campaign funding without duplicating discount value.
 
 ## Customer readback
 

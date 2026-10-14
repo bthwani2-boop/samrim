@@ -72,9 +72,9 @@ export async function correctAndResubmitOwnJoiningCase({ caseID, input, expected
   return dshClient().correctAndResubmitJoiningCase(token, caseID, input, expectedVersion, `partner_case_correction_${digest.slice(0, 32)}`, `partner_case_correction_corr_${digest.slice(0, 32)}`);
 }
 
-export async function uploadOwnJoiningCaseStoreImage(caseID: string, image: DshImageUploadInput, provenance: MediaProvenanceInput, expectedVersion: number, idempotencyKey: string, correlationID: string): Promise<JoiningCaseResponse> {
+export async function uploadOwnJoiningCaseStoreImage(caseID: string, image: DshImageUploadInput, provenance: MediaProvenanceInput, expectedVersion: number, idempotencyKey: string, correlationID: string, role: "primary" | "cover" = "primary"): Promise<JoiningCaseResponse> {
   const token = await accessToken();
-  return dshClient().uploadJoiningCaseStoreImage(token, caseID, image, provenance, expectedVersion, idempotencyKey, correlationID);
+  return dshClient().uploadJoiningCaseStoreImage(token, caseID, image, provenance, expectedVersion, idempotencyKey, correlationID, role);
 }
 
 export async function listOwnStoreCaptainMemberships(storeID: string): Promise<StoreCaptainMembershipListResponse> {

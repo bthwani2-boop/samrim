@@ -371,7 +371,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   return <section className="access-card catalog-taxonomy-workbench" aria-labelledby="catalog-category-registry-title">
     <div className="catalog-taxonomy-workbench-heading">
       <div>
-        <h3 id="catalog-category-registry-title">الفئات</h3>
+        <h3 id="catalog-category-registry-title">فئات النشاط المحدد</h3>
       </div>
       <button type="button" className="button button-primary catalog-taxonomy-main-action" disabled={!canEdit || busy} onClick={() => { if (verticalReady) openCreate(); else if (selectedVertical || verticals.length === 0) { const settings = verticalSettingsRef.current; settings?.querySelector("summary")?.click(); settings?.scrollIntoView({ behavior: "smooth", block: "center" }); } else onVerticalChange(verticals.find((vertical) => vertical.active)?.id ?? ""); }}>{mainActionLabel}</button>
     </div>

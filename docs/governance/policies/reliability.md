@@ -7,6 +7,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 - Every material mutation defines retry/idempotency semantics.
 - Unknown external or cross-service outcomes are reconciled before blind replay.
+- A cross-owner transition that affects authorization or release of money may be described as complete only when its required owner acknowledgments and persisted eligibility are proved. If an owner is unavailable, expose the incomplete/degraded outcome and prevent unsafe dependent financial execution until current eligibility can be revalidated; a partial write, a missing retry or an immutable historical snapshot is not success evidence.
 - Concurrency-sensitive ownership, assignment, custody and terminal transitions fail deterministically rather than forking truth.
 - A multi-record mutation that cannot remain safely bounded as one synchronous operation is represented as an identifiable operation whose scope, progress and outcome can be resumed or reconciled from canonical state. Partial completion or per-record failure must not masquerade as atomic success.
 - Timeouts are decisions only when the owning capability defines their durable consequence.

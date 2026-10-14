@@ -7,6 +7,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 - One durable fact has one canonical writer and one owning migration history.
 - Schema and application changes cut over coherently; obsolete dual-write/shadow schemas require a proven bounded coexistence need.
+- For a migration affecting retained local, shared or production-like state, record the exact source/applied schema boundary, protect the target with a restorable restricted backup and rehearse the upgrade/restore on an isolated copy. Stop or coordinate incompatible writers, apply through the owning migration runner, then verify version, record identity, integrity and compatible service readback before resuming. A successful disposable migration test does not grant permission to reset, overwrite or mutate durable shared data.
 - Migrations are deterministic, ordered, reviewable and fail closed on incompatible preconditions.
 - Idempotency, ownership integrity and concurrency invariants belong in durable constraints where reliable.
 - Any durable invariant that is reliably expressible at the persistence boundary is enforced there through the strongest appropriate mechanism, such as `NOT NULL`, `UNIQUE`, foreign keys, `CHECK`, transaction atomicity, isolation or locking. Application/UI validation is complementary and must not be the sole protection for persistent truth when the database can enforce the invariant reliably.

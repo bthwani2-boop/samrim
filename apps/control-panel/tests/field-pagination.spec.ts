@@ -23,7 +23,7 @@ test("Field registry replaces cursor pages and restores query and city on browse
   });
 
   await page.goto("/fields?serviceCityId=city-a");
-  await expect(page.getByText("الميداني الأول", { exact: true })).toBeVisible();
+  await expect(page.getByText("الميداني الأول", { exact: true }).filter({ visible: true })).toBeVisible();
   await page.getByLabel("بحث بالهاتف").fill(privatePhone);
   await expect.poll(() => requests.at(-1)?.get("q")).toBe(privatePhone);
   await expect(page.getByRole("button", { name: "تحديث السجل", exact: true })).toBeEnabled();
@@ -33,19 +33,19 @@ test("Field registry replaces cursor pages and restores query and city on browse
   expect(page.url()).not.toContain(privatePhone);
   expect(page.url()).not.toContain(secondCursor);
   await expect(page.getByText("لا توجد نتائج في هذه الصفحة")).toBeVisible();
-  await expect(page.getByText("الميداني الأول", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("الميداني الأول", { exact: true }).filter({ visible: true })).toHaveCount(0);
   await page.getByRole("button", { name: "التالية", exact: true }).click();
-  await expect(page.getByText("الميداني الثالث", { exact: true })).toBeVisible();
+  await expect(page.getByText("الميداني الثالث", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "التالية", exact: true })).toBeDisabled();
   await page.reload();
-  await expect(page.getByText("الميداني الثالث", { exact: true })).toBeVisible();
+  await expect(page.getByText("الميداني الثالث", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(page.getByLabel("بحث بالهاتف")).toHaveValue(privatePhone);
   expect(requests.at(-1)?.get("cursor")).toBe(thirdCursor);
   await page.getByRole("button", { name: "السابقة", exact: true }).click();
   await expect(page).toHaveURL(/fieldPage=2/);
   await expect(page.getByText("لا توجد نتائج في هذه الصفحة")).toBeVisible();
   await page.getByRole("button", { name: "السابقة", exact: true }).click();
-  await expect(page.getByText("الميداني الأول", { exact: true })).toBeVisible();
+  await expect(page.getByText("الميداني الأول", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "السابقة", exact: true })).toBeDisabled();
 
   await page.locator(".field-roster-filter-disclosure > summary").click();
@@ -54,7 +54,7 @@ test("Field registry replaces cursor pages and restores query and city on browse
   await page.getByRole("button", { name: "التالية", exact: true }).click();
   await expect(page.getByText("لا توجد نتائج في هذه الصفحة")).toBeVisible();
   await page.goBack();
-  await expect(page.getByText("الميداني الأول", { exact: true })).toBeVisible();
+  await expect(page.getByText("الميداني الأول", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "مدينة الخدمة", exact: true })).toHaveValue("city-b");
   expect(requests.every((params) => params.get("limit") === "25")).toBe(true);
   expect(requests.at(-1)?.get("q")).toBe(privatePhone);
@@ -63,7 +63,7 @@ test("Field registry replaces cursor pages and restores query and city on browse
   failSecondPage = true;
   await page.getByRole("button", { name: "التالية", exact: true }).click();
   await expect(page.locator(".field-workbench-pane > p.identity-error[role=alert]")).toHaveText("تعذر إكمال طلب الميدانيين الآن. أعد المحاولة لاحقًا.");
-  await expect(page.getByText("الميداني الأول", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("الميداني الأول", { exact: true }).filter({ visible: true })).toHaveCount(0);
   await expect(page.getByText("لا توجد نتائج في هذه الصفحة")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "التالية", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "السابقة", exact: true })).toBeEnabled();
@@ -71,7 +71,7 @@ test("Field registry replaces cursor pages and restores query and city on browse
   await page.getByRole("button", { name: "تحديث السجل", exact: true }).click();
   await expect(page.getByText("لا توجد نتائج في هذه الصفحة")).toBeVisible();
   await page.getByRole("button", { name: "السابقة", exact: true }).click();
-  await expect(page.getByText("الميداني الأول", { exact: true })).toBeVisible();
+  await expect(page.getByText("الميداني الأول", { exact: true }).filter({ visible: true })).toBeVisible();
 
   await page.getByLabel("بحث بالهاتف").fill("");
   await page.getByRole("combobox", { name: "مدينة الخدمة", exact: true }).selectOption("");
@@ -79,11 +79,11 @@ test("Field registry replaces cursor pages and restores query and city on browse
   await page.getByRole("combobox", { name: "مزوّد المحفظة", exact: true }).selectOption("wallet-a");
   await page.getByRole("button", { name: "مسح البحث والمرشحات", exact: true }).click();
   await expect(page.getByRole("button", { name: "تحديث السجل", exact: true })).toBeEnabled();
-  await expect(page.getByText("الميداني الأول", { exact: true })).toBeVisible();
+  await expect(page.getByText("الميداني الأول", { exact: true }).filter({ visible: true })).toBeVisible();
 
   // A copied URL has no private tab history: its public page marker safely returns to page one.
   await page.goto("/fields?serviceCityId=city-a&fieldPage=3");
-  await expect(page.getByText("الميداني الأول", { exact: true })).toBeVisible();
+  await expect(page.getByText("الميداني الأول", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(page.getByLabel("بحث بالهاتف")).toHaveValue("");
   await expect(page).toHaveURL(/\/fields\?serviceCityId=city-a$/);
   expect(requests.at(-1)?.get("cursor")).toBeNull();
@@ -96,11 +96,11 @@ test("Field registry replaces cursor pages and restores query and city on browse
   await expect.poll(() => requests.at(-1)?.get("q")).toBe(privatePhone);
   await expect(page.getByRole("button", { name: "تحديث السجل", exact: true })).toBeEnabled();
   await page.getByLabel("بحث بالهاتف").fill("");
-  await expect(page.getByText("الميداني الأول", { exact: true })).toBeVisible();
+  await expect(page.getByText("الميداني الأول", { exact: true }).filter({ visible: true })).toBeVisible();
   const requestsBeforeBack = requests.length;
   await page.goBack();
   await expect.poll(() => requests.length).toBeGreaterThan(requestsBeforeBack);
-  await expect(page.getByText("الميداني الأول", { exact: true })).toBeVisible();
+  await expect(page.getByText("الميداني الأول", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "تحديث السجل", exact: true })).toBeEnabled();
   await expect(page.getByLabel("بحث بالهاتف")).toHaveValue("");
   expect(requests.at(-1)?.get("q")).toBe("");
@@ -127,26 +127,26 @@ test("Field access filter applies before paging and survives reload and browser 
     return route.fulfill({ status: 200, json: { items: [candidate] } });
   });
   await page.goto("/fields");
-  await expect(page.getByText("مرشح للمراجعة", { exact: true })).toBeVisible();
+  await expect(page.getByText("مرشح للمراجعة", { exact: true }).filter({ visible: true })).toBeVisible();
   await page.locator(".field-roster-filter-disclosure > summary").click();
   const access = page.getByRole("combobox", { name: "دخول التطبيق", exact: true });
   await access.selectOption("disabled");
-  await expect(page.getByText("ميداني موقوف أول", { exact: true })).toBeVisible();
-  await expect(page.getByText("مرشح للمراجعة", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("ميداني موقوف أول", { exact: true }).filter({ visible: true })).toBeVisible();
+  await expect(page.getByText("مرشح للمراجعة", { exact: true }).filter({ visible: true })).toHaveCount(0);
   await expect.poll(() => requests.at(-1)?.get("enabled")).toBe("false");
   await page.getByRole("button", { name: "التالية", exact: true }).click();
-  await expect(page.getByText("ميداني موقوف ثانٍ", { exact: true })).toBeVisible();
+  await expect(page.getByText("ميداني موقوف ثانٍ", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(page).toHaveURL(/fieldPage=2/);
   await page.reload();
-  await expect(page.getByText("ميداني موقوف ثانٍ", { exact: true })).toBeVisible();
+  await expect(page.getByText("ميداني موقوف ثانٍ", { exact: true }).filter({ visible: true })).toBeVisible();
   await page.locator(".field-roster-filter-disclosure > summary").click();
   await expect(page.getByRole("combobox", { name: "دخول التطبيق", exact: true })).toHaveValue("disabled");
   expect(requests.at(-1)?.get("enabled")).toBe("false");
   expect(requests.at(-1)?.get("cursor")).toBe(nextToken);
   await page.getByRole("button", { name: "السابقة", exact: true }).click();
-  await expect(page.getByText("ميداني موقوف أول", { exact: true })).toBeVisible();
+  await expect(page.getByText("ميداني موقوف أول", { exact: true }).filter({ visible: true })).toBeVisible();
   await page.getByRole("button", { name: "مسح البحث والمرشحات", exact: true }).click();
-  await expect(page.getByText("مرشح للمراجعة", { exact: true })).toBeVisible();
+  await expect(page.getByText("مرشح للمراجعة", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "دخول التطبيق", exact: true })).toHaveValue("");
   expect(requests.at(-1)?.get("enabled")).toBeNull();
 });
@@ -163,6 +163,6 @@ test("Field registry reports malformed successful reads and recovers without cla
   await expect(page.getByText("لا توجد ملفات أو حسابات ميدانية")).toHaveCount(0);
   invalid = false;
   await page.getByRole("button", { name: "تحديث السجل", exact: true }).click();
-  await expect(page.getByText("ميداني صالح", { exact: true })).toBeVisible();
+  await expect(page.getByText("ميداني صالح", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(page.locator(".field-workbench-pane > p.identity-error[role=alert]")).toHaveCount(0);
 });

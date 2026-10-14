@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/xml"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -78,6 +79,9 @@ func ExportSettlementBatch(ctx context.Context, db *sql.DB, cipher *DestinationC
 	factHashes, err := requireIdentityFactsForSnapshots(ctx, tx, input.DestinationCipher, input.IdentityFactsByBeneficiary, snapshots)
 	if err != nil {
 		return SettlementBatchExportRecord{}, commitIdentityStaleness(tx, err)
+	}
+	if err := requireCurrentSettlementExportRouting(ctx, tx, batch); err != nil {
+		return SettlementBatchExportRecord{}, err
 	}
 	requestHash := hashFacts(append([]string{"settlement-batch-export", input.BatchID, input.ActorID, batchHash}, factHashes...)...)
 	var priorID string
@@ -234,4 +238,57 @@ func safeArtifactName(value string) string {
 		return "batch"
 	}
 	return result.String()
+}
+
+// requireCurrentSettlementExportRouting gates the creation or replay of a
+// transfer-ready spreadsheet. Historical beneficiary snapshots stay immutable,
+// but they cannot authorize a *new* export after the effective Store routing
+// changes. An existing archived receipt is read through its evidence owner.
+func requireCurrentSettlementExportRouting(ctx context.Context, tx *sql.Tx, batch SettlementBatchRecord) error {
+	partnerPayouts := make(map[string][]string)
+	for _, item := range batch.Items {
+		if !strings.EqualFold(item.ActorType, "partner") {
+			continue
+		}
+		var partnerActorID string
+		if err := tx.QueryRowContext(ctx, "SELECT actor_id FROM wlt.payout_requests WHERE id=$1 AND actor_type='partner'", item.PayoutID).Scan(&partnerActorID); err != nil {
+			return ErrPayoutRecipientReviewRequired
+		}
+		partnerPayouts[partnerActorID] = append(partnerPayouts[partnerActorID], item.PayoutID)
+	}
+	partners := make([]string, 0, len(partnerPayouts))
+	for partner := range partnerPayouts {
+		partners = append(partners, partner)
+	}
+	sort.Strings(partners)
+	for _, partner := range partners {
+		// The same advisory lock is held by Store recipient transitions and
+		// partner payout creation; lock partners in deterministic order.
+		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:partner-payout:"+partner); err != nil {
+			return err
+		}
+		for _, payoutID := range partnerPayouts[partner] {
+			var total, eligible int64
+			err := tx.QueryRowContext(ctx, `
+SELECT COUNT(*), COALESCE(SUM(CASE WHEN
+    COALESCE(r.state,'DEFAULT_OWNER') <> 'RECIPIENT_REVIEW_REQUIRED'
+    AND CASE WHEN r.state='SELECTED_VERIFIED_STAFF' THEN r.beneficiary_actor_id ELSE p.actor_id END = a.beneficiary_actor_id
+    AND COALESCE(r.version,0) = a.recipient_assignment_version
+    THEN 1 ELSE 0 END),0)
+FROM wlt.payout_store_allocations a
+JOIN wlt.payout_requests p ON p.id=a.payout_id
+LEFT JOIN wlt.store_payout_recipient_assignments r
+  ON r.store_id=a.store_id AND r.partner_actor_id=p.actor_id
+WHERE a.payout_id=$1 AND p.actor_type='partner' AND p.actor_id=$2`, payoutID, partner).Scan(&total, &eligible)
+			if err != nil {
+				return err
+			}
+			// Legacy partner payouts without Store-owned allocations cannot
+			// establish current beneficiary routing and must not be exported.
+			if total == 0 || eligible != total {
+				return ErrPayoutRecipientReviewRequired
+			}
+		}
+	}
+	return nil
 }

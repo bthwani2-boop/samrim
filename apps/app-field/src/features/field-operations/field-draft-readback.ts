@@ -77,16 +77,16 @@ function fieldImageRightsMatch(actual: MediaProvenance | null | undefined, expec
 export function fieldDraftMediaUploadConfirmed(
   uploaded: JoiningCaseView,
   canonical: JoiningCaseView,
-  kind: "store",
+  kind: "store" | "cover",
   previousVersion: number,
   expectedCaseID: string,
   expectedRights: MediaProvenanceInput,
 ): boolean {
-  if (kind !== "store" || uploaded.id !== expectedCaseID || canonical.id !== expectedCaseID ||
+  if (uploaded.id !== expectedCaseID || canonical.id !== expectedCaseID ||
     uploaded.origin !== "field" || canonical.origin !== "field" ||
     uploaded.version <= previousVersion || canonical.version < uploaded.version) return false;
-  const submittedImage = uploaded.storeProfileImage;
-  const savedImage = canonical.storeProfileImage;
+  const submittedImage = kind === "cover" ? uploaded.storeCoverImage : uploaded.storeProfileImage;
+  const savedImage = kind === "cover" ? canonical.storeCoverImage : canonical.storeProfileImage;
   // The same image bytes and BOTH DSH rights records must match this upload.
   if (!submittedImage?.uri || !savedImage?.uri || !submittedImage.contentSha256 || !savedImage.contentSha256) return false;
   return submittedImage.uri === savedImage.uri &&

@@ -148,9 +148,13 @@ func TestOperatorPromotionRegistryFiltersCityBeforePageLimit(t *testing.T) {
 
 func createPublishedPromotion(t *testing.T, ctx context.Context, db *sql.DB, id, code, storeID, cityID string, startsAt time.Time) {
 	t.Helper()
+	fundingSource := "BTHWANI"
+	if storeID != "" {
+		fundingSource = "PARTNER" // Only the Store-owner flow can fund its own Store offer.
+	}
 	_, replayed, err := postgres.CreatePromotion(ctx, db, postgres.PromotionInput{
 		ID: id, Code: code, NameAr: "عرض تجريبي", Kind: "FIXED", ValueMinor: 100,
-		FundingSource: "PARTNER", StoreID: storeID, ServiceCityID: cityID, StartsAt: startsAt,
+		FundingSource: fundingSource, StoreID: storeID, ServiceCityID: cityID, StartsAt: startsAt,
 		CreatedByActorID: "marketing-test-operator",
 	}, "create-"+id, postgres.HashMarketingFacts("create", id, code))
 	if err != nil || replayed {
@@ -224,6 +228,19 @@ func TestPublicDiscoveryContentIsEligibleAndBoundedBySurface(t *testing.T) {
 		}
 		for index := 0; index < 7; index++ {
 			addContent(fmt.Sprintf("visible-short-%02d", index), "SHORT_FORM", "INFO", "", index+1)
+		}
+		// A previously published item must disappear from public discovery as
+		// soon as its media is retired, without deleting the operator record.
+		addContent("retired-media", "BANNER", "INFO", "", 0)
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.discovery_content_media_assets SET state='retired',retired_at=clock_timestamp() WHERE id=$1`, "retired-media-asset"); err != nil {
+			t.Fatalf("retire published discovery media: %v", err)
+		}
+		retired, err := postgres.ReadDiscoveryContent(ctx, db, "retired-media")
+		if err != nil || retired.State != "PUBLISHED" || retired.MediaURI != "" {
+			t.Fatalf("operator must retain the published record without exposed media: %+v err=%v", retired, err)
+		}
+		if _, err := postgres.ResolveDiscoveryContentTarget(ctx, db, "retired-media", cityID); err != postgres.ErrDiscoveryContentNotFound {
+			t.Fatalf("retired media must prevent public target navigation: %v", err)
 		}
 
 		items, err := postgres.ListDiscoveryContent(ctx, db, true, " "+cityID+" ")

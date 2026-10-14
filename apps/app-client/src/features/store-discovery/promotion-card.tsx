@@ -7,19 +7,23 @@ import { StyleSheet, Text, View } from "react-native";
 export function PromotionCard({ promotion }: { promotion: PublicPromotionView }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const benefit = promotion.kind === "PERCENTAGE" ? `خصم ${promotion.valueMinor}%` : `خصم ${formatMoney(promotion.valueMinor, "YER")}`;
+  const benefit = promotion.kind === "PERCENTAGE" ? `خصم ${promotion.valueMinor}%` : `خصم ${discoveryMoney(promotion.valueMinor, "YER")}`;
   return (
     <BthwaniSurface tone="raised" style={styles.card}>
       <View style={styles.copy}>
         <Text style={styles.title}>{promotion.nameAr}</Text>
         <Text style={styles.muted}>{promotion.descriptionAr || benefit}</Text>
         {promotion.descriptionAr ? <Text style={styles.benefit}>{benefit}</Text> : null}
-        {promotion.maxDiscountMinor ? <Text style={styles.muted}>الحد الأعلى للخصم {formatMoney(promotion.maxDiscountMinor, "YER")}</Text> : null}
+        {promotion.maxDiscountMinor ? <Text style={styles.muted}>الحد الأعلى للخصم {discoveryMoney(promotion.maxDiscountMinor, "YER")}</Text> : null}
         {promotion.endsAt ? <Text style={styles.muted}>يسري حتى {new Date(promotion.endsAt).toLocaleDateString("ar-YE", { dateStyle: "medium" })}</Text> : null}
       </View>
       <Text accessibilityLabel={`رمز العرض ${promotion.code}`} style={styles.code}>{promotion.code}</Text>
     </BthwaniSurface>
   );
+}
+
+function discoveryMoney(amountMinor: number, currency: string): string {
+  return (currency === "YER" ? formatMoney(amountMinor, "YER") : `${amountMinor} ${currency}`).replace(/ريال يمني/g, "ريال");
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {

@@ -19,6 +19,8 @@ export type MobileIconName =
   | "warning"
   | "success"
   | "search"
+  | "share"
+  | "trending"
   | "notifications"
   | "close"
   | "eye"

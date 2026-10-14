@@ -213,7 +213,7 @@ test("uncertain wallet creation reuses its key and status changes carry the curr
   await expect(page.locator("tbody th")).toHaveText("محفظة اختبار");
   expect(creationKeys).toHaveLength(2); expect(creationKeys[0]).toBeTruthy(); expect(creationKeys[1]).toBe(creationKeys[0]);
   await page.getByRole("button", { name: "تعطيل", exact: true }).click();
-  await expect(page.locator("tbody")).toContainText("متوقفة");
+  await expect(page.locator("tbody").getByRole("img", { name: /متوقف/ })).toBeVisible();
   expect(update).toEqual({ version: "4", body: { displayNameAr: "محفظة اختبار", active: false } });
 });
 

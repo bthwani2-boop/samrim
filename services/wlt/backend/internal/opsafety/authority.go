@@ -30,6 +30,19 @@ func RequireExpectedDatabaseTarget(raw string, getenv func(string) string) (Data
 	if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") || parsed.Hostname() == "" || parsed.User == nil || strings.TrimSpace(parsed.User.Username()) == "" || strings.Trim(strings.TrimSpace(parsed.Path), "/") == "" {
 		return DatabaseTarget{}, fmt.Errorf("database URL must be a valid explicit postgres target")
 	}
+	// lib/pq can accept connection target overrides in URL query options.
+	// Reject them before comparing the apparent URI authority to the expected
+	// database; otherwise a migration can validate one target and open another.
+	options, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return DatabaseTarget{}, fmt.Errorf("database URL contains invalid connection options")
+	}
+	for key := range options {
+		switch strings.ToLower(key) {
+		case "host", "hostaddr", "port", "user", "dbname", "database", "service":
+			return DatabaseTarget{}, fmt.Errorf("database URL must not override target identity")
+		}
+	}
 	port := parsed.Port()
 	if port == "" {
 		port = "5432"

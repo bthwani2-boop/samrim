@@ -25,6 +25,7 @@ var (
 	CatalogNotReadyReason                = "CATALOG_NOT_READY"
 	CommercialAgreementNotReadyReason    = "COMMERCIAL_AGREEMENT_NOT_READY"
 	StoreLogoNotReadyReason              = "STORE_LOGO_NOT_READY"
+	StoreCoverNotReadyReason             = "STORE_COVER_NOT_READY"
 )
 
 type PublicationReadiness struct {
@@ -451,6 +452,13 @@ func (s *Service) ReadinessForStore(ctx context.Context, store postgres.StoreRec
 	}
 	if logo == nil {
 		return blockedReadiness(StoreLogoNotReadyReason), nil
+	}
+	cover, err := postgres.ReadStoreCoverMedia(ctx, s.db, "", store.ID)
+	if err != nil {
+		return PublicationReadiness{}, err
+	}
+	if cover == nil {
+		return blockedReadiness(StoreCoverNotReadyReason), nil
 	}
 	catalogReady, err := postgres.HasPublishableCatalog(ctx, s.db, store.ID)
 	if err != nil {

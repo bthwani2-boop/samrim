@@ -36,6 +36,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
   const [proofDetailsError, setProofDetailsError] = useState<{ caseId: string; message: string } | null>(null);
   const [proofDetailsLoading, setProofDetailsLoading] = useState(false);
   const [storeImageFile, setStoreImageFile] = useState<File | null>(null);
+  const [storeCoverFile, setStoreCoverFile] = useState<File | null>(null);
   const [storeImageProvenance, setStoreImageProvenance] = useState<MediaProvenanceInput>({ creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false });
   const [activeTermsPolicy, setActiveTermsPolicy] = useState<PartnerFinancialTermsPolicy | null>(null);
   const [policyReadMessage, setPolicyReadMessage] = useState("");
@@ -147,9 +148,9 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
     setError(message || fallback);
   }
 
-  async function uploadIntakeImage() {
+  async function uploadIntakeImage(role: "primary" | "cover") {
     const current = result?.case;
-    const file = storeImageFile;
+    const file = role === "cover" ? storeCoverFile : storeImageFile;
     if (!current || (current.state !== "draft" && !(current.state === "approved" && current.store?.id)) || !file || busy) return;
     if (storeImageProvenance.creator.trim().length < 2 || storeImageProvenance.sourceDescription.trim().length < 3 || storeImageProvenance.rightsStatement.trim().length < 5 || !storeImageProvenance.rightsAttested) {
       setError("أكمل منشئ صورة الواجهة ومصدرها وبيان حق استخدامها، وأكّد صحة التصريح.");
@@ -158,11 +159,12 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
     setBusy(true);
     setError("");
     try {
-      const headers = new Headers(await stablePartnerMutationHeaders(`joining-case-store-image:${caseId}:${current.version}:${file.name}:${file.size}:${file.lastModified}`));
+      const headers = new Headers(await stablePartnerMutationHeaders(`joining-case-store-image:${role}:${caseId}:${current.version}:${file.name}:${file.size}:${file.lastModified}`));
       headers.delete("Content-Type");
       headers.set("X-Expected-Version", String(current.version));
       const form = new FormData();
       form.append("file", file, file.name);
+      form.append("role", role);
         form.set("creator", storeImageProvenance.creator);
         form.set("sourceDescription", storeImageProvenance.sourceDescription);
         form.set("sourceUri", storeImageProvenance.sourceUri ?? "");
@@ -177,7 +179,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
       }
       const updated = await response.json() as JoiningCaseResponse;
       setResult(updated);
-      setStoreImageFile(null);
+      if (role === "cover") setStoreCoverFile(null); else setStoreImageFile(null);
     } catch {
       await readCase(false);
       setError("تعذر تأكيد رفع الصورة. أُعيدت قراءة الحالة؛ تحقق من حالة الملف قبل تكرار الرفع.");
@@ -339,15 +341,18 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
             <h3 id="joining-case-actions-heading">الخطوة التالية والإجراءات</h3>
             {current.state === "draft" && current.origin === "field" ? <p>يستكمل الميداني الملف ثم يطلب قبول المشغّل؛ لا يُنشأ دور الشريك من تطبيق الميداني.</p> : null}
             {(current.state === "draft" || (current.state === "approved" && Boolean(current.store?.id))) ? <details className="partner-case-attachments">
-              <summary>إدارة شعار المتجر ومصدر الصورة</summary>
+              <summary>إدارة شعار المتجر وغلافه ومصدر الصور</summary>
               <>
-                {current.storeProfileImage ? <p>يوجد شعار محفوظ.</p> : null}
+                {current.storeProfileImage ? <p>يوجد شعار محفوظ.</p> : <p>الشعار مطلوب قبل نشر المتجر.</p>}
+                {current.storeCoverImage ? <p>يوجد غلاف محفوظ.</p> : <p>غلاف المتجر مطلوب قبل النشر.</p>}
                 <label className="field-label" htmlFor="joining-storefront-file">شعار المتجر<input id="joining-storefront-file" type="file" accept="image/jpeg,image/png" disabled={busy} onChange={(event) => setStoreImageFile(event.target.files?.[0] ?? null)} /></label>
+                {storeImageFile ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void uploadIntakeImage("primary")}>رفع شعار المتجر</button> : null}
+                <label className="field-label" htmlFor="joining-store-cover-file">غلاف واجهة المتجر<input id="joining-store-cover-file" type="file" accept="image/jpeg,image/png" disabled={busy} onChange={(event) => setStoreCoverFile(event.target.files?.[0] ?? null)} /></label>
+                {storeCoverFile ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void uploadIntakeImage("cover")}>رفع غلاف المتجر</button> : null}
                 <label className="field-label" htmlFor="joining-storefront-creator">منشئ الصورة<input id="joining-storefront-creator" disabled={busy} value={storeImageProvenance.creator} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, creator: event.target.value }))} /></label>
                 <label className="field-label" htmlFor="joining-storefront-source">مصدر الصورة<input id="joining-storefront-source" disabled={busy} value={storeImageProvenance.sourceDescription} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, sourceDescription: event.target.value }))} /></label>
                 <label className="field-label" htmlFor="joining-storefront-rights">حق الاستخدام<input id="joining-storefront-rights" disabled={busy} value={storeImageProvenance.rightsStatement} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, rightsStatement: event.target.value }))} /></label>
                 <label className="action-row"><input type="checkbox" disabled={busy} checked={storeImageProvenance.rightsAttested} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, rightsAttested: event.target.checked }))} /> أؤكد صحة مصدر الصورة وحق استخدامه</label>
-                {storeImageFile ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void uploadIntakeImage()}>رفع شعار المتجر</button> : null}
               </>
             </details> : null}
             {current.state === "draft" && current.origin === "control_panel" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال الحالة للمراجعة وإنشاء دور الشريك</button> : null}

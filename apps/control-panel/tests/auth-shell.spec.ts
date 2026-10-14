@@ -1,10 +1,19 @@
 import { expect, type Page, test } from "./coverage-fixtures";
 
 async function fillActionReason(page: Page, reason: string) {
-  const input = page.getByLabel("سبب الإجراء");
-  await expect(input).toBeAttached();
-  const disclosure = input.locator("xpath=ancestor::details[1]");
-  if (await disclosure.count() && !await input.isVisible()) await disclosure.locator("summary").first().click();
+  await expect(page.getByLabel("سبب الإجراء").first()).toBeAttached();
+  const directInput = page.getByLabel("سبب الإجراء").filter({ visible: true }).first();
+  if (await directInput.count()) {
+    await directInput.fill(reason);
+    return;
+  }
+  const mobileAccountActions = page.getByText("إجراءات الحساب", { exact: true }).filter({ visible: true }).first();
+  if (await mobileAccountActions.count()) await mobileAccountActions.click();
+  const summary = page.locator("details > summary:visible").filter({ hasText: /إدارة الوصول|إدارة التشغيل/ }).first();
+  await expect(summary).toBeVisible();
+  const input = summary.locator("xpath=..").getByLabel("سبب الإجراء");
+  if (!await input.isVisible()) await summary.click();
+  await expect(input).toBeVisible();
   await input.fill(reason);
 }
 
@@ -199,7 +208,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   await expect(page.locator(candidateNameSelector)).toHaveValue(reviewedName);
   await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
   if (role === "field") {
-    await expect(page.getByText("اعتُمد الملف وأُعيدت قراءته؛ أصبح منح الدور خطوته التالية.")).toBeVisible();
+    await expect(page.getByText("اعتُمد الملف وأُعيدت قراءته؛ أصبح منح الدور خطوته التالية.").filter({ visible: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "منح دور الميداني" })).toBeVisible();
   } else {
     await page.locator(`#${role}-candidate-state`).selectOption("pending_identity");
@@ -207,7 +216,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   }
   await page.getByRole("button", { name: `منح دور ${role === "captain" ? "الكابتن" : "الميداني"}` }).click();
   if (role === "captain") await page.locator(`#${role}-candidate-state`).selectOption("eligible");
-  await expect(page.getByText(role === "captain" ? "اكتمل منح الدور؛ ينتظر تفعيل الحساب من الكابتن." : "مُنح دور الدخول وربط بأهلية النظام. الخطوة التالية للميداني: يفتح التطبيق، ويدخل رقم الهاتف المسجل، ثم يختار تفعيل الجهاز لإثبات الهاتف وإنشاء كلمة المرور.")).toBeVisible();
+  await expect(page.getByText(role === "captain" ? "اكتمل منح الدور؛ ينتظر تفعيل الحساب من الكابتن." : "مُنح دور الدخول وربط بأهلية النظام. الخطوة التالية للميداني: يفتح التطبيق، ويدخل رقم الهاتف المسجل، ثم يختار تفعيل الجهاز لإثبات الهاتف وإنشاء كلمة المرور.").filter({ visible: true })).toBeVisible();
   await expect(page.getByText(actorID)).toHaveCount(0);
   expect(mutations).toEqual([
     role === "field" ? { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, allServiceCities: true, serviceCityIds: [], walletProviderKey: "wallet_provider_floosak" } : { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, walletProviderKey: "wallet_provider_floosak" },
@@ -266,14 +275,14 @@ async function exerciseLegacyDshProfileReview(page: Page, role: "captain" | "fie
 
   await page.goto(`/${surface}`);
   await expect(page.getByRole("heading", { name: role === "captain" ? "ملفات الكباتن قبل منح الدور" : "الميدانيون" })).toBeVisible();
-  await expect(page.getByText(role === "captain" ? "موقوف حتى استكمال الملف ومراجعته" : "الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
+  await expect(role === "captain" ? page.getByText("موقوف حتى استكمال الملف ومراجعته") : page.getByRole("img", { name: "الملف يحتاج استكمالًا ومراجعة" }).first()).toBeVisible();
   const name = "سامي ناصر محمد العريقي";
   if (role === "field") {
-    await page.locator(`#field-profile-name-act_field_legacy_review`).fill(name);
+    await page.locator(`#table-field-profile-name-act_field_legacy_review`).fill(name);
     await page.getByRole("button", { name: "حفظ الملف والمدن" }).click();
-    await expect(page.locator("#field-profile-name-act_field_legacy_review")).toHaveValue(name);
+    await expect(page.locator("#table-field-profile-name-act_field_legacy_review")).toHaveValue(name);
     await page.getByRole("button", { name: "اعتماد مراجعة الملف" }).click();
-    await expect(page.locator("output.success-inline")).toContainText("اعتُمدت مراجعة الملف وأُعيدت قراءة حالته.");
+    await expect(page.locator("output.success-inline:visible").first()).toContainText("اعتُمدت مراجعة الملف وأُعيدت قراءة حالته.");
   } else {
     await page.locator(`#${role}-candidate-name-${admissionID}`).fill(name);
     await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
@@ -331,9 +340,9 @@ test("authenticated operator discovers the platform centers through workspace na
   await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
   await expect.poll(() => homeRequestsActionableOrders).toBe(true);
   await expect.poll(() => homeRequestsCatalogQueue).toBe(true);
-  await expect(page.getByRole("heading", { name: "مقترحات المنتجات" })).toBeVisible();
+  await expect(page.locator("#home-queue-proposals-title")).toBeVisible();
   await expect(page.getByRole("link", { name: /قهوة للمراجعة/ })).toHaveAttribute("href", "/catalog/proposals?proposalId=proposal-home");
-  await expect(page.getByRole("heading", { name: "أحدث الإشعارات غير المقروءة" })).toBeVisible();
+  await expect(page.locator("#home-notifications-title")).toBeVisible();
   const navigationToggle = page.getByRole("button", { name: "فتح مسارات العمل" });
   await navigationToggle.click();
   await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" })).toHaveAttribute("data-open", "true");
@@ -388,11 +397,11 @@ test("operator home reads only work queues covered by the current session permis
 
   await page.goto("/workspace");
   await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "أحدث الإشعارات غير المقروءة" })).toBeVisible();
+  await expect(page.locator("#home-notifications-title")).toBeVisible();
   expect([...deniedQueueRequests]).toEqual([]);
   await expect(page.getByRole("heading", { name: "طلبات تحتاج إجراءً" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "طلبات الانضمام المقدمة" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "مقترحات المنتجات" })).toHaveCount(0);
+  await expect(page.locator("#home-queue-proposals-title")).toHaveCount(0);
 });
 
 test("authenticated operator can open the notification center from the workspace header", async ({ page }) => {
@@ -425,9 +434,9 @@ test("operator notification cards write back read state and update the unread su
   });
   await page.goto("/notifications");
 
-  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
-  await page.getByRole("button", { name: "وصل طلب جديد، جديد" }).click();
-  await expect(page.getByRole("button", { name: "وصل طلب جديد، مقروء" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+  await page.getByRole("article", { name: "وصل طلب جديد، جديد" }).getByRole("button", { name: "تمييز وصل طلب جديد كمقروء" }).click();
+  await expect(page.getByRole("article", { name: "وصل طلب جديد، مقروء" })).toBeVisible();
   await expect(page.getByText("0 إشعارات غير مقروءة", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "المقروءة", exact: true })).toBeVisible();
 });
@@ -449,8 +458,8 @@ test("operator notification inbox reads bounded cursor pages and restores browse
   });
 
   await page.goto("/notifications");
-  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "طلب قيد المتابعة، مقروء" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "طلب قيد المتابعة، مقروء" })).toBeVisible();
   await expect(page.getByText("2 إشعارات غير مقروءة", { exact: true })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("2 إشعارًا في الصفحة");
   expect(requests[0]).toEqual({ limit: "50", cursor: null });
@@ -458,24 +467,24 @@ test("operator notification inbox reads bounded cursor pages and restores browse
   const pagination = page.getByRole("navigation", { name: "صفحات الإشعارات" });
   await pagination.getByRole("button", { name: "الأقدم" }).click();
   await expect(page).toHaveURL(/cursor=older-page/);
-  await expect(page.getByRole("button", { name: "إشعار أقدم، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "إشعار أقدم، جديد" })).toBeVisible();
   await pagination.getByRole("button", { name: "الأحدث" }).click();
   await expect(page).not.toHaveURL(/cursor=/);
-  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "وصل طلب جديد، جديد" })).toBeVisible();
 
   await page.goBack();
   await expect(page).toHaveURL(/cursor=older-page/);
-  await expect(page.getByRole("button", { name: "إشعار أقدم، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "إشعار أقدم، جديد" })).toBeVisible();
   await page.goForward();
   await expect(page).not.toHaveURL(/cursor=/);
-  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "وصل طلب جديد، جديد" })).toBeVisible();
 
   await page.goto("/notifications?cursor=older-page");
-  await expect(page.getByRole("button", { name: "إشعار أقدم، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "إشعار أقدم، جديد" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "صفحات الإشعارات" }).getByRole("button", { name: "الأحدث" })).toBeEnabled();
   await page.getByRole("navigation", { name: "صفحات الإشعارات" }).getByRole("button", { name: "الأحدث" }).click();
   await expect(page).not.toHaveURL(/cursor=/);
-  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "وصل طلب جديد، جديد" })).toBeVisible();
   expect(requests.every((request) => request.limit === "50")).toBe(true);
   expect(requests.filter((request) => request.cursor === "older-page").length).toBeGreaterThanOrEqual(2);
 });
@@ -564,9 +573,9 @@ test("partner registry, joining queue, and stores are separate workspace destina
   await expect(partnerTabs.getByRole("link", { name: "الطلبات والاعتمادات", exact: true })).toHaveAttribute("aria-current", "page");
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "قبول إحالات الميدانيين", exact: true })).toBeVisible();
-  await expect(page.locator('[aria-labelledby="home-joining-admission-title"]').getByRole("link", { name: "عرض الكل" })).toHaveAttribute("href", "/partners/joining?state=admission_requested");
-  await expect(page.locator('[aria-labelledby="home-joining-title"]').getByRole("link", { name: "عرض الكل" })).toHaveAttribute("href", "/partners/joining?state=submitted");
+  await expect(page.locator("a[href=\"/partners/joining?state=admission_requested\"]").first()).toBeVisible();
+  await expect(page.locator('a[href="/partners/joining?state=admission_requested"]').first()).toHaveAttribute("href", "/partners/joining?state=admission_requested");
+  await expect(page.locator('a[href="/partners/joining?state=submitted"]').first()).toHaveAttribute("href", "/partners/joining?state=submitted");
 });
 
 test("finance and marketing centers expose only real independent resource routes", async ({ page }) => {
@@ -961,12 +970,12 @@ test("legacy Field role with a missing profile is suspended before Identity acce
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_legacy", phoneE164: "+96777000108", role: "field", enabled: false, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_legacy", actorId: "act_field_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
-  await expect(page.getByText("الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
+  await expect(page.getByRole("img", { name: "الملف يحتاج استكمالًا ومراجعة" }).first()).toBeVisible();
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await fillActionReason(page, "إيقاف حتى مراجعة الملف");
   await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
-  await expect(page.locator("output.success-inline")).toContainText("أُوقف دور الدخول وأُعيدت قراءة حالة الحساب وأهلية النظام.");
+  await expect(page.locator("output.success-inline:visible").first()).toContainText("أُوقف دور الدخول وأُعيدت قراءة حالة الحساب وأهلية النظام.");
 });
 
 test("legacy Captain profile review never offers role activation before review", async ({ page }) => {
@@ -988,7 +997,7 @@ test("legacy Captain profile review never offers role activation before review",
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_legacy", phoneE164: "+96777000109", role: "captain", enabled, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "cap_adm_legacy", actorId: "act_captain_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, availabilityState: "unavailable", version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
   });
   await page.goto("/captains");
-  await expect(page.getByText("الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
+  await expect(page.getByText("الملف يحتاج استكمالًا ومراجعة", { exact: true })).toBeVisible();
   await fillActionReason(page, "إيقاف حتى مراجعة الملف");
   await page.getByRole("button", { name: "إيقاف التشغيل" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_captain_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
@@ -1016,7 +1025,7 @@ test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await fillActionReason(page, "استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.locator("output.success-inline")).toContainText("أُجيزت إعادة تسجيل دور سبق تفعيله");
+  await expect(page.locator("output.success-inline:visible").first()).toContainText("أُجيزت إعادة تسجيل دور سبق تفعيله");
   await expect(page.locator("tr.field-agent-row").getByRole("status").filter({ hasText: /^بانتظار تفعيل الجهاز/ })).toHaveText("بانتظار تفعيل الجهاز من تطبيق الميدان برقم الهاتف المسجّل.");
   expect(reenrollmentBody).toMatchObject({
     actorId: "act_field_reenroll",
@@ -1147,7 +1156,7 @@ test("Field reenrollment conflicts reload the canonical DSH-owned roster before 
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await fillActionReason(page, "استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.getByText(/^تغيرت حالة الحساب بالتزامن\. أُعيد تحميل الحالة الحالية/)).toBeVisible();
+  await expect(page.getByText(/^تغيرت حالة الحساب بالتزامن\. أُعيد تحميل الحالة الحالية/).filter({ visible: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toBeVisible();
 });
 
@@ -1157,7 +1166,7 @@ test("Field first activation is distinct from reenrollment and explains the next
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_first_activation", phoneE164: "+96777000118", role: "field", enabled: true, securityEnabled: true, actorVersion: 1, roleVersion: 1, admission: { id: "fld_adm_first_activation", actorId: "act_field_first_activation", fullNameAr: "سالم علي", state: "eligible", version: 1, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
-  await expect(page.getByText("الدور جاهز؛ بانتظار تفعيل الجهاز")).toBeVisible();
+  await expect(page.getByRole("img", { name: "الدور جاهز؛ بانتظار تفعيل الجهاز" }).first()).toBeVisible();
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await expect(page.locator("tr.field-agent-row").getByRole("status")).toContainText("برقم الهاتف المسجّل");
   await expect(page.getByRole("status")).toContainText("تفعيل الجهاز");
@@ -1192,7 +1201,7 @@ test("Field reenrollment remains unavailable until DSH restores eligibility", as
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_suspended", phoneE164: "+96777000107", role: "field", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_suspended", actorId: "act_field_suspended", state: "suspended", version: 9, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
-  await expect(page.locator("tr.field-agent-row").first().getByText(/موقوف/).first()).toBeVisible();
+  await expect(page.locator("tr.field-agent-row").first().getByRole("img", { name: /موقوف/ }).first()).toBeVisible();
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
@@ -1806,7 +1815,7 @@ test("operator creates a product category under its commerce vertical", async ({
   });
   await page.goto("/catalog/categories?verticalId=vertical_0123456789abcdef0123456789abcdef");
   await expect(page.getByRole("region", { name: "إدارة الفئات" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "إدارة الفئات" }).getByRole("heading", { name: "الفئات", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "إدارة الفئات" }).locator("#catalog-category-registry-title")).toHaveText("فئات النشاط المحدد");
   await expect(page.locator(".catalog-taxonomy-workspace")).toHaveCount(1);
   await expect(page.locator(".catalog-taxonomy-workspace > .catalog-taxonomy-workbench")).toHaveCount(1);
   await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(2);

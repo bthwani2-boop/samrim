@@ -1,11 +1,13 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniIconButton, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, type Notification } from "@bthwani/dsh";
+import { createDshMobileClient, type BeneficiaryWalletResponse, type Notification } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+
+type WalletCreditNotice = Readonly<{ id: string; orderId: string; amountMinor: number; currency: "YER"; createdAt: string }>;
 
 function dshClient() {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -19,6 +21,7 @@ export function NotificationsInbox() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const authenticated = currentIdentityState().kind === "authenticated";
   const [items, setItems] = useState<ReadonlyArray<Notification>>([]);
+  const [walletCredits, setWalletCredits] = useState<ReadonlyArray<WalletCreditNotice>>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(authenticated);
   const [refreshing, setRefreshing] = useState(false);
@@ -36,6 +39,9 @@ export function NotificationsInbox() {
       const response = await dshClient().listNotifications(token, 50);
       setItems(response.notifications);
       setUnreadCount(response.unreadCount);
+      const walletReadback = await dshClient().readOwnWallet(token).catch(() => null);
+      const credits = (walletReadback?.state as (BeneficiaryWalletResponse["state"] & { recentCompensations?: ReadonlyArray<WalletCreditNotice> }) | undefined)?.recentCompensations ?? [];
+      setWalletCredits(credits);
     } catch (cause) {
       console.error("DSH client notifications readback failed", cause);
       setError("تعذر قراءة الإشعارات. أعد المحاولة.");
@@ -129,8 +135,16 @@ export function NotificationsInbox() {
           </BthwaniSurface>
 
           {unreadItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>الجديدة</Text><Text style={styles.groupCount}>{unreadItems.length}</Text></View><View style={styles.list}>{unreadItems.map(renderItem)}</View></View> : null}
+          {walletCredits.length ? <View style={styles.group}>
+            <View style={styles.groupHeader}><Text style={styles.groupTitle}>تعويضات المحفظة</Text></View>
+            <View style={styles.list}>{walletCredits.map((credit) => <View key={`wallet:${credit.id}`} style={styles.item}>
+              <Text style={styles.itemTitle}>أُضيف تعويض إلى محفظتك</Text>
+              <Text style={styles.body}>تم إضافة {credit.amountMinor.toLocaleString("ar-YE")} ريال يمني للطلب {credit.orderId}. الرصيد متاح للشراء في أي متجر.</Text>
+              <Text style={styles.date}>{formatNotificationDate(credit.createdAt)}</Text>
+            </View>)}</View>
+          </View> : null}
           {readItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>المقروءة</Text><Text style={styles.groupCount}>{readItems.length}</Text></View><View style={styles.list}>{readItems.map(renderItem)}</View></View> : null}
-          {!items.length ? <BthwaniSurface tone="inset" style={styles.state}><View style={styles.stateIcon}><BthwaniIcon name="notifications" color={theme.colorMuted} size={sizing.iconXl} /></View><Text style={styles.cardTitle}>لا توجد إشعارات حالياً</Text><Text style={styles.muted}>ستظهر تحديثات الطلبات هنا عند توفرها.</Text></BthwaniSurface> : null}
+          {!items.length && !walletCredits.length ? <BthwaniSurface tone="inset" style={styles.state}><View style={styles.stateIcon}><BthwaniIcon name="notifications" color={theme.colorMuted} size={sizing.iconXl} /></View><Text style={styles.cardTitle}>لا توجد إشعارات حالياً</Text><Text style={styles.muted}>ستظهر تحديثات الطلبات هنا عند توفرها.</Text></BthwaniSurface> : null}
           {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
           <BthwaniButton busy={refreshing} disabled={Boolean(busy)} label="تحديث الإشعارات" onPress={() => void load(true)} variant="secondary" />
         </>

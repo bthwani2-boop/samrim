@@ -235,7 +235,7 @@ export function dshHttpStatus(error: unknown): number {
   return error.kind === "network" ? 502 : error.kind === "config" ? 500 : error.status;
 }
 
-async function requestDshJson<T>(method: string, path: string, body: unknown | undefined, headers: Record<string, string>): Promise<Readonly<{ status: number; payload: T }>> {
+export async function requestDshJson<T>(method: string, path: string, body: unknown | undefined, headers: Record<string, string>): Promise<Readonly<{ status: number; payload: T }>> {
   const baseUrl = dshBaseUrl();
   const token = dshToken();
   const controller = new AbortController();
@@ -932,13 +932,14 @@ export async function createJoiningCase(input: CreateJoiningCaseRequest, context
   return requestDshJson<JoiningCaseResponse>(dshOperationPaths.createJoiningCase.method, dshOperationPaths.createJoiningCase.path, { ...input, contactPhoneE164 }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
-export async function uploadOperatorJoiningCaseStoreImage(caseId: string, file: File, provenance: MediaProvenanceInput, context: StorePublicationMutationContext): Promise<Readonly<{ status: number; payload: JoiningCaseResponse }>> {
+export async function uploadOperatorJoiningCaseStoreImage(caseId: string, file: File, provenance: MediaProvenanceInput, context: StorePublicationMutationContext, role: "primary" | "cover" = "primary"): Promise<Readonly<{ status: number; payload: JoiningCaseResponse }>> {
   const normalizedCaseId = caseId.trim();
   if (!normalizedCaseId || file.size < 1 || file.size > 10 * 1024 * 1024 || !["image/jpeg", "image/png"].includes(file.type) || !isMediaProvenanceInputValid(provenance)) throw new Error("DSH_JOINING_CASE_STORE_IMAGE_INPUT_INVALID");
   validateVersionedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_JOINING_CASE_STORE_IMAGE_IDEMPOTENCY_INVALID");
   const form = new FormData();
   form.append("file", file, file.name || "storefront-image");
+  form.append("role", role);
   appendMediaProvenance(form, provenance);
   const path = dshOperationPaths.uploadOperatorJoiningCaseStoreImage.path.replace("{caseId}", encodeURIComponent(normalizedCaseId));
   return requestDshMultipart<JoiningCaseResponse>(dshOperationPaths.uploadOperatorJoiningCaseStoreImage.method, path, form, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
@@ -960,6 +961,21 @@ export async function downloadJoiningCaseReviewPhoto(caseId: string, context: Ds
   if (!caseId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_JOINING_REVIEW_PHOTO_READ_INPUT_INVALID");
   const path = dshOperationPaths.downloadJoiningCaseReviewPhoto.path.replace("{caseId}", encodeURIComponent(caseId.trim()));
   return requestDshFile(path, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": "cp_joining_review_" + crypto.randomUUID() });
+}
+
+export async function listOperatorStoreInternalPhotos(storeId: string, context: DshOperatorReadContext): Promise<Readonly<{ storeId: string; photos: ReadonlyArray<import("@bthwani/dsh").StoreInternalPhotoSummary> }>> {
+  const normalized = storeId.trim();
+  if (!normalized || !context.operatorActorId.trim()) throw new Error("DSH_STORE_INTERNAL_PHOTOS_INPUT_INVALID");
+  const path = dshOperationPaths.listOperatorStoreInternalPhotos.path.replace("{storeId}", encodeURIComponent(normalized));
+  return (await requestDshJson<{ storeId: string; photos: ReadonlyArray<import("@bthwani/dsh").StoreInternalPhotoSummary> }>(dshOperationPaths.listOperatorStoreInternalPhotos.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": `cp_store_photos_${crypto.randomUUID()}` })).payload;
+}
+
+export async function downloadOperatorStoreInternalPhoto(storeId: string, photoId: string, context: DshOperatorReadContext): Promise<Readonly<{ content: Uint8Array; contentType: string; contentDisposition: string }>> {
+  const normalizedStoreId = storeId.trim();
+  const normalizedPhotoId = photoId.trim();
+  if (!normalizedStoreId || !normalizedPhotoId || !context.operatorActorId.trim()) throw new Error("DSH_STORE_INTERNAL_PHOTO_INPUT_INVALID");
+  const path = dshOperationPaths.readOperatorStoreInternalPhoto.path.replace("{storeId}", encodeURIComponent(normalizedStoreId)).replace("{photoId}", encodeURIComponent(normalizedPhotoId));
+  return requestDshFile(path, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": `cp_store_photo_${crypto.randomUUID()}` });
 }
 
 export async function listCatalogVerticals(context: DshOperatorReadContext, includeInactive = false): Promise<CommerceVerticalListResponse> {

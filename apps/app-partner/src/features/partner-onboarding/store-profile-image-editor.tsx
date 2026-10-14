@@ -9,7 +9,8 @@ import { Image, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { partnerStoreImageReadbackMatches } from "./store-profile-image-readback";
 import { readOwnJoiningCase, uploadOwnJoiningCaseStoreImage } from "./store-readback-client";
 
-type StoreImageDraft = Readonly<{ image: DshImageUploadInput; contentSha256: string; provenance: MediaProvenanceInput }>;
+type StoreImageRole = "primary" | "cover";
+type StoreImageDraft = Readonly<{ role: StoreImageRole; image: DshImageUploadInput; contentSha256: string; provenance: MediaProvenanceInput }>;
 
 export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCaseResponse; onUpdated: (next: JoiningCaseResponse) => void }) {
   const current = value.case;
@@ -17,6 +18,7 @@ export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCa
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [storeImageRole, setStoreImageRole] = useState<StoreImageRole>("primary");
   const [storeImage, setStoreImage] = useState<StoreImageDraft | null>(null);
 
   if (current.state !== "needs_correction" && !(current.state === "approved" && current.store?.id)) return null;
@@ -34,7 +36,7 @@ export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCa
       if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("STORE_IMAGE_SIZE_INVALID");
       const digest = new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, await blob.arrayBuffer()));
       const contentSha256 = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
-      setStoreImage({ contentSha256, image: { uri: picked.assets[0].uri, name: picked.assets[0].fileName ?? "store-image.jpg", type: picked.assets[0].mimeType ?? "image/jpeg", blob }, provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
+      setStoreImage({ role: storeImageRole, contentSha256, image: { uri: picked.assets[0].uri, name: picked.assets[0].fileName ?? (storeImageRole === "cover" ? "store-cover.jpg" : "store-logo.jpg"), type: picked.assets[0].mimeType ?? "image/jpeg", blob }, provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
       setError("");
     } catch (cause) {
       console.error("DSH Partner store image preparation failed", cause);
@@ -51,6 +53,7 @@ export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCa
     const requested = {
       caseID: current.id,
       partnerActorID: current.partnerActorId ?? "",
+      role: storeImage.role,
       contentSha256: storeImage.contentSha256,
       provenance: storeImage.provenance,
     };
@@ -62,8 +65,8 @@ export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCa
     setBusy(true);
     setError("");
     try {
-      const identity = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `${current.id}:${current.version}:${storeImage.contentSha256}:${JSON.stringify(storeImage.provenance)}`);
-      const updated = await uploadOwnJoiningCaseStoreImage(current.id, storeImage.image, storeImage.provenance, current.version, `partner_store_image_${identity}`, `partner_store_image_corr_${identity}`);
+      const identity = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `${current.id}:${current.version}:${storeImage.role}:${storeImage.contentSha256}:${JSON.stringify(storeImage.provenance)}`);
+      const updated = await uploadOwnJoiningCaseStoreImage(current.id, storeImage.image, storeImage.provenance, current.version, `partner_store_image_${identity}`, `partner_store_image_corr_${identity}`, storeImage.role);
       if (!partnerStoreImageReadbackMatches(updated.case, requested)) {
         throw new Error("PARTNER_STORE_IMAGE_UPLOAD_READBACK_MISMATCH");
       }
@@ -91,11 +94,17 @@ export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCa
     }
   }
 
+  const selectedAsset = storeImageRole === "cover" ? current.storeCoverImage : current.storeProfileImage;
+  const selectedImageTitle = storeImageRole === "cover" ? "غلاف المتجر" : "شعار المتجر";
   return (
-    <View style={styles.container} accessibilityLabel="صورة المتجر وحقوق استخدامها">
-      <Text style={styles.title}>صورة المتجر</Text>
-      {current.storeProfileImage ? <Image accessibilityLabel={`صورة متجر ${current.firstStoreName}`} source={{ uri: current.storeProfileImage.uri }} resizeMode="cover" style={styles.storeImage} /> : <Text style={styles.muted}>لا توجد صورة موثقة للعرض حاليًا. ارفع صورة مع بيان مصدرها وحق استخدامها.</Text>}
-      {storeImage ? <Image accessibilityLabel="معاينة الصورة الجديدة" source={{ uri: storeImage.image.uri }} resizeMode="cover" style={styles.storeImage} /> : null}
+    <View style={styles.container} accessibilityLabel="شعار المتجر وغلافه ومصدر الصور">
+      <Text style={styles.title}>صور واجهة المتجر</Text>
+      <View style={styles.roleOptions}>
+        <BthwaniButton disabled={busy} label="الشعار" onPress={() => { setStoreImageRole("primary"); setStoreImage(null); setError(""); }} variant={storeImageRole === "primary" ? "primary" : "secondary"} />
+        <BthwaniButton disabled={busy} label="الغلاف" onPress={() => { setStoreImageRole("cover"); setStoreImage(null); setError(""); }} variant={storeImageRole === "cover" ? "primary" : "secondary"} />
+      </View>
+      {selectedAsset ? <Image accessibilityLabel={`${selectedImageTitle} ${current.firstStoreName}`} source={{ uri: selectedAsset.uri }} resizeMode="cover" style={[styles.storeImage, storeImageRole === "cover" && styles.storeCover]} /> : <Text style={styles.muted}>{storeImageRole === "cover" ? "لا يوجد غلاف موثق بعد. الغلاف مطلوب قبل نشر المتجر للعملاء." : "لا يوجد شعار موثق بعد. الشعار مطلوب قبل نشر المتجر للعملاء."}</Text>}
+      {storeImage ? <Image accessibilityLabel={`معاينة ${selectedImageTitle} الجديدة`} source={{ uri: storeImage.image.uri }} resizeMode="cover" style={[styles.storeImage, storeImageRole === "cover" && styles.storeCover]} /> : null}
       {storeImage ? <View style={styles.imageBox}>
         <Text style={styles.label}>مصدر الصورة وحق استخدامها</Text>
         <TextInput accessibilityLabel="منشئ الصورة" editable={!busy} placeholder="منشئ الصورة أو المصور" onChangeText={(creator) => setStoreImage((image) => image ? { ...image, provenance: { ...image.provenance, creator } } : null)} value={storeImage.provenance.creator} style={styles.input} />
@@ -105,8 +114,8 @@ export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCa
         <TextInput accessibilityLabel="رابط شروط الترخيص اختياري" editable={!busy} autoCapitalize="none" keyboardType="url" placeholder="رابط شروط الترخيص، اختياري" onChangeText={(rightsUri) => setStoreImage((image) => image ? { ...image, provenance: { ...image.provenance, rightsUri } } : null)} value={storeImage.provenance.rightsUri} style={styles.input} />
         <View style={styles.attestation}><Switch disabled={busy} value={storeImage.provenance.rightsAttested} onValueChange={(rightsAttested) => setStoreImage((image) => image ? { ...image, provenance: { ...image.provenance, rightsAttested } } : null)} /><Text style={styles.muted}>أؤكد صحة بيانات المصدر وحق الاستخدام.</Text></View>
       </View> : null}
-      <BthwaniButton disabled={busy} label={storeImage ? "اختيار صورة أخرى" : "اختيار صورة المتجر"} onPress={() => void chooseStoreImage()} variant="secondary" />
-      {storeImage ? <BthwaniButton busy={busy} disabled={busy || !isMediaProvenanceInputValid(storeImage.provenance)} label="حفظ صورة المتجر" onPress={() => void uploadStoreImage()} variant="secondary" /> : null}
+      <BthwaniButton disabled={busy} label={storeImage ? "اختيار صورة أخرى" : `اختيار ${selectedImageTitle}`} onPress={() => void chooseStoreImage()} variant="secondary" />
+      {storeImage ? <BthwaniButton busy={busy} disabled={busy || !isMediaProvenanceInputValid(storeImage.provenance)} label={`حفظ ${selectedImageTitle}`} onPress={() => void uploadStoreImage()} variant="secondary" /> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );
@@ -123,6 +132,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     error: { ...typography.label, color: theme.danger },
     imageBox: { backgroundColor: theme.structureSoft, borderRadius: radius.sm, gap: spacing[2], padding: spacing[2] },
     attestation: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
+    roleOptions: { flexDirection: "row", gap: spacing[2] },
     storeImage: { borderRadius: radius.sm, height: 180, width: "100%" },
+    storeCover: { height: 144 },
   });
 }

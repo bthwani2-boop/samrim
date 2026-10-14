@@ -180,6 +180,14 @@ export function EmployeeDirectory() {
         {loading ? <tr><td colSpan={6}>جارٍ تحميل الموظفين…</td></tr> : null}</tbody>
       </table>
     </div>
+    <ul className="employee-mobile-list" aria-label="موظفو الصفحة الحالية" aria-busy={loading}>
+      {items.map((person) => <li className="employee-mobile-card" key={person.id}>
+        <div className="employee-mobile-heading"><strong>{person.fullNameAr}</strong><ActivityIndicator active={person.status === "active"} inactiveLabel="غير نشط" /></div>
+        <dl><div><dt>القسم</dt><dd>{person.department}</dd></div><div><dt>المسمى</dt><dd>{person.jobTitle}</dd></div><div><dt>الارتباط</dt><dd>{person.operatorActorId ? "هوية تشغيل مرتبطة" : "بلا هوية تشغيل"}</dd></div></dl>
+        <button className="button button-secondary" type="button" aria-label={`فتح ملف ${person.fullNameAr}`} onClick={() => openEmployee(person)}>فتح الملف</button>
+      </li>)}
+      {!loading && !error && items.length === 0 ? <li className="collection-state">لا يوجد موظفون مطابقون للبحث.</li> : null}
+    </ul>
     <div className="form-actions">
       <ActivityLegend inactiveLabel="غير نشط" />
       <button className="button button-secondary" type="button" disabled={history.length === 0 || loading} onClick={() => { const stack = [...history]; setCursor(stack.pop() ?? ""); setHistory(stack); }}>السابق</button>
@@ -189,7 +197,6 @@ export function EmployeeDirectory() {
       <div className="access-section-heading"><h2>{selected.fullNameAr}</h2><button type="button" className="button button-quiet" onClick={() => fileRef.current?.close()}>إغلاق</button></div>
       <p className="muted">إغلاق الملف يحفظ مسودتك في هذه الجلسة؛ افتح الموظف نفسه لاستكمالها.</p>
       <dl>
-        <dt>الرقم الوظيفي</dt><dd><bdi dir="ltr">{selected.id}</bdi></dd>
         <dt>القسم</dt><dd>{selected.department}</dd>
         <dt>المسمى</dt><dd>{selected.jobTitle}</dd>
         <dt>تاريخ الانضمام</dt><dd>{selected.startDate}</dd>
@@ -200,8 +207,15 @@ export function EmployeeDirectory() {
       <EmployeeAccessRequest key={`${selected.id}-access`} employee={selected} />
       <EmployeeOperatorAccess key={`${selected.id}-operator-access`} employee={selected} />
       <EmployeeEmploymentStatus key={`${selected.id}-employment-status`} employee={selected} onSaved={(next)=>{setSelected(next);setItems((list)=>list.map((person)=>person.id===next.id?next:person));}} />
-      <EmployeeAttendance key={selected.id + "-attendance"} employeeId={selected.id} />
+      <details className="employee-file-section">
+        <summary>الحضور والتصحيحات اليدوية</summary>
+        <EmployeeAttendance key={selected.id + "-attendance"} employeeId={selected.id} />
+      </details>
       <EmployeeAuditHistory key={`${selected.id}-audit`} employee={selected} />
+      <details className="employee-file-section employee-technical-details">
+        <summary>معرّف تقني</summary>
+        <dl><dt>معرّف الموظف</dt><dd><bdi dir="ltr">{selected.id}</bdi></dd></dl>
+      </details>
     </dialog> : null}
     {pendingEmployee ? <dialog ref={switchRef} aria-labelledby="employee-switch-title" onClose={() => setPendingEmployee(null)}>
       <h2 id="employee-switch-title">فتح ملف موظف آخر</h2>

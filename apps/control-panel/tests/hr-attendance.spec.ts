@@ -26,6 +26,7 @@ test("Manual HR attendance is unknown by default and corrections use the latest 
  });
  await page.goto("/hr/employees");
  await page.locator(".hr-directory .operations-table button").first().click();
+ await page.getByText("الحضور والتصحيحات اليدوية", {exact:true}).click();
  const attendance=page.getByRole("region",{name:"الحضور اليدوي"});
  await expect(attendance.getByText("هذا اليوم غير مسجل", {exact:false})).toBeVisible();
  await attendance.getByLabel("التاريخ").fill("2026-10-12");

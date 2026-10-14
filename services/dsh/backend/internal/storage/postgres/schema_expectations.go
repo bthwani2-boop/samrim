@@ -39,6 +39,12 @@ var journeyRefoundationRelations = []schemaRelationExpectation{
 		constraints: []string{"joining_case_review_photos_pkey", "joining_case_review_photos_joining_case_id_fkey", "joining_case_review_photos_size_chk", "joining_case_review_photos_content_chk", "joining_case_review_photos_sha_chk"},
 	},
 	{
+		name:        "dsh.store_internal_photos",
+		columns:     []string{"id", "joining_case_id", "store_id", "idempotency_key", "request_hash", "content_type", "content_sha256", "image_bytes", "uploaded_by_field_actor_id", "created_at"},
+		constraints: []string{"store_internal_photos_pkey", "store_internal_photos_joining_case_id_fkey", "store_internal_photos_store_id_fkey", "store_internal_photos_idempotency_key_key", "store_internal_photos_size_chk", "store_internal_photos_content_chk", "store_internal_photos_sha_chk", "store_internal_photos_hash_chk"},
+		indexes:     []string{"store_internal_photos_store_idx", "store_internal_photos_case_idx"},
+	},
+	{
 		name:        "dsh.joining_cases",
 		columns:     []string{"owner_full_name", "first_store_address", "first_store_working_hours", "first_store_proof_type", "first_store_notes"},
 		constraints: []string{"joining_cases_owner_full_name_chk", "joining_cases_first_store_address_chk", "joining_cases_first_store_working_hours_chk", "joining_cases_first_store_proof_type_chk", "joining_cases_first_store_notes_chk"},

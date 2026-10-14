@@ -188,7 +188,17 @@ type CaptainWalletState struct {
 	AvailableMinor     int64  `json:"availableMinor"`
 }
 
+type CustomerWalletCompensationSummary struct {
+	ID          string    `json:"id"`
+	OrderID     string    `json:"orderId"`
+	AmountMinor int64     `json:"amountMinor"`
+	Currency    string    `json:"currency"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
 type WalletState struct {
+	RecentCompensations []CustomerWalletCompensationSummary `json:"recentCompensations,omitempty"`
+
 	ActorType          string `json:"actorType"`
 	ActorID            string `json:"actorId"`
 	Currency           string `json:"currency"`

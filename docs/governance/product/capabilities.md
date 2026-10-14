@@ -16,6 +16,7 @@ Routing only; behavior remains in each capability owner. Journey participation i
 `STORE_SCOPED_ACCESS_DELEGATION` → `capabilities/partner/store-scoped-access-delegation.md`
 `SERVICEABILITY_ADDRESSES` → `capabilities/commerce/serviceability-addresses.md`
 `CART_CHECKOUT` → `capabilities/commerce/cart-checkout.md`
+`CUSTOMER_STORE_CATALOG` → `capabilities/commerce/customer-store-catalog.md`
 `ORDER_LIFECYCLE` → `capabilities/commerce/order-lifecycle.md`
 `ORDER_CONVERSATION` → `capabilities/commerce/order-conversation.md`
 `COMMERCE_PROMOTIONS` → `capabilities/commerce/commerce-promotions.md`

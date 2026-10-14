@@ -29,15 +29,24 @@ type cashInFundingIntentJSON struct {
 	UpdatedAt                    string  `json:"updatedAt"`
 }
 
+type customerCompensationSummaryJSON struct {
+	ID          string    `json:"id"`
+	OrderID     string    `json:"orderId"`
+	AmountMinor int64     `json:"amountMinor"`
+	Currency    string    `json:"currency"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
 type walletStateJSON struct {
-	ActorType          string `json:"actorType"`
-	ActorID            string `json:"actorId"`
-	Currency           string `json:"currency"`
-	LedgerBalanceMinor int64  `json:"ledgerBalanceMinor"`
-	HeldMinor          int64  `json:"heldMinor"`
-	AvailableMinor     int64  `json:"availableMinor"`
-	CashInEnabled      bool   `json:"cashInEnabled"`
-	Simulator          bool   `json:"simulator"`
+	ActorType           string                            `json:"actorType"`
+	ActorID             string                            `json:"actorId"`
+	Currency            string                            `json:"currency"`
+	LedgerBalanceMinor  int64                             `json:"ledgerBalanceMinor"`
+	HeldMinor           int64                             `json:"heldMinor"`
+	AvailableMinor      int64                             `json:"availableMinor"`
+	CashInEnabled       bool                              `json:"cashInEnabled"`
+	Simulator           bool                              `json:"simulator"`
+	RecentCompensations []customerCompensationSummaryJSON `json:"recentCompensations,omitempty"`
 }
 
 func (s *Server) readWalletState(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +58,7 @@ func (s *Server) readWalletState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	balance, held, available := int64(0), int64(0), int64(0)
+	var recent []customerCompensationSummaryJSON
 	var err error
 	if actorType == "captain" {
 		captainState, readErr := postgres.ReadCaptainWalletState(r.Context(), s.db, actorID)
@@ -58,12 +68,21 @@ func (s *Server) readWalletState(w http.ResponseWriter, r *http.Request) {
 		customerState, readErr := postgres.ReadCustomerWalletState(r.Context(), s.db, actorID)
 		err = readErr
 		balance, held, available = customerState.LedgerBalanceMinor, customerState.HeldMinor, customerState.AvailableMinor
+		if err == nil {
+			var recorded []postgres.CustomerWalletCompensationRecord
+			recorded, err = postgres.ListRecentCustomerWalletCompensations(r.Context(), s.db, actorID, 10)
+			if err == nil {
+				for _, item := range recorded {
+					recent = append(recent, customerCompensationSummaryJSON{ID: item.CaseID, OrderID: item.OrderID, AmountMinor: item.AmountMinor, Currency: item.Currency, CreatedAt: item.CreatedAt})
+				}
+			}
+		}
 	}
 	if err != nil {
 		writeCashInError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"state": walletStateJSON{ActorType: actorType, ActorID: actorID, Currency: "YER", LedgerBalanceMinor: balance, HeldMinor: held, AvailableMinor: available, CashInEnabled: s.cashInRail != nil, Simulator: s.cashInSimulatorEnabled}})
+	writeJSON(w, http.StatusOK, map[string]any{"state": walletStateJSON{ActorType: actorType, ActorID: actorID, Currency: "YER", LedgerBalanceMinor: balance, HeldMinor: held, AvailableMinor: available, CashInEnabled: s.cashInRail != nil, Simulator: s.cashInSimulatorEnabled, RecentCompensations: recent}})
 }
 
 func (s *Server) createCashInFundingIntent(w http.ResponseWriter, r *http.Request) {

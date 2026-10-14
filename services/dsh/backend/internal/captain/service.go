@@ -356,6 +356,23 @@ func (s *Service) ReadDeliveryTask(ctx context.Context, accessToken, assignmentI
 	return postgres.ReadCaptainDeliveryTask(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject)
 }
 
+// UpdatePresence only accepts authenticated captains and only persists their latest position.
+func (s *Service) UpdatePresence(ctx context.Context, accessToken string, latitude, longitude float64) (time.Time, error) {
+	identity, err := s.requireCaptain(ctx, accessToken)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return postgres.UpdateCaptainPresence(ctx, s.db, identity.Subject, latitude, longitude)
+}
+
+// PresenceHeatmap is operator-only; there are no individual coordinates in its response.
+func (s *Service) PresenceHeatmap(ctx context.Context, actorID, mode string) ([]postgres.CaptainPresenceCell, error) {
+	if err := s.requireOperator(ctx, actorID); err != nil {
+		return nil, err
+	}
+	return postgres.ReadCaptainPresenceHeatmap(ctx, s.db, mode)
+}
+
 func (s *Service) UpdateLocation(ctx context.Context, accessToken, assignmentID string, latitude, longitude float64, idempotencyKey, correlationID string) (postgres.CaptainLocationResult, error) {
 	identity, err := s.requireCaptain(ctx, accessToken)
 	if err != nil {

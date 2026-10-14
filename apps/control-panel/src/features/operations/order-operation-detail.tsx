@@ -5,8 +5,9 @@ import { PageHeader } from "../../shell/page-header";
 import { captainAssignmentStateLabel, captainHandoffStateLabel, formatMoney, formatOrderDate, fulfillmentModeLabel, type OperatorOperation, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
+import { useSession } from "../../session/session-provider";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 import { OperationLocationMap } from "./operation-location-map";
 type DetailTab = "overview" | "items" | "store" | "fulfillment" | "payment" | "assignment" | "recovery";
@@ -22,6 +23,7 @@ const detailTabs: ReadonlyArray<Readonly<{ id: DetailTab; label: string }>> = [
 
 export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>) {
   const pathname = usePathname();
+  const { state: sessionState } = useSession();
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
   const params = new URLSearchParams(queryString);
@@ -34,8 +36,13 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
   const [actionError, setActionError] = useState("");
   const [actionNeedsReadback, setActionNeedsReadback] = useState(false);
   const [notice, setNotice] = useState("");
+  const [walletCreditedAdjustments, setWalletCreditedAdjustments] = useState<ReadonlySet<string>>(() => new Set());
+  const loadSequence = useRef(0);
+  const actionSequence = useRef(0);
+  const actionInFlight = useRef(false);
 
   const load = useCallback(async (): Promise<boolean> => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
     setOperation(null);
     setNotice("");
@@ -43,13 +50,17 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
     setErrorStatus(0);
     try {
       const response = await fetch(`/api/operations/${encodeURIComponent(orderId)}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
+      if (sequence !== loadSequence.current) return false;
       if (!response.ok) {
+        const message = await operationResponseMessage(response);
+        if (sequence !== loadSequence.current) return false;
         setErrorStatus(response.status);
-        setError(await operationResponseMessage(response));
+        setError(message);
         setOperation(null);
         return false;
       }
       const body = await response.json() as { operation?: OperatorOperation };
+      if (sequence !== loadSequence.current) return false;
       if (!body?.operation || body.operation.order?.id !== orderId) {
         setError("استجابة تفاصيل الطلب غير صالحة. أعد القراءة.");
         return false;
@@ -59,15 +70,25 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
       setActionError("");
       return true;
     } catch (cause) {
+      if (sequence !== loadSequence.current) return false;
       const timedOut = cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError");
       setError(timedOut ? "استغرقت قراءة تفاصيل الطلب وقتًا طويلًا. أعد المحاولة." : cause instanceof Error ? cause.message : "تعذرت قراءة تفاصيل الطلب.");
       return false;
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   }, [orderId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    actionInFlight.current = false;
+    setBusy(false);
+    setActionNeedsReadback(false);
+    void load();
+    return () => {
+      loadSequence.current += 1;
+      actionSequence.current += 1;
+    };
+  }, [load]);
 
   const tab = detailTabs.find((item) => item.id === requestedTab && (item.id !== "recovery" || operation?.order.state === "DELIVERY_FAILED"))?.id ?? "overview";
   const tabHref = useCallback((nextTab: DetailTab) => {
@@ -83,10 +104,14 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
   }, [queryString]);
 
   async function runAction() {
-    if (!operation || busy || loading || actionNeedsReadback) return;
+    if (!operation || busy || loading || actionNeedsReadback || actionInFlight.current) return;
     const { order, assignment } = operation;
+    if (order.id !== orderId) return;
     const action = resolveOperatorAction({ state: order.state, assignment });
     if (!action) return;
+    const actionVersion = ++actionSequence.current;
+    const actionStillCurrent = () => actionVersion === actionSequence.current;
+    actionInFlight.current = true;
     setBusy(true);
     setActionNeedsReadback(true);
     setActionError("");
@@ -102,29 +127,72 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
           ...(action === "recover" ? { expectedVersion: assignment?.version } : {}),
         }),
       });
+      if (!actionStillCurrent()) return;
       if (!response.ok) {
         const message = response.status === 409 ? "تغيرت حالة الطلب منذ فتحه." : await operationResponseMessage(response);
+        if (!actionStillCurrent()) return;
         const verified = await load();
+        if (!actionStillCurrent()) return;
         setActionError(verified
           ? `${message} تمت إعادة قراءة الحالة؛ راجعها قبل محاولة أخرى.`
           : `${message} تعذرت إعادة قراءة الحالة؛ لن يُعاد إرسال الإجراء قبل نجاح القراءة.`);
         return;
       }
       const readbackSucceeded = await load();
+      if (!actionStillCurrent()) return;
       if (readbackSucceeded) setNotice("تم تحديث حالة الطلب بعد إعادة قراءتها من المصدر التشغيلي.");
       else setActionError("أُرسل الإجراء، لكن تعذرت إعادة قراءة الحالة لتأكيد النتيجة. أعد القراءة قبل اتخاذ قرار آخر.");
     } catch (cause) {
+      if (!actionStillCurrent()) return;
       const message = isRequestFailure(cause) ? cause.message : "تعذر تنفيذ الإجراء.";
       const verified = await load();
+      if (!actionStillCurrent()) return;
       setActionError(verified
         ? `${message} لم نتأكد من نتيجة الإجراء؛ راجع الحالة المعادة قبل إعادة المحاولة.`
         : `${message} لم نتأكد من النتيجة وتعذرت إعادة القراءة؛ لن يُعاد إرسال الإجراء قبل التحقق.`);
+    } finally {
+      if (actionStillCurrent()) {
+        actionInFlight.current = false;
+        setBusy(false);
+      }
+    }
+  }
+
+  async function creditCustomerWallet(adjustmentId: string, amountMinor: number) {
+    if (busy || loading || amountMinor <= 0 || walletCreditedAdjustments.has(adjustmentId)) return;
+    if (!window.confirm(`إضافة ${formatMoney(amountMinor, "YER")} إلى محفظة العميل على نفقة المنصة بعد مراجعة تعديل الطلب؟`)) return;
+    setBusy(true);
+    setActionError("");
+    setNotice("");
+    try {
+      const response = await identityFetch("/api/finance/order-wallet-compensation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, adjustmentId }),
+      });
+      if (!response.ok) {
+        setActionError(await operationResponseMessage(response));
+        return;
+      }
+      const body = await response.json() as { walletCompensation?: { orderId: string; adjustmentId?: string; amountMinor: number; ledgerTransactionId: string } };
+      if (body.walletCompensation?.orderId !== orderId || body.walletCompensation.amountMinor !== amountMinor ||
+          !body.walletCompensation.ledgerTransactionId) {
+        setActionError("تعذر مطابقة قيد المحفظة مع الطلب؛ يجب التحقق من السجل المالي قبل إعادة المحاولة.");
+        return;
+      }
+      setWalletCreditedAdjustments((previous) => new Set([...previous, adjustmentId]));
+      const refreshed = await load();
+      setNotice(refreshed
+        ? `تم تسجيل ${formatMoney(amountMinor, "YER")} في محفظة العميل والتحقق من حالة الطلب.`
+        : `تم تسجيل ${formatMoney(amountMinor, "YER")} في محفظة العميل، لكن تعذرت إعادة قراءة الطلب؛ راجع السجل قبل أي إجراء آخر.`);
+    } catch {
+      setActionError("تعذّر التأكد من نتيجة التعويض. راجع السجل المالي قبل إعادة المحاولة؛ لا تنشئ تعويضًا آخر.");
     } finally {
       setBusy(false);
     }
   }
 
-  if (loading && !operation) return <section className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة مساحة الطلب</strong></section>;
+  if ((loading && !operation) || (operation && operation.order.id !== orderId)) return <section className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة مساحة الطلب</strong></section>;
   if (error || !operation) return <section className="collection-state" role="alert"><strong>{errorStatus === 403 ? "لا تملك صلاحية فتح هذا الطلب" : "تعذر فتح مساحة الطلب"}</strong><p>{error || "لم تعد تفاصيل هذا الطلب متاحة."}</p><div className="order-detail-state-actions"><button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading}>إعادة القراءة</button><Link className="button button-secondary" href={returnHref()}>العودة إلى العمليات</Link></div></section>;
 
   const { order, assignment } = operation;
@@ -170,8 +238,24 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
             <h3>تعديلات عناصر الطلب</h3>
             <ul className="order-detail-list">{order.adjustments.map((adjustment) => {
               const line = order.lines.find((candidate) => candidate.id === adjustment.orderLineId);
-              const stateLabel = adjustment.state === "PROPOSED" ? "بانتظار موافقة العميل" : adjustment.state === "REJECTED" ? "رفض العميل التعديل" : "معلق للتسوية المالية";
-              return <li key={adjustment.id}><div><strong>{adjustment.kind === "REMOVE_ITEM" ? "طلب إزالة صنف" : "تسجيل الكمية الفعلية"}{line ? ` · ${line.productName}` : ""}</strong><span>{stateLabel}</span>{adjustment.state === "FINANCIAL_RECONCILIATION_REQUIRED" ? <span>لا يتقدم الطلب ولا يتغير المبلغ حتى تُحسم التسوية المالية المعتمدة.</span> : null}</div>{adjustment.actualQuantityBaseUnits ? <span>{new Intl.NumberFormat("ar-YE").format(adjustment.actualQuantityBaseUnits)} {line?.baseUnit ?? ""}</span> : null}</li>;
+              const stateLabel = adjustment.state === "PROPOSED" ? "بانتظار موافقة العميل" : adjustment.state === "REJECTED" ? "رفض العميل التعديل" : adjustment.state === "APPLIED" ? "تم تعويض العميل في المحفظة" : "معلق للتسوية المالية";
+              const compensated = walletCreditedAdjustments.has(adjustment.id);
+              const financeAllowed = sessionState.kind === "authenticated" && sessionState.identity.role === "operator" && sessionState.identity.permissions?.includes("finance");
+              const eligibleForWallet = financeAllowed && (order.state === "DELIVERED" || order.state === "PICKED_UP") && !order.discountMinor && !order.promotionId &&
+                adjustment.kind === "REMOVE_ITEM" && adjustment.state === "FINANCIAL_RECONCILIATION_REQUIRED" &&
+                line && line.lineAmountMinor > 0 && line.lineAmountMinor <= order.totalAmountMinor;
+              return <li key={adjustment.id}>
+                <div>
+                  <strong>{adjustment.kind === "REMOVE_ITEM" ? "طلب إزالة صنف" : "تسجيل الكمية الفعلية"}{line ? ` · ${line.productName}` : ""}</strong>
+                  <span>{compensated ? "أُضيف التعويض إلى محفظة العميل" : stateLabel}</span>
+                  {adjustment.state === "FINANCIAL_RECONCILIATION_REQUIRED" ? <span>لا يتقدم الطلب قبل إغلاق التسوية التشغيلية والمالية اللازمة.</span> : null}
+                  {eligibleForWallet && !compensated ? <button type="button" className="button button-secondary"
+                    disabled={busy || loading} onClick={() => void creditCustomerWallet(adjustment.id, line.lineAmountMinor)}>
+                    {busy ? "جارٍ التحقق..." : `تعويض المحفظة: ${formatMoney(line.lineAmountMinor, line.currency)}`}
+                  </button> : null}
+                </div>
+                {adjustment.actualQuantityBaseUnits ? <span>{new Intl.NumberFormat("ar-YE").format(adjustment.actualQuantityBaseUnits)} {line?.baseUnit ?? ""}</span> : null}
+              </li>;
             })}</ul>
           </div> : null}
         </section>

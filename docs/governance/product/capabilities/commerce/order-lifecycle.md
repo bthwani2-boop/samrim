@@ -27,7 +27,9 @@ DSH owns operational Order truth, original confirmation snapshot, OrderAdjustmen
 - an OrderAdjustment may cover bounded item removal, eligible substitution or actual fulfilled quantity/measure where current catalog quantity semantics permit it;
 - a required customer decision is explicit when the adjustment materially changes what the customer will receive/pay; Partner cannot self-approve a customer-required substitute merely by continuing preparation;
 - unresolved mandatory adjustment blocks readiness/completion until it reaches a legal outcome or the Order enters the appropriate exception/cancellation path;
-- WLT alone owns resulting financial delta, refund or additional required financial treatment; DSH never infers ledger completion from operational adjustment state;
+- WLT alone owns resulting financial delta and, where a paid customer is owed money, the default credit to that Customer Wallet exactly once; DSH never infers ledger completion from operational adjustment state;
+- before collection, cancel or correct only the unpaid obligation; after collection, keep any unverified amount explicitly pending rather than issuing a speculative credit;
+- no independent routine refund ticket/journey is required; rare external exceptions remain authorized Operations/Finance work;
 - a delivery recipient snapshot may differ from the purchasing Client, but it has no Order/payment authority;
 - Partner acts only on Orders for an authorized owned/granted Store scope;
 - Partner acceptance, rejection, preparation and readiness are canonical DSH transitions;

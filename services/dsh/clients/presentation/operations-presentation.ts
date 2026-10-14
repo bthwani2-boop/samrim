@@ -37,6 +37,7 @@ const publicationReadinessBlockedReasonLabels: Record<StorePublicationBlockedRea
   SERVICE_CITY_NOT_ELIGIBLE: "مدينة خدمة المتجر غير مؤهلة للنشر",
   CATALOG_NOT_READY: "لا يوجد كتالوج أو عرض منشور صالح يجعل المتجر جاهزًا",
   STORE_LOGO_NOT_READY: "شعار المتجر غير جاهز؛ أضفه من ملف المتجر قبل النشر للعملاء",
+  STORE_COVER_NOT_READY: "صورة غلاف المتجر غير جاهزة للنشر",
 };
 
 const storeOfferPublicationLabels: Record<StoreOfferPublicationState, string> = {

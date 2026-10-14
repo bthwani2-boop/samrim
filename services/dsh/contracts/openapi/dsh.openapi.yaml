@@ -36,6 +36,9 @@ paths:
   /dsh/joining-cases/{caseId}/store-image:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1store-image"
 
+  /dsh/joining-cases/{caseId}/internal-photos:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1internal-photos"
+
   /dsh/joining-cases/{caseId}/proof-image:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1proof-image"
 
@@ -305,6 +308,12 @@ paths:
 
   /dsh/stores/{storeId}/publication:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1publication"
+
+  /dsh/operator/stores/{storeId}/internal-photos:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1internal-photos"
+
+  /dsh/operator/stores/{storeId}/internal-photos/{photoId}:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1internal-photos~1{photoId}"
 
   /dsh/operator/stores/partner-presence:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1stores~1partner-presence"
@@ -642,6 +651,8 @@ paths:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1beneficiaries~1{actorType}~1{actorId}~1financial-statement"
   /dsh/operator/financial-statements:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1financial-statements"
+  /dsh/operator/orders/{orderId}/adjustments/{adjustmentId}/wallet-compensation:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1orders~1{orderId}~1adjustments~1{adjustmentId}~1wallet-compensation"
   /dsh/operator/payout-requests/{payoutId}:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests~1{payoutId}"
   /dsh/operator/payout-requests/{payoutId}/prepare:
@@ -1311,6 +1322,38 @@ components:
           $ref: "#/components/schemas/MediaProvenance"
           nullable: true
 
+    StoreCoverImage:
+      type: object
+      required: [uri, role]
+      additionalProperties: false
+      properties:
+        uri:
+          type: string
+          format: uri
+        role:
+          type: string
+          const: cover
+        contentSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        provenance:
+          $ref: "#/components/schemas/MediaProvenance"
+          nullable: true
+
+    StoreInternalPhotoSummary:
+      type: object
+      required: [id, contentType, createdAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        contentType:
+          type: string
+          enum: [image/jpeg, image/png]
+        createdAt:
+          type: string
+          format: date-time
+
     MediaProvenance:
       type: object
       required: [creator, sourceDescription, rightsStatement, attestedByActorId, attestedAt]
@@ -1472,6 +1515,9 @@ components:
         storeProfileImage:
           $ref: "#/components/schemas/StoreProfileImage"
           nullable: true
+        storeCoverImage:
+          $ref: "#/components/schemas/StoreCoverImage"
+          nullable: true
         version:
           type: integer
           minimum: 1
@@ -1600,6 +1646,9 @@ components:
           type: string
         storeProfileImage:
           $ref: "#/components/schemas/StoreProfileImage"
+          nullable: true
+        storeCoverImage:
+          $ref: "#/components/schemas/StoreCoverImage"
           nullable: true
         commercialStoreTypeNameAr:
           type: string
@@ -1859,7 +1908,7 @@ components:
           type: boolean
         blockedReason:
           type: string
-          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, FINANCIAL_PROFILE_NOT_READY, SERVICE_CITY_NOT_ELIGIBLE, STORE_LOGO_NOT_READY, CATALOG_NOT_READY]
+          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, FINANCIAL_PROFILE_NOT_READY, SERVICE_CITY_NOT_ELIGIBLE, STORE_LOGO_NOT_READY, STORE_COVER_NOT_READY, CATALOG_NOT_READY]
 
     StoreView:
       type: object
@@ -1912,6 +1961,9 @@ components:
           nullable: true
         storeProfileImage:
           $ref: "#/components/schemas/StoreProfileImage"
+          nullable: true
+        storeCoverImage:
+          $ref: "#/components/schemas/StoreCoverImage"
           nullable: true
         createdAt:
           type: string
@@ -4585,6 +4637,9 @@ components:
           nullable: true
         storeProfileImage:
           $ref: "#/components/schemas/StoreProfileImage"
+          nullable: true
+        storeCoverImage:
+          $ref: "#/components/schemas/StoreCoverImage"
           nullable: true
         version:
           type: integer
@@ -8182,6 +8237,29 @@ components:
           type: boolean
         simulator:
           type: boolean
+        recentCompensations:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerWalletCompensationSummary"
+
+    CustomerWalletCompensationSummary:
+      type: object
+      additionalProperties: false
+      required: [id, orderId, amountMinor, currency, createdAt]
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        amountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        createdAt:
+          type: string
+          format: date-time
 
     BeneficiaryWalletResponse:
       type: object
@@ -8452,7 +8530,7 @@ components:
           enum: [REMOVE_ITEM, SET_ACTUAL_QUANTITY]
         state:
           type: string
-          enum: [PROPOSED, REJECTED, FINANCIAL_RECONCILIATION_REQUIRED]
+          enum: [PROPOSED, REJECTED, FINANCIAL_RECONCILIATION_REQUIRED, APPLIED]
         actualQuantityBaseUnits:
           type: integer
           minimum: 1
@@ -8743,6 +8821,15 @@ components:
         redeemedCount:
           type: integer
           minimum: 0
+        discountBudgetLimitMinor:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Optional cap on the total discount authorized at checkout in YER minor units; WLT owns actual funding ledger.
+        discountSpentMinor:
+          type: integer
+          minimum: 0
+          description: Sum of active, non-released promotion redemptions (not WLT settled spend).
         version:
           type: integer
           minimum: 1
@@ -8883,6 +8970,11 @@ components:
           type: integer
           minimum: 1
           nullable: true
+        discountBudgetLimitMinor:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Optional hard cap on total discounted value in YER minor units.
 
     PromotionTarget:
       type: object

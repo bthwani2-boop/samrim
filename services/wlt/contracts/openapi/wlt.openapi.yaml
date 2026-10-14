@@ -76,6 +76,39 @@ paths:
         '400': { description: Invalid query. }
         '401': { description: WLT service authorization is required. }
         '502': { description: WLT persistence is unavailable. }
+  /wlt/v1/operator/order-adjustment-reconciliation-cases/{caseId}/wallet-credit:
+    post:
+      operationId: creditReviewedCustomerWallet
+      summary: Credit the existing customer wallet once after Finance review of a collected adjustment
+      description: Service-to-service only. DSH authorizes the acting Finance operator and independently derives the exact amount from original Order evidence. WLT rejects uncollected, mismatched or excessive compensation.
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amountMinor, evidenceReference]
+              properties:
+                amountMinor: { type: integer, format: int64, minimum: 1 }
+                evidenceReference: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        '201': { description: A balanced platform-expense to Customer Wallet entry was committed with canonical compensation readback. }
+        '200': { description: Existing customer credit returned safely after an idempotent retry. }
+        '400': { description: Invalid amount or attribution. }
+        '401': { description: WLT service token is missing or invalid. }
+        '404': { description: Canonical WLT adjustment case is not found. }
+        '409': { description: Payment not collected, amount exceeds original Order or prior decision conflicts. }
+        '502': { description: WLT persistence is unavailable. }
   /wlt/v1/payment-intents/by-external-reference:
     get:
       operationId: readPaymentIntentByExternalReference
@@ -1999,6 +2032,19 @@ components:
         availableMinor: { type: integer }
         cashInEnabled: { type: boolean }
         simulator: { type: boolean }
+        recentCompensations:
+          type: array
+          items: { $ref: '#/components/schemas/CustomerWalletCompensationSummary' }
+    CustomerWalletCompensationSummary:
+      type: object
+      additionalProperties: false
+      required: [id, orderId, amountMinor, currency, createdAt]
+      properties:
+        id: { type: string, minLength: 1 }
+        orderId: { type: string, minLength: 1 }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        createdAt: { type: string, format: date-time }
     WalletStateResponse:
       type: object
       additionalProperties: false

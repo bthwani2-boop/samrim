@@ -50,6 +50,8 @@ type PromotionRecord struct {
 	Targets                    []PromotionTargetInput
 	RedemptionLimit            *int64
 	RedeemedCount              int64
+	DiscountBudgetLimitMinor   *int64
+	DiscountSpentMinor         int64
 	Version                    int
 	CreatedByActorID           string
 	CreatedAt                  time.Time
@@ -93,6 +95,7 @@ type PromotionInput struct {
 	MinOrderSubtotalMinor      *int64
 	Targets                    []PromotionTargetInput
 	RedemptionLimit            *int64
+	DiscountBudgetLimitMinor   *int64
 	CreatedByActorID           string
 }
 
@@ -202,6 +205,11 @@ func validatePromotionInput(input PromotionInput) error {
 	if input.RequiresPartnerOptIn && strings.TrimSpace(input.StoreID) != "" {
 		return ErrPromotionInvalid
 	}
+	// The platform cannot volunteer a Store's funds: a platform-wide offer
+	// funded by Partners requires each participating Store's explicit opt-in.
+	if input.StoreID == "" && input.FundingSource != "BTHWANI" && !input.RequiresPartnerOptIn {
+		return ErrPromotionInvalid
+	}
 	if len(input.Targets) > 0 {
 		seenTargets := map[string]struct{}{}
 		for _, target := range input.Targets {
@@ -225,6 +233,9 @@ func validatePromotionInput(input PromotionInput) error {
 	if input.RedemptionLimit != nil && *input.RedemptionLimit <= 0 {
 		return ErrPromotionInvalid
 	}
+	if input.DiscountBudgetLimitMinor != nil && *input.DiscountBudgetLimitMinor <= 0 {
+		return ErrPromotionInvalid
+	}
 	if input.EndsAt != nil && !input.EndsAt.After(input.StartsAt) {
 		return ErrPromotionInvalid
 	}
@@ -233,10 +244,10 @@ func validatePromotionInput(input PromotionInput) error {
 
 func scanPromotion(row rowScanner) (PromotionRecord, error) {
 	var item PromotionRecord
-	var maxDiscount, redemptionLimit, fundingShare, threshold sql.NullInt64
+	var maxDiscount, redemptionLimit, fundingShare, threshold, budgetLimit sql.NullInt64
 	var storeValue, cityValue sql.NullString
 	var endValue sql.NullTime
-	err := row.Scan(&item.ID, &item.Code, &item.NameAr, &item.DescriptionAr, &item.Kind, &item.ValueMinor, &maxDiscount, &item.FundingSource, &fundingShare, &storeValue, &cityValue, &item.State, &item.StartsAt, &endValue, &item.RequiresPartnerOptIn, &threshold, &redemptionLimit, &item.RedeemedCount, &item.Version, &item.CreatedByActorID, &item.CreatedAt, &item.UpdatedAt)
+	err := row.Scan(&item.ID, &item.Code, &item.NameAr, &item.DescriptionAr, &item.Kind, &item.ValueMinor, &maxDiscount, &item.FundingSource, &fundingShare, &storeValue, &cityValue, &item.State, &item.StartsAt, &endValue, &item.RequiresPartnerOptIn, &threshold, &redemptionLimit, &item.RedeemedCount, &item.Version, &item.CreatedByActorID, &item.CreatedAt, &item.UpdatedAt, &budgetLimit, &item.DiscountSpentMinor)
 	if err != nil {
 		return PromotionRecord{}, err
 	}
@@ -266,20 +277,24 @@ func scanPromotion(row rowScanner) (PromotionRecord, error) {
 		value := redemptionLimit.Int64
 		item.RedemptionLimit = &value
 	}
+	if budgetLimit.Valid {
+		value := budgetLimit.Int64
+		item.DiscountBudgetLimitMinor = &value
+	}
 	return item, nil
 }
 
-const promotionSelect = `id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,funding_share_partner_percent,store_id,service_city_id,state,starts_at,ends_at,requires_partner_opt_in,min_order_subtotal_minor,redemption_limit,redeemed_count,version,created_by_actor_id,created_at,updated_at`
+const promotionSelect = `id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,funding_share_partner_percent,store_id,service_city_id,state,starts_at,ends_at,requires_partner_opt_in,min_order_subtotal_minor,redemption_limit,redeemed_count,version,created_by_actor_id,created_at,updated_at,discount_budget_limit_minor,discount_spent_minor`
 
 // listPublicPromotionsQuery must stay character-identical to promotionSelect for
 // its column list; TestPublicPromotionsListingKeepsCanonicalColumns fails when
 // the two drift apart.
-const listPublicPromotionsQuery = `SELECT id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,funding_share_partner_percent,store_id,service_city_id,state,starts_at,ends_at,requires_partner_opt_in,min_order_subtotal_minor,redemption_limit,redeemed_count,version,created_by_actor_id,created_at,updated_at
+const listPublicPromotionsQuery = `SELECT id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,funding_share_partner_percent,store_id,service_city_id,state,starts_at,ends_at,requires_partner_opt_in,min_order_subtotal_minor,redemption_limit,redeemed_count,version,created_by_actor_id,created_at,updated_at,discount_budget_limit_minor,discount_spent_minor
         FROM dsh.commerce_promotions
         WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())))
         AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2)
         AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3))
-        AND (NOT $1 OR requires_partner_opt_in = false OR EXISTS (SELECT 1 FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=dsh.commerce_promotions.id AND o.store_id=$3 AND o.state='OPTED_IN'))
+        AND (NOT $1 OR store_id IS NOT NULL OR (funding_source='BTHWANI' AND requires_partner_opt_in=false) OR EXISTS (SELECT 1 FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=dsh.commerce_promotions.id AND o.store_id=$3 AND o.state='OPTED_IN'))
         ORDER BY starts_at DESC,id DESC
         LIMIT CASE WHEN $1 THEN 4 ELSE NULL END`
 
@@ -390,7 +405,7 @@ func CreatePromotion(ctx context.Context, db *sql.DB, input PromotionInput, idem
 	if !errors.Is(err, sql.ErrNoRows) {
 		return PromotionRecord{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_promotions(id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,funding_share_partner_percent,store_id,service_city_id,starts_at,ends_at,requires_partner_opt_in,min_order_subtotal_minor,redemption_limit,created_by_actor_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),NULLIF($11,''),$12,$13,$14,$15,$16,$17)`, input.ID, input.Code, input.NameAr, input.DescriptionAr, input.Kind, input.ValueMinor, input.MaxDiscountMinor, input.FundingSource, input.FundingSharePartnerPercent, input.StoreID, input.ServiceCityID, input.StartsAt, input.EndsAt, input.RequiresPartnerOptIn, input.MinOrderSubtotalMinor, input.RedemptionLimit, input.CreatedByActorID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_promotions(id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,funding_share_partner_percent,store_id,service_city_id,starts_at,ends_at,requires_partner_opt_in,min_order_subtotal_minor,redemption_limit,created_by_actor_id,discount_budget_limit_minor) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),NULLIF($11,''),$12,$13,$14,$15,$16,$17,$18)`, input.ID, input.Code, input.NameAr, input.DescriptionAr, input.Kind, input.ValueMinor, input.MaxDiscountMinor, input.FundingSource, input.FundingSharePartnerPercent, input.StoreID, input.ServiceCityID, input.StartsAt, input.EndsAt, input.RequiresPartnerOptIn, input.MinOrderSubtotalMinor, input.RedemptionLimit, input.CreatedByActorID, input.DiscountBudgetLimitMinor); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "commerce_promotions_code_uq") {
 			return PromotionRecord{}, false, ErrPromotionCodeConflict
 		}
@@ -463,6 +478,15 @@ func SetPromotionState(ctx context.Context, db *sql.DB, id, state, idempotencyKe
 			return PromotionRecord{}, false, err
 		}
 	}
+	if state == "PAUSED" {
+		// Only a live promotion can be paused. In particular, ENDED is
+		// terminal and must not be resurrected by PAUSED -> PUBLISHED.
+		if err := tx.QueryRowContext(ctx, "SELECT 1 FROM dsh.commerce_promotions WHERE id=$1 AND state='PUBLISHED'", id).Scan(&stateGuard); errors.Is(err, sql.ErrNoRows) {
+			return PromotionRecord{}, false, ErrPromotionNotFound
+		} else if err != nil {
+			return PromotionRecord{}, false, err
+		}
+	}
 	if state == "ENDED" {
 		if err := tx.QueryRowContext(ctx, "SELECT 1 FROM dsh.commerce_promotions WHERE id=$1 AND state IN ('PUBLISHED','PAUSED','DRAFT')", id).Scan(&stateGuard); errors.Is(err, sql.ErrNoRows) {
 			return PromotionRecord{}, false, ErrPromotionNotFound
@@ -470,7 +494,11 @@ func SetPromotionState(ctx context.Context, db *sql.DB, id, state, idempotencyKe
 			return PromotionRecord{}, false, err
 		}
 	}
-	result, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET state=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$3", id, state, expectedVersion)
+	result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_promotions SET state=$2,version=version+1,updated_at=clock_timestamp()
+		WHERE id=$1 AND version=$3 AND
+		(($2='PUBLISHED' AND state IN ('DRAFT','PAUSED')) OR
+		 ($2='PAUSED' AND state='PUBLISHED') OR
+		 ($2='ENDED' AND state IN ('PUBLISHED','PAUSED','DRAFT')))`, id, state, expectedVersion)
 	if err != nil {
 		return PromotionRecord{}, false, err
 	}
@@ -529,7 +557,7 @@ func EvaluatePromotion(ctx context.Context, source rowQueryer, code, storeID, st
 	}
 	// A platform campaign applies to a Store only when the Store opted in where
 	// opt-in is required.
-	if item.StoreID == "" && item.RequiresPartnerOptIn {
+	if item.StoreID == "" && (item.RequiresPartnerOptIn || item.FundingSource != "BTHWANI") {
 		var opted bool
 		if err := source.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM dsh.commerce_promotion_store_opt_ins WHERE promotion_id=$1 AND store_id=$2 AND state='OPTED_IN')", item.ID, storeID).Scan(&opted); err != nil {
 			return PromotionRecord{}, 0, err
@@ -641,6 +669,9 @@ func EvaluatePromotion(ctx context.Context, source rowQueryer, code, storeID, st
 	if discount <= 0 {
 		return PromotionRecord{}, 0, ErrPromotionUnavailable
 	}
+	if item.DiscountBudgetLimitMinor != nil && discount > *item.DiscountBudgetLimitMinor-item.DiscountSpentMinor {
+		return PromotionRecord{}, 0, ErrPromotionLimitReached
+	}
 	return item, discount, nil
 }
 
@@ -648,7 +679,10 @@ func RedeemPromotion(ctx context.Context, tx *sql.Tx, promotion PromotionRecord,
 	if promotion.ID == "" || strings.TrimSpace(clientActorID) == "" || strings.TrimSpace(orderID) == "" || discountMinor <= 0 {
 		return ErrPromotionUnavailable
 	}
-	result, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET redeemed_count=redeemed_count+1,updated_at=clock_timestamp() WHERE id=$1 AND (redemption_limit IS NULL OR redeemed_count < redemption_limit)", promotion.ID)
+	result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_promotions SET redeemed_count=redeemed_count+1,discount_spent_minor=discount_spent_minor+$2,updated_at=clock_timestamp()
+		WHERE id=$1 AND (redemption_limit IS NULL OR redeemed_count < redemption_limit)
+		  AND discount_spent_minor<=9223372036854775807-$2
+		  AND (discount_budget_limit_minor IS NULL OR discount_spent_minor<=discount_budget_limit_minor-$2)`, promotion.ID, discountMinor)
 	if err != nil {
 		return err
 	}
@@ -673,11 +707,28 @@ func releaseOrderPromotionRedemptionTx(ctx context.Context, tx *sql.Tx, orderID,
 	if strings.TrimSpace(orderID) == "" || strings.TrimSpace(promotionID) == "" {
 		return nil
 	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM dsh.commerce_promotion_redemptions WHERE order_id=$1 AND promotion_id=$2", orderID, promotionID); err != nil {
+	var releasedMinor int64
+	err := tx.QueryRowContext(ctx, "DELETE FROM dsh.commerce_promotion_redemptions WHERE order_id=$1 AND promotion_id=$2 RETURNING discount_minor", orderID, promotionID).Scan(&releasedMinor)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil // Duplicate cancellation cannot release capacity twice.
+	}
+	if err != nil {
 		return err
 	}
-	_, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET redeemed_count=redeemed_count-1,updated_at=clock_timestamp() WHERE id=$1 AND redeemed_count>0", promotionID)
-	return err
+	result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_promotions
+		SET redeemed_count=redeemed_count-1,discount_spent_minor=discount_spent_minor-$2,updated_at=clock_timestamp()
+		WHERE id=$1 AND redeemed_count>0 AND discount_spent_minor>=$2`, promotionID, releasedMinor)
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated != 1 {
+		return ErrPromotionInvalid // Roll back deletion if accounting is inconsistent.
+	}
+	return nil
 }
 
 func scanDiscoveryContent(row rowScanner) (DiscoveryContentRecord, error) {
@@ -800,6 +851,13 @@ func ListDiscoveryContent(ctx context.Context, db *sql.DB, public bool, serviceC
                           AND content.starts_at <= statement_timestamp()
                           AND (content.ends_at IS NULL OR content.ends_at > statement_timestamp())
                           AND (content.service_city_id IS NULL OR content.service_city_id=$1)
+                          AND EXISTS (
+                              SELECT 1 FROM dsh.discovery_content_media_assets asset
+                              WHERE asset.id=content.media_asset_id
+                                AND asset.state='active'
+                                AND asset.rights_attested_at IS NOT NULL
+                                AND asset.uri<>''
+                          )
                           AND ` + discoveryContentTargetEligibilityPredicate("content", "$1", "statement_timestamp()") + `
                 )
                 SELECT ` + discoveryContentSelect + `
@@ -945,12 +1003,12 @@ func ListPartnerEligibleCampaigns(ctx context.Context, db *sql.DB, storeID strin
 	items := make([]PartnerCampaignRecord, 0, 4)
 	for rows.Next() {
 		var record PartnerCampaignRecord
-		var maxDiscount, threshold sql.NullInt64
+		var maxDiscount, threshold, budgetLimit sql.NullInt64
 		var storeValue, cityValue, optInState sql.NullString
 		var optInVersion sql.NullInt64
 		var endValue sql.NullTime
 		var fundingShare sql.NullInt64
-		if err := rows.Scan(&record.ID, &record.Code, &record.NameAr, &record.DescriptionAr, &record.Kind, &record.ValueMinor, &maxDiscount, &record.FundingSource, &fundingShare, &storeValue, &cityValue, &record.State, &record.StartsAt, &endValue, &record.RequiresPartnerOptIn, &threshold, &record.RedemptionLimit, &record.RedeemedCount, &record.Version, &record.CreatedByActorID, &record.CreatedAt, &record.UpdatedAt, &optInState, &optInVersion); err != nil {
+		if err := rows.Scan(&record.ID, &record.Code, &record.NameAr, &record.DescriptionAr, &record.Kind, &record.ValueMinor, &maxDiscount, &record.FundingSource, &fundingShare, &storeValue, &cityValue, &record.State, &record.StartsAt, &endValue, &record.RequiresPartnerOptIn, &threshold, &record.RedemptionLimit, &record.RedeemedCount, &record.Version, &record.CreatedByActorID, &record.CreatedAt, &record.UpdatedAt, &budgetLimit, &record.DiscountSpentMinor, &optInState, &optInVersion); err != nil {
 			return nil, err
 		}
 		if optInVersion.Valid {
@@ -967,6 +1025,10 @@ func ListPartnerEligibleCampaigns(ctx context.Context, db *sql.DB, storeID strin
 		if endValue.Valid {
 			value := endValue.Time
 			record.EndsAt = &value
+		}
+		if budgetLimit.Valid {
+			value := budgetLimit.Int64
+			record.DiscountBudgetLimitMinor = &value
 		}
 		record.StoreOptInState = optInState.String
 		items = append(items, record)
@@ -1020,14 +1082,14 @@ func SetPartnerCampaignOptIn(ctx context.Context, db *sql.DB, promotionID, store
 		}
 	}
 	var record PartnerCampaignRecord
-	var maxDiscount, threshold sql.NullInt64
+	var maxDiscount, threshold, budgetLimit sql.NullInt64
 	var storeValue, cityValue, optInState sql.NullString
 	var endValue sql.NullTime
 	var fundingShare sql.NullInt64
 	if err := tx.QueryRowContext(ctx, `SELECT `+promotionSelect+`,
                 COALESCE((SELECT o.state FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=p.id AND o.store_id=$2), '')
                 FROM dsh.commerce_promotions p WHERE p.id=$1 AND p.store_id IS NULL AND p.state='PUBLISHED'`, promotionID, storeID).Scan(
-		&record.ID, &record.Code, &record.NameAr, &record.DescriptionAr, &record.Kind, &record.ValueMinor, &maxDiscount, &record.FundingSource, &fundingShare, &storeValue, &cityValue, &record.State, &record.StartsAt, &endValue, &record.RequiresPartnerOptIn, &threshold, &record.RedemptionLimit, &record.RedeemedCount, &record.Version, &record.CreatedByActorID, &record.CreatedAt, &record.UpdatedAt, &optInState); err != nil {
+		&record.ID, &record.Code, &record.NameAr, &record.DescriptionAr, &record.Kind, &record.ValueMinor, &maxDiscount, &record.FundingSource, &fundingShare, &storeValue, &cityValue, &record.State, &record.StartsAt, &endValue, &record.RequiresPartnerOptIn, &threshold, &record.RedemptionLimit, &record.RedeemedCount, &record.Version, &record.CreatedByActorID, &record.CreatedAt, &record.UpdatedAt, &budgetLimit, &record.DiscountSpentMinor, &optInState); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return PartnerCampaignRecord{}, false, ErrPromotionNotFound
 		}
@@ -1044,6 +1106,10 @@ func SetPartnerCampaignOptIn(ctx context.Context, db *sql.DB, promotionID, store
 	if endValue.Valid {
 		value := endValue.Time
 		record.EndsAt = &value
+	}
+	if budgetLimit.Valid {
+		value := budgetLimit.Int64
+		record.DiscountBudgetLimitMinor = &value
 	}
 	record.StoreOptInState = optInState.String
 	if err := tx.QueryRowContext(ctx, "SELECT version FROM dsh.commerce_promotion_store_opt_ins WHERE promotion_id=$1 AND store_id=$2", promotionID, storeID).Scan(&record.StoreOptInVersion); err != nil {

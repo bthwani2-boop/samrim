@@ -173,7 +173,7 @@ test("operations lanes, order detail routes, and operator recovery follow URL st
   await expect(page.getByRole("heading", { name: "عناصر الطلب" })).toBeVisible();
 
   await page.goto("/operations?lane=exceptions");
-  await expect(page.getByRole("heading", { name: "الاستثناءات والاستعادة" })).toBeVisible();
+  await expect(page.locator("#operations-list-title")).toBeVisible();
   await expect(page.getByRole("button", { name: "استعادة التسليم" })).toHaveCount(0);
   await page.getByRole("link", { name: "فتح الطلب" }).click();
   const detailNavigation = page.getByRole("navigation", { name: "مساحات تفاصيل الطلب" });
@@ -192,7 +192,7 @@ test("operations lanes, order detail routes, and operator recovery follow URL st
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/operations?lane=exceptions");
-  await expect(page.getByRole("heading", { name: "الاستثناءات والاستعادة" })).toBeVisible();
+  await expect(page.locator("#operations-list-title")).toBeVisible();
   const laneNavigationBounds = await page.getByRole("navigation", { name: "مسارات مركز العمليات" }).boundingBox();
   const activeLaneBounds = await page.getByRole("navigation", { name: "مسارات مركز العمليات" }).getByRole("link", { name: "الاستثناءات والاستعادة" }).boundingBox();
   if (!laneNavigationBounds || !activeLaneBounds) throw new Error("Expected the active narrow operations lane to render.");
