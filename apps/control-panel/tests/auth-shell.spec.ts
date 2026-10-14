@@ -997,7 +997,7 @@ test("legacy Captain profile review never offers role activation before review",
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_legacy", phoneE164: "+96777000109", role: "captain", enabled, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "cap_adm_legacy", actorId: "act_captain_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, availabilityState: "unavailable", version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
   });
   await page.goto("/captains");
-  await expect(page.getByRole("img", { name: "الملف يحتاج استكمالًا ومراجعة" }).first()).toBeVisible();
+  await expect(page.getByText("الملف يحتاج استكمالًا ومراجعة", { exact: true })).toBeVisible();
   await fillActionReason(page, "إيقاف حتى مراجعة الملف");
   await page.getByRole("button", { name: "إيقاف التشغيل" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_captain_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
