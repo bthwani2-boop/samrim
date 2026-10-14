@@ -82,14 +82,22 @@ func RecordDiscoveryContentEvent(ctx context.Context, db *sql.DB, input Discover
 	}
 	var eligible bool
 	if err := db.QueryRowContext(ctx, `SELECT EXISTS (
-		SELECT 1 FROM dsh.discovery_content
-		WHERE id=$1 AND state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())
+		SELECT 1 FROM dsh.discovery_content content
+		WHERE content.id=$1 AND content.state='PUBLISHED' AND content.starts_at <= clock_timestamp()
+		  AND (content.ends_at IS NULL OR content.ends_at > clock_timestamp())
+		  AND EXISTS (
+			SELECT 1 FROM dsh.discovery_content_media_assets asset
+			WHERE asset.id=content.media_asset_id AND asset.state='active'
+			  AND asset.rights_attested_at IS NOT NULL AND asset.uri<>''
+		  )
 	)`, input.ContentID).Scan(&eligible); err != nil {
 		return err
 	}
-	if !eligible {
-		// An already-recorded event remains replayable after a campaign
-		// expires; a new event for that content must still be rejected.
+	if !eligible && input.EventType != "CONVERSION" {
+		// New clicks/impressions require active, licensed content, but exact
+		// prior events remain replayable after expiry or media retirement.
+		// Conversion is instead attributed to a click at the order creation
+		// time, so expiry after a legitimate click does not erase that sale.
 		found, err := readDiscoveryContentEventReplay(ctx, db, input)
 		if err != nil {
 			return err

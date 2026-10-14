@@ -91,8 +91,29 @@ func TestDiscoveryConversionRequiresPreOrderClickInSameSession(t *testing.T) {
 		if err := postgres.RecordDiscoveryContentEvent(ctx, db, wrongSession); !errors.Is(err, postgres.ErrDiscoveryContentEventInvalid) {
 			t.Fatalf("order from unrelated session must not be attributed: %v", err)
 		}
+		// A click made while published may still lead to a valid attributed
+		// order after the promotion closes. Closing must reject NEW clicks.
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.discovery_content SET ends_at=clock_timestamp()-interval '1 second' WHERE id=$1", content); err != nil {
+			t.Fatalf("expire campaign after the order: %v", err)
+		}
+		freshClick := click
+		freshClick.ID, freshClick.ClientEventID = "late-click", "client-late-click"
+		if err := postgres.RecordDiscoveryContentEvent(ctx, db, freshClick); !errors.Is(err, postgres.ErrDiscoveryContentEventNotFound) {
+			t.Fatalf("expired content must reject new clicks: %v", err)
+		}
+		if err := postgres.RecordDiscoveryContentEvent(ctx, db, click); err != nil {
+			t.Fatalf("existing click must replay after expiry: %v", err)
+		}
 		if err := postgres.RecordDiscoveryContentEvent(ctx, db, conversion); err != nil {
-			t.Fatalf("record click-attributed order: %v", err)
+			t.Fatalf("record click-attributed order after content expires: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.discovery_content_media_assets SET state='retired',retired_at=clock_timestamp() WHERE id='attribution-asset'"); err != nil {
+			t.Fatalf("retire content media: %v", err)
+		}
+		if err := postgres.RecordDiscoveryContentEvent(ctx, db, postgres.DiscoveryContentEventInput{
+			ID: "retired-impression", ClientEventID: "client-retired-impression", ContentID: content, EventType: "IMPRESSION", ClientSessionID: session,
+		}); !errors.Is(err, postgres.ErrDiscoveryContentEventNotFound) {
+			t.Fatalf("retired media must reject new impression events: %v", err)
 		}
 		if _, err := db.ExecContext(ctx, `UPDATE dsh.discovery_content_events
 			SET occurred_at=clock_timestamp()-interval '25 hours' WHERE client_event_id=$1`, click.ClientEventID); err != nil {
