@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { operationResponseMessage } from "./operator-actions";
+import { operationalAge } from "./operational-age";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type LaneId = "orders" | "attention" | "dispatch" | "execution" | "exceptions" | "history";
@@ -23,6 +24,11 @@ const lanes: ReadonlyArray<Lane> = [
 ];
 
 const subLanes: Partial<Record<LaneId, ReadonlyArray<SubLane>>> = {
+  exceptions: [
+    { id: "delivery-failed", label: "تعثر التسليم", state: "DELIVERY_FAILED" },
+    { id: "rejected", label: "الطلبات المرفوضة", state: "REJECTED" },
+    { id: "cancelled", label: "الطلبات الملغاة", state: "CANCELLED" },
+  ],
   execution: [
     { id: "assigned", label: "إسناد الكابتن", state: "CAPTAIN_ASSIGNED" },
     { id: "custody", label: "في عهدة الكابتن", state: "IN_CUSTODY" },
@@ -57,7 +63,7 @@ export function OperationsWorkspace() {
   const lane = lanes.find((item) => item.id === requestedLane) ?? defaultLane;
   const laneSubTabs = subLanes[lane.id] ?? [];
   const subLane = laneSubTabs.find((item) => item.id === params.get("sub")) ?? laneSubTabs[0];
-  const state = lane.id === "dispatch" ? "READY_FOR_DISPATCH" : lane.id === "exceptions" ? "DELIVERY_FAILED" : lane.id === "execution" || lane.id === "history" ? subLane?.state ?? "" : "";
+  const state = lane.id === "dispatch" ? "READY_FOR_DISPATCH" : lane.id === "exceptions" ? subLane?.state ?? "DELIVERY_FAILED" : lane.id === "execution" || lane.id === "history" ? subLane?.state ?? "" : "";
   const actionableOnly = lane.id === "attention";
   const searchFromUrl = (params.get("q") ?? "").trim().slice(0, 128);
   const sort = params.get("sort") === "updated_asc" ? "updated_asc" : "updated_desc";
@@ -66,6 +72,7 @@ export function OperationsWorkspace() {
   const hasSearch = Boolean(searchFromUrl);
 
   const [operations, setOperations] = useState<ReadonlyArray<OperatorOperationListItem>>([]);
+  const [ageClock, setAgeClock] = useState(() => Date.now());
   const [search, setSearch] = useState(searchFromUrl);
   const [loading, setLoading] = useState(true);
   const [nextCursor, setNextCursor] = useState("");
@@ -75,6 +82,11 @@ export function OperationsWorkspace() {
   const lanesNavigationRef = useRef<HTMLElement>(null);
 
   useEffect(() => setSearch(searchFromUrl), [searchFromUrl]);
+  useEffect(() => {
+    const timer = setInterval(() => setAgeClock(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  const needsReviewOnPage = operations.filter((operation) => operationalAge(operation.state, operation.updatedAt, ageClock).needsReview).length;
 
   const navigate = useCallback((changes: Readonly<{ lane?: LaneId; sub?: string; q?: string; sort?: string }>) => {
     cursorPage.clearForNavigation();
@@ -208,11 +220,12 @@ export function OperationsWorkspace() {
       {loading && operations.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة {lane.label}</strong></div> : null}
       {!loading && !error && operations.length === 0 ? <div className="collection-state"><strong>{hasSearch ? "لا توجد نتائج تطابق البحث" : "لا توجد طلبات في هذا المسار"}</strong><p>{hasSearch ? "امسح البحث لعرض بقية السجلات." : lane.summary}</p></div> : null}
 
+      {operations.length > 0 && needsReviewOnPage > 0 ? <p role="status">في هذه الصفحة: {needsReviewOnPage} طلبات تحتاج مراجعة بسبب التعثر أو طول المدة منذ آخر تحديث. ليست هذه مخالفة مؤكدة لمهلة خدمة.</p> : null}
       {operations.length > 0 ? (
         <section className="operations-table-wrap" aria-label="جدول الطلبات؛ يمكن تمريره أفقيًا عند ضيق الشاشة">
           <table className="operations-table">
             <caption className="visually-hidden">{laneSubTabs.length && subLane ? subLane.label : lane.label}</caption>
-            <thead><tr><th scope="col">الطلب</th><th scope="col">المتجر</th><th scope="col">الحالة</th><th scope="col">الكابتن</th><th scope="col">آخر تحديث</th><th scope="col">المتابعة</th></tr></thead>
+            <thead><tr><th scope="col">الطلب</th><th scope="col">المتجر</th><th scope="col">الحالة</th><th scope="col">الكابتن</th><th scope="col">آخر تحديث</th><th scope="col">المتابعة</th><th scope="col">منذ آخر تحديث</th></tr></thead>
             <tbody>
               {operations.map((item) => (
                 <tr key={item.orderId}>
@@ -221,6 +234,7 @@ export function OperationsWorkspace() {
                   <td><span className={`status-badge status-${item.state.toLowerCase()}`}>{orderStateLabel(item.state)}</span></td>
                   <td>{item.assignment ? captainAssignmentStateLabel(item.assignment.state) : <span className="muted">غير مسند</span>}</td>
                   <td><time dateTime={item.updatedAt}>{formatOrderDate(item.updatedAt)}</time></td>
+                  <td><span className={operationalAge(item.state, item.updatedAt, ageClock).needsReview ? "operations-attention" : "muted"}>{operationalAge(item.state, item.updatedAt, ageClock).label}</span></td>
                   <td>{lane.id === "attention" ? <span className="operations-attention">يتطلب قرارًا</span> : <span className="muted">فتح مساحة الطلب</span>}</td>
                 </tr>
               ))}
