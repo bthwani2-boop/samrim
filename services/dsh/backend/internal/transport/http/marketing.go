@@ -364,6 +364,13 @@ func (s *MarketingServer) createOperatorPromotion(w http.ResponseWriter, r *http
 	if !decodeJSON(w, r, &input) {
 		return
 	}
+	// Operator authority alone cannot charge a specific Store's funds.
+	// Partner-authored Store offers use their own Store-authorized endpoint;
+	// platform-wide partner funding requires explicit Store opt-in.
+	if strings.TrimSpace(input.StoreID) != "" && string(input.FundingSource) != "BTHWANI" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "operator Store-targeted campaigns cannot charge Partner funds")
+		return
+	}
 	var maxDiscount *int64
 	if input.MaxDiscountMinor > 0 {
 		value := int64(input.MaxDiscountMinor)
@@ -380,12 +387,13 @@ func (s *MarketingServer) createOperatorPromotion(w http.ResponseWriter, r *http
 		fundingShare = &value
 	}
 	threshold := promotionThreshold(int64(input.MinOrderSubtotalMinor))
+	budgetLimit := promotionThreshold(int64(input.DiscountBudgetLimitMinor))
 	item, replayed, err := postgres.CreatePromotion(r.Context(), s.db, postgres.PromotionInput{
 		ID: input.ID, Code: input.Code, NameAr: input.NameAr, DescriptionAr: input.DescriptionAr, Kind: string(input.Kind), ValueMinor: int64(input.ValueMinor), MaxDiscountMinor: maxDiscount,
 		// The operator owns the funding source and allocation for platform-authored
 		// promotions; partner-authored Store promotions stay partner-borne.
-		FundingSource: string(input.FundingSource), FundingSharePartnerPercent: fundingShare, StoreID: input.StoreID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, RequiresPartnerOptIn: input.RequiresPartnerOptIn, MinOrderSubtotalMinor: threshold, Targets: promotionTargets(input.Targets), RedemptionLimit: limit, CreatedByActorID: acting,
-	}, idempotency, postgres.HashMarketingFacts("promotion-create", input.ID, input.Code, input.NameAr, input.DescriptionAr, string(input.Kind), fmt.Sprint(input.ValueMinor), string(input.FundingSource), input.StoreID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.RedemptionLimit), correlation))
+		FundingSource: string(input.FundingSource), FundingSharePartnerPercent: fundingShare, StoreID: input.StoreID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, RequiresPartnerOptIn: input.RequiresPartnerOptIn, MinOrderSubtotalMinor: threshold, Targets: promotionTargets(input.Targets), RedemptionLimit: limit, DiscountBudgetLimitMinor: budgetLimit, CreatedByActorID: acting,
+	}, idempotency, postgres.HashMarketingFacts("promotion-create", input.ID, input.Code, input.NameAr, input.DescriptionAr, string(input.Kind), fmt.Sprint(input.ValueMinor), string(input.FundingSource), input.StoreID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.RedemptionLimit), fmt.Sprint(input.DiscountBudgetLimitMinor), correlation))
 	if err != nil {
 		writeMarketingError(w, err)
 		return
@@ -696,7 +704,7 @@ func toPromotionView(item postgres.PromotionRecord) contract.PromotionView {
 	for _, target := range item.Targets {
 		targets = append(targets, contract.PromotionTarget{TargetKind: target.Kind, TargetRef: target.Ref, TargetLabelAr: target.LabelAr})
 	}
-	return contract.PromotionView{ID: item.ID, Code: item.Code, NameAr: item.NameAr, DescriptionAr: item.DescriptionAr, Kind: contract.PromotionKind(item.Kind), ValueMinor: int(item.ValueMinor), MaxDiscountMinor: intValue(item.MaxDiscountMinor), FundingSource: contract.PromotionFundingSource(item.FundingSource), FundingSharePartnerPercent: intPointer(item.FundingSharePartnerPercent), RequiresPartnerOptIn: item.RequiresPartnerOptIn, MinOrderSubtotalMinor: intValue(item.MinOrderSubtotalMinor), Targets: targets, StoreID: item.StoreID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, RedemptionLimit: intValue(item.RedemptionLimit), RedeemedCount: int(item.RedeemedCount), Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.PromotionView{ID: item.ID, Code: item.Code, NameAr: item.NameAr, DescriptionAr: item.DescriptionAr, Kind: contract.PromotionKind(item.Kind), ValueMinor: int(item.ValueMinor), MaxDiscountMinor: intValue(item.MaxDiscountMinor), FundingSource: contract.PromotionFundingSource(item.FundingSource), FundingSharePartnerPercent: intPointer(item.FundingSharePartnerPercent), RequiresPartnerOptIn: item.RequiresPartnerOptIn, MinOrderSubtotalMinor: intValue(item.MinOrderSubtotalMinor), Targets: targets, StoreID: item.StoreID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, RedemptionLimit: intValue(item.RedemptionLimit), RedeemedCount: int(item.RedeemedCount), DiscountBudgetLimitMinor: intValue(item.DiscountBudgetLimitMinor), DiscountSpentMinor: int(item.DiscountSpentMinor), Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toPublicPromotionView(item postgres.PromotionRecord) contract.PublicPromotionView {

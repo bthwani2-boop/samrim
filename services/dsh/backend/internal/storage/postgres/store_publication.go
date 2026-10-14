@@ -380,7 +380,9 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 		if err != nil {
 			return OperatorStorePage{}, err
 		}
-		store.StoreCoverImageURI = storeProfileImageURI(cover)
+		if cover != nil {
+			store.StoreCoverImageURI = cover.URI
+		}
 		if verticalID.Valid {
 			store.PrimaryVerticalID = verticalID.String
 		}
