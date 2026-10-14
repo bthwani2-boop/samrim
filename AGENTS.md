@@ -86,9 +86,11 @@ Where a workflow crosses actors or surfaces, exercise distinct authorized roles 
 
 Proceed autonomously through routine authorized edits, application interaction, diagnosis and verification until the objective is demonstrably usable or a real blocker is established. Preserve valid sessions and user data, maintain useful regression proof, and finish with an exact-HEAD closure claim and concise results rather than a test-only handoff. Existing authorization, financial, destructive-change, external-publication, deployment and merge boundaries remain in force; this default grants no new authority. Never claim unproven or perpetual 100% correctness.
 
-Default small-change loop:
+Default fast local closure loop:
 
-`SMALL CHANGE -> AFFECTED CHECK -> IMPLEMENT -> DIRECT PROOF -> DONE`
+`BOUNDED ROOT CAUSE -> COHERENT IMPLEMENTATION BATCH -> SMALLEST SUFFICIENT AFFECTED CHECK -> DIRECT PROOF WHEN NEEDED -> DONE`
+
+Complete related edits before running TypeScript, tests, device checks or other verification; do not repeat a check after every minor edit. Batch related terminal/remote/device inspection and reuse still-valid proof. If a check fails, repair the relevant owner and rerun only the invalidated proof. Preserve earlier proof for unaffected code. This optimization never removes material security, financial, data-integrity or end-user evidence.
 
 Use Git to identify changes and Nx to select affected project work when applicable. `pnpm check` is the normal local feedback command for uncommitted work; use narrower direct commands when they are sufficient. `pnpm verify` is explicit candidate-wide local proof, not a default step and not an implicit prerequisite to push.
 

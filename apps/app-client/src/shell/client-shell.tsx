@@ -14,7 +14,7 @@ export function ClientPublicShell({ children, hideHeader = false, hideSearchActi
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   return (
-    <SafeAreaView edges={["top"]} style={[styles.shell, hideHeader && { backgroundColor: theme.surfaceInset }]}>
+    <SafeAreaView edges={hideHeader ? [] : ["top"]} style={[styles.shell, hideHeader && { backgroundColor: theme.surfaceInset }]}>
       {!hideHeader ? <ClientPublicHeader hideSearchAction={hideSearchAction} safeArea={false} /> : null}
       <View style={styles.content}>{children}</View>
     </SafeAreaView>

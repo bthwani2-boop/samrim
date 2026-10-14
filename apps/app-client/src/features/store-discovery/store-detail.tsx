@@ -5,7 +5,8 @@ import * as ExpoLinking from "expo-linking";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, FlatList, I18nManager, Image, Pressable, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 import { currentIdentityState } from "../../bootstrap/identity";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { PromotionCard } from "./promotion-card";
@@ -18,6 +19,7 @@ type DetailState =
   | { kind: "error" };
 
 type StoreCatalogRow =
+  | { kind: "filters"; key: string }
   | { kind: "section"; key: string; title: string }
   | { kind: "heading"; key: string; title: string; subtitle: string }
   | { kind: "empty"; key: string; title: string }
@@ -44,6 +46,7 @@ function categoryTrail(categoryId: string, categories: PublicCatalogResponse["ca
 
 export default function ClientStoreDetail({ storeId, categoryId = "", productId = "" }: { storeId: string; categoryId?: string; productId?: string }) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { selectedCityID } = useServiceCityScope();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -78,6 +81,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [failedCategoryImageIDs, setFailedCategoryImageIDs] = useState<ReadonlySet<string>>(new Set());
   const [failedStoreImage, setFailedStoreImage] = useState(false);
   const [failedStoreCover, setFailedStoreCover] = useState(false);
+  const [heroVisible, setHeroVisible] = useState(true);
   const [favoriteOfferBusyID, setFavoriteOfferBusyID] = useState("");
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [favoriteLoadError, setFavoriteLoadError] = useState(false);
@@ -99,9 +103,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [cartReadError, setCartReadError] = useState(false);
   const fulfillmentModes = useMemo(() => state.kind === "ready" ? availableCustomerFulfillmentModes(state.store.fulfillmentModes) : [], [state]);
   const mutationBusy = Boolean(busyOfferId);
+  const bannerCatalogOffers = bannerOffers.length > 0 ? bannerOffers : (catalogTabs[0]?.catalog.offers ?? (state.kind === "ready" ? state.catalog.offers : []));
   const bannerItems: StoreBannerItem[] = [
     ...promotions.map((promotion) => ({ kind: "promotion" as const, key: `promotion:${promotion.id}`, promotion })),
-    ...bannerOffers.map((offer) => ({ kind: "offer" as const, key: `offer:${offer.offerId}`, offer })),
+    ...bannerCatalogOffers.slice(0, 5).map((offer) => ({ kind: "offer" as const, key: `offer:${offer.offerId}`, offer })),
   ].slice(0, 5);
   // Expose neighboring slides; centering padding is part of the scroll content, not each item.
   const bannerViewportWidth = Math.max(1, windowWidth - spacing[3] * 2);
@@ -151,6 +156,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setCartReadError(false);
     setFailedStoreImage(false);
     setFailedStoreCover(false);
+    setHeroVisible(true);
     setIsFavorite(false);
     setFavoriteOfferIDs(new Set());
     setFavoritesView(false);
@@ -340,6 +346,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة المتجر</Text><Text style={styles.muted}>قد لا يكون المتجر متاحًا في مدينة الخدمة الحالية.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة" onPress={() => router.back()} variant="secondary" /></View>;
   }
 
+  const hasCoverImage = Boolean(state.store.storeCoverImage?.uri && !failedStoreCover);
+  const heroImageURI = hasCoverImage ? state.store.storeCoverImage?.uri : (!failedStoreImage ? state.store.storeProfileImage?.uri : undefined);
   const activeCatalogCategories = state.catalog.categories.filter((category) => category.active);
   const selectedCategory = activeCatalogCategories.find((category) => category.id === selectedCategoryID);
   const selectedCategoryTrail = selectedCategory ? categoryTrail(selectedCategory.id, activeCatalogCategories) : [];
@@ -562,15 +570,64 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   };
 
   const detailQuantity = detailOffer ? Number(quantities[detailOffer.offerId] ?? detailOffer.quantityMinBaseUnits) : 0;
+  const renderCategoryRail = () => (
+          <ScrollView horizontal contentContainerStyle={styles.categoryRail} showsHorizontalScrollIndicator={false}>
+            <Pressable accessibilityRole="button" accessibilityLabel="عرض كل منتجات المتجر" accessibilityState={{ selected: !favoritesView && !popularView && !selectedCategoryID, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(0)} style={[styles.catalogFilterChip, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipSelected]}><Text style={[styles.catalogFilterChipLabel, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipLabelSelected]}>كل المنتجات</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="عرض المنتجات المفضلة" accessibilityState={{ selected: favoritesView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(1)} style={[styles.catalogFilterChip, favoritesView && styles.catalogFilterChipSelected]}><BthwaniIcon name="favorite" color={favoritesView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text style={[styles.catalogFilterChipLabel, favoritesView && styles.catalogFilterChipLabelSelected]}>المفضلة</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="عرض المنتجات الأكثر رواجًا خلال آخر 30 يومًا" accessibilityState={{ selected: popularView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(2)} style={[styles.catalogFilterChip, popularView && styles.catalogFilterChipSelected]}><BthwaniIcon name="trending" color={popularView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text style={[styles.catalogFilterChipLabel, popularView && styles.catalogFilterChipLabelSelected]}>الأكثر رواجًا</Text></Pressable>
+            {!favoritesView && activeCatalogCategories.length > 0 ? <>
+              {selectedCategoryTrail.map((category, index) => renderCategoryChip(category, index === selectedCategoryTrail.length - 1))}
+              {categoryChildren.map((category) => renderCategoryChip(category, selectedCategoryID === category.id))}
+            </> : null}
+          </ScrollView>
+  );
 
   return (
     <View style={styles.page} accessibilityLabel={`كتالوج ${state.store.name}`}>
-      <View style={styles.storeHero}>
-          {state.store.storeCoverImage?.uri && !failedStoreCover
-            ? <View pointerEvents="none" style={styles.storeHeroMedia}><Image accessibilityLabel={`غلاف متجر ${state.store.name}`} onError={() => setFailedStoreCover(true)} source={{ uri: state.store.storeCoverImage.uri }} resizeMode="cover" style={styles.storeCover} /></View>
+      <StatusBar style={heroImageURI && heroVisible ? "light" : "dark"} />
+      <View style={styles.catalogPager} onLayout={(event) => setPagerWidth(event.nativeEvent.layout.width)}>
+      {pagerWidth > 0 ? <FlatList
+        ref={catalogPagerRef}
+        horizontal
+        pagingEnabled
+        // Native RTL positions horizontal list offsets differently; inversion keeps tab IDs and swipe destinations aligned.
+        inverted={I18nManager.isRTL}
+        data={[0, 1, 2]}
+        keyExtractor={(index) => String(index)}
+        initialNumToRender={3}
+        maxToRenderPerBatch={3}
+        windowSize={3}
+        removeClippedSubviews={false}
+        showsHorizontalScrollIndicator={false}
+        getItemLayout={(_data, index) => ({ length: pagerWidth, offset: pagerWidth * index, index })}
+        onMomentumScrollEnd={(event) => void selectCatalogTab(Math.round(Math.abs(event.nativeEvent.contentOffset.x) / pagerWidth), true)}
+        onScrollToIndexFailed={(info) => catalogPagerRef.current?.scrollToOffset({ offset: info.index * pagerWidth, animated: false })}
+        renderItem={({ item: tabIndex }) => {
+          const snapshot = catalogTabs[tabIndex];
+          const pageRows: StoreCatalogRow[] = [{ kind: "filters", key: "catalog-filters" }, ...(tabIndex === activeTab ? catalogRows : snapshot ? buildCatalogRows(snapshot.catalog, tabIndex === 1, tabIndex === 2, snapshot.categoryID, snapshot.query) : [])];
+          return <View style={{ width: pagerWidth, flex: 1 }}><FlatList
+        stickyHeaderIndices={[1]}
+        onScroll={(event) => { if (tabIndex === activeTab) { const visible = event.nativeEvent.contentOffset.y < 184 + insets.top - 32; setHeroVisible((current) => current === visible ? current : visible); } }}
+        scrollEventThrottle={160}
+        contentContainerStyle={styles.container}
+        data={pageRows}
+        keyExtractor={(row) => row.key}
+        keyboardShouldPersistTaps="handled"
+        renderItem={({ item }) => {
+          if (item.kind === "filters") return <View style={[styles.stickyCategories, { paddingTop: insets.top }]}>{renderCategoryRail()}</View>;
+          if (item.kind === "offer") return renderOffer(item.offer);
+          if (item.kind === "section") return <Text accessibilityRole="header" style={styles.sectionTitle}>{item.title}</Text>;
+          if (item.kind === "heading") return <BthwaniSectionHeader title={item.title} subtitle={item.subtitle} />;
+          return <BthwaniSurface tone="inset" style={styles.emptySection}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /><Text style={styles.sectionTitle}>{item.title}</Text></BthwaniSurface>;
+        }}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={<View style={styles.listHeader}>
+      <View style={[styles.storeHero, { height: 184 + insets.top }]}>
+          {heroImageURI
+            ? <View pointerEvents="none" style={styles.storeHeroMedia}><Image accessibilityLabel={`${hasCoverImage ? "غلاف" : "صورة"} متجر ${state.store.name}`} onError={() => { if (hasCoverImage) setFailedStoreCover(true); else setFailedStoreImage(true); }} source={{ uri: heroImageURI }} resizeMode="cover" blurRadius={hasCoverImage ? 0 : 12} style={styles.storeCover} /></View>
             : <View accessibilityLabel={failedStoreCover ? `تعذر تحميل غلاف متجر ${state.store.name}` : `غلاف متجر ${state.store.name} غير متوفر`} pointerEvents="none" style={styles.storeCoverFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
         <View pointerEvents="none" style={styles.storeHeroShade} />
-        <View style={styles.storeHeroToolbar}>
+        <View style={[styles.storeHeroToolbar, { paddingTop: insets.top + spacing[2] }]}>
           {catalogSearchOpen ? <BthwaniSearchField
           accessibilityLabel="البحث في جميع منتجات المتجر"
           containerStyle={styles.headerSearchField}
@@ -581,7 +638,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           placeholder="ابحث في جميع منتجات المتجر"
           returnKeyType="search"
           value={catalogQuery}
-        /> : <BthwaniIconButton icon="back" label="العودة إلى المتاجر" onPress={() => router.back()} size={sizing.controlMd} style={styles.storeHeaderBack} tone="soft" />}
+        /> : null}
         <View style={styles.storeHeaderActions}>
           <BthwaniIconButton icon={catalogSearchOpen ? "close" : "search"} label={catalogSearchOpen ? "إغلاق البحث داخل المتجر" : "البحث في منتجات المتجر"} onPress={() => { if (catalogSearchOpen) { setCatalogSearchOpen(false); setCatalogQuery(""); void reloadCatalog(null, "", false, false); } else if (activeTab !== 0) { void selectCatalogTab(0).then(() => setCatalogSearchOpen(true)); } else { setCatalogSearchOpen(true); } }} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
           {!catalogSearchOpen ? <><BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push("/multi-store-checkout" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
@@ -621,61 +678,21 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           })}
         </View> : selectedFulfillmentMode ? <Text numberOfLines={1} style={styles.storeInfoSingleMode}>{fulfillmentModeLabel(selectedFulfillmentMode)}</Text> : null}
       </BthwaniSurface>
-      <View style={styles.catalogPager} onLayout={(event) => setPagerWidth(event.nativeEvent.layout.width)}>
-      {pagerWidth > 0 ? <FlatList
-        ref={catalogPagerRef}
-        horizontal
-        pagingEnabled
-        // Native RTL positions horizontal list offsets differently; inversion keeps tab IDs and swipe destinations aligned.
-        inverted={I18nManager.isRTL}
-        data={[0, 1, 2]}
-        keyExtractor={(index) => String(index)}
-        initialNumToRender={3}
-        maxToRenderPerBatch={3}
-        windowSize={3}
-        removeClippedSubviews={false}
-        showsHorizontalScrollIndicator={false}
-        getItemLayout={(_data, index) => ({ length: pagerWidth, offset: pagerWidth * index, index })}
-        onMomentumScrollEnd={(event) => void selectCatalogTab(Math.round(Math.abs(event.nativeEvent.contentOffset.x) / pagerWidth), true)}
-        onScrollToIndexFailed={(info) => catalogPagerRef.current?.scrollToOffset({ offset: info.index * pagerWidth, animated: false })}
-        renderItem={({ item: tabIndex }) => {
-          const snapshot = catalogTabs[tabIndex];
-          const pageRows = tabIndex === activeTab ? catalogRows : snapshot ? buildCatalogRows(snapshot.catalog, tabIndex === 1, tabIndex === 2, snapshot.categoryID, snapshot.query) : [];
-          return <View style={{ width: pagerWidth, flex: 1 }}><FlatList
-        contentContainerStyle={styles.container}
-        data={pageRows}
-        keyExtractor={(row) => row.key}
-        keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => {
-          if (item.kind === "offer") return renderOffer(item.offer);
-          if (item.kind === "section") return <Text accessibilityRole="header" style={styles.sectionTitle}>{item.title}</Text>;
-          if (item.kind === "heading") return <BthwaniSectionHeader title={item.title} subtitle={item.subtitle} />;
-          return <BthwaniSurface tone="inset" style={styles.emptySection}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /><Text style={styles.sectionTitle}>{item.title}</Text></BthwaniSurface>;
-        }}
-        showsVerticalScrollIndicator={false}
-        ListHeaderComponent={<View style={styles.listHeader}>
+
           {bannerItems.length ? <View style={styles.bannerBlock}>
-            <View style={styles.bannerHeading}><Text style={styles.bannerHeadingText}>{promotions.length && bannerOffers.length ? "عروض ومنتجات رائجة" : promotions.length ? "عروض هذا المتجر" : "الأكثر طلبًا خلال آخر 30 يومًا"}</Text><View style={styles.bannerHeadingActions}>{bannerItems.length > 1 ? <Text style={styles.bannerPause}>{bannerIndex + 1} من {bannerItems.length}</Text> : null}{bannerItems.length > 1 ? reduceMotion ? <Text accessibilityLabel="الحركة التلقائية متوقفة وفق إعدادات تقليل الحركة بالجهاز" style={styles.bannerPause}>الحركة متوقفة</Text> : <Pressable accessibilityRole="button" accessibilityLabel={bannerPaused ? "تشغيل حركة العروض والمنتجات" : "إيقاف حركة العروض والمنتجات"} onPress={() => setBannerPaused((paused) => !paused)}><Text style={styles.bannerPause}>{bannerPaused ? "تشغيل" : "إيقاف"}</Text></Pressable> : null}</View></View>
+            <View style={styles.bannerHeading}><Text style={styles.bannerHeadingText}>{promotions.length && bannerCatalogOffers.length ? "عروض ومنتجات المتجر" : promotions.length ? "عروض هذا المتجر" : bannerOffers.length ? "الأكثر طلبًا خلال آخر 30 يومًا" : "منتجات من هذا المتجر"}</Text><View style={styles.bannerHeadingActions}>{bannerItems.length > 1 ? <Text style={styles.bannerPause}>{bannerIndex + 1} من {bannerItems.length}</Text> : null}{bannerItems.length > 1 ? reduceMotion ? <Text accessibilityLabel="الحركة التلقائية متوقفة وفق إعدادات تقليل الحركة بالجهاز" style={styles.bannerPause}>الحركة متوقفة</Text> : <Pressable accessibilityRole="button" accessibilityLabel={bannerPaused ? "تشغيل حركة العروض والمنتجات" : "إيقاف حركة العروض والمنتجات"} onPress={() => setBannerPaused((paused) => !paused)}><Text style={styles.bannerPause}>{bannerPaused ? "تشغيل" : "إيقاف"}</Text></Pressable> : null}</View></View>
             <ScrollView ref={tabIndex === activeTab ? bannerRef : undefined} horizontal snapToInterval={bannerStep} decelerationRate="fast" contentContainerStyle={{ paddingHorizontal: bannerSidePadding, gap: spacing[2] }} onTouchStart={() => setBannerPaused(true)} onMomentumScrollEnd={(event) => setBannerIndex(Math.max(0, Math.min(bannerItems.length - 1, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / bannerStep))))} showsHorizontalScrollIndicator={false}>
-              {bannerItems.map((item) => item.kind === "offer" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`عرض المنتج الرائج ${item.offer.productName}`} onPress={() => openOfferDetails(item.offer.offerId)} style={[styles.bannerCard, { width: bannerWidth }]}>
+              {bannerItems.map((item) => item.kind === "offer" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`${bannerOffers.length ? "عرض المنتج الرائج" : "عرض المنتج"} ${item.offer.productName}`} onPress={() => openOfferDetails(item.offer.offerId)} style={[styles.bannerCard, { width: bannerWidth }]}>
                 {item.offer.media[0]?.uri ? <Image source={{ uri: item.offer.media[0].uri }} accessibilityLabel={`صورة ${item.offer.productName}`} resizeMode="cover" style={styles.bannerImage} /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="trending" color={theme.interactiveText} size={sizing.iconMd} /></View>}
-                <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>الأكثر طلبًا</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.offer.productName}</Text><Text style={styles.bannerPrice}>{storeMoney(item.offer.priceMinor, item.offer.currency)}</Text></View>
+                <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>{bannerOffers.length ? "الأكثر طلبًا" : "من منتجات المتجر"}</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.offer.productName}</Text><Text style={styles.bannerPrice}>{storeMoney(item.offer.priceMinor, item.offer.currency)}</Text></View>
               </Pressable> : <View key={item.key} accessibilityLabel={`عرض ${item.promotion.nameAr}: ${promotionBenefit(item.promotion)}`} style={[styles.bannerCard, { width: bannerWidth }]}>
                 <View style={styles.bannerPromotionMark}><Text style={styles.bannerPromotionMarkText}>عرض</Text></View>
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>من عروض المتجر</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.promotion.nameAr}</Text><Text numberOfLines={1} style={styles.bannerPrice}>{promotionBenefit(item.promotion)} · الرمز {item.promotion.code}</Text></View>
               </View>)}
             </ScrollView>
           </View> : null}
-          {bannerError ? <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل المنتجات الرائجة" onPress={() => void loadBanner()} style={styles.inlineRecovery}><Text style={styles.bannerPause}>تعذر تحميل المنتجات الرائجة · إعادة المحاولة</Text></Pressable> : null}
-          <ScrollView horizontal contentContainerStyle={styles.categoryRail} showsHorizontalScrollIndicator={false}>
-            <Pressable accessibilityRole="button" accessibilityLabel="عرض كل منتجات المتجر" accessibilityState={{ selected: !favoritesView && !popularView && !selectedCategoryID, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(0)} style={[styles.catalogFilterChip, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipSelected]}><Text style={[styles.catalogFilterChipLabel, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipLabelSelected]}>كل المنتجات</Text></Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="عرض المنتجات المفضلة" accessibilityState={{ selected: favoritesView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(1)} style={[styles.catalogFilterChip, favoritesView && styles.catalogFilterChipSelected]}><BthwaniIcon name="favorite" color={favoritesView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text style={[styles.catalogFilterChipLabel, favoritesView && styles.catalogFilterChipLabelSelected]}>المفضلة</Text></Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="عرض المنتجات الأكثر رواجًا خلال آخر 30 يومًا" accessibilityState={{ selected: popularView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(2)} style={[styles.catalogFilterChip, popularView && styles.catalogFilterChipSelected]}><BthwaniIcon name="trending" color={popularView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text style={[styles.catalogFilterChipLabel, popularView && styles.catalogFilterChipLabelSelected]}>الأكثر رواجًا</Text></Pressable>
-            {!favoritesView && activeCatalogCategories.length > 0 ? <>
-              {selectedCategoryTrail.map((category, index) => renderCategoryChip(category, index === selectedCategoryTrail.length - 1))}
-              {categoryChildren.map((category) => renderCategoryChip(category, selectedCategoryID === category.id))}
-            </> : null}
-          </ScrollView>
+          {bannerError && bannerItems.length === 0 ? <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل المنتجات الرائجة" onPress={() => void loadBanner()} style={styles.inlineRecovery}><Text style={styles.bannerPause}>تعذر تحميل المنتجات الرائجة · إعادة المحاولة</Text></Pressable> : null}
+
         </View>}
         ListFooterComponent={tabIndex === activeTab && (state.catalog.nextCursor || promotionError || (!promotionLoading && promotions.length > 0) || error || favoriteLoadError) ? <View style={styles.listFooter}>
           {state.catalog.nextCursor ? <BthwaniButton busy={loadingMore} disabled={catalogRefreshing} label="تحميل المزيد" onPress={() => void loadMore()} style={styles.loadMoreButton} variant="secondary" /> : null}
@@ -753,6 +770,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     pageLoading: { gap: spacing[3] },
     container: { backgroundColor: theme.background, gap: spacing[3], paddingBottom: spacing[4], paddingHorizontal: spacing[3], width: "100%" },
     listHeader: { gap: spacing[3] },
+    stickyCategories: { backgroundColor: theme.background, zIndex: 3 },
     listFooter: { gap: spacing[3] },
     storeCover: { height: "100%", width: "100%" },
     storeCoverFallback: { alignItems: "center", backgroundColor: theme.surfaceInset, height: "100%", justifyContent: "center", width: "100%" },
@@ -773,11 +791,11 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
     title: { ...typography.titleSm, color: theme.color },
     muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 20 },
-    storeHero: { height: 184, position: "relative", backgroundColor: theme.surfaceInset, overflow: "hidden" },
+    storeHero: { height: 184, marginHorizontal: -spacing[3], position: "relative", backgroundColor: theme.surfaceInset, overflow: "hidden" },
     storeHeroMedia: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0 },
     storeHeroShade: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.26)" },
-    storeHeroToolbar: { position: "absolute", top: 0, left: 0, right: 0, alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "space-between", paddingHorizontal: spacing[3], paddingTop: spacing[2], zIndex: 2 },
-    storeInfoCard: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[2], marginHorizontal: spacing[3], marginTop: -56, padding: spacing[3], zIndex: 2, ...elevation.raised },
+    storeHeroToolbar: { position: "absolute", top: 0, left: 0, right: 0, alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "flex-end", paddingHorizontal: spacing[3], zIndex: 2 },
+    storeInfoCard: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[2], marginTop: -56, padding: spacing[3], zIndex: 2, ...elevation.raised },
     storeInfoIdentityRow: { alignItems: "center", flexDirection: "row", gap: spacing[3] },
     storeInfoLogo: { backgroundColor: theme.surface, borderRadius: radius.lg, height: 60, width: 60 },
     storeInfoLogoFallback: { alignItems: "center", backgroundColor: theme.surfaceInset, borderRadius: radius.lg, height: 60, justifyContent: "center", width: 60 },
@@ -797,7 +815,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     storeInfoModeText: { ...typography.caption, color: theme.color, textAlign: "center" },
     storeInfoModeTextSelected: { color: theme.interactiveText },
     storeInfoSingleMode: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
-    storeHeaderBack: { backgroundColor: "rgba(255,255,255,0.88)" },
     storeHeaderActions: { alignItems: "center", flexDirection: "row", gap: spacing[1] },
     storeHeaderAction: { backgroundColor: "rgba(255,255,255,0.88)", borderColor: "transparent" },
     orderStatusBadge: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, justifyContent: "center", minHeight: sizing.controlMd, minWidth: sizing.controlMd, paddingHorizontal: spacing[3] },
