@@ -78,6 +78,15 @@ func TestReviewedCustomerWalletCompensationUsesExistingCaseAndBalancedLedger(t *
 	if walletAfter.LedgerBalanceMinor != walletBefore.LedgerBalanceMinor+1 || walletAfter.AvailableMinor != walletBefore.AvailableMinor+1 {
 		t.Fatalf("wallet balance not credited exactly once: before=%+v after=%+v", walletBefore, walletAfter)
 	}
+	history, err := ListRecentCustomerWalletCompensations(s.ctx, s.db, customerID, 10)
+	if err != nil || len(history) != 1 || history[0].CaseID != adjustment.ID || history[0].OrderID != orderID ||
+		history[0].LedgerTransactionID == "" || history[0].AmountMinor != 1 {
+		t.Fatalf("canonical customer wallet history not readable: entries=%+v err=%v", history, err)
+	}
+	foreignHistory, err := ListRecentCustomerWalletCompensations(s.ctx, s.db, "foreign-"+customerID, 10)
+	if err != nil || len(foreignHistory) != 0 {
+		t.Fatalf("customer wallet history leaked to another actor: %+v err=%v", foreignHistory, err)
+	}
 	var debit, liability int64
 	if err := s.db.QueryRowContext(s.ctx, `SELECT
   COALESCE(SUM(amount_minor) FILTER(WHERE account_code='CUSTOMER_COMPENSATION_EXPENSE' AND direction='DEBIT'),0),

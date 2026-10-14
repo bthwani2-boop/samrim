@@ -154,6 +154,7 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
   };
 
   const state = wallet?.state;
+  const recentCompensations = (state as (BeneficiaryWalletResponse["state"] & { recentCompensations?: ReadonlyArray<{ id: string; orderId: string; amountMinor: number; currency: "YER"; createdAt: string }> }) | undefined)?.recentCompensations ?? [];
   const userCanAddFunds = Boolean(state?.cashInEnabled && !state.simulator);
   const userHasPending = Boolean(pending && !state?.simulator);
 
@@ -167,6 +168,13 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
           </View>
           <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} />
         </View>
+        {recentCompensations.length ? <View style={styles.walletCredits}>
+          <Text style={styles.creditHeading}>تعويضات أُضيفت إلى محفظتك</Text>
+          {recentCompensations.map((credit) => <View key={credit.id} style={styles.walletCredit}>
+            <Text style={styles.creditAmount}>+ {formatMoney(credit.amountMinor, credit.currency)}</Text>
+            <Text style={styles.muted}>تعويض عن الطلب {credit.orderId} — متاح للشراء من أي متجر</Text>
+          </View>)}
+        </View> : null}
         {userHasPending ? <Text style={styles.pendingCopy}>طلب شحن قيد التأكيد: {formatMoney(pending!.amountMinor, "YER")}.</Text> : null}
         {busy && !wallet ? <ActivityIndicator accessibilityLabel="جارٍ قراءة الرصيد" color={theme.actionBackground} /> : null}
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
@@ -237,6 +245,10 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     walletPanel: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[4], marginTop: spacing[4], padding: spacing[4] },
+    walletCredits: { gap: spacing[2] },
+    walletCredit: { backgroundColor: theme.actionSoft, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] },
+    creditHeading: { ...typography.titleSm, color: theme.color, textAlign: "right" },
+    creditAmount: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "right" },
     balanceCard: { alignItems: "center", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, flexDirection: "row", justifyContent: "space-between", minHeight: 96, paddingHorizontal: spacing[4], paddingVertical: spacing[3] },
     balanceCopy: { alignItems: "flex-end", gap: spacing[1] },
     balanceLabel: { ...typography.bodySm, color: theme.colorMuted },

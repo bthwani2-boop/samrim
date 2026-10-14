@@ -8184,6 +8184,29 @@ components:
           type: boolean
         simulator:
           type: boolean
+        recentCompensations:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerWalletCompensationSummary"
+
+    CustomerWalletCompensationSummary:
+      type: object
+      additionalProperties: false
+      required: [id, orderId, amountMinor, currency, createdAt]
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        amountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        createdAt:
+          type: string
+          format: date-time
 
     BeneficiaryWalletResponse:
       type: object
