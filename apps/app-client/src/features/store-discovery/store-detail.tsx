@@ -589,11 +589,38 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" /></> : null}
         </View>
         </View>
-        <View pointerEvents="none" style={styles.storeHeroIdentity}>
-          <Text numberOfLines={1} style={styles.storeHeaderTitle}>{state.store.name}</Text>
-          <Text numberOfLines={1} style={styles.storeHeaderCity}>{serviceCityDisplayName(state.store.serviceCity.displayNameAr)}</Text>
-        </View>
       </View>
+      <BthwaniSurface tone="raised" style={styles.storeInfoCard} accessibilityLabel={'معلومات متجر ' + state.store.name}>
+        <View style={styles.storeInfoIdentityRow}>
+          {state.store.storeProfileImage?.uri && !failedStoreImage
+            ? <Image accessibilityLabel={'شعار متجر ' + state.store.name} onError={() => setFailedStoreImage(true)} source={{ uri: state.store.storeProfileImage.uri }} resizeMode="contain" style={styles.storeInfoLogo} />
+            : <View style={styles.storeInfoLogoFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
+          <View style={styles.storeInfoIdentityCopy}>
+            <Text numberOfLines={1} style={styles.storeInfoName}>{state.store.name}</Text>
+            <Text numberOfLines={1} style={styles.storeInfoLocation}>{serviceCityDisplayName(state.store.serviceCity.displayNameAr)}</Text>
+            {state.store.ratingCount > 0 ? <Text accessibilityLabel={'تقييم المتجر ' + state.store.ratingAverage.toFixed(1) + ' من 5، عدد التقييمات ' + state.store.ratingCount} style={styles.storeInfoRating}>★ {state.store.ratingAverage.toFixed(1)} <Text style={styles.storeInfoRatingCount}>({state.store.ratingCount})</Text></Text> : null}
+          </View>
+        </View>
+        <View style={styles.storeInfoDivider} />
+        <View style={styles.storeInfoStatusRow}>
+          <View style={styles.storeInfoStat}>
+            <Text style={styles.storeInfoStatLabel}>حالة المتجر</Text>
+            <View style={styles.orderStatusBadge}><Text style={styles.orderStatusBadgeText}>{selectedFulfillmentMode ? orderabilityBadge(orderabilityByMode?.find((item) => item.fulfillmentMode === selectedFulfillmentMode)) : 'جار التحقق'}</Text></View>
+          </View>
+          <View style={styles.storeInfoStat}>
+            <Text style={styles.storeInfoStatLabel}>التجهيز والطلب</Text>
+            <Text numberOfLines={2} style={styles.storeInfoStatValue}>{selectedFulfillmentMode ? orderabilityEta(orderabilityByMode?.find((item) => item.fulfillmentMode === selectedFulfillmentMode)) : 'اختر طريقة الطلب'}</Text>
+          </View>
+        </View>
+        {fulfillmentModes.length > 1 ? <View style={styles.storeInfoModes}>
+          {fulfillmentModes.map((mode) => {
+            const orderability = orderabilityByMode?.find((item) => item.fulfillmentMode === mode);
+            return <Pressable key={mode} accessibilityRole="radio" accessibilityLabel={fulfillmentModeLabel(mode)} accessibilityHint={fulfillmentModeDescription(mode) + ' ' + orderabilityEta(orderability)} accessibilityState={{ checked: selectedFulfillmentMode === mode }} onPress={() => { setSelectedFulfillmentMode(mode); setError(''); }} style={[styles.storeInfoMode, selectedFulfillmentMode === mode && styles.storeInfoModeSelected]}>
+              <Text numberOfLines={1} style={[styles.storeInfoModeText, selectedFulfillmentMode === mode && styles.storeInfoModeTextSelected]}>{fulfillmentModeLabel(mode)}</Text>
+            </Pressable>;
+          })}
+        </View> : selectedFulfillmentMode ? <Text numberOfLines={1} style={styles.storeInfoSingleMode}>{fulfillmentModeLabel(selectedFulfillmentMode)}</Text> : null}
+      </BthwaniSurface>
       <View style={styles.catalogPager} onLayout={(event) => setPagerWidth(event.nativeEvent.layout.width)}>
       {pagerWidth > 0 ? <FlatList
         ref={catalogPagerRef}
@@ -627,19 +654,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={<View style={styles.listHeader}>
-          <BthwaniSurface tone="raised" style={styles.orderStatus} accessibilityLabel="حالة المتجر وطرق الطلب">
-            <View style={styles.orderStatusTop}>
-              <View style={styles.orderStatusCopy}>
-                <Text numberOfLines={2} style={styles.orderStatusMeta}>{selectedFulfillmentMode ? `${fulfillmentModeLabel(selectedFulfillmentMode)} · ${orderabilityEta(orderabilityByMode?.find((item) => item.fulfillmentMode === selectedFulfillmentMode))}` : "اختر طريقة الطلب"}</Text>
-              </View>
-              <View style={styles.orderStatusBadge}><Text style={styles.orderStatusBadgeText}>{selectedFulfillmentMode ? orderabilityBadge(orderabilityByMode?.find((item) => item.fulfillmentMode === selectedFulfillmentMode)) : "الطلب"}</Text></View>
-            </View>
-            {fulfillmentModes.length > 1 ? <View style={styles.modeOptions}>{fulfillmentModes.map((mode) => {
-              const orderability = orderabilityByMode?.find((item) => item.fulfillmentMode === mode);
-              const modeEta = orderability?.preparationMinutes ? orderability.state === "CLOSED_BY_SCHEDULE" ? ` · تجهيز ${orderability.preparationMinutes} د بعد الفتح` : ` · تجهيز ${orderability.preparationMinutes} د` : "";
-              return <Pressable key={mode} accessibilityRole="radio" accessibilityLabel={fulfillmentModeLabel(mode)} accessibilityHint={`${fulfillmentModeDescription(mode)} ${orderabilityEta(orderability)}`} accessibilityState={{ checked: selectedFulfillmentMode === mode }} onPress={() => { setSelectedFulfillmentMode(mode); setError(""); }} style={[styles.modeOption, selectedFulfillmentMode === mode && styles.modeOptionSelected]}><Text style={styles.modeOptionLabel}>{fulfillmentModeLabel(mode)}</Text><Text style={styles.modeOptionState}>{orderabilityBadge(orderability)}{modeEta}</Text></Pressable>;
-            })}</View> : null}
-          </BthwaniSurface>
           {bannerItems.length ? <View style={styles.bannerBlock}>
             <View style={styles.bannerHeading}><Text style={styles.bannerHeadingText}>{promotions.length && bannerOffers.length ? "عروض ومنتجات رائجة" : promotions.length ? "عروض هذا المتجر" : "الأكثر طلبًا خلال آخر 30 يومًا"}</Text><View style={styles.bannerHeadingActions}>{bannerItems.length > 1 ? <Text style={styles.bannerPause}>{bannerIndex + 1} من {bannerItems.length}</Text> : null}{bannerItems.length > 1 ? reduceMotion ? <Text accessibilityLabel="الحركة التلقائية متوقفة وفق إعدادات تقليل الحركة بالجهاز" style={styles.bannerPause}>الحركة متوقفة</Text> : <Pressable accessibilityRole="button" accessibilityLabel={bannerPaused ? "تشغيل حركة العروض والمنتجات" : "إيقاف حركة العروض والمنتجات"} onPress={() => setBannerPaused((paused) => !paused)}><Text style={styles.bannerPause}>{bannerPaused ? "تشغيل" : "إيقاف"}</Text></Pressable> : null}</View></View>
             <ScrollView ref={tabIndex === activeTab ? bannerRef : undefined} horizontal snapToInterval={bannerStep} decelerationRate="fast" contentContainerStyle={{ paddingHorizontal: bannerSidePadding, gap: spacing[2] }} onTouchStart={() => setBannerPaused(true)} onMomentumScrollEnd={(event) => setBannerIndex(Math.max(0, Math.min(bannerItems.length - 1, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / bannerStep))))} showsHorizontalScrollIndicator={false}>
@@ -759,27 +773,35 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
     title: { ...typography.titleSm, color: theme.color },
     muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 20 },
-    storeHero: { height: 168, position: "relative", backgroundColor: theme.actionBackground, overflow: "hidden" },
+    storeHero: { height: 184, position: "relative", backgroundColor: theme.surfaceInset, overflow: "hidden" },
     storeHeroMedia: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0 },
     storeHeroShade: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.26)" },
     storeHeroToolbar: { position: "absolute", top: 0, left: 0, right: 0, alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "space-between", paddingHorizontal: spacing[3], paddingTop: spacing[2], zIndex: 2 },
-    storeHeroIdentity: { bottom: spacing[3], position: "absolute", right: spacing[3], left: spacing[3], alignItems: "flex-start", gap: spacing[1] },
-    storeHeaderTitle: { ...typography.titleSm, color: theme.onAction },
-    storeHeaderCity: { ...typography.caption, color: theme.onAction, opacity: 0.82 },
+    storeInfoCard: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[2], marginHorizontal: spacing[3], marginTop: -56, padding: spacing[3], zIndex: 2, ...elevation.raised },
+    storeInfoIdentityRow: { alignItems: "center", flexDirection: "row", gap: spacing[3] },
+    storeInfoLogo: { backgroundColor: theme.surface, borderRadius: radius.lg, height: 60, width: 60 },
+    storeInfoLogoFallback: { alignItems: "center", backgroundColor: theme.surfaceInset, borderRadius: radius.lg, height: 60, justifyContent: "center", width: 60 },
+    storeInfoIdentityCopy: { alignItems: "flex-start", flex: 1, gap: spacing[1], minWidth: 0 },
+    storeInfoName: { ...typography.titleSm, color: theme.color, textAlign: "right" },
+    storeInfoLocation: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
+    storeInfoRating: { ...typography.bodySm, color: theme.color, textAlign: "right" },
+    storeInfoRatingCount: { ...typography.caption, color: theme.colorMuted },
+    storeInfoDivider: { backgroundColor: theme.borderColor, height: borders.hairline, width: "100%" },
+    storeInfoStatusRow: { flexDirection: "row", gap: spacing[3] },
+    storeInfoStat: { alignItems: "flex-start", flex: 1, gap: spacing[1], minWidth: 0 },
+    storeInfoStatLabel: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
+    storeInfoStatValue: { ...typography.bodySm, color: theme.color, textAlign: "right" },
+    storeInfoModes: { flexDirection: "row", gap: spacing[1] },
+    storeInfoMode: { alignItems: "center", backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, flex: 1, justifyContent: "center", minHeight: sizing.controlMd, minWidth: 0, paddingHorizontal: spacing[1] },
+    storeInfoModeSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
+    storeInfoModeText: { ...typography.caption, color: theme.color, textAlign: "center" },
+    storeInfoModeTextSelected: { color: theme.interactiveText },
+    storeInfoSingleMode: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
     storeHeaderBack: { backgroundColor: "rgba(255,255,255,0.88)" },
     storeHeaderActions: { alignItems: "center", flexDirection: "row", gap: spacing[1] },
     storeHeaderAction: { backgroundColor: "rgba(255,255,255,0.88)", borderColor: "transparent" },
-    orderStatus: { alignItems: "stretch", borderRadius: radius.xl, flexDirection: "column", gap: spacing[2], paddingHorizontal: spacing[3], paddingVertical: spacing[2], ...elevation.raised },
-    orderStatusTop: { alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "space-between" },
-    orderStatusCopy: { alignItems: "flex-end", flex: 1, gap: spacing[1], minWidth: 0 },
-    orderStatusMeta: { ...typography.bodySm, color: theme.colorMuted, textAlign: "right" },
     orderStatusBadge: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, justifyContent: "center", minHeight: sizing.controlMd, minWidth: sizing.controlMd, paddingHorizontal: spacing[3] },
     orderStatusBadgeText: { ...typography.bodyStrong, color: theme.interactiveText },
-    modeOptions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
-    modeOption: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, flex: 1, gap: spacing[1], minWidth: 90, padding: spacing[2] },
-    modeOptionSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
-    modeOptionLabel: { ...typography.label, color: theme.color, textAlign: "center" },
-    modeOptionState: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
     inlineRecovery: { alignItems: "flex-end", paddingVertical: spacing[1] },
     promotionList: { gap: spacing[2] },
     promotionNotice: { alignItems: "flex-start", gap: spacing[2] },

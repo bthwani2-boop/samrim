@@ -115,6 +115,12 @@ if (app === "app-client") {
   assert.match(nativeIcons, /<View pointerEvents="none"[^>]*>/, "client: decorative native icons must not intercept parent button touches");
   assert.equal((storeDetail.match(/state\.store\.storeCoverImage\?\.uri && !failedStoreCover/g) ?? []).length, 1, "client: store cover must have one canonical hero placement");
   assert.ok(storeDetail.includes("styles.storeHeroToolbar") && storeDetail.includes("styles.storeHeroMedia"), "client: store actions and cover must share the hero");
+  assert.ok(storeDetail.includes("styles.storeInfoCard") && storeDetail.includes("state.store.storeProfileImage?.uri"), "client: separate public logo and cover");
+  assert.ok(storeDetail.includes("state.store.ratingCount > 0") && storeDetail.includes("orderabilityBadge") && storeDetail.includes("fulfillmentModes.map"), "client: real ratings and delivery state");
+  assert.ok(storeDetail.includes("حالة المتجر") && storeDetail.includes("التجهيز والطلب") && storeDetail.includes("معلومات متجر"), "client: store info labels must remain readable Arabic");
+  assert.doesNotMatch(storeDetail, /styles\.orderStatus\b/, "client: no redundant order strip");
+  const publicShell = fs.readFileSync(path.join(appDir, "src/shell/client-shell.tsx"), "utf8");
+  assert.ok(publicShell.includes('hideHeader && { backgroundColor: theme.surfaceInset }'), "client: neutral hidden-header status bar");
   console.log("MOBILE_STORE_RTL_AND_SEARCH=PASS header search, native pager, compact banners, unique store name");
 }
 if (app === "app-partner") {
