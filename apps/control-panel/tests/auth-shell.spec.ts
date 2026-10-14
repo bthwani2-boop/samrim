@@ -1,6 +1,12 @@
 import { expect, type Page, test } from "./coverage-fixtures";
 
 async function fillActionReason(page: Page, reason: string) {
+  await expect(page.getByLabel("سبب الإجراء").first()).toBeAttached();
+  const directInput = page.getByLabel("سبب الإجراء").filter({ visible: true }).first();
+  if (await directInput.count()) {
+    await directInput.fill(reason);
+    return;
+  }
   const mobileAccountActions = page.getByText("إجراءات الحساب", { exact: true }).filter({ visible: true }).first();
   if (await mobileAccountActions.count()) await mobileAccountActions.click();
   const summary = page.locator("details > summary:visible").filter({ hasText: /إدارة الوصول|إدارة التشغيل/ }).first();
@@ -272,11 +278,11 @@ async function exerciseLegacyDshProfileReview(page: Page, role: "captain" | "fie
   await expect(role === "captain" ? page.getByText("موقوف حتى استكمال الملف ومراجعته") : page.getByRole("img", { name: "الملف يحتاج استكمالًا ومراجعة" }).first()).toBeVisible();
   const name = "سامي ناصر محمد العريقي";
   if (role === "field") {
-    await page.locator(`#field-profile-name-act_field_legacy_review`).fill(name);
+    await page.locator(`#table-field-profile-name-act_field_legacy_review`).fill(name);
     await page.getByRole("button", { name: "حفظ الملف والمدن" }).click();
-    await expect(page.locator("#field-profile-name-act_field_legacy_review")).toHaveValue(name);
+    await expect(page.locator("#table-field-profile-name-act_field_legacy_review")).toHaveValue(name);
     await page.getByRole("button", { name: "اعتماد مراجعة الملف" }).click();
-    await expect(page.locator("output.success-inline")).toContainText("اعتُمدت مراجعة الملف وأُعيدت قراءة حالته.");
+    await expect(page.locator("output.success-inline:visible").first()).toContainText("اعتُمدت مراجعة الملف وأُعيدت قراءة حالته.");
   } else {
     await page.locator(`#${role}-candidate-name-${admissionID}`).fill(name);
     await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
@@ -969,7 +975,7 @@ test("legacy Field role with a missing profile is suspended before Identity acce
   await fillActionReason(page, "إيقاف حتى مراجعة الملف");
   await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
-  await expect(page.locator("output.success-inline")).toContainText("أُوقف دور الدخول وأُعيدت قراءة حالة الحساب وأهلية النظام.");
+  await expect(page.locator("output.success-inline:visible").first()).toContainText("أُوقف دور الدخول وأُعيدت قراءة حالة الحساب وأهلية النظام.");
 });
 
 test("legacy Captain profile review never offers role activation before review", async ({ page }) => {
@@ -1019,7 +1025,7 @@ test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await fillActionReason(page, "استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.locator("output.success-inline")).toContainText("أُجيزت إعادة تسجيل دور سبق تفعيله");
+  await expect(page.locator("output.success-inline:visible").first()).toContainText("أُجيزت إعادة تسجيل دور سبق تفعيله");
   await expect(page.locator("tr.field-agent-row").getByRole("status").filter({ hasText: /^بانتظار تفعيل الجهاز/ })).toHaveText("بانتظار تفعيل الجهاز من تطبيق الميدان برقم الهاتف المسجّل.");
   expect(reenrollmentBody).toMatchObject({
     actorId: "act_field_reenroll",
@@ -1150,7 +1156,7 @@ test("Field reenrollment conflicts reload the canonical DSH-owned roster before 
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await fillActionReason(page, "استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.getByText(/^تغيرت حالة الحساب بالتزامن\. أُعيد تحميل الحالة الحالية/)).toBeVisible();
+  await expect(page.getByText(/^تغيرت حالة الحساب بالتزامن\. أُعيد تحميل الحالة الحالية/).filter({ visible: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toBeVisible();
 });
 
@@ -1195,7 +1201,7 @@ test("Field reenrollment remains unavailable until DSH restores eligibility", as
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_suspended", phoneE164: "+96777000107", role: "field", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_suspended", actorId: "act_field_suspended", state: "suspended", version: 9, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
-  await expect(page.locator("tr.field-agent-row").first().getByText(/موقوف/).first()).toBeVisible();
+  await expect(page.locator("tr.field-agent-row").first().getByRole("img", { name: /موقوف/ }).first()).toBeVisible();
   await expect(page.locator("tr.field-agent-row")).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
@@ -1809,7 +1815,7 @@ test("operator creates a product category under its commerce vertical", async ({
   });
   await page.goto("/catalog/categories?verticalId=vertical_0123456789abcdef0123456789abcdef");
   await expect(page.getByRole("region", { name: "إدارة الفئات" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "إدارة الفئات" }).getByRole("heading", { name: "الفئات", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "إدارة الفئات" }).locator("#catalog-category-registry-title")).toHaveText("فئات النشاط المحدد");
   await expect(page.locator(".catalog-taxonomy-workspace")).toHaveCount(1);
   await expect(page.locator(".catalog-taxonomy-workspace > .catalog-taxonomy-workbench")).toHaveCount(1);
   await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(2);

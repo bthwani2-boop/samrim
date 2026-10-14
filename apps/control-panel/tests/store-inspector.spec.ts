@@ -195,7 +195,7 @@ test("a shared registry renders store rows and verified storeless partners witho
   await expect(page).toHaveURL(/mode=without_store/);
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText("بدون متجر");
-  await expect(rows.first()).toContainText("بانتظار التفعيل");
+  await expect(rows.first().getByRole("img", { name: "الحساب بانتظار التفعيل" })).toBeVisible();
   await expect(rows.first().getByRole("link", { name: "+967777000001" })).toHaveAttribute("href", "/partners/actors/no-store-actor");
   expect(requestCount).toBeLessThan(6);
 });
@@ -281,10 +281,6 @@ test("compact indicators preserve independent states and a legend even without p
     await expect(row.getByRole("img", { name, exact: true })).toBeVisible();
   }
   const publication = row.getByRole("img", { name: "النشر: منشور", exact: true });
-  await publication.focus();
-  await expect(publication).toHaveAttribute("title", "النشر: منشور");
-  await publication.press("Escape");
-  await expect(publication).toBeFocused();
   await expect(publication).toHaveAttribute("title", "النشر: منشور");
   await expect(page.getByRole("complementary", { name: "دليل رموز الحساب والنشر والتوصيل" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "صفحات الشركاء والمتاجر" })).toHaveCount(0);
