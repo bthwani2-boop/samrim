@@ -100,10 +100,29 @@ func RecordDiscoveryContentEvent(ctx context.Context, db *sql.DB, input Discover
 		return ErrDiscoveryContentEventNotFound
 	}
 	if input.EventType == "CONVERSION" {
-		if err := db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM dsh.commerce_orders WHERE id=$1 AND client_actor_id=$2)", input.OrderID, input.ClientActorID).Scan(&eligible); err != nil {
+		// Conversion means an order created after a recorded click, attributed
+		// to the same content and session within the last 24 hours. Knowing an
+		// order ID alone is not evidence that marketing led to that order.
+		if err := db.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM dsh.commerce_orders orders
+			JOIN dsh.discovery_content_events click ON click.content_id=$1
+			WHERE orders.id=$2 AND orders.client_actor_id=$3
+			  AND click.event_type='CLICK' AND click.client_session_id=$4
+			  AND click.occurred_at<=orders.created_at
+			  AND click.occurred_at>=orders.created_at-interval '24 hours'
+		)`, input.ContentID, input.OrderID, input.ClientActorID, input.ClientSessionID).Scan(&eligible); err != nil {
 			return err
 		}
 		if !eligible {
+			// An exact, already-attributed event remains idempotently replayable
+			// after its original click has aged out of the 24-hour window.
+			found, err := readDiscoveryContentEventReplay(ctx, db, input)
+			if err != nil {
+				return err
+			}
+			if found {
+				return nil
+			}
 			return ErrDiscoveryContentEventInvalid
 		}
 	}

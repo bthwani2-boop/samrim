@@ -514,6 +514,7 @@ export function MarketingPromotionsWorkspace() {
         if (!promotionForm.code.trim() || !promotionForm.nameAr.trim() || !Number.isSafeInteger(valueMinor) || valueMinor <= 0 || (promotionForm.kind === "PERCENTAGE" && valueMinor > 100) || Number.isNaN(starts.getTime())) throw new Error("أكمل بيانات العرض الأساسية.");
         if (ends && (Number.isNaN(ends.getTime()) || ends.getTime() <= starts.getTime())) throw new Error("نهاية العرض يجب أن تكون بعد بدايته.");
         if (promotionForm.fundingSource === "SHARED" && (!Number.isSafeInteger(fundingShare) || fundingShare < 1 || fundingShare > 99)) throw new Error("حدد حصة الشريك من التمويل المشترك بين 1 و99.");
+        if (promotionForm.storeId && promotionForm.fundingSource !== "BTHWANI") throw new Error("لا يمكن تحميل متجر محدد تكلفة عرض ينشئه المشغل. أنشئ حملة عامة بموافقة الشركاء أو دع الشريك ينشئ عرض متجره.");
         if (promotionForm.targetKind !== "NONE" && !promotionForm.targetId) throw new Error("اختر هدف العرض من السجل المعتمد.");
         const targets: NonNullable<CreatePromotionRequest["targets"]> = promotionForm.targetKind === "NONE" ? [] : [{ targetKind: promotionForm.targetKind, targetRef: promotionForm.targetId }];
         const input: CreatePromotionRequest = {
@@ -525,7 +526,7 @@ export function MarketingPromotionsWorkspace() {
           valueMinor,
           fundingSource: promotionForm.fundingSource,
           startsAt: starts.toISOString(),
-          requiresPartnerOptIn: !promotionForm.storeId && promotionForm.requiresPartnerOptIn,
+          requiresPartnerOptIn: !promotionForm.storeId && (promotionForm.requiresPartnerOptIn || promotionForm.fundingSource !== "BTHWANI"),
           ...(promotionForm.fundingSource === "SHARED" ? { fundingSharePartnerPercent: fundingShare } : {}),
           ...(promotionForm.maxDiscountMinor ? { maxDiscountMinor: Number(promotionForm.maxDiscountMinor) } : {}),
           ...(promotionForm.redemptionLimit ? { redemptionLimit: Number(promotionForm.redemptionLimit) } : {}),
@@ -623,7 +624,7 @@ export function MarketingPromotionsWorkspace() {
             {selectedTargetLabel ? <p className="muted">الهدف المختار: {selectedTargetLabel}</p> : null}
           </> : null}
 
-          <label className="field-label"><input type="checkbox" disabled={formLocked || Boolean(promotionForm.storeId)} checked={!promotionForm.storeId && promotionForm.requiresPartnerOptIn} onChange={(event) => setPromotionForm((current) => ({ ...current, requiresPartnerOptIn: event.target.checked }))} /> تتطلب الحملة موافقة الشريك قبل المشاركة</label>
+          <label className="field-label"><input type="checkbox" disabled={formLocked || Boolean(promotionForm.storeId) || promotionForm.fundingSource !== "BTHWANI"} checked={!promotionForm.storeId && (promotionForm.requiresPartnerOptIn || promotionForm.fundingSource !== "BTHWANI")} onChange={(event) => setPromotionForm((current) => ({ ...current, requiresPartnerOptIn: event.target.checked }))} /> {promotionForm.fundingSource !== "BTHWANI" && !promotionForm.storeId ? "موافقة كل شريك على تمويل الخصم إلزامية قبل المشاركة" : "تتطلب الحملة موافقة الشريك قبل المشاركة"}</label>
           <label className="field-label">بداية العرض<input aria-label="بداية العرض" type="datetime-local" disabled={formLocked} value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></label>
           <label className="field-label">نهاية العرض<input aria-label="نهاية العرض" type="datetime-local" disabled={formLocked} value={endsAt} onChange={(event) => setEndsAt(event.target.value)} /></label>
           <button className="button" type="button" disabled={busy || attemptChecking || !attemptReady} onClick={() => void createPromotion()}>{pendingCreate ? "التحقق / إعادة محاولة الإنشاء" : "إنشاء مسودة العرض"}</button>
@@ -666,6 +667,8 @@ export function MarketingContentWorkspace() {
   const [analyticsContentId, setAnalyticsContentId] = useState("");
   const [analytics, setAnalytics] = useState<ReadonlyArray<DiscoveryContentAnalytics> | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState("");
+  const analyticsSequence = useRef(0);
   const [contentStartsAt, setContentStartsAt] = useState(futureDateInput);
   const [contentEndsAt, setContentEndsAt] = useState(futureEndDateInput);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
@@ -714,18 +717,23 @@ export function MarketingContentWorkspace() {
   }, [appliedSearch, cursor, kind, sort, state]);
 
   async function readAnalytics(contentId: string) {
+    const sequence = ++analyticsSequence.current;
     setAnalyticsContentId(contentId);
     setAnalytics(null);
+    setAnalyticsError("");
     setAnalyticsLoading(true);
     try {
-      const response = await fetch(`/api/marketing/analytics?contentId=${encodeURIComponent(contentId)}`, { cache: "no-store" });
+      const response = await fetch(`/api/marketing/analytics?contentId=${encodeURIComponent(contentId)}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
       const body = await response.json().catch(() => null) as { items?: ReadonlyArray<DiscoveryContentAnalytics>; error?: { message?: string } } | null;
+      if (sequence !== analyticsSequence.current) return;
       if (!response.ok) throw new Error(body?.error?.message ?? "تعذر قراءة تحليلات المحتوى المحدد.");
-      setAnalytics(body?.items ?? []);
+      if (!body || !Array.isArray(body.items)) throw new Error("استجابة التحليلات غير صالحة؛ لا يمكن اعتماد أرقامها.");
+      setAnalytics(body.items);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "تعذر قراءة تحليلات المحتوى المحدد.");
+      if (sequence !== analyticsSequence.current) return;
+      setAnalyticsError(error instanceof Error ? error.message : "تعذر قراءة تحليلات المحتوى المحدد.");
     } finally {
-      setAnalyticsLoading(false);
+      if (sequence === analyticsSequence.current) setAnalyticsLoading(false);
     }
   }
 
@@ -990,10 +998,12 @@ export function MarketingContentWorkspace() {
     let analyticsContent: ReactNode = null;
     if (analyticsLoading) {
       analyticsContent = <p role="status">جارٍ قراءة النتائج…</p>;
+    } else if (analyticsError) {
+      analyticsContent = <p role="alert">{analyticsError}</p>;
     } else if (analytics) {
-      analyticsContent = <dl><div><dt>الظهور</dt><dd>{analytics.find((item) => item.eventType === "IMPRESSION")?.count ?? 0}</dd></div><div><dt>النقر</dt><dd>{analytics.find((item) => item.eventType === "CLICK")?.count ?? 0}</dd></div><div><dt>التحويل</dt><dd>{analytics.find((item) => item.eventType === "CONVERSION")?.count ?? 0}</dd></div></dl>;
+      analyticsContent = <><dl><div><dt>أحداث الظهور</dt><dd>{analytics.find((item) => item.eventType === "IMPRESSION")?.count ?? 0}</dd></div><div><dt>أحداث النقر</dt><dd>{analytics.find((item) => item.eventType === "CLICK")?.count ?? 0}</dd></div><div><dt>طلبات منشأة منسوبة</dt><dd>{analytics.find((item) => item.eventType === "CONVERSION")?.count ?? 0}</dd></div></dl><p className="muted">الإسناد تسجيل أحداث وليس إثبات بيع مكتمل أو ربح. لا يشمل هذا التقرير تكلفة تمويل الخصومات.</p></>;
     }
-    analyticsPanel = <aside className="panel" aria-live="polite"><strong>تحليلات المحتوى</strong>{analyticsContent}<button className="button button-quiet" type="button" onClick={() => { setAnalyticsContentId(""); setAnalytics(null); }}>إغلاق التحليلات</button></aside>;
+    analyticsPanel = <aside className="panel" aria-live="polite"><strong>تحليلات المحتوى</strong>{analyticsContent}<button className="button button-quiet" type="button" onClick={() => { analyticsSequence.current++; setAnalyticsContentId(""); setAnalytics(null); setAnalyticsError(""); }}>إغلاق التحليلات</button></aside>;
   }
 
   return (

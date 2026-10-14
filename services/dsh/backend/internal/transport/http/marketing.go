@@ -364,6 +364,13 @@ func (s *MarketingServer) createOperatorPromotion(w http.ResponseWriter, r *http
 	if !decodeJSON(w, r, &input) {
 		return
 	}
+	// Operator authority alone cannot charge a specific Store's funds.
+	// Partner-authored Store offers use their own Store-authorized endpoint;
+	// platform-wide partner funding requires explicit Store opt-in.
+	if strings.TrimSpace(input.StoreID) != "" && string(input.FundingSource) != "BTHWANI" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "operator Store-targeted campaigns cannot charge Partner funds")
+		return
+	}
 	var maxDiscount *int64
 	if input.MaxDiscountMinor > 0 {
 		value := int64(input.MaxDiscountMinor)

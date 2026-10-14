@@ -202,6 +202,11 @@ func validatePromotionInput(input PromotionInput) error {
 	if input.RequiresPartnerOptIn && strings.TrimSpace(input.StoreID) != "" {
 		return ErrPromotionInvalid
 	}
+	// The platform cannot volunteer a Store's funds: a platform-wide offer
+	// funded by Partners requires each participating Store's explicit opt-in.
+	if input.StoreID == "" && input.FundingSource != "BTHWANI" && !input.RequiresPartnerOptIn {
+		return ErrPromotionInvalid
+	}
 	if len(input.Targets) > 0 {
 		seenTargets := map[string]struct{}{}
 		for _, target := range input.Targets {
@@ -279,7 +284,7 @@ const listPublicPromotionsQuery = `SELECT id,code,name_ar,description_ar,kind,va
         WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())))
         AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2)
         AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3))
-        AND (NOT $1 OR requires_partner_opt_in = false OR EXISTS (SELECT 1 FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=dsh.commerce_promotions.id AND o.store_id=$3 AND o.state='OPTED_IN'))
+        AND (NOT $1 OR store_id IS NOT NULL OR (funding_source='BTHWANI' AND requires_partner_opt_in=false) OR EXISTS (SELECT 1 FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=dsh.commerce_promotions.id AND o.store_id=$3 AND o.state='OPTED_IN'))
         ORDER BY starts_at DESC,id DESC
         LIMIT CASE WHEN $1 THEN 4 ELSE NULL END`
 
@@ -463,6 +468,15 @@ func SetPromotionState(ctx context.Context, db *sql.DB, id, state, idempotencyKe
 			return PromotionRecord{}, false, err
 		}
 	}
+	if state == "PAUSED" {
+		// Only a live promotion can be paused. In particular, ENDED is
+		// terminal and must not be resurrected by PAUSED -> PUBLISHED.
+		if err := tx.QueryRowContext(ctx, "SELECT 1 FROM dsh.commerce_promotions WHERE id=$1 AND state='PUBLISHED'", id).Scan(&stateGuard); errors.Is(err, sql.ErrNoRows) {
+			return PromotionRecord{}, false, ErrPromotionNotFound
+		} else if err != nil {
+			return PromotionRecord{}, false, err
+		}
+	}
 	if state == "ENDED" {
 		if err := tx.QueryRowContext(ctx, "SELECT 1 FROM dsh.commerce_promotions WHERE id=$1 AND state IN ('PUBLISHED','PAUSED','DRAFT')", id).Scan(&stateGuard); errors.Is(err, sql.ErrNoRows) {
 			return PromotionRecord{}, false, ErrPromotionNotFound
@@ -470,7 +484,11 @@ func SetPromotionState(ctx context.Context, db *sql.DB, id, state, idempotencyKe
 			return PromotionRecord{}, false, err
 		}
 	}
-	result, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET state=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$3", id, state, expectedVersion)
+	result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_promotions SET state=$2,version=version+1,updated_at=clock_timestamp()
+		WHERE id=$1 AND version=$3 AND
+		(($2='PUBLISHED' AND state IN ('DRAFT','PAUSED')) OR
+		 ($2='PAUSED' AND state='PUBLISHED') OR
+		 ($2='ENDED' AND state IN ('PUBLISHED','PAUSED','DRAFT')))`, id, state, expectedVersion)
 	if err != nil {
 		return PromotionRecord{}, false, err
 	}
@@ -529,7 +547,7 @@ func EvaluatePromotion(ctx context.Context, source rowQueryer, code, storeID, st
 	}
 	// A platform campaign applies to a Store only when the Store opted in where
 	// opt-in is required.
-	if item.StoreID == "" && item.RequiresPartnerOptIn {
+	if item.StoreID == "" && (item.RequiresPartnerOptIn || item.FundingSource != "BTHWANI") {
 		var opted bool
 		if err := source.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM dsh.commerce_promotion_store_opt_ins WHERE promotion_id=$1 AND store_id=$2 AND state='OPTED_IN')", item.ID, storeID).Scan(&opted); err != nil {
 			return PromotionRecord{}, 0, err

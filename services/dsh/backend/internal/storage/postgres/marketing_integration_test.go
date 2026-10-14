@@ -148,9 +148,13 @@ func TestOperatorPromotionRegistryFiltersCityBeforePageLimit(t *testing.T) {
 
 func createPublishedPromotion(t *testing.T, ctx context.Context, db *sql.DB, id, code, storeID, cityID string, startsAt time.Time) {
 	t.Helper()
+	fundingSource := "BTHWANI"
+	if storeID != "" {
+		fundingSource = "PARTNER" // Only the Store-owner flow can fund its own Store offer.
+	}
 	_, replayed, err := postgres.CreatePromotion(ctx, db, postgres.PromotionInput{
 		ID: id, Code: code, NameAr: "عرض تجريبي", Kind: "FIXED", ValueMinor: 100,
-		FundingSource: "PARTNER", StoreID: storeID, ServiceCityID: cityID, StartsAt: startsAt,
+		FundingSource: fundingSource, StoreID: storeID, ServiceCityID: cityID, StartsAt: startsAt,
 		CreatedByActorID: "marketing-test-operator",
 	}, "create-"+id, postgres.HashMarketingFacts("create", id, code))
 	if err != nil || replayed {
