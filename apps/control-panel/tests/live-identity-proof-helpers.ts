@@ -26,6 +26,12 @@ export function assertIdentityProofScope(): void {
   }
 }
 
+export function runtimeComposeProject(): string {
+  const composeProject = process.env.SAMRIM_RUNTIME_COMPOSE_PROJECT?.trim() || "samrim-local";
+  if (!/^[a-z0-9][a-z0-9_-]*$/i.test(composeProject)) throw new Error("runtime Compose project name is invalid");
+  return composeProject;
+}
+
 export async function jsonRequest(base: string, pathname: string, token: string, body?: unknown, extraHeaders: Record<string, string> = {}) {
   const response = await fetch(base + pathname, {
     method: "POST",
@@ -57,8 +63,7 @@ export function readCanonicalRuntime(): { envFile: string; repoRoot: string; pos
 
 function readCanonicalInitialOperator(): { actorId: string; phone: string } | null {
   const { envFile, repoRoot, postgresUser, postgresDatabase } = readCanonicalRuntime();
-  const composeProject = process.env.SAMRIM_RUNTIME_COMPOSE_PROJECT?.trim() || "samrim-local";
-  if (!/^[a-z0-9][a-z0-9_-]*$/i.test(composeProject)) throw new Error("runtime Compose project name is invalid");
+  const composeProject = runtimeComposeProject();
   const output = execFileSync(resolveTrustedExecutable("docker"), [
     "compose", "--project-name", composeProject, "--env-file", envFile,
     "-f", path.join(repoRoot, "infra/local/compose/compose.yaml"), "exec", "-T", "postgres",
