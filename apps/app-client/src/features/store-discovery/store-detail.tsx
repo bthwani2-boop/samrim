@@ -4,11 +4,12 @@ import { availableCustomerFulfillmentModes, type CartResponse, type CustomerFulf
 import * as ExpoLinking from "expo-linking";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, FlatList, Image, Modal, PanResponder, Pressable, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { AccessibilityInfo, FlatList, I18nManager, Image, Pressable, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { currentIdentityState } from "../../bootstrap/identity";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { PromotionCard } from "./promotion-card";
+import { StoreProductSheet } from "./store-product-sheet";
 import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 
 type DetailState =
@@ -25,6 +26,8 @@ type StoreCatalogRow =
 type StoreBannerItem =
   | { kind: "offer"; key: string; offer: PublicCatalogResponse["offers"][number] }
   | { kind: "promotion"; key: string; promotion: PublicPromotionView };
+
+type CatalogSnapshot = { catalog: PublicCatalogResponse; categoryID: string | null; query: string; productID: string };
 
 function categoryTrail(categoryId: string, categories: PublicCatalogResponse["categories"]): ReadonlyArray<PublicCatalogResponse["categories"][number]> {
   const byId = new Map(categories.map((category) => [category.id, category]));
@@ -51,14 +54,22 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [addedOfferId, setAddedOfferId] = useState("");
   const [selectedCategoryID, setSelectedCategoryID] = useState<string | null>(null);
   const [activeProductID, setActiveProductID] = useState("");
-  const [detailOfferID, setDetailOfferID] = useState("");
+  const [detailOffer, setDetailOffer] = useState<PublicCatalogResponse["offers"][number] | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const detailRequestID = useRef(0);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogSearchOpen, setCatalogSearchOpen] = useState(false);
   const [catalogRefreshing, setCatalogRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const catalogRequestID = useRef(0);
+  const storeRequestID = useRef(0);
+  const [catalogTabs, setCatalogTabs] = useState<Partial<Record<number, CatalogSnapshot>>>({});
+  const catalogPagerRef = useRef<FlatList<number> | null>(null);
+  const [pagerWidth, setPagerWidth] = useState(0);
   const cartReadRequestID = useRef(0);
   const promotionRequestID = useRef(0);
+  const bannerRequestID = useRef(0);
+  const [bannerError, setBannerError] = useState(false);
   const [error, setError] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
@@ -81,22 +92,39 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [promotionError, setPromotionError] = useState(false);
   const [favoritesView, setFavoritesView] = useState(false);
   const [popularView, setPopularView] = useState(false);
+  const activeTab = favoritesView ? 1 : popularView ? 2 : 0;
   const [selectedFulfillmentMode, setSelectedFulfillmentMode] = useState<CustomerFulfillmentMode | null>(null);
   const [orderabilityByMode, setOrderabilityByMode] = useState<ReadonlyArray<StoreOrderability> | null>(null);
   const [openCart, setOpenCart] = useState<CartResponse["cart"] | null>(null);
   const [cartReadError, setCartReadError] = useState(false);
   const fulfillmentModes = useMemo(() => state.kind === "ready" ? availableCustomerFulfillmentModes(state.store.fulfillmentModes) : [], [state]);
   const mutationBusy = Boolean(busyOfferId);
-  const detailOffer = state.kind === "ready" ? state.catalog.offers.find((offer) => offer.offerId === detailOfferID) : undefined;
   const bannerItems: StoreBannerItem[] = [
     ...promotions.map((promotion) => ({ kind: "promotion" as const, key: `promotion:${promotion.id}`, promotion })),
     ...bannerOffers.map((offer) => ({ kind: "offer" as const, key: `offer:${offer.offerId}`, offer })),
   ].slice(0, 5);
   const bannerWidth = Math.max(280, windowWidth - spacing[3] * 2);
 
+  const loadBanner = useCallback(async () => {
+    if (!selectedCityID) return;
+    const scope = storeRequestID.current;
+    const requestID = ++bannerRequestID.current;
+    setBannerError(false);
+    try {
+      const result = await readPublicStoreCatalog(storeId, selectedCityID, "", "", 5, "", "", "MOST_ORDERED_30_DAYS");
+      if (scope === storeRequestID.current && requestID === bannerRequestID.current) setBannerOffers(result.offers.slice(0, 5));
+    } catch {
+      if (scope === storeRequestID.current && requestID === bannerRequestID.current) setBannerError(true);
+    }
+  }, [selectedCityID, storeId]);
+
   const load = useCallback(async () => {
-    const requestID = catalogRequestID.current + 1;
-    catalogRequestID.current = requestID;
+    const requestID = ++storeRequestID.current;
+    catalogRequestID.current += 1;
+    detailRequestID.current += 1;
+    setDetailOffer(null);
+    setDetailLoading(false);
+    setCatalogTabs({});
     const cartRequestID = ++cartReadRequestID.current;
     const promotionID = promotionRequestID.current + 1;
     promotionRequestID.current = promotionID;
@@ -107,6 +135,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setLoadingMore(false);
     setPromotions([]);
     setBannerOffers([]);
+    setBannerError(false);
     setBannerIndex(0);
     setBannerPaused(false);
     bannerRef.current?.scrollTo({ x: 0, animated: false });
@@ -147,42 +176,41 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         .finally(() => {
           if (promotionID === promotionRequestID.current) setPromotionLoading(false);
         });
-      void readPublicStoreCatalog(storeId, selectedCityID, "", "", 5, "", "", "MOST_ORDERED_30_DAYS").then((result) => {
-        if (requestID === catalogRequestID.current) setBannerOffers(result.offers.slice(0, 5));
-      }).catch(() => { if (requestID === catalogRequestID.current) setBannerOffers([]); });
+      void loadBanner();
       const [store, rawCatalog] = await Promise.all([
         readPublishedStore(storeId, selectedCityID),
         readPublicStoreCatalog(storeId, selectedCityID, categoryId.trim(), "", 20, "", productId.trim()),
       ]);
       const catalog = productId.trim() ? filterCatalogToProduct(rawCatalog, productId.trim()) : rawCatalog;
-      if (requestID !== catalogRequestID.current) return;
+      if (requestID !== storeRequestID.current) return;
       setFavoriteLoadError(false);
       setState({ kind: "ready", store, catalog });
+      setCatalogTabs({ 0: { catalog, categoryID: categoryId.trim() || null, query: "", productID: productId.trim() } });
       if (currentIdentityState().kind === "authenticated") {
         void Promise.allSettled([listFavoriteStoreIDs(), listFavoriteStoreOfferIDs(storeId)]).then(([storesResult, offersResult]) => {
-          if (requestID !== catalogRequestID.current) return;
+          if (requestID !== storeRequestID.current) return;
           if (storesResult.status === "fulfilled") setIsFavorite(storesResult.value.includes(storeId));
           if (offersResult.status === "fulfilled") setFavoriteOfferIDs(new Set(offersResult.value));
           setFavoriteLoadError(storesResult.status === "rejected" || offersResult.status === "rejected");
         });
         void readOwnStoreCart(storeId).then((result) => {
-          if (requestID !== catalogRequestID.current || cartRequestID !== cartReadRequestID.current) return;
+          if (requestID !== storeRequestID.current || cartRequestID !== cartReadRequestID.current) return;
           setOpenCart(result?.cart ?? null);
           setCartReadError(false);
         }).catch(() => {
-          if (requestID === catalogRequestID.current && cartRequestID === cartReadRequestID.current) setCartReadError(true);
+          if (requestID === storeRequestID.current && cartRequestID === cartReadRequestID.current) setCartReadError(true);
         });
       }
       void orderabilityRequest.then((orderability) => {
-        if (requestID === catalogRequestID.current) setOrderabilityByMode(orderability);
+        if (requestID === storeRequestID.current) setOrderabilityByMode(orderability);
       });
       void promotionRequest;
     } catch {
-      if (requestID !== catalogRequestID.current) return;
+      if (requestID !== storeRequestID.current) return;
       setPromotionLoading(false);
       setState({ kind: "error" });
     }
-  }, [categoryId, productId, selectedCityID, storeId]);
+  }, [categoryId, loadBanner, productId, selectedCityID, storeId]);
 
   async function retryPromotions() {
     if (!selectedCityID) return;
@@ -219,6 +247,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       setPopularView(!favoriteOnly && popularOnly);
       setCatalogQuery(favoriteOnly ? "" : query);
       setState((current) => current.kind === "ready" ? { kind: "ready", store: current.store, catalog } : current);
+      setCatalogTabs((current) => ({ ...current, [favoriteOnly ? 1 : popularOnly ? 2 : 0]: { catalog, categoryID: favoriteOnly ? null : categoryID, query: favoriteOnly ? "" : query, productID: "" } }));
     } catch {
       if (requestID === catalogRequestID.current) setError("تعذر تحديث الكتالوج. يمكنك متابعة العناصر الحالية أو إعادة المحاولة.");
     } finally {
@@ -226,33 +255,52 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
   }, [favoritesView, popularView, selectedCityID, storeId]);
 
-  const selectCatalogTab = useCallback(async (index: number) => {
-    if (catalogRefreshing || loadingMore) return;
-    if (index === 1) {
-      if (currentIdentityState().kind !== "authenticated") { router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href); return; }
-      setCatalogSearchOpen(false);
-      await reloadCatalog(null, "", true, false);
+  const selectCatalogTab = useCallback(async (index: number, fromSwipe = false) => {
+    if (index < 0 || index > 2 || state.kind !== "ready") return;
+    if (index === 1 && currentIdentityState().kind !== "authenticated") {
+      catalogPagerRef.current?.scrollToIndex({ index: activeTab, animated: !reduceMotion });
+      router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
       return;
     }
+    if (!fromSwipe) catalogPagerRef.current?.scrollToIndex({ index, animated: !reduceMotion });
+    if (index === activeTab) {
+      if (index === 0 && selectedCategoryID) await reloadCatalog(null, "", false, false);
+      return;
+    }
+    setCatalogTabs((current) => ({ ...current, [activeTab]: { catalog: state.catalog, categoryID: selectedCategoryID, query: catalogQuery, productID: activeProductID } }));
+    catalogRequestID.current += 1;
+    setLoadingMore(false);
     setCatalogSearchOpen(false);
-    await reloadCatalog(null, "", false, index === 2);
-  }, [catalogRefreshing, loadingMore, reloadCatalog, router, storeId]);
+    setFavoritesView(index === 1);
+    setPopularView(index === 2);
+    const saved = catalogTabs[index];
+    setSelectedCategoryID(saved?.categoryID ?? null);
+    setCatalogQuery(saved?.query ?? "");
+    setActiveProductID(saved?.productID ?? "");
+    setError("");
+    if (saved) {
+      setCatalogRefreshing(false);
+      setState({ kind: "ready", store: state.store, catalog: saved.catalog });
+      return;
+    }
+    setState({ kind: "ready", store: state.store, catalog: { ...state.catalog, offers: [], sections: [], nextCursor: undefined } });
+    await reloadCatalog(null, "", index === 1, index === 2);
+  }, [activeTab, activeProductID, catalogQuery, catalogTabs, reduceMotion, reloadCatalog, router, selectedCategoryID, state, storeId]);
 
-  const productPager = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 32 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35,
-    onPanResponderRelease: (_event, gesture) => {
-      if (Math.abs(gesture.dx) < 52) return;
-      const currentTab = favoritesView ? 1 : popularView ? 2 : 0;
-      void selectCatalogTab(Math.max(0, Math.min(2, currentTab + (gesture.dx < 0 ? 1 : -1))));
-    },
-  }), [favoritesView, popularView, selectCatalogTab]);
+  useEffect(() => {
+    void load();
+    return () => {
+      storeRequestID.current += 1;
+      catalogRequestID.current += 1;
+      promotionRequestID.current += 1;
+      bannerRequestID.current += 1;
+      detailRequestID.current += 1;
+    };
+  }, [load]);
 
-  const dismissProductSheet = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_event, gesture) => gesture.dy > 12 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.25,
-    onPanResponderRelease: (_event, gesture) => { if (gesture.dy > 72) setDetailOfferID(""); },
-  }), []);
-
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (pagerWidth > 0) catalogPagerRef.current?.scrollToIndex({ index: activeTab, animated: false });
+  }, [pagerWidth]);
 
   useEffect(() => {
     if (fulfillmentModes.length === 1 && fulfillmentModes[0] && selectedFulfillmentMode === null) setSelectedFulfillmentMode(fulfillmentModes[0]);
@@ -294,39 +342,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const categoryChildren = selectedCategory
     ? activeCatalogCategories.filter((category) => category.parentCategoryId === selectedCategory.id)
     : activeCatalogCategories.filter((category) => !category.parentCategoryId);
-  const activeSections = state.catalog.sections.filter((section) => section.active);
-  const sectionOfferIds = new Set(activeSections.flatMap((section) => section.offerIds));
-  const emptyOfferMessage = favoritesView
-    ? "لم تحفظ منتجات من هذا المتجر بعد"
-    : popularView
-      ? catalogQuery.trim()
-        ? "لا توجد منتجات مطابقة"
-        : selectedCategoryID
-          ? "لا توجد منتجات رائجة في هذا التصنيف خلال آخر 30 يومًا"
-          : "لا توجد منتجات مطلوبة خلال آخر 30 يومًا"
-      : "لا توجد منتجات متاحة حاليًا";
-  const catalogRows: StoreCatalogRow[] = [];
-  const seenOfferIDs = new Set<string>();
-  if (favoritesView) catalogRows.push({ kind: "heading", key: "favorite-offers-heading", title: "المنتجات المفضلة", subtitle: `${state.catalog.offers.length} منتج معروض${catalogRefreshing ? " · جارٍ التحديث…" : ""}` });
-  if (state.catalog.offers.length === 0) catalogRows.push({ kind: "empty", key: "catalog-empty", title: emptyOfferMessage });
-  const appendOffer = (offer: PublicCatalogResponse["offers"][number]) => {
-    if (seenOfferIDs.has(offer.offerId)) return;
-    seenOfferIDs.add(offer.offerId);
-    catalogRows.push({ kind: "offer", key: `offer:${offer.offerId}`, offer });
-  };
-  if (state.catalog.offers.length > 0 && !favoritesView && !popularView) {
-    for (const section of activeSections) {
-      const sectionOffers = section.offerIds
-        .map((offerID) => state.catalog.offers.find((offer) => offer.offerId === offerID))
-        .filter((offer): offer is PublicCatalogResponse["offers"][number] => offer !== undefined && !seenOfferIDs.has(offer.offerId));
-      if (sectionOffers.length === 0) continue;
-      catalogRows.push({ kind: "section", key: `section:${section.id}`, title: section.nameAr });
-      sectionOffers.forEach(appendOffer);
-    }
-    state.catalog.offers.filter((offer) => !sectionOfferIds.has(offer.offerId)).forEach(appendOffer);
-  } else if (state.catalog.offers.length > 0) {
-    state.catalog.offers.forEach(appendOffer);
-  }
+  const catalogRows = buildCatalogRows(state.catalog, favoritesView, popularView, selectedCategoryID, catalogQuery, catalogRefreshing);
 
   const renderCategoryChip = (category: PublicCatalogResponse["categories"][number], selected: boolean) => (
     <Pressable
@@ -456,6 +472,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setError("");
     try {
       const isFavoriteNow = await setFavoriteStoreOffer(offerID, !favoriteOfferIDs.has(offerID));
+      setCatalogTabs((current) => { const next = { ...current }; delete next[1]; return next; });
       setFavoriteOfferIDs((current) => {
         const next = new Set(current);
         if (isFavoriteNow) next.add(offerID);
@@ -473,10 +490,25 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
   }
 
-  function openOfferDetails(offerID: string) {
+  async function openOfferDetails(offerID: string) {
+    const offer = state.kind === "ready" ? state.catalog.offers.find((item) => item.offerId === offerID) ?? bannerOffers.find((item) => item.offerId === offerID) : undefined;
+    if (!offer || !selectedCityID) return;
+    const requestID = ++detailRequestID.current;
     setAddedOfferId("");
     setError("");
-    setDetailOfferID(offerID);
+    setDetailOffer(offer);
+    setDetailLoading(true);
+    try {
+      const catalog = await readPublicStoreCatalog(storeId, selectedCityID, "", "", 20, "", offer.productId);
+      if (requestID !== detailRequestID.current) return;
+      const fresh = catalog.offers.find((item) => item.offerId === offerID);
+      if (!fresh) { setDetailOffer(null); setError("هذا المنتج لم يعد متاحًا في المتجر."); return; }
+      setDetailOffer(fresh);
+    } catch {
+      if (requestID === detailRequestID.current) setError("تعذر تحديث تفاصيل المنتج. أغلق التفاصيل وأعد فتحها للمحاولة.");
+    } finally {
+      if (requestID === detailRequestID.current) setDetailLoading(false);
+    }
   }
 
   async function reloadFavorites() {
@@ -498,7 +530,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const renderOffer = (offer: PublicCatalogResponse["offers"][number]) => {
     const primaryMedia = offer.media.find((media) => media.role === "primary") ?? offer.media[0];
     return (
-      <View key={offer.offerId} accessibilityHint="اسحب يمينًا أو يسارًا للتنقل بين تبويبات منتجات المتجر" {...productPager.panHandlers}>
+      <View key={offer.offerId}>
       <BthwaniSurface tone="base" style={styles.item}>
         <View style={styles.productSummary}>
           <View style={styles.productImageFrame}>
@@ -525,8 +557,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   };
 
   const detailQuantity = detailOffer ? Number(quantities[detailOffer.offerId] ?? detailOffer.quantityMinBaseUnits) : 0;
-  const canIncreaseDetailQuantity = Boolean(detailOffer && !mutationBusy && detailQuantity + detailOffer.quantityStepBaseUnits <= detailOffer.quantityMaxBaseUnits);
-  const canDecreaseDetailQuantity = Boolean(detailOffer && !mutationBusy && detailQuantity - detailOffer.quantityStepBaseUnits >= detailOffer.quantityMinBaseUnits);
 
   return (
     <View style={styles.page} accessibilityLabel={`كتالوج ${state.store.name}`}>
@@ -546,9 +576,28 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="primary" />
         </View>
       </View>
-      <FlatList
+      <View style={styles.catalogPager} onLayout={(event) => setPagerWidth(event.nativeEvent.layout.width)}>
+      {pagerWidth > 0 ? <FlatList
+        ref={catalogPagerRef}
+        horizontal
+        pagingEnabled
+        inverted={I18nManager.isRTL}
+        data={[0, 1, 2]}
+        keyExtractor={(index) => String(index)}
+        initialNumToRender={3}
+        maxToRenderPerBatch={3}
+        windowSize={3}
+        removeClippedSubviews={false}
+        showsHorizontalScrollIndicator={false}
+        getItemLayout={(_data, index) => ({ length: pagerWidth, offset: pagerWidth * index, index })}
+        onMomentumScrollEnd={(event) => void selectCatalogTab(Math.round(Math.abs(event.nativeEvent.contentOffset.x) / pagerWidth), true)}
+        onScrollToIndexFailed={(info) => catalogPagerRef.current?.scrollToOffset({ offset: info.index * pagerWidth, animated: false })}
+        renderItem={({ item: tabIndex }) => {
+          const snapshot = catalogTabs[tabIndex];
+          const pageRows = tabIndex === activeTab ? catalogRows : snapshot ? buildCatalogRows(snapshot.catalog, tabIndex === 1, tabIndex === 2, snapshot.categoryID, snapshot.query) : [];
+          return <View style={{ width: pagerWidth, flex: 1 }}><FlatList
         contentContainerStyle={styles.container}
-        data={catalogRows}
+        data={pageRows}
         keyExtractor={(row) => row.key}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => {
@@ -572,12 +621,12 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             {fulfillmentModes.length > 1 ? <View style={styles.modeOptions}>{fulfillmentModes.map((mode) => {
               const orderability = orderabilityByMode?.find((item) => item.fulfillmentMode === mode);
               const modeEta = orderability?.preparationMinutes ? orderability.state === "CLOSED_BY_SCHEDULE" ? ` · تجهيز ${orderability.preparationMinutes} د بعد الفتح` : ` · تجهيز ${orderability.preparationMinutes} د` : "";
-              return <BthwaniChip key={mode} accessibilityHint={`${fulfillmentModeDescription(mode)} ${orderabilityBadge(orderability)}، ${orderabilityEta(orderability)}`} label={`${fulfillmentModeLabel(mode)} · ${orderabilityBadge(orderability)}${modeEta}`} onPress={() => { setSelectedFulfillmentMode(mode); setError(""); }} selected={selectedFulfillmentMode === mode} />;
+              return <Pressable key={mode} accessibilityRole="radio" accessibilityLabel={fulfillmentModeLabel(mode)} accessibilityHint={`${fulfillmentModeDescription(mode)} ${orderabilityEta(orderability)}`} accessibilityState={{ checked: selectedFulfillmentMode === mode }} onPress={() => { setSelectedFulfillmentMode(mode); setError(""); }} style={[styles.modeOption, selectedFulfillmentMode === mode && styles.modeOptionSelected]}><Text style={styles.modeOptionLabel}>{fulfillmentModeLabel(mode)}</Text><Text style={styles.modeOptionState}>{orderabilityBadge(orderability)}{modeEta}</Text></Pressable>;
             })}</View> : null}
           </BthwaniSurface>
           {bannerItems.length ? <View style={styles.bannerBlock}>
             <View style={styles.bannerHeading}><Text style={styles.bannerHeadingText}>{promotions.length && bannerOffers.length ? "عروض ومنتجات رائجة" : promotions.length ? "عروض هذا المتجر" : "الأكثر طلبًا خلال آخر 30 يومًا"}</Text><View style={styles.bannerHeadingActions}>{bannerItems.length > 1 ? <Text style={styles.bannerPause}>{bannerIndex + 1} من {bannerItems.length}</Text> : null}{bannerItems.length > 1 ? reduceMotion ? <Text accessibilityLabel="الحركة التلقائية متوقفة وفق إعدادات تقليل الحركة بالجهاز" style={styles.bannerPause}>الحركة متوقفة</Text> : <Pressable accessibilityRole="button" accessibilityLabel={bannerPaused ? "تشغيل حركة العروض والمنتجات" : "إيقاف حركة العروض والمنتجات"} onPress={() => setBannerPaused((paused) => !paused)}><Text style={styles.bannerPause}>{bannerPaused ? "تشغيل" : "إيقاف"}</Text></Pressable> : null}</View></View>
-            <ScrollView ref={bannerRef} horizontal pagingEnabled onTouchStart={() => setBannerPaused(true)} onMomentumScrollEnd={(event) => setBannerIndex(Math.round(event.nativeEvent.contentOffset.x / bannerWidth))} showsHorizontalScrollIndicator={false}>
+            <ScrollView ref={tabIndex === activeTab ? bannerRef : undefined} horizontal pagingEnabled onTouchStart={() => setBannerPaused(true)} onMomentumScrollEnd={(event) => setBannerIndex(Math.round(event.nativeEvent.contentOffset.x / bannerWidth))} showsHorizontalScrollIndicator={false}>
               {bannerItems.map((item) => item.kind === "offer" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`عرض المنتج الرائج ${item.offer.productName}`} onPress={() => openOfferDetails(item.offer.offerId)} style={[styles.bannerCard, { width: bannerWidth }]}>
                 {item.offer.media[0]?.uri ? <Image source={{ uri: item.offer.media[0].uri }} accessibilityLabel={`صورة ${item.offer.productName}`} resizeMode="cover" style={styles.bannerImage} /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="trending" color={theme.interactiveText} size={sizing.iconMd} /></View>}
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>الأكثر طلبًا</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.offer.productName}</Text><Text style={styles.bannerPrice}>{storeMoney(item.offer.priceMinor, item.offer.currency)}</Text></View>
@@ -587,6 +636,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
               </View>)}
             </ScrollView>
           </View> : null}
+          {bannerError ? <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل المنتجات الرائجة" onPress={() => void loadBanner()} style={styles.inlineRecovery}><Text style={styles.bannerPause}>تعذر تحميل المنتجات الرائجة · إعادة المحاولة</Text></Pressable> : null}
           {catalogSearchOpen && !favoritesView ? <BthwaniSearchField
             accessibilityLabel="البحث في منتجات المتجر"
             containerStyle={styles.searchField}
@@ -599,16 +649,16 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             value={catalogQuery}
           /> : null}
           <ScrollView horizontal contentContainerStyle={styles.categoryRail} showsHorizontalScrollIndicator={false}>
-            <Pressable accessibilityRole="button" accessibilityLabel="عرض كل منتجات المتجر" accessibilityState={{ selected: !favoritesView && !popularView && !selectedCategoryID, disabled: catalogRefreshing || loadingMore }} disabled={catalogRefreshing || loadingMore} onPress={() => void reloadCatalog(null, "", false, false)} style={[styles.catalogFilterChip, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipSelected]}><Text style={[styles.catalogFilterChipLabel, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipLabelSelected]}>كل المنتجات</Text></Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="عرض المنتجات المفضلة" accessibilityState={{ selected: favoritesView, disabled: catalogRefreshing || loadingMore }} disabled={catalogRefreshing || loadingMore} onPress={() => { if (currentIdentityState().kind !== "authenticated") { router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href); return; } setCatalogSearchOpen(false); void reloadCatalog(null, "", true, false); }} style={[styles.catalogFilterChip, favoritesView && styles.catalogFilterChipSelected]}><BthwaniIcon name="favorite" color={favoritesView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text style={[styles.catalogFilterChipLabel, favoritesView && styles.catalogFilterChipLabelSelected]}>المفضلة</Text></Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="عرض المنتجات الأكثر رواجًا خلال آخر 30 يومًا" accessibilityState={{ selected: popularView, disabled: catalogRefreshing || loadingMore }} disabled={catalogRefreshing || loadingMore} onPress={() => { setCatalogSearchOpen(false); void reloadCatalog(selectedCategoryID, "", false, true); }} style={[styles.catalogFilterChip, popularView && styles.catalogFilterChipSelected]}><BthwaniIcon name="trending" color={popularView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text style={[styles.catalogFilterChipLabel, popularView && styles.catalogFilterChipLabelSelected]}>الأكثر رواجًا</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="عرض كل منتجات المتجر" accessibilityState={{ selected: !favoritesView && !popularView && !selectedCategoryID, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(0)} style={[styles.catalogFilterChip, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipSelected]}><Text style={[styles.catalogFilterChipLabel, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipLabelSelected]}>كل المنتجات</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="عرض المنتجات المفضلة" accessibilityState={{ selected: favoritesView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(1)} style={[styles.catalogFilterChip, favoritesView && styles.catalogFilterChipSelected]}><BthwaniIcon name="favorite" color={favoritesView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text style={[styles.catalogFilterChipLabel, favoritesView && styles.catalogFilterChipLabelSelected]}>المفضلة</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="عرض المنتجات الأكثر رواجًا خلال آخر 30 يومًا" accessibilityState={{ selected: popularView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(2)} style={[styles.catalogFilterChip, popularView && styles.catalogFilterChipSelected]}><BthwaniIcon name="trending" color={popularView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text style={[styles.catalogFilterChipLabel, popularView && styles.catalogFilterChipLabelSelected]}>الأكثر رواجًا</Text></Pressable>
             {!favoritesView && activeCatalogCategories.length > 0 ? <>
               {selectedCategoryTrail.map((category, index) => renderCategoryChip(category, index === selectedCategoryTrail.length - 1))}
               {categoryChildren.map((category) => renderCategoryChip(category, selectedCategoryID === category.id))}
             </> : null}
           </ScrollView>
         </View>}
-        ListFooterComponent={state.catalog.nextCursor || promotionError || (!promotionLoading && promotions.length > 0) || error || favoriteLoadError ? <View style={styles.listFooter}>
+        ListFooterComponent={tabIndex === activeTab && (state.catalog.nextCursor || promotionError || (!promotionLoading && promotions.length > 0) || error || favoriteLoadError) ? <View style={styles.listFooter}>
           {state.catalog.nextCursor ? <BthwaniButton busy={loadingMore} disabled={catalogRefreshing} label="تحميل المزيد" onPress={() => void loadMore()} style={styles.loadMoreButton} variant="secondary" /> : null}
           {promotionError ? <View style={styles.promotionNotice}><Text accessibilityRole="alert" style={styles.validationError}>تعذر قراءة عروض هذا المتجر؛ يمكنك متابعة الطلب من دونها.</Text><BthwaniButton label="إعادة قراءة العروض" onPress={() => void retryPromotions()} variant="secondary" /></View> : null}
           {!promotionLoading && !promotionError && promotions.length > 0 ? <>
@@ -618,35 +668,25 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           {favoriteLoadError ? <BthwaniSurface tone="inset" style={styles.favoriteNotice}><Text style={styles.muted}>تعذر تحديث حالة المفضلة من الخادم.</Text><BthwaniButton busy={favoriteLoading} label="إعادة المحاولة" onPress={() => void reloadFavorites()} variant="secondary" /></BthwaniSurface> : null}
         </View> : null}
+        ListEmptyComponent={tabIndex !== activeTab || catalogRefreshing ? <View style={styles.pageLoading} accessibilityLabel="جارٍ تحميل منتجات التبويب"><BthwaniSkeleton height={112} /><BthwaniSkeleton height={112} /></View> : null}
+      /></View>;
+        }}
+      /> : null}
+      </View>
+      <StoreProductSheet
+        offer={detailOffer}
+        quantityBaseUnits={detailQuantity}
+        selectedOptionIds={detailOffer ? selectedModifierOptionIds[detailOffer.offerId] ?? [] : []}
+        busy={mutationBusy || detailLoading}
+        added={Boolean(detailOffer && addedOfferId === detailOffer.offerId)}
+        fulfillmentSelected={Boolean(selectedFulfillmentMode)}
+        error={error}
+        onQuantityChange={(quantity) => { if (detailOffer) setQuantities((current) => ({ ...current, [detailOffer.offerId]: String(quantity) })); }}
+        onToggleModifier={(groupID, optionID, maxSelections) => { if (detailOffer) toggleModifier(detailOffer, groupID, optionID, maxSelections); }}
+        onAdd={() => { if (detailOffer) void add(detailOffer); }}
+        onClose={() => { detailRequestID.current += 1; setDetailOffer(null); setDetailLoading(false); }}
+        onGoToCart={() => { detailRequestID.current += 1; setDetailOffer(null); router.push(`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}` as Href); }}
       />
-      <Modal animationType="slide" onRequestClose={() => setDetailOfferID("")} transparent visible={Boolean(detailOffer)}>
-        <View style={styles.sheetBackdrop}>
-          <BthwaniSurface accessibilityViewIsModal style={styles.productSheet} tone="raised">
-            <View {...dismissProductSheet.panHandlers} accessibilityLabel="اسحب للأسفل لإغلاق تفاصيل المنتج" style={styles.sheetDragTarget}><View style={styles.sheetDragHandle} /></View>
-            <View style={styles.sheetHeading}><Text accessibilityRole="header" style={styles.sheetTitle}>{detailOffer?.productName}</Text><BthwaniIconButton icon="close" label="إغلاق تفاصيل المنتج" onPress={() => setDetailOfferID("")} size={sizing.controlMd} tone="soft" /></View>
-            {detailOffer ? <>
-              <ScrollView horizontal contentContainerStyle={styles.productGallery} showsHorizontalScrollIndicator={false}>
-                {detailOffer.media.length && !failedProductImageIDs.has(detailOffer.offerId) ? detailOffer.media.map((media) => <Image key={media.uri} accessibilityLabel={`صورة ${detailOffer.productName}`} onError={() => setFailedProductImageIDs((current) => new Set(current).add(detailOffer.offerId))} source={{ uri: media.uri }} resizeMode="cover" style={styles.productGalleryImage} />) : <View accessibilityLabel={`لا توجد صور متاحة لـ ${detailOffer.productName}`} style={styles.productGalleryFallback}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.muted}>لا توجد صور متاحة لهذا المنتج</Text></View>}
-              </ScrollView>
-              <ScrollView contentContainerStyle={styles.productSheetContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
-                <Text style={styles.productActionPrice}>{storeMoney(detailOffer.priceMinor, detailOffer.currency)}</Text>
-                {detailOffer.productDescription ? <Text style={styles.muted}>{detailOffer.productDescription}</Text> : null}
-                <Text style={styles.quantityHint}>الكمية: {formatQuantity(detailOffer.baseUnit, detailOffer.quantityMinBaseUnits)}–{formatQuantity(detailOffer.baseUnit, detailOffer.quantityMaxBaseUnits)} · الخطوة {formatQuantity(detailOffer.baseUnit, detailOffer.quantityStepBaseUnits)}</Text>
-                <View style={styles.quantityRow}><Text style={styles.filterLabel}>الكمية</Text><View style={styles.quantityStepper}>
-                  <Pressable accessibilityRole="button" accessibilityLabel="زيادة الكمية" accessibilityState={{ disabled: !canIncreaseDetailQuantity }} disabled={!canIncreaseDetailQuantity} onPress={() => setQuantities((current) => ({ ...current, [detailOffer.offerId]: String(Number(current[detailOffer.offerId] ?? detailOffer.quantityMinBaseUnits) + detailOffer.quantityStepBaseUnits) }))} style={[styles.quantityAction, !canIncreaseDetailQuantity && styles.quantityActionDisabled]}><Text style={[styles.quantityActionText, !canIncreaseDetailQuantity && styles.quantityActionTextDisabled]}>+</Text></Pressable>
-                  <Text accessibilityLabel={`كمية ${detailOffer.productName}`} style={styles.quantityValue}>{formatQuantity(detailOffer.baseUnit, detailQuantity)}</Text>
-                  <Pressable accessibilityRole="button" accessibilityLabel="تقليل الكمية" accessibilityState={{ disabled: !canDecreaseDetailQuantity }} disabled={!canDecreaseDetailQuantity} onPress={() => setQuantities((current) => ({ ...current, [detailOffer.offerId]: String(Number(current[detailOffer.offerId] ?? detailOffer.quantityMinBaseUnits) - detailOffer.quantityStepBaseUnits) }))} style={[styles.quantityAction, !canDecreaseDetailQuantity && styles.quantityActionDisabled]}><Text style={[styles.quantityActionText, !canDecreaseDetailQuantity && styles.quantityActionTextDisabled]}>−</Text></Pressable>
-                </View></View>
-                {!isQuantityAllowed(detailOffer, Number(quantities[detailOffer.offerId] ?? detailOffer.quantityMinBaseUnits)) ? <Text accessibilityRole="alert" style={styles.validationError}>الكمية لا تطابق الحد أو الخطوة المحددة للمنتج.</Text> : null}
-                {detailOffer.modifierGroups.map((group) => <View key={group.id} style={styles.modifierGroup}><Text style={styles.filterLabel}>{group.nameAr}{group.required ? " · مطلوب" : ""}</Text><View style={styles.modifierOptions}>{group.options.filter((option) => option.availability).map((option) => <BthwaniChip key={option.id} label={`${option.nameAr}${option.priceDeltaMinor ? ` · +${storeMoney(option.priceDeltaMinor, detailOffer.currency)}` : ""}`} onPress={() => toggleModifier(detailOffer, group.id, option.id, group.maxSelections)} selected={(selectedModifierOptionIds[detailOffer.offerId] ?? []).includes(option.id)} />)}</View></View>)}
-                {validateModifierSelection(detailOffer, selectedModifierOptionIds[detailOffer.offerId] ?? []) ? <Text accessibilityRole="alert" style={styles.validationError}>{validateModifierSelection(detailOffer, selectedModifierOptionIds[detailOffer.offerId] ?? [])}</Text> : null}
-              </ScrollView>
-              {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
-              {addedOfferId === detailOffer.offerId ? <View style={styles.sheetActions}><BthwaniButton label="متابعة التسوق" onPress={() => setDetailOfferID("")} variant="secondary" /><BthwaniButton label="الانتقال للسلة" onPress={() => { setDetailOfferID(""); router.push(`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}` as Href); }} /></View> : <BthwaniButton accessibilityLabel={`إضافة ${detailOffer.productName} إلى السلة`} busy={busyOfferId === detailOffer.offerId} disabled={mutationBusy || !selectedFulfillmentMode || !isQuantityAllowed(detailOffer, Number(quantities[detailOffer.offerId] ?? detailOffer.quantityMinBaseUnits)) || Boolean(validateModifierSelection(detailOffer, selectedModifierOptionIds[detailOffer.offerId] ?? []))} label="إضافة إلى السلة" onPress={() => void add(detailOffer)} />}
-            </> : null}
-          </BthwaniSurface>
-        </View>
-      </Modal>
       {openCart?.lines.length || cartReadError ? <SafeAreaView edges={["bottom"]} style={styles.cartSafeArea}>
         <BthwaniSurface tone="raised" style={styles.cartCta}>
           <View style={styles.cartSummary}>
@@ -690,11 +730,13 @@ function orderabilityEta(orderability: StoreOrderability | undefined): string {
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     page: { backgroundColor: theme.background, flex: 1 },
+    catalogPager: { flex: 1 },
+    pageLoading: { gap: spacing[3] },
     container: { backgroundColor: theme.background, gap: spacing[3], paddingBottom: spacing[4], paddingHorizontal: spacing[3], width: "100%" },
     listHeader: { gap: spacing[3] },
     listFooter: { gap: spacing[3] },
     storeCover: { borderRadius: radius.lg, height: 132, width: "100%" },
-    storeCoverFallback: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], height: 132, justifyContent: "flex-end", paddingHorizontal: spacing[4], width: "100%" },
+    storeCoverFallback: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], minHeight: 40, justifyContent: "flex-end", paddingHorizontal: spacing[3], paddingVertical: spacing[2], width: "100%" },
     storeCoverFallbackCopy: { alignItems: "flex-end", flex: 1, gap: spacing[1] },
     storeCoverFallbackTitle: { ...typography.titleSm, color: theme.color },
     storeCoverFallbackText: { ...typography.caption, color: theme.colorMuted },
@@ -742,7 +784,12 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     orderStatusMeta: { ...typography.bodySm, color: theme.colorMuted, textAlign: "right" },
     orderStatusBadge: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, justifyContent: "center", minHeight: sizing.controlMd, minWidth: sizing.controlMd, paddingHorizontal: spacing[3] },
     orderStatusBadgeText: { ...typography.bodyStrong, color: theme.interactiveText },
-    modeOptions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2], justifyContent: "flex-end" },
+    modeOptions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    modeOption: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, flex: 1, gap: spacing[1], minWidth: 90, padding: spacing[2] },
+    modeOptionSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
+    modeOptionLabel: { ...typography.label, color: theme.color, textAlign: "center" },
+    modeOptionState: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
+    inlineRecovery: { alignItems: "flex-end", paddingVertical: spacing[1] },
     modeDescription: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
     promotionList: { gap: spacing[2] },
     promotionNotice: { alignItems: "flex-start", gap: spacing[2] },
@@ -858,4 +905,42 @@ function dshMutationErrorMessage(cause: unknown, fallback: string): string {
   if (code === "UNAUTHENTICATED") return "سجّل الدخول لإضافة المنتج إلى السلة.";
   if (code === "STALE_CHECKOUT") return "تغيرت السلة أو بيانات المنتج. افتح السلة لقراءة الحالة الحالية.";
   return fallback;
+}
+
+function buildCatalogRows(catalog: PublicCatalogResponse, favoritesView: boolean, popularView: boolean, categoryID: string | null, query: string, refreshing = false): StoreCatalogRow[] {
+  const activeSections = catalog.sections.filter((section) => section.active);
+  const sectionOfferIds = new Set(activeSections.flatMap((section) => section.offerIds));
+  const emptyOfferMessage = favoritesView
+    ? "لم تحفظ منتجات من هذا المتجر بعد"
+    : popularView
+      ? query.trim()
+        ? "لا توجد منتجات مطابقة"
+        : categoryID
+          ? "لا توجد منتجات رائجة في هذا التصنيف خلال آخر 30 يومًا"
+          : "لا توجد منتجات مطلوبة خلال آخر 30 يومًا"
+      : "لا توجد منتجات متاحة حاليًا";
+  const catalogRows: StoreCatalogRow[] = [];
+  const seenOfferIDs = new Set<string>();
+  if (favoritesView) catalogRows.push({ kind: "heading", key: "favorite-offers-heading", title: "المنتجات المفضلة", subtitle: `${catalog.offers.length} منتج معروض${refreshing ? " · جارٍ التحديث…" : ""}` });
+  if (catalog.offers.length === 0) catalogRows.push({ kind: "empty", key: "catalog-empty", title: emptyOfferMessage });
+  const appendOffer = (offer: PublicCatalogResponse["offers"][number]) => {
+    if (seenOfferIDs.has(offer.offerId)) return;
+    seenOfferIDs.add(offer.offerId);
+    catalogRows.push({ kind: "offer", key: `offer:${offer.offerId}`, offer });
+  };
+  if (catalog.offers.length > 0 && !favoritesView && !popularView) {
+    for (const section of activeSections) {
+      const sectionOffers = section.offerIds
+        .map((offerID) => catalog.offers.find((offer) => offer.offerId === offerID))
+        .filter((offer): offer is PublicCatalogResponse["offers"][number] => offer !== undefined && !seenOfferIDs.has(offer.offerId));
+      if (sectionOffers.length === 0) continue;
+      catalogRows.push({ kind: "section", key: `section:${section.id}`, title: section.nameAr });
+      sectionOffers.forEach(appendOffer);
+    }
+    catalog.offers.filter((offer) => !sectionOfferIds.has(offer.offerId)).forEach(appendOffer);
+  } else if (catalog.offers.length > 0) {
+    catalog.offers.forEach(appendOffer);
+  }
+
+  return catalogRows;
 }

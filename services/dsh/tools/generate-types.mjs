@@ -8,6 +8,7 @@ const root = path.resolve(import.meta.dirname, "../../..");
 const contractPath = path.join(root, "services/dsh/contracts/openapi/dsh.openapi.yaml");
 const pathModulePaths = [
   path.join(root, "services/dsh/contracts/openapi/paths/runtime.yaml"),
+  path.join(root, "services/dsh/contracts/openapi/paths/store-images.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/joining-cases.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/catalog.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/commerce.yaml"),

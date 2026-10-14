@@ -52,12 +52,12 @@ function FirstJoiningStoreFacts({ styles, store }: { styles: SurfaceStyles; stor
   </View>;
 }
 
-function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, canPromote, firstStoreCase, onProfileImageUpdated }: { styles: SurfaceStyles; store: PartnerAccessibleStore; canCatalog: boolean; canOperate: boolean; canPromote: boolean; firstStoreCase: JoiningCaseResponse | null; onProfileImageUpdated: (next: JoiningCaseResponse) => void }) {
+function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, canPromote, firstStoreCase }: { styles: SurfaceStyles; store: PartnerAccessibleStore; canCatalog: boolean; canOperate: boolean; canPromote: boolean; firstStoreCase: JoiningCaseResponse | null }) {
   const firstJoiningStore = firstStoreCase?.case.store;
   const isSameFirstJoiningStore = Boolean(store.owned && firstJoiningStore && firstJoiningStore.id === store.id);
   return <>
     {store.owned ? <StoreCommercialAgreements key={store.id} storeID={store.id} /> : null}
-    {isSameFirstJoiningStore && firstStoreCase ? <StoreProfileImageEditor value={firstStoreCase} onUpdated={onProfileImageUpdated} /> : null}
+    {store.owned ? <StoreProfileImageEditor key={store.id} storeID={store.id} storeName={store.name} /> : null}
     {canOperate ? <StoreOperationalAvailabilityManagement storeID={store.id} fulfillmentModes={store.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
     {canCatalog && store.primaryVerticalId ? <StoreOfferManagement storeId={store.id} verticalId={store.primaryVerticalId} /> : null}
     {canCatalog && !store.primaryVerticalId ? <View style={styles.card}><Text style={styles.muted}>تعذر فتح إدارة المنتجات لأن تصنيف نشاط المتجر غير متاح في القراءة الحالية.</Text></View> : null}
@@ -99,7 +99,7 @@ export function PartnerStore() {
 
     {selectedStore ? <>
       <StoreHeaderRow styles={styles} store={selectedStore} />
-      <StoreManagementSurfaces canCatalog={canCatalog} canOperate={canOperate} canPromote={canPromote} firstStoreCase={firstStoreCase} onProfileImageUpdated={onboarding.update} store={selectedStore} styles={styles} />
+      <StoreManagementSurfaces canCatalog={canCatalog} canOperate={canOperate} canPromote={canPromote} firstStoreCase={firstStoreCase} store={selectedStore} styles={styles} />
     </> : null}
 
     {onboarding.state.kind === "ready" && onboarding.state.value.case.state === "needs_correction" ? <Link href={"/onboarding" as Href} asChild><BthwaniButton label="مراجعة التصحيح المطلوب في ملف الانضمام" variant="secondary" /></Link> : null}

@@ -9,6 +9,11 @@ servers:
   - url: http://127.0.0.1:18080
 
 paths:
+  /dsh/partner/stores/{storeId}/images:
+    $ref: "./paths/store-images.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1images"
+  /dsh/operator/stores/{storeId}/images:
+    $ref: "./paths/store-images.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1images"
+
   /dsh/health:
     $ref: "./paths/runtime.yaml#/paths/~1dsh~1health"
 
@@ -1304,6 +1309,22 @@ components:
       type: string
       enum: [field, control_panel]
 
+    StoreImagesResponse:
+      type: object
+      required: [storeId, version]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        storeProfileImage:
+          $ref: "#/components/schemas/StoreProfileImage"
+        storeCoverImage:
+          $ref: "#/components/schemas/StoreCoverImage"
+        replayed:
+          type: boolean
     StoreProfileImage:
       type: object
       required: [uri, role]

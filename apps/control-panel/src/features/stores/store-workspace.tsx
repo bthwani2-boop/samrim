@@ -1,5 +1,6 @@
 "use client";
 
+import { StoreImageEditor } from "./store-image-editor";
 import { PageHeader } from "../../shell/page-header";
 import { TextArea } from "@bthwani/design-system/web";
 
@@ -253,6 +254,8 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
           {internalPhotosError ? <div className="managed-status managed-status-warning" role="alert">{internalPhotosError}<button type="button" className="button button-secondary" onClick={() => { setInternalPhotosError(""); void fetch(`/api/stores/${encodeURIComponent(storeId)}/internal-photos`, { cache: "no-store" }).then((response) => response.json() as Promise<{ photos: ReadonlyArray<StoreInternalPhotoSummary> }>).then((result) => setInternalPhotos(result.photos)).catch(() => setInternalPhotosError("تعذر قراءة الصور الداخلية.")); }}>إعادة المحاولة</button></div> : null}
           {internalPhotos.length ? <div className="store-internal-photo-grid">{internalPhotos.map((photo) => <figure key={photo.id}><img src={`/api/stores/${encodeURIComponent(storeId)}/internal-photos/${encodeURIComponent(photo.id)}`} alt="صورة ميدانية داخلية للمتجر" loading="lazy" /><figcaption><time dateTime={photo.createdAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium" }).format(new Date(photo.createdAt))}</time></figcaption></figure>)}</div> : !internalPhotosError ? <p className="muted">لا توجد صور ميدانية داخلية لهذا المتجر.</p> : null}
         </section>
+
+        <StoreImageEditor key={storeId} storeId={storeId} name={store.name} onSaved={() => void readStore(false)} />
 
         <section className="store-detail-section" aria-labelledby="store-publication-title">
           <div className="store-detail-heading"><div><h2 id="store-publication-title">النشر والجاهزية</h2></div><span className={`status-badge status-${store.publicationState}`}>{publicationStateLabel(store.publicationState)}</span></div>

@@ -124,3 +124,10 @@ export function isJoiningCaseNotFound(error: unknown): boolean {
   const candidate = error as { kind?: unknown; status?: unknown };
   return candidate.kind === "http" && candidate.status === 404;
 }
+
+export async function readOwnStoreImages(storeID: string) {
+ return dshClient().readPartnerStoreImages(await accessToken(),storeID);
+}
+export async function uploadOwnStoreImage(storeID: string,image: DshImageUploadInput,provenance: MediaProvenanceInput,expectedVersion: number,idempotencyKey: string,correlationID: string,role: "primary" | "cover") {
+ return dshClient().uploadPartnerStoreImage(await accessToken(),storeID,image,provenance,expectedVersion,idempotencyKey,correlationID,role);
+}
