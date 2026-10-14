@@ -10,11 +10,12 @@ export function partnerStoreImageReadbackMatches(
   expected: Readonly<{
     caseID: string;
     partnerActorID: string;
+    role: "primary" | "cover";
     contentSha256: string;
     provenance: MediaProvenanceInput;
   }>,
 ): boolean {
-  const image = actual.storeProfileImage;
+  const image = expected.role === "cover" ? actual.storeCoverImage : actual.storeProfileImage;
   const stored = image?.provenance;
   const requested = expected.provenance;
   return Boolean(

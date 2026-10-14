@@ -36,6 +36,9 @@ paths:
   /dsh/joining-cases/{caseId}/store-image:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1store-image"
 
+  /dsh/joining-cases/{caseId}/internal-photos:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1internal-photos"
+
   /dsh/joining-cases/{caseId}/proof-image:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1proof-image"
 
@@ -305,6 +308,12 @@ paths:
 
   /dsh/stores/{storeId}/publication:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1publication"
+
+  /dsh/operator/stores/{storeId}/internal-photos:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1internal-photos"
+
+  /dsh/operator/stores/{storeId}/internal-photos/{photoId}:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1internal-photos~1{photoId}"
 
   /dsh/operator/stores/partner-presence:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1stores~1partner-presence"
@@ -1313,6 +1322,38 @@ components:
           $ref: "#/components/schemas/MediaProvenance"
           nullable: true
 
+    StoreCoverImage:
+      type: object
+      required: [uri, role]
+      additionalProperties: false
+      properties:
+        uri:
+          type: string
+          format: uri
+        role:
+          type: string
+          const: cover
+        contentSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        provenance:
+          $ref: "#/components/schemas/MediaProvenance"
+          nullable: true
+
+    StoreInternalPhotoSummary:
+      type: object
+      required: [id, contentType, createdAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        contentType:
+          type: string
+          enum: [image/jpeg, image/png]
+        createdAt:
+          type: string
+          format: date-time
+
     MediaProvenance:
       type: object
       required: [creator, sourceDescription, rightsStatement, attestedByActorId, attestedAt]
@@ -1474,6 +1515,9 @@ components:
         storeProfileImage:
           $ref: "#/components/schemas/StoreProfileImage"
           nullable: true
+        storeCoverImage:
+          $ref: "#/components/schemas/StoreCoverImage"
+          nullable: true
         version:
           type: integer
           minimum: 1
@@ -1602,6 +1646,9 @@ components:
           type: string
         storeProfileImage:
           $ref: "#/components/schemas/StoreProfileImage"
+          nullable: true
+        storeCoverImage:
+          $ref: "#/components/schemas/StoreCoverImage"
           nullable: true
         commercialStoreTypeNameAr:
           type: string
@@ -1861,7 +1908,7 @@ components:
           type: boolean
         blockedReason:
           type: string
-          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, FINANCIAL_PROFILE_NOT_READY, SERVICE_CITY_NOT_ELIGIBLE, STORE_LOGO_NOT_READY, CATALOG_NOT_READY]
+          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, FINANCIAL_PROFILE_NOT_READY, SERVICE_CITY_NOT_ELIGIBLE, STORE_LOGO_NOT_READY, STORE_COVER_NOT_READY, CATALOG_NOT_READY]
 
     StoreView:
       type: object
@@ -1914,6 +1961,9 @@ components:
           nullable: true
         storeProfileImage:
           $ref: "#/components/schemas/StoreProfileImage"
+          nullable: true
+        storeCoverImage:
+          $ref: "#/components/schemas/StoreCoverImage"
           nullable: true
         createdAt:
           type: string
@@ -4587,6 +4637,9 @@ components:
           nullable: true
         storeProfileImage:
           $ref: "#/components/schemas/StoreProfileImage"
+          nullable: true
+        storeCoverImage:
+          $ref: "#/components/schemas/StoreCoverImage"
           nullable: true
         version:
           type: integer

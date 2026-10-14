@@ -55,6 +55,8 @@ Do not create a permanent technology-radar database, competitor matrix, dependen
 
 ## External reference curation
 
+The project's non-authoritative delivery, logistics, mapping and Yemen-localization OSS reference links are curated at `docs/reference/oss-logistics.md`. Use this source only for question-driven evidence and candidate discovery, never automatic adoption.
+
 One external URL is curated in one canonical reference class unless a second occurrence has a materially different purpose.
 
 Reference existence never authorizes adoption. Reopen prior research only when the current question, constraints or disconfirming evidence can materially change the decision.

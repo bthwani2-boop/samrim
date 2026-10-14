@@ -28,11 +28,11 @@ test("home distinguishes authoritative unread total from the visible latest page
     });
   });
   await page.goto("/workspace");
-  await expect(page.getByRole("heading", { name: "أحدث الإشعارات غير المقروءة" })).toBeVisible();
-  await expect(page.getByText("إجمالي غير المقروءة: 17")).toBeVisible();
-  await expect(page.getByText(/توجد إشعارات غير مقروءة في صفحات أقدم/)).toBeVisible();
-  await expect(page.getByText("لا توجد إشعارات غير مقروءة.", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "عرض الكل" })).toHaveAttribute("href", "/notifications");
+  await expect(page.getByRole("heading", { name: "الإشعارات" })).toBeVisible();
+  await expect(page.locator(".home-unread-total")).toContainText("إجمالي غير المقروءة: ١٧");
+  await expect(page.getByText(/لا إشعارات غير مقروءة في هذه المعاينة/)).toBeVisible();
+  await expect(page.getByText("أنت على اطلاع؛ لا إشعارات غير مقروءة.", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "صندوق الإشعارات" })).toHaveAttribute("href", "/notifications");
   expect(seenLimit).toBe("50");
 });
 
@@ -51,8 +51,8 @@ test("home does not turn unknown counts or failed reads into zero", async ({ pag
     });
   });
   await page.goto("/workspace");
-  await expect(page.getByText("العدد الإجمالي غير متاح")).toBeVisible();
-  await expect(page.getByText(/عدد الإشعارات غير معروف/)).toBeVisible();
+  await expect(page.getByText("إجمالي غير المقروءة غير متاح")).toBeVisible();
+  await expect(page.getByText(/تعذر تحديد العدد/)).toBeVisible();
   mode = "failed";
   await page.clock.fastForward(31_000);
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -60,8 +60,17 @@ test("home does not turn unknown counts or failed reads into zero", async ({ pag
   await expect(page.getByText("لا توجد إشعارات غير مقروءة.", { exact: true })).toHaveCount(0);
   mode = "recovered";
   await page.getByRole("button", { name: "إعادة المحاولة", exact: true }).click();
-  await expect(page.getByText("إجمالي غير المقروءة: 0")).toBeVisible();
-  await expect(page.getByText("لا توجد إشعارات غير مقروءة.", { exact: true })).toBeVisible();
+  await expect(page.locator(".home-unread-total")).toContainText("إجمالي غير المقروءة: ٠");
+  await expect(page.getByText("أنت على اطلاع؛ لا إشعارات غير مقروءة.", { exact: true })).toBeVisible();
+});
+
+test("home notification preview opens its related canonical record", async ({ page }) => {
+  await auth(page);
+  await page.route("**/api/notifications?**", (route) => route.fulfill({ json: {
+    notifications: [{ ...readNotification, id: "notification-unread", readAt: null, orderId: "order-notification-4" }], unreadCount: 1,
+  } }));
+  await page.goto("/workspace");
+  await expect(page.getByRole("link", { name: /تحديث طلب سابق/ })).toHaveAttribute("href", "/operations/order-notification-4");
 });
 
 test("notification inbox rejects missing global unread count without inventing zero", async ({ page }) => {

@@ -3,7 +3,7 @@
 import { PageHeader } from "../../shell/page-header";
 import { TextArea } from "@bthwani/design-system/web";
 
-import { publicationReadinessBlockedReasonLabel, publicationStateLabel, type CommercialStoreType, type CommercialStoreTypeListResponse, type SetStoreCommercialTypeResponse, type StoreFulfillmentMode, type StoreFulfillmentModesResponse, type StorePublicationResponse } from "@bthwani/dsh";
+import { publicationReadinessBlockedReasonLabel, publicationStateLabel, type CommercialStoreType, type CommercialStoreTypeListResponse, type SetStoreCommercialTypeResponse, type StoreFulfillmentMode, type StoreFulfillmentModesResponse, type StoreInternalPhotoSummary, type StorePublicationResponse } from "@bthwani/dsh";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -39,6 +39,8 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [internalPhotos, setInternalPhotos] = useState<ReadonlyArray<StoreInternalPhotoSummary>>([]);
+  const [internalPhotosError, setInternalPhotosError] = useState("");
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [trashReason, setTrashReason] = useState("");
   const requestSequence = useRef(0);
@@ -72,6 +74,17 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
     void readStore();
     return () => { requestSequence.current += 1; };
   }, [readStore]);
+
+  useEffect(() => {
+    let active = true;
+    void fetch(`/api/stores/${encodeURIComponent(storeId)}/internal-photos`, { cache: "no-store" }).then(async (response) => {
+      if (!response.ok) throw new Error(await partnerErrorMessage(response));
+      return response.json() as Promise<{ photos: ReadonlyArray<StoreInternalPhotoSummary> }>;
+    }).then((result) => { if (active) { setInternalPhotos(result.photos); setInternalPhotosError(""); } }).catch((cause: unknown) => {
+      if (active) setInternalPhotosError(cause instanceof Error ? cause.message : "تعذر قراءة الصور الداخلية.");
+    });
+    return () => { active = false; };
+  }, [storeId]);
 
   async function reconcileFailure(response: Response, fallback: string) {
     const message = await partnerErrorMessage(response);
@@ -229,9 +242,16 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
             </dl>
             <figure className="store-profile-media">
               {store.storeProfileImage?.uri ? <img src={store.storeProfileImage.uri} alt={`صورة متجر ${store.name}`} loading="lazy" /> : <div className="store-profile-media-empty" role="img" aria-label={`لم تُرفق صورة لمتجر ${store.name}`}>لا توجد صورة مرفقة</div>}
-              <figcaption>صورة المتجر</figcaption>
+              {store.storeCoverImage?.uri ? <img src={store.storeCoverImage.uri} alt={`غلاف متجر ${store.name}`} loading="lazy" /> : null}
+              <figcaption>شعار المتجر وغلاف واجهته</figcaption>
             </figure>
           </div>
+        </section>
+
+        <section className="store-detail-section" aria-labelledby="store-internal-photos-title">
+          <div className="store-detail-heading"><div><h2 id="store-internal-photos-title">الصور الميدانية الداخلية</h2><p className="muted">لا تظهر هذه الصور للعملاء ولا تُستخدم في واجهة المتجر.</p></div><span className="status-badge">{internalPhotos.length} صور</span></div>
+          {internalPhotosError ? <div className="managed-status managed-status-warning" role="alert">{internalPhotosError}<button type="button" className="button button-secondary" onClick={() => { setInternalPhotosError(""); void fetch(`/api/stores/${encodeURIComponent(storeId)}/internal-photos`, { cache: "no-store" }).then((response) => response.json() as Promise<{ photos: ReadonlyArray<StoreInternalPhotoSummary> }>).then((result) => setInternalPhotos(result.photos)).catch(() => setInternalPhotosError("تعذر قراءة الصور الداخلية.")); }}>إعادة المحاولة</button></div> : null}
+          {internalPhotos.length ? <div className="store-internal-photo-grid">{internalPhotos.map((photo) => <figure key={photo.id}><img src={`/api/stores/${encodeURIComponent(storeId)}/internal-photos/${encodeURIComponent(photo.id)}`} alt="صورة ميدانية داخلية للمتجر" loading="lazy" /><figcaption><time dateTime={photo.createdAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium" }).format(new Date(photo.createdAt))}</time></figcaption></figure>)}</div> : !internalPhotosError ? <p className="muted">لا توجد صور ميدانية داخلية لهذا المتجر.</p> : null}
         </section>
 
         <section className="store-detail-section" aria-labelledby="store-publication-title">

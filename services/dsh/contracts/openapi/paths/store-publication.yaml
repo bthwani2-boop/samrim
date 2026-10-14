@@ -163,6 +163,47 @@ paths:
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
 
+  /dsh/operator/stores/{storeId}/internal-photos:
+    get:
+      operationId: listOperatorStoreInternalPhotos
+      summary: List private Field premises photos for an authorized operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { name: storeId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        "200":
+          description: Internal photo metadata; image bytes remain behind the authorized private download route.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [storeId, photos]
+                additionalProperties: false
+                properties:
+                  storeId: { type: string }
+                  photos:
+                    type: array
+                    items: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreInternalPhotoSummary" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
+  /dsh/operator/stores/{storeId}/internal-photos/{photoId}:
+    get:
+      operationId: readOperatorStoreInternalPhoto
+      summary: Read private Field premises photo bytes as an authorized operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { name: storeId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { name: photoId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        "200": { description: Private image bytes with no-store cache policy., content: { image/jpeg: { schema: { type: string, format: binary } }, image/png: { schema: { type: string, format: binary } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
   /dsh/stores/{storeId}/publication:
     get:
       operationId: readStorePublication

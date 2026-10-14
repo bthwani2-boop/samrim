@@ -60,6 +60,7 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}", s.readForOperator)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/submit", s.submit)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/store-image", s.uploadStoreProfileImage)
+	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/internal-photos", s.uploadStoreInternalPhoto)
 	mux.HandleFunc("POST /dsh/operator/joining-cases/{caseId}/store-image", s.uploadOperatorStoreProfileImage)
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}/proof-image", s.downloadJoiningCaseProofImage)
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}/proof-details", s.readJoiningCaseProofDetails)
@@ -274,6 +275,7 @@ func (s *JoiningCaseServer) writeResult(w http.ResponseWriter, ctx *http.Request
 	view.FinancialProfileState = result.Case.FinancialProfileState
 	view.TermsPolicyVersion = nullableStringPointer(result.Case.TermsPolicyVersion)
 	view.StoreProfileImage = toStoreProfileImage(result.Case.StoreProfileImage)
+	view.StoreCoverImage = toStoreCoverImage(result.Case.StoreCoverImage)
 	view.CorrectionReason = result.Case.CorrectionReason
 	view.ReviewedBy = result.Case.ReviewedBy
 	if result.Case.Store != nil {
@@ -368,6 +370,8 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the partner session does not own this joining case")
 	case errors.Is(err, postgres.ErrStoreProfileMediaNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "joining case was not found")
+	case errors.Is(err, postgres.ErrStoreInternalPhotoLimit):
+		writeError(w, http.StatusConflict, "STORE_INTERNAL_PHOTO_LIMIT", "the internal Store photo limit has been reached")
 	case errors.Is(err, postgres.ErrStoreProfileMediaInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "store profile image is invalid")
 	case errors.Is(err, postgres.ErrStoreProfileMediaVersion), errors.Is(err, postgres.ErrStoreProfileMediaState), errors.Is(err, postgres.ErrStoreProfileMediaIdempotency), errors.Is(err, postgres.ErrStoreProfileMediaCleanupBusy):

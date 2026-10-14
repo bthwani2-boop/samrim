@@ -1,12 +1,13 @@
 "use client";
 
-import type { Notification, NotificationKind } from "@bthwani/dsh";
+import type { Notification } from "@bthwani/dsh";
 import Link from "next/link";
-import { parseOperatorNotificationList } from "./notification-readback";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "../../shell/page-header";
-import { notificationKindLabel } from "./notification-presentation";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { notificationHref, notificationKindLabel, notificationKindTone } from "./notification-presentation";
+import { parseOperatorNotificationList } from "./notification-readback";
+
 type NotificationReadPayload = Readonly<{ notificationId: string; readAt: string }>;
 type NotificationHistory = Readonly<{ operatorNotificationCursors?: ReadonlyArray<string> }>;
 const notificationPageSize = 50;
@@ -142,36 +143,26 @@ function NotificationGroup({ title, count, items, pendingId, onMarkRead }: Reado
         <span>{count}</span>
       </div>
       <div className="operator-notification-list">
-        {items.map((item) => (
-          <article key={item.id} className={`operator-notification-card${item.readAt ? " is-read" : " is-unread"}`} aria-label={`${item.title}، ${item.readAt ? "مقروء" : "جديد"}`}>
-            <span className={`operator-notification-kind operator-notification-kind-${notificationKindTone(item.kind)}`} aria-hidden="true">{notificationKindLabel(item.kind)}</span>
-            <span className="operator-notification-copy">
-              <strong>{item.title}</strong>
-              <span>{item.body}</span>
-              <time dateTime={item.createdAt}>{formatNotificationDate(item.createdAt)}</time>
-            </span>
-            <div className="operator-notification-actions">
-              {notificationHref(item) ? <Link className="button button-secondary" href={notificationHref(item)!}>فتح السجل</Link> : null}
-              {item.readAt ? <span className="operator-notification-state">مقروء</span> : <button type="button" className="button button-quiet" disabled={pendingId === item.id} onClick={() => void onMarkRead(item)}>{pendingId === item.id ? "جارٍ التحديث…" : "تحديد كمقروء"}</button>}
-            </div>
-          </article>
-        ))}
+        {items.map((item) => {
+          const href = notificationHref(item);
+          return (
+            <article key={item.id} className={`operator-notification-card${item.readAt ? " is-read" : " is-unread"}`} aria-label={`${item.title}، ${item.readAt ? "مقروء" : "جديد"}`}>
+              <span className={`operator-notification-kind operator-notification-kind-${notificationKindTone(item.kind)}`} aria-hidden="true">{notificationKindLabel(item.kind)}</span>
+              <span className="operator-notification-copy">
+                <strong>{item.title}</strong>
+                <span>{item.body}</span>
+                <time dateTime={item.createdAt}>{formatNotificationDate(item.createdAt)}</time>
+              </span>
+              <div className="operator-notification-actions">
+                {href ? <Link className="button button-secondary" href={href}>فتح السجل</Link> : null}
+                {item.readAt ? <span className="operator-notification-state">مقروء</span> : <button type="button" className="button button-quiet" disabled={pendingId === item.id} onClick={() => void onMarkRead(item)}>{pendingId === item.id ? "جارٍ التحديث…" : "تحديد كمقروء"}</button>}
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
-}
-
-function notificationHref(item: Notification): string | null {
-  if (item.joiningCaseId?.trim()) return `/partners/${encodeURIComponent(item.joiningCaseId.trim())}`;
-  if (item.storeId?.trim()) return `/partners/stores/${encodeURIComponent(item.storeId.trim())}`;
-  if (item.orderId.trim()) return `/operations/${encodeURIComponent(item.orderId.trim())}`;
-  return null;
-}
-
-function notificationKindTone(kind: NotificationKind) {
-  if (kind.startsWith("FIELD_")) return "partner";
-  if (kind.startsWith("CAPTAIN_") || ["HANDOFF_CONFIRMED", "PICKED_UP", "DELIVERED", "DELIVERY_FAILED", "DELIVERY_RECOVERED", "REASSIGNED"].includes(kind)) return "delivery";
-  return "order";
 }
 
 function formatNotificationDate(value: string) {

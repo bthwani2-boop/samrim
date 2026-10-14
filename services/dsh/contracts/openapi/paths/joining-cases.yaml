@@ -137,6 +137,7 @@ paths:
               additionalProperties: false
               properties:
                 file: { type: string, format: binary }
+                role: { type: string, enum: [primary, cover], default: primary }
                 creator: { type: string, minLength: 2, maxLength: 200 }
                 sourceDescription: { type: string, minLength: 3, maxLength: 1000 }
                 sourceUri: { type: string, format: uri }
@@ -146,6 +147,37 @@ paths:
       responses:
         "200": { description: Image attached and current joining-case readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
         "201": { description: Image attached and current joining-case readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "503": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/joining-cases/{caseId}/internal-photos:
+    post:
+      operationId: uploadJoiningCaseStoreInternalPhoto
+      summary: Add a private Field photo to the Store premises album
+      description: A Field member may append up to twenty optional premises photos while the assigned case is a draft. The images remain internal and are never returned in customer Store projections.
+      security: [{ userBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - { name: caseId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              additionalProperties: false
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200": { description: Private photo saved and current joining-case readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "201": { description: Private photo saved and current joining-case readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
@@ -174,6 +206,7 @@ paths:
               additionalProperties: false
               properties:
                 file: { type: string, format: binary }
+                role: { type: string, enum: [primary, cover], default: primary }
                 creator: { type: string, minLength: 2, maxLength: 200 }
                 sourceDescription: { type: string, minLength: 3, maxLength: 1000 }
                 sourceUri: { type: string, format: uri }

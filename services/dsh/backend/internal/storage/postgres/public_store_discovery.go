@@ -166,11 +166,12 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 			JOIN dsh.catalog_categories parent ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id AND parent.active=true
 		) SELECT DISTINCT id FROM store_categories ORDER BY id),candidate.distance_meters,
 		candidate.service_city_id,candidate.display_name_ar,candidate.service_city_active,candidate.service_city_version,candidate.service_city_created_at,candidate.service_city_updated_at,
-		media.id,media.joining_case_id,media.store_id,media.uri,media.object_key,media.content_sha256,media.content_type,media.byte_size,media.media_role,media.state,media.creator,media.source_description,media.source_uri,media.rights_statement,media.rights_uri,media.rights_attested_by_actor_id,media.rights_attested_at,media.created_at,media.attached_at
+		media.id,media.joining_case_id,media.store_id,media.uri,media.object_key,media.content_sha256,media.content_type,media.byte_size,media.media_role,media.state,media.creator,media.source_description,media.source_uri,media.rights_statement,media.rights_uri,media.rights_attested_by_actor_id,media.rights_attested_at,media.created_at,media.attached_at,cover.uri
 	FROM candidate_page candidate
 	LEFT JOIN LATERAL (SELECT AVG(r.rating)::double precision AS rating_average,COUNT(*)::int AS rating_count FROM dsh.commerce_order_ratings r WHERE r.store_id=candidate.id) rating ON true
 	LEFT JOIN LATERAL (SELECT a.id,a.joining_case_id,COALESCE(a.store_id,'') AS store_id,a.uri,a.object_key,a.content_sha256,a.content_type,a.byte_size,a.media_role,a.state,a.creator,a.source_description,COALESCE(a.source_uri,'') AS source_uri,a.rights_statement,COALESCE(a.rights_uri,'') AS rights_uri,a.rights_attested_by_actor_id,a.rights_attested_at,a.created_at,a.attached_at
-		FROM dsh.store_profile_media_assets a WHERE a.state='active' AND a.rights_attested_at IS NOT NULL AND a.store_id=candidate.id ORDER BY a.created_at DESC LIMIT 1) media ON true
+		FROM dsh.store_profile_media_assets a WHERE a.state='active' AND a.media_role='primary' AND a.rights_attested_at IS NOT NULL AND a.store_id=candidate.id ORDER BY a.created_at DESC LIMIT 1) media ON true
+	LEFT JOIN LATERAL (SELECT a.uri FROM dsh.store_profile_media_assets a WHERE a.state='active' AND a.media_role='cover' AND a.rights_attested_at IS NOT NULL AND a.store_id=candidate.id ORDER BY a.created_at DESC LIMIT 1) cover ON true
 	ORDER BY CASE WHEN $13='newest' THEN candidate.created_at END DESC,CASE WHEN $13='newest' THEN candidate.id END DESC,
 	CASE WHEN $13 IN ('all','nearest') AND $4::double precision IS NOT NULL THEN candidate.distance_meters END ASC NULLS LAST,
 	CASE WHEN $13<>'newest' THEN lower(candidate.name) END ASC,CASE WHEN $13<>'newest' THEN candidate.id END ASC`
@@ -195,10 +196,11 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 		var mediaCreator, mediaSourceDescription, mediaSourceURI, mediaRightsStatement, mediaRightsURI, mediaRightsAttestedBy sql.NullString
 		var mediaRightsAttestedAt, mediaCreatedAt, mediaAttachedAt sql.NullTime
 		var mediaSize sql.NullInt64
+		var coverURI sql.NullString
 		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.PrimaryVerticalID, &store.Version, &nameSortKey,
 			&store.RatingAverage, &store.RatingCount, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, pq.Array(&store.FulfillmentModes), pq.Array(&store.CategoryIDs), &distance,
 			&city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt,
-			&mediaID, &mediaJoiningCaseID, &mediaStoreID, &mediaURI, &mediaObjectKey, &mediaContentSHA, &mediaContentType, &mediaSize, &mediaRole, &mediaState, &mediaCreator, &mediaSourceDescription, &mediaSourceURI, &mediaRightsStatement, &mediaRightsURI, &mediaRightsAttestedBy, &mediaRightsAttestedAt, &mediaCreatedAt, &mediaAttachedAt); err != nil {
+			&mediaID, &mediaJoiningCaseID, &mediaStoreID, &mediaURI, &mediaObjectKey, &mediaContentSHA, &mediaContentType, &mediaSize, &mediaRole, &mediaState, &mediaCreator, &mediaSourceDescription, &mediaSourceURI, &mediaRightsStatement, &mediaRightsURI, &mediaRightsAttestedBy, &mediaRightsAttestedAt, &mediaCreatedAt, &mediaAttachedAt, &coverURI); err != nil {
 			return PublicStorePage{}, fmt.Errorf("scan published store page: %w", err)
 		}
 		store.ServiceCity = &city
@@ -226,6 +228,9 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 				media.AttachedAt = &attachedAt
 			}
 			store.StoreProfileImage = media
+		}
+		if coverURI.Valid {
+			store.StoreCoverImage = &StoreProfileMediaRecord{URI: coverURI.String, Role: "cover"}
 		}
 		page.Stores = append(page.Stores, store)
 	}

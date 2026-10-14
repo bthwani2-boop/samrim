@@ -19,6 +19,10 @@ var (
 )
 
 func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, caseID, idempotencyKey, correlationID string, expectedVersion int, contentType string, data []byte, provenance media.Provenance) (postgres.JoiningCaseResult, error) {
+	return s.UploadStoreMedia(ctx, accessToken, "primary", caseID, idempotencyKey, correlationID, expectedVersion, contentType, data, provenance)
+}
+
+func (s *Service) UploadStoreMedia(ctx context.Context, accessToken, role, caseID, idempotencyKey, correlationID string, expectedVersion int, contentType string, data []byte, provenance media.Provenance) (postgres.JoiningCaseResult, error) {
 	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
@@ -32,18 +36,51 @@ func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, case
 	default:
 		return postgres.JoiningCaseResult{}, ErrStoreProfileMediaSessionForbidden
 	}
-	return s.uploadStoreProfileImage(ctx, scope, identity.Subject, caseID, idempotencyKey, correlationID, expectedVersion, contentType, data, provenance)
+	return s.uploadStoreMedia(ctx, scope, identity.Subject, role, caseID, idempotencyKey, correlationID, expectedVersion, contentType, data, provenance)
+}
+
+func (s *Service) UploadStoreInternalPhoto(ctx context.Context, accessToken, caseID, idempotencyKey string, expectedVersion int, contentType string, data []byte) (postgres.JoiningCaseResult, error) {
+	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	if identity.Role != "field" || identity.Surface != "app-field" || strings.TrimSpace(identity.Subject) == "" {
+		return postgres.JoiningCaseResult{}, ErrFieldSessionForbidden
+	}
+	admission, err := postgres.ReadFieldAdmissionForActor(ctx, s.db, identity.Subject)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	if admission.State != "eligible" || admission.RequiresProfileReview || strings.TrimSpace(admission.FullNameAr) == "" {
+		return postgres.JoiningCaseResult{}, ErrFieldSessionForbidden
+	}
+	actualType, _, _, err := media.ValidateImageBytes(data)
+	if err != nil || (strings.TrimSpace(contentType) != "" && strings.TrimSpace(contentType) != actualType) {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	return postgres.SaveStoreInternalPhoto(ctx, s.db, caseID, identity.Subject, expectedVersion, idempotencyKey, actualType, data)
 }
 
 func (s *Service) UploadStoreProfileImageForOperator(ctx context.Context, caseID, actingActorID, idempotencyKey, correlationID string, expectedVersion int, contentType string, data []byte, provenance media.Provenance) (postgres.JoiningCaseResult, error) {
+	return s.UploadStoreMediaForOperator(ctx, caseID, actingActorID, "primary", idempotencyKey, correlationID, expectedVersion, contentType, data, provenance)
+}
+
+func (s *Service) UploadStoreMediaForOperator(ctx context.Context, caseID, actingActorID, role, idempotencyKey, correlationID string, expectedVersion int, contentType string, data []byte, provenance media.Provenance) (postgres.JoiningCaseResult, error) {
 	actingActorID = strings.TrimSpace(actingActorID)
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	return s.uploadStoreProfileImage(ctx, "operator", actingActorID, caseID, idempotencyKey, correlationID, expectedVersion, contentType, data, provenance)
+	return s.uploadStoreMedia(ctx, "operator", actingActorID, role, caseID, idempotencyKey, correlationID, expectedVersion, contentType, data, provenance)
 }
 
-func (s *Service) uploadStoreProfileImage(ctx context.Context, scope, actorID, caseID, idempotencyKey, correlationID string, expectedVersion int, contentType string, data []byte, provenance media.Provenance) (postgres.JoiningCaseResult, error) {
+func (s *Service) uploadStoreMedia(ctx context.Context, scope, actorID, role, caseID, idempotencyKey, correlationID string, expectedVersion int, contentType string, data []byte, provenance media.Provenance) (postgres.JoiningCaseResult, error) {
+	role = strings.TrimSpace(role)
+	if role == "" {
+		role = "primary"
+	}
+	if role != "primary" && role != "cover" {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
 	caseID = strings.TrimSpace(caseID)
 	actorID = strings.TrimSpace(actorID)
 	if caseID == "" || expectedVersion < 1 || !validStoreProfileMutation(idempotencyKey, correlationID, actorID) {
@@ -97,8 +134,8 @@ func (s *Service) uploadStoreProfileImage(ctx context.Context, scope, actorID, c
 	}
 	digest := sha256.Sum256(data)
 	contentSHA := hex.EncodeToString(digest[:])
-	requestHash := postgres.HashStoreProfileMediaUploadRequest(caseID, contentSHA, expectedVersion, provenance)
-	assetHash := sha256.Sum256([]byte(caseID + "\x00" + strings.TrimSpace(idempotencyKey)))
+	requestHash := postgres.HashStoreMediaUploadRequest(role, caseID, contentSHA, expectedVersion, provenance)
+	assetHash := sha256.Sum256([]byte(caseID + "\x00" + role + "\x00" + strings.TrimSpace(idempotencyKey)))
 	assetID := "store_profile_media_" + hex.EncodeToString(assetHash[:])
 	objectKey, err := media.KeyForStoreProfileUpload(assetID, idempotencyKey, contentSHA, actualType)
 	if err != nil {
@@ -108,7 +145,7 @@ func (s *Service) uploadStoreProfileImage(ctx context.Context, scope, actorID, c
 	if uri == "" {
 		return postgres.JoiningCaseResult{}, errors.New("store profile media storage is unavailable")
 	}
-	asset, replayed, err := postgres.RegisterStoreProfileMediaAssetPending(ctx, s.db, postgres.StoreProfileMediaAssetInput{ID: assetID, JoiningCaseID: caseID, IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ExpectedCaseVersion: expectedVersion, ObjectKey: objectKey, URI: uri, ContentSHA256: contentSHA, ContentType: actualType, ByteSize: int64(len(data)), ActingActorID: actorID, CorrelationID: strings.TrimSpace(correlationID), Provenance: provenance})
+	asset, replayed, err := postgres.RegisterStoreProfileMediaAssetPending(ctx, s.db, postgres.StoreProfileMediaAssetInput{ID: assetID, JoiningCaseID: caseID, Role: role, IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ExpectedCaseVersion: expectedVersion, ObjectKey: objectKey, URI: uri, ContentSHA256: contentSHA, ContentType: actualType, ByteSize: int64(len(data)), ActingActorID: actorID, CorrelationID: strings.TrimSpace(correlationID), Provenance: provenance})
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}

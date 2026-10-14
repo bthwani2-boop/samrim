@@ -60,6 +60,8 @@ func (s *StorePublicationServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/stores/{storeId}/fulfillment-modes", s.setFulfillmentModes)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/commercial-type", s.setCommercialStoreType)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/publication", s.readForOperator)
+	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/internal-photos", s.listStoreInternalPhotos)
+	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/internal-photos/{photoId}", s.readStoreInternalPhoto)
 	mux.HandleFunc("GET /dsh/public/stores", s.listPublic)
 	mux.HandleFunc("GET /dsh/public/stores/{storeId}", s.readPublic)
 	mux.HandleFunc("GET /dsh/public/stores/{storeId}/orderability", s.readPublicOrderability)
@@ -132,7 +134,7 @@ func (s *StorePublicationServer) listForOperator(w http.ResponseWriter, r *http.
 	}
 	stores := make([]contract.OperatorStoreSummary, 0, len(page.Stores))
 	for _, store := range page.Stores {
-		stores = append(stores, contract.OperatorStoreSummary{ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, PartnerName: store.PartnerName, ServiceCityName: store.ServiceCityName, PrimaryVerticalName: store.PrimaryVerticalName, StoreProfileImage: toStoreProfileImageURI(store.StoreProfileImageURI), CommercialStoreTypeNameAr: store.CommercialStoreTypeNameAr, DeliveryOrigin: operatorStoreDeliveryOrigin(store), ServiceCityID: store.ServiceCityID, PrimaryVerticalID: store.PrimaryVerticalID, CommercialStoreTypeID: nullableString(store.CommercialStoreTypeID), Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), FulfillmentModes: toStoreFulfillmentModes(store.FulfillmentModes), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
+		stores = append(stores, contract.OperatorStoreSummary{ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, PartnerName: store.PartnerName, ServiceCityName: store.ServiceCityName, PrimaryVerticalName: store.PrimaryVerticalName, StoreProfileImage: toStoreProfileImageURI(store.StoreProfileImageURI), StoreCoverImage: toStoreCoverImageURI(store.StoreCoverImageURI), CommercialStoreTypeNameAr: store.CommercialStoreTypeNameAr, DeliveryOrigin: operatorStoreDeliveryOrigin(store), ServiceCityID: store.ServiceCityID, PrimaryVerticalID: store.PrimaryVerticalID, CommercialStoreTypeID: nullableString(store.CommercialStoreTypeID), Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), FulfillmentModes: toStoreFulfillmentModes(store.FulfillmentModes), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
 	}
 	writeJSON(w, http.StatusOK, contract.OperatorStoreListResponse{Stores: stores, NextCursor: page.NextCursor})
 }
@@ -242,6 +244,60 @@ func (s *StorePublicationServer) readForOperator(w http.ResponseWriter, r *http.
 		return
 	}
 	writeStorePublication(w, http.StatusOK, postgres.PublicationResult{Store: store}, readiness)
+}
+
+func (s *StorePublicationServer) listStoreInternalPhotos(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if acting == "" || len(acting) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	store, _, err := s.service.ReadForOperator(r.Context(), r.PathValue("storeId"), acting)
+	if err != nil {
+		writeStorePublicationError(w, err)
+		return
+	}
+	photos, err := postgres.ListStoreInternalPhotosForOperator(r.Context(), s.db, store.ID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "private Store photos could not be read")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, struct {
+		StoreID string                               `json:"storeId"`
+		Photos  []postgres.StoreInternalPhotoSummary `json:"photos"`
+	}{StoreID: store.ID, Photos: photos})
+}
+
+func (s *StorePublicationServer) readStoreInternalPhoto(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if acting == "" || len(acting) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	store, _, err := s.service.ReadForOperator(r.Context(), r.PathValue("storeId"), acting)
+	if err != nil {
+		writeStorePublicationError(w, err)
+		return
+	}
+	data, contentType, err := postgres.ReadStoreInternalPhotoForOperator(r.Context(), s.db, store.ID, r.PathValue("photoId"))
+	if err != nil {
+		writeStorePublicationError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Request) {
@@ -642,6 +698,7 @@ func toPublicStoreView(store postgres.PublicStoreRecord) contract.PublicStoreVie
 		RatingAverage:     store.RatingAverage,
 		RatingCount:       store.RatingCount,
 		StoreProfileImage: toStoreProfileImageURI(storeProfileImageURI(store.StoreProfileImage)),
+		StoreCoverImage:   toStoreCoverImageURI(storeProfileImageURI(store.StoreCoverImage)),
 		ServiceCity:       toServiceCityRecord(store.ServiceCity),
 		PrimaryVerticalID: store.PrimaryVerticalID,
 		DistanceMeters:    optionalDistanceValue(store.DistanceMeters),
@@ -649,6 +706,13 @@ func toPublicStoreView(store postgres.PublicStoreRecord) contract.PublicStoreVie
 		CategoryIds:       store.CategoryIDs,
 		CreatedAt:         store.CreatedAt, UpdatedAt: store.UpdatedAt,
 	}
+}
+
+func toStoreCoverImageURI(uri string) *contract.StoreCoverImage {
+	if strings.TrimSpace(uri) == "" {
+		return nil
+	}
+	return &contract.StoreCoverImage{Uri: strings.TrimSpace(uri), Role: "cover"}
 }
 
 func optionalDistanceValue(value *int) int {

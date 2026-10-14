@@ -20,7 +20,28 @@ func (s *JoiningCaseServer) uploadStoreProfileImage(w http.ResponseWriter, r *ht
 	if !ok {
 		return
 	}
-	result, err := s.service.UploadStoreProfileImage(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, correlation, expected, contentType, data, provenance)
+	result, err := s.service.UploadStoreMedia(r.Context(), bearerToken(r), r.FormValue("role"), r.PathValue("caseId"), idempotency, correlation, expected, contentType, data, provenance)
+	if err != nil {
+		writeJoiningCaseError(w, err)
+		return
+	}
+	s.writeResult(w, r, responseStatus(result.Replayed), result)
+}
+
+func (s *JoiningCaseServer) uploadStoreInternalPhoto(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an authenticated Field session is required")
+		return
+	}
+	_, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	data, contentType, valid := readMultipartImageUpload(w, r, "a valid internal Store image is required")
+	if !valid {
+		return
+	}
+	result, err := s.service.UploadStoreInternalPhoto(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, expected, contentType, data)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return
@@ -45,7 +66,7 @@ func (s *JoiningCaseServer) uploadOperatorStoreProfileImage(w http.ResponseWrite
 	if !ok {
 		return
 	}
-	result, err := s.service.UploadStoreProfileImageForOperator(r.Context(), r.PathValue("caseId"), acting, idempotency, correlation, expected, contentType, data, provenance)
+	result, err := s.service.UploadStoreMediaForOperator(r.Context(), r.PathValue("caseId"), acting, r.FormValue("role"), idempotency, correlation, expected, contentType, data, provenance)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return

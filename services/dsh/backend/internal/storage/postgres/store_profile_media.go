@@ -14,8 +14,16 @@ import (
 )
 
 func HashStoreProfileMediaUploadRequest(caseID, contentSHA256 string, expectedVersion int, provenance media.Provenance) string {
+	return HashStoreMediaUploadRequest("primary", caseID, contentSHA256, expectedVersion, provenance)
+}
+
+func HashStoreMediaUploadRequest(role, caseID, contentSHA256 string, expectedVersion int, provenance media.Provenance) string {
 	provenance = provenance.Normalized()
-	facts := []string{"store-profile-image", strings.TrimSpace(caseID), strings.TrimSpace(contentSHA256), fmt.Sprint(expectedVersion), provenance.Creator, provenance.SourceDescription, provenance.SourceURI, provenance.RightsStatement, provenance.RightsURI, fmt.Sprint(provenance.RightsAttested)}
+	role = strings.TrimSpace(role)
+	facts := []string{"store-media", role, strings.TrimSpace(caseID), strings.TrimSpace(contentSHA256), fmt.Sprint(expectedVersion), provenance.Creator, provenance.SourceDescription, provenance.SourceURI, provenance.RightsStatement, provenance.RightsURI, fmt.Sprint(provenance.RightsAttested)}
+	if role == "primary" {
+		facts = []string{"store-profile-image", strings.TrimSpace(caseID), strings.TrimSpace(contentSHA256), fmt.Sprint(expectedVersion), provenance.Creator, provenance.SourceDescription, provenance.SourceURI, provenance.RightsStatement, provenance.RightsURI, fmt.Sprint(provenance.RightsAttested)}
+	}
 	digest := sha256.Sum256([]byte(strings.Join(facts, "\x00")))
 	return hex.EncodeToString(digest[:])
 }
@@ -45,6 +53,7 @@ type StoreProfileMediaCleanupAsset struct {
 
 type StoreProfileMediaAssetInput struct {
 	ID, JoiningCaseID, IdempotencyKey, RequestHash, ObjectKey, URI string
+	Role                                                           string
 	ExpectedCaseVersion                                            int
 	ContentSHA256, ContentType, ActingActorID, CorrelationID       string
 	ByteSize                                                       int64
@@ -63,6 +72,7 @@ var (
 	ErrStoreProfileMediaState       = errors.New("joining case does not allow store profile media changes")
 	ErrStoreProfileMediaFailed      = errors.New("store profile media upload previously failed")
 	ErrStoreProfileMediaCleanupBusy = errors.New("store profile media cleanup currently owns this upload")
+	ErrStoreInternalPhotoLimit      = errors.New("joining case reached the internal photo limit")
 )
 
 func CanUploadStoreProfileMedia(caseState, storeID string) bool {
@@ -73,7 +83,14 @@ func CanUploadStoreProfileMedia(caseState, storeID string) bool {
 
 func RegisterStoreProfileMediaAssetPending(ctx context.Context, db *sql.DB, input StoreProfileMediaAssetInput) (StoreProfileMediaRecord, bool, error) {
 	input.Provenance = input.Provenance.Normalized()
+	input.Role = strings.TrimSpace(input.Role)
+	if input.Role == "" {
+		input.Role = "primary"
+	}
 	if db == nil || strings.TrimSpace(input.ID) == "" || strings.TrimSpace(input.JoiningCaseID) == "" || strings.TrimSpace(input.IdempotencyKey) == "" || strings.TrimSpace(input.RequestHash) == "" || input.ExpectedCaseVersion < 1 || input.ByteSize < 1 || strings.TrimSpace(input.ObjectKey) == "" || strings.TrimSpace(input.URI) == "" || strings.TrimSpace(input.ContentSHA256) == "" || strings.TrimSpace(input.ContentType) == "" || input.Provenance.Validate() != nil || strings.TrimSpace(input.ActingActorID) == "" {
+		return StoreProfileMediaRecord{}, false, ErrStoreProfileMediaInvalid
+	}
+	if input.Role != "primary" && input.Role != "cover" {
 		return StoreProfileMediaRecord{}, false, ErrStoreProfileMediaInvalid
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -88,7 +105,7 @@ func RegisterStoreProfileMediaAssetPending(ctx context.Context, db *sql.DB, inpu
 	var storedHash string
 	err = tx.QueryRowContext(ctx, `SELECT id,joining_case_id,COALESCE(store_id,''),uri,object_key,content_sha256,content_type,byte_size,media_role,state,creator,source_description,COALESCE(source_uri,''),rights_statement,COALESCE(rights_uri,''),rights_attested_by_actor_id,rights_attested_at,created_at,attached_at,request_hash FROM dsh.store_profile_media_assets WHERE idempotency_key=$1 FOR UPDATE`, input.IdempotencyKey).Scan(&record.ID, &record.JoiningCaseID, &record.StoreID, &record.URI, &record.ObjectKey, &record.ContentSHA256, &record.ContentType, &record.ByteSize, &record.Role, &record.State, &record.Provenance.Creator, &record.Provenance.SourceDescription, &record.Provenance.SourceURI, &record.Provenance.RightsStatement, &record.Provenance.RightsURI, &record.RightsAttestedByActorID, &record.RightsAttestedAt, &record.CreatedAt, &record.AttachedAt, &storedHash)
 	if err == nil {
-		if record.JoiningCaseID != input.JoiningCaseID || record.URI != input.URI || record.ContentSHA256 != input.ContentSHA256 || record.ContentType != input.ContentType || record.ByteSize != input.ByteSize || storedHash != input.RequestHash {
+		if record.JoiningCaseID != input.JoiningCaseID || record.Role != input.Role || record.URI != input.URI || record.ContentSHA256 != input.ContentSHA256 || record.ContentType != input.ContentType || record.ByteSize != input.ByteSize || storedHash != input.RequestHash {
 			return StoreProfileMediaRecord{}, false, ErrStoreProfileMediaIdempotency
 		}
 		if record.State == "pending" {
@@ -138,7 +155,7 @@ func RegisterStoreProfileMediaAssetPending(ctx context.Context, db *sql.DB, inpu
 	if caseVersion != input.ExpectedCaseVersion {
 		return StoreProfileMediaRecord{}, false, ErrStoreProfileMediaVersion
 	}
-	err = tx.QueryRowContext(ctx, `INSERT INTO dsh.store_profile_media_assets(id,joining_case_id,store_id,idempotency_key,request_hash,expected_case_version,object_key,uri,content_sha256,content_type,byte_size,media_role,state,creator,source_description,source_uri,rights_statement,rights_uri,rights_attested_by_actor_id,rights_attested_at) VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9,$10,$11,'primary','pending',$12,$13,NULLIF($14,''),$15,NULLIF($16,''),$17,clock_timestamp()) RETURNING id,joining_case_id,COALESCE(store_id,''),uri,object_key,content_sha256,content_type,byte_size,media_role,state,creator,source_description,COALESCE(source_uri,''),rights_statement,COALESCE(rights_uri,''),rights_attested_by_actor_id,rights_attested_at,created_at,attached_at`, input.ID, input.JoiningCaseID, caseStoreID, input.IdempotencyKey, input.RequestHash, input.ExpectedCaseVersion, input.ObjectKey, input.URI, input.ContentSHA256, input.ContentType, input.ByteSize, input.Provenance.Creator, input.Provenance.SourceDescription, input.Provenance.SourceURI, input.Provenance.RightsStatement, input.Provenance.RightsURI, input.ActingActorID).Scan(&record.ID, &record.JoiningCaseID, &record.StoreID, &record.URI, &record.ObjectKey, &record.ContentSHA256, &record.ContentType, &record.ByteSize, &record.Role, &record.State, &record.Provenance.Creator, &record.Provenance.SourceDescription, &record.Provenance.SourceURI, &record.Provenance.RightsStatement, &record.Provenance.RightsURI, &record.RightsAttestedByActorID, &record.RightsAttestedAt, &record.CreatedAt, &record.AttachedAt)
+	err = tx.QueryRowContext(ctx, `INSERT INTO dsh.store_profile_media_assets(id,joining_case_id,store_id,idempotency_key,request_hash,expected_case_version,object_key,uri,content_sha256,content_type,byte_size,media_role,state,creator,source_description,source_uri,rights_statement,rights_uri,rights_attested_by_actor_id,rights_attested_at) VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending',$13,$14,NULLIF($15,''),$16,NULLIF($17,''),$18,clock_timestamp()) RETURNING id,joining_case_id,COALESCE(store_id,''),uri,object_key,content_sha256,content_type,byte_size,media_role,state,creator,source_description,COALESCE(source_uri,''),rights_statement,COALESCE(rights_uri,''),rights_attested_by_actor_id,rights_attested_at,created_at,attached_at`, input.ID, input.JoiningCaseID, caseStoreID, input.IdempotencyKey, input.RequestHash, input.ExpectedCaseVersion, input.ObjectKey, input.URI, input.ContentSHA256, input.ContentType, input.ByteSize, input.Role, input.Provenance.Creator, input.Provenance.SourceDescription, input.Provenance.SourceURI, input.Provenance.RightsStatement, input.Provenance.RightsURI, input.ActingActorID).Scan(&record.ID, &record.JoiningCaseID, &record.StoreID, &record.URI, &record.ObjectKey, &record.ContentSHA256, &record.ContentType, &record.ByteSize, &record.Role, &record.State, &record.Provenance.Creator, &record.Provenance.SourceDescription, &record.Provenance.SourceURI, &record.Provenance.RightsStatement, &record.Provenance.RightsURI, &record.RightsAttestedByActorID, &record.RightsAttestedAt, &record.CreatedAt, &record.AttachedAt)
 	if err != nil {
 		return StoreProfileMediaRecord{}, false, err
 	}
@@ -235,9 +252,9 @@ func ActivateStoreProfileMediaAsset(ctx context.Context, db *sql.DB, assetID, jo
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var storedCase, state, storedHash string
+	var storedCase, state, storedHash, role string
 	var cleanupClaimedAt sql.NullTime
-	if err := tx.QueryRowContext(ctx, "SELECT joining_case_id,state,request_hash,cleanup_claimed_at FROM dsh.store_profile_media_assets WHERE id=$1 FOR UPDATE", assetID).Scan(&storedCase, &state, &storedHash, &cleanupClaimedAt); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, "SELECT joining_case_id,state,request_hash,media_role,cleanup_claimed_at FROM dsh.store_profile_media_assets WHERE id=$1 FOR UPDATE", assetID).Scan(&storedCase, &state, &storedHash, &role, &cleanupClaimedAt); errors.Is(err, sql.ErrNoRows) {
 		return 0, ErrStoreProfileMediaNotFound
 	} else if err != nil {
 		return 0, err
@@ -269,7 +286,7 @@ func ActivateStoreProfileMediaAsset(ctx context.Context, db *sql.DB, assetID, jo
 		return 0, ErrStoreProfileMediaVersion
 	}
 	var previousID sql.NullString
-	if err := tx.QueryRowContext(ctx, "SELECT id FROM dsh.store_profile_media_assets WHERE joining_case_id=$1 AND state='active' AND id<>$2 FOR UPDATE", joiningCaseID, assetID).Scan(&previousID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, "SELECT id FROM dsh.store_profile_media_assets WHERE joining_case_id=$1 AND media_role=$2 AND state='active' AND id<>$3 FOR UPDATE", joiningCaseID, role, assetID).Scan(&previousID); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return 0, err
 	}
 	if previousID.Valid {
@@ -285,8 +302,14 @@ func ActivateStoreProfileMediaAsset(ctx context.Context, db *sql.DB, assetID, jo
 		return 0, ErrStoreProfileMediaVersion
 	}
 	event := "store_profile_image_attached"
+	if role == "cover" {
+		event = "store_cover_image_attached"
+	}
 	if previousID.Valid {
 		event = "store_profile_image_replaced"
+		if role == "cover" {
+			event = "store_cover_image_replaced"
+		}
 	}
 	auditID := "store_profile_media_audit_" + assetID
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_profile_media_audit(id,event_type,idempotency_key,correlation_id,acting_actor_id,joining_case_id,result_version,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, auditID, event, idempotencyKey, correlationID, actingActorID, joiningCaseID, version, requestHash); err != nil {
@@ -307,29 +330,41 @@ func MarkStoreProfileMediaAssetFailed(ctx context.Context, db *sql.DB, assetID, 
 }
 
 func ReadStoreProfileMedia(ctx context.Context, db *sql.DB, joiningCaseID, storeID string) (*StoreProfileMediaRecord, error) {
+	return ReadStoreMedia(ctx, db, joiningCaseID, storeID, "primary")
+}
+
+func ReadStoreCoverMedia(ctx context.Context, db *sql.DB, joiningCaseID, storeID string) (*StoreProfileMediaRecord, error) {
+	return ReadStoreMedia(ctx, db, joiningCaseID, storeID, "cover")
+}
+
+func ReadStoreMedia(ctx context.Context, db *sql.DB, joiningCaseID, storeID, role string) (*StoreProfileMediaRecord, error) {
 	if db == nil {
 		return nil, errors.New("DSH database is nil")
+	}
+	role = strings.TrimSpace(role)
+	if role != "primary" && role != "cover" {
+		return nil, ErrStoreProfileMediaInvalid
 	}
 	joiningCaseID = strings.TrimSpace(joiningCaseID)
 	storeID = strings.TrimSpace(storeID)
 	if joiningCaseID == "" && storeID == "" {
 		return nil, nil
 	}
-	record, err := readStoreProfileMediaWithQuery(ctx, db, joiningCaseID, storeID)
+	record, err := readStoreProfileMediaWithQuery(ctx, db, joiningCaseID, storeID, role)
 	if err != nil {
 		return nil, err
 	}
 	return record, nil
 }
 
-func readStoreProfileMediaWithQuery(ctx context.Context, queryer storeProfileMediaQueryer, joiningCaseID, storeID string) (*StoreProfileMediaRecord, error) {
+func readStoreProfileMediaWithQuery(ctx context.Context, queryer storeProfileMediaQueryer, joiningCaseID, storeID, role string) (*StoreProfileMediaRecord, error) {
 	joiningCaseID = strings.TrimSpace(joiningCaseID)
 	storeID = strings.TrimSpace(storeID)
 	if joiningCaseID == "" && storeID == "" {
 		return nil, nil
 	}
 	record := StoreProfileMediaRecord{}
-	err := queryer.QueryRowContext(ctx, `SELECT id,joining_case_id,COALESCE(store_id,''),uri,object_key,content_sha256,content_type,byte_size,media_role,state,creator,source_description,COALESCE(source_uri,''),rights_statement,COALESCE(rights_uri,''),rights_attested_by_actor_id,rights_attested_at,created_at,attached_at FROM dsh.store_profile_media_assets WHERE state='active' AND rights_attested_at IS NOT NULL AND ((joining_case_id=$1 AND $1<>'') OR (store_id=$2 AND $2<>'')) ORDER BY created_at DESC LIMIT 1`, joiningCaseID, storeID).Scan(&record.ID, &record.JoiningCaseID, &record.StoreID, &record.URI, &record.ObjectKey, &record.ContentSHA256, &record.ContentType, &record.ByteSize, &record.Role, &record.State, &record.Provenance.Creator, &record.Provenance.SourceDescription, &record.Provenance.SourceURI, &record.Provenance.RightsStatement, &record.Provenance.RightsURI, &record.RightsAttestedByActorID, &record.RightsAttestedAt, &record.CreatedAt, &record.AttachedAt)
+	err := queryer.QueryRowContext(ctx, `SELECT id,joining_case_id,COALESCE(store_id,''),uri,object_key,content_sha256,content_type,byte_size,media_role,state,creator,source_description,COALESCE(source_uri,''),rights_statement,COALESCE(rights_uri,''),rights_attested_by_actor_id,rights_attested_at,created_at,attached_at FROM dsh.store_profile_media_assets WHERE state='active' AND media_role=$3 AND rights_attested_at IS NOT NULL AND ((joining_case_id=$1 AND $1<>'') OR (store_id=$2 AND $2<>'')) ORDER BY created_at DESC LIMIT 1`, joiningCaseID, storeID, role).Scan(&record.ID, &record.JoiningCaseID, &record.StoreID, &record.URI, &record.ObjectKey, &record.ContentSHA256, &record.ContentType, &record.ByteSize, &record.Role, &record.State, &record.Provenance.Creator, &record.Provenance.SourceDescription, &record.Provenance.SourceURI, &record.Provenance.RightsStatement, &record.Provenance.RightsURI, &record.RightsAttestedByActorID, &record.RightsAttestedAt, &record.CreatedAt, &record.AttachedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

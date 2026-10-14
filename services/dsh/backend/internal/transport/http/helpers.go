@@ -143,6 +143,7 @@ func toStoreView(store postgres.StoreRecord, readiness storepublication.Publicat
 		DeliveryOrigin: deliveryOrigin,
 		CreatedAt:      store.CreatedAt, UpdatedAt: store.UpdatedAt,
 		StoreProfileImage:    toStoreProfileImage(store.StoreProfileImage),
+		StoreCoverImage:      toStoreCoverImage(store.StoreCoverImage),
 		PublicationReadiness: toPublicationReadiness(readiness),
 	}
 }
@@ -161,6 +162,14 @@ func toStoreProfileImage(value *postgres.StoreProfileMediaRecord) *contract.Stor
 	}
 	provenance := contract.MediaProvenance{Creator: value.Provenance.Creator, SourceDescription: value.Provenance.SourceDescription, SourceUri: value.Provenance.SourceURI, RightsStatement: value.Provenance.RightsStatement, RightsUri: value.Provenance.RightsURI, AttestedByActorID: value.RightsAttestedByActorID, AttestedAt: *value.RightsAttestedAt}
 	return &contract.StoreProfileImage{Uri: strings.TrimSpace(value.URI), Role: "primary", ContentSha256: strings.TrimSpace(value.ContentSHA256), Provenance: &provenance}
+}
+
+func toStoreCoverImage(value *postgres.StoreProfileMediaRecord) *contract.StoreCoverImage {
+	if value == nil || strings.TrimSpace(value.URI) == "" || value.RightsAttestedAt == nil || strings.TrimSpace(value.RightsAttestedByActorID) == "" {
+		return nil
+	}
+	provenance := contract.MediaProvenance{Creator: value.Provenance.Creator, SourceDescription: value.Provenance.SourceDescription, SourceUri: value.Provenance.SourceURI, RightsStatement: value.Provenance.RightsStatement, RightsUri: value.Provenance.RightsURI, AttestedByActorID: value.RightsAttestedByActorID, AttestedAt: *value.RightsAttestedAt}
+	return &contract.StoreCoverImage{Uri: strings.TrimSpace(value.URI), Role: "cover", ContentSha256: strings.TrimSpace(value.ContentSHA256), Provenance: &provenance}
 }
 
 func toStoreProfileImageURI(uri string) *contract.StoreProfileImage {

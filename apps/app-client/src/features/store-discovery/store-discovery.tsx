@@ -683,7 +683,7 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
               <Text style={styles.storeMeta} numberOfLines={1}>{offer.storeName || "متجر مشارك"}</Text>
               <Text style={offer.availability ? styles.productAvailability : styles.storeHint}>{offer.availability ? "متاح حسب آخر تحديث" : "تحقق من التوفر داخل المتجر"}</Text>
             </View>
-            <View style={styles.productPriceBlock}><Text style={styles.productPrice}>{formatMoney(offer.priceMinor, offer.currency)}</Text><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
+            <View style={styles.productPriceBlock}><Text style={styles.productPrice}>{formatMoney(offer.priceMinor, offer.currency).replace(/ريال يمني/g, "ريال")}</Text><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
           </Pressable>;
         })}</View>
         {loadMoreProductsError ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل المزيد من المنتجات.</Text> : null}
