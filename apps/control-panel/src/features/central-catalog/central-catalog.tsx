@@ -138,6 +138,14 @@ export function CentralCatalog() {
   const [verticalFilter, setVerticalFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [catalogFiltersOpen, setCatalogFiltersOpen] = useState(false);
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 820px)");
+    const synchronize = () => setCatalogFiltersOpen(desktop.matches);
+    synchronize();
+    desktop.addEventListener("change", synchronize);
+    return () => desktop.removeEventListener("change", synchronize);
+  }, []);
   const [sort, setSort] = useState("name_asc");
   const [viewMode, setViewMode] = useState<"table" | "gallery">("table");
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
@@ -603,7 +611,7 @@ export function CentralCatalog() {
         <form className="catalog-registry-toolbar" noValidate onSubmit={(event) => { event.preventDefault(); const nextQuery = query.trim(); changeFilters({ query: nextQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); setAppliedQuery(nextQuery); }}>
           <label className="catalog-search-input">بحث<input aria-label="البحث في المنتجات" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="اسم المنتج أو العلامة" /></label>
           <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
-          <details className="catalog-mobile-filters">
+          <details className="catalog-mobile-filters" open={catalogFiltersOpen} onToggle={(event) => { if (!window.matchMedia("(min-width: 820px)").matches) setCatalogFiltersOpen(event.currentTarget.open); }}>
             <summary>مرشحات إضافية <span className="catalog-filter-count">{activeFilterCount ? `${activeFilterCount} مفعّلة` : "اختياري"}</span></summary>
             <div className="catalog-mobile-filter-fields">
               <label>النشاط الرئيسي<select value={verticalFilter} onChange={(event) => { const verticalId = event.target.value; changeFilters({ query: appliedQuery, verticalId, categoryId: "", active: statusFilter, sort }); setVerticalFilter(verticalId); setCategoryFilter(""); }}><option value="">الكل</option>{sharedVerticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select></label>

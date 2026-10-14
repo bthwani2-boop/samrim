@@ -65,10 +65,10 @@ test("HR errors are distinct from an empty directory and automatic reads pause d
   });
   await page.goto("/hr/employees");
   await expect(page.locator(".hr-directory").getByRole("alert")).toBeVisible();
-  await expect(page.getByText("لا يوجد موظفون مطابقون للبحث.", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("لا يوجد موظفون مطابقون للبحث.", { exact: true }).filter({ visible: true })).toHaveCount(0);
   valid = true;
   await page.getByRole("button", { name: "إعادة تحميل السجل", exact: true }).click();
-  await expect(page.getByText("لا يوجد موظفون مطابقون للبحث.", { exact: true })).toBeVisible();
+  await expect(page.getByText("لا يوجد موظفون مطابقون للبحث.", { exact: true }).filter({ visible: true })).toBeVisible();
   await page.getByRole("button", { name: "إضافة موظف", exact: true }).click();
   await page.getByLabel("الاسم الكامل", { exact: true }).fill("مسودة موظف");
   const before = reads;

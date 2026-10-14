@@ -558,3 +558,25 @@
   .access-summary-grid > article span { font-size: 12px; color: var(--text-muted); }
   .access-summary-grid > article strong { font-size: 22px; font-variant-numeric: tabular-nums; }
 }
+
+/* Notification action affordances share the single Control Panel stylesheet. */
+.operator-notification-card { flex-wrap: wrap; }
+.operator-notification-actions { gap: 8px; margin-inline-start: auto; }
+.operator-notification-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-base);
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.operator-notification-action:hover { background: var(--surface-muted); }
+.operator-notification-action:focus-visible { outline: 2px solid var(--action-bg); outline-offset: 2px; }
+.operator-notification-action:disabled { opacity: .55; cursor: not-allowed; }

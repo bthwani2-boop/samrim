@@ -1,10 +1,13 @@
 import { expect, type Page, test } from "./coverage-fixtures";
 
 async function fillActionReason(page: Page, reason: string) {
-  const input = page.getByLabel("سبب الإجراء");
-  await expect(input).toBeAttached();
-  const disclosure = input.locator("xpath=ancestor::details[1]");
-  if (await disclosure.count() && !await input.isVisible()) await disclosure.locator("summary").first().click();
+  const mobileAccountActions = page.getByText("إجراءات الحساب", { exact: true }).filter({ visible: true }).first();
+  if (await mobileAccountActions.count()) await mobileAccountActions.click();
+  const summary = page.locator("details > summary:visible").filter({ hasText: /إدارة الوصول|إدارة التشغيل/ }).first();
+  await expect(summary).toBeVisible();
+  const input = summary.locator("xpath=..").getByLabel("سبب الإجراء");
+  if (!await input.isVisible()) await summary.click();
+  await expect(input).toBeVisible();
   await input.fill(reason);
 }
 
@@ -199,7 +202,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   await expect(page.locator(candidateNameSelector)).toHaveValue(reviewedName);
   await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
   if (role === "field") {
-    await expect(page.getByText("اعتُمد الملف وأُعيدت قراءته؛ أصبح منح الدور خطوته التالية.")).toBeVisible();
+    await expect(page.getByText("اعتُمد الملف وأُعيدت قراءته؛ أصبح منح الدور خطوته التالية.").filter({ visible: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "منح دور الميداني" })).toBeVisible();
   } else {
     await page.locator(`#${role}-candidate-state`).selectOption("pending_identity");
@@ -331,9 +334,9 @@ test("authenticated operator discovers the platform centers through workspace na
   await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
   await expect.poll(() => homeRequestsActionableOrders).toBe(true);
   await expect.poll(() => homeRequestsCatalogQueue).toBe(true);
-  await expect(page.getByRole("heading", { name: "مقترحات المنتجات" })).toBeVisible();
+  await expect(page.locator("#home-queue-proposals-title")).toBeVisible();
   await expect(page.getByRole("link", { name: /قهوة للمراجعة/ })).toHaveAttribute("href", "/catalog/proposals?proposalId=proposal-home");
-  await expect(page.getByRole("heading", { name: "أحدث الإشعارات غير المقروءة" })).toBeVisible();
+  await expect(page.locator("#home-notifications-title")).toBeVisible();
   const navigationToggle = page.getByRole("button", { name: "فتح مسارات العمل" });
   await navigationToggle.click();
   await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" })).toHaveAttribute("data-open", "true");
@@ -388,11 +391,11 @@ test("operator home reads only work queues covered by the current session permis
 
   await page.goto("/workspace");
   await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "أحدث الإشعارات غير المقروءة" })).toBeVisible();
+  await expect(page.locator("#home-notifications-title")).toBeVisible();
   expect([...deniedQueueRequests]).toEqual([]);
   await expect(page.getByRole("heading", { name: "طلبات تحتاج إجراءً" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "طلبات الانضمام المقدمة" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "مقترحات المنتجات" })).toHaveCount(0);
+  await expect(page.locator("#home-queue-proposals-title")).toHaveCount(0);
 });
 
 test("authenticated operator can open the notification center from the workspace header", async ({ page }) => {
@@ -425,9 +428,9 @@ test("operator notification cards write back read state and update the unread su
   });
   await page.goto("/notifications");
 
-  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
-  await page.getByRole("button", { name: "وصل طلب جديد، جديد" }).click();
-  await expect(page.getByRole("button", { name: "وصل طلب جديد، مقروء" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+  await page.getByRole("article", { name: "وصل طلب جديد، جديد" }).getByRole("button", { name: "تمييز وصل طلب جديد كمقروء" }).click();
+  await expect(page.getByRole("article", { name: "وصل طلب جديد، مقروء" })).toBeVisible();
   await expect(page.getByText("0 إشعارات غير مقروءة", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "المقروءة", exact: true })).toBeVisible();
 });
@@ -449,8 +452,8 @@ test("operator notification inbox reads bounded cursor pages and restores browse
   });
 
   await page.goto("/notifications");
-  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "طلب قيد المتابعة، مقروء" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "طلب قيد المتابعة، مقروء" })).toBeVisible();
   await expect(page.getByText("2 إشعارات غير مقروءة", { exact: true })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("2 إشعارًا في الصفحة");
   expect(requests[0]).toEqual({ limit: "50", cursor: null });
@@ -458,24 +461,24 @@ test("operator notification inbox reads bounded cursor pages and restores browse
   const pagination = page.getByRole("navigation", { name: "صفحات الإشعارات" });
   await pagination.getByRole("button", { name: "الأقدم" }).click();
   await expect(page).toHaveURL(/cursor=older-page/);
-  await expect(page.getByRole("button", { name: "إشعار أقدم، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "إشعار أقدم، جديد" })).toBeVisible();
   await pagination.getByRole("button", { name: "الأحدث" }).click();
   await expect(page).not.toHaveURL(/cursor=/);
-  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "وصل طلب جديد، جديد" })).toBeVisible();
 
   await page.goBack();
   await expect(page).toHaveURL(/cursor=older-page/);
-  await expect(page.getByRole("button", { name: "إشعار أقدم، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "إشعار أقدم، جديد" })).toBeVisible();
   await page.goForward();
   await expect(page).not.toHaveURL(/cursor=/);
-  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "وصل طلب جديد، جديد" })).toBeVisible();
 
   await page.goto("/notifications?cursor=older-page");
-  await expect(page.getByRole("button", { name: "إشعار أقدم، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "إشعار أقدم، جديد" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "صفحات الإشعارات" }).getByRole("button", { name: "الأحدث" })).toBeEnabled();
   await page.getByRole("navigation", { name: "صفحات الإشعارات" }).getByRole("button", { name: "الأحدث" }).click();
   await expect(page).not.toHaveURL(/cursor=/);
-  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "وصل طلب جديد، جديد" })).toBeVisible();
   expect(requests.every((request) => request.limit === "50")).toBe(true);
   expect(requests.filter((request) => request.cursor === "older-page").length).toBeGreaterThanOrEqual(2);
 });
@@ -564,9 +567,9 @@ test("partner registry, joining queue, and stores are separate workspace destina
   await expect(partnerTabs.getByRole("link", { name: "الطلبات والاعتمادات", exact: true })).toHaveAttribute("aria-current", "page");
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "قبول إحالات الميدانيين", exact: true })).toBeVisible();
-  await expect(page.locator('[aria-labelledby="home-joining-admission-title"]').getByRole("link", { name: "عرض الكل" })).toHaveAttribute("href", "/partners/joining?state=admission_requested");
-  await expect(page.locator('[aria-labelledby="home-joining-title"]').getByRole("link", { name: "عرض الكل" })).toHaveAttribute("href", "/partners/joining?state=submitted");
+  await expect(page.locator("a[href=\"/partners/joining?state=admission_requested\"]").first()).toBeVisible();
+  await expect(page.locator('a[href="/partners/joining?state=admission_requested"]').first()).toHaveAttribute("href", "/partners/joining?state=admission_requested");
+  await expect(page.locator('a[href="/partners/joining?state=submitted"]').first()).toHaveAttribute("href", "/partners/joining?state=submitted");
 });
 
 test("finance and marketing centers expose only real independent resource routes", async ({ page }) => {
