@@ -5,6 +5,11 @@ export function createCaptainOperationStyles(theme: ReturnType<typeof resolveThe
   return StyleSheet.create({
     container: { backgroundColor: theme.background, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
     title: { ...typography.hero, color: theme.color },
+    readinessTitle: { ...typography.titleLg, color: theme.color },
+    readinessCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[3] },
+    readinessStatusRow: { flexDirection: "row", gap: spacing[2] },
+    readinessItem: { backgroundColor: theme.surfaceInset, borderRadius: radius.md, flex: 1, gap: spacing[1], minWidth: 0, padding: spacing[3] },
+    nextStepCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
     sectionTitle: { ...typography.bodyStrong, color: theme.color, marginTop: spacing[1] },
     muted: { ...typography.bodySm, color: theme.colorMuted },
     state: { alignItems: "center", gap: spacing[2], paddingVertical: spacing[2] },

@@ -66,8 +66,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     headerSearchField: { flex: 1, minWidth: 0 },
     scene: { backgroundColor: theme.background },
     screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
-    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingHorizontal: spacing[3], paddingTop: spacing[2] },
-    navigationItem: { borderRadius: radius.md, minHeight: sizing.controlLg, paddingHorizontal: spacing[2], transform: [{ translateY: -spacing[4] }] },
+    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingHorizontal: spacing[3] },
+    navigationItem: { borderRadius: radius.md, paddingHorizontal: spacing[2] },
     navigationLabel: { ...typography.caption },
   });
 }

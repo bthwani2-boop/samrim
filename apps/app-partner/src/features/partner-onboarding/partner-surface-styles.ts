@@ -1,4 +1,4 @@
-import { radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { StyleSheet } from "react-native";
 
 export function createPartnerSurfaceStyles(theme: ReturnType<typeof resolveTheme>) {
@@ -14,6 +14,12 @@ export function createPartnerSurfaceStyles(theme: ReturnType<typeof resolveTheme
     metaGrid: { flexDirection: "row", gap: spacing[2] },
     metaItem: { backgroundColor: theme.surfaceInset, borderRadius: radius.md, flex: 1, gap: spacing[1], padding: spacing[3] },
     metaLabel: { ...typography.caption, color: theme.colorMuted },
+    formInput: { backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 48, paddingHorizontal: spacing[3], textAlign: "right" },
+    choiceRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    choice: { backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, justifyContent: "center", minHeight: 40, paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
+    choiceSelected: { backgroundColor: theme.actionSoft, borderColor: theme.actionBackground },
+    choiceText: { ...typography.bodySm, color: theme.color },
+    choiceTextSelected: { ...typography.bodySm, color: theme.interactiveText },
     error: { ...typography.label, backgroundColor: theme.dangerSoft, borderRadius: radius.sm, color: theme.danger, padding: spacing[2] },
   });
 }
