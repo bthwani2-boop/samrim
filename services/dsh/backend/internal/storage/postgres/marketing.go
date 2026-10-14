@@ -800,6 +800,13 @@ func ListDiscoveryContent(ctx context.Context, db *sql.DB, public bool, serviceC
                           AND content.starts_at <= statement_timestamp()
                           AND (content.ends_at IS NULL OR content.ends_at > statement_timestamp())
                           AND (content.service_city_id IS NULL OR content.service_city_id=$1)
+                          AND EXISTS (
+                              SELECT 1 FROM dsh.discovery_content_media_assets asset
+                              WHERE asset.id=content.media_asset_id
+                                AND asset.state='active'
+                                AND asset.rights_attested_at IS NOT NULL
+                                AND asset.uri<>''
+                          )
                           AND ` + discoveryContentTargetEligibilityPredicate("content", "$1", "statement_timestamp()") + `
                 )
                 SELECT ` + discoveryContentSelect + `

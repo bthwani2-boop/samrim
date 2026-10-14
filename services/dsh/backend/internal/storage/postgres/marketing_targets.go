@@ -31,7 +31,7 @@ func ResolveDiscoveryContentTarget(ctx context.Context, db *sql.DB, contentID, s
 		return DiscoveryContentTargetResolution{}, err
 	}
 	now := time.Now().UTC()
-	if content.State != "PUBLISHED" || content.StartsAt.After(now) || (content.EndsAt != nil && !content.EndsAt.After(now)) || (content.ServiceCityID != "" && content.ServiceCityID != serviceCityID) {
+	if content.State != "PUBLISHED" || content.MediaURI == "" || content.StartsAt.After(now) || (content.EndsAt != nil && !content.EndsAt.After(now)) || (content.ServiceCityID != "" && content.ServiceCityID != serviceCityID) {
 		return DiscoveryContentTargetResolution{}, ErrDiscoveryContentNotFound
 	}
 	result, err := resolveDiscoveryContentTarget(ctx, db, content.TargetType, content.TargetID, serviceCityID, now)
