@@ -111,6 +111,10 @@ if (app === "app-client") {
   assert.ok(storeDetail.includes('containerStyle={styles.headerSearchField}'), "client: store search must be owned by the top header");
   assert.doesNotMatch(storeDetail, /storeCoverFallbackTitle/, "client: a missing cover must not duplicate the store name");
   assert.ok(storeDetail.includes('snapToInterval={bannerStep}'), "client: compact banner cards must snap at their actual step width");
+  const nativeIcons = fs.readFileSync(path.join(root, "packages/design-system/src/native/icons.tsx"), "utf8");
+  assert.match(nativeIcons, /<View pointerEvents="none"[^>]*>/, "client: decorative native icons must not intercept parent button touches");
+  assert.equal((storeDetail.match(/state\.store\.storeCoverImage\?\.uri && !failedStoreCover/g) ?? []).length, 1, "client: store cover must have one canonical hero placement");
+  assert.ok(storeDetail.includes("styles.storeHeroToolbar") && storeDetail.includes("styles.storeHeroMedia"), "client: store actions and cover must share the hero");
   console.log("MOBILE_STORE_RTL_AND_SEARCH=PASS header search, native pager, compact banners, unique store name");
 }
 if (app === "app-partner") {

@@ -565,8 +565,13 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
 
   return (
     <View style={styles.page} accessibilityLabel={`كتالوج ${state.store.name}`}>
-      <View style={styles.storeHeader}>
-        {catalogSearchOpen ? <BthwaniSearchField
+      <View style={styles.storeHero}>
+          {state.store.storeCoverImage?.uri && !failedStoreCover
+            ? <View pointerEvents="none" style={styles.storeHeroMedia}><Image accessibilityLabel={`غلاف متجر ${state.store.name}`} onError={() => setFailedStoreCover(true)} source={{ uri: state.store.storeCoverImage.uri }} resizeMode="cover" style={styles.storeCover} /></View>
+            : <View accessibilityLabel={failedStoreCover ? `تعذر تحميل غلاف متجر ${state.store.name}` : `غلاف متجر ${state.store.name} غير متوفر`} pointerEvents="none" style={styles.storeCoverFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
+        <View pointerEvents="none" style={styles.storeHeroShade} />
+        <View style={styles.storeHeroToolbar}>
+          {catalogSearchOpen ? <BthwaniSearchField
           accessibilityLabel="البحث في جميع منتجات المتجر"
           containerStyle={styles.headerSearchField}
           editable={!catalogRefreshing && !loadingMore}
@@ -576,19 +581,17 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           placeholder="ابحث في جميع منتجات المتجر"
           returnKeyType="search"
           value={catalogQuery}
-        /> : <View style={styles.storeHeaderIdentity}>
-          <View style={styles.storeHeaderCopy}>
-            <Text numberOfLines={1} style={styles.storeHeaderTitle}>{state.store.name}</Text>
-            <Text numberOfLines={1} style={styles.storeHeaderCity}>{serviceCityDisplayName(state.store.serviceCity.displayNameAr)}</Text>
-          </View>
-          {state.store.storeProfileImage?.uri && !failedStoreImage ? <Image accessibilityLabel={`شعار متجر ${state.store.name}`} onError={() => setFailedStoreImage(true)} source={{ uri: state.store.storeProfileImage.uri }} style={styles.merchantImage} resizeMode="cover" /> : <View style={styles.storeHeaderLogoFallback}><BthwaniIcon name="store" color={theme.onAction} size={sizing.iconMd} /></View>}
-          <BthwaniIconButton icon="back" label="العودة إلى المتاجر" onPress={() => router.back()} size={sizing.controlMd} style={styles.storeHeaderBack} tone="soft" />
-        </View>}
+        /> : <BthwaniIconButton icon="back" label="العودة إلى المتاجر" onPress={() => router.back()} size={sizing.controlMd} style={styles.storeHeaderBack} tone="soft" />}
         <View style={styles.storeHeaderActions}>
-          <BthwaniIconButton icon={catalogSearchOpen ? "close" : "search"} label={catalogSearchOpen ? "إغلاق البحث داخل المتجر" : "البحث في منتجات المتجر"} onPress={() => { if (catalogSearchOpen) { setCatalogSearchOpen(false); setCatalogQuery(""); void reloadCatalog(null, "", false, false); } else if (activeTab !== 0) { void selectCatalogTab(0).then(() => setCatalogSearchOpen(true)); } else { setCatalogSearchOpen(true); } }} size={sizing.controlMd} style={styles.storeHeaderAction} tone="primary" />
-          {!catalogSearchOpen ? <><BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push("/multi-store-checkout" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="primary" />
-          <BthwaniIconButton icon="share" label="مشاركة المتجر" onPress={() => void shareStore()} size={sizing.controlMd} style={styles.storeHeaderAction} tone="primary" />
-          <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="primary" /></> : null}
+          <BthwaniIconButton icon={catalogSearchOpen ? "close" : "search"} label={catalogSearchOpen ? "إغلاق البحث داخل المتجر" : "البحث في منتجات المتجر"} onPress={() => { if (catalogSearchOpen) { setCatalogSearchOpen(false); setCatalogQuery(""); void reloadCatalog(null, "", false, false); } else if (activeTab !== 0) { void selectCatalogTab(0).then(() => setCatalogSearchOpen(true)); } else { setCatalogSearchOpen(true); } }} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
+          {!catalogSearchOpen ? <><BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push("/multi-store-checkout" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
+          <BthwaniIconButton icon="share" label="مشاركة المتجر" onPress={() => void shareStore()} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
+          <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" /></> : null}
+        </View>
+        </View>
+        <View pointerEvents="none" style={styles.storeHeroIdentity}>
+          <Text numberOfLines={1} style={styles.storeHeaderTitle}>{state.store.name}</Text>
+          <Text numberOfLines={1} style={styles.storeHeaderCity}>{serviceCityDisplayName(state.store.serviceCity.displayNameAr)}</Text>
         </View>
       </View>
       <View style={styles.catalogPager} onLayout={(event) => setPagerWidth(event.nativeEvent.layout.width)}>
@@ -624,9 +627,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={<View style={styles.listHeader}>
-          {state.store.storeCoverImage?.uri && !failedStoreCover
-            ? <Image accessibilityLabel={`غلاف متجر ${state.store.name}`} onError={() => setFailedStoreCover(true)} source={{ uri: state.store.storeCoverImage.uri }} resizeMode="cover" style={styles.storeCover} />
-            : <View accessibilityLabel={failedStoreCover ? `تعذر تحميل غلاف متجر ${state.store.name}` : `غلاف متجر ${state.store.name} غير متوفر`} style={styles.storeCoverFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /><View style={styles.storeCoverFallbackCopy}><Text style={styles.storeCoverFallbackText}>{failedStoreCover ? "تعذر تحميل غلاف المتجر" : "غلاف المتجر غير متاح حاليًا"}</Text></View></View>}
           <BthwaniSurface tone="raised" style={styles.orderStatus} accessibilityLabel="حالة المتجر وطرق الطلب">
             <View style={styles.orderStatusTop}>
               <View style={styles.orderStatusCopy}>
@@ -740,10 +740,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     container: { backgroundColor: theme.background, gap: spacing[3], paddingBottom: spacing[4], paddingHorizontal: spacing[3], width: "100%" },
     listHeader: { gap: spacing[3] },
     listFooter: { gap: spacing[3] },
-    storeCover: { borderRadius: radius.lg, height: 132, width: "100%" },
-    storeCoverFallback: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], minHeight: 40, justifyContent: "flex-end", paddingHorizontal: spacing[3], paddingVertical: spacing[2], width: "100%" },
-    storeCoverFallbackCopy: { alignItems: "flex-end", flex: 1, gap: spacing[1] },
-    storeCoverFallbackText: { ...typography.caption, color: theme.colorMuted },
+    storeCover: { height: "100%", width: "100%" },
+    storeCoverFallback: { alignItems: "center", backgroundColor: theme.surfaceInset, height: "100%", justifyContent: "center", width: "100%" },
     bannerBlock: { gap: spacing[1] },
     bannerHeading: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
     bannerHeadingActions: { alignItems: "center", flexDirection: "row", gap: spacing[1] },
@@ -761,16 +759,16 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
     title: { ...typography.titleSm, color: theme.color },
     muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 20 },
-    storeHeader: { alignItems: "center", backgroundColor: theme.interactiveText, flexDirection: "row", gap: spacing[2], minHeight: sizing.controlMd + spacing[2], paddingHorizontal: spacing[3], paddingVertical: spacing[1] },
-    storeHeaderIdentity: { alignItems: "center", flex: 1, flexDirection: "row", gap: spacing[1], minWidth: 0 },
-    storeHeaderCopy: { alignItems: "flex-end", flex: 1, gap: 2, minWidth: 0 },
+    storeHero: { height: 168, position: "relative", backgroundColor: theme.actionBackground, overflow: "hidden" },
+    storeHeroMedia: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0 },
+    storeHeroShade: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.26)" },
+    storeHeroToolbar: { position: "absolute", top: 0, left: 0, right: 0, alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "space-between", paddingHorizontal: spacing[3], paddingTop: spacing[2], zIndex: 2 },
+    storeHeroIdentity: { bottom: spacing[3], position: "absolute", right: spacing[3], left: spacing[3], alignItems: "flex-start", gap: spacing[1] },
     storeHeaderTitle: { ...typography.titleSm, color: theme.onAction },
     storeHeaderCity: { ...typography.caption, color: theme.onAction, opacity: 0.82 },
-    merchantImage: { borderRadius: radius.round, height: sizing.controlMd, width: sizing.controlMd },
-    storeHeaderLogoFallback: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.round, height: sizing.controlMd, justifyContent: "center", width: sizing.controlMd },
-    storeHeaderBack: { backgroundColor: theme.actionBackground },
+    storeHeaderBack: { backgroundColor: "rgba(255,255,255,0.88)" },
     storeHeaderActions: { alignItems: "center", flexDirection: "row", gap: spacing[1] },
-    storeHeaderAction: { borderColor: "transparent" },
+    storeHeaderAction: { backgroundColor: "rgba(255,255,255,0.88)", borderColor: "transparent" },
     orderStatus: { alignItems: "stretch", borderRadius: radius.xl, flexDirection: "column", gap: spacing[2], paddingHorizontal: spacing[3], paddingVertical: spacing[2], ...elevation.raised },
     orderStatusTop: { alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "space-between" },
     orderStatusCopy: { alignItems: "flex-end", flex: 1, gap: spacing[1], minWidth: 0 },

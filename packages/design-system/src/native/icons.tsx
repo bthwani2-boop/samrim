@@ -1,6 +1,6 @@
 import { Host, Icon } from "@expo/ui";
 import type * as React from "react";
-import type { ColorValue } from "react-native";
+import { View, type ColorValue } from "react-native";
 
 import { sizing } from "../tokens/index";
 import type { MobileIconName } from "./icon-types";
@@ -51,8 +51,10 @@ export function BthwaniIcon({
   if (color !== undefined) props.color = color;
   if (accessibilityLabel !== undefined) props.accessibilityLabel = accessibilityLabel;
   return (
-    <Host matchContents style={{ width: size, height: size }}>
-      <Icon {...props} />
-    </Host>
+    <View pointerEvents="none" style={{ width: size, height: size }}>
+      <Host matchContents style={{ width: size, height: size }}>
+        <Icon {...props} />
+      </Host>
+    </View>
   );
 }
