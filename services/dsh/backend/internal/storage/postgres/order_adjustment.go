@@ -189,7 +189,9 @@ func ProposeOrderAdjustment(ctx context.Context, db *sql.DB, input ProposeOrderA
 	if err != nil {
 		return OrderRecord{}, OrderAdjustmentRecord{}, false, err
 	}
-	if current.Version != input.ExpectedOrderVersion || (current.State != "PARTNER_ACCEPTED" && current.State != "PREPARING") || current.PaymentState != "REQUIRES_COLLECTION" {
+	postCompletionRemoval := (current.State == "DELIVERED" || current.State == "PICKED_UP") && current.PaymentState == "COLLECTED" && input.Kind == "REMOVE_ITEM"
+	preCollectionAdjustment := (current.State == "PARTNER_ACCEPTED" || current.State == "PREPARING") && current.PaymentState == "REQUIRES_COLLECTION"
+	if current.Version != input.ExpectedOrderVersion || (!preCollectionAdjustment && !postCompletionRemoval) {
 		return OrderRecord{}, OrderAdjustmentRecord{}, false, ErrOrderAdjustmentConflict
 	}
 	var lineMeasurement, quantityPolicy string
@@ -210,7 +212,7 @@ func ProposeOrderAdjustment(ctx context.Context, db *sql.DB, input ProposeOrderA
 		}
 	}
 	var openAdjustmentID string
-	err = tx.QueryRowContext(ctx, `SELECT id FROM dsh.commerce_order_adjustments WHERE order_line_id=$1 AND state IN ('PROPOSED','APPROVED','FINANCIAL_RECONCILIATION_REQUIRED')`, input.OrderLineID).Scan(&openAdjustmentID)
+	err = tx.QueryRowContext(ctx, `SELECT id FROM dsh.commerce_order_adjustments WHERE order_line_id=$1 AND state IN ('PROPOSED','APPROVED','FINANCIAL_RECONCILIATION_REQUIRED','APPLIED')`, input.OrderLineID).Scan(&openAdjustmentID)
 	if err == nil {
 		return OrderRecord{}, OrderAdjustmentRecord{}, false, ErrOrderAdjustmentConflict
 	}
@@ -303,7 +305,8 @@ func DecideOrderAdjustment(ctx context.Context, db *sql.DB, orderID, adjustmentI
 	if current.ClientActorID != customerActorID {
 		return OrderRecord{}, OrderAdjustmentRecord{}, false, ErrOrderNotFound
 	}
-	if current.Version != expectedOrderVersion || (current.State != "PARTNER_ACCEPTED" && current.State != "PREPARING") {
+	postCompletionDecision := (current.State == "DELIVERED" || current.State == "PICKED_UP") && current.PaymentState == "COLLECTED"
+	if current.Version != expectedOrderVersion || ((current.State != "PARTNER_ACCEPTED" && current.State != "PREPARING") && !postCompletionDecision) {
 		return OrderRecord{}, OrderAdjustmentRecord{}, false, ErrOrderAdjustmentConflict
 	}
 	adjustment, err := scanOrderAdjustment(tx.QueryRowContext(ctx, lockOrderAdjustmentByOrderAndIDSQL, orderID, adjustmentID))

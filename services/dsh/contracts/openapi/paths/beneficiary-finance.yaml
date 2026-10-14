@@ -1699,3 +1699,56 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/orders/{orderId}/adjustments/{adjustmentId}/wallet-compensation:
+    post:
+      operationId: creditOperatorOrderAdjustmentWallet
+      summary: Credit a reviewed, collected full item removal to the customer's existing wallet
+      description: Finance-only, platform-funded compensation. The amount comes exclusively from the immutable DSH Order line; customer-provided amounts and discounted Orders are rejected.
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: adjustmentId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        "200":
+          description: Idempotent replay of an existing verified wallet credit.
+        "201":
+          description: One balanced WLT ledger credit and authoritative customer wallet readback.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [walletCompensation, walletState, idempotentReplay]
+                properties:
+                  walletCompensation:
+                    type: object
+                    required: [caseId, orderId, customerActorId, amountMinor, currency, ledgerTransactionId]
+                    properties:
+                      caseId: { type: string }
+                      orderId: { type: string }
+                      customerActorId: { type: string }
+                      amountMinor: { type: integer, format: int64, minimum: 1 }
+                      currency: { type: string, const: YER }
+                      ledgerTransactionId: { type: string }
+                  walletState: { type: object }
+                  idempotentReplay: { type: boolean }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

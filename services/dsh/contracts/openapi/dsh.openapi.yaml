@@ -642,6 +642,8 @@ paths:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1beneficiaries~1{actorType}~1{actorId}~1financial-statement"
   /dsh/operator/financial-statements:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1financial-statements"
+  /dsh/operator/orders/{orderId}/adjustments/{adjustmentId}/wallet-compensation:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1orders~1{orderId}~1adjustments~1{adjustmentId}~1wallet-compensation"
   /dsh/operator/payout-requests/{payoutId}:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests~1{payoutId}"
   /dsh/operator/payout-requests/{payoutId}/prepare:
@@ -8452,7 +8454,7 @@ components:
           enum: [REMOVE_ITEM, SET_ACTUAL_QUANTITY]
         state:
           type: string
-          enum: [PROPOSED, REJECTED, FINANCIAL_RECONCILIATION_REQUIRED]
+          enum: [PROPOSED, REJECTED, FINANCIAL_RECONCILIATION_REQUIRED, APPLIED]
         actualQuantityBaseUnits:
           type: integer
           minimum: 1
