@@ -507,7 +507,7 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
   return { accessToken, actorID, caseID, storeID, activeAgreement };
 }
 
-async function prepareApprovedStoreLogo(caseID, partnerAccessToken, fixtureName) {
+async function prepareApprovedStoreLogo(caseID, partnerAccessToken, fixtureName, role = "primary") {
   const path = `/dsh/joining-cases/${encodeURIComponent(caseID)}`;
   const readOperatorCase = () => request(dshBase, "GET", path, {
     token: dshToken,
@@ -519,6 +519,7 @@ async function prepareApprovedStoreLogo(caseID, partnerAccessToken, fixtureName)
     fail("Approved joining case missing before deferred Store logo upload", JSON.stringify({ fixtureName, before }));
   }
   const form = new FormData();
+  form.set("role", role);
   form.set("creator", "DSH runtime proof fixture generator");
   form.set("sourceDescription", "One-pixel PNG generated for the isolated Store publication proof");
   form.set("rightsStatement", "Generated solely for this disposable runtime proof and permitted for its test");
@@ -530,10 +531,11 @@ async function prepareApprovedStoreLogo(caseID, partnerAccessToken, fixtureName)
     rawBody: form,
   });
   const canonical = await readOperatorCase();
+  const mediaField = role === "cover" ? "storeCoverImage" : "storeProfileImage";
   if (uploaded.status !== 201 || uploaded.body?.case?.version !== expectedVersion + 1 ||
-      !uploaded.body?.case?.storeProfileImage || canonical.status !== 200 ||
-      canonical.body?.case?.version !== uploaded.body.case.version || !canonical.body?.case?.storeProfileImage) {
-    fail("Partner deferred Store logo upload or operator readback failed", JSON.stringify({ fixtureName, uploaded, canonical }));
+      !uploaded.body?.case?.[mediaField] || canonical.status !== 200 ||
+      canonical.body?.case?.version !== uploaded.body.case.version || !canonical.body?.case?.[mediaField]) {
+    fail("Partner deferred Store media upload or operator readback failed", JSON.stringify({ fixtureName, role, uploaded, canonical }));
   }
   return canonical.body.case;
 }
@@ -1084,6 +1086,8 @@ if (storeLocalFieldRewardPolicy.status !== 201 || storeLocalFieldRewardPolicy.bo
 console.log("DSH_FIELD_ACQUISITION_REWARD_POLICY=PASS");
 await prepareApprovedStoreLogo(first.caseID, first.accessToken, "catalog-a");
 await prepareApprovedStoreLogo(second.caseID, second.accessToken, "catalog-b");
+await prepareApprovedStoreLogo(first.caseID, first.accessToken, "catalog-a-cover", "cover");
+await prepareApprovedStoreLogo(second.caseID, second.accessToken, "catalog-b-cover", "cover");
 const publishA = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-a-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const publishB = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 if (publishA.status !== 200 || publishB.status !== 200) {
