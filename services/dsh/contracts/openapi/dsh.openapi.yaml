@@ -8743,6 +8743,15 @@ components:
         redeemedCount:
           type: integer
           minimum: 0
+        discountBudgetLimitMinor:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Optional cap on the total discount authorized at checkout in YER minor units; WLT owns actual funding ledger.
+        discountSpentMinor:
+          type: integer
+          minimum: 0
+          description: Sum of active, non-released promotion redemptions (not WLT settled spend).
         version:
           type: integer
           minimum: 1
@@ -8883,6 +8892,11 @@ components:
           type: integer
           minimum: 1
           nullable: true
+        discountBudgetLimitMinor:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Optional hard cap on total discounted value in YER minor units.
 
     PromotionTarget:
       type: object

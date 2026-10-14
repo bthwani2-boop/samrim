@@ -67,6 +67,7 @@ type PromotionFormState = Readonly<{
   valueMinor: string;
   maxDiscountMinor: string;
   redemptionLimit: string;
+  discountBudgetLimitMinor: string;
   minOrderSubtotalMinor: string;
   fundingSource: CreatePromotionRequest["fundingSource"];
   fundingSharePartnerPercent: string;
@@ -86,6 +87,7 @@ function emptyPromotionForm(): PromotionFormState {
     valueMinor: "10",
     maxDiscountMinor: "",
     redemptionLimit: "",
+    discountBudgetLimitMinor: "",
     minOrderSubtotalMinor: "",
     fundingSource: "BTHWANI",
     fundingSharePartnerPercent: "50",
@@ -511,10 +513,12 @@ export function MarketingPromotionsWorkspace() {
         const ends = endsAt ? new Date(endsAt) : null;
         const valueMinor = Number(promotionForm.valueMinor);
         const fundingShare = Number(promotionForm.fundingSharePartnerPercent);
+        const budgetLimit = promotionForm.discountBudgetLimitMinor ? Number(promotionForm.discountBudgetLimitMinor) : null;
         if (!promotionForm.code.trim() || !promotionForm.nameAr.trim() || !Number.isSafeInteger(valueMinor) || valueMinor <= 0 || (promotionForm.kind === "PERCENTAGE" && valueMinor > 100) || Number.isNaN(starts.getTime())) throw new Error("أكمل بيانات العرض الأساسية.");
         if (ends && (Number.isNaN(ends.getTime()) || ends.getTime() <= starts.getTime())) throw new Error("نهاية العرض يجب أن تكون بعد بدايته.");
         if (promotionForm.fundingSource === "SHARED" && (!Number.isSafeInteger(fundingShare) || fundingShare < 1 || fundingShare > 99)) throw new Error("حدد حصة الشريك من التمويل المشترك بين 1 و99.");
         if (promotionForm.storeId && promotionForm.fundingSource !== "BTHWANI") throw new Error("لا يمكن تحميل متجر محدد تكلفة عرض ينشئه المشغل. أنشئ حملة عامة بموافقة الشركاء أو دع الشريك ينشئ عرض متجره.");
+        if (budgetLimit !== null && (!Number.isSafeInteger(budgetLimit) || budgetLimit <= 0)) throw new Error("سقف مجموع الخصومات يجب أن يكون مبلغًا صحيحًا موجبًا.");
         if (promotionForm.targetKind !== "NONE" && !promotionForm.targetId) throw new Error("اختر هدف العرض من السجل المعتمد.");
         const targets: NonNullable<CreatePromotionRequest["targets"]> = promotionForm.targetKind === "NONE" ? [] : [{ targetKind: promotionForm.targetKind, targetRef: promotionForm.targetId }];
         const input: CreatePromotionRequest = {
@@ -530,6 +534,7 @@ export function MarketingPromotionsWorkspace() {
           ...(promotionForm.fundingSource === "SHARED" ? { fundingSharePartnerPercent: fundingShare } : {}),
           ...(promotionForm.maxDiscountMinor ? { maxDiscountMinor: Number(promotionForm.maxDiscountMinor) } : {}),
           ...(promotionForm.redemptionLimit ? { redemptionLimit: Number(promotionForm.redemptionLimit) } : {}),
+          ...(budgetLimit !== null ? { discountBudgetLimitMinor: budgetLimit } : {}),
           ...(promotionForm.minOrderSubtotalMinor ? { minOrderSubtotalMinor: Number(promotionForm.minOrderSubtotalMinor) } : {}),
           ...(targets.length ? { targets } : {}),
           ...(promotionForm.storeId ? { storeId: promotionForm.storeId } : {}),
@@ -608,6 +613,7 @@ export function MarketingPromotionsWorkspace() {
           {promotionForm.fundingSource === "SHARED" ? <label className="field-label">حصة الشريك من التمويل (%)<input aria-label="حصة الشريك من التمويل" inputMode="numeric" type="number" min="1" max="99" disabled={formLocked} value={promotionForm.fundingSharePartnerPercent} onChange={(event) => setPromotionForm((current) => ({ ...current, fundingSharePartnerPercent: event.target.value }))} /></label> : null}
           <label className="field-label">الحد الأدنى للطلب (اختياري)<input aria-label="حد الطلب الأدنى" inputMode="numeric" type="number" min="1" placeholder="بالريال اليمني" disabled={formLocked} value={promotionForm.minOrderSubtotalMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, minOrderSubtotalMinor: event.target.value }))} /></label>
           <label className="field-label">عدد مرات الاستخدام (اختياري)<input aria-label="حد الاستخدام" inputMode="numeric" type="number" min="1" placeholder="اتركه بلا حد" disabled={formLocked} value={promotionForm.redemptionLimit} onChange={(event) => setPromotionForm((current) => ({ ...current, redemptionLimit: event.target.value }))} /></label>
+          <label className="field-label">سقف مجموع الخصومات (اختياري، ر.ي)<input aria-label="سقف مجموع خصومات الحملة" inputMode="numeric" type="number" min="1" placeholder="يتحقق الخادم من المبلغ عند الدفع" disabled={formLocked} value={promotionForm.discountBudgetLimitMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, discountBudgetLimitMinor: event.target.value }))} /></label>
           <label className="field-label" htmlFor="promotion-city">مدينة الخدمة<select id="promotion-city" disabled={formLocked} value={promotionForm.serviceCityId} onChange={(event) => { setStoreSearch(""); setStoreOptions([]); setPromotionForm((current) => ({ ...current, serviceCityId: event.target.value, storeId: "" })); }}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
 
           <label className="field-label">بحث عن متجر (اختياري)<input aria-label="بحث متجر الحملة" maxLength={128} placeholder={promotionForm.serviceCityId ? "اسم المتجر" : "اختر مدينة أولًا"} disabled={formLocked || !promotionForm.serviceCityId} value={storeSearch} onChange={(event) => { setStoreSearch(event.target.value); setPromotionForm((current) => ({ ...current, storeId: "", requiresPartnerOptIn: current.requiresPartnerOptIn })); }} /></label>
@@ -640,7 +646,7 @@ export function MarketingPromotionsWorkspace() {
           <label className="field-label" htmlFor="promotion-sort">ترتيب البداية<select id="promotion-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="starts_desc">الأحدث بداية</option><option value="starts_asc">الأقدم بداية</option></select></label>
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
         </form>
-        {registry?.promotions.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr><th scope="col">العرض</th><th scope="col">الرمز</th><th scope="col">القيمة</th><th scope="col">التمويل والنطاق</th><th scope="col">الحالة</th><th scope="col">البداية</th><th scope="col">الإجراء</th></tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}</th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? item.valueMinor + "%" : formatMoney(item.valueMinor, "YER")}</td><td>{item.fundingSource === "SHARED" ? "مشترك · حصة الشريك " + (item.fundingSharePartnerPercent ?? 0) + "%" : item.fundingSource === "BTHWANI" ? "بثواني" : "الشريك"}<br />{item.storeId ? "متجر محدد" : item.serviceCityId ? "حملة مدينة" : "حملة منصة"}{item.requiresPartnerOptIn ? " · تتطلب موافقة" : ""}<br />{promotionTargetSummary(item)}{item.minOrderSubtotalMinor ? <><br />حد الطلب {formatMoney(item.minOrderSubtotalMinor, "YER")}</> : null}</td><td>{promotionStateLabel(item.state)}</td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td>{item.state === "ENDED" ? <span className="muted">لا إجراء</span> : <button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button>}</td></tr>)}</tbody></table></div> : null}
+        {registry?.promotions.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr><th scope="col">العرض</th><th scope="col">الرمز</th><th scope="col">القيمة</th><th scope="col">التمويل والنطاق</th><th scope="col">الحالة</th><th scope="col">البداية</th><th scope="col">الإجراء</th></tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}</th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? item.valueMinor + "%" : formatMoney(item.valueMinor, "YER")}</td><td>{item.fundingSource === "SHARED" ? "مشترك · حصة الشريك " + (item.fundingSharePartnerPercent ?? 0) + "%" : item.fundingSource === "BTHWANI" ? "بثواني" : "الشريك"}<br />{item.storeId ? "متجر محدد" : item.serviceCityId ? "حملة مدينة" : "حملة منصة"}{item.requiresPartnerOptIn ? " · تتطلب موافقة" : ""}<br />{promotionTargetSummary(item)}{item.minOrderSubtotalMinor ? <><br />حد الطلب {formatMoney(item.minOrderSubtotalMinor, "YER")}</> : null}{item.discountBudgetLimitMinor ? <><br />سقف الخصومات: {formatMoney(item.discountBudgetLimitMinor, "YER")} · مستخدم: {formatMoney(item.discountSpentMinor, "YER")}</> : null}</td><td>{promotionStateLabel(item.state)}</td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td>{item.state === "ENDED" ? <span className="muted">لا إجراء</span> : <button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button>}</td></tr>)}</tbody></table></div> : null}
         {!registry?.promotions.length && loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة العروض…</p> : null}
         {registry && !registry.promotions.length && !loading && !registryError ? <p className="collection-state">لا توجد عروض مطابقة.</p> : null}
         <nav className="pagination" aria-label="صفحات سجل العروض"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
