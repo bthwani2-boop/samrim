@@ -33,7 +33,6 @@ export function PartnerStoreScopeSelector({ requiredPermissions }: Readonly<{ re
 
   return <View style={styles.card}>
     <Text style={styles.value}>اختر المتجر</Text>
-    <Text style={styles.muted}>سيبقى المتجر المختار نفسه أثناء انتقالك بين أقسام التطبيق.</Text>
     {visibleStores.length === 0 ? <Text style={styles.muted}>لا يوجد متجر متاح لهذه العملية حاليًا.</Text> : null}
     {visibleStores.map((store) => <Pressable accessibilityRole="button" accessibilityState={{ selected: selectedStore?.id === store.id }} key={store.id} onPress={() => selectStore(store.id)} style={{ backgroundColor: selectedStore?.id === store.id ? theme.surfaceInset : theme.surface, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 4, padding: 12 }}>
       <Text style={styles.value}>{store.name}</Text>

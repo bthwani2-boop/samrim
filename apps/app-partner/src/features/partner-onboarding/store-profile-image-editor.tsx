@@ -35,7 +35,8 @@ export function StoreProfileImageEditor(props: { value: JoiningCaseResponse; onU
   function matches(next: typeof activeCurrent) {
     if (!storeImage) return false;
     const asset = storeImage.role === "cover" ? next.storeCoverImage : next.storeProfileImage;
-    return asset?.contentSha256 === storeImage.contentSha256 && asset.provenance.creator === storeImage.provenance.creator.trim() && asset.provenance.sourceDescription === storeImage.provenance.sourceDescription.trim() && asset.provenance.rightsStatement === storeImage.provenance.rightsStatement.trim() && (asset.provenance.sourceUri ?? "") === (storeImage.provenance.sourceUri ?? "").trim() && (asset.provenance.rightsUri ?? "") === (storeImage.provenance.rightsUri ?? "").trim() && Boolean(asset.provenance.attestedByActorId && asset.provenance.attestedAt);
+    if (!asset?.provenance) return false;
+    return asset.contentSha256 === storeImage.contentSha256 && asset.provenance.creator === storeImage.provenance.creator.trim() && asset.provenance.sourceDescription === storeImage.provenance.sourceDescription.trim() && asset.provenance.rightsStatement === storeImage.provenance.rightsStatement.trim() && (asset.provenance.sourceUri ?? "") === (storeImage.provenance.sourceUri ?? "").trim() && (asset.provenance.rightsUri ?? "") === (storeImage.provenance.rightsUri ?? "").trim() && Boolean(asset.provenance.attestedByActorId && asset.provenance.attestedAt);
   }
   if (current.state !== "needs_correction" && !(activeCurrent.state === "approved" && activeCurrent.store?.id)) return null;
 
@@ -73,7 +74,7 @@ export function StoreProfileImageEditor(props: { value: JoiningCaseResponse; onU
       contentSha256: storeImage.contentSha256,
       provenance: storeImage.provenance,
     };
-    if (storeID ? matches(current) : partnerStoreImageReadbackMatches(current as JoiningCaseResponse["case"], requested)) {
+    if (storeID ? matches(activeCurrent) : partnerStoreImageReadbackMatches(current as JoiningCaseResponse["case"], requested)) {
       setStoreImage(null);
       setError("");
       return;

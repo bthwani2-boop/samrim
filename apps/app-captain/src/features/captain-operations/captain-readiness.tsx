@@ -102,7 +102,6 @@ export function CaptainReadiness() {
   return (
     <View style={styles.container} accessibilityLabel="جاهزية الكابتن">
       <Text style={styles.readinessTitle}>جاهزية الكابتن</Text>
-      <Text style={styles.muted}>تحقق من جاهزيتك، حدّد توفرك، ثم انتقل مباشرة إلى المهمة التالية.</Text>
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
       {!loading && currentAdmission ? <View style={styles.readinessCard}>
         <View style={styles.readinessStatusRow}><View style={styles.readinessItem}><Text style={styles.cardTitle}>قبولك</Text><Text style={styles.muted}>{captainAdmissionStateLabel(currentAdmission.state)}</Text></View><View style={styles.readinessItem}><Text style={styles.cardTitle}>التوفر</Text><BthwaniStatusBadge icon={currentAdmission.availabilityState === "available" ? "success" : "appearance"} label={captainAvailabilityStateLabel(currentAdmission.availabilityState)} tone={currentAdmission.availabilityState === "available" ? "success" : "neutral"} /></View></View>
@@ -111,7 +110,7 @@ export function CaptainReadiness() {
           <BthwaniButton busy={busy} disabled={busy || loading || currentAdmission.state !== "eligible" || currentAdmission.availabilityState === "unavailable"} label="غير متاح" onPress={() => void setAvailability(false)} style={styles.actionButton} variant="secondary" />
         </View>
       </View> : null}
-      {!loading ? <View style={styles.nextStepCard}><Text style={styles.sectionTitle}>الخطوة التالية</Text><Text style={styles.muted}>افتح العروض أو التوصيلات لمعالجة المهام الحالية.</Text><View style={styles.row}><Link href={"/offers" as Href} asChild><BthwaniButton label="فتح العروض" style={styles.actionButton} /></Link><Link href={"/deliveries" as Href} asChild><BthwaniButton label="فتح التوصيلات" style={styles.actionButton} variant="secondary" /></Link></View></View> : null}
+      {!loading ? <View style={styles.nextStepCard}><Text style={styles.sectionTitle}>العمل الآن</Text><View style={styles.row}><Link href={"/offers" as Href} asChild><BthwaniButton label="العروض" style={styles.actionButton} /></Link><Link href={"/deliveries" as Href} asChild><BthwaniButton label="التوصيلات" style={styles.actionButton} variant="secondary" /></Link></View></View> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <BthwaniButton busy={busy || loading} disabled={busy || loading} label="تحديث الحالة" onPress={() => void load()} variant="secondary" />
     </View>

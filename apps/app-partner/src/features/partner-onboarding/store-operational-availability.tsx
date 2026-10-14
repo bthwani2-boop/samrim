@@ -234,14 +234,14 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
 
   const current = state.value.availability;
   return <View style={styles.card}>
-    <View style={styles.heading}><Text style={styles.title}>ساعات العمل وإتاحة الطلب</Text><Text style={styles.muted}>المنطقة الزمنية: اليمن (Asia/Aden). هذا الإعداد لا يغيّر نشر المتجر أو أوضاعه الدائمة.</Text></View>
+    <View style={styles.heading}><Text style={styles.title}>استقبال الطلبات</Text></View>
     <View style={styles.block}>
       <Text style={styles.label}>ساعات استقبال الطلبات</Text>
       <View style={styles.chips}>
         <BthwaniChip accessibilityLabel="المتجر مفتوح دائمًا" disabled={disabled} label="مفتوح دائمًا" onPress={() => setDraft((value) => value ? { ...value, scheduleMode: "ALWAYS_OPEN" } : value)} selected={draft.scheduleMode === "ALWAYS_OPEN"} />
         <BthwaniChip accessibilityLabel="تحديد ساعات أسبوعية" disabled={disabled} label="ساعات أسبوعية" onPress={() => setDraft((value) => value ? { ...value, scheduleMode: "WEEKLY" } : value)} selected={draft.scheduleMode === "WEEKLY"} />
       </View>
-      {draft.scheduleMode === "WEEKLY" ? <><Text style={styles.muted}>اختر أيام العمل وأدخل فترة واحدة أو أكثر لكل يوم. لا تُحفظ ساعات افتراضية من دون اختيارك.</Text><View style={styles.days}>{WEEKDAYS.map((day, dayOfWeek) => {
+      {draft.scheduleMode === "WEEKLY" ? <><View style={styles.days}>{WEEKDAYS.map((day, dayOfWeek) => {
         const windows = draft.weeklySchedule.map((window, index) => ({ window, index })).filter(({ window }) => window.dayOfWeek === dayOfWeek);
         return <View key={day} style={styles.dayCard}>
           <View style={styles.dayHeader}><Text style={styles.label}>{day}</Text><Switch accessibilityLabel={`ساعات عمل يوم ${day}`} disabled={disabled} onValueChange={(enabled) => enabled ? addWindow(dayOfWeek) : setDraft((value) => value ? { ...value, weeklySchedule: value.weeklySchedule.filter((window) => window.dayOfWeek !== dayOfWeek) } : value)} value={windows.length > 0} /></View>
@@ -254,20 +254,18 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
         </View>;
       })}</View></> : null}
     </View>
-    <View style={styles.settingRow}><View style={styles.settingCopy}><Text style={styles.label}>إيقاف استقبال الطلبات مؤقتًا</Text><Text style={styles.muted}>{draft.paused ? draft.pauseUntil ? `يستمر الإيقاف حتى ${draft.pauseUntil} بتوقيت اليمن ما لم تستأنف الطلبات قبل ذلك.` : "يبقى الإيقاف حتى تستأنف الطلبات يدويًا." : "يمكن إيقاف الطلبات دون إلغاء نشر المتجر."}</Text></View><Switch accessibilityLabel="إيقاف استقبال الطلبات مؤقتًا" disabled={disabled} onValueChange={(paused) => setDraft((value) => value ? { ...value, paused, pauseReason: paused ? value.pauseReason : "", pauseUntil: paused ? value.pauseUntil : null } : value)} value={draft.paused} /></View>
+    <View style={styles.settingRow}><View style={styles.settingCopy}><Text style={styles.label}>إيقاف استقبال الطلبات مؤقتًا</Text>{draft.paused ? <Text style={styles.muted}>{draft.pauseUntil ? `حتى ${draft.pauseUntil} بتوقيت اليمن` : "حتى الاستئناف يدويًا"}</Text> : null}</View><Switch accessibilityLabel="إيقاف استقبال الطلبات مؤقتًا" disabled={disabled} onValueChange={(paused) => setDraft((value) => value ? { ...value, paused, pauseReason: paused ? value.pauseReason : "", pauseUntil: paused ? value.pauseUntil : null } : value)} value={draft.paused} /></View>
     {draft.paused ? <>
       <TextInput accessibilityLabel="سبب إيقاف استقبال الطلبات" editable={!disabled} maxLength={500} onChangeText={(pauseReason) => setDraft((value) => value ? { ...value, pauseReason } : value)} placeholder="سبب الإيقاف" value={draft.pauseReason} style={styles.input} />
       <TextInput accessibilityLabel="موعد استئناف استقبال الطلبات" editable={!disabled} maxLength={16} onChangeText={(pauseUntil) => setDraft((value) => value ? { ...value, pauseUntil: toAsciiDigits(pauseUntil) || null } : value)} placeholder="يوم/شهر/سنة ساعة:دقيقة" value={draft.pauseUntil ?? ""} style={styles.input} />
-      <Text style={styles.muted}>أدخل موعدًا مستقبليًا بتوقيت اليمن، أو اتركه فارغًا للاستئناف يدويًا.</Text>
+      <Text style={styles.muted}>اختياري · بتوقيت اليمن</Text>
     </> : null}
     <View style={styles.block}>
       <Text style={styles.label}>مدة التجهيز</Text>
       <TextInput accessibilityLabel="مدة التجهيز بالدقائق" editable={!disabled} keyboardType="number-pad" onChangeText={(preparationMinutes) => setDraft((value) => value ? { ...value, preparationMinutes: toAsciiDigits(preparationMinutes).replace(/[^0-9]/g, "") } : value)} placeholder="بالدقائق، اختياري" value={draft.preparationMinutes} style={styles.input} />
-      <Text style={styles.muted}>من دقيقة واحدة إلى 24 ساعة.</Text>
     </View>
     {fulfillmentModes.length ? <View style={styles.block}>
       <Text style={styles.label}>إيقاف وضع طلب مؤقتًا</Text>
-      <Text style={styles.muted}>الأوضاع المعروضة هنا هي أوضاع هذا المتجر المعتمدة. التغيير مؤقت ولا يحذف الوضع من إعدادات المتجر.</Text>
       {fulfillmentModes.map((mode) => {
         const unavailable = draft.unavailableFulfillmentModes.includes(mode);
         const status = state.value.orderabilityByMode.find((item) => item.fulfillmentMode === mode);

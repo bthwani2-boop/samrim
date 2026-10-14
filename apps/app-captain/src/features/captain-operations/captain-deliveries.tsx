@@ -3,6 +3,7 @@ import { BthwaniButton, BthwaniMap, BthwaniStatusBadge, useAppearanceTheme } fro
 import { type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, type CashLiabilityItem, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
+import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Text, TextInput, View } from "react-native";
 
@@ -315,12 +316,11 @@ export function CaptainDeliveries() {
 
   return (
     <View style={styles.container} accessibilityLabel="التوصيلات الحالية">
-      <Text style={styles.title}>التوصيلات الحالية</Text>
-      <Text style={styles.muted}>رتّب عملك من الاستلام إلى التسليم، وتعرّف على العائق قبل بدء الإجراء.</Text>
+      <Text style={styles.readinessTitle}>التوصيلات الحالية</Text>
       {pendingCompletion ? <View style={styles.warningBox}><Text style={styles.warning}>توجد محاولة تسليم محفوظة للمهمة؛ تحقق من نتيجتها قبل إنشاء محاولة جديدة.</Text><BthwaniButton busy={busy === pendingCompletion.assignmentID} disabled={Boolean(busy) || !completionStorageReady} label="التحقق من نتيجة التسليم" onPress={() => void retryPendingCompletion()} />{completionRejected ? <BthwaniButton busy={Boolean(busy)} disabled={Boolean(busy)} label="تحقق من المهمة لفتح تصحيح آمن" onPress={() => void replaceRejectedCompletionAfterReadback()} variant="secondary" /> : null}</View> : null}
       {completionStorageIssue ? <Text accessibilityRole="alert" style={styles.error}>تعذر قراءة المحاولة الآمنة السابقة. لا تؤكد تسليمًا جديدًا؛ أعد قراءة الحالة أو اطلب مراجعة المشغل.</Text> : null}
       {!completionStorageReady && !completionStorageIssue && !loading ? <Text accessibilityRole="alert" style={styles.warning}>تعذر التحقق من المحاولات المحفوظة؛ لن نرسل تأكيدًا حتى تنجح إعادة القراءة.</Text> : null}
-      {cashLiability ? <View style={styles.summaryCard} accessibilityLabel="العهدة النقدية">
+      {cashLiability && (cashLiability.items.length > 0 || cashLiability.totalAmountMinor > 0) ? <View style={styles.summaryCard} accessibilityLabel="العهدة النقدية">
         <Text style={styles.sectionTitle}>العهدة النقدية غير المسوّاة</Text>
         <Text style={styles.warning}>الإجمالي المفتوح: {formatMoney(cashLiability.totalAmountMinor, "YER")}</Text>
         {cashLiability.items.length === 0 ? <Text style={styles.muted}>لا توجد مبالغ معلّقة.</Text> : cashLiability.items.map((item) => {
@@ -335,8 +335,11 @@ export function CaptainDeliveries() {
         })}
       </View> : null}
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
-      {!loading ? <Text style={styles.sectionTitle}>التكليفات ({assignments.length})</Text> : null}
-      {!loading && !assignments.length ? <Text style={styles.muted}>لا توجد تكليفات.</Text> : null}
+      {!loading && assignments.length > 0 ? <Text style={styles.sectionTitle}>التكليفات ({assignments.length})</Text> : null}
+      {!loading && !assignments.length ? <View style={styles.card}>
+        <Text style={styles.muted}>لا توجد توصيلات حالية.</Text>
+        {!pendingCompletion && completionStorageReady && !completionStorageIssue ? <Link href={"/offers" as Href} asChild><BthwaniButton label="استعراض العروض" /></Link> : null}
+      </View> : null}
       {!loading ? assignments.map((assignment) => {
         const task = tasks[assignment.id];
         const taskReady = canActOnCaptainTask(assignment, task);

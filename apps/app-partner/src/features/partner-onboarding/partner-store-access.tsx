@@ -271,7 +271,7 @@ function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, o
   const canInvite = !busy && phone.trim().length > 0 && selectedPermissions.length > 0 && selectedStoreIDs.length > 0;
   return <View style={styles.card}>
     <Text style={styles.value}>تفويض وصول لمتجر محدد</Text>
-    <Text style={styles.muted}>أدخل رقم هاتف الموظف، واختر المتاجر والصلاحيات. تصل الدعوة إلى حسابه الموثّق، ويُستكمل اعتماد الدور عند الحاجة. لكل متجر صلاحية مستقلة.</Text>
+    <Text style={styles.muted}>تصل الدعوة إلى حساب الموظف الموثّق.</Text>
     <TextInput accessibilityLabel="رقم هاتف الموظف" autoCapitalize="none" autoCorrect={false} editable={!busy} keyboardType="phone-pad" onChangeText={onPhoneChange} placeholder="رقم الهاتف مع مفتاح الدولة" placeholderTextColor={theme.colorMuted} style={[styles.formInput, { textAlign: "left", writingDirection: "ltr" }]} value={phone} />
     <Text style={styles.metaLabel}>متاجر الفريق المملوكة</Text>
     <TextInput accessibilityLabel="بحث المتاجر المملوكة" autoCapitalize="none" autoCorrect={false} editable={!busy} onChangeText={onStoreSearchChange} placeholder="ابحث باسم المتجر" placeholderTextColor={theme.colorMuted} style={styles.formInput} value={storeSearch} />
@@ -285,7 +285,7 @@ function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, o
       return <Pressable accessibilityRole="button" accessibilityState={{ selected, disabled: busy }} disabled={busy} key={preset.value} onPress={() => choosePreset(preset)} style={[styles.choice, selected && styles.choiceSelected]}><Text style={selected ? styles.choiceTextSelected : styles.choiceText}>{selected ? "✓  " : ""}{preset.label}</Text></Pressable>;
     })}</View>
     <Text style={styles.metaLabel}>حدد أقل صلاحيات لازمة لهذا المتجر فقط</Text>
-    <Text style={styles.muted}>صلاحية التوصيل تعتمد على قراءة الطلب، لذلك تضيف «الطلبات» معها تلقائيًا ولا يمكن إبقاء التوصيل منفردًا.</Text>
+    <Text style={styles.muted}>التوصيل يضيف صلاحية الطلبات تلقائيًا.</Text>
     <View style={styles.choiceRow}>{permissions.map((permission) => {
       const selected = selectedPermissions.includes(permission.value);
       return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: busy }} disabled={busy} key={permission.value} onPress={() => onPermissionToggle(permission.value)} style={[styles.choice, selected && styles.choiceSelected]}><Text style={selected ? styles.choiceTextSelected : styles.choiceText}>{selected ? "✓  " : ""}{permission.label}</Text></Pressable>;
@@ -325,8 +325,7 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
     <Text style={styles.muted}>{grantStateLabel(grant.state)} · الصلاحيات الحالية: {permissionNames(grant.permissions)}</Text>
     {grant.state === "active" || grant.state === "suspended" || grant.state === "pending_role_admission" || grant.state === "pending_partner_activation" || grant.state === "pending_acceptance" ? <>
       <Text style={styles.metaLabel}>الصلاحيات المفوضة</Text>
-      <Text style={styles.metaLabel}>يُحفظ تغيير كل صلاحية بعد تأكيده.</Text>
-      <Text style={styles.muted}>التوصيل يعتمد على الطلبات؛ إضافة التوصيل تضيف «الطلبات» تلقائيًا، وإزالة «الطلبات» تزيل التوصيل معها.</Text>
+      <Text style={styles.muted}>التوصيل مرتبط بصلاحية الطلبات.</Text>
       <View style={styles.choiceRow}>{permissions.map((permission) => {
         const checked = selected.includes(permission.value);
         const next = toggleStoreAccessPermission(selected, permission.value);
