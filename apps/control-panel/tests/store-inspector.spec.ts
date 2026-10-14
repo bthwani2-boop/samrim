@@ -189,7 +189,7 @@ test("a shared registry renders store rows and verified storeless partners witho
   await page.goto("/partners");
   const rows = page.locator(".store-registry tbody tr");
   await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText("نشط");
+  await expect(rows.first().getByRole("img", { name: /نشط/ })).toBeVisible();
   await expect(rows.first().getByRole("link", { name: "شريك الاختبار" })).toHaveAttribute("href", "/partners/actors/partner");
   await page.locator("#partner-registry-mode").selectOption("without_store");
   await expect(page).toHaveURL(/mode=without_store/);
@@ -282,10 +282,10 @@ test("compact indicators preserve independent states and a legend even without p
   }
   const publication = row.getByRole("img", { name: "النشر: منشور", exact: true });
   await publication.focus();
-  await expect(publication.locator(".record-indicator-tooltip")).toBeVisible();
+  await expect(publication).toHaveAttribute("title", "النشر: منشور");
   await publication.press("Escape");
   await expect(publication).toBeFocused();
-  await expect(publication.locator(".record-indicator-tooltip")).toHaveCount(0);
+  await expect(publication).toHaveAttribute("title", "النشر: منشور");
   await expect(page.getByRole("complementary", { name: "دليل رموز الحساب والنشر والتوصيل" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "صفحات الشركاء والمتاجر" })).toHaveCount(0);
   const share = await row.evaluate((element) => {
