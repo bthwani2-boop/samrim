@@ -103,7 +103,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     ...promotions.map((promotion) => ({ kind: "promotion" as const, key: `promotion:${promotion.id}`, promotion })),
     ...bannerOffers.map((offer) => ({ kind: "offer" as const, key: `offer:${offer.offerId}`, offer })),
   ].slice(0, 5);
-  const bannerWidth = Math.max(280, windowWidth - spacing[3] * 2);
+  // Expose neighboring slides; centering padding is part of the scroll content, not each item.
+  const bannerViewportWidth = Math.max(1, windowWidth - spacing[3] * 2);
+  const bannerWidth = Math.min(220, Math.max(164, Math.round(bannerViewportWidth * 0.52)));
+  const bannerStep = bannerWidth + spacing[2];
+  const bannerSidePadding = Math.max(0, (bannerViewportWidth - bannerWidth) / 2);
 
   const loadBanner = useCallback(async () => {
     if (!selectedCityID) return;
@@ -283,7 +287,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       setState({ kind: "ready", store: state.store, catalog: saved.catalog });
       return;
     }
-    setState({ kind: "ready", store: state.store, catalog: { ...state.catalog, offers: [], sections: [], nextCursor: undefined } });
+    setState({ kind: "ready", store: state.store, catalog: { ...state.catalog, offers: [], sections: [], nextCursor: null } });
     await reloadCatalog(null, "", index === 1, index === 2);
   }, [activeTab, activeProductID, catalogQuery, catalogTabs, reduceMotion, reloadCatalog, router, selectedCategoryID, state, storeId]);
 
@@ -311,12 +315,12 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     const timer = setInterval(() => {
       setBannerIndex((current) => {
         const next = (current + 1) % bannerItems.length;
-        bannerRef.current?.scrollTo({ x: next * bannerWidth, animated: true });
+        bannerRef.current?.scrollTo({ x: next * bannerStep, animated: true });
         return next;
       });
     }, 5000);
     return () => clearInterval(timer);
-  }, [bannerItems.length, bannerPaused, reduceMotion, bannerWidth]);
+  }, [bannerItems.length, bannerPaused, reduceMotion, bannerStep]);
 
   useEffect(() => {
     if (bannerIndex >= bannerItems.length) setBannerIndex(0);
@@ -543,7 +547,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           </View>
           <View style={styles.productCopyAndAction}>
             <Pressable accessibilityRole="button" accessibilityLabel={`عرض تفاصيل ${offer.productName}`} accessibilityHint="يفتح صور المنتج وتفاصيله وخيارات الكمية" onPress={() => openOfferDetails(offer.offerId)} style={styles.itemCopy}>
-              <Text numberOfLines={1} style={styles.itemTitle}>{offer.productName}</Text>
+              <Text numberOfLines={2} style={styles.itemTitle}>{offer.productName}</Text>
+              <Text numberOfLines={1} style={styles.productUnit}>{offer.pricingBasis === "PER_MEASURE" ? `السعر لكل ${formatQuantity(offer.baseUnit, offer.pricingUnitBaseUnits)}` : offer.variantTitle || "للوحدة"}</Text>
             </Pressable>
             <View style={styles.productActionRow}>
               <Text style={styles.productActionPrice}>{storeMoney(offer.priceMinor, offer.currency)}</Text>
@@ -561,19 +566,29 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   return (
     <View style={styles.page} accessibilityLabel={`كتالوج ${state.store.name}`}>
       <View style={styles.storeHeader}>
-        <View style={styles.storeHeaderIdentity}>
+        {catalogSearchOpen ? <BthwaniSearchField
+          accessibilityLabel="البحث في جميع منتجات المتجر"
+          containerStyle={styles.headerSearchField}
+          editable={!catalogRefreshing && !loadingMore}
+          onChangeText={setCatalogQuery}
+          onClear={() => { setCatalogQuery(""); void reloadCatalog(null, "", false, false); }}
+          onSubmitEditing={() => void reloadCatalog(null, catalogQuery, false, false)}
+          placeholder="ابحث في جميع منتجات المتجر"
+          returnKeyType="search"
+          value={catalogQuery}
+        /> : <View style={styles.storeHeaderIdentity}>
           <View style={styles.storeHeaderCopy}>
             <Text numberOfLines={1} style={styles.storeHeaderTitle}>{state.store.name}</Text>
             <Text numberOfLines={1} style={styles.storeHeaderCity}>{serviceCityDisplayName(state.store.serviceCity.displayNameAr)}</Text>
           </View>
           {state.store.storeProfileImage?.uri && !failedStoreImage ? <Image accessibilityLabel={`شعار متجر ${state.store.name}`} onError={() => setFailedStoreImage(true)} source={{ uri: state.store.storeProfileImage.uri }} style={styles.merchantImage} resizeMode="cover" /> : <View style={styles.storeHeaderLogoFallback}><BthwaniIcon name="store" color={theme.onAction} size={sizing.iconMd} /></View>}
           <BthwaniIconButton icon="back" label="العودة إلى المتاجر" onPress={() => router.back()} size={sizing.controlMd} style={styles.storeHeaderBack} tone="soft" />
-        </View>
+        </View>}
         <View style={styles.storeHeaderActions}>
-          <BthwaniIconButton icon={catalogSearchOpen ? "close" : "search"} label={catalogSearchOpen ? "إغلاق البحث داخل المتجر" : "البحث في منتجات المتجر"} onPress={() => { setCatalogSearchOpen((open) => !open); if (catalogSearchOpen) { setCatalogQuery(""); void reloadCatalog(selectedCategoryID, ""); } }} size={sizing.controlMd} style={styles.storeHeaderAction} tone="primary" />
-          <BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push("/multi-store-checkout" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="primary" />
+          <BthwaniIconButton icon={catalogSearchOpen ? "close" : "search"} label={catalogSearchOpen ? "إغلاق البحث داخل المتجر" : "البحث في منتجات المتجر"} onPress={() => { if (catalogSearchOpen) { setCatalogSearchOpen(false); setCatalogQuery(""); void reloadCatalog(null, "", false, false); } else if (activeTab !== 0) { void selectCatalogTab(0).then(() => setCatalogSearchOpen(true)); } else { setCatalogSearchOpen(true); } }} size={sizing.controlMd} style={styles.storeHeaderAction} tone="primary" />
+          {!catalogSearchOpen ? <><BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push("/multi-store-checkout" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="primary" />
           <BthwaniIconButton icon="share" label="مشاركة المتجر" onPress={() => void shareStore()} size={sizing.controlMd} style={styles.storeHeaderAction} tone="primary" />
-          <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="primary" />
+          <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="primary" /></> : null}
         </View>
       </View>
       <View style={styles.catalogPager} onLayout={(event) => setPagerWidth(event.nativeEvent.layout.width)}>
@@ -581,6 +596,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         ref={catalogPagerRef}
         horizontal
         pagingEnabled
+        // Native RTL positions horizontal list offsets differently; inversion keeps tab IDs and swipe destinations aligned.
         inverted={I18nManager.isRTL}
         data={[0, 1, 2]}
         keyExtractor={(index) => String(index)}
@@ -610,7 +626,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         ListHeaderComponent={<View style={styles.listHeader}>
           {state.store.storeCoverImage?.uri && !failedStoreCover
             ? <Image accessibilityLabel={`غلاف متجر ${state.store.name}`} onError={() => setFailedStoreCover(true)} source={{ uri: state.store.storeCoverImage.uri }} resizeMode="cover" style={styles.storeCover} />
-            : <View accessibilityLabel={failedStoreCover ? `تعذر تحميل غلاف متجر ${state.store.name}` : `غلاف متجر ${state.store.name} غير متوفر`} style={styles.storeCoverFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /><View style={styles.storeCoverFallbackCopy}><Text style={styles.storeCoverFallbackTitle}>{state.store.name}</Text><Text style={styles.storeCoverFallbackText}>{failedStoreCover ? "تعذر تحميل صورة الغلاف" : "صورة الغلاف غير متاحة حاليًا"}</Text></View></View>}
+            : <View accessibilityLabel={failedStoreCover ? `تعذر تحميل غلاف متجر ${state.store.name}` : `غلاف متجر ${state.store.name} غير متوفر`} style={styles.storeCoverFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /><View style={styles.storeCoverFallbackCopy}><Text style={styles.storeCoverFallbackText}>{failedStoreCover ? "تعذر تحميل غلاف المتجر" : "غلاف المتجر غير متاح حاليًا"}</Text></View></View>}
           <BthwaniSurface tone="raised" style={styles.orderStatus} accessibilityLabel="حالة المتجر وطرق الطلب">
             <View style={styles.orderStatusTop}>
               <View style={styles.orderStatusCopy}>
@@ -626,7 +642,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           </BthwaniSurface>
           {bannerItems.length ? <View style={styles.bannerBlock}>
             <View style={styles.bannerHeading}><Text style={styles.bannerHeadingText}>{promotions.length && bannerOffers.length ? "عروض ومنتجات رائجة" : promotions.length ? "عروض هذا المتجر" : "الأكثر طلبًا خلال آخر 30 يومًا"}</Text><View style={styles.bannerHeadingActions}>{bannerItems.length > 1 ? <Text style={styles.bannerPause}>{bannerIndex + 1} من {bannerItems.length}</Text> : null}{bannerItems.length > 1 ? reduceMotion ? <Text accessibilityLabel="الحركة التلقائية متوقفة وفق إعدادات تقليل الحركة بالجهاز" style={styles.bannerPause}>الحركة متوقفة</Text> : <Pressable accessibilityRole="button" accessibilityLabel={bannerPaused ? "تشغيل حركة العروض والمنتجات" : "إيقاف حركة العروض والمنتجات"} onPress={() => setBannerPaused((paused) => !paused)}><Text style={styles.bannerPause}>{bannerPaused ? "تشغيل" : "إيقاف"}</Text></Pressable> : null}</View></View>
-            <ScrollView ref={tabIndex === activeTab ? bannerRef : undefined} horizontal pagingEnabled onTouchStart={() => setBannerPaused(true)} onMomentumScrollEnd={(event) => setBannerIndex(Math.round(event.nativeEvent.contentOffset.x / bannerWidth))} showsHorizontalScrollIndicator={false}>
+            <ScrollView ref={tabIndex === activeTab ? bannerRef : undefined} horizontal snapToInterval={bannerStep} decelerationRate="fast" contentContainerStyle={{ paddingHorizontal: bannerSidePadding, gap: spacing[2] }} onTouchStart={() => setBannerPaused(true)} onMomentumScrollEnd={(event) => setBannerIndex(Math.max(0, Math.min(bannerItems.length - 1, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / bannerStep))))} showsHorizontalScrollIndicator={false}>
               {bannerItems.map((item) => item.kind === "offer" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`عرض المنتج الرائج ${item.offer.productName}`} onPress={() => openOfferDetails(item.offer.offerId)} style={[styles.bannerCard, { width: bannerWidth }]}>
                 {item.offer.media[0]?.uri ? <Image source={{ uri: item.offer.media[0].uri }} accessibilityLabel={`صورة ${item.offer.productName}`} resizeMode="cover" style={styles.bannerImage} /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="trending" color={theme.interactiveText} size={sizing.iconMd} /></View>}
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>الأكثر طلبًا</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.offer.productName}</Text><Text style={styles.bannerPrice}>{storeMoney(item.offer.priceMinor, item.offer.currency)}</Text></View>
@@ -637,17 +653,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             </ScrollView>
           </View> : null}
           {bannerError ? <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل المنتجات الرائجة" onPress={() => void loadBanner()} style={styles.inlineRecovery}><Text style={styles.bannerPause}>تعذر تحميل المنتجات الرائجة · إعادة المحاولة</Text></Pressable> : null}
-          {catalogSearchOpen && !favoritesView ? <BthwaniSearchField
-            accessibilityLabel="البحث في منتجات المتجر"
-            containerStyle={styles.searchField}
-            editable={!catalogRefreshing && !loadingMore}
-            onChangeText={setCatalogQuery}
-            onClear={() => { setCatalogQuery(""); void reloadCatalog(selectedCategoryID, ""); }}
-            onSubmitEditing={() => void reloadCatalog(selectedCategoryID, catalogQuery)}
-            placeholder="ابحث باسم المنتج"
-            returnKeyType="search"
-            value={catalogQuery}
-          /> : null}
           <ScrollView horizontal contentContainerStyle={styles.categoryRail} showsHorizontalScrollIndicator={false}>
             <Pressable accessibilityRole="button" accessibilityLabel="عرض كل منتجات المتجر" accessibilityState={{ selected: !favoritesView && !popularView && !selectedCategoryID, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(0)} style={[styles.catalogFilterChip, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipSelected]}><Text style={[styles.catalogFilterChipLabel, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipLabelSelected]}>كل المنتجات</Text></Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel="عرض المنتجات المفضلة" accessibilityState={{ selected: favoritesView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(1)} style={[styles.catalogFilterChip, favoritesView && styles.catalogFilterChipSelected]}><BthwaniIcon name="favorite" color={favoritesView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text style={[styles.catalogFilterChipLabel, favoritesView && styles.catalogFilterChipLabelSelected]}>المفضلة</Text></Pressable>
@@ -690,7 +695,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       {openCart?.lines.length || cartReadError ? <SafeAreaView edges={["bottom"]} style={styles.cartSafeArea}>
         <BthwaniSurface tone="raised" style={styles.cartCta}>
           <View style={styles.cartSummary}>
-            <Text style={styles.cartTitle}>{cartReadError ? "تعذر تحديث السلة" : `سلتك · ${openCart?.lines.length ?? 0} منتجات`}</Text>
+            <Text style={styles.cartTitle}>{cartReadError ? "تعذر تحديث السلة" : `سلتك · ${openCart?.lines.length ?? 0} ${openCart?.lines.length === 1 ? "منتج" : openCart?.lines.length === 2 ? "منتجان" : "منتجات"}`}</Text>
             <Text style={styles.cartValue}>{cartReadError ? "افتح السلة لإعادة قراءة محتوياتها" : openCart?.lines.some((line) => line.requiresReview) ? "تحتاج بعض الأسعار إلى مراجعة" : `قيمة المنتجات ${storeMoney(openCart?.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0) ?? 0, "YER")}`}</Text>
           </View>
           <BthwaniButton accessibilityLabel="مراجعة محتويات السلة" disabled={mutationBusy} label="مراجعة السلة" onPress={() => router.push(`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}` as Href)} />
@@ -738,7 +743,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     storeCover: { borderRadius: radius.lg, height: 132, width: "100%" },
     storeCoverFallback: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], minHeight: 40, justifyContent: "flex-end", paddingHorizontal: spacing[3], paddingVertical: spacing[2], width: "100%" },
     storeCoverFallbackCopy: { alignItems: "flex-end", flex: 1, gap: spacing[1] },
-    storeCoverFallbackTitle: { ...typography.titleSm, color: theme.color },
     storeCoverFallbackText: { ...typography.caption, color: theme.colorMuted },
     bannerBlock: { gap: spacing[1] },
     bannerHeading: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
@@ -754,17 +758,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     bannerItemEyebrow: { ...typography.caption, color: theme.colorMuted },
     bannerProduct: { ...typography.bodyStrong, color: theme.color },
     bannerPrice: { ...typography.caption, color: theme.interactiveText },
-    sheetBackdrop: { backgroundColor: "rgba(0,0,0,0.42)", flex: 1, justifyContent: "flex-end" },
-    productSheet: { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, gap: spacing[3], maxHeight: "92%", padding: spacing[4], paddingBottom: spacing[5] },
-    sheetDragTarget: { alignItems: "center", height: spacing[4], justifyContent: "center", marginTop: -spacing[2], width: "100%" },
-    sheetDragHandle: { backgroundColor: theme.borderColorStrong, borderRadius: radius.round, height: spacing[1], width: spacing[8] },
-    sheetHeading: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-    sheetTitle: { ...typography.titleSm, color: theme.color, flex: 1, textAlign: "right" },
-    productGallery: { flexDirection: "row", gap: spacing[2] },
-    productGalleryImage: { backgroundColor: theme.surfaceInset, borderRadius: radius.lg, height: 210, width: 260 },
-    productGalleryFallback: { alignItems: "center", backgroundColor: theme.surfaceInset, borderRadius: radius.lg, gap: spacing[2], height: 210, justifyContent: "center", width: 260 },
-    productSheetContent: { gap: spacing[3], paddingBottom: spacing[2] },
-    sheetActions: { flexDirection: "row", gap: spacing[2] },
     state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
     title: { ...typography.titleSm, color: theme.color },
     muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 20 },
@@ -790,7 +783,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     modeOptionLabel: { ...typography.label, color: theme.color, textAlign: "center" },
     modeOptionState: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
     inlineRecovery: { alignItems: "flex-end", paddingVertical: spacing[1] },
-    modeDescription: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
     promotionList: { gap: spacing[2] },
     promotionNotice: { alignItems: "flex-start", gap: spacing[2] },
     categoryRail: { alignItems: "center", flexDirection: "row", gap: spacing[2], paddingVertical: spacing[1] },
@@ -805,8 +797,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     categoryThumbnailSelected: { backgroundColor: theme.interactiveText },
     categoryChipLabel: { ...typography.bodySm, color: theme.color, maxWidth: 132 },
     categoryChipLabelSelected: { color: theme.onAction },
-    searchField: { width: "100%" },
-    filterLabel: { ...typography.bodyStrong, color: theme.color },
+    headerSearchField: { flex: 1, minWidth: 0 },
     sectionTitle: { ...typography.bodyStrong, backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, color: theme.color, minHeight: 72, paddingHorizontal: spacing[4], paddingVertical: spacing[4], textAlign: "right", textAlignVertical: "center" },
     item: { borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[2], ...elevation.raised },
     productSummary: { alignItems: "stretch", flexDirection: "row", gap: spacing[3] },
@@ -817,28 +808,17 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     productCopyAndAction: { flex: 1, gap: spacing[1], justifyContent: "space-between", minWidth: 0, paddingVertical: spacing[1] },
     itemCopy: { alignItems: "flex-start", flex: 1, justifyContent: "center", minHeight: sizing.controlMd },
     itemTitle: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
+    productUnit: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
     productActionRow: { alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "space-between", width: "100%" },
     productActionPrice: { ...typography.bodyStrong, color: theme.interactiveText },
     addOfferButton: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.md, flexDirection: "row", gap: spacing[1], justifyContent: "center", minHeight: sizing.controlMd, minWidth: sizing.controlMd, paddingHorizontal: spacing[2] },
     addOfferPlus: { ...typography.bodyStrong, color: theme.onAction },
-    quantityHint: { ...typography.caption, color: theme.colorMuted },
-    quantityRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", width: "100%" },
-    quantityStepper: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
-    quantityAction: { alignItems: "center", backgroundColor: theme.actionSoft, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, height: sizing.controlMd, justifyContent: "center", minWidth: sizing.controlMd },
-    quantityActionDisabled: { backgroundColor: theme.surfaceInset },
-    quantityActionText: { ...typography.titleSm, color: theme.interactiveText },
-    quantityActionTextDisabled: { color: theme.colorMuted },
-    quantityValue: { ...typography.bodyStrong, color: theme.color, minWidth: 84, textAlign: "center" },
-    modifierGroup: { gap: spacing[2], marginTop: spacing[1] },
-    modifierOptions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
-    invalidModifierOption: { borderColor: theme.danger },
     emptySection: { alignItems: "center", borderRadius: radius.lg, gap: spacing[2], padding: spacing[4] },
     cartSafeArea: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingHorizontal: spacing[4], paddingTop: spacing[2] },
     cartCta: { alignItems: "center", borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], padding: spacing[3] },
     cartSummary: { flex: 1, gap: spacing[1] },
     cartTitle: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
     cartValue: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
-    success: { ...typography.bodySm, color: theme.success, lineHeight: 19 },
     validationError: { ...typography.bodySm, color: theme.danger, lineHeight: 19 },
     error: { ...typography.bodySm, color: theme.danger, lineHeight: 19 },
     loadMoreButton: { width: "100%" },

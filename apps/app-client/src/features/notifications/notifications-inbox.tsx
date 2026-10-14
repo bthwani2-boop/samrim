@@ -165,7 +165,7 @@ function formatNotificationDate(value: string) {
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({
-  container: { backgroundColor: theme.background, direction: "rtl", flexGrow: 1, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
+  container: { backgroundColor: theme.background, flexGrow: 1, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
   screenHeader: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
   headingCopy: { flex: 1, gap: spacing[1] },
   eyebrow: { ...typography.label, color: theme.interactiveText },

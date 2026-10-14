@@ -102,7 +102,20 @@ if (app === "app-client") {
   assert.ok(identityGateContent.includes("authenticatedContent={<Redirect"), `${app}: managed identity gate must redirect into the authenticated route tree`);
 }
 console.log(`MOBILE_ROUTE_TREE=PASS app=${app} routes=${routePaths.join(",")}`);
+if (app === "app-client") {
+  const storeDetail = fs.readFileSync(path.join(appDir, "src/features/store-discovery/store-detail.tsx"), "utf8");
+  const notificationInbox = fs.readFileSync(path.join(appDir, "src/features/notifications/notifications-inbox.tsx"), "utf8");
+  assert.match(storeDetail, /inverted=\{I18nManager\.isRTL\}/, "client: horizontal pager needs native RTL item-order normalization to keep tab IDs aligned");
+  assert.doesNotMatch(notificationInbox, /direction: "rtl"/, "client: notifications must inherit the native RTL direction");
+  assert.equal((storeDetail.match(/<BthwaniSearchField\b/g) ?? []).length, 1, "client: store search must have exactly one field");
+  assert.ok(storeDetail.includes('containerStyle={styles.headerSearchField}'), "client: store search must be owned by the top header");
+  assert.doesNotMatch(storeDetail, /storeCoverFallbackTitle/, "client: a missing cover must not duplicate the store name");
+  assert.ok(storeDetail.includes('snapToInterval={bannerStep}'), "client: compact banner cards must snap at their actual step width");
+  console.log("MOBILE_STORE_RTL_AND_SEARCH=PASS header search, native pager, compact banners, unique store name");
+}
 if (app === "app-partner") {
+  const orderManagement = fs.readFileSync(path.join(appDir, "src/features/order-management/order-management.tsx"), "utf8");
+  assert.doesNotMatch(orderManagement, /row-reverse/, "partner: order filters and summaries must use native RTL row layout");
   const storeOfferContent = fs.readFileSync(path.join(appDir, "src", "features", "store-offer", "store-offer.tsx"), "utf8");
   assert.ok(storeOfferContent.includes("label={category.pathAr}"), `${app}: shared catalog category choices must display their full hierarchy path`);
   console.log("MOBILE_CATALOG_CATEGORY_PATH=PASS shared catalog proposals display the full category hierarchy");
