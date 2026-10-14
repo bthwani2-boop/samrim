@@ -182,7 +182,7 @@ func visibleNotificationEvents(role string) string {
 		FROM dsh.captain_audit audit
 		JOIN dsh.commerce_orders orders ON orders.id = audit.order_id
 		%s
-		  AND audit.event_type NOT IN ('dispatch_offer_created', 'dispatch_offer_rejected', 'dispatch_offer_expired', 'captain_offer_superseded_by_access')`
+		  AND audit.event_type NOT IN ('dispatch_offer_created', 'dispatch_offer_rejected', 'dispatch_offer_expired', 'dispatch_offer_superseded', 'captain_offer_superseded_by_access')`
 	const captain = `
 		SELECT 'captain:' || audit.id::text AS notification_id, audit.event_type, audit.order_id,
 		       ''::text AS joining_case_id, ''::text AS store_id, audit.to_state, audit.created_at
@@ -204,7 +204,7 @@ func visibleNotificationEvents(role string) string {
 		SELECT 'captain:' || audit.id::text AS notification_id, audit.event_type, audit.order_id,
 		       ''::text AS joining_case_id, ''::text AS store_id, audit.to_state, audit.created_at
 		FROM dsh.captain_audit audit
-		WHERE audit.order_id IS NOT NULL
+		WHERE audit.order_id IS NOT NULL AND audit.event_type <> 'dispatch_offer_superseded'
 		UNION ALL
 		SELECT 'field:' || audit.id::text AS notification_id, audit.event_type, ''::text AS order_id,
 		       audit.case_id::text AS joining_case_id, COALESCE(cases.store_id, '')::text AS store_id, audit.to_state, audit.created_at

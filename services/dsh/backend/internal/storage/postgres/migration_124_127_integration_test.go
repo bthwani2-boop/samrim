@@ -13,7 +13,7 @@ import (
 
 // Verify a fresh isolated database and a real v123-to-v127 upgrade, without
 // resetting or mutating the persistent local development database.
-func TestIntegrationMigrations124Through127FreshAndUpgrade(t *testing.T) {
+func TestIntegrationMigrations124Through128FreshAndUpgrade(t *testing.T) {
 	rootURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
 	if rootURL == "" {
 		t.Skip("DSH_DATABASE_URL must point to a disposable PostgreSQL server")
@@ -33,6 +33,7 @@ func TestIntegrationMigrations124Through127FreshAndUpgrade(t *testing.T) {
 	}{
 		{name: "fresh", prefix: 0},
 		{name: "upgrade-from-v123", prefix: 123},
+		{name: "upgrade-from-v127", prefix: 127},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			withFreshDatabase(t, rootDB, rootURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, source []string) {
@@ -52,11 +53,11 @@ func TestIntegrationMigrations124Through127FreshAndUpgrade(t *testing.T) {
 				if err := db.QueryRowContext(ctx, "SELECT count(*), max(version) FROM dsh.schema_migrations").Scan(&count, &latest); err != nil {
 					t.Fatal(err)
 				}
-				if count != 127 || latest != 127 {
+				if count != 128 || latest != 128 {
 					t.Fatalf("migration graph not committed: count=%d latest=%d", count, latest)
 				}
-				expected := []string{"124_promotion_discount_budget.sql", "125_store_cover_media.sql", "126_store_internal_photos.sql", "127_captain_presence_latest.sql"}
-				rows, err := db.QueryContext(ctx, "SELECT name FROM dsh.schema_migrations WHERE version BETWEEN 124 AND 127 ORDER BY version")
+				expected := []string{"124_promotion_discount_budget.sql", "125_store_cover_media.sql", "126_store_internal_photos.sql", "127_captain_presence_latest.sql", "128_captain_parallel_dispatch.sql"}
+				rows, err := db.QueryContext(ctx, "SELECT name FROM dsh.schema_migrations WHERE version BETWEEN 124 AND 128 ORDER BY version")
 				if err != nil {
 					t.Fatal(err)
 				}

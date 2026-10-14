@@ -92,3 +92,10 @@ func TestCaptainReassignmentNotificationDistinguishesRevokedFromNewOffer(t *test
 		t.Fatalf("new captain must receive an offer, got %+v", next)
 	}
 }
+
+func TestParallelDispatchSupersededCaptainNotification(t *testing.T) {
+	kind, title, body := message("dispatch_offer_superseded", "captain", "parallel-order", "superseded")
+	if kind != "CAPTAIN_OFFER" || title != "تحديث عرض التوصيل" || body == "" {
+		t.Fatalf("winner supersession notification was not rendered: kind=%q title=%q body=%q", kind, title, body)
+	}
+}

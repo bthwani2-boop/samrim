@@ -1071,6 +1071,126 @@ func ReadStoreCaptainDispatchOffer(ctx context.Context, db *sql.DB, storeID, ord
 	return ReadCaptainOffer(ctx, db, offerID)
 }
 
+// dispatchCaptainCandidatesTx creates at most three offers in one order-locked
+// transaction. Only BTHWANI_CAPTAIN calls this helper; store Captain is unchanged.
+func dispatchCaptainCandidatesTx(ctx context.Context, tx *sql.Tx, orderID, excludeCaptainID, idempotencyKey, requestHash, actingActorID, correlationID, auditEvent, fromState string) (string, error) {
+	query := `SELECT id,actor_id FROM dsh.captain_admissions WHERE state='eligible'
+		AND requires_profile_review=false AND availability_state='available'
+		AND NOT EXISTS (SELECT 1 FROM dsh.captain_dispatch_offers o WHERE o.captain_actor_id=dsh.captain_admissions.actor_id AND o.state='offered')
+		AND NOT EXISTS (SELECT 1 FROM dsh.captain_assignments a WHERE a.captain_actor_id=dsh.captain_admissions.actor_id AND a.state IN ('assigned','in_custody'))`
+	args := []any{}
+	if excludeCaptainID != "" {
+		query += " AND actor_id<>$1"
+		args = append(args, excludeCaptainID)
+	}
+	query += " ORDER BY updated_at,actor_id LIMIT 3 FOR UPDATE SKIP LOCKED"
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return "", err
+	}
+	type candidate struct{ admissionID, actorID string }
+	candidates := make([]candidate, 0, 3)
+	for rows.Next() {
+		var c candidate
+		if err := rows.Scan(&c.admissionID, &c.actorID); err != nil {
+			_ = rows.Close()
+			return "", err
+		}
+		candidates = append(candidates, c)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return "", err
+	}
+	if err := rows.Close(); err != nil {
+		return "", err
+	}
+	if len(candidates) == 0 {
+		return "", ErrCaptainNoAvailable
+	}
+	var firstID string
+	expiresAt := time.Now().UTC().Add(captainOfferTimeout)
+	for i, c := range candidates {
+		id, err := newID("captain-offer")
+		if err != nil {
+			return "", err
+		}
+		key := idempotencyKey
+		if i > 0 {
+			key = fmt.Sprintf("%s:offer-%d", idempotencyKey, i+1)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_dispatch_offers(id,order_id,captain_actor_id,state,expires_at,version,idempotency_key,request_hash) VALUES($1,$2,$3,'offered',$4,1,$5,$6)`, id, orderID, c.actorID, expiresAt, key, requestHash); err != nil {
+			if isUniqueViolation(err) {
+				return "", ErrCaptainDispatchConflict
+			}
+			return "", err
+		}
+		if err := reserveCaptainAvailabilityTx(ctx, tx, c.admissionID, c.actorID, key, requestHash, actingActorID, correlationID); err != nil {
+			return "", err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),'offered',1,$9)`, auditEvent, key, correlationID, actingActorID, orderID, id, c.actorID, fromState, requestHash); err != nil {
+			return "", err
+		}
+		if i == 0 {
+			firstID = id
+		}
+	}
+	return firstID, nil
+}
+
+// supersedePendingCaptainOffersTx removes losing offers before restoring
+// availability, ensuring their late acceptances cannot assign the order.
+func supersedePendingCaptainOffersTx(ctx context.Context, tx *sql.Tx, orderID, winningOfferID, actingActorID, correlationID string) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id,captain_actor_id FROM dsh.captain_dispatch_offers WHERE order_id=$1 AND state='offered' AND id<>$2 ORDER BY id FOR UPDATE`, orderID, winningOfferID)
+	if err != nil {
+		return err
+	}
+	type loser struct{ id, actorID string }
+	losers := make([]loser, 0, 3)
+	for rows.Next() {
+		var l loser
+		if err := rows.Scan(&l.id, &l.actorID); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		losers = append(losers, l)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if len(losers) == 0 {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE dsh.captain_dispatch_offers SET state='superseded',version=version+1,updated_at=clock_timestamp() WHERE order_id=$1 AND state='offered' AND id<>$2`, orderID, winningOfferID); err != nil {
+		return err
+	}
+	var paymentIntentID sql.NullString
+	var paymentState string
+	if err := tx.QueryRowContext(ctx, `SELECT payment_intent_id,payment_state FROM dsh.commerce_orders WHERE id=$1`, orderID).Scan(&paymentIntentID, &paymentState); err != nil {
+		return err
+	}
+	for _, l := range losers {
+		key := "captain-superseded:" + l.id
+		hash := hashFacts("dispatch-offer-superseded", orderID, l.id)
+		if err := restoreCaptainAvailabilityTx(ctx, tx, l.actorID, key, hash, actingActorID, correlationID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('dispatch_offer_superseded',$1,$2,$3,$4,$5,$6,'offered','superseded',2,$7)`, key, correlationID, actingActorID, orderID, l.id, l.actorID, hash); err != nil {
+			return err
+		}
+		if paymentIntentID.Valid && paymentState == "REQUIRES_COLLECTION" {
+			if err := enqueueFinancialHandoffTx(ctx, tx, FinancialHandoffOutbox{EffectType: "CAPTAIN_COD_RELEASE", SourceRef: l.id, OrderID: orderID, PaymentIntentID: paymentIntentID.String, CaptainActorID: l.actorID, IdempotencyKey: key, CorrelationID: correlationID, ActingActorID: actingActorID}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func createCaptainDispatchOffer(ctx context.Context, db *sql.DB, orderID, excludeCaptainID, idempotencyKey, requestHash, actingActorID, correlationID, operation string) (CaptainOffer, bool, error) {
 	if db == nil || strings.TrimSpace(orderID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CaptainOffer{}, false, ErrCaptainOperationConflict
@@ -1113,37 +1233,11 @@ func createCaptainDispatchOffer(ctx context.Context, db *sql.DB, orderID, exclud
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return CaptainOffer{}, false, err
 	}
-	var admissionID, captainID string
-	query := "SELECT id,actor_id FROM dsh.captain_admissions WHERE state='eligible' AND requires_profile_review=false AND availability_state='available' AND NOT EXISTS (SELECT 1 FROM dsh.captain_dispatch_offers WHERE captain_actor_id=dsh.captain_admissions.actor_id AND state='offered') AND NOT EXISTS (SELECT 1 FROM dsh.captain_assignments WHERE captain_actor_id=dsh.captain_admissions.actor_id AND state IN ('assigned','in_custody'))"
-	args := []any{}
-	if strings.TrimSpace(excludeCaptainID) != "" {
-		args = append(args, strings.TrimSpace(excludeCaptainID))
-		query += " AND actor_id<>$1"
-	}
-	query += " ORDER BY updated_at,actor_id LIMIT 1 FOR UPDATE SKIP LOCKED"
-	if err := tx.QueryRowContext(ctx, query, args...).Scan(&admissionID, &captainID); errors.Is(err, sql.ErrNoRows) {
-		return CaptainOffer{}, false, ErrCaptainNoAvailable
-	} else if err != nil {
-		return CaptainOffer{}, false, err
-	}
-	offerID, err := newID("captain-offer")
+	offerID, err := dispatchCaptainCandidatesTx(ctx, tx, orderID, excludeCaptainID, idempotencyKey, requestHash, actingActorID, correlationID, "dispatch_offer_created", "")
 	if err != nil {
 		return CaptainOffer{}, false, err
 	}
-	expiresAt := time.Now().UTC().Add(captainOfferTimeout)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_dispatch_offers(id,order_id,captain_actor_id,state,expires_at,version,idempotency_key,request_hash) VALUES($1,$2,$3,'offered',$4,1,$5,$6)`, offerID, orderID, captainID, expiresAt, idempotencyKey, requestHash); err != nil {
-		if isUniqueViolation(err) {
-			return CaptainOffer{}, false, ErrCaptainDispatchConflict
-		}
-		return CaptainOffer{}, false, err
-	}
-	if err := reserveCaptainAvailabilityTx(ctx, tx, admissionID, captainID, idempotencyKey, requestHash, actingActorID, correlationID); err != nil {
-		return CaptainOffer{}, false, err
-	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,offer_id,result_version) VALUES($1,$2,$3,$4,$5,1)`, idempotencyKey, requestHash, operation, orderID, offerID); err != nil {
-		return CaptainOffer{}, false, err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,to_state,result_version,request_hash) VALUES('dispatch_offer_created',$1,$2,$3,$4,$5,$6,'offered',1,$7)`, idempotencyKey, correlationID, actingActorID, orderID, offerID, captainID, requestHash); err != nil {
 		return CaptainOffer{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -1257,6 +1351,16 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 			return CaptainOfferResult{}, err
 		}
 		return CaptainOfferResult{Offer: offer, Assignment: assignment, Replayed: true}, nil
+	}
+	// Every captain acceptance must lock the order before its offer. Otherwise
+	// simultaneous acceptances could deadlock while superseding other offers.
+	var lockedOrderID string
+	if err := tx.QueryRowContext(ctx, `SELECT o.id FROM dsh.commerce_orders o
+		JOIN dsh.captain_dispatch_offers offer ON offer.order_id=o.id
+		WHERE offer.id=$1 FOR UPDATE OF o`, offerID).Scan(&lockedOrderID); errors.Is(err, sql.ErrNoRows) {
+		return CaptainOfferResult{}, ErrCaptainOfferNotFound
+	} else if err != nil {
+		return CaptainOfferResult{}, err
 	}
 	var offer CaptainOffer
 	err = tx.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),o.address_text,o.payment_cash_amount_minor,o.currency,o.payment_method,o.payment_state
@@ -1401,6 +1505,11 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 			return CaptainOfferResult{}, err
 		}
 	}
+	if offer.SourceStoreID == "" {
+		if err := supersedePendingCaptainOffersTx(ctx, tx, offer.OrderID, offer.ID, captainActorID, correlationID); err != nil {
+			return CaptainOfferResult{}, err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,offer_id,assignment_id,result_version) VALUES($1,$2,'respond_offer',$3,$4,$5,1)`, idempotencyKey, requestHash, offer.OrderID, offer.ID, assignmentID); err != nil {
 		return CaptainOfferResult{}, err
 	}
@@ -1434,9 +1543,9 @@ func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, r
 		return CaptainOffer{}, false, err
 	}
 	if replay != nil {
-		offer, readErr := readCaptainOfferTx(ctx, tx, "offer.id=$1", replay.OfferID)
-		if readErr != nil {
-			return CaptainOffer{}, false, readErr
+		offer, err := readCaptainOfferTx(ctx, tx, "offer.id=$1", replay.OfferID)
+		if err != nil {
+			return CaptainOffer{}, false, err
 		}
 		if err := tx.Commit(); err != nil {
 			return CaptainOffer{}, false, err
@@ -1456,7 +1565,7 @@ func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, r
 	if state != "READY_FOR_DISPATCH" && state != "CAPTAIN_ASSIGNED" {
 		return CaptainOffer{}, false, ErrCaptainCustodyConflict
 	}
-	var currentAssignmentID, oldCaptain, assignmentState, oldOfferID string
+	var currentAssignmentID, oldCaptain, assignmentState string
 	err = tx.QueryRowContext(ctx, "SELECT id,captain_actor_id,state FROM dsh.captain_assignments WHERE order_id=$1 AND state IN ('assigned','in_custody') FOR UPDATE", orderID).Scan(&currentAssignmentID, &oldCaptain, &assignmentState)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return CaptainOffer{}, false, err
@@ -1467,25 +1576,10 @@ func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, r
 	if state == "CAPTAIN_ASSIGNED" && currentAssignmentID == "" {
 		return CaptainOffer{}, false, ErrCaptainAssignmentConflict
 	}
+	// A previous parallel batch may contain three active offers, not one.
 	if oldCaptain == "" {
-		if err := tx.QueryRowContext(ctx, "SELECT id,captain_actor_id FROM dsh.captain_dispatch_offers WHERE order_id=$1 AND state='offered' FOR UPDATE", orderID).Scan(&oldOfferID, &oldCaptain); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return CaptainOffer{}, false, err
-		}
-	}
-	var candidateAdmissionID, captainID string
-	if err := tx.QueryRowContext(ctx, "SELECT id,actor_id FROM dsh.captain_admissions WHERE state='eligible' AND requires_profile_review=false AND availability_state='available' AND actor_id<>$1 AND NOT EXISTS (SELECT 1 FROM dsh.captain_dispatch_offers WHERE captain_actor_id=dsh.captain_admissions.actor_id AND state='offered') AND NOT EXISTS (SELECT 1 FROM dsh.captain_assignments WHERE captain_actor_id=dsh.captain_admissions.actor_id AND state IN ('assigned','in_custody')) ORDER BY updated_at,actor_id LIMIT 1 FOR UPDATE SKIP LOCKED", oldCaptain).Scan(&candidateAdmissionID, &captainID); errors.Is(err, sql.ErrNoRows) {
-		return CaptainOffer{}, false, ErrCaptainNoAvailable
-	} else if err != nil {
-		return CaptainOffer{}, false, err
-	}
-	if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_dispatch_offers SET state='superseded',version=version+1,updated_at=clock_timestamp() WHERE order_id=$1 AND state='offered'", orderID); err != nil {
-		return CaptainOffer{}, false, err
-	}
-	if oldOfferID != "" {
-		if paymentState != "REQUIRES_COLLECTION" || !paymentIntentID.Valid {
-			return CaptainOffer{}, false, ErrPaymentStateConflict
-		}
-		if err := enqueueFinancialHandoffTx(ctx, tx, FinancialHandoffOutbox{EffectType: "CAPTAIN_COD_RELEASE", SourceRef: oldOfferID, OrderID: orderID, PaymentIntentID: paymentIntentID.String, CaptainActorID: oldCaptain, IdempotencyKey: idempotencyKey, CorrelationID: correlationID, ActingActorID: actingActorID}); err != nil {
+		err := tx.QueryRowContext(ctx, "SELECT captain_actor_id FROM dsh.captain_dispatch_offers WHERE order_id=$1 AND state='offered' ORDER BY created_at,id LIMIT 1", orderID).Scan(&oldCaptain)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return CaptainOffer{}, false, err
 		}
 	}
@@ -1499,35 +1593,27 @@ func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, r
 		if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_handoffs SET state='superseded',version=version+1,updated_at=clock_timestamp() WHERE assignment_id=$1", currentAssignmentID); err != nil {
 			return CaptainOffer{}, false, err
 		}
-		if state == "CAPTAIN_ASSIGNED" {
-			if _, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state='READY_FOR_DISPATCH',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='CAPTAIN_ASSIGNED'", orderID); err != nil {
-				return CaptainOffer{}, false, err
-			}
+		if _, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state='READY_FOR_DISPATCH',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='CAPTAIN_ASSIGNED'", orderID); err != nil {
+			return CaptainOffer{}, false, err
 		}
 		if err := enqueueFinancialHandoffTx(ctx, tx, FinancialHandoffOutbox{EffectType: "CAPTAIN_COD_RELEASE", SourceRef: currentAssignmentID, OrderID: orderID, PaymentIntentID: paymentIntentID.String, CaptainActorID: oldCaptain, IdempotencyKey: idempotencyKey, CorrelationID: correlationID, ActingActorID: actingActorID}); err != nil {
 			return CaptainOffer{}, false, err
 		}
 	}
-	if oldCaptain != "" {
+	// Invalidate every previous offer before selecting the next group.
+	if err := supersedePendingCaptainOffersTx(ctx, tx, orderID, "", actingActorID, correlationID); err != nil {
+		return CaptainOffer{}, false, err
+	}
+	if currentAssignmentID != "" {
 		if err := restoreCaptainAvailabilityTx(ctx, tx, oldCaptain, idempotencyKey+":restore", requestHash, actingActorID, correlationID); err != nil {
 			return CaptainOffer{}, false, err
 		}
 	}
-	offerID, err := newID("captain-offer")
+	offerID, err := dispatchCaptainCandidatesTx(ctx, tx, orderID, oldCaptain, idempotencyKey, requestHash, actingActorID, correlationID, "captain_assignment_reassigned", state)
 	if err != nil {
 		return CaptainOffer{}, false, err
 	}
-	expiresAt := time.Now().UTC().Add(captainOfferTimeout)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_dispatch_offers(id,order_id,captain_actor_id,state,expires_at,version,idempotency_key,request_hash) VALUES($1,$2,$3,'offered',$4,1,$5,$6)`, offerID, orderID, captainID, expiresAt, idempotencyKey, requestHash); err != nil {
-		return CaptainOffer{}, false, err
-	}
-	if err := reserveCaptainAvailabilityTx(ctx, tx, candidateAdmissionID, captainID, idempotencyKey+":reserve", requestHash, actingActorID, correlationID); err != nil {
-		return CaptainOffer{}, false, err
-	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,offer_id,result_version) VALUES($1,$2,'reassign',$3,$4,1)`, idempotencyKey, requestHash, orderID, offerID); err != nil {
-		return CaptainOffer{}, false, err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('captain_assignment_reassigned',$1,$2,$3,$4,$5,$6,$7,'offered',1,$8)`, idempotencyKey, correlationID, actingActorID, orderID, offerID, captainID, state, requestHash); err != nil {
 		return CaptainOffer{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
