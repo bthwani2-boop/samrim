@@ -1,4 +1,6 @@
 import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import * as Location from "expo-location";
+import { publishCaptainPresence } from "./captain-presence-publisher";
 import { type CaptainAdmission, captainAdmissionStateLabel, captainAvailabilityStateLabel } from "@bthwani/dsh";
 import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -75,6 +77,12 @@ const theme = useAppearanceTheme();
       const current = currentIdentityState();
       if (current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return;
       await captainClient().setCaptainAvailability(token, available, currentAdmission.version);
+      if (available) {
+        try {
+          const permission = await Location.requestForegroundPermissionsAsync();
+          if (permission.granted) void publishCaptainPresence().catch(() => {});
+        } catch { /* Availability remains canonical even if location permission is declined. */ }
+      }
       const after = currentIdentityState();
       if (after.kind !== "authenticated" || !isCurrentCaptainActor(actorID, after.identity.subject.trim())) return;
       if (!(await load())) setError("وصل رد تغيير التوفر، لكن تعذرت قراءة الحالة الجديدة. حدّث الجاهزية قبل إجراء آخر.");

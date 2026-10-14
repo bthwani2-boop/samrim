@@ -50,8 +50,8 @@ func TestCaptainRegisteredRoutesRejectUnauthenticatedRequests(t *testing.T) {
 	server.Register(mux)
 
 	routes := captainRegisteredRoutes(t)
-	if len(routes) != 36 {
-		t.Fatalf("Captain route census changed: got %d, want 36; review authentication for every new or removed route", len(routes))
+	if len(routes) != 38 {
+		t.Fatalf("Captain route census changed: got %d, want 38; review authentication for every new or removed route", len(routes))
 	}
 	for _, route := range routes {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {

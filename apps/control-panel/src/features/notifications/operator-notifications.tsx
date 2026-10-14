@@ -2,6 +2,8 @@
 
 import type { Notification } from "@bthwani/dsh";
 import Link from "next/link";
+import { operationNotificationHref } from "./notification-operation-link";
+import styles from "./operator-notifications.module.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "../../shell/page-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
@@ -24,6 +26,7 @@ export function OperatorNotifications() {
   const [nextCursor, setNextCursor] = useState("");
   const [routeStateReady, setRouteStateReady] = useState(false);
   const requestSequence = useRef(0);
+  const readMutationInFlight = useRef(false);
 
   useEffect(() => {
     const syncPageFromUrl = () => {
@@ -89,7 +92,8 @@ export function OperatorNotifications() {
   }
 
   async function markRead(item: Notification) {
-    if (item.readAt || pendingId) return;
+    if (item.readAt || pendingId || readMutationInFlight.current) return;
+    readMutationInFlight.current = true;
     setPendingId(item.id);
     setError("");
     try {
@@ -109,6 +113,7 @@ export function OperatorNotifications() {
         ? "لم نتأكد من نتيجة تحديد الإشعار كمقروء؛ تم تحديث القائمة من الخادم."
         : "لم نتأكد من نتيجة تحديد الإشعار كمقروء وتعذرت إعادة القراءة. أعد تحديث الإشعارات قبل محاولة أخرى.");
     } finally {
+      readMutationInFlight.current = false;
       setPendingId("");
     }
   }
@@ -144,18 +149,21 @@ function NotificationGroup({ title, count, items, pendingId, onMarkRead }: Reado
       </div>
       <div className="operator-notification-list">
         {items.map((item) => {
-          const href = notificationHref(item);
+          const linkedRecordHref = item.joiningCaseId?.trim() || item.storeId?.trim() ? notificationHref(item) : null;
+          const orderHref = operationNotificationHref(item.orderId);
           return (
-            <article key={item.id} className={`operator-notification-card${item.readAt ? " is-read" : " is-unread"}`} aria-label={`${item.title}، ${item.readAt ? "مقروء" : "جديد"}`}>
+            <article key={item.id} className={`operator-notification-card ${styles.card}${item.readAt ? " is-read" : " is-unread"}`} aria-label={`${item.title}، ${item.readAt ? "مقروء" : "جديد"}`}>
               <span className={`operator-notification-kind operator-notification-kind-${notificationKindTone(item.kind)}`} aria-hidden="true">{notificationKindLabel(item.kind)}</span>
               <span className="operator-notification-copy">
                 <strong>{item.title}</strong>
                 <span>{item.body}</span>
                 <time dateTime={item.createdAt}>{formatNotificationDate(item.createdAt)}</time>
               </span>
-              <div className="operator-notification-actions">
-                {href ? <Link className="button button-secondary" href={href}>فتح السجل</Link> : null}
-                {item.readAt ? <span className="operator-notification-state">مقروء</span> : <button type="button" className="button button-quiet" disabled={pendingId === item.id} onClick={() => void onMarkRead(item)}>{pendingId === item.id ? "جارٍ التحديث…" : "تحديد كمقروء"}</button>}
+              <span className="operator-notification-state">{item.readAt ? "مقروء" : "جديد"}</span>
+              <div className={`operator-notification-actions ${styles.actions}`}>
+                {linkedRecordHref ? <Link className={styles.action} href={linkedRecordHref}>فتح السجل</Link> : null}
+                {orderHref ? <Link className={styles.action} href={orderHref}>فتح الطلب</Link> : null}
+                {!item.readAt ? <button className={styles.action} type="button" disabled={Boolean(pendingId)} onClick={() => void onMarkRead(item)} aria-label={`تمييز ${item.title} كمقروء`}>تمييز كمقروء</button> : null}
               </div>
             </article>
           );

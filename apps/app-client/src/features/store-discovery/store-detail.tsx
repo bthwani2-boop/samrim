@@ -318,7 +318,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     for (const section of activeSections) {
       const sectionOffers = section.offerIds
         .map((offerID) => state.catalog.offers.find((offer) => offer.offerId === offerID))
-        .filter((offer): offer is PublicCatalogResponse["offers"][number] => Boolean(offer) && !seenOfferIDs.has(offer.offerId));
+        .filter((offer): offer is PublicCatalogResponse["offers"][number] => offer !== undefined && !seenOfferIDs.has(offer.offerId));
       if (sectionOffers.length === 0) continue;
       catalogRows.push({ kind: "section", key: `section:${section.id}`, title: section.nameAr });
       sectionOffers.forEach(appendOffer);
@@ -626,7 +626,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             <View style={styles.sheetHeading}><Text accessibilityRole="header" style={styles.sheetTitle}>{detailOffer?.productName}</Text><BthwaniIconButton icon="close" label="إغلاق تفاصيل المنتج" onPress={() => setDetailOfferID("")} size={sizing.controlMd} tone="soft" /></View>
             {detailOffer ? <>
               <ScrollView horizontal contentContainerStyle={styles.productGallery} showsHorizontalScrollIndicator={false}>
-                {detailOffer.media.length && !failedProductImageIDs.has(detailOffer.offerId) ? detailOffer.media.map((media) => <Image key={media.id} accessibilityLabel={`صورة ${detailOffer.productName}`} onError={() => setFailedProductImageIDs((current) => new Set(current).add(detailOffer.offerId))} source={{ uri: media.uri }} resizeMode="cover" style={styles.productGalleryImage} />) : <View accessibilityLabel={`لا توجد صور متاحة لـ ${detailOffer.productName}`} style={styles.productGalleryFallback}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.muted}>لا توجد صور متاحة لهذا المنتج</Text></View>}
+                {detailOffer.media.length && !failedProductImageIDs.has(detailOffer.offerId) ? detailOffer.media.map((media) => <Image key={media.uri} accessibilityLabel={`صورة ${detailOffer.productName}`} onError={() => setFailedProductImageIDs((current) => new Set(current).add(detailOffer.offerId))} source={{ uri: media.uri }} resizeMode="cover" style={styles.productGalleryImage} />) : <View accessibilityLabel={`لا توجد صور متاحة لـ ${detailOffer.productName}`} style={styles.productGalleryFallback}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.muted}>لا توجد صور متاحة لهذا المنتج</Text></View>}
               </ScrollView>
               <ScrollView contentContainerStyle={styles.productSheetContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
                 <Text style={styles.productActionPrice}>{storeMoney(detailOffer.priceMinor, detailOffer.currency)}</Text>
@@ -667,7 +667,7 @@ function fulfillmentModeDescription(mode: CustomerFulfillmentMode): string {
 }
 
 function storeMoney(amountMinor: number, currency: string): string {
-  return formatMoney(amountMinor, currency).replace(/ريال يمني/g, "ريال");
+  return (currency === "YER" ? formatMoney(amountMinor, "YER") : `${amountMinor} ${currency}`).replace(/ريال يمني/g, "ريال");
 }
 
 function orderabilityBadge(orderability: StoreOrderability | undefined): string {

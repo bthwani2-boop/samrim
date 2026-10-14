@@ -1,0 +1,36 @@
+.card {
+  flex-wrap: wrap;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-base);
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.action:hover {
+  background: var(--surface-muted);
+}
+.action:focus-visible {
+  outline: 2px solid var(--action-bg);
+  outline-offset: 2px;
+}
+.action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

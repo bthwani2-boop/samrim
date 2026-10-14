@@ -23,7 +23,7 @@ export function PromotionCard({ promotion }: { promotion: PublicPromotionView })
 }
 
 function discoveryMoney(amountMinor: number, currency: string): string {
-  return formatMoney(amountMinor, currency).replace(/ريال يمني/g, "ريال");
+  return (currency === "YER" ? formatMoney(amountMinor, "YER") : `${amountMinor} ${currency}`).replace(/ريال يمني/g, "ريال");
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {

@@ -2,7 +2,6 @@ import { toAsciiDigits } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniMap, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, type CashLiabilityItem, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Text, TextInput, View } from "react-native";
@@ -11,7 +10,7 @@ import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySe
 import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { canActOnCaptainTask } from "./captain-task-eligibility";
-import { canPublishCaptainLocation, isCurrentCaptainActor } from "./captain-session-scope";
+import { isCurrentCaptainActor } from "./captain-session-scope";
 import { OrderConversation } from "./order-conversation";
 
 type PendingCaptainCompletionAttempt = Readonly<{
@@ -62,15 +61,13 @@ export function CaptainDeliveries() {
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
   const readSequence = useRef(0);
+  const mutationInFlight = useRef(false);
   const [tasks, setTasks] = useState<Readonly<Record<string, CaptainDeliveryTask>>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [collectionAmounts, setCollectionAmounts] = useState<Record<string, string>>({});
   const [deliveryProofCodes, setDeliveryProofCodes] = useState<Record<string, string>>({});
-  const [locationError, setLocationError] = useState("");
-  const [lastLocationUpdatedAt, setLastLocationUpdatedAt] = useState("");
-  const [captainPosition, setCaptainPosition] = useState<{ latitude: number; longitude: number } | null>(null);
   const [cashLiability, setCashLiability] = useState<{ items: ReadonlyArray<CashLiabilityItem>; totalAmountMinor: number } | null>(null);
   const [cashRemittanceReferences, setCashRemittanceReferences] = useState<Record<string, string>>({});
   const [cashBusy, setCashBusy] = useState("");
@@ -79,7 +76,6 @@ export function CaptainDeliveries() {
   const [completionStorageIssue, setCompletionStorageIssue] = useState(false);
   const [completionRejected, setCompletionRejected] = useState(false);
   const currentActorReadback = isCurrentCaptainActor(loadedActorID, activeActorID);
-  const activeAssignmentID = useMemo(() => currentActorReadback ? assignments.find((assignment) => assignment.state === "in_custody")?.id ?? "" : "", [assignments, currentActorReadback]);
 
   const load = useCallback(async () => {
     const sequence = ++readSequence.current;
@@ -167,67 +163,9 @@ export function CaptainDeliveries() {
     void load();
   }, [activeActorID, load]);
 
-  useEffect(() => {
-    if (!canPublishCaptainLocation(loadedActorID, activeActorID, activeAssignmentID)) {
-      setLocationError("");
-      setLastLocationUpdatedAt("");
-      setCaptainPosition(null);
-      return;
-    }
-    let disposed = false;
-    let publishing = false;
-    let subscription: Location.LocationSubscription | undefined;
-    const publish = async (latitude: number, longitude: number) => {
-      if (publishing || disposed || !hasCurrentDeliveryActor(loadedActorID)) return;
-      publishing = true;
-      if (!disposed) setCaptainPosition({ latitude, longitude });
-      try {
-        const token = await getUsableIdentityAccessToken();
-        if (disposed || !hasCurrentDeliveryActor(loadedActorID)) return;
-        const result = await captainClient().updateCaptainLocation(token, activeAssignmentID, latitude, longitude);
-        if (!disposed && hasCurrentDeliveryActor(loadedActorID)) {
-          setLastLocationUpdatedAt(result.location.updatedAt);
-          setLocationError("");
-        }
-      } catch (cause) {
-        console.warn("DSH Captain live location update failed", cause);
-        if (!disposed && hasCurrentDeliveryActor(loadedActorID)) setLocationError("تعذر تحديث الموقع. فعّل إذن الموقع وأعد المحاولة.");
-      } finally {
-        publishing = false;
-      }
-    };
-    const start = async () => {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (disposed) return;
-      if (permission.status !== "granted") {
-        setLocationError("اسمح بالوصول إلى الموقع أثناء استخدام التطبيق لتحديث رحلة التوصيل.");
-        return;
-      }
-      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      if (disposed) return;
-      await publish(current.coords.latitude, current.coords.longitude);
-      if (disposed) return;
-      const watcher = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: 30_000, distanceInterval: 100 }, (position) => {
-        void publish(position.coords.latitude, position.coords.longitude);
-      });
-      if (disposed || !hasCurrentDeliveryActor(loadedActorID)) {
-        watcher.remove();
-        return;
-      }
-      subscription = watcher;
-    };
-    void start().catch((cause) => {
-      console.warn("DSH Captain live location setup failed", cause);
-      if (!disposed && hasCurrentDeliveryActor(loadedActorID)) setLocationError("تعذر تشغيل تحديث الموقع لهذه الرحلة.");
-    });
-    return () => {
-      disposed = true;
-      subscription?.remove();
-    };
-  }, [activeActorID, activeAssignmentID, loadedActorID]);
-
   async function pickup(assignment: CaptainAssignment) {
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || mutationInFlight.current || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
+    mutationInFlight.current = true;
     setBusy(assignment.id);
     setError("");
     try {
@@ -239,12 +177,14 @@ export function CaptainDeliveries() {
       console.error("DSH Captain pickup failed", cause);
       setError("لا يمكن تأكيد الاستلام قبل تأكيد المتجر أو عند تعارض النسخة.");
     } finally {
+      mutationInFlight.current = false;
       setBusy("");
     }
   }
 
   async function complete(assignment: CaptainAssignment, result: "delivered" | "delivery_failed", collectedAmountMinor?: number) {
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "in_custody" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || mutationInFlight.current || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "in_custody" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
+    mutationInFlight.current = true;
     setBusy(assignment.id);
     setError("");
     try {
@@ -277,13 +217,15 @@ export function CaptainDeliveries() {
       setCompletionRejected(captainCompletionHttpRejected(cause));
       setError(captainCompletionHttpRejected(cause) ? "لم تُحدّث المهمة. تحقق منها قبل إعادة المحاولة." : "تعذر تأكيد النتيجة. بقيت المحاولة محفوظة؛ أعد المحاولة من الزر نفسه.");
     } finally {
+      mutationInFlight.current = false;
       setBusy("");
     }
   }
 
   async function retryPendingCompletion() {
     const attempt = pendingCompletion;
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || busy || !completionStorageReady) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || busy || mutationInFlight.current || !completionStorageReady) return;
+    mutationInFlight.current = true;
     setBusy(attempt.assignmentID);
     setError("");
     setCompletionRejected(false);
@@ -302,13 +244,15 @@ export function CaptainDeliveries() {
       setCompletionRejected(captainCompletionHttpRejected(cause));
       setError(captainCompletionHttpRejected(cause) ? "لم تُحدّث المهمة. تحقق منها قبل إعادة المحاولة." : "لم نتأكد من النتيجة. بقيت المحاولة محفوظة؛ أعد المحاولة من الزر نفسه.");
     } finally {
+      mutationInFlight.current = false;
       setBusy("");
     }
   }
 
   async function replaceRejectedCompletionAfterReadback() {
     const attempt = pendingCompletion;
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || !completionRejected || busy) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || !completionRejected || busy || mutationInFlight.current) return;
+    mutationInFlight.current = true;
     setBusy(attempt.assignmentID);
     setError("");
     try {
@@ -333,17 +277,19 @@ export function CaptainDeliveries() {
       console.error("DSH Captain completion rejection reconciliation failed", cause);
       setError("تعذر تأكيد حالة المهمة. بقيت المحاولة الأصلية محفوظة كما هي.");
     } finally {
+      mutationInFlight.current = false;
       setBusy("");
     }
   }
 
   async function remitCash(item: CashLiabilityItem) {
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || loading || !cashLiability?.items.some((current) => current.paymentIntentId === item.paymentIntentId && current.paymentVersion === item.paymentVersion)) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || loading || mutationInFlight.current || !cashLiability?.items.some((current) => current.paymentIntentId === item.paymentIntentId && current.paymentVersion === item.paymentVersion)) return;
     const reference = cashRemittanceReferences[item.paymentIntentId]?.trim() ?? "";
     if (cashBusy || !reference) {
       setError("أدخل مرجع توريد العهدة لإرساله إلى المالية.");
       return;
     }
+    mutationInFlight.current = true;
     setCashBusy(item.paymentIntentId);
     setError("");
     try {
@@ -355,6 +301,7 @@ export function CaptainDeliveries() {
       console.error("WLT Captain cash remittance submission failed", cause);
       setError("تعذر إرسال مرجع التوريد. أعد القراءة قبل المحاولة.");
     } finally {
+      mutationInFlight.current = false;
       setCashBusy("");
     }
   }
@@ -387,7 +334,6 @@ export function CaptainDeliveries() {
           </View>;
         })}
       </View> : null}
-      {activeAssignmentID ? <Text accessibilityLiveRegion="polite" style={locationError ? styles.warning : styles.progress}>{locationError || (lastLocationUpdatedAt ? "الموقع المباشر مفعّل أثناء العهدة." : "جارٍ تفعيل الموقع المباشر أثناء العهدة…")}</Text> : null}
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
       {!loading ? <Text style={styles.sectionTitle}>التكليفات ({assignments.length})</Text> : null}
       {!loading && !assignments.length ? <Text style={styles.muted}>لا توجد تكليفات.</Text> : null}
@@ -444,8 +390,6 @@ export function CaptainDeliveries() {
                     { id: "pickup", coordinate: task.pickupOrigin, title: `استلام من ${task.storeName}` },
                     { id: "destination", coordinate: task.customerDestination, title: "عنوان العميل" },
                   ]}
-                  selection={assignment.id === activeAssignmentID ? captainPosition : null}
-                  selectionTitle="موقعك الحالي"
                 />
                 <Text style={styles.muted}>حالة الطلب: {orderStateLabel(task.orderState)}</Text>
                 <Text style={styles.payment}>{paymentMethodLabel(task.paymentMethod, task.fulfillmentMode, task.amountDueMinor)} · {paymentStateLabel(task.paymentState, task.paymentMethod, task.fulfillmentMode, task.amountDueMinor)}</Text>
