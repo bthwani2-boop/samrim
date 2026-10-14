@@ -26,8 +26,8 @@ export default function PartnerWallet() {
       </View>
       <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} />
     </View>
-    {canReadFinance ? <PartnerFinancialSummaryCard key={financeScopeKey} /> : <View style={styles.card}><Text style={styles.muted}>قراءة المالية غير ممنوحة لحسابك على أي متجر.</Text></View>}
-    {canRequestPayout ? <PartnerPayoutCard key={payoutScopeKey} /> : null}
-    {ownsAnyStore ? <StorePayoutRecipientsCard key={ownerScopeKey} /> : null}
+    {canReadFinance ? <PartnerFinancialSummaryCard key={`finance:${financeScopeKey}`} /> : <View style={styles.card}><Text style={styles.muted}>قراءة المالية غير ممنوحة لحسابك على أي متجر.</Text></View>}
+    {canRequestPayout ? <PartnerPayoutCard key={`payout:${payoutScopeKey}`} /> : null}
+    {ownsAnyStore ? <StorePayoutRecipientsCard key={`recipients:${ownerScopeKey}`} /> : null}
   </View>;
 }
