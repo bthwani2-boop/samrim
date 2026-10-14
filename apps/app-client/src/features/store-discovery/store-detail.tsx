@@ -245,7 +245,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       const currentTab = favoritesView ? 1 : popularView ? 2 : 0;
       void selectCatalogTab(Math.max(0, Math.min(2, currentTab + (gesture.dx < 0 ? 1 : -1))));
     },
-  }), [catalogRefreshing, favoritesView, loadingMore, popularView, selectCatalogTab]);
+  }), [favoritesView, popularView, selectCatalogTab]);
 
   const dismissProductSheet = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_event, gesture) => gesture.dy > 12 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.25,

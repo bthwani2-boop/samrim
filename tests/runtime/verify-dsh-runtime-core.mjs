@@ -1257,6 +1257,7 @@ if (modifierOptionCreate.status !== 201 || !modifierOptionCreate.body?.option?.i
 const modifierOptionID = String(modifierOptionCreate.body.option.id);
 const storeLocalOfferPublished = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/offers/${storeLocalOfferID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-local-offer-publish-${suffix}`, 1), body: discreteOffer(1000, "published") });
 await prepareApprovedStoreLogo(storeLocal.caseID, storeLocal.accessToken, "store-local");
+await prepareApprovedStoreLogo(storeLocal.caseID, storeLocal.accessToken, "store-local-cover", "cover");
 const storeLocalPublished = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-local-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const storeLocalFieldEntitlementQuery = `SELECT count(*) || ':' || count(DISTINCT store_id) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}','${sqlLiteral(storeLocal.storeID)}')`;
 await waitForSQL(storeLocalFieldEntitlementQuery, "3:3", "Field acquisition entitlement did not post once for the newly published Field-origin store", 120_000);
@@ -1886,6 +1887,7 @@ const fieldPayoutOffer = await request(dshBase, "POST", `/dsh/stores/${encodeURI
 const fieldPayoutOfferID = String(fieldPayoutOffer.body?.offer?.offerId || "");
 const fieldPayoutOfferPublished = await request(dshBase, "PATCH", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/offers/${encodeURIComponent(fieldPayoutOfferID)}`, { token: fieldPayoutPartnerAccessToken, headers: partnerHeaders(`field-payout-offer-publish-${suffix}`, 1), body: discreteOffer(1250, "published") });
 await prepareApprovedStoreLogo(fieldPayoutCaseID, fieldPayoutPartnerAccessToken, "field-payout");
+await prepareApprovedStoreLogo(fieldPayoutCaseID, fieldPayoutPartnerAccessToken, "field-payout-cover", "cover");
 const fieldPayoutPublication = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-payout-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const fieldPayoutSummaryDeadline = Date.now() + 95_000;
 let fieldPayoutSummary = null;
