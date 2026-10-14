@@ -2032,6 +2032,19 @@ components:
         availableMinor: { type: integer }
         cashInEnabled: { type: boolean }
         simulator: { type: boolean }
+        recentCompensations:
+          type: array
+          items: { $ref: '#/components/schemas/CustomerWalletCompensationSummary' }
+    CustomerWalletCompensationSummary:
+      type: object
+      additionalProperties: false
+      required: [id, orderId, amountMinor, currency, createdAt]
+      properties:
+        id: { type: string, minLength: 1 }
+        orderId: { type: string, minLength: 1 }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        createdAt: { type: string, format: date-time }
     WalletStateResponse:
       type: object
       additionalProperties: false
