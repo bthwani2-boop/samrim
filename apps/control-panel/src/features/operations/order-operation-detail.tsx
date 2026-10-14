@@ -5,7 +5,7 @@ import { PageHeader } from "../../shell/page-header";
 import { captainAssignmentStateLabel, captainHandoffStateLabel, formatMoney, formatOrderDate, fulfillmentModeLabel, type OperatorOperation, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 import { OperationLocationMap } from "./operation-location-map";
@@ -34,8 +34,12 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
   const [actionError, setActionError] = useState("");
   const [actionNeedsReadback, setActionNeedsReadback] = useState(false);
   const [notice, setNotice] = useState("");
+  const loadSequence = useRef(0);
+  const actionSequence = useRef(0);
+  const actionInFlight = useRef(false);
 
   const load = useCallback(async (): Promise<boolean> => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
     setOperation(null);
     setNotice("");
@@ -43,13 +47,17 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
     setErrorStatus(0);
     try {
       const response = await fetch(`/api/operations/${encodeURIComponent(orderId)}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
+      if (sequence !== loadSequence.current) return false;
       if (!response.ok) {
+        const message = await operationResponseMessage(response);
+        if (sequence !== loadSequence.current) return false;
         setErrorStatus(response.status);
-        setError(await operationResponseMessage(response));
+        setError(message);
         setOperation(null);
         return false;
       }
       const body = await response.json() as { operation?: OperatorOperation };
+      if (sequence !== loadSequence.current) return false;
       if (!body?.operation || body.operation.order?.id !== orderId) {
         setError("استجابة تفاصيل الطلب غير صالحة. أعد القراءة.");
         return false;
@@ -59,15 +67,25 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
       setActionError("");
       return true;
     } catch (cause) {
+      if (sequence !== loadSequence.current) return false;
       const timedOut = cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError");
       setError(timedOut ? "استغرقت قراءة تفاصيل الطلب وقتًا طويلًا. أعد المحاولة." : cause instanceof Error ? cause.message : "تعذرت قراءة تفاصيل الطلب.");
       return false;
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   }, [orderId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    actionInFlight.current = false;
+    setBusy(false);
+    setActionNeedsReadback(false);
+    void load();
+    return () => {
+      loadSequence.current += 1;
+      actionSequence.current += 1;
+    };
+  }, [load]);
 
   const tab = detailTabs.find((item) => item.id === requestedTab && (item.id !== "recovery" || operation?.order.state === "DELIVERY_FAILED"))?.id ?? "overview";
   const tabHref = useCallback((nextTab: DetailTab) => {
@@ -83,10 +101,14 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
   }, [queryString]);
 
   async function runAction() {
-    if (!operation || busy || loading || actionNeedsReadback) return;
+    if (!operation || busy || loading || actionNeedsReadback || actionInFlight.current) return;
     const { order, assignment } = operation;
+    if (order.id !== orderId) return;
     const action = resolveOperatorAction({ state: order.state, assignment });
     if (!action) return;
+    const actionVersion = ++actionSequence.current;
+    const actionStillCurrent = () => actionVersion === actionSequence.current;
+    actionInFlight.current = true;
     setBusy(true);
     setActionNeedsReadback(true);
     setActionError("");
@@ -102,29 +124,38 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
           ...(action === "recover" ? { expectedVersion: assignment?.version } : {}),
         }),
       });
+      if (!actionStillCurrent()) return;
       if (!response.ok) {
         const message = response.status === 409 ? "تغيرت حالة الطلب منذ فتحه." : await operationResponseMessage(response);
+        if (!actionStillCurrent()) return;
         const verified = await load();
+        if (!actionStillCurrent()) return;
         setActionError(verified
           ? `${message} تمت إعادة قراءة الحالة؛ راجعها قبل محاولة أخرى.`
           : `${message} تعذرت إعادة قراءة الحالة؛ لن يُعاد إرسال الإجراء قبل نجاح القراءة.`);
         return;
       }
       const readbackSucceeded = await load();
+      if (!actionStillCurrent()) return;
       if (readbackSucceeded) setNotice("تم تحديث حالة الطلب بعد إعادة قراءتها من المصدر التشغيلي.");
       else setActionError("أُرسل الإجراء، لكن تعذرت إعادة قراءة الحالة لتأكيد النتيجة. أعد القراءة قبل اتخاذ قرار آخر.");
     } catch (cause) {
+      if (!actionStillCurrent()) return;
       const message = isRequestFailure(cause) ? cause.message : "تعذر تنفيذ الإجراء.";
       const verified = await load();
+      if (!actionStillCurrent()) return;
       setActionError(verified
         ? `${message} لم نتأكد من نتيجة الإجراء؛ راجع الحالة المعادة قبل إعادة المحاولة.`
         : `${message} لم نتأكد من النتيجة وتعذرت إعادة القراءة؛ لن يُعاد إرسال الإجراء قبل التحقق.`);
     } finally {
-      setBusy(false);
+      if (actionStillCurrent()) {
+        actionInFlight.current = false;
+        setBusy(false);
+      }
     }
   }
 
-  if (loading && !operation) return <section className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة مساحة الطلب</strong></section>;
+  if ((loading && !operation) || (operation && operation.order.id !== orderId)) return <section className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة مساحة الطلب</strong></section>;
   if (error || !operation) return <section className="collection-state" role="alert"><strong>{errorStatus === 403 ? "لا تملك صلاحية فتح هذا الطلب" : "تعذر فتح مساحة الطلب"}</strong><p>{error || "لم تعد تفاصيل هذا الطلب متاحة."}</p><div className="order-detail-state-actions"><button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading}>إعادة القراءة</button><Link className="button button-secondary" href={returnHref()}>العودة إلى العمليات</Link></div></section>;
 
   const { order, assignment } = operation;

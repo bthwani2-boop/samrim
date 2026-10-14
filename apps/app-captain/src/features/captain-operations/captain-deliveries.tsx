@@ -62,6 +62,7 @@ export function CaptainDeliveries() {
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
   const readSequence = useRef(0);
+  const mutationInFlight = useRef(false);
   const [tasks, setTasks] = useState<Readonly<Record<string, CaptainDeliveryTask>>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -227,7 +228,8 @@ export function CaptainDeliveries() {
   }, [activeActorID, activeAssignmentID, loadedActorID]);
 
   async function pickup(assignment: CaptainAssignment) {
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || mutationInFlight.current || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
+    mutationInFlight.current = true;
     setBusy(assignment.id);
     setError("");
     try {
@@ -239,12 +241,14 @@ export function CaptainDeliveries() {
       console.error("DSH Captain pickup failed", cause);
       setError("لا يمكن تأكيد الاستلام قبل تأكيد المتجر أو عند تعارض النسخة.");
     } finally {
+      mutationInFlight.current = false;
       setBusy("");
     }
   }
 
   async function complete(assignment: CaptainAssignment, result: "delivered" | "delivery_failed", collectedAmountMinor?: number) {
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "in_custody" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || mutationInFlight.current || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "in_custody" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
+    mutationInFlight.current = true;
     setBusy(assignment.id);
     setError("");
     try {
@@ -277,13 +281,15 @@ export function CaptainDeliveries() {
       setCompletionRejected(captainCompletionHttpRejected(cause));
       setError(captainCompletionHttpRejected(cause) ? "لم تُحدّث المهمة. تحقق منها قبل إعادة المحاولة." : "تعذر تأكيد النتيجة. بقيت المحاولة محفوظة؛ أعد المحاولة من الزر نفسه.");
     } finally {
+      mutationInFlight.current = false;
       setBusy("");
     }
   }
 
   async function retryPendingCompletion() {
     const attempt = pendingCompletion;
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || busy || !completionStorageReady) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || busy || mutationInFlight.current || !completionStorageReady) return;
+    mutationInFlight.current = true;
     setBusy(attempt.assignmentID);
     setError("");
     setCompletionRejected(false);
@@ -302,13 +308,15 @@ export function CaptainDeliveries() {
       setCompletionRejected(captainCompletionHttpRejected(cause));
       setError(captainCompletionHttpRejected(cause) ? "لم تُحدّث المهمة. تحقق منها قبل إعادة المحاولة." : "لم نتأكد من النتيجة. بقيت المحاولة محفوظة؛ أعد المحاولة من الزر نفسه.");
     } finally {
+      mutationInFlight.current = false;
       setBusy("");
     }
   }
 
   async function replaceRejectedCompletionAfterReadback() {
     const attempt = pendingCompletion;
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || !completionRejected || busy) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || !completionRejected || busy || mutationInFlight.current) return;
+    mutationInFlight.current = true;
     setBusy(attempt.assignmentID);
     setError("");
     try {
@@ -333,17 +341,19 @@ export function CaptainDeliveries() {
       console.error("DSH Captain completion rejection reconciliation failed", cause);
       setError("تعذر تأكيد حالة المهمة. بقيت المحاولة الأصلية محفوظة كما هي.");
     } finally {
+      mutationInFlight.current = false;
       setBusy("");
     }
   }
 
   async function remitCash(item: CashLiabilityItem) {
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || loading || !cashLiability?.items.some((current) => current.paymentIntentId === item.paymentIntentId && current.paymentVersion === item.paymentVersion)) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || loading || mutationInFlight.current || !cashLiability?.items.some((current) => current.paymentIntentId === item.paymentIntentId && current.paymentVersion === item.paymentVersion)) return;
     const reference = cashRemittanceReferences[item.paymentIntentId]?.trim() ?? "";
     if (cashBusy || !reference) {
       setError("أدخل مرجع توريد العهدة لإرساله إلى المالية.");
       return;
     }
+    mutationInFlight.current = true;
     setCashBusy(item.paymentIntentId);
     setError("");
     try {
@@ -355,6 +365,7 @@ export function CaptainDeliveries() {
       console.error("WLT Captain cash remittance submission failed", cause);
       setError("تعذر إرسال مرجع التوريد. أعد القراءة قبل المحاولة.");
     } finally {
+      mutationInFlight.current = false;
       setCashBusy("");
     }
   }
