@@ -266,7 +266,6 @@ export default function IdentityGate() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        {publicDiscovery}
         <View style={styles.authShell}>
           <View style={styles.brandBlock}>
             <Text style={styles.brand}>{copy.brand}</Text>
