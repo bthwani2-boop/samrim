@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
@@ -38,6 +39,26 @@ func TestCaptainOfferAcceptancePreflightProtectsCODReservation(t *testing.T) {
 			}
 			if reserve != tc.wantReserve {
 				t.Fatalf("reserve = %v, want %v", reserve, tc.wantReserve)
+			}
+		})
+	}
+}
+
+func TestCaptainCODReservationConflictIsNotReportedAsOutage(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want error
+	}{
+		{name: "another captain holds this COD order", err: &wlt.Error{Status: 409, Code: "STATE_CONFLICT"}, want: postgres.ErrCaptainAssignmentConflict},
+		{name: "WLT storage unavailable", err: &wlt.Error{Status: 502, Code: "WLT_STORAGE_UNAVAILABLE"}, want: ErrPaymentUnavailable},
+		{name: "transport error", err: errors.New("connection reset"), want: ErrPaymentUnavailable},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := classifyCaptainCODReserveError(tc.err)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("classification=%v; want=%v", err, tc.want)
 			}
 		})
 	}

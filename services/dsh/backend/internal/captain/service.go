@@ -282,7 +282,7 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 	if order.FulfillmentMode == "BTHWANI_CAPTAIN" && order.PaymentCashAmountMinor > 0 && order.PaymentIntentID != nil && strings.TrimSpace(*order.PaymentIntentID) != "" {
 		_, _, reserveErr := s.payment.ReserveCaptainCOD(ctx, order.ID, *order.PaymentIntentID, identity.Subject, wlt.DerivedIdempotencyKey("captain-cod-reserve", offer.ID), correlationID)
 		if reserveErr != nil {
-			return postgres.CaptainOfferResult{}, fmt.Errorf("%w: captain COD authorization unavailable: %v", ErrPaymentUnavailable, reserveErr)
+			return postgres.CaptainOfferResult{}, classifyCaptainCODReserveError(reserveErr)
 		}
 		reserved = true
 	}
@@ -298,6 +298,16 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 		}
 	}
 	return result, respondErr
+}
+
+// A competing captain already holding the only active COD reservation is a
+// normal parallel-dispatch race; only transport/unknown failures are outages.
+func classifyCaptainCODReserveError(err error) error {
+	var financial *wlt.Error
+	if errors.As(err, &financial) && financial.Status == 409 && financial.Code == "STATE_CONFLICT" {
+		return postgres.ErrCaptainAssignmentConflict
+	}
+	return fmt.Errorf("%w: captain COD authorization unavailable: %v", ErrPaymentUnavailable, err)
 }
 
 // A Captain must own a current, actionable offer before any external COD reserve.
