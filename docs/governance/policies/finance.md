@@ -95,7 +95,7 @@ Field acquisition reward is a one-time earning for a Field-attributed Partner jo
 
 ## Refunds, payouts and settlement
 
-Refund eligibility derives from canonical operational facts and versioned financial policy. Where provider-side refund capability is not proven, a governed manual refund case may be used; provider capability is never inferred from provider name.
+Customer refunds are rare and use the existing Order/Operations/WLT owners, not a standalone refund department, self-service payout journey or general dispute platform. Before money is collected, an Order cancellation or authorized repricing cancels or corrects the payment obligation; it is not a refund. After collection, once DSH's immutable operational evidence and the applicable approved financial rules establish the exact customer entitlement, WLT credits the customer's existing BThwani wallet by default. That balance is reusable for purchases from any eligible Store. The customer needs no new refund request when entitlement is already proven. WLT posts one idempotent balanced effect per eligible Order adjustment or exception, reconciles previously distributed Store/commission/promotion/COD effects as applicable, and exposes canonical wallet history/readback. An unresolved adjustment, uncertain collection, missing financial amount or missing reconciliation is not permission to create a wallet credit. Notify the customer of the credited amount and linked Order only after the WLT effect commits. A rare external/cash return follows an explicitly authorized Operations and Finance manual exception with evidence and applicable customer rights; no provider-side reversal capability is presumed and no double wallet/external repayment is permitted.
 
 Beneficiary settlement uses:
 
