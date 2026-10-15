@@ -36,6 +36,7 @@ export default function ClientOrders() {
   const [refreshError, setRefreshError] = useState("");
   const [activeTab, setActiveTab] = useState<"orders" | "carts">("orders");
   const [fulfillmentFilter, setFulfillmentFilter] = useState<"all" | "delivery" | "pickup">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "completed" | "stopped">("all");
   const [repeatingOrderID, setRepeatingOrderID] = useState("");
   const [repeatError, setRepeatError] = useState("");
 
@@ -65,9 +66,15 @@ export default function ClientOrders() {
   }, []);
 
   const visibleOrders = useMemo(() => {
-    if (state.kind !== "ready" || fulfillmentFilter === "all") return state.kind === "ready" ? state.orders : [];
-    return state.orders.filter((order) => fulfillmentFilter === "pickup" ? order.fulfillmentMode === "CUSTOMER_PICKUP" : order.fulfillmentMode !== "CUSTOMER_PICKUP");
-  }, [fulfillmentFilter, state]);
+    if (state.kind !== "ready") return [];
+    return state.orders.filter((order) => {
+      const byMode = fulfillmentFilter === "all" || (fulfillmentFilter === "pickup" ? order.fulfillmentMode === "CUSTOMER_PICKUP" : order.fulfillmentMode !== "CUSTOMER_PICKUP");
+      const completed = order.state === "DELIVERED" || order.state === "PICKED_UP";
+      const stopped = order.state === "REJECTED" || order.state === "CANCELLED" || order.state === "DELIVERY_FAILED";
+      const byStatus = statusFilter === "all" || (statusFilter === "completed" ? completed : statusFilter === "stopped" ? stopped : !completed && !stopped);
+      return byMode && byStatus;
+    });
+  }, [fulfillmentFilter, state, statusFilter]);
 
   const repeatOrder = useCallback(async (order: Order) => {
     if (state.kind !== "ready" || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID) || repeatingOrderID || !order.lines.length) return;
@@ -181,6 +188,12 @@ export default function ClientOrders() {
         <BthwaniChip label="التوصيل" selected={fulfillmentFilter === "delivery"} onPress={() => setFulfillmentFilter("delivery")} />
         <BthwaniChip label="الاستلام من المتجر" selected={fulfillmentFilter === "pickup"} onPress={() => setFulfillmentFilter("pickup")} />
       </View>
+      <View accessibilityLabel="تصفية الطلبات حسب الحالة" style={styles.filterRow}>
+        <BthwaniChip label="كل الحالات" selected={statusFilter === "all"} onPress={() => setStatusFilter("all")} />
+        <BthwaniChip label="قيد التنفيذ" selected={statusFilter === "active"} onPress={() => setStatusFilter("active")} />
+        <BthwaniChip label="مكتملة" selected={statusFilter === "completed"} onPress={() => setStatusFilter("completed")} />
+        <BthwaniChip label="ملغاة أو متعثرة" selected={statusFilter === "stopped"} onPress={() => setStatusFilter("stopped")} />
+      </View>
       {repeatError ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{repeatError}</Text> : null}
       {state.orders.length === 0 ? (
         <BthwaniSurface tone="inset" style={styles.emptyState}>
@@ -193,7 +206,7 @@ export default function ClientOrders() {
         <BthwaniSurface tone="inset" style={styles.emptyState}>
           <View style={styles.emptyIcon}><BthwaniIcon name="orders" color={theme.interactiveText} size={sizing.iconXl} /></View>
           <Text style={styles.cardTitle}>لا توجد طلبات بهذا النوع</Text>
-          <BthwaniButton label="عرض كل الطلبات" onPress={() => setFulfillmentFilter("all")} variant="secondary" />
+          <BthwaniButton label="عرض كل الطلبات" onPress={() => { setFulfillmentFilter("all"); setStatusFilter("all"); }} variant="secondary" />
         </BthwaniSurface>
       ) : (
         <View style={styles.list}>
