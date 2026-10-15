@@ -1,18 +1,30 @@
-import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { formatMoney, type PublicCatalogResponse } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { AccessibilityInfo, Animated, Image, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StoreProductGallery, type GallerySourceRect } from "./store-product-gallery";
 
 type Offer = PublicCatalogResponse["offers"][number];
 export type StoreProductSheetProps = {
   offer: Offer | null;
+  galleryOffers: ReadonlyArray<Offer>;
+  onBrowseOffer: (offerID: string) => void;
+  isFavorite: (offerID: string) => boolean;
+  favoriteBusy: boolean;
+  onToggleFavorite: (offerID: string) => void;
+  gallerySourceRect?: GallerySourceRect | undefined;
+  onQuickAdd: (offerID: string) => void;
+  presentation?: "gallery" | "quick";
+  anchorY?: number | undefined;
+  onShopOtherStore: () => void;
   quantityBaseUnits: number;
   selectedOptionIds: ReadonlyArray<string>;
   busy: boolean;
   added: boolean;
   fulfillmentSelected: boolean;
+  orderingUnavailableMessage: string;
   error: string;
   onQuantityChange: (quantity: number) => void;
   onToggleModifier: (groupID: string, optionID: string, maxSelections: number) => void;
@@ -24,7 +36,7 @@ export type StoreProductSheetProps = {
 const localized = (value: number) => new Intl.NumberFormat("ar-YE", { maximumFractionDigits: 3, useGrouping: false }).format(value);
 const money = (value: number) => formatMoney(value, "YER").replace(/ريال يمني/g, "ريال");
 const scaleFor = (offer: Offer) => offer.baseUnit === "GRAM" || offer.baseUnit === "MILLILITER" ? 1000 : 1;
-const unitFor = (offer: Offer) => offer.baseUnit === "GRAM" ? "كجم" : offer.baseUnit === "MILLILITER" ? "لتر" : "حبة";
+const unitFor = (offer: Offer) => offer.baseUnit === "GRAM" ? "كجم" : offer.baseUnit === "MILLILITER" ? "لتر" : /^(عبوة|كيس|علبة|زجاجة|ربطة|كرتون)/.exec(offer.variantTitle?.trim() ?? "")?.[1] ?? "حبة";
 const quantityText = (offer: Offer, value: number) => localized(value / scaleFor(offer));
 const quantityLabel = (offer: Offer, value: number) => `${quantityText(offer, value)} ${unitFor(offer)}`;
 
@@ -76,30 +88,26 @@ function lineEstimate(offer: Offer, quantity: number, selected: ReadonlyArray<st
 }
 
 export function StoreProductSheet(props: StoreProductSheetProps) {
-  const { offer, quantityBaseUnits, selectedOptionIds, busy, added, fulfillmentSelected, error, onQuantityChange, onToggleModifier, onAdd, onClose, onGoToCart } = props;
+  const { offer, galleryOffers, onBrowseOffer, isFavorite, favoriteBusy, onToggleFavorite, gallerySourceRect, onQuickAdd, quantityBaseUnits, selectedOptionIds, busy, added, fulfillmentSelected, orderingUnavailableMessage, error, onQuantityChange, onToggleModifier, onAdd, onClose, onGoToCart, onShopOtherStore, presentation = "gallery", anchorY } = props;
+  const quick = presentation === "quick";
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
-  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const { height: windowHeight } = useWindowDimensions();
   const maxHeight = Math.max(240, windowHeight - insets.top - spacing[3]);
-  const compactHeight = Math.min(maxHeight, Math.max(360, windowHeight * 0.72));
+  const compactHeight = Math.min(maxHeight, quick ? added ? 180 : Math.min(470, 236 + (offer?.modifierGroups.length ?? 0) * 74) : Math.max(420, windowHeight * 0.82));
   const [expanded, setExpanded] = useState(false);
   const expandedRef = useRef(false);
   const [dragging, setDragging] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [draft, setDraft] = useState("");
-  const [failedImages, setFailedImages] = useState<ReadonlySet<string>>(new Set());
-  const [imageAttempts, setImageAttempts] = useState<Record<string, number>>({});
-  const [imageIndex, setImageIndex] = useState(0);
-  const [galleryWidth, setGalleryWidth] = useState(Math.max(1, windowWidth - spacing[4] * 2));
   const sheetHeight = useRef(new Animated.Value(compactHeight)).current;
   const currentHeight = useRef(compactHeight);
   const dragStartHeight = useRef(compactHeight);
   const scrollOffset = useRef(0);
   const lastEmittedQuantity = useRef<number | null>(null);
   const inputScale = offer ? scaleFor(offer) : 1;
-  const galleryRef = useRef<FlatList<Offer["media"][number]> | null>(null);
-
+  const browsableOffers = galleryOffers.length ? galleryOffers : offer ? [offer] : [];
   useEffect(() => {
     let active = true;
     void AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (active) setReduceMotion(value); });
@@ -111,9 +119,6 @@ export function StoreProductSheet(props: StoreProductSheetProps) {
     setExpanded(false);
     expandedRef.current = false;
     setDragging(false);
-    setFailedImages(new Set());
-    setImageAttempts({});
-    setImageIndex(0);
     scrollOffset.current = 0;
     lastEmittedQuantity.current = null;
     // The next offer starts at the compact snap point, independent of old drags.
@@ -135,10 +140,6 @@ export function StoreProductSheet(props: StoreProductSheetProps) {
     sheetHeight.setValue(nextHeight);
     currentHeight.current = nextHeight;
   }, [compactHeight, maxHeight, sheetHeight]);
-
-  useEffect(() => {
-    galleryRef.current?.scrollToOffset({ offset: imageIndex * galleryWidth, animated: false });
-  }, [galleryWidth, imageIndex]);
 
   const snap = useCallback((toExpanded: boolean) => {
     const target = toExpanded ? maxHeight : compactHeight;
@@ -209,54 +210,66 @@ export function StoreProductSheet(props: StoreProductSheetProps) {
 
   const canDecrease = !validQuantity || quantityAllowed(offer, parsed - offer.quantityStepBaseUnits);
   const canIncrease = !validQuantity || quantityAllowed(offer, parsed + offer.quantityStepBaseUnits);
-  return <Modal visible transparent animationType="none" onRequestClose={onClose}>
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.backdrop}>
+  if (!quick) return <StoreProductGallery
+    offer={offer}
+    offers={browsableOffers}
+    sourceRect={gallerySourceRect}
+    isFavorite={isFavorite}
+    favoriteBusy={favoriteBusy}
+    onToggleFavorite={onToggleFavorite}
+    onQuickAdd={onQuickAdd}
+    onBrowse={onBrowseOffer}
+    onClose={onClose}
+  />;
+
+  const thumbnailUri = offer.media.find((media) => media.role === "primary")?.uri ?? offer.media[0]?.uri;
+  return <Modal visible transparent animationType={quick ? "fade" : "slide"} onRequestClose={onClose}>
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={[styles.backdrop, quick && styles.quickBackdrop]}>
       <Pressable accessibilityRole="button" accessibilityLabel="إغلاق تفاصيل المنتج" onPress={onClose} style={StyleSheet.absoluteFill} />
-      <Animated.View accessibilityViewIsModal style={[styles.sheet, { height: sheetHeight, paddingBottom: Math.max(insets.bottom, spacing[3]) }]}>
-        <View {...dragHandle.panHandlers} style={styles.dragTarget} accessibilityLabel="اسحب لتمديد التفاصيل أو تصغيرها"><View style={styles.dragHandle} /></View>
-        <View style={styles.heading}>
-          <BthwaniIconButton icon="close" label="إغلاق تفاصيل المنتج" onPress={onClose} size={sizing.controlMd} tone="soft" />
-          <Pressable accessibilityRole="button" accessibilityLabel={expanded ? "تصغير تفاصيل المنتج" : "تمديد تفاصيل المنتج"} accessibilityState={{ expanded }} onPress={() => snap(!expanded)} style={styles.expand}><Text style={styles.expandText}>{expanded ? "تصغير" : "تمديد"}</Text></Pressable>
-          <Text accessibilityRole="header" style={styles.title}>{offer.productName}</Text>
-        </View>
-        <View {...dragContent.panHandlers} style={styles.content}>
-          <ScrollView scrollEnabled={!dragging} scrollEventThrottle={16} onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} contentContainerStyle={styles.details} keyboardShouldPersistTaps="handled">
-            <View onLayout={(event) => setGalleryWidth(Math.max(1, event.nativeEvent.layout.width))}>
-              {offer.media.length ? <FlatList ref={galleryRef} horizontal pagingEnabled data={offer.media} keyExtractor={(media, index) => `${media.uri}:${index}`} showsHorizontalScrollIndicator={false} onMomentumScrollEnd={(event) => setImageIndex(Math.max(0, Math.min(offer.media.length - 1, Math.round(event.nativeEvent.contentOffset.x / galleryWidth))))} renderItem={({ item: media, index }) => {
-                const key = `${media.uri}:${index}`;
-                const frame = { width: galleryWidth, height: Math.max(150, Math.min(260, galleryWidth * 0.65)) };
-                return failedImages.has(key) ? <View style={[styles.imageFallback, frame]}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.muted}>تعذر تحميل هذه الصورة</Text><BthwaniButton label="إعادة تحميل الصورة" variant="secondary" onPress={() => { setFailedImages((current) => { const next = new Set(current); next.delete(key); return next; }); setImageAttempts((current) => ({ ...current, [key]: (current[key] ?? 0) + 1 })); }} /></View> : <Image key={`${key}:${imageAttempts[key] ?? 0}`} accessibilityLabel={`صورة ${offer.productName} ${index + 1} من ${offer.media.length}`} source={{ uri: media.uri }} resizeMode="contain" style={[styles.image, frame]} onError={() => setFailedImages((current) => new Set(current).add(key))} />;
-              }} /> : <View style={styles.emptyMedia}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.muted}>لا توجد صور لهذا المنتج</Text></View>}
-              {offer.media.length > 1 ? <View style={styles.galleryControls}>
-                <Pressable accessibilityRole="button" accessibilityLabel="الصورة السابقة" disabled={imageIndex === 0} accessibilityState={{ disabled: imageIndex === 0 }} onPress={() => setImageIndex((index) => Math.max(0, index - 1))} style={styles.expand}><Text style={[styles.expandText, imageIndex === 0 && styles.disabled]}>السابق</Text></Pressable>
-                <Text accessibilityLiveRegion="polite" style={styles.counter}>{localized(imageIndex + 1)} / {localized(offer.media.length)}</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel="الصورة التالية" disabled={imageIndex === offer.media.length - 1} accessibilityState={{ disabled: imageIndex === offer.media.length - 1 }} onPress={() => setImageIndex((index) => Math.min(offer.media.length - 1, index + 1))} style={styles.expand}><Text style={[styles.expandText, imageIndex === offer.media.length - 1 && styles.disabled]}>التالي</Text></Pressable>
-              </View> : null}
+      <Animated.View accessibilityViewIsModal style={[styles.sheet, quick && styles.quickSheet, quick ? { bottom: Math.max(insets.bottom + spacing[2], Math.min(windowHeight - (anchorY ?? windowHeight) + spacing[2], windowHeight - compactHeight - insets.top - spacing[2])) } : null, { height: sheetHeight, paddingBottom: quick ? spacing[3] : Math.max(insets.bottom, spacing[3]) }]}>
+        {!quick ? <View {...dragHandle.panHandlers} style={styles.dragTarget} accessibilityLabel="اسحب لتمديد التفاصيل أو تصغيرها"><View style={styles.dragHandle} /></View> : null}
+        <View style={styles.quickHeading}>
+          <View style={styles.quickIdentity}>
+            {thumbnailUri ? <Image accessibilityLabel={"صورة " + offer.productName} source={{ uri: thumbnailUri }} style={styles.quickThumb} resizeMode="cover" /> : <View style={[styles.quickThumb, styles.quickThumbFallback]}><BthwaniIcon name="store" size={sizing.iconSm} color={theme.colorMuted} /></View>}
+            <View style={styles.quickIdentityCopy}>
+              <Text numberOfLines={1} accessibilityRole="header" style={styles.quickName}>{offer.productName}</Text>
+              <Text numberOfLines={1} style={styles.quickPrice}>{money(offer.priceMinor)} / {quantityLabel(offer, offer.pricingUnitBaseUnits)}</Text>
             </View>
-            <Text style={styles.price}>{money(offer.priceMinor)} / {quantityLabel(offer, offer.pricingUnitBaseUnits)}</Text>
-            {offer.variantTitle ? <Text style={styles.muted}>{offer.variantTitle}</Text> : null}
-            {offer.productDescription ? <Text style={styles.description}>{offer.productDescription}</Text> : null}
-            <Text style={styles.label}>الكمية ({unitFor(offer)})</Text>
+          </View>
+          <BthwaniIconButton icon="close" label="إغلاق اختيار الكمية" onPress={onClose} size={sizing.controlMd} tone="soft" />
+        </View>
+        {added ? <View style={styles.quickDone}>
+          <Text accessibilityLiveRegion="polite" style={styles.success}>أُضيف إلى السلة</Text>
+          <View style={styles.completionActions}>
+            <Pressable accessibilityRole="button" onPress={onGoToCart} style={[styles.choiceTab, styles.choiceTabPrimary]}><Text numberOfLines={2} style={styles.choicePrimaryText}>الانتقال للسلة</Text></Pressable>
+            <Pressable accessibilityRole="button" onPress={onClose} style={styles.choiceTab}><Text numberOfLines={2} style={styles.choiceTabText}>متابعة التسوق</Text></Pressable>
+            <Pressable accessibilityRole="button" onPress={onShopOtherStore} style={styles.choiceTab}><Text numberOfLines={2} style={styles.choiceTabText}>متجر آخر</Text></Pressable>
+          </View>
+        </View> : <>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.quickForm}>
             <View style={styles.quantityRow}>
-              <Pressable accessibilityRole="button" accessibilityLabel="تقليل الكمية" accessibilityState={{ disabled: busy || !canDecrease }} disabled={busy || !canDecrease} onPress={() => stepQuantity(-1)} style={[styles.step, (busy || !canDecrease) && styles.disabled]}><Text style={styles.stepText}>−</Text></Pressable>
-              <TextInput accessibilityLabel={`الكمية بـ ${unitFor(offer)}`} accessibilityHint={`من ${quantityLabel(offer, offer.quantityMinBaseUnits)} إلى ${quantityLabel(offer, offer.quantityMaxBaseUnits)}`} value={draft} onChangeText={editQuantity} editable={!busy} keyboardType={scaleFor(offer) === 1 ? "number-pad" : "decimal-pad"} selectTextOnFocus style={[styles.quantityInput, Boolean(quantityError) && styles.invalid]} />
+              <Text style={styles.quickQuantityLabel}>الكمية ({unitFor(offer)})</Text>
               <Pressable accessibilityRole="button" accessibilityLabel="زيادة الكمية" accessibilityState={{ disabled: busy || !canIncrease }} disabled={busy || !canIncrease} onPress={() => stepQuantity(1)} style={[styles.step, (busy || !canIncrease) && styles.disabled]}><Text style={styles.stepText}>+</Text></Pressable>
+              <TextInput accessibilityLabel={"الكمية بـ " + unitFor(offer)} accessibilityHint={"من " + quantityLabel(offer, offer.quantityMinBaseUnits) + " إلى " + quantityLabel(offer, offer.quantityMaxBaseUnits)} value={draft} onChangeText={editQuantity} editable={!busy} keyboardType={scaleFor(offer) === 1 ? "number-pad" : "decimal-pad"} selectTextOnFocus style={[styles.quantityInput, Boolean(quantityError) && styles.invalid]} />
+              <Pressable accessibilityRole="button" accessibilityLabel="تقليل الكمية" accessibilityState={{ disabled: busy || !canDecrease }} disabled={busy || !canDecrease} onPress={() => stepQuantity(-1)} style={[styles.step, (busy || !canDecrease) && styles.disabled]}><Text style={styles.stepText}>−</Text></Pressable>
             </View>
-            <Text style={styles.muted}>الحد {quantityLabel(offer, offer.quantityMinBaseUnits)}–{quantityLabel(offer, offer.quantityMaxBaseUnits)} · الزيادة {quantityLabel(offer, offer.quantityStepBaseUnits)}</Text>
+            {offer.modifierGroups.map((group) => <View key={group.id} style={styles.quickGroup}>
+              <Text style={styles.label}>{group.nameAr}{group.minSelections > 0 ? " *" : ""}</Text>
+              <View style={styles.options}>{group.options.filter((option) => option.availability).map((option) => <BthwaniChip key={option.id} label={option.nameAr + (option.priceDeltaMinor ? " · +" + money(option.priceDeltaMinor) : "")} selected={selectedOptionIds.includes(option.id)} disabled={busy} onPress={() => onToggleModifier(group.id, option.id, group.maxSelections)} />)}</View>
+            </View>)}
             {quantityError ? <Text accessibilityRole="alert" style={styles.error}>{quantityError}</Text> : null}
-            {offer.modifierGroups.map((group) => <View key={group.id} style={styles.group}><Text style={styles.label}>{group.nameAr}{group.minSelections > 0 ? " · مطلوب" : " · اختياري"}</Text><Text style={styles.muted}>من {localized(group.minSelections)} إلى {localized(group.maxSelections)} خيارات</Text><View style={styles.options}>{group.options.filter((option) => option.availability).map((option) => <BthwaniChip key={option.id} label={`${option.nameAr}${option.priceDeltaMinor ? ` · +${money(option.priceDeltaMinor)}` : ""}`} selected={selectedOptionIds.includes(option.id)} disabled={busy} onPress={() => onToggleModifier(group.id, option.id, group.maxSelections)} />)}</View></View>)}
             {modifiersInvalid ? <Text accessibilityRole="alert" style={styles.error}>{modifiersInvalid}</Text> : null}
-            {unavailable ? <Text accessibilityRole="alert" style={styles.error}>هذا المنتج غير متاح للإضافة الآن.</Text> : null}
-            {!fulfillmentSelected ? <Text style={styles.muted}>اختر طريقة الطلب من صفحة المتجر قبل الإضافة.</Text> : null}
+            {unavailable ? <Text accessibilityRole="alert" style={styles.error}>المنتج غير متاح.</Text> : null}
+            {!fulfillmentSelected ? <Text style={styles.muted}>{orderingUnavailableMessage}</Text> : null}
+            {validQuantity && !modifiersInvalid && estimate === null ? <Text accessibilityRole="alert" style={styles.error}>تعذر حساب قيمة الاختيار.</Text> : null}
+            {offer.quantityPolicy === "VARIABLE_MEASURE" ? <Text style={styles.quickHint}>القيمة تقديرية حتى تأكيد الوزن.</Text> : null}
           </ScrollView>
-        </View>
-        <View style={styles.footer}>
-          {!added ? <Text accessibilityLiveRegion="polite" style={styles.estimate}>{estimate === null ? "أكمل الكمية والخيارات لعرض القيمة" : `${offer.quantityPolicy === "VARIABLE_MEASURE" ? "القيمة التقديرية" : "قيمة الاختيار"}: ${money(estimate)}`}</Text> : <Text accessibilityLiveRegion="polite" style={styles.success}>أُضيف المنتج إلى السلة</Text>}
-          {offer.quantityPolicy === "VARIABLE_MEASURE" && !added ? <Text style={styles.muted}>تُراجع القيمة عند تأكيد الوزن الفعلي.</Text> : null}
-          {validQuantity && !modifiersInvalid && estimate === null ? <Text accessibilityRole="alert" style={styles.error}>لا يمكن حساب قيمة صحيحة لهذه الكمية؛ عدّلها وفق الزيادة المحددة.</Text> : null}
-          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-          {added ? <View style={styles.actions}><BthwaniButton style={styles.action} label="متابعة التسوق" variant="secondary" onPress={onClose} /><BthwaniButton style={styles.action} label="الانتقال للسلة" onPress={onGoToCart} /></View> : <BthwaniButton label="إضافة إلى السلة" accessibilityLabel={`إضافة ${offer.productName} إلى السلة`} busy={busy} disabled={busy || unavailable || !fulfillmentSelected || !validQuantity || Boolean(modifiersInvalid) || estimate === null} onPress={onAdd} />}
-        </View>
+          <View style={styles.quickFooter}>
+            <Text numberOfLines={1} accessibilityLiveRegion="polite" style={styles.quickTotal}>{estimate === null ? "—" : money(estimate)}</Text>
+            {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+            <BthwaniButton label="إضافة للسلة" accessibilityLabel={"إضافة " + offer.productName + " إلى السلة"} busy={busy} disabled={busy || unavailable || !fulfillmentSelected || !validQuantity || Boolean(modifiersInvalid) || estimate === null} onPress={onAdd} />
+          </View>
+        </>}
       </Animated.View>
     </KeyboardAvoidingView>
   </Modal>;
@@ -265,37 +278,86 @@ export function StoreProductSheet(props: StoreProductSheetProps) {
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     backdrop: { backgroundColor: "rgba(0,0,0,0.42)", flex: 1, justifyContent: "flex-end" },
+    quickBackdrop: { backgroundColor: "rgba(0,0,0,0.15)" },
+    galleryOnlyBackdrop: { justifyContent: "center", paddingHorizontal: spacing[3] },
+    galleryOnlyContainer: { width: "100%", maxHeight: "100%" },
     sheet: { backgroundColor: theme.surfaceRaised, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, maxHeight: "100%", overflow: "hidden", paddingHorizontal: spacing[4] },
+    quickSheet: { position: "absolute", left: spacing[2], right: spacing[2], borderRadius: radius.xl, borderColor: theme.borderColor, borderWidth: borders.hairline, elevation: 9, paddingHorizontal: spacing[3] },
+    quickHeading: { alignItems: "center", flexDirection: "row", gap: spacing[1], paddingTop: spacing[2], paddingBottom: spacing[1] },
+    quickIdentity: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: spacing[2] },
+    quickThumb: { width: 46, height: 46, borderRadius: radius.md },
+    quickThumbFallback: { alignItems: "center", justifyContent: "center", backgroundColor: theme.surfaceInset },
+    quickIdentityCopy: { flex: 1, minWidth: 0, gap: spacing[1] },
+    quickName: { ...typography.bodyStrong, color: theme.color, textAlign: "auto" },
+    quickPrice: { ...typography.caption, color: theme.interactiveText, textAlign: "auto" },
+    quickForm: { gap: spacing[2], paddingBottom: spacing[1] },
+    quickQuantityLabel: { ...typography.caption, color: theme.color, flexShrink: 1 },
+    quickGroup: { gap: spacing[1] },
+    quickHint: { ...typography.caption, color: theme.colorMuted },
+    quickFooter: { borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingTop: spacing[2], gap: spacing[1], paddingBottom: spacing[1] },
+    quickTotal: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "auto" },
+    quickDone: { gap: spacing[2], justifyContent: "center", flex: 1, paddingBottom: spacing[1] },
+    choiceTab: { backgroundColor: theme.actionSoft, borderRadius: radius.md, minHeight: 43, justifyContent: "center", alignItems: "center", paddingHorizontal: spacing[1], flex: 1 },
+    choiceTabPrimary: { backgroundColor: theme.actionBackground },
+    choiceTabText: { ...typography.caption, color: theme.interactiveText, textAlign: "center" },
+    choicePrimaryText: { ...typography.caption, color: theme.onAction, textAlign: "center" },
     dragTarget: { alignItems: "center", height: sizing.controlMd, justifyContent: "center" },
     dragHandle: { backgroundColor: theme.borderColorStrong, borderRadius: radius.round, height: spacing[1], width: spacing[8] },
     heading: { alignItems: "center", flexDirection: "row", gap: spacing[2], paddingBottom: spacing[2] },
     title: { ...typography.titleSm, color: theme.color, flex: 1, textAlign: "right" },
+    headingTitle: { flex: 1, minWidth: 0, textAlign: "auto" },
+    fullWidthText: { alignSelf: "stretch", width: "100%", textAlign: "auto" },
     expand: { justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[2] },
     expandText: { ...typography.bodySm, color: theme.interactiveText },
     content: { flex: 1 },
     details: { gap: spacing[3], paddingBottom: spacing[4] },
+    quickDetails: { gap: spacing[2], paddingBottom: spacing[2] },
     image: { backgroundColor: theme.surfaceInset, borderRadius: radius.lg },
+    galleryBrowser: { gap: spacing[2] },
+    galleryProductCard: { borderRadius: radius.xl, backgroundColor: theme.surface, padding: spacing[2], gap: spacing[2], alignItems: "stretch" },
+    galleryProductInfo: { gap: spacing[1], alignItems: "stretch", width: "100%" },
+    expandedProductCard: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.xl, padding: spacing[2], gap: spacing[2], ...elevation.raised },
+    expandedImageFrame: { width: "100%", position: "relative", overflow: "hidden", borderRadius: radius.lg },
+    expandedImage: { width: "100%", backgroundColor: theme.surfaceInset, borderRadius: radius.lg },
+    expandedImagePlaceholder: { alignItems: "center", justifyContent: "center", gap: spacing[2], backgroundColor: theme.surfaceInset, borderRadius: radius.lg, minHeight: 218 },
+    expandedFavorite: { position: "absolute", right: spacing[2], top: spacing[2] },
+    expandedProductInfo: { gap: spacing[1], width: "100%", alignItems: "stretch" },
+    expandedProductName: { ...typography.bodyStrong, color: theme.color, textAlign: "auto" },
+    expandedProductUnit: { ...typography.caption, color: theme.colorMuted, textAlign: "auto" },
+    expandedCardBottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing[2], paddingTop: spacing[1] },
+    expandedProductPrice: { ...typography.bodyStrong, color: theme.interactiveText, flexShrink: 1, textAlign: "auto" },
+    expandedAddButton: { backgroundColor: theme.actionBackground, minWidth: sizing.controlMd, minHeight: sizing.controlMd, borderRadius: radius.md, paddingHorizontal: spacing[2], justifyContent: "center", alignItems: "center", flexDirection: "row", gap: spacing[1] },
+    expandedAddLabel: { ...typography.bodyStrong, color: theme.onAction },
+    mediaThumbnails: { gap: spacing[2], paddingVertical: spacing[1] },
+    thumbnailFrame: { borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, padding: 2 },
+    thumbnailSelected: { borderColor: theme.interactiveText, borderWidth: 2 },
+    thumbnailImage: { borderRadius: radius.sm, width: 44, height: 44 },
+    neighbors: { gap: spacing[2], marginTop: spacing[2] },
+    neighborCard: { alignItems: "center", flexDirection: "row", borderRadius: radius.lg, borderColor: theme.borderColor, borderWidth: borders.hairline, padding: spacing[2], gap: spacing[3] },
+    neighborImage: { height: 76, width: 76, borderRadius: radius.md },
+    neighborCopy: { flex: 1, minWidth: 0, alignItems: "stretch", gap: spacing[1] },
     imageFallback: { alignItems: "center", backgroundColor: theme.surfaceInset, borderRadius: radius.lg, gap: spacing[2], justifyContent: "center" },
     emptyMedia: { alignItems: "center", backgroundColor: theme.surfaceInset, borderRadius: radius.lg, gap: spacing[2], padding: spacing[4] },
     galleryControls: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
     counter: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
-    price: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "right" },
-    label: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
-    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: "right" },
+    price: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "auto" },
+    label: { ...typography.bodyStrong, color: theme.color, textAlign: "auto" },
+    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: "auto" },
     description: { ...typography.bodySm, color: theme.color, textAlign: "right" },
-    quantityRow: { alignItems: "center", flexDirection: "row", gap: spacing[3] },
-    quantityInput: { ...typography.bodyStrong, backgroundColor: theme.surface, borderColor: theme.borderColorStrong, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, flex: 1, minHeight: sizing.controlLg, paddingHorizontal: spacing[3], textAlign: "center" },
+    quantityRow: { alignItems: "center", flexDirection: "row", gap: spacing[1] },
+    quantityInput: { ...typography.bodyStrong, backgroundColor: theme.surface, borderColor: theme.borderColorStrong, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, flex: 1, minWidth: 36, minHeight: sizing.controlMd, paddingHorizontal: spacing[1], textAlign: "center" },
     invalid: { borderColor: theme.danger },
-    step: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, justifyContent: "center", minHeight: sizing.controlLg, minWidth: sizing.controlLg },
+    step: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, justifyContent: "center", minHeight: sizing.controlMd, minWidth: sizing.controlMd },
     stepText: { ...typography.titleSm, color: theme.interactiveText },
     disabled: { opacity: 0.45 },
     group: { gap: spacing[2] },
     options: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2], justifyContent: "flex-end" },
     footer: { borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[2], paddingTop: spacing[3] },
-    estimate: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
+    estimate: { ...typography.bodyStrong, color: theme.color, textAlign: "auto" },
     success: { ...typography.bodyStrong, color: theme.success, textAlign: "right" },
     error: { ...typography.bodySm, color: theme.danger, textAlign: "right" },
     actions: { flexDirection: "row", gap: spacing[2] },
-    action: { flex: 1 },
+    completionActions: { flexDirection: "row", gap: spacing[1] },
+    action: { flexGrow: 1, minWidth: 92 },
   });
 }

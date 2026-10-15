@@ -422,7 +422,8 @@ func scheduleContains(schedule []StoreScheduleWindow, at time.Time) bool {
 }
 
 func canonicalSchedule(input []StoreScheduleWindow) []StoreScheduleWindow {
-	result := append([]StoreScheduleWindow(nil), input...)
+	// Preserve [] instead of null for ALWAYS_OPEN: PostgreSQL requires an empty JSON array.
+	result := append([]StoreScheduleWindow{}, input...)
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].DayOfWeek != result[j].DayOfWeek {
 			return result[i].DayOfWeek < result[j].DayOfWeek

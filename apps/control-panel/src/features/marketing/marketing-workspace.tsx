@@ -1020,6 +1020,7 @@ export function MarketingContentWorkspace() {
       <details className="access-card marketing-create-disclosure" open={Boolean(pendingCreate)}>
         <summary className="section-heading marketing-create-summary">إنشاء محتوى اكتشاف</summary>
         <div className="access-card-heading"><h2>إنشاء بطاقة اكتشاف</h2></div>
+        <p className="muted">المحتوى المنشور المرتبط بمتجر أو منتج من كتالوجه أو عرض مرتبط به يظهر في شريط واجهة ذلك المتجر. اختر الوجهة الصحيحة؛ لا يُعرض محتوى متجر داخل متجر آخر.</p>
         <div className="workspace-form-grid">
           <label className="field-label">عنوان المحتوى<input aria-label="عنوان المحتوى" placeholder="مختارات الأسبوع" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.titleAr} onChange={(event) => setContentForm((current) => ({ ...current, titleAr: event.target.value }))} /></label>
           <label className="field-label">نص المحتوى<input aria-label="نص المحتوى" placeholder="اكتشف الجديد في مدينتك" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.bodyAr} onChange={(event) => setContentForm((current) => ({ ...current, bodyAr: event.target.value }))} /></label>

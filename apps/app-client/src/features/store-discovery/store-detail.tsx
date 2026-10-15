@@ -1,17 +1,21 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, type CartResponse, type CustomerFulfillmentMode, formatMoney, fulfillmentModeLabel, type PublicCatalogResponse, type PublicPromotionView, type PublicStoreView, type StoreOrderability } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type CartResponse, type CustomerFulfillmentMode, formatMoney, fulfillmentModeLabel, type PublicCatalogResponse, type PublicPromotionView, type PublicDiscoveryContentView, type PublicStoreView, type StoreOrderability } from "@bthwani/dsh";
 import * as ExpoLinking from "expo-linking";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, FlatList, Image, Pressable, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { AccessibilityInfo, Alert, FlatList, Image, Pressable, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
+import type { GallerySourceRect } from "./store-product-gallery";
 import { StatusBar } from "expo-status-bar";
 import { currentIdentityState } from "../../bootstrap/identity";
 import { useServiceCityScope } from "../service-city/service-city-scope";
+import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { PromotionCard } from "./promotion-card";
 import { StoreProductSheet } from "./store-product-sheet";
-import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
+import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicDiscoveryContent, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 
 type DetailState =
   | { kind: "loading" }
@@ -19,6 +23,7 @@ type DetailState =
   | { kind: "error" };
 
 type StoreCatalogRow =
+  | { kind: "grid"; key: string; offers: PublicCatalogResponse["offers"] }
   | { kind: "filters"; key: string }
   | { kind: "section"; key: string; title: string }
   | { kind: "heading"; key: string; title: string; subtitle: string }
@@ -26,10 +31,25 @@ type StoreCatalogRow =
   | { kind: "offer"; key: string; offer: PublicCatalogResponse["offers"][number] };
 
 type StoreBannerItem =
+  | { kind: "content"; key: string; content: PublicDiscoveryContentView }
   | { kind: "offer"; key: string; offer: PublicCatalogResponse["offers"][number] }
   | { kind: "promotion"; key: string; promotion: PublicPromotionView };
 
 type CatalogSnapshot = { catalog: PublicCatalogResponse; categoryID: string | null; query: string; productID: string };
+
+function buildDisplayCatalogRows(rows: StoreCatalogRow[], gridMode: boolean): StoreCatalogRow[] {
+  // Product cards scroll vertically; horizontal swipes change catalog tabs.
+  const offers = rows.filter((row): row is Extract<StoreCatalogRow, { kind: "offer" }> => row.kind === "offer");
+  const result: StoreCatalogRow[] = rows.filter((row) => row.kind === "heading" || row.kind === "empty");
+  if (!gridMode) {
+    result.push(...offers);
+  } else {
+    for (let index = 0; index < offers.length; index += 2) {
+      result.push({ kind: "grid", key: "grid:" + offers[index]!.offer.offerId, offers: offers.slice(index, index + 2).map((row) => row.offer) });
+    }
+  }
+  return result;
+}
 
 function categoryTrail(categoryId: string, categories: PublicCatalogResponse["categories"]): ReadonlyArray<PublicCatalogResponse["categories"][number]> {
   const byId = new Map(categories.map((category) => [category.id, category]));
@@ -59,6 +79,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [activeProductID, setActiveProductID] = useState("");
   const [detailOffer, setDetailOffer] = useState<PublicCatalogResponse["offers"][number] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [sheetMode, setSheetMode] = useState<"gallery" | "quick">("gallery");
+  const [quickAnchorY, setQuickAnchorY] = useState<number | undefined>(undefined);
+  const [gallerySourceRect, setGallerySourceRect] = useState<GallerySourceRect | undefined>();
+  const imageRefs = useRef<Map<string, View>>(new Map());
+  const [gridMode, setGridMode] = useState(false);
   const detailRequestID = useRef(0);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogSearchOpen, setCatalogSearchOpen] = useState(false);
@@ -84,6 +109,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [favoriteLoadError, setFavoriteLoadError] = useState(false);
   const [promotions, setPromotions] = useState<ReadonlyArray<PublicPromotionView>>([]);
+  const [marketingContents, setMarketingContents] = useState<ReadonlyArray<PublicDiscoveryContentView>>([]);
   const [bannerOffers, setBannerOffers] = useState<PublicCatalogResponse["offers"]>([]);
   const [bannerIndex, setBannerIndex] = useState(0);
   const [bannerPaused, setBannerPaused] = useState(false);
@@ -102,15 +128,21 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const fulfillmentModes = useMemo(() => state.kind === "ready" ? availableCustomerFulfillmentModes(state.store.fulfillmentModes) : [], [state]);
   const mutationBusy = Boolean(busyOfferId);
   const bannerCatalogOffers = bannerOffers.length > 0 ? bannerOffers : (catalogTabs[0]?.catalog.offers ?? (state.kind === "ready" ? state.catalog.offers : []));
+  const storeMarketingContents = marketingContents.filter((item) =>
+    (item.targetType === "STORE" && item.targetId === storeId) ||
+    (item.targetType === "PRODUCT" && [...bannerCatalogOffers, ...(state.kind === "ready" ? state.catalog.offers : [])].some((offer) => offer.productId === item.targetId)) ||
+    (item.targetType === "PROMOTION" && promotions.some((promotion) => promotion.id === item.targetId))
+  );
   const bannerItems: StoreBannerItem[] = [
+    ...storeMarketingContents.map((content) => ({ kind: "content" as const, key: "content:" + content.id, content })),
     ...promotions.map((promotion) => ({ kind: "promotion" as const, key: `promotion:${promotion.id}`, promotion })),
     ...bannerCatalogOffers.slice(0, 5).map((offer) => ({ kind: "offer" as const, key: `offer:${offer.offerId}`, offer })),
   ].slice(0, 5);
   // Expose neighboring slides; centering padding is part of the scroll content, not each item.
   const bannerViewportWidth = Math.max(1, windowWidth - spacing[3] * 2);
-  const bannerWidth = Math.min(220, Math.max(164, Math.round(bannerViewportWidth * 0.52)));
-  const bannerStep = bannerWidth + spacing[2];
-  const bannerSidePadding = Math.max(0, (bannerViewportWidth - bannerWidth) / 2);
+  const bannerWidth = Math.min(220, Math.max(174, Math.round(bannerViewportWidth * 0.60)));
+  const bannerStep = bannerWidth + spacing[1];
+  const bannerSidePadding = spacing[1];
 
   const loadBanner = useCallback(async () => {
     if (!selectedCityID) return;
@@ -141,6 +173,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setCatalogRefreshing(false);
     setLoadingMore(false);
     setPromotions([]);
+    setMarketingContents([]);
     setBannerOffers([]);
     setBannerError(false);
     setBannerIndex(0);
@@ -170,6 +203,9 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       const orderabilityRequest = readPublicStoreOrderability(storeId, selectedCityID)
         .then((result) => result.orderabilityByMode)
         .catch(() => null);
+      const contentRequest = listPublicDiscoveryContent(selectedCityID)
+        .then((result) => { if (requestID === storeRequestID.current) setMarketingContents(result.items); })
+        .catch(() => { if (requestID === storeRequestID.current) setMarketingContents([]); });
       const promotionRequest = listPublicPromotions(selectedCityID, storeId)
         .then((result) => {
           if (promotionID !== promotionRequestID.current) return;
@@ -213,6 +249,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         if (requestID === storeRequestID.current) setOrderabilityByMode(orderability);
       });
       void promotionRequest;
+      void contentRequest;
     } catch {
       if (requestID !== storeRequestID.current) return;
       setPromotionLoading(false);
@@ -320,9 +357,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     return () => clearInterval(timer);
   }, [bannerItems.length, bannerPaused, reduceMotion, bannerStep]);
 
+  const visibleContentID = bannerItems[bannerIndex]?.kind === "content" ? bannerItems[bannerIndex].content.id : "";
   useEffect(() => {
     if (bannerIndex >= bannerItems.length) setBannerIndex(0);
-  }, [bannerIndex, bannerItems.length]);
+    if (visibleContentID) void recordDiscoveryImpression(visibleContentID);
+  }, [bannerIndex, bannerItems.length, visibleContentID]);
 
   useEffect(() => {
     let active = true;
@@ -340,31 +379,59 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
 
   const heroImageURI = !failedStoreCover ? state.store.storeCoverImage?.uri : undefined;
   const storeAddress = state.store.addressLine?.trim();
-  const storeCategories = (catalogTabs[0]?.catalog.categories ?? state.catalog.categories).filter((category) => category.active && !category.parentCategoryId).slice(0, 3).map((category) => category.nameAr).join(" · ");
   const currentOrderability = (orderabilityByMode ?? state.store.orderabilityByMode).find((item) => item.fulfillmentMode === selectedFulfillmentMode);
+  const canOrderSelected = Boolean(selectedFulfillmentMode && currentOrderability?.state === "OPEN_FOR_ORDERS");
   const activeCatalogCategories = state.catalog.categories.filter((category) => category.active);
   const selectedCategory = activeCatalogCategories.find((category) => category.id === selectedCategoryID);
   const selectedCategoryTrail = selectedCategory ? categoryTrail(selectedCategory.id, activeCatalogCategories) : [];
-  const categoryChildren = selectedCategory
-    ? activeCatalogCategories.filter((category) => category.parentCategoryId === selectedCategory.id)
-    : activeCatalogCategories.filter((category) => !category.parentCategoryId);
+  // Keep every main category visible. Reveal descendants inline, immediately after
+  // their own parent along the selected branch; never create a second filter row.
+  const categoryBranchIDs = new Set(selectedCategoryTrail.map((category) => category.id));
+  const visibleCategories: Array<{ category: PublicCatalogResponse["categories"][number]; depth: number }> = [];
+  const visitedCategoryIDs = new Set<string>();
+  const appendCategoryLevel = (parentId: string | null, depth: number) => {
+    for (const category of activeCatalogCategories) {
+      const matchesLevel = parentId === null ? !category.parentCategoryId : category.parentCategoryId === parentId;
+      if (!matchesLevel || visitedCategoryIDs.has(category.id)) continue;
+      visitedCategoryIDs.add(category.id);
+      visibleCategories.push({ category, depth });
+      if (categoryBranchIDs.has(category.id)) appendCategoryLevel(category.id, depth + 1);
+    }
+  };
+  appendCategoryLevel(null, 0);
   const catalogRows = buildCatalogRows(state.catalog, favoritesView, popularView, selectedCategoryID, catalogQuery, catalogRefreshing);
+  const visibleCatalogRows = buildDisplayCatalogRows(catalogRows, gridMode);
+  const switchCatalogTabOnSwipe = (translationX: number) => {
+    if (catalogRefreshing || mutationBusy || detailOffer) return;
+    const next = activeTab + (translationX < 0 ? 1 : -1);
+    if (next >= 0 && next <= 2) void selectCatalogTab(next);
+  };
+  const tabSwipeGesture = Gesture.Pan()
+    .enabled(!catalogRefreshing && !mutationBusy && !detailOffer)
+    .activeOffsetX([-42, 42])
+    .failOffsetY([-18, 18])
+    .onEnd((event) => {
+      if (Math.abs(event.translationX) >= 65) runOnJS(switchCatalogTabOnSwipe)(event.translationX);
+    });
 
-  const renderCategoryChip = (category: PublicCatalogResponse["categories"][number], selected: boolean) => (
-    <Pressable
+  const renderCategoryChip = (category: PublicCatalogResponse["categories"][number], depth: number) => {
+    const selected = selectedCategoryID === category.id;
+    const isChild = depth > 0;
+    const isDeep = depth > 1;
+    return <Pressable
       key={category.id}
       accessibilityRole="button"
-      accessibilityLabel={`تصنيف ${category.nameAr}`}
+      accessibilityLabel={`${isChild ? "تصنيف فرعي" : "تصنيف رئيسي"} ${category.nameAr}`}
       accessibilityState={{ selected }}
       onPress={() => void reloadCatalog(category.id, catalogQuery, false, popularView)}
-      style={[styles.categoryChip, selected && styles.categoryChipSelected]}
+      style={[styles.categoryChip, isChild ? styles.subcategoryChip : styles.mainCategoryChip, isDeep && styles.deepCategoryChip, selected && styles.categoryChipSelected]}
     >
       {category.imageUri && !failedCategoryImageIDs.has(category.id)
-        ? <Image accessibilityLabel={`صورة ${category.nameAr}`} onError={() => setFailedCategoryImageIDs((current) => new Set(current).add(category.id))} source={{ uri: category.imageUri }} resizeMode="cover" style={styles.categoryThumbnail} />
-        : <View style={[styles.categoryThumbnailPlaceholder, selected && styles.categoryThumbnailSelected]}><BthwaniIcon name="store" color={selected ? theme.onAction : theme.colorMuted} size={sizing.iconSm} /></View>}
-      <Text numberOfLines={1} style={[styles.categoryChipLabel, selected && styles.categoryChipLabelSelected]}>{category.nameAr}</Text>
-    </Pressable>
-  );
+        ? <Image accessibilityLabel={`صورة ${category.nameAr}`} onError={() => setFailedCategoryImageIDs((current) => new Set(current).add(category.id))} source={{ uri: category.imageUri }} resizeMode="cover" style={[styles.categoryThumbnail, isChild && styles.subcategoryThumbnail, isDeep && styles.deepCategoryThumbnail]} />
+        : <View style={[styles.categoryThumbnailPlaceholder, isChild && styles.subcategoryThumbnail, isDeep && styles.deepCategoryThumbnail, selected && styles.categoryThumbnailSelected]}><BthwaniIcon name="store" color={selected ? theme.onAction : theme.colorMuted} size={sizing.iconSm} /></View>}
+      <Text numberOfLines={1} style={[styles.categoryChipLabel, isChild && styles.subcategoryChipLabel, isDeep && styles.deepCategoryChipLabel, selected && styles.categoryChipLabelSelected]}>{category.nameAr}</Text>
+    </Pressable>;
+  };
 
   async function loadMore() {
     if (loadingMore || catalogRefreshing || state.kind !== "ready" || !selectedCityID || !state.catalog.nextCursor) return;
@@ -403,7 +470,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
 
   async function add(offer: PublicCatalogResponse["offers"][number]) {
     if (busyOfferId) return;
-    if (!selectedFulfillmentMode) {
+    if (!selectedFulfillmentMode || !((orderabilityByMode ?? (state.kind === "ready" ? state.store.orderabilityByMode : [])).find((mode) => mode.fulfillmentMode === selectedFulfillmentMode)?.state === "OPEN_FOR_ORDERS")) {
       setError("اختر طريقة الطلب من الخيارات المتاحة لهذا المتجر أولًا.");
       return;
     }
@@ -496,14 +563,29 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
   }
 
-  async function openOfferDetails(offerID: string) {
+  function openGalleryFromImage(offerID: string) {
+    const source = imageRefs.current.get(offerID);
+    if (!source) { setGallerySourceRect(undefined); void openOfferDetails(offerID); return; }
+    source.measureInWindow((x, y, width, height) => {
+      setGallerySourceRect(width > 0 && height > 0 ? { x, y, width, height } : undefined);
+      void openOfferDetails(offerID);
+    });
+  }
+
+  async function openOfferDetails(offerID: string, mode: "gallery" | "quick" = "gallery", anchorY?: number) {
     const offer = state.kind === "ready" ? state.catalog.offers.find((item) => item.offerId === offerID) ?? bannerOffers.find((item) => item.offerId === offerID) : undefined;
     if (!offer || !selectedCityID) return;
     const requestID = ++detailRequestID.current;
     setAddedOfferId("");
     setError("");
+    setSheetMode(mode);
+    setQuickAnchorY(anchorY);
     setDetailOffer(offer);
     setDetailLoading(true);
+    // Operating hours may have changed since the store page loaded.
+    if (mode === "quick") void readPublicStoreOrderability(storeId, selectedCityID)
+      .then((result) => { if (requestID === detailRequestID.current) setOrderabilityByMode(result.orderabilityByMode); })
+      .catch(() => {});
     try {
       const catalog = await readPublicStoreCatalog(storeId, selectedCityID, "", "", 20, "", offer.productId);
       if (requestID !== detailRequestID.current) return;
@@ -533,29 +615,62 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
   }
 
-  const renderOffer = (offer: PublicCatalogResponse["offers"][number]) => {
+  const renderOffer = (offer: PublicCatalogResponse["offers"][number], asGrid = false) => {
     const primaryMedia = offer.media.find((media) => media.role === "primary") ?? offer.media[0];
+    if (asGrid) return <BthwaniSurface key={offer.offerId} tone="base" style={[styles.item, styles.gridItem]}>
+      <View style={styles.gridImageFrame}>
+        <Pressable ref={(node) => { if (node) imageRefs.current.set(offer.offerId, node); else imageRefs.current.delete(offer.offerId); }} accessibilityRole="button" accessibilityLabel={"تكبير صورة " + offer.productName} onPress={() => openGalleryFromImage(offer.offerId)}>
+          {primaryMedia && !failedProductImageIDs.has(offer.offerId) ? <Image accessibilityLabel={"صورة " + offer.productName} source={{ uri: primaryMedia.uri }} onError={() => setFailedProductImageIDs((current) => new Set(current).add(offer.offerId))} resizeMode="cover" style={styles.gridImage} /> : <View style={[styles.productImagePlaceholder, styles.gridImage]}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
+        </Pressable>
+        <BthwaniIconButton disabled={Boolean(favoriteOfferBusyID)} icon="favorite" label={favoriteOfferIDs.has(offer.offerId) ? "إزالة المنتج من المفضلة" : "إضافة المنتج للمفضلة"} onPress={() => void toggleOfferFavorite(offer.offerId)} size={sizing.controlMd} style={styles.productFavorite} tone={favoriteOfferIDs.has(offer.offerId) ? "primary" : "soft"} />
+      </View>
+      <Pressable accessibilityRole="button" onPress={() => openGalleryFromImage(offer.offerId)} style={styles.gridCopy}><Text numberOfLines={2} style={[styles.itemTitle, styles.gridCopyText]}>{offer.productName}</Text><Text numberOfLines={1} style={[styles.productUnit, styles.gridCopyText]}>{offer.variantTitle || (offer.pricingBasis === "PER_MEASURE" ? formatQuantity(offer.baseUnit, offer.pricingUnitBaseUnits) : "عبوة")}</Text></Pressable>
+      <View style={styles.gridBottom}><Text numberOfLines={1} style={styles.productActionPrice}>{storeMoney(offer.priceMinor, offer.currency)}</Text><Pressable accessibilityRole="button" accessibilityLabel={"اختيار كمية " + offer.productName + " وإضافتها للسلة"} disabled={mutationBusy} accessibilityState={{ disabled: mutationBusy }} onPress={(event) => void openOfferDetails(offer.offerId, "quick", event.nativeEvent.pageY)} style={styles.addOfferButton}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconSm} /><Text style={styles.addOfferPlus}>+</Text></Pressable></View>
+    </BthwaniSurface>;
     return (
       <View key={offer.offerId}>
-      <BthwaniSurface tone="base" style={styles.item}>
+      <BthwaniSurface tone="base" style={[styles.item, styles.listItem]}>
         <View style={styles.productSummary}>
           <View style={styles.productImageFrame}>
-            <Pressable accessibilityRole="button" accessibilityLabel={`عرض صور وتفاصيل ${offer.productName}`} onPress={() => openOfferDetails(offer.offerId)}>
+            <Pressable
+              ref={(node) => { if (node) imageRefs.current.set(offer.offerId, node); else imageRefs.current.delete(offer.offerId); }}
+              accessibilityRole="button"
+              accessibilityLabel={`عرض صور وتفاصيل ${offer.productName}`}
+              onPress={() => openGalleryFromImage(offer.offerId)}
+              style={styles.productImagePressable}
+            >
               {primaryMedia && !failedProductImageIDs.has(offer.offerId)
                 ? <Image accessibilityLabel={`صورة ${offer.productName}`} onError={() => setFailedProductImageIDs((current) => new Set(current).add(offer.offerId))} source={{ uri: primaryMedia.uri }} resizeMode="cover" style={styles.productImage} />
                 : <View accessibilityLabel={`لا توجد صورة متاحة لـ ${offer.productName}`} style={styles.productImagePlaceholder}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
             </Pressable>
-            <BthwaniIconButton disabled={Boolean(favoriteOfferBusyID)} icon="favorite" label={favoriteOfferIDs.has(offer.offerId) ? `إزالة ${offer.productName} من المفضلة` : `إضافة ${offer.productName} إلى المفضلة`} onPress={() => void toggleOfferFavorite(offer.offerId)} size={sizing.controlMd} style={styles.productFavorite} tone={favoriteOfferIDs.has(offer.offerId) ? "primary" : "soft"} />
           </View>
           <View style={styles.productCopyAndAction}>
-            <Pressable accessibilityRole="button" accessibilityLabel={`عرض تفاصيل ${offer.productName}`} accessibilityHint="يفتح صور المنتج وتفاصيله وخيارات الكمية" onPress={() => openOfferDetails(offer.offerId)} style={styles.itemCopy}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`عرض تفاصيل ${offer.productName}`} accessibilityHint="يفتح بطاقة المنتج المكبرة" onPress={() => openGalleryFromImage(offer.offerId)} style={styles.itemCopy}>
               <Text numberOfLines={2} style={styles.itemTitle}>{offer.productName}</Text>
               <Text numberOfLines={1} style={styles.productUnit}>{offer.pricingBasis === "PER_MEASURE" ? `السعر لكل ${formatQuantity(offer.baseUnit, offer.pricingUnitBaseUnits)}` : offer.variantTitle || "للوحدة"}</Text>
             </Pressable>
-            <View style={styles.productActionRow}>
-              <Text style={styles.productActionPrice}>{storeMoney(offer.priceMinor, offer.currency)}</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel={`اختيار كمية وإضافة ${offer.productName} إلى السلة`} accessibilityState={{ disabled: mutationBusy || !selectedFulfillmentMode }} disabled={mutationBusy || !selectedFulfillmentMode} onPress={() => openOfferDetails(offer.offerId)} style={styles.addOfferButton}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconSm} /><Text style={styles.addOfferPlus}>+</Text></Pressable>
-            </View>
+            <Text numberOfLines={1} style={styles.productActionPrice}>{storeMoney(offer.priceMinor, offer.currency)}</Text>
+          </View>
+          <View style={styles.listCardActions}>
+            <BthwaniIconButton
+              disabled={Boolean(favoriteOfferBusyID)}
+              icon="favorite"
+              label={favoriteOfferIDs.has(offer.offerId) ? `إزالة ${offer.productName} من المفضلة` : `إضافة ${offer.productName} إلى المفضلة`}
+              onPress={() => void toggleOfferFavorite(offer.offerId)}
+              size={sizing.controlMd}
+              tone={favoriteOfferIDs.has(offer.offerId) ? "primary" : "soft"}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`اختيار كمية وإضافة ${offer.productName} إلى السلة`}
+              accessibilityState={{ disabled: mutationBusy }}
+              disabled={mutationBusy}
+              onPress={(event) => void openOfferDetails(offer.offerId, "quick", event.nativeEvent.pageY)}
+              style={styles.addOfferButton}
+            >
+              <BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconSm} />
+              <Text style={styles.addOfferPlus}>+</Text>
+            </Pressable>
           </View>
         </View>
       </BthwaniSurface>
@@ -565,39 +680,47 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
 
   const detailQuantity = detailOffer ? Number(quantities[detailOffer.offerId] ?? detailOffer.quantityMinBaseUnits) : 0;
   const renderCategoryRail = () => (
-          <ScrollView horizontal contentContainerStyle={styles.categoryRail} showsHorizontalScrollIndicator={false}>
-            <Pressable accessibilityRole="button" accessibilityLabel="عرض كل منتجات المتجر" accessibilityState={{ selected: !favoritesView && !popularView && !selectedCategoryID, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(0)} style={[styles.catalogFilterChip, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipSelected]}><Text style={[styles.catalogFilterChipLabel, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipLabelSelected]}>كل المنتجات</Text></Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="عرض المنتجات المفضلة" accessibilityState={{ selected: favoritesView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(1)} style={[styles.catalogFilterChip, favoritesView && styles.catalogFilterChipSelected]}><BthwaniIcon name="favorite" color={favoritesView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text style={[styles.catalogFilterChipLabel, favoritesView && styles.catalogFilterChipLabelSelected]}>المفضلة</Text></Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="عرض المنتجات الأكثر رواجًا خلال آخر 30 يومًا" accessibilityState={{ selected: popularView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(2)} style={[styles.catalogFilterChip, popularView && styles.catalogFilterChipSelected]}><BthwaniIcon name="trending" color={popularView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text style={[styles.catalogFilterChipLabel, popularView && styles.catalogFilterChipLabelSelected]}>الأكثر رواجًا</Text></Pressable>
-            {!favoritesView && activeCatalogCategories.length > 0 ? <>
-              {selectedCategoryTrail.map((category, index) => renderCategoryChip(category, index === selectedCategoryTrail.length - 1))}
-              {categoryChildren.map((category) => renderCategoryChip(category, selectedCategoryID === category.id))}
-            </> : null}
-          </ScrollView>
+    <View style={styles.catalogToolbar}>
+      <Pressable accessibilityRole="button" accessibilityLabel={gridMode ? "عرض المنتجات كقائمة" : "عرض المنتجات كمربعات"} accessibilityState={{ selected: gridMode }} onPress={() => setGridMode((current) => !current)} style={styles.layoutToggle}>
+        {gridMode ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.layoutListGlyph}>{[0, 1, 2].map((index) => <View key={index} style={styles.layoutListLine} />)}</View> : <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.layoutGridGlyph}>{[0, 1, 2, 3].map((index) => <View key={index} style={styles.layoutGridSquare} />)}</View>}
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="الكل" accessibilityState={{ selected: !favoritesView && !popularView && !selectedCategoryID, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(0)} style={[styles.catalogFilterChip, styles.pinnedAllChip, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipSelected]}><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipLabelSelected]}>الكل</Text></Pressable>
+      <ScrollView horizontal style={styles.categoryScroller} contentContainerStyle={styles.categoryRail} showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <Pressable accessibilityRole="button" accessibilityLabel="المفضلة" accessibilityState={{ selected: favoritesView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(1)} style={[styles.catalogFilterChip, favoritesView && styles.catalogFilterChipSelected]}><BthwaniIcon name="favorite" color={favoritesView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, favoritesView && styles.catalogFilterChipLabelSelected]}>المفضلة</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="الأكثر طلبًا خلال آخر 30 يومًا" accessibilityState={{ selected: popularView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(2)} style={[styles.catalogFilterChip, popularView && styles.catalogFilterChipSelected]}><BthwaniIcon name="trending" color={popularView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, popularView && styles.catalogFilterChipLabelSelected]}>الأكثر طلبًا</Text></Pressable>
+        {!favoritesView ? visibleCategories.map(({ category, depth }) => renderCategoryChip(category, depth)) : null}
+      </ScrollView>
+    </View>
   );
 
   return (
-    <View style={styles.page} accessibilityLabel={`كتالوج ${state.store.name}`}>
+    <GestureHandlerRootView style={styles.page} accessibilityLabel={`كتالوج ${state.store.name}`}>
       <StatusBar style={heroImageURI && heroVisible ? "light" : "dark"} />
       <View pointerEvents="none" style={[styles.statusBarScrim, { height: insets.top, backgroundColor: heroVisible ? "transparent" : theme.background }]} />
       <FlatList<StoreCatalogRow>
         stickyHeaderIndices={[1]}
-        onScroll={(event) => { const visible = event.nativeEvent.contentOffset.y < 184 + insets.top - 32; setHeroVisible((current) => current === visible ? current : visible); }}
+        onScroll={(event) => { const visible = event.nativeEvent.contentOffset.y < 244 + insets.top - 32; setHeroVisible((current) => current === visible ? current : visible); }}
         scrollEventThrottle={160}
         contentContainerStyle={styles.container}
-        data={[{ kind: "filters", key: "catalog-filters" }, ...catalogRows]}
+        data={[{ kind: "filters", key: "catalog-filters" }, ...visibleCatalogRows]}
         keyExtractor={(row) => row.key}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => {
-          if (item.kind === "filters") return <View style={[styles.stickyCategories, { paddingTop: insets.top }]}>{renderCategoryRail()}</View>;
-          if (item.kind === "offer") return renderOffer(item.offer);
+          if (item.kind === "filters") return <View style={[styles.stickyCategories, { paddingTop: heroVisible ? 0 : insets.top }]}>{renderCategoryRail()}</View>;
+          if (item.kind === "offer") return <GestureDetector gesture={tabSwipeGesture}><View>{renderOffer(item.offer)}</View></GestureDetector>;
+          if (item.kind === "grid") return <GestureDetector gesture={tabSwipeGesture}>
+            <View style={styles.gridRow}>
+              {item.offers.map((offer) => <View key={offer.offerId} style={styles.gridCell}>{renderOffer(offer, true)}</View>)}
+              {item.offers.length === 1 ? <View style={styles.gridCell} /> : null}
+            </View>
+          </GestureDetector>;
           if (item.kind === "section") return <Text accessibilityRole="header" style={styles.sectionTitle}>{item.title}</Text>;
           if (item.kind === "heading") return <BthwaniSectionHeader title={item.title} subtitle={item.subtitle} />;
-          return <BthwaniSurface tone="inset" style={styles.emptySection}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /><Text style={styles.sectionTitle}>{item.title}</Text></BthwaniSurface>;
+          return <GestureDetector gesture={tabSwipeGesture}><View><BthwaniSurface tone="inset" style={styles.emptySection}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /><Text style={styles.sectionTitle}>{item.title}</Text></BthwaniSurface></View></GestureDetector>;
         }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={<View style={styles.listHeader}>
-      <View style={[styles.storeHero, { height: 184 + insets.top }]}>
+      <View style={[styles.storeHero, { height: 244 + insets.top }]}>
           {heroImageURI
             ? <View pointerEvents="none" style={styles.storeHeroMedia}><Image accessibilityLabel={"غلاف متجر " + state.store.name} onError={() => setFailedStoreCover(true)} source={{ uri: heroImageURI }} resizeMode="cover" style={styles.storeCover} /></View>
             : <View accessibilityLabel={"غلاف متجر " + state.store.name + " غير متوفر"} pointerEvents="none" style={styles.storeCoverFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
@@ -614,10 +737,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           returnKeyType="search"
           value={catalogQuery}
         /> : null}
+        <BthwaniIconButton icon="share" label="مشاركة المتجر" onPress={() => void shareStore()} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
         <View style={styles.storeHeaderActions}>
           <BthwaniIconButton icon={catalogSearchOpen ? "close" : "search"} label={catalogSearchOpen ? "إغلاق البحث داخل المتجر" : "البحث في منتجات المتجر"} onPress={() => { if (catalogSearchOpen) { setCatalogSearchOpen(false); setCatalogQuery(""); void reloadCatalog(null, "", false, false); } else if (activeTab !== 0) { void selectCatalogTab(0).then(() => setCatalogSearchOpen(true)); } else { setCatalogSearchOpen(true); } }} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
           {!catalogSearchOpen ? <><BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push("/multi-store-checkout" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
-          <BthwaniIconButton icon="share" label="مشاركة المتجر" onPress={() => void shareStore()} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
           <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" /></> : null}
         </View>
         </View>
@@ -629,7 +752,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             : <View style={styles.storeInfoLogoFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
           <View style={styles.storeInfoIdentityCopy}>
             <Text numberOfLines={2} style={styles.storeInfoName}>{state.store.name}</Text>
-            {storeCategories ? <Text numberOfLines={2} style={styles.storeInfoLocation}>{storeCategories}</Text> : null}
             <View style={styles.storeInfoAddressRow}>
               <BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconSm} />
               <Text numberOfLines={2} style={styles.storeInfoLocation}>{storeAddress || "عنوان المتجر غير مسجل"}</Text>
@@ -648,7 +770,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           </View>
           <View style={styles.storeInfoStat}>
             <Text style={styles.storeInfoStatLabel}>تقييم المتجر</Text>
-            <Text accessibilityLabel={state.store.ratingCount ? "تقييم " + state.store.ratingAverage.toFixed(1) + " من خمسة، " + state.store.ratingCount + " تقييم" : "لا توجد تقييمات بعد"} style={styles.storeInfoStatValue}>{state.store.ratingCount ? "★ " + state.store.ratingAverage.toFixed(1) + " (" + state.store.ratingCount + ")" : "لا تقييمات بعد"}</Text>
+            <Text accessibilityLabel={"تقييم المتجر " + (state.store.ratingCount ? state.store.ratingAverage.toFixed(1) : "0.0") + " من خمسة، عدد المقيّمين " + state.store.ratingCount} style={styles.storeInfoStatValue}>{"★ " + (state.store.ratingCount ? state.store.ratingAverage.toFixed(1) : "0.0") + " · " + state.store.ratingCount + " تقييم"}</Text>
           </View>
         </View>
         {fulfillmentModes.length ? <View style={styles.storeInfoModes} accessibilityLabel="طرق الطلب المتاحة">
@@ -662,15 +784,17 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       </BthwaniSurface>
 
           {bannerItems.length ? <View style={styles.bannerBlock}>
-            <View style={styles.bannerHeading}><Text style={styles.bannerHeadingText}>{promotions.length && bannerCatalogOffers.length ? "عروض ومنتجات المتجر" : promotions.length ? "عروض هذا المتجر" : bannerOffers.length ? "الأكثر طلبًا خلال آخر 30 يومًا" : "منتجات من هذا المتجر"}</Text><View style={styles.bannerHeadingActions}>{bannerItems.length > 1 ? <Text style={styles.bannerPause}>{bannerIndex + 1} من {bannerItems.length}</Text> : null}{bannerItems.length > 1 ? reduceMotion ? <Text accessibilityLabel="الحركة التلقائية متوقفة وفق إعدادات تقليل الحركة بالجهاز" style={styles.bannerPause}>الحركة متوقفة</Text> : <Pressable accessibilityRole="button" accessibilityLabel={bannerPaused ? "تشغيل حركة العروض والمنتجات" : "إيقاف حركة العروض والمنتجات"} onPress={() => setBannerPaused((paused) => !paused)}><Text style={styles.bannerPause}>{bannerPaused ? "تشغيل" : "إيقاف"}</Text></Pressable> : null}</View></View>
-            <ScrollView ref={bannerRef} horizontal snapToInterval={bannerStep} decelerationRate="fast" contentContainerStyle={{ paddingHorizontal: bannerSidePadding, gap: spacing[2] }} onTouchStart={() => setBannerPaused(true)} onMomentumScrollEnd={(event) => setBannerIndex(Math.max(0, Math.min(bannerItems.length - 1, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / bannerStep))))} showsHorizontalScrollIndicator={false}>
-              {bannerItems.map((item) => item.kind === "offer" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`${bannerOffers.length ? "عرض المنتج الرائج" : "عرض المنتج"} ${item.offer.productName}`} onPress={() => openOfferDetails(item.offer.offerId)} style={[styles.bannerCard, { width: bannerWidth }]}>
+            <ScrollView ref={bannerRef} horizontal snapToInterval={bannerStep} decelerationRate="fast" contentContainerStyle={{ paddingHorizontal: bannerSidePadding, gap: spacing[1] }} onTouchStart={() => setBannerPaused(true)} onTouchEnd={() => setBannerPaused(false)} onMomentumScrollEnd={(event) => { setBannerIndex(Math.max(0, Math.min(bannerItems.length - 1, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / bannerStep)))); setBannerPaused(false); }} showsHorizontalScrollIndicator={false}>
+              {bannerItems.map((item) => item.kind === "content" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={"تفاصيل " + item.content.titleAr} onPress={() => { void recordDiscoveryClick(item.content.id); if (item.content.targetType === "STORE" || !item.content.targetId) Alert.alert(item.content.titleAr, item.content.bodyAr || "من جديد المتجر"); else router.push(("/discovery-content/" + encodeURIComponent(item.content.id)) as Href); }} style={[styles.bannerCard, { width: bannerWidth }]}>
+                {item.content.mediaUri ? <Image source={{ uri: item.content.mediaUri }} accessibilityLabel={"صورة " + item.content.titleAr} style={styles.bannerImage} resizeMode="cover" /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
+                <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>جديد المتجر</Text><Text numberOfLines={2} style={styles.bannerProduct}>{item.content.titleAr}</Text><Text numberOfLines={2} style={styles.bannerPrice}>{item.content.bodyAr}</Text></View>
+              </Pressable> : item.kind === "offer" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`${bannerOffers.length ? "عرض المنتج الرائج" : "عرض المنتج"} ${item.offer.productName}`} onPress={() => openOfferDetails(item.offer.offerId)} style={[styles.bannerCard, { width: bannerWidth }]}>
                 {item.offer.media[0]?.uri ? <Image source={{ uri: item.offer.media[0].uri }} accessibilityLabel={`صورة ${item.offer.productName}`} resizeMode="cover" style={styles.bannerImage} /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="trending" color={theme.interactiveText} size={sizing.iconMd} /></View>}
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>{bannerOffers.length ? "الأكثر طلبًا" : "من منتجات المتجر"}</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.offer.productName}</Text><Text style={styles.bannerPrice}>{storeMoney(item.offer.priceMinor, item.offer.currency)}</Text></View>
-              </Pressable> : <View key={item.key} accessibilityLabel={`عرض ${item.promotion.nameAr}: ${promotionBenefit(item.promotion)}`} style={[styles.bannerCard, { width: bannerWidth }]}>
+              </Pressable> : <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`عرض ${item.promotion.nameAr}: ${promotionBenefit(item.promotion)}`} onPress={() => Alert.alert(item.promotion.nameAr, `${item.promotion.descriptionAr}\n${promotionBenefit(item.promotion)}\nرمز العرض: ${item.promotion.code}`)} style={[styles.bannerCard, { width: bannerWidth }]}>
                 <View style={styles.bannerPromotionMark}><Text style={styles.bannerPromotionMarkText}>عرض</Text></View>
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>من عروض المتجر</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.promotion.nameAr}</Text><Text numberOfLines={1} style={styles.bannerPrice}>{promotionBenefit(item.promotion)} · الرمز {item.promotion.code}</Text></View>
-              </View>)}
+              </Pressable>)}
             </ScrollView>
           </View> : null}
           {bannerError && bannerItems.length === 0 ? <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل المنتجات الرائجة" onPress={() => void loadBanner()} style={styles.inlineRecovery}><Text style={styles.bannerPause}>تعذر تحميل المنتجات الرائجة · إعادة المحاولة</Text></Pressable> : null}
@@ -689,12 +813,23 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         ListEmptyComponent={catalogRefreshing ? <View style={styles.pageLoading} accessibilityLabel="جارٍ تحميل منتجات التبويب"><BthwaniSkeleton height={112} /><BthwaniSkeleton height={112} /></View> : null}
       />
       <StoreProductSheet
+        galleryOffers={[...state.catalog.offers, ...bannerOffers.filter((offer) => !state.catalog.offers.some((existing) => existing.offerId === offer.offerId))]}
+        onBrowseOffer={(offerID) => { void openOfferDetails(offerID, "gallery"); }}
+        isFavorite={(offerID) => favoriteOfferIDs.has(offerID)}
+        gallerySourceRect={gallerySourceRect}
+        favoriteBusy={Boolean(favoriteOfferBusyID)}
+        onToggleFavorite={(offerID) => { void toggleOfferFavorite(offerID); }}
+        onQuickAdd={(offerID) => { void openOfferDetails(offerID, "quick"); }}
+        presentation={sheetMode}
+        anchorY={quickAnchorY}
+        onShopOtherStore={() => { detailRequestID.current += 1; setDetailOffer(null); router.push("/home" as Href); }}
         offer={detailOffer}
         quantityBaseUnits={detailQuantity}
         selectedOptionIds={detailOffer ? selectedModifierOptionIds[detailOffer.offerId] ?? [] : []}
         busy={mutationBusy || detailLoading}
         added={Boolean(detailOffer && addedOfferId === detailOffer.offerId)}
-        fulfillmentSelected={Boolean(selectedFulfillmentMode)}
+        fulfillmentSelected={canOrderSelected}
+        orderingUnavailableMessage={selectedFulfillmentMode ? "المتجر لا يستقبل طلبات بهذه الطريقة حاليًا." : "اختر طريقة الطلب من صفحة المتجر أولًا."}
         error={error}
         onQuantityChange={(quantity) => { if (detailOffer) setQuantities((current) => ({ ...current, [detailOffer.offerId]: String(quantity) })); }}
         onToggleModifier={(groupID, optionID, maxSelections) => { if (detailOffer) toggleModifier(detailOffer, groupID, optionID, maxSelections); }}
@@ -703,15 +838,16 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         onGoToCart={() => { detailRequestID.current += 1; setDetailOffer(null); router.push(`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}` as Href); }}
       />
       {openCart?.lines.length || cartReadError ? <SafeAreaView edges={["bottom"]} style={styles.cartSafeArea}>
-        <BthwaniSurface tone="raised" style={styles.cartCta}>
+        <Pressable accessibilityRole="button" accessibilityLabel={cartReadError ? "فتح السلة لإعادة قراءة محتوياتها" : "مراجعة السلة، " + (openCart?.lines.length ?? 0) + " منتجات"} disabled={mutationBusy} accessibilityState={{ disabled: mutationBusy }} onPress={() => router.push((`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}`) as Href)} style={styles.cartCta}>
+          <View style={styles.cartOpenAction}><Text style={styles.cartOpenText}>مراجعة السلة</Text></View>
           <View style={styles.cartSummary}>
-            <Text style={styles.cartTitle}>{cartReadError ? "تعذر تحديث السلة" : `سلتك · ${openCart?.lines.length ?? 0} ${openCart?.lines.length === 1 ? "منتج" : openCart?.lines.length === 2 ? "منتجان" : "منتجات"}`}</Text>
-            <Text style={styles.cartValue}>{cartReadError ? "افتح السلة لإعادة قراءة محتوياتها" : openCart?.lines.some((line) => line.requiresReview) ? "تحتاج بعض الأسعار إلى مراجعة" : `قيمة المنتجات ${storeMoney(openCart?.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0) ?? 0, "YER")}`}</Text>
+            <Text numberOfLines={1} style={styles.cartTitle}>{cartReadError ? "تعذر تحديث السلة" : `سلتك · ${openCart?.lines.length ?? 0} ${openCart?.lines.length === 1 ? "منتج" : "منتجات"}`}</Text>
+            <Text numberOfLines={1} style={styles.cartValue}>{cartReadError ? "أعد قراءة السلة" : openCart?.lines.some((line) => line.requiresReview) ? "بعض الأسعار تحتاج مراجعة" : storeMoney(openCart?.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0) ?? 0, "YER")}</Text>
           </View>
-          <BthwaniButton accessibilityLabel="مراجعة محتويات السلة" disabled={mutationBusy} label="مراجعة السلة" onPress={() => router.push(`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}` as Href)} />
-        </BthwaniSurface>
+          <View style={styles.cartCompactIcon}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconMd} /></View>
+        </Pressable>
       </SafeAreaView> : null}
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -748,34 +884,34 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     statusBarScrim: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 5, elevation: 5 },
     catalogPager: { flex: 1 },
     pageLoading: { gap: spacing[3] },
-    container: { backgroundColor: theme.background, gap: spacing[3], paddingBottom: spacing[4], paddingHorizontal: spacing[3], width: "100%" },
-    listHeader: { gap: spacing[3] },
+    container: { backgroundColor: theme.background, gap: spacing[1], paddingBottom: spacing[2], paddingHorizontal: spacing[3], width: "100%" },
+    listHeader: { gap: spacing[1] },
     stickyCategories: { backgroundColor: theme.background, zIndex: 3 },
     listFooter: { gap: spacing[3] },
     storeCover: { height: "100%", width: "100%" },
     storeCoverFallback: { alignItems: "center", backgroundColor: theme.surfaceInset, height: "100%", justifyContent: "center", width: "100%" },
-    bannerBlock: { gap: spacing[1] },
+    bannerBlock: { gap: 0, marginTop: -spacing[1] },
     bannerHeading: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
     bannerHeadingActions: { alignItems: "center", flexDirection: "row", gap: spacing[1] },
     bannerHeadingText: { ...typography.caption, color: theme.colorMuted },
     bannerPause: { ...typography.caption, color: theme.interactiveText, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
-    bannerCard: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], minHeight: 76, padding: spacing[2] },
-    bannerImage: { borderRadius: radius.md, height: 58, width: 70 },
-    bannerImageFallback: { alignItems: "center", backgroundColor: theme.surface, borderRadius: radius.md, height: 58, justifyContent: "center", width: 70 },
-    bannerPromotionMark: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.md, height: 58, justifyContent: "center", width: 70 },
+    bannerCard: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.lg, flexDirection: "row", gap: spacing[1], minHeight: 80, padding: spacing[1] },
+    bannerImage: { borderRadius: radius.md, height: 72, width: 74 },
+    bannerImageFallback: { alignItems: "center", backgroundColor: theme.surface, borderRadius: radius.md, height: 72, justifyContent: "center", width: 74 },
+    bannerPromotionMark: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.md, height: 72, justifyContent: "center", width: 74 },
     bannerPromotionMarkText: { ...typography.bodyStrong, color: theme.onAction },
-    bannerCopy: { alignItems: "flex-end", flex: 1, gap: spacing[1] },
+    bannerCopy: { alignItems: "flex-end", flex: 1, gap: 1, minWidth: 0 },
     bannerItemEyebrow: { ...typography.caption, color: theme.colorMuted },
     bannerProduct: { ...typography.bodyStrong, color: theme.color },
     bannerPrice: { ...typography.caption, color: theme.interactiveText },
     state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
     title: { ...typography.titleSm, color: theme.color },
     muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 20 },
-    storeHero: { height: 184, marginHorizontal: -spacing[3], position: "relative", backgroundColor: theme.surfaceInset, overflow: "hidden" },
+    storeHero: { height: 244, marginHorizontal: -spacing[3], position: "relative", backgroundColor: theme.surfaceInset, overflow: "hidden" },
     storeHeroMedia: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0 },
     storeHeroShade: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.26)" },
-    storeHeroToolbar: { position: "absolute", top: 0, left: 0, right: 0, alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "flex-end", paddingHorizontal: spacing[3], zIndex: 2 },
-    storeInfoCard: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[2], marginTop: -56, padding: spacing[3], zIndex: 2, ...elevation.raised },
+    storeHeroToolbar: { position: "absolute", top: 0, left: 0, right: 0, alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "space-between", paddingHorizontal: spacing[3], zIndex: 2 },
+    storeInfoCard: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[2], marginTop: -68, padding: spacing[3], zIndex: 2, ...elevation.raised },
     storeInfoIdentityRow: { alignItems: "center", flexDirection: "row", gap: spacing[3] },
     storeInfoAddressRow: { alignItems: "center", flexDirection: "row", gap: spacing[1] },
     storeInfoLogo: { backgroundColor: theme.surface, borderRadius: radius.lg, height: 60, width: 60 },
@@ -803,39 +939,67 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     inlineRecovery: { alignItems: "flex-end", paddingVertical: spacing[1] },
     promotionList: { gap: spacing[2] },
     promotionNotice: { alignItems: "flex-start", gap: spacing[2] },
-    categoryRail: { alignItems: "center", flexDirection: "row", gap: spacing[2], paddingVertical: spacing[1] },
-    catalogFilterChip: { alignItems: "center", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.round, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[1], justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
+    categoryRail: { alignItems: "center", flexDirection: "row", gap: spacing[1], paddingVertical: spacing[1], paddingHorizontal: spacing[1] },
+    catalogToolbar: { alignItems: "center", flexDirection: "row", gap: spacing[1], minHeight: sizing.controlLg },
+    categoryScroller: { flex: 1, minWidth: 0 },
+    layoutToggle: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, justifyContent: "center", minHeight: sizing.controlMd, minWidth: sizing.controlMd, padding: spacing[2] },
+    layoutListGlyph: { width: 20, gap: 3, alignItems: "stretch" },
+    layoutListLine: { height: 3, width: "100%", borderRadius: radius.round, backgroundColor: theme.interactiveText },
+    layoutGridGlyph: { width: 20, height: 20, flexDirection: "row", flexWrap: "wrap", gap: 3 },
+    layoutGridSquare: { height: 8, width: 8, borderRadius: 2, backgroundColor: theme.interactiveText },
+    catalogFilterChip: { alignItems: "center", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.round, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[1], justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[2] },
+    pinnedAllChip: { minWidth: 52 },
     catalogFilterChipSelected: { backgroundColor: theme.actionBackground, borderColor: theme.actionBackground },
-    catalogFilterChipLabel: { ...typography.bodySm, color: theme.color, textAlign: "center" },
+    catalogFilterChipLabel: { ...typography.caption, color: theme.color, textAlign: "center" },
     catalogFilterChipLabelSelected: { color: theme.onAction, fontWeight: "600" },
-    categoryChip: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.round, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], maxWidth: 190, minHeight: sizing.controlLg, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
+    categoryChip: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.round, borderWidth: borders.hairline, flexDirection: "row", justifyContent: "center", gap: spacing[1], minHeight: sizing.controlMd, paddingHorizontal: spacing[1] },
+    mainCategoryChip: { width: 110, minHeight: sizing.controlMd },
+    subcategoryChip: { maxWidth: 90, minHeight: 36, paddingHorizontal: spacing[1] },
+    deepCategoryChip: { maxWidth: 75, minHeight: 30, paddingHorizontal: spacing[1] },
     categoryChipSelected: { backgroundColor: theme.actionBackground, borderColor: theme.actionBackground },
-    categoryThumbnail: { borderRadius: radius.round, height: sizing.avatarSm, width: sizing.avatarSm },
-    categoryThumbnailPlaceholder: { alignItems: "center", backgroundColor: theme.surfaceInset, borderRadius: radius.round, height: sizing.avatarSm, justifyContent: "center", width: sizing.avatarSm },
+    categoryThumbnail: { borderRadius: radius.round, height: 22, width: 22 },
+    subcategoryThumbnail: { height: 20, width: 20 },
+    deepCategoryThumbnail: { height: 18, width: 18 },
+    categoryThumbnailPlaceholder: { alignItems: "center", backgroundColor: theme.surfaceInset, borderRadius: radius.round, height: 22, justifyContent: "center", width: 22 },
     categoryThumbnailSelected: { backgroundColor: theme.interactiveText },
-    categoryChipLabel: { ...typography.bodySm, color: theme.color, maxWidth: 132 },
+    categoryChipLabel: { ...typography.caption, color: theme.color, flexShrink: 1, textAlign: "center" },
+    subcategoryChipLabel: { ...typography.caption },
+    deepCategoryChipLabel: { ...typography.caption },
     categoryChipLabelSelected: { color: theme.onAction },
     headerSearchField: { flex: 1, minWidth: 0 },
-    sectionTitle: { ...typography.bodyStrong, backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, color: theme.color, minHeight: 72, paddingHorizontal: spacing[4], paddingVertical: spacing[4], textAlign: "right", textAlignVertical: "center" },
+    sectionTitle: { ...typography.bodyStrong, backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, color: theme.color, minHeight: 48, paddingHorizontal: spacing[3], paddingVertical: spacing[2], textAlign: "right", textAlignVertical: "center" },
     item: { borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[2], ...elevation.raised },
-    productSummary: { alignItems: "stretch", flexDirection: "row", gap: spacing[3] },
-    productImageFrame: { borderRadius: radius.lg, height: 112, overflow: "hidden", position: "relative", width: "34%" },
-    productImage: { backgroundColor: theme.surface, height: 112, width: "100%" },
-    productImagePlaceholder: { alignItems: "center", backgroundColor: theme.surfaceInset, height: 112, justifyContent: "center", width: "100%" },
+    gridRow: { flexDirection: "row", gap: spacing[2] },
+    gridCell: { flex: 1, minWidth: 0 },
+    gridItem: { flex: 1, minHeight: 238, padding: spacing[2] },
+    gridImageFrame: { width: "100%", position: "relative", overflow: "hidden", borderRadius: radius.lg },
+    gridImage: { height: 130, width: "100%", backgroundColor: theme.surfaceInset },
+    gridCopy: { alignItems: "stretch", alignSelf: "stretch", width: "100%" },
+    gridCopyText: { alignSelf: "stretch", width: "100%", textAlign: "auto" },
+    gridBottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing[1] },
+    productSummary: { alignItems: "stretch", flexDirection: "row", gap: 0, height: 124 },
+    listItem: { padding: 0, overflow: "hidden" },
+    listCardActions: { alignItems: "center", flexDirection: "column", justifyContent: "space-between", width: 44, paddingVertical: spacing[2], paddingHorizontal: spacing[1] },
+    productImageFrame: { height: "100%", overflow: "hidden", width: "40%" },
+    productImagePressable: { width: "100%", height: "100%" },
+    productImage: { backgroundColor: theme.surface, height: "100%", width: "100%" },
+    productImagePlaceholder: { alignItems: "center", backgroundColor: theme.surfaceInset, height: "100%", justifyContent: "center", width: "100%" },
     productFavorite: { position: "absolute", right: spacing[1], top: spacing[1] },
-    productCopyAndAction: { flex: 1, gap: spacing[1], justifyContent: "space-between", minWidth: 0, paddingVertical: spacing[1] },
+    productCopyAndAction: { flex: 1, gap: spacing[1], justifyContent: "space-between", minWidth: 0, padding: spacing[2] },
     itemCopy: { alignItems: "flex-start", flex: 1, justifyContent: "center", minHeight: sizing.controlMd },
     itemTitle: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
     productUnit: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
-    productActionRow: { alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "space-between", width: "100%" },
-    productActionPrice: { ...typography.bodyStrong, color: theme.interactiveText },
+    productActionPrice: { ...typography.bodyStrong, color: theme.interactiveText, flexShrink: 1 },
     addOfferButton: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.md, flexDirection: "row", gap: spacing[1], justifyContent: "center", minHeight: sizing.controlMd, minWidth: sizing.controlMd, paddingHorizontal: spacing[2] },
     addOfferPlus: { ...typography.bodyStrong, color: theme.onAction },
     emptySection: { alignItems: "center", borderRadius: radius.lg, gap: spacing[2], padding: spacing[4] },
-    cartSafeArea: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingHorizontal: spacing[4], paddingTop: spacing[2] },
-    cartCta: { alignItems: "center", borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], padding: spacing[3] },
-    cartSummary: { flex: 1, gap: spacing[1] },
-    cartTitle: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
+    cartSafeArea: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingHorizontal: spacing[3], paddingTop: spacing[1] },
+    cartCta: { alignItems: "center", backgroundColor: theme.surfaceRaised, borderRadius: radius.round, flexDirection: "row", gap: spacing[2], minHeight: 54, paddingHorizontal: spacing[2], paddingVertical: spacing[1], borderColor: theme.borderColor, borderWidth: borders.hairline },
+    cartCompactIcon: { alignItems: "center", justifyContent: "center", backgroundColor: theme.actionBackground, borderRadius: radius.round, height: 34, width: 34 },
+    cartOpenAction: { backgroundColor: theme.actionSoft, borderRadius: radius.round, paddingHorizontal: spacing[3], minHeight: 34, justifyContent: "center" },
+    cartOpenText: { ...typography.caption, color: theme.interactiveText },
+    cartSummary: { flex: 1, gap: 0, minWidth: 0 },
+    cartTitle: { ...typography.bodySm, color: theme.color, textAlign: "right" },
     cartValue: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
     validationError: { ...typography.bodySm, color: theme.danger, lineHeight: 19 },
     error: { ...typography.bodySm, color: theme.danger, lineHeight: 19 },
@@ -919,7 +1083,7 @@ function buildCatalogRows(catalog: PublicCatalogResponse, favoritesView: boolean
       : "لا توجد منتجات متاحة حاليًا";
   const catalogRows: StoreCatalogRow[] = [];
   const seenOfferIDs = new Set<string>();
-  if (favoritesView) catalogRows.push({ kind: "heading", key: "favorite-offers-heading", title: "المنتجات المفضلة", subtitle: `${catalog.offers.length} منتج معروض${refreshing ? " · جارٍ التحديث…" : ""}` });
+
   if (catalog.offers.length === 0) catalogRows.push({ kind: "empty", key: "catalog-empty", title: emptyOfferMessage });
   const appendOffer = (offer: PublicCatalogResponse["offers"][number]) => {
     if (seenOfferIDs.has(offer.offerId)) return;

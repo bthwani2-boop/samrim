@@ -129,7 +129,7 @@ export function StoreProfileImageEditor(props: { value: JoiningCaseResponse; onU
         <BthwaniButton disabled={busy} label="الشعار" onPress={() => { setStoreImageRole("primary"); setStoreImage(null); setError(""); }} variant={storeImageRole === "primary" ? "primary" : "secondary"} />
         <BthwaniButton disabled={busy} label="الغلاف" onPress={() => { setStoreImageRole("cover"); setStoreImage(null); setError(""); }} variant={storeImageRole === "cover" ? "primary" : "secondary"} />
       </View>
-      {selectedAsset ? <Image accessibilityLabel={`${selectedImageTitle} ${activeCurrent.firstStoreName}`} source={{ uri: selectedAsset.uri }} resizeMode="cover" style={[styles.storeImage, storeImageRole === "cover" && styles.storeCover]} /> : <Text style={styles.muted}>{storeImageRole === "cover" ? "لا يوجد غلاف موثق بعد. الغلاف مطلوب قبل نشر المتجر للعملاء." : "لا يوجد شعار موثق بعد. الشعار مطلوب قبل نشر المتجر للعملاء."}</Text>}
+      {selectedAsset ? <Image accessibilityLabel={`${selectedImageTitle} ${activeCurrent.firstStoreName}`} source={{ uri: selectedAsset.uri }} resizeMode="cover" style={[styles.storeImage, storeImageRole === "cover" && styles.storeCover]} /> : <Text style={styles.muted}>{storeImageRole === "cover" ? "لا يوجد غلاف للمتجر بعد. هذا غلاف عريض مستقل عن الشعار، وسيظهر في أعلى واجهة المتجر عند إضافته." : "لا يوجد شعار موثق بعد. الشعار مطلوب قبل نشر المتجر للعملاء."}</Text>}
       {storeImage ? <Image accessibilityLabel={`معاينة ${selectedImageTitle} الجديدة`} source={{ uri: storeImage.image.uri }} resizeMode="cover" style={[styles.storeImage, storeImageRole === "cover" && styles.storeCover]} /> : null}
       {storeImage ? <View style={styles.imageBox}>
         <Text style={styles.label}>مصدر الصورة وحق استخدامها</Text>

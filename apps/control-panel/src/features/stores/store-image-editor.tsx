@@ -24,7 +24,7 @@ export function StoreImageEditor({storeId,name,onSaved}: {storeId:string;name:st
   try {
    const digest=await crypto.subtle.digest("SHA-256",await selected.arrayBuffer());
    const hash=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,"0")).join("");
-   const matches=(next:StoreImagesResponse)=>{const asset=role==="cover"?next.storeCoverImage:next.storeProfileImage;return next.storeId===storeId&&asset?.contentSha256===hash&&asset.provenance.creator===provenance.creator.trim()&&asset.provenance.sourceDescription===provenance.sourceDescription.trim()&&asset.provenance.rightsStatement===provenance.rightsStatement.trim()&&(asset.provenance.sourceUri??"")===(provenance.sourceUri??"").trim()&&(asset.provenance.rightsUri??"")===(provenance.rightsUri??"").trim()&&Boolean(asset.provenance.attestedAt);};
+   const matches=(next:StoreImagesResponse)=>{const asset=role==="cover"?next.storeCoverImage:next.storeProfileImage;return next.storeId===storeId&&asset?.contentSha256===hash&&asset.provenance?.creator===provenance.creator.trim()&&asset.provenance?.sourceDescription===provenance.sourceDescription.trim()&&asset.provenance?.rightsStatement===provenance.rightsStatement.trim()&&(asset.provenance?.sourceUri??"")===(provenance.sourceUri??"").trim()&&(asset.provenance?.rightsUri??"")===(provenance.rightsUri??"").trim()&&Boolean(asset.provenance?.attestedAt);};
    const identityHash=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(`${storeId}:${current.version}:${role}:${hash}:${JSON.stringify(provenance)}`));
    const identity=Array.from(new Uint8Array(identityHash),b=>b.toString(16).padStart(2,"0")).join("");
    const form=new FormData();form.append("file",selected);form.append("role",role);for(const [key,value]of Object.entries(provenance))form.append(key,String(value));
@@ -40,8 +40,8 @@ export function StoreImageEditor({storeId,name,onSaved}: {storeId:string;name:st
  return <section className="store-detail-section" aria-labelledby="store-images-title">
   <h2 id="store-images-title">صور واجهة المتجر</h2>
   <div className="button-row" role="group" aria-label="نوع الصورة">{(["primary","cover"] as const).map(value=><button key={value} type="button" className={`button ${role===value?"button-primary":"button-secondary"}`} disabled={busy} aria-pressed={role===value} onClick={()=>{setRole(value);setFile(null);setProvenance(emptyProvenance);setError("");setNotice("");}}>{value==="cover"?"الغلاف":"الشعار"}</button>)}</div>
-  {selectedAsset?<StoreLogo name={name} uri={selectedAsset.uri} imageLabel={label}/>:<p className="muted">{current?`لم يُرفق ${label} بعد.`:"جارٍ قراءة صور المتجر…"}</p>}
-  {preview?<StoreLogo name={name} uri={preview} imageLabel={`معاينة ${label} الجديد`}/>:null}
+  {selectedAsset?(role==="cover"?<img src={selectedAsset.uri} alt={`غلاف المتجر ${name}`} style={{width:"100%",aspectRatio:"16 / 7",objectFit:"cover",borderRadius:12}}/>:<StoreLogo name={name} uri={selectedAsset.uri} imageLabel={label}/>):<p className="muted">{current?`لم يُرفق ${label} بعد.`:"جارٍ قراءة صور المتجر…"}</p>}
+  {preview?(role==="cover"?<img src={preview} alt={`معاينة غلاف المتجر ${name}`} style={{width:"100%",aspectRatio:"16 / 7",objectFit:"cover",borderRadius:12}}/>:<StoreLogo name={name} uri={preview} imageLabel={`معاينة ${label} الجديد`}/>):null}
   <form noValidate onSubmit={event=>{event.preventDefault();void save();}}>
    <fieldset disabled={busy||!current}><legend>إضافة أو استبدال {label}</legend>
     <label>الصورة (JPG أو PNG، حتى 10 ميغابايت)<input key={role} type="file" accept="image/jpeg,image/png" onChange={event=>{const next=event.target.files?.[0];if(!next)return;if(next.size<1||next.size>10*1024*1024||!["image/jpeg","image/png"].includes(next.type)){setError("اختر JPG أو PNG لا يتجاوز 10 ميغابايت.");return;}setFile(next);setError("");setNotice("");}}/></label>
