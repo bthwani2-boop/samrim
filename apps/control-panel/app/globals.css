@@ -123,6 +123,11 @@
   .page-header-title { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .workspace-page, .work-stack, .operations-workspace, .store-workspace, .partner-detail-workspace { display: grid; gap: 16px; min-inline-size: 0; }
   .panel, .access-card, .order-detail-panel, .partner-detail-section, .store-detail-section, .review-panel, .home-work-area, .access-workspace-section, .account-access-panel { min-inline-size: 0; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-base); }
+  .marketing-analytics-breakdown { display: grid; gap: 10px; margin: 0; }
+  .marketing-analytics-breakdown > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 12px; }
+  .marketing-analytics-breakdown dt { color: var(--text-muted); font-size: 13px; }
+  .marketing-analytics-breakdown dd { display: grid; justify-items: end; gap: 4px; margin: 0; font-variant-numeric: tabular-nums; }
+  .marketing-analytics-breakdown progress { inline-size: clamp(90px, 16vw, 180px); block-size: 7px; accent-color: var(--action-bg); }
   .marketing-create-disclosure:not([open]) { padding: 0; border: 0; background: transparent; }
   .marketing-create-disclosure:not([open]) > .marketing-create-summary { display: inline-flex; justify-content: center; inline-size: auto; min-block-size: 44px; padding: 8px 14px; border: 1px solid var(--action-bg); border-radius: 7px; background: var(--action-bg); color: var(--color-on-action); cursor: pointer; }
   :is(.panel,.access-card,.order-detail-panel,.partner-detail-section,.store-detail-section,.review-panel) > * { margin-block-end: 12px; }

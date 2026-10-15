@@ -6,6 +6,7 @@ EXECUTION_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 - One durable fact has one canonical writer and one owning migration history.
+- Text integrity is end-to-end: new or modified text sources and transport payloads use verified UTF-8, with decoding/transcoding of external legacy encodings at ingestion boundaries only. A byte-order mark is avoided for source files unless a consumer requires it (for example an Excel-compatible CSV export). Preserve Arabic Unicode and mixed-direction identifiers without double-decoding, guessing a replacement encoding, or substituting mojibake for real content; validate round trips across API, storage and display when materially affected. Encoding fixes must preserve original business facts and user data.
 - Schema and application changes cut over coherently; obsolete dual-write/shadow schemas require a proven bounded coexistence need.
 - For a migration affecting retained local, shared or production-like state, record the exact source/applied schema boundary, protect the target with a restorable restricted backup and rehearse the upgrade/restore on an isolated copy. Stop or coordinate incompatible writers, apply through the owning migration runner, then verify version, record identity, integrity and compatible service readback before resuming. A successful disposable migration test does not grant permission to reset, overwrite or mutate durable shared data.
 - Migrations are deterministic, ordered, reviewable and fail closed on incompatible preconditions.
