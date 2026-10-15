@@ -237,7 +237,8 @@ export default function ClientOrders() {
       ) : visibleOrders.length === 0 ? (
         <BthwaniSurface tone="inset" style={styles.emptyState}>
           <View style={styles.emptyIcon}><BthwaniIcon name="orders" color={theme.interactiveText} size={sizing.iconXl} /></View>
-          <Text style={styles.cardTitle}>لا توجد طلبات بهذا النوع</Text>
+          <Text style={styles.cardTitle}>{state.nextCursor ? "لا توجد طلبات مطابقة في الصفحات المحمّلة" : "لا توجد طلبات بهذا النوع"}</Text>
+          {state.nextCursor ? <Text style={styles.muted}>قد تجد طلبات مطابقة في الصفحات الأقدم. استخدم «البحث في طلبات أقدم» لمتابعة السجل.</Text> : null}
           <BthwaniButton label="عرض كل الطلبات" onPress={() => { setFulfillmentFilter("all"); setStatusFilter("all"); }} variant="secondary" />
         </BthwaniSurface>
       ) : (
@@ -253,7 +254,7 @@ export default function ClientOrders() {
       )}
       {state.nextCursor ? <View style={styles.list}>
         {loadMoreError ? <Text accessibilityRole="alert" style={styles.error}>{loadMoreError}</Text> : null}
-        <BthwaniButton busy={loadingMore} disabled={refreshing || loadingMore || Boolean(repeatingOrderID)} label={loadingMore ? "جارٍ تحميل الطلبات الأقدم…" : "عرض طلبات أقدم"} onPress={() => void loadMore()} variant="secondary" />
+        <BthwaniButton busy={loadingMore} disabled={refreshing || loadingMore || Boolean(repeatingOrderID)} label={loadingMore ? "جارٍ تحميل الطلبات الأقدم…" : visibleOrders.length === 0 && state.orders.length > 0 ? "البحث في طلبات أقدم" : "عرض طلبات أقدم"} onPress={() => void loadMore()} variant="secondary" />
       </View> : null}
     </View>
   );

@@ -66,9 +66,12 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 				t.Fatalf("nearby ordering mismatch at %d: %+v", i, nearby)
 			}
 		}
-		pending, err := postgres.ListReadyCaptainDispatchOrders(ctx, db, 10)
+		pending, err := postgres.ListReadyCaptainDispatchOrders(ctx, db, 10, "")
 		if err != nil || len(pending) != 1 || pending[0] != orderID {
 			t.Fatalf("automatic dispatch recovery scan=%v err=%v", pending, err)
+		}
+		if next, err := postgres.ListReadyCaptainDispatchOrders(ctx, db, 10, orderID); err != nil || len(next) != 0 {
+			t.Fatalf("cursor must advance past scanned order: %v err=%v", next, err)
 		}
 		dispatchKey := "dispatch-three-first-key"
 		hash := postgres.HashCaptainDispatchRequest(orderID)
@@ -89,9 +92,41 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 				t.Fatalf("wallet-ineligible or stale captain received an offer: %s", offeredActor)
 			}
 		}
-		pending, err = postgres.ListReadyCaptainDispatchOrders(ctx, db, 10)
+		pending, err = postgres.ListReadyCaptainDispatchOrders(ctx, db, 10, "")
 		if err != nil || len(pending) != 0 {
 			t.Fatalf("active offer must hide order from automatic redispatch: %v err=%v", pending, err)
+		}
+		// Unserviceable older ready orders must not starve later orders.
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version)
+			SELECT 'dispatch-fair-cart-'||lpad(n::text,2,'0'),'dispatch-three-client',$1,'checked_out',1
+			FROM generate_series(0,27) n`, storeID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders
+			(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,
+			serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,
+			total_amount_minor,currency,version,payment_intent_id,payment_method,payment_state,fulfillment_mode,payment_cash_amount_minor)
+			SELECT 'dispatch-fair-order-'||lpad(n::text,2,'0'),'dispatch-three-client',$1,
+				'dispatch-fair-cart-'||lpad(n::text,2,'0'),'dispatch-three-address',1,'صنعاء',15.3694457,44.1910064,$2,
+				'CITY_SCOPE_V1','SERVICEABLE',1,1,'READY_FOR_DISPATCH',1800,'YER',1,
+				'dispatch-fair-payment-'||n,'CASH_ON_DELIVERY','REQUIRES_COLLECTION','BTHWANI_CAPTAIN',1800
+			FROM generate_series(0,27) n`, storeID, cityID); err != nil {
+			t.Fatal(err)
+		}
+		firstPage, err := postgres.ListReadyCaptainDispatchOrders(ctx, db, 25, "")
+		if err != nil || len(firstPage) != 25 {
+			t.Fatalf("ready-page1 count=%d err=%v", len(firstPage), err)
+		}
+		secondPage, err := postgres.ListReadyCaptainDispatchOrders(ctx, db, 25, firstPage[len(firstPage)-1])
+		if err != nil || len(secondPage) != 3 {
+			t.Fatalf("ready-page2 count=%d err=%v", len(secondPage), err)
+		}
+		if firstPage[len(firstPage)-1] >= secondPage[0] {
+			t.Fatalf("ready cursor repeated/skipped boundary: %s >= %s", firstPage[len(firstPage)-1], secondPage[0])
+		}
+		end, err := postgres.ListReadyCaptainDispatchOrders(ctx, db, 25, secondPage[len(secondPage)-1])
+		if err != nil || len(end) != 0 {
+			t.Fatalf("ready scan must reach end: %v err=%v", end, err)
 		}
 		replay, again, err := postgres.CreateCaptainDispatchOffer(ctx, db, orderID, dispatchKey, hash, "operator-test", "correlation-three")
 		if err != nil || !again || replay.ID != first.ID {

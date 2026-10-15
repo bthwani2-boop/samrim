@@ -35,8 +35,8 @@ func NewCaptain(identityClient *identityintegration.Client, accessToken string, 
 	return &CaptainServer{auth: authorizer, service: service}, nil
 }
 
-func (s *CaptainServer) ReconcileAutomaticDispatch(ctx context.Context) error {
-	return s.service.ReconcileAutomaticDispatch(ctx)
+func (s *CaptainServer) ReconcileAutomaticDispatch(ctx context.Context, afterID string) (string, error) {
+	return s.service.ReconcileAutomaticDispatch(ctx, afterID)
 }
 
 func (s *CaptainServer) Register(mux *http.ServeMux) {

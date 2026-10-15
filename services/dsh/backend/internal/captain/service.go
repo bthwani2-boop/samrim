@@ -459,32 +459,43 @@ func (s *Service) Recover(ctx context.Context, assignmentID, actingActorID strin
 // ReconcileAutomaticDispatch runs only inside the DSH worker; it is not an
 // externally callable role bypass. Each insert is guarded by the canonical
 // order lock, duplicate-offer constraints, and the WLT wallet preflight.
-func (s *Service) ReconcileAutomaticDispatch(ctx context.Context) error {
+func (s *Service) ReconcileAutomaticDispatch(ctx context.Context, afterID string) (string, error) {
 	if err := postgres.CanonicalizeCaptainOffers(ctx, s.db, ""); err != nil {
-		return err
+		return afterID, err
 	}
-	orderIDs, err := postgres.ListReadyCaptainDispatchOrders(ctx, s.db, 25)
+	const pageSize = 25
+	orderIDs, err := postgres.ListReadyCaptainDispatchOrders(ctx, s.db, pageSize, afterID)
 	if err != nil {
-		return err
+		return afterID, err
 	}
+	var firstErr error
 	for _, orderID := range orderIDs {
+		if err := ctx.Err(); err != nil {
+			return afterID, err
+		}
 		approved, err := s.dispatchCandidates(ctx, orderID)
 		if errors.Is(err, postgres.ErrCaptainNoAvailable) {
 			continue
 		}
 		if err != nil {
-			return err
+			if firstErr == nil {
+				firstErr = fmt.Errorf("dispatch order %s: %w", orderID, err)
+			}
+			continue
 		}
 		key := fmt.Sprintf("auto-dispatch:%s:%d", orderID, time.Now().UTC().UnixNano())
 		_, _, err = postgres.CreateCaptainDispatchOffer(ctx, s.db, orderID, key, postgres.HashCaptainDispatchRequest(orderID), "system-captain-dispatch", key, approved...)
 		if errors.Is(err, postgres.ErrCaptainDispatchConflict) || errors.Is(err, postgres.ErrCaptainNoAvailable) {
 			continue
 		}
-		if err != nil {
-			return err
+		if err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("dispatch order %s: %w", orderID, err)
 		}
 	}
-	return nil
+	if len(orderIDs) < pageSize {
+		return "", firstErr
+	}
+	return orderIDs[len(orderIDs)-1], firstErr
 }
 
 // dispatchCandidates checks fresh nearby presence and the canonical WLT wallet
