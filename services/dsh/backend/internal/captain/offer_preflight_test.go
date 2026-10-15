@@ -51,6 +51,8 @@ func TestCaptainCODReservationConflictIsNotReportedAsOutage(t *testing.T) {
 		want error
 	}{
 		{name: "another captain holds this COD order", err: &wlt.Error{Status: 409, Code: "STATE_CONFLICT"}, want: postgres.ErrCaptainAssignmentConflict},
+		{name: "captain balance cannot cover COD", err: &wlt.Error{Status: 409, Code: "INSUFFICIENT_FUNDS"}, want: ErrCaptainWalletInsufficientFunds},
+		{name: "payment has no cash exposure", err: &wlt.Error{Status: 409, Code: "COD_EXPOSURE_UNAVAILABLE"}, want: postgres.ErrPaymentStateConflict},
 		{name: "WLT storage unavailable", err: &wlt.Error{Status: 502, Code: "WLT_STORAGE_UNAVAILABLE"}, want: ErrPaymentUnavailable},
 		{name: "transport error", err: errors.New("connection reset"), want: ErrPaymentUnavailable},
 	}

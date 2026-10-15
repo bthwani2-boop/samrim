@@ -16,18 +16,19 @@ import (
 )
 
 var (
-	ErrInvalidInput                = errors.New("captain input is invalid")
-	ErrOperatorNotActive           = errors.New("operator is not active")
-	ErrCaptainSessionForbidden     = errors.New("an active app-captain session is required")
-	ErrPartnerSessionForbidden     = errors.New("an active app-partner session is required")
-	ErrManagedRoleClosed           = errors.New("managed role mutation is outside the DSH-owned domain boundary")
-	ErrManagedRoleNotEligible      = errors.New("managed role is not currently eligible in its owning domain")
-	ErrManagedRoleVersionConflict  = errors.New("managed role version is stale")
-	ErrCaptainIdentityUnavailable  = errors.New("captain identity was not provisioned")
-	ErrPaymentUnavailable          = errors.New("payment collection is unavailable")
-	ErrCollectionAmountMismatch    = errors.New("collected amount does not match the order amount")
-	ErrLocationStateConflict       = errors.New("captain location is only publishable while the order is in custody")
-	ErrLocationIdempotencyConflict = errors.New("captain location idempotency key conflicts with a previous request")
+	ErrInvalidInput                   = errors.New("captain input is invalid")
+	ErrOperatorNotActive              = errors.New("operator is not active")
+	ErrCaptainSessionForbidden        = errors.New("an active app-captain session is required")
+	ErrPartnerSessionForbidden        = errors.New("an active app-partner session is required")
+	ErrManagedRoleClosed              = errors.New("managed role mutation is outside the DSH-owned domain boundary")
+	ErrManagedRoleNotEligible         = errors.New("managed role is not currently eligible in its owning domain")
+	ErrManagedRoleVersionConflict     = errors.New("managed role version is stale")
+	ErrCaptainIdentityUnavailable     = errors.New("captain identity was not provisioned")
+	ErrPaymentUnavailable             = errors.New("payment collection is unavailable")
+	ErrCaptainWalletInsufficientFunds = errors.New("captain wallet cannot cover COD exposure")
+	ErrCollectionAmountMismatch       = errors.New("collected amount does not match the order amount")
+	ErrLocationStateConflict          = errors.New("captain location is only publishable while the order is in custody")
+	ErrLocationIdempotencyConflict    = errors.New("captain location idempotency key conflicts with a previous request")
 )
 
 type Service struct {
@@ -304,8 +305,15 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 // normal parallel-dispatch race; only transport/unknown failures are outages.
 func classifyCaptainCODReserveError(err error) error {
 	var financial *wlt.Error
-	if errors.As(err, &financial) && financial.Status == 409 && financial.Code == "STATE_CONFLICT" {
-		return postgres.ErrCaptainAssignmentConflict
+	if errors.As(err, &financial) && financial.Status == 409 {
+		switch financial.Code {
+		case "STATE_CONFLICT":
+			return postgres.ErrCaptainAssignmentConflict
+		case "INSUFFICIENT_FUNDS":
+			return ErrCaptainWalletInsufficientFunds
+		case "COD_EXPOSURE_UNAVAILABLE":
+			return postgres.ErrPaymentStateConflict
+		}
 	}
 	return fmt.Errorf("%w: captain COD authorization unavailable: %v", ErrPaymentUnavailable, err)
 }

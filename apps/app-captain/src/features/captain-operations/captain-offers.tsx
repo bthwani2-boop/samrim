@@ -84,13 +84,16 @@ export function CaptainOffers() {
       if (after.kind !== "authenticated" || !isCurrentCaptainActor(actorID, after.identity.subject.trim())) return;
       await load();
     } catch (cause) {
-      console.error("DSH Captain offer response failed", cause);
+      const insufficientFunds = typeof cause === "object" && cause !== null && "code" in cause && cause.code === "INSUFFICIENT_FUNDS";
+      if (!insufficientFunds) console.error("DSH Captain offer response failed", cause);
       const current = currentIdentityState();
       if (current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return;
       const verified = await load();
-      setError(verified
-        ? "لم نتأكد من نتيجة الرد. راجع حالة العرض بعد إعادة القراءة، ثم تحقق من التوصيلات قبل أي محاولة جديدة."
-        : "لم نتأكد من نتيجة الرد وتعذرت إعادة قراءة العروض. لا تعِد إرسال القرار قبل نجاح تحديث العروض والتوصيلات.");
+      setError(insufficientFunds && verified
+        ? "رصيد محفظتك المتاح لا يكفي لضمان التحصيل النقدي لهذا الطلب. لم يُقبل العرض؛ يلزم توفير الرصيد عبر قناة شحن معتمدة."
+        : verified
+          ? "لم نتأكد من نتيجة الرد. راجع حالة العرض بعد إعادة القراءة، ثم تحقق من التوصيلات قبل أي محاولة جديدة."
+          : "لم نتأكد من نتيجة الرد وتعذرت إعادة قراءة العروض. لا تعِد إرسال القرار قبل نجاح تحديث العروض والتوصيلات.");
     } finally {
       setBusy("");
     }
@@ -99,6 +102,7 @@ export function CaptainOffers() {
   return (
     <View style={styles.container} accessibilityLabel="عروض التوصيل">
       <Text style={styles.readinessTitle}>عروض التوصيل</Text>
+      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ جلب العروض…</Text></View> : null}
       {!loading && !error && !filteredOffers.length ? <View style={styles.card}>
         <Text style={styles.cardTitle}>{scopedOffers.length ? "لا توجد نتائج للبحث" : "لا توجد عروض جديدة الآن"}</Text>
@@ -131,7 +135,6 @@ export function CaptainOffers() {
           <BthwaniButton disabled={Boolean(busy) || loading || !isCurrentCaptainActor(loadedActorID, activeActorID)} label="رفض" onPress={() => void respond(offer, "reject")} style={styles.actionButton} variant="secondary" />
         </View> : null}
       </View>) : null}
-      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <BthwaniButton busy={Boolean(busy) || loading} disabled={Boolean(busy) || loading} label="تحديث العروض" onPress={() => void load()} variant="secondary" />
     </View>
   );

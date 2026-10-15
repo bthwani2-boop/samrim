@@ -905,6 +905,8 @@ func writeCaptainError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "PAYMENT_STATE_CONFLICT", "the order payment state is not actionable")
 	case errors.Is(err, captain.ErrCollectionAmountMismatch):
 		writeError(w, http.StatusConflict, "AMOUNT_MISMATCH", "the collected amount must equal the order amount")
+	case errors.Is(err, captain.ErrCaptainWalletInsufficientFunds):
+		writeError(w, http.StatusConflict, "INSUFFICIENT_FUNDS", "captain wallet balance cannot cover this cash-on-delivery order")
 	case errors.Is(err, captain.ErrPaymentUnavailable):
 		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "cash collection is temporarily unavailable; the delivery was not finalized")
 	default:
