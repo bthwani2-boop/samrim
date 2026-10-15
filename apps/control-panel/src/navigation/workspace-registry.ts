@@ -69,7 +69,8 @@ export const workspaceMarketingResources = [
 
 export type MarketingResourceKey = (typeof workspaceMarketingResources)[number]["key"];
 
-const marketingChildren: readonly WorkspaceChild[] = workspaceMarketingResources.map(({ href, label }) => ({ href, label }));
+// Both marketing resources are visible in one canonical workspace; legacy deep links remain available.
+const marketingChildren: readonly WorkspaceChild[] = [];
 
 export const workspaceDestinations: readonly WorkspaceDestination[] = [
   { href: "/workspace", label: "الرئيسية", children: [] },

@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
-import { workspaceMarketingResources } from "../../../src/navigation/workspace-registry";
+import { MarketingCenterWorkspace } from "../../../src/features/marketing/marketing-center-workspace";
 
 export default function MarketingPage() {
-  redirect(workspaceMarketingResources[0].href);
+  return <MarketingCenterWorkspace />;
 }
 
 export const metadata = { title: "التسويق والمحتوى" };
