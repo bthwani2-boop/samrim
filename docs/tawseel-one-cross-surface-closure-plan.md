@@ -8,6 +8,13 @@ REFERENCE_OWNER: docs/reference/competitors/tawseel-one.md
 SOURCE_OF_TRUTH: approved docs/governance owners + current code/contracts/runtime
 STATE: ACTIVE — evidence-based incremental closure, not a claim of 100% parity
 
+## الملخص التنفيذي المعتمد للعمل
+الهدف هو تكافؤ شامل مع تجربة توصيل ون المرئية مع المحافظة على هوية بثواني وتفوقه في منطق الشراء متعدد المتاجر، طرق التنفيذ، الأمان، الصلاحيات، المحفظة والتسويات. لا تعني المحاكاة نسخ الشيفرة أو الأصول التجارية أو تقليد نقاط ضعف المنافس. أي سلوك أو خدمة لم تُلاحظ أو لم تُعتمد ضمن نطاق بثواني تبقى قيد التقييم ولا تُضاف افتراضيًا.
+
+**وحدة الإغلاق هي الرحلة الوظيفية عبر الأسطح المتأثرة، وليست الشاشة.** نبدأ من الأدلة المرجعية والصور والهاتف، ثم نقارن بالكود وعقود الخدمات والحالة الفعلية، وننفذ أقل دفعة مترابطة تزيل السبب الجذري دون إعادة بناء الصحيح. تشمل الدفعة واجهات العميل/الشريك/الكابتن/الميدان/الإدارة وخدمات DSH/Identity/WLT عند مشاركتها فعليًا فقط. نختبر محليًا ثم نقرأ النتيجة من المصدر المرجعي ونوثق المجهول والممنوع من الاختبار بوضوح.
+
+**الأولوية:** الحفاظ على أعمال واجهة المتجر الجارية، ثم إغلاق فجوات الاكتشاف والطلبات والإشعارات والسلة والدفع والتتبع والتسوية، وبعدها الخدمات الإضافية بعد قرار نطاق واعتمادها. يمنع الدفع أو الشراء أو الحذف أو تغيير حسابات تطبيق المنافس. لا ندّعي اكتمال 100% بلا دليل وظيفي لكل مسار.
+
 ## Mission and authority
 Use Tawseel One as black-box reference for *observable functional and UX coverage*, not as executable authority. Reproduce the useful experience and comparable behavior with BThwani's own identity, design system, architecture, catalog, services, permitted assets and policies. Preserve BThwani capabilities which are superior or safer (multi-store checkout, fulfillment choices, identity scope, wallet ledger and idempotency). Where neither is adequate, choose the simplest complete BThwani solution. Never copy competitor branding/assets/source, decompile binaries, intercept private traffic or infer undocumented backend internals.
 
@@ -57,5 +64,8 @@ Use Tawseel One as black-box reference for *observable functional and UX coverag
 
 ## Execution record
 - 2026-10-15 baseline: branch `19` HEAD `0086aa9b9f6126be42814307e73d0a1dd7f580eb`; existing uncommitted modifications in store-discovery and new store-directory-card belong to another in-progress task and must be preserved.
-- Existing verified implementation: orders/open-carts and lifecycle filters added in commits `8d0658e4` and `0086aa9b`, passed TypeScript, Android interaction proof not yet established.
+- Prior implementation: orders/open-carts and lifecycle filters added in commits `8d0658e4` and `0086aa9b`, passed TypeScript. This review has now exercised the open-cart journey on Android; status-filter cases with existing orders remain untested.
+- 2026-10-15 executable batch: `572d162c` integrated client notification unread action, notification-to-order navigation, refreshed store-directory cards and this plan; `pnpm --dir apps/app-client exec tsc --noEmit --pretty false` passed. This was a concurrently integrated commit; do not pretend that each included change was separately authored or verified by this review.
+- 2026-10-15 Android evidence: USB Samsung `SM-S9280`, `com.bthwani.client` foreground, Home -> Notifications showed an authenticated empty inbox (`0` unread); Orders -> `سلالي` showed a canonical open cart (one item, store name) and entering it reached the actual fulfillment selection. No new order/payment/cancellation was created. Badge-positive and notification-to-order taps remain `NOT_TESTED_WITH_REASON` (no current notification available); do not mark them closed by device proof.
+- 2026-10-15 boundary: no fresh partner/captain/field/control-panel E2E proof for competitor parity, no implementation of custom orders or subscription products, no claim of complete coverage. Continue slices from proven gaps.
 - This plan is an operating guide; update the record only for material checkpoints and outcomes, not after each tiny edit.
