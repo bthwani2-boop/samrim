@@ -6,6 +6,7 @@ import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { ClientOpenCarts } from "./client-open-carts";
 import { isClientActorScopeCurrent } from "./order-session-scope";
 
 type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string } | { kind: "error" } | { kind: "auth_required" };
@@ -33,6 +34,7 @@ export default function ClientOrders() {
   const loadSequence = useRef(0);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
+  const [activeTab, setActiveTab] = useState<"orders" | "carts">("orders");
   const [fulfillmentFilter, setFulfillmentFilter] = useState<"all" | "delivery" | "pickup">("all");
   const [repeatingOrderID, setRepeatingOrderID] = useState("");
   const [repeatError, setRepeatError] = useState("");
@@ -144,6 +146,17 @@ export default function ClientOrders() {
   if (state.kind === "auth_required") {
     return <View style={styles.state}><BthwaniIcon name="account" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>سجّل الدخول لمتابعة طلباتك</Text><Text style={styles.muted}>ستظهر طلباتك وحالاتها هنا بعد تسجيل الدخول.</Text><BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/orders" as Href)} /></View>;
   }
+  if (activeTab === "carts" && activeActorID) {
+    return <View style={styles.container} accessibilityLabel="سلال العميل">
+      <Text style={styles.eyebrow}>متابعة رحلتك</Text>
+      <Text style={styles.title}>طلباتي وسلالي</Text>
+      <View style={styles.filterRow} accessibilityLabel="التبديل بين الطلبات والسلال">
+        <BthwaniChip label="طلباتي" selected={false} onPress={() => setActiveTab("orders")} />
+        <BthwaniChip label="سلالي" selected onPress={() => {}} />
+      </View>
+      <ClientOpenCarts actorID={activeActorID} />
+    </View>;
+  }
   if (state.kind === "loading") {
     return <View style={styles.state} accessibilityLabel="جارٍ تجهيز الطلبات"><BthwaniSkeleton width="42%" height={28} /><BthwaniSkeleton height={112} /><BthwaniSkeleton height={112} /></View>;
   }
@@ -157,6 +170,10 @@ export default function ClientOrders() {
       <View style={styles.headingRow}>
         <View style={styles.headingCopy}><Text style={styles.title}>طلباتي</Text><Text style={styles.muted}>تابع حالة طلباتك وافتح أي طلب لمراجعة التفاصيل الحالية.</Text></View>
         <BthwaniButton accessibilityLabel="تحديث قائمة الطلبات" busy={refreshing} label="تحديث" onPress={() => void load(true)} variant="secondary" />
+      </View>
+      <View style={styles.filterRow} accessibilityLabel="التبديل بين الطلبات والسلال">
+        <BthwaniChip label="طلباتي" selected onPress={() => {}} />
+        <BthwaniChip label="سلالي" selected={false} onPress={() => setActiveTab("carts")} />
       </View>
       {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{refreshError}</Text> : null}
       <View accessibilityLabel="تصفية الطلبات حسب طريقة الاستلام" style={styles.filterRow}>
