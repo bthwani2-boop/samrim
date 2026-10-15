@@ -451,7 +451,7 @@ func ListPartnerOrdersAuthorizedStoreIDs(ctx context.Context, db *sql.DB, actorI
 		return nil, ErrPartnerOrdersScopeInvalid
 	}
 	rows, err := db.QueryContext(ctx, `SELECT id FROM dsh.stores WHERE partner_actor_id=$1
-		UNION SELECT store_id FROM dsh.store_access_grants WHERE delegate_actor_id=$1 AND state='active' AND 'orders'=ANY(permissions)`, actorID, actorID)
+		UNION SELECT store_id FROM dsh.store_access_grants WHERE delegate_actor_id=$1 AND state='active' AND 'orders'=ANY(permissions)`, actorID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve partner orders scope: %w", err)
 	}
@@ -486,10 +486,10 @@ func ListOrdersForPartnerStores(ctx context.Context, db *sql.DB, storeIDs []stri
 		return PartnerOrdersPage{}, ErrPartnerOrdersInvalidQuery
 	}
 	statesKey := strings.Join(states, ",")
-	args := []any{storeIDs}
+	args := []any{pq.Array(storeIDs)}
 	where := "o.store_id = ANY($1)"
 	if len(states) > 0 {
-		args = append(args, states)
+		args = append(args, pq.Array(states))
 		where += " AND o.state = ANY($" + strconv.Itoa(len(args)) + ")"
 	}
 	if query != "" {
@@ -579,7 +579,7 @@ func CountPartnerOrderAttention(ctx context.Context, db *sql.DB, storeIDs []stri
 			count(*) FILTER (WHERE o.state='CREATED'),
 			count(*) FILTER (WHERE o.state='READY_FOR_DISPATCH'),
 			count(*) FILTER (WHERE o.state='DELIVERY_FAILED')
-		FROM dsh.commerce_orders o WHERE o.store_id = ANY($1)`, storeIDs).Scan(&counts.NewOrders, &counts.AwaitingDispatch, &counts.DeliveryRecovery)
+		FROM dsh.commerce_orders o WHERE o.store_id = ANY($1)`, pq.Array(storeIDs)).Scan(&counts.NewOrders, &counts.AwaitingDispatch, &counts.DeliveryRecovery)
 	if err != nil {
 		return PartnerOrderAttentionCounts{}, fmt.Errorf("count partner order attention: %w", err)
 	}

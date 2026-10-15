@@ -129,6 +129,30 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if _, err := postgres.ListOrdersForClientPage(ctx, db, "another_client", 2, clientPage1.NextCursor); !errors.Is(err, postgres.ErrClientOrdersInvalidCursor) {
 			t.Fatalf("cross-client cursor unexpectedly allowed: %v", err)
 		}
+		partnerStores, err := postgres.ListPartnerOrdersAuthorizedStoreIDs(ctx, db, "partner_operator_ops")
+		if err != nil || len(partnerStores) != 1 || partnerStores[0] != "store_operator_ops" {
+			t.Fatalf("partner scope = %+v err=%v", partnerStores, err)
+		}
+		partnerCounts, err := postgres.CountPartnerOrderAttention(ctx, db, partnerStores)
+		if err != nil || partnerCounts.AwaitingDispatch != 2 || partnerCounts.NewOrders != 0 {
+			t.Fatalf("partner order attention = %+v err=%v", partnerCounts, err)
+		}
+		partnerPage1, err := postgres.ListOrdersForPartnerStores(ctx, db, partnerStores, nil, "", 2, "")
+		if err != nil || len(partnerPage1.Orders) != 2 || partnerPage1.NextCursor == "" {
+			t.Fatalf("partner orders first page = %+v err=%v", partnerPage1, err)
+		}
+		partnerPage2, err := postgres.ListOrdersForPartnerStores(ctx, db, partnerStores, nil, "", 2, partnerPage1.NextCursor)
+		if err != nil || len(partnerPage2.Orders) != 1 || partnerPage2.NextCursor != "" {
+			t.Fatalf("partner orders second page = %+v err=%v", partnerPage2, err)
+		}
+		filtered, err := postgres.ListOrdersForPartnerStores(ctx, db, partnerStores, []string{"READY_FOR_DISPATCH"}, "", 10, "")
+		if err != nil || len(filtered.Orders) != 2 || filtered.NextCursor != "" {
+			t.Fatalf("partner state filter = %+v err=%v", filtered, err)
+		}
+		noAccess, err := postgres.ListPartnerOrdersAuthorizedStoreIDs(ctx, db, "another-partner")
+		if err != nil || len(noAccess) != 0 {
+			t.Fatalf("unauthorized partner unexpectedly has store access: %+v err=%v", noAccess, err)
+		}
 		var pickupOrder *postgres.OrderRecord
 		for index := range clientOrders {
 			if clientOrders[index].ID == "operator_order_02" {
