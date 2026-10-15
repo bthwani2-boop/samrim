@@ -4,6 +4,7 @@ import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { type PropsWithChildren, useEffect, useMemo, useRef } from "react";
 import { type ColorValue, ScrollView, StyleSheet, Text, type TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ClientNotificationAction } from "../features/notifications/client-notification-action";
 import { serviceCityDisplayName, useServiceCityScope } from "../features/service-city/service-city-scope";
 
 type ClientSearchNavigation = {
@@ -70,7 +71,7 @@ function ClientHeader({ searchOnCurrentRoute = false, hideSearchAction = false, 
           </View>
           <View style={styles.headerActions}>
             {!hideSearchAction ? <BthwaniIconButton icon="search" label="البحث عن متجر أو منتج" onPress={() => { if (onSearchOpenChange) onSearchOpenChange(true); else if (searchOnCurrentRoute) router.setParams({ focus: "search" }); else if (navigation) navigation.navigate("home", { focus: "search" }); else router.push("/home?focus=search" as Href); }} size={sizing.controlMd} tone="soft" /> : null}
-            <BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlMd} tone="soft" />
+            <ClientNotificationAction />
             <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} tone="soft" />
             <BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push("/multi-store-checkout" as Href)} size={sizing.controlMd} tone="soft" />
           </View>

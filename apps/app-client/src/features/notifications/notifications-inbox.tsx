@@ -52,17 +52,26 @@ export function NotificationsInbox() {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function markRead(item: Notification) {
-    if (item.readAt || busy) return;
+  async function openNotification(item: Notification) {
+    if (busy) return;
+    const targetOrderID = item.orderId.trim();
+    if (item.readAt) {
+      if (targetOrderID) router.push(`/orders/${encodeURIComponent(targetOrderID)}` as Href);
+      return;
+    }
     setBusy(item.id);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       await dshClient().markNotificationRead(token, item.id);
-      await load(true);
+      if (targetOrderID) {
+        router.push(`/orders/${encodeURIComponent(targetOrderID)}` as Href);
+      } else {
+        await load(true);
+      }
     } catch (cause) {
       console.error("DSH client notification read-state write failed", cause);
-      setError("تعذر تحديث حالة الإشعار.");
+      setError("تعذر تحديث حالة الإشعار. حاول مجددًا.");
     } finally {
       setBusy("");
     }
@@ -74,10 +83,10 @@ export function NotificationsInbox() {
         key={item.id}
         accessibilityRole="button"
         accessibilityLabel={item.title}
-        accessibilityHint={item.readAt ? undefined : "اضغط لتمييز الإشعار كمقروء"}
-        accessibilityState={{ busy: busy === item.id, disabled: Boolean(busy) }}
-        disabled={Boolean(busy)}
-        onPress={() => void markRead(item)}
+        accessibilityHint={item.orderId.trim() ? "افتح تفاصيل الطلب مع تمييز الإشعار كمقروء" : item.readAt ? undefined : "اضغط لتمييز الإشعار كمقروء"}
+        accessibilityState={{ busy: busy === item.id, disabled: Boolean(busy) || (Boolean(item.readAt) && !item.orderId.trim()) }}
+        disabled={Boolean(busy) || (Boolean(item.readAt) && !item.orderId.trim())}
+        onPress={() => void openNotification(item)}
         style={({ pressed }) => [styles.item, !item.readAt && styles.unread, pressed && styles.pressed]}
       >
         <View style={styles.itemHeader}>
