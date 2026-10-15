@@ -4,10 +4,11 @@ import { captainAssignmentStateLabel, formatOrderDate, type OperatorOperationLis
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
+import { RecordIndicator } from "../shared/record-indicator";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { operationalAge } from "./operational-age";
 import { OrderOperationDetail } from "./order-operation-detail";
-import { operationResponseMessage } from "./operator-actions";
+import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 
 type View = "all" | "attention" | "dispatch" | "delivered";
 type Change = Readonly<{ view?: View; state?: string; q?: string; sort?: string }>;
@@ -95,6 +96,8 @@ export function OperationsWorkspace() {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialogRef.current?.focus();
     function handleDialogKeys(event: KeyboardEvent) {
+      // An inner native modal manages its own focus and Escape; keep the order inspector open.
+      if (dialogRef.current?.querySelector("dialog[open]")) return;
       if (event.key === "Escape") {
         event.preventDefault();
         setSelectedOrderId("");
@@ -199,9 +202,6 @@ export function OperationsWorkspace() {
     active: operations.filter((item) => !["READY_FOR_DISPATCH", "DELIVERY_FAILED", "DELIVERED", "REJECTED", "CANCELLED"].includes(item.state)).length,
     delivered: operations.filter((item) => item.state === "DELIVERED").length,
   };
-  const displayedOperations = [...operations].sort((a, b) =>
-    Number(operationalAge(b.state, b.updatedAt, ageClock).needsReview) -
-    Number(operationalAge(a.state, a.updatedAt, ageClock).needsReview));
   const shortOrderId = (id: string) => id.length > 22 ? id.slice(0, 11) + "…" + id.slice(-7) : id;
   const selectedViewLabel = preciseState ? specificStates.find((item) => item.value === preciseState)?.label ?? preciseState
     : views.find((item) => item.id === view)?.label ?? "جميع الطلبات";
@@ -280,29 +280,35 @@ export function OperationsWorkspace() {
 
       <div className="ops-results">
         {operations.length > 0 ? (
-          <div className="operations-table-wrap" role="region" aria-label="قائمة الطلبات؛ تمرير أفقي عند الحاجة" tabIndex={0}>
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: This labeled, horizontally scrollable table region must be keyboard-focusable.
+          <section className="operations-table-wrap" aria-label="قائمة الطلبات؛ تمرير أفقي عند الحاجة" tabIndex={0}>
             <table className="operations-table ops-list-table">
               <caption className="visually-hidden">{selectedViewLabel}، خمسون طلبًا كحد أقصى في الصفحة</caption>
               <thead><tr><th scope="col">الطلب</th><th scope="col">المتجر</th><th scope="col">الحالة</th><th scope="col">الكابتن</th><th scope="col">آخر تحديث</th><th scope="col">المتابعة</th><th scope="col">إجراء</th></tr></thead>
               <tbody>
-                {displayedOperations.map((item) => {
+                {operations.map((item) => {
                   const age = operationalAge(item.state, item.updatedAt, ageClock);
+                  const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
                   return <tr key={item.orderId} className={age.needsReview ? "ops-row-review" : undefined}>
                     <th scope="row"><span className="ops-order-id" title={item.orderId}>{shortOrderId(item.orderId)}</span></th>
                     <td>{item.storeName}</td>
                     <td><span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span></td>
                     <td>{item.assignment ? captainAssignmentStateLabel(item.assignment.state) : <span className="muted">غير مسند</span>}</td>
                     <td><time dateTime={item.updatedAt}>{formatOrderDate(item.updatedAt)}</time></td>
-                    <td><span className={age.needsReview ? "operations-attention" : "muted"}>{age.label}</span></td>
+                    <td><div className="ops-row-followup">
+                      <span className={age.needsReview ? "operations-attention" : "muted"}>{age.label}</span>
+                      {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
+                    </div></td>
                     <td><button type="button" className="ops-row-open" aria-label={"فتح الطلب " + item.orderId} onClick={() => setSelectedOrderId(item.orderId)}>فتح</button></td>
                   </tr>;
                 })}
               </tbody>
             </table>
-          </div>
+          </section>
         ) : null}
       </div>
       {selectedOrderId ? (
+        // biome-ignore lint/a11y/noStaticElementInteractions: Backdrop pointer dismissal is supplementary; the labeled close button and Escape provide keyboard access.
         <div className="ops-detail-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedOrderId(""); }}>
           <aside ref={dialogRef} tabIndex={-1} className="ops-detail-drawer" role="dialog" aria-modal="true" aria-label={"تفاصيل الطلب " + selectedOrderId}>
             <OrderOperationDetail orderId={selectedOrderId} embedded onClose={() => setSelectedOrderId("")} onUpdated={() => void load(true)} />

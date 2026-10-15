@@ -625,6 +625,8 @@
 .ops-list-table td:nth-child(5) { white-space: nowrap; }
 .ops-list-table th:last-child,.ops-list-table td:last-child { inline-size: 70px; min-inline-size: 60px; }
 .ops-row-review { box-shadow: inset -3px 0 var(--danger-text); }
+.ops-row-followup { display: grid; justify-items: start; gap: 4px; }
+.ops-row-followup .record-indicator[data-legend] { font-size: 11px; }
 .ops-order-id { color: var(--interactive-text); font-weight: 650; direction: ltr; display: inline-block; font-size: 12px; }
 .ops-row-open { padding: 6px 12px; min-block-size: 32px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-muted); color: var(--interactive-text); font: inherit; cursor: pointer; }
 .ops-row-open:hover { border-color: var(--interactive-text); }
@@ -637,6 +639,10 @@
 .ops-close { flex: none; inline-size: 36px; block-size: 36px; border: 1px solid var(--border-subtle); border-radius: 7px; background: var(--surface-muted); color: var(--color-primary); font-size: 21px; cursor: pointer; }
 .ops-detail-drawer .order-detail-workspace { gap: 12px; }
 .ops-detail-drawer .order-detail-panel { padding: 12px; }
+.ops-wallet-confirm { inline-size: min(420px,calc(100vw - 32px)); margin: auto; }
+.ops-wallet-confirm h2 { margin-block-end: 10px; font-size: 17px; }
+.ops-wallet-confirm p { margin-block: 0 12px; }
+.ops-wallet-confirm .action-row { justify-content: flex-start; }
 .ops-detail-drawer .order-detail-panel > h2 { font-size: 15px; }
 .ops-detail-drawer .order-detail-toolbar { flex-wrap: wrap; }
 @media (max-width: 750px) {

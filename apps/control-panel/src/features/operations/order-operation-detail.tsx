@@ -10,6 +10,30 @@ import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 import { OperationLocationMap } from "./operation-location-map";
+type PendingWalletCompensation = Readonly<{ adjustmentId: string; amountMinor: number }>;
+
+function WalletCompensationConfirmation({ amountMinor, onCancel, onConfirm }: Readonly<{
+  amountMinor: number; onCancel: () => void; onConfirm: () => void;
+}>) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+
+  return <dialog ref={dialogRef} aria-labelledby="ops-wallet-confirm-title" className="ops-wallet-confirm"
+    onCancel={(event) => { event.preventDefault(); onCancel(); }} onClose={onCancel}>
+    <h2 id="ops-wallet-confirm-title">تأكيد تعويض محفظة العميل</h2>
+    <p>ستُضاف <strong>{formatMoney(amountMinor, "YER")}</strong> إلى محفظة العميل على نفقة المنصة مقابل تعديل هذا الطلب.</p>
+    <p className="muted">راجع المبلغ والتعديل قبل التأكيد. لن تُعرض نتيجة ناجحة إلا بعد التحقق من القيد المالي.</p>
+    <div className="action-row">
+      <button type="button" className="button button-primary" onClick={onConfirm}>تأكيد إضافة التعويض</button>
+      <button type="button" className="button button-secondary" onClick={onCancel}>إلغاء</button>
+    </div>
+  </dialog>;
+}
+
 export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpdated }: Readonly<{ orderId: string; embedded?: boolean; onClose?: () => void; onUpdated?: () => void }>) {
   const { state: sessionState } = useSession();
   const searchParams = useSearchParams();
@@ -24,6 +48,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
   const [actionNeedsReadback, setActionNeedsReadback] = useState(false);
   const [notice, setNotice] = useState("");
   const [walletCreditedAdjustments, setWalletCreditedAdjustments] = useState<ReadonlySet<string>>(() => new Set());
+  const [pendingWalletCompensation, setPendingWalletCompensation] = useState<PendingWalletCompensation | null>(null);
   const loadSequence = useRef(0);
   const actionSequence = useRef(0);
   const actionInFlight = useRef(false);
@@ -141,7 +166,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
 
   async function creditCustomerWallet(adjustmentId: string, amountMinor: number) {
     if (busy || loading || amountMinor <= 0 || walletCreditedAdjustments.has(adjustmentId)) return;
-    if (!window.confirm(`إضافة ${formatMoney(amountMinor, "YER")} إلى محفظة العميل على نفقة المنصة بعد مراجعة تعديل الطلب؟`)) return;
+    setPendingWalletCompensation(null);
     setBusy(true);
     setActionError("");
     setNotice("");
@@ -194,6 +219,12 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
         <button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading || busy}>{loading ? "جارٍ القراءة…" : "إعادة قراءة الحالة"}</button>
       </div>
 
+      {pendingWalletCompensation ? <WalletCompensationConfirmation
+        amountMinor={pendingWalletCompensation.amountMinor}
+        onCancel={() => setPendingWalletCompensation(null)}
+        onConfirm={() => void creditCustomerWallet(pendingWalletCompensation.adjustmentId, pendingWalletCompensation.amountMinor)}
+      /> : null}
+
       {notice ? <p className="success-inline" role="status">{notice}</p> : null}
       {actionError ? <div className="managed-status managed-status-warning" role="alert"><strong>لم يكتمل الإجراء</strong><p>{actionError}</p><button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading || busy}>إعادة قراءة الحالة الحالية</button></div> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت إعادة قراءة حالة الطلب</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading || busy}>إعادة المحاولة</button></div> : null}
@@ -231,7 +262,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
                   <span>{compensated ? "أُضيف التعويض إلى محفظة العميل" : stateLabel}</span>
                   {adjustment.state === "FINANCIAL_RECONCILIATION_REQUIRED" ? <span>لا يتقدم الطلب قبل إغلاق التسوية التشغيلية والمالية اللازمة.</span> : null}
                   {eligibleForWallet && !compensated ? <button type="button" className="button button-secondary"
-                    disabled={busy || loading} onClick={() => void creditCustomerWallet(adjustment.id, line.lineAmountMinor)}>
+                    disabled={busy || loading} onClick={() => setPendingWalletCompensation({ adjustmentId: adjustment.id, amountMinor: line.lineAmountMinor })}>
                     {busy ? "جارٍ التحقق..." : `تعويض المحفظة: ${formatMoney(line.lineAmountMinor, line.currency)}`}
                   </button> : null}
                 </div>
