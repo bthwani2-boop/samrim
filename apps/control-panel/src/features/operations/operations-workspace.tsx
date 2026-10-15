@@ -293,7 +293,10 @@ export function OperationsWorkspace() {
                     <th scope="row"><span className="ops-order-id" title={item.orderId}>{shortOrderId(item.orderId)}</span></th>
                     <td>{item.storeName}</td>
                     <td><span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span></td>
-                    <td>{item.assignment ? captainAssignmentStateLabel(item.assignment.state) : <span className="muted">غير مسند</span>}</td>
+                    <td>{item.assignment ? <span className="ops-captain-cell">
+                      <span>{captainAssignmentStateLabel(item.assignment.state)}</span>
+                      {item.assignment.captainActorId ? <bdi dir="ltr" className="ops-captain-id" title={item.assignment.captainActorId}>{shortOrderId(item.assignment.captainActorId)}</bdi> : null}
+                    </span> : <span className="muted">غير مسند</span>}</td>
                     <td><time dateTime={item.updatedAt}>{formatOrderDate(item.updatedAt)}</time></td>
                     <td><div className="ops-row-followup">
                       <span className={age.needsReview ? "operations-attention" : "muted"}>{age.label}</span>

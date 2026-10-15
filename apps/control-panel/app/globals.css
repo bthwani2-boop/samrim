@@ -625,6 +625,8 @@
 .ops-list-table td:nth-child(5) { white-space: nowrap; }
 .ops-list-table th:last-child,.ops-list-table td:last-child { inline-size: 70px; min-inline-size: 60px; }
 .ops-row-review { box-shadow: inset -3px 0 var(--danger-text); }
+.ops-captain-cell { display: grid; gap: 3px; justify-items: start; }
+.ops-captain-id { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
 .ops-row-followup { display: grid; justify-items: start; gap: 4px; }
 .ops-row-followup .record-indicator[data-legend] { font-size: 11px; }
 .ops-order-id { color: var(--interactive-text); font-weight: 650; direction: ltr; display: inline-block; font-size: 12px; }

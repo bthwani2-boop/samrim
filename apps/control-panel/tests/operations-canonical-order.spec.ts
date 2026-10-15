@@ -8,7 +8,7 @@ test("operations preserve canonical server order while making later exceptions v
   } } }));
   await page.route("**/api/notifications**", (route) => route.fulfill({ json: { notifications: [], unreadCount: 0 } }));
   const serverRows = [
-    { orderId: "recent-order", storeName: "المتجر الأحدث", state: "DELIVERED", updatedAt: "2026-10-15T13:59:00Z", assignment: null },
+    { orderId: "recent-order", storeName: "المتجر الأحدث", state: "DELIVERED", updatedAt: "2026-10-15T13:59:00Z", assignment: { state: "delivered", captainActorId: "captain-identified-2026-sanaa" } },
     { orderId: "older-order", storeName: "المتجر المتعثر", state: "READY_FOR_DISPATCH", updatedAt: "2026-10-15T12:40:00Z", assignment: null },
   ];
   await page.route("**/api/operations?**", (route) => route.fulfill({ json: { operations: serverRows, nextCursor: "" } }));
@@ -16,6 +16,8 @@ test("operations preserve canonical server order while making later exceptions v
   const rows = page.locator(".ops-list-table tbody tr");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText("المتجر الأحدث");
+  await expect(rows.nth(0).locator(".ops-captain-id")).toHaveAttribute("title", "captain-identified-2026-sanaa");
+  await expect(rows.nth(0).locator(".ops-captain-id")).toHaveAttribute("dir", "ltr");
   await expect(rows.nth(1)).toContainText("المتجر المتعثر");
   await expect(rows.nth(1)).toContainText("أكثر من ساعة دون تحديث");
   await expect(rows.nth(1).locator(".ops-row-followup .record-indicator")).toContainText("إرسال للتوزيع");
