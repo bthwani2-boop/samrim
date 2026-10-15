@@ -609,9 +609,16 @@ paths:
           schema:
             type: string
             maxLength: 128
+        - name: cursor
+          in: query
+          required: false
+          description: Keyset continuation for the client's history. Not combined with cartId.
+          schema:
+            type: string
+            maxLength: 4096
       responses:
         "200":
-          description: Bounded client Order list, optionally scoped to one checked-out cart for outcome recovery.
+          description: Paginated client Order history; cartId performs bounded checkout recovery.
           content:
             application/json:
               schema:

@@ -118,6 +118,17 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil {
 			t.Fatalf("list client orders with store pickup details: %v", err)
 		}
+		clientPage1, err := postgres.ListOrdersForClientPage(ctx, db, "client_operator_ops", 2, "")
+		if err != nil || len(clientPage1.Orders) != 2 || clientPage1.Orders[0].ID != "operator_order_03" || clientPage1.Orders[1].ID != "operator_order_02" || clientPage1.NextCursor == "" {
+			t.Fatalf("client first keyset page incorrect: %+v err=%v", clientPage1, err)
+		}
+		clientPage2, err := postgres.ListOrdersForClientPage(ctx, db, "client_operator_ops", 2, clientPage1.NextCursor)
+		if err != nil || len(clientPage2.Orders) != 1 || clientPage2.Orders[0].ID != "operator_order_01" || clientPage2.NextCursor != "" {
+			t.Fatalf("client second keyset page incorrect: %+v err=%v", clientPage2, err)
+		}
+		if _, err := postgres.ListOrdersForClientPage(ctx, db, "another_client", 2, clientPage1.NextCursor); !errors.Is(err, postgres.ErrClientOrdersInvalidCursor) {
+			t.Fatalf("cross-client cursor unexpectedly allowed: %v", err)
+		}
 		var pickupOrder *postgres.OrderRecord
 		for index := range clientOrders {
 			if clientOrders[index].ID == "operator_order_02" {

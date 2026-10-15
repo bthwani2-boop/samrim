@@ -271,16 +271,17 @@ func (s *OrderServer) listClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cartID := strings.TrimSpace(r.URL.Query().Get("cartId"))
-	if len(cartID) > 128 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId is too long")
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cartID) > 128 || len(cursor) > 4096 || (cartID != "" && cursor != "") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client Order filter or cursor is invalid")
 		return
 	}
-	items, err := s.service.ListForClient(r.Context(), bearerToken(r), limit, cartID)
+	page, err := s.service.ListForClient(r.Context(), bearerToken(r), limit, cartID, cursor)
 	if err != nil {
 		writeOrderError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, contract.OrderListResponse{Orders: toOrders(items)})
+	writeJSON(w, http.StatusOK, contract.OrderListResponse{Orders: toOrders(page.Orders), NextCursor: page.NextCursor})
 }
 
 func (s *OrderServer) read(w http.ResponseWriter, r *http.Request) {
@@ -809,6 +810,8 @@ func writeOrderError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, postgres.ErrPartnerOrdersScopeInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner orders Store scope is invalid")
+	case errors.Is(err, postgres.ErrClientOrdersInvalidCursor):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client Order history cursor is invalid")
 	case errors.Is(err, postgres.ErrPartnerOrdersInvalidState), errors.Is(err, postgres.ErrPartnerOrdersInvalidQuery), errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidLimit):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner or operator orders pagination, state, or search is invalid")
 	case errors.Is(err, orderdomain.ErrClientSessionForbidden), errors.Is(err, orderdomain.ErrPartnerSessionForbidden), errors.Is(err, orderdomain.ErrStoreOwnershipForbidden), errors.Is(err, orderdomain.ErrOperatorNotActive):

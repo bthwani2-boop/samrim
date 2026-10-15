@@ -332,7 +332,7 @@ function goPropertyType(lines, optional, context) {
   const pointer = valueAfter(lines, "x-go-pointer:", 10) === "true";
   const pointerType = pointer;
   const ref = valueAfter(lines, "$ref:", 10);
-  if (ref) return nullable ? "*" + refType(ref) : refType(ref);
+  if (ref) return nullable || pointerType ? "*" + refType(ref) : refType(ref);
 
   const constant = valueAfter(lines, "const:", 10);
   if (constant !== null) return pointerType ? "*string" : "string";

@@ -2,12 +2,17 @@ import { borders, elevation, radius, type resolveTheme, sizing, spacing, typogra
 import { BthwaniButton, BthwaniIcon, BthwaniIconButton, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, type BeneficiaryWalletResponse, type Notification } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { type Href, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type Href, useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 
 type WalletCreditNotice = Readonly<{ id: string; orderId: string; amountMinor: number; currency: "YER"; createdAt: string }>;
+
+function activeClientActorID(): string {
+  const current = currentIdentityState();
+  return current.kind === "authenticated" ? current.identity.subject.trim() : "";
+}
 
 function dshClient() {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -19,7 +24,13 @@ export function NotificationsInbox() {
   const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const authenticated = currentIdentityState().kind === "authenticated";
+  const [actorID, setActorID] = useState(activeClientActorID);
+  const authenticated = Boolean(actorID);
+  const loadSequence = useRef(0);
+  const pageSequence = useRef(0);
+  const [nextCursor, setNextCursor] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState("");
   const [items, setItems] = useState<ReadonlyArray<Notification>>([]);
   const [walletCredits, setWalletCredits] = useState<ReadonlyArray<WalletCreditNotice>>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -31,29 +42,86 @@ export function NotificationsInbox() {
   const readItems = useMemo(() => items.filter((item) => Boolean(item.readAt)), [items]);
 
   const load = useCallback(async (preserveCurrent = false) => {
-    if (!authenticated) return;
+    const sequence = ++loadSequence.current;
+    pageSequence.current += 1;
+    setNextCursor("");
+    setMoreError("");
+    setLoadingMore(false);
+    if (!actorID || activeClientActorID() !== actorID) return;
     if (preserveCurrent) setRefreshing(true); else setLoading(true);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const response = await dshClient().listNotifications(token, 50);
+      if (sequence !== loadSequence.current || activeClientActorID() !== actorID) return;
       setItems(response.notifications);
       setUnreadCount(response.unreadCount);
+      setNextCursor(response.nextCursor ?? "");
       const walletReadback = await dshClient().readOwnWallet(token).catch(() => null);
+      if (sequence !== loadSequence.current || activeClientActorID() !== actorID) return;
       const credits = (walletReadback?.state as (BeneficiaryWalletResponse["state"] & { recentCompensations?: ReadonlyArray<WalletCreditNotice> }) | undefined)?.recentCompensations ?? [];
       setWalletCredits(credits);
     } catch (cause) {
       console.error("DSH client notifications readback failed", cause);
-      setError("تعذر قراءة الإشعارات. أعد المحاولة.");
+      if (sequence === loadSequence.current && activeClientActorID() === actorID) setError("تعذر قراءة الإشعارات. أعد المحاولة.");
     } finally {
-      if (preserveCurrent) setRefreshing(false); else setLoading(false);
+      if (sequence === loadSequence.current && activeClientActorID() === actorID) {
+        if (preserveCurrent) setRefreshing(false); else setLoading(false);
+      }
     }
-  }, [authenticated]);
+  }, [actorID]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => subscribeIdentitySession(() => {
+    loadSequence.current += 1;
+    pageSequence.current += 1;
+    setActorID(activeClientActorID());
+    setItems([]);
+    setWalletCredits([]);
+    setUnreadCount(0);
+    setNextCursor("");
+    setMoreError("");
+    setLoadingMore(false);
+    setBusy("");
+    setLoading(false);
+    setRefreshing(false);
+    setError("");
+  }), []);
+
+  useFocusEffect(useCallback(() => {
+    void load();
+    return () => {
+      loadSequence.current += 1;
+      pageSequence.current += 1;
+    };
+  }, [load]));
+
+  const loadMore = useCallback(async () => {
+    if (!actorID || !nextCursor || loading || refreshing || loadingMore || activeClientActorID() !== actorID) return;
+    const sequence = ++pageSequence.current;
+    const cursor = nextCursor;
+    setLoadingMore(true);
+    setMoreError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      if (sequence !== pageSequence.current || activeClientActorID() !== actorID) return;
+      const response = await dshClient().listNotifications(token, 50, cursor);
+      if (sequence !== pageSequence.current || activeClientActorID() !== actorID) return;
+      setItems((previous) => {
+        const ids = new Set(previous.map((item) => item.id));
+        return [...previous, ...response.notifications.filter((item) => !ids.has(item.id))];
+      });
+      setUnreadCount(response.unreadCount);
+      setNextCursor(response.nextCursor && response.nextCursor !== cursor ? response.nextCursor : "");
+    } catch (cause) {
+      console.error("DSH notifications next-page read failed", cause);
+      if (sequence === pageSequence.current && activeClientActorID() === actorID) setMoreError("تعذر قراءة بقية الإشعارات. حاول مجددًا.");
+    } finally {
+      if (sequence === pageSequence.current && activeClientActorID() === actorID) setLoadingMore(false);
+    }
+  }, [actorID, loading, loadingMore, nextCursor, refreshing]);
 
   async function openNotification(item: Notification) {
-    if (busy) return;
+    if (busy || !actorID || activeClientActorID() !== actorID) return;
     const targetOrderID = item.orderId.trim();
     if (item.readAt) {
       if (targetOrderID) router.push(`/orders/${encodeURIComponent(targetOrderID)}` as Href);
@@ -63,7 +131,9 @@ export function NotificationsInbox() {
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (activeClientActorID() !== actorID) return;
       await dshClient().markNotificationRead(token, item.id);
+      if (activeClientActorID() !== actorID) return;
       if (targetOrderID) {
         router.push(`/orders/${encodeURIComponent(targetOrderID)}` as Href);
       } else {
@@ -71,9 +141,9 @@ export function NotificationsInbox() {
       }
     } catch (cause) {
       console.error("DSH client notification read-state write failed", cause);
-      setError("تعذر تحديث حالة الإشعار. حاول مجددًا.");
+      if (activeClientActorID() === actorID) setError("تعذر تحديث حالة الإشعار. حاول مجددًا.");
     } finally {
-      setBusy("");
+      if (activeClientActorID() === actorID) setBusy("");
     }
   }
 
@@ -153,6 +223,10 @@ export function NotificationsInbox() {
             </View>)}</View>
           </View> : null}
           {readItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>المقروءة</Text><Text style={styles.groupCount}>{readItems.length}</Text></View><View style={styles.list}>{readItems.map(renderItem)}</View></View> : null}
+          {nextCursor ? <View style={styles.group}>
+            {moreError ? <Text accessibilityRole="alert" style={styles.error}>{moreError}</Text> : null}
+            <BthwaniButton busy={loadingMore} disabled={Boolean(busy) || refreshing || loadingMore} label={loadingMore ? "جارٍ تحميل المزيد…" : "عرض إشعارات أقدم"} onPress={() => void loadMore()} variant="secondary" />
+          </View> : null}
           {!items.length && !walletCredits.length ? <BthwaniSurface tone="inset" style={styles.state}><View style={styles.stateIcon}><BthwaniIcon name="notifications" color={theme.colorMuted} size={sizing.iconXl} /></View><Text style={styles.cardTitle}>لا توجد إشعارات حالياً</Text><Text style={styles.muted}>ستظهر تحديثات الطلبات هنا عند توفرها.</Text></BthwaniSurface> : null}
           {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
           <BthwaniButton busy={refreshing} disabled={Boolean(busy)} label="تحديث الإشعارات" onPress={() => void load(true)} variant="secondary" />

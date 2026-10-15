@@ -9,7 +9,7 @@ import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySe
 import { ClientOpenCarts } from "./client-open-carts";
 import { isClientActorScopeCurrent } from "./order-session-scope";
 
-type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string } | { kind: "error" } | { kind: "auth_required" };
+type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string; nextCursor: string } | { kind: "error" } | { kind: "auth_required" };
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -32,6 +32,9 @@ export default function ClientOrders() {
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
   const loadSequence = useRef(0);
+  const pageSequence = useRef(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
   const [activeTab, setActiveTab] = useState<"orders" | "carts">("orders");
@@ -42,6 +45,9 @@ export default function ClientOrders() {
 
   const load = useCallback(async (preserveCurrent = false) => {
     const sequence = ++loadSequence.current;
+    pageSequence.current += 1;
+    setLoadingMore(false);
+    setLoadMoreError("");
     const session = currentIdentityState();
     if (session.kind !== "authenticated" || !session.identity.subject.trim()) { setState({ kind: "auth_required" }); return; }
     const actorID = session.identity.subject.trim();
@@ -53,7 +59,7 @@ export default function ClientOrders() {
       const response = await client().listClientOrders(token, 50);
       const current = currentIdentityState();
       if (sequence !== loadSequence.current || current.kind !== "authenticated" || !isClientActorScopeCurrent(actorID, current.identity.subject.trim())) return;
-      setState({ kind: "ready", orders: response.orders, actorID });
+      setState({ kind: "ready", orders: response.orders, actorID, nextCursor: response.nextCursor ?? "" });
     } catch (error) {
       console.error("DSH client orders read failed", error);
       const current = currentIdentityState();
@@ -75,6 +81,32 @@ export default function ClientOrders() {
       return byMode && byStatus;
     });
   }, [fulfillmentFilter, state, statusFilter]);
+
+  const loadMore = useCallback(async () => {
+    if (state.kind !== "ready" || !state.nextCursor || loadingMore || refreshing || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID)) return;
+    const sequence = ++pageSequence.current;
+    const loadID = loadSequence.current;
+    const cursor = state.nextCursor;
+    const actorID = state.actorID;
+    setLoadMoreError("");
+    setLoadingMore(true);
+    try {
+      const token = await getUsableIdentityAccessToken();
+      if (sequence !== pageSequence.current || loadID !== loadSequence.current || !hasCurrentOrdersActor(actorID)) return;
+      const response = await client().listClientOrders(token, 50, "", cursor);
+      if (sequence !== pageSequence.current || loadID !== loadSequence.current || !hasCurrentOrdersActor(actorID)) return;
+      setState((current) => {
+        if (current.kind !== "ready" || current.actorID !== actorID || current.nextCursor !== cursor) return current;
+        const existingIDs = new Set(current.orders.map((item) => item.id));
+        return { ...current, orders: [...current.orders, ...response.orders.filter((item) => !existingIDs.has(item.id))], nextCursor: response.nextCursor && response.nextCursor !== cursor ? response.nextCursor : "" };
+      });
+    } catch (error) {
+      console.error("DSH client orders next-page read failed", error);
+      if (sequence === pageSequence.current && loadID === loadSequence.current && hasCurrentOrdersActor(actorID)) setLoadMoreError("تعذر تحميل الطلبات الأقدم. أعد المحاولة.");
+    } finally {
+      if (sequence === pageSequence.current && loadID === loadSequence.current && hasCurrentOrdersActor(actorID)) setLoadingMore(false);
+    }
+  }, [state, loadingMore, refreshing, activeActorID]);
 
   const repeatOrder = useCallback(async (order: Order) => {
     if (state.kind !== "ready" || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID) || repeatingOrderID || !order.lines.length) return;
@@ -219,6 +251,10 @@ export default function ClientOrders() {
           </View>)}
         </View>
       )}
+      {state.nextCursor ? <View style={styles.list}>
+        {loadMoreError ? <Text accessibilityRole="alert" style={styles.error}>{loadMoreError}</Text> : null}
+        <BthwaniButton busy={loadingMore} disabled={refreshing || loadingMore || Boolean(repeatingOrderID)} label={loadingMore ? "جارٍ تحميل الطلبات الأقدم…" : "عرض طلبات أقدم"} onPress={() => void loadMore()} variant="secondary" />
+      </View> : null}
     </View>
   );
 }

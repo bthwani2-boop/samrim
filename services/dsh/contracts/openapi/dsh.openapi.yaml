@@ -1321,8 +1321,10 @@ components:
           minimum: 1
         storeProfileImage:
           $ref: "#/components/schemas/StoreProfileImage"
+          x-go-pointer: true
         storeCoverImage:
           $ref: "#/components/schemas/StoreCoverImage"
+          x-go-pointer: true
         replayed:
           type: boolean
     StoreProfileImage:

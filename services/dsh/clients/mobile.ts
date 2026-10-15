@@ -698,11 +698,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.cancelMultiStoreCheckout.path.replace("{checkoutId}", encodeURIComponent(normalized));
       return userRequest<MultiStoreCheckoutResponse>(accessToken, path, dshOperationPaths.cancelMultiStoreCheckout.method, undefined, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
     },
-    async listClientOrders(accessToken: string, limit = 50, cartID = ""): Promise<OrderListResponse> {
+    async listClientOrders(accessToken: string, limit = 50, cartID = "", cursor = ""): Promise<OrderListResponse> {
       const normalizedCartID = cartID.trim();
-      if (limit < 1 || limit > 100 || normalizedCartID.length > 128) throw new Error("DSH_ORDER_LIST_INPUT_INVALID");
+      const normalizedCursor = cursor.trim();
+      if (limit < 1 || limit > 100 || normalizedCartID.length > 128 || normalizedCursor.length > 4096 || (normalizedCartID && normalizedCursor)) throw new Error("DSH_ORDER_LIST_INPUT_INVALID");
       const query = new URLSearchParams({ limit: String(limit) });
       if (normalizedCartID) query.set("cartId", normalizedCartID);
+      if (normalizedCursor) query.set("cursor", normalizedCursor);
       return userRequest<OrderListResponse>(accessToken, `${dshOperationPaths.listClientOrders.path}?${query.toString()}`, dshOperationPaths.listClientOrders.method);
     },
     async listNotifications(accessToken: string, limit = 50, cursor = ""): Promise<NotificationListResponse> {
