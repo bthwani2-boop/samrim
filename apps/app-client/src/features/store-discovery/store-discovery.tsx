@@ -278,7 +278,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       current = current.parentCategoryId ? byID.get(current.parentCategoryId) : undefined;
     }
     const parentID = trail.at(-1)?.id ?? "";
-    const children = categories.filter((category) => category.parentCategoryId === parentID);
+    const children = categories.filter((category) => (category.parentCategoryId ?? "") === parentID);
     return { verticals, categories, trail, children };
   }, [selectedCategoryID, selectedVerticalID, state]);
   const selectedVertical = taxonomy.verticals.find((vertical) => vertical.id === selectedVerticalID);
