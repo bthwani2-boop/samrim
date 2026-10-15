@@ -26,7 +26,8 @@ export const workspaceCatalogResources = [
 
 export type CatalogResourceKey = (typeof workspaceCatalogResources)[number]["key"];
 
-const catalogChildren: readonly WorkspaceChild[] = workspaceCatalogResources.map(({ href, label }) => ({ href, label }));
+// Product, category, and proposal registries share /catalog; retain separate import/recovery workflows.
+const catalogChildren: readonly WorkspaceChild[] = workspaceCatalogResources.filter(({ key }) => key === "import" || key === "trash").map(({ href, label }) => ({ href, label }));
 
 export const workspacePolicyResources = [
   { key: "service-cities", href: "/policies/service-cities", label: "مدن الخدمة", description: "إدارة المدن المعتمدة المستخدمة في أهلية الخدمة والانضمام." },
@@ -36,7 +37,8 @@ export const workspacePolicyResources = [
   { key: "partner-financial-terms", href: "/policies/partner-financial-terms", label: "شروط الشريك المالية", description: "تحديد العمولة وفترة التسوية المعتمدتين مركزيًا في السجل المالي لملفات الشركاء الجديدة والعالقة." }
 ] as const;
 export type PolicyResourceKey = (typeof workspacePolicyResources)[number]["key"];
-const policyChildren: readonly WorkspaceChild[] = workspacePolicyResources.map(({ href, label }) => ({ href, label }));
+// Policy editors are reached inside the one canonical policies surface. Existing deep links stay valid.
+const policyChildren: readonly WorkspaceChild[] = [];
 
 export const workspaceFinanceResources = [
   { key: "cash-custody", href: "/finance/cash-custody", label: "حفظ النقد", description: "قراءة الالتزامات النقدية المحصلة عند الاستلام." },

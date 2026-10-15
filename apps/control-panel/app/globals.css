@@ -657,3 +657,16 @@
 
 .ops-location-disclosure { margin-block-start: 8px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-muted); }
 .ops-location-disclosure > summary { min-block-size: 34px; padding: 7px 10px; color: var(--interactive-text); font-size: 12px; cursor: pointer; }
+
+@layer composition {
+  /* Compact, in-place administration; a collapsed section does not load its registry. */
+  .policy-center-disclosure { border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--surface-base); overflow: clip; }
+  .policies-center, .catalog-center-tools { display: grid; gap: 10px; align-content: start; }
+  .policy-center-disclosure > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; padding: 11px 14px; list-style-position: inside; }
+  .policy-center-disclosure > summary:hover { background: var(--surface-muted); }
+  .policy-center-disclosure-title { font-weight: 700; color: var(--color-primary); }
+  .policy-center-disclosure-body { border-block-start: 1px solid var(--border-subtle); padding: 12px; min-inline-size: 0; }
+  .policy-center-disclosure-body .workspace-page { padding: 0; }
+  .catalog-center-tools { margin-block-end: 4px; }
+  .catalog-center-heavy-actions { justify-content: flex-start; }
+}

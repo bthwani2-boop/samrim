@@ -17,7 +17,7 @@ function accessDenied() {
   );
 }
 
-export function CatalogWorkspace({ resource, children }: { resource: CatalogResourceKey; children: ReactNode }) {
+export function CatalogWorkspace({ resource, children, title }: { resource: CatalogResourceKey; children: ReactNode; title?: string }) {
   const { state } = useSession();
 
   if (state.kind !== "authenticated") return null;
@@ -29,7 +29,7 @@ export function CatalogWorkspace({ resource, children }: { resource: CatalogReso
   const selected = workspaceCatalogResources.find((item) => item.key === resource) ?? workspaceCatalogResources[0]!;
   return (
     <section className="workspace-page" aria-labelledby="catalog-page-title">
-      <PageHeader id="catalog-page-title" title={selected.label} />
+      <PageHeader id="catalog-page-title" title={title ?? selected.label} />
       {children}
     </section>
   );
