@@ -371,7 +371,18 @@ func (s *Service) ReadDeliveryTask(ctx context.Context, accessToken, assignmentI
 	if strings.TrimSpace(assignmentID) == "" {
 		return postgres.CaptainDeliveryTask{}, ErrInvalidInput
 	}
-	return postgres.ReadCaptainDeliveryTask(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject)
+	task, err := postgres.ReadCaptainDeliveryTask(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject)
+	if err != nil {
+		return postgres.CaptainDeliveryTask{}, err
+	}
+	if task.FulfillmentMode == postgres.FulfillmentModeBthwaniCaptain && task.PaymentIntentID != "" {
+		payment, paymentErr := s.payment.Read(ctx, task.PaymentIntentID)
+		if paymentErr == nil && payment.ID == task.PaymentIntentID && payment.CustomerPaymentAllocation != nil && payment.CustomerPaymentAllocation.OrderID == task.OrderReference && payment.CustomerPaymentAllocation.Currency == task.Currency && payment.CustomerPaymentAllocation.FulfillmentMode == task.FulfillmentMode {
+			fee := payment.CustomerPaymentAllocation.DeliveryFeeMinor
+			task.DeliveryFeeMinor = &fee
+		}
+	}
+	return task, nil
 }
 
 // UpdatePresence only accepts authenticated captains and only persists their latest position.

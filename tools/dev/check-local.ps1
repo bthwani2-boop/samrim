@@ -46,6 +46,12 @@ try {
         Write-Host "VERIFY_SCOPE base=$governanceBase head=$head runtime=off cloud=off"
         $candidateFiles = @(git diff --name-only $governanceBase $head -- | ForEach-Object { ([string]$_).Trim().Replace('\','/') } | Where-Object { $_ })
         if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect candidate governance scope.' }
+        node tools/dev/check-encoding.mjs --base $governanceBase
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate UTF-8 integrity check failed.' }
+        if (@($candidateFiles | Where-Object { $_ -match '^tools/dev/check-encoding(\.test)?\.mjs$' }).Count -gt 0) {
+            node --test tools/dev/check-encoding.test.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Candidate UTF-8 guard regression test failed.' }
+        }
         if (@($candidateFiles | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -gt 0) {
             pnpm exec nx affected -t lint format-check typecheck unit contract build vet export-smoke --base=$governanceBase --head=$head --outputStyle=static --parallel=2 --nxBail=true
             if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
@@ -74,6 +80,13 @@ try {
     if ($files.Count -eq 0) {
         Write-Host 'LOCAL_CHECK=PASS scope=no-working-tree-changes'
         return
+    }
+
+    node tools/dev/check-encoding.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local UTF-8 integrity check failed.' }
+    if (@($files | Where-Object { $_ -match '^tools/dev/check-encoding(\.test)?\.mjs$' }).Count -gt 0) {
+        node --test tools/dev/check-encoding.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Local UTF-8 guard regression test failed.' }
     }
 
     $env:NX_NO_CLOUD = 'true'

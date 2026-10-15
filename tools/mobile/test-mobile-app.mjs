@@ -470,7 +470,9 @@ if (app === "app-captain") {
   const panel = fs.readFileSync(path.join(appDir, "src", "features", "wallet", "cash-in-panel.tsx"), "utf8");
   assert.ok(panel.indexOf("setWallet(walletResponse)") < panel.indexOf("readOwnFundingIntent(token, attempt.fundingIntentID)"), "app-captain: wallet state remains available when recovery of a stale saved intent fails");
   assert.ok(panel.includes("readOwnFundingIntent(token, attempt.fundingIntentID)"), "app-captain: stored retry intent must use canonical owner readback");
-  assert.ok(!panel.includes("simulateOwnFundingIntent"), "app-captain: development-only simulator controls must not be exposed by the current cash-in panel");
+  assert.ok(panel.includes("response.simulator && __DEV__") && panel.includes("simulateOwnFundingIntent("), "app-captain: funding simulator requires explicit local-development gating");
+  assert.ok(panel.includes("matchesCaptainFundingRequest(settled.intent, actorID, parsedAmount)") && panel.includes("settled.intent.state !== \"SETTLED\""), "app-captain: simulated funding must verify owner, amount, and canonical settlement before success");
+  assert.ok(panel.includes("const userCanAddFunds = Boolean(state?.cashInEnabled && (!state.simulator || simulatorInDevelopment))"), "app-captain: actual provider funding remains available outside local simulator");
   assert.ok(panel.includes("matchesCaptainFundingAttempt(intent, storedAttempt)"), "app-captain: terminal readback must clear only its exact local retry intent");
   console.log("MOBILE_CAPTAIN_CASH_IN_RECOVERY=PASS canonical intent, actor scope, retry identity, and terminal cleanup");
 }

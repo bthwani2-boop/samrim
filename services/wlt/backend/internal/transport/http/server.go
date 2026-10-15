@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
@@ -12,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/cashin"
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/storage/postgres"
@@ -1641,8 +1643,24 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 }
 
 func decodeJSONWithLimit(w http.ResponseWriter, r *http.Request, target any, limit int64) bool {
+	return decodeJSONWithOptionalEmpty(w, r, target, limit, false)
+}
+
+func decodeOptionalJSON(w http.ResponseWriter, r *http.Request, target any) bool {
+	return decodeJSONWithOptionalEmpty(w, r, target, 32*1024, true)
+}
+
+func decodeJSONWithOptionalEmpty(w http.ResponseWriter, r *http.Request, target any, limit int64, allowEmpty bool) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
-	decoder := json.NewDecoder(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil || !utf8.Valid(body) {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body is invalid")
+		return false
+	}
+	if allowEmpty && len(bytes.TrimSpace(body)) == 0 {
+		return true
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body is invalid")

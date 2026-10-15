@@ -6788,6 +6788,11 @@ components:
         amountDueMinor:
           type: integer
           minimum: 0
+        deliveryFeeMinor:
+          type: integer
+          minimum: 0
+          x-go-pointer: true
+          description: WLT-owned Captain earning from delivery fee, when available for BThwani Captain delivery.
         currency:
           type: string
           const: YER
@@ -6855,7 +6860,8 @@ components:
           enum: [DELIVERY, STORE_PICKUP]
         state:
           type: string
-          enum: [PENDING, VERIFIED]
+          enum: [PENDING, VERIFIED, CAPTAIN_CONFIRMED]
+          description: CAPTAIN_CONFIRMED is the assigned Captain’s statement, not customer code verification.
         code:
           type: string
           pattern: '^[0-9]{6}$'

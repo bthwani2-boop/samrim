@@ -134,6 +134,8 @@ type CaptainDeliveryTask struct {
 	PaymentMethod        string
 	PaymentState         string
 	AmountDueMinor       int64
+	DeliveryFeeMinor     *int64 // WLT-owned presentation only
+	PaymentIntentID      string // internal WLT readback, not returned to app
 	Currency             string
 	FulfillmentMode      string
 	Recipient            DeliveryRecipientRecord
@@ -1799,7 +1801,7 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 	if assignment.State != "in_custody" || assignment.Version != expectedVersion || assignment.Handoff.State != "completed" {
 		return CaptainAssignment{}, false, ErrCaptainTerminalConflict
 	}
-	if (result == "delivered" && !validDeliveryProofCode(deliveryProofCode)) || (result == "delivery_failed" && deliveryProofCode != "") {
+	if (result == "delivered" && deliveryProofCode != "" && !validDeliveryProofCode(deliveryProofCode)) || (result == "delivery_failed" && deliveryProofCode != "") {
 		return CaptainAssignment{}, false, ErrDeliveryProofInvalid
 	}
 	var orderID string
@@ -1807,16 +1809,23 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 		return CaptainAssignment{}, false, err
 	}
 	if result == "delivered" {
-		var proofHash, proofState, proofKeyID string
-		if err := tx.QueryRowContext(ctx, `SELECT code_verifier,state,code_key_id FROM dsh.commerce_order_delivery_proofs WHERE order_id=$1 FOR UPDATE`, orderID).Scan(&proofHash, &proofState, &proofKeyID); errors.Is(err, sql.ErrNoRows) {
+		var proofHash, proofState, proofKeyID, proofType string
+		if err := tx.QueryRowContext(ctx, `SELECT code_verifier,state,code_key_id,proof_type FROM dsh.commerce_order_delivery_proofs WHERE order_id=$1 FOR UPDATE`, orderID).Scan(&proofHash, &proofState, &proofKeyID, &proofType); errors.Is(err, sql.ErrNoRows) {
 			return CaptainAssignment{}, false, ErrDeliveryProofInvalid
 		} else if err != nil {
 			return CaptainAssignment{}, false, err
 		}
-		if proofState != "PENDING" || !validDeliveryProofCode(deliveryProofCode) || !keys.VerifyProof(orderID, proofKeyID, proofHash, deliveryProofCode) {
+		if proofType != "DELIVERY" || proofState != "PENDING" {
 			return CaptainAssignment{}, false, ErrDeliveryProofInvalid
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_delivery_proofs SET state='VERIFIED',code_ciphertext=NULL,code_verifier=NULL,code_key_id=NULL,verified_by=$2,verified_at=clock_timestamp(),updated_at=clock_timestamp() WHERE order_id=$1 AND state='PENDING'`, orderID, captainActorID); err != nil {
+		proofResult := "CAPTAIN_CONFIRMED"
+		if deliveryProofCode != "" {
+			if !keys.VerifyProof(orderID, proofKeyID, proofHash, deliveryProofCode) {
+				return CaptainAssignment{}, false, ErrDeliveryProofInvalid
+			}
+			proofResult = "VERIFIED"
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_delivery_proofs SET state=$3,code_ciphertext=NULL,code_verifier=NULL,code_key_id=NULL,verified_by=$2,verified_at=clock_timestamp(),updated_at=clock_timestamp() WHERE order_id=$1 AND state='PENDING'`, orderID, captainActorID, proofResult); err != nil {
 			return CaptainAssignment{}, false, err
 		}
 	}
@@ -1838,7 +1847,7 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 				if !paymentIntentID.Valid {
 					return CaptainAssignment{}, false, ErrPaymentStateConflict
 				}
-				if collectedAmountMinor != paymentCashAmount {
+				if collectedAmountMinor != 0 && collectedAmountMinor != paymentCashAmount {
 					return CaptainAssignment{}, false, ErrCaptainCollectedAmountMismatch
 				}
 				var partnerActorID string
@@ -1865,7 +1874,7 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 			if currentPaymentState != "REQUIRES_COLLECTION" || !paymentIntentID.Valid {
 				return CaptainAssignment{}, false, ErrPaymentStateConflict
 			}
-			if collectedAmountMinor != paymentCashAmount {
+			if collectedAmountMinor != 0 && collectedAmountMinor != paymentCashAmount {
 				return CaptainAssignment{}, false, ErrCaptainCollectedAmountMismatch
 			}
 			var partnerActorID string
@@ -2126,8 +2135,8 @@ func ReadCaptainDeliveryTask(ctx context.Context, db *sql.DB, assignmentID, capt
 	}
 	var task CaptainDeliveryTask
 	var pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude sql.NullFloat64
-	var recipientName, recipientPhone, recipientInstructions sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT a.id,a.order_id,s.id,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),s.delivery_origin_latitude,s.delivery_origin_longitude,o.address_text,o.address_latitude,o.address_longitude,o.state,h.state,a.state,o.payment_method,o.payment_state,o.payment_cash_amount_minor,o.currency,o.fulfillment_mode,o.recipient_mode,o.recipient_name,o.recipient_phone_e164,o.recipient_instructions
+	var recipientName, recipientPhone, recipientInstructions, paymentIntentID sql.NullString
+	err = tx.QueryRowContext(ctx, `SELECT a.id,a.order_id,s.id,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),s.delivery_origin_latitude,s.delivery_origin_longitude,o.address_text,o.address_latitude,o.address_longitude,o.state,h.state,a.state,o.payment_method,o.payment_state,o.payment_cash_amount_minor,o.currency,o.fulfillment_mode,o.recipient_mode,o.recipient_name,o.recipient_phone_e164,o.recipient_instructions,o.payment_intent_id
 		FROM dsh.captain_assignments a
 		JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
 		JOIN dsh.commerce_orders o ON o.id=a.order_id
@@ -2136,7 +2145,10 @@ func ReadCaptainDeliveryTask(ctx context.Context, db *sql.DB, assignmentID, capt
 		&task.AssignmentID, &task.OrderReference, &task.StoreID, &task.StoreName, &task.StoreProfileImageURI, &pickupLatitude, &pickupLongitude,
 		&task.CustomerAddressText, &destinationLatitude, &destinationLongitude, &task.OrderState, &task.HandoffState, &task.DeliveryState,
 		&task.PaymentMethod, &task.PaymentState, &task.AmountDueMinor, &task.Currency, &task.FulfillmentMode,
-		&task.Recipient.Mode, &recipientName, &recipientPhone, &recipientInstructions)
+		&task.Recipient.Mode, &recipientName, &recipientPhone, &recipientInstructions, &paymentIntentID)
+	if paymentIntentID.Valid {
+		task.PaymentIntentID = paymentIntentID.String
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainDeliveryTask{}, ErrCaptainDeliveryTaskNotFound
 	}

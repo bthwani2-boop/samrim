@@ -238,9 +238,9 @@ export default function ClientOrderDetail() {
 
   const { order } = state;
   const isStorePickup = order.fulfillmentMode === "CUSTOMER_PICKUP";
-  const proofLabel = isStorePickup ? "رمز الاستلام" : "رمز التسليم";
-  const proofAvailableMessage = isStorePickup ? "أظهر الرمز لموظف المتجر بعد تجهيز طلبك." : "لا تشارك الرمز إلا مع الكابتن عند وصول الطلب.";
-  const proofWaitingMessage = isStorePickup ? "سيظهر رمز الاستلام بعد جاهزية الطلب." : "سيظهر رمز التسليم عندما يصبح الطلب في عهدة الكابتن.";
+  const proofLabel = isStorePickup ? "رمز الاستلام" : "تأكيد التسليم";
+  const proofAvailableMessage = "أظهر الرمز لموظف المتجر بعد تجهيز طلبك." ;
+  const proofWaitingMessage = isStorePickup ? "سيظهر رمز الاستلام بعد جاهزية الطلب." : "يؤكد الكابتن تسليم الطلب بعد وصوله للمستلم؛ لا تحتاج إلى رمز." ;
   const completedState = order.state === "DELIVERED" || order.state === "PICKED_UP";
   let statusIcon: "success" | "warning" | "orders" = "orders";
   let statusTone: "success" | "danger" | "info" = "info";
@@ -281,12 +281,13 @@ export default function ClientOrderDetail() {
         })}</View>
       </> : null}
       <OrderConversation orderId={order.id} />
-      <BthwaniSectionHeader title={isStorePickup ? "رمز الاستلام الذاتي من المتجر" : "إثبات التسليم"} subtitle={isStorePickup ? "أظهر الرمز لموظف المتجر عند استلامك الطلب" : "يؤكّد العميل الرمز للكابتن عند استلام الطلب"} />
+      <BthwaniSectionHeader title={isStorePickup ? "رمز الاستلام الذاتي من المتجر" : "حالة التسليم"} subtitle={isStorePickup ? "أظهر الرمز لموظف المتجر عند استلامك الطلب" : "يسجل الكابتن تسليم الطلب، ويمكنك الإبلاغ عن أي مشكلة"} />
       <BthwaniSurface tone="base" style={styles.proofSurface}>
         {deliveryProof.kind === "loading" ? <Text style={styles.muted}>جارٍ تجهيز {proofLabel}…</Text> : null}
         {deliveryProof.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة {proofLabel} الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
-        {deliveryProof.kind === "ready" && deliveryProof.value.state === "PENDING" ? <><Text style={styles.proofTitle}>{proofLabel}</Text>{deliveryProof.value.code ? <Text accessibilityLabel={proofLabel} style={styles.proofCode}>{deliveryProof.value.code}</Text> : null}<Text style={styles.muted}>{deliveryProof.value.code ? proofAvailableMessage : proofWaitingMessage}</Text></> : null}
-        {deliveryProof.kind === "ready" && deliveryProof.value.state === "VERIFIED" ? <><BthwaniStatusBadge icon="success" label={isStorePickup ? "تم تأكيد الاستلام" : "تم إثبات التسليم"} tone="success" /><Text style={styles.muted}>{isStorePickup ? "تم قبول رمز الاستلام وتسجيل استلامك للطلب." : "تم قبول رمز التسليم وتسجيل الاستلام."}</Text></> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "PENDING" ? <><Text style={styles.proofTitle}>{proofLabel}</Text>{isStorePickup && deliveryProof.value.code ? <Text accessibilityLabel={proofLabel} style={styles.proofCode}>{deliveryProof.value.code}</Text> : null}<Text style={styles.muted}>{isStorePickup && deliveryProof.value.code ? proofAvailableMessage : proofWaitingMessage}</Text></> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "VERIFIED" ? <><BthwaniStatusBadge icon="success" label={isStorePickup ? "تم تأكيد الاستلام" : "تم إثبات التسليم بالرمز"} tone="success" /><Text style={styles.muted}>{isStorePickup ? "تم قبول رمز الاستلام وتسجيل استلامك للطلب." : "تم قبول رمز التسليم وتسجيل الاستلام."}</Text></> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "CAPTAIN_CONFIRMED" ? <><BthwaniStatusBadge icon="success" label="أكد الكابتن تسليم الطلب" tone="success" /><Text style={styles.muted}>تأكيد الكابتن مسجل في النظام، وليس تحققًا مستقلًا برمز من العميل. يمكنك الإبلاغ عن أي اختلاف.</Text></> : null}
       </BthwaniSurface>
       {completedState ? <>
         <BthwaniSectionHeader title="تقييم المتجر" subtitle="قيّم المتجر الذي جهّز طلبك. تقييم المنتجات وجودة توصيل بثواني مستقلان عن تقييم المتجر." />
