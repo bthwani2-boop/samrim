@@ -456,6 +456,47 @@ func (s *Service) Recover(ctx context.Context, assignmentID, actingActorID strin
 	return postgres.RecoverCaptainAssignment(ctx, s.db, assignmentID, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainRecoveryRequest(assignmentID, expectedVersion), actingActorID, strings.TrimSpace(correlationID))
 }
 
+// ReconcileAutomaticDispatch runs only inside the DSH worker; it is not an
+// externally callable role bypass. Each insert is guarded by the canonical
+// order lock, duplicate-offer constraints, and the WLT wallet preflight.
+func (s *Service) ReconcileAutomaticDispatch(ctx context.Context) error {
+	if err := postgres.CanonicalizeCaptainOffers(ctx, s.db, ""); err != nil {
+		return err
+	}
+	orderIDs, err := postgres.ListReadyCaptainDispatchOrders(ctx, s.db, 25)
+	if err != nil {
+		return err
+	}
+	for _, orderID := range orderIDs {
+		approved, err := s.dispatchCandidates(ctx, orderID)
+		if errors.Is(err, postgres.ErrCaptainNoAvailable) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		key := fmt.Sprintf("auto-dispatch:%s:%d", orderID, time.Now().UTC().UnixNano())
+		_, _, err = postgres.CreateCaptainDispatchOffer(ctx, s.db, orderID, key, postgres.HashCaptainDispatchRequest(orderID), "system-captain-dispatch", key, approved...)
+		if errors.Is(err, postgres.ErrCaptainDispatchConflict) || errors.Is(err, postgres.ErrCaptainNoAvailable) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// dispatchCandidates checks fresh nearby presence and the canonical WLT wallet
+// before any offer is issued. WLT reserves the actual COD exposure on acceptance.
+func (s *Service) dispatchCandidates(ctx context.Context, orderID string) ([]string, error) {
+	candidates, cashMinor, err := postgres.ListNearbyCaptainCandidates(ctx, s.db, orderID, "")
+	if err != nil {
+		return nil, err
+	}
+	return selectFundedNearbyCaptains(ctx, candidates, cashMinor, s.payment.ReadCaptainWalletState)
+}
+
 func (s *Service) Dispatch(ctx context.Context, orderID, actingActorID, idempotencyKey, correlationID string) (postgres.CaptainOffer, bool, error) {
 	if !validMutation(idempotencyKey, correlationID, actingActorID) {
 		return postgres.CaptainOffer{}, false, ErrInvalidInput
@@ -463,7 +504,11 @@ func (s *Service) Dispatch(ctx context.Context, orderID, actingActorID, idempote
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.CaptainOffer{}, false, err
 	}
-	return postgres.CreateCaptainDispatchOffer(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(idempotencyKey), postgres.HashCaptainDispatchRequest(orderID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+	approved, err := s.dispatchCandidates(ctx, strings.TrimSpace(orderID))
+	if err != nil {
+		return postgres.CaptainOffer{}, false, err
+	}
+	return postgres.CreateCaptainDispatchOffer(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(idempotencyKey), postgres.HashCaptainDispatchRequest(orderID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), approved...)
 }
 
 func (s *Service) DispatchForPartner(ctx context.Context, accessToken, storeID, orderID, captainActorID string, expectedOrderVersion int, idempotencyKey, correlationID string) (postgres.CaptainOffer, bool, error) {
@@ -499,7 +544,11 @@ func (s *Service) Reassign(ctx context.Context, orderID, actingActorID, idempote
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.CaptainOffer{}, false, err
 	}
-	return postgres.ReassignCaptain(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(idempotencyKey), postgres.HashCaptainReassignmentRequest(orderID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+	approved, err := s.dispatchCandidates(ctx, strings.TrimSpace(orderID))
+	if err != nil {
+		return postgres.CaptainOffer{}, false, err
+	}
+	return postgres.ReassignCaptain(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(idempotencyKey), postgres.HashCaptainReassignmentRequest(orderID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), approved...)
 }
 
 func (s *Service) ConfirmStoreHandoff(ctx context.Context, accessToken, orderID, storeID, assignmentID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {

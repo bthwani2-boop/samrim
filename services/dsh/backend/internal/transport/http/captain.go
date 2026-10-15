@@ -1,6 +1,7 @@
 package transporthttp
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -32,6 +33,10 @@ func NewCaptain(identityClient *identityintegration.Client, accessToken string, 
 		return nil, err
 	}
 	return &CaptainServer{auth: authorizer, service: service}, nil
+}
+
+func (s *CaptainServer) ReconcileAutomaticDispatch(ctx context.Context) error {
+	return s.service.ReconcileAutomaticDispatch(ctx)
 }
 
 func (s *CaptainServer) Register(mux *http.ServeMux) {

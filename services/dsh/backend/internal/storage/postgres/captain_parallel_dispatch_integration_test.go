@@ -45,21 +45,53 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 			VALUES($1,'dispatch-three-client',$2,'dispatch-three-cart','dispatch-three-address',1,'صنعاء',15.3694457,44.1910064,$3,'CITY_SCOPE_V1','SERVICEABLE',1,1,'READY_FOR_DISPATCH',1800,'YER',1,'dispatch-three-payment','CASH_ON_DELIVERY','REQUIRES_COLLECTION','BTHWANI_CAPTAIN',1800)`, orderID, storeID, cityID); err != nil {
 			t.Fatal(err)
 		}
-		for i := 1; i <= 4; i++ {
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.stores SET delivery_origin_latitude=15.3694457,delivery_origin_longitude=44.1910064 WHERE id=$1`, storeID); err != nil {
+			t.Fatal(err)
+		}
+		for i := 1; i <= 5; i++ {
 			actor := fmt.Sprintf("dispatch-captain-%d", i)
 			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_admissions(id,actor_id,full_name_ar,state,availability_state,requires_profile_review,version) VALUES($1,$2,$3,'eligible','available',false,1)`, actor+"-admission", actor, "كابتن اختبار"); err != nil {
 				t.Fatalf("captain %d: %v", i, err)
 			}
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_presence_latest(captain_actor_id,latitude,longitude,updated_at) VALUES($1,$2,44.1910064,clock_timestamp()-CASE WHEN $3 THEN interval '16 minutes' ELSE interval '0 minutes' END)`, actor, 15.3694457+float64(i)*0.001, i == 5); err != nil {
+				t.Fatalf("captain %d location: %v", i, err)
+			}
+		}
+		nearby, cashDue, err := postgres.ListNearbyCaptainCandidates(ctx, db, orderID, "")
+		if err != nil || cashDue != 1800 || len(nearby) != 4 {
+			t.Fatalf("nearby candidates=%+v cash=%d err=%v", nearby, cashDue, err)
+		}
+		for i, c := range nearby {
+			if c.ActorID != fmt.Sprintf("dispatch-captain-%d", i+1) {
+				t.Fatalf("nearby ordering mismatch at %d: %+v", i, nearby)
+			}
+		}
+		pending, err := postgres.ListReadyCaptainDispatchOrders(ctx, db, 10)
+		if err != nil || len(pending) != 1 || pending[0] != orderID {
+			t.Fatalf("automatic dispatch recovery scan=%v err=%v", pending, err)
 		}
 		dispatchKey := "dispatch-three-first-key"
 		hash := postgres.HashCaptainDispatchRequest(orderID)
-		first, replayed, err := postgres.CreateCaptainDispatchOffer(ctx, db, orderID, dispatchKey, hash, "operator-test", "correlation-three")
+		first, replayed, err := postgres.CreateCaptainDispatchOffer(ctx, db, orderID, dispatchKey, hash, "operator-test", "correlation-three", nearby[1].ActorID, nearby[2].ActorID, nearby[3].ActorID)
 		if err != nil || replayed || first.State != "offered" {
 			t.Fatalf("first dispatch: %+v replayed=%v error=%v", first, replayed, err)
 		}
 		offers := readParallelOfferIDs(t, ctx, db, orderID)
 		if len(offers) != 3 {
 			t.Fatalf("wanted exactly three parallel offers, got %d", len(offers))
+		}
+		for _, offeredID := range offers {
+			var offeredActor string
+			if err := db.QueryRowContext(ctx, "SELECT captain_actor_id FROM dsh.captain_dispatch_offers WHERE id=$1", offeredID).Scan(&offeredActor); err != nil {
+				t.Fatal(err)
+			}
+			if offeredActor == nearby[0].ActorID || offeredActor == "dispatch-captain-5" {
+				t.Fatalf("wallet-ineligible or stale captain received an offer: %s", offeredActor)
+			}
+		}
+		pending, err = postgres.ListReadyCaptainDispatchOrders(ctx, db, 10)
+		if err != nil || len(pending) != 0 {
+			t.Fatalf("active offer must hide order from automatic redispatch: %v err=%v", pending, err)
 		}
 		replay, again, err := postgres.CreateCaptainDispatchOffer(ctx, db, orderID, dispatchKey, hash, "operator-test", "correlation-three")
 		if err != nil || !again || replay.ID != first.ID {
@@ -114,6 +146,24 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 		}
 		if active != 0 || accepted != 1 || superseded != 2 {
 			t.Fatalf("offer state mismatch active=%d accepted=%d superseded=%d", active, accepted, superseded)
+		}
+		for _, offerID := range offers {
+			var offerState string
+			if err := db.QueryRowContext(ctx, "SELECT state FROM dsh.captain_dispatch_offers WHERE id=$1", offerID).Scan(&offerState); err != nil {
+				t.Fatal(err)
+			}
+			if offerState != "superseded" {
+				continue
+			}
+			visible, err := postgres.ListCaptainOffers(ctx, db, actors[offerID], 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, item := range visible {
+				if item.ID == offerID {
+					t.Fatalf("losing offer %s remains visible to its captain", offerID)
+				}
+			}
 		}
 		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.captain_assignments WHERE order_id=$1 AND state='assigned'", orderID).Scan(&assignments); err != nil {
 			t.Fatal(err)

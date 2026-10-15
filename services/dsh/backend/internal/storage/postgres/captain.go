@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/lib/pq"
 	"strconv"
 	"strings"
 	"time"
@@ -945,8 +946,8 @@ func RestoreCaptainAdmission(ctx context.Context, db *sql.DB, actorID, idempoten
 	return restored, nil
 }
 
-func CreateCaptainDispatchOffer(ctx context.Context, db *sql.DB, orderID, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainOffer, bool, error) {
-	return createCaptainDispatchOffer(ctx, db, orderID, "", idempotencyKey, requestHash, actingActorID, correlationID, "dispatch")
+func CreateCaptainDispatchOffer(ctx context.Context, db *sql.DB, orderID, idempotencyKey, requestHash, actingActorID, correlationID string, approvedCaptainIDs ...string) (CaptainOffer, bool, error) {
+	return createCaptainDispatchOffer(ctx, db, orderID, "", idempotencyKey, requestHash, actingActorID, correlationID, "dispatch", approvedCaptainIDs)
 }
 
 func CreateStoreCaptainDispatchOffer(ctx context.Context, db *sql.DB, storeID, orderID, captainActorID, partnerActorID string, expectedOrderVersion int, idempotencyKey, requestHash, correlationID string) (CaptainOffer, bool, error) {
@@ -1073,7 +1074,7 @@ func ReadStoreCaptainDispatchOffer(ctx context.Context, db *sql.DB, storeID, ord
 
 // dispatchCaptainCandidatesTx creates at most three offers in one order-locked
 // transaction. Only BTHWANI_CAPTAIN calls this helper; store Captain is unchanged.
-func dispatchCaptainCandidatesTx(ctx context.Context, tx *sql.Tx, orderID, excludeCaptainID, idempotencyKey, requestHash, actingActorID, correlationID, auditEvent, fromState string) (string, error) {
+func dispatchCaptainCandidatesTx(ctx context.Context, tx *sql.Tx, orderID, excludeCaptainID, idempotencyKey, requestHash, actingActorID, correlationID, auditEvent, fromState string, approvedCaptainIDs []string) (string, error) {
 	query := `SELECT id,actor_id FROM dsh.captain_admissions WHERE state='eligible'
 		AND requires_profile_review=false AND availability_state='available'
 		AND NOT EXISTS (SELECT 1 FROM dsh.captain_dispatch_offers o WHERE o.captain_actor_id=dsh.captain_admissions.actor_id AND o.state='offered')
@@ -1083,7 +1084,13 @@ func dispatchCaptainCandidatesTx(ctx context.Context, tx *sql.Tx, orderID, exclu
 		query += " AND actor_id<>$1"
 		args = append(args, excludeCaptainID)
 	}
-	query += " ORDER BY updated_at,actor_id LIMIT 3 FOR UPDATE SKIP LOCKED"
+	if approvedCaptainIDs != nil {
+		query += " AND actor_id = ANY($" + strconv.Itoa(len(args)+1) + "::text[])"
+		args = append(args, pq.Array(approvedCaptainIDs))
+		query += " ORDER BY array_position($" + strconv.Itoa(len(args)) + "::text[], actor_id), actor_id LIMIT 3 FOR UPDATE SKIP LOCKED"
+	} else {
+		query += " ORDER BY updated_at,actor_id LIMIT 3 FOR UPDATE SKIP LOCKED"
+	}
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return "", err
@@ -1191,7 +1198,7 @@ func supersedePendingCaptainOffersTx(ctx context.Context, tx *sql.Tx, orderID, w
 	return nil
 }
 
-func createCaptainDispatchOffer(ctx context.Context, db *sql.DB, orderID, excludeCaptainID, idempotencyKey, requestHash, actingActorID, correlationID, operation string) (CaptainOffer, bool, error) {
+func createCaptainDispatchOffer(ctx context.Context, db *sql.DB, orderID, excludeCaptainID, idempotencyKey, requestHash, actingActorID, correlationID, operation string, approvedCaptainIDs []string) (CaptainOffer, bool, error) {
 	if db == nil || strings.TrimSpace(orderID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CaptainOffer{}, false, ErrCaptainOperationConflict
 	}
@@ -1233,7 +1240,7 @@ func createCaptainDispatchOffer(ctx context.Context, db *sql.DB, orderID, exclud
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return CaptainOffer{}, false, err
 	}
-	offerID, err := dispatchCaptainCandidatesTx(ctx, tx, orderID, excludeCaptainID, idempotencyKey, requestHash, actingActorID, correlationID, "dispatch_offer_created", "")
+	offerID, err := dispatchCaptainCandidatesTx(ctx, tx, orderID, excludeCaptainID, idempotencyKey, requestHash, actingActorID, correlationID, "dispatch_offer_created", "", approvedCaptainIDs)
 	if err != nil {
 		return CaptainOffer{}, false, err
 	}
@@ -1526,7 +1533,7 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 	return CaptainOfferResult{Offer: offer, Assignment: &assignment}, nil
 }
 
-func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainOffer, bool, error) {
+func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, requestHash, actingActorID, correlationID string, approvedCaptainIDs ...string) (CaptainOffer, bool, error) {
 	if db == nil || strings.TrimSpace(orderID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CaptainOffer{}, false, ErrCaptainOperationConflict
 	}
@@ -1609,7 +1616,7 @@ func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, r
 			return CaptainOffer{}, false, err
 		}
 	}
-	offerID, err := dispatchCaptainCandidatesTx(ctx, tx, orderID, oldCaptain, idempotencyKey, requestHash, actingActorID, correlationID, "captain_assignment_reassigned", state)
+	offerID, err := dispatchCaptainCandidatesTx(ctx, tx, orderID, oldCaptain, idempotencyKey, requestHash, actingActorID, correlationID, "captain_assignment_reassigned", state, approvedCaptainIDs)
 	if err != nil {
 		return CaptainOffer{}, false, err
 	}

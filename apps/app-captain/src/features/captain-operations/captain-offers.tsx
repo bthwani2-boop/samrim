@@ -1,6 +1,6 @@
 import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainOffer, captainOfferStateLabel, formatMoney, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
-import { type Href, Link, useLocalSearchParams } from "expo-router";
+import { type Href, Link, useIsFocused, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Text, View } from "react-native";
 
@@ -12,6 +12,7 @@ import { isCurrentCaptainActor } from "./captain-session-scope";
 export function CaptainOffers() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
+  const isFocused = useIsFocused();
   const { q: rawQuery } = useLocalSearchParams<{ q?: string | string[] }>();
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const [offers, setOffers] = useState<ReadonlyArray<CaptainOffer>>([]);
@@ -65,6 +66,29 @@ export function CaptainOffers() {
     }
     void load();
   }, [activeActorID, load]);
+  // Losing offers disappear from the active screen after the server's
+  // atomic supersession, without requiring the other captain to tap Refresh.
+  useEffect(() => {
+    if (!isFocused || !activeActorID || loadedActorID !== activeActorID || loading) return;
+    let cancelled = false;
+    const refresh = async () => {
+      if (busy) return;
+      try {
+        const token = await getUsableIdentityAccessToken();
+        const response = await captainClient().listOwnCaptainOffers(token);
+        const session = currentIdentityState();
+        if (!cancelled && session.kind === "authenticated" && isCurrentCaptainActor(activeActorID, session.identity.subject.trim())) {
+          setOffers(response.offers);
+        }
+      } catch {
+        // An interrupted quiet refresh preserves the previous visible state.
+        // Explicit Refresh retains its normal error/retry path.
+      }
+    };
+    const timer = setInterval(() => void refresh(), 5000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [isFocused, activeActorID, loadedActorID, busy, loading]);
+
   const scopedOffers = isCurrentCaptainActor(loadedActorID, activeActorID) ? offers : [];
   const filteredOffers = useMemo(() => { const query = searchQuery.trim().toLocaleLowerCase(); if (!query) return scopedOffers; return scopedOffers.filter((offer) => [offer.id, offer.orderId, offer.storeName, offer.customerAddressText].join(" ").toLocaleLowerCase().includes(query)); }, [scopedOffers, searchQuery]);
 
