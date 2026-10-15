@@ -45,7 +45,7 @@ test("operations rereads the current server filter on return without touching th
     return route.fulfill({ json: { operations: [] } });
   });
   await page.goto("/operations?q=المعتمد");
-  await expect(page.getByText("لا توجد نتائج تطابق البحث", { exact: true })).toBeVisible();
+  await expect(page.getByText("لا توجد طلبات تطابق البحث", { exact: true })).toBeVisible();
   await page.getByLabel("رقم الطلب أو اسم المتجر").fill("بحث لم يُرسل");
   await page.clock.fastForward(31_000);
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));

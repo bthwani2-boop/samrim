@@ -118,23 +118,16 @@ test("operations lanes, order detail routes, and operator recovery follow URL st
   await page.goto("/operations");
   await expect(page.getByRole("heading", { name: "العمليات", exact: true })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  const lanes = page.getByRole("navigation", { name: "مسارات مركز العمليات" });
-  await expect(lanes.getByRole("link", { name: "الطلبات" })).toHaveAttribute("aria-current", "page");
-  await expect(lanes.getByRole("link", { name: "تحتاج قرارًا" })).toBeVisible();
-  await expect(lanes.getByRole("link", { name: "الاستثناءات والاستعادة" })).toBeVisible();
-
-  await page.getByRole("link", { name: "التوزيع", exact: true }).focus();
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/lane=dispatch/);
+  await expect(page.getByRole("navigation", { name: "عرض الطلبات" })).toHaveCount(0);
+  await expect(page.locator(".ops-summary-grid .ops-summary")).toHaveCount(4);
+  await page.getByRole("combobox", { name: "تصفية حسب حالة الطلب" }).selectOption("READY_FOR_DISPATCH");
+  await expect(page).toHaveURL(/state=READY_FOR_DISPATCH/);
   await expect.poll(() => listRequests.some((url) => url.searchParams.get("state") === "READY_FOR_DISPATCH")).toBe(true);
-
-  await lanes.getByRole("link", { name: "التنفيذ الجاري" }).click();
-  await expect(page).toHaveURL(/lane=execution&sub=assigned/);
-  const executionSubLanes = page.getByRole("navigation", { name: "مسارات التنفيذ الجاري" });
-  await expect(executionSubLanes.getByRole("link", { name: "إسناد الكابتن" })).toHaveAttribute("aria-current", "page");
-  await expect(executionSubLanes.getByRole("link", { name: "في عهدة الكابتن" })).toBeVisible();
-  await executionSubLanes.getByRole("link", { name: "في عهدة الكابتن" }).click();
-  await expect(page).toHaveURL(/lane=execution&sub=custody/);
+  await page.getByRole("combobox", { name: "تصفية حسب حالة الطلب" }).selectOption("CAPTAIN_ASSIGNED");
+  await expect(page).toHaveURL(/state=CAPTAIN_ASSIGNED/);
+  await expect.poll(() => listRequests.some((url) => url.searchParams.get("state") === "CAPTAIN_ASSIGNED")).toBe(true);
+  await page.getByRole("combobox", { name: "تصفية حسب حالة الطلب" }).selectOption("IN_CUSTODY");
+  await expect(page).toHaveURL(/state=IN_CUSTODY/);
   await expect.poll(() => listRequests.some((url) => url.searchParams.get("state") === "IN_CUSTODY")).toBe(true);
   await page.locator(".account-menu > summary").click();
   await page.getByRole("radio", { name: "فاتح" }).check();
@@ -154,30 +147,33 @@ test("operations lanes, order detail routes, and operator recovery follow URL st
   expect(desktopWidth).toBeLessThanOrEqual(1440);
 
   await page.reload();
-  await expect(page).toHaveURL(/lane=execution&sub=custody/);
-  await expect(executionSubLanes.getByRole("link", { name: "في عهدة الكابتن" })).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(/state=IN_CUSTODY/);
+  await expect(page.getByRole("combobox", { name: "تصفية حسب حالة الطلب" })).toHaveValue("IN_CUSTODY");
   await page.goBack();
-  await expect(page).toHaveURL(/lane=execution&sub=assigned/);
+  await expect(page).toHaveURL(/state=CAPTAIN_ASSIGNED/);
   await page.goForward();
-  await expect(page).toHaveURL(/lane=execution&sub=custody/);
+  await expect(page).toHaveURL(/state=IN_CUSTODY/);
 
-  await page.getByRole("link", { name: "فتح الطلب" }).click();
-  await expect(page).toHaveURL(/\/operations\/order_ops_100\?.*tab=overview/);
-  await expect(page.getByRole("navigation", { name: "مساحات تفاصيل الطلب" })).toBeVisible();
-  await page.getByRole("navigation", { name: "مساحات تفاصيل الطلب" }).getByRole("link", { name: "العناصر" }).click();
-  await expect(page).toHaveURL(/tab=items/);
-  await expect(page.getByRole("heading", { name: "عناصر الطلب" })).toBeVisible();
-  await expect(page.getByText("قهوة مختارة")).toBeVisible();
-  await page.reload();
-  await expect(page).toHaveURL(/tab=items/);
-  await expect(page.getByRole("heading", { name: "عناصر الطلب" })).toBeVisible();
+  await page.getByRole("button", { name: "فتح الطلب order_ops_100" }).click();
+  const drawer = page.getByRole("dialog", { name: "تفاصيل الطلب order_ops_100" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole("heading", { name: "عناصر الطلب" })).toBeVisible();
+  await expect(drawer.getByText("قهوة مختارة")).toBeVisible();
+  await expect(drawer.getByRole("heading", { name: "الدفع والمبالغ" })).toBeVisible();
+  await expect(drawer.getByText("عرض الموقع على الخريطة")).toBeVisible();
+  await expect(drawer.locator(".ops-location-disclosure")).not.toHaveAttribute("open");
+  await expect(drawer.getByRole("navigation", { name: "مساحات تفاصيل الطلب" })).toHaveCount(0);
+  await page.screenshot({ path: path.join(evidenceDirectory, "operations-inline-detail.png") });
+  await expect(page).toHaveURL(/state=IN_CUSTODY/);
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
 
-  await page.goto("/operations?lane=exceptions");
-  await expect(page.locator("#operations-list-title")).toBeVisible();
+  await page.goto("/operations?state=DELIVERY_FAILED");
+  await expect(page.getByRole("heading", { name: "تعثر التسليم" })).toBeVisible();
   await expect(page.getByRole("button", { name: "استعادة التسليم" })).toHaveCount(0);
-  await page.getByRole("link", { name: "فتح الطلب" }).click();
-  const detailNavigation = page.getByRole("navigation", { name: "مساحات تفاصيل الطلب" });
-  await expect(detailNavigation.getByRole("link", { name: "الاستعادة" })).toBeVisible();
+  await page.getByRole("button", { name: "فتح الطلب order_ops_100" }).click();
+  const recoveryDrawer = page.getByRole("dialog", { name: "تفاصيل الطلب order_ops_100" });
+  await expect(recoveryDrawer.getByRole("heading", { name: "استعادة التسليم" })).toBeVisible();
   await page.getByRole("button", { name: "استعادة التسليم" }).click();
   await expect(page.locator(".managed-status[role=alert]")).toContainText("تغيرت حالة الطلب");
   expect(actions).toHaveLength(1);
@@ -186,18 +182,15 @@ test("operations lanes, order detail routes, and operator recovery follow URL st
   actionMode = "success";
   await page.getByRole("button", { name: "استعادة التسليم" }).click();
   await expect(page.getByRole("status")).toContainText("تم تحديث حالة الطلب بعد إعادة قراءتها من المصدر التشغيلي.");
-  await expect(detailNavigation.getByRole("link", { name: "الاستعادة" })).toHaveCount(0);
+  await expect(recoveryDrawer.getByRole("heading", { name: "استعادة التسليم" })).toHaveCount(0);
   await expect(page.getByText("مع الكابتن", { exact: true })).toBeVisible();
   expect(actions).toHaveLength(2);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/operations?lane=exceptions");
-  await expect(page.locator("#operations-list-title")).toBeVisible();
-  const laneNavigationBounds = await page.getByRole("navigation", { name: "مسارات مركز العمليات" }).boundingBox();
-  const activeLaneBounds = await page.getByRole("navigation", { name: "مسارات مركز العمليات" }).getByRole("link", { name: "الاستثناءات والاستعادة" }).boundingBox();
-  if (!laneNavigationBounds || !activeLaneBounds) throw new Error("Expected the active narrow operations lane to render.");
-  expect(activeLaneBounds.x).toBeGreaterThanOrEqual(laneNavigationBounds.x);
-  expect(activeLaneBounds.x + activeLaneBounds.width).toBeLessThanOrEqual(laneNavigationBounds.x + laneNavigationBounds.width);
+  await page.goto("/operations?view=dispatch");
+  await expect(page.getByRole("heading", { name: "بانتظار كابتن" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "عرض الطلبات" })).toHaveCount(0);
+  await expect(page.locator(".ops-summary-grid .ops-summary")).toHaveCount(4);
   const narrowWidth = await page.locator("html").evaluate((element) => element.scrollWidth);
   expect(narrowWidth).toBeLessThanOrEqual(390);
   const brandBounds = await page.locator(".workspace-header > .brand-link").boundingBox();
@@ -242,14 +235,14 @@ test("operations server errors and empty search results have distinct recovery s
   });
 
   await page.goto("/operations");
-  await expect(page.getByText("لا توجد طلبات في هذا المسار", { exact: true })).toBeVisible();
+  await expect(page.getByText("لا توجد طلبات في هذا العرض", { exact: true })).toBeVisible();
   await page.getByRole("searchbox", { name: "رقم الطلب أو اسم المتجر" }).fill("لا توجد نتيجة");
   await page.getByRole("button", { name: "بحث", exact: true }).click();
   await expect(page).toHaveURL(/q=/);
-  await expect(page.getByText("لا توجد نتائج تطابق البحث", { exact: true })).toBeVisible();
+  await expect(page.getByText("لا توجد طلبات تطابق البحث", { exact: true })).toBeVisible();
 
   responseMode = "forbidden";
-  await page.goto("/operations?lane=dispatch");
-  await expect(page.locator(".managed-status[role=alert]")).toContainText("لا تملك صلاحية قراءة هذا المسار");
+  await page.goto("/operations?view=dispatch");
+  await expect(page.locator(".managed-status[role=alert]")).toContainText("لا تملك صلاحية قراءة الطلبات");
   await expect(page.getByRole("button", { name: "إعادة المحاولة" })).toBeVisible();
 });

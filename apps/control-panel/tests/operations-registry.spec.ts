@@ -15,11 +15,11 @@ for (const body of [{}, { operations: null }, { operations: [], nextCursor: 7 }]
     await page.route("**/api/operations?**", (route) => route.fulfill({ status: 200, json: valid ? { operations: [], nextCursor: "" } : body }));
     await page.goto("/operations");
     await expect(page.locator(".operations-workspace").getByRole("alert")).toContainText("تعذر قراءة الطلبات");
-    await expect(page.getByText("لا توجد طلبات في هذا المسار", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("لا توجد طلبات في هذا العرض", { exact: true })).toHaveCount(0);
     valid = true;
     await page.getByRole("button", { name: "إعادة المحاولة", exact: true }).click();
     await expect(page.locator(".operations-workspace").getByRole("alert")).toHaveCount(0);
-    await expect(page.getByText("لا توجد طلبات في هذا المسار", { exact: true })).toBeVisible();
+    await expect(page.getByText("لا توجد طلبات في هذا العرض", { exact: true })).toBeVisible();
   });
 }
 
@@ -94,13 +94,15 @@ test("operation detail links retain the current page and resubmitting the same s
   await page.goto("/operations?lane=attention&q=متجر&sort=updated_asc");
   await page.getByRole("navigation", { name: "صفحات الطلبات" }).getByRole("button", { name: "التالي", exact: true }).click();
   await expect(page.getByRole("cell", { name: "متجر الصفحة الثانية", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "فتح الطلب", exact: true })).toHaveAttribute("href", /cursor=second-page/);
+  await expect(page.getByRole("button", { name: "فتح الطلب second-order" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "عرض الطلبات" })).toHaveCount(0);
   await page.getByRole("button", { name: "بحث", exact: true }).click();
   await expect(page.getByRole("cell", { name: "متجر الصفحة الأولى", exact: true })).toBeVisible();
   await expect(page).not.toHaveURL(/cursor=/);
   const query = new URL(page.url()).searchParams;
   expect(query.get("q")).toBe("متجر");
-  expect(query.get("lane")).toBe("attention");
+  expect(query.has("lane")).toBe(false);
+  expect(query.has("view")).toBe(false);
   expect(query.get("sort")).toBe("updated_asc");
 });
 
