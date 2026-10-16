@@ -1093,8 +1093,17 @@ await prepareApprovedStoreLogo(first.caseID, first.accessToken, "catalog-a");
 await prepareApprovedStoreLogo(second.caseID, second.accessToken, "catalog-b");
 await prepareApprovedStoreLogo(first.caseID, first.accessToken, "catalog-a-cover", "cover");
 await prepareApprovedStoreLogo(second.caseID, second.accessToken, "catalog-b-cover", "cover");
-const publishA = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-a-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
-const publishB = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
+// Store media writes advance the store revision. Read the canonical revision
+// before each optimistic-concurrency publication transition; a fixture's
+// approval-time version must never be assumed to remain current.
+function publicationVersion(storeID) {
+  const value = sql(`SELECT version::text FROM dsh.stores WHERE id='${sqlLiteral(storeID)}'`);
+  const version = Number(value);
+  if (!Number.isSafeInteger(version) || version < 1) fail("canonical store publication version unavailable", JSON.stringify({ storeID, value }));
+  return version;
+}
+const publishA = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-a-publish-${suffix}`, crypto.randomUUID(), publicationVersion(first.storeID)), body: { state: "published" } });
+const publishB = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-publish-${suffix}`, crypto.randomUUID(), publicationVersion(second.storeID)), body: { state: "published" } });
 if (publishA.status !== 200 || publishB.status !== 200) {
   const publicationReadback = {
     storeA: sql(`SELECT publication_state || ':' || version::text FROM dsh.stores WHERE id='${sqlLiteral(first.storeID)}'`),
@@ -1263,7 +1272,7 @@ const modifierOptionID = String(modifierOptionCreate.body.option.id);
 const storeLocalOfferPublished = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/offers/${storeLocalOfferID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-local-offer-publish-${suffix}`, 1), body: discreteOffer(1000, "published") });
 await prepareApprovedStoreLogo(storeLocal.caseID, storeLocal.accessToken, "store-local");
 await prepareApprovedStoreLogo(storeLocal.caseID, storeLocal.accessToken, "store-local-cover", "cover");
-const storeLocalPublished = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-local-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
+const storeLocalPublished = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-local-publish-${suffix}`, crypto.randomUUID(), publicationVersion(storeLocal.storeID)), body: { state: "published" } });
 const storeLocalFieldEntitlementQuery = `SELECT count(*) || ':' || count(DISTINCT store_id) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}','${sqlLiteral(storeLocal.storeID)}')`;
 await waitForSQL(storeLocalFieldEntitlementQuery, "3:3", "Field acquisition entitlement did not post once for the newly published Field-origin store", 120_000);
 const storeLocalFieldSummary = await request(dshBase, "GET", `/dsh/operator/fields/${encodeURIComponent(fieldActorID)}/financial-summary`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
@@ -2079,7 +2088,7 @@ const captainEnabledReplay = await request(dshBase, "POST", `/dsh/captains/${enc
 if (captainRoleBeforeDisable.status !== 200 || captainDisabled.status !== 204 || captainAdmissionSuspended.status !== 200 || captainAdmissionSuspended.body?.admission?.state !== "suspended" || captainAdmissionSuspended.body.admission.availabilityState !== "unavailable" || captainDisabledReplay.status !== 204 || captainRoleAfterDisable.body?.enabled !== false || revokedCaptainSession.status !== 401 || captainEnabled.status !== 204 || captainAdmissionRestored.status !== 200 || captainAdmissionRestored.body?.admission?.state !== "eligible" || captainAdmissionRestored.body.admission.availabilityState !== "unavailable" || captainEnabledReplay.status !== 204) fail("Captain DSH/Identity access transition was not atomic enough, idempotent, or fail-closed", JSON.stringify({ captainRoleBeforeDisable, captainDisabled, captainAdmissionSuspended, captainDisabledReplay, captainRoleAfterDisable, revokedCaptainSession, captainEnabled, captainAdmissionRestored, captainEnabledReplay }));
 console.log("DSH_CAPTAIN_ACCESS_SUSPEND_RESTORE=PASS");
 
-const hiddenA = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-a-hide-${suffix}`, crypto.randomUUID(), 2), body: { state: "hidden" } });
+const hiddenA = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-a-hide-${suffix}`, crypto.randomUUID(), publicationVersion(first.storeID)), body: { state: "hidden" } });
 if (hiddenA.status !== 200) fail("Store hide failed", JSON.stringify(hiddenA));
 const afterHideA = await request(dshBase, "GET", `/dsh/public/stores?serviceCityId=${encodeURIComponent(cityA)}`);
 const afterHideB = await request(dshBase, "GET", `/dsh/public/stores?serviceCityId=${encodeURIComponent(cityB)}`);
