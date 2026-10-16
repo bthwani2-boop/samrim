@@ -1705,6 +1705,14 @@ const captainSelf = await request(dshBase, "GET", "/dsh/captains/me", { token: c
 const captainAvailability = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: captainAccessToken, headers: partnerHeaders(`captain-availability-${suffix}`, captainSelf.body?.admission?.version), body: { available: true } });
 const partnerCaptainOffers = await request(dshBase, "GET", "/dsh/captains/me/offers", { token: first.accessToken });
 if (captainSelf.status !== 200 || captainSelf.body?.admission?.actorId !== captainActorID || captainSelf.body?.admission?.fullNameAr !== "علي سالم أحمد الصنعاني" || captainSelf.body?.admission?.contactPhoneE164 !== captainPhone || captainAvailability.status !== 200 || captainAvailability.body?.admission?.availabilityState !== "available" || partnerCaptainOffers.status !== 403) fail("Captain profile readback, session, or cross-role read boundary failed", JSON.stringify({ captainSelf, captainAvailability, partnerCaptainOffers }));
+// A captain is dispatchable only after the official live-presence writer
+// records an eligible, fresh position. Availability and wallet funding alone
+// must not bypass the proximity requirement.
+const captainPresence = await request(dshBase, "POST", "/dsh/captains/me/presence", {
+  token: captainAccessToken, body: { latitude: firstStoreOrigin.firstStoreLatitude, longitude: firstStoreOrigin.firstStoreLongitude },
+});
+if (captainPresence.status !== 200 || !captainPresence.body?.updatedAt) fail("eligible Captain presence was not recorded through its owner", JSON.stringify(captainPresence));
+expectSQL(`SELECT count(*) FROM dsh.captain_presence_latest WHERE captain_actor_id='${sqlLiteral(captainActorID)}' AND latitude=${firstStoreOrigin.firstStoreLatitude} AND longitude=${firstStoreOrigin.firstStoreLongitude} AND updated_at > clock_timestamp()-interval '15 minutes'`, "1", "Captain first dispatch lacked fresh persisted presence");
 const firstDispatchKey = `captain-dispatch-first-${suffix}`;
 const firstDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, firstDispatchKey) });
 if (firstDispatch.status !== 201 || firstDispatch.body?.offer?.state !== "offered" || firstDispatch.body.offer.captainActorId !== captainActorID || firstDispatch.body.offer.storeName !== "Catalog Runtime A store" || firstDispatch.body.offer.customerAddressText !== `عنوان أ ${suffix}` || firstDispatch.body.offer.amountDueMinor !== mainOrderTotal || firstDispatch.body.offer.currency !== "YER" || firstDispatch.body.offer.paymentMethod !== "CASH_ON_DELIVERY" || firstDispatch.body.offer.paymentState !== "REQUIRES_COLLECTION") fail("Captain dispatch did not create an addressed offer with canonical order context", JSON.stringify(firstDispatch));
@@ -1741,6 +1749,11 @@ await fundCaptainThroughDevelopmentCashIn(secondCaptainActorID, mainOrderTotal, 
 const secondCaptainAvailability = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: secondCaptainAccessToken, headers: partnerHeaders(`captain-availability-second-${suffix}`, secondCaptainSelf.body?.admission?.version), body: { available: true } });
 if (secondCaptainSelf.status !== 200 || secondCaptainAvailability.status !== 200 || secondCaptainAvailability.body?.admission?.availabilityState !== "available") fail("second Captain availability failed", JSON.stringify({ secondCaptainSelf, secondCaptainAvailability }));
 
+const secondCaptainPresence = await request(dshBase, "POST", "/dsh/captains/me/presence", {
+  token: secondCaptainAccessToken, body: { latitude: firstStoreOrigin.firstStoreLatitude, longitude: firstStoreOrigin.firstStoreLongitude },
+});
+if (secondCaptainPresence.status !== 200 || !secondCaptainPresence.body?.updatedAt) fail("replacement Captain presence was not recorded", JSON.stringify(secondCaptainPresence));
+expectSQL(`SELECT count(*) FROM dsh.captain_presence_latest WHERE captain_actor_id='${sqlLiteral(secondCaptainActorID)}' AND updated_at > clock_timestamp()-interval '15 minutes'`, "1", "replacement Captain lacked fresh presence");
 const reassignKey = `captain-reassign-active-${suffix}`;
 const reassigned = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/reassign`, { token: dshToken, headers: serviceHeaders(actingOperatorID, reassignKey) });
 const reassignedReplay = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/reassign`, { token: dshToken, headers: serviceHeaders(actingOperatorID, reassignKey) });
@@ -2117,6 +2130,10 @@ const expiryCaptainActorID = captainActorID;
 const expiryCaptainAccessToken = captainAccessToken;
 const expiryCaptainSelf = await request(dshBase, "GET", "/dsh/captains/me", { token: expiryCaptainAccessToken });
 if (expiryCaptainSelf.status !== 200 || expiryCaptainSelf.body?.admission?.actorId !== expiryCaptainActorID || expiryCaptainSelf.body.admission.availabilityState !== "available") fail("Existing Captain expiry session is not available", JSON.stringify(expiryCaptainSelf));
+const expiryCaptainPresence = await request(dshBase, "POST", "/dsh/captains/me/presence", {
+  token: expiryCaptainAccessToken, body: { latitude: firstStoreOrigin.firstStoreLatitude, longitude: firstStoreOrigin.firstStoreLongitude },
+});
+if (expiryCaptainPresence.status !== 200 || !expiryCaptainPresence.body?.updatedAt) fail("expiry Captain lacked fresh presence", JSON.stringify(expiryCaptainPresence));
 const expiryDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(expiryOrderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-expiry-dispatch-${suffix}`) });
 if (expiryDispatch.status !== 201 || expiryDispatch.body?.offer?.state !== "offered" || expiryDispatch.body.offer.captainActorId !== expiryCaptainActorID) fail("Captain expiry offer fixture failed", JSON.stringify({ expiryDispatch, expiryCaptainActorID }));
 const expiryOfferID = String(expiryDispatch.body.offer.id);
