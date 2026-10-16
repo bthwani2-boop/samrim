@@ -23,20 +23,115 @@ test("catalog center keeps its product registry and contextual work on one surfa
   await expect(page.getByRole("heading", { name: "الكتالوج", exact: true, level: 1 })).toBeVisible();
   await expect(page.getByTestId("catalog-center")).toBeVisible();
   await expect(page.getByRole("button", { name: "جدول المنتجات", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("summary").filter({ hasText: "المجالات والفئات" })).toBeVisible();
-  await expect(page.locator("summary").filter({ hasText: "مقترحات الشركاء" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الكتالوج", exact: true })).toHaveAttribute("aria-current", "location");
+  const catalogModes = page.getByRole("group", { name: "إدارة الكتالوج" });
+  await expect(catalogModes.getByRole("button", { name: "المنتجات" })).toHaveAttribute("aria-pressed", "true");
+  await expect(catalogModes.getByRole("button", { name: "الفئات" })).toBeVisible();
+  await expect(catalogModes.getByRole("button", { name: "مقترحات الشركاء" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الكتالوج", exact: true })).toHaveAttribute("aria-current", "page");
   const sideNavigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
-  const catalogTabs = sideNavigation.getByRole("list", { name: "مسارات الكتالوج" });
-  for (const [label, href] of [["الاستيراد", "/catalog/import"], ["سلة المحذوفات", "/catalog/trash"]] as const) {
-    await expect(catalogTabs.getByRole("link", { name: label, exact: true })).toHaveAttribute("href", href);
-    await expect(sideNavigation.getByRole("link", { name: label, exact: true })).toHaveCount(1);
-  }
-  for (const label of ["المنتجات", "الفئات", "المراجعة"]) {
-    await expect(catalogTabs.getByRole("link", { name: label, exact: true })).toHaveCount(0);
-  }
+  await expect(sideNavigation.getByRole("list", { name: "مسارات الكتالوج" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "استيراد", exact: true })).toHaveAttribute("href", "/catalog/import");
+  await expect(page.getByRole("link", { name: "سلة المحذوفات", exact: true })).toHaveAttribute("href", "/catalog/trash");
   await expect(page.getByRole("heading", { name: "اختر مورد الكتالوج" })).toHaveCount(0);
   await expect(page.locator("#catalog-import-rows")).toHaveCount(0);
+});
+
+
+test("catalog rows display real category names without misleading selection controls", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/catalog/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const body = path === "/api/catalog/verticals" ? { verticals: [{ id: "grocery", nameAr: "البقالة", nameEn: "Grocery", active: true, version: 1 }] }
+      : path === "/api/catalog/product-registry" ? { products: [{
+          id: "rice-1", verticalId: "grocery", canonicalName: "أرز أبيض", brand: "الخير",
+          active: true, version: 1, variantCount: 1, storeCount: 2, categoryIds: ["rice-cat"],
+          categoryNamesAr: ["الأرز"], primaryImageUri: "",
+          createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-07T00:00:00Z",
+        }], totalCount: 1, measuredAt: "2026-10-16T00:00:00Z", nextCursor: "" }
+      : { categories: [], nextCursor: "" };
+    await route.fulfill({ status: 200, json: body });
+  });
+  await page.goto("/catalog");
+  const row = page.getByRole("row", { name: /أرز أبيض/ });
+  await expect(row).toContainText("الأرز");
+  await expect(row).toContainText("البقالة");
+  await expect(row.getByRole("button", { name: "إدارة المنتج" })).toBeVisible();
+  await expect(row.getByRole("checkbox")).toHaveCount(0);
+  const toolbarHeight = await page.locator(".catalog-compact-toolbar").evaluate((node) => node.getBoundingClientRect().height);
+  expect(toolbarHeight).toBeLessThan(90);
+  await page.locator(".catalog-compact-toolbar summary").click();
+  await expect(page.getByRole("combobox", { name: "الفئة", exact: true })).toBeVisible();
+});
+
+test("product files stay beside the catalog on desktop and open as a full-width file on mobile", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const product = {
+    id: "rice-1", verticalId: "grocery", scope: "SHARED", version: 1, canonicalName: "أرز أبيض",
+    description: "منتج غذائي للاستخدام اليومي.", brand: "الخير", categoryIds: ["rice-cat"],
+    active: true, attributes: [], media: [], variantCount: 1, storeCount: 2, updatedAt: "2026-10-07T00:00:00Z",
+    variants: [{ id: "rice-variant", title: "عبوة 1 كجم", measurementKind: "DISCRETE", baseUnit: "COUNT", identifiers: [], attributes: [] }],
+  };
+  const category = { id: "rice-cat", verticalId: "grocery", nameAr: "الأرز", pathAr: "الأرز والحبوب / الأرز", active: true, parentCategoryId: null, version: 1 };
+  await page.route("**/api/catalog/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const body = path === "/api/catalog/verticals" ? { verticals: [{ id: "grocery", nameAr: "البقالة", nameEn: "Grocery", active: true, version: 1 }] }
+      : path === "/api/catalog/product-registry" ? { products: [{ ...product, categoryNamesAr: ["الأرز"], primaryImageUri: "" }], totalCount: 1, measuredAt: "2026-10-16T00:00:00Z", nextCursor: "" }
+      : path === "/api/catalog/products/rice-1" ? product
+      : path.endsWith("/attribute-rules") ? { rules: [] }
+      : path.endsWith("/rice-cat") ? { category }
+      : { categories: [category], nextCursor: "" };
+    await route.fulfill({ status: 200, json: body });
+  });
+
+  await page.goto("/catalog?q=أرز");
+  const trigger = page.getByRole("row", { name: /أرز أبيض/ }).getByRole("button", { name: "إدارة المنتج" });
+  await trigger.click();
+  const workspace = page.locator(".adaptive-record-workspace");
+  await expect(page).toHaveURL(/mode=edit/);
+  await expect(workspace).toHaveAttribute("data-open", "true");
+  await expect(workspace).toHaveAttribute("data-split", "true");
+  const file = page.locator(".adaptive-record-detail");
+  await expect(file.locator(".workspace-side-drawer-heading")).toContainText("ملف المنتج");
+  await expect(file.locator(".workspace-side-drawer-heading")).toContainText("أرز أبيض");
+  await expect(file.locator(".workspace-side-drawer-actions").getByRole("button", { name: "حفظ التعديل", exact: true })).toBeVisible();
+  const widths = await page.evaluate(() => ({
+    list: document.querySelector(".adaptive-record-registry")?.getBoundingClientRect().width ?? 0,
+    table: document.querySelector(".catalog-registry-table")?.getBoundingClientRect().width ?? 0,
+  }));
+  expect(widths.list).toBeGreaterThanOrEqual(510);
+  expect(widths.table).toBeLessThanOrEqual(widths.list + 1);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(workspace).toHaveAttribute("data-split", "false");
+  await expect(file).toHaveCSS("position", "fixed");
+  await page.getByRole("button", { name: "إغلاق التفاصيل", exact: true }).click();
+  await expect(workspace).toHaveAttribute("data-open", "false");
+  expect(new URL(page.url()).searchParams.get("q")).toBe("أرز");
+  await expect(trigger).toBeFocused();
+});
+
+test("catalog modes preserve product filters and use one workbench", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/catalog/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const body = path.endsWith("/verticals") ? { verticals: [] }
+      : path.endsWith("/product-registry") ? { products: [], totalCount: 0, measuredAt: new Date().toISOString(), nextCursor: "" }
+      : path.endsWith("/categories") ? { categories: [], nextCursor: "" }
+      : path.endsWith("/proposals") ? { proposals: [], nextCursor: "" }
+      : { products: [], nextCursor: "" };
+    await route.fulfill({ status: 200, json: body });
+  });
+  await page.goto("/catalog");
+  const modes = page.getByRole("group", { name: "إدارة الكتالوج" });
+  const search = page.getByRole("textbox", { name: "البحث في المنتجات" });
+  await search.fill("أرز");
+  await modes.getByRole("button", { name: "مقترحات الشركاء" }).click();
+  await expect(page).toHaveURL(/catalogView=proposals/);
+  await expect(page.getByRole("heading", { name: "المقترحات المقدمة" })).toBeVisible();
+  await modes.getByRole("button", { name: "المنتجات" }).click();
+  await expect(search).toHaveValue("أرز");
+  await expect(page).toHaveURL(/\/catalog$/);
 });
 
 test("store catalog import searches server pages and keeps the selected store visible", async ({ page }) => {
@@ -199,9 +294,9 @@ test("operator sees shared product categories as a hierarchy under their commerc
   const rootItem = tree.getByRole("listitem").first();
   const childList = rootItem.getByRole("list");
   const childItem = childList.getByRole("listitem").first();
-  await expect(page.getByLabel("النشاط التجاري")).toHaveValue("grocery");
+  await expect(page.getByLabel("المجال التجاري")).toHaveValue("grocery");
   await expect(childItem.getByRole("button", { name: /قهوة Coffee/ })).toBeVisible();
-  await expect(rootItem).toContainText("جذر النشاط التجاري");
+  await expect(rootItem).toContainText("جذر المجال التجاري");
   await expect(childItem.locator(".catalog-taxonomy-child-count")).toContainText("ضمن مشروبات");
   await rootItem.getByRole("button", { name: "طي فروع مشروبات" }).click();
   await expect(childList).toHaveCount(0);
@@ -237,7 +332,7 @@ test("vertical registry does not present a category image as a vertical image", 
 
   await page.goto("/catalog/categories?verticalId=grocery");
   await page.locator("details.catalog-vertical-settings > summary").click();
-  await expect(page.getByRole("heading", { name: "الأنشطة التجارية" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "المجالات التجارية" })).toBeVisible();
   await expect(page.getByRole("img", { name: "صورة المجال المقاضي" })).toHaveCount(0);
   await expect(page.getByText("لا توجد صورة جذر")).toHaveCount(0);
 });

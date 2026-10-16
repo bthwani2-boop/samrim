@@ -232,6 +232,13 @@ func (s *Service) ListForOperator(ctx context.Context, state, query, sort, actin
 	return postgres.ListOrdersForOperator(ctx, s.db, state, query, sort, actionableOnly, limit, cursor)
 }
 
+func (s *Service) ListForOperatorStore(ctx context.Context, state, query, sort, actingActorID string, actionableOnly bool, limit int, cursor, storeID string) (postgres.OperatorOperationsResult, error) {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
+		return postgres.OperatorOperationsResult{}, err
+	}
+	return postgres.ListOrdersForOperatorStore(ctx, s.db, state, query, sort, actionableOnly, limit, cursor, storeID)
+}
+
 func (s *Service) ReadForOperator(ctx context.Context, orderID, actingActorID string) (postgres.OperatorOperationRecord, error) {
 	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
 		return postgres.OperatorOperationRecord{}, err

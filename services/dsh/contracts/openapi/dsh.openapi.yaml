@@ -672,8 +672,13 @@ paths:
   /dsh/operator/operations:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations"
 
+  /dsh/operator/home-analytics:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1home-analytics"
+
   /dsh/operator/operations/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}"
+  /dsh/operator/customers/{actorId}/orders:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1customers~1{actorId}~1orders"
 
   /dsh/operator/cash-custody:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cash-custody"
@@ -3008,7 +3013,7 @@ components:
 
     CatalogProductRegistryItem:
       type: object
-      required: [id, verticalId, canonicalName, active, version, variantCount, storeCount, categoryIds, createdAt, updatedAt]
+      required: [id, verticalId, canonicalName, active, version, variantCount, storeCount, categoryIds, categoryNamesAr, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -3031,6 +3036,10 @@ components:
           type: integer
           minimum: 0
         categoryIds:
+          type: array
+          items:
+            type: string
+        categoryNamesAr:
           type: array
           items:
             type: string
@@ -7262,6 +7271,23 @@ components:
           format: date-time
           nullable: true
 
+    DistanceFeeBand:
+      type: object
+      additionalProperties: false
+      required: [upToMeters, ratePerKmMinor]
+      properties:
+        upToMeters:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 1
+          description: Upper distance in meters; null is the final open-ended band.
+        ratePerKmMinor:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Delivery price in minor currency units per kilometer.
+
     DeliveryFeePolicyResponse:
       type: object
       additionalProperties: false
@@ -8858,6 +8884,57 @@ components:
           $ref: "#/components/schemas/OperatorAssignmentSummary"
           nullable: true
 
+    OperatorHomeDailyOrders:
+      type: object
+      additionalProperties: false
+      required: [day, orders, delivered, awaitingDispatch, inProgress, failed, cancelled]
+      properties:
+        day:
+          type: string
+          description: ISO local calendar date (YYYY-MM-DD) in Asia/Aden.
+        orders:
+          type: integer
+          format: int64
+          minimum: 0
+        delivered:
+          type: integer
+          format: int64
+          minimum: 0
+        awaitingDispatch:
+          type: integer
+          format: int64
+          minimum: 0
+        inProgress:
+          type: integer
+          format: int64
+          minimum: 0
+        failed:
+          type: integer
+          format: int64
+          minimum: 0
+        cancelled:
+          type: integer
+          format: int64
+          minimum: 0
+
+    OperatorHomeAnalytics:
+      type: object
+      additionalProperties: false
+      required: [days, measuredAt, timeZone]
+      properties:
+        days:
+          type: array
+          minItems: 7
+          maxItems: 7
+          items:
+            $ref: "#/components/schemas/OperatorHomeDailyOrders"
+        measuredAt:
+          type: string
+          format: date-time
+        timeZone:
+          type: string
+          enum: [Asia/Aden]
+
     OperatorOperationsSummary:
       type: object
       description: Counts over the complete authorized filtered result set before cursor paging, measured with the returned page in one database statement snapshot. Each subsequent request refreshes that snapshot.
@@ -8889,6 +8966,119 @@ components:
         measuredAt:
           type: string
           format: date-time
+
+    OperatorCustomerOrder:
+      type: object
+      additionalProperties: false
+      required: [id, storeName, state, totalAmountMinor, currency, paymentMethod, paymentState, createdAt]
+      properties:
+        id:
+          type: string
+        storeName:
+          type: string
+        state:
+          $ref: "#/components/schemas/OrderState"
+        totalAmountMinor:
+          type: integer
+          format: int64
+          minimum: 0
+        currency:
+          type: string
+        paymentMethod:
+          type: string
+        paymentState:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    OperatorCustomerDailyActivity:
+      type: object
+      additionalProperties: false
+      required: [day, orders]
+      properties:
+        day:
+          type: string
+          format: date
+        orders:
+          type: integer
+          format: int64
+          minimum: 0
+
+    OperatorCustomerOrderSummary:
+      type: object
+      description: Lifetime counts and fixed-period activity over all orders owned by exactly one client actor, regardless of pagination; no wallet balance or speculative financial total.
+      additionalProperties: false
+      required: [totalOrders, deliveredOrders, cancelledOrders, rejectedOrders, failedOrders, openOrders, last30Days, previous30Days, distinctStores, firstOrderAt, lastOrderAt, measuredAt, dailyActivity]
+      properties:
+        totalOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        deliveredOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        cancelledOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        rejectedOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        failedOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        openOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        last30Days:
+          type: integer
+          format: int64
+          minimum: 0
+        previous30Days:
+          type: integer
+          format: int64
+          minimum: 0
+        distinctStores:
+          type: integer
+          format: int64
+          minimum: 0
+        firstOrderAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastOrderAt:
+          type: string
+          format: date-time
+          nullable: true
+        measuredAt:
+          type: string
+          format: date-time
+        dailyActivity:
+          type: array
+          minItems: 7
+          maxItems: 7
+          items:
+            $ref: "#/components/schemas/OperatorCustomerDailyActivity"
+
+    OperatorCustomerOrdersResponse:
+      type: object
+      additionalProperties: false
+      required: [orders, nextCursor, summary]
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperatorCustomerOrder"
+        nextCursor:
+          type: string
+          maxLength: 512
+        summary:
+          $ref: "#/components/schemas/OperatorCustomerOrderSummary"
 
     OperatorOperationsResponse:
       type: object

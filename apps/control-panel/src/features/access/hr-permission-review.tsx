@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { TextArea } from "@bthwani/design-system/web";
+import { useId, useState } from "react";
 import type { HRAccessRequest } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { operatorWorkspacePermissions } from "../../session/operator-permissions";
@@ -16,6 +17,7 @@ type Props = Readonly<{ request: HRAccessRequest }>;
 const labelOf = (name: string) => operatorWorkspacePermissions.find(({ key }) => key === name)?.label ?? name;
 
 export function HRPermissionReview({ request }: Props) {
+  const reasonId = useId();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -69,8 +71,8 @@ export function HRPermissionReview({ request }: Props) {
             onChange={(event) => setSelected((prev) => event.target.checked ? [...prev, name] : prev.filter((value) => value !== name))} />
           {labelOf(name)}
         </label>)}
-        <label className="field-label">سبب القرار
-          <textarea value={reason} maxLength={500} rows={2} disabled={saving} onChange={(event) => setReason(event.target.value)} />
+        <label className="field-label" htmlFor={reasonId}>سبب القرار
+          <TextArea className="resize-none" id={reasonId} value={reason} maxLength={500} rows={2} disabled={saving} onChange={(event) => setReason(event.target.value)} />
         </label>
         <button type="button" className="button button-primary" disabled={saving || reason.trim().length < 8} onClick={() => void apply()}>
           {saving ? "جارٍ تطبيق القرار…" : "تطبيق الصلاحيات المحددة"}

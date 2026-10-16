@@ -1,13 +1,14 @@
 "use client";
 
-import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import type { ActorRoleView } from "@bthwani/identity";
+import Link from "next/link";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { operatorWorkspacePermissions } from "../../session/operator-permissions";
-import { responseMessage } from "./identity-error-message";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { responseMessage } from "./identity-error-message";
 
 type OperatorRow = ActorRoleView;
 type OperatorPage = Readonly<{ items: ReadonlyArray<OperatorRow>; nextCursor?: string }>;
@@ -27,7 +28,7 @@ function enabledPermissionCount(operator: OperatorRow): number | null {
   return typeof count === "number" && Number.isInteger(count) && count >= 0 && count <= operatorWorkspacePermissions.length ? count : null;
 }
 
-export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selectionDisabled = false }: Readonly<{ onSelectPhone: (phone: string) => void; selectedPhone?: string; selectionDisabled?: boolean }>) {
+export function OperatorDirectory() {
   const [query, setQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
   const [enabled, setEnabled] = useState("");
@@ -107,7 +108,7 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
   }, [appliedQuery, coverage, enabled, sort, cursorPage.cursor]);
 
   useEffect(() => { if (urlReady && cursorPage.ready) void load(); }, [load, urlReady, cursorPage.ready]);
-  useReadOnReturn(() => load(), urlReady && cursorPage.ready && !loading && !selectionDisabled && !selectedPhone);
+  useReadOnReturn(() => load(), urlReady && cursorPage.ready && !loading);
 
   const activeFilterCount = Number(Boolean(appliedQuery)) + Number(Boolean(enabled)) + Number(coverage !== "all");
 
@@ -200,11 +201,11 @@ export function OperatorDirectory({ onSelectPhone, selectedPhone = "", selection
             {items.map((operator) => {
               const status = identityStatus(operator);
               const count = enabledPermissionCount(operator);
-              return <tr key={operator.actorId} className={selectedPhone === operator.phoneE164 ? "is-selected" : undefined}>
+              return <tr key={operator.actorId}>
                 <th scope="row"><div className="access-profile-identity">{operator.fullNameAr?.trim() ? <><strong>{operator.fullNameAr.trim()}</strong><bdi dir="ltr" className="access-operator-phone">{operator.phoneE164}</bdi></> : <strong><bdi dir="ltr" className="access-operator-phone">{operator.phoneE164}</bdi></strong>}<small>{[operator.jobTitle || "المسمى غير مسجل", operator.department || "القسم غير مسجل"].join(" · ")}</small></div></th>
                 <td><span className={`access-state-pill ${status.tone}`}>{status.label}</span></td>
                 <td>{count === null ? <span className="muted">غير متاحة</span> : <span className="access-permission-count"><strong>{count}</strong><span>من {operatorWorkspacePermissions.length}</span></span>}</td>
-                <td><button type="button" className="button button-secondary access-row-action" aria-haspopup="dialog" aria-expanded={selectedPhone === operator.phoneE164} aria-controls={selectedPhone === operator.phoneE164 ? "account-access-dialog" : undefined} disabled={selectionDisabled} onClick={() => onSelectPhone(operator.phoneE164)}>{selectedPhone === operator.phoneE164 ? "التفاصيل مفتوحة" : "عرض التفاصيل"}</button></td>
+                <td><Link className="button button-secondary access-row-action" href={"/access/operators/" + encodeURIComponent(operator.phoneE164)}>فتح ملف المشغّل</Link></td>
               </tr>;
             })}
           </tbody>

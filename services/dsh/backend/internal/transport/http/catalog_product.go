@@ -109,6 +109,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /dsh/catalog/attributes/{attributeId}/enum-options/{optionValue}", s.updateAttributeEnumOption)
 	mux.HandleFunc("GET /dsh/catalog/product-proposals/review-queue", s.listProductProposalReviewQueue)
 	mux.HandleFunc("POST /dsh/catalog/product-proposals/{proposalId}/review", s.reviewProductProposal)
+	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/offers", s.listOperatorStoreOffers)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/offers", s.listOffers)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/catalog/imports/preview", s.previewPartnerStoreCatalogImport)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/catalog/imports/{runId}", s.readPartnerStoreCatalogImport)
@@ -501,7 +502,7 @@ func (s *CatalogServer) listProductRegistry(w http.ResponseWriter, r *http.Reque
 		if product.PrimaryImageURI != nil {
 			image = *product.PrimaryImageURI
 		}
-		items = append(items, contract.CatalogProductRegistryItem{ID: product.ID, VerticalID: product.VerticalID, CanonicalName: product.CanonicalName, Brand: brand, Active: product.Active, Version: product.Version, VariantCount: product.VariantCount, StoreCount: product.StoreCount, CategoryIds: product.CategoryIDs, PrimaryImageUri: image, CreatedAt: product.CreatedAt, UpdatedAt: product.UpdatedAt})
+		items = append(items, contract.CatalogProductRegistryItem{ID: product.ID, VerticalID: product.VerticalID, CanonicalName: product.CanonicalName, Brand: brand, Active: product.Active, Version: product.Version, VariantCount: product.VariantCount, StoreCount: product.StoreCount, CategoryIds: product.CategoryIDs, CategoryNamesAr: product.CategoryNamesAr, PrimaryImageUri: image, CreatedAt: product.CreatedAt, UpdatedAt: product.UpdatedAt})
 	}
 	writeJSON(w, http.StatusOK, contract.CatalogProductRegistryResponse{Products: items, NextCursor: page.NextCursor, TotalCount: int(page.TotalCount), MeasuredAt: page.MeasuredAt})
 }
@@ -763,6 +764,33 @@ func (s *CatalogServer) updateStoreScopedProduct(w http.ResponseWriter, r *http.
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.CatalogProductResponse{Product: toCatalogProduct(result.Product), IdempotentReplay: result.Replayed})
+}
+
+func (s *CatalogServer) listOperatorStoreOffers(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	actorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actorID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	limit, ok := catalogLimit(w, r)
+	if !ok {
+		return
+	}
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 2048 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "offer cursor is invalid")
+		return
+	}
+	page, err := s.service.ListOffersForOperator(r.Context(), actorID, r.PathValue("storeId"), limit, cursor)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeOffers(w, http.StatusOK, page)
 }
 
 func (s *CatalogServer) listOffers(w http.ResponseWriter, r *http.Request) {

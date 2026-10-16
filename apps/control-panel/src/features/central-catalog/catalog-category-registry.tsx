@@ -1,8 +1,8 @@
 "use client";
 import { TextArea } from "@bthwani/design-system/web";
 
-import { isMediaProvenanceInputValid, type CatalogCategoryListItem, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CommerceVertical, type MediaProvenanceInput } from "@bthwani/dsh";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { type CatalogCategoryListItem, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CommerceVertical, isMediaProvenanceInputValid, type MediaProvenanceInput } from "@bthwani/dsh";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { CatalogAttributePolicyWorkspace } from "./catalog-attribute-policy-workspace";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "./catalog-media-provenance-fields";
@@ -87,11 +87,11 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   if (verticalReady) {
     mainActionLabel = "فئة رئيسية جديدة";
   } else if (selectedVertical) {
-    mainActionLabel = selectedVertical.active ? "راجع مسار النشاط التجاري" : "إعداد النشاط المتوقف";
+    mainActionLabel = selectedVertical.active ? "راجع مسار المجال التجاري" : "إعداد المجال المتوقف";
   } else if (verticals.length > 0) {
-    mainActionLabel = "اختر النشاط التجاري أولًا";
+    mainActionLabel = "اختر المجال التجاري أولًا";
   } else {
-    mainActionLabel = "إعداد النشاط التجاري";
+    mainActionLabel = "إعداد المجال التجاري";
   }
 
   useEffect(() => {
@@ -105,7 +105,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
     void fetch(`/api/catalog/categories/${encodeURIComponent(categoryId)}`, { cache: "no-store" })
       .then((response) => parseResponse<{ category: CatalogCategoryListItem }>(response))
       .then((payload) => {
-        if (payload.category.verticalId !== verticalId) throw new Error("الفئة المحددة لا تتبع النشاط التجاري المختار.");
+        if (payload.category.verticalId !== verticalId) throw new Error("الفئة المحددة لا تتبع المجال التجاري المختار.");
         if (activeRequest && requestId === categoryDetailSequence.current) setCategoryDetail(payload.category);
       })
       .catch((nextError) => { if (activeRequest && requestId === categoryDetailSequence.current) { setCategoryDetail(null); setError(nextError instanceof Error ? nextError.message : "تعذر قراءة تفاصيل الفئة."); } });
@@ -221,7 +221,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
     const normalizedNameEn = nameEn.trim();
     const normalizedReason = reason.trim();
     if (!verticalId || !selectedVertical?.active) {
-      setError("اختر نشاطًا تجاريًا نشطًا.");
+      setError("اختر مجالًا تجاريًا نشطًا.");
       return;
     }
     if (normalizedNameAr.length < 2 || normalizedNameAr.length > 160 || normalizedNameEn.length < 2 || normalizedNameEn.length > 160) {
@@ -341,7 +341,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
     const collapsed = collapsedCategoryIDs.has(category.id);
     const parent = category.parentCategoryId ? categoryIndex.get(category.parentCategoryId) : undefined;
     const locationLabel = !category.parentCategoryId
-      ? "جذر النشاط التجاري"
+      ? "جذر المجال التجاري"
       : parent
         ? `ضمن ${parent.nameAr}`
         : "ضمن المسار المحفوظ · الأب خارج النتائج الحالية";
@@ -371,13 +371,13 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   return <section className="access-card catalog-taxonomy-workbench" aria-labelledby="catalog-category-registry-title">
     <div className="catalog-taxonomy-workbench-heading">
       <div>
-        <h3 id="catalog-category-registry-title">فئات النشاط المحدد</h3>
+        <h3 id="catalog-category-registry-title">فئات المجال المحدد</h3>
       </div>
       <button type="button" className="button button-primary catalog-taxonomy-main-action" disabled={!canEdit || busy} onClick={() => { if (verticalReady) openCreate(); else if (selectedVertical || verticals.length === 0) { const settings = verticalSettingsRef.current; settings?.querySelector("summary")?.click(); settings?.scrollIntoView({ behavior: "smooth", block: "center" }); } else onVerticalChange(verticals.find((vertical) => vertical.active)?.id ?? ""); }}>{mainActionLabel}</button>
     </div>
-    <label className="field-label catalog-taxonomy-vertical-label" htmlFor="catalog-taxonomy-vertical">النشاط التجاري
+    <label className="field-label catalog-taxonomy-vertical-label" htmlFor="catalog-taxonomy-vertical">المجال التجاري
  <select id="catalog-taxonomy-vertical" value={verticalId} disabled={loading || busy || verticals.length === 0} onChange={(event) => onVerticalChange(event.target.value)}>
-        {verticals.length === 0 ? <option value="">لا توجد أنشطة تجارية ذات فئات منتجات</option> : null}
+        {verticals.length === 0 ? <option value="">لا توجد مجالات تجارية ذات فئات منتجات</option> : null}
         {verticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr} · {vertical.nameEn}</option>)}
       </select>
     </label>
@@ -423,10 +423,10 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       <div className="catalog-taxonomy-records">
         <div className="catalog-taxonomy-record-heading" aria-hidden="true"><span>الفئة ومسارها</span><span>الموقع</span><span>الحالة</span><span>الإجراء</span></div>
         {loading && categories.length === 0 ? <p className="catalog-taxonomy-feedback" role="status">جارٍ تحميل صفحة الفئات…</p> : null}
-        {!loading && categories.length === 0 ? <div className="catalog-taxonomy-empty catalog-taxonomy-empty-inset"><strong>{categoryQuery ? "لا توجد فئات مطابقة" : "لا توجد فئات لهذا النشاط التجاري"}</strong><p>{categoryQuery ? "غيّر نص البحث أو الحالة." : "أنشئ الفئة الرئيسية الأولى من الزر أعلى السجل، ثم أضف الفروع عند الحاجة."}</p></div> : null}
+        {!loading && categories.length === 0 ? <div className="catalog-taxonomy-empty catalog-taxonomy-empty-inset"><strong>{categoryQuery ? "لا توجد فئات مطابقة" : "لا توجد فئات لهذا المجال التجاري"}</strong><p>{categoryQuery ? "غيّر نص البحث أو الحالة." : "أنشئ الفئة الرئيسية الأولى من الزر أعلى السجل، ثم أضف الفروع عند الحاجة."}</p></div> : null}
         {categories.length > 0 ? <>
-          <div className="catalog-taxonomy-vertical-root"><span>النشاط التجاري الرئيسي</span><strong>{selectedVertical?.nameAr ?? "النشاط المحدد"}</strong></div>
-          {rootCategories.length ? <ul aria-label={`شجرة فئات ${selectedVertical?.nameAr ?? "النشاط المحدد"}`} className="catalog-taxonomy-tree">
+          <div className="catalog-taxonomy-vertical-root"><span>المجال التجاري الرئيسي</span><strong>{selectedVertical?.nameAr ?? "المجال المحدد"}</strong></div>
+          {rootCategories.length ? <ul aria-label={`شجرة فئات ${selectedVertical?.nameAr ?? "المجال المحدد"}`} className="catalog-taxonomy-tree">
             {rootCategories.map(renderCategoryNode)}
           </ul> : null}
           {detachedCategories.length ? <section className="catalog-taxonomy-detached" aria-labelledby="catalog-taxonomy-detached-title">
@@ -467,8 +467,8 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
         </details>
       </section> : null}
     </> : null}
-    {!verticalReady && verticalId ? <div className="catalog-taxonomy-empty"><strong>النشاط المحدد لا يستخدم المنتجات المشتركة</strong><p>اختر نشاطًا بمسار «منتجات مشتركة» أو عدّل المسار من إعدادات الأنشطة التجارية أدناه.</p></div> : null}
-    {!verticalId ? <div className="catalog-taxonomy-empty"><strong>لا توجد أنشطة تجارية نشطة للمنتجات المشتركة</strong><p>فعّل نشاطًا بمسار «منتجات مشتركة» من إدارة الأنشطة التجارية أدناه.</p></div> : null}
+    {!verticalReady && verticalId ? <div className="catalog-taxonomy-empty"><strong>المجال المحدد لا يستخدم المنتجات المشتركة</strong><p>اختر مجالًا بمسار «منتجات مشتركة» أو عدّل المسار من إعدادات المجالات التجارية أدناه.</p></div> : null}
+    {!verticalId ? <div className="catalog-taxonomy-empty"><strong>لا توجد مجالات تجارية نشطة للمنتجات المشتركة</strong><p>فعّل مجالًا بمسار «منتجات مشتركة» من إدارة المجالات التجارية أدناه.</p></div> : null}
     <div ref={verticalSettingsRef}>{management}</div>
   </section>;
 }

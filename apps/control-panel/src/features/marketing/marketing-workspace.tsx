@@ -231,7 +231,7 @@ export function MarketingWorkspace({ resource, children }: { resource: Marketing
   const { state } = useSession();
 
   if (state.kind !== "authenticated") return null;
-  if (state.identity.role !== "operator") return accessDenied();
+  if (state.identity.role !== "operator" || !state.identity.permissions?.includes("marketing")) return accessDenied();
 
   const selected = workspaceMarketingResources.find((item) => item.key === resource) ?? workspaceMarketingResources[0]!;
   return (

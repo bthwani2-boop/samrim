@@ -14,6 +14,7 @@ test("catalog rejects malformed product rows without crashing and retries the re
     [null],
     [{ ...coffee, canonicalName: null }],
     [{ ...coffee, categoryIds: null }],
+    [{ ...coffee, categoryNamesAr: "not-an-array" }],
     [{ ...coffee, updatedAt: "not-a-date" }],
   ];
   let reads = 0;
@@ -26,10 +27,10 @@ test("catalog rejects malformed product rows without crashing and retries the re
   for (let index = 0; index < malformed.length; index += 1) {
     const error = page.locator(".central-catalog-list").getByRole("alert");
     await expect(error).toContainText("استجابة سجل المنتجات غير صالحة");
-    await expect(page.getByRole("button", { name: "تفاصيل وتعديل" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "إدارة المنتج" })).toHaveCount(0);
     await error.getByRole("button", { name: "إعادة قراءة سجل المنتجات" }).click();
   }
-  await expect(page.getByRole("button", { name: "تفاصيل وتعديل" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "إدارة المنتج" })).toBeVisible();
   await expect(page.locator(".central-catalog-list").getByRole("alert")).toHaveCount(0);
   await page.getByRole("button", { name: "معرض الصور", exact: true }).click();
   await expect(page.getByRole("button", { name: "تفاصيل وصور قهوة عربية" })).toBeVisible();

@@ -1,4 +1,5 @@
 "use client";
+import { TextArea } from "@bthwani/design-system/web";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { HRAttendanceRecord,HRAttendanceStatus,HRAttendancePage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
@@ -40,13 +41,16 @@ export function EmployeeAttendance({employeeId}:{employeeId:string}){
   retry.current=null;
  },[selected]);
  async function submit(event:FormEvent<HTMLFormElement>){
-  event.preventDefault();if(busy||loading||note.trim().length<8)return;
+  event.preventDefault();if(busy||loading)return;
+  const normalizedNote=note.trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(day)){setError("اختر تاريخًا صالحًا للتسجيل.");return;}
+  if(normalizedNote.length<8||normalizedNote.length>500){setError("اكتب سببًا واضحًا من 8 إلى 500 حرف.");return;}
   if((checkIn==="")!==(checkOut==="")){setError("أدخل وقتَي الدخول والخروج معًا أو اتركهما فارغين");return;}
   let normalizedCheckIn: string|undefined, normalizedCheckOut:string|undefined;
   try{
    if(checkIn&&checkOut){normalizedCheckIn=new Date(checkIn).toISOString();normalizedCheckOut=new Date(checkOut).toISOString();}
   }catch{setError("وقت الدخول أو الخروج غير صالح");return}
-  const body={date:day,status,note:note.trim(),expectedVersion:selected?.version??0,
+  const body={date:day,status,note:normalizedNote,expectedVersion:selected?.version??0,
    ...(normalizedCheckIn?{checkInAt:normalizedCheckIn,checkOutAt:normalizedCheckOut}: {})};
   const signature=JSON.stringify(body);
   if(retry.current?.signature!==signature)retry.current={signature,key:crypto.randomUUID()};
@@ -68,7 +72,7 @@ export function EmployeeAttendance({employeeId}:{employeeId:string}){
  return <section className="form-section form-section--w620" aria-label="الحضور اليدوي">
   <h3>الحضور اليومي</h3>
   <p className="muted">تسجيل يدوي مع سجل تصحيحات؛ عدم وجود تسجيل لا يعني الغياب، ولا تُحسب خصومات أو رواتب تلقائيًا.</p>
-  <form onSubmit={e=>void submit(e)}>
+  <form noValidate onSubmit={e=>void submit(e)}>
    <label className="field-label">التاريخ<input type="date" required value={day} onChange={e=>{setDay(e.target.value);setStatus("present");setNote("");setCheckIn("");setCheckOut("");setNotice("");retry.current=null}}/></label>
    {loading?<p role="status">جارٍ تحميل السجلات…</p>:null}
    <label className="field-label">الحالة
@@ -80,7 +84,7 @@ export function EmployeeAttendance({employeeId}:{employeeId:string}){
     <label className="field-label">وقت الدخول (اختياري)<input type="datetime-local" value={checkIn} onChange={e=>{setCheckIn(e.target.value);retry.current=null}}/></label>
     <label className="field-label">وقت الخروج (اختياري)<input type="datetime-local" value={checkOut} onChange={e=>{setCheckOut(e.target.value);retry.current=null}}/></label>
    </>:null}
-   <label className="field-label">سبب التسجيل أو التصحيح<textarea required minLength={8} maxLength={500} value={note} onChange={e=>{setNote(e.target.value);retry.current=null}}/></label>
+   <label className="field-label" htmlFor="employee-attendance-reason">سبب التسجيل أو التصحيح<TextArea className="resize-none" id="employee-attendance-reason" required minLength={8} maxLength={500} value={note} onChange={e=>{setNote(e.target.value);retry.current=null}}/></label>
    {selected?<p className="muted">هناك تسجيل سابق لهذا التاريخ (الإصدار {selected.version}). الحفظ التالي تصحيح موثق.</p>:<p className="muted">هذا اليوم غير مسجل؛ لا يُفترض أنه غياب.</p>}
    <div className="form-actions">
     <button className="button button-primary" disabled={busy||loading||!day||note.trim().length<8} type="submit">{busy?"جارٍ الحفظ…":selected?"حفظ تصحيح موثق":"تسجيل الحضور"}</button>

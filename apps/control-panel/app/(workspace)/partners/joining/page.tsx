@@ -1,19 +1,12 @@
-import Link from "next/link";
-import { PageHeader } from "../../../../src/shell/page-header";
-import { JoiningCaseQueue } from "../../../../src/features/partner-onboarding/joining-case-queue";
-import { PartnerApprovalsNavigation } from "../../../../src/features/partner-onboarding/partner-approvals-navigation";
-import { PartnerOperatorBoundary } from "../../../../src/features/partner-onboarding/partner-workspace";
+import { redirect } from "next/navigation";
 
-export default function PartnerJoiningPage() {
-  return (
-    <PartnerOperatorBoundary>
-      <section className="workspace-page partner-joining-page" aria-labelledby="partner-joining-page-title">
-        <PageHeader id="partner-joining-page-title" title="الطلبات والاعتمادات" actions={<Link className="button button-primary" href="/partners/new">طلب انضمام جديد</Link>} />
-        <PartnerApprovalsNavigation current="joining" />
-        <JoiningCaseQueue />
-      </section>
-    </PartnerOperatorBoundary>
-  );
+// Old bookmarks stay valid; there is one operational partner workspace.
+export default async function LegacyPartnersQueue({ searchParams }: Readonly<{searchParams: Promise<Record<string, string | string[] | undefined>>}>) {
+  const original = await searchParams;
+  const params = new URLSearchParams({ view: "joining" });
+  for (const key of ["state","q","sort","cursor"]) {
+    const value = original[key];
+    if (typeof value === "string" && value.length <= 2048 && value) params.set(key, value);
+  }
+  redirect("/partners?" + params.toString());
 }
-
-export const metadata = { title: "الطلبات والاعتمادات" };

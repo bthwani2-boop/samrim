@@ -171,8 +171,8 @@ export function CatalogAttributePolicyWorkspace({ verticalId, categoryId }: { ve
         <button type="button" className="button button-secondary" disabled={busy || !canEdit || !verticalId || !nameAr.trim() || !code.trim() || changeReason.trim().length < 5} onClick={() => void createDefinition()}>إضافة الخاصية</button>
     </div>
     <div className="catalog-attribute-definition-list">
-      <strong>تعريفات خصائص النشاط التجاري</strong>
-      {loading ? <p>جارٍ قراءة التعريفات…</p> : definitions.length === 0 ? <p>لا توجد تعريفات خصائص لهذا النشاط التجاري بعد.</p> : <ul>{definitions.map((definition) => {
+      <strong>تعريفات خصائص المجال التجاري</strong>
+      {loading ? <p>جارٍ قراءة التعريفات…</p> : definitions.length === 0 ? <p>لا توجد تعريفات خصائص لهذا المجال التجاري بعد.</p> : <ul>{definitions.map((definition) => {
         const nameDraft = definitionNames[definition.id] ?? definition.nameAr;
         return <li key={definition.id}>
           <label className="field-label" htmlFor={`attribute-name-${definition.id}`}>اسم الخاصية<input id={`attribute-name-${definition.id}`} value={nameDraft} onChange={(event) => setDefinitionNames((current) => ({ ...current, [definition.id]: event.target.value }))} disabled={busy || !canEdit} maxLength={160} /></label>
@@ -204,7 +204,7 @@ export function CatalogAttributePolicyWorkspace({ verticalId, categoryId }: { ve
     <div className="catalog-attribute-rules">
       <strong>متطلبات الفئة للمنتج</strong>
       <p className="muted">حدد الخصائص المطلوبة أو التي تصنع نسخة مستقلة من المنتج.</p>
-      {loading ? <p>جارٍ قراءة القواعد…</p> : !categoryId ? <p>اختر فئة لقراءة قواعدها.</p> : definitions.length === 0 ? <p>لا توجد تعريفات خصائص لهذه النشاط الرئيسي بعد.</p> : <ul>{definitions.map((definition) => {
+      {loading ? <p>جارٍ قراءة القواعد…</p> : !categoryId ? <p>اختر فئة لقراءة قواعدها.</p> : definitions.length === 0 ? <p>لا توجد تعريفات خصائص لهذا المجال التجاري بعد.</p> : <ul>{definitions.map((definition) => {
         const rule = rules.find((item) => item.attributeId === definition.id);
         const draft = drafts[definition.id] ?? { required: rule?.required ?? false, filterable: rule?.filterable ?? false, variantAxis: rule?.variantAxis ?? false };
         return <li key={definition.id}><div><strong>{definition.nameAr}</strong><span> · {valueKindLabels[definition.valueKind]}</span><div className="field-row"><label><input type="checkbox" checked={draft.required} disabled={busy || !canEdit} onChange={(event) => setDrafts((current) => ({ ...current, [definition.id]: { ...draft, required: event.target.checked } }))} /> مطلوب</label><label><input type="checkbox" checked={draft.filterable} disabled={busy || !canEdit} onChange={(event) => setDrafts((current) => ({ ...current, [definition.id]: { ...draft, filterable: event.target.checked } }))} /> قابل للتصفية</label><label><input type="checkbox" checked={draft.variantAxis} disabled={busy || !canEdit} onChange={(event) => setDrafts((current) => ({ ...current, [definition.id]: { ...draft, variantAxis: event.target.checked } }))} /> يميز خيارات المنتج</label></div></div><button type="button" className="button button-secondary" disabled={busy || !canEdit || !categoryId || changeReason.trim().length < 5} onClick={() => void saveRule(definition.id)}>حفظ القاعدة</button></li>;

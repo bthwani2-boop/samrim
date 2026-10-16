@@ -1,0 +1,375 @@
+"use client";
+
+import { fulfillmentModeLabel, type JoiningCaseSummary, joiningCaseStateLabel, type OperatorStoreSummary, publicationStateLabel, type StoreAccessGrant } from "@bthwani/dsh";
+import type { ActorRoleView } from "@bthwani/identity";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
+import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
+import { PageHeader } from "../../shell/page-header";
+import { PartnerDetailWorkspace } from "../partners/partner-detail-workspace";
+import { partnerErrorMessage } from "../partners/partner-error-message";
+import { RecordIndicator } from "../shared/record-indicator";
+import { RecordTabs } from "../shared/record-tabs";
+import { downloadRegistryCsv } from "../shared/registry-csv";
+import { useReadOnReturn } from "../shared/use-read-on-return";
+import { AccountIndicator, FulfillmentIndicators, PublicationIndicator } from "../stores/store-indicators";
+import { StoreInspector } from "../stores/store-inspector";
+import { StoreLogo } from "../stores/store-logo";
+import { StoreOperationalDecision } from "../stores/store-registry-decision";
+import { JoiningCaseDetail } from "./joining-case-detail";
+
+type Row =
+  | { kind: "joining"; case: JoiningCaseSummary }
+  | { kind: "access"; grant: StoreAccessGrant }
+  | { kind: "store"; store: OperatorStoreSummary; partnerRole: ActorRoleView | null }
+  | { kind: "partner"; actor: ActorRoleView };
+type Kind = "all" | "requests" | "joining" | "access" | "store" | "partner";
+type WorkspaceTab = "directory" | "requests";
+const typesByTab: Record<WorkspaceTab, ReadonlyArray<{ value: Kind; label: string }>> = {
+  directory: [{ value: "store", label: "المتاجر" }, { value: "partner", label: "الشركاء دون متجر" }],
+  requests: [
+    { value: "requests", label: "كل الطلبات والاعتمادات" },
+    { value: "joining", label: "طلبات الانضمام" },
+    { value: "access", label: "اعتمادات الوصول" },
+  ],
+};
+const defaultKindByTab: Record<WorkspaceTab, Kind> = { directory: "store", requests: "requests" };
+const statusesByKind: Record<Kind, ReadonlyArray<{ value: string; label: string }>> = {
+  all: [{ value: "", label: "جميع الحالات" }],
+  requests: [
+    { value: "", label: "جميع الحالات" }, { value: "submitted", label: "للمراجعة" },
+    { value: "admission_requested", label: "طلب قبول" }, { value: "needs_correction", label: "يحتاج تصحيحًا" },
+    { value: "draft", label: "مسودة" }, { value: "approved", label: "معتمد" },
+    { value: "pending_role_admission", label: "اعتماد وصول معلق" },
+  ],
+  joining: [
+    { value: "", label: "جميع الحالات" }, { value: "submitted", label: "للمراجعة" },
+    { value: "admission_requested", label: "طلب قبول" }, { value: "needs_correction", label: "يحتاج تصحيحًا" },
+    { value: "draft", label: "مسودة" }, { value: "approved", label: "معتمد" },
+  ],
+  access: [{ value: "", label: "جميع الحالات" }, { value: "pending_role_admission", label: "اعتماد وصول معلق" }],
+  store: [
+    { value: "", label: "جميع الحالات" }, { value: "published", label: "منشور" },
+    { value: "unpublished", label: "غير منشور" }, { value: "hidden", label: "مخفي" },
+  ],
+  partner: [{ value: "", label: "جميع الحالات" }],
+};
+const permissionLabels: Record<string, string> = {
+  orders: "إدارة الطلبات", catalog: "إدارة الكتالوج", store_operations: "التحكم في الإتاحة",
+};
+const rowId = (row: Row) => row.kind === "joining" ? "joining:" + row.case.id :
+  row.kind === "access" ? "access:" + row.grant.id : row.kind === "store" ? "store:" + row.store.id : "partner:" + row.actor.actorId;
+const date = (value?: string) => value ? new Intl.DateTimeFormat("ar-YE", { dateStyle: "medium" }).format(new Date(value)) : "—";
+const isPhone = (value: string) => /^\+?[\d\s-]{5,}$/.test(value) && value.replace(/\D/g, "").length >= 5;
+const caption = (row: Row) => row.kind === "joining" ? "طلب انضمام" : row.kind === "access" ? "اعتماد وصول" : row.kind === "store" ? "متجر" : "شريك دون متجر";
+
+export function PartnersWorkbench() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const params = new URLSearchParams(searchParams.toString());
+  const legacyView = params.get("view");
+  const activeTab: WorkspaceTab = params.get("tab") === "requests" || ["requests", "joining", "access"].includes(params.get("kind") ?? "") || legacyView === "joining" || legacyView === "access" ? "requests" : "directory";
+  const legacyKind = legacyView === "joining" || legacyView === "access" ? legacyView :
+    legacyView === "accounts" || params.get("mode") === "without_store" ? "partner" : params.get("mode") === "stores" ? "store" : "";
+  const requestedKind = params.get("kind") || legacyKind || defaultKindByTab[activeTab];
+  const kindOptions = typesByTab[activeTab];
+  const kind: Kind = kindOptions.some((entry) => entry.value === requestedKind) ? requestedKind as Kind : defaultKindByTab[activeTab];
+  const statusOptions = statusesByKind[kind];
+  const requestedStatus = params.get("status") || params.get("state") || "";
+  const status = statusOptions.some((entry) => entry.value === requestedStatus) ? requestedStatus : "";
+  const city = activeTab === "directory" && kind === "store" ? (params.get("serviceCityId") ?? "").slice(0, 128) : "";
+  const sort = params.get("sort") === "oldest" || params.get("sort") === "updated_asc" ? "oldest" : "newest";
+  const urlSearch = (params.get("q") ?? "").slice(0, 100).trim();
+  const [privateSearch, setPrivateSearch] = useState("");
+  const appliedSearch = urlSearch || privateSearch;
+  const [search, setSearch] = useState(appliedSearch);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [cities, setCities] = useState<ReadonlyArray<{ id: string; displayNameAr: string }>>([]);
+  const [rows, setRows] = useState<ReadonlyArray<Row>>([]);
+  const [nextCursor, setNextCursor] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [revision, setRevision] = useState(0);
+  const [busyGrant, setBusyGrant] = useState("");
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const attempts = useRef(new Map<string, { idempotencyKey: string; correlationId: string }>());
+  const sequence = useRef(0);
+  const openStore = (params.get("inspect") ?? "").slice(0, 128);
+  const openCase = (params.get("case") ?? "").slice(0, 128);
+  const openGrant = (params.get("grant") ?? "").slice(0, 128);
+  const openPartner = (params.get("actor") ?? "").slice(0, 128);
+  const selectedGrant = rows.find((r) => r.kind === "access" && r.grant.id === openGrant);
+  const selectedPartner = rows.find((r) => r.kind === "partner" && r.actor.actorId === openPartner);
+  const selectedId = openStore || openCase || openGrant || openPartner;
+  const page = useCursorPage("cursor", JSON.stringify([activeTab, kind, status, city, sort, appliedSearch]), true);
+  const cursor = page.cursor;
+
+  useEffect(() => setSearch(appliedSearch), [appliedSearch]);
+  useEffect(() => {
+    const sync = () => setPrivateSearch(typeof window.history.state?.partnerWorkbenchPhone === "string" ? window.history.state.partnerWorkbenchPhone : "");
+    const initial = new URLSearchParams(window.location.search);
+    const q = initial.get("q") ?? "";
+    if (isPhone(q)) {
+      initial.delete("q");
+      window.history.replaceState({ ...window.history.state, partnerWorkbenchPhone: q }, "", window.location.pathname + (initial.size ? "?" + initial : ""));
+    }
+    sync();
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/service-cities", { cache: "no-store" }).then((res) => res.ok ? res.json() as Promise<{cities?: {id:string;displayNameAr:string}[]}> : null)
+      .then((data) => { if (active && data?.cities) setCities(data.cities); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  const navigate = (nextTab: WorkspaceTab, nextKind: Kind, nextStatus: string, nextCity: string, nextSort: string, nextQuery: string) => {
+    page.clearForNavigation();
+    const url = new URLSearchParams();
+    if (nextTab === "requests") url.set("tab", "requests");
+    if (nextKind !== defaultKindByTab[nextTab]) url.set("kind", nextKind);
+    if (nextStatus) url.set("status", nextStatus);
+    if (nextCity) url.set("serviceCityId", nextCity);
+    if (nextSort === "oldest") url.set("sort", "oldest");
+    if (nextQuery && !isPhone(nextQuery)) url.set("q", nextQuery);
+    const href = pathname + (url.size ? "?" + url : "");
+    if (isPhone(nextQuery)) {
+      window.history.pushState({ ...window.history.state, partnerWorkbenchPhone: nextQuery }, "", href);
+      setPrivateSearch(nextQuery);
+      setRevision((current) => current + 1);
+    } else {
+      setPrivateSearch("");
+      router.push(href, { scroll: false });
+    }
+    setSelected(new Set());
+  };
+  const selectTab = (nextTab: WorkspaceTab) => navigate(nextTab, defaultKindByTab[nextTab], "", "", "newest", appliedSearch);
+
+  const load = useCallback(async () => {
+    const request = ++sequence.current;
+    setLoading(true);
+    setError("");
+    try {
+      const query = new URLSearchParams({ kind, sort });
+      if (status) query.set("status", status);
+      if (city) query.set("serviceCityId", city);
+      if (cursor) query.set("cursor", cursor);
+      if (appliedSearch && !isPhone(appliedSearch)) query.set("q", appliedSearch);
+      const response = await fetch("/api/partners/workbench?" + query, {
+        method: isPhone(appliedSearch) ? "POST" : "GET",
+        ...(isPhone(appliedSearch) ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ q: appliedSearch }) } : {}),
+        cache: "no-store",
+        signal: AbortSignal.timeout(20000),
+      });
+      if (request !== sequence.current) return;
+      if (!response.ok) throw new Error(await partnerErrorMessage(response));
+      const result = await response.json() as { rows?: Row[]; nextCursor?: string };
+      if (!Array.isArray(result.rows) || typeof result.nextCursor !== "string") throw new Error("استجابة السجل غير صالحة.");
+      setRows(result.rows);
+      setNextCursor(result.nextCursor);
+      setSelected((previous) => new Set(result.rows!.filter((row) => previous.has(rowId(row))).map(rowId)));
+    } catch (cause) {
+      if (request !== sequence.current) return;
+      setError(cause instanceof Error ? cause.message : "تعذرت قراءة السجلات.");
+      setRows([]);
+      setNextCursor("");
+    } finally {
+      if (request === sequence.current) setLoading(false);
+    }
+  }, [kind, status, city, sort, appliedSearch, cursor]);
+  useEffect(() => {
+    if (page.ready && revision >= 0) void load();
+    return () => { sequence.current += 1; };
+  }, [page.ready, load, revision]);
+  useReadOnReturn(load, page.ready && !loading && !busyGrant);
+
+  const inspect = (type: "inspect" | "case" | "grant" | "actor", id: string) => {
+    const q = new URLSearchParams(window.location.search);
+    for (const k of ["inspect", "case", "grant", "actor"]) q.delete(k);
+    q.set(type, id);
+    router.push(pathname + "?" + q, { scroll: false });
+  };
+  const close = () => {
+    const q = new URLSearchParams(window.location.search);
+    for (const k of ["inspect", "case", "grant", "actor"]) q.delete(k);
+    router.replace(pathname + (q.size ? "?" + q : ""), { scroll: false });
+    void load();
+  };
+  async function approve(grant: StoreAccessGrant) {
+    if (busyGrant) return;
+    const key = grant.id + ":" + grant.version;
+    const attempt = attempts.current.get(key) ?? {
+      idempotencyKey: "store_access_admission_" + crypto.randomUUID(),
+      correlationId: "store_access_admission_corr_" + crypto.randomUUID(),
+    };
+    attempts.current.set(key, attempt);
+    setBusyGrant(grant.id);
+    setError("");
+    try {
+      const response = await fetch("/api/partners/store-access-admissions/" + encodeURIComponent(grant.id) + "/provision", {
+        method: "POST", headers: { "Idempotency-Key": attempt.idempotencyKey, "X-Correlation-ID": attempt.correlationId },
+      });
+      if (!response.ok) throw new Error(await partnerErrorMessage(response));
+      attempts.current.delete(key);
+      close();
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "تعذر اعتماد الدور.");
+      await load();
+    } finally { setBusyGrant(""); }
+  }
+  const selectedRecords = rows.filter((row) => (row.kind === "store" || row.kind === "joining") && selected.has(rowId(row)));
+  const exportSelected = () => {
+    downloadRegistryCsv("selected-partners.csv", ["نوع السجل", "المتجر", "الشريك", "الهاتف", "المدينة", "الحالة", "آخر تحديث"],
+      selectedRecords.flatMap((row) => row.kind === "store" ?
+        [["متجر", row.store.name, row.store.partnerName || "", row.partnerRole?.phoneE164 || "", row.store.serviceCityName || "", publicationStateLabel(row.store.publicationState), row.store.updatedAt]] :
+        row.kind === "joining" ? [["طلب انضمام", row.case.firstStoreName || "", row.case.businessName, row.case.contactPhoneE164, "", joiningCaseStateLabel(row.case.state), row.case.updatedAt]] : []));
+  };
+
+  function renderRow(row: Row) {
+    if (row.kind === "joining") {
+      const c = row.case;
+      return <tr key={rowId(row)} data-kind="joining">
+        <th scope="row"><div className="store-registry-identity"><input type="checkbox" aria-label={"تحديد طلب " + c.businessName} checked={selected.has(rowId(row))} onChange={(event) => { const updated = new Set(selected); if (event.target.checked) updated.add(rowId(row)); else updated.delete(rowId(row)); setSelected(updated); }} /><span className="partner-attention-avatar" aria-hidden="true">+</span><div className="store-registry-identity-copy"><strong>{c.firstStoreName || c.businessName}</strong><small>{c.businessName}</small><a href={"tel:" + c.contactPhoneE164}><bdi dir="ltr">{c.contactPhoneE164}</bdi></a></div></div></th>
+        <td><div className="store-registry-cell-stack"><strong>طلب انضمام</strong><small>{c.origin === "field" ? "عبر الميداني" : "عبر المشغّل"}</small></div></td>
+        <td><span className="partner-state-tag is-pending">{joiningCaseStateLabel(c.state)}</span></td>
+        <td><div className="store-registry-cell-stack"><span>{c.state === "submitted" ? "ينتظر قرار المراجعة" : c.state === "admission_requested" ? "ينتظر قبول الإحالة" : c.state === "needs_correction" ? "ينتظر استكمال التصحيح" : c.state === "approved" ? "استكمال التفعيل" : "استكمال الطلب"}</span><small>إنشاء: {date(c.createdAt)}</small></div></td>
+        <td><time dateTime={c.updatedAt}>{date(c.updatedAt)}</time></td>
+        <td><button className="partner-row-action" type="button" data-adaptive-record-trigger={`partner-case-${c.id}`} onClick={() => inspect("case", c.id)}>مراجعة الطلب ←</button></td>
+      </tr>;
+    }
+    if (row.kind === "access") {
+      const g = row.grant;
+      return <tr key={rowId(row)} data-kind="access">
+        <th scope="row"><div className="store-registry-identity"><span className="partner-attention-avatar" aria-hidden="true">✓</span><div className="store-registry-identity-copy"><strong>{g.storeName}</strong><small>مدعو: <bdi dir="ltr">{g.delegatePhoneMasked || "هاتف محجوب"}</bdi></small></div></div></th>
+        <td>اعتماد وصول</td><td><span className="partner-state-tag is-pending">اعتماد دور معلق</span></td>
+        <td><div className="store-registry-cell-stack"><span>{g.permissions.map((p) => permissionLabels[p] || "صلاحية إضافية").join("، ") || "لم تحدد صلاحيات"}</span><small>انتهاء الدعوة: {date(g.expiresAt)}</small></div></td>
+        <td><time dateTime={g.updatedAt}>{date(g.updatedAt)}</time></td>
+        <td><button className="partner-row-action" type="button" data-adaptive-record-trigger={`partner-grant-${g.id}`} onClick={() => inspect("grant", g.id)}>مراجعة الاعتماد ←</button></td>
+      </tr>;
+    }
+    if (row.kind === "partner") {
+      const a = row.actor;
+      return <tr key={rowId(row)} data-kind="partner"><th scope="row"><bdi dir="ltr">{a.phoneE164}</bdi><small className="store-registry-secondary">شريك دون متجر</small></th>
+        <td>حساب شريك</td><td><AccountIndicator role={a} /></td><td>لم يُربط متجر بهذا الحساب</td><td>—</td>
+        <td><button type="button" className="partner-row-action" data-adaptive-record-trigger={`partner-actor-${a.actorId}`} onClick={() => inspect("actor", a.actorId)}>ملف الحساب ←</button></td></tr>;
+    }
+    const s = row.store;
+    return <tr key={rowId(row)} data-kind="store" tabIndex={0} onClick={(event) => {
+      if (event.target instanceof Element && !event.target.closest("a,button,input,label,select")) inspect("inspect", s.id);
+    }} onKeyDown={(event) => {
+      if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); inspect("inspect", s.id); }
+    }}>
+      <th scope="row"><div className="store-registry-identity"><input type="checkbox" aria-label={"تحديد متجر " + s.name} checked={selected.has(rowId(row))} onChange={(event) => { const updated = new Set(selected); if (event.target.checked) updated.add(rowId(row)); else updated.delete(rowId(row)); setSelected(updated); }} /><StoreLogo name={s.name} uri={s.storeProfileImage?.uri} /><div className="store-registry-identity-copy"><strong>{s.name}</strong>{s.partnerActorId ? <Link href={`/partners/actors/${encodeURIComponent(s.partnerActorId)}`} title="فتح ملف الشريك المالك">{s.partnerName || "ملف الشريك"}</Link> : <small>حساب الشريك غير محدد</small>}{row.partnerRole?.phoneE164 ? <a href={"tel:" + row.partnerRole.phoneE164}><bdi dir="ltr">{row.partnerRole.phoneE164}</bdi></a> : null}</div></div></th>
+      <td><div className="store-registry-cell-stack"><strong>{s.primaryVerticalName || "متجر"}</strong><small>{s.commercialStoreTypeNameAr || "نوع المتجر غير محدد"}</small><small>{s.serviceCityName || "المدينة غير محددة"}</small></div></td>
+      <td><div className="store-registry-cell-stack"><span>{publicationStateLabel(s.publicationState)} <PublicationIndicator state={s.publicationState} /></span><span><AccountIndicator role={row.partnerRole} /></span></div></td>
+      <td><div className="store-registry-cell-stack"><span>{s.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "لا توجد أوضاع توصيل"}</span><FulfillmentIndicators modes={s.fulfillmentModes} /></div></td>
+      <td><time dateTime={s.updatedAt}>{date(s.updatedAt)}</time></td>
+      <td><StoreOperationalDecision store={s} role={row.partnerRole} onInspect={() => inspect("inspect", s.id)} /></td>
+    </tr>;
+  }
+
+  function renderCard(row: Row) {
+    const title = row.kind === "joining" ? row.case.firstStoreName || row.case.businessName :
+      row.kind === "access" ? row.grant.storeName : row.kind === "store" ? row.store.name : row.actor.phoneE164;
+    const subtitle = row.kind === "joining" ? row.case.businessName + " · " + row.case.contactPhoneE164 :
+      row.kind === "access" ? "المدعو: " + (row.grant.delegatePhoneMasked || "هاتف محجوب") :
+      row.kind === "store" ? (row.store.partnerName || "شريك المتجر") + " · " + (row.store.serviceCityName || "المدينة غير محددة") : "شريك دون متجر";
+    const state = row.kind === "joining" ? joiningCaseStateLabel(row.case.state) :
+      row.kind === "access" ? "اعتماد دور معلق" : row.kind === "store" ? publicationStateLabel(row.store.publicationState) :
+      row.actor.enabled && row.actor.securityEnabled ? "حساب مفعل" : "حساب موقوف";
+    const details = row.kind === "joining" ? (row.case.origin === "field" ? "عبر الميداني" : "عبر المشغّل") + " · آخر تحديث: " + date(row.case.updatedAt) :
+      row.kind === "access" ? row.grant.permissions.map((p) => permissionLabels[p] || "صلاحية إضافية").join("، ") + " · انتهاء: " + date(row.grant.expiresAt) :
+      row.kind === "store" ? [row.store.primaryVerticalName || "متجر", row.store.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "بدون توصيل", "تحديث: " + date(row.store.updatedAt)].join(" · ") : "لم يُربط متجر بهذا الحساب";
+    const type = row.kind === "joining" ? "case" : row.kind === "access" ? "grant" : row.kind === "store" ? "inspect" : "actor";
+    const id = row.kind === "joining" ? row.case.id : row.kind === "access" ? row.grant.id : row.kind === "store" ? row.store.id : row.actor.actorId;
+    return <li className="partner-unified-card" key={rowId(row)} data-kind={row.kind}>
+      <div className="partner-unified-card-head"><strong>{title}</strong><span className="partner-state-tag is-muted">{caption(row)}</span></div>
+      <span className="partner-unified-card-sub">{subtitle}</span>
+      <div className="partner-unified-card-details"><span>{state}</span><span>{details}</span></div>
+      <div className="partner-unified-card-actions">
+        {row.kind === "store" || row.kind === "joining" ? <label className="partner-unified-select"><input type="checkbox" aria-label={"تحديد " + title} checked={selected.has(rowId(row))} onChange={(event) => {
+          const updated = new Set(selected);
+          if (event.target.checked) updated.add(rowId(row)); else updated.delete(rowId(row));
+          setSelected(updated);
+        }} /> تحديد</label> : null}
+        <button className="partner-row-action" type="button" data-adaptive-record-trigger={`partner-${row.kind}-${id}`} onClick={() => inspect(type, id)}>
+          {row.kind === "joining" ? "مراجعة الطلب" : row.kind === "access" ? "اعتماد الوصول" : row.kind === "store" ? "إدارة المتجر" : "ملف الشريك"} ←
+        </button>
+      </div>
+    </li>;
+  }
+
+  const grant = selectedGrant?.kind === "access" ? selectedGrant.grant : null;
+  const actor = selectedPartner?.kind === "partner" ? selectedPartner.actor : null;
+  const detail = openStore ? <StoreInspector storeId={openStore} onClose={close} onUpdated={() => void load()} /> :
+    openCase ? <AdaptiveRecordPanel title="ملف طلب الانضمام" onClose={close}><JoiningCaseDetail key={openCase} caseId={openCase} embedded /></AdaptiveRecordPanel> :
+    grant ? <AdaptiveRecordPanel title="مراجعة اعتماد الوصول" subtitle={grant.storeName} onClose={close}>
+      <dl className="facts-grid"><div><dt>المتجر</dt><dd>{grant.storeName}</dd></div><div><dt>المدعو</dt><dd><bdi dir="ltr">{grant.delegatePhoneMasked || "محجوب"}</bdi></dd></div><div><dt>الصلاحيات المطلوبة</dt><dd>{grant.permissions.map((p) => permissionLabels[p] || "صلاحية إضافية").join("، ")}</dd></div><div><dt>تنتهي الدعوة</dt><dd>{date(grant.expiresAt)}</dd></div><div><dt>آخر تحديث</dt><dd>{date(grant.updatedAt)}</dd></div></dl>
+      <p className="store-registry-secondary">يُعتمد الدور فقط إذا كانت الدعوة مقبولة ومستوفية لشروط الوصول. يتحقق الخادم من ذلك قبل الحفظ.</p>
+      <button type="button" className="button button-primary" disabled={Boolean(busyGrant)} onClick={() => void approve(grant)}>{busyGrant ? "جارٍ الاعتماد…" : "اعتماد دور الشريك"}</button>
+    </AdaptiveRecordPanel> :
+    actor ? <AdaptiveRecordPanel title="إدارة حساب الشريك" onClose={close}>
+      <PartnerDetailWorkspace key={actor.actorId} actorId={actor.actorId} embedded />
+    </AdaptiveRecordPanel> : null;
+
+  const triggerKey = openStore ? `partner-store-${openStore}` : openCase ? `partner-case-${openCase}` : openGrant ? `partner-grant-${openGrant}` : openPartner ? `partner-actor-${openPartner}` : undefined;
+  return <AdaptiveRecordWorkspace open={Boolean(selectedId)} detail={detail} preferenceKey="partners-unified" {...(triggerKey ? { triggerKey } : {})} onClose={close}>
+    <section className="workspace-page partners-unified-workbench store-registry" aria-label="السجل الموحد للشركاء والمتاجر">
+      <PageHeader id="partners-unified-title" title="الشركاء والمتاجر" actions={<Link className="button button-primary" href="/partners/new">+ طلب انضمام جديد</Link>} />
+      <RecordTabs id="partners-workspace" panelId="partners-workspace-panel" ariaLabel="أقسام الشركاء والمتاجر" className="partner-unified-section-tabs"
+        tabs={[{ key: "directory", label: "المتاجر والشركاء" }, { key: "requests", label: "طلبات الانضمام والاعتمادات" }]}
+        active={activeTab} onSelect={selectTab} />
+      <section id="partners-workspace-panel" role="tabpanel" aria-labelledby={`partners-workspace-tab-${activeTab}`} className="partner-unified-tab-panel">
+      <form className="workspace-toolbar partner-unified-toolbar" noValidate onSubmit={(event) => { event.preventDefault(); navigate(activeTab, kind, status, city, sort, search.trim().slice(0,100)); }}>
+        <label className="field-label" htmlFor="partner-unified-search">بحث في جميع السجلات
+          <input id="partner-unified-search" type="search" value={search} maxLength={100} onChange={(event) => setSearch(event.target.value)} placeholder="المتجر أو الشريك أو رقم الهاتف" />
+        </label>
+        <label className="field-label" htmlFor="partner-unified-kind">نوع السجل
+          <select id="partner-unified-kind" value={kind} onChange={(event) => navigate(activeTab, event.target.value as Kind, "", "", sort, appliedSearch)}>{kindOptions.map((t) => <option value={t.value} key={t.value}>{t.label}</option>)}</select>
+        </label>
+        <label className="field-label" htmlFor="partner-unified-status">الحالة
+          <select id="partner-unified-status" value={status} onChange={(event) => {
+            const next = event.target.value;
+            navigate(activeTab, kind, next, "", sort, appliedSearch);
+          }}>{statusOptions.map((s) => <option value={s.value} key={s.value}>{s.label}</option>)}</select>
+        </label>
+        <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
+        <button type="button" className="button button-secondary" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(!filtersOpen)}>خيارات إضافية</button>
+        {filtersOpen ? <div className="partner-unified-extra">
+          <label className="field-label" htmlFor="partner-unified-sort">ترتيب السجلات
+            <select id="partner-unified-sort" value={sort} onChange={(event) => navigate(activeTab, kind, status, city, event.target.value, appliedSearch)}><option value="newest">الأحدث أولًا</option><option value="oldest">الأقدم أولًا</option></select>
+          </label>
+          {activeTab === "directory" ? <label className="field-label" htmlFor="partner-unified-city">مدينة المتاجر فقط
+            <select id="partner-unified-city" value={city} onChange={(event) => navigate("directory", "store", status, event.target.value, sort, appliedSearch)}>
+              <option value="">كل المدن</option>{cities.map((entry) => <option key={entry.id} value={entry.id}>{entry.displayNameAr}</option>)}
+            </select>
+          </label> : null}
+        </div> : null}
+      </form>
+      {kind !== defaultKindByTab[activeTab] || status || city || appliedSearch ? <div className="partner-unified-active"><span>تم تطبيق مرشحات على العرض الحالي</span><button type="button" className="button button-secondary" onClick={() => { setSearch(""); navigate(activeTab, defaultKindByTab[activeTab], "", "", "newest", ""); }}>مسح المرشحات</button></div> : null}
+      <div className="partner-registry-summary"><span>{activeTab === "requests" ? "طلبات الانضمام واعتمادات الوصول" : "المتاجر وحسابات الشركاء"} · {rows.length} سجلًا في الصفحة</span>
+        {selectedRecords.length ? <div className="partner-registry-bulk-actions"><span>{selectedRecords.length} سجل محدد</span><button type="button" className="button button-secondary" onClick={exportSelected}>تصدير المحدد</button><button type="button" className="button button-secondary" onClick={() => setSelected(new Set())}>إلغاء التحديد</button></div> : null}</div>
+      {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت قراءة السجلات</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => void load()}>إعادة المحاولة</button></div> : null}
+      {loading && !rows.length ? <div className="collection-state" role="status">جارٍ تحميل سجلات الشركاء والمتاجر…</div> : null}
+      {!loading && !error && !rows.length ? <div className="collection-state"><strong>{nextCursor ? "لا توجد مطابقة في هذه الصفحة" : "لا توجد سجلات مطابقة"}</strong><p>{nextCursor ? "قد توجد نتائج أخرى في الصفحة التالية." : "جرّب تغيير نوع السجل أو المرشحات."}</p></div> : null}
+      {rows.length > 0 ? <div className="store-registry-table-wrap partner-unified-table-wrap"><table className="operations-table partner-registry-table partner-unified-table">
+        <caption className="visually-hidden">{activeTab === "requests" ? kind === "requests" ? "طلبات الانضمام واعتمادات الوصول" : kind === "access" ? "اعتمادات وصول المتاجر" : "طلبات انضمام الشركاء" : kind === "partner" ? "حسابات الشركاء دون متجر" : "دليل المتاجر والشركاء"}</caption>
+        <thead><tr><th scope="col">الشريك / المتجر والاتصال</th><th scope="col">النوع والموقع</th><th scope="col">الحالة</th><th scope="col">البيانات والخطوة المطلوبة</th><th scope="col">آخر تحديث</th><th scope="col">الإجراء</th></tr></thead>
+        <tbody>{rows.map(renderRow)}</tbody>
+      </table></div> : null}
+      {rows.length > 0 ? <ul className="partner-unified-cards" aria-label="سجلات الشركاء على الهاتف">{rows.map(renderCard)}</ul> : null}
+      {activeTab === "directory" && kind === "store" && rows.length > 0 ? <aside className="record-legend partner-registry-legend" aria-label="دليل رموز الحساب والنشر والتوصيل">
+        <div><strong>الحساب</strong><RecordIndicator legend icon="active" label="الحساب نشط" tone="success" /><RecordIndicator legend icon="pending" label="الحساب بانتظار التفعيل" tone="warning" /><RecordIndicator legend icon="paused" label="الحساب موقوف" tone="warning" /><RecordIndicator legend icon="unknown" label="حالة الحساب غير متاحة" /></div>
+        <div><strong>النشر</strong><RecordIndicator legend icon="published" label="منشور" tone="success" /><RecordIndicator legend icon="unpublished" label="غير منشور" /><RecordIndicator legend icon="hidden" label="مخفي" /></div>
+        <div><strong>التوصيل</strong><RecordIndicator legend icon="rider" label="توصيل بثواني" /><RecordIndicator legend icon="storeDelivery" label="توصيل المتجر" /><RecordIndicator legend icon="pickup" label="استلم بنفسك من المتجر" /></div>
+      </aside> : null}
+      <footer className="registry-footer"><CursorPagination page={page} nextCursor={nextCursor} disabled={loading || Boolean(busyGrant)} label="صفحات السجل الموحد للشركاء" /></footer>
+      </section>
+    </section>
+  </AdaptiveRecordWorkspace>;
+}

@@ -32,6 +32,10 @@ export function EmployeeProfileEditor({employee, colleagues, onSaved}:{
    department:form.department.trim(),jobTitle:form.jobTitle.trim(),
    workLocation:form.workLocation.trim(),
   };
+  if(input.fullNameAr.length<2||input.department.length===0||input.jobTitle.length===0||input.workLocation.length===0||
+   !/^\d{4}-\d{2}-\d{2}$/.test(input.startDate)||(input.phoneE164!==""&&!/^\+[1-9]\d{7,14}$/.test(input.phoneE164))){
+   setError("أكمل الاسم والقسم والمسمى وموقع العمل وتاريخ البداية، ورقم الهاتف للمشغّل.");return;
+  }
   const signature=JSON.stringify(input);
   if(mutation.current?.signature!==signature)mutation.current={signature,key:crypto.randomUUID()};
   setPending(true);setError("");setNotice("");
@@ -58,7 +62,7 @@ export function EmployeeProfileEditor({employee, colleagues, onSaved}:{
   </div>
   {notice?<p role="status">{notice}</p>:null}
   {error?<p role="alert">{error}</p>:null}
-  {editing?<form onSubmit={(event)=>void save(event)} className="access-create-form">
+  {editing?<form onSubmit={(event)=>void save(event)} className="access-create-form" noValidate>
    <label className="field-label">الاسم الكامل<input required minLength={2} maxLength={120} value={form.fullNameAr} onChange={(e)=>change("fullNameAr",e.target.value)}/></label>
    <label className="field-label">رقم الهاتف (اختياري)<input type="tel" dir="ltr" placeholder="+967777000100" value={form.phoneE164} onChange={(e)=>change("phoneE164",e.target.value)}/></label>
    <label className="field-label">القسم<input required maxLength={80} value={form.department} onChange={(e)=>change("department",e.target.value)}/></label>

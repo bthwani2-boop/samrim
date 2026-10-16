@@ -655,7 +655,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   const localProductFormLocked = busy || Boolean(productCreateAttempt.current);
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <Text style={styles.muted}>يظهر هذا المسار للحالة المعتمدة فقط. يتحقق النظام في كل قراءة وكتابة من الإسناد والارتباط بالمتجر وعدم إتمام إطلاق المتجر.</Text>
-    {snapshot ? <View style={styles.card}><Text style={styles.heading}>المتجر المعتمد</Text><Text style={styles.body}>المتجر: {snapshot.storeName}</Text><Text style={styles.body}>النشاط التجاري: {snapshot.verticalNameAr}</Text><BthwaniButton disabled={localProductFormLocked} label={localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER" ? "إغلاق إضافة المنتج" : "إضافة منتج لهذا المتجر دون باركود"} onPress={() => { setLocalProductFormOpen(!(localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER")); setIdentifier(""); setResolution(null); }} variant="secondary" /></View> : null}
+    {snapshot ? <View style={styles.card}><Text style={styles.heading}>المتجر المعتمد</Text><Text style={styles.body}>المتجر: {snapshot.storeName}</Text><Text style={styles.body}>المجال التجاري: {snapshot.verticalNameAr}</Text><BthwaniButton disabled={localProductFormLocked} label={localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER" ? "إغلاق إضافة المنتج" : "إضافة منتج لهذا المتجر دون باركود"} onPress={() => { setLocalProductFormOpen(!(localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER")); setIdentifier(""); setResolution(null); }} variant="secondary" /></View> : null}
     {localProductFormOpen || resolution?.outcome === "UNKNOWN_IDENTIFIER" || Boolean(productCreateAttempt.current) ? <View style={styles.card}>
       <Text style={styles.heading}>تسجيل منتج محلي</Text>
       <Text style={styles.muted}>ينشئ المنتج لهذا المتجر فقط. الباركود اختياري ولا يلزم لإضافة الوجبات والمنتجات الخاصة.</Text>
@@ -739,7 +739,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
       <Text style={styles.label}>التصنيف المطلوب</Text>
       <TextInput accessibilityLabel="البحث عن تصنيف للمقترح" editable={!proposalFormLocked} onChangeText={setProposalCategoryQuery} placeholder="ابحث باسم التصنيف" value={proposalCategoryQuery} style={styles.input} />
       <View style={styles.row}>{filteredProposalCategories.slice(0, 20).map((category) => <BthwaniChip key={category.id} disabled={proposalFormLocked} label={category.pathAr || category.nameAr} onPress={() => { setProposalCategoryID(category.id); setProposalAttributes({}); setProposalError(""); }} selected={proposalCategoryID === category.id} />)}</View>
-      {proposalCategories.length === 0 ? <Text style={styles.error}>لا توجد فئة منتجات نشطة لهذا النشاط التجاري؛ اطلب إعداد الفئات قبل إرسال المقترح.</Text> : null}
+      {proposalCategories.length === 0 ? <Text style={styles.error}>لا توجد فئة منتجات نشطة لهذا المجال التجاري؛ اطلب إعداد الفئات قبل إرسال المقترح.</Text> : null}
       {filteredProposalCategories.length === 0 && proposalCategories.length > 0 ? <Text style={styles.muted}>لا توجد تصنيفات تطابق البحث الحالي.</Text> : null}
       {proposalCategoryCursor ? <BthwaniButton busy={proposalCategoriesLoadingMore} disabled={proposalCategoriesLoadingMore || proposalFormLocked} label="قراءة تصنيفات إضافية" onPress={() => void loadMoreProposalCategories()} variant="secondary" /> : null}
       <Text style={styles.label}>اسم المنتج المقترح</Text>

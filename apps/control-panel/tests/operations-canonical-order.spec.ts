@@ -16,8 +16,8 @@ test("operations preserve canonical server order while making later exceptions v
   const rows = page.locator(".ops-list-table tbody tr");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText("المتجر الأحدث");
-  await expect(rows.nth(0).locator(".ops-captain-id")).toHaveAttribute("title", "captain-identified-2026-sanaa");
-  await expect(rows.nth(0).locator(".ops-captain-id")).toHaveAttribute("dir", "ltr");
+  await expect(rows.nth(0).locator(".ops-captain-cell")).toContainText("تم التسليم");
+  await expect(rows.nth(0).locator(".ops-captain-cell")).not.toContainText("captain-identified-2026-sanaa");
   await expect(rows.nth(1)).toContainText("المتجر المتعثر");
   await expect(rows.nth(1)).toContainText("أكثر من ساعة دون تحديث");
   await expect(rows.nth(1).locator(".ops-row-followup .record-indicator")).toContainText("إرسال للتوزيع");

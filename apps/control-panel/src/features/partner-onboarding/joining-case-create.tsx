@@ -1,8 +1,8 @@
 "use client";
-import { TextArea } from "@bthwani/design-system/web";
 
 import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
-import { isValidStoreWorkingHours, type CommerceVertical, type CommercialStoreType, type CreateJoiningCaseRequest, type JoiningCaseProofType, type JoiningCaseResponse, type ServiceCity, type StoreWorkingHoursInterval } from "@bthwani/dsh";
+import { TextArea } from "@bthwani/design-system/web";
+import { type CommerceVertical, type CommercialStoreType, type CreateJoiningCaseRequest, isValidStoreWorkingHours, type JoiningCaseProofType, type JoiningCaseResponse, type ServiceCity, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -37,7 +37,7 @@ function clearPendingJoiningCaseMetadata(storageKey: string): void {
 }
 
 function commercialTypePrompt(verticalId: string, loading: boolean): string {
-  if (!verticalId) return "اختر النشاط الرئيسي أولاً";
+  if (!verticalId) return "اختر المجال التجاري أولاً";
   if (loading) return "جارٍ تحميل الأنواع…";
   return "اختر نوع المتجر";
 }
@@ -313,7 +313,7 @@ export function JoiningCaseCreate() {
         <label className="field-label" htmlFor="joining-store">اسم المتجر الأول<input id="joining-store" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={storeName} onChange={(event) => setStoreName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-address">عنوان المتجر<TextArea className="resize-none" id="joining-address" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={storeAddress} onChange={(event) => setStoreAddress(event.target.value)} placeholder="الحي والشارع وأقرب معلم" rows={3} /></label>
         <label className="field-label" htmlFor="joining-city">مدينة المتجر الأول<select id="joining-city" disabled={busy || optionsBusy || Boolean(optionsError) || pendingRequestLocked || !attemptReady} value={serviceCityId} onChange={(event) => setServiceCityId(event.target.value)}><option value="">اختر مدينة نشطة</option>{activeCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
-        <label className="field-label" htmlFor="joining-vertical">النشاط الرئيسي<select id="joining-vertical" disabled={busy || optionsBusy || Boolean(optionsError) || pendingRequestLocked || !attemptReady} value={verticalId} onChange={(event) => setVerticalId(event.target.value)}><option value="">اختر النشاط الرئيسي</option>{activeVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label>
+        <label className="field-label" htmlFor="joining-vertical">المجال التجاري<select id="joining-vertical" disabled={busy || optionsBusy || Boolean(optionsError) || pendingRequestLocked || !attemptReady} value={verticalId} onChange={(event) => setVerticalId(event.target.value)}><option value="">اختر المجال التجاري</option>{activeVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label>
          <label className="field-label" htmlFor="joining-commercial-type">نوع المتجر التجاري<select id="joining-commercial-type" disabled={busy || optionsBusy || commercialTypesBusy || !verticalId || Boolean(commercialTypesError) || pendingRequestLocked || !attemptReady} value={commercialTypeId} onChange={(event) => setCommercialTypeId(event.target.value)}><option value="">{commercialTypePlaceholder}</option>{activeCommercialTypes.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}</select>{commercialTypesError ? <span className="identity-error" role="alert">{commercialTypesError}</span> : null}{hasNoActiveCommercialTypes ? <span className="muted">لا توجد أنواع نشطة لهذه الفئة. أضف النوع من سجل أنواع المتاجر قبل إنشاء الحالة.</span> : null}</label>
         <fieldset className="field-label" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady}>
           <legend>ساعات العمل الأسبوعية · توقيت المدينة</legend>

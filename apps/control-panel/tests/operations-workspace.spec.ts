@@ -154,9 +154,11 @@ test("operations lanes, order detail routes, and operator recovery follow URL st
   await page.goForward();
   await expect(page).toHaveURL(/state=IN_CUSTODY/);
 
-  await page.getByRole("button", { name: "فتح الطلب order_ops_100" }).click();
-  const drawer = page.getByRole("dialog", { name: "تفاصيل الطلب order_ops_100" });
+  await page.getByRole("button", { name: "فتح طلب من متجر صنعاء" }).click();
+  const drawer = page.getByRole("region", { name: "ملف الطلب" });
   await expect(drawer).toBeVisible();
+  await expect(page.locator(".adaptive-record-workspace")).toHaveAttribute("data-split", "true");
+  await expect(page.locator(".ops-list-table")).toBeVisible();
   await expect(drawer.getByRole("heading", { name: "عناصر الطلب" })).toBeVisible();
   await expect(drawer.getByText("قهوة مختارة")).toBeVisible();
   await expect(drawer.getByRole("heading", { name: "الدفع والمبالغ" })).toBeVisible();
@@ -171,8 +173,8 @@ test("operations lanes, order detail routes, and operator recovery follow URL st
   await page.goto("/operations?state=DELIVERY_FAILED");
   await expect(page.getByRole("heading", { name: "تعثر التسليم" })).toBeVisible();
   await expect(page.getByRole("button", { name: "استعادة التسليم" })).toHaveCount(0);
-  await page.getByRole("button", { name: "فتح الطلب order_ops_100" }).click();
-  const recoveryDrawer = page.getByRole("dialog", { name: "تفاصيل الطلب order_ops_100" });
+  await page.getByRole("button", { name: "فتح طلب من متجر صنعاء" }).click();
+  const recoveryDrawer = page.getByRole("region", { name: "ملف الطلب" });
   await expect(recoveryDrawer.getByRole("heading", { name: "استعادة التسليم" })).toBeVisible();
   await page.getByRole("button", { name: "استعادة التسليم" }).click();
   await expect(page.locator(".managed-status[role=alert]")).toContainText("تغيرت حالة الطلب");

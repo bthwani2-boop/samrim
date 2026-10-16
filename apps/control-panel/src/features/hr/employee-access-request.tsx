@@ -1,5 +1,6 @@
 "use client";
 
+import { TextArea } from "@bthwani/design-system/web";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { HRAccessRequest, HREmployee } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
@@ -63,13 +64,13 @@ export function EmployeeAccessRequest({ employee }: { employee: HREmployee }) {
  }
  if(employee.operatorActorId) return <p>هذا الموظف مرتبط بالفعل بحساب مشغّل.</p>;
  if(!employee.phoneE164) return <p>يجب تسجيل رقم هاتف الموظف الموثوق قبل تقديم طلب الوصول.</p>;
- return <form onSubmit={(event)=>void submit(event)} className="form-section form-section--w620">
+ return <form onSubmit={(event)=>void submit(event)} className="form-section form-section--w620" noValidate>
   <h3>طلب منح وصول للوحة التحكم</h3>
   <p className="muted">هذا طلب للمشغّل الأساسي فقط؛ لا يتم منح أي صلاحيات عند الإرسال.</p>
   {rejected?<p role="status">رُفض الطلب السابق: {rejected.rejectionReason||"راجع المشغّل الأساسي"}. يمكنك تصحيح بيانات الموظف وإرسال طلب جديد.</p>:null}
   {checking?<p role="status">جارٍ التحقق من حالة الطلب…</p>:sent?<p role="status">{sent.state==="pending_review"?"طلب الوصول بانتظار المشغّل الأساسي.":sent.state==="identity_provisioning"?"جارٍ تحويل الطلب إلى Identity.":"أُحيل الطلب إلى Identity وما زالت الموافقة على الوصول والتفعيل منفصلتين."}</p>:error?<p role="alert">{error}</p>:<>
-  <label className="field-label">سبب طلب الوصول
-   <textarea required minLength={8} maxLength={500} value={reason} onChange={(e)=>{setReason(e.target.value);mutation.current=null}}/>
+   <label className="field-label" htmlFor="employee-access-request-reason">سبب طلب الوصول
+    <TextArea className="resize-none" id="employee-access-request-reason" required minLength={8} maxLength={500} value={reason} onChange={(e)=>{setReason(e.target.value);mutation.current=null}}/>
   </label>
   <fieldset><legend>الأقسام المقترحة (اختياري، ولا تُمنح تلقائيًا)</legend>
    {workspaces.map(([key,label])=><label key={key} className="checkbox-field">

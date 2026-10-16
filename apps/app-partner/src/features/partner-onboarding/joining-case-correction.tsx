@@ -281,9 +281,9 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       if (code === "SERVICE_CITY_UNAVAILABLE") {
         setError("مدينة الخدمة لم تعد نشطة. أعد قراءة المدن واختر مدينة أخرى قبل إعادة الإرسال.");
       } else if (code === "VERTICAL_UNAVAILABLE") {
-        setError("النشاط التجاري لم يعد نشطًا. أعد قراءة الأنشطة واختر نشاطًا آخر قبل إعادة الإرسال.");
+        setError("المجال التجاري لم يعد نشطًا. أعد قراءة الأنشطة واختر نشاطًا آخر قبل إعادة الإرسال.");
       } else if (code === "COMMERCIAL_STORE_TYPE_UNAVAILABLE") {
-        setError("نوع المتجر لم يعد نشطًا لهذا النشاط التجاري. أعد قراءة الأنواع واختر نوعًا متاحًا.");
+        setError("نوع المتجر لم يعد نشطًا لهذا المجال التجاري. أعد قراءة الأنواع واختر نوعًا متاحًا.");
       } else if (code === "VERSION_CONFLICT" || code === "STATE_CONFLICT") {
         setError("تغيّرت الحالة أثناء التصحيح. أعد قراءة حالة الانضمام ثم حاول مجددًا.");
       } else {
@@ -320,14 +320,14 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       <Text style={styles.label}>مدينة المتجر الأول</Text>
       {cities.length === 0 ? <Text style={styles.muted}>لا توجد مدن خدمة مقروءة حاليًا. أعد قراءة بيانات الشريك.</Text> : null}
       <View style={styles.cityList}>{cities.map((city) => <BthwaniChip key={city.id} disabled={busy} label={city.displayNameAr} onPress={() => setServiceCityId(city.id)} selected={serviceCityId === city.id} />)}</View>
-      <Text style={styles.label}>النشاط التجاري</Text>
+      <Text style={styles.label}>المجال التجاري</Text>
       {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
-      {optionsError ? <View style={styles.optionError}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة الأنشطة التجارية.</Text><BthwaniButton label="إعادة قراءة الأنشطة" onPress={() => void loadOptions()} variant="secondary" /></View> : null}
+      {optionsError ? <View style={styles.optionError}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة المجالات التجارية.</Text><BthwaniButton label="إعادة قراءة الأنشطة" onPress={() => void loadOptions()} variant="secondary" /></View> : null}
       <View style={styles.cityList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} disabled={busy} label={vertical.nameAr} onPress={() => { setVerticalId(vertical.id); setCommercialTypeId(""); }} selected={verticalId === vertical.id} />)}</View>
       <Text style={styles.label}>نوع المتجر التجاري</Text>
-      {commercialTypesLoading ? <Text style={styles.muted}>جارٍ قراءة أنواع المتاجر لهذا النشاط التجاري…</Text> : null}
+      {commercialTypesLoading ? <Text style={styles.muted}>جارٍ قراءة أنواع المتاجر لهذا المجال التجاري…</Text> : null}
       {commercialTypesError ? <View style={styles.optionError}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة أنواع المتاجر.</Text><BthwaniButton label="إعادة قراءة الأنواع" disabled={busy || !verticalId} onPress={() => void loadCommercialTypes(verticalId)} variant="secondary" /></View> : null}
-      {!commercialTypesLoading && !commercialTypesError && verticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذا النشاط التجاري. اطلب من المشغّل إعداد النوع التجاري.</Text> : null}
+      {!commercialTypesLoading && !commercialTypesError && verticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذا المجال التجاري. اطلب من المشغّل إعداد النوع التجاري.</Text> : null}
       <View style={styles.cityList}>{commercialTypes.map((item) => <BthwaniChip key={item.id} disabled={busy} label={item.nameAr} onPress={() => setCommercialTypeId(item.id)} selected={commercialTypeId === item.id} />)}</View>
       <View style={styles.scheduleBox}>
         <Text style={styles.label}>ساعات العمل الأسبوعية</Text>

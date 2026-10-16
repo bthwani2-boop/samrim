@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type CSSProperties, type RefObject } from "react";
+import { type CSSProperties, type RefObject, useEffect, useLayoutEffect, useState } from "react";
 import type { OperatorPolicyChange } from "../../server/dsh/dsh-bff";
 import type { PolicyCapability } from "./policy-capabilities";
 
@@ -47,13 +47,21 @@ export type PolicyPreviewState = Readonly<{
   value?: PolicyListPreview;
 }>;
 
-export function PolicyQuickPeek({ policy, preview, style, containerRef, onClose }: Readonly<{
+export function PolicyQuickPeek({ policy, preview, position, containerRef, onClose }: Readonly<{
   policy: PolicyCapability;
   preview: PolicyPreviewState | undefined;
-  style: CSSProperties;
+  position: CSSProperties;
   containerRef: RefObject<HTMLDivElement | null>;
   onClose: () => void;
 }>) {
+  useLayoutEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    // Position is measured from the trigger; the stylesheet owns all fixed visual rules.
+    if (typeof position.left === "number") element.style.left = `${position.left}px`;
+    if (typeof position.top === "number") element.style.top = `${position.top}px`;
+    if (typeof position.width === "number") element.style.width = `${position.width}px`;
+  }, [position, containerRef]);
   const hasList = policy.list !== null || policy.owner === "WLT";
   const [history,setHistory]=useState<readonly OperatorPolicyChange[]>([]);
   const [historyState,setHistoryState]=useState<"loading"|"ready"|"error"|"restricted">("loading");
@@ -71,7 +79,7 @@ export function PolicyQuickPeek({ policy, preview, style, containerRef, onClose 
     return ()=>controller.abort();
   },[policy.key,preview?.kind]);
   return <div className="policy-quick-peek" role="dialog" aria-label={`معاينة ${policy.label}`}
-    ref={containerRef} style={style} tabIndex={-1} data-testid="policy-quick-peek">
+    ref={containerRef} tabIndex={-1} data-testid="policy-quick-peek">
     <header className="policy-quick-peek-head">
       <strong>{policy.label}</strong>
       <button type="button" className="policy-quick-peek-close" aria-label="إغلاق المعاينة" onClick={onClose}>×</button>
@@ -118,7 +126,7 @@ export function PolicyQuickPeek({ policy, preview, style, containerRef, onClose 
             <span>{change.field} · v{change.version} · {new Date(change.createdAt).toLocaleString("ar-YE")}</span>
             <small>{change.before ? formatHistoryValue(change.field,change.before)+" ← " : ""}{formatHistoryValue(change.field,change.after)}</small>
             {change.reason ? <small>{change.reason}</small> : null}
-            <small>من: <bdi dir="ltr">{change.actorId}</bdi></small>
+            <details><summary>بيانات التدقيق</summary><small>معرّف منفذ التغيير: <bdi dir="ltr">{change.actorId}</bdi></small></details>
           </li>)}
         </ol>
         {history.length>2?<button type="button" className="policy-quick-peek-history-toggle" onClick={()=>setExpanded(v=>!v)}>

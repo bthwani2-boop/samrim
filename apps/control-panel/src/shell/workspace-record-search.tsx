@@ -11,12 +11,13 @@ function isSearchResponse(value: unknown): value is { groups: Group[] } {
 }
 
 export function WorkspaceRecordSearch({ query, identity, onNavigate }: Readonly<{ query: string; identity: ActorIdentity; onNavigate: () => void }>) {
-  const [result, setResult] = useState<{ query: string; groups: Group[] } | null>(null);
+  const [result, setResult] = useState<{ query: string; subject: string; groups: Group[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const active = useRef<AbortController | null>(null);
   useEffect(() => {
-    setResult(null); setError(""); setBusy(false);
+    setResult((current) => current && (current.query !== query || current.subject !== identity.subject) ? null : current);
+    setError(""); setBusy(false);
     return () => active.current?.abort();
   }, [query, identity.subject]);
   if (identity.role !== "operator" || !identity.permissions?.some((permission) => ["operations", "partners", "catalog"].includes(permission))) return null;
@@ -29,7 +30,7 @@ export function WorkspaceRecordSearch({ query, identity, onNavigate }: Readonly<
       const response = await fetch("/api/workspace/search", { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: query.trim() }), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]) });
       const body: unknown = await response.json();
       if (!response.ok || !isSearchResponse(body)) throw new Error("تعذّر البحث في السجلات. أعد المحاولة.");
-      if (!controller.signal.aborted) setResult({ query, groups: body.groups });
+      if (!controller.signal.aborted) setResult({ query, subject: identity.subject, groups: body.groups });
     } catch {
       if (!controller.signal.aborted) setError("تعذّر البحث في السجلات. أعد المحاولة.");
     } finally { if (!controller.signal.aborted) setBusy(false); }
@@ -39,7 +40,7 @@ export function WorkspaceRecordSearch({ query, identity, onNavigate }: Readonly<
     <button type="button" className="button button-secondary" onClick={() => void search()} disabled={busy || query.trim().length < 2 || query.trim().length > 100}>{busy ? "جارٍ البحث…" : error ? "إعادة محاولة البحث في السجلات" : "بحث السجلات المصرّح بها"}</button>
     {busy ? <p role="status">جارٍ البحث في المصادر المصرّح بها…</p> : null}
     {error ? <p role="alert">{error}</p> : null}
-    {result?.query === query ? <>
+    {result?.query === query && result.subject === identity.subject ? <>
       <p className="workspace-search-label">حتى خمس نتائج لكل نوع؛ النص يبقى داخل هذه الجلسة.</p>
       {result.groups.map((group) => <section key={group.key} aria-label={group.label}>
         <h3>{group.label}</h3>

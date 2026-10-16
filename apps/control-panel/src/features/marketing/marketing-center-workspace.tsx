@@ -1,15 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
-import { MarketingPromotionsWorkspace } from "./marketing-promotions-workspace";
-import { MarketingContentWorkspace } from "./marketing-content-workspace";
 import { LazyWorkspaceDisclosure } from "../shared/lazy-workspace-disclosure";
+import { MarketingContentWorkspace } from "./marketing-content-workspace";
+import { MarketingPromotionsWorkspace } from "./marketing-promotions-workspace";
 
 export function MarketingCenterWorkspace() {
   const { state } = useSession();
   if (state.kind !== "authenticated") return null;
-  if (state.identity.role !== "operator") {
+  if (state.identity.role !== "operator" || !state.identity.permissions?.includes("marketing")) {
     return <section className="state-content workspace-restricted" role="alert">
       <h1>التسويق للمشغلين فقط</h1>
       <p>لا يمنح الدخول إلى هذا المركز صلاحيات إضافية.</p>
@@ -17,7 +18,8 @@ export function MarketingCenterWorkspace() {
   }
 
   return <section className="workspace-page marketing-center" aria-labelledby="marketing-center-title">
-    <PageHeader id="marketing-center-title" title="التسويق والمحتوى" />
+    <PageHeader id="marketing-center-title" title="التسويق والمحتوى"
+      actions={<Link href="/marketing/customers" className="button button-primary">إدارة العملاء</Link>} />
     <div className="work-stack">
     <LazyWorkspaceDisclosure name="العروض والحملات" description="إدارة النشر والتمويل ونتائج العروض" initiallyOpen>
       <MarketingPromotionsWorkspace />

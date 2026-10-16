@@ -81,6 +81,11 @@ func (s *catalogRefoundationScenario) verifyRegistryScale() {
 	if err != nil || page.TotalCount != 1000 || len(page.Products) != 50 || page.NextCursor == "" {
 		s.t.Fatalf("bounded registry and summary over 1000 isolated products: count=%d rows=%d err=%v", page.TotalCount, len(page.Products), err)
 	}
+	for _, product := range page.Products {
+		if len(product.CategoryNamesAr) != 1 || strings.TrimSpace(product.CategoryNamesAr[0]) == "" {
+			s.t.Fatalf("registry product %s missing server-resolved category name: %#v", product.ID, product.CategoryNamesAr)
+		}
+	}
 	started = time.Now()
 	next, err := postgres.ListCatalogProductRegistry(s.ctx, s.db, "Registry proof product", s.verticalID, s.categoryID, "active", "name_asc", 50, page.NextCursor)
 	nextDuration := time.Since(started)

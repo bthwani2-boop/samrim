@@ -9,7 +9,6 @@ import { partnerErrorMessage } from "../partners/partner-error-message";
 import { stablePartnerMutationHeaders } from "../partners/partner-request";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { StoreLogo } from "../stores/store-logo";
-import { readJoiningQueueReturn } from "./joining-return-context";
 
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
   { value: "BTHWANI_CAPTAIN", label: "توصيل بثواني", description: "المنصة تتولى إسناد التوصيل وإدارته." },
@@ -26,12 +25,10 @@ const proofTypeLabels: Record<JoiningCaseProofType, string> = {
 
 const weekdays = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"] as const;
 
-export function JoiningCaseDetail({ caseId }: { caseId: string }) {
+export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string; embedded?: boolean }) {
   const { state: sessionState } = useSession();
   const canManageFinancialTerms = sessionState.kind === "authenticated" && sessionState.identity.permissions?.includes("finance") === true && sessionState.identity.permissions?.includes("platform_policies") === true;
   const [result, setResult] = useState<JoiningCaseResponse | null>(null);
-  const [backHref, setBackHref] = useState("/partners/joining");
-  useEffect(() => setBackHref(readJoiningQueueReturn(caseId)), [caseId]);
   const [proofDetails, setProofDetails] = useState<{ caseId: string; response: JoiningCaseProofDetailsResponse } | null>(null);
   const [proofDetailsError, setProofDetailsError] = useState<{ caseId: string; message: string } | null>(null);
   const [proofDetailsLoading, setProofDetailsLoading] = useState(false);
@@ -321,7 +318,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>اسم المتجر</dt><dd>{current.firstStoreName || "غير مسجل"}</dd></div>
               <div><dt>مدينة الخدمة</dt><dd>{cityName}</dd></div>
               <div><dt>العنوان</dt><dd>{current.firstStoreAddress || "غير متاح في بيانات الحالة القديمة"}</dd></div>
-              <div><dt>النشاط الرئيسي</dt><dd>{verticalName}</dd></div>
+              <div><dt>المجال التجاري</dt><dd>{verticalName}</dd></div>
               <div><dt>نوع المتجر</dt><dd>{commercialTypeName}</dd></div>
               <div><dt>موقع المتجر على الخريطة</dt><dd>{current.firstStoreLatitude != null && current.firstStoreLongitude != null ? <a href={`https://www.google.com/maps?q=${current.firstStoreLatitude},${current.firstStoreLongitude}`} target="_blank" rel="noopener noreferrer">فتح موقع المتجر على الخريطة</a> : "غير متاح في بيانات الحالة القديمة"}</dd></div>
               <div><dt>ساعات العمل</dt><dd>{current.firstStoreWorkingHours ? current.firstStoreWorkingHours.intervals.length > 0 ? <ul>{current.firstStoreWorkingHours.intervals.map((interval) => <li key={`${interval.dayOfWeek}-${interval.opensAt}-${interval.closesAt}`}>{weekdays[interval.dayOfWeek - 1] ?? `اليوم ${interval.dayOfWeek}`}: {interval.opensAt}–{interval.closesAt}{interval.closesNextDay ? " (اليوم التالي)" : ""}</li>)}</ul> : "لا توجد فترات عمل مسجلة" : "غير متاحة في بيانات الحالة القديمة"}</dd></div>
@@ -377,7 +374,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
         </>
       )}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
-      <div className="button-row"><Link className="button button-secondary" href={backHref}>العودة إلى طلبات الانضمام</Link></div>
+      {embedded ? null : <div className="button-row"><Link className="button button-secondary" href="/partners?kind=joining">العودة إلى طلبات الانضمام</Link></div>}
     </section>
   );
 }

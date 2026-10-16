@@ -4,11 +4,12 @@ import { captainAssignmentStateLabel, formatOrderDate, type OperatorOperationLis
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
+import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { RecordIndicator } from "../shared/record-indicator";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { operationalAge } from "./operational-age";
-import { OrderOperationDetail } from "./order-operation-detail";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
+import { OrderOperationDetail } from "./order-operation-detail";
 
 type View = "all" | "attention" | "dispatch" | "delivered";
 type Change = Readonly<{ view?: View; state?: string; q?: string; sort?: string }>;
@@ -97,32 +98,8 @@ export function OperationsWorkspace() {
   const [errorStatus, setErrorStatus] = useState(0);
   const [selectedOrderId, setSelectedOrderId] = useState("");
   const loadSequence = useRef(0);
-  const dialogRef = useRef<HTMLElement>(null);
 
   useEffect(() => setSearch(searchFromUrl), [searchFromUrl]);
-  useEffect(() => {
-    if (!selectedOrderId) return;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialogRef.current?.focus();
-    function handleDialogKeys(event: KeyboardEvent) {
-      // An inner native modal manages its own focus and Escape; keep the order inspector open.
-      if (dialogRef.current?.querySelector("dialog[open]")) return;
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setSelectedOrderId("");
-        return;
-      }
-      if (event.key !== "Tab" || !dialogRef.current) return;
-      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex="0"]'));
-      if (!focusable.length) { event.preventDefault(); return; }
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
-      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    }
-    window.addEventListener("keydown", handleDialogKeys);
-    return () => { window.removeEventListener("keydown", handleDialogKeys); previousFocus?.focus(); };
-  }, [selectedOrderId]);
   useEffect(() => {
     const timer = setInterval(() => setAgeClock(Date.now()), 60_000);
     return () => clearInterval(timer);
@@ -207,11 +184,25 @@ export function OperationsWorkspace() {
 
   const hasSearch = Boolean(searchFromUrl);
   const selectedFilter = preciseState || (view === "attention" ? "attention" : view === "dispatch" ? "READY_FOR_DISPATCH" : view === "delivered" ? "DELIVERED" : "");
-  const shortOrderId = (id: string) => id.length > 22 ? id.slice(0, 11) + "…" + id.slice(-7) : id;
   const selectedViewLabel = preciseState ? specificStates.find((item) => item.value === preciseState)?.label ?? preciseState
     : views.find((item) => item.id === view)?.label ?? "جميع الطلبات";
 
+  const selectedIndex = operations.findIndex((item) => item.orderId === selectedOrderId);
+  const closeSelected = () => setSelectedOrderId("");
+
   return (
+    <AdaptiveRecordWorkspace
+      open={Boolean(selectedOrderId)}
+      preferenceKey="operations"
+      onClose={closeSelected}
+      detail={selectedOrderId ? <AdaptiveRecordPanel
+        title="ملف الطلب"
+        onClose={closeSelected}
+        onPrevious={selectedIndex > 0 ? () => setSelectedOrderId(operations[selectedIndex - 1]!.orderId) : undefined}
+        onNext={selectedIndex >= 0 && selectedIndex < operations.length - 1 ? () => setSelectedOrderId(operations[selectedIndex + 1]!.orderId) : undefined}
+      >
+        <OrderOperationDetail orderId={selectedOrderId} embedded onClose={closeSelected} onUpdated={() => void load(true)} />
+      </AdaptiveRecordPanel> : null}>
     <section className="operations-workspace ops-center" aria-label="مركز متابعة الطلبات">
       <div className="ops-page-intro">
         <p>متابعة الطلبات والتعامل مع ما يحتاج تدخلك من مكان واحد.</p>
@@ -223,7 +214,7 @@ export function OperationsWorkspace() {
 
       <div className="ops-tools">
         <search className="ops-search" aria-label="البحث في الطلبات">
-          <form onSubmit={(event) => {
+          <form noValidate onSubmit={(event) => {
             event.preventDefault();
             navigate({ view: "all", state: "", q: search.trim().slice(0, 128) });
           }}>
@@ -289,42 +280,56 @@ export function OperationsWorkspace() {
           <section className="operations-table-wrap" aria-label="قائمة الطلبات؛ تمرير أفقي عند الحاجة" tabIndex={0}>
             <table className="operations-table ops-list-table">
               <caption className="visually-hidden">{selectedViewLabel}، خمسون طلبًا كحد أقصى في الصفحة</caption>
-              <thead><tr><th scope="col">الطلب</th><th scope="col">المتجر</th><th scope="col">الحالة</th><th scope="col">الكابتن</th><th scope="col">آخر تحديث</th><th scope="col">المتابعة</th><th scope="col">إجراء</th></tr></thead>
+              <thead><tr><th scope="col">المتجر</th><th scope="col">الحالة</th><th scope="col">الكابتن</th><th scope="col">آخر تحديث</th><th scope="col">المتابعة</th><th scope="col">إجراء</th></tr></thead>
               <tbody>
                 {operations.map((item) => {
                   const age = operationalAge(item.state, item.updatedAt, ageClock);
                   const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
                   return <tr key={item.orderId} className={age.needsReview ? "ops-row-review" : undefined}>
-                    <th scope="row"><span className="ops-order-id" title={item.orderId}>{shortOrderId(item.orderId)}</span></th>
-                    <td>{item.storeName}</td>
+                    <th scope="row">{item.storeName}</th>
                     <td><span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span></td>
                     <td>{item.assignment ? <span className="ops-captain-cell">
                       <span>{captainAssignmentStateLabel(item.assignment.state)}</span>
-                      {item.assignment.captainActorId ? <bdi dir="ltr" className="ops-captain-id" title={item.assignment.captainActorId}>{shortOrderId(item.assignment.captainActorId)}</bdi> : null}
                     </span> : <span className="muted">غير مسند</span>}</td>
                     <td><time dateTime={item.updatedAt}>{formatOrderDate(item.updatedAt)}</time></td>
                     <td><div className="ops-row-followup">
                       <span className={age.needsReview ? "operations-attention" : "muted"}>{age.label}</span>
                       {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
                     </div></td>
-                    <td><button type="button" className="ops-row-open" aria-label={"فتح الطلب " + item.orderId} onClick={() => setSelectedOrderId(item.orderId)}>فتح</button></td>
+                    <td><button type="button" className="ops-row-open" aria-label={"فتح طلب من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>فتح</button></td>
                   </tr>;
                 })}
               </tbody>
             </table>
+            <ul className="ops-mobile-orders" aria-label="طلبات الصفحة">
+              {operations.map((item) => {
+                const age = operationalAge(item.state, item.updatedAt, ageClock);
+                const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
+                return <li key={item.orderId} className={"ops-mobile-order" + (age.needsReview ? " ops-mobile-order-review" : "")}>
+                  <div className="ops-mobile-order-heading">
+                    <strong>{item.storeName}</strong>
+                  </div>
+                  <div className="ops-mobile-order-status">
+                    <span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span>
+                    <span className="ops-mobile-order-captain">{item.assignment ? captainAssignmentStateLabel(item.assignment.state) : "غير مسند"}</span>
+                  </div>
+                  <div className="ops-mobile-order-followup">
+                    <span className={age.needsReview ? "operations-attention" : "muted"}>{age.label}</span>
+                    {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
+                  </div>
+                  <div className="ops-mobile-order-bottom">
+                    <time dateTime={item.updatedAt}>آخر تحديث: {formatOrderDate(item.updatedAt)}</time>
+                    <button type="button" className="ops-row-open" aria-label={"فتح طلب من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>فتح الطلب</button>
+                  </div>
+                </li>;
+              })}
+            </ul>
           </section>
         ) : null}
       </div>
-      {selectedOrderId ? (
-        // biome-ignore lint/a11y/noStaticElementInteractions: Backdrop pointer dismissal is supplementary; the labeled close button and Escape provide keyboard access.
-        <div className="ops-detail-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedOrderId(""); }}>
-          <aside ref={dialogRef} tabIndex={-1} className="ops-detail-drawer" role="dialog" aria-modal="true" aria-label={"تفاصيل الطلب " + selectedOrderId}>
-            <OrderOperationDetail orderId={selectedOrderId} embedded onClose={() => setSelectedOrderId("")} onUpdated={() => void load(true)} />
-          </aside>
-        </div>
-      ) : null}
 
       <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading} label="صفحات الطلبات" />
     </section>
+    </AdaptiveRecordWorkspace>
   );
 }

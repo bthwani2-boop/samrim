@@ -95,6 +95,7 @@ export const colorRoles = {
   surfaceMuted: brandScale.surface[100],
   surfaceInset: brandScale.surface[200],
   surfaceOverlay: alpha(brandRoots.surfaceBase, 0.86),
+  overlayScrim: alpha("#020617", 0.57),
   mediaScrimStrong: alpha("#0F172A", 0.78),
 
   brandStructure: brandRoots.brandStructure,
@@ -158,6 +159,7 @@ export const lightThemeColors = {
   surfaceRaised: brandScale.surface[50],
   surfaceInset: brandScale.surface[100],
   surfaceOverlay: colorRoles.surfaceOverlay,
+  overlayScrim: colorRoles.overlayScrim,
   color: colorRoles.textPrimary,
   colorSecondary: colorRoles.textSecondary,
   colorMuted: colorRoles.textMuted,
@@ -204,6 +206,7 @@ export const darkThemeColors = {
   surfaceRaised: neutralScale[800],
   surfaceInset: neutralScale[800],
   surfaceOverlay: alpha(neutralScale[900], 0.9),
+  overlayScrim: colorRoles.overlayScrim,
   color: neutralScale[50],
   colorSecondary: neutralScale[200],
   colorMuted: neutralScale[400],

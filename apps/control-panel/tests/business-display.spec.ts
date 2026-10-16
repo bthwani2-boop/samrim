@@ -12,11 +12,13 @@ async function session(page: Page) {
   await page.route("**/api/auth/session**", (route) => route.fulfill({ json: { identity: {
     subject: "operator", sessionId: "session", role: "operator", permissions: ["partners", "catalog"], surface: "control-panel", expiresAt: "2099-01-01T00:00:00.000Z",
   } } }));
+  await page.route("**/api/notifications**", (route) => route.fulfill({ json: { notifications: [], unreadCount: 0 } }));
+  await page.route("**/api/service-cities**", (route) => route.fulfill({ json: { cities: [] } }));
 }
 
 test("store registry shows business names and exports them without internal keys", async ({ page }) => {
   await session(page);
-  await page.route("**/api/partners/registry?**", (route) => route.fulfill({ json: { rows: [{ kind: "store", store, partnerRole: null }], nextCursor: "" } }));
+  await page.route("**/api/partners/workbench?**", (route) => route.fulfill({ json: { rows: [{ kind: "store", store, partnerRole: null }], nextCursor: "" } }));
   await page.goto("/partners");
   const table = page.getByRole("table");
   await expect(table.getByRole("link", { name: store.partnerName })).toBeVisible();
@@ -51,7 +53,7 @@ test("store profile keeps useful facts and actions without database IDs or versi
 
 test("missing display names never fall back to opaque keys", async ({ page }) => {
   await session(page);
-  await page.route("**/api/partners/registry?**", (route) => route.fulfill({ json: { rows: [{ kind: "store", store: { ...store, partnerName: undefined, serviceCityName: undefined, primaryVerticalName: undefined }, partnerRole: null }], nextCursor: "" } }));
+  await page.route("**/api/partners/workbench?**", (route) => route.fulfill({ json: { rows: [{ kind: "store", store: { ...store, partnerName: undefined, serviceCityName: undefined, primaryVerticalName: undefined }, partnerRole: null }], nextCursor: "" } }));
   await page.goto("/partners");
   await expect(page.getByRole("table")).not.toContainText("opaque_internal");
   await expect(page.getByRole("link", { name: "ملف الشريك", exact: true })).toBeVisible();

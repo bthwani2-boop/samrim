@@ -1,5 +1,6 @@
 "use client";
 
+import { TextArea } from "@bthwani/design-system/web";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DistanceFeePolicy, DistanceFeeBand } from "../../server/dsh/dsh-bff";
 import { useSession } from "../../session/session-provider";
@@ -181,7 +182,7 @@ export function DeliveryFeePolicyWorkspace(){
    <small className="delivery-tariff-estimate-note">معاينة حسابية للقيم المعروضة، وليست تسعيرًا معتمدًا حتى الحفظ.</small>
    {canEdit?<div className="delivery-tariff-commit">
     <label htmlFor="delivery-policy-reason">سبب التعديل
-     <textarea id="delivery-policy-reason" rows={2} minLength={5} maxLength={500}
+     <TextArea className="resize-none" id="delivery-policy-reason" rows={2} minLength={5} maxLength={500}
       value={reason} onChange={e=>setReason(e.target.value)} disabled={busy} placeholder="اذكر سبب تغيير الأسعار"/>
     </label>
     {error?<p role="alert" className="validation-error">{error}</p>:null}

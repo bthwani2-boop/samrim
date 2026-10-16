@@ -61,6 +61,22 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if first.Summary.TotalCount != 3 || first.Summary.ActionableCount != 3 || first.Summary.AwaitingDispatchCount != 3 || first.Summary.ActiveCount != 0 || first.Summary.DeliveredCount != 0 || first.Summary.MeasuredAt.IsZero() {
 			t.Fatalf("first-page summary must cover all filtered results, not the two loaded rows: %+v", first.Summary)
 		}
+		scoped, err := postgres.ListOrdersForOperatorStore(ctx, db, "READY_FOR_DISPATCH", "", "updated_desc", true, 2, "", "store_operator_ops")
+		if err != nil || len(scoped.Operations) != 2 || scoped.Summary.TotalCount != 3 || scoped.NextCursor == "" {
+			t.Fatalf("Store-scoped operator first page must preserve exact Store totals: %+v err=%v", scoped, err)
+		}
+		scopedNext, err := postgres.ListOrdersForOperatorStore(ctx, db, "READY_FOR_DISPATCH", "", "updated_desc", true, 2, scoped.NextCursor, "store_operator_ops")
+		if err != nil || len(scopedNext.Operations) != 1 || scopedNext.Summary.TotalCount != 3 {
+			t.Fatalf("Store-scoped pagination lost an order or changed totals: %+v err=%v", scopedNext, err)
+		}
+		if _, err := postgres.ListOrdersForOperatorStore(ctx, db, "READY_FOR_DISPATCH", "", "updated_desc", true, 2, scoped.NextCursor, "another_store"); !errors.Is(err, postgres.ErrOperatorOperationInvalidCursor) {
+			t.Fatalf("cross-Store continuation was accepted: %v", err)
+		}
+		scopedEmpty, err := postgres.ListOrdersForOperatorStore(ctx, db, "", "", "updated_desc", false, 10, "", "another_store")
+		if err != nil || scopedEmpty.Summary.TotalCount != 0 || len(scopedEmpty.Operations) != 0 {
+			t.Fatalf("Store-scoped read leaked orders from another Store: %+v err=%v", scopedEmpty, err)
+		}
+
 		second, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", "", "updated_desc", true, 2, first.NextCursor)
 		if err != nil || len(second.Operations) != 1 || second.Operations[0].OrderID != "operator_order_01" || second.NextCursor != "" {
 			t.Fatalf("second operator operations page is not stable: %+v err=%v", second, err)

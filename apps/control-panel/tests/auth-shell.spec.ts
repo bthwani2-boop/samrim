@@ -352,24 +352,14 @@ test("authenticated operator discovers the platform centers through workspace na
   await expect(page).toHaveURL(/\/access$/);
   await expect(page.locator('#workspace-navigation a[href="/access"][aria-current="page"]')).toHaveAttribute("href", "/access");
   await expect(page.getByRole("heading", { name: "الوصول والصلاحيات", exact: true, level: 1 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "طلبات الوصول من الموارد البشرية", level: 2 })).toBeVisible();
-  const accessTabs = page.getByRole("navigation", { name: "أقسام الوصول والصلاحيات" });
-  await accessTabs.getByRole("link", { name: "حسابات المشغّلين" }).click();
-  await expect(page).toHaveURL(/\/access\?view=operators$/);
-  await expect(page.getByRole("heading", { name: "ملفات المشغّلين", level: 2 })).toBeVisible();
-  await accessTabs.getByRole("link", { name: "الصلاحيات", exact: true }).click();
-  await expect(page).toHaveURL(/\/access\?view=permissions$/);
-  await expect(page.getByRole("heading", { name: "حسابات المشغّلين", level: 2 })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "بحث بالاسم أو الهاتف أو المسمى أو القسم" })).toBeVisible();
+  await expect(page.locator(".access-center-table")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "أقسام الوصول والصلاحيات" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "بحث عن موظف أو مشغّل" })).toBeVisible();
   await expect(page.locator(".access-table")).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await page.reload();
-  await expect(page).toHaveURL(/\/access\?view=permissions$/);
-  await expect(page.getByRole("heading", { name: "الوصول والصلاحيات", exact: true, level: 1 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "حسابات المشغّلين", level: 2 })).toBeVisible();
-  await page.getByRole("navigation", { name: "أقسام الوصول والصلاحيات" }).getByRole("link", { name: "حسابات المشغّلين" }).click();
-  await expect(page).toHaveURL(/\/access\?view=operators$/);
-  await expect(page.getByRole("heading", { name: "ملفات المشغّلين", level: 2 })).toBeVisible();
+  await expect(page).toHaveURL(/\/access$/);
+  await expect(page.locator(".access-center-table")).toBeVisible();
 });
 
 test("operator without operator-administration authority cannot open access or profile controls", async ({ page }) => {
@@ -552,30 +542,21 @@ test("workspace navigation keeps captain operations and field partners in their 
   await expect(navigation.getByRole("link", { name: "الشركاء", exact: true })).toHaveCount(1);
 });
 
-test("partner registry, joining queue, and stores are separate workspace destinations", async ({ page }) => {
+test("partners have one canonical workspace and preserve legacy joining deep links", async ({ page }) => {
   await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "partners"]);
   const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
 
   await page.goto("/partners");
   await expect(page.getByRole("heading", { name: "الشركاء والمتاجر", exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "الشركاء والمتاجر" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "طابور حالات انضمام الشركاء" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "إضافة شريك", exact: true })).toHaveCount(0);
-  const partnerTabs = navigation.getByRole("list", { name: "مسارات الشركاء" });
-  await expect(partnerTabs.getByRole("link", { name: "الطلبات والاعتمادات", exact: true })).toHaveAttribute("href", "/partners/joining");
-  await expect(partnerTabs.getByRole("link", { name: "الشركاء والمتاجر", exact: true })).toHaveAttribute("href", "/partners");
-  await expect(navigation.getByRole("link", { name: "الطلبات والاعتمادات", exact: true })).toHaveCount(1);
-  await expect(navigation.getByRole("link", { name: "الشركاء والمتاجر", exact: true })).toHaveCount(1);
-  await expect(navigation.getByRole("link", { name: "إضافة شريك", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "السجل الموحد للشركاء والمتاجر" })).toBeVisible();
+  const children = navigation.getByRole("list", { name: "مسارات الشركاء" });
+  await expect(children.getByRole("link", { name: "الميداني", exact: true })).toHaveAttribute("href", "/fields");
+  await expect(children.getByRole("link", { name: "الشركاء والمتاجر", exact: true })).toHaveCount(0);
+  await expect(children.getByRole("link", { name: "الطلبات والاعتمادات", exact: true })).toHaveCount(0);
 
-  await page.goto("/partners/joining");
-  await expect(page.getByRole("heading", { name: "الطلبات والاعتمادات", exact: true })).toBeVisible();
-  await expect(partnerTabs.getByRole("link", { name: "الطلبات والاعتمادات", exact: true })).toHaveAttribute("aria-current", "page");
-
-  await page.goto("/");
-  await expect(page.locator("a[href=\"/partners/joining?state=admission_requested\"]").first()).toBeVisible();
-  await expect(page.locator('a[href="/partners/joining?state=admission_requested"]').first()).toHaveAttribute("href", "/partners/joining?state=admission_requested");
-  await expect(page.locator('a[href="/partners/joining?state=submitted"]').first()).toHaveAttribute("href", "/partners/joining?state=submitted");
+  await page.goto("/partners/joining?state=submitted");
+  await expect(page).toHaveURL(/\/partners\?.*view=joining/);
+  await expect(page.getByRole("heading", { name: "الشركاء والمتاجر", exact: true })).toBeVisible();
 });
 
 test("finance and marketing centers expose only real independent resource routes", async ({ page }) => {
@@ -803,13 +784,9 @@ test("operator direct navigation to access exposes the canonical access capabili
   });
   await page.goto("/access");
   await expect(page.getByRole("heading", { name: "الوصول والصلاحيات", exact: true, level: 1 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "طلبات الوصول من الموارد البشرية", level: 2 })).toBeVisible();
+  await expect(page.locator(".access-center-table")).toBeVisible();
   await expect(page.locator("details.access-create-disclosure")).toHaveCount(0);
-  const sections = page.getByRole("navigation", { name: "أقسام الوصول والصلاحيات" });
-  await sections.getByRole("link", { name: "حسابات المشغّلين" }).click();
-  await expect(page.getByRole("heading", { name: "ملفات المشغّلين", level: 2 })).toBeVisible();
-  await sections.getByRole("link", { name: "الصلاحيات", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "حسابات المشغّلين", level: 2 })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "أقسام الوصول والصلاحيات" })).toHaveCount(0);
 });
 
 test("operator permission coverage filters the server page and starts a fresh cursor", async ({ page }) => {
@@ -831,7 +808,7 @@ test("operator permission coverage filters the server page and starts a fresh cu
   });
 
   await page.goto("/access?view=permissions");
-  await expect(page.getByRole("heading", { name: "حسابات المشغّلين" })).toBeVisible();
+  await expect(page.locator(".access-center-table")).toBeVisible();
   const coverageFilter = page.getByLabel("تصفية حسب نطاق الصلاحيات");
   await coverageFilter.selectOption("some");
   await expect.poll(() => requests.some((request) => new URL(request).searchParams.get("permissionCoverage") === "some")).toBe(true);
@@ -879,9 +856,10 @@ test("an HR-linked operator profile is approved, admitted, and invited without d
   await page.goto("/access?view=operators");
   await expect(page.getByText(profile.fullNameAr)).toBeVisible();
   await expect(page.locator("#operator-profile-name")).toHaveCount(0);
-  await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
-  await page.getByRole("button", { name: "منح دور المشغّل", exact: true }).click();
-  await page.getByRole("button", { name: "إصدار دعوة التفعيل", exact: true }).click();
+  await page.locator(".access-center-table").getByRole("button", { name: "اعتماد الملف", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "اعتماد الملف", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "منح الدور", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "إصدار دعوة", exact: true }).click();
   await expect(page.getByText("operator-enrollment-proof-code-123456", { exact: true })).toBeVisible();
   expect(actions).toEqual(["approve", "grant", "invitation"]);
 });
@@ -920,13 +898,16 @@ test("operator access keeps phone discovery separate from actorId mutation", asy
     await route.fulfill({ status: 204 });
   });
   await page.goto("/access?view=permissions");
-  await page.getByRole("button", { name: "عرض التفاصيل" }).click();
-  const operatorDetails = page.getByRole("dialog");
-  await expect(operatorDetails.getByText("+96777000102", { exact: true })).toBeVisible();
+  await page.locator(".access-center-table").getByRole("button", { name: "مراجعة الصلاحيات" }).click();
+  await page.getByRole("dialog").getByRole("link", { name: "فتح ملف المشغّل الكامل" }).click();
+  await expect(page).toHaveURL(/\/access\/operators\/%2B96777000102$/);
+  await expect(page.getByText("+96777000102", { exact: true })).toBeVisible();
   await expect(page.getByText("act_operator_canonical")).toHaveCount(0);
+  await page.getByRole("tab", { name: "الصلاحيات والتحكم" }).click();
+  const operatorDetails = page.getByRole("tabpanel", { name: "الصلاحيات والتحكم" });
   await operatorDetails.locator("details.access-account-controls").last().locator("summary").click();
   await operatorDetails.locator("#access-reason").fill("مراجعة صلاحية الحساب");
-  await page.getByRole("button", { name: "إيقاف الدور" }).click();
+  await operatorDetails.getByRole("button", { name: "إيقاف الدور" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_operator_canonical", role: "operator", action: "disable-role", expectedVersion: 3 });
 });
 
@@ -1746,7 +1727,7 @@ test("operator creates a canonical commerce vertical before onboarding partners"
 
   await page.locator("#catalog-vertical-reason").fill("إنشاء فئة جديدة للاختبار");
   await page.getByRole("button", { name: "إضافة نشاط تجاري" }).click();
-  await expect(page.getByLabel("النشاط التجاري")).toHaveValue("vertical_0123456789abcdef0123456789abcdef");
+  await expect(page.getByLabel("المجال التجاري")).toHaveValue("vertical_0123456789abcdef0123456789abcdef");
   expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", active: true, reason: "إنشاء فئة جديدة للاختبار" });
 });
 
@@ -1815,7 +1796,7 @@ test("operator creates a product category under its commerce vertical", async ({
   });
   await page.goto("/catalog/categories?verticalId=vertical_0123456789abcdef0123456789abcdef");
   await expect(page.getByRole("region", { name: "إدارة الفئات" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "إدارة الفئات" }).locator("#catalog-category-registry-title")).toHaveText("فئات النشاط المحدد");
+  await expect(page.getByRole("region", { name: "إدارة الفئات" }).locator("#catalog-category-registry-title")).toHaveText("فئات المجال المحدد");
   await expect(page.locator(".catalog-taxonomy-workspace")).toHaveCount(1);
   await expect(page.locator(".catalog-taxonomy-workspace > .catalog-taxonomy-workbench")).toHaveCount(1);
   await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(2);

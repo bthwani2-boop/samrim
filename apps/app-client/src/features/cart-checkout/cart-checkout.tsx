@@ -331,7 +331,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
     const mixedWalletDefault = wallet.kind === "ready" ? Math.min(wallet.availableMinor, quote.quote.totalAmountMinor - 1) : 0;
     const mixedWalletAmount = mixedWalletInput.trim() ? parseMinorAmount(mixedWalletInput) : mixedWalletDefault;
     const internalBalanceAmountMinor = paymentChoice === "cash" ? 0 : paymentChoice === "wallet" ? quote.quote.totalAmountMinor : mixedWalletAmount;
-    if (paymentChoice !== "cash" && (wallet.kind !== "ready" || internalBalanceAmountMinor === null || internalBalanceAmountMinor <= 0 || internalBalanceAmountMinor > wallet.availableMinor || (paymentChoice === "wallet" && wallet.availableMinor < quote.quote.totalAmountMinor) || (paymentChoice === "mixed" && internalBalanceAmountMinor >= quote.quote.totalAmountMinor))) {
+    if (internalBalanceAmountMinor === null || (paymentChoice !== "cash" && (wallet.kind !== "ready" || internalBalanceAmountMinor <= 0 || internalBalanceAmountMinor > wallet.availableMinor || (paymentChoice === "wallet" && wallet.availableMinor < quote.quote.totalAmountMinor) || (paymentChoice === "mixed" && internalBalanceAmountMinor >= quote.quote.totalAmountMinor)))) {
       setError("الرصيد المتاح غير كافٍ لطريقة الدفع المختارة. اشحن المحفظة أو اختر الدفع النقدي.");
       return;
     }

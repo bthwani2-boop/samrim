@@ -1,5 +1,5 @@
-import { expect, test } from "./coverage-fixtures";
 import { canManagePolicy, policyCapabilities } from "../src/features/policies/policy-capabilities";
+import { expect, test } from "./coverage-fixtures";
 
 test("catalog retains its existing product register and contextual secondary tools", async ({ page }) => {
   let proposalReads = 0;
@@ -23,7 +23,7 @@ test("catalog retains its existing product register and contextual secondary too
   await expect(page.getByRole("button", { name: "جدول المنتجات" })).toBeVisible();
   await expect(page.getByRole("button", { name: "معرض الصور" })).toBeVisible();
   expect(proposalReads).toBe(0);
-  await page.locator("summary").filter({ hasText: "مقترحات الشركاء" }).click();
+  await page.getByRole("group", { name: "إدارة الكتالوج" }).getByRole("button", { name: "مقترحات الشركاء" }).click();
   await expect.poll(() => proposalReads).toBeGreaterThan(0);
 });
 
@@ -330,7 +330,17 @@ test("captain minimum balance is managed centrally and refreshes the real policy
   await row.getByRole("button",{name:"معاينة الحد الأدنى لرصيد الكابتن"}).click();
   const peek=studio.getByRole("dialog",{name:"معاينة الحد الأدنى لرصيد الكابتن"});
   await expect(peek).toContainText("رفع الحد للطلبات");
-  await expect(peek).toContainText("operator");
+  const peekBounds = await peek.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return { top: rect.top, bottom: rect.bottom, viewportHeight: window.innerHeight };
+  });
+  expect(peekBounds.top).toBeGreaterThanOrEqual(0);
+  expect(peekBounds.bottom).toBeLessThanOrEqual(peekBounds.viewportHeight);
+  const operatorReference = peek.getByText("operator", { exact: true });
+  await expect(operatorReference).toBeHidden();
+  await peek.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await peek.getByText("بيانات التدقيق", { exact: true }).click();
+  await expect(operatorReference).toBeVisible();
 });
 
 test("unconfigured captain minimum balance is not silently invented", async ({page})=>{

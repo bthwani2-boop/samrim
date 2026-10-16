@@ -4,16 +4,12 @@ import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HREmployee, HREmployeeInput, HREmployeePage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
+import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { PageHeader } from "../../shell/page-header";
-import { useReadOnReturn } from "../shared/use-read-on-return";
 import { ActivityIndicator, ActivityLegend } from "../shared/record-indicator";
-import { EmployeeAccessRequest } from "./employee-access-request";
-import { EmployeeAttendance } from "./employee-attendance";
-import { EmployeeAuditHistory } from "./employee-audit-history";
-import { EmployeeEmploymentStatus } from "./employee-employment-status";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 import { EmployeeManagerSelect } from "./employee-manager-select";
-import { EmployeeOperatorAccess } from "./employee-operator-access";
-import { EmployeeProfileEditor } from "./employee-profile-editor";
+import { EmployeeProfileWorkspace } from "./employee-profile-workspace";
 
 const blank: HREmployeeInput = {
   fullNameAr: "", phoneE164: "",
@@ -42,16 +38,11 @@ export function EmployeeDirectory() {
   const [cursor, setCursor] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [nextCursor, setNextCursor] = useState("");
-  const [selected, setSelected] = useState<HREmployee | null>(null);
-  const [fileOpen, setFileOpen] = useState(false);
-  const [fileDirty, setFileDirty] = useState(false);
-  const [pendingEmployee, setPendingEmployee] = useState<HREmployee | null>(null);
-  const fileRef = useRef<HTMLDialogElement>(null);
-  const switchRef = useRef<HTMLDialogElement>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [selectedEmployee, setSelectedEmployee] = useState("");
   const mutation = useRef<{ signature: string; key: string } | null>(null);
 
   const load = useCallback(async (overrides?: { q: string; cursor: string }) => {
@@ -72,25 +63,35 @@ export function EmployeeDirectory() {
     } finally { setLoading(false); }
   }, [applied, cursor]);
 
+  useEffect(() => {
+    const sync = () => setSelectedEmployee(new URLSearchParams(window.location.search).get("employee")?.slice(0, 160) ?? "");
+    sync();
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
+
+  const openEmployee = (employeeId: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("employee", employeeId);
+    window.history.pushState({ ...window.history.state }, "", url.pathname + url.search + url.hash);
+    setSelectedEmployee(employeeId);
+  };
+  const closeEmployee = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("employee");
+    url.searchParams.delete("tab");
+    window.history.pushState({ ...window.history.state }, "", url.pathname + url.search + url.hash);
+    setSelectedEmployee("");
+  };
+  const selectedIndex = items.findIndex((item) => item.id === selectedEmployee);
+  const selectedItem = selectedIndex >= 0 ? items[selectedIndex] : undefined;
+  const moveSelection = (offset: number) => {
+    const nextItem = items[selectedIndex + offset];
+    if (nextItem) openEmployee(nextItem.id);
+  };
+
   useEffect(() => { void load(); }, [load]);
-  useReadOnReturn(() => load(), !loading && !saving && !formOpen && !fileOpen && !fileDirty);
-
-  useEffect(() => {
-    if (fileOpen && selected && !fileRef.current?.open) fileRef.current?.showModal();
-  }, [fileOpen, selected]);
-
-  useEffect(() => {
-    if (pendingEmployee && !switchRef.current?.open) switchRef.current?.showModal();
-  }, [pendingEmployee]);
-
-  function openEmployee(person: HREmployee) {
-    if (selected?.id !== person.id) {
-      if (fileDirty) { setPendingEmployee(person); return; }
-      setFileDirty(false);
-      setSelected(person);
-    }
-    setFileOpen(true);
-  }
+  useReadOnReturn(() => load(), !loading && !saving && !formOpen);
 
   function update<K extends keyof HREmployeeInput>(key: K, value: HREmployeeInput[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -140,20 +141,22 @@ export function EmployeeDirectory() {
       setHistory([]);
       setApplied("");
       setQuery("");
-      if (!fileDirty) {
-        setSelected(result.employee);
-        setFileOpen(true);
-      }
-      await load({ q: "", cursor: "" });
+      openEmployee(result.employee.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر تسجيل الموظف. يمكنك إعادة المحاولة دون تكرار الطلب.");
     } finally { setSaving(false); }
   }
 
-  return <section className="workspace-page access-page hr-directory" aria-labelledby="hr-title">
+  return <AdaptiveRecordWorkspace preferenceKey="employees" open={Boolean(selectedEmployee)} onClose={closeEmployee}
+    detail={<AdaptiveRecordPanel title="ملف الموظف"
+      onClose={closeEmployee} onPrevious={selectedIndex > 0 ? () => moveSelection(-1) : undefined}
+      onNext={selectedIndex >= 0 && selectedIndex < items.length - 1 ? () => moveSelection(1) : undefined}>
+      {selectedEmployee ? <EmployeeProfileWorkspace key={selectedEmployee} employeeId={selectedEmployee} embedded /> : null}
+    </AdaptiveRecordPanel>}>
+  <section className="workspace-page access-page hr-directory" aria-labelledby="hr-title">
     <PageHeader id="hr-title" title="الموارد البشرية" actions={<button type="button" className="button button-primary" onClick={() => { setFormOpen((v) => !v); setError(""); }} aria-expanded={formOpen} aria-controls="employee-create">إضافة موظف</button>} />
 
-    {formOpen ? <form id="employee-create" className="access-create-form" onSubmit={(event) => void save(event)}>
+    {formOpen ? <form id="employee-create" className="access-create-form" noValidate onSubmit={(event) => void save(event)}>
       <h2>ملف موظف جديد</h2>
       <p className="muted">إضافة الموظف لا تمنح صلاحيات دخول. وتُستكمل بيانات الراتب ضمن صلاحيات سرية لاحقًا.</p>
       <label className="field-label">الاسم الكامل<input required minLength={2} maxLength={120} autoComplete="name" value={form.fullNameAr} onChange={(e) => update("fullNameAr", e.target.value)} /></label>
@@ -170,7 +173,7 @@ export function EmployeeDirectory() {
     </form> : null}
     {notice ? <p role="status" className="success-inline">{notice}</p> : null}
     {error ? <div role="alert" className="managed-status managed-status-warning"><p>{error}</p><button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading || saving}>إعادة تحميل السجل</button></div> : null}
-    <form className="form-actions" onSubmit={(e) => { e.preventDefault(); setApplied(query.trim()); setCursor(""); setHistory([]); }}>
+    <form className="form-actions" noValidate onSubmit={(e) => { e.preventDefault(); setApplied(query.trim()); setCursor(""); setHistory([]); }}>
       <label className="field-label">البحث عن موظف<input aria-label="ابحث عن موظف أو قسم" maxLength={80} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="الاسم أو القسم" /></label>
       <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
     </form>
@@ -178,21 +181,21 @@ export function EmployeeDirectory() {
       <table className="operations-table access-table">
         <caption className="visually-hidden">دليل موظفي بثواني</caption>
         <thead><tr><th scope="col">الموظف</th><th scope="col">القسم</th><th scope="col">المسمى</th><th scope="col">النوع</th><th scope="col" className="indicator-column">الحالة</th><th scope="col">التفاصيل</th></tr></thead>
-        <tbody>{items.map((person) => <tr key={person.id}>
+        <tbody>{items.map((person, index) => <tr key={person.id}>
           <th scope="row">{person.fullNameAr}</th><td>{person.department}</td><td>{person.jobTitle}</td>
           <td>{person.operatorActorId ? "مرتبط بهوية تشغيل" : "بلا هوية تشغيل"}</td>
           <td className="indicator-column"><ActivityIndicator active={person.status === "active"} inactiveLabel="غير نشط" /></td>
-          <td><button className="button button-quiet" type="button" aria-label={`فتح ملف ${person.fullNameAr}`} onClick={() => openEmployee(person)}>التفاصيل</button></td>
+          <td><button type="button" className="button button-quiet" aria-label={`فتح ملف ${person.fullNameAr}`} data-adaptive-record-trigger={`employee-${index}`} onClick={() => openEmployee(person.id)}>فتح الملف</button></td>
         </tr>)}
         {!loading && !error && items.length === 0 ? <tr><td colSpan={6}>لا يوجد موظفون مطابقون للبحث.</td></tr> : null}
         {loading ? <tr><td colSpan={6}>جارٍ تحميل الموظفين…</td></tr> : null}</tbody>
       </table>
     </div>
     <ul className="employee-mobile-list" aria-label="موظفو الصفحة الحالية" aria-busy={loading}>
-      {items.map((person) => <li className="employee-mobile-card" key={person.id}>
+      {items.map((person, index) => <li className="employee-mobile-card" key={person.id}>
         <div className="employee-mobile-heading"><strong>{person.fullNameAr}</strong><ActivityIndicator active={person.status === "active"} inactiveLabel="غير نشط" /></div>
         <dl><div><dt>القسم</dt><dd>{person.department}</dd></div><div><dt>المسمى</dt><dd>{person.jobTitle}</dd></div><div><dt>الارتباط</dt><dd>{person.operatorActorId ? "هوية تشغيل مرتبطة" : "بلا هوية تشغيل"}</dd></div></dl>
-        <button className="button button-secondary" type="button" aria-label={`فتح ملف ${person.fullNameAr}`} onClick={() => openEmployee(person)}>فتح الملف</button>
+        <button type="button" className="button button-secondary" aria-label={`فتح ملف ${person.fullNameAr}`} data-adaptive-record-trigger={`employee-${index}`} onClick={() => openEmployee(person.id)}>فتح الملف</button>
       </li>)}
       {!loading && !error && items.length === 0 ? <li className="collection-state">لا يوجد موظفون مطابقون للبحث.</li> : null}
     </ul>
@@ -201,39 +204,6 @@ export function EmployeeDirectory() {
       <button className="button button-secondary" type="button" disabled={history.length === 0 || loading} onClick={() => { const stack = [...history]; setCursor(stack.pop() ?? ""); setHistory(stack); }}>السابق</button>
       <button className="button button-secondary" type="button" disabled={!nextCursor || loading} onClick={() => { setHistory((current) => [...current, cursor]); setCursor(nextCursor); }}>التالي</button>
     </div>
-    {selected ? <dialog ref={fileRef} className="employee-file-dialog" aria-label="تفاصيل الموظف" onClose={() => setFileOpen(false)} onChange={() => setFileDirty(true)}>
-      <div className="access-section-heading"><h2>{selected.fullNameAr}</h2><button type="button" className="button button-quiet" onClick={() => fileRef.current?.close()}>إغلاق</button></div>
-      <p className="muted">إغلاق الملف يحفظ مسودتك في هذه الجلسة؛ افتح الموظف نفسه لاستكمالها.</p>
-      <dl>
-        <dt>القسم</dt><dd>{selected.department}</dd>
-        <dt>المسمى</dt><dd>{selected.jobTitle}</dd>
-        <dt>تاريخ الانضمام</dt><dd>{selected.startDate}</dd>
-        <dt>موقع العمل</dt><dd>{selected.workLocation}</dd>
-        <dt>الوصول للوحة التحكم</dt><dd>{selected.operatorActorId ? "هوية تشغيل مرتبطة؛ تحقق من حالة الوصول أدناه" : "لا توجد هوية تشغيل مرتبطة"}</dd>
-      </dl>
-      <EmployeeProfileEditor key={selected.id} employee={selected} colleagues={items} onSaved={(next)=>{setSelected(next);setItems((list)=>list.map((person)=>person.id===next.id?next:person))}} />
-      <EmployeeAccessRequest key={`${selected.id}-access`} employee={selected} />
-      <EmployeeOperatorAccess key={`${selected.id}-operator-access`} employee={selected} />
-      <EmployeeEmploymentStatus key={`${selected.id}-employment-status`} employee={selected} onSaved={(next)=>{setSelected(next);setItems((list)=>list.map((person)=>person.id===next.id?next:person));}} />
-      <details className="employee-file-section">
-        <summary>الحضور والتصحيحات اليدوية</summary>
-        <EmployeeAttendance key={selected.id + "-attendance"} employeeId={selected.id} />
-      </details>
-      <EmployeeAuditHistory key={`${selected.id}-audit`} employee={selected} />
-      <details className="employee-file-section employee-technical-details">
-        <summary>معرّف تقني</summary>
-        <dl><dt>معرّف الموظف</dt><dd><bdi dir="ltr">{selected.id}</bdi></dd></dl>
-      </details>
-    </dialog> : null}
-    {pendingEmployee ? <dialog ref={switchRef} aria-labelledby="employee-switch-title" onClose={() => setPendingEmployee(null)}>
-      <h2 id="employee-switch-title">فتح ملف موظف آخر</h2>
-      <p>أدخلت تعديلات في الملف الحالي. إذا لم تحفظها، ستفقدها عند فتح ملف {pendingEmployee.fullNameAr}.</p>
-      <div className="form-actions">
-        <button type="button" className="button button-secondary" onClick={() => switchRef.current?.close()}>الاحتفاظ بالملف الحالي</button>
-        <button type="button" className="button button-primary" onClick={() => {
-          setFileDirty(false); setSelected(pendingEmployee); setPendingEmployee(null); setFileOpen(true);
-        }}>فتح الملف الآخر</button>
-      </div>
-    </dialog> : null}
-  </section>;
+  </section>
+  </AdaptiveRecordWorkspace>;
 }

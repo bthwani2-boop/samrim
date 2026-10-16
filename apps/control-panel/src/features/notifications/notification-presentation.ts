@@ -18,3 +18,22 @@ export function notificationHref(item: Pick<Notification, "orderId" | "joiningCa
   if (item.orderId.trim()) return `/operations/${encodeURIComponent(item.orderId.trim())}`;
   return null;
 }
+
+export function notificationTitle(item: Pick<Notification, "title" | "orderId">): string {
+  return withoutInternalOrderKey(item.title, item.orderId);
+}
+
+export function notificationBody(item: Pick<Notification, "body" | "orderId">): string {
+  return withoutInternalOrderKey(item.body, item.orderId);
+}
+
+function withoutInternalOrderKey(text: string, orderId: string): string {
+  const internalKey = orderId.trim();
+  if (!internalKey || !text.includes(internalKey)) return text;
+
+  return text.split(internalKey).join("")
+    .replace(/\s+رقم(?=[\s.,،؛])/gu, "")
+    .replace(/\s{2,}/gu, " ")
+    .replace(/\s+([.,،؛])/gu, "$1")
+    .trim();
+}

@@ -61,6 +61,7 @@ export function themeToCssVariables(themeColors: ThemeColors): Record<string, st
     "--surface-base": themeColors.surface,
     "--surface-muted": themeColors.surfaceInset,
     "--surface-overlay": themeColors.surfaceOverlay,
+    "--overlay-scrim": themeColors.overlayScrim,
     "--text-muted": themeColors.colorMuted,
     "--color-primary": themeColors.color,
     "--color-secondary": themeColors.colorSecondary,

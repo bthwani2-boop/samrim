@@ -1,7 +1,8 @@
 "use client";
-import { useReadOnReturn } from "../shared/use-read-on-return";
+import { TextArea } from "@bthwani/design-system/web";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 import type { HRAccessRequest, HRAccessRequestPage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { operatorWorkspacePermissions } from "../../session/operator-permissions";
@@ -106,8 +107,8 @@ export function HROperatorAccessQueue() {
     </div>:null}
     {selected.state==="identity_provisioning"?<button type="button" className="button button-primary" disabled={!!busy} onClick={()=>void openProfile(selected.id)}>استكمال إنشاء ملف المراجعة</button>:null}
     {rejecting===selected.id&&selected.state==="pending_review"?<div className="form-section form-section--w420">
-     <label className="field-label">سبب الرفض
-      <textarea required minLength={8} maxLength={500} rows={3} value={rejectReason} onChange={(e)=>{setRejectReason(e.target.value);rejectMutation.current=null}}/>
+      <label className="field-label" htmlFor="hr-access-rejection-reason">سبب الرفض
+       <TextArea className="resize-none" id="hr-access-rejection-reason" required minLength={8} maxLength={500} rows={3} value={rejectReason} onChange={(e)=>{setRejectReason(e.target.value);rejectMutation.current=null}}/>
      </label>
      <div className="form-actions">
       <button type="button" className="button button-secondary" disabled={!!busy||rejectReason.trim().length<8} onClick={()=>void rejectRequest(selected)}>تأكيد الرفض</button>

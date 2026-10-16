@@ -89,12 +89,13 @@ export function CatalogTrash() {
       {!loading && !error && visible.length > 0 ? (
         <div className="partner-stores-table-wrap">
           <table className="operations-table">
-            <thead><tr><th scope="col">المنتج</th><th scope="col">تاريخ الحذف</th><th scope="col">بواسطة</th><th scope="col">السبب</th><th scope="col">الإجراء</th></tr></thead>
+            <thead><tr><th scope="col">المنتج</th><th scope="col">تاريخ الحذف</th><th scope="col">السبب</th><th scope="col">الإجراء</th></tr></thead>
             <tbody>{visible.map((product) => (
               <tr key={product.id}>
-                <th scope="row">{product.canonicalName}<div className="muted"><bdi dir="ltr">{product.id}</bdi></div></th>
+                <th scope="row">{product.canonicalName}
+                  {product.deletedBy ? <details><summary>تفاصيل التدقيق</summary><dl><dt>معرّف منفذ الحذف</dt><dd><bdi dir="ltr">{product.deletedBy}</bdi></dd></dl></details> : null}
+                </th>
                 <td>{product.deletedAt ? new Date(product.deletedAt).toLocaleString("ar-YE") : "—"}</td>
-                <td><bdi dir="ltr">{product.deletedBy || "—"}</bdi></td>
                 <td>{product.deletionReason || "—"}</td>
                 <td>
                   {confirmId === product.id ? (

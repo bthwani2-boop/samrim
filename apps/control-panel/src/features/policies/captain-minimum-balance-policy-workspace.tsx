@@ -1,4 +1,5 @@
 "use client";
+import { TextArea } from "@bthwani/design-system/web";
 import { useCallback, useEffect, useState } from "react";
 import type { CaptainMinimumBalancePolicy } from "../../server/dsh/dsh-bff";
 import { useSession } from "../../session/session-provider";
@@ -72,7 +73,7 @@ export function CaptainMinimumBalancePolicyWorkspace() {
     <input id="captain-min-balance" type="number" min="1" step="1" value={amount} onChange={e=>setAmount(e.target.value)} disabled={!canEdit||busy} />
    </label>
    <label className="field-label" htmlFor="captain-min-reason">سبب الاعتماد أو التعديل
-    <textarea id="captain-min-reason" rows={2} minLength={5} maxLength={500} value={reason} onChange={e=>setReason(e.target.value)} disabled={!canEdit||busy}/>
+     <TextArea className="resize-none" id="captain-min-reason" rows={2} minLength={5} maxLength={500} value={reason} onChange={e=>setReason(e.target.value)} disabled={!canEdit||busy}/>
    </label>
    {canEdit?<button type="button" className="button button-primary" onClick={()=>void save()} disabled={!valid||busy}>{busy?"جارٍ التفعيل…":policy?"اعتماد الحد المعدل":"اعتماد أول حد"}</button>:null}
   </div>:null}

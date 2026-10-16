@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-export function StoreLogo({ name, uri, imageLabel = "شعار" }: Readonly<{ name: string; uri?: string | null | undefined; imageLabel?: string }>) {
+export function StoreLogo({ name, uri, imageLabel = "شعار", allowPreview = true }: Readonly<{ name: string; uri?: string | null | undefined; imageLabel?: string; allowPreview?: boolean }>) {
   const [failedUri, setFailedUri] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
@@ -25,7 +25,7 @@ export function StoreLogo({ name, uri, imageLabel = "شعار" }: Readonly<{ nam
   return (
     <>
       <span className="store-list-logo">
-        {validImage ? (
+        {validImage ? (!allowPreview ? <img src={uri!} alt={`${imageLabel} متجر ${name}`} loading="lazy" decoding="async" onError={() => setFailedUri(uri!)} /> :
           <button ref={triggerRef} className="store-logo-preview-trigger" type="button" title={`تكبير ${imageLabel} متجر ${name}`} aria-label={`تكبير ${imageLabel} متجر ${name}`} onClick={() => { setPreviewFailed(false); setPreviewOpen(true); }}>
             <img src={uri!} alt={`${imageLabel} متجر ${name}`} loading="lazy" decoding="async" onError={() => setFailedUri(uri!)} />
           </button>
@@ -33,7 +33,7 @@ export function StoreLogo({ name, uri, imageLabel = "شعار" }: Readonly<{ nam
           <span className="store-list-logo-placeholder" role="img" aria-label={`لا توجد صورة متاحة لمتجر ${name}`}>{name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => Array.from(word)[0]).join("") || "—"}</span>
         )}
       </span>
-      {previewOpen && validImage ? (
+      {previewOpen && validImage && allowPreview ? (
         <dialog ref={dialogRef} className="catalog-image-dialog" aria-modal="true" aria-label={`${imageLabel} متجر ${name}`} onClose={close}>
           <div className="action-row">
             <button className="button button-secondary" type="button" onClick={close}>إغلاق الصورة</button>

@@ -1014,6 +1014,31 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/operator/home-analytics:
+    get:
+      operationId: readOperatorHomeAnalytics
+      summary: Last seven Asia/Aden calendar days of orders created and their current statuses
+      description: Operator operations permission is required. Each count is across all orders created on that date, irrespective of pagination. Status is current at read time, not a historical daily snapshot.
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      responses:
+        "200":
+          description: All seven dates including empty days from one PostgreSQL snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/OperatorHomeAnalytics"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
   /dsh/operator/operations:
     get:
       operationId: listOperatorOperations
@@ -1069,6 +1094,50 @@ paths:
             application/json:
               schema:
                 $ref: "../dsh.openapi.yaml#/components/schemas/OperatorOperationsResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/operator/customers/{actorId}/orders:
+    get:
+      operationId: listOperatorCustomerOrders
+      summary: Read one customer's bounded order history and actor-wide operational analytics
+      description: Requires an active operator with marketing or operations permission for read-only customer purchase history. The cursor scope is bound to the customer actor identifier; operational mutations still require operations permission.
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: actorId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 15
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            maxLength: 512
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      responses:
+        "200":
+          description: The selected customer's paginated order list and whole-account performance metrics.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/OperatorCustomerOrdersResponse"
         "400":
           $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
         "401":

@@ -1,6 +1,5 @@
 "use client";
 
-import { PageHeader } from "../../shell/page-header";
 
 import { captainAssignmentStateLabel, captainHandoffStateLabel, formatMoney, formatOrderDate, fulfillmentModeLabel, type OperatorOperation, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
@@ -8,8 +7,10 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
-import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
+import { PageHeader } from "../../shell/page-header";
 import { OperationLocationMap } from "./operation-location-map";
+import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
+
 type PendingWalletCompensation = Readonly<{ adjustmentId: string; amountMinor: number }>;
 
 function WalletCompensationConfirmation({ amountMinor, onCancel, onConfirm }: Readonly<{
@@ -206,13 +207,10 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
   const countLabel = new Intl.NumberFormat("ar-YE").format(order.lines.length);
 
   return (
-    <section className="order-detail-workspace" aria-labelledby="order-operation-title">
-      {embedded ? (
-        <header className="ops-inline-detail-header">
-          <div><h2 id="order-operation-title">الطلب {order.id}</h2><p>{operation.storeName} · {orderStateLabel(order.state)}</p></div>
-          <button type="button" className="ops-close" onClick={onClose} aria-label="إغلاق تفاصيل الطلب">×</button>
-        </header>
-      ) : <PageHeader id="order-operation-title" title={<>طلب من {operation.storeName}</>} status={<span className="status-badge">{orderStateLabel(order.state)}</span>} actions={<Link className="button button-secondary" href={returnHref()}>الطلبات</Link>} />}
+    <section className="order-detail-workspace" aria-labelledby={embedded ? undefined : "order-operation-title"}>
+      {embedded
+        ? <p className="ops-inline-detail-context">{operation.storeName} · {orderStateLabel(order.state)}</p>
+        : <PageHeader id="order-operation-title" title={<>طلب من {operation.storeName}</>} status={<span className="status-badge">{orderStateLabel(order.state)}</span>} actions={<Link className="button button-secondary" href={returnHref()}>الطلبات</Link>} />}
 
       <div className="order-detail-toolbar">
         {action ? <button type="button" className={`button ${action === "recover" ? "button-secondary" : "button-primary"}`} onClick={() => void runAction()} disabled={busy || loading || actionNeedsReadback}>{busy ? "جارٍ تنفيذ الإجراء…" : operationActionLabel(action)}</button> : <span className="muted">لا يتطلب هذا الطلب إجراءً مباشرًا من المشغل.</span>}
@@ -235,6 +233,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
           <dl className="order-detail-facts">
 
             <div><dt>المتجر</dt><dd><Link href={`/partners/stores/${encodeURIComponent(order.storeId)}`}>{operation.storeName}</Link></dd></div>
+            <div><dt>العميل</dt><dd><Link href={`/customers/${encodeURIComponent(order.clientActorId)}`}>فتح ملف العميل</Link></dd></div>
             <div><dt>عدد العناصر</dt><dd>{countLabel}</dd></div>
             <div><dt>تاريخ الطلب</dt><dd><time dateTime={order.createdAt}>{formatOrderDate(order.createdAt)}</time></dd></div>
             <div><dt>آخر تحديث</dt><dd><time dateTime={order.updatedAt}>{formatOrderDate(order.updatedAt)}</time></dd></div>

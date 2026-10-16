@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
 import { OperationalIcon } from "../../shell/workspace-icon";
-import { policyCapabilities as policies, policyCapability, isPolicyKey, canManagePolicy, type PolicyResourceKey } from "./policy-capabilities";
-import { policyEditors } from "./policy-editors";
-import { PolicyQuickPeek, type PolicyPreviewState } from "./policy-quick-peek";
 import { PoliciesWorkspace } from "./policies-workspace";
+import { canManagePolicy, isPolicyKey, type PolicyResourceKey, policyCapabilities as policies, policyCapability } from "./policy-capabilities";
+import { policyEditors } from "./policy-editors";
 import { readFinancialPolicyPreviews } from "./policy-financial-preview";
+import { type PolicyPreviewState, PolicyQuickPeek } from "./policy-quick-peek";
 
 type DrawerMode = "manage" | "add" | "choose";
 
@@ -213,7 +213,8 @@ export function PoliciesCenterWorkspace() {
     const width = Math.min(340, window.innerWidth - 24);
     // Use viewport positioning so the preview remains anchored without reflowing the registry.
     const left = Math.max(12, Math.min(bounds.left - width + bounds.width, window.innerWidth - width - 12));
-    const top = Math.max(12, Math.min(bounds.bottom + 8, window.innerHeight - 290));
+    const maxHeight = Math.min(410, window.innerHeight - 24);
+    const top = Math.max(12, Math.min(bounds.bottom + 8, window.innerHeight - maxHeight - 12));
     setPeekStyle({ left, top, width });
     setPeekKey(key);
   }
@@ -286,18 +287,18 @@ export function PoliciesCenterWorkspace() {
       {!visible.length ? <li className="policy-rich-empty" role="status">لا توجد سياسة تطابق البحث.</li> : null}
     </ul>
     {peekKey ? <PolicyQuickPeek policy={policyCapability(peekKey)} preview={previews[peekKey]}
-      style={peekStyle} containerRef={peekRef} onClose={() => closePeek()}
+      position={peekStyle} containerRef={peekRef} onClose={() => closePeek()}
       /> : null}
 
-    <dialog ref={dialogRef} className="policy-rich-drawer" aria-labelledby={drawerMode === "choose" ? "policy-manage-drawer-title" : "policy-rich-drawer-title"}
+    <dialog ref={dialogRef} className="policy-rich-drawer workspace-side-drawer" aria-labelledby={drawerMode === "choose" ? "policy-manage-drawer-title" : "policy-rich-drawer-title"}
       onKeyDownCapture={(event) => { if (event.key === "Escape" && event.target instanceof HTMLElement && event.target.matches("input, textarea, select")) event.preventDefault(); }}
       onCancel={(event) => { event.preventDefault(); closeDrawer(); }}>
       {drawerMode === "choose" ? <>
-        <header className="policy-rich-drawer-header">
+        <header className="policy-rich-drawer-header workspace-side-drawer-header">
           <button ref={managementCloseButtonRef} type="button" className="policy-rich-close" aria-label="إغلاق إدارة السياسات" onClick={closeDrawer}>×</button>
           <div className="policy-rich-drawer-heading"><span className="policy-rich-icon"><OperationalIcon name="policies" /></span><h2 id="policy-manage-drawer-title">إدارة سياسة</h2></div>
         </header>
-        <div className="policy-rich-drawer-scroll policy-manage-chooser">
+        <div className="policy-rich-drawer-scroll workspace-side-drawer-scroll policy-manage-chooser">
           <label className="field-label" htmlFor="policy-manage-target">السياسة المعتمدة
             <select id="policy-manage-target" value={selected ?? ""} onChange={(event) => { const key = event.target.value; setSelected(isPolicyKey(key) ? key : null); }}>
               <option value="">اختر السياسة المطلوبة</option>
@@ -313,14 +314,14 @@ export function PoliciesCenterWorkspace() {
         </div>
       </> : null}
       {active && activeMeta ? <div className="policy-rich-content" hidden={drawerMode === "choose"}>
-        <header className="policy-rich-drawer-header">
+        <header className="policy-rich-drawer-header workspace-side-drawer-header">
           <button ref={closeButtonRef} type="button" className="policy-rich-close" aria-label="إغلاق تفاصيل السياسة" onClick={closeDrawer}>×</button>
           <div className="policy-rich-drawer-heading">
             <span className="policy-rich-icon"><OperationalIcon name={activeMeta.icon} /></span>
             <div><h2 id="policy-rich-drawer-title">{active.label}</h2><p>{activeMeta.context}</p></div>
           </div>
         </header>
-        <div className="policy-rich-drawer-scroll">
+        <div className="policy-rich-drawer-scroll workspace-side-drawer-scroll">
             <div className="policy-rich-edit-toolbar">
               <button type="button" className="button button-secondary" onClick={() => { setDrawerMode("choose"); setPreviewRevision((value) => value + 1); }}>اختيار إجراء آخر</button>
               <strong>{drawerMode === "add" ? (activeMeta.createLabel ?? "إضافة قاعدة أو إصدار") : "تعديل السياسة"}</strong>

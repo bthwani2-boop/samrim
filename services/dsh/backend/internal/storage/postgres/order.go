@@ -618,9 +618,22 @@ type operatorOperationsCursor struct {
 	ActionableOnly bool      `json:"actionableOnly"`
 	Query          string    `json:"query"`
 	Sort           string    `json:"sort"`
+	StoreID        string    `json:"storeId,omitempty"`
 }
 
 func ListOrdersForOperator(ctx context.Context, db *sql.DB, state, query, sort string, actionableOnly bool, limit int, cursor string) (OperatorOperationsResult, error) {
+	return listOrdersForOperatorScope(ctx, db, state, query, sort, actionableOnly, limit, cursor, "")
+}
+
+func ListOrdersForOperatorStore(ctx context.Context, db *sql.DB, state, query, sort string, actionableOnly bool, limit int, cursor, storeID string) (OperatorOperationsResult, error) {
+	storeID = strings.TrimSpace(storeID)
+	if storeID == "" || len(storeID) > 128 {
+		return OperatorOperationsResult{}, ErrOperatorOperationInvalidQuery
+	}
+	return listOrdersForOperatorScope(ctx, db, state, query, sort, actionableOnly, limit, cursor, storeID)
+}
+
+func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, sort string, actionableOnly bool, limit int, cursor, storeID string) (OperatorOperationsResult, error) {
 	if db == nil || limit < 1 || limit > 100 {
 		return OperatorOperationsResult{}, ErrOperatorOperationInvalidLimit
 	}
@@ -639,6 +652,10 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state, query, sort s
 	ascending := sort == "updated_asc"
 	args := []any{}
 	where := "TRUE"
+	if storeID != "" {
+		args = append(args, storeID)
+		where += " AND o.store_id=$" + strconv.Itoa(len(args))
+	}
 	if state != "" {
 		args = append(args, state)
 		where += " AND o.state=$" + strconv.Itoa(len(args))
@@ -653,7 +670,7 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state, query, sort s
 	}
 	pageWhere := "TRUE"
 	if strings.TrimSpace(cursor) != "" {
-		decoded, err := decodeOperatorOperationsCursor(cursor, state, actionableOnly, query, sort)
+		decoded, err := decodeOperatorOperationsCursor(cursor, state, actionableOnly, query, sort, storeID)
 		if err != nil {
 			return OperatorOperationsResult{}, err
 		}
@@ -734,7 +751,7 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state, query, sort s
 	if len(operations) > limit {
 		last := operations[limit-1]
 		result.Operations = operations[:limit]
-		result.NextCursor = encodeOperatorOperationsCursor(operatorOperationsCursor{UpdatedAt: last.UpdatedAt, ID: last.OrderID, State: state, ActionableOnly: actionableOnly, Query: query, Sort: sort})
+		result.NextCursor = encodeOperatorOperationsCursor(operatorOperationsCursor{UpdatedAt: last.UpdatedAt, ID: last.OrderID, State: state, ActionableOnly: actionableOnly, Query: query, Sort: sort, StoreID: storeID})
 	}
 	return result, nil
 }
@@ -759,13 +776,13 @@ func encodeOperatorOperationsCursor(cursor operatorOperationsCursor) string {
 	return base64.RawURLEncoding.EncodeToString(value)
 }
 
-func decodeOperatorOperationsCursor(raw, state string, actionableOnly bool, query, sort string) (operatorOperationsCursor, error) {
+func decodeOperatorOperationsCursor(raw, state string, actionableOnly bool, query, sort, storeID string) (operatorOperationsCursor, error) {
 	value, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
 	if err != nil {
 		return operatorOperationsCursor{}, ErrOperatorOperationInvalidCursor
 	}
 	var cursor operatorOperationsCursor
-	if err := json.Unmarshal(value, &cursor); err != nil || cursor.ID == "" || cursor.UpdatedAt.IsZero() || cursor.State != strings.TrimSpace(state) || cursor.ActionableOnly != actionableOnly || cursor.Query != strings.TrimSpace(query) || cursor.Sort != strings.TrimSpace(sort) {
+	if err := json.Unmarshal(value, &cursor); err != nil || cursor.ID == "" || cursor.UpdatedAt.IsZero() || cursor.State != strings.TrimSpace(state) || cursor.ActionableOnly != actionableOnly || cursor.Query != strings.TrimSpace(query) || cursor.Sort != strings.TrimSpace(sort) || cursor.StoreID != storeID {
 		return operatorOperationsCursor{}, ErrOperatorOperationInvalidCursor
 	}
 	return cursor, nil

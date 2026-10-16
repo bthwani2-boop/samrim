@@ -8,7 +8,7 @@ import { operatorWorkspacePermissions } from "../../session/operator-permissions
 import { useSession } from "../../session/session-provider";
 import { responseMessage } from "./identity-error-message";
 
-type ManagedOperatorStatus = Readonly<{
+export type ManagedOperatorStatus = Readonly<{
   role: "operator";
   actorId?: string;
   fullNameAr?: string;
@@ -48,7 +48,7 @@ function accessDate(value: string | undefined): string {
   return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("ar-YE-u-nu-latn", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-export function AccountAccessPanel({ selectedPhone, onClear, onBusyChange }: Readonly<{ selectedPhone: string; onClear: () => void; onBusyChange?: (busy: boolean) => void }>) {
+export function AccountAccessPanel({ selectedPhone, onClear, onBusyChange, onActorResolved, onStatusResolved, embedded = false }: Readonly<{ selectedPhone: string; onClear: () => void; onBusyChange?: (busy: boolean) => void; onActorResolved?: (actorId: string | null) => void; onStatusResolved?: (status: ManagedOperatorStatus | null) => void; embedded?: boolean }>) {
   const { state: sessionState } = useSession();
   const [reason, setReason] = useState("");
   const [permissionReasons, setPermissionReasons] = useState<Record<string, string>>({});
@@ -70,9 +70,11 @@ export function AccountAccessPanel({ selectedPhone, onClear, onBusyChange }: Rea
   }, []);
 
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
+  useEffect(() => { onActorResolved?.(status?.actorId ?? null); }, [status?.actorId, onActorResolved]);
+  useEffect(() => { onStatusResolved?.(status); }, [status, onStatusResolved]);
 
   useEffect(() => {
-    if (!selectedPhone) return;
+    if (!selectedPhone || embedded) return;
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (!dialog.open) dialog.showModal();
@@ -80,7 +82,7 @@ export function AccountAccessPanel({ selectedPhone, onClear, onBusyChange }: Rea
       headingRef.current?.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [selectedPhone]);
+  }, [selectedPhone, embedded]);
 
   function closeDetails() {
     if (busy) return;
@@ -289,21 +291,20 @@ export function AccountAccessPanel({ selectedPhone, onClear, onBusyChange }: Rea
   const canManagePermissionTarget = sessionState.kind === "authenticated" && sessionState.identity.canManageOperatorPermissions === true && status?.role === "operator" && Boolean(status.actorId) && status.actorId !== sessionState.identity.subject && operatorWorkspacePermissions.every(({ key }) => Boolean(status.operatorPermissions?.[key]));
   const canViewOwnPermissions = sessionState.kind === "authenticated" && status?.role === "operator" && status.actorId === sessionState.identity.subject;
 
-  return <dialog id="account-access-dialog" className="access-details-dialog" ref={dialogRef} aria-labelledby="account-access-title" onCancel={(event) => { if (busy) event.preventDefault(); else onClear(); }}>
-    <section className="access-workspace-section account-access-panel">
-    <header className="access-section-heading account-access-heading">
+  const content = <section className="access-workspace-section account-access-panel">
+    {!embedded ? <header className="access-section-heading account-access-heading">
       <div>
         <h2 id="account-access-title" ref={headingRef} tabIndex={-1}>{status?.fullNameAr?.trim() || <bdi dir="ltr">{status?.phoneE164 ?? selectedPhone}</bdi>}</h2>
         {status?.fullNameAr?.trim() ? <bdi className="access-target-phone" dir="ltr">{status.phoneE164}</bdi> : null}
       </div>
       <div className="access-target-actions"><button type="button" className="access-clear-target" disabled={busy} onClick={closeDetails} aria-label="إغلاق تفاصيل المشغّل">إغلاق</button></div>
-    </header>
+    </header> : null}
 
     {loadingStatus ? <p className="access-loading" role="status"><span className="loading-mark" aria-hidden="true" /> جارٍ قراءة الحالة والصلاحيات…</p> : null}
     {error ? <div className="managed-status managed-status-warning" role="alert"><strong>{finalStateUnverified ? "الحالة تحتاج إلى تحقق" : "تعذر إكمال العملية"}</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={busy || loadingStatus} onClick={() => void refreshCanonicalStatus()}>إعادة القراءة</button></div> : null}
 
     {status ? (status.exists ? <>
-      <div className="access-account-summary" role="status"><span className={`access-state-pill ${accountStateTone(status)}`}>{accountStateLabel(status.state)}</span></div>
+      {!embedded ? <><div className="access-account-summary" role="status"><span className={`access-state-pill ${accountStateTone(status)}`}>{accountStateLabel(status.state)}</span></div>
       <dl className="access-account-details">
         <div><dt>المسمى الوظيفي</dt><dd>{status.jobTitle || "غير محدد"}</dd></div>
         <div><dt>القسم</dt><dd>{status.department || "غير محدد"}</dd></div>
@@ -311,7 +312,7 @@ export function AccountAccessPanel({ selectedPhone, onClear, onBusyChange }: Rea
         <div><dt>تفعيل الحساب</dt><dd>{status.activatedAt ? <time dateTime={status.activatedAt}>{accessDate(status.activatedAt)}</time> : "لم يُفعّل بعد"}</dd></div>
         <div><dt>آخر تسجيل دخول</dt><dd>{status.lastAuthenticatedAt ? <time dateTime={status.lastAuthenticatedAt}>{accessDate(status.lastAuthenticatedAt)}</time> : "لم يسجّل دخولًا بعد"}</dd></div>
         <div><dt>حالة الهوية</dt><dd>{status.securityEnabled ? "مفعّلة" : "موقوفة"}</dd></div>
-      </dl>
+      </dl></> : null}
 
       {sessionState.kind === "authenticated" && sessionState.identity.canManageOperatorPermissions === true ? <details className="access-account-controls">
         <summary>تعديل المسمى والقسم</summary>
@@ -360,7 +361,8 @@ export function AccountAccessPanel({ selectedPhone, onClear, onBusyChange }: Rea
           </div>
         </div>
       </details> : null}
-    </> : <div className="collection-state"><strong>لا يوجد حساب مشغّل لهذا الرقم</strong><p>أنشئ ملفًا من تبويب ملفات المشغّلين ثم راجعه.</p></div>) : null}
-    </section>
-  </dialog>;
+    </> : <div className="collection-state"><strong>لا يوجد حساب مشغّل لهذا الرقم</strong><p>يُنشأ ملف المراجعة من طلب الوصول في الموارد البشرية؛ راجع الطلب المرتبط.</p></div>) : null}
+    </section>;
+  return embedded ? <section className="access-inline-panel" aria-label="ملف المشغّل">{content}</section>
+    : <dialog id="account-access-dialog" className="access-details-dialog" ref={dialogRef} aria-labelledby="account-access-title" onCancel={(event) => { if (busy) event.preventDefault(); else onClear(); }}>{content}</dialog>;
 }

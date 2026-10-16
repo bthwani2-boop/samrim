@@ -1,16 +1,17 @@
 "use client";
 
-import { PageHeader } from "../../shell/page-header";
 
-import { type JoiningCaseView, fulfillmentModeLabel, joiningCaseStateLabel, type PartnerManagedStore, publicationStateLabel } from "@bthwani/dsh";
+import { fulfillmentModeLabel, type JoiningCaseView, joiningCaseStateLabel, type PartnerManagedStore, publicationStateLabel } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
-import { partnerErrorMessage } from "./partner-error-message";
-import { ActorLegalNameWorkspace } from "./actor-legal-name-workspace";
-import { StoreLogo } from "../stores/store-logo";
+import { PageHeader } from "../../shell/page-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { StoreLogo } from "../stores/store-logo";
+import { ActorLegalNameWorkspace } from "./actor-legal-name-workspace";
+import { partnerErrorMessage } from "./partner-error-message";
+
 type PartnerDetail = Readonly<{ partner: ActorRoleView; joiningCase: JoiningCaseView | null }>;
 type PartnerStoresPage = Readonly<{ stores: ReadonlyArray<PartnerManagedStore>; nextCursor?: string }>;
 type PartnerDetailTab = "profile" | "stores";
@@ -21,7 +22,7 @@ function partnerRequestError(cause: unknown, fallback: string): string {
   return fallback;
 }
 
-export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }>) {
+export function PartnerDetailWorkspace({ actorId, embedded = false }: Readonly<{ actorId: string; embedded?: boolean }>) {
   const [detail, setDetail] = useState<PartnerDetail | null>(null);
   const [stores, setStores] = useState<ReadonlyArray<PartnerManagedStore>>([]);
   const [storesCursor, setStoresCursor] = useState("");
@@ -70,39 +71,43 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
 
   useEffect(() => {
     void loadDetail();
-    const syncTab = () => setActiveTab(new URLSearchParams(window.location.search).get("view") === "stores" ? "stores" : "profile");
+    const syncTab = () => setActiveTab(!embedded && new URLSearchParams(window.location.search).get("view") === "stores" ? "stores" : "profile");
     syncTab();
     window.addEventListener("popstate", syncTab);
     return () => window.removeEventListener("popstate", syncTab);
-  }, [loadDetail]);
+  }, [loadDetail, embedded]);
 
   useEffect(() => {
     if (activeTab === "stores") {
-      const cursor = new URLSearchParams(window.location.search).get("cursor") ?? "";
+      const cursor = embedded ? "" : new URLSearchParams(window.location.search).get("cursor") ?? "";
       void loadStores(cursor);
     }
-  }, [activeTab, loadStores]);
+  }, [activeTab, loadStores, embedded]);
 
   // Returning to a record silently refreshes its canonical state but never overwrites a pending reason.
   useReadOnReturn(() => {
     void loadDetail(false);
-    if (activeTab === "stores") void loadStores(new URLSearchParams(window.location.search).get("cursor") ?? "", storesPageStack);
+    if (activeTab === "stores") void loadStores(embedded ? "" : new URLSearchParams(window.location.search).get("cursor") ?? "", storesPageStack);
   }, !busy && !loading && !loadingStores && !reason.trim());
 
   function navigateTab(tab: PartnerDetailTab) {
-    const params = new URLSearchParams(window.location.search);
-    if (tab === "stores") params.set("view", tab); else params.delete("view");
-    params.delete("cursor");
-    window.history.pushState({}, "", window.location.pathname + (params.size ? `?${params.toString()}` : ""));
+    if (!embedded) {
+      const params = new URLSearchParams(window.location.search);
+      if (tab === "stores") params.set("view", tab); else params.delete("view");
+      params.delete("cursor");
+      window.history.pushState({}, "", window.location.pathname + (params.size ? `?${params.toString()}` : ""));
+    }
     setActiveTab(tab);
     setStoresPageStack([]);
   }
 
   function navigateStorePage(cursor: string, stack: ReadonlyArray<string>) {
-    const params = new URLSearchParams(window.location.search);
-    params.set("view", "stores");
-    if (cursor) params.set("cursor", cursor); else params.delete("cursor");
-    window.history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
+    if (!embedded) {
+      const params = new URLSearchParams(window.location.search);
+      params.set("view", "stores");
+      if (cursor) params.set("cursor", cursor); else params.delete("cursor");
+      window.history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
+    }
     void loadStores(cursor, stack);
   }
 
@@ -241,8 +246,8 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
   }
   if (busy) statusActionLabel = "جارٍ التحديث والتحقق…";
 
-  return <section className="workspace-page partner-detail-workspace" aria-labelledby="partner-detail-title">
-    <PageHeader id="partner-detail-title" title={detail?.joiningCase?.businessName || "ملف الشريك"} actions={<Link className="button button-secondary" href="/partners">الشركاء والمتاجر</Link>} />
+  return <section className="workspace-page partner-detail-workspace" aria-labelledby={embedded ? undefined : "partner-detail-title"} aria-label={embedded ? "تفاصيل حساب الشريك" : undefined}>
+    {embedded ? null : <PageHeader id="partner-detail-title" title={detail?.joiningCase?.businessName || "ملف الشريك"} actions={<Link className="button button-secondary" href="/partners">الشركاء والمتاجر</Link>} />}
 
     {detail ? <section className="partner-case-summary" aria-label="ملخص حساب الشريك ومتجره">
       <div className="partner-case-summary-main">

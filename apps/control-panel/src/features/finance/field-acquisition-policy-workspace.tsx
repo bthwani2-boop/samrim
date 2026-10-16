@@ -198,7 +198,7 @@ export function FieldAcquisitionPolicyWorkspace() {
     {canEditPolicy ? <>
       <div className="form-grid">
         <label className="field-label" htmlFor="field-acquisition-reward">مبلغ الاستحقاق (ريال)<input id="field-acquisition-reward" type="number" min="50" step="50" value={rewardMinor} onChange={(event) => setRewardMinor(event.target.value)} aria-describedby="field-acquisition-rounding" disabled={busy || !canEdit} /><small id="field-acquisition-rounding">مضاعفات ٥٠؛ مرة واحدة عند ظهور أول متجر مؤهل.</small></label>
-        <label className="field-label" htmlFor="field-reward-reason">سبب الإنشاء أو التغيير<TextArea id="field-reward-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} rows={3} aria-describedby="field-reward-reason-hint" disabled={busy || !canEdit} /><small id="field-reward-reason-hint">٥–٥٠٠ حرف.</small></label>
+        <label className="field-label" htmlFor="field-reward-reason">سبب الإنشاء أو التغيير<TextArea className="resize-none" id="field-reward-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} rows={3} aria-describedby="field-reward-reason-hint" disabled={busy || !canEdit} /><small id="field-reward-reason-hint">٥–٥٠٠ حرف.</small></label>
       </div>
       {message ? <output className="success state-message">{message}</output> : null}
       {error ? <p className="validation-error state-message" role="alert">{error}</p> : null}

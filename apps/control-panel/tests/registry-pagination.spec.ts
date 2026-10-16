@@ -6,9 +6,9 @@ const cases = [
   { key: "proposals", path: "/catalog/proposals", api: "/api/catalog/proposals", parameter: "proposalCursor", rows: ".proposal-list > li", label: "مقترحات المنتجات", size: 50 },
   { key: "captains", path: "/captains", api: "/api/captains", parameter: "captainCursor", rows: "section[aria-labelledby=captain-roster-title] tbody tr", label: "الكباتن", size: 25 },
   { key: "candidates", path: "/captains", api: "/api/captains", parameter: "captainCandidateCursor", rows: "section[aria-labelledby=captain-candidate-registry-title] tbody tr", label: "ملفات الكباتن", size: 25 },
-  { key: "operators", path: "/access?view=permissions", api: "/api/access/operators", parameter: "operatorCursor", rows: ".operator-directory tbody tr", label: "حسابات المشغّلين", size: 10 },
-  { key: "profiles", path: "/access?view=profiles", api: "/api/access/operator-profiles", parameter: "operatorProfileCursor", rows: ".profile-table tbody tr", label: "ملفات المشغّلين", size: 25 },
-] as const;
+  { key: "operators", path: "/access?view=permissions", api: "/api/access/operators", parameter: "operatorCursor", rows: ".access-center-table tbody tr", label: "حسابات المشغّلين", size: 25 },
+  { key: "profiles", path: "/access?view=profiles", api: "/api/access/operator-profiles", parameter: "operatorProfileCursor", rows: ".access-center-table tbody tr", label: "ملفات المشغّلين", size: 25 },
+];
 
 for (const registry of cases) {
   test(`${registry.key} keeps a 5000-record collection bounded and restores cursor navigation`, async ({ page }) => {
@@ -60,6 +60,15 @@ for (const registry of cases) {
     });
     await page.goto(registry.path);
     const rows = page.locator(registry.rows);
+    if (registry.key === "operators" || registry.key === "profiles") {
+      await expect(rows).toHaveCount(registry.size);
+      await page.getByRole("button", { name: "تحميل المزيد" }).click();
+      await expect(rows).toHaveCount(registry.size * 2);
+      expect(requestedCursors).toContain(nextToken);
+      expect(page.url()).not.toContain(nextToken);
+      expect(page.url()).not.toContain("+96777002500");
+      return;
+    }
     const navigation = page.getByRole("navigation", { name: `صفحات ${registry.label}`, exact: true });
     await expect(rows).toHaveCount(registry.size);
     const recordMarker = (index: number) => registry.key === "operators" || registry.key === "captains" || registry.key === "candidates"

@@ -50,6 +50,8 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/orders/{orderId}/tracking", s.readTracking)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/cancel", s.cancel)
 	mux.HandleFunc("GET /dsh/operator/operations", s.listOperatorOperations)
+	mux.HandleFunc("GET /dsh/operator/home-analytics", s.readOperatorHomeAnalytics)
+	mux.HandleFunc("GET /dsh/operator/customers/{actorId}/orders", s.listOperatorCustomerOrders)
 	mux.HandleFunc("GET /dsh/operator/operations/{orderId}", s.readOperatorOperation)
 	mux.HandleFunc("GET /dsh/operator/cash-custody", s.listOperatorCashCustody)
 	mux.HandleFunc("POST /dsh/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileOperatorCashRemittance)
@@ -103,7 +105,18 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
 		return
 	}
-	operations, err := s.service.ListForOperator(r.Context(), state, query, sort, actingActorID, actionableOnly, limit, cursor)
+	storeID := strings.TrimSpace(r.URL.Query().Get("storeId"))
+	if (r.URL.Query().Has("storeId") && storeID == "") || len(storeID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is invalid")
+		return
+	}
+	var operations postgres.OperatorOperationsResult
+	var err error
+	if storeID != "" {
+		operations, err = s.service.ListForOperatorStore(r.Context(), state, query, sort, actingActorID, actionableOnly, limit, cursor, storeID)
+	} else {
+		operations, err = s.service.ListForOperator(r.Context(), state, query, sort, actingActorID, actionableOnly, limit, cursor)
+	}
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -813,8 +826,8 @@ func writeOrderError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, postgres.ErrPartnerOrdersScopeInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner orders Store scope is invalid")
-	case errors.Is(err, postgres.ErrClientOrdersInvalidCursor):
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client Order history cursor is invalid")
+	case errors.Is(err, postgres.ErrClientOrdersInvalidCursor), errors.Is(err, postgres.ErrOperatorCustomerOrdersInvalidCursor):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "customer Order history cursor is invalid")
 	case errors.Is(err, postgres.ErrPartnerOrdersInvalidState), errors.Is(err, postgres.ErrPartnerOrdersInvalidQuery), errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidLimit):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner or operator orders pagination, state, or search is invalid")
 	case errors.Is(err, orderdomain.ErrClientSessionForbidden), errors.Is(err, orderdomain.ErrPartnerSessionForbidden), errors.Is(err, orderdomain.ErrStoreOwnershipForbidden), errors.Is(err, orderdomain.ErrOperatorNotActive):

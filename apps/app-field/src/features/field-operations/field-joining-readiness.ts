@@ -16,7 +16,7 @@ export function getFieldJoiningRequirements(saved: JoiningCaseView | null): Read
       saved: Boolean(saved?.ownerFullName?.trim() && saved.businessName.trim() && saved.firstStoreName.trim() && saved.contactPhoneE164),
     },
     { key: "city", label: "مدينة الخدمة", saved: Boolean(saved?.serviceCityId) },
-    { key: "vertical", label: "النشاط التجاري", saved: Boolean(saved?.firstStoreVerticalId) },
+    { key: "vertical", label: "المجال التجاري", saved: Boolean(saved?.firstStoreVerticalId) },
     { key: "storeType", label: "نوع المتجر", saved: Boolean(saved?.firstStoreCommercialTypeId) },
     { key: "address", label: "عنوان المتجر", saved: Boolean(saved?.firstStoreAddress && Array.from(saved.firstStoreAddress.trim()).length >= 4) },
     { key: "location", label: "موقع المتجر", saved: Boolean(saved?.firstStoreLatitude != null && saved.firstStoreLongitude != null && (saved.firstStoreLatitude !== 0 || saved.firstStoreLongitude !== 0)) },

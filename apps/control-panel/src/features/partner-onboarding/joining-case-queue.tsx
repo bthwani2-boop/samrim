@@ -7,6 +7,7 @@ import { partnerErrorMessage } from "../partners/partner-error-message";
 import { downloadRegistryCsv } from "../shared/registry-csv";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { rememberJoiningQueueReturn } from "./joining-return-context";
+
 type QueueState = "" | JoiningCaseState;
 type QueueSort = "created_asc" | "created_desc";
 type QueueHistory = Readonly<{ joiningCaseCursors?: ReadonlyArray<string> }>;
@@ -42,7 +43,7 @@ function caseHint(state: JoiningCaseState): string {
 
 const dateFormatter = new Intl.DateTimeFormat("ar-YE", { dateStyle: "medium", timeStyle: "short" });
 
-export function JoiningCaseQueue() {
+export function JoiningCaseQueue({ onOpenCase, refreshKey = 0 }: Readonly<{ onOpenCase?: (caseId: string) => void; refreshKey?: number }> = {}) {
   const [cases, setCases] = useState<JoiningCaseListResponse["cases"]>([]);
   const [state, setState] = useState<QueueState>("");
   const [query, setQuery] = useState("");
@@ -142,6 +143,12 @@ export function JoiningCaseQueue() {
     return () => { activeRequest.current?.abort(); };
   }, [loadQueue, urlReady]);
   useReadOnReturn(loadQueue, urlReady && !busy);
+  const appliedRefreshKey = useRef(refreshKey);
+  useEffect(() => {
+    if (!urlReady || appliedRefreshKey.current === refreshKey) return;
+    appliedRefreshKey.current = refreshKey;
+    void loadQueue();
+  }, [refreshKey, urlReady, loadQueue]);
 
   function toggleSelected(caseId: string) {
     setSelectedIds((current) => {
@@ -197,7 +204,7 @@ export function JoiningCaseQueue() {
             <th scope="col">الشريك / الهاتف</th>
             <th scope="col">المتجر / المصدر</th>
             <th scope="col">الحالة والخطوة التالية</th>
-            <th scope="col">آخر تحديث</th>
+            <th scope="col">آخر تحديث / تاريخ الطلب</th>
             <th scope="col">الإجراء</th>
           </tr></thead>
           <tbody>{cases.map((item) => <tr key={item.id}>
@@ -205,8 +212,8 @@ export function JoiningCaseQueue() {
             <th scope="row"><div className="joining-case-row-main"><span>{item.businessName}</span><a href={`tel:${item.contactPhoneE164}`} title={`اتصال بالشريك ${item.businessName}`}><bdi dir="ltr">{item.contactPhoneE164}</bdi></a></div></th>
             <td><div className="joining-case-row-main"><span>{item.firstStoreName || "متجر بدون اسم"}</span><small>{item.origin === "field" ? "عبر الميداني" : "عبر لوحة التحكم"}</small></div></td>
             <td><div className="joining-case-row-state"><span className={`joining-case-state-pill state-${item.state}`}>{joiningCaseStateLabel(item.state)}</span><small>{caseHint(item.state)}</small></div></td>
-            <td><time dateTime={item.updatedAt}>{dateFormatter.format(new Date(item.updatedAt))}</time></td>
-            <td><Link className="partner-row-action joining-case-row-action" href={`/partners/${encodeURIComponent(item.id)}`} onClick={() => rememberJoiningQueueReturn(item.id)}>{caseAction(item.state)}<span aria-hidden="true">←</span></Link></td>
+            <td><div className="joining-case-row-main"><time dateTime={item.updatedAt}>{dateFormatter.format(new Date(item.updatedAt))}</time><small>أُنشئ: <time dateTime={item.createdAt}>{dateFormatter.format(new Date(item.createdAt))}</time></small></div></td>
+            <td><Link className="partner-row-action joining-case-row-action" href={`/partners?view=joining&case=${encodeURIComponent(item.id)}`} onClick={(event) => { if (onOpenCase) { event.preventDefault(); onOpenCase(item.id); } else rememberJoiningQueueReturn(item.id); }}>{caseAction(item.state)}<span aria-hidden="true">←</span></Link></td>
           </tr>)}</tbody>
         </table>
       </div>

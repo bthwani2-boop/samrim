@@ -15,6 +15,14 @@ func (s *Service) ListOffersForPartner(ctx context.Context, accessToken, storeID
 	return postgres.ListCatalogOfferPage(ctx, s.db, strings.TrimSpace(storeID), limit, cursor)
 }
 
+// ListOffersForOperator preserves the store-scoped offer owner and checks the operator's partners permission.
+func (s *Service) ListOffersForOperator(ctx context.Context, actorID, storeID string, limit int, cursor string) (postgres.CatalogStoreOfferPage, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "partners"); err != nil {
+		return postgres.CatalogStoreOfferPage{}, err
+	}
+	return postgres.ListCatalogOfferPage(ctx, s.db, strings.TrimSpace(storeID), limit, cursor)
+}
+
 func (s *Service) ListQuickPricesForPartner(ctx context.Context, accessToken, storeID string, filters postgres.CatalogQuickPriceFilters, limit int, cursor string) (postgres.CatalogStoreOfferPage, error) {
 	if _, err := s.requireStoreOwner(ctx, accessToken, storeID); err != nil {
 		return postgres.CatalogStoreOfferPage{}, err

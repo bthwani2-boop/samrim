@@ -1,18 +1,12 @@
-import { PageHeader } from "../../../../src/shell/page-header";
-import { PartnerApprovalsNavigation } from "../../../../src/features/partner-onboarding/partner-approvals-navigation";
-import { PartnerOperatorBoundary } from "../../../../src/features/partner-onboarding/partner-workspace";
-import { StoreAccessAdmissionQueue } from "../../../../src/features/store-access/store-access-admission-queue";
+import { redirect } from "next/navigation";
 
-export default function PartnerStoreAccessPage() {
-  return (
-    <PartnerOperatorBoundary>
-      <section className="workspace-page" aria-labelledby="partner-store-access-title">
-        <PageHeader id="partner-store-access-title" title="الطلبات والاعتمادات" />
-        <PartnerApprovalsNavigation current="store-access" />
-        <StoreAccessAdmissionQueue />
-      </section>
-    </PartnerOperatorBoundary>
-  );
+// Old bookmarks stay valid; there is one operational partner workspace.
+export default async function LegacyPartnersQueue({ searchParams }: Readonly<{searchParams: Promise<Record<string, string | string[] | undefined>>}>) {
+  const original = await searchParams;
+  const params = new URLSearchParams({ view: "access" });
+  for (const key of []) {
+    const value = original[key];
+    if (typeof value === "string" && value.length <= 2048 && value) params.set(key, value);
+  }
+  redirect("/partners?" + params.toString());
 }
-
-export const metadata = { title: "الطلبات والاعتمادات — اعتماد الوصول" };

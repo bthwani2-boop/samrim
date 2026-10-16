@@ -28,7 +28,7 @@ test("home distinguishes authoritative unread total from the visible latest page
     });
   });
   await page.goto("/workspace");
-  await expect(page.getByRole("heading", { name: "الإشعارات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "آخر التنبيهات" })).toBeVisible();
   await expect(page.locator(".home-unread-total")).toContainText("إجمالي غير المقروءة: ١٧");
   await expect(page.getByText(/لا إشعارات غير مقروءة في هذه المعاينة/)).toBeVisible();
   await expect(page.getByText("أنت على اطلاع؛ لا إشعارات غير مقروءة.", { exact: true })).toHaveCount(0);
@@ -71,6 +71,50 @@ test("home notification preview opens its related canonical record", async ({ pa
   } }));
   await page.goto("/workspace");
   await expect(page.getByRole("link", { name: /تحديث طلب سابق/ })).toHaveAttribute("href", "/operations/order-notification-4");
+});
+
+test("operator notification summaries keep internal order keys out of visible text", async ({ page }, testInfo) => {
+  await auth(page);
+  const orderId = "order-private-internal-key";
+  await page.route("**/api/notifications?**", (route) => route.fulfill({ json: {
+    notifications: [{
+      ...readNotification,
+      id: "notification-with-internal-order-key",
+      title: `تم استلام الطلب رقم ${orderId}.`,
+      body: `استلم الكابتن الطلب رقم ${orderId} وبدأ التوصيل.`,
+      readAt: null,
+      orderId,
+    }],
+    unreadCount: 1,
+  } }));
+
+  for (const view of [
+    { name: "desktop-light", width: 1440, height: 900, colorScheme: "light" as const },
+    { name: "desktop-dark", width: 1440, height: 900, colorScheme: "dark" as const },
+    { name: "mobile-light", width: 390, height: 844, colorScheme: "light" as const },
+    { name: "mobile-dark", width: 390, height: 844, colorScheme: "dark" as const },
+  ]) {
+    await page.setViewportSize({ width: view.width, height: view.height });
+    await page.emulateMedia({ colorScheme: view.colorScheme, reducedMotion: "reduce" });
+    await page.goto("/workspace");
+    const preview = page.locator(".home-notification-list");
+    await expect(preview).toContainText("تم استلام الطلب.");
+    await expect(preview).toContainText("استلم الكابتن الطلب وبدأ التوصيل.");
+    await expect(preview).not.toContainText(orderId);
+    await preview.scrollIntoViewIfNeeded();
+    const dimensions = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, page: document.documentElement.scrollWidth }));
+    expect(dimensions.page).toBeLessThanOrEqual(dimensions.viewport + 1);
+    const screenshotPath = testInfo.outputPath(`home-notifications-${view.name}.png`);
+    await page.screenshot({ path: screenshotPath, animations: "disabled" });
+    await testInfo.attach(`home-notifications-${view.name}.png`, {
+      path: screenshotPath,
+      contentType: "image/png",
+    });
+  }
+
+  await page.goto("/notifications");
+  await expect(page.locator(".operator-notification-list")).toContainText("استلم الكابتن الطلب وبدأ التوصيل.");
+  await expect(page.locator(".operator-notification-list")).not.toContainText(orderId);
 });
 
 test("notification inbox rejects missing global unread count without inventing zero", async ({ page }) => {
