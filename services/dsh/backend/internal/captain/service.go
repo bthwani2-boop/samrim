@@ -536,7 +536,12 @@ func (s *Service) Dispatch(ctx context.Context, orderID, actingActorID, idempote
 		return postgres.CaptainOffer{}, false, err
 	}
 	approved, err := s.dispatchCandidates(ctx, strings.TrimSpace(orderID))
-	if err != nil {
+	if errors.Is(err, postgres.ErrCaptainNoAvailable) {
+		// The database verifies idempotent replay before trying new candidates.
+		// An empty non-nil approved list denies a fresh offer while preserving
+		// the existing operation when its captain is already reserved.
+		approved = []string{}
+	} else if err != nil {
 		return postgres.CaptainOffer{}, false, err
 	}
 	return postgres.CreateCaptainDispatchOffer(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(idempotencyKey), postgres.HashCaptainDispatchRequest(orderID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), approved...)
@@ -578,7 +583,12 @@ func (s *Service) Reassign(ctx context.Context, orderID, actingActorID, idempote
 		return postgres.CaptainOffer{}, false, err
 	}
 	approved, err := s.dispatchCandidates(ctx, strings.TrimSpace(orderID))
-	if err != nil {
+	if errors.Is(err, postgres.ErrCaptainNoAvailable) {
+		// The database verifies idempotent replay before trying new candidates.
+		// An empty non-nil approved list denies a fresh offer while preserving
+		// the existing operation when its captain is already reserved.
+		approved = []string{}
+	} else if err != nil {
 		return postgres.CaptainOffer{}, false, err
 	}
 	return postgres.ReassignCaptain(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(idempotencyKey), postgres.HashCaptainReassignmentRequest(orderID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), approved...)
