@@ -36,9 +36,11 @@ test("the same employee retains HR status when Root disables operator access", a
     }
     await route.fulfill({ json: { employee, role: { actorId: employee.operatorActorId, role: "operator", enabled, roleVersion: version } } });
   });
+  await page.route("**/api/hr/employees/" + employee.id, route => route.fulfill({json:{employee}}));
   await page.goto("/hr/employees");
-  await page.locator(".hr-directory .operations-table button").first().click();
+  await page.getByRole("button",{name:"فتح ملف " + employee.fullNameAr}).first().click();
   await expect(page.getByText(employee.fullNameAr).first()).toBeVisible();
+  await page.getByRole("tab",{name:"الوصول والصلاحيات"}).click();
   await page.getByRole("button", { name: "إدارة صلاحية تشغيل الموظف" }).click();
   await expect(page.getByText("وصول التشغيل مفعّل")).toBeVisible();
   await page.getByLabel("سبب قرار صلاحية التشغيل").fill("إيقاف صلاحية تشغيل الموظف مؤقتًا للتحقق");
@@ -52,7 +54,9 @@ test("HR-only staff cannot see the Root operator management action", async ({ pa
   await page.route("**/api/auth/session**", (route) => route.fulfill({ json: { identity: { ...root, canManageOperatorPermissions: false } } }));
   await page.route("**/api/hr/employees?**", (route) => route.fulfill({ json: { items: [employee], nextCursor: "" } }));
   await page.route("**/api/hr/access-requests?**", (route) => route.fulfill({ json: { items: [], nextCursor: "" } }));
+  await page.route("**/api/hr/employees/" + employee.id, route => route.fulfill({json:{employee}}));
   await page.goto("/hr/employees");
-  await page.locator(".hr-directory .operations-table button").first().click();
+  await page.getByRole("button",{name:"فتح ملف " + employee.fullNameAr}).first().click();
+  await page.getByRole("tab",{name:"الوصول والصلاحيات"}).click();
   await expect(page.getByRole("button", { name: "إدارة صلاحية تشغيل الموظف" })).toHaveCount(0);
 });
