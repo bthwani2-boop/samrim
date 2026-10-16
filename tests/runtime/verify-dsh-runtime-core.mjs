@@ -437,6 +437,27 @@ for (const attributeID of [measurementAttributeID, dateAttributeID]) {
 
 const firstStoreOrigin = { firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006 };
 const correctedStoreOrigin = { firstStoreLatitude: 15.370001, firstStoreLongitude: 44.192002 };
+for (const destination of [
+  { latitude: 15.3694457, longitude: 44.1910064 },
+  { latitude: 15.370001, longitude: 44.192002 },
+]) {
+  const directFeeQuote = await request(wltBase, "POST", "/wlt/v1/delivery-quotes", {
+    token: wltToken,
+    body: {
+      serviceCityId: cityA,
+      originLatitude: 15.369445,
+      originLongitude: 44.191006,
+      destinationLatitude: destination.latitude,
+      destinationLongitude: destination.longitude,
+      orderSizeBaseUnits: 1,
+    },
+  });
+  if (directFeeQuote.status !== 200 || directFeeQuote.body?.quote?.policyVersion !== deliveryFeePolicyCreate.body.policy.policyVersion || !Number.isSafeInteger(directFeeQuote.body?.quote?.feeMinor) || directFeeQuote.body.quote.feeMinor < 0) {
+    fail("WLT distance-band delivery quote contract or city policy resolution failed", JSON.stringify({ destination, directFeeQuote, policy: deliveryFeePolicyCreate.body.policy }));
+  }
+}
+console.log("WLT_DISTANCE_BAND_QUOTES=PASS");
+
 const runtimePNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
 function joiningCaseDetails(businessName, firstStoreName, serviceCityId, vertical = verticalID, commercialType = commercialStoreTypeID, storeOrigin = firstStoreOrigin, fulfillmentModes = ["BTHWANI_CAPTAIN"]) {
@@ -1295,7 +1316,11 @@ async function acceptedCheckoutTotal(cartIDToQuote, storeIDToQuote, addressIDToQ
     body: { cartId: cartIDToQuote, storeId: storeIDToQuote, addressId: addressIDToQuote, fulfillmentMode: mode, ...(promotionCodeToQuote ? { promotionCode: promotionCodeToQuote } : {}) },
   });
   const total = quote.body?.quote?.totalAmountMinor;
-  if (quote.status !== 200 || !Number.isSafeInteger(total) || total <= 0) fail("failed to obtain canonical accepted quote before test checkout", JSON.stringify({ cartIDToQuote, storeIDToQuote, mode, version, quote }));
+  if (quote.status !== 200 || !Number.isSafeInteger(total) || total <= 0) {
+    const storeScope = sql(`SELECT service_city_id || '|' || delivery_origin_latitude::text || '|' || delivery_origin_longitude::text FROM dsh.stores WHERE id='${sqlLiteral(storeIDToQuote)}'`);
+    const cityPolicy = sql(`SELECT service_city_id || '|' || policy_version || '|' || distance_bands::text FROM wlt.delivery_fee_policies WHERE state='ACTIVE' AND service_city_id='${sqlLiteral(cityA)}'`);
+    fail("failed to obtain canonical accepted quote before test checkout", JSON.stringify({ cartIDToQuote, storeIDToQuote, mode, version, quote, storeScope, cityPolicy }));
+  }
   return total;
 }
 
