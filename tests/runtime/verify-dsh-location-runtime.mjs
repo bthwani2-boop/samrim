@@ -205,7 +205,12 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
     imageReadback.body?.case?.version !== storeImage.body.case.version || !imageReadback.body?.case?.storeProfileImage) {
     throw new Error(`location approved Store logo upload/readback failed: ${JSON.stringify({ storeImage, imageReadback })}`);
   }
-  return { ...fixture, caseID, storeID: String(approved.case.store.id) };
+  const storeID = String(approved.case.store.id);
+  const storeVersionAfterLogo = Number(sql(`SELECT version FROM dsh.stores WHERE id='${sqlLiteral(storeID)}'`));
+  if (!Number.isSafeInteger(storeVersionAfterLogo) || storeVersionAfterLogo !== Number(approved.case.store.version) + 1) {
+    throw new Error(`location Store media upload did not advance the canonical Store version: ${JSON.stringify({ approvedVersion: approved.case.store.version, storeVersionAfterLogo })}`);
+  }
+  return { ...fixture, caseID, storeID, storeVersionAfterLogo };
 }
 
 let exitCode = 1;
@@ -289,13 +294,14 @@ try {
 
   const origin = await expect(dshBase, "GET", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/delivery-origin`, 200, { token: partnerFixture.pair.accessToken });
   if (origin.origin?.latitude !== firstStoreOrigin.firstStoreLatitude || origin.origin?.longitude !== firstStoreOrigin.firstStoreLongitude || origin.originVersion !== 1 || Object.hasOwn(origin, "storeVersion")) throw new Error(`partner origin canonical readback failed: ${JSON.stringify(origin)}`);
+  const expectedStoreReadback = `${partnerFixture.storeVersionAfterLogo}|1`;
   let storeReadback = sql(`SELECT version || '|' || delivery_origin_version FROM dsh.stores WHERE id='${sqlLiteral(partnerStoreID)}'`);
-  if (storeReadback !== "1|1") throw new Error(`canonical joining approval changed Store version unexpectedly: ${storeReadback}`);
+  if (storeReadback !== expectedStoreReadback) throw new Error(`canonical approved Store image/version readback drifted: ${storeReadback}, expected ${expectedStoreReadback}`);
 
-  const publicationAttempt = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/publication`, { token: controlPanelToken, headers: { ...userHeaders(`location-publication-${suffix}`, 1), ...serviceHeaders(operatorID) }, body: { state: "published" } });
+  const publicationAttempt = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/publication`, { token: controlPanelToken, headers: { ...userHeaders(`location-publication-${suffix}`, partnerFixture.storeVersionAfterLogo), ...serviceHeaders(operatorID) }, body: { state: "published" } });
   if (publicationAttempt.status !== 409 || publicationAttempt.body?.error?.code !== "READINESS_BLOCKED") throw new Error(`publication readiness gate did not fail closed: ${JSON.stringify(publicationAttempt)}`);
   storeReadback = sql(`SELECT version || '|' || delivery_origin_version FROM dsh.stores WHERE id='${sqlLiteral(partnerStoreID)}'`);
-  if (storeReadback !== "1|1") throw new Error(`blocked publication changed Store or origin version: ${storeReadback}`);
+  if (storeReadback !== expectedStoreReadback) throw new Error(`blocked publication changed Store or origin version: ${storeReadback}`);
   console.log("LOCATION_CORE_PUBLICATION_READINESS_GATE=PASS");
 
   const wrongRoleAddress = await request(dshBase, "GET", `/dsh/addresses/${encodeURIComponent(addressID)}`, { token: partnerFixture.pair.accessToken });
