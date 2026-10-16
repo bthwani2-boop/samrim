@@ -42,6 +42,9 @@ func MigrateDeliveryProofCryptography(ctx context.Context, db *sql.DB, keys *Del
 		if !hasCiphertext || !hasVerifier || !hasKeyID {
 			return errors.New("DSH delivery proof schema is neither legacy nor fully migrated")
 		}
+		if err := upgradeCaptainConfirmedProofMaterial(ctx, tx); err != nil {
+			return err
+		}
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("finish DSH delivery proof migration readback: %w", err)
 		}
@@ -103,12 +106,251 @@ func MigrateDeliveryProofCryptography(ctx context.Context, db *sql.DB, keys *Del
 		DROP COLUMN code_hash,
 		ADD CONSTRAINT commerce_order_delivery_proof_material_chk CHECK (
 			(state='PENDING' AND code_ciphertext IS NOT NULL AND code_verifier ~ '^[0-9a-f]{64}$' AND code_key_id ~ '^[a-zA-Z0-9_-]{1,32}$')
-			OR (state='VERIFIED' AND code_ciphertext IS NULL AND code_verifier IS NULL AND code_key_id IS NULL)
+			OR (state IN ('VERIFIED', 'CAPTAIN_CONFIRMED') AND code_ciphertext IS NULL AND code_verifier IS NULL AND code_key_id IS NULL)
 		)`); err != nil {
 		return fmt.Errorf("remove legacy DSH delivery proof columns: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit protected DSH delivery proof migration: %w", err)
+	}
+	return nil
+}
+
+// upgradeCaptainConfirmedProofMaterial runs only after the legacy proof
+// material has been encrypted and code/code_hash columns have been removed.
+// Existing installations need the wider state guard; a fresh cutover already
+// creates it in its final form.
+func upgradeCaptainConfirmedProofMaterial(ctx context.Context, tx *sql.Tx) error {
+	var definition string
+	if err := tx.QueryRowContext(ctx, `SELECT pg_get_constraintdef(oid)
+		FROM pg_constraint
+		WHERE conrelid='dsh.commerce_order_delivery_proofs'::regclass
+		  AND conname='commerce_order_delivery_proof_material_chk'`).Scan(&definition); err != nil {
+		return fmt.Errorf("inspect DSH delivery proof material constraint: %w", err)
+	}
+	if strings.Contains(definition, "CAPTAIN_CONFIRMED") {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE dsh.commerce_order_delivery_proofs
+		DROP CONSTRAINT commerce_order_delivery_proof_material_chk,
+		ADD CONSTRAINT commerce_order_delivery_proof_material_chk CHECK (
+			(state='PENDING' AND code_ciphertext IS NOT NULL
+				AND code_verifier ~ '^[0-9a-f]{64}ctx context.Context, tx *sql.Tx, keys *DeliveryProofKeyring, proofs map[string]legacyDeliveryProof) error {
+	rows, err := tx.QueryContext(ctx, `SELECT i.idempotency_key,i.request_hash,i.order_id,i.expected_version FROM dsh.commerce_order_transition_idempotency i WHERE i.requested_state='PICKED_UP' ORDER BY i.idempotency_key FOR UPDATE`)
+	if err != nil {
+		return fmt.Errorf("read legacy store pickup idempotency: %w", err)
+	}
+	type row struct {
+		key, requestHash, orderID string
+		expectedVersion           int
+	}
+	items := make([]row, 0)
+	for rows.Next() {
+		var item row
+		if err := rows.Scan(&item.key, &item.requestHash, &item.orderID, &item.expectedVersion); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan legacy store pickup idempotency: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("read legacy store pickup idempotency rows: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close legacy store pickup idempotency rows: %w", err)
+	}
+	for _, item := range items {
+		proof, ok := proofs[item.orderID]
+		if !ok || !validDeliveryProofCode(proof.code) || item.requestHash != HashStorePickupCompletion(item.orderID, proof.code, item.expectedVersion) {
+			return fmt.Errorf("legacy store pickup idempotency %s cannot be safely translated", item.key)
+		}
+		newHash, err := keys.ActiveIdempotencyHash("store-pickup-completion", item.orderID, proof.code, strconv.Itoa(item.expectedVersion), "PICKED_UP")
+		if err != nil {
+			return fmt.Errorf("protect store pickup idempotency %s: %w", item.key, err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_transition_idempotency SET request_hash=$2 WHERE idempotency_key=$1`, item.key, newHash); err != nil {
+			return fmt.Errorf("update store pickup idempotency %s: %w", item.key, err)
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_audit SET request_hash=$2 WHERE idempotency_key=$1 AND event_type='order_picked_up'`, item.key, newHash)
+		if err != nil {
+			return fmt.Errorf("update store pickup audit %s: %w", item.key, err)
+		}
+		if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+			return fmt.Errorf("store pickup audit %s did not have exactly one matching row", item.key)
+		}
+	}
+	return nil
+}
+
+func migrateLegacyCaptainCompletionHashes(ctx context.Context, tx *sql.Tx, keys *DeliveryProofKeyring) error {
+	rows, err := tx.QueryContext(ctx, `SELECT idempotency_key,request_hash FROM dsh.captain_operation_idempotency WHERE operation='complete' ORDER BY idempotency_key FOR UPDATE`)
+	if err != nil {
+		return fmt.Errorf("read legacy captain completion idempotency: %w", err)
+	}
+	type row struct {
+		key, requestHash string
+	}
+	items := make([]row, 0)
+	for rows.Next() {
+		var item row
+		if err := rows.Scan(&item.key, &item.requestHash); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan legacy captain completion idempotency: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("read legacy captain completion rows: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close legacy captain completion rows: %w", err)
+	}
+	for _, item := range items {
+		if !isLegacySHA256(item.requestHash) {
+			return fmt.Errorf("legacy captain completion idempotency %s has an invalid request digest", item.key)
+		}
+		newHash, err := keys.ActiveIdempotencyHash("captain-completion-legacy", item.requestHash)
+		if err != nil {
+			return fmt.Errorf("protect captain completion idempotency %s: %w", item.key, err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE dsh.captain_operation_idempotency SET request_hash=$2 WHERE idempotency_key=$1 AND operation='complete'`, item.key, newHash); err != nil {
+			return fmt.Errorf("update captain completion idempotency %s: %w", item.key, err)
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE dsh.captain_audit SET request_hash=$2 WHERE idempotency_key=$1 AND event_type IN ('delivery_completed','delivery_failed')`, item.key, newHash)
+		if err != nil {
+			return fmt.Errorf("update captain completion audit %s: %w", item.key, err)
+		}
+		if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+			return fmt.Errorf("captain completion audit %s did not have exactly one matching row", item.key)
+		}
+	}
+	return nil
+}
+
+func isLegacySHA256(value string) bool {
+	if len(value) != 64 || strings.ToLower(value) != value {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func legacyStorePickupRequestHash(orderID, code string, expectedVersion int) string {
+	return hashFacts(strings.TrimSpace(orderID), HashDeliveryProofCode(orderID, code), strconv.Itoa(expectedVersion), "PICKED_UP")
+}
+
+				AND code_key_id ~ '^[a-zA-Z0-9_-]{1,32}ctx context.Context, tx *sql.Tx, keys *DeliveryProofKeyring, proofs map[string]legacyDeliveryProof) error {
+	rows, err := tx.QueryContext(ctx, `SELECT i.idempotency_key,i.request_hash,i.order_id,i.expected_version FROM dsh.commerce_order_transition_idempotency i WHERE i.requested_state='PICKED_UP' ORDER BY i.idempotency_key FOR UPDATE`)
+	if err != nil {
+		return fmt.Errorf("read legacy store pickup idempotency: %w", err)
+	}
+	type row struct {
+		key, requestHash, orderID string
+		expectedVersion           int
+	}
+	items := make([]row, 0)
+	for rows.Next() {
+		var item row
+		if err := rows.Scan(&item.key, &item.requestHash, &item.orderID, &item.expectedVersion); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan legacy store pickup idempotency: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("read legacy store pickup idempotency rows: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close legacy store pickup idempotency rows: %w", err)
+	}
+	for _, item := range items {
+		proof, ok := proofs[item.orderID]
+		if !ok || !validDeliveryProofCode(proof.code) || item.requestHash != HashStorePickupCompletion(item.orderID, proof.code, item.expectedVersion) {
+			return fmt.Errorf("legacy store pickup idempotency %s cannot be safely translated", item.key)
+		}
+		newHash, err := keys.ActiveIdempotencyHash("store-pickup-completion", item.orderID, proof.code, strconv.Itoa(item.expectedVersion), "PICKED_UP")
+		if err != nil {
+			return fmt.Errorf("protect store pickup idempotency %s: %w", item.key, err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_transition_idempotency SET request_hash=$2 WHERE idempotency_key=$1`, item.key, newHash); err != nil {
+			return fmt.Errorf("update store pickup idempotency %s: %w", item.key, err)
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_audit SET request_hash=$2 WHERE idempotency_key=$1 AND event_type='order_picked_up'`, item.key, newHash)
+		if err != nil {
+			return fmt.Errorf("update store pickup audit %s: %w", item.key, err)
+		}
+		if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+			return fmt.Errorf("store pickup audit %s did not have exactly one matching row", item.key)
+		}
+	}
+	return nil
+}
+
+func migrateLegacyCaptainCompletionHashes(ctx context.Context, tx *sql.Tx, keys *DeliveryProofKeyring) error {
+	rows, err := tx.QueryContext(ctx, `SELECT idempotency_key,request_hash FROM dsh.captain_operation_idempotency WHERE operation='complete' ORDER BY idempotency_key FOR UPDATE`)
+	if err != nil {
+		return fmt.Errorf("read legacy captain completion idempotency: %w", err)
+	}
+	type row struct {
+		key, requestHash string
+	}
+	items := make([]row, 0)
+	for rows.Next() {
+		var item row
+		if err := rows.Scan(&item.key, &item.requestHash); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan legacy captain completion idempotency: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("read legacy captain completion rows: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close legacy captain completion rows: %w", err)
+	}
+	for _, item := range items {
+		if !isLegacySHA256(item.requestHash) {
+			return fmt.Errorf("legacy captain completion idempotency %s has an invalid request digest", item.key)
+		}
+		newHash, err := keys.ActiveIdempotencyHash("captain-completion-legacy", item.requestHash)
+		if err != nil {
+			return fmt.Errorf("protect captain completion idempotency %s: %w", item.key, err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE dsh.captain_operation_idempotency SET request_hash=$2 WHERE idempotency_key=$1 AND operation='complete'`, item.key, newHash); err != nil {
+			return fmt.Errorf("update captain completion idempotency %s: %w", item.key, err)
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE dsh.captain_audit SET request_hash=$2 WHERE idempotency_key=$1 AND event_type IN ('delivery_completed','delivery_failed')`, item.key, newHash)
+		if err != nil {
+			return fmt.Errorf("update captain completion audit %s: %w", item.key, err)
+		}
+		if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+			return fmt.Errorf("captain completion audit %s did not have exactly one matching row", item.key)
+		}
+	}
+	return nil
+}
+
+func isLegacySHA256(value string) bool {
+	if len(value) != 64 || strings.ToLower(value) != value {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func legacyStorePickupRequestHash(orderID, code string, expectedVersion int) string {
+	return hashFacts(strings.TrimSpace(orderID), HashDeliveryProofCode(orderID, code), strconv.Itoa(expectedVersion), "PICKED_UP")
+}
+)
+			OR (state IN ('VERIFIED', 'CAPTAIN_CONFIRMED')
+				AND code_ciphertext IS NULL AND code_verifier IS NULL AND code_key_id IS NULL)
+		)`); err != nil {
+		return fmt.Errorf("upgrade DSH delivery proof material constraint: %w", err)
 	}
 	return nil
 }

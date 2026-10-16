@@ -6,7 +6,7 @@ import { type MarketingResourceKey, workspaceMarketingResources } from "../../na
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
 
-export type ApiError = { error?: { message?: string } };
+type ApiError = { error?: { message?: string } };
 
 export function promotionTargetSummary(item: PromotionView): string {
   const targets = item.targets ?? [];
@@ -82,7 +82,7 @@ export function emptyPromotionForm(): PromotionFormState {
   };
 }
 
-export type PendingDiscoveryContentCreateInput = Readonly<{
+type PendingDiscoveryContentCreateInput = Readonly<{
   id: string;
   kind: "BANNER" | "CAROUSEL" | "SHORT_FORM";
   titleAr: string;
@@ -103,7 +103,7 @@ export type PendingDiscoveryContentCreate = Readonly<{
   input: PendingDiscoveryContentCreateInput;
 }>;
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 

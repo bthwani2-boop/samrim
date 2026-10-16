@@ -30,9 +30,7 @@ export type CatalogResourceKey = (typeof workspaceCatalogResources)[number]["key
 // Product, category, and proposal registries share /catalog; retain separate import/recovery workflows.
 const catalogChildren: readonly WorkspaceChild[] = [];
 
-export type { PolicyResourceKey } from "../features/policies/policy-capabilities";
 // The policies' names, scopes and supported capabilities have one discoverable owner.
-export { policyCapabilities as workspacePolicyResources } from "../features/policies/policy-capabilities";
 
 // Policy editors are reached inside the one canonical policies surface. Existing deep links stay valid.
 const policyChildren: readonly WorkspaceChild[] = [];

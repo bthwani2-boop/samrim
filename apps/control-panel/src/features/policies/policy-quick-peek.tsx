@@ -26,7 +26,7 @@ function formatHistoryValue(field: string, value: string) {
   }
 }
 
-export type PolicyListPreview = Readonly<{
+type PolicyListPreview = Readonly<{
   active: number | null;
   inactive: number | null;
   headline?: string;
