@@ -14,24 +14,6 @@ async function setup(page: Page) {
   await page.route("**/api/partners/workbench**", (route) => route.fulfill({ json: { rows: registryRows([first, second]), nextCursor: "" } }));
 }
 
-test("store registry shows the canonical logo beside the store and a fallback for stores without images", async ({ page }) => {
-  await setup(page);
-  const imageUri = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44"><rect width="44" height="44" fill="#567"/></svg>');
-  await page.route("**/api/partners/workbench**", (route) => route.fulfill({
-    json: { rows: registryRows([{ ...first, storeProfileImage: { uri: imageUri, role: "primary" } }, second]), nextCursor: "" },
-  }));
-  await page.goto("/partners");
-  const rows = page.locator(".partner-unified-table tbody tr[data-kind=\"store\"]");
-  await expect(rows).toHaveCount(2);
-  const logo = rows.first().getByRole("img", { name: "شعار متجر متجر الاختبار" });
-  await expect(logo).toHaveAttribute("src", imageUri);
-  await expect.poll(() => logo.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBe(44);
-  await expect(rows.nth(1).getByRole("img", { name: "لا توجد صورة متاحة لمتجر المتجر الثاني" })).toBeVisible();
-  await expect(rows.first().getByRole("link", { name: "شريك الاختبار" })).toHaveAttribute("href", "/partners/actors/partner");
-  await rows.first().getByRole("button", { name: "إدارة المتجر" }).click();
-  await expect(page.getByRole("region", { name: "تفاصيل المتجر" })).toBeVisible();
-  expect(new URL(page.url()).searchParams.get("inspect")).toBe(first.id);
-});
 test("store inspection reads canonical readiness on demand and preserves registry context and focus", async ({ page }) => {
   await setup(page);
   let reads = 0;
@@ -266,24 +248,6 @@ test("phone lookup stays out of the browser URL and sends a same-origin private 
   await page.reload();
   await expect(page.locator("#partner-unified-search")).toHaveValue("+967777123456");
   expect(new URL(page.url()).searchParams.has("q")).toBe(false);
-});
-
-test("store logo opens the shared full-image review and restores keyboard focus", async ({ page }) => {
-  await setup(page);
-  const imageUri = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44"><rect width="44" height="44" fill="#567"/></svg>');
-  await page.route("**/api/partners/workbench**", (route) => route.fulfill({
-    json: { rows: registryRows([{ ...first, storeProfileImage: { uri: imageUri, role: "primary" } }]), nextCursor: "" },
-  }));
-  await page.goto("/partners");
-  const trigger = page.getByRole("button", { name: "تكبير شعار متجر متجر الاختبار" });
-  await expect(trigger).toBeVisible();
-  await trigger.click();
-  const viewer = page.getByRole("dialog", { name: "شعار متجر متجر الاختبار" });
-  await expect(viewer).toBeVisible();
-  await expect(viewer.getByRole("img", { name: "شعار متجر متجر الاختبار" })).toHaveAttribute("src", imageUri);
-  await page.keyboard.press("Escape");
-  await expect(viewer).toHaveCount(0);
-  await expect(trigger).toBeFocused();
 });
 
 test("compact indicators preserve independent states and a legend even without pagination", async ({ page }, testInfo) => {

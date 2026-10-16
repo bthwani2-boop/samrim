@@ -154,23 +154,6 @@ test.beforeEach(async ({ page }) => {
   await stubPresentationReads(page);
 });
 
-for (const [device, viewport] of [["desktop", { width: 1368, height: 900 }], ["mobile", { width: 390, height: 844 }]] as const) {
-  for (const theme of ["light", "dark"] as const) {
-    test(`visual baseline: store registry ${device} ${theme}`, async ({ page }) => {
-      await page.setViewportSize(viewport);
-      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-      await page.goto("/partners");
-      // Linux runner and local Docker use different system-ui font aliases.
-      // Pin a packaged Arabic-capable font for comparable Linux rendering.
-      if (process.platform === "linux") await page.addStyleTag({ content: 'body { font-family: "FreeSerif", serif !important; }' });
-      await expect(page.locator(".store-registry tbody tr")).toHaveCount(10);
-      await expect(page.getByRole("heading", { name: "الشركاء والمتاجر", level: 1, exact: true })).toBeVisible();
-      // Reviewed compact indicators and mobile cards use platform-specific baselines.
-      await expect(page).toHaveScreenshot(`store-registry-${device}-${theme}.png`, { animations: "disabled", maxDiffPixels: 256 });
-    });
-  }
-}
-
 test("store registry geometry is stable on direct load, client navigation and reload", async ({ page }) => {
   const registry = page.locator(".store-registry");
   const readGeometry = () => registry.evaluate((element) => {

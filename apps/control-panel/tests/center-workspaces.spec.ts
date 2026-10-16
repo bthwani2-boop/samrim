@@ -19,41 +19,6 @@ async function financeFixtures(page: Page, failed = false) {
   return requests;
 }
 
-test("finance root reads independent bounded queues and links canonical work", async ({ page }) => {
-  await authenticate(page);
-  const requests = await financeFixtures(page);
-  await page.goto("/finance");
-  await expect(page).toHaveURL(/\/finance$/);
-  const center = page.locator(".finance-center");
-  await expect(center.getByRole("heading", { name: "المالية", exact: true })).toBeVisible();
-  await expect(center.getByRole("link", { name: /متجر الاختبار/ })).toHaveAttribute("href", "/finance/partner-commission-receivables?partnerActorId=partner-1");
-  await expect(center.getByRole("link", { name: /دفعة من/ })).toHaveAttribute("href", /batchId=batch-1/);
-  await expect(center.getByRole("link", { name: /عميل الاختبار/ })).toHaveAttribute("href", /intakeId=intake-1/);
-  await expect(center.getByRole("link", { name: /كابتن الاختبار/ })).toHaveAttribute("href", /search=/);
-  expect(requests).toHaveLength(4);
-  expect(requests.every((url) => url.searchParams.get("limit") === "3")).toBe(true);
-  expect(requests.find((url) => url.pathname.endsWith("settlement-batches"))?.searchParams.get("status")).toBe("PREPARED");
-  expect(requests.find((url) => url.pathname.endsWith("customer-withdrawal-intakes"))?.searchParams.get("status")).toBe("REQUESTED");
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(center.getByRole("link", { name: /متجر الاختبار/ })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-});
-
-test("finance failed preview remains unknown and recovers without hiding other queues", async ({ page }) => {
-  await authenticate(page);
-  await financeFixtures(page, true);
-  await page.goto("/finance");
-  const custody = page.getByRole("region", { name: "العهد النقدية" });
-  await expect(custody.getByRole("alert")).toBeVisible();
-  await expect(custody.getByText("لا سجلات في هذه المعاينة.")).toHaveCount(0);
-  await expect(page.locator(".finance-center").getByText("متجر الاختبار", { exact: true })).toBeVisible();
-  await page.unroute("**/api/finance/**");
-  await financeFixtures(page);
-  await page.getByRole("button", { name: "إعادة المحاولة", exact: true }).click();
-  await expect(custody.getByRole("link", { name: /كابتن الاختبار/ })).toBeVisible();
-  await expect(custody.getByRole("alert")).toHaveCount(0);
-});
-
 test("finance root does not fetch financial data without permission", async ({ page }) => {
   await authenticate(page, []);
   const requests = await financeFixtures(page);

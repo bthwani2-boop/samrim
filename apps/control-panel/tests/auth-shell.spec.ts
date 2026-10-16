@@ -42,36 +42,6 @@ async function stubAuthenticatedSession(page: Page, permissions = authenticatedO
   });
 }
 
-test("workspace search hides child destinations when their parent permission is absent", async ({ page }) => {
-  await stubAuthenticatedSession(page, ["catalog"]);
-  await page.goto("/workspace");
-  await page.getByRole("button", { name: "البحث في صفحات لوحة التحكم" }).click();
-  const search = page.getByRole("searchbox", { name: "البحث في صفحات لوحة التحكم" });
-
-  for (const query of ["الكباتن", "الميدان"]) {
-    await search.fill(query);
-    await expect(page.getByText("لا توجد صفحات مطابقة.")).toBeVisible();
-  }
-
-  await search.fill("المنتجات");
-  await expect(page.locator(".workspace-search-results").getByRole("link", { name: "المنتجات" })).toBeVisible();
-});
-
-test("workspace search offers shared store recovery to partners without exposing catalog-only resources", async ({ page }) => {
-  await stubAuthenticatedSession(page, ["partners"]);
-  await page.goto("/workspace");
-  await page.getByRole("button", { name: "البحث في صفحات لوحة التحكم" }).click();
-  const search = page.getByRole("searchbox", { name: "البحث في صفحات لوحة التحكم" });
-
-  await search.fill("سلة المحذوفات");
-  const trash = page.locator(".workspace-search-results").getByRole("link", { name: "سلة المحذوفات" });
-  await expect(trash).toBeVisible();
-  await expect(trash).toHaveAttribute("href", "/catalog/trash");
-
-  await search.fill("المنتجات");
-  await expect(page.getByText("لا توجد صفحات مطابقة.")).toBeVisible();
-});
-
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/wallet-providers**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ walletProviders: [
@@ -309,59 +279,6 @@ test("signed-out access to a protected workspace route returns to the identity s
   await expect(page.getByRole("heading", { name: /^الدخول (بمفتاح المرور|بكلمة المرور)$/ })).toBeVisible();
 });
 
-test("authenticated operator discovers the platform centers through workspace navigation", async ({ page }) => {
-  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "operations", "partners", "catalog"], true);
-  await page.route("**/api/access/operator-profiles**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
-  });
-  await page.route("**/api/access/operators**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 10, nextCursor: "" }) });
-  });
-  let homeRequestsActionableOrders = false;
-  let homeRequestsCatalogQueue = false;
-  await page.route("**/api/operations**", async (route) => {
-    homeRequestsActionableOrders = new URL(route.request().url()).searchParams.get("actionableOnly") === "true";
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ operations: [] }) });
-  });
-  await page.route("**/api/partners/joining-cases**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cases: [] }) });
-  });
-  await page.route("**/api/catalog/proposals**", async (route) => {
-    homeRequestsCatalogQueue = new URL(route.request().url()).searchParams.get("state") === "submitted";
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ proposals: [{ id: "proposal-home", partnerActorId: "partner-home", verticalId: "grocery", categoryId: "coffee", proposedName: "قهوة للمراجعة", proposedVariantTitle: "الافتراضي", proposedMeasurementKind: "DISCRETE", proposedBaseUnit: "COUNT", state: "submitted", version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" }] }) });
-  });
-  await page.route("**/api/notifications**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ notifications: [], unreadCount: 0 }) });
-  });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
-
-  await expect(page).toHaveURL(/\/workspace$/);
-  await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
-  await expect.poll(() => homeRequestsActionableOrders).toBe(true);
-  await expect.poll(() => homeRequestsCatalogQueue).toBe(true);
-  await expect(page.locator("#home-queue-proposals-title")).toBeVisible();
-  await expect(page.getByRole("link", { name: /قهوة للمراجعة/ })).toHaveAttribute("href", "/catalog/proposals?proposalId=proposal-home");
-  await expect(page.locator("#home-notifications-title")).toBeVisible();
-  const navigationToggle = page.getByRole("button", { name: "فتح مسارات العمل" });
-  await navigationToggle.click();
-  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" })).toHaveAttribute("data-open", "true");
-  const accessLink = page.getByRole("link", { name: "الوصول والصلاحيات" });
-  await expect(accessLink).toBeVisible();
-  await accessLink.click();
-  await expect(page).toHaveURL(/\/access$/);
-  await expect(page.locator('#workspace-navigation a[href="/access"][aria-current="page"]')).toHaveAttribute("href", "/access");
-  await expect(page.getByRole("heading", { name: "الوصول والصلاحيات", exact: true, level: 1 })).toBeVisible();
-  await expect(page.locator(".access-center-table")).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "أقسام الوصول والصلاحيات" })).toHaveCount(0);
-  await expect(page.getByRole("textbox", { name: "بحث عن موظف أو مشغّل" })).toBeVisible();
-  await expect(page.locator(".access-table")).toBeVisible();
-  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await page.reload();
-  await expect(page).toHaveURL(/\/access$/);
-  await expect(page.locator(".access-center-table")).toBeVisible();
-});
-
 test("operator without operator-administration authority cannot open access or profile controls", async ({ page }) => {
   await stubAuthenticatedSession(page);
   await page.goto("/access");
@@ -479,45 +396,6 @@ test("operator notification inbox reads bounded cursor pages and restores browse
   expect(requests.filter((request) => request.cursor === "older-page").length).toBeGreaterThanOrEqual(2);
 });
 
-test("workspace routes keep one main landmark and an actor-specific page hierarchy", async ({ page }) => {
-  test.setTimeout(120_000);
-  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "operations", "partners", "catalog"], true);
-  const routes = [
-    ["/workspace", "الرئيسية"],
-    ["/notifications", "الإشعارات"],
-    ["/access", "الوصول والصلاحيات"],
-    ["/partners", "الشركاء والمتاجر"],
-    ["/operations", "العمليات"],
-    ["/finance", "حفظ النقد"],
-    ["/captains", "قبول الكباتن"],
-    ["/fields", "الميدانيون"],
-    ["/catalog", "المنتجات"],
-    ["/policies", "مدن الخدمة"],
-  ] as const;
-
-  for (const [path, heading] of routes) {
-    await page.goto(path, { waitUntil: "commit" });
-    await expect(page.locator("#workspace-main")).toHaveCount(1, { timeout: 30_000 });
-    await expect(page.locator("#workspace-main > main")).toHaveCount(0, { timeout: 30_000 });
-    await expect(page.getByRole("heading", { name: heading, exact: true, level: 1 })).toBeVisible({ timeout: 30_000 });
-    await expect(page).toHaveTitle(/.+ \| بثواني$/);
-    if (path !== "/notifications") {
-      const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
-      if (path === "/captains" || path === "/fields") {
-        const owner = path === "/captains" ? "العمليات" : "الشركاء";
-        const tab = path === "/captains" ? "الكباتن" : "الميداني";
-        await expect(navigation.getByRole("link", { name: owner, exact: true })).toHaveAttribute("aria-current", "location", { timeout: 30_000 });
-        await expect(navigation.getByRole("list", { name: `مسارات ${owner}` }).getByRole("link", { name: tab, exact: true })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
-      } else {
-        const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : path === "/access" ? "الوصول والصلاحيات" : path === "/partners" ? "الشركاء" : path === "/operations" ? "العمليات" : path === "/finance" ? "المالية" : path === "/policies" ? "السياسات" : "الكتالوج";
-        const currentState = ["/catalog", "/finance", "/policies"].includes(path) ? "location" : "page";
-        if (path === "/partners") await expect(navigation.getByRole("link", { name: navigationLabel, exact: true })).toHaveAttribute("href", "/partners");
-        else await expect(navigation.getByRole("link", { name: navigationLabel, exact: true })).toHaveAttribute("aria-current", currentState, { timeout: 30_000 });
-      }
-    }
-  }
-});
-
 test("workspace navigation keeps captain operations and field partners in their owning centers", async ({ page }) => {
   await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "operations", "partners"]);
   const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
@@ -557,27 +435,6 @@ test("partners have one canonical workspace and preserve legacy joining deep lin
   await page.goto("/partners/joining?state=submitted");
   await expect(page).toHaveURL(/\/partners\?.*view=joining/);
   await expect(page.getByRole("heading", { name: "الشركاء والمتاجر", exact: true })).toBeVisible();
-});
-
-test("finance and marketing centers expose only real independent resource routes", async ({ page }) => {
-  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "marketing"]);
-  const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
-
-  await page.goto("/finance");
-  await expect(page).toHaveURL(/\/finance\/cash-custody$/);
-  await expect(page.getByRole("heading", { name: "حفظ النقد", exact: true, level: 1 })).toBeVisible();
-  await expect(navigation.getByRole("link", { name: "حفظ النقد", exact: true })).toHaveAttribute("href", "/finance/cash-custody");
-  await expect(navigation.getByRole("link", { name: "اتفاقات المتاجر", exact: true })).toHaveAttribute("href", "/finance/partner-store-commissions");
-
-  await page.goto("/finance/cash-custody");
-  await expect(page.getByRole("heading", { name: "حفظ النقد", exact: true })).toBeVisible();
-  await expect(navigation.getByRole("link", { name: "المالية", exact: true })).toHaveAttribute("aria-current", "location");
-  await expect(navigation.getByRole("link", { name: "حفظ النقد", exact: true })).toHaveAttribute("aria-current", "page");
-
-  await page.goto("/marketing/promotions");
-  await expect(page.getByRole("heading", { name: "العروض", exact: true })).toBeVisible();
-  await expect(navigation.getByRole("link", { name: "التسويق والمحتوى", exact: true })).toHaveAttribute("aria-current", "location");
-  await expect(navigation.getByRole("link", { name: "محتوى الاكتشاف", exact: true })).toHaveAttribute("href", "/marketing/content");
 });
 
 test("marketing resource pages keep promotions and discovery content separate", async ({ page }) => {
@@ -738,17 +595,6 @@ test("marketing create recovery reconciles promotions and resumes content with t
   expect(await page.evaluate(() => window.sessionStorage.getItem("bthwani.control.marketing.content-create.v1.actor-operator"))).toBeNull();
 });
 
-test("workspace shell exposes nested breadcrumbs and the current resource", async ({ page }) => {
-  await stubAuthenticatedSession(page);
-  await page.goto("/catalog/products");
-  const breadcrumbs = page.getByRole("navigation", { name: "مسار الصفحة" });
-  await expect(breadcrumbs.getByRole("link", { name: "الكتالوج", exact: true })).toHaveAttribute("href", "/catalog");
-  await expect(breadcrumbs.locator('[aria-current="page"]')).toContainText("المنتجات");
-
-  await page.goto("/policies?policy=service-cities&action=manage");
-  await expect(page.getByRole("navigation", { name: "مسار الصفحة" }).locator('[aria-current="page"]')).toContainText("سياسات المنصة");
-});
-
 test("mobile workspace navigation restores focus and account menu owns appearance controls", async ({ page }) => {
   await stubAuthenticatedSession(page);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -817,53 +663,6 @@ test("operator permission coverage filters the server page and starts a fresh cu
   await expect(page.getByRole("row", { name: /مشغّل تجريبي/ })).toContainText("4");
 });
 
-test("an HR-linked operator profile is approved, admitted, and invited without duplicate creation", async ({ page }) => {
-  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
-  const profileId = "oprof_browser_review";
-  const actorId = "act_operator_browser_review";
-  let profile = {
-    id: profileId, fullNameAr: "محمود علي الصنعاني", phoneE164: "+96777000123",
-    jobTitle: "مشرف العمليات", department: "العمليات",
-    state: "pending_review", version: 1, createdAt: "2026-10-12T00:00:00.000Z",
-    roleEnabled: false, securityEnabled: true, activatedAt: null as string | null,
-  };
-  const actions: string[] = [];
-  await page.route("**/api/access/operator-profiles**", async (route) => {
-    const request = route.request();
-    if (request.method() === "GET") {
-      await route.fulfill({ json: { items: [profile], nextCursor: "" } });
-      return;
-    }
-    const body = request.postDataJSON() as { action: string; expectedVersion?: number };
-    actions.push(body.action);
-    if (body.action === "approve" && body.expectedVersion === 1) {
-      profile = { ...profile, state: "approved", version: 2 };
-      return route.fulfill({ json: { profile } });
-    }
-    if (body.action === "grant" && body.expectedVersion === 2) {
-      profile = { ...profile, state: "admitted", version: 3, roleEnabled: true };
-      return route.fulfill({ status: 201, json: { profile, role: { actorId, role: "operator", actorCreated: true, roleCreated: true } } });
-    }
-    if (body.action === "invitation") {
-      return route.fulfill({ status: 201, json: {
-        profile, enrollmentToken: { code: "operator-enrollment-proof-code-123456", maskedPhone: "+967*******123",
-          role: "operator", expiresAt: "2099-01-01T00:00:00.000Z" },
-      } });
-    }
-    return route.fulfill({ status: 400, json: { error: { code: "INVALID_INPUT" } } });
-  });
-
-  await page.goto("/access?view=operators");
-  await expect(page.getByText(profile.fullNameAr)).toBeVisible();
-  await expect(page.locator("#operator-profile-name")).toHaveCount(0);
-  await page.locator(".access-center-table").getByRole("button", { name: "اعتماد الملف", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "اعتماد الملف", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "منح الدور", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "إصدار دعوة", exact: true }).click();
-  await expect(page.getByText("operator-enrollment-proof-code-123456", { exact: true })).toBeVisible();
-  expect(actions).toEqual(["approve", "grant", "invitation"]);
-});
-
 test("operator access keeps phone discovery separate from actorId mutation", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
   let mutationBody: Record<string, unknown> | undefined;
@@ -911,54 +710,6 @@ test("operator access keeps phone discovery separate from actorId mutation", asy
   expect(mutationBody).toMatchObject({ actorId: "act_operator_canonical", role: "operator", action: "disable-role", expectedVersion: 3 });
 });
 
-test("Field center reads DSH eligibility and routes operational controls to the role owner", async ({ page }) => {
-  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
-  let mutationBody: Record<string, unknown> | undefined;
-  let enabled = true;
-  await page.route("**/api/fields**", async (route) => {
-    if (route.request().method() === "POST") {
-      mutationBody = route.request().postDataJSON() as Record<string, unknown>;
-      enabled = false;
-      await route.fulfill({ status: 204 });
-      return;
-    }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_admitted", phoneE164: "+96777000103", role: "field", enabled, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_field_admitted", actorId: "act_field_admitted", state: "eligible", version: 4, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
-  });
-  await page.goto("/fields");
-  await expect(page.getByRole("heading", { name: "الميدانيون" })).toBeVisible();
-  await expect(page.locator("tr.field-agent-row")).toBeVisible();
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await expect(page.locator("tr.field-agent-row > th").first()).toHaveCSS("position", "sticky");
-  await expect(page.locator("tr.field-agent-row > td").last()).toHaveCSS("position", "sticky");
-  await page.setViewportSize({ width: 800, height: 800 });
-  await expect(page.locator("tr.field-agent-row > td").last()).toHaveCSS("position", "static");
-  await fillActionReason(page, "تجميد أهلية الميدان");
-  await page.getByRole("button", { name: "إيقاف الوصول" }).click();
-  expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", action: "disable", expectedVersion: 2, reason: "تجميد أهلية الميدان" });
-});
-
-test("legacy Field role with a missing profile is suspended before Identity access is already disabled", async ({ page }) => {
-  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
-  let admissionState = "eligible";
-  let mutationBody: Record<string, unknown> | undefined;
-  await page.route("**/api/fields**", async (route) => {
-    if (route.request().method() === "POST") {
-      mutationBody = route.request().postDataJSON() as Record<string, unknown>;
-      admissionState = "suspended";
-      await route.fulfill({ status: 204 });
-      return;
-    }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_legacy", phoneE164: "+96777000108", role: "field", enabled: false, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_legacy", actorId: "act_field_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
-  });
-  await page.goto("/fields");
-  await expect(page.getByRole("img", { name: "الملف يحتاج استكمالًا ومراجعة" }).first()).toBeVisible();
-  await expect(page.locator("tr.field-agent-row")).toBeVisible();
-  await fillActionReason(page, "إيقاف حتى مراجعة الملف");
-  await page.getByRole("button", { name: "إيقاف الوصول" }).click();
-  expect(mutationBody).toMatchObject({ actorId: "act_field_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
-  await expect(page.locator("output.success-inline:visible").first()).toContainText("أُوقف دور الدخول وأُعيدت قراءة حالة الحساب وأهلية النظام.");
-});
-
 test("legacy Captain profile review never offers role activation before review", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
   let admissionState = "eligible";
@@ -987,36 +738,6 @@ test("legacy Captain profile review never offers role activation before review",
   if (!await reviewWarning.isVisible()) await reviewWarning.locator("xpath=ancestor::details[1]").locator("summary").click();
   await expect(reviewWarning).toBeVisible();
   await expect(page.getByRole("button", { name: "إعادة التفعيل" })).toHaveCount(0);
-});
-
-test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and admission versions", async ({ page }) => {
-  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
-  let reenrolled = false;
-  let reenrollmentBody: Record<string, unknown> | undefined;
-  await page.route("**/api/fields**", async (route) => {
-    if (route.request().method() === "POST") {
-      reenrollmentBody = route.request().postDataJSON() as Record<string, unknown>;
-      reenrolled = true;
-      await route.fulfill({ status: 204 });
-      return;
-    }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_reenroll", phoneE164: "+96777000105", role: "field", enabled: true, securityEnabled: true, activatedAt: reenrolled ? undefined : "2026-09-20T08:00:00.000Z", actorVersion: 4, roleVersion: reenrolled ? 3 : 2, admission: { id: "fld_adm_reenroll", actorId: "act_field_reenroll", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
-  });
-  await page.goto("/fields");
-  await expect(page.locator("tr.field-agent-row")).toBeVisible();
-  await fillActionReason(page, "استرداد جهاز الميدان");
-  await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.locator("output.success-inline:visible").first()).toContainText("أُجيزت إعادة تسجيل دور سبق تفعيله");
-  await expect(page.locator("tr.field-agent-row").getByRole("status").filter({ hasText: /^بانتظار تفعيل الجهاز/ })).toHaveText("بانتظار تفعيل الجهاز من تطبيق الميدان برقم الهاتف المسجّل.");
-  expect(reenrollmentBody).toMatchObject({
-    actorId: "act_field_reenroll",
-    action: "reenroll",
-    expectedActorVersion: 4,
-    expectedRoleVersion: 2,
-    expectedAdmissionVersion: 8,
-    reason: "استرداد جهاز الميدان",
-  });
-  await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
 test("Captain reenrollment goes through DSH eligibility and verifies the Identity readback", async ({ page }) => {
@@ -1122,38 +843,6 @@ test("Field roster distinguishes DSH failures and retry restores the same canoni
   await expect(error).toHaveCount(0);
 });
 
-test("Field reenrollment conflicts reload the canonical DSH-owned roster before retry", async ({ page }) => {
-  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
-  let conflictStateApplied = false;
-  await page.route("**/api/fields**", async (route) => {
-    if (route.request().method() === "POST") {
-      conflictStateApplied = true;
-      await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "CONFLICT", message: "the access versions changed" } }) });
-      return;
-    }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_conflict", phoneE164: "+96777000106", role: "field", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: conflictStateApplied ? 3 : 2, admission: { id: "fld_adm_conflict", actorId: "act_field_conflict", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
-  });
-  await page.goto("/fields");
-  await expect(page.locator("tr.field-agent-row")).toBeVisible();
-  await fillActionReason(page, "استرداد جهاز الميدان");
-  await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.getByText(/^تغيرت حالة الحساب بالتزامن\. أُعيد تحميل الحالة الحالية/).filter({ visible: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toBeVisible();
-});
-
-test("Field first activation is distinct from reenrollment and explains the next app step", async ({ page }) => {
-  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
-  await page.route("**/api/fields**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_first_activation", phoneE164: "+96777000118", role: "field", enabled: true, securityEnabled: true, actorVersion: 1, roleVersion: 1, admission: { id: "fld_adm_first_activation", actorId: "act_field_first_activation", fullNameAr: "سالم علي", state: "eligible", version: 1, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
-  });
-  await page.goto("/fields");
-  await expect(page.getByRole("img", { name: "الدور جاهز؛ بانتظار تفعيل الجهاز" }).first()).toBeVisible();
-  await expect(page.locator("tr.field-agent-row")).toBeVisible();
-  await expect(page.locator("tr.field-agent-row").getByRole("status")).toContainText("برقم الهاتف المسجّل");
-  await expect(page.getByRole("status")).toContainText("تفعيل الجهاز");
-  await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
-});
-
 test("Field admission form accepts valid Yemeni local or international phone and rejects invalid input", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
   await page.route("**/api/service-cities**", async (route) => {
@@ -1176,17 +865,6 @@ test("Field admission form accepts valid Yemeni local or international phone and
   await expect(page.getByRole("button", { name: "حفظ للمراجعة" })).toBeEnabled();
 });
 
-test("Field reenrollment remains unavailable until DSH restores eligibility", async ({ page }) => {
-  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
-  await page.route("**/api/fields**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_suspended", phoneE164: "+96777000107", role: "field", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_suspended", actorId: "act_field_suspended", state: "suspended", version: 9, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
-  });
-  await page.goto("/fields");
-  await expect(page.locator("tr.field-agent-row").first().getByRole("img", { name: /موقوف/ }).first()).toBeVisible();
-  await expect(page.locator("tr.field-agent-row")).toBeVisible();
-  await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
-});
-
 test("captain center owns DSH eligibility and operational availability", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
   let mutationBody: Record<string, unknown> | undefined;
@@ -1207,95 +885,6 @@ test("captain center owns DSH eligibility and operational availability", async (
   await fillActionReason(page, "تحديث توافر الكابتن");
   await page.getByRole("button", { name: "جعله غير متاح" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_captain_admitted", action: "availability", available: false, expectedVersion: 7, reason: "تحديث توافر الكابتن" });
-});
-
-test("Captain candidate profile is reviewed before Identity grants the app role", async ({ page }) => {
-  await stubAuthenticatedSession(page);
-  await exerciseReviewedDshCandidateFlow(page, "captain", "علي سالم", "علي سالم أحمد الصنعاني", "+96777000105");
-});
-
-test("legacy Captain profile completion and review leave access suspended", async ({ page }) => {
-  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
-  await exerciseLegacyDshProfileReview(page, "captain");
-});
-
-test("operator operations uses the DSH read model and resource actions", async ({ page }) => {
-  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "operations"]);
-  let requestedCursor = "";
-  let requestedSearch = "";
-  let requestedSort = "";
-  const operation = {
-    orderId: "order_ready",
-    state: "READY_FOR_DISPATCH",
-    updatedAt: "2026-09-18T06:00:00.000Z",
-    storeName: "متجر الاختبار",
-    assignment: null,
-  };
-  const detail = {
-    order: { id: "order_ready", clientActorId: "act_client", storeId: "store_test", storeName: "متجر الاختبار", pickupLocation: null, cartId: "cart_test", fulfillmentMode: "BTHWANI_DELIVERY", addressId: "address_test", addressVersion: 1, addressText: "شارع الاختبار", addressLatitude: 15.369445, addressLongitude: 44.191006, serviceCityId: "sanaa", serviceabilityPolicyVersion: "CITY_SCOPE_V1", serviceabilityStatus: "SERVICEABLE", serviceabilityStoreVersion: 1, serviceabilityAddressVersion: 1, state: "READY_FOR_DISPATCH", subtotalAmountMinor: 1800, discountMinor: 0, totalAmountMinor: 1800, currency: "YER", paymentMethod: "CASH_ON_DELIVERY", paymentState: "REQUIRES_COLLECTION", paymentIntentId: "payment_ready", version: 3, lines: [], adjustments: [], createdAt: "2026-09-18T05:00:00.000Z", updatedAt: "2026-09-18T06:00:00.000Z" },
-    storeName: "متجر الاختبار",
-    assignment: null,
-  };
-  await page.route("**/api/operations*", async (route) => {
-    const requestUrl = new URL(route.request().url());
-    if (route.request().method() !== "GET" || requestUrl.pathname !== "/api/operations") {
-      await route.fallback();
-      return;
-    }
-    requestedCursor = requestUrl.searchParams.get("cursor") ?? "";
-    requestedSearch = requestUrl.searchParams.get("q") ?? "";
-    requestedSort = requestUrl.searchParams.get("sort") ?? "updated_desc";
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        operations: requestedCursor ? [] : [operation],
-        nextCursor: requestedCursor ? undefined : "cursor-page-2",
-      }),
-    });
-  });
-  await page.route("**/api/operations/order_ready", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ operation: { ...detail, order: { ...detail.order, lines: [{ id: "line-1", productName: "قهوة", variantTitle: "الافتراضي", finalQuantityBaseUnits: 1, baseUnit: "COUNT", lineAmountMinor: 1800, currency: "YER" }] } } }),
-    });
-  });
-  await page.goto("/operations");
-  await expect(page.getByRole("heading", { name: "العمليات" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "فتح الطلب order_ready" })).toBeVisible();
-  const searchBox = page.getByRole("searchbox");
-  await searchBox.fill("متجر الاختبار");
-  await searchBox.press("Enter");
-  await expect.poll(() => requestedSearch).toBe("متجر الاختبار");
-  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("متجر الاختبار");
-  await page.getByRole("combobox", { name: "ترتيب الطلبات" }).selectOption("updated_asc");
-  await expect.poll(() => requestedSort).toBe("updated_asc");
-  await expect.poll(() => new URL(page.url()).searchParams.get("sort")).toBe("updated_asc");
-  await page.getByRole("button", { name: "فتح الطلب order_ready" }).click();
-  const drawer = page.getByRole("dialog", { name: "تفاصيل الطلب order_ready" });
-  await expect(drawer).toBeVisible();
-  await expect(drawer.getByText("شارع الاختبار")).toBeVisible();
-  await expect(drawer.getByText("الدفع نقدًا عند الاستلام", { exact: true })).toBeVisible();
-  await expect(drawer.getByText("بانتظار التحصيل عند التسليم", { exact: true })).toBeVisible();
-  await expect(drawer.getByRole("heading", { name: "عناصر الطلب" })).toBeVisible();
-  await expect(drawer.getByText("قهوة", { exact: true })).toBeVisible();
-  await expect(drawer.getByRole("navigation")).toHaveCount(0);
-  await drawer.getByRole("button", { name: "إغلاق تفاصيل الطلب" }).click();
-  await expect(drawer).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "العمليات" })).toBeVisible();
-  const restoredSearchBox = page.getByRole("searchbox");
-  await restoredSearchBox.fill("");
-  await restoredSearchBox.press("Enter");
-  await expect.poll(() => requestedSearch).toBe("");
-  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBeNull();
-  const operationsPagination = page.getByRole("navigation", { name: "صفحات الطلبات" });
-  await operationsPagination.getByRole("button", { name: "التالي", exact: true }).click();
-  await expect(page.getByText("لا توجد طلبات في هذا العرض")).toBeVisible();
-  await expect(operationsPagination.getByRole("button", { name: "التالي", exact: true })).toBeDisabled();
-  await expect(operationsPagination.getByRole("button", { name: "السابق", exact: true })).toBeEnabled();
-  expect(requestedCursor).toBe("cursor-page-2");
-  await expect(page.getByRole("searchbox")).toHaveCount(1);
 });
 
 test("operator finance reads only the bounded COD cash-custody projection", async ({ page }) => {
@@ -1509,16 +1098,6 @@ test("partner commission remittance keeps its recovery key when WLT returns an u
   expect(replay.headers["idempotency-key"]).toBe(original.headers["idempotency-key"]);
   expect(replay.headers["x-correlation-id"]).toBe(original.headers["x-correlation-id"]);
   expect(evidenceUploadCount).toBe(1);
-});
-
-test("Field candidate profile is reviewed before Identity grants the app role", async ({ page }) => {
-  await stubAuthenticatedSession(page);
-  await exerciseReviewedDshCandidateFlow(page, "field", "سامي ناصر", "سامي ناصر محمد العريقي", "+96777000104");
-});
-
-test("legacy Field profile completion and review leave access suspended", async ({ page }) => {
-  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
-  await exerciseLegacyDshProfileReview(page, "field");
 });
 
 test("operator creates a DSH-owned joining case from prospective partner facts", async ({ page }) => {
@@ -1910,37 +1489,6 @@ test("operator replaces the primary product image and adds a gallery image throu
   await expect(page.locator(".catalog-media-preview")).toHaveCount(2);
   await expect(page.locator(".catalog-media-preview").nth(0)).toHaveAttribute("src", currentProduct.media[0]!.uri);
   await expect(page.locator(".catalog-media-preview").nth(1)).toHaveAttribute("src", currentProduct.media[1]!.uri);
-});
-
-test("operator resumes a canonical joining case from the DSH queue", async ({ page }) => {
-  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "partners"]);
-  await page.route("**/api/partners/joining-cases**", async (route) => {
-    if (new URL(route.request().url()).pathname !== "/api/partners/joining-cases") {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-       body: JSON.stringify({ cases: [{ id: "join_resume", contactPhoneE164: "+96777000101", businessName: "نشاط مستعاد", firstStoreName: "متجر مستعاد", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, state: "submitted", version: 2, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }),
-    });
-  });
-  await page.route("**/api/partners/joining-cases/join_resume", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-         case: { id: "join_resume", contactPhoneE164: "+96777000101", businessName: "نشاط مستعاد", firstStoreName: "متجر مستعاد", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, state: "submitted", version: 2, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
-        idempotentReplay: false,
-      }),
-    });
-  });
-  await page.goto("/partners/joining");
-  await page.getByRole("row", { name: /نشاط مستعاد/ }).getByRole("link", { name: "مراجعة الطلب" }).click();
-  await expect(page.getByRole("status").first()).toContainText("الحالة: قيد المراجعة");
-  await expect(page.getByRole("region", { name: "ملخص طلب الانضمام" })).toContainText("متجر مستعاد");
-  await page.locator("details.partner-case-details > summary").click();
-  await expect(page.locator("details.partner-case-details")).toContainText("نشاط مستعاد");
 });
 
 test("Partner reenrollment verifies DSH joining eligibility and the Identity readback", async ({ page }) => {

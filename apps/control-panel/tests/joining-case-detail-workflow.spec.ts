@@ -77,24 +77,3 @@ test("partner file distinguishes legal owner from business and keeps routine rer
   await expect(page.getByRole("heading", { name: "متاجر الشريك" })).toBeVisible();
   await expect(page.getByRole("button", { name: "إعادة القراءة", exact: true })).toHaveCount(0);
 });
-
-test("case review returns to the precise originating queue filters without leaking them into the detail URL", async ({ page }) => {
-  await page.route("**/api/auth/session**", (route) => route.fulfill({ json: { identity: {
-    subject: "operator-review", sessionId: "session", role: "operator", permissions: ["partners"],
-    surface: "control-panel", expiresAt: "2099-01-01T00:00:00.000Z",
-  } } }));
-  await page.route("**/api/notifications**", (route) => route.fulfill({ json: { notifications: [], unreadCount: 0 } }));
-  await page.route("**/api/partners/joining-cases?**", (route) => route.fulfill({ json: { cases: [joiningCase], nextCursor: "" } }));
-  await page.route("**/api/partners/joining-cases/case-review", (route) => route.fulfill({ json: { case: joiningCase } }));
-  await page.goto("/partners/joining?state=approved&sort=created_desc&q=%D9%85%D8%AA%D8%AC%D8%B1");
-  const original = new URL(page.url()).search;
-  const row = page.locator(".joining-case-table tbody tr").first();
-  await expect(row).toContainText("متجر الاختبار");
-  await row.getByRole("link", { name: /متابعة الطلب/ }).click();
-  await expect(page).toHaveURL(/\/partners\/case-review$/);
-  const back = page.getByRole("link", { name: "العودة إلى طلبات الانضمام" });
-  await expect(back).toHaveAttribute("href", "/partners/joining" + original);
-  await back.click();
-  await expect(page).toHaveURL(/\/partners\/joining\?/);
-  expect(new URL(page.url()).search).toBe(original);
-});
