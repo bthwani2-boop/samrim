@@ -31,7 +31,7 @@ export function StoreImageEditor({storeId,name,onSaved,initialRole="primary",loc
    bitmap.close();
   }).catch(()=>{if(active)setError("تعذرت معاينة الصورة. اختر صورة JPG أو PNG صالحة.");});
   return()=>{active=false;};
- },[file,role]);
+ },[file]);
  async function save() {
   if(!file||!current||busy) return;
   if(!isMediaProvenanceInputValid(provenance)){setError("أكمل منشئ الصورة ومصدرها وحق استخدامها وأكّد التصريح.");return;}

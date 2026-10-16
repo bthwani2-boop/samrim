@@ -174,7 +174,7 @@ jobs:
           fi
 
           runtime_test_files="$(grep -E '^tests/runtime/' <<< "$changed_files" || true)"
-          unknown_runtime_test_files="$(grep -Ev '^(tests/runtime/(mailpit-challenge\.mjs|verify-dsh-baseline\.mjs|verify-dsh-location-runtime\.mjs|verify-dsh-runtime-core\.mjs|verify-identity-migrations\.mjs|verify-identity-migrations\.test\.mjs|verify-identity-runtime\.mjs|runtime-proof/(canonical-dsh-migration-history\.mjs|challenge-source\.mjs|identity-migration-host-fallback\.mjs|trusted-executables\.mjs|trusted-executables\.d\.mts)))$' <<< "$runtime_test_files" || true)"
+          unknown_runtime_test_files="$(grep -Ev '^(tests/runtime/(mailpit-challenge\.mjs|mailpit-challenge\.test\.mjs|verify-dsh-baseline\.mjs|verify-dsh-location-runtime\.mjs|verify-dsh-runtime-core\.mjs|verify-identity-migrations\.mjs|verify-identity-migrations\.test\.mjs|verify-identity-runtime\.mjs|runtime-proof/(canonical-dsh-migration-history\.mjs|challenge-source\.mjs|identity-migration-host-fallback\.mjs|trusted-executables\.mjs|trusted-executables\.d\.mts)))$' <<< "$runtime_test_files" || true)"
           if [[ -n "$unknown_runtime_test_files" ]]; then
             echo "::error::Runtime proof files require explicit proof ownership before CI can route them:"
             printf '%s\n' "$unknown_runtime_test_files"
@@ -193,7 +193,7 @@ jobs:
           if grep -Eq '^tests/runtime/verify-dsh-runtime-core\.mjs$' <<< "$changed_files"; then dsh_runtime_proof_changed=true; fi
           if grep -Eq '^tests/runtime/verify-dsh-location-runtime\.mjs$' <<< "$changed_files"; then dsh_location_proof_changed=true; fi
 
-          if grep -Eq '^tests/runtime/(mailpit-challenge\.mjs|runtime-proof/challenge-source\.mjs)$' <<< "$changed_files"; then
+          if grep -Eq '^tests/runtime/(mailpit-challenge\.mjs|mailpit-challenge\.test\.mjs|runtime-proof/challenge-source\.mjs)$' <<< "$changed_files"; then
             identity_runtime_proof_changed=true
             dsh_runtime_proof_changed=true
             dsh_location_proof_changed=true
@@ -252,6 +252,10 @@ jobs:
           echo "direct_dsh_baseline=$direct_dsh_baseline" >> "$GITHUB_OUTPUT"
           echo "direct_dsh_runtime=$direct_dsh_runtime" >> "$GITHUB_OUTPUT"
           echo "direct_dsh_location=$direct_dsh_location" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Mailpit localhost transport guard
+        if: steps.scope.outputs.run == 'true'
+        run: node --test tests/runtime/mailpit-challenge.test.mjs
 
       - name: Create private DSH checker fixture path
         if: steps.scope.outputs.checker == 'true'
