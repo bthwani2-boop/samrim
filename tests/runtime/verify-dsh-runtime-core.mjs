@@ -351,6 +351,24 @@ if (deliveryFeePolicyCreate.status !== 201 || deliveryFeePolicyCreate.body?.poli
 
 const deliveryFeePolicyRead = await request(dshBase, "GET", `/dsh/operator/distance-band-fee-policy?serviceCityId=${encodeURIComponent(cityA)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (deliveryFeePolicyRead.status !== 200 || deliveryFeePolicyRead.body?.policy?.id !== deliveryFeePolicyCreate.body.policy.id || deliveryFeePolicyRead.body.policy?.serviceCityId !== cityA || deliveryFeePolicyRead.body.policy?.distanceBands?.[0]?.ratePerKmMinor !== 150) fail("delivery-fee policy readback did not return the active city policy", JSON.stringify({ deliveryFeePolicyCreate, deliveryFeePolicyRead }));
+// Both independently serviceable cities must carry an active distance-band
+// policy: the multi-store checkout below quotes Store B in cityB as well.
+const cityBDeliveryPolicy = await request(dshBase, "POST", "/dsh/operator/distance-band-fee-policy", {
+  token: dshToken,
+  headers: serviceHeaders(actingOperatorID, `delivery-distance-bands-city-b-${suffix}`),
+  body: { serviceCityId: cityB, distanceBands: deliveryBands, expectedVersion: 0, reason: "DSH runtime second city distance-band delivery pricing proof" },
+});
+const cityBDeliveryPolicyRead = await request(dshBase, "GET", `/dsh/operator/distance-band-fee-policy?serviceCityId=${encodeURIComponent(cityB)}`, {
+  token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID },
+});
+if (cityBDeliveryPolicy.status !== 201 || cityBDeliveryPolicy.body?.policy?.serviceCityId !== cityB ||
+    cityBDeliveryPolicy.body.policy?.distanceBands?.[0]?.ratePerKmMinor !== 150 ||
+    cityBDeliveryPolicyRead.status !== 200 ||
+    cityBDeliveryPolicyRead.body?.policy?.id !== cityBDeliveryPolicy.body.policy.id ||
+    cityBDeliveryPolicyRead.body?.policy?.serviceCityId !== cityB) {
+  fail("second city's canonical distance-band policy was not active", JSON.stringify({ cityBDeliveryPolicy, cityBDeliveryPolicyRead }));
+}
+
 console.log("DSH_DELIVERY_FEE_POLICY=PASS");
 console.log("DSH_CITY_SCOPE_RUNTIME=PASS");
 let partnerFinancialTermsPolicyRead = await request(wltBase, "GET", "/wlt/v1/operator/partner-financial-terms-policy", { token: wltToken });
