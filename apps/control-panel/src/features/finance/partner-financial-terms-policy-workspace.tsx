@@ -4,6 +4,7 @@ import { TextArea } from "@bthwani/design-system/web";
 import type { PartnerFinancialTermsPolicy } from "@bthwani/dsh";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { PolicyRecordProvenance } from "../policies/policy-record-provenance";
 
 type ReadState = "loading" | "ready" | "missing" | "error";
 type SettlementPeriod = "DAILY" | "WEEKLY" | "MONTHLY";
@@ -88,7 +89,7 @@ export function PartnerFinancialTermsPolicyWorkspace() {
     {readState === "loading" ? <p role="status">جارٍ قراءة الشروط المعتمدة من السجل المالي…</p> : null}
     {readState === "missing" ? <p className="managed-status managed-status-warning" role="status">لم تُحدّد فترة التسوية؛ يلزم تفعيلها قبل اعتماد الشريك.</p> : null}
     {readState === "error" ? <p className="validation-error" role="alert">{error || "تعذرت القراءة؛ التعديل متوقف حتى نجاح القراءة."}</p> : null}
-    {policy ? <p className="muted">فترة التسوية: {settlementLabels[policy.settlementPeriod]}</p> : null}
+    {policy ? <><p className="muted">فترة التسوية: {settlementLabels[policy.settlementPeriod]}</p><PolicyRecordProvenance record={policy} /></> : null}
     {(readState === "ready" || readState === "missing") ? <>
       <div className="form-grid">
         <label className="field-label" htmlFor="partner-terms-settlement">فترة تسوية الشريك<select id="partner-terms-settlement" value={settlementPeriod} onChange={(event) => setSettlementPeriod(event.target.value as SettlementPeriod | "")} disabled={busy || !canEdit}><option value="">اختر الفترة</option><option value="DAILY">يومية</option><option value="WEEKLY">أسبوعية</option><option value="MONTHLY">شهرية</option></select></label>

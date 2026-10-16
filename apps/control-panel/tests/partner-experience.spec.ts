@@ -45,26 +45,6 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/catalog/commercial-store-types**", (route) => route.fulfill({ json: { storeTypes: [{ id: "type-1", nameAr: "سوبر ماركت", active: true }] } }));
 });
 
-test("approved joining case puts identity, logo, status and direct files above expandable evidence", async ({ page }, testInfo) => {
-  await page.route("**/api/partners/joining-cases/case-experience", (route) => route.fulfill({ json: { case: joiningCase, idempotentReplay: false } }));
-  await page.goto("/partners/case-experience");
-  const summary = page.getByRole("region", { name: "ملخص طلب الانضمام" });
-  await expect(summary.getByRole("img", { name: "شعار متجر سوبر ماركت الخير" })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("joining-case-review.png"), fullPage: true });
-  await expect(summary).toContainText("الحالة: تمت الموافقة");
-  await expect(summary.getByRole("link", { name: "فتح ملف المتجر" })).toHaveAttribute("href", "/partners/stores/store-experience");
-  await expect(summary.getByRole("link", { name: "فتح ملف الشريك" })).toHaveAttribute("href", "/partners/actors/actor-experience");
-  const details = page.locator(".partner-case-details");
-  await expect(details).not.toHaveAttribute("open", "");
-  await expect(details.getByText("رقم الإثبات", { exact: true })).toBeHidden();
-  await details.locator(":scope > summary").click();
-  await expect(details.getByText("رقم الإثبات", { exact: true })).toBeVisible();
-  await summary.getByRole("link", { name: "متابعة الإجراء" }).click();
-  await expect(page).toHaveURL(/#joining-case-actions$/);
-  await expect(page.getByRole("heading", { name: "الخطوة التالية والإجراءات" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "فتح ملف المتجر", exact: true })).toHaveCount(1);
-});
-
 test("partner profile exposes linked first store before switching to the complete store list", async ({ page }) => {
   await page.route("**/api/partners/roster/actor-experience", (route) => route.fulfill({
     json: { partner: {

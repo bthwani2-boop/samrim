@@ -24,12 +24,14 @@ test("Root ends employment on the same HR record and preserves operator actor id
   changes+=1;
   return route.fulfill({json:{employee:{...person,status:"inactive",version:6},idempotentReplay:false}});
  });
+ await page.route("**/api/hr/employees/" + person.id, route => route.fulfill({json:{employee:person}}));
  await page.goto("/hr/employees");
- await page.locator(".hr-directory .operations-table button").first().click();
+ await page.getByRole("button",{name:"فتح ملف " + person.fullNameAr}).first().click();
+ await page.getByRole("tab",{name:"البيانات الوظيفية"}).click();
  await page.getByRole("textbox",{name:"سبب تغيير الحالة الوظيفية"}).fill("إنهاء خدمة الموظف وتقييد الوصول بعد المراجعة");
  await page.getByRole("button",{name:"إيقاف الحالة الوظيفية"}).click();
  await expect(page.getByText("تم إيقاف الحالة الوظيفية", {exact:false})).toBeVisible();
- await expect(page.locator(".hr-directory tbody").getByRole("img", {name:"غير نشط", exact:true})).toBeVisible();
+ await expect(page.locator(".bt-employee-profile-hero").getByText("غير نشط",{exact:true})).toBeVisible();
  expect(changes).toBe(1);
 });
 
@@ -37,8 +39,10 @@ test("HR operator without Root Owner role cannot end linked operator employment"
  await page.route("**/api/auth/session**",route=>route.fulfill({json:{identity:{...root,canManageOperatorPermissions:false}}}));
  await page.route("**/api/hr/employees?**",route=>route.fulfill({json:{items:[person],nextCursor:""}}));
  await page.route("**/api/hr/access-requests?**",route=>route.fulfill({json:{items:[],nextCursor:""}}));
+ await page.route("**/api/hr/employees/" + person.id, route => route.fulfill({json:{employee:person}}));
  await page.goto("/hr/employees");
- await page.locator(".hr-directory .operations-table button").first().click();
+ await page.getByRole("button",{name:"فتح ملف " + person.fullNameAr}).first().click();
+ await page.getByRole("tab",{name:"البيانات الوظيفية"}).click();
  await expect(page.getByRole("button",{name:"إيقاف الحالة الوظيفية"})).toHaveCount(0);
 });
 
@@ -53,8 +57,10 @@ test("HR audit history shows attributed status reasons and paginates older emplo
   if(cursor==="cursor2")return route.fulfill({json:{items:[{eventType:"created",actingActorId:"act_initial",createdAt:"2026-10-10T10:00:00Z"}]}});
   return route.fulfill({json:{items:[{eventType:"status_changed",actingActorId:"act_root",reason:"المراجعة الوظيفية الموثقة",createdAt:"2026-10-12T12:00:00Z"}],nextCursor:"cursor2"}});
  });
+ await page.route("**/api/hr/employees/" + person.id, route => route.fulfill({json:{employee:person}}));
  await page.goto("/hr/employees");
- await page.locator(".hr-directory .operations-table button").first().click();
+ await page.getByRole("button",{name:"فتح ملف " + person.fullNameAr}).first().click();
+ await page.getByRole("tab",{name:"سجل التغييرات"}).click();
  await page.getByRole("button",{name:"عرض سجل التغييرات"}).click();
  await expect(page.getByText("المراجعة الوظيفية الموثقة")).toBeVisible();
  await expect(page.getByText("act_root")).toBeVisible();

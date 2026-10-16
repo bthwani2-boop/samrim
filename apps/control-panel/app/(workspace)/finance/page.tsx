@@ -1,8 +1,9 @@
-import { redirect } from "next/navigation";
-import { workspaceFinanceResources } from "../../../src/navigation/workspace-registry";
+import { FinanceCenterWorkspace } from "../../../src/features/finance/finance-center-workspace";
 
-export default function FinancePage() {
-  redirect(workspaceFinanceResources[0].href);
+export default async function FinancePage({
+  searchParams,
+}: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
+  return <FinanceCenterWorkspace initialQuery={await searchParams} />;
 }
 
 export const metadata = { title: "المالية" };

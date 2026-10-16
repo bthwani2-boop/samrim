@@ -23,7 +23,7 @@ test("automatic return reads retain reference drafts and pause while renaming", 
     reads++;
     return route.fulfill({ json: { walletProviders: [wallets[0]!] } });
   });
-  await page.goto("/policies/wallet-providers");
+  await page.goto("/policies?policy=wallet-providers&action=manage");
   await expect(page.locator("tbody tr")).toHaveCount(1);
   const initialReads = reads;
   await page.locator("details.create-disclosure > summary").click();
@@ -43,21 +43,21 @@ test("automatic return reads retain reference drafts and pause while renaming", 
 });
 
 test("resource centers open their canonical work surface without repeated navigation cards", async ({ page }) => {
-  for (const [center, destination, heading] of [["finance", "cash-custody", "حفظ النقد"], ["marketing", "promotions", "العروض"], ["policies", "service-cities", "مدن الخدمة"]] as const) {
+  for (const [center, heading] of [["finance", "المالية"], ["marketing", "التسويق والمحتوى"], ["policies", "سياسات المنصة"]] as const) {
     await page.goto(`/${center}`);
-    await expect(page).toHaveURL(new RegExp(`/${center}/${destination}$`));
+    await expect(page).toHaveURL(new RegExp(`/${center}$`));
     await expect(page.getByRole("heading", { name: heading, level: 1, exact: true })).toBeVisible();
     await expect(page.locator("#workspace-main .resource-index, #workspace-main .resource-link")).toHaveCount(0);
-    await expect(page.locator(".workspace-nav-children")).toHaveCount(1);
+    await expect(page.locator("#workspace-main h1")).toHaveCount(1);
     await page.reload();
-    await expect(page).toHaveURL(new RegExp(`/${center}/${destination}$`));
+    await expect(page).toHaveURL(new RegExp(`/${center}$`));
   }
 });
 
 test("reference rows stay bounded at desktop and mobile sizes and editing restores keyboard focus", async ({ page }) => {
   for (const width of [1368, 390]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto("/policies/wallet-providers");
+    await page.goto("/policies?policy=wallet-providers&action=manage");
     await expect(page.locator("tbody tr")).toHaveCount(50);
     await expect(page.getByLabel("اسم المحفظة بالعربية")).toBeHidden();
     await expect(page.locator("tbody input")).toHaveCount(0);
@@ -88,7 +88,7 @@ test("reference search and status filters show a precise subset and reset withou
       if (route.request().method() !== "GET") mutations++;
       return route.fulfill({ status: 200, json: { [property]: records } });
     });
-    await page.goto(`/policies/${resource}`);
+    await page.goto(`/policies?policy=${resource}&action=manage`);
     await expect(page.locator("tbody tr")).toHaveCount(2);
     const search = page.getByRole("searchbox");
     await search.fill("عدن");
@@ -114,7 +114,7 @@ test("a filtered edit stays visible across conflict refresh and returns focus wh
     current = { ...current, displayNameAr: attempts === 1 ? "اسم متزامن" : "الاسم الجديد", version: current.version + 1 };
     return route.fulfill(attempts === 1 ? { status: 409, json: { error: { code: "VERSION_CONFLICT" } } } : { status: 200, json: { walletProvider: current } });
   });
-  await page.goto("/policies/wallet-providers");
+  await page.goto("/policies?policy=wallet-providers&action=manage");
   const search = page.getByRole("searchbox");
   await search.fill("محفظة 1");
   await page.getByRole("button", { name: "تعديل", exact: true }).click();
@@ -146,7 +146,7 @@ test("a conflicting wallet edit keeps its draft and a successful retry reads the
     current = { ...current, displayNameAr: "محفظة معتمدة", version: 9 };
     return route.fulfill({ status: 200, json: { walletProvider: current } });
   });
-  await page.goto("/policies/wallet-providers");
+  await page.goto("/policies?policy=wallet-providers&action=manage");
   await page.getByRole("button", { name: "تعديل", exact: true }).click();
   const input = page.getByLabel("اسم المزوّد");
   await input.fill("محفظة معتمدة"); await input.press("Enter");
@@ -173,7 +173,7 @@ test("city read failure never presents a false empty registry and uncertain crea
     created = true;
     return route.fulfill({ status: 201, json: { city: { id: "city-proof", displayNameAr: "صنعاء", active: true, version: 1 } } });
   });
-  await page.goto("/policies/service-cities");
+  await page.goto("/policies?policy=service-cities&action=manage");
   await expect(page.locator("#workspace-main").getByRole("alert")).toContainText("تعذر قراءة المدن");
   await expect(page.getByText("لا توجد مدن بعد.", { exact: true })).toHaveCount(0);
   readFailed = false;
@@ -204,7 +204,7 @@ test("uncertain wallet creation reuses its key and status changes carry the curr
     provider = { ...provider!, active: false, version: 5 };
     return route.fulfill({ status: 200, json: { walletProvider: provider } });
   });
-  await page.goto("/policies/wallet-providers");
+  await page.goto("/policies?policy=wallet-providers&action=manage");
   await page.locator("details.create-disclosure > summary").click();
   await page.getByLabel("اسم المحفظة بالعربية").fill("محفظة اختبار");
   await page.getByRole("button", { name: "إضافة محفظة", exact: true }).click();
@@ -219,7 +219,7 @@ test("uncertain wallet creation reuses its key and status changes carry the curr
 
 test("an operator without policy authority cannot expose reference records or mutation controls", async ({ page }) => {
   await page.route("**/api/auth/session", (route) => route.fulfill({ status: 200, json: { identity: { ...identity, permissions: ["partners"] } } }));
-  await page.goto("/policies/wallet-providers");
+  await page.goto("/policies?policy=wallet-providers&action=manage");
   await expect(page.locator("#workspace-main")).toContainText("الوصول إلى هذه المساحة غير مفعّل");
   await expect(page.locator("tbody tr")).toHaveCount(0);
   await expect(page.locator("tbody button, .create-disclosure")).toHaveCount(0);

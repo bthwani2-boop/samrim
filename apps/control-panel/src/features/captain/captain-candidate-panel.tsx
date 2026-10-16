@@ -1,12 +1,13 @@
 "use client";
 
-import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
 import { type CaptainAdmission, captainAdmissionStateLabel } from "@bthwani/dsh";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
-import { useWalletProviders } from "../wallet-provider/use-wallet-providers";
+import { useWalletProviders, walletProviderLabel } from "../wallet-provider/use-wallet-providers";
 
 type CandidatePage = Readonly<{ items: ReadonlyArray<CaptainAdmission>; nextCursor?: string }>;
 
@@ -161,7 +162,7 @@ export function CaptainCandidatePanel() {
           const canEdit = profile.state === "pending_review" || canCompleteLegacy;
           return <tr key={profile.id}>
             <th scope="row"><div className="access-form"><label className="field-label" htmlFor={"captain-candidate-name-" + profile.id}>الاسم<input id={"captain-candidate-name-" + profile.id} value={name} maxLength={120} disabled={Boolean(busy) || !canEdit} onChange={(event) => setEdits((current) => ({ ...current, [profile.id]: event.target.value }))} /></label><bdi dir="ltr">{profile.contactPhoneE164 || "—"}</bdi></div></th>
-            <td>{profile.requiresProfileReview ? "موقوف حتى استكمال الملف ومراجعته" : captainAdmissionStateLabel(profile.state)}</td>
+            <td>{profile.requiresProfileReview ? "موقوف حتى استكمال الملف ومراجعته" : captainAdmissionStateLabel(profile.state)}<details><summary>بيانات الملف</summary><dl><dt>مزوّد المحفظة</dt><dd>{walletProviderLabel(profile.walletProviderKey, walletProviders)}</dd><dt>تاريخ الإنشاء</dt><dd>{new Intl.DateTimeFormat("ar-YE", { dateStyle: "medium" }).format(new Date(profile.createdAt))}</dd><dt>آخر تحديث</dt><dd>{new Intl.DateTimeFormat("ar-YE", { dateStyle: "medium" }).format(new Date(profile.updatedAt))}</dd></dl>{profile.actorId ? <Link href={`/captains/${encodeURIComponent(profile.actorId)}`} className="button button-secondary">فتح ملف الكابتن</Link> : <p className="muted">لم يُمنح دور الكابتن بعد؛ تُدار بياناته هنا.</p>}</details></td>
             <td><div className="access-form">
               {canEdit ? <>
                 <button type="button" className="button button-secondary" disabled={Boolean(busy) || !changed} onClick={() => void mutate(profile, "update-profile")}>{busy === profile.id + ":update-profile" ? "جارٍ الحفظ…" : "حفظ الملف"}</button>

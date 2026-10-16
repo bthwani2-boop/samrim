@@ -1,11 +1,12 @@
 "use client";
 import { TextArea } from "@bthwani/design-system/web";
-import type { CommercialStoreType, CommerceVertical } from "@bthwani/dsh";
+import type { CommercialStoreType, CommerceVertical, FieldAcquisitionRewardPolicy } from "@bthwani/dsh";
 import { financialPolicyStateLabel, formatMoney } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { PolicyRecordProvenance } from "../policies/policy-record-provenance";
 
-type Policy = Readonly<{ id: string; scopeType: "STORE_TYPE"; scopeId: string; rewardMinor: number; roundingUnitMinor: 50; state: "ACTIVE" | "RETIRED"; version: number }>;
+type Policy = FieldAcquisitionRewardPolicy;
 type ReadState = "unselected" | "loading" | "ready" | "missing" | "error";
 
 function saveButtonLabel(busy: boolean, hasPolicy: boolean): string {
@@ -38,23 +39,23 @@ function FieldAcquisitionPolicySelection({
 }>) {
   return <>
     <div className="form-grid">
-      <label className="field-label" htmlFor="field-reward-vertical">المجال التجاري<select id="field-reward-vertical" value={verticalId} onChange={(event) => onVerticalChange(event.target.value)} disabled={busy || verticals.length === 0}>
-        <option value="">اختر المجال التجاري</option>
+      <label className="field-label" htmlFor="field-reward-vertical">للعثور على نوع المتجر: اختر المجال الذي يتبعه<select id="field-reward-vertical" value={verticalId} onChange={(event) => onVerticalChange(event.target.value)} disabled={busy || verticals.length === 0}>
+        <option value="">اختر مجال المتجر للتصفية فقط</option>
         {verticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}
       </select></label>
-      {verticalId && !commercialTypesLoading && !commercialTypesError ? <label className="field-label" htmlFor="field-reward-commercial-type">نوع المتجر التجاري<select id="field-reward-commercial-type" value={commercialTypeId} onChange={(event) => onCommercialTypeChange(event.target.value)} disabled={busy || commercialTypes.length === 0}>
+      {verticalId && !commercialTypesLoading && !commercialTypesError ? <label className="field-label" htmlFor="field-reward-commercial-type">نوع المتجر الذي تُطبّق عليه المكافأة<select id="field-reward-commercial-type" value={commercialTypeId} onChange={(event) => onCommercialTypeChange(event.target.value)} disabled={busy || commercialTypes.length === 0}>
         <option value="">اختر نوع المتجر</option>
         {commercialTypes.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}
-      </select></label> : null}
+      </select><small>هذا النوع وحده نطاق سياسة المكافأة؛ لا تُطبّق على المجال التجاري بأكمله.</small></label> : null}
     </div>
     {verticalsError ? <p className="validation-error state-message" role="alert">{verticalsError} <button className="button button-quiet" type="button" onClick={onVerticalRetry} disabled={busy}>إعادة تحميل الفئات</button></p> : null}
-    {verticals.length === 0 && !verticalsError ? <p className="muted state-message">لا توجد فئات متاجر نشطة حاليًا.</p> : null}
+    {verticals.length === 0 && !verticalsError ? <p className="muted state-message">لا توجد مجالات تحتوي أنواع متاجر نشطة حاليًا.</p> : null}
     {commercialTypesLoading ? <p className="state-message" role="status">جارٍ قراءة أنواع المتاجر…</p> : null}
     {commercialTypesError ? <p className="validation-error state-message" role="alert">{commercialTypesError} <button className="button button-quiet" type="button" onClick={onCommercialTypesRetry} disabled={busy}>إعادة القراءة</button></p> : null}
     {readState === "loading" ? <p className="state-message" role="status">جارٍ قراءة سياسة نوع المتجر من السجل المالي…</p> : null}
     {readState === "missing" ? <p className="managed-status managed-status-warning state-message" role="status">لا توجد سياسة لنوع «{selectedCommercialType?.nameAr}». أنشئها هنا لاحتساب الاستحقاق.</p> : null}
     {readState === "error" ? <p className="validation-error state-message" role="alert">{error || "تعذرت القراءة؛ الحفظ معطل حتى نجاحها."}</p> : null}
-    {policy ? <div className="facts-grid" role="status"><span>المبلغ الفعّال</span><strong>{formatMoney(policy.rewardMinor, "YER")}</strong><span>{financialPolicyStateLabel(policy.state)}</span></div> : null}
+    {policy ? <><div className="facts-grid" role="status"><span>المبلغ الفعّال لنوع المتجر</span><strong>{formatMoney(policy.rewardMinor, "YER")}</strong><span>{financialPolicyStateLabel(policy.state)}</span></div><PolicyRecordProvenance record={policy} /></> : null}
   </>;
 }
 
@@ -197,7 +198,7 @@ export function FieldAcquisitionPolicyWorkspace() {
     {canEditPolicy ? <>
       <div className="form-grid">
         <label className="field-label" htmlFor="field-acquisition-reward">مبلغ الاستحقاق (ريال)<input id="field-acquisition-reward" type="number" min="50" step="50" value={rewardMinor} onChange={(event) => setRewardMinor(event.target.value)} aria-describedby="field-acquisition-rounding" disabled={busy || !canEdit} /><small id="field-acquisition-rounding">مضاعفات ٥٠؛ مرة واحدة عند ظهور أول متجر مؤهل.</small></label>
-        <label className="field-label" htmlFor="field-reward-reason">سبب الإنشاء أو التغيير<TextArea id="field-reward-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} rows={3} aria-describedby="field-reward-reason-hint" disabled={busy || !canEdit} /><small id="field-reward-reason-hint">٥–٥٠٠ حرف.</small></label>
+        <label className="field-label" htmlFor="field-reward-reason">سبب الإنشاء أو التغيير<TextArea className="resize-none" id="field-reward-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} rows={3} aria-describedby="field-reward-reason-hint" disabled={busy || !canEdit} /><small id="field-reward-reason-hint">٥–٥٠٠ حرف.</small></label>
       </div>
       {message ? <output className="success state-message">{message}</output> : null}
       {error ? <p className="validation-error state-message" role="alert">{error}</p> : null}

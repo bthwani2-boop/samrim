@@ -42,6 +42,9 @@ func MigrateDeliveryProofCryptography(ctx context.Context, db *sql.DB, keys *Del
 		if !hasCiphertext || !hasVerifier || !hasKeyID {
 			return errors.New("DSH delivery proof schema is neither legacy nor fully migrated")
 		}
+		if err := upgradeCaptainConfirmedProofMaterial(ctx, tx); err != nil {
+			return err
+		}
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("finish DSH delivery proof migration readback: %w", err)
 		}
@@ -103,12 +106,40 @@ func MigrateDeliveryProofCryptography(ctx context.Context, db *sql.DB, keys *Del
 		DROP COLUMN code_hash,
 		ADD CONSTRAINT commerce_order_delivery_proof_material_chk CHECK (
 			(state='PENDING' AND code_ciphertext IS NOT NULL AND code_verifier ~ '^[0-9a-f]{64}$' AND code_key_id ~ '^[a-zA-Z0-9_-]{1,32}$')
-			OR (state='VERIFIED' AND code_ciphertext IS NULL AND code_verifier IS NULL AND code_key_id IS NULL)
+			OR (state IN ('VERIFIED', 'CAPTAIN_CONFIRMED') AND code_ciphertext IS NULL AND code_verifier IS NULL AND code_key_id IS NULL)
 		)`); err != nil {
 		return fmt.Errorf("remove legacy DSH delivery proof columns: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit protected DSH delivery proof migration: %w", err)
+	}
+	return nil
+}
+
+// upgradeCaptainConfirmedProofMaterial runs only after legacy plaintext has
+// been encrypted and removed; existing installations may retain an older
+// material constraint while fresh installations create the final constraint.
+func upgradeCaptainConfirmedProofMaterial(ctx context.Context, tx *sql.Tx) error {
+	var definition string
+	if err := tx.QueryRowContext(ctx, `SELECT pg_get_constraintdef(oid)
+		FROM pg_constraint
+		WHERE conrelid='dsh.commerce_order_delivery_proofs'::regclass
+		  AND conname='commerce_order_delivery_proof_material_chk'`).Scan(&definition); err != nil {
+		return fmt.Errorf("inspect DSH delivery proof material constraint: %w", err)
+	}
+	if strings.Contains(definition, "CAPTAIN_CONFIRMED") {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE dsh.commerce_order_delivery_proofs
+		DROP CONSTRAINT commerce_order_delivery_proof_material_chk,
+		ADD CONSTRAINT commerce_order_delivery_proof_material_chk CHECK (
+			(state='PENDING' AND code_ciphertext IS NOT NULL
+				AND code_verifier ~ '^[0-9a-f]{64}$'
+				AND code_key_id ~ '^[a-zA-Z0-9_-]{1,32}$')
+			OR (state IN ('VERIFIED', 'CAPTAIN_CONFIRMED')
+				AND code_ciphertext IS NULL AND code_verifier IS NULL AND code_key_id IS NULL)
+		)`); err != nil {
+		return fmt.Errorf("upgrade DSH delivery proof material constraint: %w", err)
 	}
 	return nil
 }

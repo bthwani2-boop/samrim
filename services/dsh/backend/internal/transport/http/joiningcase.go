@@ -52,6 +52,10 @@ func (s *JoiningCaseServer) ReconcileStoreProfileMedia(ctx context.Context) erro
 }
 
 func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/images", s.storeImages)
+	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/images", s.storeImages)
+	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/images", s.operatorStoreImages)
+	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/images", s.operatorStoreImages)
 	mux.HandleFunc("POST /dsh/joining-cases", s.create)
 	mux.HandleFunc("GET /dsh/joining-cases", s.listForOperator)
 	mux.HandleFunc("GET /dsh/joining-cases/self", s.readForPartner)

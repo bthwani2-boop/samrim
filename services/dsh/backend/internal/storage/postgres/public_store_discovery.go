@@ -166,7 +166,8 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 			JOIN dsh.catalog_categories parent ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id AND parent.active=true
 		) SELECT DISTINCT id FROM store_categories ORDER BY id),candidate.distance_meters,
 		candidate.service_city_id,candidate.display_name_ar,candidate.service_city_active,candidate.service_city_version,candidate.service_city_created_at,candidate.service_city_updated_at,
-		media.id,media.joining_case_id,media.store_id,media.uri,media.object_key,media.content_sha256,media.content_type,media.byte_size,media.media_role,media.state,media.creator,media.source_description,media.source_uri,media.rights_statement,media.rights_uri,media.rights_attested_by_actor_id,media.rights_attested_at,media.created_at,media.attached_at,cover.uri
+		media.id,media.joining_case_id,media.store_id,media.uri,media.object_key,media.content_sha256,media.content_type,media.byte_size,media.media_role,media.state,media.creator,media.source_description,media.source_uri,media.rights_statement,media.rights_uri,media.rights_attested_by_actor_id,media.rights_attested_at,media.created_at,media.attached_at,cover.uri,
+		COALESCE((SELECT NULLIF(BTRIM(jc.first_store_address),'') FROM dsh.joining_cases jc WHERE jc.store_id=candidate.id AND jc.first_store_address IS NOT NULL ORDER BY jc.updated_at DESC LIMIT 1),'')
 	FROM candidate_page candidate
 	LEFT JOIN LATERAL (SELECT AVG(r.rating)::double precision AS rating_average,COUNT(*)::int AS rating_count FROM dsh.commerce_order_ratings r WHERE r.store_id=candidate.id) rating ON true
 	LEFT JOIN LATERAL (SELECT a.id,a.joining_case_id,COALESCE(a.store_id,'') AS store_id,a.uri,a.object_key,a.content_sha256,a.content_type,a.byte_size,a.media_role,a.state,a.creator,a.source_description,COALESCE(a.source_uri,'') AS source_uri,a.rights_statement,COALESCE(a.rights_uri,'') AS rights_uri,a.rights_attested_by_actor_id,a.rights_attested_at,a.created_at,a.attached_at
@@ -200,7 +201,7 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.PrimaryVerticalID, &store.Version, &nameSortKey,
 			&store.RatingAverage, &store.RatingCount, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, pq.Array(&store.FulfillmentModes), pq.Array(&store.CategoryIDs), &distance,
 			&city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt,
-			&mediaID, &mediaJoiningCaseID, &mediaStoreID, &mediaURI, &mediaObjectKey, &mediaContentSHA, &mediaContentType, &mediaSize, &mediaRole, &mediaState, &mediaCreator, &mediaSourceDescription, &mediaSourceURI, &mediaRightsStatement, &mediaRightsURI, &mediaRightsAttestedBy, &mediaRightsAttestedAt, &mediaCreatedAt, &mediaAttachedAt, &coverURI); err != nil {
+			&mediaID, &mediaJoiningCaseID, &mediaStoreID, &mediaURI, &mediaObjectKey, &mediaContentSHA, &mediaContentType, &mediaSize, &mediaRole, &mediaState, &mediaCreator, &mediaSourceDescription, &mediaSourceURI, &mediaRightsStatement, &mediaRightsURI, &mediaRightsAttestedBy, &mediaRightsAttestedAt, &mediaCreatedAt, &mediaAttachedAt, &coverURI, &store.AddressLine); err != nil {
 			return PublicStorePage{}, fmt.Errorf("scan published store page: %w", err)
 		}
 		store.ServiceCity = &city

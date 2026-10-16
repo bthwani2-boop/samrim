@@ -58,9 +58,31 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil || len(first.Operations) != 2 || first.Operations[0].OrderID != "operator_order_03" || first.Operations[1].OrderID != "operator_order_02" || first.NextCursor == "" {
 			t.Fatalf("first operator operations page is not stable: %+v err=%v", first, err)
 		}
+		if first.Summary.TotalCount != 3 || first.Summary.ActionableCount != 3 || first.Summary.AwaitingDispatchCount != 3 || first.Summary.ActiveCount != 0 || first.Summary.DeliveredCount != 0 || first.Summary.MeasuredAt.IsZero() {
+			t.Fatalf("first-page summary must cover all filtered results, not the two loaded rows: %+v", first.Summary)
+		}
+		scoped, err := postgres.ListOrdersForOperatorStore(ctx, db, "READY_FOR_DISPATCH", "", "updated_desc", true, 2, "", "store_operator_ops")
+		if err != nil || len(scoped.Operations) != 2 || scoped.Summary.TotalCount != 3 || scoped.NextCursor == "" {
+			t.Fatalf("Store-scoped operator first page must preserve exact Store totals: %+v err=%v", scoped, err)
+		}
+		scopedNext, err := postgres.ListOrdersForOperatorStore(ctx, db, "READY_FOR_DISPATCH", "", "updated_desc", true, 2, scoped.NextCursor, "store_operator_ops")
+		if err != nil || len(scopedNext.Operations) != 1 || scopedNext.Summary.TotalCount != 3 {
+			t.Fatalf("Store-scoped pagination lost an order or changed totals: %+v err=%v", scopedNext, err)
+		}
+		if _, err := postgres.ListOrdersForOperatorStore(ctx, db, "READY_FOR_DISPATCH", "", "updated_desc", true, 2, scoped.NextCursor, "another_store"); !errors.Is(err, postgres.ErrOperatorOperationInvalidCursor) {
+			t.Fatalf("cross-Store continuation was accepted: %v", err)
+		}
+		scopedEmpty, err := postgres.ListOrdersForOperatorStore(ctx, db, "", "", "updated_desc", false, 10, "", "another_store")
+		if err != nil || scopedEmpty.Summary.TotalCount != 0 || len(scopedEmpty.Operations) != 0 {
+			t.Fatalf("Store-scoped read leaked orders from another Store: %+v err=%v", scopedEmpty, err)
+		}
+
 		second, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", "", "updated_desc", true, 2, first.NextCursor)
 		if err != nil || len(second.Operations) != 1 || second.Operations[0].OrderID != "operator_order_01" || second.NextCursor != "" {
 			t.Fatalf("second operator operations page is not stable: %+v err=%v", second, err)
+		}
+		if second.Summary.TotalCount != 3 || second.Summary.ActionableCount != 3 {
+			t.Fatalf("cursor narrowed result-set summary: %+v", second.Summary)
 		}
 		if _, err := postgres.ListOrdersForOperator(ctx, db, "CAPTAIN_ASSIGNED", "", "updated_desc", true, 2, first.NextCursor); !errors.Is(err, postgres.ErrOperatorOperationInvalidCursor) {
 			t.Fatalf("expected filter-bound cursor rejection, got %v", err)
@@ -87,6 +109,17 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil || len(matched.Operations) != 1 || matched.Operations[0].OrderID != "operator_order_02" {
 			t.Fatalf("case-insensitive order identifier search failed: %+v err=%v", matched, err)
 		}
+		if matched.Summary.TotalCount != 1 || matched.Summary.AwaitingDispatchCount != 1 {
+			t.Fatalf("summary ignored identifier search: %+v", matched.Summary)
+		}
+		empty, err := postgres.ListOrdersForOperator(ctx, db, "", "no-such-order", "updated_desc", false, 2, "")
+		if err != nil || len(empty.Operations) != 0 || empty.Summary.TotalCount != 0 || empty.Summary.ActionableCount != 0 || empty.Summary.MeasuredAt.IsZero() {
+			t.Fatalf("empty query must return a measured zero summary: %+v err=%v", empty, err)
+		}
+		literal, err := postgres.ListOrdersForOperator(ctx, db, "", "%", "updated_desc", false, 2, "")
+		if err != nil || literal.Summary.TotalCount != 0 {
+			t.Fatalf("summary expanded a literal wildcard search: %+v err=%v", literal, err)
+		}
 		storeMatches, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", "متجر العمليات", "updated_desc", false, 10, "")
 		if err != nil || len(storeMatches.Operations) != 3 {
 			t.Fatalf("store name search failed: %+v err=%v", storeMatches, err)
@@ -109,6 +142,17 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil || len(actionable.Operations) != 2 {
 			t.Fatalf("actionable operator queue included a non-actionable order: %+v err=%v", actionable, err)
 		}
+		if actionable.Summary.TotalCount != 2 || actionable.Summary.ActionableCount != 2 || actionable.Summary.AwaitingDispatchCount != 2 || actionable.Summary.ActiveCount != 0 {
+			t.Fatalf("summary ignored actionable filter: %+v", actionable.Summary)
+		}
+		all, err := postgres.ListOrdersForOperator(ctx, db, "", "", "updated_desc", false, 1, "")
+		if err != nil || all.Summary.TotalCount != 3 || all.Summary.ActiveCount != 1 || all.Summary.ActionableCount != 2 {
+			t.Fatalf("summary lost non-actionable active pickup orders: %+v err=%v", all.Summary, err)
+		}
+		pickup, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_PICKUP", "", "updated_desc", false, 1, "")
+		if err != nil || pickup.Summary.TotalCount != 1 || pickup.Summary.ActiveCount != 1 || pickup.Summary.AwaitingDispatchCount != 0 || pickup.Summary.ActionableCount != 0 {
+			t.Fatalf("summary ignored exact state filter: %+v err=%v", pickup.Summary, err)
+		}
 		for _, item := range actionable.Operations {
 			if item.OrderID == "operator_order_02" {
 				t.Fatal("ready-for-pickup order was included in the operator-action queue")
@@ -117,6 +161,41 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		clientOrders, err := postgres.ListOrdersForClient(ctx, db, "client_operator_ops", "", 50)
 		if err != nil {
 			t.Fatalf("list client orders with store pickup details: %v", err)
+		}
+		clientPage1, err := postgres.ListOrdersForClientPage(ctx, db, "client_operator_ops", 2, "")
+		if err != nil || len(clientPage1.Orders) != 2 || clientPage1.Orders[0].ID != "operator_order_03" || clientPage1.Orders[1].ID != "operator_order_02" || clientPage1.NextCursor == "" {
+			t.Fatalf("client first keyset page incorrect: %+v err=%v", clientPage1, err)
+		}
+		clientPage2, err := postgres.ListOrdersForClientPage(ctx, db, "client_operator_ops", 2, clientPage1.NextCursor)
+		if err != nil || len(clientPage2.Orders) != 1 || clientPage2.Orders[0].ID != "operator_order_01" || clientPage2.NextCursor != "" {
+			t.Fatalf("client second keyset page incorrect: %+v err=%v", clientPage2, err)
+		}
+		if _, err := postgres.ListOrdersForClientPage(ctx, db, "another_client", 2, clientPage1.NextCursor); !errors.Is(err, postgres.ErrClientOrdersInvalidCursor) {
+			t.Fatalf("cross-client cursor unexpectedly allowed: %v", err)
+		}
+		partnerStores, err := postgres.ListPartnerOrdersAuthorizedStoreIDs(ctx, db, "partner_operator_ops")
+		if err != nil || len(partnerStores) != 1 || partnerStores[0] != "store_operator_ops" {
+			t.Fatalf("partner scope = %+v err=%v", partnerStores, err)
+		}
+		partnerCounts, err := postgres.CountPartnerOrderAttention(ctx, db, partnerStores)
+		if err != nil || partnerCounts.AwaitingDispatch != 2 || partnerCounts.NewOrders != 0 {
+			t.Fatalf("partner order attention = %+v err=%v", partnerCounts, err)
+		}
+		partnerPage1, err := postgres.ListOrdersForPartnerStores(ctx, db, partnerStores, nil, "", 2, "")
+		if err != nil || len(partnerPage1.Orders) != 2 || partnerPage1.NextCursor == "" {
+			t.Fatalf("partner orders first page = %+v err=%v", partnerPage1, err)
+		}
+		partnerPage2, err := postgres.ListOrdersForPartnerStores(ctx, db, partnerStores, nil, "", 2, partnerPage1.NextCursor)
+		if err != nil || len(partnerPage2.Orders) != 1 || partnerPage2.NextCursor != "" {
+			t.Fatalf("partner orders second page = %+v err=%v", partnerPage2, err)
+		}
+		filtered, err := postgres.ListOrdersForPartnerStores(ctx, db, partnerStores, []string{"READY_FOR_DISPATCH"}, "", 10, "")
+		if err != nil || len(filtered.Orders) != 2 || filtered.NextCursor != "" {
+			t.Fatalf("partner state filter = %+v err=%v", filtered, err)
+		}
+		noAccess, err := postgres.ListPartnerOrdersAuthorizedStoreIDs(ctx, db, "another-partner")
+		if err != nil || len(noAccess) != 0 {
+			t.Fatalf("unauthorized partner unexpectedly has store access: %+v err=%v", noAccess, err)
 		}
 		var pickupOrder *postgres.OrderRecord
 		for index := range clientOrders {

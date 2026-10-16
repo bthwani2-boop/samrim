@@ -1,7 +1,7 @@
-import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type JoiningCaseResponse, publicationStateLabel, type PublicationState, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { type Href, Link } from "expo-router";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { STORE_SURFACE_PERMISSIONS } from "../../shell/partner-authority";
 import { StoreOfferManagement } from "../store-offer/store-offer";
@@ -37,7 +37,7 @@ function StoreHeaderRow({ styles, store }: { styles: SurfaceStyles; store: Partn
   const published = store.publicationState === "published";
   return <View style={styles.headerRow}>
     <View style={styles.headerCopy}>
-      <Text style={styles.metaLabel}>{store.owned ? "متجر تملكه" : "وصول مفوض"}</Text>
+      {!store.owned ? <Text style={styles.metaLabel}>وصول مفوض</Text> : null}
       <Text selectable style={styles.value}>{store.name}</Text>
     </View>
     <BthwaniStatusBadge icon={published ? "success" : "warning"} label={published ? "منشور" : publicationLabel(store.publicationState)} tone={published ? "success" : "warning"} />
@@ -52,21 +52,51 @@ function FirstJoiningStoreFacts({ styles, store }: { styles: SurfaceStyles; stor
   </View>;
 }
 
-function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, canPromote, firstStoreCase, onProfileImageUpdated }: { styles: SurfaceStyles; store: PartnerAccessibleStore; canCatalog: boolean; canOperate: boolean; canPromote: boolean; firstStoreCase: JoiningCaseResponse | null; onProfileImageUpdated: (next: JoiningCaseResponse) => void }) {
+type StoreSection = "operations" | "catalog" | "promotions" | "team" | "settings";
+
+function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, canPromote, firstStoreCase }: { styles: SurfaceStyles; store: PartnerAccessibleStore; canCatalog: boolean; canOperate: boolean; canPromote: boolean; firstStoreCase: JoiningCaseResponse | null }) {
   const firstJoiningStore = firstStoreCase?.case.store;
   const isSameFirstJoiningStore = Boolean(store.owned && firstJoiningStore && firstJoiningStore.id === store.id);
-  return <>
-    {store.owned ? <StoreCommercialAgreements key={store.id} storeID={store.id} /> : null}
-    {isSameFirstJoiningStore && firstStoreCase ? <StoreProfileImageEditor value={firstStoreCase} onUpdated={onProfileImageUpdated} /> : null}
-    {canOperate ? <StoreOperationalAvailabilityManagement storeID={store.id} fulfillmentModes={store.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
-    {canCatalog && store.primaryVerticalId ? <StoreOfferManagement storeId={store.id} verticalId={store.primaryVerticalId} /> : null}
-    {canCatalog && !store.primaryVerticalId ? <View style={styles.card}><Text style={styles.muted}>تعذر فتح إدارة المنتجات لأن تصنيف نشاط المتجر غير متاح في القراءة الحالية.</Text></View> : null}
-    {canPromote ? <StorePromotionsCard storeID={store.id} verticalID={store.primaryVerticalId} /> : null}
-    {isSameFirstJoiningStore && firstJoiningStore ? <FirstJoiningStoreFacts styles={styles} store={firstJoiningStore} /> : null}
-    {store.owned ? <StoreCaptainMembershipManagement storeID={store.id} /> : null}
-    {store.owned ? <PartnerStoreAccess storeID={store.id} /> : null}
-    <PartnerAccessInvitationsCard />
-  </>;
+  const sections: ReadonlyArray<{ id: StoreSection; label: string }> = [
+    ...(canOperate ? [{ id: "operations" as const, label: "التشغيل" }] : []),
+    ...(canCatalog ? [{ id: "catalog" as const, label: "المنتجات" }] : []),
+    ...(canPromote ? [{ id: "promotions" as const, label: "العروض" }] : []),
+    { id: "team", label: "الفريق" },
+    ...(store.owned ? [{ id: "settings" as const, label: "بيانات المتجر" }] : []),
+  ];
+  const [section, setSection] = useState<StoreSection>(sections[0]?.id ?? "team");
+  const [visited, setVisited] = useState<ReadonlyArray<StoreSection>>([sections[0]?.id ?? "team"]);
+
+  function showSection(next: StoreSection) {
+    setSection(next);
+    setVisited((current) => current.includes(next) ? current : [...current, next]);
+  }
+
+  return <View style={styles.managementSections}>
+    <View style={styles.choiceRow} accessibilityLabel="أقسام إدارة المتجر">
+      {sections.map((item) => <BthwaniChip key={item.id} label={item.label} selected={section === item.id} onPress={() => showSection(item.id)} />)}
+    </View>
+    <View style={section === "operations" ? undefined : styles.hiddenSection} accessibilityElementsHidden={section !== "operations"} importantForAccessibility={section === "operations" ? "auto" : "no-hide-descendants"}>
+      {visited.includes("operations") && canOperate ? <StoreOperationalAvailabilityManagement storeID={store.id} fulfillmentModes={store.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
+    </View>
+    <View style={section === "catalog" ? undefined : styles.hiddenSection} accessibilityElementsHidden={section !== "catalog"} importantForAccessibility={section === "catalog" ? "auto" : "no-hide-descendants"}>
+      {visited.includes("catalog") && canCatalog && store.primaryVerticalId ? <StoreOfferManagement storeId={store.id} verticalId={store.primaryVerticalId} /> : null}
+      {visited.includes("catalog") && canCatalog && !store.primaryVerticalId ? <View style={styles.card}><Text style={styles.muted}>تعذر فتح إدارة المنتجات لأن تصنيف نشاط المتجر غير متاح في القراءة الحالية.</Text></View> : null}
+    </View>
+    <View style={section === "promotions" ? undefined : styles.hiddenSection} accessibilityElementsHidden={section !== "promotions"} importantForAccessibility={section === "promotions" ? "auto" : "no-hide-descendants"}>
+      {visited.includes("promotions") && canPromote ? <StorePromotionsCard storeID={store.id} verticalID={store.primaryVerticalId} /> : null}
+    </View>
+    <View style={section === "team" ? undefined : styles.hiddenSection} accessibilityElementsHidden={section !== "team"} importantForAccessibility={section === "team" ? "auto" : "no-hide-descendants"}>
+      {visited.includes("team") && store.owned ? <StoreCaptainMembershipManagement storeID={store.id} /> : null}
+      {visited.includes("team") && store.owned ? <PartnerStoreAccess storeID={store.id} /> : null}
+      {visited.includes("team") ? <PartnerAccessInvitationsCard /> : null}
+    </View>
+    <View style={section === "settings" ? undefined : styles.hiddenSection} accessibilityElementsHidden={section !== "settings"} importantForAccessibility={section === "settings" ? "auto" : "no-hide-descendants"}>
+      {visited.includes("settings") && store.owned ? <StoreCommercialAgreements storeID={store.id} /> : null}
+      {visited.includes("settings") && store.owned ? <StoreProfileImageEditor storeID={store.id} storeName={store.name} /> : null}
+      {visited.includes("settings") && isSameFirstJoiningStore && firstJoiningStore ? <FirstJoiningStoreFacts styles={styles} store={firstJoiningStore} /> : null}
+    </View>
+  </View>;
 }
 
 export function PartnerStore() {
@@ -89,8 +119,7 @@ export function PartnerStore() {
   }, [scopeState.kind, selectedStore, stores, selectStore]);
 
   return <View style={styles.container}>
-    <Text style={styles.sectionTitle}>المتجر</Text>
-    <PartnerStoreScopeSelector requiredPermissions={STORE_SURFACE_PERMISSIONS} />
+    {scopeState.kind !== "ready" || stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={STORE_SURFACE_PERMISSIONS} /> : null}
 
     {scopeState.kind === "ready" && !selectedStore ? <View style={styles.card}>
       <Text style={styles.muted}>لا يوجد متجر مملوك أو مفوض لهذا الحساب حاليًا.</Text>
@@ -99,7 +128,7 @@ export function PartnerStore() {
 
     {selectedStore ? <>
       <StoreHeaderRow styles={styles} store={selectedStore} />
-      <StoreManagementSurfaces canCatalog={canCatalog} canOperate={canOperate} canPromote={canPromote} firstStoreCase={firstStoreCase} onProfileImageUpdated={onboarding.update} store={selectedStore} styles={styles} />
+      <StoreManagementSurfaces key={selectedStore.id} canCatalog={canCatalog} canOperate={canOperate} canPromote={canPromote} firstStoreCase={firstStoreCase} store={selectedStore} styles={styles} />
     </> : null}
 
     {onboarding.state.kind === "ready" && onboarding.state.value.case.state === "needs_correction" ? <Link href={"/onboarding" as Href} asChild><BthwaniButton label="مراجعة التصحيح المطلوب في ملف الانضمام" variant="secondary" /></Link> : null}

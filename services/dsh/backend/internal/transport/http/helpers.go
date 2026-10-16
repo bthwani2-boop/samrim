@@ -1,11 +1,13 @@
 package transporthttp
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/catalog"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
@@ -70,7 +72,12 @@ func optionalProductValue(value *string) string {
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
-	decoder := json.NewDecoder(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil || !utf8.Valid(body) {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body is invalid")
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body is invalid")

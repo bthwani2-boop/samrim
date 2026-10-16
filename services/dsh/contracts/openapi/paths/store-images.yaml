@@ -1,0 +1,100 @@
+paths:
+  /dsh/partner/stores/{storeId}/images:
+    post:
+      operationId: uploadPartnerStoreImage
+      summary: Add or replace canonical Store logo or cover
+      security: [{ userBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - { name: storeId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, creator, sourceDescription, rightsStatement, rightsAttested]
+              additionalProperties: false
+              properties:
+                file: { type: string, format: binary }
+                role: { type: string, enum: [primary, cover], default: primary }
+                creator: { type: string, minLength: 2, maxLength: 200 }
+                sourceDescription: { type: string, minLength: 3, maxLength: 1000 }
+                sourceUri: { type: string, format: uri }
+                rightsStatement: { type: string, minLength: 5, maxLength: 2000 }
+                rightsUri: { type: string, format: uri }
+                rightsAttested: { type: boolean, const: true }
+      responses:
+        "200": { description: Image attached and current joining-case readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreImagesResponse" } } } }
+        "201": { description: Image attached and current joining-case readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreImagesResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "503": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+    get:
+      operationId: readPartnerStoreImages
+      summary: Read canonical Store logo and cover for authorized partner
+      security: [{ userBearer: [] }]
+      parameters:
+        - { name: storeId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Canonical Store media., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreImagesResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
+  /dsh/operator/stores/{storeId}/images:
+    post:
+      operationId: uploadOperatorStoreImage
+      summary: Add or replace canonical Store logo or cover
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - { name: storeId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, creator, sourceDescription, rightsStatement, rightsAttested]
+              additionalProperties: false
+              properties:
+                file: { type: string, format: binary }
+                role: { type: string, enum: [primary, cover], default: primary }
+                creator: { type: string, minLength: 2, maxLength: 200 }
+                sourceDescription: { type: string, minLength: 3, maxLength: 1000 }
+                sourceUri: { type: string, format: uri }
+                rightsStatement: { type: string, minLength: 5, maxLength: 2000 }
+                rightsUri: { type: string, format: uri }
+                rightsAttested: { type: boolean, const: true }
+      responses:
+        "200": { description: Image attached and current joining-case readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreImagesResponse" } } } }
+        "201": { description: Image attached and current joining-case readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreImagesResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "503": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+    get:
+      operationId: readOperatorStoreImages
+      summary: Read canonical Store logo and cover for authorized operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { name: storeId, in: path, required: true, schema: { type: string } }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      responses:
+        "200": { description: Canonical Store media., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreImagesResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }

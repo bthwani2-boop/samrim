@@ -20,7 +20,7 @@ type CatalogProductRegistryItem struct {
 	Active                        bool
 	Version, VariantCount         int
 	StoreCount                    int
-	CategoryIDs                   []string
+	CategoryIDs, CategoryNamesAr  []string
 	CreatedAt, UpdatedAt          time.Time
 }
 
@@ -82,6 +82,7 @@ func ListCatalogProductRegistry(ctx context.Context, db *sql.DB, query, vertical
 		AND ($4='all' OR product.active=($4='active'))`
 	const querySQL = `SELECT product.id,product.vertical_id,product.canonical_name,product.brand,product.active,product.version,COUNT(DISTINCT variant.id),
 		ARRAY(SELECT pc.category_id FROM dsh.catalog_product_categories pc WHERE pc.product_id=product.id ORDER BY pc.category_id),
+		ARRAY(SELECT category.name_ar FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories category ON category.id=pc.category_id WHERE pc.product_id=product.id ORDER BY category.name_ar,category.id),
 		(SELECT ma.uri FROM dsh.catalog_media cm JOIN dsh.catalog_media_assets ma ON ma.product_id=cm.product_id AND ma.id=cm.media_asset_id AND ma.state='active' AND ma.rights_attested_at IS NOT NULL WHERE cm.product_id=product.id AND cm.media_role='primary' ORDER BY cm.ordinal LIMIT 1),
 		(SELECT COUNT(DISTINCT o.store_id) FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id WHERE v.product_id=product.id AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)),
 		product.created_at,product.updated_at
@@ -116,11 +117,12 @@ func ListCatalogProductRegistry(ctx context.Context, db *sql.DB, query, vertical
 	items := make([]CatalogProductRegistryItem, 0, limit+1)
 	for rows.Next() {
 		var item CatalogProductRegistryItem
-		var categories pq.StringArray
-		if err := rows.Scan(&item.ID, &item.VerticalID, &item.CanonicalName, &item.Brand, &item.Active, &item.Version, &item.VariantCount, &categories, &item.PrimaryImageURI, &item.StoreCount, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		var categories, categoryNames pq.StringArray
+		if err := rows.Scan(&item.ID, &item.VerticalID, &item.CanonicalName, &item.Brand, &item.Active, &item.Version, &item.VariantCount, &categories, &categoryNames, &item.PrimaryImageURI, &item.StoreCount, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return CatalogProductRegistryPage{}, err
 		}
-		item.CategoryIDs = []string(categories)
+		item.CategoryIDs = append([]string{}, categories...)
+		item.CategoryNamesAr = append([]string{}, categoryNames...)
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {

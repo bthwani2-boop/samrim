@@ -16,18 +16,19 @@ import (
 )
 
 var (
-	ErrInvalidInput                = errors.New("captain input is invalid")
-	ErrOperatorNotActive           = errors.New("operator is not active")
-	ErrCaptainSessionForbidden     = errors.New("an active app-captain session is required")
-	ErrPartnerSessionForbidden     = errors.New("an active app-partner session is required")
-	ErrManagedRoleClosed           = errors.New("managed role mutation is outside the DSH-owned domain boundary")
-	ErrManagedRoleNotEligible      = errors.New("managed role is not currently eligible in its owning domain")
-	ErrManagedRoleVersionConflict  = errors.New("managed role version is stale")
-	ErrCaptainIdentityUnavailable  = errors.New("captain identity was not provisioned")
-	ErrPaymentUnavailable          = errors.New("payment collection is unavailable")
-	ErrCollectionAmountMismatch    = errors.New("collected amount does not match the order amount")
-	ErrLocationStateConflict       = errors.New("captain location is only publishable while the order is in custody")
-	ErrLocationIdempotencyConflict = errors.New("captain location idempotency key conflicts with a previous request")
+	ErrInvalidInput                   = errors.New("captain input is invalid")
+	ErrOperatorNotActive              = errors.New("operator is not active")
+	ErrCaptainSessionForbidden        = errors.New("an active app-captain session is required")
+	ErrPartnerSessionForbidden        = errors.New("an active app-partner session is required")
+	ErrManagedRoleClosed              = errors.New("managed role mutation is outside the DSH-owned domain boundary")
+	ErrManagedRoleNotEligible         = errors.New("managed role is not currently eligible in its owning domain")
+	ErrManagedRoleVersionConflict     = errors.New("managed role version is stale")
+	ErrCaptainIdentityUnavailable     = errors.New("captain identity was not provisioned")
+	ErrPaymentUnavailable             = errors.New("payment collection is unavailable")
+	ErrCaptainWalletInsufficientFunds = errors.New("captain wallet cannot cover COD exposure")
+	ErrCollectionAmountMismatch       = errors.New("collected amount does not match the order amount")
+	ErrLocationStateConflict          = errors.New("captain location is only publishable while the order is in custody")
+	ErrLocationIdempotencyConflict    = errors.New("captain location idempotency key conflicts with a previous request")
 )
 
 type Service struct {
@@ -278,11 +279,16 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 	if err != nil {
 		return postgres.CaptainOfferResult{}, err
 	}
+	if order.FulfillmentMode == "BTHWANI_CAPTAIN" {
+		if err := s.requireCaptainMinimumBalance(ctx, identity.Subject); err != nil {
+			return postgres.CaptainOfferResult{}, err
+		}
+	}
 	reserved := false
 	if order.FulfillmentMode == "BTHWANI_CAPTAIN" && order.PaymentCashAmountMinor > 0 && order.PaymentIntentID != nil && strings.TrimSpace(*order.PaymentIntentID) != "" {
 		_, _, reserveErr := s.payment.ReserveCaptainCOD(ctx, order.ID, *order.PaymentIntentID, identity.Subject, wlt.DerivedIdempotencyKey("captain-cod-reserve", offer.ID), correlationID)
 		if reserveErr != nil {
-			return postgres.CaptainOfferResult{}, fmt.Errorf("%w: captain COD authorization unavailable: %v", ErrPaymentUnavailable, reserveErr)
+			return postgres.CaptainOfferResult{}, classifyCaptainCODReserveError(reserveErr)
 		}
 		reserved = true
 	}
@@ -298,6 +304,23 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 		}
 	}
 	return result, respondErr
+}
+
+// A competing captain already holding the only active COD reservation is a
+// normal parallel-dispatch race; only transport/unknown failures are outages.
+func classifyCaptainCODReserveError(err error) error {
+	var financial *wlt.Error
+	if errors.As(err, &financial) && financial.Status == 409 {
+		switch financial.Code {
+		case "STATE_CONFLICT":
+			return postgres.ErrCaptainAssignmentConflict
+		case "INSUFFICIENT_FUNDS":
+			return ErrCaptainWalletInsufficientFunds
+		case "COD_EXPOSURE_UNAVAILABLE":
+			return postgres.ErrPaymentStateConflict
+		}
+	}
+	return fmt.Errorf("%w: captain COD authorization unavailable: %v", ErrPaymentUnavailable, err)
 }
 
 // A Captain must own a current, actionable offer before any external COD reserve.
@@ -353,7 +376,18 @@ func (s *Service) ReadDeliveryTask(ctx context.Context, accessToken, assignmentI
 	if strings.TrimSpace(assignmentID) == "" {
 		return postgres.CaptainDeliveryTask{}, ErrInvalidInput
 	}
-	return postgres.ReadCaptainDeliveryTask(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject)
+	task, err := postgres.ReadCaptainDeliveryTask(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject)
+	if err != nil {
+		return postgres.CaptainDeliveryTask{}, err
+	}
+	if task.FulfillmentMode == postgres.FulfillmentModeBthwaniCaptain && task.PaymentIntentID != "" {
+		payment, paymentErr := s.payment.Read(ctx, task.PaymentIntentID)
+		if paymentErr == nil && payment.ID == task.PaymentIntentID && payment.CustomerPaymentAllocation != nil && payment.CustomerPaymentAllocation.OrderID == task.OrderReference && payment.CustomerPaymentAllocation.Currency == task.Currency && payment.CustomerPaymentAllocation.FulfillmentMode == task.FulfillmentMode {
+			fee := payment.CustomerPaymentAllocation.DeliveryFeeMinor
+			task.DeliveryFeeMinor = &fee
+		}
+	}
+	return task, nil
 }
 
 // UpdatePresence only accepts authenticated captains and only persists their latest position.
@@ -438,6 +472,62 @@ func (s *Service) Recover(ctx context.Context, assignmentID, actingActorID strin
 	return postgres.RecoverCaptainAssignment(ctx, s.db, assignmentID, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainRecoveryRequest(assignmentID, expectedVersion), actingActorID, strings.TrimSpace(correlationID))
 }
 
+// ReconcileAutomaticDispatch runs only inside the DSH worker; it is not an
+// externally callable role bypass. Each insert is guarded by the canonical
+// order lock, duplicate-offer constraints, and the WLT wallet preflight.
+func (s *Service) ReconcileAutomaticDispatch(ctx context.Context, afterID string) (string, error) {
+	if err := postgres.CanonicalizeCaptainOffers(ctx, s.db, ""); err != nil {
+		return afterID, err
+	}
+	const pageSize = 25
+	orderIDs, err := postgres.ListReadyCaptainDispatchOrders(ctx, s.db, pageSize, afterID)
+	if err != nil {
+		return afterID, err
+	}
+	var firstErr error
+	for _, orderID := range orderIDs {
+		if err := ctx.Err(); err != nil {
+			return afterID, err
+		}
+		approved, err := s.dispatchCandidates(ctx, orderID)
+		if errors.Is(err, postgres.ErrCaptainNoAvailable) {
+			continue
+		}
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("dispatch order %s: %w", orderID, err)
+			}
+			continue
+		}
+		key := fmt.Sprintf("auto-dispatch:%s:%d", orderID, time.Now().UTC().UnixNano())
+		_, _, err = postgres.CreateCaptainDispatchOffer(ctx, s.db, orderID, key, postgres.HashCaptainDispatchRequest(orderID), "system-captain-dispatch", key, approved...)
+		if errors.Is(err, postgres.ErrCaptainDispatchConflict) || errors.Is(err, postgres.ErrCaptainNoAvailable) {
+			continue
+		}
+		if err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("dispatch order %s: %w", orderID, err)
+		}
+	}
+	if len(orderIDs) < pageSize {
+		return "", firstErr
+	}
+	return orderIDs[len(orderIDs)-1], firstErr
+}
+
+// dispatchCandidates checks fresh nearby presence and the canonical WLT wallet
+// before any offer is issued. WLT reserves the actual COD exposure on acceptance.
+func (s *Service) dispatchCandidates(ctx context.Context, orderID string) ([]string, error) {
+	candidates, cashMinor, err := postgres.ListNearbyCaptainCandidates(ctx, s.db, orderID, "")
+	if err != nil {
+		return nil, err
+	}
+	minimum, err := s.captainMinimumBalance(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return selectFundedNearbyCaptains(ctx, candidates, cashMinor, minimum, s.payment.ReadCaptainWalletState)
+}
+
 func (s *Service) Dispatch(ctx context.Context, orderID, actingActorID, idempotencyKey, correlationID string) (postgres.CaptainOffer, bool, error) {
 	if !validMutation(idempotencyKey, correlationID, actingActorID) {
 		return postgres.CaptainOffer{}, false, ErrInvalidInput
@@ -445,7 +535,16 @@ func (s *Service) Dispatch(ctx context.Context, orderID, actingActorID, idempote
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.CaptainOffer{}, false, err
 	}
-	return postgres.CreateCaptainDispatchOffer(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(idempotencyKey), postgres.HashCaptainDispatchRequest(orderID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+	approved, err := s.dispatchCandidates(ctx, strings.TrimSpace(orderID))
+	if errors.Is(err, postgres.ErrCaptainNoAvailable) {
+		// The database verifies idempotent replay before trying new candidates.
+		// An empty non-nil approved list denies a fresh offer while preserving
+		// the existing operation when its captain is already reserved.
+		approved = []string{}
+	} else if err != nil {
+		return postgres.CaptainOffer{}, false, err
+	}
+	return postgres.CreateCaptainDispatchOffer(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(idempotencyKey), postgres.HashCaptainDispatchRequest(orderID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), approved...)
 }
 
 func (s *Service) DispatchForPartner(ctx context.Context, accessToken, storeID, orderID, captainActorID string, expectedOrderVersion int, idempotencyKey, correlationID string) (postgres.CaptainOffer, bool, error) {
@@ -459,6 +558,8 @@ func (s *Service) DispatchForPartner(ctx context.Context, accessToken, storeID, 
 	if err := s.authorizePartnerStoreFulfillment(ctx, storeID, identity.Subject); err != nil {
 		return postgres.CaptainOffer{}, false, err
 	}
+	// Store-managed captains use PARTNER_CAPTAIN fulfillment; this platform
+	// wallet minimum applies only to BTHWANI_CAPTAIN orders.
 	requestHash := postgres.HashStoreCaptainDispatchRequest(storeID, orderID, captainActorID, expectedOrderVersion)
 	return postgres.CreateStoreCaptainDispatchOffer(ctx, s.db, strings.TrimSpace(storeID), strings.TrimSpace(orderID), strings.TrimSpace(captainActorID), identity.Subject, expectedOrderVersion, strings.TrimSpace(idempotencyKey), requestHash, strings.TrimSpace(correlationID))
 }
@@ -481,7 +582,16 @@ func (s *Service) Reassign(ctx context.Context, orderID, actingActorID, idempote
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.CaptainOffer{}, false, err
 	}
-	return postgres.ReassignCaptain(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(idempotencyKey), postgres.HashCaptainReassignmentRequest(orderID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+	approved, err := s.dispatchCandidates(ctx, strings.TrimSpace(orderID))
+	if errors.Is(err, postgres.ErrCaptainNoAvailable) {
+		// The database verifies idempotent replay before trying new candidates.
+		// An empty non-nil approved list denies a fresh offer while preserving
+		// the existing operation when its captain is already reserved.
+		approved = []string{}
+	} else if err != nil {
+		return postgres.CaptainOffer{}, false, err
+	}
+	return postgres.ReassignCaptain(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(idempotencyKey), postgres.HashCaptainReassignmentRequest(orderID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), approved...)
 }
 
 func (s *Service) ConfirmStoreHandoff(ctx context.Context, accessToken, orderID, storeID, assignmentID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {

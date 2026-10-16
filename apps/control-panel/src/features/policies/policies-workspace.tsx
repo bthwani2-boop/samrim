@@ -1,24 +1,27 @@
 "use client";
 
-import { PageHeader } from "../../shell/page-header";
-
 import type { ReactNode } from "react";
 import { useSession } from "../../session/session-provider";
-import { type PolicyResourceKey, workspacePolicyResources } from "../../navigation/workspace-registry";
-export function PoliciesWorkspace({ resource, children }: { resource: PolicyResourceKey; children: ReactNode }) {
+import { canManagePolicy, type PolicyResourceKey } from "./policy-capabilities";
+
+/** The sole policy editor adapter: keeps existing owner editors, not a second administration page. */
+export function PoliciesWorkspace({ resource, children }: Readonly<{ resource: PolicyResourceKey; children: ReactNode }>) {
   const { state } = useSession();
   if (state.kind !== "authenticated") return null;
   if (state.identity.role !== "operator") {
-    return <section className="state-content workspace-restricted"><div className="state-card" role="alert"><p className="eyebrow">صلاحية غير متاحة</p><h1>مركز السياسات للمشغّلين</h1><p className="muted">القراءة والتعديل يمران عبر المالك القانوني لكل سياسة.</p></div></section>;
+    return <section className="state-content workspace-restricted" role="alert">
+      <h1>مركز السياسات للمشغّلين</h1>
+      <p className="muted">تُدار كل سياسة عبر الخدمة المالكة وصلاحيات الحساب.</p>
+    </section>;
   }
 
-  const canEdit = state.identity.permissions?.includes("platform_policies") === true && (resource !== "partner-financial-terms" || state.identity.permissions?.includes("finance") === true);
-  const selected = workspacePolicyResources.find((item) => item.key === resource) ?? workspacePolicyResources[0]!;
-  return (
-    <section className="workspace-page" aria-labelledby="policies-page-title">
-      <PageHeader id="policies-page-title" title={selected.label} />
-      {!canEdit ? <p className="managed-status managed-status-warning" role="status">{resource === "partner-financial-terms" ? "تتطلب هذه السياسة صلاحية سياسات المنصة وصلاحية المالية من الحسابات." : "وضع قراءة فقط. يتطلب التعديل صلاحية سياسات المنصة من الحسابات."}</p> : null}
-      {children}
-    </section>
-  );
+  const canEdit = canManagePolicy(resource, state.identity.permissions);
+  return <>
+    {!canEdit ? <p className="managed-status managed-status-warning" role="status">
+      {resource === "partner-financial-terms"
+        ? "تتطلب هذه السياسة صلاحية سياسات المنصة وصلاحية المالية معًا."
+        : "وضع قراءة فقط؛ التعديل يتطلب صلاحية سياسات المنصة."}
+    </p> : null}
+    {children}
+  </>;
 }

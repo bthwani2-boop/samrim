@@ -235,7 +235,7 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
 
   return <BthwaniSurface style={styles.card}>
     <View style={styles.header}><Text style={styles.title}>العروض والحملات</Text><BthwaniButton label={formOpen ? "إغلاق" : "عرض جديد"} onPress={() => { setFormOpen((open) => !open); setError(""); }} variant="secondary" /></View>
-    <Text style={styles.muted}>عروض المتجر يمولها الشريك. تحدد المنصة تمويل حملاتها وشروط المشاركة.</Text>
+    <Text style={styles.muted}>العروض المعتمدة والنشطة لهذا المتجر تظهر للعملاء في شريط عروض المتجر إلى جانب المنتجات والمحتوى المنشور من لوحة التحكم. يمول الشريك عروض متجره، وتحدد المنصة تمويل حملاتها وشروط المشاركة.</Text>
     {notice ? <Text style={styles.notice}>{notice}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     {!state && !campaigns && !error ? <View style={styles.loading}><ActivityIndicator accessibilityLabel="جارٍ قراءة العروض والحملات" color={theme.interactiveText} /></View> : null}

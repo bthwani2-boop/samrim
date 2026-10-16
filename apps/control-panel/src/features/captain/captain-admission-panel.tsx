@@ -1,13 +1,14 @@
 "use client";
-import { useReadOnReturn } from "../shared/use-read-on-return";
-
-import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { type CaptainAdmission, captainAdmissionStateLabel, captainAvailabilityStateLabel } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CaptainCandidatePanel } from "./captain-candidate-panel";
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
+import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { responseMessage } from "../access/identity-error-message";
+import { useReadOnReturn } from "../shared/use-read-on-return";
+import { CaptainCandidatePanel } from "./captain-candidate-panel";
+import { CaptainDetailWorkspace } from "./captain-detail-workspace";
 
 type CaptainRecord = ActorRoleView & Readonly<{ admission: CaptainAdmission | null }>;
 type CaptainPage = Readonly<{ items: ReadonlyArray<CaptainRecord>; nextCursor?: string }>;
@@ -32,7 +33,35 @@ export function CaptainAdmissionPanel() {
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [selectedCaptain, setSelectedCaptain] = useState("");
   const loadRequestID = useRef(0);
+
+  useEffect(() => {
+    const sync = () => setSelectedCaptain(new URLSearchParams(window.location.search).get("captain")?.slice(0, 160) ?? "");
+    sync();
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
+
+  const selectCaptain = (actorId: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("captain", actorId);
+    window.history.pushState({ ...window.history.state }, "", url.pathname + url.search + url.hash);
+    setSelectedCaptain(actorId);
+  };
+  const closeCaptain = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("captain");
+    url.searchParams.delete("tab");
+    window.history.pushState({ ...window.history.state }, "", url.pathname + url.search + url.hash);
+    setSelectedCaptain("");
+  };
+  const selectedIndex = items.findIndex((item) => item.actorId === selectedCaptain);
+  const selectedItem = selectedIndex >= 0 ? items[selectedIndex] : undefined;
+  const moveSelection = (offset: number) => {
+    const nextItem = items[selectedIndex + offset];
+    if (nextItem) selectCaptain(nextItem.actorId);
+  };
 
   const load = useCallback(async (cursor = cursorPage.cursor): Promise<boolean> => {
     const requestID = ++loadRequestID.current;
@@ -233,7 +262,12 @@ export function CaptainAdmissionPanel() {
   }
 
   return (
-    <>
+    <AdaptiveRecordWorkspace preferenceKey="captains" open={Boolean(selectedCaptain)} onClose={closeCaptain}
+      detail={<AdaptiveRecordPanel title="ملف الكابتن"
+        onClose={closeCaptain} onPrevious={selectedIndex > 0 ? () => moveSelection(-1) : undefined}
+        onNext={selectedIndex >= 0 && selectedIndex < items.length - 1 ? () => moveSelection(1) : undefined}>
+        {selectedCaptain ? <CaptainDetailWorkspace key={selectedCaptain} actorId={selectedCaptain} embedded /> : null}
+      </AdaptiveRecordPanel>}>
       <CaptainCandidatePanel />
       <section className="access-card" aria-labelledby="captain-roster-title">
         <div className="access-card-heading"><h2 id="captain-roster-title">قائمة الكباتن وأهليتهم وتوفرهم</h2><p className="muted">إيقاف التشغيل يوقف الأهلية فقط؛ الهوية تبقى محفوظة.</p></div>
@@ -274,7 +308,8 @@ export function CaptainAdmissionPanel() {
             if (busy === `${captain.actorId}:availability`) availabilityActionLabel = "جارٍ التحديث…";
 
             return <tr key={captain.actorId}>
-            <th scope="row"><strong>{captain.admission?.fullNameAr || "—"}</strong><br /><bdi dir="ltr">{captain.phoneE164}</bdi></th>
+            <th scope="row"><button type="button" className="button button-secondary" aria-label={`فتح ملف ${captain.admission?.fullNameAr || captain.fullNameAr || captain.phoneE164}`}
+              onClick={() => selectCaptain(captain.actorId)}>فتح الملف</button><br /><strong>{captain.admission?.fullNameAr || captain.fullNameAr || "—"}</strong><br /><bdi dir="ltr">{captain.phoneE164}</bdi></th>
             <td>{identityStatusLabel}</td>
             <td>{requiresProfileReview ? "الملف يحتاج استكمالًا ومراجعة" : admissionLabel(captain.admission)}</td>
             <td>{captain.admission ? captainAvailabilityStateLabel(captain.admission.availabilityState) : "—"}</td>
@@ -289,6 +324,6 @@ export function CaptainAdmissionPanel() {
         </tbody></table></div> : null}
     <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات الكباتن" />
       </section>
-    </>
+    </AdaptiveRecordWorkspace>
   );
 }

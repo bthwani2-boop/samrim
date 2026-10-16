@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
@@ -116,5 +117,17 @@ func TestAvailabilityMutationHashCanonicalizesEquivalentFacts(t *testing.T) {
 	reordered.UnavailableFulfillmentModes = []string{" BTHWANI_CAPTAIN ", "CUSTOMER_PICKUP"}
 	if HashStoreOperationalAvailabilityMutation(base) != HashStoreOperationalAvailabilityMutation(reordered) {
 		t.Fatal("equivalent canonical Store availability facts must hash identically")
+	}
+}
+
+func TestCanonicalEmptyScheduleEncodesJSONArray(t *testing.T) {
+	for _, input := range [][]StoreScheduleWindow{nil, {}} {
+		encoded, err := json.Marshal(canonicalSchedule(input))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(encoded) != "[]" {
+			t.Fatalf("empty ALWAYS_OPEN schedule encoded as %s, want []", encoded)
+		}
 	}
 }

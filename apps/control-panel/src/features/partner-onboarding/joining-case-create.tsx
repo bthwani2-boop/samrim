@@ -1,8 +1,8 @@
 "use client";
-import { TextArea } from "@bthwani/design-system/web";
 
 import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
-import { isValidStoreWorkingHours, type CommerceVertical, type CommercialStoreType, type CreateJoiningCaseRequest, type JoiningCaseProofType, type JoiningCaseResponse, type ServiceCity, type StoreWorkingHoursInterval } from "@bthwani/dsh";
+import { TextArea } from "@bthwani/design-system/web";
+import { type CommerceVertical, type CommercialStoreType, type CreateJoiningCaseRequest, isValidStoreWorkingHours, type JoiningCaseProofType, type JoiningCaseResponse, type ServiceCity, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -37,7 +37,7 @@ function clearPendingJoiningCaseMetadata(storageKey: string): void {
 }
 
 function commercialTypePrompt(verticalId: string, loading: boolean): string {
-  if (!verticalId) return "اختر النشاط الرئيسي أولاً";
+  if (!verticalId) return "اختر المجال التجاري أولاً";
   if (loading) return "جارٍ تحميل الأنواع…";
   return "اختر نوع المتجر";
 }
@@ -302,7 +302,7 @@ export function JoiningCaseCreate() {
       </div>
       {storageError ? <p className="identity-error" role="alert">{storageError} <Link href="/partners">افتح طابور الانضمام</Link></p> : null}
       {optionsError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر تحميل الخيارات</strong><p>{optionsError}</p><button type="button" className="button button-secondary" disabled={optionsBusy || busy} onClick={() => void loadOptions()}>إعادة قراءة الخيارات</button></div> : null}
-      {!optionsBusy && !optionsError && (activeCities.length === 0 || activeVerticals.length === 0) ? <div className="managed-status managed-status-warning" role="alert"><strong>لا يمكن إنشاء الحالة بعد</strong><p>تحتاج الحالة إلى مدينة خدمة نشطة وفئة رئيسية نشطة.</p><Link className="button button-secondary" href="/policies/service-cities">فتح مدن الخدمة</Link></div> : null}
+      {!optionsBusy && !optionsError && (activeCities.length === 0 || activeVerticals.length === 0) ? <div className="managed-status managed-status-warning" role="alert"><strong>لا يمكن إنشاء الحالة بعد</strong><p>تحتاج الحالة إلى مدينة خدمة نشطة وفئة رئيسية نشطة.</p><Link className="button button-secondary" href="/policies?policy=service-cities&action=manage">فتح مدن الخدمة</Link></div> : null}
       {pendingAttempt ? <p className="managed-status managed-status-warning" role="status">{pendingRequestLocked ? "المحاولة السابقة لم تصل إلى نتيجة مؤكدة. بياناتها مقفلة في هذه الصفحة وستُعاد كما هي." : "وجدنا محاولة سابقة غير محسومة. أعد إدخال بياناتها الأصلية تماماً لإعادة المحاولة دون تكرار العملية؛ يحفظ المتصفح بيانات المتابعة فقط ولا يحفظ بيانات المالك أو الإثبات."}</p> : null}
       {createdCaseId ? <p className="managed-status managed-status-info" role="status">قُرئت الحالة المعتمدة بعد الإنشاء. <Link href={`/partners/${encodeURIComponent(createdCaseId)}`}>افتح حالة الانضمام</Link></p> : null}
       <div className="access-form">
@@ -313,7 +313,7 @@ export function JoiningCaseCreate() {
         <label className="field-label" htmlFor="joining-store">اسم المتجر الأول<input id="joining-store" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={storeName} onChange={(event) => setStoreName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-address">عنوان المتجر<TextArea className="resize-none" id="joining-address" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={storeAddress} onChange={(event) => setStoreAddress(event.target.value)} placeholder="الحي والشارع وأقرب معلم" rows={3} /></label>
         <label className="field-label" htmlFor="joining-city">مدينة المتجر الأول<select id="joining-city" disabled={busy || optionsBusy || Boolean(optionsError) || pendingRequestLocked || !attemptReady} value={serviceCityId} onChange={(event) => setServiceCityId(event.target.value)}><option value="">اختر مدينة نشطة</option>{activeCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
-        <label className="field-label" htmlFor="joining-vertical">النشاط الرئيسي<select id="joining-vertical" disabled={busy || optionsBusy || Boolean(optionsError) || pendingRequestLocked || !attemptReady} value={verticalId} onChange={(event) => setVerticalId(event.target.value)}><option value="">اختر النشاط الرئيسي</option>{activeVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label>
+        <label className="field-label" htmlFor="joining-vertical">المجال التجاري<select id="joining-vertical" disabled={busy || optionsBusy || Boolean(optionsError) || pendingRequestLocked || !attemptReady} value={verticalId} onChange={(event) => setVerticalId(event.target.value)}><option value="">اختر المجال التجاري</option>{activeVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label>
          <label className="field-label" htmlFor="joining-commercial-type">نوع المتجر التجاري<select id="joining-commercial-type" disabled={busy || optionsBusy || commercialTypesBusy || !verticalId || Boolean(commercialTypesError) || pendingRequestLocked || !attemptReady} value={commercialTypeId} onChange={(event) => setCommercialTypeId(event.target.value)}><option value="">{commercialTypePlaceholder}</option>{activeCommercialTypes.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}</select>{commercialTypesError ? <span className="identity-error" role="alert">{commercialTypesError}</span> : null}{hasNoActiveCommercialTypes ? <span className="muted">لا توجد أنواع نشطة لهذه الفئة. أضف النوع من سجل أنواع المتاجر قبل إنشاء الحالة.</span> : null}</label>
         <fieldset className="field-label" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady}>
           <legend>ساعات العمل الأسبوعية · توقيت المدينة</legend>

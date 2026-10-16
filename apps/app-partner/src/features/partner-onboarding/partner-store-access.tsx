@@ -271,21 +271,24 @@ function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, o
   const canInvite = !busy && phone.trim().length > 0 && selectedPermissions.length > 0 && selectedStoreIDs.length > 0;
   return <View style={styles.card}>
     <Text style={styles.value}>تفويض وصول لمتجر محدد</Text>
-    <Text style={styles.muted}>أرسل الدعوة برقم الهاتف المرتبط بحساب موثّق. تتحقق المنصة من هوية الموظف وتربط الدعوة بحسابه المعتمد داخليًا. يقبل الموظف الدعوة ثم يكمل اعتماد دور الشريك عند الحاجة. كل متجر يحصل على منحة مستقلة.</Text>
-    <TextInput accessibilityLabel="رقم هاتف الموظف" autoCapitalize="none" autoCorrect={false} editable={!busy} keyboardType="phone-pad" onChangeText={onPhoneChange} placeholder="رقم الهاتف مع مفتاح الدولة" placeholderTextColor={theme.colorMuted} style={{ borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, color: theme.color, padding: 12, textAlign: "left" }} value={phone} />
+    <Text style={styles.muted}>تصل الدعوة إلى حساب الموظف الموثّق.</Text>
+    <TextInput accessibilityLabel="رقم هاتف الموظف" autoCapitalize="none" autoCorrect={false} editable={!busy} keyboardType="phone-pad" onChangeText={onPhoneChange} placeholder="رقم الهاتف مع مفتاح الدولة" placeholderTextColor={theme.colorMuted} style={[styles.formInput, { textAlign: "left", writingDirection: "ltr" }]} value={phone} />
     <Text style={styles.metaLabel}>متاجر الفريق المملوكة</Text>
-    <TextInput accessibilityLabel="بحث المتاجر المملوكة" autoCapitalize="none" autoCorrect={false} editable={!busy} onChangeText={onStoreSearchChange} placeholder="ابحث باسم المتجر" placeholderTextColor={theme.colorMuted} style={{ borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, color: theme.color, padding: 12 }} value={storeSearch} />
+    <TextInput accessibilityLabel="بحث المتاجر المملوكة" autoCapitalize="none" autoCorrect={false} editable={!busy} onChangeText={onStoreSearchChange} placeholder="ابحث باسم المتجر" placeholderTextColor={theme.colorMuted} style={styles.formInput} value={storeSearch} />
     <View style={{ gap: 8 }}>{filteredOwnedStores.map((store) => {
       const selected = selectedStoreIDs.includes(store.id);
-      return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: busy }} disabled={busy} key={store.id} onPress={() => onTargetStoreToggle(store.id)} style={{ backgroundColor: selected ? theme.actionBackground : theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, padding: 12 }}><Text style={{ color: selected ? theme.onAction : theme.color }}>{store.name}</Text></Pressable>;
+      return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: busy }} disabled={busy} key={store.id} onPress={() => onTargetStoreToggle(store.id)} style={[styles.choice, selected && styles.choiceSelected]}><Text style={selected ? styles.choiceTextSelected : styles.choiceText}>{selected ? "✓  " : ""}{store.name}</Text></Pressable>;
     })}</View>
     <Text style={styles.metaLabel}>قوالب الدور</Text>
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{rolePresets.map((preset) => <Pressable accessibilityRole="button" disabled={busy} key={preset.value} onPress={() => choosePreset(preset)} style={{ backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: theme.color }}>{preset.label}</Text></Pressable>)}</View>
+    <View style={styles.choiceRow}>{rolePresets.map((preset) => {
+      const selected = preset.permissions.length === selectedPermissions.length && preset.permissions.every((permission) => selectedPermissions.includes(permission));
+      return <Pressable accessibilityRole="button" accessibilityState={{ selected, disabled: busy }} disabled={busy} key={preset.value} onPress={() => choosePreset(preset)} style={[styles.choice, selected && styles.choiceSelected]}><Text style={selected ? styles.choiceTextSelected : styles.choiceText}>{selected ? "✓  " : ""}{preset.label}</Text></Pressable>;
+    })}</View>
     <Text style={styles.metaLabel}>حدد أقل صلاحيات لازمة لهذا المتجر فقط</Text>
-    <Text style={styles.muted}>صلاحية التوصيل تعتمد على قراءة الطلب، لذلك تضيف «الطلبات» معها تلقائيًا ولا يمكن إبقاء التوصيل منفردًا.</Text>
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{permissions.map((permission) => {
+    <Text style={styles.muted}>التوصيل يضيف صلاحية الطلبات تلقائيًا.</Text>
+    <View style={styles.choiceRow}>{permissions.map((permission) => {
       const selected = selectedPermissions.includes(permission.value);
-      return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: busy }} disabled={busy} key={permission.value} onPress={() => onPermissionToggle(permission.value)} style={{ backgroundColor: selected ? theme.actionBackground : theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: selected ? theme.onAction : theme.color }}>{permission.label}</Text></Pressable>;
+      return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: busy }} disabled={busy} key={permission.value} onPress={() => onPermissionToggle(permission.value)} style={[styles.choice, selected && styles.choiceSelected]}><Text style={selected ? styles.choiceTextSelected : styles.choiceText}>{selected ? "✓  " : ""}{permission.label}</Text></Pressable>;
     })}</View>
     <BthwaniButton busy={busy} disabled={!canInvite} label="إرسال دعوة الموظف" onPress={onInvite} />
   </View>;
@@ -322,13 +325,12 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
     <Text style={styles.muted}>{grantStateLabel(grant.state)} · الصلاحيات الحالية: {permissionNames(grant.permissions)}</Text>
     {grant.state === "active" || grant.state === "suspended" || grant.state === "pending_role_admission" || grant.state === "pending_partner_activation" || grant.state === "pending_acceptance" ? <>
       <Text style={styles.metaLabel}>الصلاحيات المفوضة</Text>
-      <Text style={styles.metaLabel}>يُحفظ تغيير كل صلاحية بعد تأكيده.</Text>
-      <Text style={styles.muted}>التوصيل يعتمد على الطلبات؛ إضافة التوصيل تضيف «الطلبات» تلقائيًا، وإزالة «الطلبات» تزيل التوصيل معها.</Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{permissions.map((permission) => {
+      <Text style={styles.muted}>التوصيل مرتبط بصلاحية الطلبات.</Text>
+      <View style={styles.choiceRow}>{permissions.map((permission) => {
         const checked = selected.includes(permission.value);
         const next = toggleStoreAccessPermission(selected, permission.value);
         const disabled = busy || next.length === 0;
-        return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked, disabled }} disabled={disabled} key={permission.value} onPress={() => setPendingPermissions(next)} style={{ backgroundColor: checked ? theme.actionBackground : theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: checked ? theme.onAction : theme.color }}>{permission.label}</Text></Pressable>;
+        return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked, disabled }} disabled={disabled} key={permission.value} onPress={() => setPendingPermissions(next)} style={[styles.choice, checked && styles.choiceSelected]}><Text style={checked ? styles.choiceTextSelected : styles.choiceText}>{checked ? "✓  " : ""}{permission.label}</Text></Pressable>;
       })}</View>
       {grant.state === "active" ? <BthwaniButton disabled={busy} label="إيقاف الوصول مؤقتًا" onPress={() => onTransition("suspended")} variant="secondary" /> : null}
       {grant.state === "suspended" ? <BthwaniButton disabled={busy} label="إعادة تفعيل الوصول" onPress={() => onTransition("active")} /> : null}

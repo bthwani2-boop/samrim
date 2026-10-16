@@ -28,7 +28,7 @@ test("operator sees one lazy-loading trash screen and safely restores categories
   await page.route("**/api/catalog/trash**", async (route) => {
     if (route.request().method() === "GET") {
       productReads++;
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{ id: "product-yemeni-coffee", canonicalName: "قهوة يمنية", version: 2, deletedAt: "2026-10-11T10:00:00Z", deletionReason: "منتج مكرر" }], nextCursor: "" }) });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{ id: "product-yemeni-coffee", canonicalName: "قهوة يمنية", version: 2, deletedAt: "2026-10-11T10:00:00Z", deletedBy: "operator-product-fixture", deletionReason: "منتج مكرر" }], nextCursor: "" }) });
       return;
     }
     await route.fulfill({ status: 404, body: "unexpected product mutation" });
@@ -36,7 +36,7 @@ test("operator sees one lazy-loading trash screen and safely restores categories
   await page.route("**/api/catalog/category-trash**", async (route) => {
     if (route.request().method() === "GET") {
       categoryReads++;
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [{ id: "category-coffee", nameAr: "القهوة", verticalId: "grocery", version: 2, deletedAt: "2026-10-11T11:00:00Z", deletionReason: "إعادة تصنيف" }], nextCursor: "" }) });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [{ id: "category-coffee", nameAr: "القهوة", verticalId: "grocery", version: 2, deletedAt: "2026-10-11T11:00:00Z", deletedBy: "operator-category-fixture", deletionReason: "إعادة تصنيف" }], nextCursor: "" }) });
       return;
     }
     mutations.push({ path: new URL(route.request().url()).pathname, version: route.request().headers()["x-expected-version"] ?? null, body: route.request().postDataJSON() as Record<string, unknown> });
@@ -45,7 +45,7 @@ test("operator sees one lazy-loading trash screen and safely restores categories
   await page.route("**/api/stores/trash**", async (route) => {
     if (route.request().method() === "GET") {
       storeReads++;
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ stores: [{ id: "store-sanaa-1", name: "بقالة صنعاء", partnerActorId: "partner-1", version: 2, deletedAt: "2026-10-11T12:00:00Z", deletionReason: "نقل الموقع" }], nextCursor: "" }) });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ stores: [{ id: "store-sanaa-1", name: "بقالة صنعاء", partnerActorId: "partner-1", version: 2, deletedAt: "2026-10-11T12:00:00Z", deletedBy: "operator-store-fixture", deletionReason: "نقل الموقع" }], nextCursor: "" }) });
       return;
     }
     mutations.push({ path: new URL(route.request().url()).pathname, version: route.request().headers()["x-expected-version"] ?? null, body: route.request().postDataJSON() as Record<string, unknown> });
@@ -62,6 +62,11 @@ test("operator sees one lazy-loading trash screen and safely restores categories
   await expect(page.getByRole("heading", { name: "سلة المحذوفات", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "المنتجات المحذوفة" })).toBeVisible();
   await expect(page.getByText("قهوة يمنية")).toBeVisible();
+  expect(await page.locator("main").innerText()).not.toContain("product-yemeni-coffee");
+  const productRow = page.getByRole("row").filter({ hasText: "قهوة يمنية" });
+  await expect(productRow.getByText("operator-product-fixture", { exact: true })).toBeHidden();
+  await productRow.getByText("تفاصيل التدقيق", { exact: true }).click();
+  await expect(productRow.getByText("operator-product-fixture", { exact: true })).toBeVisible();
   expect(productReads).toBeGreaterThan(0);
   expect(categoryReads).toBe(0);
   expect(storeReads).toBe(0);
@@ -69,6 +74,11 @@ test("operator sees one lazy-loading trash screen and safely restores categories
   await page.getByRole("button", { name: "الفئات", exact: true }).click();
   await expect(page.getByRole("heading", { name: "الفئات المحذوفة" })).toBeVisible();
   await expect(page.getByRole("rowheader", { name: /القهوة/ })).toBeVisible();
+  expect(await page.locator("main").innerText()).not.toContain("category-coffee");
+  const categoryRow = page.getByRole("row").filter({ hasText: "القهوة" });
+  await expect(categoryRow.getByText("operator-category-fixture", { exact: true })).toBeHidden();
+  await categoryRow.getByText("تفاصيل التدقيق", { exact: true }).click();
+  await expect(categoryRow.getByText("operator-category-fixture", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "استعادة", exact: true }).click();
   await page.getByRole("button", { name: "تأكيد", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("بحالة غير نشطة");
@@ -76,6 +86,11 @@ test("operator sees one lazy-loading trash screen and safely restores categories
   await page.getByRole("button", { name: "المتاجر", exact: true }).click();
   await expect(page.getByRole("heading", { name: "المتاجر المحذوفة" })).toBeVisible();
   await expect(page.getByRole("rowheader", { name: /بقالة صنعاء/ })).toBeVisible();
+  expect(await page.locator("main").innerText()).not.toContain("store-sanaa-1");
+  const storeRow = page.getByRole("row").filter({ hasText: "بقالة صنعاء" });
+  await expect(storeRow.getByText("operator-store-fixture", { exact: true })).toBeHidden();
+  await storeRow.getByText("تفاصيل التدقيق", { exact: true }).click();
+  await expect(storeRow.getByText("operator-store-fixture", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "استعادة", exact: true }).click();
   await page.getByRole("button", { name: "تأكيد", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("بحالة مخفي");

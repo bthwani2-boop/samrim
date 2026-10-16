@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
-import { workspacePolicyResources } from "../../../src/navigation/workspace-registry";
+import { PoliciesCenterWorkspace } from "../../../src/features/policies/policies-center-workspace";
 
 export default function PoliciesPage() {
-  redirect(workspacePolicyResources[0].href);
+  return <PoliciesCenterWorkspace />;
 }
 
-export const metadata = { title: "السياسات" };
+export const metadata = { title: "سياسات المنصة" };

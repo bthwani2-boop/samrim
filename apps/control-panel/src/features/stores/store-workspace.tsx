@@ -1,14 +1,15 @@
 "use client";
 
-import { PageHeader } from "../../shell/page-header";
 import { TextArea } from "@bthwani/design-system/web";
-
-import { publicationReadinessBlockedReasonLabel, publicationStateLabel, type CommercialStoreType, type CommercialStoreTypeListResponse, type SetStoreCommercialTypeResponse, type StoreFulfillmentMode, type StoreFulfillmentModesResponse, type StoreInternalPhotoSummary, type StorePublicationResponse } from "@bthwani/dsh";
+import { type CommercialStoreType, type CommercialStoreTypeListResponse, publicationReadinessBlockedReasonLabel, publicationStateLabel, type SetStoreCommercialTypeResponse, type StoreFulfillmentMode, type StoreFulfillmentModesResponse, type StoreInternalPhotoSummary, type StorePublicationResponse } from "@bthwani/dsh";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PageHeader } from "../../shell/page-header";
 import { partnerErrorMessage } from "../partners/partner-error-message";
 import { partnerMutationHeaders } from "../partners/partner-request";
+import { StoreImageEditor } from "./store-image-editor";
+
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
   { value: "BTHWANI_CAPTAIN", label: "توصيل بثواني", description: "تتولى المنصة إسناد التوصيل وإدارته." },
   { value: "PARTNER_CAPTAIN", label: "توصيل المتجر", description: "يعيّن المتجر كابتنًا من كباتنه النشطين." },
@@ -22,10 +23,10 @@ async function readCommercialStoreTypes(verticalId?: string | null): Promise<Rea
   return (await response.json() as CommercialStoreTypeListResponse).storeTypes;
 }
 
-export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
+export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonly<{ storeId: string; embedded?: boolean; onUpdated?: (() => void) | undefined }>) {
   const searchParams = useSearchParams();
   const registryParams = new URLSearchParams();
-  for (const key of ["state", "q", "sort", "cursor", "inspect"]) {
+  for (const key of ["tab", "kind", "status", "state", "serviceCityId", "q", "sort", "cursor", "inspect"]) {
     const value = searchParams.get(key);
     if (value) registryParams.set(key, value);
   }
@@ -107,7 +108,8 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
         return;
       }
       setConfirmTrash(false); setTrashReason("");
-      window.location.assign("/catalog/trash");
+      if (embedded) { await readStore(false); setNotice("تم نقل المتجر إلى السلة، وأُرسلت قراءة محدثة لقائمة الشركاء."); onUpdated?.(); }
+      else window.location.assign("/catalog/trash");
     } catch {
       await readStore(false);
       setError("تعذرت أرشفة المتجر؛ تحقّق من الاتصال ثم أعد المحاولة.");
@@ -139,6 +141,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
       setPublication(result);
       setSelectedModes(result.store.fulfillmentModes);
       setNotice("سُجل تغيير النشر وعادت الحالة المعتمدة الجديدة.");
+      onUpdated?.();
     } catch {
       await readStore(false);
       setError("تعذر تأكيد نتيجة تغيير النشر. تمت إعادة قراءة المتجر؛ راجع الحالة قبل إعادة المحاولة.");
@@ -170,6 +173,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
       await readStore(false);
       setSelectedModes(result.fulfillmentModes);
       setNotice("حُفظت أوضاع الطلب ثم أُعيدت قراءة سجل المتجر .");
+      onUpdated?.();
     } catch {
       await readStore(false);
       setError("تعذر تأكيد حفظ أوضاع الطلب. تمت إعادة قراءة المتجر؛ راجع الحالة قبل إعادة المحاولة.");
@@ -205,6 +209,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
       }
       setCommercialTypeReason("");
       setNotice("حُفظ نوع المتجر التجاري وأُكدت مطابقته في قراءة النظام.");
+      onUpdated?.();
     } catch {
       await readStore(false);
       setError("تعذر تأكيد تغيير نوع المتجر. أُعيدت قراءة النظام؛ راجع الحالة قبل إعادة المحاولة.");
@@ -215,27 +220,27 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
 
   const store = publication?.store;
   return (
-    <section className="workspace-page store-workspace" aria-labelledby="store-workspace-title">
-      <PageHeader id="store-workspace-title" title={store?.name ?? "ملف المتجر"} actions={<Link className="button button-secondary" href={registryHref}>الشركاء والمتاجر</Link>} />
+    <section className={`workspace-page store-workspace ${embedded ? "store-workspace-embedded" : ""}`} aria-label={embedded ? "إدارة بيانات المتجر وتوصيله وصوره" : undefined} aria-labelledby={embedded ? undefined : "store-workspace-title"}>
+      {embedded ? null : <PageHeader id="store-workspace-title" title={store?.name ?? "ملف المتجر"} actions={<Link className="button button-secondary" href={registryHref}>الشركاء والمتاجر</Link>} />}
 
       {loading ? <output className="collection-state"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة الملف المعتمد </strong></output> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readStore()}>إعادة قراءة المتجر</button></div> : null}
       {notice ? <output className="managed-status managed-status-success">{notice}</output> : null}
 
       {store ? <>
-        <section className="partner-case-summary" aria-label="ملخص حالة المتجر">
+        {embedded ? null : <section className="partner-case-summary" aria-label="ملخص حالة المتجر">
           <div className="partner-case-summary-main">
             <div><h2>{store.name}</h2><p>الشريك: {store.partnerName || "حساب مرتبط"}</p><p>{publicationStateLabel(store.publicationState)} · {store.publicationReadiness.ready ? "جاهز للنشر" : publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason)}</p></div>
           </div>
           <div className="partner-case-summary-actions"><Link className="button button-secondary" href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}>ملف الشريك</Link><a className="button button-primary" href="#store-publication-title">إدارة النشر</a></div>
-        </section>
-        <section className="store-detail-section" aria-labelledby="store-detail-context-title">
+        </section>}
+        {embedded ? null : <section className="store-detail-section" aria-labelledby="store-detail-context-title">
           <div className="store-detail-heading"><div><h2 id="store-detail-context-title">معلومات المتجر والعلاقات</h2></div><button type="button" className="button button-secondary" disabled={loading || busy} onClick={() => void readStore()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
           <div className="store-detail-overview">
             <dl className="store-detail-facts">
               <div><dt>الشريك المالك</dt><dd><Link href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}>{store.partnerName || "ملف الشريك"}</Link></dd></div>
               <div><dt>مدينة الخدمة</dt><dd>{store.serviceCityName || "غير محددة"}</dd></div>
-              <div><dt>النشاط الرئيسي</dt><dd>{store.primaryVerticalName || "غير محددة"}</dd></div>
+              <div><dt>المجال التجاري</dt><dd>{store.primaryVerticalName || "غير محددة"}</dd></div>
               <div><dt>نوع المتجر التجاري</dt><dd>{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr || "غير محدد"}</dd></div>
               <div><dt>تاريخ الإنشاء</dt><dd><time dateTime={store.createdAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.createdAt))}</time></dd></div>
               <div><dt>آخر تحديث</dt><dd><time dateTime={store.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.updatedAt))}</time></dd></div>
@@ -246,7 +251,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
               <figcaption>شعار المتجر وغلاف واجهته</figcaption>
             </figure>
           </div>
-        </section>
+        </section>}
 
         <section className="store-detail-section" aria-labelledby="store-internal-photos-title">
           <div className="store-detail-heading"><div><h2 id="store-internal-photos-title">الصور الميدانية الداخلية</h2><p className="muted">لا تظهر هذه الصور للعملاء ولا تُستخدم في واجهة المتجر.</p></div><span className="status-badge">{internalPhotos.length} صور</span></div>
@@ -254,22 +259,24 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
           {internalPhotos.length ? <div className="store-internal-photo-grid">{internalPhotos.map((photo) => <figure key={photo.id}><img src={`/api/stores/${encodeURIComponent(storeId)}/internal-photos/${encodeURIComponent(photo.id)}`} alt="صورة ميدانية داخلية للمتجر" loading="lazy" /><figcaption><time dateTime={photo.createdAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium" }).format(new Date(photo.createdAt))}</time></figcaption></figure>)}</div> : !internalPhotosError ? <p className="muted">لا توجد صور ميدانية داخلية لهذا المتجر.</p> : null}
         </section>
 
-        <section className="store-detail-section" aria-labelledby="store-publication-title">
+        {embedded ? null : <StoreImageEditor key={storeId} storeId={storeId} name={store.name} onSaved={() => { void readStore(false); onUpdated?.(); }} />}
+
+        {embedded ? null : <section className="store-detail-section" aria-labelledby="store-publication-title">
           <div className="store-detail-heading"><div><h2 id="store-publication-title">النشر والجاهزية</h2></div><span className={`status-badge status-${store.publicationState}`}>{publicationStateLabel(store.publicationState)}</span></div>
           <p>{store.publicationReadiness.ready ? "المتجر مستوفٍ لشروط النشر الحالية." : `الجاهزية: ${publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason)}`}</p>
           <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || (!store.publicationReadiness.ready && store.publicationState !== "published")} onClick={() => void changePublication()}>{busy ? "جارٍ الحفظ…" : store.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void readStore()}>إعادة قراءة النشر</button></div>
-        </section>
+        </section>}
 
-        <section className="store-detail-section" aria-labelledby="store-fulfillment-title">
+        {!embedded ? <section className="store-detail-section" aria-labelledby="store-fulfillment-title">
           <div className="store-detail-heading"><div><h2 id="store-fulfillment-title">أوضاع التنفيذ</h2></div></div>
           <fieldset className="store-fulfillment-options" disabled={busy || loading}>
             <legend>الأوضاع التي يتيحها المتجر</legend>
             {fulfillmentModeOptions.map((option) => <label key={option.value} className="store-fulfillment-option"><input type="checkbox" checked={selectedModes.includes(option.value)} onChange={() => setSelectedModes((current) => current.includes(option.value) ? current.filter((mode) => mode !== option.value) : [...current, option.value])} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}
           </fieldset>
           <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || selectedModes.length === 0 || selectedModes.length === store.fulfillmentModes.length && selectedModes.every((mode) => store.fulfillmentModes.includes(mode))} onClick={() => void saveFulfillmentModes()}>{busy ? "جارٍ الحفظ…" : "حفظ أوضاع التنفيذ"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setSelectedModes(store.fulfillmentModes); setError(""); }}>إلغاء التغييرات</button></div>
-        </section>
+        </section> : null}
 
-        <details className="store-advanced-settings" open={!store.commercialStoreTypeId}>
+        <details className="store-advanced-settings" open={embedded || !store.commercialStoreTypeId}>
           <summary>{store.commercialStoreTypeId ? "إعدادات المتجر والإجراءات الإدارية" : "استكمال نوع المتجر والإعدادات الإدارية"}</summary>
         <section className="store-detail-section" aria-labelledby="store-commercial-type-title">
           <div className="store-detail-heading"><div><h2 id="store-commercial-type-title">نوع المتجر التجاري</h2></div></div>
@@ -304,8 +311,8 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
         </section>
 
         <section className="store-detail-section" aria-labelledby="store-catalog-title">
-          <div className="store-detail-heading"><div><h2 id="store-catalog-title">المركزي والمحلي</h2></div><Link href="/catalog/products">فتح المنتجات المركزية</Link></div>
-          <p className="muted">المنتجات المشتركة في الكتالوج؛ أسعار المتجر وتوفره في تطبيق الشريك.</p>
+          <div className="store-detail-heading"><div><h2 id="store-catalog-title">المنتجات والعروض المحلية</h2></div>{embedded ? null : <Link href="/catalog/products">فتح المنتجات المركزية</Link>}</div>
+          <p className="muted">تظهر عروض هذا المتجر وأسعاره وتوفّره في تبويب «الكتالوج والمنتجات» داخل ملف المتجر. تبقى إدارة عروض المتجر وأسعاره من خلال مالكها في تطبيق الشريك.</p>
         </section>
         </details>
       </> : null}

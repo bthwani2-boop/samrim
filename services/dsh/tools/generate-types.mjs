@@ -8,6 +8,7 @@ const root = path.resolve(import.meta.dirname, "../../..");
 const contractPath = path.join(root, "services/dsh/contracts/openapi/dsh.openapi.yaml");
 const pathModulePaths = [
   path.join(root, "services/dsh/contracts/openapi/paths/runtime.yaml"),
+  path.join(root, "services/dsh/contracts/openapi/paths/store-images.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/joining-cases.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/catalog.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/commerce.yaml"),
@@ -331,7 +332,7 @@ function goPropertyType(lines, optional, context) {
   const pointer = valueAfter(lines, "x-go-pointer:", 10) === "true";
   const pointerType = pointer;
   const ref = valueAfter(lines, "$ref:", 10);
-  if (ref) return nullable ? "*" + refType(ref) : refType(ref);
+  if (ref) return nullable || pointerType ? "*" + refType(ref) : refType(ref);
 
   const constant = valueAfter(lines, "const:", 10);
   if (constant !== null) return pointerType ? "*string" : "string";

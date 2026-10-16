@@ -1,19 +1,21 @@
 import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type DshImageUploadInput, isMediaProvenanceInputValid, type JoiningCaseResponse, type MediaProvenanceInput } from "@bthwani/dsh";
+import { type DshImageUploadInput, isMediaProvenanceInputValid, type JoiningCaseResponse, type StoreImagesResponse, type MediaProvenanceInput } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Image, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 
 import { partnerStoreImageReadbackMatches } from "./store-profile-image-readback";
-import { readOwnJoiningCase, uploadOwnJoiningCaseStoreImage } from "./store-readback-client";
+import { readOwnJoiningCase, uploadOwnJoiningCaseStoreImage, readOwnStoreImages, uploadOwnStoreImage } from "./store-readback-client";
 
 type StoreImageRole = "primary" | "cover";
 type StoreImageDraft = Readonly<{ role: StoreImageRole; image: DshImageUploadInput; contentSha256: string; provenance: MediaProvenanceInput }>;
 
-export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCaseResponse; onUpdated: (next: JoiningCaseResponse) => void }) {
-  const current = value.case;
+export function StoreProfileImageEditor(props: { value: JoiningCaseResponse; onUpdated: (next: JoiningCaseResponse) => void } | { storeID: string; storeName: string }) {
+  const [stored, setStored] = useState<StoreImagesResponse | null>(null);
+  const storeID = "storeID" in props ? props.storeID : "";
+  const current = "value" in props ? props.value.case : stored ? { ...stored, id: stored.storeId, firstStoreName: props.storeName, partnerActorId: "", state: "approved", store: { id: stored.storeId } } : null;
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [busy, setBusy] = useState(false);
@@ -21,7 +23,22 @@ export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCa
   const [storeImageRole, setStoreImageRole] = useState<StoreImageRole>("primary");
   const [storeImage, setStoreImage] = useState<StoreImageDraft | null>(null);
 
-  if (current.state !== "needs_correction" && !(current.state === "approved" && current.store?.id)) return null;
+  useEffect(() => {
+    if (!storeID) return;
+    let active = true;
+    setStored(null);
+    void readOwnStoreImages(storeID).then((next) => { if(active) setStored(next); }).catch(() => { if(active) setError("تعذر قراءة صور المتجر. أعد المحاولة."); });
+    return () => { active=false; };
+  },[storeID]);
+  if (!current) return <View style={styles.container}><Text style={styles.muted}>{error || "جارٍ قراءة صور المتجر…"}</Text>{error ? <BthwaniButton label="إعادة المحاولة" onPress={() => void readOwnStoreImages(storeID).then(setStored).catch(() => setError("تعذرت قراءة الصور. أعد المحاولة."))} /> : null}</View>;
+  const activeCurrent = current;
+  function matches(next: typeof activeCurrent) {
+    if (!storeImage) return false;
+    const asset = storeImage.role === "cover" ? next.storeCoverImage : next.storeProfileImage;
+    if (!asset?.provenance) return false;
+    return asset.contentSha256 === storeImage.contentSha256 && asset.provenance.creator === storeImage.provenance.creator.trim() && asset.provenance.sourceDescription === storeImage.provenance.sourceDescription.trim() && asset.provenance.rightsStatement === storeImage.provenance.rightsStatement.trim() && (asset.provenance.sourceUri ?? "") === (storeImage.provenance.sourceUri ?? "").trim() && (asset.provenance.rightsUri ?? "") === (storeImage.provenance.rightsUri ?? "").trim() && Boolean(asset.provenance.attestedByActorId && asset.provenance.attestedAt);
+  }
+  if (current.state !== "needs_correction" && !(activeCurrent.state === "approved" && activeCurrent.store?.id)) return null;
 
   async function chooseStoreImage() {
     if (busy) return;
@@ -51,13 +68,13 @@ export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCa
       return;
     }
     const requested = {
-      caseID: current.id,
-      partnerActorID: current.partnerActorId ?? "",
+      caseID: activeCurrent.id,
+      partnerActorID: activeCurrent.partnerActorId ?? "",
       role: storeImage.role,
       contentSha256: storeImage.contentSha256,
       provenance: storeImage.provenance,
     };
-    if (partnerStoreImageReadbackMatches(current, requested)) {
+    if (storeID ? matches(activeCurrent) : partnerStoreImageReadbackMatches(current as JoiningCaseResponse["case"], requested)) {
       setStoreImage(null);
       setError("");
       return;
@@ -65,21 +82,30 @@ export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCa
     setBusy(true);
     setError("");
     try {
-      const identity = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `${current.id}:${current.version}:${storeImage.role}:${storeImage.contentSha256}:${JSON.stringify(storeImage.provenance)}`);
-      const updated = await uploadOwnJoiningCaseStoreImage(current.id, storeImage.image, storeImage.provenance, current.version, `partner_store_image_${identity}`, `partner_store_image_corr_${identity}`, storeImage.role);
-      if (!partnerStoreImageReadbackMatches(updated.case, requested)) {
-        throw new Error("PARTNER_STORE_IMAGE_UPLOAD_READBACK_MISMATCH");
+      const identity = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `${activeCurrent.id}:${activeCurrent.version}:${storeImage.role}:${storeImage.contentSha256}:${JSON.stringify(storeImage.provenance)}`);
+      if (storeID) {
+        const updated = await uploadOwnStoreImage(storeID,storeImage.image,storeImage.provenance,activeCurrent.version,`partner_store_image_${identity}`,`partner_store_image_corr_${identity}`,storeImage.role);
+        setStored(updated);
+        if (!matches({ ...activeCurrent,...updated })) throw new Error("PARTNER_STORE_IMAGE_UPLOAD_READBACK_MISMATCH");
+      } else if ("value" in props) {
+        const updated = await uploadOwnJoiningCaseStoreImage(activeCurrent.id, storeImage.image, storeImage.provenance, activeCurrent.version, `partner_store_image_${identity}`, `partner_store_image_corr_${identity}`, storeImage.role);
+        if (!partnerStoreImageReadbackMatches(updated.case, requested)) throw new Error("PARTNER_STORE_IMAGE_UPLOAD_READBACK_MISMATCH");
+        props.onUpdated(updated);
       }
-      onUpdated(updated);
       setStoreImage(null);
     } catch (cause) {
       console.error("DSH Partner store image upload failed", cause);
       try {
+        if(storeID) {
+          const latest = await readOwnStoreImages(storeID); setStored(latest);
+          if (matches({...activeCurrent,...latest})) { setStoreImage(null); setError(""); return; }
+          throw new Error("STORE_IMAGE_NOT_CONFIRMED");
+        }
         const latest = await readOwnJoiningCase();
         if (latest.case.id !== requested.caseID || latest.case.partnerActorId !== requested.partnerActorID) {
           throw new Error("PARTNER_STORE_IMAGE_WRONG_CASE_READBACK");
         }
-        onUpdated(latest);
+        if ("value" in props) props.onUpdated(latest);
         if (partnerStoreImageReadbackMatches(latest.case, requested)) {
           setStoreImage(null);
           setError("");
@@ -94,7 +120,7 @@ export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCa
     }
   }
 
-  const selectedAsset = storeImageRole === "cover" ? current.storeCoverImage : current.storeProfileImage;
+  const selectedAsset = storeImageRole === "cover" ? activeCurrent.storeCoverImage : activeCurrent.storeProfileImage;
   const selectedImageTitle = storeImageRole === "cover" ? "غلاف المتجر" : "شعار المتجر";
   return (
     <View style={styles.container} accessibilityLabel="شعار المتجر وغلافه ومصدر الصور">
@@ -103,7 +129,7 @@ export function StoreProfileImageEditor({ value, onUpdated }: { value: JoiningCa
         <BthwaniButton disabled={busy} label="الشعار" onPress={() => { setStoreImageRole("primary"); setStoreImage(null); setError(""); }} variant={storeImageRole === "primary" ? "primary" : "secondary"} />
         <BthwaniButton disabled={busy} label="الغلاف" onPress={() => { setStoreImageRole("cover"); setStoreImage(null); setError(""); }} variant={storeImageRole === "cover" ? "primary" : "secondary"} />
       </View>
-      {selectedAsset ? <Image accessibilityLabel={`${selectedImageTitle} ${current.firstStoreName}`} source={{ uri: selectedAsset.uri }} resizeMode="cover" style={[styles.storeImage, storeImageRole === "cover" && styles.storeCover]} /> : <Text style={styles.muted}>{storeImageRole === "cover" ? "لا يوجد غلاف موثق بعد. الغلاف مطلوب قبل نشر المتجر للعملاء." : "لا يوجد شعار موثق بعد. الشعار مطلوب قبل نشر المتجر للعملاء."}</Text>}
+      {selectedAsset ? <Image accessibilityLabel={`${selectedImageTitle} ${activeCurrent.firstStoreName}`} source={{ uri: selectedAsset.uri }} resizeMode="cover" style={[styles.storeImage, storeImageRole === "cover" && styles.storeCover]} /> : <Text style={styles.muted}>{storeImageRole === "cover" ? "لا يوجد غلاف للمتجر بعد. هذا غلاف عريض مستقل عن الشعار، وسيظهر في أعلى واجهة المتجر عند إضافته." : "لا يوجد شعار موثق بعد. الشعار مطلوب قبل نشر المتجر للعملاء."}</Text>}
       {storeImage ? <Image accessibilityLabel={`معاينة ${selectedImageTitle} الجديدة`} source={{ uri: storeImage.image.uri }} resizeMode="cover" style={[styles.storeImage, storeImageRole === "cover" && styles.storeCover]} /> : null}
       {storeImage ? <View style={styles.imageBox}>
         <Text style={styles.label}>مصدر الصورة وحق استخدامها</Text>

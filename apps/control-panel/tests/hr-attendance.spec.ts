@@ -24,9 +24,10 @@ test("Manual HR attendance is unknown by default and corrections use the latest 
     recordedByActorId:root.subject,recordedAt:"2026-10-12T10:00:00Z"};
   await route.fulfill({json:{record,idempotentReplay:false}});
  });
+ await page.route("**/api/hr/employees/" + employee.id, route => route.fulfill({json:{employee}}));
  await page.goto("/hr/employees");
- await page.locator(".hr-directory .operations-table button").first().click();
- await page.getByText("الحضور والتصحيحات اليدوية", {exact:true}).click();
+ await page.getByRole("button",{name:"فتح ملف " + employee.fullNameAr}).first().click();
+ await page.getByRole("tab",{name:"الحضور",exact:true}).click();
  const attendance=page.getByRole("region",{name:"الحضور اليدوي"});
  await expect(attendance.getByText("هذا اليوم غير مسجل", {exact:false})).toBeVisible();
  await attendance.getByLabel("التاريخ").fill("2026-10-12");

@@ -313,6 +313,16 @@ type OperatorAssignmentListRecord struct {
 type OperatorOperationsResult struct {
 	Operations []OperatorOperationListRecord
 	NextCursor string
+	Summary    OperatorOperationsSummary
+}
+
+type OperatorOperationsSummary struct {
+	TotalCount            int
+	ActionableCount       int
+	AwaitingDispatchCount int
+	ActiveCount           int
+	DeliveredCount        int
+	MeasuredAt            time.Time
 }
 
 // Legacy multi-store children omit a displayed total. Direct client checkout
@@ -451,7 +461,7 @@ func ListPartnerOrdersAuthorizedStoreIDs(ctx context.Context, db *sql.DB, actorI
 		return nil, ErrPartnerOrdersScopeInvalid
 	}
 	rows, err := db.QueryContext(ctx, `SELECT id FROM dsh.stores WHERE partner_actor_id=$1
-		UNION SELECT store_id FROM dsh.store_access_grants WHERE delegate_actor_id=$1 AND state='active' AND 'orders'=ANY(permissions)`, actorID, actorID)
+		UNION SELECT store_id FROM dsh.store_access_grants WHERE delegate_actor_id=$1 AND state='active' AND 'orders'=ANY(permissions)`, actorID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve partner orders scope: %w", err)
 	}
@@ -486,10 +496,10 @@ func ListOrdersForPartnerStores(ctx context.Context, db *sql.DB, storeIDs []stri
 		return PartnerOrdersPage{}, ErrPartnerOrdersInvalidQuery
 	}
 	statesKey := strings.Join(states, ",")
-	args := []any{storeIDs}
+	args := []any{pq.Array(storeIDs)}
 	where := "o.store_id = ANY($1)"
 	if len(states) > 0 {
-		args = append(args, states)
+		args = append(args, pq.Array(states))
 		where += " AND o.state = ANY($" + strconv.Itoa(len(args)) + ")"
 	}
 	if query != "" {
@@ -579,7 +589,7 @@ func CountPartnerOrderAttention(ctx context.Context, db *sql.DB, storeIDs []stri
 			count(*) FILTER (WHERE o.state='CREATED'),
 			count(*) FILTER (WHERE o.state='READY_FOR_DISPATCH'),
 			count(*) FILTER (WHERE o.state='DELIVERY_FAILED')
-		FROM dsh.commerce_orders o WHERE o.store_id = ANY($1)`, storeIDs).Scan(&counts.NewOrders, &counts.AwaitingDispatch, &counts.DeliveryRecovery)
+		FROM dsh.commerce_orders o WHERE o.store_id = ANY($1)`, pq.Array(storeIDs)).Scan(&counts.NewOrders, &counts.AwaitingDispatch, &counts.DeliveryRecovery)
 	if err != nil {
 		return PartnerOrderAttentionCounts{}, fmt.Errorf("count partner order attention: %w", err)
 	}
@@ -608,9 +618,22 @@ type operatorOperationsCursor struct {
 	ActionableOnly bool      `json:"actionableOnly"`
 	Query          string    `json:"query"`
 	Sort           string    `json:"sort"`
+	StoreID        string    `json:"storeId,omitempty"`
 }
 
 func ListOrdersForOperator(ctx context.Context, db *sql.DB, state, query, sort string, actionableOnly bool, limit int, cursor string) (OperatorOperationsResult, error) {
+	return listOrdersForOperatorScope(ctx, db, state, query, sort, actionableOnly, limit, cursor, "")
+}
+
+func ListOrdersForOperatorStore(ctx context.Context, db *sql.DB, state, query, sort string, actionableOnly bool, limit int, cursor, storeID string) (OperatorOperationsResult, error) {
+	storeID = strings.TrimSpace(storeID)
+	if storeID == "" || len(storeID) > 128 {
+		return OperatorOperationsResult{}, ErrOperatorOperationInvalidQuery
+	}
+	return listOrdersForOperatorScope(ctx, db, state, query, sort, actionableOnly, limit, cursor, storeID)
+}
+
+func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, sort string, actionableOnly bool, limit int, cursor, storeID string) (OperatorOperationsResult, error) {
 	if db == nil || limit < 1 || limit > 100 {
 		return OperatorOperationsResult{}, ErrOperatorOperationInvalidLimit
 	}
@@ -629,19 +652,25 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state, query, sort s
 	ascending := sort == "updated_asc"
 	args := []any{}
 	where := "TRUE"
+	if storeID != "" {
+		args = append(args, storeID)
+		where += " AND o.store_id=$" + strconv.Itoa(len(args))
+	}
 	if state != "" {
 		args = append(args, state)
 		where += " AND o.state=$" + strconv.Itoa(len(args))
 	}
+	const actionable = "(o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed'))"
 	if actionableOnly {
-		where += " AND (o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed'))"
+		where += " AND " + actionable
 	}
 	if query != "" {
 		args = append(args, "%"+escapeOperatorOperationSearch(query)+"%")
 		where += " AND (o.id ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!' OR s.name ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!')"
 	}
+	pageWhere := "TRUE"
 	if strings.TrimSpace(cursor) != "" {
-		decoded, err := decodeOperatorOperationsCursor(cursor, state, actionableOnly, query, sort)
+		decoded, err := decodeOperatorOperationsCursor(cursor, state, actionableOnly, query, sort, storeID)
 		if err != nil {
 			return OperatorOperationsResult{}, err
 		}
@@ -650,15 +679,19 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state, query, sort s
 		if ascending {
 			operator = ">"
 		}
-		where += " AND (o.updated_at,o.id)" + operator + "($" + strconv.Itoa(len(args)-1) + ",$" + strconv.Itoa(len(args)) + ")"
+		pageWhere += " AND (updated_at,id)" + operator + "($" + strconv.Itoa(len(args)-1) + ",$" + strconv.Itoa(len(args)) + ")"
 	}
 	args = append(args, limit+1)
 	order := "DESC"
 	if ascending {
 		order = "ASC"
 	}
-	rows, err := db.QueryContext(ctx, `SELECT o.id,s.name,o.state,o.updated_at,
-		a.id,a.order_id,a.captain_actor_id,a.state,a.version,COALESCE(h.state,'')
+	// The filtered registry, totals and bounded page share a single statement snapshot.
+	// Cursor predicates apply only to the page, never to the result-set summary.
+	rows, err := db.QueryContext(ctx, `WITH filtered AS MATERIALIZED (
+		SELECT o.id,s.name,o.state,o.updated_at,
+		a.id AS assignment_id,a.order_id,a.captain_actor_id,a.state AS assignment_state,a.version,COALESCE(h.state,'') AS handoff_state,
+		`+actionable+` AS actionable
 		FROM dsh.commerce_orders o
 		JOIN dsh.stores s ON s.id=o.store_id
 		LEFT JOIN LATERAL (
@@ -668,20 +701,40 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state, query, sort s
 			ORDER BY created_at DESC LIMIT 1
 		) a ON TRUE
 		LEFT JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
-		WHERE `+where+" ORDER BY o.updated_at "+order+",o.id "+order+" LIMIT $"+strconv.Itoa(len(args)), args...)
+		WHERE `+where+`
+	), summary AS (
+		SELECT count(*) AS total_count,
+		count(*) FILTER (WHERE actionable) AS actionable_count,
+		count(*) FILTER (WHERE state='READY_FOR_DISPATCH') AS awaiting_dispatch_count,
+		count(*) FILTER (WHERE state NOT IN ('READY_FOR_DISPATCH','DELIVERY_FAILED','DELIVERED','REJECTED','CANCELLED')) AS active_count,
+		count(*) FILTER (WHERE state='DELIVERED') AS delivered_count,
+		statement_timestamp() AS measured_at FROM filtered
+	), page AS (
+		SELECT * FROM filtered WHERE `+pageWhere+" ORDER BY updated_at "+order+",id "+order+" LIMIT $"+strconv.Itoa(len(args))+`
+	)
+	SELECT summary.*,page.id,page.name,page.state,page.updated_at,page.assignment_id,page.order_id,page.captain_actor_id,page.assignment_state,page.version,page.handoff_state
+	FROM summary LEFT JOIN page ON TRUE ORDER BY page.updated_at `+order+",page.id "+order, args...)
 	if err != nil {
 		return OperatorOperationsResult{}, err
 	}
 	defer rows.Close()
 	operations := make([]OperatorOperationListRecord, 0, limit+1)
+	var summary OperatorOperationsSummary
 	for rows.Next() {
 		var item OperatorOperationListRecord
+		var id, storeName, state sql.NullString
+		var updatedAt sql.NullTime
 		var assignmentID, assignmentOrderID, captainActorID, assignmentState, handoffState sql.NullString
 		var assignmentVersion sql.NullInt64
-		if err := rows.Scan(&item.OrderID, &item.StoreName, &item.State, &item.UpdatedAt,
+		if err := rows.Scan(&summary.TotalCount, &summary.ActionableCount, &summary.AwaitingDispatchCount, &summary.ActiveCount, &summary.DeliveredCount, &summary.MeasuredAt,
+			&id, &storeName, &state, &updatedAt,
 			&assignmentID, &assignmentOrderID, &captainActorID, &assignmentState, &assignmentVersion, &handoffState); err != nil {
 			return OperatorOperationsResult{}, err
 		}
+		if !id.Valid {
+			continue // The summary still exists for empty results or an exhausted cursor.
+		}
+		item.OrderID, item.StoreName, item.State, item.UpdatedAt = id.String, storeName.String, state.String, updatedAt.Time
 		if assignmentID.Valid {
 			item.Assignment = &OperatorAssignmentListRecord{ID: assignmentID.String, OrderID: assignmentOrderID.String, CaptainActorID: captainActorID.String, State: assignmentState.String, Version: int(assignmentVersion.Int64), HandoffState: handoffState.String}
 		}
@@ -694,11 +747,11 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state, query, sort s
 		return OperatorOperationsResult{}, err
 	}
 
-	result := OperatorOperationsResult{Operations: operations}
+	result := OperatorOperationsResult{Operations: operations, Summary: summary}
 	if len(operations) > limit {
 		last := operations[limit-1]
 		result.Operations = operations[:limit]
-		result.NextCursor = encodeOperatorOperationsCursor(operatorOperationsCursor{UpdatedAt: last.UpdatedAt, ID: last.OrderID, State: state, ActionableOnly: actionableOnly, Query: query, Sort: sort})
+		result.NextCursor = encodeOperatorOperationsCursor(operatorOperationsCursor{UpdatedAt: last.UpdatedAt, ID: last.OrderID, State: state, ActionableOnly: actionableOnly, Query: query, Sort: sort, StoreID: storeID})
 	}
 	return result, nil
 }
@@ -723,13 +776,13 @@ func encodeOperatorOperationsCursor(cursor operatorOperationsCursor) string {
 	return base64.RawURLEncoding.EncodeToString(value)
 }
 
-func decodeOperatorOperationsCursor(raw, state string, actionableOnly bool, query, sort string) (operatorOperationsCursor, error) {
+func decodeOperatorOperationsCursor(raw, state string, actionableOnly bool, query, sort, storeID string) (operatorOperationsCursor, error) {
 	value, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
 	if err != nil {
 		return operatorOperationsCursor{}, ErrOperatorOperationInvalidCursor
 	}
 	var cursor operatorOperationsCursor
-	if err := json.Unmarshal(value, &cursor); err != nil || cursor.ID == "" || cursor.UpdatedAt.IsZero() || cursor.State != strings.TrimSpace(state) || cursor.ActionableOnly != actionableOnly || cursor.Query != strings.TrimSpace(query) || cursor.Sort != strings.TrimSpace(sort) {
+	if err := json.Unmarshal(value, &cursor); err != nil || cursor.ID == "" || cursor.UpdatedAt.IsZero() || cursor.State != strings.TrimSpace(state) || cursor.ActionableOnly != actionableOnly || cursor.Query != strings.TrimSpace(query) || cursor.Sort != strings.TrimSpace(sort) || cursor.StoreID != storeID {
 		return operatorOperationsCursor{}, ErrOperatorOperationInvalidCursor
 	}
 	return cursor, nil

@@ -69,7 +69,9 @@ export function StoreTrash() {
     {!loading && !error && stores.length > 0 ? <div className="partner-stores-table-wrap">
       <table className="operations-table"><thead><tr><th scope="col">المتجر</th><th scope="col">الحذف</th><th scope="col">السبب</th><th scope="col">الإجراء</th></tr></thead>
         <tbody>{stores.map((item) => <tr key={item.id}>
-          <th scope="row">{item.name}<div className="muted"><bdi dir="ltr">{item.id}</bdi></div></th>
+          <th scope="row">{item.name}
+            {item.deletedBy ? <details><summary>تفاصيل التدقيق</summary><dl><dt>معرّف منفذ الحذف</dt><dd><bdi dir="ltr">{item.deletedBy}</bdi></dd></dl></details> : null}
+          </th>
           <td>{item.deletedAt ? new Date(item.deletedAt).toLocaleString("ar-YE") : "—"}</td>
           <td>{item.deletionReason ?? "—"}</td>
           <td>{confirmId === item.id ? <div className="catalog-category-filters">

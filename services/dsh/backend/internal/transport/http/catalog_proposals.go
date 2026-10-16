@@ -1,6 +1,7 @@
 package transporthttp
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/catalog"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
@@ -216,7 +218,12 @@ func (s *CatalogServer) previewCatalogImport(w http.ResponseWriter, r *http.Requ
 
 func decodeCatalogImportJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, 25*1024*1024)
-	decoder := json.NewDecoder(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil || !utf8.Valid(body) {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog import request body is invalid or exceeds 25 MiB")
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog import request body is invalid or exceeds 25 MiB")

@@ -127,15 +127,19 @@ func (s *Service) MarkOrderConversationRead(ctx context.Context, accessToken, or
 	return postgres.MarkOrderConversationRead(ctx, s.db, orderID, actorID, role, messageID)
 }
 
-func (s *Service) ListForClient(ctx context.Context, accessToken string, limit int, cartID string) ([]postgres.OrderRecord, error) {
+func (s *Service) ListForClient(ctx context.Context, accessToken string, limit int, cartID, cursor string) (postgres.ClientOrdersPage, error) {
 	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
 	if err != nil {
-		return nil, err
+		return postgres.ClientOrdersPage{}, err
 	}
 	if strings.TrimSpace(cartID) != "" {
-		return postgres.ListOrdersForClientByCart(ctx, s.db, identity, cartID)
+		if cursor != "" {
+			return postgres.ClientOrdersPage{}, postgres.ErrClientOrdersInvalidCursor
+		}
+		orders, err := postgres.ListOrdersForClientByCart(ctx, s.db, identity, cartID)
+		return postgres.ClientOrdersPage{Orders: orders}, err
 	}
-	return postgres.ListOrdersForClient(ctx, s.db, identity, "", limit)
+	return postgres.ListOrdersForClientPage(ctx, s.db, identity, limit, cursor)
 }
 
 func (s *Service) CancelForClient(ctx context.Context, accessToken, orderID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
@@ -226,6 +230,13 @@ func (s *Service) ListForOperator(ctx context.Context, state, query, sort, actin
 		return postgres.OperatorOperationsResult{}, err
 	}
 	return postgres.ListOrdersForOperator(ctx, s.db, state, query, sort, actionableOnly, limit, cursor)
+}
+
+func (s *Service) ListForOperatorStore(ctx context.Context, state, query, sort, actingActorID string, actionableOnly bool, limit int, cursor, storeID string) (postgres.OperatorOperationsResult, error) {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
+		return postgres.OperatorOperationsResult{}, err
+	}
+	return postgres.ListOrdersForOperatorStore(ctx, s.db, state, query, sort, actionableOnly, limit, cursor, storeID)
 }
 
 func (s *Service) ReadForOperator(ctx context.Context, orderID, actingActorID string) (postgres.OperatorOperationRecord, error) {

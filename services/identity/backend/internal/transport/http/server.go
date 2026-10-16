@@ -1,6 +1,7 @@
 package identityhttp
 
 import (
+	"bytes"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -816,7 +817,12 @@ func (s *Server) revokeRoleSessions(w http.ResponseWriter, r *http.Request, call
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
-	decoder := json.NewDecoder(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil || !utf8.Valid(body) {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_REQUEST", "request body is invalid"))
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_REQUEST", "request body is invalid"))

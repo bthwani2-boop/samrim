@@ -32,8 +32,19 @@ func NewDeliveryFee(identityClient *identityintegration.Client, accessToken stri
 }
 
 func (s *DeliveryFeeServer) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /dsh/operator/captain-minimum-balance-policy", s.readCaptainMinimumBalance)
+	mux.HandleFunc("POST /dsh/operator/captain-minimum-balance-policy", s.createCaptainMinimumBalance)
+	mux.HandleFunc("GET /dsh/operator/captain-minimum-balance-policy/history", s.listCaptainMinimumBalanceHistory)
+	mux.HandleFunc("GET /dsh/operator/distance-band-fee-policy", s.readDistanceBands)
+	mux.HandleFunc("POST /dsh/operator/distance-band-fee-policy", s.createDistanceBands)
 	mux.HandleFunc("GET /dsh/operator/delivery-fee-policy", s.read)
-	mux.HandleFunc("POST /dsh/operator/delivery-fee-policy", s.create)
+	mux.HandleFunc("POST /dsh/operator/delivery-fee-policy", func(w http.ResponseWriter, r *http.Request) {
+		if !s.auth.Authorized(r) {
+			writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+			return
+		}
+		writeError(w, http.StatusGone, "LEGACY_PRICING_DISABLED", "Use the distance-band delivery fee policy")
+	})
 	mux.HandleFunc("GET /dsh/operator/partner-financial-terms-policy", s.readPartnerFinancialTerms)
 	mux.HandleFunc("POST /dsh/operator/partner-financial-terms-policy", s.createPartnerFinancialTerms)
 }

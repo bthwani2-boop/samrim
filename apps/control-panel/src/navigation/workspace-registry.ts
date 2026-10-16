@@ -1,4 +1,5 @@
 import type { OperatorPermission } from "@bthwani/identity";
+import { policyCapabilities as workspacePolicyResources } from "../features/policies/policy-capabilities";
 
 type WorkspaceChild = Readonly<{
   href: string;
@@ -26,17 +27,13 @@ export const workspaceCatalogResources = [
 
 export type CatalogResourceKey = (typeof workspaceCatalogResources)[number]["key"];
 
-const catalogChildren: readonly WorkspaceChild[] = workspaceCatalogResources.map(({ href, label }) => ({ href, label }));
+// Product, category, and proposal registries share /catalog; retain separate import/recovery workflows.
+const catalogChildren: readonly WorkspaceChild[] = [];
 
-export const workspacePolicyResources = [
-  { key: "service-cities", href: "/policies/service-cities", label: "مدن الخدمة", description: "إدارة المدن المعتمدة المستخدمة في أهلية الخدمة والانضمام." },
-  { key: "wallet-providers", href: "/policies/wallet-providers", label: "مزودو المحافظ الرسمية", description: "إدارة أسماء المحافظ الرسمية التي تظهر في قوائم الاختيار." },
-  { key: "delivery-fees", href: "/policies/delivery-fees", label: "رسوم التوصيل", description: "إدارة سياسة الرسوم المحسوبة خادميًا في السجل المالي." },
-  { key: "field-acquisition", href: "/policies/field-acquisition", label: "استحقاق ضم الشريك للميداني", description: "إدارة مبلغ الاستحقاق مركزيًا حسب فئة المتجر في السجل المالي." },
-  { key: "partner-financial-terms", href: "/policies/partner-financial-terms", label: "شروط الشريك المالية", description: "تحديد العمولة وفترة التسوية المعتمدتين مركزيًا في السجل المالي لملفات الشركاء الجديدة والعالقة." }
-] as const;
-export type PolicyResourceKey = (typeof workspacePolicyResources)[number]["key"];
-const policyChildren: readonly WorkspaceChild[] = workspacePolicyResources.map(({ href, label }) => ({ href, label }));
+// The policies' names, scopes and supported capabilities have one discoverable owner.
+
+// Policy editors are reached inside the one canonical policies surface. Existing deep links stay valid.
+const policyChildren: readonly WorkspaceChild[] = [];
 
 export const workspaceFinanceResources = [
   { key: "cash-custody", href: "/finance/cash-custody", label: "حفظ النقد", description: "قراءة الالتزامات النقدية المحصلة عند الاستلام." },
@@ -50,26 +47,30 @@ export const workspaceFinanceResources = [
 
 export type FinanceResourceKey = (typeof workspaceFinanceResources)[number]["key"];
 
-const financeChildren: readonly WorkspaceChild[] = workspaceFinanceResources.flatMap<WorkspaceChild>(({ key, href, label }) => {
-  if (key === "beneficiary-settlement-partners") {
-    return [{
-      href: "/finance/beneficiary-settlement",
-      label: "المستحقات والتسويات",
-      searchAliases: "مستحقات الشركاء مستحقات الكباتن مستحقات الميدان دفعات المطابقة",
-    }];
-  }
-  if (key === "beneficiary-settlement-captains" || key === "beneficiary-settlement-field") return [];
-  return [{ href, label }];
-});
+// The finance workbench owns the visible navigation; legacy detail routes remain valid.
+const financeChildren: readonly WorkspaceChild[] = [];
+const financeWorkflowLinks = {
+  "cash-custody": "custody",
+  "partner-store-commissions": "agreements",
+  "beneficiary-settlement-partners": "settlement-partner",
+  "beneficiary-settlement-captains": "settlement-captain",
+  "beneficiary-settlement-field": "settlement-field",
+  "customer-withdrawals": "withdrawals",
+  "partner-commission-receivables": "commissions",
+} as const satisfies Record<FinanceResourceKey, string>;
 
 export const workspaceMarketingResources = [
+  { key: "customers", href: "/marketing/customers", label: "العملاء", description: "سجل العملاء وتحليل النشاط الشرائي وفتح ملف العميل الموحد." },
   { key: "promotions", href: "/marketing/promotions", label: "العروض", description: "إنشاء العروض ومراجعة نشرها وإيقافها." },
   { key: "content", href: "/marketing/content", label: "محتوى الاكتشاف", description: "إنشاء بطاقات الاكتشاف ومراجعة نشرها." }
 ] as const;
 
 export type MarketingResourceKey = (typeof workspaceMarketingResources)[number]["key"];
 
-const marketingChildren: readonly WorkspaceChild[] = workspaceMarketingResources.map(({ href, label }) => ({ href, label }));
+// Both marketing resources are visible in one canonical workspace; legacy deep links remain available.
+const marketingChildren: readonly WorkspaceChild[] = [
+  { href: "/marketing/customers", label: "العملاء", searchAliases: "Customer 360 ملف العميل شرائح العملاء نشاط العملاء" },
+];
 
 export const workspaceDestinations: readonly WorkspaceDestination[] = [
   { href: "/workspace", label: "الرئيسية", children: [] },
@@ -78,15 +79,14 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
     href: "/operations",
     label: "العمليات",
     permission: "operations",
-    children: [{ href: "/captains", label: "الكباتن" }, { href: "/operations/customer-withdrawals", label: "طلبات سحب العملاء الاستثنائية" }]
+    children: [{ href: "/captains", label: "الكباتن" }, { href: "/operations/customer-withdrawals", label: "طلبات سحب العملاء الاستثنائية", showInWorkspaceNavigation: false }]
   },
   {
     href: "/partners",
     label: "الشركاء",
     permission: "partners",
     children: [
-      { href: "/partners", label: "الشركاء والمتاجر", searchAliases: "سجل الشركاء سجل المتاجر حسابات الشركاء" },
-      { href: "/partners/joining", label: "الطلبات والاعتمادات", searchAliases: "طلبات الانضمام اعتماد وصول المتاجر دعوات الوصول" },
+      { href: "/partners", label: "الشركاء والمتاجر", searchAliases: "سجل الشركاء سجل المتاجر حسابات الشركاء", showInWorkspaceNavigation: false },
       { href: "/fields", label: "الميداني" }
     ]
   },
@@ -98,7 +98,7 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
   { href: "/access", label: "الوصول والصلاحيات", children: [], initialOperatorAdminOnly: true }
 ];
 
-export const workspaceSearchEntries = workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false).flatMap((destination) => [
+export const workspaceSearchEntries = [...workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false).flatMap((destination) => [
   ...(destination.children.some((child) => child.href === destination.href) ? [] : [{
     href: destination.href,
     label: destination.label,
@@ -111,7 +111,17 @@ export const workspaceSearchEntries = workspaceDestinations.filter((destination)
     context: destination.label,
     searchText: `${child.label} ${destination.label} ${child.href} ${child.searchAliases ?? ""}`,
   })),
-]);
+]),
+  ...workspaceCatalogResources.filter(({ key }) => key !== "trash" && key !== "import").map(({ href, label }) => ({ href, label, context: "الكتالوج", searchText: `${label} الكتالوج ${href}` })),
+  ...workspacePolicyResources.map(({ href, label }) => ({ href, label, context: "السياسات", searchText: `${label} السياسات ${href}` })),
+  ...workspaceMarketingResources.filter(({ key }) => key !== "customers").map(({ href, label }) => ({ href, label, context: "التسويق والمحتوى", searchText: `${label} التسويق ${href}` })),
+  ...workspaceFinanceResources.map(({ key, label, href }) => ({
+    href: `/finance?workflow=${financeWorkflowLinks[key]}`,
+    label,
+    context: "المالية",
+    searchText: `${label} المالية ${href}`,
+  })),
+];
 
 export function isCurrentWorkspacePath(pathname: string, href: string) {
   return href === "/workspace" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
@@ -128,9 +138,8 @@ export function currentWorkspaceDestination(pathname: string) {
 export function currentWorkspaceChild(pathname: string, destination: WorkspaceDestination) {
   if (destination.href === "/partners") {
     if (isCurrentWorkspacePath(pathname, "/fields")) return destination.children.find((child) => child.href === "/fields") ?? null;
-    const joining = pathname === "/partners/joining" || pathname === "/partners/new" || pathname === "/partners/store-access"
-      || (pathname.startsWith("/partners/") && !pathname.startsWith("/partners/actors/") && !pathname.startsWith("/partners/stores/") && pathname !== "/partners/stores");
-    return destination.children.find((child) => child.href === (joining ? "/partners/joining" : "/partners")) ?? null;
+    // Detailed joining, account and access routes belong to the single partners workbench.
+    return destination.children.find((child) => child.href === "/partners") ?? null;
   }
   return destination.children.find((child) =>
     child.href === destination.href ? pathname === child.href : isCurrentWorkspacePath(pathname, child.href)
@@ -146,6 +155,8 @@ export function dynamicWorkspaceRouteLabel(pathname: string) {
   }
   if (segments[0] === "partners" && segments[1] === "stores" && segments.length === 3) return "ملف المتجر";
   if (segments[0] === "partners" && segments[1] === "actors" && segments.length === 3) return "ملف الشريك";
+  if (segments[0] === "customers" && segments.length === 2) return "ملف العميل";
+  if (segments[0] === "marketing" && segments[1] === "customers" && segments.length === 3) return "ملف العميل";
   if (segments[0] === "operations" && segments.length === 2) return "تفاصيل الطلب";
   return null;
 }

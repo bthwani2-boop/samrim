@@ -1,4 +1,5 @@
 "use client";
+import { TextArea } from "@bthwani/design-system/web";
 import { useRef, useState } from "react";
 import type { HREmployee } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
@@ -36,8 +37,8 @@ export function EmployeeEmploymentStatus({employee,onSaved}: Readonly<{employee:
   <h3>الحالة الوظيفية</h3>
   <p>الحالة الحالية: <strong>{employee.status==="active"?"على رأس العمل":"غير نشط"}</strong>.</p>
   <p className="muted">الحالة الوظيفية مستقلة عن صلاحية تشغيل المنصة. عند إيقاف موظف لديه وصول تشغيل، تُسحب صلاحية تشغيله وجلساته أولًا.</p>
-  <label className="field-label">سبب تغيير الحالة الوظيفية
-   <textarea rows={2} maxLength={500} disabled={saving} value={reason} onChange={e=>{key.current=null;setReason(e.target.value);setError("");}}/>
+  <label className="field-label" htmlFor="employee-employment-status-reason">سبب تغيير الحالة الوظيفية
+   <TextArea className="resize-none" id="employee-employment-status-reason" rows={2} maxLength={500} disabled={saving} value={reason} onChange={e=>{key.current=null;setReason(e.target.value);setError("");}}/>
   </label>
   <button type="button" className="button button-secondary" disabled={saving||reason.trim().length<8} onClick={()=>void apply()}>
    {saving?"جارٍ تنفيذ القرار…":target==="inactive"?"إيقاف الحالة الوظيفية":"إعادة تنشيط الحالة الوظيفية"}

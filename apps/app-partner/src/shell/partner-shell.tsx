@@ -51,23 +51,22 @@ function PartnerHeader({ canSearchOrders, focus: rawFocus, searchQuery: rawQuery
     return () => clearTimeout(timer);
   }, [isSearchOpen]);
 
-  return <View style={styles.header}>{isSearchOpen ? <View style={styles.headerSearchActions}><BthwaniSearchField accessibilityLabel="البحث في الطلبات" autoCapitalize="none" autoCorrect={false} containerStyle={styles.headerSearchField} inputRef={searchInputRef} onChangeText={(value) => navigation.setParams({ q: value })} onClear={() => navigation.setParams({ q: "" })} placeholder="ابحث برقم الطلب أو العنوان أو المنتج" returnKeyType="search" value={searchQuery} /><BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => navigation.setParams({ focus: "", q: "" })} size={sizing.controlMd} tone="soft" /></View> : <><View style={styles.headerIdentity}><Text style={styles.brand}>بثواني · الشريك</Text><Text style={styles.context}>تشغيل المتجر والطلبات</Text></View><View style={styles.headerActions}>{canSearchOrders ? <BthwaniIconButton icon="search" label="البحث في الطلبات" onPress={() => navigation.navigate("orders", { focus: "search" })} size={sizing.controlMd} tone="soft" /> : null}<BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlMd} tone="soft" /><BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} tone="soft" /></View></>}</View>;
+  return <View style={styles.header}>{isSearchOpen ? <View style={styles.headerSearchActions}><BthwaniSearchField accessibilityLabel="البحث في الطلبات" autoCapitalize="none" autoCorrect={false} containerStyle={styles.headerSearchField} inputRef={searchInputRef} onChangeText={(value) => navigation.setParams({ q: value })} onClear={() => navigation.setParams({ q: "" })} placeholder="ابحث برقم الطلب أو العنوان أو المنتج" returnKeyType="search" value={searchQuery} /><BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => navigation.setParams({ focus: "", q: "" })} size={sizing.controlMd} tone="soft" /></View> : <><View style={styles.headerIdentity}><Text style={styles.brand}>بثواني · الشريك</Text></View><View style={styles.headerActions}>{canSearchOrders ? <BthwaniIconButton icon="search" label="البحث في الطلبات" onPress={() => navigation.navigate("orders", { focus: "search" })} size={sizing.controlMd} tone="soft" /> : null}<BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlMd} tone="soft" /><BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} tone="soft" /></View></>}</View>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     headerSafeArea: { backgroundColor: theme.surface },
-    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, flexDirection: "row", gap: spacing[3], justifyContent: "space-between", minHeight: 76, paddingHorizontal: spacing[4], paddingVertical: spacing[3] },
+    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, flexDirection: "row", gap: spacing[3], justifyContent: "space-between", minHeight: sizing.controlLg, paddingHorizontal: spacing[4], paddingVertical: spacing[3] },
     headerIdentity: { flex: 1, minWidth: 0 },
     brand: { ...typography.titleMd, color: theme.color },
-    context: { ...typography.caption, color: theme.colorMuted, marginTop: spacing[1] },
     headerActions: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
     headerSearchActions: { alignItems: "center", flex: 1, flexDirection: "row", gap: spacing[2], minWidth: 0 },
     headerSearchField: { flex: 1, minWidth: 0 },
     scene: { backgroundColor: theme.background },
     screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
-    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingHorizontal: spacing[3], paddingTop: spacing[2] },
-    navigationItem: { borderRadius: radius.md, minHeight: sizing.controlLg, paddingHorizontal: spacing[2], transform: [{ translateY: -spacing[4] }] },
+    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingHorizontal: spacing[3] },
+    navigationItem: { borderRadius: radius.md, paddingHorizontal: spacing[2] },
     navigationLabel: { ...typography.caption },
   });
 }

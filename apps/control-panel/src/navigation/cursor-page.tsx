@@ -11,10 +11,13 @@ export function useCursorPage(parameter: string, filterKey = "", privateCursor: 
   const [filters, setFilters] = useState(filterKey);
   const historyKey = `registry:${parameter}`;
   const initialFilters = useRef(filterKey);
+  const restoringHistory = useRef(false);
   const restoreSavedFilters = useEffectEvent((key: string) => restoreFilters?.(key));
+  const currentFilterKey = useEffectEvent(() => filterKey);
 
   useEffect(() => {
     const sync = (event?: PopStateEvent) => {
+      if (event) restoringHistory.current = true;
       const state = event ? event.state : window.history.state;
       const saved = state?.[historyKey];
       const previous = Array.isArray(saved?.previous) && saved.previous.every((value: unknown) => typeof value === "string") ? saved.previous : [];
@@ -23,6 +26,9 @@ export function useCursorPage(parameter: string, filterKey = "", privateCursor: 
       const cursor = protectedMarker ? (marker === `page-${previous.length + 1}` && typeof saved?.cursor === "string" ? saved.cursor : "") : marker;
       const restoredFilters = typeof saved?.filterKey === "string" ? saved.filterKey : initialFilters.current;
       setFilters(restoredFilters);
+      // Back can restore the same filter key without changing state; clear the
+      // restoration guard now or later user edits will never reset the cursor.
+      if (restoredFilters === currentFilterKey()) restoringHistory.current = false;
       if (privateCursor) {
         restoreSavedFilters(restoredFilters);
         const url = new URL(window.location.href);
@@ -33,8 +39,8 @@ export function useCursorPage(parameter: string, filterKey = "", privateCursor: 
       setReady(true);
     };
     sync();
-    window.addEventListener("popstate", sync);
-    return () => window.removeEventListener("popstate", sync);
+    window.addEventListener("popstate", sync, true);
+    return () => window.removeEventListener("popstate", sync, true);
   // Filter restoration callbacks are mount/event readers, not resubscription triggers.
   }, [historyKey, parameter, privateCursor]);
 
@@ -49,8 +55,22 @@ export function useCursorPage(parameter: string, filterKey = "", privateCursor: 
   }, [filterKey, historyKey, parameter, privateCursor]);
 
   const filtersChanged = filters !== filterKey;
+  const cursor = filtersChanged ? "" : position.cursor;
+  const previous = filtersChanged ? [] : position.previous;
+  const reset = useCallback(() => navigate("", [], true), [navigate]);
+  const clearForNavigation = useCallback(() => setPosition({ cursor: "", previous: [] }), []);
   useEffect(() => {
+    if (!restoringHistory.current) return;
+    if (filters === filterKey) restoringHistory.current = false;
+  }, [filterKey, filters]);
+  useEffect(() => {
+    if (restoringHistory.current) return;
     if (!filtersChanged) return;
+    if (privateCursor === true) {
+      const marker = new URLSearchParams(window.location.search).get(parameter);
+      const savedFilterKey = window.history.state?.[historyKey]?.filterKey;
+      if (marker && savedFilterKey === filterKey) return;
+    }
     if (privateCursor !== true) {
       // Filter links already drop public cursors. Never erase a restored Back entry.
       if (new URLSearchParams(window.location.search).has(parameter)) return;
@@ -60,14 +80,9 @@ export function useCursorPage(parameter: string, filterKey = "", privateCursor: 
     }
     navigate("", [], true);
     setFilters(filterKey);
-  }, [filterKey, filtersChanged, navigate, parameter, privateCursor]);
-
-  const cursor = filtersChanged ? "" : position.cursor;
-  const previous = filtersChanged ? [] : position.previous;
-  const reset = useCallback(() => navigate("", [], true), [navigate]);
-  const clearForNavigation = useCallback(() => setPosition({ cursor: "", previous: [] }), []);
+  }, [filterKey, filtersChanged, historyKey, navigate, parameter, privateCursor]);
   return {
-    cursor, clearForNavigation, ready, canPrevious: Boolean(cursor) || previous.length > 0,
+    cursor, clearForNavigation, ready, filtersStable: !filtersChanged, canPrevious: Boolean(cursor) || previous.length > 0,
     previousLabel: previous.length > 0 ? "السابق" : "الأولى",
     reset,
     next: (nextCursor: string) => navigate(nextCursor, [...previous, cursor]),
@@ -80,7 +95,7 @@ export function CursorPagination({ page, nextCursor, disabled, label }: Readonly
 }>) {
   if (!page.canPrevious && !nextCursor) return null;
   return <nav className="pagination" aria-label={label}>
-    <button className="button button-secondary" type="button" disabled={disabled || !page.canPrevious} onClick={page.previous}>{page.previousLabel}</button>
-    <button className="button button-secondary" type="button" disabled={disabled || !nextCursor} onClick={() => page.next(nextCursor)}>التالي</button>
+    <button className="button button-secondary" type="button" disabled={disabled || !page.filtersStable || !page.canPrevious} onClick={page.previous}>{page.previousLabel}</button>
+    <button className="button button-secondary" type="button" disabled={disabled || !page.filtersStable || !nextCursor} onClick={() => page.next(nextCursor)}>التالي</button>
   </nav>;
 }

@@ -81,6 +81,11 @@ func (s *catalogRefoundationScenario) verifyRegistryScale() {
 	if err != nil || page.TotalCount != 1000 || len(page.Products) != 50 || page.NextCursor == "" {
 		s.t.Fatalf("bounded registry and summary over 1000 isolated products: count=%d rows=%d err=%v", page.TotalCount, len(page.Products), err)
 	}
+	for _, product := range page.Products {
+		if len(product.CategoryNamesAr) != 1 || strings.TrimSpace(product.CategoryNamesAr[0]) == "" {
+			s.t.Fatalf("registry product %s missing server-resolved category name: %#v", product.ID, product.CategoryNamesAr)
+		}
+	}
 	started = time.Now()
 	next, err := postgres.ListCatalogProductRegistry(s.ctx, s.db, "Registry proof product", s.verticalID, s.categoryID, "active", "name_asc", 50, page.NextCursor)
 	nextDuration := time.Since(started)
@@ -673,10 +678,26 @@ func (s *catalogRefoundationScenario) publishSecondStoreOffer() {
 
 func (s *catalogRefoundationScenario) verifyPublicStoreDiscovery() {
 	s.t.Helper()
+	const canonicalAddress = "صنعاء، عنوان متجر الاختبار"
+	if _, err := s.db.ExecContext(s.ctx, "UPDATE dsh.joining_cases SET first_store_address=$1 WHERE id=$2", canonicalAddress, "joining_store_discovery_v1"); err != nil {
+		s.t.Fatalf("set canonical public Store address fixture: %v", err)
+	}
 	s.verifyPublishedStorePagination()
 	publicStores, err := postgres.ListPublishedStorePage(s.ctx, s.db, postgres.PublicStoreListQuery{ServiceCityID: s.cityID, Sort: "newest", Limit: 10})
 	if err != nil || len(publicStores.Stores) != 2 {
 		s.t.Fatalf("published store discovery query failed: %+v err=%v", publicStores, err)
+	}
+	foundAddress := false
+	for _, store := range publicStores.Stores {
+		if store.ID == "store_catalog_v1" {
+			foundAddress = true
+			if store.AddressLine != canonicalAddress {
+				s.t.Fatalf("public directory lost canonical Store address: %q", store.AddressLine)
+			}
+		}
+	}
+	if !foundAddress {
+		s.t.Fatal("address fixture Store missing from published directory")
 	}
 	verticalStores, err := postgres.ListPublishedStorePage(s.ctx, s.db, postgres.PublicStoreListQuery{ServiceCityID: s.cityID, VerticalID: s.verticalID, Sort: "newest", Limit: 10})
 	if err != nil || len(verticalStores.Stores) != 2 {
@@ -687,7 +708,7 @@ func (s *catalogRefoundationScenario) verifyPublicStoreDiscovery() {
 		s.t.Fatalf("published store filter leaked a different vertical: %+v err=%v", missingVerticalStores, err)
 	}
 	publishedStore, err := postgres.ReadPublishedStore(s.ctx, s.db, "store_catalog_v1", s.cityID)
-	if err != nil || publishedStore.ID != "store_catalog_v1" || len(publishedStore.CategoryIDs) != 1 || publishedStore.CategoryIDs[0] != s.categoryID {
+	if err != nil || publishedStore.ID != "store_catalog_v1" || publishedStore.AddressLine != canonicalAddress || len(publishedStore.CategoryIDs) != 1 || publishedStore.CategoryIDs[0] != s.categoryID {
 		s.t.Fatalf("published store canonical readback failed: %+v err=%v", publishedStore, err)
 	}
 	discoveryCategories, err := postgres.ListPublicDiscoveryCategories(s.ctx, s.db, s.cityID)

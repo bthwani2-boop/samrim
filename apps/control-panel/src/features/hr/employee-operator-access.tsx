@@ -1,5 +1,6 @@
 "use client";
 
+import { TextArea } from "@bthwani/design-system/web";
 import { useState } from "react";
 import type { HREmployee } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
@@ -60,8 +61,8 @@ export function EmployeeOperatorAccess({ employee }: Readonly<{ employee: HREmpl
       {role ? <>
         <p>الحالة في Identity: <strong>{role.enabled ? "وصول التشغيل مفعّل" : "وصول التشغيل موقوف"}</strong>.</p>
         <p className="muted">إيقاف التشغيل لا ينهي خدمة الموظف ولا يحذف ملفه أو حسابه. إعادة التفعيل لا تُعيد الجلسات القديمة.</p>
-        <label className="field-label">سبب قرار صلاحية التشغيل
-          <textarea rows={2} maxLength={500} value={reason} disabled={saving} onChange={(event) => setReason(event.target.value)} />
+        <label className="field-label" htmlFor="employee-operator-access-reason">سبب قرار صلاحية التشغيل
+          <TextArea className="resize-none" id="employee-operator-access-reason" rows={2} maxLength={500} value={reason} disabled={saving} onChange={(event) => setReason(event.target.value)} />
         </label>
         <button type="button" className="button button-secondary" disabled={saving || reason.trim().length < 8} onClick={() => void toggle()}>
           {saving ? "جارٍ التنفيذ…" : role.enabled ? "إيقاف وصول التشغيل وإبطال الجلسات" : "إعادة تفعيل وصول التشغيل"}

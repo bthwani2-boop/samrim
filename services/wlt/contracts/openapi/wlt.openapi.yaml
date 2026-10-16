@@ -6,6 +6,109 @@ info:
 servers:
   - url: http://localhost:18083
 paths:
+  /wlt/v1/operator/distance-band-fee-policies:
+    get:
+      operationId: readDistanceBandFeePolicy
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: serviceCityId
+          in: query
+          schema: { type: string, maxLength: 128 }
+      responses:
+        '200': { description: Current policy version; legacy versions have null bands until configured. }
+        '404': { description: No active policy for the requested scope. }
+    post:
+      operationId: createDistanceBandFeePolicy
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+        - { $ref: '#/components/parameters/ActingActorId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [serviceCityId, distanceBands, expectedVersion, reason]
+              properties:
+                serviceCityId: { type: string, maxLength: 128 }
+                distanceBands:
+                  type: array
+                  minItems: 1
+                  maxItems: 30
+                  description: Increasing tier upper bounds in metres; last bound is null (unlimited).
+                  items:
+                    type: object
+                    required: [upToMeters, ratePerKmMinor]
+                    properties:
+                      upToMeters: { type: [integer, 'null'], minimum: 1, maximum: 500000 }
+                      ratePerKmMinor: { type: integer, minimum: 1, maximum: 100000000 }
+                expectedVersion: { type: integer, minimum: 0 }
+                reason: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        '201': { description: New effective distance-only pricing version. }
+        '200': { description: Idempotent replay of that version. }
+        '409': { description: Stale version or changed idempotent facts. }
+  /wlt/v1/operator/policy-history:
+    get:
+      operationId: readOperatorPolicyHistory
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: key
+          in: query
+          required: true
+          schema: { type: string, enum: [delivery-fees, field-acquisition, partner-financial-terms, captain-minimum-balance] }
+        - name: scopeId
+          in: query
+          schema: { type: string, maxLength: 128 }
+      responses:
+        '200': { description: Latest 50 WLT-owned versioned policy changes with actor and reason. }
+  /wlt/v1/operator/policy-registry:
+    get:
+      operationId: readOperatorPolicyRegistry
+      security: [{ serviceToken: [] }]
+      responses:
+        '200': { description: Active WLT fee and Store Type reward policies, with total counts. }
+  /wlt/v1/operator/captain-minimum-balance-policy:
+    get:
+      operationId: readCaptainMinimumBalancePolicy
+      security: [{ serviceToken: [] }]
+      responses:
+        '200': { description: The active platform-wide captain minimum available balance in YER. }
+        '404': { description: No active policy has been configured. }
+    post:
+      operationId: createCaptainMinimumBalancePolicy
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+        - { $ref: '#/components/parameters/ActingActorId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [minimumAvailableMinor, expectedVersion, reason]
+              properties:
+                minimumAvailableMinor: { type: integer, format: int64, minimum: 1 }
+                expectedVersion: { type: integer, minimum: 0 }
+                reason: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        '201': { description: Versioned activation. }
+        '200': { description: Idempotent replay. }
+        '409': { description: Stale version or idempotency conflict. }
+  /wlt/v1/operator/captain-minimum-balance-policy/history:
+    get:
+      operationId: listCaptainMinimumBalanceHistory
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        '200': { description: Most recent WLT-owned versions, including actor and change reason. }
   /wlt/v1/payment-intents:
     post:
       operationId: createPaymentIntent
@@ -3407,10 +3510,10 @@ components:
         policyVersion: { type: string }
         serviceCityId: { type: string }
         distanceMeters: { type: integer, minimum: 0 }
-        distanceUnits: { type: integer, minimum: 1 }
-        orderSizeBaseUnits: { type: integer, minimum: 1 }
-        orderSizeUnits: { type: integer, minimum: 1 }
-        roundingUnitMinor: { type: integer, const: 50 }
+        distanceUnits: { type: integer, minimum: 0, description: "Legacy informational field; not used in distance-band quotes." }
+        orderSizeBaseUnits: { type: integer, minimum: 0, description: "Legacy input retained for compatibility; not used for pricing." }
+        orderSizeUnits: { type: integer, minimum: 0, description: "Always zero for distance-only quotes." }
+        roundingUnitMinor: { type: integer, const: 1 }
     DeliveryFeeQuoteResponse:
       type: object
       additionalProperties: false
@@ -3476,6 +3579,17 @@ components:
         orderSizeRateMinor: { type: integer, minimum: 0 }
         zoneSurchargeMinor: { type: integer, minimum: 0 }
         roundingUnitMinor: { type: integer, const: 50 }
+        distanceBands:
+          type: [array, 'null']
+          description: Distance-band prices; null only for retained legacy policy records.
+          maxItems: 30
+          items:
+            type: object
+            additionalProperties: false
+            required: [upToMeters, ratePerKmMinor]
+            properties:
+              upToMeters: { type: [integer, 'null'], minimum: 1 }
+              ratePerKmMinor: { type: integer, minimum: 1 }
         version: { type: integer, minimum: 1 }
         createdBy: { type: string }
         createdAt: { type: string, format: date-time }

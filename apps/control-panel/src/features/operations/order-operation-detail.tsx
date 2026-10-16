@@ -1,42 +1,55 @@
 "use client";
 
-import { PageHeader } from "../../shell/page-header";
 
 import { captainAssignmentStateLabel, captainHandoffStateLabel, formatMoney, formatOrderDate, fulfillmentModeLabel, type OperatorOperation, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
-import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
+import { PageHeader } from "../../shell/page-header";
 import { OperationLocationMap } from "./operation-location-map";
-type DetailTab = "overview" | "items" | "store" | "fulfillment" | "payment" | "assignment" | "recovery";
-const detailTabs: ReadonlyArray<Readonly<{ id: DetailTab; label: string }>> = [
-  { id: "overview", label: "نظرة عامة" },
-  { id: "items", label: "العناصر" },
-  { id: "store", label: "المتجر" },
-  { id: "fulfillment", label: "التنفيذ" },
-  { id: "payment", label: "الدفع" },
-  { id: "assignment", label: "الكابتن والتوزيع" },
-  { id: "recovery", label: "الاستعادة" },
-];
+import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 
-export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>) {
-  const pathname = usePathname();
+type PendingWalletCompensation = Readonly<{ adjustmentId: string; amountMinor: number }>;
+
+function WalletCompensationConfirmation({ amountMinor, onCancel, onConfirm }: Readonly<{
+  amountMinor: number; onCancel: () => void; onConfirm: () => void;
+}>) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+
+  return <dialog ref={dialogRef} aria-labelledby="ops-wallet-confirm-title" className="ops-wallet-confirm"
+    onCancel={(event) => { event.preventDefault(); onCancel(); }} onClose={onCancel}>
+    <h2 id="ops-wallet-confirm-title">تأكيد تعويض محفظة العميل</h2>
+    <p>ستُضاف <strong>{formatMoney(amountMinor, "YER")}</strong> إلى محفظة العميل على نفقة المنصة مقابل تعديل هذا الطلب.</p>
+    <p className="muted">راجع المبلغ والتعديل قبل التأكيد. لن تُعرض نتيجة ناجحة إلا بعد التحقق من القيد المالي.</p>
+    <div className="action-row">
+      <button type="button" className="button button-primary" onClick={onConfirm}>تأكيد إضافة التعويض</button>
+      <button type="button" className="button button-secondary" onClick={onCancel}>إلغاء</button>
+    </div>
+  </dialog>;
+}
+
+export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpdated }: Readonly<{ orderId: string; embedded?: boolean; onClose?: () => void; onUpdated?: () => void }>) {
   const { state: sessionState } = useSession();
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
-  const params = new URLSearchParams(queryString);
-  const requestedTab = params.get("tab") as DetailTab | null;
   const [operation, setOperation] = useState<OperatorOperation | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [errorStatus, setErrorStatus] = useState(0);
+  const [showLocationMap, setShowLocationMap] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionNeedsReadback, setActionNeedsReadback] = useState(false);
   const [notice, setNotice] = useState("");
   const [walletCreditedAdjustments, setWalletCreditedAdjustments] = useState<ReadonlySet<string>>(() => new Set());
+  const [pendingWalletCompensation, setPendingWalletCompensation] = useState<PendingWalletCompensation | null>(null);
   const loadSequence = useRef(0);
   const actionSequence = useRef(0);
   const actionInFlight = useRef(false);
@@ -90,12 +103,6 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
     };
   }, [load]);
 
-  const tab = detailTabs.find((item) => item.id === requestedTab && (item.id !== "recovery" || operation?.order.state === "DELIVERY_FAILED"))?.id ?? "overview";
-  const tabHref = useCallback((nextTab: DetailTab) => {
-    const next = new URLSearchParams(queryString);
-    next.set("tab", nextTab);
-    return `${pathname}?${next.toString()}`;
-  }, [pathname, queryString]);
   const returnHref = useCallback(() => {
     const next = new URLSearchParams(queryString);
     next.delete("tab");
@@ -140,7 +147,7 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
       }
       const readbackSucceeded = await load();
       if (!actionStillCurrent()) return;
-      if (readbackSucceeded) setNotice("تم تحديث حالة الطلب بعد إعادة قراءتها من المصدر التشغيلي.");
+      if (readbackSucceeded) { setNotice("تم تحديث حالة الطلب بعد إعادة قراءتها من المصدر التشغيلي."); onUpdated?.(); }
       else setActionError("أُرسل الإجراء، لكن تعذرت إعادة قراءة الحالة لتأكيد النتيجة. أعد القراءة قبل اتخاذ قرار آخر.");
     } catch (cause) {
       if (!actionStillCurrent()) return;
@@ -160,7 +167,7 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
 
   async function creditCustomerWallet(adjustmentId: string, amountMinor: number) {
     if (busy || loading || amountMinor <= 0 || walletCreditedAdjustments.has(adjustmentId)) return;
-    if (!window.confirm(`إضافة ${formatMoney(amountMinor, "YER")} إلى محفظة العميل على نفقة المنصة بعد مراجعة تعديل الطلب؟`)) return;
+    setPendingWalletCompensation(null);
     setBusy(true);
     setActionError("");
     setNotice("");
@@ -193,44 +200,48 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
   }
 
   if ((loading && !operation) || (operation && operation.order.id !== orderId)) return <section className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة مساحة الطلب</strong></section>;
-  if (error || !operation) return <section className="collection-state" role="alert"><strong>{errorStatus === 403 ? "لا تملك صلاحية فتح هذا الطلب" : "تعذر فتح مساحة الطلب"}</strong><p>{error || "لم تعد تفاصيل هذا الطلب متاحة."}</p><div className="order-detail-state-actions"><button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading}>إعادة القراءة</button><Link className="button button-secondary" href={returnHref()}>العودة إلى العمليات</Link></div></section>;
+  if (error || !operation) return <section className="collection-state" role="alert"><strong>{errorStatus === 403 ? "لا تملك صلاحية فتح هذا الطلب" : "تعذر فتح مساحة الطلب"}</strong><p>{error || "لم تعد تفاصيل هذا الطلب متاحة."}</p><div className="order-detail-state-actions"><button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading}>إعادة القراءة</button>{embedded ? <button type="button" className="button button-secondary" onClick={onClose}>إغلاق</button> : <Link className="button button-secondary" href={returnHref()}>العودة إلى العمليات</Link>}</div></section>;
 
   const { order, assignment } = operation;
   const action = resolveOperatorAction({ state: order.state, assignment });
-  const visibleTabs = detailTabs.filter((item) => item.id !== "recovery" || order.state === "DELIVERY_FAILED");
   const countLabel = new Intl.NumberFormat("ar-YE").format(order.lines.length);
 
   return (
-    <section className="order-detail-workspace" aria-labelledby="order-operation-title">
-      <PageHeader id="order-operation-title" title={<>طلب من {operation.storeName}</>} status={<span className="status-badge">{orderStateLabel(order.state)}</span>} actions={<Link className="button button-secondary" href={returnHref()}>الطلبات</Link>} />
-
-      <nav className="order-detail-tabs" aria-label="مساحات تفاصيل الطلب">
-        {visibleTabs.map((item) => <Link key={item.id} href={tabHref(item.id)} aria-current={item.id === tab ? "page" : undefined} className={item.id === tab ? "order-detail-tab is-active" : "order-detail-tab"}>{item.label}</Link>)}
-      </nav>
+    <section className="order-detail-workspace" aria-labelledby={embedded ? undefined : "order-operation-title"}>
+      {embedded
+        ? <p className="ops-inline-detail-context">{operation.storeName} · {orderStateLabel(order.state)}</p>
+        : <PageHeader id="order-operation-title" title={<>طلب من {operation.storeName}</>} status={<span className="status-badge">{orderStateLabel(order.state)}</span>} actions={<Link className="button button-secondary" href={returnHref()}>الطلبات</Link>} />}
 
       <div className="order-detail-toolbar">
         {action ? <button type="button" className={`button ${action === "recover" ? "button-secondary" : "button-primary"}`} onClick={() => void runAction()} disabled={busy || loading || actionNeedsReadback}>{busy ? "جارٍ تنفيذ الإجراء…" : operationActionLabel(action)}</button> : <span className="muted">لا يتطلب هذا الطلب إجراءً مباشرًا من المشغل.</span>}
         <button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading || busy}>{loading ? "جارٍ القراءة…" : "إعادة قراءة الحالة"}</button>
       </div>
 
+      {pendingWalletCompensation ? <WalletCompensationConfirmation
+        amountMinor={pendingWalletCompensation.amountMinor}
+        onCancel={() => setPendingWalletCompensation(null)}
+        onConfirm={() => void creditCustomerWallet(pendingWalletCompensation.adjustmentId, pendingWalletCompensation.amountMinor)}
+      /> : null}
+
       {notice ? <p className="success-inline" role="status">{notice}</p> : null}
       {actionError ? <div className="managed-status managed-status-warning" role="alert"><strong>لم يكتمل الإجراء</strong><p>{actionError}</p><button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading || busy}>إعادة قراءة الحالة الحالية</button></div> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت إعادة قراءة حالة الطلب</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading || busy}>إعادة المحاولة</button></div> : null}
 
-      {tab === "overview" ? (
+      {(
         <section className="order-detail-panel" aria-labelledby="order-overview-title">
           <h2 id="order-overview-title">ملخص الطلب</h2>
           <dl className="order-detail-facts">
 
             <div><dt>المتجر</dt><dd><Link href={`/partners/stores/${encodeURIComponent(order.storeId)}`}>{operation.storeName}</Link></dd></div>
+            <div><dt>العميل</dt><dd><Link href={`/customers/${encodeURIComponent(order.clientActorId)}`}>فتح ملف العميل</Link></dd></div>
             <div><dt>عدد العناصر</dt><dd>{countLabel}</dd></div>
             <div><dt>تاريخ الطلب</dt><dd><time dateTime={order.createdAt}>{formatOrderDate(order.createdAt)}</time></dd></div>
             <div><dt>آخر تحديث</dt><dd><time dateTime={order.updatedAt}>{formatOrderDate(order.updatedAt)}</time></dd></div>
           </dl>
         </section>
-      ) : null}
+      )}
 
-      {tab === "items" ? (
+      {(
         <section className="order-detail-panel" aria-labelledby="order-items-title">
           <h2 id="order-items-title">عناصر الطلب</h2>
           {order.lines.length ? <ul className="order-detail-list">{order.lines.map((line) => <li key={line.id}><div><strong>{line.productName}</strong>{line.variantTitle ? <span>{line.variantTitle}</span> : null}</div><span>{new Intl.NumberFormat("ar-YE").format(line.finalQuantityBaseUnits)} {line.baseUnit}</span><strong>{formatMoney(line.lineAmountMinor, line.currency)}</strong></li>)}</ul> : <p className="muted">لا تتوفر عناصر لهذا الطلب.</p>}
@@ -250,7 +261,7 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
                   <span>{compensated ? "أُضيف التعويض إلى محفظة العميل" : stateLabel}</span>
                   {adjustment.state === "FINANCIAL_RECONCILIATION_REQUIRED" ? <span>لا يتقدم الطلب قبل إغلاق التسوية التشغيلية والمالية اللازمة.</span> : null}
                   {eligibleForWallet && !compensated ? <button type="button" className="button button-secondary"
-                    disabled={busy || loading} onClick={() => void creditCustomerWallet(adjustment.id, line.lineAmountMinor)}>
+                    disabled={busy || loading} onClick={() => setPendingWalletCompensation({ adjustmentId: adjustment.id, amountMinor: line.lineAmountMinor })}>
                     {busy ? "جارٍ التحقق..." : `تعويض المحفظة: ${formatMoney(line.lineAmountMinor, line.currency)}`}
                   </button> : null}
                 </div>
@@ -259,17 +270,11 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
             })}</ul>
           </div> : null}
         </section>
-      ) : null}
+      )}
 
-      {tab === "store" ? (
-        <section className="order-detail-panel" aria-labelledby="order-store-title">
-          <h2 id="order-store-title">المتجر المرتبط</h2>
-          <p>{operation.storeName}</p>
-          <Link className="button button-secondary" href={`/partners/stores/${encodeURIComponent(order.storeId)}`}>فتح مساحة المتجر</Link>
-        </section>
-      ) : null}
 
-      {tab === "fulfillment" ? (
+
+      {(
         <section className="order-detail-panel" aria-labelledby="order-fulfillment-title">
           <h2 id="order-fulfillment-title">التنفيذ والاستلام</h2>
           <dl className="order-detail-facts">
@@ -277,15 +282,18 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
             <div><dt>عنوان التوصيل</dt><dd>{order.addressText || "لا يتطلب هذا الطلب عنوان توصيل."}</dd></div>
             <div><dt>تسليم المتجر للكابتن</dt><dd>{assignment ? captainHandoffStateLabel(assignment.handoffState) : "لا يوجد إسناد كابتن حالي."}</dd></div>
           </dl>
-          {order.fulfillmentMode === "CUSTOMER_PICKUP" && order.pickupLocation ? (
-            <OperationLocationMap latitude={order.pickupLocation.latitude} longitude={order.pickupLocation.longitude} label={`موقع استلام ${operation.storeName}`} />
-          ) : order.fulfillmentMode !== "CUSTOMER_PICKUP" ? (
-            <OperationLocationMap latitude={order.addressLatitude} longitude={order.addressLongitude} label="وجهة التوصيل" />
-          ) : <p className="muted">إحداثيات موقع الاستلام غير متاحة لهذا الطلب.</p>}
+          <details className="ops-location-disclosure" onToggle={(event) => setShowLocationMap(event.currentTarget.open)}>
+            <summary>عرض الموقع على الخريطة</summary>
+            {showLocationMap ? (order.fulfillmentMode === "CUSTOMER_PICKUP" && order.pickupLocation ? (
+              <OperationLocationMap latitude={order.pickupLocation.latitude} longitude={order.pickupLocation.longitude} label={`موقع استلام ${operation.storeName}`} />
+            ) : order.fulfillmentMode !== "CUSTOMER_PICKUP" ? (
+              <OperationLocationMap latitude={order.addressLatitude} longitude={order.addressLongitude} label="وجهة التوصيل" />
+            ) : <p className="muted">إحداثيات موقع الاستلام غير متاحة لهذا الطلب.</p>) : null}
+          </details>
         </section>
-      ) : null}
+      )}
 
-      {tab === "payment" ? (
+      {(
         <section className="order-detail-panel" aria-labelledby="order-payment-title">
           <h2 id="order-payment-title">الدفع والمبالغ</h2>
           <dl className="order-detail-facts">
@@ -297,17 +305,17 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
             <div><dt>النقد المتبقي عند الاستلام</dt><dd>{formatMoney(order.cashAmountMinor, order.currency)}</dd></div>
           </dl>
         </section>
-      ) : null}
+      )}
 
-      {tab === "assignment" ? (
+      {(
         <section className="order-detail-panel" aria-labelledby="order-assignment-title">
           <h2 id="order-assignment-title">إسناد الكابتن</h2>
           {assignment ? <dl className="order-detail-facts"><div><dt>حالة الإسناد</dt><dd>{captainAssignmentStateLabel(assignment.state)}</dd></div><div><dt>تسليم المتجر</dt><dd>{captainHandoffStateLabel(assignment.handoffState)}</dd></div></dl> : <p>لا يوجد إسناد كابتن حالي لهذا الطلب.</p>}
           <Link className="order-detail-text-link" href="/captains">الانتقال إلى سجل الكباتن</Link>
         </section>
-      ) : null}
+      )}
 
-      {tab === "recovery" ? (
+      {order.state === "DELIVERY_FAILED" ? (
         <section className="order-detail-panel" aria-labelledby="order-recovery-title">
           <h2 id="order-recovery-title">استعادة التسليم</h2>
           <p>تعذر إكمال التسليم. {assignment ? "راجع حالة الإسناد وتسليم المتجر قبل المتابعة." : "لا يوجد إسناد حالي مرتبط بهذا التعثر."}</p>

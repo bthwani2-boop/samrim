@@ -325,7 +325,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       }
     } catch (cause) {
       console.warn("DSH Field commercial store type read failed", cause);
-      if (sequence === commercialTypeReadSequence.current) setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذا النشاط التجاري.");
+      if (sequence === commercialTypeReadSequence.current) setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذا المجال التجاري.");
     } finally {
       if (sequence === commercialTypeReadSequence.current) setCommercialTypesLoading(false);
     }
@@ -488,7 +488,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
           : code === "SERVICE_CITY_UNAVAILABLE"
             ? "مدينة الخدمة لم تعد نشطة. أعد قراءة المدن واختر مدينة أخرى."
             : code === "VERTICAL_UNAVAILABLE"
-              ? "النشاط التجاري لم يعد نشطًا. أعد قراءة الأنشطة واختر نشاطًا آخر."
+              ? "المجال التجاري لم يعد نشطًا. أعد قراءة الأنشطة واختر نشاطًا آخر."
                : code === "INVALID_INPUT" ? "رفض الخادم بعض بيانات المسودة. راجع الحقول المدخلة ثم أعد المحاولة." : "تعذر حفظ المسودة. تحقق من اتصال الخدمة وأعد المحاولة.");
       }
     } finally {
@@ -756,14 +756,14 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
             setLocationError("");
           }
         }} selected={input.serviceCityId === city.id} />)}</View>
-        <Text style={styles.label}>النشاط التجاري</Text>
+        <Text style={styles.label}>المجال التجاري</Text>
         {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
         {!optionsLoading && !optionsError && verticals.length === 0 ? <Text style={styles.error}>لا يوجد نشاط تجاري متاح حاليًا.</Text> : null}
         <View style={styles.optionList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} disabled={formLocked} label={vertical.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreVerticalId: vertical.id }))} selected={input.firstStoreVerticalId === vertical.id} />)}</View>
         <Text style={styles.label}>نوع المتجر</Text>
-        {commercialTypesLoading ? <Text style={styles.muted}>جارٍ قراءة أنواع المتاجر لهذا النشاط التجاري…</Text> : null}
+        {commercialTypesLoading ? <Text style={styles.muted}>جارٍ قراءة أنواع المتاجر لهذا المجال التجاري…</Text> : null}
         {commercialTypesError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{commercialTypesError}</Text><BthwaniButton label="إعادة قراءة أنواع المتاجر" disabled={formLocked || !input.firstStoreVerticalId} onPress={() => void loadCommercialTypes(input.firstStoreVerticalId)} variant="secondary" /></View> : null}
-        {!commercialTypesLoading && !commercialTypesError && input.firstStoreVerticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذا النشاط التجاري. اطلب من المشغّل إعداد النوع التجاري أولًا.</Text> : null}
+        {!commercialTypesLoading && !commercialTypesError && input.firstStoreVerticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذا المجال التجاري. اطلب من المشغّل إعداد النوع التجاري أولًا.</Text> : null}
         <View style={styles.optionList}>{commercialTypes.map((item) => <BthwaniChip key={item.id} disabled={formLocked} label={item.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreCommercialTypeId: item.id }))} selected={input.firstStoreCommercialTypeId === item.id} />)}</View>
         </View> : null}
         {activeStep === 1 ? <>

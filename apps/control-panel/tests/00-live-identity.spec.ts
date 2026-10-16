@@ -168,16 +168,19 @@ async function createOperatorThroughControlPanel(
     response.url().endsWith(`/api/access/operator-profiles/${encodeURIComponent(profileId)}`) && response.request().method() === "POST",
   );
   await profileRow.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
+  const admissionDrawer = page.locator(".adaptive-record-sheet");
+  await expect(admissionDrawer).toBeVisible();
+  await admissionDrawer.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
   const approveResponse = await approveResponsePromise;
   expect(approveResponse.status()).toBe(200);
   const approvedProfile = await findOperatorProfileByPhone(identityBase, controlToken, (await findInitialOperator(identityBase, controlToken))!.actorId, input.phone);
   expect(approvedProfile).toMatchObject({ id: profileId, state: "approved", version: 2 });
-  await expect(profileRow.getByRole("button", { name: "منح دور المشغّل", exact: true })).toBeVisible();
+  await expect(admissionDrawer.getByRole("button", { name: "منح الدور", exact: true })).toBeVisible();
 
   const grantResponsePromise = page.waitForResponse((response) =>
     response.url().endsWith(`/api/access/operator-profiles/${encodeURIComponent(profileId)}`) && response.request().method() === "POST",
   );
-  await profileRow.getByRole("button", { name: "منح دور المشغّل", exact: true }).click();
+  await admissionDrawer.getByRole("button", { name: "منح الدور", exact: true }).click();
   const grantResponse = await grantResponsePromise;
   expect(grantResponse.status()).toBe(201);
   const grantedProfile = await findOperatorProfileByPhone(identityBase, controlToken, (await findInitialOperator(identityBase, controlToken))!.actorId, input.phone);
@@ -188,12 +191,12 @@ async function createOperatorThroughControlPanel(
   const invitationResponsePromise = page.waitForResponse((response) =>
     response.url().endsWith(`/api/access/operator-profiles/${encodeURIComponent(profileId)}`) && response.request().method() === "POST",
   );
-  await profileRow.getByRole("button", { name: "إصدار دعوة التفعيل", exact: true }).click();
+  await admissionDrawer.getByRole("button", { name: "إصدار دعوة", exact: true }).click();
   const invitationResponse = await invitationResponsePromise;
   expect(invitationResponse.status()).toBe(201);
   const finalProfile = await findOperatorProfileByPhone(identityBase, controlToken, (await findInitialOperator(identityBase, controlToken))!.actorId, input.phone);
   expect(finalProfile).toMatchObject({ id: profileId, actorId, state: "admitted", roleEnabled: true, securityEnabled: true });
-  const token = String(await page.locator(".code-output code").textContent() || "");
+  const token = String(await admissionDrawer.locator(".access-center-invitation code").textContent() || "");
   expect(token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
   return { actorId, phone: input.phone, token, profileId, actorCreatedByTest: true };
 }

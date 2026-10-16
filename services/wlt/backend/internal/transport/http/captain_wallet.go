@@ -1,7 +1,6 @@
 package http
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -79,23 +78,17 @@ func (s *Server) transitionCaptainCOD(w http.ResponseWriter, r *http.Request, op
 		return
 	}
 	input := postgres.CaptainCODReservationInput{OrderID: r.PathValue("orderId"), IdempotencyKey: idempotency, CorrelationID: correlation}
+	var body captainCODReservationRequest
 	if operation == "reserve" {
-		var body captainCODReservationRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body is invalid")
+		if !decodeJSON(w, r, &body) {
 			return
 		}
 		input.OrderID = body.OrderID
-		input.PaymentIntentID = body.PaymentIntentID
-		input.CaptainActorID = body.CaptainActorID
-	} else {
-		var body captainCODReservationRequest
-		if r.Body != nil {
-			_ = json.NewDecoder(r.Body).Decode(&body)
-		}
-		input.PaymentIntentID = body.PaymentIntentID
-		input.CaptainActorID = body.CaptainActorID
+	} else if !decodeOptionalJSON(w, r, &body) {
+		return
 	}
+	input.PaymentIntentID = body.PaymentIntentID
+	input.CaptainActorID = body.CaptainActorID
 	var reservation postgres.CaptainCODReservationRecord
 	var replay bool
 	var err error

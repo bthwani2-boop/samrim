@@ -238,9 +238,9 @@ export default function ClientOrderDetail() {
 
   const { order } = state;
   const isStorePickup = order.fulfillmentMode === "CUSTOMER_PICKUP";
-  const proofLabel = isStorePickup ? "رمز الاستلام" : "رمز التسليم";
-  const proofAvailableMessage = isStorePickup ? "أظهر الرمز لموظف المتجر بعد تجهيز طلبك." : "لا تشارك الرمز إلا مع الكابتن عند وصول الطلب.";
-  const proofWaitingMessage = isStorePickup ? "سيظهر رمز الاستلام بعد جاهزية الطلب." : "سيظهر رمز التسليم عندما يصبح الطلب في عهدة الكابتن.";
+  const proofLabel = isStorePickup ? "رمز الاستلام" : "تأكيد التسليم";
+  const proofAvailableMessage = "أظهر الرمز لموظف المتجر بعد تجهيز طلبك." ;
+  const proofWaitingMessage = isStorePickup ? "سيظهر رمز الاستلام بعد جاهزية الطلب." : "يؤكد الكابتن تسليم الطلب بعد وصوله للمستلم؛ لا تحتاج إلى رمز." ;
   const completedState = order.state === "DELIVERED" || order.state === "PICKED_UP";
   let statusIcon: "success" | "warning" | "orders" = "orders";
   let statusTone: "success" | "danger" | "info" = "info";
@@ -281,25 +281,26 @@ export default function ClientOrderDetail() {
         })}</View>
       </> : null}
       <OrderConversation orderId={order.id} />
-      <BthwaniSectionHeader title={isStorePickup ? "رمز الاستلام الذاتي من المتجر" : "إثبات التسليم"} subtitle={isStorePickup ? "أظهر الرمز لموظف المتجر عند استلامك الطلب" : "يؤكّد العميل الرمز للكابتن عند استلام الطلب"} />
+      <BthwaniSectionHeader title={isStorePickup ? "رمز الاستلام الذاتي من المتجر" : "حالة التسليم"} subtitle={isStorePickup ? "أظهر الرمز لموظف المتجر عند استلامك الطلب" : "يسجل الكابتن تسليم الطلب، ويمكنك الإبلاغ عن أي مشكلة"} />
       <BthwaniSurface tone="base" style={styles.proofSurface}>
         {deliveryProof.kind === "loading" ? <Text style={styles.muted}>جارٍ تجهيز {proofLabel}…</Text> : null}
         {deliveryProof.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة {proofLabel} الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
-        {deliveryProof.kind === "ready" && deliveryProof.value.state === "PENDING" ? <><Text style={styles.proofTitle}>{proofLabel}</Text>{deliveryProof.value.code ? <Text accessibilityLabel={proofLabel} style={styles.proofCode}>{deliveryProof.value.code}</Text> : null}<Text style={styles.muted}>{deliveryProof.value.code ? proofAvailableMessage : proofWaitingMessage}</Text></> : null}
-        {deliveryProof.kind === "ready" && deliveryProof.value.state === "VERIFIED" ? <><BthwaniStatusBadge icon="success" label={isStorePickup ? "تم تأكيد الاستلام" : "تم إثبات التسليم"} tone="success" /><Text style={styles.muted}>{isStorePickup ? "تم قبول رمز الاستلام وتسجيل استلامك للطلب." : "تم قبول رمز التسليم وتسجيل الاستلام."}</Text></> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "PENDING" ? <><Text style={styles.proofTitle}>{proofLabel}</Text>{isStorePickup && deliveryProof.value.code ? <Text accessibilityLabel={proofLabel} style={styles.proofCode}>{deliveryProof.value.code}</Text> : null}<Text style={styles.muted}>{isStorePickup && deliveryProof.value.code ? proofAvailableMessage : proofWaitingMessage}</Text></> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "VERIFIED" ? <><BthwaniStatusBadge icon="success" label={isStorePickup ? "تم تأكيد الاستلام" : "تم إثبات التسليم بالرمز"} tone="success" /><Text style={styles.muted}>{isStorePickup ? "تم قبول رمز الاستلام وتسجيل استلامك للطلب." : "تم قبول رمز التسليم وتسجيل الاستلام."}</Text></> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "CAPTAIN_CONFIRMED" ? <><BthwaniStatusBadge icon="success" label="أكد الكابتن تسليم الطلب" tone="success" /><Text style={styles.muted}>تأكيد الكابتن مسجل في النظام، وليس تحققًا مستقلًا برمز من العميل. يمكنك الإبلاغ عن أي اختلاف.</Text></> : null}
       </BthwaniSurface>
       {completedState ? <>
-        <BthwaniSectionHeader title="قيّم تجربتك" subtitle={isStorePickup ? "رأيك يساعدنا على تحسين تجربة الاستلام من المتجر" : "رأيك يساعدنا على تحسين جودة التوصيل"} />
+        <BthwaniSectionHeader title="تقييم المتجر" subtitle="قيّم المتجر الذي جهّز طلبك. تقييم المنتجات وجودة توصيل بثواني مستقلان عن تقييم المتجر." />
         <BthwaniSurface tone="base" style={styles.ratingSurface}>
           {orderRating.kind === "loading" ? <Text style={styles.muted}>جارٍ قراءة التقييم…</Text> : null}
           {orderRating.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة التقييم الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
-          {orderRating.kind === "ready" ? <><BthwaniStatusBadge icon="success" label="تم حفظ تقييمك" tone="success" /><Text style={styles.muted}>{"★".repeat(orderRating.value.rating.rating)}{"☆".repeat(5 - orderRating.value.rating.rating)}</Text>{orderRating.value.rating.review ? <Text style={styles.reviewText}>{orderRating.value.rating.review}</Text> : null}</> : null}
+          {orderRating.kind === "ready" ? <><BthwaniStatusBadge icon="success" label="تم حفظ تقييم المتجر" tone="success" /><Text style={styles.muted}>{"★".repeat(orderRating.value.rating.rating)}{"☆".repeat(5 - orderRating.value.rating.rating)}</Text>{orderRating.value.rating.review ? <Text style={styles.reviewText}>{orderRating.value.rating.review}</Text> : null}</> : null}
           {orderRating.kind === "empty" ? <>
             <Text style={styles.muted}>اختر من نجمة إلى خمس نجوم، ويمكنك إضافة ملاحظة قصيرة.</Text>
             <View accessibilityLabel="اختيار تقييم من نجمة إلى خمس نجوم" style={styles.ratingStars}>{[1, 2, 3, 4, 5].map((value) => <Pressable key={value} accessibilityRole="button" accessibilityLabel={`${value} نجوم`} onPress={() => setSelectedRating(value)} style={styles.ratingStar}><Text style={[styles.ratingStarText, value <= selectedRating ? styles.ratingStarSelected : null]}>{value <= selectedRating ? "★" : "☆"}</Text></Pressable>)}</View>
             <TextInput accessibilityLabel="مراجعة اختيارية" multiline maxLength={1000} onChangeText={setReview} placeholder="اكتب ملاحظتك (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.reviewInput} textAlign="right" value={review} />
             {ratingError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{ratingError}</Text> : null}
-            <BthwaniButton busy={ratingSubmitting} disabled={selectedRating < 1 || ratingSubmitting} label="حفظ التقييم" onPress={() => void submitRating()} />
+            <BthwaniButton busy={ratingSubmitting} disabled={selectedRating < 1 || ratingSubmitting} label="حفظ تقييم المتجر" onPress={() => void submitRating()} />
           </> : null}
         </BthwaniSurface>
       </> : null}

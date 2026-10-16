@@ -8,6 +8,7 @@ import { serviceCityDisplayName, useServiceCityScope } from "../service-city/ser
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { PromotionCard } from "./promotion-card";
+import { StoreDirectoryCard, type StorePromotionCache } from "./store-directory-card";
 import { listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
 
 type DiscoveryState =
@@ -51,6 +52,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const [selectedCategoryID, setSelectedCategoryID] = useState("");
   const [favoriteBusyStoreID, setFavoriteBusyStoreID] = useState("");
   const [failedStoreImageIDs, setFailedStoreImageIDs] = useState<ReadonlySet<string>>(() => new Set());
+  const promotionCache = useRef<StorePromotionCache>(new Map());
   const [favoriteError, setFavoriteError] = useState("");
   const [directoryLocation, setDirectoryLocation] = useState<{ latitude: number; longitude: number } | undefined>();
   const [nearestAddress, setNearestAddress] = useState<DeliveryAddress | null>(null);
@@ -276,7 +278,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       current = current.parentCategoryId ? byID.get(current.parentCategoryId) : undefined;
     }
     const parentID = trail.at(-1)?.id ?? "";
-    const children = categories.filter((category) => category.parentCategoryId === parentID);
+    const children = categories.filter((category) => (category.parentCategoryId ?? "") === parentID);
     return { verticals, categories, trail, children };
   }, [selectedCategoryID, selectedVerticalID, state]);
   const selectedVertical = taxonomy.verticals.find((vertical) => vertical.id === selectedVerticalID);
@@ -422,9 +424,9 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         <BthwaniChip label="المنتجات" selected={searchScope === "products"} onPress={() => { if (onSearchScopeChange) onSearchScopeChange("products"); else router.setParams({ scope: "products" }); }} />
       </View> : null}
 
-      {taxonomy.verticals.length ? <View style={styles.categoryShortcutBlock} accessibilityLabel="الأنشطة التجارية الرئيسية">
+      {taxonomy.verticals.length ? <View style={styles.categoryShortcutBlock} accessibilityLabel="المجالات التجارية الرئيسية">
         <BthwaniSectionHeader title="تسوق حسب النشاط" />
-        <ScrollView accessibilityLabel="الأنشطة التجارية" contentContainerStyle={styles.activityTiles} horizontal showsHorizontalScrollIndicator={false}>
+        <ScrollView accessibilityLabel="المجالات التجارية" contentContainerStyle={styles.activityTiles} horizontal showsHorizontalScrollIndicator={false}>
           <Pressable accessibilityRole="button" accessibilityLabel="عرض كل الأنشطة والمتاجر" accessibilityState={{ selected: !selectedVerticalID }} onPress={() => selectVertical("")} style={[styles.activityTile, !selectedVerticalID && styles.activityTileSelected]}>
             <View style={[styles.activityMark, !selectedVerticalID && styles.activityMarkSelected]}><BthwaniIcon name="store" color={!selectedVerticalID ? theme.onAction : theme.interactiveText} size={sizing.iconLg} /></View>
             <Text numberOfLines={1} style={[styles.activityTileName, !selectedVerticalID && styles.activityTileNameSelected]}>الكل</Text>
@@ -541,31 +543,18 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
 
       </View>}
-      renderItem={({ item: store }) => {
-        const isFavorite = state.kind === "ready" && state.favoriteStoreIDs.includes(store.id);
-        const fulfillmentModes = availableCustomerFulfillmentModes(store.fulfillmentModes);
-        const fulfillmentModeLabels = fulfillmentModes.map(fulfillmentModeLabel);
-        const modeSummary = fulfillmentModeLabels.length ? `، طرق الطلب المتاحة: ${fulfillmentModeLabels.join("، ")}` : "";
-        const modesForCustomer = new Set<string>(fulfillmentModes);
-        const orderability = (store.orderabilityByMode ?? []).filter((state) => modesForCustomer.has(state.fulfillmentMode));
-        const acceptsOrders = orderability.some((state) => state.state === "OPEN_FOR_ORDERS");
-        const paused = orderability.some((state) => state.state === "PAUSED");
-        const closedBySchedule = orderability.length > 0 && orderability.every((state) => state.state === "CLOSED_BY_SCHEDULE");
-        const availabilityLabel = acceptsOrders ? "مفتوح الآن" : paused ? "متوقف مؤقتًا" : closedBySchedule ? "مغلق حسب ساعات العمل" : orderability.length ? "غير متاح للطلبات" : "تحقق من التوفر";
-        return <Pressable accessibilityRole="button" accessibilityLabel={`فتح متجر ${store.name}، ${availabilityLabel}${modeSummary}`} onPress={() => router.push(`/store/${encodeURIComponent(store.id)}` as Href)} style={({ pressed }) => [styles.storeCard, pressed && styles.pressed]}>
-          {store.storeProfileImage?.uri && !failedStoreImageIDs.has(store.id) ? <Image accessibilityLabel={`شعار متجر ${store.name}`} onError={() => setFailedStoreImageIDs((current) => new Set(current).add(store.id))} source={{ uri: store.storeProfileImage.uri }} style={styles.storeImage} resizeMode="cover" /> : <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
-          <View style={styles.storeCopy}>
-            <Text style={styles.storeTitle} numberOfLines={2}>{store.name}</Text>
-            <Text style={styles.storeMeta}>{typeof store.distanceMeters === "number" ? `${(store.distanceMeters / 1000).toFixed(2)} كم` : selectedCityName || "مدينة الخدمة"}</Text>
-            <View style={styles.storeFacts}>
-              {store.ratingCount > 0 ? <Text accessibilityLabel={`التقييم ${store.ratingAverage.toFixed(1)} من 5 من ${store.ratingCount} تقييم`} style={styles.storeRating}>★ {store.ratingAverage.toFixed(1)} <Text style={styles.storeRatingCount}>({store.ratingCount})</Text></Text> : null}
-              <View style={[styles.availabilityBadge, acceptsOrders && styles.availabilityBadgeOpen]}><View style={[styles.availabilityDot, acceptsOrders && styles.availabilityDotOpen]} /><Text style={[styles.storeHint, acceptsOrders && styles.storeHintOpen]}>{availabilityLabel}</Text></View>
-            </View>
-            {fulfillmentModeLabels.length ? <Text numberOfLines={1} style={styles.storeModes}>{fulfillmentModeLabels.join("  ·  ")}</Text> : null}
-          </View>
-          <View style={styles.storeActions}><BthwaniIconButton disabled={Boolean(favoriteBusyStoreID)} icon="favorite" label={isFavorite ? `إزالة ${store.name} من المفضلة` : `إضافة ${store.name} إلى المفضلة`} onPress={(event) => { event.stopPropagation(); void toggleFavorite(store.id); }} tone={isFavorite ? "primary" : "soft"} /></View>
-        </Pressable>;
-      }}
+      renderItem={({ item: store }) => <StoreDirectoryCard
+        store={store}
+        activityLabel={state.kind === "ready" ? state.verticals.find((vertical) => vertical.id === store.primaryVerticalId)?.nameAr ?? "" : ""}
+        cityId={selectedCityID ?? ""}
+        favorite={state.kind === "ready" && state.favoriteStoreIDs.includes(store.id)}
+        favoriteBusy={Boolean(favoriteBusyStoreID)}
+        imageFailed={failedStoreImageIDs.has(store.id)}
+        onImageError={() => setFailedStoreImageIDs((current) => new Set(current).add(store.id))}
+        onOpen={() => router.push(("/store/" + encodeURIComponent(store.id)) as Href)}
+        onFavorite={() => { void toggleFavorite(store.id); }}
+        promotionCache={promotionCache.current}
+      />}
       ListEmptyComponent={directoryMode ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} /> : null}
       ListFooterComponent={<View style={styles.footer}>
         {directoryMode && state.kind === "ready" && state.nextCursor ? <>

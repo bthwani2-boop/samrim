@@ -1,5 +1,9 @@
 async function readMailpitMessages(port) {
-  const response = await fetch(`http://127.0.0.1:${String(port).trim()}/api/v1/messages?limit=50`, { signal: AbortSignal.timeout(2_000) });
+  const localPort = Number(port);
+  if (!Number.isInteger(localPort) || localPort < 1 || localPort > 65_535) {
+    throw new Error("Invalid local Mailpit port");
+  }
+  const response = await fetch(`http://127.0.0.1:${localPort}/api/v1/messages?limit=50`, { redirect: "error", signal: AbortSignal.timeout(2_000) });
   if (!response.ok) throw new Error(`Mailpit message listing returned ${response.status}`);
   const body = await response.json();
   return Array.isArray(body?.messages) ? body.messages : [];

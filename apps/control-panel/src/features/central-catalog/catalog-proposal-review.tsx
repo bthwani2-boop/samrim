@@ -1,9 +1,8 @@
 "use client";
-import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { TextArea } from "@bthwani/design-system/web";
-
 import { type CatalogCategoryListItem, type CatalogProductProposal, type CommerceVertical, catalogProductProposalStateLabel } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 
 type ProposalDecision = "approved" | "needs_correction" | "rejected";
 
@@ -165,8 +164,8 @@ export function CatalogProposalReview() {
             {proposals.map((proposal) => (
               <li key={proposal.id}>
                 <button type="button" className={`proposal-row${selectedId === proposal.id ? " selected" : ""}`} aria-pressed={selectedId === proposal.id} onClick={() => selectProposal(proposal.id)}>
-                  <span><strong>{proposal.proposedName}</strong><small>{proposal.proposedVariantTitle}</small></span>
-                  <em>{catalogProductProposalStateLabel(proposal.state)}</em>
+                  <span><strong>{proposal.proposedName}</strong><small>{verticals.find((item) => item.id === proposal.verticalId)?.nameAr ?? "المجال غير متاح"} · {proposal.proposedVariantTitle} · {proposal.submitterRole === "FIELD" ? "مقدم من الميداني" : "مقدم من الشريك"}</small></span>
+                  <span className="catalog-proposal-meta"><small>{new Date(proposal.createdAt).toLocaleDateString("ar-YE")}</small><em>{catalogProductProposalStateLabel(proposal.state)}</em></span>
                 </button>
               </li>
             ))}
@@ -186,7 +185,7 @@ export function CatalogProposalReview() {
               <div><dt>الاسم المقترح</dt><dd>{selected.proposedName}</dd></div>
               <div><dt>العلامة</dt><dd>{selected.proposedBrand || "غير محددة"}</dd></div>
               <div><dt>النسخة</dt><dd>{selected.proposedVariantTitle}</dd></div>
-              <div><dt>النشاط الرئيسي</dt><dd>{vertical?.nameAr ?? "النشاط الرئيسي غير متاحة"}</dd></div>
+              <div><dt>المجال التجاري</dt><dd>{vertical?.nameAr ?? "المجال التجاري غير متاحة"}</dd></div>
               <div><dt>الفئة</dt><dd>{category?.nameAr ?? "الفئة غير متاحة"}</dd></div>
               <div><dt>القياس</dt><dd>{measurementLabels[selected.proposedMeasurementKind]} · {unitLabels[selected.proposedBaseUnit]}</dd></div>
               <div><dt>الباركود</dt><dd>{selected.proposedIdentifierValue ? selected.proposedIdentifierValue : "لا يوجد"}</dd></div>

@@ -1,8 +1,9 @@
-import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniIconButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { sizing } from "@bthwani/design-system";
 import * as Location from "expo-location";
 import { publishCaptainPresence } from "./captain-presence-publisher";
 import { type CaptainAdmission, captainAdmissionStateLabel, captainAvailabilityStateLabel } from "@bthwani/dsh";
-import { type Href, Link } from "expo-router";
+import { type Href, Link, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
@@ -12,7 +13,7 @@ import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { isCurrentCaptainActor } from "./captain-session-scope";
 
 export function CaptainReadiness() {
-const theme = useAppearanceTheme();
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
   const [admission, setAdmission] = useState<CaptainAdmission | null>(null);
   const [loadedActorID, setLoadedActorID] = useState("");
@@ -22,6 +23,7 @@ const theme = useAppearanceTheme();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [activityCounts, setActivityCounts] = useState<{ offers: number | null; deliveries: number | null }>({ offers: null, deliveries: null });
 
   const load = useCallback(async (): Promise<boolean> => {
     const sequence = ++readSequence.current;
@@ -30,6 +32,7 @@ const theme = useAppearanceTheme();
     setLoading(true);
     setAdmission(null);
     setLoadedActorID("");
+    setActivityCounts({ offers: null, deliveries: null });
     setError("");
     if (!actorID) {
       setLoading(false);
@@ -38,11 +41,23 @@ const theme = useAppearanceTheme();
     }
     try {
       const token = await getUsableIdentityAccessToken();
-      const response = await captainClient().readOwnCaptainAdmission(token);
+      const api = captainClient();
+      const response = await api.readOwnCaptainAdmission(token);
       const current = currentIdentityState();
       if (sequence !== readSequence.current || current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return false;
       setAdmission(response.admission);
       setLoadedActorID(actorID);
+      // Summary counts are optional; a full bounded list cannot establish an exact total.
+      void Promise.allSettled([api.listOwnCaptainOffers(token), api.listOwnCaptainAssignments(token)]).then(([offersResult, assignmentsResult]) => {
+        const latest = currentIdentityState();
+        if (sequence !== readSequence.current || latest.kind !== "authenticated" || !isCurrentCaptainActor(actorID, latest.identity.subject.trim())) return;
+        setActivityCounts({
+          offers: offersResult.status === "fulfilled" && offersResult.value.offers.length < 50
+            ? offersResult.value.offers.filter((offer) => offer.state === "offered" && Date.parse(offer.expiresAt) > Date.now()).length : null,
+          deliveries: assignmentsResult.status === "fulfilled" && assignmentsResult.value.assignments.length < 50
+            ? assignmentsResult.value.assignments.filter((assignment) => assignment.state === "assigned" || assignment.state === "in_custody").length : null,
+        });
+      });
       return true;
     } catch (cause) {
       console.error("DSH Captain admission readback failed", cause);
@@ -55,16 +70,18 @@ const theme = useAppearanceTheme();
   }, []);
 
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!activeActorID) {
       readSequence.current += 1;
       setAdmission(null);
       setLoadedActorID("");
+      setActivityCounts({ offers: null, deliveries: null });
       setLoading(false);
-      return;
+    } else {
+      void load();
     }
-    void load();
-  }, [activeActorID, load]);
+    return () => { readSequence.current += 1; };
+  }, [activeActorID, load]));
   const currentAdmission = isCurrentCaptainActor(loadedActorID, activeActorID) ? admission : null;
 
   async function setAvailability(available: boolean) {
@@ -99,21 +116,44 @@ const theme = useAppearanceTheme();
     }
   }
 
+  const eligible = currentAdmission?.state === "eligible";
+  const available = currentAdmission?.availabilityState === "available";
+  const offersLabel = activityCounts.offers === null ? "العروض" : "العروض (" + activityCounts.offers + ")";
+  const deliveriesLabel = activityCounts.deliveries === null ? "التوصيلات" : "التوصيلات (" + activityCounts.deliveries + ")";
+  const highlightDeliveries = (activityCounts.deliveries ?? 0) > 0;
+  const highlightOffers = !highlightDeliveries && (activityCounts.offers ?? 0) > 0;
+
   return (
     <View style={styles.container} accessibilityLabel="جاهزية الكابتن">
-      <Text style={styles.title}>جاهزية الكابتن</Text>
-      <Text style={styles.muted}>تحقق من جاهزيتك، حدّد توفرك، ثم انتقل مباشرة إلى المهمة التالية.</Text>
-      {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
-      {!loading && currentAdmission ? <View style={styles.card}>
-        <View style={styles.row}><View style={styles.task}><Text style={styles.cardTitle}>قبولك</Text><Text style={styles.muted}>{captainAdmissionStateLabel(currentAdmission.state)}</Text></View><View style={styles.task}><Text style={styles.cardTitle}>التوفر</Text><BthwaniStatusBadge icon={currentAdmission.availabilityState === "available" ? "success" : "appearance"} label={captainAvailabilityStateLabel(currentAdmission.availabilityState)} tone={currentAdmission.availabilityState === "available" ? "success" : "neutral"} /></View></View>
+      <View style={styles.readinessPageHeading}>
+        <Text style={styles.readinessTitle}>الجاهزية</Text>
+        <BthwaniIconButton icon="refresh" label="تحديث الجاهزية والعروض والتوصيلات" disabled={busy || loading} onPress={() => void load()} size={sizing.controlSm} tone="soft" />
+      </View>
+      {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحديث الحالة…</Text></View> : null}
+      {!loading && currentAdmission ? <View style={styles.readinessHero}>
+        <View style={styles.readinessHeroHeader}>
+          <View style={styles.readinessHeroCopy}>
+            <Text style={styles.readinessEyebrow}>حالة العمل</Text>
+            <Text style={styles.readinessStatus}>{captainAvailabilityStateLabel(currentAdmission.availabilityState)}</Text>
+          </View>
+          <BthwaniStatusBadge icon={eligible ? "success" : "warning"} label={captainAdmissionStateLabel(currentAdmission.state)} tone={eligible ? "success" : "warning"} />
+        </View>
+        {eligible ? <BthwaniButton
+          busy={busy}
+          disabled={busy || loading}
+          label={available ? "إيقاف استقبال العروض" : "بدء استقبال العروض"}
+          onPress={() => void setAvailability(!available)}
+          variant={available ? "secondary" : "primary"}
+        /> : <Text style={styles.muted}>تغيير التوفر متاح بعد اعتماد الكابتن.</Text>}
+      </View> : null}
+      {!loading && currentAdmission ? <View style={styles.readinessActions}>
+        <Text style={styles.sectionTitle}>العمل الآن</Text>
         <View style={styles.row}>
-          <BthwaniButton busy={busy} disabled={busy || loading || currentAdmission.state !== "eligible" || currentAdmission.availabilityState === "available"} label="متاح" onPress={() => void setAvailability(true)} style={styles.actionButton} />
-          <BthwaniButton busy={busy} disabled={busy || loading || currentAdmission.state !== "eligible" || currentAdmission.availabilityState === "unavailable"} label="غير متاح" onPress={() => void setAvailability(false)} style={styles.actionButton} variant="secondary" />
+          <Link href={"/offers" as Href} asChild><BthwaniButton label={offersLabel} style={styles.actionButton} variant={highlightOffers ? "primary" : "secondary"} /></Link>
+          <Link href={"/deliveries" as Href} asChild><BthwaniButton label={deliveriesLabel} style={styles.actionButton} variant={highlightDeliveries ? "primary" : "secondary"} /></Link>
         </View>
       </View> : null}
-      {!loading ? <View style={styles.summaryCard}><Text style={styles.sectionTitle}>الخطوة التالية</Text><Text style={styles.muted}>افتح العروض أو التوصيلات لمعالجة المهام الحالية.</Text><View style={styles.row}><Link href={"/offers" as Href} asChild><BthwaniButton label="فتح العروض" style={styles.actionButton} variant="secondary" /></Link><Link href={"/deliveries" as Href} asChild><BthwaniButton label="فتح التوصيلات" style={styles.actionButton} variant="secondary" /></Link></View></View> : null}
-      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <BthwaniButton busy={busy || loading} disabled={busy || loading} label="تحديث الحالة" onPress={() => void load()} variant="secondary" />
+      {error ? <View style={styles.readinessError}><Text accessibilityRole="alert" style={styles.error}>{error}</Text><BthwaniButton disabled={busy || loading} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
     </View>
   );
 }

@@ -6,9 +6,10 @@ import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { ClientOpenCarts } from "./client-open-carts";
 import { isClientActorScopeCurrent } from "./order-session-scope";
 
-type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string } | { kind: "error" } | { kind: "auth_required" };
+type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string; nextCursor: string } | { kind: "error" } | { kind: "auth_required" };
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -31,14 +32,22 @@ export default function ClientOrders() {
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
   const loadSequence = useRef(0);
+  const pageSequence = useRef(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
+  const [activeTab, setActiveTab] = useState<"orders" | "carts">("orders");
   const [fulfillmentFilter, setFulfillmentFilter] = useState<"all" | "delivery" | "pickup">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "completed" | "stopped">("all");
   const [repeatingOrderID, setRepeatingOrderID] = useState("");
   const [repeatError, setRepeatError] = useState("");
 
   const load = useCallback(async (preserveCurrent = false) => {
     const sequence = ++loadSequence.current;
+    pageSequence.current += 1;
+    setLoadingMore(false);
+    setLoadMoreError("");
     const session = currentIdentityState();
     if (session.kind !== "authenticated" || !session.identity.subject.trim()) { setState({ kind: "auth_required" }); return; }
     const actorID = session.identity.subject.trim();
@@ -50,7 +59,7 @@ export default function ClientOrders() {
       const response = await client().listClientOrders(token, 50);
       const current = currentIdentityState();
       if (sequence !== loadSequence.current || current.kind !== "authenticated" || !isClientActorScopeCurrent(actorID, current.identity.subject.trim())) return;
-      setState({ kind: "ready", orders: response.orders, actorID });
+      setState({ kind: "ready", orders: response.orders, actorID, nextCursor: response.nextCursor ?? "" });
     } catch (error) {
       console.error("DSH client orders read failed", error);
       const current = currentIdentityState();
@@ -63,9 +72,41 @@ export default function ClientOrders() {
   }, []);
 
   const visibleOrders = useMemo(() => {
-    if (state.kind !== "ready" || fulfillmentFilter === "all") return state.kind === "ready" ? state.orders : [];
-    return state.orders.filter((order) => fulfillmentFilter === "pickup" ? order.fulfillmentMode === "CUSTOMER_PICKUP" : order.fulfillmentMode !== "CUSTOMER_PICKUP");
-  }, [fulfillmentFilter, state]);
+    if (state.kind !== "ready") return [];
+    return state.orders.filter((order) => {
+      const byMode = fulfillmentFilter === "all" || (fulfillmentFilter === "pickup" ? order.fulfillmentMode === "CUSTOMER_PICKUP" : order.fulfillmentMode !== "CUSTOMER_PICKUP");
+      const completed = order.state === "DELIVERED" || order.state === "PICKED_UP";
+      const stopped = order.state === "REJECTED" || order.state === "CANCELLED" || order.state === "DELIVERY_FAILED";
+      const byStatus = statusFilter === "all" || (statusFilter === "completed" ? completed : statusFilter === "stopped" ? stopped : !completed && !stopped);
+      return byMode && byStatus;
+    });
+  }, [fulfillmentFilter, state, statusFilter]);
+
+  const loadMore = useCallback(async () => {
+    if (state.kind !== "ready" || !state.nextCursor || loadingMore || refreshing || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID)) return;
+    const sequence = ++pageSequence.current;
+    const loadID = loadSequence.current;
+    const cursor = state.nextCursor;
+    const actorID = state.actorID;
+    setLoadMoreError("");
+    setLoadingMore(true);
+    try {
+      const token = await getUsableIdentityAccessToken();
+      if (sequence !== pageSequence.current || loadID !== loadSequence.current || !hasCurrentOrdersActor(actorID)) return;
+      const response = await client().listClientOrders(token, 50, "", cursor);
+      if (sequence !== pageSequence.current || loadID !== loadSequence.current || !hasCurrentOrdersActor(actorID)) return;
+      setState((current) => {
+        if (current.kind !== "ready" || current.actorID !== actorID || current.nextCursor !== cursor) return current;
+        const existingIDs = new Set(current.orders.map((item) => item.id));
+        return { ...current, orders: [...current.orders, ...response.orders.filter((item) => !existingIDs.has(item.id))], nextCursor: response.nextCursor && response.nextCursor !== cursor ? response.nextCursor : "" };
+      });
+    } catch (error) {
+      console.error("DSH client orders next-page read failed", error);
+      if (sequence === pageSequence.current && loadID === loadSequence.current && hasCurrentOrdersActor(actorID)) setLoadMoreError("تعذر تحميل الطلبات الأقدم. أعد المحاولة.");
+    } finally {
+      if (sequence === pageSequence.current && loadID === loadSequence.current && hasCurrentOrdersActor(actorID)) setLoadingMore(false);
+    }
+  }, [state, loadingMore, refreshing, activeActorID]);
 
   const repeatOrder = useCallback(async (order: Order) => {
     if (state.kind !== "ready" || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID) || repeatingOrderID || !order.lines.length) return;
@@ -144,6 +185,17 @@ export default function ClientOrders() {
   if (state.kind === "auth_required") {
     return <View style={styles.state}><BthwaniIcon name="account" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>سجّل الدخول لمتابعة طلباتك</Text><Text style={styles.muted}>ستظهر طلباتك وحالاتها هنا بعد تسجيل الدخول.</Text><BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/orders" as Href)} /></View>;
   }
+  if (activeTab === "carts" && activeActorID) {
+    return <View style={styles.container} accessibilityLabel="سلال العميل">
+      <Text style={styles.eyebrow}>متابعة رحلتك</Text>
+      <Text style={styles.title}>طلباتي وسلالي</Text>
+      <View style={styles.filterRow} accessibilityLabel="التبديل بين الطلبات والسلال">
+        <BthwaniChip label="طلباتي" selected={false} onPress={() => setActiveTab("orders")} />
+        <BthwaniChip label="سلالي" selected onPress={() => {}} />
+      </View>
+      <ClientOpenCarts actorID={activeActorID} />
+    </View>;
+  }
   if (state.kind === "loading") {
     return <View style={styles.state} accessibilityLabel="جارٍ تجهيز الطلبات"><BthwaniSkeleton width="42%" height={28} /><BthwaniSkeleton height={112} /><BthwaniSkeleton height={112} /></View>;
   }
@@ -158,11 +210,21 @@ export default function ClientOrders() {
         <View style={styles.headingCopy}><Text style={styles.title}>طلباتي</Text><Text style={styles.muted}>تابع حالة طلباتك وافتح أي طلب لمراجعة التفاصيل الحالية.</Text></View>
         <BthwaniButton accessibilityLabel="تحديث قائمة الطلبات" busy={refreshing} label="تحديث" onPress={() => void load(true)} variant="secondary" />
       </View>
+      <View style={styles.filterRow} accessibilityLabel="التبديل بين الطلبات والسلال">
+        <BthwaniChip label="طلباتي" selected onPress={() => {}} />
+        <BthwaniChip label="سلالي" selected={false} onPress={() => setActiveTab("carts")} />
+      </View>
       {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{refreshError}</Text> : null}
       <View accessibilityLabel="تصفية الطلبات حسب طريقة الاستلام" style={styles.filterRow}>
         <BthwaniChip label="الكل" selected={fulfillmentFilter === "all"} onPress={() => setFulfillmentFilter("all")} />
         <BthwaniChip label="التوصيل" selected={fulfillmentFilter === "delivery"} onPress={() => setFulfillmentFilter("delivery")} />
         <BthwaniChip label="الاستلام من المتجر" selected={fulfillmentFilter === "pickup"} onPress={() => setFulfillmentFilter("pickup")} />
+      </View>
+      <View accessibilityLabel="تصفية الطلبات حسب الحالة" style={styles.filterRow}>
+        <BthwaniChip label="كل الحالات" selected={statusFilter === "all"} onPress={() => setStatusFilter("all")} />
+        <BthwaniChip label="قيد التنفيذ" selected={statusFilter === "active"} onPress={() => setStatusFilter("active")} />
+        <BthwaniChip label="مكتملة" selected={statusFilter === "completed"} onPress={() => setStatusFilter("completed")} />
+        <BthwaniChip label="ملغاة أو متعثرة" selected={statusFilter === "stopped"} onPress={() => setStatusFilter("stopped")} />
       </View>
       {repeatError ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{repeatError}</Text> : null}
       {state.orders.length === 0 ? (
@@ -175,8 +237,9 @@ export default function ClientOrders() {
       ) : visibleOrders.length === 0 ? (
         <BthwaniSurface tone="inset" style={styles.emptyState}>
           <View style={styles.emptyIcon}><BthwaniIcon name="orders" color={theme.interactiveText} size={sizing.iconXl} /></View>
-          <Text style={styles.cardTitle}>لا توجد طلبات بهذا النوع</Text>
-          <BthwaniButton label="عرض كل الطلبات" onPress={() => setFulfillmentFilter("all")} variant="secondary" />
+          <Text style={styles.cardTitle}>{state.nextCursor ? "لا توجد طلبات مطابقة في الصفحات المحمّلة" : "لا توجد طلبات بهذا النوع"}</Text>
+          {state.nextCursor ? <Text style={styles.muted}>قد تجد طلبات مطابقة في الصفحات الأقدم. استخدم «البحث في طلبات أقدم» لمتابعة السجل.</Text> : null}
+          <BthwaniButton label="عرض كل الطلبات" onPress={() => { setFulfillmentFilter("all"); setStatusFilter("all"); }} variant="secondary" />
         </BthwaniSurface>
       ) : (
         <View style={styles.list}>
@@ -189,6 +252,10 @@ export default function ClientOrders() {
           </View>)}
         </View>
       )}
+      {state.nextCursor ? <View style={styles.list}>
+        {loadMoreError ? <Text accessibilityRole="alert" style={styles.error}>{loadMoreError}</Text> : null}
+        <BthwaniButton busy={loadingMore} disabled={refreshing || loadingMore || Boolean(repeatingOrderID)} label={loadingMore ? "جارٍ تحميل الطلبات الأقدم…" : visibleOrders.length === 0 && state.orders.length > 0 ? "البحث في طلبات أقدم" : "عرض طلبات أقدم"} onPress={() => void loadMore()} variant="secondary" />
+      </View> : null}
     </View>
   );
 }

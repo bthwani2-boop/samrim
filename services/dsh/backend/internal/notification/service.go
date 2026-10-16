@@ -186,7 +186,7 @@ func message(eventType, role, orderID, toState string) (string, string, string) 
 			return "CAPTAIN_ASSIGNED", "تم قبول عرض التوصيل", fmt.Sprintf("تم إسناد الطلب رقم %s إليك.", orderRef)
 		}
 		return "CAPTAIN_ASSIGNED", "تم تعيين الكابتن", fmt.Sprintf("تم تعيين كابتن لتوصيل الطلب رقم %s.", orderRef)
-	case "dispatch_offer_rejected", "dispatch_offer_expired", "captain_offer_superseded_by_access":
+	case "dispatch_offer_rejected", "dispatch_offer_expired", "dispatch_offer_superseded", "captain_offer_superseded_by_access":
 		return "CAPTAIN_OFFER", "تحديث عرض التوصيل", fmt.Sprintf("تحدّث عرض توصيل الطلب رقم %s.", orderRef)
 	case "captain_assignment_reassigned":
 		if role == "captain" {

@@ -45,7 +45,7 @@ test("operations rereads the current server filter on return without touching th
     return route.fulfill({ json: { operations: [] } });
   });
   await page.goto("/operations?q=المعتمد");
-  await expect(page.getByText("لا توجد نتائج تطابق البحث", { exact: true })).toBeVisible();
+  await expect(page.getByText("لا توجد طلبات تطابق البحث", { exact: true })).toBeVisible();
   await page.getByLabel("رقم الطلب أو اسم المتجر").fill("بحث لم يُرسل");
   await page.clock.fastForward(31_000);
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -78,28 +78,26 @@ test("HR errors are distinct from an empty directory and automatic reads pause d
   await expect(page.getByLabel("الاسم الكامل", { exact: true })).toHaveValue("مسودة موظف");
 });
 
-test("employee file keeps the directory context and retains a closed draft with focus restoration", async ({ page }) => {
+test("employee adaptive file preserves directory context and restores the opener focus", async ({ page }) => {
   await session(page);
   const person = { id: "employee-context", fullNameAr: "موظف الملف", department: "العمليات", jobTitle: "مشرف", startDate: "2026-10-01", workLocation: "صنعاء", phoneE164: "", status: "active", version: 1, createdAt: "2026-10-01T00:00:00Z" };
   await page.route("**/api/hr/employees?**", (route) => route.fulfill({ json: { items: [person, { ...person, id: "employee-other", fullNameAr: "موظف آخر" }] } }));
-  await page.route("**/api/hr/access-requests?**", (route) => route.fulfill({ json: { items: [] } }));
+  await page.route("**/api/hr/employees/*", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1);
+    return route.fulfill({ json: { employee: id === person.id ? person : { ...person, id: "employee-other", fullNameAr: "موظف آخر" } } });
+  });
   await page.goto("/hr/employees");
-  const trigger = page.getByRole("button", { name: "فتح ملف موظف الملف", exact: true });
+  const trigger = page.getByRole("button", { name: "فتح ملف موظف الملف", exact: true }).first();
   await trigger.click();
-  const file = page.getByRole("dialog", { name: "تفاصيل الموظف", exact: true });
+  const file = page.locator(".adaptive-record-sheet[aria-label='ملف الموظف']");
   await expect(file).toBeVisible();
-  await file.getByRole("button", { name: "تعديل البيانات", exact: true }).click();
-  await file.getByLabel("موقع العمل", { exact: true }).fill("مسودة موقع محفوظة");
-  await file.press("Escape");
-  await expect(file).toBeHidden();
+  await expect(file.getByRole("heading", { name: person.fullNameAr, exact: true })).toBeVisible();
+  await file.getByRole("tab", { name: "البيانات الوظيفية" }).click();
+  await expect(file.getByRole("button", { name: "تعديل البيانات" })).toBeVisible();
+  await file.getByRole("button", { name: "إغلاق التفاصيل" }).click();
+  await expect(file).toHaveCount(0);
   await expect(trigger).toBeFocused();
-  await trigger.click();
-  await expect(file.getByLabel("موقع العمل", { exact: true })).toHaveValue("مسودة موقع محفوظة");
-  await file.getByRole("button", { name: "إغلاق", exact: true }).click();
-  await page.getByRole("button", { name: "فتح ملف موظف آخر", exact: true }).click();
-  const guard = page.getByRole("dialog", { name: "فتح ملف موظف آخر", exact: true });
-  await expect(guard).toBeVisible();
-  await guard.getByRole("button", { name: "الاحتفاظ بالملف الحالي", exact: true }).click();
-  await trigger.click();
-  await expect(file.getByLabel("موقع العمل", { exact: true })).toHaveValue("مسودة موقع محفوظة");
+  await expect(page).not.toHaveURL(/employee=/);
+  await page.getByRole("button", { name: "فتح ملف موظف آخر", exact: true }).first().click();
+  await expect(file.getByRole("heading", { name: "موظف آخر", exact: true })).toBeVisible();
 });

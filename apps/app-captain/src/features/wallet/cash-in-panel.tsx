@@ -51,7 +51,7 @@ export function CaptainCashInPanel() {
         if (storedAttempt && matchesCaptainFundingAttempt(intent, storedAttempt)) {
           await SecureStore.deleteItemAsync(attemptKey(actorID));
           setPending(null);
-          setNotice(intent.providerKey === "DEVELOPMENT_SIMULATOR" ? "" : intent.state === "SETTLED" ? "تمت إضافة الرصيد." : "لم تتم إضافة الرصيد. يمكنك المحاولة مجددًا.");
+          setNotice(intent.state === "SETTLED" ? "تمت إضافة الرصيد إلى المحفظة." : "لم تتم إضافة الرصيد. يمكنك المحاولة مجددًا.");
         }
       }
     } catch (cause) {
@@ -79,12 +79,28 @@ export function CaptainCashInPanel() {
       await SecureStore.setItemAsync(attemptKey(actorID), JSON.stringify(confirmedAttempt));
       setPending(confirmedAttempt);
       setAmount("");
-      if (["SETTLED", "FAILED"].includes(response.intent.state)) {
+      let finalIntent = response.intent;
+      if (response.simulator && __DEV__ && response.intent.state !== "SETTLED" && response.intent.state !== "FAILED") {
+        // Simulator is an admitted DSH operation for the authenticated actor
+        // only in local development; no WLT service token or direct ledger edits.
+        const settled = await captainClient().simulateOwnFundingIntent(
+          token, response.intent.id, "SUCCESS",
+          `${attempt.idempotencyKey}_settle`,
+          `${attempt.correlationID}_settle`,
+        );
+        const current = currentIdentityState();
+        if (current.kind !== "authenticated" || current.identity.subject.trim() !== actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
+        if (!matchesCaptainFundingRequest(settled.intent, actorID, parsedAmount) || settled.intent.id !== response.intent.id || settled.intent.state !== "SETTLED") {
+          throw new Error("CASH_IN_SIMULATOR_READBACK_MISMATCH");
+        }
+        finalIntent = settled.intent;
+      }
+      if (["SETTLED", "FAILED"].includes(finalIntent.state)) {
         await SecureStore.deleteItemAsync(attemptKey(actorID));
         setPending(null);
-        setNotice(response.intent.providerKey === "DEVELOPMENT_SIMULATOR" ? "تعذر إتمام الدفع. حاول مجددًا لاحقًا." : response.intent.state === "SETTLED" ? "تمت إضافة الرصيد." : "لم تتم إضافة الرصيد. يمكنك المحاولة مجددًا.");
+        setNotice(finalIntent.state === "SETTLED" ? "نجح شحن المحفظة، وسيظهر الرصيد بعد التحديث." : "لم تتم إضافة الرصيد. يمكنك المحاولة مجددًا.");
       } else {
-        setNotice(response.simulator ? "تعذر إتمام الدفع. حاول مجددًا لاحقًا." : "سُجل طلب الشحن، وسيظهر الرصيد بعد تأكيد الدفع.");
+        setNotice("سُجل طلب الشحن، وسيظهر الرصيد بعد تأكيد المزود المالي.");
       }
       await load();
     } catch (cause) {
@@ -94,15 +110,17 @@ export function CaptainCashInPanel() {
   };
 
   const state = wallet?.state;
-  const latest = (wallet?.fundingIntents ?? []).filter((intent) => intent.providerKey !== "DEVELOPMENT_SIMULATOR");
-  const userCanAddFunds = Boolean(state?.cashInEnabled && !state.simulator);
-  const userHasPending = Boolean(pending && !state?.simulator);
+  const simulatorInDevelopment = Boolean(__DEV__ && state?.simulator);
+  const latest = (wallet?.fundingIntents ?? []).filter((intent) => simulatorInDevelopment || intent.providerKey !== "DEVELOPMENT_SIMULATOR");
+  const userCanAddFunds = Boolean(state?.cashInEnabled && (!state.simulator || simulatorInDevelopment));
+  const userHasPending = Boolean(pending);
   const fundingStateLabel = (value: CashInFundingIntent["state"]) => ({ PENDING_PROVIDER: "بانتظار تأكيد الدفع", UNKNOWN: "جارٍ التحقق من الدفع", SETTLED: "تم الدفع", FAILED: "لم يكتمل الدفع" })[value];
   return <BthwaniSurface tone="base" style={styles.panel} accessibilityLabel="شحن رصيد الكابتن">
     <Text style={styles.title}>شحن رصيد الكابتن</Text><Text style={styles.muted}>يُستخدم الرصيد المتاح لتسوية المبالغ المعتمدة. لا ينطبق الشحن على كابتن المتجر.</Text>
     {busy && !wallet ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الرصيد…</Text></View> : null}
     {state ? <View style={styles.balance}><Text style={styles.label}>المتاح</Text><Text style={styles.amount}>{formatMoney(state.availableMinor, state.currency)}</Text><Text style={styles.muted}>الرصيد الدفتري {formatMoney(state.ledgerBalanceMinor, state.currency)} · المحجوز {formatMoney(state.heldMinor, state.currency)}</Text></View> : null}
-    {userCanAddFunds ? <><TextInput accessibilityLabel="مبلغ شحن محفظة الكابتن" editable={!userHasPending && !busy} keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/[^0-9]/g, ""))} placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} disabled={busy} label={userHasPending ? "متابعة طلب الشحن" : "إضافة رصيد"} onPress={() => void createIntent()} /></> : <Text style={styles.muted}>الشحن غير متاح حاليًا.</Text>}
+    {simulatorInDevelopment ? <Text style={styles.notice}>بيئة تطوير محلية: سيؤكد محاكي المزود المالي الشحن دون أي دفع حقيقي.</Text> : null}
+    {userCanAddFunds ? <><TextInput accessibilityLabel="مبلغ شحن محفظة الكابتن" editable={!userHasPending && !busy} keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/[^0-9]/g, ""))} placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} disabled={busy} label={userHasPending ? "متابعة طلب الشحن" : simulatorInDevelopment ? "شحن تجريبي عبر المحاكي" : "شحن الرصيد"} onPress={() => void createIntent()} /></> : <Text style={styles.muted}>الشحن غير متاح حاليًا.</Text>}
     {userHasPending ? <Text style={styles.notice}>طلب شحن بقيمة {formatMoney(pending!.amountMinor, "YER")} بانتظار التأكيد.</Text> : null}
     {latest.length ? <View style={styles.history}><Text style={styles.label}>آخر طلبات الشحن</Text>{latest.slice(0, 5).map((intent) => <View key={intent.id} style={styles.row}><Text style={styles.muted}>{fundingStateLabel(intent.state)}</Text><Text style={styles.rowAmount}>{formatMoney(intent.amountMinor, intent.currency)}</Text></View>)}</View> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}

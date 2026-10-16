@@ -102,7 +102,34 @@ if (app === "app-client") {
   assert.ok(identityGateContent.includes("authenticatedContent={<Redirect"), `${app}: managed identity gate must redirect into the authenticated route tree`);
 }
 console.log(`MOBILE_ROUTE_TREE=PASS app=${app} routes=${routePaths.join(",")}`);
+if (app === "app-client") {
+  const storeDetail = fs.readFileSync(path.join(appDir, "src/features/store-discovery/store-detail.tsx"), "utf8");
+  const notificationInbox = fs.readFileSync(path.join(appDir, "src/features/notifications/notifications-inbox.tsx"), "utf8");
+  assert.match(storeDetail, /const next = activeTab \+ \(translationX < 0 \? 1 : -1\)/, "client: left/right swipes must preserve Arabic tab order");
+  assert.match(storeDetail, /runOnJS\(switchCatalogTabOnSwipe\)\(event\.translationX\)/, "client: native swipe gestures must switch tabs on the JS thread");
+  assert.match(storeDetail, /if \(next >= 0 && next <= 2\) void selectCatalogTab\(next\)/, "client: swipes must stay within canonical tab IDs");
+  assert.doesNotMatch(notificationInbox, /direction: "rtl"/, "client: notifications must inherit the native RTL direction");
+  assert.equal((storeDetail.match(/<BthwaniSearchField\b/g) ?? []).length, 1, "client: store search must have exactly one field");
+  assert.ok(storeDetail.includes('containerStyle={styles.headerSearchField}'), "client: store search must be owned by the top header");
+  assert.doesNotMatch(storeDetail, /storeCoverFallbackTitle/, "client: a missing cover must not duplicate the store name");
+  assert.ok(storeDetail.includes('snapToInterval={bannerStep}'), "client: compact banner cards must snap at their actual step width");
+  const nativeIcons = fs.readFileSync(path.join(root, "packages/design-system/src/native/icons.tsx"), "utf8");
+  assert.match(nativeIcons, /<View pointerEvents="none"[^>]*>/, "client: decorative native icons must not intercept parent button touches");
+  assert.equal((storeDetail.match(/state\.store\.storeCoverImage\?\.uri/g) ?? []).length, 1, "client: store cover must use a single canonical image URI");
+  assert.equal((storeDetail.match(/source=\{\{ uri: heroImageURI \}\}/g) ?? []).length, 1, "client: cover image must render in one hero placement");
+  assert.ok(storeDetail.includes('!failedStoreCover ? state.store.storeCoverImage?.uri : undefined'), "client: failed cover must fall back safely");
+  assert.ok(storeDetail.includes("styles.storeHeroToolbar") && storeDetail.includes("styles.storeHeroMedia"), "client: store actions and cover must share the hero");
+  assert.ok(storeDetail.includes("styles.storeInfoCard") && storeDetail.includes("state.store.storeProfileImage?.uri"), "client: separate public logo and cover");
+  assert.ok(storeDetail.includes('state.store.ratingCount ? state.store.ratingAverage.toFixed(1) : "0.0"') && storeDetail.includes("orderabilityBadge") && storeDetail.includes("fulfillmentModes.map"), "client: real ratings and delivery state");
+  assert.ok(storeDetail.includes("حالة المتجر") && storeDetail.includes("مدة التجهيز") && storeDetail.includes("معلومات متجر"), "client: store info labels must remain readable Arabic");
+  assert.doesNotMatch(storeDetail, /styles\.orderStatus\b/, "client: no redundant order strip");
+  const publicShell = fs.readFileSync(path.join(appDir, "src/shell/client-shell.tsx"), "utf8");
+  assert.ok(publicShell.includes('hideHeader && { backgroundColor: theme.surfaceInset }'), "client: neutral hidden-header status bar");
+  console.log("MOBILE_STORE_RTL_AND_SEARCH=PASS header search, RTL swipe tabs, compact banners, unique store name");
+}
 if (app === "app-partner") {
+  const orderManagement = fs.readFileSync(path.join(appDir, "src/features/order-management/order-management.tsx"), "utf8");
+  assert.doesNotMatch(orderManagement, /row-reverse/, "partner: order filters and summaries must use native RTL row layout");
   const storeOfferContent = fs.readFileSync(path.join(appDir, "src", "features", "store-offer", "store-offer.tsx"), "utf8");
   assert.ok(storeOfferContent.includes("label={category.pathAr}"), `${app}: shared catalog category choices must display their full hierarchy path`);
   console.log("MOBILE_CATALOG_CATEGORY_PATH=PASS shared catalog proposals display the full category hierarchy");
@@ -447,7 +474,9 @@ if (app === "app-captain") {
   const panel = fs.readFileSync(path.join(appDir, "src", "features", "wallet", "cash-in-panel.tsx"), "utf8");
   assert.ok(panel.indexOf("setWallet(walletResponse)") < panel.indexOf("readOwnFundingIntent(token, attempt.fundingIntentID)"), "app-captain: wallet state remains available when recovery of a stale saved intent fails");
   assert.ok(panel.includes("readOwnFundingIntent(token, attempt.fundingIntentID)"), "app-captain: stored retry intent must use canonical owner readback");
-  assert.ok(!panel.includes("simulateOwnFundingIntent"), "app-captain: development-only simulator controls must not be exposed by the current cash-in panel");
+  assert.ok(panel.includes("response.simulator && __DEV__") && panel.includes("simulateOwnFundingIntent("), "app-captain: funding simulator requires explicit local-development gating");
+  assert.ok(panel.includes("matchesCaptainFundingRequest(settled.intent, actorID, parsedAmount)") && panel.includes("settled.intent.state !== \"SETTLED\""), "app-captain: simulated funding must verify owner, amount, and canonical settlement before success");
+  assert.ok(panel.includes("const userCanAddFunds = Boolean(state?.cashInEnabled && (!state.simulator || simulatorInDevelopment))"), "app-captain: actual provider funding remains available outside local simulator");
   assert.ok(panel.includes("matchesCaptainFundingAttempt(intent, storedAttempt)"), "app-captain: terminal readback must clear only its exact local retry intent");
   console.log("MOBILE_CAPTAIN_CASH_IN_RECOVERY=PASS canonical intent, actor scope, retry identity, and terminal cleanup");
 }

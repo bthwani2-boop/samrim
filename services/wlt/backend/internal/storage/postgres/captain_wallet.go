@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/domain"
+	"github.com/lib/pq"
 )
 
 var (
@@ -142,6 +143,12 @@ func ReserveCaptainCOD(ctx context.Context, db *sql.DB, input CaptainCODReservat
 		return CaptainCODReservationRecord{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.captain_cod_reservations(id,order_id,payment_intent_id,captain_actor_id,amount_minor,currency,state,reserve_idempotency_key,request_hash,correlation_id) VALUES($1,$2,$3,$4,$5,'YER','ACTIVE',$6,$7,$8)`, reservationID, input.OrderID, input.PaymentIntentID, input.CaptainActorID, amountMinor, input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
+		// With parallel DSH offers, another Captain may reserve the same order
+		// first. This is a normal assignment race, not a WLT storage outage.
+		var conflict *pq.Error
+		if errors.As(err, &conflict) && conflict.Code == "23505" && (conflict.Constraint == "captain_cod_reservations_active_order_uq" || conflict.Constraint == "captain_cod_reservations_active_payment_intent_uq") {
+			return CaptainCODReservationRecord{}, false, ErrCaptainCODReservationState
+		}
 		return CaptainCODReservationRecord{}, false, err
 	}
 	if err := insertCaptainCODReservationEvent(ctx, tx, reservationID, "CAPTAIN_COD_RESERVED", input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {

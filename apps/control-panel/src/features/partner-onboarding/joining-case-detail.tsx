@@ -9,7 +9,6 @@ import { partnerErrorMessage } from "../partners/partner-error-message";
 import { stablePartnerMutationHeaders } from "../partners/partner-request";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { StoreLogo } from "../stores/store-logo";
-import { readJoiningQueueReturn } from "./joining-return-context";
 
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
   { value: "BTHWANI_CAPTAIN", label: "توصيل بثواني", description: "المنصة تتولى إسناد التوصيل وإدارته." },
@@ -26,12 +25,10 @@ const proofTypeLabels: Record<JoiningCaseProofType, string> = {
 
 const weekdays = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"] as const;
 
-export function JoiningCaseDetail({ caseId }: { caseId: string }) {
+export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string; embedded?: boolean }) {
   const { state: sessionState } = useSession();
   const canManageFinancialTerms = sessionState.kind === "authenticated" && sessionState.identity.permissions?.includes("finance") === true && sessionState.identity.permissions?.includes("platform_policies") === true;
   const [result, setResult] = useState<JoiningCaseResponse | null>(null);
-  const [backHref, setBackHref] = useState("/partners/joining");
-  useEffect(() => setBackHref(readJoiningQueueReturn(caseId)), [caseId]);
   const [proofDetails, setProofDetails] = useState<{ caseId: string; response: JoiningCaseProofDetailsResponse } | null>(null);
   const [proofDetailsError, setProofDetailsError] = useState<{ caseId: string; message: string } | null>(null);
   const [proofDetailsLoading, setProofDetailsLoading] = useState(false);
@@ -321,7 +318,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>اسم المتجر</dt><dd>{current.firstStoreName || "غير مسجل"}</dd></div>
               <div><dt>مدينة الخدمة</dt><dd>{cityName}</dd></div>
               <div><dt>العنوان</dt><dd>{current.firstStoreAddress || "غير متاح في بيانات الحالة القديمة"}</dd></div>
-              <div><dt>النشاط الرئيسي</dt><dd>{verticalName}</dd></div>
+              <div><dt>المجال التجاري</dt><dd>{verticalName}</dd></div>
               <div><dt>نوع المتجر</dt><dd>{commercialTypeName}</dd></div>
               <div><dt>موقع المتجر على الخريطة</dt><dd>{current.firstStoreLatitude != null && current.firstStoreLongitude != null ? <a href={`https://www.google.com/maps?q=${current.firstStoreLatitude},${current.firstStoreLongitude}`} target="_blank" rel="noopener noreferrer">فتح موقع المتجر على الخريطة</a> : "غير متاح في بيانات الحالة القديمة"}</dd></div>
               <div><dt>ساعات العمل</dt><dd>{current.firstStoreWorkingHours ? current.firstStoreWorkingHours.intervals.length > 0 ? <ul>{current.firstStoreWorkingHours.intervals.map((interval) => <li key={`${interval.dayOfWeek}-${interval.opensAt}-${interval.closesAt}`}>{weekdays[interval.dayOfWeek - 1] ?? `اليوم ${interval.dayOfWeek}`}: {interval.opensAt}–{interval.closesAt}{interval.closesNextDay ? " (اليوم التالي)" : ""}</li>)}</ul> : "لا توجد فترات عمل مسجلة" : "غير متاحة في بيانات الحالة القديمة"}</dd></div>
@@ -358,7 +355,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
             {current.state === "draft" && current.origin === "control_panel" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال الحالة للمراجعة وإنشاء دور الشريك</button> : null}
             {current.state === "admission_requested" && current.origin === "field" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>قبول الإحالة وإنشاء دور الشريك</button> : null}
             {current.state === "submitted" ? <>
-               {activeTermsPolicy ? <p className="managed-status managed-status-info">ستُعتمد شروط التسوية: {settlementPeriodLabel(activeTermsPolicy.settlementPeriod)}.</p> : <><output className="managed-status managed-status-warning">{policyReadMessage || "تُقرأ فترة التسوية من قسم السياسات؛ أما عمولة كل متجر فتُحسم في اتفاقيته الخاصة بعد تفاوض المالك وموافقة المالية."}</output><Link className="button button-secondary" href="/policies/partner-financial-terms">فتح شروط تسوية الشريك</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة الشروط النشطة</button></>}
+               {activeTermsPolicy ? <p className="managed-status managed-status-info">ستُعتمد شروط التسوية: {settlementPeriodLabel(activeTermsPolicy.settlementPeriod)}.</p> : <><output className="managed-status managed-status-warning">{policyReadMessage || "تُقرأ فترة التسوية من قسم السياسات؛ أما عمولة كل متجر فتُحسم في اتفاقيته الخاصة بعد تفاوض المالك وموافقة المالية."}</output><Link className="button button-secondary" href="/policies?policy=partner-financial-terms&action=manage">فتح شروط تسوية الشريك</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة الشروط النشطة</button></>}
               <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<TextArea className="resize-none" id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>
               <button type="button" className="button button-primary" disabled={busy || !canManageFinancialTerms || !activeTermsPolicy} onClick={() => void reviewCase("approved")}>اعتماد الحالة وإنشاء المتجر بالشروط النشطة</button>
               <button type="button" className="button button-secondary" disabled={busy} onClick={() => void reviewCase("needs_correction")}>إعادة للتصحيح</button>
@@ -369,7 +366,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <details className="partner-case-attachments"><summary>إرشادات تفعيل حساب الشريك</summary><p>يفتح صاحب المتجر تطبيق الشريك برقم الجوال المسجّل. عند أول تفعيل يختار «أول دخول»؛ وإن سبق التفعيل يسجّل الدخول أو يستعيد كلمة المرور. لا يحتاج إلى دعوة من تطبيق الميداني.</p></details>
               {current.financialProfileState === "REQUIRED" ? <>
                 <p className="managed-status managed-status-warning" role="status">{activeTermsPolicy ? "ستُربط شروط التسوية بهذه الحالة العالقة." : policyReadMessage || "يلزم وجود سياسة مالية نشطة وصلاحية المالية."}</p>
-                {!activeTermsPolicy ? <><Link className="button button-secondary" href="/policies/partner-financial-terms">فتح سياسة الشريك المالية</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة السياسة النشطة</button></> : null}
+                {!activeTermsPolicy ? <><Link className="button button-secondary" href="/policies?policy=partner-financial-terms&action=manage">فتح سياسة الشريك المالية</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة السياسة النشطة</button></> : null}
                 <button type="button" className="button button-primary" disabled={busy || !canManageFinancialTerms || !activeTermsPolicy} onClick={() => void bindFinancialTerms()}>استكمال الربط المالي وفق السياسة النشطة</button>
               </> : null}
             </> : null}
@@ -377,7 +374,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
         </>
       )}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
-      <div className="button-row"><Link className="button button-secondary" href={backHref}>العودة إلى طلبات الانضمام</Link></div>
+      {embedded ? null : <div className="button-row"><Link className="button button-secondary" href="/partners?kind=joining">العودة إلى طلبات الانضمام</Link></div>}
     </section>
   );
 }

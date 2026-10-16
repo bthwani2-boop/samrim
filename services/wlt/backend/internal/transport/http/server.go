@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
@@ -12,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/cashin"
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/storage/postgres"
@@ -89,8 +91,20 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/remit", s.remitCash)
 	mux.HandleFunc("POST /wlt/v1/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileCashRemittance)
 	mux.HandleFunc("POST /wlt/v1/delivery-quotes", s.deliveryQuote)
+	mux.HandleFunc("GET /wlt/v1/operator/policy-history", s.readOperatorPolicyHistory)
+	mux.HandleFunc("GET /wlt/v1/operator/policy-registry", s.readOperatorPolicyRegistry)
+	mux.HandleFunc("GET /wlt/v1/operator/captain-minimum-balance-policy", s.readCaptainMinimumBalancePolicy)
+	mux.HandleFunc("POST /wlt/v1/operator/captain-minimum-balance-policy", s.createCaptainMinimumBalancePolicy)
+	mux.HandleFunc("GET /wlt/v1/operator/captain-minimum-balance-policy/history", s.listCaptainMinimumBalancePolicyHistory)
+	mux.HandleFunc("GET /wlt/v1/operator/distance-band-fee-policies", s.readDistanceBandFeePolicy)
+	mux.HandleFunc("POST /wlt/v1/operator/distance-band-fee-policies", s.createDistanceBandFeePolicy)
 	mux.HandleFunc("GET /wlt/v1/operator/delivery-fee-policies", s.readDeliveryFeePolicy)
-	mux.HandleFunc("POST /wlt/v1/operator/delivery-fee-policies", s.createDeliveryFeePolicy)
+	mux.HandleFunc("POST /wlt/v1/operator/delivery-fee-policies", func(w http.ResponseWriter, r *http.Request) {
+		if !s.authorize(w, r) {
+			return
+		}
+		writeError(w, http.StatusGone, "LEGACY_PRICING_DISABLED", "Use the distance-band delivery fee policy")
+	})
 	mux.HandleFunc("GET /wlt/v1/operator/partner-financial-terms-policy", s.readPartnerFinancialTermsPolicy)
 	mux.HandleFunc("POST /wlt/v1/operator/partner-financial-terms-policy", s.createPartnerFinancialTermsPolicy)
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles", s.preparePartnerFinancialProfile)
@@ -729,21 +743,22 @@ type createPartnerFinancialTermsPolicyRequest struct {
 }
 
 type deliveryFeePolicyJSON struct {
-	ID                     string  `json:"id"`
-	ServiceCityID          string  `json:"serviceCityId"`
-	PolicyVersion          string  `json:"policyVersion"`
-	State                  string  `json:"state"`
-	BaseFeeMinor           int64   `json:"baseFeeMinor"`
-	DistanceUnitMeters     int64   `json:"distanceUnitMeters"`
-	DistanceRateMinor      int64   `json:"distanceRateMinor"`
-	OrderSizeUnitBaseUnits int64   `json:"orderSizeUnitBaseUnits"`
-	OrderSizeRateMinor     int64   `json:"orderSizeRateMinor"`
-	ZoneSurchargeMinor     int64   `json:"zoneSurchargeMinor"`
-	RoundingUnitMinor      int64   `json:"roundingUnitMinor"`
-	Version                int     `json:"version"`
-	CreatedBy              string  `json:"createdBy"`
-	CreatedAt              string  `json:"createdAt"`
-	RetiredAt              *string `json:"retiredAt"`
+	DistanceBands          []postgres.DeliveryDistanceBand `json:"distanceBands"`
+	ID                     string                          `json:"id"`
+	ServiceCityID          string                          `json:"serviceCityId"`
+	PolicyVersion          string                          `json:"policyVersion"`
+	State                  string                          `json:"state"`
+	BaseFeeMinor           int64                           `json:"baseFeeMinor"`
+	DistanceUnitMeters     int64                           `json:"distanceUnitMeters"`
+	DistanceRateMinor      int64                           `json:"distanceRateMinor"`
+	OrderSizeUnitBaseUnits int64                           `json:"orderSizeUnitBaseUnits"`
+	OrderSizeRateMinor     int64                           `json:"orderSizeRateMinor"`
+	ZoneSurchargeMinor     int64                           `json:"zoneSurchargeMinor"`
+	RoundingUnitMinor      int64                           `json:"roundingUnitMinor"`
+	Version                int                             `json:"version"`
+	CreatedBy              string                          `json:"createdBy"`
+	CreatedAt              string                          `json:"createdAt"`
+	RetiredAt              *string                         `json:"retiredAt"`
 }
 
 type deliveryFeeQuoteResponse struct {
@@ -1641,8 +1656,24 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 }
 
 func decodeJSONWithLimit(w http.ResponseWriter, r *http.Request, target any, limit int64) bool {
+	return decodeJSONWithOptionalEmpty(w, r, target, limit, false)
+}
+
+func decodeOptionalJSON(w http.ResponseWriter, r *http.Request, target any) bool {
+	return decodeJSONWithOptionalEmpty(w, r, target, 32*1024, true)
+}
+
+func decodeJSONWithOptionalEmpty(w http.ResponseWriter, r *http.Request, target any, limit int64, allowEmpty bool) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
-	decoder := json.NewDecoder(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil || !utf8.Valid(body) {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body is invalid")
+		return false
+	}
+	if allowEmpty && len(bytes.TrimSpace(body)) == 0 {
+		return true
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body is invalid")
@@ -1684,7 +1715,7 @@ func toCashRemittance(item postgres.CashRemittanceRecord) cashRemittanceJSON {
 }
 
 func toDeliveryFeePolicy(item postgres.DeliveryFeePolicyRecord) deliveryFeePolicyJSON {
-	result := deliveryFeePolicyJSON{ID: item.ID, ServiceCityID: item.ServiceCityID, PolicyVersion: item.PolicyVersion, State: item.State, BaseFeeMinor: item.BaseFeeMinor, DistanceUnitMeters: item.DistanceUnitMeters, DistanceRateMinor: item.DistanceRateMinor, OrderSizeUnitBaseUnits: item.OrderSizeUnitBaseUnits, OrderSizeRateMinor: item.OrderSizeRateMinor, ZoneSurchargeMinor: item.ZoneSurchargeMinor, RoundingUnitMinor: item.RoundingUnitMinor, Version: item.Version, CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+	result := deliveryFeePolicyJSON{DistanceBands: item.DistanceBands, ID: item.ID, ServiceCityID: item.ServiceCityID, PolicyVersion: item.PolicyVersion, State: item.State, BaseFeeMinor: item.BaseFeeMinor, DistanceUnitMeters: item.DistanceUnitMeters, DistanceRateMinor: item.DistanceRateMinor, OrderSizeUnitBaseUnits: item.OrderSizeUnitBaseUnits, OrderSizeRateMinor: item.OrderSizeRateMinor, ZoneSurchargeMinor: item.ZoneSurchargeMinor, RoundingUnitMinor: item.RoundingUnitMinor, Version: item.Version, CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
 	if item.RetiredAt != nil {
 		value := item.RetiredAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")
 		result.RetiredAt = &value
