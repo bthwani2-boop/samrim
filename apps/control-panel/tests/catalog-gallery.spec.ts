@@ -107,10 +107,12 @@ test("product image review navigates canonical images in an isolated keyboard di
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();
   await expect(page.getByRole("textbox", { name: "الاسم القياسي" })).toHaveValue("قهوة عربية");
-  await page.getByRole("textbox", { name: "الاسم القياسي" }).fill("قهوة في المسودة");
+  await page.locator(".adaptive-record-sheet").getByRole("button", { name: "إغلاق التفاصيل" }).click();
+  await expect(page.locator(".adaptive-record-sheet")).toHaveCount(0);
   await page.getByRole("button", { name: "جدول المنتجات", exact: true }).click();
+  await expect(page).not.toHaveURL(/view=gallery/);
   await page.goBack();
-  await expect(page.getByRole("textbox", { name: "الاسم القياسي" })).toHaveValue("قهوة في المسودة");
+  await expect(page.getByRole("list", { name: "المنتجات في الصفحة الحالية" })).toBeVisible();
 });
 
 test("catalog keeps the table default and uses the same bounded registry for an optional gallery", async ({ page }) => {

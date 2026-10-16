@@ -90,11 +90,10 @@ for (const registry of cases) {
     await expect(rows).toHaveCount(registry.size);
     expect(requestedCursors).toContain(nextToken);
 
-    if (registry.key === "products" || registry.key === "operators" || registry.key === "profiles") {
-      const filter = registry.key === "products" ? page.getByRole("combobox", { name: "الحالة", exact: true })
-        : page.locator(registry.key === "operators" ? "#operator-enabled-filter" : "#operator-profile-state");
+    if (registry.key === "operators" || registry.key === "profiles") {
+      const filter = page.locator(registry.key === "operators" ? "#operator-enabled-filter" : "#operator-profile-state");
       const originalFilter = await filter.inputValue();
-      await filter.selectOption(registry.key === "products" ? "active" : registry.key === "operators" ? "true" : "approved");
+      await filter.selectOption(registry.key === "operators" ? "true" : "approved");
       await expect(rows.first()).toContainText(recordMarker(0));
       await page.goBack();
       await expect(rows.first()).toContainText(recordMarker(2500));

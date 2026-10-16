@@ -16,7 +16,7 @@ test("operations uses owner totals across bounded pages, and clears protected ro
   await page.route("**/api/operations?**", (route) => {
     const next = new URL(route.request().url()).searchParams.has("cursor");
     return route.fulfill(forbidden ? { status: 403, json: { error: { code: "FORBIDDEN" } } } : { json: {
-      operations: [{ ...row, orderId: next ? "second-summary-order" : row.orderId }], summary, nextCursor: next ? "" : "next-summary-page",
+      operations: [{ ...row, orderId: next ? "second-summary-order" : row.orderId, storeName: next ? "متجر الصفحة الثانية" : row.storeName }], summary, nextCursor: next ? "" : "next-summary-page",
     } });
   });
   await page.goto("/operations");
@@ -24,7 +24,7 @@ test("operations uses owner totals across bounded pages, and clears protected ro
   await expect(page.locator(".ops-summary-review strong")).toHaveText("76");
   await expect(page.locator(".ops-summary-dispatch strong")).toHaveText("72");
   await page.getByRole("navigation", { name: "صفحات الطلبات" }).getByRole("button", { name: "التالي", exact: true }).click();
-  await expect(page.getByRole("rowheader", { name: "second-summary-order", exact: true })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: "متجر الصفحة الثانية", exact: true })).toBeVisible();
   await expect(page.locator(".ops-list-name")).toContainText("125 إجمالي النتائج");
   forbidden = true;
   await page.getByRole("button", { name: "تحديث قائمة الطلبات" }).click();
@@ -38,7 +38,7 @@ test("operations keeps missing totals unknown and rejects a malformed owner summ
   let malformed = false;
   await page.route("**/api/operations?**", (route) => route.fulfill({ json: { operations: [row], ...(malformed ? { summary: { ...summary, totalCount: -1 } } : {}) } }));
   await page.goto("/operations");
-  await expect(page.getByRole("cell", { name: row.storeName, exact: true })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: row.storeName, exact: true })).toBeVisible();
   await expect(page.locator(".ops-summary-review strong")).toHaveText("—");
   await expect(page.locator(".ops-summary-caption")).toContainText("لم تتوفر");
   malformed = true;

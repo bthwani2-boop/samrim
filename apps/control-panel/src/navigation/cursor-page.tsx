@@ -13,6 +13,7 @@ export function useCursorPage(parameter: string, filterKey = "", privateCursor: 
   const initialFilters = useRef(filterKey);
   const restoringHistory = useRef(false);
   const restoreSavedFilters = useEffectEvent((key: string) => restoreFilters?.(key));
+  const currentFilterKey = useEffectEvent(() => filterKey);
 
   useEffect(() => {
     const sync = (event?: PopStateEvent) => {
@@ -25,6 +26,9 @@ export function useCursorPage(parameter: string, filterKey = "", privateCursor: 
       const cursor = protectedMarker ? (marker === `page-${previous.length + 1}` && typeof saved?.cursor === "string" ? saved.cursor : "") : marker;
       const restoredFilters = typeof saved?.filterKey === "string" ? saved.filterKey : initialFilters.current;
       setFilters(restoredFilters);
+      // Back can restore the same filter key without changing state; clear the
+      // restoration guard now or later user edits will never reset the cursor.
+      if (restoredFilters === currentFilterKey()) restoringHistory.current = false;
       if (privateCursor) {
         restoreSavedFilters(restoredFilters);
         const url = new URL(window.location.href);
@@ -78,7 +82,7 @@ export function useCursorPage(parameter: string, filterKey = "", privateCursor: 
     setFilters(filterKey);
   }, [filterKey, filtersChanged, historyKey, navigate, parameter, privateCursor]);
   return {
-    cursor, clearForNavigation, ready, canPrevious: Boolean(cursor) || previous.length > 0,
+    cursor, clearForNavigation, ready, filtersStable: !filtersChanged, canPrevious: Boolean(cursor) || previous.length > 0,
     previousLabel: previous.length > 0 ? "السابق" : "الأولى",
     reset,
     next: (nextCursor: string) => navigate(nextCursor, [...previous, cursor]),
@@ -91,7 +95,7 @@ export function CursorPagination({ page, nextCursor, disabled, label }: Readonly
 }>) {
   if (!page.canPrevious && !nextCursor) return null;
   return <nav className="pagination" aria-label={label}>
-    <button className="button button-secondary" type="button" disabled={disabled || !page.canPrevious} onClick={page.previous}>{page.previousLabel}</button>
-    <button className="button button-secondary" type="button" disabled={disabled || !nextCursor} onClick={() => page.next(nextCursor)}>التالي</button>
+    <button className="button button-secondary" type="button" disabled={disabled || !page.filtersStable || !page.canPrevious} onClick={page.previous}>{page.previousLabel}</button>
+    <button className="button button-secondary" type="button" disabled={disabled || !page.filtersStable || !nextCursor} onClick={() => page.next(nextCursor)}>التالي</button>
   </nav>;
 }

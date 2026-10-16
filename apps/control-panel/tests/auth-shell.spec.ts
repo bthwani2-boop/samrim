@@ -698,7 +698,7 @@ test("operator access keeps phone discovery separate from actorId mutation", asy
   });
   await page.goto("/access?view=permissions");
   await page.locator(".access-center-table").getByRole("button", { name: "مراجعة الصلاحيات" }).click();
-  await page.getByRole("dialog").getByRole("link", { name: "فتح ملف المشغّل الكامل" }).click();
+  await page.locator(".adaptive-record-sheet").getByRole("link", { name: "فتح ملف المشغّل الكامل" }).click();
   await expect(page).toHaveURL(/\/access\/operators\/%2B96777000102$/);
   await expect(page.getByText("+96777000102", { exact: true })).toBeVisible();
   await expect(page.getByText("act_operator_canonical")).toHaveCount(0);
@@ -1459,7 +1459,7 @@ test("operator replaces the primary product image and adds a gallery image throu
   });
 
   await page.goto("/catalog/products");
-  await page.getByRole("row", { name: /قهوة رفع الصور/ }).getByRole("button", { name: "تفاصيل وتعديل" }).click();
+  await page.getByRole("row", { name: /قهوة رفع الصور/ }).getByRole("button", { name: "إدارة المنتج" }).click();
   await expect(page.getByLabel("رابط الصورة الأساسية")).toHaveCount(0);
   const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
   await page.getByLabel("ملف الصورة").setInputFiles({ name: "coffee-primary.png", mimeType: "image/png", buffer: onePixelPng });
@@ -1485,7 +1485,7 @@ test("operator replaces the primary product image and adds a gallery image throu
   ]);
 
   await page.reload();
-  await page.getByRole("row", { name: /قهوة رفع الصور/ }).getByRole("button", { name: "تفاصيل وتعديل" }).click();
+  await page.getByRole("row", { name: /قهوة رفع الصور/ }).getByRole("button", { name: "إدارة المنتج" }).click();
   await expect(page.locator(".catalog-media-preview")).toHaveCount(2);
   await expect(page.locator(".catalog-media-preview").nth(0)).toHaveAttribute("src", currentProduct.media[0]!.uri);
   await expect(page.locator(".catalog-media-preview").nth(1)).toHaveAttribute("src", currentProduct.media[1]!.uri);

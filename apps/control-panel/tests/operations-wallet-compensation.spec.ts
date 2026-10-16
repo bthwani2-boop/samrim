@@ -45,8 +45,8 @@ test("customer wallet compensation uses a cancellable in-app financial confirmat
   });
 
   await page.goto("/operations?state=DELIVERED");
-  await page.getByRole("button", { name: "فتح الطلب compensation-order" }).click();
-  const drawer = page.getByRole("dialog", { name: "تفاصيل الطلب compensation-order" });
+  await page.getByRole("button", { name: "فتح طلب من متجر التعويض" }).click();
+  const drawer = page.locator(".adaptive-record-sheet");
   const trigger = drawer.getByRole("button", { name: /تعويض المحفظة/ });
   await expect(trigger).toBeVisible();
   await trigger.click();
@@ -73,8 +73,8 @@ test("customer wallet compensation uses a cancellable in-app financial confirmat
 
   financeAllowed = false;
   await page.reload();
-  await page.getByRole("button", { name: "فتح الطلب compensation-order" }).click();
-  await expect(page.getByRole("dialog", { name: "تفاصيل الطلب compensation-order" })
+  await page.getByRole("button", { name: "فتح طلب من متجر التعويض" }).click();
+  await expect(page.locator(".adaptive-record-sheet")
     .getByRole("button", { name: /تعويض المحفظة/ })).toHaveCount(0);
   expect(mutations).toBe(1);
 });
