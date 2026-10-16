@@ -351,24 +351,31 @@ if (deliveryFeePolicyCreate.status !== 201 || deliveryFeePolicyCreate.body?.poli
 
 const deliveryFeePolicyRead = await request(dshBase, "GET", `/dsh/operator/distance-band-fee-policy?serviceCityId=${encodeURIComponent(cityA)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (deliveryFeePolicyRead.status !== 200 || deliveryFeePolicyRead.body?.policy?.id !== deliveryFeePolicyCreate.body.policy.id || deliveryFeePolicyRead.body.policy?.serviceCityId !== cityA || deliveryFeePolicyRead.body.policy?.distanceBands?.[0]?.ratePerKmMinor !== 150) fail("delivery-fee policy readback did not return the active city policy", JSON.stringify({ deliveryFeePolicyCreate, deliveryFeePolicyRead }));
-// Both independently serviceable cities must carry an active distance-band
-// policy: the multi-store checkout below quotes Store B in cityB as well.
-const cityBDeliveryPolicy = await request(dshBase, "POST", "/dsh/operator/distance-band-fee-policy", {
-  token: dshToken,
-  headers: serviceHeaders(actingOperatorID, `delivery-distance-bands-city-b-${suffix}`),
-  body: { serviceCityId: cityB, distanceBands: deliveryBands, expectedVersion: 0, reason: "DSH runtime second city distance-band delivery pricing proof" },
-});
-const cityBDeliveryPolicyRead = await request(dshBase, "GET", `/dsh/operator/distance-band-fee-policy?serviceCityId=${encodeURIComponent(cityB)}`, {
+// The canonical global policy is a legacy v1 until an authorized Operator
+// activates distance-band pricing. Retire it through the real policy owner
+// instead of inventing a City B exception that bypasses fallback coverage.
+const globalLegacyFeePolicy = await request(dshBase, "GET", "/dsh/operator/distance-band-fee-policy", {
   token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID },
 });
-if (cityBDeliveryPolicy.status !== 201 || cityBDeliveryPolicy.body?.policy?.serviceCityId !== cityB ||
-    cityBDeliveryPolicy.body.policy?.distanceBands?.[0]?.ratePerKmMinor !== 150 ||
-    cityBDeliveryPolicyRead.status !== 200 ||
-    cityBDeliveryPolicyRead.body?.policy?.id !== cityBDeliveryPolicy.body.policy.id ||
-    cityBDeliveryPolicyRead.body?.policy?.serviceCityId !== cityB) {
-  fail("second city's canonical distance-band policy was not active", JSON.stringify({ cityBDeliveryPolicy, cityBDeliveryPolicyRead }));
+if (globalLegacyFeePolicy.status !== 200 || globalLegacyFeePolicy.body?.policy?.version !== 1 ||
+    (globalLegacyFeePolicy.body.policy.distanceBands?.length ?? 0) !== 0) {
+  fail("disposable global fee policy is not at its expected legacy baseline", JSON.stringify(globalLegacyFeePolicy));
 }
-
+const globalDistancePolicy = await request(dshBase, "POST", "/dsh/operator/distance-band-fee-policy", {
+  token: dshToken,
+  headers: serviceHeaders(actingOperatorID, `delivery-global-distance-bands-${suffix}`),
+  body: { serviceCityId: "", distanceBands: deliveryBands, expectedVersion: globalLegacyFeePolicy.body.policy.version, reason: "DSH runtime global fallback distance-band pricing proof" },
+});
+const globalDistancePolicyRead = await request(dshBase, "GET", "/dsh/operator/distance-band-fee-policy", {
+  token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID },
+});
+if (globalDistancePolicy.status !== 201 || globalDistancePolicy.body?.policy?.serviceCityId !== "" ||
+    globalDistancePolicy.body.policy?.distanceBands?.[0]?.ratePerKmMinor !== 150 ||
+    globalDistancePolicyRead.status !== 200 ||
+    globalDistancePolicyRead.body?.policy?.id !== globalDistancePolicy.body.policy.id ||
+    globalDistancePolicyRead.body?.policy?.version !== globalLegacyFeePolicy.body.policy.version + 1) {
+  fail("canonical global distance-band fallback policy was not activated", JSON.stringify({ globalDistancePolicy, globalDistancePolicyRead }));
+}
 console.log("DSH_DELIVERY_FEE_POLICY=PASS");
 console.log("DSH_CITY_SCOPE_RUNTIME=PASS");
 let partnerFinancialTermsPolicyRead = await request(wltBase, "GET", "/wlt/v1/operator/partner-financial-terms-policy", { token: wltToken });
@@ -473,6 +480,15 @@ for (const destination of [
   if (directFeeQuote.status !== 200 || directFeeQuote.body?.quote?.policyVersion !== deliveryFeePolicyCreate.body.policy.policyVersion || !Number.isSafeInteger(directFeeQuote.body?.quote?.feeMinor) || directFeeQuote.body.quote.feeMinor < 0) {
     fail("WLT distance-band delivery quote contract or city policy resolution failed", JSON.stringify({ destination, directFeeQuote, policy: deliveryFeePolicyCreate.body.policy }));
   }
+}
+const cityBGlobalQuote = await request(wltBase, "POST", "/wlt/v1/delivery-quotes", {
+  token: wltToken,
+  body: { serviceCityId: cityB, originLatitude: 15.369445, originLongitude: 44.191006,
+    destinationLatitude: 15.3694458, destinationLongitude: 44.1910065, orderSizeBaseUnits: 1 },
+});
+if (cityBGlobalQuote.status !== 200 || cityBGlobalQuote.body?.quote?.policyVersion !== globalDistancePolicy.body.policy.policyVersion ||
+    !Number.isSafeInteger(cityBGlobalQuote.body?.quote?.feeMinor) || cityBGlobalQuote.body.quote.feeMinor < 0) {
+  fail("WLT City B did not resolve the configured global distance-band policy", JSON.stringify(cityBGlobalQuote));
 }
 console.log("WLT_DISTANCE_BAND_QUOTES=PASS");
 
