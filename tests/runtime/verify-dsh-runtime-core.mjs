@@ -1984,7 +1984,15 @@ const fieldPayoutOfferID = String(fieldPayoutOffer.body?.offer?.offerId || "");
 const fieldPayoutOfferPublished = await request(dshBase, "PATCH", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/offers/${encodeURIComponent(fieldPayoutOfferID)}`, { token: fieldPayoutPartnerAccessToken, headers: partnerHeaders(`field-payout-offer-publish-${suffix}`, 1), body: discreteOffer(1250, "published") });
 await prepareApprovedStoreLogo(fieldPayoutCaseID, fieldPayoutPartnerAccessToken, "field-payout");
 await prepareApprovedStoreLogo(fieldPayoutCaseID, fieldPayoutPartnerAccessToken, "field-payout-cover", "cover");
-const fieldPayoutPublication = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-payout-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
+// Media uploads advance the Store version; publication must use the latest
+// canonical revision rather than the initial approval revision.
+const fieldPayoutPublicationVersion = publicationVersion(fieldPayoutStoreID);
+const fieldPayoutPublication = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-payout-publish-${suffix}`, crypto.randomUUID(), fieldPayoutPublicationVersion), body: { state: "published" } });
+if (fieldPayoutPublication.status !== 200 || fieldPayoutPublication.body?.store?.publicationState !== "published" ||
+    fieldPayoutPublication.body.store.version !== fieldPayoutPublicationVersion + 1 ||
+    publicationVersion(fieldPayoutStoreID) !== fieldPayoutPublication.body.store.version) {
+  fail("Field Store publication failed canonical version and readback proof", JSON.stringify({ fieldPayoutPublication, fieldPayoutPublicationVersion }));
+}
 const fieldPayoutSummaryDeadline = Date.now() + 95_000;
 let fieldPayoutSummary = null;
 while (Date.now() < fieldPayoutSummaryDeadline) {
@@ -1997,7 +2005,7 @@ while (Date.now() < fieldPayoutSummaryDeadline) {
   await new Promise((resolve) => setTimeout(resolve, 2_000));
 }
 const fieldPayoutEarningCount = sql(`SELECT count(*) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(secondFieldActorID)}' AND store_id='${sqlLiteral(fieldPayoutStoreID)}'`);
-if (fieldPayoutSubmitted.status !== 200 || fieldPayoutSubmitted.body?.case?.state !== "submitted" || fieldPayoutSubmitted.body?.case?.version !== fieldPayoutEvidenceVersion + 2 || fieldPayoutApproved.status !== 200 || fieldPayoutApproved.body?.case?.state !== "approved" || fieldPayoutPartnerActorID === "" || fieldPayoutOffer.status !== 201 || fieldPayoutOfferPublished.status !== 200 || fieldPayoutPublication.status !== 200 || !fieldPayoutSummary || fieldPayoutEarningCount !== "1") fail("Field payout proof fixture did not reach one customer-visible commission", JSON.stringify({ fieldPayoutCase, fieldPayoutFlow, fieldPayoutSubmitted, fieldPayoutApproved, fieldPayoutOffer, fieldPayoutOfferPublished, fieldPayoutPublication, fieldPayoutSummary, fieldPayoutEarningCount }));
+if (fieldPayoutSubmitted.status !== 200 || fieldPayoutSubmitted.body?.case?.state !== "submitted" || fieldPayoutSubmitted.body?.case?.version !== fieldPayoutEvidenceVersion + 2 || fieldPayoutApproved.status !== 200 || fieldPayoutApproved.body?.case?.state !== "approved" || fieldPayoutPartnerActorID === "" || fieldPayoutOffer.status !== 201 || fieldPayoutOfferPublished.status !== 200 || fieldPayoutPublication.status !== 200 || fieldPayoutSummary?.status !== 200 || fieldPayoutSummary.body?.summary?.fieldActorId !== secondFieldActorID || fieldPayoutSummary.body.summary.currency !== "YER" || fieldPayoutSummary.body.summary.earnedMinor !== fieldAcquisitionRewardMinor || fieldPayoutSummary.body.summary.entitlementMinor !== fieldAcquisitionRewardMinor || fieldPayoutSummary.body.summary.partnerCount !== 1 || fieldPayoutEarningCount !== "1") fail("Field payout proof fixture did not reach one customer-visible commission", JSON.stringify({ fieldPayoutCase, fieldPayoutFlow, fieldPayoutSubmitted, fieldPayoutApproved, fieldPayoutOffer, fieldPayoutOfferPublished, fieldPayoutPublication, fieldPayoutSummary, fieldPayoutEarningCount }));
 async function verifyPayoutBeneficiaryName(actorID, role) {
   const path = `/dsh/operator/actors/${encodeURIComponent(actorID)}/legal-name`;
   const submitted = await request(dshBase, "POST", path, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${role}-legal-name-${suffix}`), body: { givenName: "محمد", secondName: "علي", thirdName: "صالح", familyName: "الحديدة", evidenceReference: `${role}-identity-proof-${suffix}` } });
