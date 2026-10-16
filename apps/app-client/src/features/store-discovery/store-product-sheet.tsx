@@ -106,6 +106,9 @@ export function StoreProductSheet(props: StoreProductSheetProps) {
   const dragStartHeight = useRef(compactHeight);
   const scrollOffset = useRef(0);
   const lastEmittedQuantity = useRef<number | null>(null);
+  const offerId = offer?.offerId;
+  const previousOfferId = useRef(offerId);
+  const draftOfferId = useRef(offerId);
   const inputScale = offer ? scaleFor(offer) : 1;
   const browsableOffers = galleryOffers.length ? galleryOffers : offer ? [offer] : [];
   useEffect(() => {
@@ -116,23 +119,25 @@ export function StoreProductSheet(props: StoreProductSheetProps) {
   }, []);
 
   useEffect(() => {
+    // Reset only on product identity, not when the compact snap height changes.
+    if (previousOfferId.current === offerId) return;
+    previousOfferId.current = offerId;
     setExpanded(false);
     expandedRef.current = false;
     setDragging(false);
     scrollOffset.current = 0;
     lastEmittedQuantity.current = null;
-    // The next offer starts at the compact snap point, independent of old drags.
     sheetHeight.stopAnimation();
     sheetHeight.setValue(compactHeight);
     currentHeight.current = compactHeight;
-  // Reset only on product identity; editing a valid decimal must retain its text.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offer?.offerId]);
+  }, [offerId, compactHeight, sheetHeight]);
 
   useEffect(() => {
-    if (quantityBaseUnits === lastEmittedQuantity.current) return;
+    const changedOffer = draftOfferId.current !== offerId;
+    draftOfferId.current = offerId;
+    if (!changedOffer && quantityBaseUnits === lastEmittedQuantity.current) return;
     setDraft(localized(quantityBaseUnits / inputScale));
-  }, [offer?.offerId, inputScale, quantityBaseUnits]);
+  }, [offerId, inputScale, quantityBaseUnits]);
 
   useEffect(() => {
     const nextHeight = expandedRef.current ? maxHeight : compactHeight;

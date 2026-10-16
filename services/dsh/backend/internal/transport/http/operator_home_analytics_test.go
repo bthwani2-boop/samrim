@@ -17,9 +17,9 @@ func TestOperatorHomeAnalyticsRejectsRequestsBeforeDatabaseRead(t *testing.T) {
 	}
 	server := &OrderServer{auth: token}
 	for _, tc := range []struct {
-		name string
-		token bool
-		actor string
+		name   string
+		token  bool
+		actor  string
 		status int
 	}{
 		{name: "unauthenticated", status: http.StatusUnauthorized},

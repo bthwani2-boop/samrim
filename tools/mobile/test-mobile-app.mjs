@@ -105,7 +105,9 @@ console.log(`MOBILE_ROUTE_TREE=PASS app=${app} routes=${routePaths.join(",")}`);
 if (app === "app-client") {
   const storeDetail = fs.readFileSync(path.join(appDir, "src/features/store-discovery/store-detail.tsx"), "utf8");
   const notificationInbox = fs.readFileSync(path.join(appDir, "src/features/notifications/notifications-inbox.tsx"), "utf8");
-  assert.match(storeDetail, /inverted=\{I18nManager\.isRTL\}/, "client: horizontal pager needs native RTL item-order normalization to keep tab IDs aligned");
+  assert.match(storeDetail, /const next = activeTab \+ \(translationX < 0 \? 1 : -1\)/, "client: left/right swipes must preserve Arabic tab order");
+  assert.match(storeDetail, /runOnJS\(switchCatalogTabOnSwipe\)\(event\.translationX\)/, "client: native swipe gestures must switch tabs on the JS thread");
+  assert.match(storeDetail, /if \(next >= 0 && next <= 2\) void selectCatalogTab\(next\)/, "client: swipes must stay within canonical tab IDs");
   assert.doesNotMatch(notificationInbox, /direction: "rtl"/, "client: notifications must inherit the native RTL direction");
   assert.equal((storeDetail.match(/<BthwaniSearchField\b/g) ?? []).length, 1, "client: store search must have exactly one field");
   assert.ok(storeDetail.includes('containerStyle={styles.headerSearchField}'), "client: store search must be owned by the top header");
@@ -113,15 +115,17 @@ if (app === "app-client") {
   assert.ok(storeDetail.includes('snapToInterval={bannerStep}'), "client: compact banner cards must snap at their actual step width");
   const nativeIcons = fs.readFileSync(path.join(root, "packages/design-system/src/native/icons.tsx"), "utf8");
   assert.match(nativeIcons, /<View pointerEvents="none"[^>]*>/, "client: decorative native icons must not intercept parent button touches");
-  assert.equal((storeDetail.match(/state\.store\.storeCoverImage\?\.uri && !failedStoreCover/g) ?? []).length, 1, "client: store cover must have one canonical hero placement");
+  assert.equal((storeDetail.match(/state\.store\.storeCoverImage\?\.uri/g) ?? []).length, 1, "client: store cover must use a single canonical image URI");
+  assert.equal((storeDetail.match(/source=\{\{ uri: heroImageURI \}\}/g) ?? []).length, 1, "client: cover image must render in one hero placement");
+  assert.ok(storeDetail.includes('!failedStoreCover ? state.store.storeCoverImage?.uri : undefined'), "client: failed cover must fall back safely");
   assert.ok(storeDetail.includes("styles.storeHeroToolbar") && storeDetail.includes("styles.storeHeroMedia"), "client: store actions and cover must share the hero");
   assert.ok(storeDetail.includes("styles.storeInfoCard") && storeDetail.includes("state.store.storeProfileImage?.uri"), "client: separate public logo and cover");
-  assert.ok(storeDetail.includes("state.store.ratingCount > 0") && storeDetail.includes("orderabilityBadge") && storeDetail.includes("fulfillmentModes.map"), "client: real ratings and delivery state");
-  assert.ok(storeDetail.includes("حالة المتجر") && storeDetail.includes("التجهيز والطلب") && storeDetail.includes("معلومات متجر"), "client: store info labels must remain readable Arabic");
+  assert.ok(storeDetail.includes('state.store.ratingCount ? state.store.ratingAverage.toFixed(1) : "0.0"') && storeDetail.includes("orderabilityBadge") && storeDetail.includes("fulfillmentModes.map"), "client: real ratings and delivery state");
+  assert.ok(storeDetail.includes("حالة المتجر") && storeDetail.includes("مدة التجهيز") && storeDetail.includes("معلومات متجر"), "client: store info labels must remain readable Arabic");
   assert.doesNotMatch(storeDetail, /styles\.orderStatus\b/, "client: no redundant order strip");
   const publicShell = fs.readFileSync(path.join(appDir, "src/shell/client-shell.tsx"), "utf8");
   assert.ok(publicShell.includes('hideHeader && { backgroundColor: theme.surfaceInset }'), "client: neutral hidden-header status bar");
-  console.log("MOBILE_STORE_RTL_AND_SEARCH=PASS header search, native pager, compact banners, unique store name");
+  console.log("MOBILE_STORE_RTL_AND_SEARCH=PASS header search, RTL swipe tabs, compact banners, unique store name");
 }
 if (app === "app-partner") {
   const orderManagement = fs.readFileSync(path.join(appDir, "src/features/order-management/order-management.tsx"), "utf8");
