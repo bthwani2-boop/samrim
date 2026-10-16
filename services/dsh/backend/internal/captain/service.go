@@ -279,6 +279,11 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 	if err != nil {
 		return postgres.CaptainOfferResult{}, err
 	}
+	if order.FulfillmentMode == "BTHWANI_CAPTAIN" {
+		if err := s.requireCaptainMinimumBalance(ctx, identity.Subject); err != nil {
+			return postgres.CaptainOfferResult{}, err
+		}
+	}
 	reserved := false
 	if order.FulfillmentMode == "BTHWANI_CAPTAIN" && order.PaymentCashAmountMinor > 0 && order.PaymentIntentID != nil && strings.TrimSpace(*order.PaymentIntentID) != "" {
 		_, _, reserveErr := s.payment.ReserveCaptainCOD(ctx, order.ID, *order.PaymentIntentID, identity.Subject, wlt.DerivedIdempotencyKey("captain-cod-reserve", offer.ID), correlationID)
@@ -516,7 +521,11 @@ func (s *Service) dispatchCandidates(ctx context.Context, orderID string) ([]str
 	if err != nil {
 		return nil, err
 	}
-	return selectFundedNearbyCaptains(ctx, candidates, cashMinor, s.payment.ReadCaptainWalletState)
+	minimum, err := s.captainMinimumBalance(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return selectFundedNearbyCaptains(ctx, candidates, cashMinor, minimum, s.payment.ReadCaptainWalletState)
 }
 
 func (s *Service) Dispatch(ctx context.Context, orderID, actingActorID, idempotencyKey, correlationID string) (postgres.CaptainOffer, bool, error) {
@@ -544,6 +553,8 @@ func (s *Service) DispatchForPartner(ctx context.Context, accessToken, storeID, 
 	if err := s.authorizePartnerStoreFulfillment(ctx, storeID, identity.Subject); err != nil {
 		return postgres.CaptainOffer{}, false, err
 	}
+	// Store-managed captains use PARTNER_CAPTAIN fulfillment; this platform
+	// wallet minimum applies only to BTHWANI_CAPTAIN orders.
 	requestHash := postgres.HashStoreCaptainDispatchRequest(storeID, orderID, captainActorID, expectedOrderVersion)
 	return postgres.CreateStoreCaptainDispatchOffer(ctx, s.db, strings.TrimSpace(storeID), strings.TrimSpace(orderID), strings.TrimSpace(captainActorID), identity.Subject, expectedOrderVersion, strings.TrimSpace(idempotencyKey), requestHash, strings.TrimSpace(correlationID))
 }

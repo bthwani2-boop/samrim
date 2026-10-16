@@ -94,6 +94,8 @@ Complete related edits before running TypeScript, tests, device checks or other 
 
 Use Git to identify changes and Nx to select affected project work when applicable. `pnpm check` is the normal local feedback command for uncommitted work; use narrower direct commands when they are sufficient. `pnpm verify` is explicit candidate-wide local proof, not a default step and not an implicit prerequisite to push.
 
+**MANDATORY — ZERO MOJIBAKE:** All new/modified text MUST be valid UTF-8 without BOM or confirmed encoding corruption. Run `node tools/dev/check-encoding.mjs`; any confirmed violation BLOCKS closure until its root cause is fixed—never blindly replace characters. Details: `docs/governance/policies/quality.md`.
+
 Default integration flow:
 
 `DISCOVER -> CHANGE -> AFFECTED PROOF -> LOCAL COMMIT(S) -> FEATURE FREEZE -> SAFE PUSH -> PR/CI ONCE`

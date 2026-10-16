@@ -1,132 +1,194 @@
 "use client";
-import { TextArea } from "@bthwani/design-system/web";
 
-import { financialPolicyStateLabel } from "@bthwani/dsh";
-import type { DeliveryFeePolicy } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { DistanceFeePolicy, DistanceFeeBand } from "../../server/dsh/dsh-bff";
 import { useSession } from "../../session/session-provider";
 
-type City = Readonly<{ id: string; displayNameAr: string; active: boolean }>;
-type Policy = Readonly<{ id: string; serviceCityId: string; policyVersion: string; state: DeliveryFeePolicy["state"]; baseFeeMinor: number; distanceUnitMeters: number; distanceRateMinor: number; orderSizeUnitBaseUnits: number; orderSizeRateMinor: number; zoneSurchargeMinor: number; roundingUnitMinor: number; version: number }>;
-type PolicyForm = Readonly<{ baseFeeMinor: string; distanceUnitMeters: string; distanceRateMinor: string; orderSizeUnitBaseUnits: string; orderSizeRateMinor: string; zoneSurchargeMinor: string }>;
-type ReadState = "loading" | "ready" | "missing" | "error";
+type City = Readonly<{id:string;displayNameAr:string;active:boolean}>;
+type Row = Readonly<{id:string;limitKm:string;rate:string}>;
+type ReadState = "loading"|"ready"|"missing"|"error";
+const endpoint="/api/finance/distance-band-fee-policy";
+const emptyRows=():Row[]=>[{id:"new-band-0",limitKm:"",rate:""}];
+const format=(value:number)=>new Intl.NumberFormat("ar-YE",{maximumFractionDigits:2}).format(value);
 
-const emptyForm: PolicyForm = { baseFeeMinor: "", distanceUnitMeters: "", distanceRateMinor: "", orderSizeUnitBaseUnits: "", orderSizeRateMinor: "", zoneSurchargeMinor: "" };
-
-function formFromPolicy(policy: Policy): PolicyForm {
-  return { baseFeeMinor: String(policy.baseFeeMinor), distanceUnitMeters: String(policy.distanceUnitMeters), distanceRateMinor: String(policy.distanceRateMinor), orderSizeUnitBaseUnits: String(policy.orderSizeUnitBaseUnits), orderSizeRateMinor: String(policy.orderSizeRateMinor), zoneSurchargeMinor: String(policy.zoneSurchargeMinor) };
+function rowsFromPolicy(p:DistanceFeePolicy):Row[]{
+ if(!Array.isArray(p.distanceBands)||p.distanceBands.length===0)return emptyRows();
+ return p.distanceBands.map((b,index)=>({id:`${p.id}-${index}`,limitKm:b.upToMeters===null?"":String(b.upToMeters/1000),rate:String(b.ratePerKmMinor)}));
 }
-
-function validForm(form: PolicyForm) {
-  const fields = Object.values(form);
-  if (fields.some((value) => value.trim() === "" || !Number.isInteger(Number(value)))) return false;
-  return Number(form.baseFeeMinor) >= 0 && Number(form.distanceUnitMeters) >= 1 && Number(form.distanceRateMinor) >= 0 && Number(form.orderSizeUnitBaseUnits) >= 1 && Number(form.orderSizeRateMinor) >= 0 && Number(form.zoneSurchargeMinor) >= 0;
+function normalizedBands(rows:readonly Row[]):DistanceFeeBand[]|null{
+ if(!rows.length||rows.length>30)return null;
+ let previous=0;
+ const result:DistanceFeeBand[]=[];
+ for(let index=0;index<rows.length;index++){
+  const row=rows[index]!;
+  const rate=Number(row.rate);
+  if(!row.rate.trim()||!Number.isSafeInteger(rate)||rate<=0||rate>100000000)return null;
+  let upper:number|null=null;
+  if(index!==rows.length-1){
+   upper=Number(row.limitKm)*1000;
+   if(!row.limitKm.trim()||!Number.isSafeInteger(upper)||upper<=previous||upper>500000)return null;
+   previous=upper;
+  }
+  result.push({upToMeters:upper,ratePerKmMinor:rate});
+ }
+ return result;
 }
+function previewQuote(km:string,bands:readonly DistanceFeeBand[]|null):number|null{
+ if(!bands||!km.trim())return null;
+ const meters=Number(km)*1000;
+ if(!Number.isSafeInteger(meters)||meters<0||meters>500000)return null;
+ let previous=0,amount=0;
+ for(const band of bands){
+  if(meters<=previous)break;
+  const end=band.upToMeters===null?meters:Math.min(meters,band.upToMeters);
+  amount+=(end-previous)*band.ratePerKmMinor/1000;
+  previous=end;
+ }
+ return Math.ceil(amount);
+}
+export function DeliveryFeePolicyWorkspace(){
+ const {state:session}=useSession();
+ const canEdit=session.kind==="authenticated"&&session.identity.permissions?.includes("platform_policies")===true;
+ const [cities,setCities]=useState<City[]>([]);
+ const [city,setCity]=useState("");
+ const [policy,setPolicy]=useState<DistanceFeePolicy|null>(null);
+ const [rows,setRows]=useState<Row[]>(emptyRows);
+ const [reason,setReason]=useState("");
+ const [sampleKm,setSampleKm]=useState("1");
+ const [readState,setReadState]=useState<ReadState>("loading");
+ const [busy,setBusy]=useState(false);
+ const [error,setError]=useState("");
+ const [notice,setNotice]=useState("");
+ const sequence=useRef(0);
 
-export function DeliveryFeePolicyWorkspace() {
-  const { state } = useSession();
-  const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("platform_policies") === true;
-  const [cities, setCities] = useState<City[]>([]);
-  const [serviceCityId, setServiceCityId] = useState("");
-  const [policy, setPolicy] = useState<Policy | null>(null);
-  const [form, setForm] = useState<PolicyForm>(emptyForm);
-  const [reason, setReason] = useState("");
-  const [readState, setReadState] = useState<ReadState>("loading");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const readSequence = useRef(0);
+ const read=useCallback(async(scope:string):Promise<DistanceFeePolicy|null>=>{
+  const id=++sequence.current;
+  setReadState("loading");setError("");setNotice("");
+  try{
+   const response=await fetch(endpoint+"?serviceCityId="+encodeURIComponent(scope),{cache:"no-store"});
+   const payload=await response.json() as {policy?:DistanceFeePolicy;error?:{message?:string}};
+   if(id!==sequence.current)return null;
+   if(response.status===404){
+    setPolicy(null);setRows(emptyRows());setReadState("missing");return null;
+   }
+   if(!response.ok||!payload.policy)throw new Error(payload.error?.message||"تعذرت قراءة سياسة رسوم التوصيل");
+   setPolicy(payload.policy);setRows(rowsFromPolicy(payload.policy));setReadState("ready");
+   return payload.policy;
+  }catch(e){
+   if(id===sequence.current){setReadState("error");setError(e instanceof Error?e.message:"تعذرت قراءة السياسة");}
+   return null;
+  }
+ },[]);
+ useEffect(()=>{
+  let alive=true;
+  void(async()=>{
+   const response=await fetch("/api/service-cities",{cache:"no-store"});
+   const payload=await response.json() as {cities?:City[]};
+   if(!response.ok)throw new Error("تعذرت قراءة مدن الخدمة");
+   if(alive)setCities(Array.isArray(payload.cities)?payload.cities:[]);
+   await read("");
+  })().catch(e=>{
+   if(alive){setReadState("error");setError(e instanceof Error?e.message:"تعذرت قراءة مدن الخدمة");}
+  });
+  return()=>{alive=false;sequence.current+=1};
+ },[read]);
 
-  const read = useCallback(async (cityId: string): Promise<boolean> => {
-    const sequence = ++readSequence.current;
-    setReadState("loading");
-    setPolicy(null);
-    setForm(emptyForm);
-    setError("");
-    setMessage("");
-    try {
-      const query = cityId ? `?serviceCityId=${encodeURIComponent(cityId)}` : "";
-      const response = await fetch(`/api/finance/delivery-fee-policy${query}`, { cache: "no-store" });
-      const body = await response.json() as { policy?: Policy; error?: { message?: string } };
-      if (sequence !== readSequence.current) return false;
-      if (response.status === 404) {
-        setReadState("missing");
-        return false;
-      }
-      if (!response.ok || !body.policy) throw new Error(body.error?.message || "تعذرت قراءة سياسة هذا النطاق.");
-      setPolicy(body.policy);
-      setForm(formFromPolicy(body.policy));
-      setReadState("ready");
-      return true;
-    } catch (value) {
-      if (sequence === readSequence.current) {
-        setReadState("error");
-        setError(value instanceof Error ? value.message : "تعذرت قراءة سياسة هذا النطاق.");
-      }
-      return false;
-    }
-  }, []);
+ const bands=normalizedBands(rows);
+ const quote=previewQuote(sampleKm,bands);
+ const active=policy?.distanceBands?.length?true:false;
+ const editingAllowed=canEdit&&(readState==="ready"||readState==="missing");
+ const canSave=editingAllowed&&!busy&&bands!==null&&reason.trim().length>=5&&reason.trim().length<=500;
+ const change=(index:number,key:"limitKm"|"rate",value:string)=>setRows(current=>current.map((r,i)=>i===index?{...r,[key]:value}:r));
+ const add=()=>setRows(current=>{
+  if(current.length>=30)return current;
+  return [...current.slice(0,-1),{...current[current.length-1]!,limitKm:""},{id:crypto.randomUUID(),limitKm:"",rate:""}];
+ });
+ const remove=(index:number)=>setRows(current=>{
+  if(current.length===1)return current;
+  const remaining=current.filter((_,i)=>i!==index);
+  return remaining.map((r,i)=>i===remaining.length-1?{...r,limitKm:""}:r);
+ });
 
-  useEffect(() => {
-    let mounted = true;
-    void (async () => {
-      const response = await fetch("/api/service-cities", { cache: "no-store" });
-      const body = await response.json() as { cities?: City[] };
-      if (!response.ok) throw new Error("تعذرت قراءة مدن الخدمة.");
-      if (mounted) setCities(body.cities ?? []);
-      await read("");
-    })().catch((value: unknown) => {
-      if (mounted) {
-        setReadState("error");
-        setError(value instanceof Error ? value.message : "تعذرت قراءة مدن الخدمة.");
-      }
-    });
-    return () => { mounted = false; readSequence.current += 1; };
-  }, [read]);
-
-  const update = (key: keyof PolicyForm, value: string) => setForm((current) => ({ ...current, [key]: value }));
-  const save = async () => {
-    if ((readState !== "ready" && readState !== "missing") || !canEdit || !validForm(form) || reason.trim().length < 5 || reason.trim().length > 500) return;
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      const payload = { serviceCityId, baseFeeMinor: Number(form.baseFeeMinor), distanceUnitMeters: Number(form.distanceUnitMeters), distanceRateMinor: Number(form.distanceRateMinor), orderSizeUnitBaseUnits: Number(form.orderSizeUnitBaseUnits), orderSizeRateMinor: Number(form.orderSizeRateMinor), zoneSurchargeMinor: Number(form.zoneSurchargeMinor), roundingUnitMinor: 50, expectedVersion: policy?.version ?? 0, reason: reason.trim() };
-      const response = await fetch("/api/finance/delivery-fee-policy", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) });
-      const body = await response.json() as { error?: { message?: string } };
-      if (!response.ok) throw new Error(body.error?.message || "تعذر تفعيل سياسة رسوم التوصيل.");
-      const confirmed = await read(serviceCityId);
-      if (!confirmed) throw new Error("تم إرسال التغيير، لكن تعذرت مطابقة القراءة المعتمدة بعد الحفظ. حدّث القراءة قبل أي تعديل آخر.");
-      setMessage("تم تفعيل السياسة والتحقق من قراءتها من السجل المالي.");
-      setReason("");
-    } catch (value) {
-      setError(value instanceof Error ? value.message : "تعذر تفعيل سياسة رسوم التوصيل.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return <section className="form-section" aria-label="إعداد رسوم التوصيل">
-    <div className="action-row"><button className="button button-secondary" type="button" onClick={() => void read(serviceCityId)} disabled={busy || readState === "loading"}>إعادة القراءة</button></div>
-
-    <label className="field-label" htmlFor="delivery-fee-city">النطاق / مدينة الخدمة<select id="delivery-fee-city" value={serviceCityId} onChange={(event) => { const next = event.target.value; setServiceCityId(next); void read(next); }} disabled={busy}><option value="">السياسة العامة</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}{city.active ? "" : " · غير نشطة"}</option>)}</select></label>
-    {readState === "loading" ? <p role="status">جارٍ قراءة السجل المالي لهذا النطاق…</p> : null}
-    {readState === "missing" ? <p className="managed-status managed-status-warning" role="status">لا توجد سياسة نشطة لهذا النطاق. املأ القيم صراحةً لإنشاء أول إصدار.</p> : null}
-    {readState === "error" ? <p className="validation-error" role="alert">{error || "تعذرت القراءة؛ الحفظ معطل حتى نجاح القراءة."}</p> : null}
-    {message ? <p className="success" role="status">{message}</p> : null}
-    {policy ? <p className="muted">الحالة: {financialPolicyStateLabel(policy.state)} · التقريب: {policy.roundingUnitMinor} ريال</p> : null}
-    {(readState === "ready" || readState === "missing") ? <>
-      <div className="form-grid">
-        <label className="field-label" htmlFor="delivery-base">الرسوم الأساسية (ريال)<input id="delivery-base" type="number" min="0" value={form.baseFeeMinor} onChange={(event) => update("baseFeeMinor", event.target.value)} disabled={busy || !canEdit} /></label>
-        <label className="field-label" htmlFor="delivery-distance-unit">وحدة المسافة (متر)<input id="delivery-distance-unit" type="number" min="1" value={form.distanceUnitMeters} onChange={(event) => update("distanceUnitMeters", event.target.value)} disabled={busy || !canEdit} /></label>
-        <label className="field-label" htmlFor="delivery-distance-rate">رسوم كل وحدة مسافة (ريال)<input id="delivery-distance-rate" type="number" min="0" value={form.distanceRateMinor} onChange={(event) => update("distanceRateMinor", event.target.value)} disabled={busy || !canEdit} /></label>
-        <label className="field-label" htmlFor="delivery-size-unit">وحدة حجم الطلب (وحدات)<input id="delivery-size-unit" type="number" min="1" value={form.orderSizeUnitBaseUnits} onChange={(event) => update("orderSizeUnitBaseUnits", event.target.value)} disabled={busy || !canEdit} /></label>
-        <label className="field-label" htmlFor="delivery-size-rate">رسوم كل وحدة حجم (ريال)<input id="delivery-size-rate" type="number" min="0" value={form.orderSizeRateMinor} onChange={(event) => update("orderSizeRateMinor", event.target.value)} disabled={busy || !canEdit} /></label>
-        <label className="field-label" htmlFor="delivery-zone">بدل المنطقة (ريال)<input id="delivery-zone" type="number" min="0" value={form.zoneSurchargeMinor} onChange={(event) => update("zoneSurchargeMinor", event.target.value)} disabled={busy || !canEdit} /></label>
-      </div>
-      <label className="field-label" htmlFor="delivery-policy-reason">سبب التغيير<TextArea aria-describedby="delivery-policy-reason-hint" className="resize-none" id="delivery-policy-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} rows={3} disabled={busy || !canEdit} /><small id="delivery-policy-reason-hint">٥–٥٠٠ حرف؛ تُفعّل نسخة جديدة.</small></label>
-      {error ? <p className="validation-error" role="alert">{error}</p> : null}
-      <div className="action-row"><button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || !canEdit || !validForm(form) || reason.trim().length < 5 || reason.trim().length > 500}>{busy ? "جارٍ التفعيل والتحقق…" : policy ? "تفعيل نسخة معدلة" : "إنشاء السياسة الأولى"}</button></div>
-    </> : null}
-  </section>;
+ async function save(){
+  if(!canSave||!bands)return;
+  const expected=JSON.stringify(bands);
+  setBusy(true);setError("");setNotice("");
+  try{
+   const response=await fetch(endpoint,{
+    method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},
+    body:JSON.stringify({serviceCityId:city,distanceBands:bands,expectedVersion:policy?.version??0,reason:reason.trim()}),
+   });
+   const body=await response.json() as {error?:{message?:string}};
+   if(!response.ok)throw new Error(body.error?.message||"تعذر اعتماد شرائح المسافة");
+   const confirmed=await read(city);
+   if(!confirmed||JSON.stringify(confirmed.distanceBands)!==expected)
+    throw new Error("أُرسل الحفظ، لكن تعذرت مطابقة البيانات المعتمدة. أعد القراءة قبل تعديل جديد.");
+   setReason("");
+   setNotice("تم اعتماد الشرائح والتحقق من WLT");
+   window.dispatchEvent(new CustomEvent("policy:changed",{detail:{key:"delivery-fees"}}));
+  }catch(e){setError(e instanceof Error?e.message:"تعذر حفظ الشرائح");}
+  finally{setBusy(false);}
+ }
+ return <section className="delivery-tariff" aria-label="إعداد رسوم التوصيل">
+  <div className="delivery-tariff-context">
+   <label htmlFor="delivery-fee-city">التسعير حسب</label>
+   <select id="delivery-fee-city" value={city} disabled={busy} onChange={e=>{setCity(e.target.value);setReason("");void read(e.target.value)}}>
+    <option value="">كل مدن الخدمة · القاعدة العامة</option>
+    {cities.map(c=><option key={c.id} value={c.id}>{c.displayNameAr}{c.active?"":" · غير نشطة"}</option>)}
+   </select>
+  </div>
+  <div className="delivery-tariff-status">
+   <div className="delivery-tariff-current">
+    <strong>شرائح سعر الكيلومتر</strong>
+    {readState==="ready"&&active&&policy?<span>سارية · إصدار {policy.version}</span>:null}
+    {readState==="ready"&&!active||readState==="missing"?<span>لا توجد شرائح معتمدة لهذا النطاق</span>:null}
+   </div>
+   <button type="button" className="delivery-tariff-reload" disabled={busy||readState==="loading"} onClick={()=>void read(city)}>إعادة القراءة</button>
+  </div>
+  {readState==="loading"?<p role="status" className="muted">جارٍ قراءة الشرائح…</p>:null}
+  {readState==="error"?<p role="alert" className="validation-error">{error}</p>:null}
+  {notice?<p role="status" className="success">{notice}</p>:null}
+  {editingAllowed?<div className="delivery-tariff-body">
+   <div className="delivery-tariff-grid-head" aria-hidden="true">
+    <span>من (كم)</span><span>إلى (كم)</span><span>ريال / كم</span><span/>
+   </div>
+   <ol className="delivery-tariff-tiers" aria-label="شرائح رسوم التوصيل">
+    {rows.map((row,index)=><li className="delivery-tariff-tier" key={row.id}>
+      <output className="delivery-tariff-from" aria-label={`بداية الشريحة ${index+1}`}>{index===0?"0":rows[index-1]!.limitKm||"—"}</output>
+      {index===rows.length-1?<span className="delivery-tariff-unbounded">بلا حد</span>:
+       <input type="number" inputMode="decimal" min="0.001" step="0.001"
+        aria-label={`نهاية الشريحة ${index+1} بالكيلومتر`} value={row.limitKm}
+        onChange={e=>change(index,"limitKm",e.target.value)} disabled={busy||!canEdit} />}
+      <input type="number" inputMode="numeric" min="1" step="1"
+       aria-label={`سعر الشريحة ${index+1} لكل كيلومتر بالريال`} value={row.rate}
+       onChange={e=>change(index,"rate",e.target.value)} disabled={busy||!canEdit}/>
+      {canEdit&&rows.length>1?<button type="button" className="delivery-tariff-remove"
+       aria-label={`حذف الشريحة ${index+1}`} title="حذف الشريحة"
+       onClick={()=>remove(index)} disabled={busy}>×</button>:<span/>}
+    </li>)}
+   </ol>
+   {canEdit?<button type="button" className="delivery-tariff-add" onClick={add} disabled={busy||rows.length>=30}>+ إضافة شريحة</button>:null}
+   <p className="delivery-tariff-explain">يُحسب كل جزء من المسافة بسعر شريحته، وآخر شريحة تستمر لأي مسافة. لا رسوم حجم أو منطقة.</p>
+   <div className="delivery-tariff-estimate">
+    <label htmlFor="delivery-estimate-distance">معاينة لمسافة (كم)
+     <input id="delivery-estimate-distance" type="number" inputMode="decimal" min="0" step="0.1" value={sampleKm} onChange={e=>setSampleKm(e.target.value)}/>
+    </label>
+    <div className="delivery-tariff-estimate-total">
+     <small>الرسم المحسوب</small>
+     <strong>{quote===null?"—":format(quote)+" ريال"}</strong>
+    </div>
+   </div>
+   <small className="delivery-tariff-estimate-note">معاينة حسابية للقيم المعروضة، وليست تسعيرًا معتمدًا حتى الحفظ.</small>
+   {canEdit?<div className="delivery-tariff-commit">
+    <label htmlFor="delivery-policy-reason">سبب التعديل
+     <textarea id="delivery-policy-reason" rows={2} minLength={5} maxLength={500}
+      value={reason} onChange={e=>setReason(e.target.value)} disabled={busy} placeholder="اذكر سبب تغيير الأسعار"/>
+    </label>
+    {error?<p role="alert" className="validation-error">{error}</p>:null}
+    <button type="button" className="button button-primary" disabled={!canSave} onClick={()=>void save()}>
+     {busy?"جارٍ الاعتماد…":active?"اعتماد الشرائح المعدلة":"اعتماد الشرائح"}
+    </button>
+   </div>:null}
+  </div>:null}
+ </section>;
 }

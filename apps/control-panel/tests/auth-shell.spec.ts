@@ -764,8 +764,8 @@ test("workspace shell exposes nested breadcrumbs and the current resource", asyn
   await expect(breadcrumbs.getByRole("link", { name: "الكتالوج", exact: true })).toHaveAttribute("href", "/catalog");
   await expect(breadcrumbs.locator('[aria-current="page"]')).toContainText("المنتجات");
 
-  await page.goto("/policies/service-cities");
-  await expect(page.getByRole("navigation", { name: "مسار الصفحة" }).locator('[aria-current="page"]')).toContainText("مدن الخدمة");
+  await page.goto("/policies?policy=service-cities&action=manage");
+  await expect(page.getByRole("navigation", { name: "مسار الصفحة" }).locator('[aria-current="page"]')).toContainText("سياسات المنصة");
 });
 
 test("mobile workspace navigation restores focus and account menu owns appearance controls", async ({ page }) => {
@@ -1664,7 +1664,7 @@ test("operator gets an actionable empty state when no active commerce vertical e
   });
   await page.goto("/partners/new");
   await expect(page.getByText("لا يمكن إنشاء الحالة بعد", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "فتح مدن الخدمة" })).toHaveAttribute("href", "/policies/service-cities");
+  await expect(page.getByRole("link", { name: "فتح مدن الخدمة" })).toHaveAttribute("href", "/policies?policy=service-cities&action=manage");
   await expect(page.getByRole("button", { name: "إنشاء حالة انضمام" })).toBeDisabled();
 });
 
@@ -1684,7 +1684,7 @@ test("operator city creation delegates the stable id to DSH", async ({ page }) =
     });
   });
 
-  await page.goto("/policies/service-cities");
+  await page.goto("/policies?policy=service-cities&action=manage");
   await page.locator("details.create-disclosure > summary").click();
   await page.getByLabel("الاسم العربي").fill("صنعاء");
   await page.getByRole("button", { name: "إضافة مدينة" }).click();
@@ -1706,7 +1706,7 @@ test("operator city creation rejects non-Arabic names before mutation", async ({
     mutationAttempted = true;
     await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: { code: "UNEXPECTED_MUTATION" } }) });
   });
-  await page.goto("/policies/service-cities");
+  await page.goto("/policies?policy=service-cities&action=manage");
   await page.locator("details.create-disclosure > summary").click();
   await page.getByLabel("الاسم العربي").fill("Sana'a");
   await page.getByRole("button", { name: "إضافة مدينة" }).click();
@@ -1774,17 +1774,18 @@ test("operator creates and reads back the reward policy for the selected commerc
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ policy: savedPolicy }) });
   });
 
-  await page.goto("/policies/field-acquisition");
-  await expect(page.getByRole("heading", { name: "استحقاق ضم الشريك للميداني", exact: true, level: 1 })).toBeVisible();
-  await page.getByLabel("المجال التجاري").selectOption("restaurants");
-  await page.getByLabel("نوع المتجر التجاري").selectOption("grocery-market");
+  await page.goto("/policies?policy=field-acquisition&action=manage");
+  await expect(page).toHaveURL(/\/policies\?policy=field-acquisition&action=manage/);
+  await expect(page.getByTestId("policy-studio").getByRole("dialog", { name: "استحقاق ضم الشريك للميداني" })).toBeVisible();
+  await page.getByLabel("للعثور على نوع المتجر: اختر المجال الذي يتبعه").selectOption("restaurants");
+  await page.getByLabel("نوع المتجر الذي تُطبّق عليه المكافأة").selectOption("grocery-market");
   await expect(page.getByRole("status").getByText(/لا توجد سياسة لنوع/)).toBeVisible();
   await page.getByLabel(/^مبلغ الاستحقاق \(ريال\)/).fill("250");
   await page.getByLabel("سبب الإنشاء أو التغيير").fill("سياسة اختبار نوع المطعم");
   await page.getByRole("button", { name: "إنشاء السياسة", exact: true }).click();
   await expect(page.locator("output.success")).toContainText("تم حفظ السياسة ومطابقة مبلغها وإصدارها مع السجل المالي.");
   expect(mutation).toMatchObject({ scopeType: "STORE_TYPE", scopeId: "grocery-market", rewardMinor: 250, roundingUnitMinor: 50, expectedVersion: 0, reason: "سياسة اختبار نوع المطعم" });
-  await expect(page.getByRole("status").getByText("المبلغ الفعّال")).toBeVisible();
+  await expect(page.getByRole("status").getByText("المبلغ الفعّال لنوع المتجر")).toBeVisible();
 });
 
 test("operator creates a product category under its commerce vertical", async ({ page }) => {

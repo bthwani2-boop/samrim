@@ -58,9 +58,15 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil || len(first.Operations) != 2 || first.Operations[0].OrderID != "operator_order_03" || first.Operations[1].OrderID != "operator_order_02" || first.NextCursor == "" {
 			t.Fatalf("first operator operations page is not stable: %+v err=%v", first, err)
 		}
+		if first.Summary.TotalCount != 3 || first.Summary.ActionableCount != 3 || first.Summary.AwaitingDispatchCount != 3 || first.Summary.ActiveCount != 0 || first.Summary.DeliveredCount != 0 || first.Summary.MeasuredAt.IsZero() {
+			t.Fatalf("first-page summary must cover all filtered results, not the two loaded rows: %+v", first.Summary)
+		}
 		second, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", "", "updated_desc", true, 2, first.NextCursor)
 		if err != nil || len(second.Operations) != 1 || second.Operations[0].OrderID != "operator_order_01" || second.NextCursor != "" {
 			t.Fatalf("second operator operations page is not stable: %+v err=%v", second, err)
+		}
+		if second.Summary.TotalCount != 3 || second.Summary.ActionableCount != 3 {
+			t.Fatalf("cursor narrowed result-set summary: %+v", second.Summary)
 		}
 		if _, err := postgres.ListOrdersForOperator(ctx, db, "CAPTAIN_ASSIGNED", "", "updated_desc", true, 2, first.NextCursor); !errors.Is(err, postgres.ErrOperatorOperationInvalidCursor) {
 			t.Fatalf("expected filter-bound cursor rejection, got %v", err)
@@ -87,6 +93,17 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil || len(matched.Operations) != 1 || matched.Operations[0].OrderID != "operator_order_02" {
 			t.Fatalf("case-insensitive order identifier search failed: %+v err=%v", matched, err)
 		}
+		if matched.Summary.TotalCount != 1 || matched.Summary.AwaitingDispatchCount != 1 {
+			t.Fatalf("summary ignored identifier search: %+v", matched.Summary)
+		}
+		empty, err := postgres.ListOrdersForOperator(ctx, db, "", "no-such-order", "updated_desc", false, 2, "")
+		if err != nil || len(empty.Operations) != 0 || empty.Summary.TotalCount != 0 || empty.Summary.ActionableCount != 0 || empty.Summary.MeasuredAt.IsZero() {
+			t.Fatalf("empty query must return a measured zero summary: %+v err=%v", empty, err)
+		}
+		literal, err := postgres.ListOrdersForOperator(ctx, db, "", "%", "updated_desc", false, 2, "")
+		if err != nil || literal.Summary.TotalCount != 0 {
+			t.Fatalf("summary expanded a literal wildcard search: %+v err=%v", literal, err)
+		}
 		storeMatches, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", "متجر العمليات", "updated_desc", false, 10, "")
 		if err != nil || len(storeMatches.Operations) != 3 {
 			t.Fatalf("store name search failed: %+v err=%v", storeMatches, err)
@@ -108,6 +125,17 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		actionable, err := postgres.ListOrdersForOperator(ctx, db, "", "", "updated_desc", true, 10, "")
 		if err != nil || len(actionable.Operations) != 2 {
 			t.Fatalf("actionable operator queue included a non-actionable order: %+v err=%v", actionable, err)
+		}
+		if actionable.Summary.TotalCount != 2 || actionable.Summary.ActionableCount != 2 || actionable.Summary.AwaitingDispatchCount != 2 || actionable.Summary.ActiveCount != 0 {
+			t.Fatalf("summary ignored actionable filter: %+v", actionable.Summary)
+		}
+		all, err := postgres.ListOrdersForOperator(ctx, db, "", "", "updated_desc", false, 1, "")
+		if err != nil || all.Summary.TotalCount != 3 || all.Summary.ActiveCount != 1 || all.Summary.ActionableCount != 2 {
+			t.Fatalf("summary lost non-actionable active pickup orders: %+v err=%v", all.Summary, err)
+		}
+		pickup, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_PICKUP", "", "updated_desc", false, 1, "")
+		if err != nil || pickup.Summary.TotalCount != 1 || pickup.Summary.ActiveCount != 1 || pickup.Summary.AwaitingDispatchCount != 0 || pickup.Summary.ActionableCount != 0 {
+			t.Fatalf("summary ignored exact state filter: %+v err=%v", pickup.Summary, err)
 		}
 		for _, item := range actionable.Operations {
 			if item.OrderID == "operator_order_02" {

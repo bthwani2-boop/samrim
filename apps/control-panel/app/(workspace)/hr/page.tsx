@@ -1,2 +1,5 @@
-import { redirect } from "next/navigation";
-export default function HRHome() { redirect("/hr/employees"); }
+import { HRCenterWorkspace } from "../../../src/features/hr/hr-center-workspace";
+
+export default function HRHome() { return <HRCenterWorkspace />; }
+
+export const metadata = { title: "الموارد البشرية" };

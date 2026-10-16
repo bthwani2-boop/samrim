@@ -12,6 +12,7 @@ import { useSession } from "../../src/session/session-provider";
 import { AppearanceControl } from "../../src/shell/appearance-control";
 import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/public-shell";
 import { WorkspaceIcon } from "../../src/shell/workspace-icon";
+import { WorkspaceRecordSearch } from "../../src/shell/workspace-record-search";
 
 function currentChild(pathname: string, destination: (typeof workspaceDestinations)[number]) {
   const child = currentWorkspaceChild(pathname, destination);
@@ -254,10 +255,11 @@ function WorkspaceHeader({
                 id="workspace-search-input"
                 type="search"
                 autoComplete="off"
-                placeholder="ابحث عن صفحة أو مساحة"
+                placeholder="ابحث عن صفحة أو سجل"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
               />
+              {searchQuery ? <button type="button" className="workspace-search-close" aria-label="مسح نص البحث" onClick={() => { setSearchQuery(""); searchInputRef.current?.focus(); }}>×</button> : null}
               <button type="button" className="workspace-search-close" aria-label="إغلاق البحث" onClick={() => closeSearch(true)}>×</button>
             </form>
           ) : null}
@@ -307,6 +309,7 @@ function WorkspaceHeader({
               </ul>
             </>
           ) : <p className="workspace-search-empty">لا توجد صفحات مطابقة.</p> : <p className="workspace-search-empty">اكتب اسم الصفحة أو المساحة للبحث.</p>}
+          {searchOpen && normalizedSearch && identity ? <WorkspaceRecordSearch key={identity.subject} query={searchQuery} identity={identity} onNavigate={() => closeSearch()} /> : null}
         </div>
       </div>
     </header>

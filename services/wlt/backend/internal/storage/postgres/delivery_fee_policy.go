@@ -5,10 +5,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"strings"
 	"time"
 )
@@ -35,6 +35,7 @@ type DeliveryFeePolicyRecord struct {
 	CreatedBy              string
 	CreatedAt              time.Time
 	RetiredAt              *time.Time
+	DistanceBands          []DeliveryDistanceBand
 }
 
 type CreateDeliveryFeePolicyInput struct {
@@ -169,12 +170,12 @@ func ReadDeliveryFeePolicy(ctx context.Context, db *sql.DB, serviceCityID string
 }
 
 func readExactActiveDeliveryFeePolicy(ctx context.Context, db *sql.DB, serviceCityID string) (DeliveryFeePolicyRecord, error) {
-	return readDeliveryFeePolicyRow(db.QueryRowContext(ctx, `SELECT id,service_city_id,policy_version,state,base_fee_minor,distance_unit_meters,distance_rate_minor,order_size_unit_base_units,order_size_rate_minor,zone_surcharge_minor,rounding_unit_minor,version,created_by,created_at,retired_at FROM wlt.delivery_fee_policies WHERE state='ACTIVE' AND service_city_id=$1`, serviceCityID))
+	return readDeliveryFeePolicyRow(db.QueryRowContext(ctx, `SELECT id,service_city_id,policy_version,state,base_fee_minor,distance_unit_meters,distance_rate_minor,order_size_unit_base_units,order_size_rate_minor,zone_surcharge_minor,rounding_unit_minor,version,created_by,created_at,retired_at,distance_bands FROM wlt.delivery_fee_policies WHERE state='ACTIVE' AND service_city_id=$1`, serviceCityID))
 }
 
 func ResolveDeliveryFeeQuote(ctx context.Context, db *sql.DB, input DeliveryFeeQuoteInput) (DeliveryFeeQuoteRecord, error) {
 	input.ServiceCityID = strings.TrimSpace(input.ServiceCityID)
-	if db == nil || len(input.ServiceCityID) > 128 || input.OrderSizeBaseUnits <= 0 || !validCoordinate(input.OriginLatitude, input.OriginLongitude) || !validCoordinate(input.DestinationLatitude, input.DestinationLongitude) {
+	if db == nil || len(input.ServiceCityID) > 128 || !validCoordinate(input.OriginLatitude, input.OriginLongitude) || !validCoordinate(input.DestinationLatitude, input.DestinationLongitude) {
 		return DeliveryFeeQuoteRecord{}, ErrDeliveryFeeQuoteInvalidInput
 	}
 	policy, err := readActiveDeliveryFeePolicy(ctx, db, input.ServiceCityID)
@@ -182,43 +183,44 @@ func ResolveDeliveryFeeQuote(ctx context.Context, db *sql.DB, input DeliveryFeeQ
 		return DeliveryFeeQuoteRecord{}, err
 	}
 	distanceMeters := haversineMeters(input.OriginLatitude, input.OriginLongitude, input.DestinationLatitude, input.DestinationLongitude)
-	distanceUnits := ceilDivPositive(distanceMeters, policy.DistanceUnitMeters)
-	orderSizeUnits := ceilDivPositive(input.OrderSizeBaseUnits, policy.OrderSizeUnitBaseUnits)
-	amount := new(big.Int).SetInt64(policy.BaseFeeMinor)
-	amount.Add(amount, new(big.Int).Mul(big.NewInt(policy.DistanceRateMinor), big.NewInt(distanceUnits)))
-	amount.Add(amount, new(big.Int).Mul(big.NewInt(policy.OrderSizeRateMinor), big.NewInt(orderSizeUnits)))
-	amount.Add(amount, big.NewInt(policy.ZoneSurchargeMinor))
-	rounding := big.NewInt(policy.RoundingUnitMinor)
-	amount.Add(amount, new(big.Int).Sub(rounding, big.NewInt(1)))
-	amount.Quo(amount, rounding)
-	amount.Mul(amount, rounding)
-	if !amount.IsInt64() {
-		return DeliveryFeeQuoteRecord{}, ErrDeliveryFeeQuoteInvalidInput
+	if !validDeliveryDistanceBands(policy.DistanceBands) {
+		return DeliveryFeeQuoteRecord{}, ErrDeliveryFeePolicyNotFound
 	}
-	return DeliveryFeeQuoteRecord{FeeMinor: amount.Int64(), PolicyVersion: policy.PolicyVersion, ServiceCityID: input.ServiceCityID, DistanceMeters: distanceMeters, DistanceUnits: distanceUnits, OrderSizeBaseUnits: input.OrderSizeBaseUnits, OrderSizeUnits: orderSizeUnits, RoundingUnitMinor: policy.RoundingUnitMinor}, nil
+	amountMinor, err := calculateDistanceBandFee(distanceMeters, policy.DistanceBands)
+	if err != nil {
+		return DeliveryFeeQuoteRecord{}, err
+	}
+	distanceUnits := int64(0)
+	return DeliveryFeeQuoteRecord{FeeMinor: amountMinor, PolicyVersion: policy.PolicyVersion, ServiceCityID: input.ServiceCityID, DistanceMeters: distanceMeters, DistanceUnits: distanceUnits, OrderSizeBaseUnits: input.OrderSizeBaseUnits, OrderSizeUnits: 0, RoundingUnitMinor: 1}, nil
 }
 
 func readActiveDeliveryFeePolicy(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, serviceCityID string) (DeliveryFeePolicyRecord, error) {
-	return readDeliveryFeePolicyRow(source.QueryRowContext(ctx, `SELECT id,service_city_id,policy_version,state,base_fee_minor,distance_unit_meters,distance_rate_minor,order_size_unit_base_units,order_size_rate_minor,zone_surcharge_minor,rounding_unit_minor,version,created_by,created_at,retired_at FROM wlt.delivery_fee_policies WHERE state='ACTIVE' AND service_city_id IN ($1,'') ORDER BY CASE WHEN service_city_id=$1 AND $1<>'' THEN 0 ELSE 1 END, version DESC LIMIT 1`, serviceCityID))
+	return readDeliveryFeePolicyRow(source.QueryRowContext(ctx, `SELECT id,service_city_id,policy_version,state,base_fee_minor,distance_unit_meters,distance_rate_minor,order_size_unit_base_units,order_size_rate_minor,zone_surcharge_minor,rounding_unit_minor,version,created_by,created_at,retired_at,distance_bands FROM wlt.delivery_fee_policies WHERE state='ACTIVE' AND distance_bands IS NOT NULL AND service_city_id IN ($1,'') ORDER BY CASE WHEN service_city_id=$1 AND $1<>'' THEN 0 ELSE 1 END, version DESC LIMIT 1`, serviceCityID))
 }
 
 func readDeliveryFeePolicyByID(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, policyID string) (DeliveryFeePolicyRecord, error) {
-	return readDeliveryFeePolicyRow(source.QueryRowContext(ctx, `SELECT id,service_city_id,policy_version,state,base_fee_minor,distance_unit_meters,distance_rate_minor,order_size_unit_base_units,order_size_rate_minor,zone_surcharge_minor,rounding_unit_minor,version,created_by,created_at,retired_at FROM wlt.delivery_fee_policies WHERE id=$1`, policyID))
+	return readDeliveryFeePolicyRow(source.QueryRowContext(ctx, `SELECT id,service_city_id,policy_version,state,base_fee_minor,distance_unit_meters,distance_rate_minor,order_size_unit_base_units,order_size_rate_minor,zone_surcharge_minor,rounding_unit_minor,version,created_by,created_at,retired_at,distance_bands FROM wlt.delivery_fee_policies WHERE id=$1`, policyID))
 }
 
 func readDeliveryFeePolicyRow(row *sql.Row) (DeliveryFeePolicyRecord, error) {
 	var result DeliveryFeePolicyRecord
 	var retiredAt sql.NullTime
-	err := row.Scan(&result.ID, &result.ServiceCityID, &result.PolicyVersion, &result.State, &result.BaseFeeMinor, &result.DistanceUnitMeters, &result.DistanceRateMinor, &result.OrderSizeUnitBaseUnits, &result.OrderSizeRateMinor, &result.ZoneSurchargeMinor, &result.RoundingUnitMinor, &result.Version, &result.CreatedBy, &result.CreatedAt, &retiredAt)
+	var bands []byte
+	err := row.Scan(&result.ID, &result.ServiceCityID, &result.PolicyVersion, &result.State, &result.BaseFeeMinor, &result.DistanceUnitMeters, &result.DistanceRateMinor, &result.OrderSizeUnitBaseUnits, &result.OrderSizeRateMinor, &result.ZoneSurchargeMinor, &result.RoundingUnitMinor, &result.Version, &result.CreatedBy, &result.CreatedAt, &retiredAt, &bands)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DeliveryFeePolicyRecord{}, ErrDeliveryFeePolicyNotFound
 	}
 	if retiredAt.Valid {
 		result.RetiredAt = &retiredAt.Time
+	}
+	if err == nil && len(bands) > 0 {
+		if err := json.Unmarshal(bands, &result.DistanceBands); err != nil {
+			return DeliveryFeePolicyRecord{}, err
+		}
 	}
 	return result, err
 }

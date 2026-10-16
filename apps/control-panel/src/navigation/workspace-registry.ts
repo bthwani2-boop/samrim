@@ -1,4 +1,5 @@
 import type { OperatorPermission } from "@bthwani/identity";
+import { policyCapabilities as workspacePolicyResources } from "../features/policies/policy-capabilities";
 
 type WorkspaceChild = Readonly<{
   href: string;
@@ -29,14 +30,9 @@ export type CatalogResourceKey = (typeof workspaceCatalogResources)[number]["key
 // Product, category, and proposal registries share /catalog; retain separate import/recovery workflows.
 const catalogChildren: readonly WorkspaceChild[] = workspaceCatalogResources.filter(({ key }) => key === "import" || key === "trash").map(({ href, label }) => ({ href, label }));
 
-export const workspacePolicyResources = [
-  { key: "service-cities", href: "/policies/service-cities", label: "مدن الخدمة", description: "إدارة المدن المعتمدة المستخدمة في أهلية الخدمة والانضمام." },
-  { key: "wallet-providers", href: "/policies/wallet-providers", label: "مزودو المحافظ الرسمية", description: "إدارة أسماء المحافظ الرسمية التي تظهر في قوائم الاختيار." },
-  { key: "delivery-fees", href: "/policies/delivery-fees", label: "رسوم التوصيل", description: "إدارة سياسة الرسوم المحسوبة خادميًا في السجل المالي." },
-  { key: "field-acquisition", href: "/policies/field-acquisition", label: "استحقاق ضم الشريك للميداني", description: "إدارة مبلغ الاستحقاق مركزيًا حسب فئة المتجر في السجل المالي." },
-  { key: "partner-financial-terms", href: "/policies/partner-financial-terms", label: "شروط الشريك المالية", description: "تحديد العمولة وفترة التسوية المعتمدتين مركزيًا في السجل المالي لملفات الشركاء الجديدة والعالقة." }
-] as const;
-export type PolicyResourceKey = (typeof workspacePolicyResources)[number]["key"];
+// The policies' names, scopes and supported capabilities have one discoverable owner.
+export { policyCapabilities as workspacePolicyResources } from "../features/policies/policy-capabilities";
+export type { PolicyResourceKey } from "../features/policies/policy-capabilities";
 // Policy editors are reached inside the one canonical policies surface. Existing deep links stay valid.
 const policyChildren: readonly WorkspaceChild[] = [];
 
@@ -101,7 +97,7 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
   { href: "/access", label: "الوصول والصلاحيات", children: [], initialOperatorAdminOnly: true }
 ];
 
-export const workspaceSearchEntries = workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false).flatMap((destination) => [
+export const workspaceSearchEntries = [...workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false).flatMap((destination) => [
   ...(destination.children.some((child) => child.href === destination.href) ? [] : [{
     href: destination.href,
     label: destination.label,
@@ -114,7 +110,11 @@ export const workspaceSearchEntries = workspaceDestinations.filter((destination)
     context: destination.label,
     searchText: `${child.label} ${destination.label} ${child.href} ${child.searchAliases ?? ""}`,
   })),
-]);
+]),
+  ...workspaceCatalogResources.filter(({ key }) => key !== "trash" && key !== "import").map(({ href, label }) => ({ href, label, context: "الكتالوج", searchText: `${label} الكتالوج ${href}` })),
+  ...workspacePolicyResources.map(({ href, label }) => ({ href, label, context: "السياسات", searchText: `${label} السياسات ${href}` })),
+  ...workspaceMarketingResources.map(({ href, label }) => ({ href, label, context: "التسويق والمحتوى", searchText: `${label} التسويق ${href}` })),
+];
 
 export function isCurrentWorkspacePath(pathname: string, href: string) {
   return href === "/workspace" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);

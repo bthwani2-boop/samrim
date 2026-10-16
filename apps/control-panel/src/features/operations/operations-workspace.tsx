@@ -1,6 +1,6 @@
 "use client";
 
-import { captainAssignmentStateLabel, formatOrderDate, type OperatorOperationListItem, orderStateLabel } from "@bthwani/dsh";
+import { captainAssignmentStateLabel, formatOrderDate, type OperatorOperationListItem, type OperatorOperationsSummary, orderStateLabel } from "@bthwani/dsh";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
@@ -57,6 +57,14 @@ function isRenderableOperation(value: unknown): value is OperatorOperationListIt
       && typeof (assignment as Record<string, unknown>).state === "string"));
 }
 
+function isRenderableSummary(value: unknown): value is OperatorOperationsSummary {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  const fields = ["totalCount", "actionableCount", "awaitingDispatchCount", "activeCount", "deliveredCount"];
+  return fields.every((field) => Number.isSafeInteger(item[field]) && Number(item[field]) >= 0 && Number(item[field]) <= Number(item.totalCount))
+    && typeof item.measuredAt === "string" && Number.isFinite(Date.parse(item.measuredAt));
+}
+
 export function OperationsWorkspace() {
   const pathname = usePathname();
   const router = useRouter();
@@ -80,6 +88,7 @@ export function OperationsWorkspace() {
   const cursor = cursorPage.cursor;
 
   const [operations, setOperations] = useState<ReadonlyArray<OperatorOperationListItem>>([]);
+  const [summary, setSummary] = useState<OperatorOperationsSummary | null>(null);
   const [ageClock, setAgeClock] = useState(() => Date.now());
   const [search, setSearch] = useState(searchFromUrl);
   const [loading, setLoading] = useState(true);
@@ -147,7 +156,7 @@ export function OperationsWorkspace() {
   const load = useCallback(async (retainRows = false) => {
     const sequence = ++loadSequence.current;
     setLoading(true);
-    if (!retainRows) setOperations([]);
+    if (!retainRows) { setOperations([]); setSummary(null); }
     setError("");
     setErrorStatus(0);
     try {
@@ -162,17 +171,19 @@ export function OperationsWorkspace() {
       });
       if (sequence !== loadSequence.current) return;
       if (!response.ok) throw Object.assign(new Error(await operationResponseMessage(response)), { status: response.status });
-      const body = await response.json() as { operations?: ReadonlyArray<OperatorOperationListItem>; nextCursor?: string };
+      const body = await response.json() as { operations?: ReadonlyArray<OperatorOperationListItem>; nextCursor?: string; summary?: OperatorOperationsSummary };
       if (sequence !== loadSequence.current) return;
       if (!body || !Array.isArray(body.operations) || !body.operations.every(isRenderableOperation)
-        || (body.nextCursor !== undefined && typeof body.nextCursor !== "string")) {
+        || (body.nextCursor !== undefined && typeof body.nextCursor !== "string")
+        || (body.summary !== undefined && !isRenderableSummary(body.summary))) {
         throw new Error("استجابة قائمة الطلبات غير صالحة. أعد المحاولة.");
       }
       setOperations(body.operations);
+      setSummary(body.summary ?? null);
       setNextCursor(body.nextCursor ?? "");
     } catch (cause) {
       if (sequence !== loadSequence.current) return;
-      if (!retainRows) setOperations([]);
+      if (!retainRows || (cause && typeof cause === "object" && "status" in cause && (cause.status === 401 || cause.status === 403))) { setOperations([]); setSummary(null); }
       setErrorStatus(cause && typeof cause === "object" && "status" in cause && typeof cause.status === "number" ? cause.status : 0);
       const timedOut = cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError");
       setError(timedOut ? "استغرقت القراءة وقتًا طويلًا. أعد المحاولة." : cause instanceof Error ? cause.message : "تعذر قراءة مركز العمليات.");
@@ -196,12 +207,6 @@ export function OperationsWorkspace() {
 
   const hasSearch = Boolean(searchFromUrl);
   const selectedFilter = preciseState || (view === "attention" ? "attention" : view === "dispatch" ? "READY_FOR_DISPATCH" : view === "delivered" ? "DELIVERED" : "");
-  const counts = {
-    review: operations.filter((item) => operationalAge(item.state, item.updatedAt, ageClock).needsReview).length,
-    dispatch: operations.filter((item) => item.state === "READY_FOR_DISPATCH").length,
-    active: operations.filter((item) => !["READY_FOR_DISPATCH", "DELIVERY_FAILED", "DELIVERED", "REJECTED", "CANCELLED"].includes(item.state)).length,
-    delivered: operations.filter((item) => item.state === "DELIVERED").length,
-  };
   const shortOrderId = (id: string) => id.length > 22 ? id.slice(0, 11) + "…" + id.slice(-7) : id;
   const selectedViewLabel = preciseState ? specificStates.find((item) => item.value === preciseState)?.label ?? preciseState
     : views.find((item) => item.id === view)?.label ?? "جميع الطلبات";
@@ -255,19 +260,19 @@ export function OperationsWorkspace() {
         <p>{error}</p><button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>إعادة المحاولة</button>
       </div> : null}
 
-      <section className="ops-status-summary" aria-label="مؤشرات الطلبات المعروضة">
-        <div className="ops-summary-caption">مؤشرات الصفحة الحالية فقط · لا تمثل إجمالي طلبات المنصة</div>
+      <section className="ops-status-summary" aria-label="مؤشرات نتائج الطلبات">
+        <div className="ops-summary-caption">{summary ? <>كل النتائج المطابقة للبحث والمرشحات · آخر قراءة <time dateTime={summary.measuredAt}>{formatOrderDate(summary.measuredAt)}</time>{loading || error ? " · جارٍ التحديث أو تعذر تحديث القراءة" : ""}</> : "لم تتوفر إجماليات النتائج من الخدمة"}</div>
         <div className="ops-summary-grid">
-          <div className="ops-summary ops-summary-review"><span>تحتاج مراجعة</span><strong>{counts.review}</strong></div>
-          <div className="ops-summary ops-summary-dispatch"><span>بانتظار كابتن</span><strong>{counts.dispatch}</strong></div>
-          <div className="ops-summary ops-summary-active"><span>قيد التنفيذ</span><strong>{counts.active}</strong></div>
-          <div className="ops-summary ops-summary-delivered"><span>تم التسليم</span><strong>{counts.delivered}</strong></div>
+          <div className="ops-summary ops-summary-review"><span>تحتاج قرارًا</span><strong>{summary?.actionableCount ?? "—"}</strong></div>
+          <div className="ops-summary ops-summary-dispatch"><span>بانتظار كابتن</span><strong>{summary?.awaitingDispatchCount ?? "—"}</strong></div>
+          <div className="ops-summary ops-summary-active"><span>قيد التنفيذ</span><strong>{summary?.activeCount ?? "—"}</strong></div>
+          <div className="ops-summary ops-summary-delivered"><span>تم التسليم</span><strong>{summary?.deliveredCount ?? "—"}</strong></div>
         </div>
       </section>
 
       <div className="ops-list-heading">
         <div className="ops-list-name"><h2 id="operations-list-title">{selectedViewLabel}</h2>
-          <span className="muted">{operations.length} طلب في هذه الصفحة{nextCursor ? " · المزيد في الصفحة التالية" : ""}</span>
+          <span className="muted">{operations.length} طلب في هذه الصفحة{summary ? ` · ${summary.totalCount} إجمالي النتائج` : ""}{nextCursor ? " · المزيد في الصفحة التالية" : ""}</span>
         </div>
 
       </div>

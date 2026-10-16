@@ -13,7 +13,7 @@ export function LazyWorkspaceDisclosure({ name, description, children, initially
 }>) {
   const [visited, setVisited] = useState(initiallyOpen);
   const [expanded, setExpanded] = useState(initiallyOpen);
-  return <details className={["policy-center-disclosure", className].filter(Boolean).join(" ")}
+  return <details className={["workspace-disclosure", className].filter(Boolean).join(" ")}
     open={expanded}
     onToggle={(event) => {
       const isOpen = event.currentTarget.open;
@@ -21,9 +21,9 @@ export function LazyWorkspaceDisclosure({ name, description, children, initially
       if (isOpen) setVisited(true);
     }}>
     <summary>
-      <span className="policy-center-disclosure-title">{name}</span>
+      <span className="workspace-disclosure-title">{name}</span>
       <span className="muted">{description}</span>
     </summary>
-    {visited ? <div className="policy-center-disclosure-body">{children}</div> : null}
+    {visited ? <div className="workspace-disclosure-body">{children}</div> : null}
   </details>;
 }

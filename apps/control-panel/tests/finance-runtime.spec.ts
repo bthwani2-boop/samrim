@@ -29,8 +29,8 @@ test("@live operator reads the real bounded COD cash-custody journey", async ({ 
 
 test("@live operator reads the WLT-owned delivery-fee policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
-  await page.goto("/policies/delivery-fees");
-  await expect(page.getByRole("heading", { name: "رسوم التوصيل", level: 1 })).toBeVisible();
+  await page.goto("/policies?policy=delivery-fees&action=manage");
+  await expect(page.getByRole("heading", { name: "رسوم التوصيل", level: 2 })).toBeVisible();
   await expect(page.getByRole("region", { name: "إعداد رسوم التوصيل", exact: true })).toBeVisible();
   await expect(page.getByLabel("النطاق / مدينة الخدمة")).toBeVisible();
   await expect(page.getByLabel("الرسوم الأساسية (ريال)")).toBeEnabled();
@@ -64,9 +64,9 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
 
 test("@live operator sees the WLT-managed Field acquisition reward store-type policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
-  await page.goto("/policies/field-acquisition");
+  await page.goto("/policies?policy=field-acquisition&action=manage");
   await expect(page.getByRole("region", { name: "إعداد مبلغ الاستحقاق", exact: true })).toBeVisible();
-  await expect(page.locator('label[for="field-reward-vertical"]')).toContainText("المجال التجاري");
+  await expect(page.locator('label[for="field-reward-vertical"]')).toContainText("اختر المجال");
   await expect(page.locator("#field-reward-vertical")).toBeVisible();
 
   const fixture = await page.evaluate(async () => {

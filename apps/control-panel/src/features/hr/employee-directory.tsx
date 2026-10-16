@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HREmployee, HREmployeeInput, HREmployeePage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
+import { PageHeader } from "../../shell/page-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { ActivityIndicator, ActivityLegend } from "../shared/record-indicator";
 import { EmployeeAccessRequest } from "./employee-access-request";
@@ -19,6 +20,18 @@ const blank: HREmployeeInput = {
   department: "", jobTitle: "", managerEmployeeId: "",
   startDate: "", workLocation: "",
 };
+
+function isEmployeePage(value: unknown): value is HREmployeePage {
+  if (!value || typeof value !== "object") return false;
+  const page = value as Record<string, unknown>;
+  return Array.isArray(page.items) && (page.nextCursor === undefined || typeof page.nextCursor === "string") && page.items.every((item: unknown) => {
+    if (!item || typeof item !== "object") return false;
+    const employee = item as Record<string, unknown>;
+    return ["id", "fullNameAr", "department", "jobTitle", "startDate", "workLocation", "createdAt"].every((key) => typeof employee[key] === "string")
+      && (employee.status === "active" || employee.status === "inactive")
+      && Number.isSafeInteger(employee.version) && Number(employee.version) > 0;
+  });
+}
 
 export function EmployeeDirectory() {
   const [form, setForm] = useState<HREmployeeInput>(blank);
@@ -48,7 +61,8 @@ export function EmployeeDirectory() {
       const params = new URLSearchParams({ q: overrides?.q ?? applied, cursor: overrides?.cursor ?? cursor });
       const result = await identityFetch(`/api/hr/employees?${params.toString()}`);
       if (!result.ok) throw new Error("تعذر تحميل سجل الموظفين. تحقق من صلاحياتك أو حاول مجددًا.");
-      const page = await result.json() as HREmployeePage;
+      const page: unknown = await result.json();
+      if (!isEmployeePage(page)) throw new Error("تعذر قراءة سجل الموظفين: الاستجابة غير صالحة. أعد المحاولة.");
       setItems(page.items);
       setNextCursor(page.nextCursor ?? "");
     } catch (cause) {
@@ -137,13 +151,7 @@ export function EmployeeDirectory() {
   }
 
   return <section className="workspace-page access-page hr-directory" aria-labelledby="hr-title">
-    <header className="access-section-heading">
-      <div>
-        <h1 id="hr-title">الموارد البشرية</h1>
-        <p>سجل موظفي بثواني — يشمل المشغّلين والموظفين دون وصول إلى لوحة التحكم.</p>
-      </div>
-      <button type="button" className="button button-primary" onClick={() => { setFormOpen((v) => !v); setError(""); }} aria-expanded={formOpen} aria-controls="employee-create">إضافة موظف</button>
-    </header>
+    <PageHeader id="hr-title" title="الموارد البشرية" actions={<button type="button" className="button button-primary" onClick={() => { setFormOpen((v) => !v); setError(""); }} aria-expanded={formOpen} aria-controls="employee-create">إضافة موظف</button>} />
 
     {formOpen ? <form id="employee-create" className="access-create-form" onSubmit={(event) => void save(event)}>
       <h2>ملف موظف جديد</h2>

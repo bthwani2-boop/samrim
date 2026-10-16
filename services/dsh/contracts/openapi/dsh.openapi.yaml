@@ -9,6 +9,110 @@ servers:
   - url: http://127.0.0.1:18080
 
 paths:
+  /dsh/operator/distance-band-fee-policy:
+    get:
+      operationId: readOperatorDistanceBandFeePolicy
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - name: serviceCityId
+          in: query
+          schema: { type: string, maxLength: 128 }
+      responses:
+        '200': { description: Owner-backed version and distance band values. }
+        '404': { description: Policy has not been configured. }
+    post:
+      operationId: createOperatorDistanceBandFeePolicy
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [serviceCityId, distanceBands, expectedVersion, reason]
+              properties:
+                serviceCityId: { type: string, maxLength: 128 }
+                distanceBands:
+                  type: array
+                  minItems: 1
+                  maxItems: 30
+                  items:
+                    type: object
+                    required: [upToMeters, ratePerKmMinor]
+                    properties:
+                      upToMeters: { type: [integer, 'null'] }
+                      ratePerKmMinor: { type: integer, minimum: 1 }
+                expectedVersion: { type: integer, minimum: 0 }
+                reason: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        '201': { description: Activated WLT policy and canonical readback. }
+        '409': { description: Stale version or idempotency conflict. }
+  /dsh/operator/policy-history:
+    get:
+      operationId: readOperatorPolicyHistory
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - name: key
+          in: query
+          required: true
+          schema: { type: string, enum: [service-cities, wallet-providers, delivery-fees, field-acquisition, partner-financial-terms, captain-minimum-balance] }
+        - name: scopeId
+          in: query
+          schema: { type: string, maxLength: 128 }
+      responses:
+        '200': { description: Latest 50 events from DSH or WLT policy versions. }
+  /dsh/operator/policy-registry:
+    get:
+      operationId: readOperatorPolicyRegistry
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+      responses:
+        '200': { description: WLT policy values joined with DSH names, without duplicated storage. }
+  /dsh/operator/captain-minimum-balance-policy:
+    get:
+      operationId: readOperatorCaptainMinimumBalancePolicy
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+      responses:
+        '200': { description: WLT-owned active balance policy. }
+        '404': { description: No active policy. }
+    post:
+      operationId: createOperatorCaptainMinimumBalancePolicy
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [minimumAvailableMinor, expectedVersion, reason]
+              properties:
+                minimumAvailableMinor: { type: integer, format: int64, minimum: 1 }
+                expectedVersion: { type: integer, minimum: 0 }
+                reason: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        '201': { description: Versioned policy activation. }
+        '409': { description: Stale policy or idempotency conflict. }
+  /dsh/operator/captain-minimum-balance-policy/history:
+    get:
+      operationId: listOperatorCaptainMinimumBalanceHistory
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+      responses:
+        '200': { description: Versioned WLT policy history. }
   /dsh/partner/stores/{storeId}/images:
     $ref: "./paths/store-images.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1images"
   /dsh/operator/stores/{storeId}/images:
@@ -7138,6 +7242,13 @@ components:
         roundingUnitMinor:
           type: integer
           const: 50
+        distanceBands:
+          type: array
+          nullable: true
+          description: Active distance-band tariff; null on retained historical legacy versions.
+          maxItems: 30
+          items:
+            $ref: "#/components/schemas/DistanceFeeBand"
         version:
           type: integer
           minimum: 1
@@ -8747,15 +8858,49 @@ components:
           $ref: "#/components/schemas/OperatorAssignmentSummary"
           nullable: true
 
+    OperatorOperationsSummary:
+      type: object
+      description: Counts over the complete authorized filtered result set before cursor paging, measured with the returned page in one database statement snapshot. Each subsequent request refreshes that snapshot.
+      required: [totalCount, actionableCount, awaitingDispatchCount, activeCount, deliveredCount, measuredAt]
+      additionalProperties: false
+      properties:
+        totalCount:
+          type: integer
+          format: int64
+          minimum: 0
+        actionableCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Orders accepted by the actionableOnly filter.
+        awaitingDispatchCount:
+          type: integer
+          format: int64
+          minimum: 0
+        activeCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Nonterminal orders excluding READY_FOR_DISPATCH and DELIVERY_FAILED.
+        deliveredCount:
+          type: integer
+          format: int64
+          minimum: 0
+        measuredAt:
+          type: string
+          format: date-time
+
     OperatorOperationsResponse:
       type: object
-      required: [operations]
+      required: [operations, summary]
       additionalProperties: false
       properties:
         operations:
           type: array
           items:
             $ref: "#/components/schemas/OperatorOperationListItem"
+        summary:
+          $ref: "#/components/schemas/OperatorOperationsSummary"
         nextCursor:
           type: string
           maxLength: 512

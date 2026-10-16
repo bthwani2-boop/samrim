@@ -112,7 +112,10 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 	for _, operation := range operations.Operations {
 		items = append(items, toOperatorOperationListItem(operation))
 	}
-	writeJSON(w, http.StatusOK, contract.OperatorOperationsResponse{Operations: items, NextCursor: operations.NextCursor})
+	summary := operations.Summary
+	writeJSON(w, http.StatusOK, contract.OperatorOperationsResponse{Operations: items, NextCursor: operations.NextCursor,
+		Summary: contract.OperatorOperationsSummary{TotalCount: summary.TotalCount, ActionableCount: summary.ActionableCount,
+			AwaitingDispatchCount: summary.AwaitingDispatchCount, ActiveCount: summary.ActiveCount, DeliveredCount: summary.DeliveredCount, MeasuredAt: summary.MeasuredAt}})
 }
 
 func (s *OrderServer) readOperatorOperation(w http.ResponseWriter, r *http.Request) {

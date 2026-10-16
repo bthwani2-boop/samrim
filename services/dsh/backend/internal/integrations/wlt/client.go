@@ -795,22 +795,27 @@ type FieldPayoutStatesBatch struct {
 	FieldFinanceSummary FieldFinanceSummary `json:"fieldFinanceSummary"`
 }
 
+type DeliveryDistanceBand struct {
+	UpToMeters     *int64 `json:"upToMeters"`
+	RatePerKmMinor int64  `json:"ratePerKmMinor"`
+}
 type DeliveryFeePolicy struct {
-	ID                     string  `json:"id"`
-	ServiceCityID          string  `json:"serviceCityId"`
-	PolicyVersion          string  `json:"policyVersion"`
-	State                  string  `json:"state"`
-	BaseFeeMinor           int64   `json:"baseFeeMinor"`
-	DistanceUnitMeters     int64   `json:"distanceUnitMeters"`
-	DistanceRateMinor      int64   `json:"distanceRateMinor"`
-	OrderSizeUnitBaseUnits int64   `json:"orderSizeUnitBaseUnits"`
-	OrderSizeRateMinor     int64   `json:"orderSizeRateMinor"`
-	ZoneSurchargeMinor     int64   `json:"zoneSurchargeMinor"`
-	RoundingUnitMinor      int64   `json:"roundingUnitMinor"`
-	Version                int     `json:"version"`
-	CreatedBy              string  `json:"createdBy"`
-	CreatedAt              string  `json:"createdAt"`
-	RetiredAt              *string `json:"retiredAt"`
+	DistanceBands          []DeliveryDistanceBand `json:"distanceBands"`
+	ID                     string                 `json:"id"`
+	ServiceCityID          string                 `json:"serviceCityId"`
+	PolicyVersion          string                 `json:"policyVersion"`
+	State                  string                 `json:"state"`
+	BaseFeeMinor           int64                  `json:"baseFeeMinor"`
+	DistanceUnitMeters     int64                  `json:"distanceUnitMeters"`
+	DistanceRateMinor      int64                  `json:"distanceRateMinor"`
+	OrderSizeUnitBaseUnits int64                  `json:"orderSizeUnitBaseUnits"`
+	OrderSizeRateMinor     int64                  `json:"orderSizeRateMinor"`
+	ZoneSurchargeMinor     int64                  `json:"zoneSurchargeMinor"`
+	RoundingUnitMinor      int64                  `json:"roundingUnitMinor"`
+	Version                int                    `json:"version"`
+	CreatedBy              string                 `json:"createdBy"`
+	CreatedAt              string                 `json:"createdAt"`
+	RetiredAt              *string                `json:"retiredAt"`
 }
 
 type PartnerFinancialTermsPolicy struct {
@@ -1981,4 +1986,104 @@ func (c *Client) requestWithActor(ctx context.Context, input actorRequest) error
 
 func targetedStatus(status int) bool {
 	return status >= http.StatusOK && status < http.StatusMultipleChoices
+}
+
+type CaptainMinimumBalancePolicy struct {
+	ID                    string  `json:"id"`
+	Version               int     `json:"version"`
+	MinimumAvailableMinor int64   `json:"minimumAvailableMinor"`
+	Currency              string  `json:"currency"`
+	State                 string  `json:"state"`
+	CreatedBy             string  `json:"createdBy"`
+	ChangeReason          string  `json:"changeReason"`
+	CreatedAt             string  `json:"createdAt"`
+	RetiredAt             *string `json:"retiredAt"`
+}
+
+func (c *Client) ReadCaptainMinimumBalancePolicy(ctx context.Context) (CaptainMinimumBalancePolicy, error) {
+	var v struct {
+		Policy CaptainMinimumBalancePolicy `json:"policy"`
+	}
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/operator/captain-minimum-balance-policy", nil, "", "", 0, &v)
+	return v.Policy, err
+}
+func (c *Client) ListCaptainMinimumBalancePolicyHistory(ctx context.Context) ([]CaptainMinimumBalancePolicy, error) {
+	var v struct {
+		Items []CaptainMinimumBalancePolicy `json:"items"`
+	}
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/operator/captain-minimum-balance-policy/history?limit=50", nil, "", "", 0, &v)
+	return v.Items, err
+}
+func (c *Client) CreateCaptainMinimumBalancePolicy(ctx context.Context, amount int64, expected int, reason, idem, correlation, actor string) (CaptainMinimumBalancePolicy, bool, error) {
+	var v struct {
+		Policy           CaptainMinimumBalancePolicy `json:"policy"`
+		IdempotentReplay bool                        `json:"idempotentReplay"`
+	}
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: "/wlt/v1/operator/captain-minimum-balance-policy",
+		body:           map[string]any{"minimumAvailableMinor": amount, "expectedVersion": expected, "reason": reason},
+		idempotencyKey: idem, correlationID: correlation, actingActorID: actor, target: &v})
+	return v.Policy, v.IdempotentReplay, err
+}
+
+type OperatorPolicyRegistry struct {
+	DeliveryFees  []OperatorFeeBrief    `json:"deliveryFees"`
+	FieldRewards  []OperatorRewardBrief `json:"fieldRewards"`
+	DeliveryTotal int64                 `json:"deliveryTotal"`
+	FieldTotal    int64                 `json:"fieldTotal"`
+}
+type OperatorFeeBrief struct {
+	ServiceCityID string                 `json:"serviceCityId"`
+	DistanceBands []DeliveryDistanceBand `json:"distanceBands"`
+	PolicyVersion string                 `json:"policyVersion"`
+	Version       int                    `json:"version"`
+	CreatedAt     string                 `json:"createdAt"`
+	CreatedBy     string                 `json:"createdBy"`
+}
+type OperatorRewardBrief struct {
+	ScopeType   string `json:"scopeType"`
+	ScopeID     string `json:"scopeId"`
+	RewardMinor int64  `json:"rewardMinor"`
+	Version     int    `json:"version"`
+	CreatedAt   string `json:"createdAt"`
+	CreatedBy   string `json:"createdBy"`
+}
+
+func (c *Client) ReadOperatorPolicyRegistry(ctx context.Context) (OperatorPolicyRegistry, error) {
+	var v OperatorPolicyRegistry
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/operator/policy-registry", nil, "", "", 0, &v)
+	return v, err
+}
+
+type PolicyChange struct {
+	ID        string `json:"id"`
+	ScopeID   string `json:"scopeId"`
+	Version   int    `json:"version"`
+	ActorID   string `json:"actorId"`
+	CreatedAt string `json:"createdAt"`
+	Reason    string `json:"reason"`
+	Field     string `json:"field"`
+	Before    string `json:"before"`
+	After     string `json:"after"`
+}
+
+func (c *Client) ReadOperatorPolicyHistory(ctx context.Context, key, scopeID string) ([]PolicyChange, error) {
+	var body struct {
+		Items []PolicyChange `json:"items"`
+	}
+	query := url.Values{"key": []string{key}, "scopeId": []string{scopeID}}
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/operator/policy-history?"+query.Encode(), nil, "", "", 0, &body)
+	return body.Items, err
+}
+
+func (c *Client) ReadDistanceBandFeePolicy(ctx context.Context, city string) (DeliveryFeePolicy, error) {
+	var reply deliveryFeePolicyResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/operator/distance-band-fee-policies?serviceCityId="+url.QueryEscape(strings.TrimSpace(city)), nil, "", "", 0, &reply)
+	return reply.Policy, err
+}
+func (c *Client) CreateDistanceBandFeePolicy(ctx context.Context, city string, bands []DeliveryDistanceBand, version int, reason, idem, correlation, actor string) (DeliveryFeePolicy, bool, error) {
+	var reply deliveryFeePolicyResponse
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: "/wlt/v1/operator/distance-band-fee-policies",
+		body:           map[string]any{"serviceCityId": city, "distanceBands": bands, "expectedVersion": version, "reason": reason},
+		idempotencyKey: idem, correlationID: correlation, actingActorID: actor, target: &reply})
+	return reply.Policy, reply.IdempotentReplay, err
 }

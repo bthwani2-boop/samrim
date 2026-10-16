@@ -1,4 +1,6 @@
 const paths = {
+  eye: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
+  edit: "M12 20h9M4 17.5V21h3.5L19 9.5 15.5 6 4 17.5ZM14 7.5l3.5 3.5",
   home: "M3 10 12 3l9 7v10H3ZM9 20v-7h6v7",
   operations: "M4 5h16v14H4ZM4 10h16M9 5v14",
   partners: "M15 20v-3a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v3M16 5a4 4 0 0 1 0 8M21 20v-3a4 4 0 0 0-3-4M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
@@ -29,7 +31,7 @@ const paths = {
   cash: "M2 6h20v12H2ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM5 9h.01M19 15h.01",
 } as const;
 export type OperationalIconName = keyof typeof paths;
-const icons: Record<string, OperationalIconName> = { "/workspace": "home", "/operations": "operations", "/partners": "partners", "/catalog": "catalog", "/marketing": "marketing", "/finance": "finance", "/policies": "policies", "/access": "access", "/hr": "employees", "/hr/employees": "employees", "/fields": "field", "/captains": "rider", "/partners/joining": "review", "/catalog/products": "pickup", "/catalog/categories": "categories", "/catalog/trash": "trash", "/catalog/proposals": "review", "/catalog/import": "import", "/marketing/promotions": "marketing", "/marketing/content": "content", "/policies/service-cities": "map", "/policies/wallet-providers": "finance", "/policies/delivery-fees": "rider", "/policies/field-acquisition": "field", "/policies/partner-financial-terms": "review", "/finance/cash-custody": "cash", "/finance/partner-store-commissions": "review", "/finance/beneficiary-settlement": "finance", "/finance/customer-withdrawals": "import", "/finance/partner-commission-receivables": "cash", "/operations/customer-withdrawals": "import" };
+const icons: Record<string, OperationalIconName> = { "/workspace": "home", "/operations": "operations", "/partners": "partners", "/catalog": "catalog", "/marketing": "marketing", "/finance": "finance", "/policies": "policies", "/access": "access", "/hr": "employees", "/hr/employees": "employees", "/fields": "field", "/captains": "rider", "/partners/joining": "review", "/catalog/products": "pickup", "/catalog/categories": "categories", "/catalog/trash": "trash", "/catalog/proposals": "review", "/catalog/import": "import", "/marketing/promotions": "marketing", "/marketing/content": "content", "/finance/cash-custody": "cash", "/finance/partner-store-commissions": "review", "/finance/beneficiary-settlement": "finance", "/finance/customer-withdrawals": "import", "/finance/partner-commission-receivables": "cash", "/operations/customer-withdrawals": "import" };
 export function OperationalIcon({ name }: Readonly<{ name: OperationalIconName }>) {
   return <svg className="workspace-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={paths[name]} /></svg>;
 }

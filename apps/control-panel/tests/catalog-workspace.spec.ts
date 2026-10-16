@@ -16,19 +16,25 @@ async function stubAuthenticatedSession(page: Page) {
   });
 }
 
-test("catalog center opens its product registry and exposes sidebar resources", async ({ page }) => {
+test("catalog center keeps its product registry and contextual work on one surface", async ({ page }) => {
   await stubAuthenticatedSession(page);
   await page.goto("/catalog");
-  await expect(page).toHaveURL(/\/catalog\/products$/);
-  await expect(page.getByRole("heading", { name: "المنتجات", exact: true, level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/\/catalog$/);
+  await expect(page.getByRole("heading", { name: "الكتالوج", exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByTestId("catalog-center")).toBeVisible();
+  await expect(page.getByRole("button", { name: "جدول المنتجات", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("summary").filter({ hasText: "المجالات والفئات" })).toBeVisible();
+  await expect(page.locator("summary").filter({ hasText: "مقترحات الشركاء" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الكتالوج", exact: true })).toHaveAttribute("aria-current", "location");
   const sideNavigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
   const catalogTabs = sideNavigation.getByRole("list", { name: "مسارات الكتالوج" });
-  for (const [label, href] of [["المنتجات", "/catalog/products"], ["الفئات", "/catalog/categories"], ["المراجعة", "/catalog/proposals"], ["الاستيراد", "/catalog/import"]] as const) {
+  for (const [label, href] of [["الاستيراد", "/catalog/import"], ["سلة المحذوفات", "/catalog/trash"]] as const) {
     await expect(catalogTabs.getByRole("link", { name: label, exact: true })).toHaveAttribute("href", href);
     await expect(sideNavigation.getByRole("link", { name: label, exact: true })).toHaveCount(1);
   }
-  await expect(catalogTabs.getByRole("link", { name: "المنتجات", exact: true })).toHaveAttribute("aria-current", "page");
+  for (const label of ["المنتجات", "الفئات", "المراجعة"]) {
+    await expect(catalogTabs.getByRole("link", { name: label, exact: true })).toHaveCount(0);
+  }
   await expect(page.getByRole("heading", { name: "اختر مورد الكتالوج" })).toHaveCount(0);
   await expect(page.locator("#catalog-import-rows")).toHaveCount(0);
 });
