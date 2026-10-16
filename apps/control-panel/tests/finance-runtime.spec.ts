@@ -27,22 +27,49 @@ test("@live operator reads the real bounded COD cash-custody journey", async ({ 
   await expect(page.locator(".finance-table tbody tr")).toHaveCount((cashCustodyRead.body.items as unknown[]).length);
 });
 
-test("@live operator reads the WLT-owned delivery-fee policy workspace", async ({ page }) => {
+test("@live operator reads the DSH-owned distance-band delivery-fee policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
   await page.goto("/policies?policy=delivery-fees&action=manage");
   await expect(page.getByRole("heading", { name: "رسوم التوصيل", level: 2 })).toBeVisible();
-  await expect(page.getByRole("region", { name: "إعداد رسوم التوصيل", exact: true })).toBeVisible();
-  await expect(page.getByLabel("النطاق / مدينة الخدمة")).toBeVisible();
-  await expect(page.getByLabel("الرسوم الأساسية (ريال)")).toBeEnabled();
-  await expect(page.getByText("الحالة: نشطة · التقريب: 50 ريال", { exact: true })).toBeVisible();
+  const workspace = page.getByRole("region", { name: "إعداد رسوم التوصيل", exact: true });
+  await expect(workspace).toBeVisible();
+  await expect(page.getByLabel("التسعير حسب")).toHaveValue("");
+  await expect(page.getByRole("list", { name: "شرائح رسوم التوصيل" })).toBeVisible();
+  await expect(page.getByText("لا رسوم حجم أو منطقة.", { exact: false })).toBeVisible();
 
   const policyRead = await page.evaluate(async () => {
-    const response = await fetch("/api/finance/delivery-fee-policy", { cache: "no-store" });
-    return { status: response.status, body: await response.json() as { policy?: { state?: string; roundingUnitMinor?: number } } };
+    const response = await fetch("/api/finance/distance-band-fee-policy?serviceCityId=", { cache: "no-store" });
+    return { status: response.status, body: await response.json() as {
+      policy?: { id?: string; version?: number; serviceCityId?: string; distanceBands?: { upToMeters: number | null; ratePerKmMinor: number }[] };
+      error?: { code?: string };
+    } };
   });
-  expect(policyRead.status).toBe(200);
-  expect(policyRead.body.policy?.state).toBe("ACTIVE");
-  expect(policyRead.body.policy?.roundingUnitMinor).toBe(50);
+  expect([200, 404], JSON.stringify(policyRead)).toContain(policyRead.status);
+  if (policyRead.status === 200) {
+    const policy = policyRead.body.policy;
+    expect(policy?.id).toBeTruthy();
+    expect(policy?.serviceCityId ?? "").toBe("");
+    expect(policy?.version).toBeGreaterThan(0);
+    expect(Array.isArray(policy?.distanceBands)).toBe(true);
+    const bands = policy!.distanceBands!;
+    let previous = 0;
+    for (const [index, band] of bands.entries()) {
+      expect(band.ratePerKmMinor).toBeGreaterThan(0);
+      if (index === bands.length - 1) expect(band.upToMeters).toBeNull();
+      else {
+        expect(band.upToMeters).toBeGreaterThan(previous);
+        previous = band.upToMeters!;
+      }
+    }
+    await expect(workspace.locator(".delivery-tariff-tier")).toHaveCount(Math.max(1, bands.length));
+    for (const [index, band] of bands.entries()) {
+      await expect(workspace.getByRole("spinbutton", { name: `سعر الشريحة ${index + 1} لكل كيلومتر بالريال` }))
+        .toHaveValue(String(band.ratePerKmMinor));
+    }
+  } else {
+    await expect(workspace.getByText("لا توجد شرائح معتمدة لهذا النطاق")).toBeVisible();
+    await expect(workspace.locator(".delivery-tariff-tier")).toHaveCount(1);
+  }
 });
 
 test("@live operator reads the WLT-managed unified beneficiary settlement workspace", async ({ page }) => {
@@ -116,7 +143,7 @@ test("@live operator sees the WLT-managed Field acquisition reward store-type po
   await vertical.selectOption(fixture.verticalId as string);
 
   const storeType = page.locator("#field-reward-commercial-type");
-  await expect(page.locator('label[for="field-reward-commercial-type"]')).toContainText("نوع المتجر التجاري");
+  await expect(page.locator('label[for="field-reward-commercial-type"]')).toContainText("نوع المتجر الذي تُطبّق عليه المكافأة");
   await expect(storeType).toBeVisible();
   await storeType.selectOption(fixture.storeTypeId as string);
 

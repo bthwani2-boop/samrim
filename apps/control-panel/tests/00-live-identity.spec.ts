@@ -168,7 +168,8 @@ async function createOperatorThroughControlPanel(
     response.url().endsWith(`/api/access/operator-profiles/${encodeURIComponent(profileId)}`) && response.request().method() === "POST",
   );
   await profileRow.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
-  const admissionDrawer = page.getByRole("dialog");
+  const admissionDrawer = page.locator(".adaptive-record-sheet");
+  await expect(admissionDrawer).toBeVisible();
   await admissionDrawer.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
   const approveResponse = await approveResponsePromise;
   expect(approveResponse.status()).toBe(200);
