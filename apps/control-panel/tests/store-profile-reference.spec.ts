@@ -30,7 +30,7 @@ test("store record uses the wide RTL reference composition without losing naviga
     currentStore = { ...currentStore, fulfillmentModes: body.fulfillmentModes, version: currentStore.version + 1 };
     return route.fulfill({ json: { storeId: store.id, fulfillmentModes: body.fulfillmentModes } });
   });
-  const uploadBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/3d0AAAAASUVORK5CYII=", "base64");
+  const uploadBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPgaLD4DwADFAHAKW63BQAAAABJRU5ErkJggg==", "base64");
   const uploadHash = createHash("sha256").update(uploadBytes).digest("hex");
   let allowImageSave = false;
   let imageUploaded = false;
@@ -106,6 +106,8 @@ test("store record uses the wide RTL reference composition without losing naviga
   const logoDialog = page.getByRole("dialog", { name: "تغيير شعار المتجر" });
   await expect(logoDialog).toBeVisible();
   await logoDialog.locator('input[type="file"]').setInputFiles({ name: "store-test.png", mimeType: "image/png", buffer: uploadBytes });
+  await expect(logoDialog.locator(".store-list-logo canvas")).toHaveAttribute("width", "1");
+  await expect(logoDialog.locator('img[src^="blob:"]')).toHaveCount(0);
   await logoDialog.getByRole("textbox", { name: "منشئ الصورة" }).fill("مصور تجريبي");
   await logoDialog.getByRole("textbox", { name: "مصدر الصورة" }).fill("بيانات اختبار");
   await logoDialog.getByRole("textbox", { name: "حق استخدام الصورة" }).fill("حقوق تصوير تجريبية");

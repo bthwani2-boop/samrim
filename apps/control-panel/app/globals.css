@@ -179,7 +179,7 @@
   .store-registry-identity { display: flex; align-items: center; gap: 10px; min-inline-size: 190px; }
   .store-registry-identity-copy { display: grid; gap: 2px; min-inline-size: 0; }
   .store-list-logo { inline-size: 44px; block-size: 44px; display: inline-grid; place-items: center; flex: none; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--surface-muted); }
-  .store-list-logo img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+  .store-list-logo img, .store-list-logo canvas { inline-size: 100%; block-size: 100%; object-fit: cover; }
   .store-list-logo-placeholder { color: var(--text-muted); font-size: 11px; }
   .partner-case-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-muted); }
   .partner-case-summary-main { display: flex; align-items: center; gap: 14px; min-inline-size: 0; }
