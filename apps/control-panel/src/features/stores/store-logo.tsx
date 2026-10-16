@@ -2,6 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 
+// Only image-address schemes are accepted; never put arbitrary persisted
+// or client-provided strings directly into image source attributes.
+export function safeStoreImageURI(value: string | null | undefined): string | null {
+  if (!value || typeof value !== "string") return null;
+  if (/^\/(?!\/)[^\s<>"']+$/.test(value)) return value;
+  if (/^https?:\/\/[^\s<>"']+$/i.test(value)) return value;
+  if (/^blob:https?:\/\/[^\s<>"']+$/i.test(value)) return value;
+  if (/^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(value)) return value;
+  return null;
+}
+
 export function StoreLogo({ name, uri, imageLabel = "شعار", allowPreview = true }: Readonly<{ name: string; uri?: string | null | undefined; imageLabel?: string; allowPreview?: boolean }>) {
   const [failedUri, setFailedUri] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -21,13 +32,14 @@ export function StoreLogo({ name, uri, imageLabel = "شعار", allowPreview = t
     window.requestAnimationFrame(() => triggerRef.current?.focus());
   };
 
-  const validImage = Boolean(uri && failedUri !== uri);
+  const safeURI = safeStoreImageURI(uri);
+  const validImage = Boolean(safeURI && failedUri !== uri);
   return (
     <>
       <span className="store-list-logo">
-        {validImage ? (!allowPreview ? <img src={uri!} alt={`${imageLabel} متجر ${name}`} loading="lazy" decoding="async" onError={() => setFailedUri(uri!)} /> :
+        {validImage ? (!allowPreview ? <img src={safeURI ?? undefined} alt={`${imageLabel} متجر ${name}`} loading="lazy" decoding="async" onError={() => setFailedUri(uri!)} /> :
           <button ref={triggerRef} className="store-logo-preview-trigger" type="button" title={`تكبير ${imageLabel} متجر ${name}`} aria-label={`تكبير ${imageLabel} متجر ${name}`} onClick={() => { setPreviewFailed(false); setPreviewOpen(true); }}>
-            <img src={uri!} alt={`${imageLabel} متجر ${name}`} loading="lazy" decoding="async" onError={() => setFailedUri(uri!)} />
+            <img src={safeURI ?? undefined} alt={`${imageLabel} متجر ${name}`} loading="lazy" decoding="async" onError={() => setFailedUri(uri!)} />
           </button>
         ) : (
           <span className="store-list-logo-placeholder" role="img" aria-label={`لا توجد صورة متاحة لمتجر ${name}`}>{name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => Array.from(word)[0]).join("") || "—"}</span>
@@ -44,7 +56,7 @@ export function StoreLogo({ name, uri, imageLabel = "شعار", allowPreview = t
               <p>تعذر تحميل صورة المتجر.</p>
               <button className="button button-secondary" type="button" onClick={() => setPreviewFailed(false)}>إعادة المحاولة</button>
             </div>
-          ) : <img src={uri!} alt={`${imageLabel} متجر ${name}`} onError={() => setPreviewFailed(true)} />}
+          ) : <img src={safeURI ?? undefined} alt={`${imageLabel} متجر ${name}`} onError={() => setPreviewFailed(true)} />}
         </dialog>
       ) : null}
     </>

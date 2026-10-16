@@ -92,15 +92,30 @@ function main(args) {
     if (!isTextFile(name)) continue;
     const file = path.resolve(root, name);
     if (!file.startsWith(root + path.sep)) continue;
-    let stat;
-    try { stat = fs.lstatSync(file); } catch (err) {
-      if (err.code === "ENOENT") continue; // deleted file
+    // Bind inspection and reading to one descriptor to prevent path swapping
+    // between the filesystem metadata check and the actual byte read.
+    let fd;
+    try {
+      fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+    } catch (err) {
+      if (err.code === "ENOENT" || err.code === "ELOOP") continue;
       throw err;
     }
-    if (!stat.isFile() || stat.isSymbolicLink()) continue;
-    checked++;
-    for (const issue of inspectEncoding(fs.readFileSync(file))) {
-      failures.push(`${name}: ${issue}`);
+    try {
+      const stat = fs.fstatSync(fd);
+      let nameStat;
+      try { nameStat = fs.lstatSync(file); } catch (err) {
+        if (err.code === "ENOENT") continue;
+        throw err;
+      }
+      if (!stat.isFile() || !nameStat.isFile() || nameStat.isSymbolicLink()
+          || stat.dev !== nameStat.dev || stat.ino !== nameStat.ino) continue;
+      checked++;
+      for (const issue of inspectEncoding(fs.readFileSync(fd))) {
+        failures.push(`${name}: ${issue}`);
+      }
+    } finally {
+      fs.closeSync(fd);
     }
   }
   if (failures.length) {
