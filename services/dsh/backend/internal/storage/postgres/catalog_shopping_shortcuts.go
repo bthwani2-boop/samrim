@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lib/pq"
 )
@@ -131,8 +132,12 @@ func validateShortcutTargets(ctx context.Context, tx *sql.Tx, input ShoppingShor
 	input.StoreTypeIDs, input.CategoryIDs = types, categories
 	var count int
 	if len(types) > 0 {
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM dsh.commercial_store_types
-            WHERE vertical_id=$1 AND active=true AND id=ANY($2)`, input.VerticalID, pq.Array(types)).Scan(&count); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM dsh.commercial_store_types store_type
+            WHERE store_type.vertical_id=$1 AND store_type.id=ANY($2)
+              AND (store_type.active=true OR ($3 > 0 AND EXISTS (
+                SELECT 1 FROM dsh.catalog_shopping_shortcut_targets target
+                WHERE target.shortcut_id=$4 AND target.store_type_id=store_type.id
+              )))`, input.VerticalID, pq.Array(types), input.ExpectedVersion, input.ID).Scan(&count); err != nil {
 			return err
 		}
 		if count != len(types) {
@@ -140,8 +145,12 @@ func validateShortcutTargets(ctx context.Context, tx *sql.Tx, input ShoppingShor
 		}
 	}
 	if len(categories) > 0 {
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM dsh.catalog_categories
-            WHERE vertical_id=$1 AND active=true AND deleted_at IS NULL AND id=ANY($2)`, input.VerticalID, pq.Array(categories)).Scan(&count); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM dsh.catalog_categories category
+            WHERE category.vertical_id=$1 AND category.id=ANY($2)
+              AND ((category.active=true AND category.deleted_at IS NULL) OR ($3 > 0 AND EXISTS (
+                SELECT 1 FROM dsh.catalog_shopping_shortcut_targets target
+                WHERE target.shortcut_id=$4 AND target.category_id=category.id
+              )))`, input.VerticalID, pq.Array(categories), input.ExpectedVersion, input.ID).Scan(&count); err != nil {
 			return err
 		}
 		if count != len(categories) {
@@ -156,7 +165,7 @@ func validateShortcutTargets(ctx context.Context, tx *sql.Tx, input ShoppingShor
 func MutateShoppingShortcut(ctx context.Context, db *sql.DB, input ShoppingShortcutInput,
 	key, requestHash string, audit CatalogRegistryAuditInput) (ShoppingShortcutResult, error) {
 	if db == nil || len(key) < 8 || len(key) > 128 || input.Ordinal < 0 || input.Ordinal > 9999 ||
-		len(input.TitleAr) < 2 || len(input.TitleAr) > 160 || input.VerticalID == "" || input.ExpectedVersion < 0 ||
+		utf8.RuneCountInString(input.TitleAr) < 2 || utf8.RuneCountInString(input.TitleAr) > 160 || input.VerticalID == "" || input.ExpectedVersion < 0 ||
 		len(audit.Reason) < 5 || audit.ActingActorID == "" || audit.CorrelationID == "" {
 		return ShoppingShortcutResult{}, ErrShoppingShortcutInvalid
 	}

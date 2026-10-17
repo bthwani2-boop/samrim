@@ -4,7 +4,7 @@ import type { CatalogCategoryListItem, CommercialStoreType, ShoppingShortcut, Sh
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 
-type Option = Readonly<{ id: string; nameAr: string; active: boolean }>;
+type Option = Readonly<{ id: string; nameAr: string; active: boolean; pathAr: string }>;
 type RegistryRead = Readonly<{ categories: ReadonlyArray<CatalogCategoryListItem>; nextCursor?: string }>;
 
 function errorMessage(input: unknown) {
@@ -27,7 +27,7 @@ async function readOptions(verticalId: string) {
     const response = await fetch(`/api/catalog/categories?${query}`, { cache: "no-store" });
     const body = await response.json() as RegistryRead | { error?: unknown };
     if (!response.ok || !("categories" in body)) throw new Error(errorMessage(body));
-    categories.push(...body.categories.map((item) => ({ id: item.id, nameAr: item.nameAr, active: item.active })));
+    categories.push(...body.categories.map((item) => ({ id: item.id, nameAr: item.nameAr, active: item.active, pathAr: item.pathAr })));
     cursor = body.nextCursor ?? "";
     if (!cursor) return { types: typesBody.storeTypes, categories };
   }
@@ -172,12 +172,12 @@ export function CatalogShoppingShortcutRegistry({ verticalId, editorOnly = false
       <label className="field-label catalog-shortcut-active"><input type="checkbox" checked={active} disabled={saving || !canEdit} onChange={(event) => setActive(event.target.checked)} /> تفعيل الاختصار</label>
       <details open><summary>أنواع المتاجر المناسبة ({typeIds.length} محدد)</summary>
         <div>{types.filter((item) => item.active || typeIds.includes(item.id)).map((item) => <label className="field-label" key={item.id}>
-          <input type="checkbox" checked={typeIds.includes(item.id)} disabled={!canEdit || saving || !item.active} onChange={() => toggle(item.id, typeIds, setTypeIds)} /> {item.nameAr}{!item.active ? " (غير نشط)" : ""}
+          <input type="checkbox" checked={typeIds.includes(item.id)} disabled={!canEdit || saving || (!item.active && !typeIds.includes(item.id))} onChange={() => toggle(item.id, typeIds, setTypeIds)} /> {item.nameAr}{!item.active ? " (غير نشط)" : ""}
         </label>)}</div>
       </details>
       <details><summary>فئات المنتجات المناسبة ({categoryIds.length} محددة)</summary>
         <div>{categories.filter((item) => item.active || categoryIds.includes(item.id)).map((item) => <label className="field-label" key={item.id}>
-          <input type="checkbox" checked={categoryIds.includes(item.id)} disabled={!canEdit || saving || !item.active} onChange={() => toggle(item.id, categoryIds, setCategoryIds)} /> {item.nameAr}{!item.active ? " (غير نشطة)" : ""}
+          <input type="checkbox" checked={categoryIds.includes(item.id)} disabled={!canEdit || saving || (!item.active && !categoryIds.includes(item.id))} onChange={() => toggle(item.id, categoryIds, setCategoryIds)} /> {item.pathAr || item.nameAr}{!item.active ? " (غير نشطة)" : ""}
         </label>)}</div>
       </details>
       <label className="field-label">سبب الإضافة أو التعديل

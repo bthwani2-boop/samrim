@@ -166,7 +166,7 @@ export function CatalogTaxonomyWorkspace() {
       </label>
       <label>المجال
         <select value={verticalId} onChange={(e) => { setVerticalId(e.target.value); setCategoryId(""); setEditor(null); }}>
-          {verticals.length === 0 ? <option value="">لا توجد مجالات</option> : null}
+          {!verticalId ? <option value="">{verticals.length === 0 ? "لا توجد مجالات" : "اختر المجال"}</option> : null}
           {verticals.map((v) => <option key={v.id} value={v.id}>{v.nameAr}{v.active ? "" : " — معطّل"}</option>)}
         </select>
       </label>
