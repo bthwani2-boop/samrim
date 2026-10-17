@@ -951,6 +951,9 @@ paths:
   /dsh/field/joining-cases/{caseId}/draft:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1draft"
 
+  /dsh/field/joining-cases/{caseId}/correction:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1correction"
+
   /dsh/field/joining-cases/{caseId}/submit:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1submit"
 

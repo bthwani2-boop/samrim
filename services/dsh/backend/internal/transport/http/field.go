@@ -90,6 +90,7 @@ func (s *FieldServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/fields/{actorId}/reenrollment", s.authorizeReenrollment)
 	mux.HandleFunc("POST /dsh/field/joining-cases", s.createJoiningCase)
 	mux.HandleFunc("PATCH /dsh/field/joining-cases/{caseId}/draft", s.updateJoiningCaseDraft)
+	mux.HandleFunc("PATCH /dsh/field/joining-cases/{caseId}/correction", s.correctJoiningCase)
 	mux.HandleFunc("GET /dsh/field/joining-cases", s.listJoiningCases)
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}", s.readJoiningCase)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/submit", s.submitJoiningCase)
@@ -383,6 +384,34 @@ func (s *FieldServer) updateJoiningCaseDraft(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeFieldCaseResult(w, responseStatus(result.Replayed), result)
+}
+
+func (s *FieldServer) correctJoiningCase(w http.ResponseWriter, r *http.Request) {
+	if !authorizedFieldSession(w, r) {
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client actor authority headers are forbidden")
+		return
+	}
+	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input fieldJoiningCaseDraftRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if !input.applyDraftScalars() {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "both coordinates must be provided together")
+		return
+	}
+	result, err := s.service.CorrectJoiningCase(r.Context(), bearerToken(r), r.PathValue("caseId"), expected, idempotency, correlation, input.createRequest())
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeFieldCaseResult(w, http.StatusOK, result)
 }
 
 func (s *FieldServer) listJoiningCases(w http.ResponseWriter, r *http.Request) {

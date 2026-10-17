@@ -46,7 +46,7 @@ DSH owns joining-case, Field standing admission/eligibility, assignment, Partner
 - a Field admission candidate captures the person's submitted name and contact phone, Service City and official-wallet provider preference; Identity alone accepts the canonical identity name and verified phone, and the provider preference does not create a payout destination;
 - Field may originate/progress authorized joining work but cannot create Identity actors/roles, approve its own submission or publish a Store;
 - owner review is distinct from Field submission;
-- only a bound Partner may correct and resubmit its `needs_correction` case as one governed atomic business transition; Operator does not impersonate that resubmission;
+- a bound Partner **or the original, currently eligible Field actor** may correct and resubmit a `needs_correction` Field-originated case through the same DSH atomic, versioned correction writer. Field correction requires that exact originating Field actor and a previously bound Partner actor; the Operator cannot impersonate either actor, approve its own correction, or change the case owner;
 - Store publication is distinct from serviceability, catalog/offer eligibility and current operational orderability;
 - customer-visible Store publication requires applicable Store publication, active Service City assignment and catalog publication gates; current orderability is evaluated separately;
 - Store publication requires an active Store-specific `STORE_COMMERCIAL_AGREEMENT` for its enabled fulfillment modes, explicit acceptance by the bound Partner owner of the exact agreement version, and Finance approval; Store Type suggestions, Store creation and catalog readiness cannot substitute for these gates;
@@ -80,7 +80,7 @@ PARTNER
 → DSH Partner eligibility
 → authorized Identity Partner role admission and access
 → canonical draft Store + owner binding
-→ bound Partner confirmation/correction of onboarding data
+→ bound Partner or original Field actor corrects returned onboarding data if requested (own attributed session only)
 → WLT Store-specific agreement proposal
 → bound Partner acceptance of the exact agreement terms
 → Finance approval and WLT activation

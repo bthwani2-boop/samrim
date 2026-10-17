@@ -131,6 +131,43 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=true WHERE id=$1", serviceCityID); err != nil {
 			t.Fatalf("reactivate Service City before Partner correction: %v", err)
 		}
+		// The originating Field agent can correct and resubmit a returned case
+		// after the Operator has linked the real Partner actor in Identity.
+		fieldCorrection := postgres.CorrectJoiningCaseInput{CaseID: created.Case.ID, ActorID: fieldActorID, OriginatingFieldActorID: fieldActorID,
+			OwnerFullName: "مالك مصحح من الميداني", BusinessName: "نشاط من الميداني", FirstStoreName: "متجر من الميداني",
+			FirstStoreAddress: "الشارع الرئيسي المصحح", FirstStoreWorkingHours: workHours,
+			FirstStoreProofType: "COMMERCIAL_REGISTRATION", EvidenceKeyring: evidenceKeys,
+			ExpectedVersion: returned.Case.Version, ServiceCityID: serviceCityID, VerticalID: verticalID,
+			CommercialTypeID: storeTypeID, Latitude: 15.4, Longitude: 44.2, FulfillmentModes: initialModes,
+			IdempotencyKey: "idem-join-field-correction", CorrelationID: "corr-join-field-correction"}
+		fieldCorrection.RequestHash = postgres.HashJoiningCaseCorrectAndResubmit(fieldCorrection)
+		impostor := fieldCorrection
+		impostor.ActorID = otherPartner
+		impostor.OriginatingFieldActorID = otherPartner
+		impostor.IdempotencyKey = "idem-join-field-correction-impostor"
+		impostor.RequestHash = postgres.HashJoiningCaseCorrectAndResubmit(impostor)
+		if _, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, impostor); !errors.Is(err, postgres.ErrJoiningCasePartnerAccess) {
+			t.Fatalf("non-originating Field correction error=%v, want denial", err)
+		}
+		fieldCorrected, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, fieldCorrection)
+		if err != nil || fieldCorrected.Case.State != "submitted" || fieldCorrected.Case.PartnerActorID != partnerActor ||
+			fieldCorrected.Case.BusinessName != "نشاط من الميداني" || fieldCorrected.Case.Version != returned.Case.Version+1 {
+			t.Fatalf("originating Field correction failed: %+v err=%v", fieldCorrected, err)
+		}
+		fieldReplay, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, fieldCorrection)
+		if err != nil || !fieldReplay.Replayed || fieldReplay.Case.Version != fieldCorrected.Case.Version {
+			t.Fatalf("Field correction idempotent replay failed: %+v err=%v", fieldReplay, err)
+		}
+		returned, err = postgres.ReviewJoiningCase(ctx, db, postgres.ReviewJoiningCaseInput{
+			CaseID: created.Case.ID, Decision: "needs_correction", CorrectionReason: "تصحيح إضافي",
+			ExpectedVersion: fieldCorrected.Case.Version, IdempotencyKey: "idem-join-field-rereview",
+			RequestHash:   postgres.HashJoiningCaseReviewWithFinancialTerms(created.Case.ID, "needs_correction", "تصحيح إضافي", fieldCorrected.Case.Version, "", ""),
+			ActingActorID: operatorActor, CorrelationID: "corr-join-field-rereview",
+		})
+		if err != nil || returned.Case.State != "needs_correction" {
+			t.Fatalf("rereview after Field correction failed: %+v err=%v", returned, err)
+		}
+
 		// A Partner correction also resubmits without uploading private document imagery.
 		partnerCorrectionBase := returned.Case
 

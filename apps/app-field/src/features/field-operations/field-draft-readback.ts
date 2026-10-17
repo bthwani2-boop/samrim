@@ -21,8 +21,9 @@ export function fieldDraftMatchesReadback(
   requested: CreateFieldJoiningCaseDraftRequest,
   actual: JoiningCaseView,
   minimumVersion: number,
+  expectedState: "draft" | "submitted" = "draft",
 ): boolean {
-  if (actual.state !== "draft" || actual.origin !== "field" || actual.version < minimumVersion) return false;
+  if (actual.state !== expectedState || actual.origin !== "field" || actual.version < minimumVersion) return false;
   if (actual.contactPhoneE164 !== requested.contactPhoneE164) return false;
   if (!matchesDraftText(requested.ownerFullName, actual.ownerFullName)) return false;
   if (!matchesDraftText(requested.businessName, actual.businessName)) return false;

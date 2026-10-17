@@ -1006,6 +1006,12 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.updateFieldJoiningCaseDraft.path.replace("{caseId}", encodeURIComponent(normalized));
       return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.updateFieldJoiningCaseDraft.method, { ...input, contactPhoneE164 }, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
     },
+    async correctFieldJoiningCase(accessToken: string, caseID: string, input: CreateFieldJoiningCaseDraftRequest, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
+      const normalized = caseID.trim();
+      if (!normalized || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
+      const path = dshOperationPaths.correctFieldJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
+      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctFieldJoiningCase.method, input, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
+    },
     async readOwnFieldJoiningCase(accessToken: string, caseID: string): Promise<JoiningCaseResponse> {
       const normalized = caseID.trim();
       if (!normalized) throw new Error("DSH_FIELD_JOINING_CASE_ID_REQUIRED");
