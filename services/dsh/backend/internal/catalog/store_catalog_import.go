@@ -4,11 +4,28 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
+	"net/http"
 	"strings"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
+
+// Store-specific imports are available to authorized Store administrators
+// or catalog operators. This does not grant editing the shared registry.
+func (s *Service) requireStoreImportOperator(ctx context.Context, actorID string) error {
+	err := s.requireOperatorPermission(ctx, actorID, "catalog")
+	if err == nil {
+		return nil
+	}
+	var forbidden *identityclient.Error
+	if !errors.As(err, &forbidden) || forbidden.Status != http.StatusForbidden {
+		return err
+	}
+	return s.requireOperatorPermission(ctx, actorID, "partners")
+}
 
 func (s *Service) PreviewPartnerStoreCatalogImport(ctx context.Context, accessToken, storeID, filename string, data []byte, idempotencyKey, correlationID string) (postgres.CatalogImportPreviewResult, error) {
 	actorID, err := s.requireStoreOwner(ctx, accessToken, storeID)
@@ -19,7 +36,7 @@ func (s *Service) PreviewPartnerStoreCatalogImport(ctx context.Context, accessTo
 }
 
 func (s *Service) PreviewOperatorStoreCatalogImport(ctx context.Context, actorID, storeID, filename string, data []byte, idempotencyKey, correlationID string) (postgres.CatalogImportPreviewResult, error) {
-	if err := s.requireOperatorPermission(ctx, actorID, "catalog"); err != nil {
+	if err := s.requireStoreImportOperator(ctx, actorID); err != nil {
 		return postgres.CatalogImportPreviewResult{}, err
 	}
 	return s.previewStoreCatalogImport(ctx, strings.TrimSpace(actorID), "OPERATOR", storeID, "", filename, data, idempotencyKey, correlationID)
@@ -142,7 +159,7 @@ func (s *Service) ReadPartnerStoreCatalogImport(ctx context.Context, accessToken
 }
 
 func (s *Service) ReadOperatorStoreCatalogImport(ctx context.Context, actorID, runID string) (postgres.CatalogImportPreviewResult, error) {
-	if err := s.requireOperatorPermission(ctx, actorID, "catalog"); err != nil {
+	if err := s.requireStoreImportOperator(ctx, actorID); err != nil {
 		return postgres.CatalogImportPreviewResult{}, err
 	}
 	result, err := postgres.ReadCatalogImportRun(ctx, s.db, runID)
@@ -183,7 +200,7 @@ func (s *Service) CommitPartnerStoreCatalogImport(ctx context.Context, accessTok
 }
 
 func (s *Service) CommitOperatorStoreCatalogImport(ctx context.Context, actorID, runID, idempotencyKey, correlationID string) (postgres.CatalogImportCommitResult, error) {
-	if err := s.requireOperatorPermission(ctx, actorID, "catalog"); err != nil {
+	if err := s.requireStoreImportOperator(ctx, actorID); err != nil {
 		return postgres.CatalogImportCommitResult{}, err
 	}
 	preview, err := s.ReadOperatorStoreCatalogImport(ctx, actorID, runID)

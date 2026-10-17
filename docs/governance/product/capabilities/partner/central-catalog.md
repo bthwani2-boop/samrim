@@ -216,7 +216,7 @@ preference may help route entry but cannot restrict a Store to one ownership
 scope. Cross-Store access, Shared Product mutation and direct Shared Product
 creation are denied.
 
-Store product and offer preparation before and after Go-Live uses one canonical DSH Store Catalog writer. The Partner app and authorized Operator Store record can create and update Store-scoped products and offers through distinct attributed identities; Operator management stays inside the Store record, not the Shared Catalog registry. Store publication remains gated by publishable offers and the independent Partner, commercial-agreement, profile-media and Operator readiness rules. Field joining-case admission does not grant catalog-writing authority.
+Store product and offer preparation before and after Go-Live uses one canonical DSH Store Catalog writer. The Partner app and authorized Operator Store record can create and update Store-scoped products and offers through distinct attributed identities; Operator management stays inside the Store record, not the Shared Catalog registry. Store publication remains gated by publishable offers and the independent Partner, commercial-agreement, profile-media and Operator readiness rules. Field joining-case admission does not grant catalog-writing authority. A Store-specific Operator import accepts either the existing Store management permission (`partners`) or the existing shared-catalog permission (`catalog`), but neither permission alone grants the other domain's mutations; each import is bound to its specified Store and Operator.
 
 ## Evolution and migration invariants
 

@@ -17,7 +17,7 @@ async function authorizedOperator() {
   if (!identity) return { error: errorResponse("UNAUTHENTICATED", "authentication is required", 401) } as const;
   if (identity.role !== "operator") return { error: errorResponse("FORBIDDEN", "control operator access is required", 403) } as const;
   const denied = operatorWorkspacePermissionDenied(identity, "catalog");
-  if (denied) return { error: denied } as const;
+  if (denied && operatorWorkspacePermissionDenied(identity, "partners")) return { error: denied } as const;
   return { identity } as const;
 }
 
