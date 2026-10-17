@@ -25,6 +25,11 @@ system.
 of a Store. A Store has exactly one `primary_vertical_id` in the admitted Product model. A
 Partner is not vertical-scoped and may own Stores in different verticals.
 
+Each `CommerceVertical` may own one illustrative image URI managed through DSH's
+catalog media storage, provenance and rights attestation. The image helps people
+recognize a vertical; it does not change its classification or eligibility rules,
+and it remains separate from Category and Product media.
+
 The joining case requires the first-Store vertical before admission. The value
 is preserved through review, correction and resubmission and is transferred to
 the Store atomically with Store creation. An existing Store with no vertical

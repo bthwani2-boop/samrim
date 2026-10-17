@@ -209,5 +209,21 @@ func (s *Service) ReconcileMediaStorage(ctx context.Context) error {
 			firstErr = err
 		}
 	}
+	verticalAssets, err := postgres.ListCommerceVerticalMediaAssetsForCleanup(ctx, s.db, 100)
+	if err != nil {
+		return err
+	}
+	for _, asset := range verticalAssets {
+		if err := s.media.Delete(ctx, asset.ObjectKey); err != nil {
+			_ = postgres.MarkCommerceVerticalMediaAssetCleanupFailure(ctx, s.db, asset.ID, err.Error())
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if err := postgres.MarkCommerceVerticalMediaAssetDeleted(ctx, s.db, asset.ID); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
 	return firstErr
 }

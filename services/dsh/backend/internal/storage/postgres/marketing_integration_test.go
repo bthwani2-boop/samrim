@@ -86,6 +86,17 @@ func TestPublicPromotionsAreStoreScopedAndBounded(t *testing.T) {
 		if !foundStoreA {
 			t.Fatalf("store A listing omitted its applicable promotion: %+v", storeA)
 		}
+		counts, err := postgres.CountPublicPromotionsForStores(ctx, db, cityID, []string{storeAID, storeBID})
+		if err != nil {
+			t.Fatalf("batch promotion counts: %v", err)
+		}
+		if counts[storeAID] != 7 || counts[storeBID] != 7 {
+			t.Fatalf("batch badges must include all six global and one scoped campaign per store, not the four-item carousel: %+v", counts)
+		}
+		otherCityCounts, err := postgres.CountPublicPromotionsForStores(ctx, db, "another-city", []string{storeAID})
+		if err != nil || otherCityCounts[storeAID] != 0 {
+			t.Fatalf("foreign city campaigns must not appear: counts=%+v err=%v", otherCityCounts, err)
+		}
 	})
 }
 

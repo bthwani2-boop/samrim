@@ -2682,6 +2682,16 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   .catalog-taxonomy-workspace .catalog-registry-table tr:last-child td { border-block-end:0; }
   .catalog-taxonomy-workspace .catalog-registry-table tbody tr:hover { background:var(--surface-muted); }
   .catalog-taxonomy-workspace .catalog-registry-table :is(th,td):last-child { inline-size:128px; }
+  .catalog-taxonomy-workspace .catalog-vertical-registry-identity { display:flex; align-items:center; gap:10px; min-inline-size:0; }
+  .catalog-taxonomy-workspace .catalog-vertical-registry-identity :is(img,span) { inline-size:42px; block-size:42px; flex:none; border-radius:10px; border:1px solid var(--border-subtle); background:var(--surface-muted); object-fit:cover; }
+  .catalog-taxonomy-workspace .catalog-vertical-registry-identity span { display:grid; place-items:center; color:var(--text-muted); font-weight:700; }
+  .catalog-taxonomy-workspace .catalog-vertical-media-editor { display:grid; gap:10px; inline-size:min(100%,760px); padding:14px; border:1px solid var(--border-subtle); border-radius:9px; background:var(--surface-base); }
+  .catalog-taxonomy-workspace .catalog-vertical-media-current { display:flex; align-items:center; gap:12px; }
+  .catalog-taxonomy-workspace .catalog-vertical-media-current img,
+  .catalog-taxonomy-workspace .catalog-vertical-media-current > span { inline-size:56px; block-size:56px; flex:none; border:1px solid var(--border-subtle); border-radius:12px; background:var(--surface-muted); object-fit:cover; }
+  .catalog-taxonomy-workspace .catalog-vertical-media-current > span { display:grid; place-items:center; color:var(--text-muted); font-size:20px; font-weight:700; }
+  .catalog-taxonomy-workspace .catalog-vertical-media-current > div { display:grid; gap:3px; min-inline-size:0; }
+  .catalog-taxonomy-workspace .catalog-vertical-media-current small { color:var(--text-muted); }
   .catalog-taxonomy-workspace .catalog-shortcut-editor { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; max-inline-size:none; inline-size:100%; padding:16px; border:1px solid var(--border-subtle); border-radius:9px; background:var(--surface-muted); }
   .catalog-taxonomy-workspace .catalog-shortcut-editor > details { min-inline-size:0; border:1px solid var(--border-subtle); border-radius:9px; background:var(--surface-base); padding:10px 12px; }
   .catalog-taxonomy-workspace .catalog-shortcut-editor > details summary { cursor:pointer; font-weight:650; }

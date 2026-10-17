@@ -420,7 +420,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       </View> : null}
 
       {taxonomy.verticals.length ? <View style={styles.categoryShortcutBlock} accessibilityLabel="المجالات التجارية الرئيسية">
-        <BthwaniSectionHeader title="تسوق حسب المجال" />
         <ScrollView accessibilityLabel="المجالات التجارية" contentContainerStyle={styles.activityTiles} horizontal showsHorizontalScrollIndicator={false}>
           <Pressable accessibilityRole="button" accessibilityLabel="عرض جميع المجالات والمتاجر" accessibilityState={{ selected: !selectedVerticalID }} onPress={() => selectVertical("")} style={[styles.activityTile, !selectedVerticalID && styles.activityTileSelected]}>
             <View style={[styles.activityMark, !selectedVerticalID && styles.activityMarkSelected]}><BthwaniIcon name="store" color={!selectedVerticalID ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /></View>
@@ -433,9 +432,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         </ScrollView>
       </View> : null}
 
-      {!searchIsActive && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
+      {!searchIsActive && !selectedVerticalID && !selectedCategoryID && !selectedShortcutID && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
         {mediaContent.length ? <>
-          {mediaContent.length > 1 ? <BthwaniSectionHeader title="العروض والاختيارات" subtitle="اسحب أو اختر إحدى الشرائح" /> : <BthwaniSectionHeader title="العروض والاختيارات" />}
           <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={mediaContent} styles={styles} theme={theme} onOpen={(item) => {
             void recordDiscoveryClick(item.id);
             if (item.targetType === "STORE" && item.targetId) router.push(`/store/${encodeURIComponent(item.targetId)}` as Href);
@@ -464,14 +462,12 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         </ScrollView>
       </View> : null}
       {selectedVertical ? <View style={styles.categoryShortcutBlock} accessibilityLabel={`فئات ${selectedVertical.nameAr}`}>
-        <BthwaniSectionHeader title={`فئات ${selectedVertical.nameAr}`} subtitle="تظهر المنتجات بعد اختيار الفئة أو فتح المتجر" />
         <ScrollView accessibilityLabel={`التدرج الهرمي لفئات ${selectedVertical.nameAr}`} contentContainerStyle={styles.categoryShortcutContent} horizontal showsHorizontalScrollIndicator={false}>
           <BthwaniChip label="كل فئات المنتجات" selected={!selectedCategoryID} onPress={() => selectCategory("")} />
           {taxonomy.trail.map((category, index) => <BthwaniChip key={category.id} label={category.nameAr} selected={index === taxonomy.trail.length - 1} onPress={() => selectCategory(category.id)} />)}
           {taxonomy.children.map((category) => <Pressable key={category.id} accessibilityRole="button" accessibilityLabel={`فتح فئة ${category.nameAr}`} accessibilityState={{ selected: selectedCategoryID === category.id }} onPress={() => selectCategory(category.id)} style={[styles.categoryTile, selectedCategoryID === category.id && styles.categoryTileSelected]}>
             {category.imageUri ? <Image source={{ uri: category.imageUri }} accessibilityLabel={`صورة ${category.nameAr}`} style={styles.categoryTileImage} resizeMode="cover" /> : <View style={styles.categoryTileFallback}><Text style={styles.categoryTileInitial}>{category.nameAr.slice(0, 1)}</Text></View>}
             <Text numberOfLines={2} style={styles.categoryTileName}>{category.nameAr}</Text>
-            <Text numberOfLines={1} style={styles.categoryTileParent}>{taxonomy.trail[taxonomy.trail.length - 1]?.nameAr ?? selectedVertical.nameAr}</Text>
           </Pressable>)}
         </ScrollView>
         {taxonomy.children.length === 0 ? <Text style={styles.categoryTreeEmpty}>{selectedCategoryID ? "وصلت إلى أدق فئة متاحة؛ المتاجر والمنتجات المطابقة معروضة أدناه." : "لا توجد فئات منتجات متاحة لهذا المجال الآن؛ يمكنك فتح المتجر وعرض منتجاته وأقسامه."}</Text> : null}
@@ -555,7 +551,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         onImageError={() => setFailedStoreImageIDs((current) => new Set(current).add(store.id))}
         onOpen={() => router.push(("/store/" + encodeURIComponent(store.id)) as Href)}
         onFavorite={() => { void toggleFavorite(store.id); }}
-        promotionCount={marketing.error ? null : marketing.promotions.filter((promotion) => promotion.storeId === store.id).length}
+        promotionCount={store.promotionCount}
       />}
       ListEmptyComponent={directoryMode ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} /> : null}
       ListFooterComponent={<View style={styles.footer}>
@@ -761,25 +757,24 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     title: { ...typography.titleLg, color: theme.color, textAlign: "center" },
     muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: "center" },
     error: { ...typography.bodySm, color: theme.danger },
-    categoryShortcutBlock: { gap: spacing[1] },
+    categoryShortcutBlock: { gap: spacing[1], paddingVertical: spacing[1] },
     categoryShortcutContent: { alignItems: "flex-start", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
     activityTiles: { alignItems: "center", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
-    activityTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.round, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: sizing.controlLg, justifyContent: "center", paddingHorizontal: spacing[2] },
+    activityTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "column", gap: spacing[1], minHeight: 80, minWidth: 88, justifyContent: "center", paddingHorizontal: spacing[2], paddingVertical: spacing[2] },
     activityTileSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
-    activityMark: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: sizing.avatarSm, justifyContent: "center", width: sizing.avatarSm },
+    activityMark: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: sizing.avatarSm, justifyContent: "center", width: sizing.avatarSm },
     activityMarkWarm: { backgroundColor: theme.surfaceInset },
     activityMarkSelected: { backgroundColor: theme.interactiveText },
-    activityInitial: { ...typography.label, color: theme.interactiveText },
+    activityInitial: { ...typography.titleSm, color: theme.interactiveText },
     activityTileName: { ...typography.label, color: theme.color, textAlign: "center" },
     activityTileNameSelected: { color: theme.interactiveText },
     categoryTreeEmpty: { ...typography.caption, color: theme.colorMuted, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
-    categoryTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2], width: 112 },
+    categoryTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2], width: 94 },
     categoryTileSelected: { borderColor: theme.interactiveText, borderWidth: 2 },
-    categoryTileImage: { backgroundColor: theme.surfaceInset, borderRadius: radius.md, height: 82, width: 82 },
-    categoryTileFallback: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: 82, justifyContent: "center", width: 82 },
+    categoryTileImage: { backgroundColor: theme.surfaceInset, borderRadius: radius.md, height: 60, width: 76 },
+    categoryTileFallback: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: 60, justifyContent: "center", width: 76 },
     categoryTileInitial: { ...typography.titleLg, color: theme.interactiveText },
     categoryTileName: { ...typography.label, color: theme.color, minHeight: 34, textAlign: "center" },
-    categoryTileParent: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
     marketingBlock: { gap: spacing[3] },
     marketingList: { gap: spacing[2] },
     marketingCard: { borderRadius: radius.lg, gap: spacing[1], padding: spacing[3] },

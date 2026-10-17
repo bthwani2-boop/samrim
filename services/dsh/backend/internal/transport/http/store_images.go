@@ -38,7 +38,14 @@ func (s *JoiningCaseServer) handleStoreImages(w http.ResponseWriter, r *http.Req
 	}
 	replayed := false
 	if r.Method == "POST" {
-		correlation, key, version, ok := requiredPartnerCaseHeaders(w, r)
+		var correlation, key string
+		var version int
+		var ok bool
+		if actor != "" {
+			_, correlation, key, version, ok = requiredVersionedCaseHeaders(w, r)
+		} else {
+			correlation, key, version, ok = requiredPartnerCaseHeaders(w, r)
+		}
 		if !ok {
 			return
 		}

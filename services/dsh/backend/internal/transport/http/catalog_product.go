@@ -53,6 +53,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/catalog/verticals", s.listVerticals)
 	mux.HandleFunc("POST /dsh/catalog/verticals", s.createVertical)
 	mux.HandleFunc("PATCH /dsh/catalog/verticals/{verticalId}", s.updateVertical)
+	mux.HandleFunc("POST /dsh/catalog/verticals/{verticalId}/media/upload", s.uploadCommerceVerticalMedia)
 	mux.HandleFunc("GET /dsh/catalog/shopping-shortcuts", s.listShoppingShortcuts)
 	mux.HandleFunc("POST /dsh/catalog/shopping-shortcuts", s.createShoppingShortcut)
 	mux.HandleFunc("PATCH /dsh/catalog/shopping-shortcuts/{shortcutId}", s.updateShoppingShortcut)
@@ -423,6 +424,32 @@ func (s *CatalogServer) uploadCategoryMedia(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.CatalogCategoryResponse{Category: toCatalogCategory(item)})
+}
+
+func (s *CatalogServer) uploadCommerceVerticalMedia(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, expected, ok := requiredVersionedCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	if s.media == nil {
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+		return
+	}
+	upload, ok := parseCatalogMediaUpload(w, r)
+	if !ok {
+		return
+	}
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	item, err := s.service.UploadCommerceVerticalMedia(r.Context(), acting, catalog.CommerceVerticalMediaUploadInput{VerticalID: r.PathValue("verticalId"), IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Provenance: upload.provenance, Bytes: upload.bytes, Reason: reason})
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CommerceVerticalResponse{Vertical: toCommerceVertical(item)})
 }
 
 func (s *CatalogServer) listProducts(w http.ResponseWriter, r *http.Request) {
@@ -925,7 +952,7 @@ func catalogLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 	return limit, true
 }
 func toCommerceVertical(item postgres.CommerceVerticalRecord) contract.CommerceVertical {
-	return contract.CommerceVertical{ID: item.ID, NameAr: item.NameAr, NameEn: item.NameEn, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.CommerceVertical{ID: item.ID, NameAr: item.NameAr, NameEn: item.NameEn, ImageUri: item.ImageURI, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 func toCommercialStoreType(item postgres.CommercialStoreTypeRecord) contract.CommercialStoreType {
 	return contract.CommercialStoreType{ID: item.ID, VerticalID: item.VerticalID, NameAr: item.NameAr, NameEn: item.NameEn, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}

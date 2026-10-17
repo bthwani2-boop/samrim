@@ -1354,6 +1354,19 @@ export async function uploadCatalogCategoryMedia(categoryId: string, file: File,
   return requestDshMultipart<CatalogCategoryResponse>(dshOperationPaths.uploadCatalogCategoryMedia.method, path, body, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
+export async function uploadCommerceVerticalMedia(verticalId: string, file: File, reason: string, provenance: MediaProvenanceInput, context: JoiningCaseMutationContext & Readonly<{ expectedVersion: number }>): Promise<Readonly<{ status: number; payload: CommerceVerticalResponse }>> {
+  const normalizedReason = reason.trim();
+  if (!verticalId.trim() || file.size < 1 || file.size > 10 * 1024 * 1024 || normalizedReason.length < 5 || normalizedReason.length > 500 || !isMediaProvenanceInputValid(provenance)) throw new Error("DSH_VERTICAL_MEDIA_UPLOAD_INPUT_INVALID");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_VERTICAL_MEDIA_UPLOAD_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.uploadCommerceVerticalMedia.path.replace("{verticalId}", encodeURIComponent(verticalId.trim()));
+  const body = new FormData();
+  body.set("file", file, file.name || "vertical-image");
+  body.set("reason", normalizedReason);
+  appendMediaProvenance(body, provenance);
+  return requestDshMultipart<CommerceVerticalResponse>(dshOperationPaths.uploadCommerceVerticalMedia.method, path, body, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
 export async function submitJoiningCase(caseId: string, context: DshVersionedMutationContext & Readonly<{ idempotencyKey: string }>): Promise<Readonly<{ status: number; payload: JoiningCaseResponse }>> {
   if (!caseId.trim()) throw new Error("DSH_JOINING_CASE_ID_REQUIRED");
   validateVersionedMutationContext(context);

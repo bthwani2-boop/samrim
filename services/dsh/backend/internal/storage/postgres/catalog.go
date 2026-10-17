@@ -50,6 +50,7 @@ var (
 
 type CommerceVerticalRecord struct {
 	ID, NameAr, NameEn   string
+	ImageURI             string
 	Active               bool
 	Version              int
 	CreatedAt, UpdatedAt time.Time
@@ -654,7 +655,7 @@ func UpdateCatalogCategory(ctx context.Context, db *sql.DB, categoryID string, i
 
 func readCommerceVerticalForUpdateTx(ctx context.Context, tx *sql.Tx, id string) (CommerceVerticalRecord, error) {
 	var item CommerceVerticalRecord
-	err := tx.QueryRowContext(ctx, `SELECT id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.commerce_verticals WHERE id=$1 FOR UPDATE`, id).Scan(&item.ID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := tx.QueryRowContext(ctx, `SELECT id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at FROM dsh.commerce_verticals WHERE id=$1 FOR UPDATE`, id).Scan(&item.ID, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CommerceVerticalRecord{}, ErrCatalogVerticalNotFound
 	}
@@ -680,7 +681,7 @@ func readCatalogCategoryForUpdateTx(ctx context.Context, tx *sql.Tx, id string) 
 }
 func readCommerceVerticalTx(ctx context.Context, tx *sql.Tx, id string) (CommerceVerticalRecord, error) {
 	var item CommerceVerticalRecord
-	err := tx.QueryRowContext(ctx, "SELECT id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.commerce_verticals WHERE id=$1", id).Scan(&item.ID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := tx.QueryRowContext(ctx, "SELECT id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at FROM dsh.commerce_verticals WHERE id=$1", id).Scan(&item.ID, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
 func readCatalogCategoryTx(ctx context.Context, tx *sql.Tx, id string) (CatalogCategoryRecord, error) {
@@ -699,7 +700,7 @@ func ListCommerceVerticals(ctx context.Context, db *sql.DB, activeOnly bool) ([]
 	if activeOnly {
 		where = " WHERE active=true"
 	}
-	rows, err := db.QueryContext(ctx, "SELECT id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.commerce_verticals"+where+" ORDER BY lower(name_en),id")
+	rows, err := db.QueryContext(ctx, "SELECT id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at FROM dsh.commerce_verticals"+where+" ORDER BY lower(name_en),id")
 	if err != nil {
 		return nil, err
 	}
@@ -707,7 +708,7 @@ func ListCommerceVerticals(ctx context.Context, db *sql.DB, activeOnly bool) ([]
 	items := []CommerceVerticalRecord{}
 	for rows.Next() {
 		var item CommerceVerticalRecord
-		if err = rows.Scan(&item.ID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err = rows.Scan(&item.ID, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -716,7 +717,7 @@ func ListCommerceVerticals(ctx context.Context, db *sql.DB, activeOnly bool) ([]
 }
 func ReadCommerceVertical(ctx context.Context, db *sql.DB, id string) (CommerceVerticalRecord, error) {
 	var item CommerceVerticalRecord
-	err := db.QueryRowContext(ctx, "SELECT id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.commerce_verticals WHERE id=$1", strings.TrimSpace(id)).Scan(&item.ID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := db.QueryRowContext(ctx, "SELECT id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at FROM dsh.commerce_verticals WHERE id=$1", strings.TrimSpace(id)).Scan(&item.ID, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CommerceVerticalRecord{}, ErrCatalogVerticalNotFound
 	}

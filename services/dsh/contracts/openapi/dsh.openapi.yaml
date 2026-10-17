@@ -176,6 +176,9 @@ paths:
   /dsh/catalog/verticals/{verticalId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1verticals~1{verticalId}"
 
+  /dsh/catalog/verticals/{verticalId}/media/upload:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1verticals~1{verticalId}~1media~1upload"
+
   /dsh/catalog/commercial-store-types:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1commercial-store-types"
 
@@ -4326,6 +4329,9 @@ components:
           type: string
         nameEn:
           type: string
+        imageUri:
+          type: string
+          description: Canonical DSH media URI for the CommerceVertical illustration.
         active:
           type: boolean
         version:
@@ -4752,7 +4758,7 @@ components:
 
     PublicStoreView:
       type: object
-      required: [id, name, serviceCity, primaryVerticalId, categoryIds, fulfillmentModes, orderabilityByMode, version, ratingAverage, ratingCount, publishedAt, createdAt, updatedAt]
+      required: [id, name, serviceCity, primaryVerticalId, categoryIds, fulfillmentModes, orderabilityByMode, version, ratingAverage, ratingCount, promotionCount, publishedAt, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -4804,6 +4810,10 @@ components:
         ratingCount:
           type: integer
           minimum: 0
+        promotionCount:
+          type: integer
+          minimum: 0
+          description: Count of published city-eligible promotions applicable to this Store, including opted-in global campaigns.
         publishedAt:
           type: string
           format: date-time
@@ -9357,9 +9367,6 @@ components:
       properties:
         id:
           type: string
-        storeId:
-          type: string
-          description: Public store that owns this promotion when store-scoped.
         code:
           type: string
         nameAr:

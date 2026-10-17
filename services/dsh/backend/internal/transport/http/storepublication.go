@@ -379,9 +379,19 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 		writeStoreAvailabilityError(w, err)
 		return
 	}
+	storeIDs := make([]string, 0, len(page.Stores))
+	for _, store := range page.Stores {
+		storeIDs = append(storeIDs, store.ID)
+	}
+	promotionCounts, err := postgres.CountPublicPromotionsForStores(r.Context(), s.db, serviceCityID, storeIDs)
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
 	values := make([]contract.PublicStoreView, 0, len(page.Stores))
 	for _, store := range page.Stores {
 		view := toPublicStoreView(store)
+		view.PromotionCount = promotionCounts[store.ID]
 		view.OrderabilityByMode = make([]contract.StoreOrderability, 0, len(orderabilityByStore[store.ID]))
 		for _, state := range orderabilityByStore[store.ID] {
 			view.OrderabilityByMode = append(view.OrderabilityByMode, toStoreOrderabilityView(state))

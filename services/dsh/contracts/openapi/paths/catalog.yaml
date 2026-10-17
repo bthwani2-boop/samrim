@@ -324,6 +324,28 @@ paths:
       responses:
         "200": { description: Vertical updated or idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CommerceVerticalResponse" } } } }
 
+  /dsh/catalog/verticals/{verticalId}/media/upload:
+    post:
+      operationId: uploadCommerceVerticalMedia
+      summary: Upload and atomically attach a CommerceVertical image
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - name: verticalId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UploadCatalogCategoryMediaRequest" } }
+      responses:
+        "200": { description: CommerceVertical image upload readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CommerceVerticalResponse" } } }
+
   /dsh/catalog/commercial-store-types:
     get:
       operationId: listCommercialStoreTypes

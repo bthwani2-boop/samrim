@@ -1,5 +1,5 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniIcon, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, fulfillmentModeLabel, type PublicStoreView } from "@bthwani/dsh";
 import { useMemo } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
@@ -51,7 +51,7 @@ export function StoreDirectoryCard({
       {modes.length ? <Text numberOfLines={1} style={styles.modes}>{modes.map(fulfillmentModeLabel).join(" · ")}</Text> : null}
     </View>
     <View style={styles.actions}>
-      <BthwaniIconButton icon="favorite" label={(favorite ? "إزالة " : "إضافة ") + store.name + (favorite ? " من المفضلة" : " إلى المفضلة")} disabled={favoriteBusy} tone={favorite ? "primary" : "soft"} onPress={(event) => { event.stopPropagation(); onFavorite(); }} size={sizing.controlMd} />
+      <Pressable accessibilityRole="button" accessibilityLabel={(favorite ? "إزالة " : "إضافة ") + store.name + (favorite ? " من المفضلة" : " إلى المفضلة")} accessibilityState={{ checked: favorite, disabled: favoriteBusy }} disabled={favoriteBusy} hitSlop={8} onPress={(event) => { event.stopPropagation(); onFavorite(); }} style={[styles.favoriteAction, favorite && styles.favoriteSelected]}><Text style={styles.favoriteGlyph}>{favorite ? "♥" : "♡"}</Text></Pressable>
       {promotionCount !== null && promotionCount > 0 ? <Pressable accessibilityRole="button" accessibilityLabel={"عرض " + offersLabel + " في متجر " + store.name} onPress={(event) => { event.stopPropagation(); onOpen(); }} style={styles.offerButton}><Text numberOfLines={1} style={styles.offerLabel}>{offersLabel}</Text></Pressable> : null}
     </View>
   </Pressable>;
@@ -77,6 +77,9 @@ function makeStyles(theme: ReturnType<typeof resolveTheme>) {
     deliveryInfo: { ...typography.caption, color: theme.interactiveText, textAlign: "auto" },
     modes: { ...typography.caption, color: theme.colorMuted, textAlign: "auto" },
     actions: { alignItems: "center", justifyContent: "space-between", gap: spacing[1], maxWidth: 72, paddingEnd: spacing[2] },
+    favoriteAction: { alignItems: "center", justifyContent: "center", height: sizing.controlMd, width: sizing.controlMd, borderRadius: radius.round, backgroundColor: theme.actionSoft },
+    favoriteSelected: { backgroundColor: theme.surfaceInset },
+    favoriteGlyph: { color: theme.interactiveText, fontSize: 29, lineHeight: 35, textAlign: "center" },
     offerButton: { backgroundColor: theme.actionSoft, borderRadius: radius.round, paddingHorizontal: spacing[1], minHeight: 27, justifyContent: "center" },
     offerLabel: { ...typography.caption, color: theme.interactiveText, textAlign: "center" },
     pressed: { opacity: 0.7 },
