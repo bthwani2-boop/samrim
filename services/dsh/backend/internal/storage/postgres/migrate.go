@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -16,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 130
+const SchemaVersion = 132
 
 type MigrationRecord struct {
 	Version int
@@ -25,6 +26,8 @@ type MigrationRecord struct {
 }
 
 var requiredTables = []schemaRelationExpectation{
+	{name: "dsh.catalog_shopping_shortcuts", columns: []string{"id", "vertical_id", "title_ar", "ordinal", "active", "version", "created_at", "updated_at"}, constraints: []string{"catalog_shopping_shortcuts_pkey", "catalog_shopping_shortcuts_id_vertical_uq", "catalog_shopping_shortcuts_id_chk", "catalog_shopping_shortcuts_title_chk"}, indexes: []string{"catalog_shopping_shortcuts_vertical_title_uq", "catalog_shopping_shortcuts_order_idx"}},
+	{name: "dsh.catalog_shopping_shortcut_targets", columns: []string{"shortcut_id", "vertical_id", "store_type_id", "category_id"}, constraints: []string{"catalog_shopping_shortcut_target_shortcut_fk", "catalog_shopping_shortcut_target_type_fk", "catalog_shopping_shortcut_target_category_fk", "catalog_shopping_shortcut_target_one_chk"}, indexes: []string{"catalog_shopping_shortcut_type_uq", "catalog_shopping_shortcut_category_uq"}},
 	{name: "dsh.hr_employees", columns: []string{"id", "full_name_ar", "phone_e164", "department", "job_title", "manager_employee_id", "start_date", "work_location", "status", "operator_actor_id", "version", "created_by_actor_id", "created_at", "updated_at"}, constraints: []string{"hr_employees_pkey", "hr_employee_name_chk", "hr_employee_phone_chk", "hr_employee_dept_chk", "hr_employee_title_chk", "hr_employee_status_chk"}, indexes: []string{"hr_employees_recent_idx", "hr_employees_department_idx", "hr_employees_manager_idx", "hr_employees_phone_uq"}},
 	{name: "dsh.hr_operator_access_requests", columns: []string{"id", "employee_id", "reason", "requested_permissions", "state", "operator_profile_id", "requested_by_actor_id", "linked_by_actor_id", "created_at", "updated_at", "version", "employee_name_snapshot", "phone_e164_snapshot", "department_snapshot", "job_title_snapshot", "rejected_at", "rejected_by_actor_id", "rejection_reason", "provisioning_at", "provisioning_by_actor_id"}, constraints: []string{"hr_operator_access_requests_pkey", "hr_access_state_chk", "hr_access_permissions_chk", "hr_access_snapshot_chk"}, indexes: []string{"hr_access_pending_idx"}},
 	{name: "dsh.hr_operator_access_events", columns: []string{"idempotency_key", "request_id", "event_type", "request_hash", "acting_actor_id", "correlation_id", "created_at"}, constraints: []string{"hr_operator_access_events_pkey", "hr_access_event_hash_chk"}},
@@ -244,7 +247,7 @@ func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrati
 		if err := tx.QueryRowContext(ctx, "SELECT name, sha256 FROM dsh.schema_migrations WHERE version=$1", record.Version).Scan(&name, &digest); err != nil {
 			return fmt.Errorf("read DSH migration v%d: %w", record.Version, err)
 		}
-		if name != record.Name || digest != record.SHA256 {
+		if name != record.Name || (digest != record.SHA256 && !acceptHistoricalV130Migration(ctx, tx, record, digest)) {
 			return fmt.Errorf("DSH migration checksum mismatch at v%d", record.Version)
 		}
 	}
@@ -270,6 +273,35 @@ func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrati
 	return nil
 }
 
+// historicalV130Querier is deliberately limited to the read needed for
+// verifying an already-applied historical migration; it does not mutate history.
+type historicalV130Querier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+// v130 was applied to some durable local databases before its SQL was corrected
+// for fresh bootstrap. Recognize only that exact audited old checksum, only in
+// development, and only when its stricter delivery-proof constraint exists.
+// Keep the recorded historical hash; never silently rewrite schema_migrations.
+func acceptHistoricalV130Migration(ctx context.Context, db historicalV130Querier, record MigrationRecord, storedDigest string) bool {
+	if os.Getenv("BTHWANI_ENV") != "development" ||
+		record.Version != 130 ||
+		record.Name != "130_captain_delivery_confirmation.sql" ||
+		record.SHA256 != "79e0ea24d4a7b56d4934ae25805957f106f5d83b2ae168224d81b410ff9933b1" ||
+		storedDigest != "da7c2732bf7412af8e3cb24af40cb39afeefe03d938a6c48f3a1bc68059ca02c" {
+		return false
+	}
+	var compatible bool
+	err := db.QueryRowContext(ctx, `SELECT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conrelid='dsh.commerce_order_delivery_proofs'::regclass
+        AND conname='commerce_order_delivery_proof_material_chk'
+        AND pg_get_constraintdef(oid) LIKE '%code_ciphertext%'
+        AND pg_get_constraintdef(oid) LIKE '%code_verifier%'
+        AND pg_get_constraintdef(oid) LIKE '%code_key_id%'
+    )`).Scan(&compatible)
+	return err == nil && compatible
+}
+
 func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) error {
 	if db == nil {
 		return errors.New("DSH database is nil")
@@ -293,7 +325,7 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 		if err := db.QueryRowContext(ctx, "SELECT version, name, sha256 FROM dsh.schema_migrations WHERE version=$1", record.Version).Scan(&version, &name, &digest); err != nil {
 			return fmt.Errorf("DSH migration readback v%d: %w", record.Version, err)
 		}
-		if version != record.Version || name != record.Name || digest != record.SHA256 {
+		if version != record.Version || name != record.Name || (digest != record.SHA256 && !acceptHistoricalV130Migration(ctx, db, record, digest)) {
 			return fmt.Errorf("DSH migration history does not match canonical v%d", record.Version)
 		}
 	}

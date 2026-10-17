@@ -30,6 +30,7 @@ type PublicStoreListQuery struct {
 	Query                 string
 	VerticalID            string
 	CategoryID            string
+	ShortcutID            string
 	FavoriteClientActorID string
 	Sort                  string
 	Limit                 int
@@ -61,6 +62,7 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 	input.Query = strings.ToLower(strings.TrimSpace(input.Query))
 	input.VerticalID = strings.TrimSpace(input.VerticalID)
 	input.CategoryID = strings.TrimSpace(input.CategoryID)
+	input.ShortcutID = strings.TrimSpace(input.ShortcutID)
 	input.Sort = strings.TrimSpace(input.Sort)
 	if input.Sort == "" {
 		input.Sort = "all"
@@ -69,7 +71,7 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 		input.Limit = publicStoreDefaultPageSize
 	}
 	if input.ServiceCityID == "" || len(input.ServiceCityID) > 128 ||
-		len(input.VerticalID) > 128 || len(input.CategoryID) > 128 || len(input.FavoriteClientActorID) > 128 || !utf8.ValidString(input.Query) ||
+		len(input.VerticalID) > 128 || len(input.CategoryID) > 128 || len(input.ShortcutID) > 128 || len(input.FavoriteClientActorID) > 128 || !utf8.ValidString(input.Query) ||
 		utf8.RuneCountInString(input.Query) > 160 || strings.ContainsRune(input.Query, '\x00') ||
 		input.Limit < 1 || input.Limit > publicStoreMaximumPageSize || len(input.Cursor) > publicStoreMaximumCursor ||
 		(input.Sort != "all" && input.Sort != "newest" && input.Sort != "nearest") ||
@@ -133,6 +135,13 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 			JOIN dsh.catalog_categories parent ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id AND parent.active=true
 		) SELECT 1 FROM store_categories WHERE id=$3))
 		AND ($15='' OR s.primary_vertical_id=$15)
+        AND ($16='' OR EXISTS (
+            SELECT 1 FROM dsh.catalog_store_offers matching_offer
+            JOIN dsh.catalog_customer_visible_offers matching_visible ON matching_visible.offer_id=matching_offer.id
+            JOIN dsh.catalog_product_variants matching_variant ON matching_variant.id=matching_offer.variant_id
+            WHERE matching_offer.store_id=s.id AND dsh.shopping_shortcut_matches_product(
+                $16,s.id,matching_variant.product_id)
+        ))
 		AND EXISTS (SELECT 1 FROM dsh.catalog_store_offers o WHERE o.store_id=s.id AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id))
 		AND EXISTS (SELECT 1 FROM dsh.joining_cases jc WHERE jc.partner_actor_id=s.partner_actor_id AND jc.financial_profile_state='ACTIVE')
 		AND ($6='' OR EXISTS (SELECT 1 FROM dsh.client_favorite_stores f WHERE f.client_actor_id=$6 AND f.store_id=s.id))
@@ -177,7 +186,7 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 	CASE WHEN $13 IN ('all','nearest') AND $4::double precision IS NOT NULL THEN candidate.distance_meters END ASC NULLS LAST,
 	CASE WHEN $13<>'newest' THEN lower(candidate.name) END ASC,CASE WHEN $13<>'newest' THEN candidate.id END ASC`
 
-	rows, err := db.QueryContext(ctx, statement, input.ServiceCityID, searchPattern, input.CategoryID, latitude, longitude, input.FavoriteClientActorID, input.Sort == "nearest", cursorCreatedAt, cursorNameKey, cursorID, cursorDistance, cursor != nil, input.Sort, input.Limit+1, input.VerticalID)
+	rows, err := db.QueryContext(ctx, statement, input.ServiceCityID, searchPattern, input.CategoryID, latitude, longitude, input.FavoriteClientActorID, input.Sort == "nearest", cursorCreatedAt, cursorNameKey, cursorID, cursorDistance, cursor != nil, input.Sort, input.Limit+1, input.VerticalID, input.ShortcutID)
 	if err != nil {
 		return PublicStorePage{}, fmt.Errorf("list published store page: %w", err)
 	}
@@ -271,12 +280,13 @@ func publicStoreCursorScope(input PublicStoreListQuery) string {
 		CityID                string   `json:"cityId"`
 		Query                 string   `json:"query"`
 		Category              string   `json:"category"`
+		Shortcut              string   `json:"shortcut"`
 		Vertical              string   `json:"vertical"`
 		FavoriteClientActorID string   `json:"favoriteClientActorId"`
 		Sort                  string   `json:"sort"`
 		Latitude              *float64 `json:"latitude"`
 		Longitude             *float64 `json:"longitude"`
-	}{CityID: input.ServiceCityID, Query: input.Query, Category: input.CategoryID, Vertical: input.VerticalID, FavoriteClientActorID: input.FavoriteClientActorID, Sort: input.Sort, Latitude: input.Latitude, Longitude: input.Longitude})
+	}{CityID: input.ServiceCityID, Query: input.Query, Category: input.CategoryID, Shortcut: input.ShortcutID, Vertical: input.VerticalID, FavoriteClientActorID: input.FavoriteClientActorID, Sort: input.Sort, Latitude: input.Latitude, Longitude: input.Longitude})
 	digest := sha256.Sum256(value)
 	return hex.EncodeToString(digest[:])
 }

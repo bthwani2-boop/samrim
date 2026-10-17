@@ -1284,6 +1284,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       q?: string;
       verticalId?: string;
       categoryId?: string;
+      shortcutId?: string;
       favoritesOnly?: boolean;
       accessToken?: string;
       sort?: "all" | "newest" | "nearest";
@@ -1299,11 +1300,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const query = options.q?.trim() ?? "";
       const verticalID = options.verticalId?.trim() ?? "";
       const categoryID = options.categoryId?.trim() ?? "";
+      const shortcutID = options.shortcutId?.trim() ?? "";
       const cursor = options.cursor?.trim() ?? "";
       const favoritesOnly = options.favoritesOnly === true;
       if (query) params.set("q", query);
       if (verticalID) params.set("verticalId", verticalID);
       if (categoryID) params.set("categoryId", categoryID);
+      if (shortcutID) params.set("shortcutId", shortcutID);
       if (favoritesOnly) params.set("favoritesOnly", "true");
       if (cursor) params.set("cursor", cursor);
       if (options.location) {

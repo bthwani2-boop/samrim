@@ -306,9 +306,9 @@ test("operator sees shared product categories as a hierarchy under their commerc
   const filters = page.locator("form.catalog-category-filters");
   await filters.getByLabel("بحث").fill("Coffee");
   await filters.getByRole("button", { name: "بحث", exact: true }).click();
-  const detachedTree = page.getByRole("list", { name: "فروع أبوها خارج النتائج الحالية" });
-  await expect(detachedTree.getByRole("listitem").first()).toContainText("المقاضي / مشروبات / قهوة");
-  await expect(page.getByRole("list", { name: "شجرة فئات المقاضي" })).toHaveCount(0);
+  const oneTree = page.getByRole("list", { name: "شجرة فئات المقاضي" });
+  await expect(oneTree.getByRole("listitem").first()).toContainText("المقاضي / مشروبات / قهوة");
+  await expect(page.getByRole("list", { name: "فروع أبوها خارج النتائج الحالية" })).toHaveCount(0);
 });
 
 test("vertical registry does not present a category image as a vertical image", async ({ page }) => {
@@ -561,4 +561,42 @@ test("store import retries only failed rows with the original commit identity", 
   expect(commitKeys).toHaveLength(2);
   expect(commitKeys[0]).toBeTruthy();
   expect(commitKeys[1]).toBe(commitKeys[0]);
+});
+
+test("operator manages an optional customer shortcut without changing internal Store Type", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const vertical = { id: "grocery", nameAr: "المقاضي", nameEn: "Grocery", active: true, version: 1 };
+  const storeType = { id: "butcher", verticalId: "grocery", nameAr: "ملحمة", nameEn: "Butcher", active: true, version: 1 };
+  const category = { id: "meat", verticalId: "grocery", nameAr: "لحوم", nameEn: "Meat", parentCategoryId: null, active: true, version: 1, pathAr: "لحوم" };
+  let saved: Record<string, unknown> | null = null;
+  await page.route("**/api/catalog/verticals**", (route) => route.fulfill({ status: 200, json: { verticals: [vertical] } }));
+  await page.route("**/api/catalog/categories**", (route) => route.fulfill({ status: 200, json: { categories: [category], nextCursor: "" } }));
+  await page.route("**/api/catalog/commercial-store-types**", (route) => route.fulfill({ status: 200, json: { storeTypes: [storeType] } }));
+  await page.route("**/api/catalog/shopping-shortcuts**", async (route) => {
+    if (route.request().method() === "POST") {
+      saved = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({ status: 201, json: {
+        shortcut: { id: "meat-shortcut", ...saved, version: 1, createdAt: "2026-10-17T00:00:00Z", updatedAt: "2026-10-17T00:00:00Z" },
+        idempotentReplay: false,
+      } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: { shortcuts: saved ? [{ id: "meat-shortcut", ...saved, version: 1, createdAt: "2026-10-17T00:00:00Z", updatedAt: "2026-10-17T00:00:00Z" }] : [] } });
+  });
+  await page.route("**/api/catalog/attributes**", (route) => route.fulfill({ status: 200, json: { definitions: [] } }));
+  await page.goto("/catalog/categories?verticalId=grocery");
+  await page.getByText("اختصارات التسوق", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "اختصارات التسوق للعملاء" })).toBeVisible();
+  await page.getByRole("button", { name: "إضافة اختصار" }).click();
+  const editor = page.getByLabel("محرر اختصار التسوق");
+  await editor.getByRole("textbox", { name: "اسم الاختصار الظاهر للعميل" }).fill("لحوم ودجاج");
+  await editor.getByRole("checkbox", { name: "ملحمة" }).check();
+  await editor.locator("details").nth(1).locator("summary").click();
+  await editor.getByRole("checkbox", { name: "لحوم" }).check();
+  await editor.getByRole("textbox", { name: "سبب الإضافة أو التعديل" }).fill("تبسيط تصفح المقاضي");
+  await editor.getByRole("button", { name: "حفظ الاختصار" }).click();
+  await expect(page.getByText("تم حفظ الاختصار «لحوم ودجاج».")).toBeVisible();
+  expect(saved).toMatchObject({ verticalId: "grocery", titleAr: "لحوم ودجاج", expectedVersion: 0,
+    storeTypeIds: ["butcher"], categoryIds: ["meat"], active: true });
+  await expect(page.getByRole("row", { name: /لحوم ودجاج/ })).toContainText("1 نوع متجر، 1 فئة");
 });

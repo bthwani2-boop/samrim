@@ -53,6 +53,9 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/catalog/verticals", s.listVerticals)
 	mux.HandleFunc("POST /dsh/catalog/verticals", s.createVertical)
 	mux.HandleFunc("PATCH /dsh/catalog/verticals/{verticalId}", s.updateVertical)
+	mux.HandleFunc("GET /dsh/catalog/shopping-shortcuts", s.listShoppingShortcuts)
+	mux.HandleFunc("POST /dsh/catalog/shopping-shortcuts", s.createShoppingShortcut)
+	mux.HandleFunc("PATCH /dsh/catalog/shopping-shortcuts/{shortcutId}", s.updateShoppingShortcut)
 	mux.HandleFunc("GET /dsh/catalog/commercial-store-types", s.listCommercialStoreTypes)
 	mux.HandleFunc("POST /dsh/catalog/commercial-store-types", s.createCommercialStoreType)
 	mux.HandleFunc("PATCH /dsh/catalog/commercial-store-types/{storeTypeId}", s.updateCommercialStoreType)
@@ -1001,6 +1004,12 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "catalog record was not found")
 	case errors.Is(err, postgres.ErrCatalogIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different catalog facts")
+	case errors.Is(err, postgres.ErrShoppingShortcutInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "shopping shortcut fields and compatible targets are required")
+	case errors.Is(err, postgres.ErrShoppingShortcutNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "shopping shortcut does not exist")
+	case errors.Is(err, postgres.ErrCatalogRegistryNameConflict):
+		writeError(w, http.StatusConflict, "CATALOG_NAME_EXISTS", "a catalog name already exists in this scope")
 	case errors.Is(err, postgres.ErrCatalogAttributeDefinitionExists):
 		writeError(w, http.StatusConflict, "ATTRIBUTE_EXISTS", "an attribute with this identifier or code already exists in the vertical")
 	case errors.Is(err, postgres.ErrCatalogAttributeOptionExists):

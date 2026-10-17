@@ -15,6 +15,7 @@ export async function listPublishedStores(serviceCityID: string, options: Readon
   q?: string;
   verticalId?: string;
   categoryId?: string;
+  shortcutId?: string;
   favoritesOnly?: boolean;
   sort?: "all" | "newest" | "nearest";
   limit?: number;

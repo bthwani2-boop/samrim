@@ -4,6 +4,7 @@ import type { CatalogCategoryListResponse, CommerceVertical } from "@bthwani/dsh
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CatalogCategoryRegistry } from "./catalog-category-registry";
 import { CatalogCommercialStoreTypeRegistry } from "./catalog-commercial-store-type-registry";
+import { CatalogShoppingShortcutRegistry } from "./catalog-shopping-shortcut-registry";
 import { CatalogVerticalRegistry } from "./catalog-vertical-registry";
 
 async function readResponse<T>(response: Response): Promise<T> {
@@ -18,6 +19,7 @@ export function CatalogTaxonomyWorkspace() {
   const [categories, setCategories] = useState<CatalogCategoryListResponse["categories"]>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [loadingVerticals, setLoadingVerticals] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [error, setError] = useState("");
@@ -87,11 +89,18 @@ export function CatalogTaxonomyWorkspace() {
 
   return <section className="catalog-taxonomy-workspace" aria-label="إدارة الفئات">
     {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" disabled={loadingVerticals || loadingCategories} onClick={() => { void loadVerticals(); if (verticalId) void loadCategories(verticalId); }}>إعادة قراءة السجل</button></p> : null}
-    <CatalogCategoryRegistry key={verticalId} verticals={sharedVerticals} verticalId={verticalId} onVerticalChange={chooseVertical} categories={categories} nextCursor={nextCursor} onFilter={(query, status, sort, cursor, append) => loadCategories(verticalId, query, status, sort, cursor, append)} categoryId={categoryId} onCategoryChange={setCategoryId} loading={loadingVerticals || loadingCategories} onSaved={() => loadCategories(verticalId, "", "all", "name_asc", "", false, true)} management={<details className="catalog-vertical-settings">
-      <summary><span>إدارة المجالات التجارية</span><small>{verticals.length} مجال</small></summary>
-
-      <CatalogVerticalRegistry verticals={verticals} selectedVerticalId={verticalId} onSelectVertical={chooseVertical} onSaved={loadVerticals} />
-      <CatalogCommercialStoreTypeRegistry verticals={verticals} verticalId={verticalId} />
-    </details>} />
+    <CatalogCategoryRegistry key={verticalId} verticals={sharedVerticals} verticalId={verticalId} onVerticalChange={chooseVertical} categories={categories} nextCursor={nextCursor} onFilter={(query, status, sort, cursor, append) => loadCategories(verticalId, query, status, sort, cursor, append)} categoryId={categoryId} onCategoryChange={setCategoryId} loading={loadingVerticals || loadingCategories} onSaved={() => loadCategories(verticalId, "", "all", "name_asc", "", false, true)} management={<section aria-label="إدارة المجالات وأنواع المتاجر">
+      <details className="catalog-vertical-settings">
+        <summary><span>إدارة المجالات</span><small>{verticals.length} مجال</small></summary>
+        <CatalogVerticalRegistry verticals={verticals} selectedVerticalId={verticalId} onSelectVertical={chooseVertical} onSaved={loadVerticals} />
+      </details>
+      {verticalId ? <section aria-label="أنواع المتاجر الداخلية">
+        <p className="catalog-taxonomy-vertical-note">نوع المتجر تصنيف إداري داخلي للانضمام والسياسات المالية؛ ولا يظهر باعتباره تصنيفًا للعميل.</p>
+        <CatalogCommercialStoreTypeRegistry verticals={verticals} verticalId={verticalId} />
+        <details className="catalog-vertical-settings" onToggle={(event) => setShortcutsOpen(event.currentTarget.open)}><summary><span>اختصارات التسوق</span><small>ظهور العملاء</small></summary>
+          {shortcutsOpen ? <CatalogShoppingShortcutRegistry verticalId={verticalId} /> : null}
+        </details>
+      </section> : null}
+    </section>} />
   </section>;
 }

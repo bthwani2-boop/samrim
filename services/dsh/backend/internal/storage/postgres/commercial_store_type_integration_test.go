@@ -50,6 +50,17 @@ func runCommercialStoreTypeScenario(t *testing.T, ctx context.Context, db *sql.D
 	suffix := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 	verticalID := createCommercialTypeVertical(t, ctx, db, suffix)
 	item := createCommercialTypeAndVerifyIdempotency(t, ctx, db, verticalID, suffix)
+	for index, duplicate := range []postgres.CommercialStoreTypeRecord{
+		{ID: "duplicate-type-ar-" + suffix, VerticalID: verticalID, NameAr: item.NameAr, NameEn: "Other Commercial Type", Active: true},
+		{ID: "duplicate-type-en-" + suffix, VerticalID: verticalID, NameAr: "نوع تجاري آخر", NameEn: item.NameEn, Active: true},
+	} {
+		reason := "Reject duplicate commercial type label"
+		key := fmt.Sprintf("idem-duplicate-type-%d-%s", index, suffix)
+		_, err := postgres.CreateCommercialStoreType(ctx, db, duplicate, key, postgres.HashCommercialStoreTypeCreateRequest(duplicate, reason), postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-" + key, Reason: reason})
+		if !errors.Is(err, postgres.ErrCatalogRegistryNameConflict) {
+			t.Fatalf("duplicate type label index=%d error=%v, want conflict", index, err)
+		}
+	}
 	verifyCommercialTypeReads(t, ctx, db, item, verticalID, suffix)
 	updateCommercialType(t, ctx, db, item, verticalID, suffix)
 	verifyStoreCommercialTypeAssignment(t, ctx, db, verticalID, suffix)

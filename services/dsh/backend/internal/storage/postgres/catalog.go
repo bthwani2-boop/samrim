@@ -23,6 +23,7 @@ var (
 	ErrCatalogCategoryNotFound          = errors.New("catalog category was not found")
 	ErrCatalogCategoryInvalidCursor     = errors.New("catalog category cursor is invalid")
 	ErrCatalogIdempotencyConflict       = errors.New("catalog idempotency key was already used with different facts")
+	ErrCatalogRegistryNameConflict      = errors.New("catalog registry name already exists in this scope")
 	ErrCatalogVersionConflict           = errors.New("catalog version is stale")
 	ErrCatalogAttributeRuleInvalid      = errors.New("catalog attribute rule is invalid")
 	ErrCatalogAttributeDefinitionExists = errors.New("catalog attribute definition already exists")
@@ -359,7 +360,7 @@ func CreateCommerceVertical(ctx context.Context, db *sql.DB, item CommerceVertic
 		}
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.commerce_verticals(id,name_ar,name_en,active) VALUES($1,$2,$3,$4)", item.ID, item.NameAr, item.NameEn, item.Active); err != nil {
-		return CommerceVerticalResult{}, err
+		return CommerceVerticalResult{}, catalogRegistryNameWriteError(err)
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_registry_mutation_idempotency(idempotency_key,request_hash,entity_type,entity_id) VALUES($1,$2,'vertical',$3)", idempotencyKey, requestHash, item.ID); err != nil {
 		return CommerceVerticalResult{}, err
@@ -449,7 +450,7 @@ func CreateCatalogCategory(ctx context.Context, db *sql.DB, item CatalogCategory
 		}
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_categories(id,vertical_id,parent_category_id,name_ar,name_en,active) VALUES($1,$2,NULLIF($3,''),$4,$5,$6)", item.ID, item.VerticalID, item.ParentCategoryID, item.NameAr, item.NameEn, item.Active); err != nil {
-		return CatalogCategoryRecord{}, err
+		return CatalogCategoryRecord{}, catalogRegistryNameWriteError(err)
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_registry_mutation_idempotency(idempotency_key,request_hash,entity_type,entity_id) VALUES($1,$2,'category',$3)", idempotencyKey, requestHash, item.ID); err != nil {
 		return CatalogCategoryRecord{}, err
@@ -508,7 +509,7 @@ func UpdateCommerceVertical(ctx context.Context, db *sql.DB, verticalID string, 
 		return CommerceVerticalResult{}, ErrCatalogVersionConflict
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE dsh.commerce_verticals SET name_ar=$2,name_en=$3,active=$4,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$5`, verticalID, input.NameAr, input.NameEn, input.Active, input.ExpectedVersion); err != nil {
-		return CommerceVerticalResult{}, err
+		return CommerceVerticalResult{}, catalogRegistryNameWriteError(err)
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_registry_mutation_idempotency(idempotency_key,request_hash,entity_type,entity_id) VALUES($1,$2,'vertical',$3)", idempotencyKey, requestHash, verticalID); err != nil {
 		return CommerceVerticalResult{}, err
@@ -630,7 +631,7 @@ func UpdateCatalogCategory(ctx context.Context, db *sql.DB, categoryID string, i
 		}
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE dsh.catalog_categories SET parent_category_id=NULLIF($2,''),name_ar=$3,name_en=$4,active=$5,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$6`, categoryID, input.ParentCategoryID, input.NameAr, input.NameEn, input.Active, input.ExpectedVersion); err != nil {
-		return CatalogCategoryRecord{}, false, err
+		return CatalogCategoryRecord{}, false, catalogRegistryNameWriteError(err)
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_registry_mutation_idempotency(idempotency_key,request_hash,entity_type,entity_id) VALUES($1,$2,'category',$3)", idempotencyKey, requestHash, categoryID); err != nil {
 		return CatalogCategoryRecord{}, false, err
@@ -2226,4 +2227,19 @@ func nullableString(value sql.NullString) *string {
 func isUniqueViolation(err error) bool {
 	var pqErr *pq.Error
 	return errors.As(err, &pqErr) && pqErr.Code == "23505"
+}
+
+// catalogRegistryNameWriteError maps only known registry label uniqueness failures;
+// unrelated unique violations (including IDs and idempotency) remain distinct.
+func catalogRegistryNameWriteError(err error) error {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Code == "23505" {
+		switch pqErr.Constraint {
+		case "commerce_verticals_name_ar_uq", "commerce_verticals_name_en_uq",
+			"commercial_store_types_vertical_name_ar_uq", "commercial_store_types_vertical_name_en_uq",
+			"catalog_categories_sibling_name_ar_uq", "catalog_categories_sibling_name_en_uq", "catalog_shopping_shortcuts_vertical_title_uq":
+			return ErrCatalogRegistryNameConflict
+		}
+	}
+	return err
 }

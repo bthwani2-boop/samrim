@@ -51,6 +51,7 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		scenario.verifyStoreScopedProducts()
 		scenario.publishFirstStoreOffer()
 		scenario.publishSecondStoreOffer()
+		scenario.verifyShoppingShortcutDiscovery()
 		scenario.verifyPublicStoreDiscovery()
 		scenario.verifyFavorites()
 		scenario.verifyProposalPagination()

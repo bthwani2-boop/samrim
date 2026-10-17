@@ -1,6 +1,6 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type PublicCommerceVertical, type PublicDiscoveryContentView, type PublicPromotionView, type PublicStoreView } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type PublicCommerceVertical, type PublicShoppingShortcut, type PublicDiscoveryContentView, type PublicPromotionView, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, I18nManager, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
@@ -13,7 +13,7 @@ import { listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryCont
 
 type DiscoveryState =
   | { kind: "loading" }
-  | { kind: "ready"; stores: ReadonlyArray<PublicStoreView>; verticals: ReadonlyArray<PublicCommerceVertical>; categories: ReadonlyArray<CatalogCategory>; favoriteStoreIDs: ReadonlyArray<string>; nextCursor: string }
+  | { kind: "ready"; stores: ReadonlyArray<PublicStoreView>; verticals: ReadonlyArray<PublicCommerceVertical>; categories: ReadonlyArray<CatalogCategory>; shortcuts: ReadonlyArray<PublicShoppingShortcut>; favoriteStoreIDs: ReadonlyArray<string>; nextCursor: string }
   | { kind: "empty" }
   | { kind: "error" };
 
@@ -50,6 +50,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const [storeFilter, setStoreFilter] = useState<"all" | "newest" | "nearest" | "favorites">("all");
   const [selectedVerticalID, setSelectedVerticalID] = useState("");
   const [selectedCategoryID, setSelectedCategoryID] = useState("");
+  const [selectedShortcutID, setSelectedShortcutID] = useState("");
   const [favoriteBusyStoreID, setFavoriteBusyStoreID] = useState("");
   const [failedStoreImageIDs, setFailedStoreImageIDs] = useState<ReadonlySet<string>>(() => new Set());
   const promotionCache = useRef<StorePromotionCache>(new Map());
@@ -71,7 +72,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const directoryQuery = directoryMode && searchIsActive ? query.trim() : "";
   const directorySort = storeFilter === "newest" || storeFilter === "nearest" ? storeFilter : "all";
   const directoryFavoritesOnly = directoryMode && storeFilter === "favorites";
-  const currentDirectoryKey = JSON.stringify([selectedCityID, directoryQuery, selectedVerticalID, directoryMode ? selectedCategoryID : "", directorySort, directoryFavoritesOnly, directoryLocation?.latitude ?? null, directoryLocation?.longitude ?? null]);
+  const currentDirectoryKey = JSON.stringify([selectedCityID, directoryQuery, selectedVerticalID, directoryMode ? selectedCategoryID : "", directoryMode ? selectedShortcutID : "", directorySort, directoryFavoritesOnly, directoryLocation?.latitude ?? null, directoryLocation?.longitude ?? null]);
   const displayedStoreCount = state.kind === "ready" ? state.stores.length : 0;
 
   const load = useCallback(async () => {
@@ -98,8 +99,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       const storeDirectory = await listPublishedStores(selectedCityID, { limit: 20 });
       const { verticals, categories } = normalizeDiscoveryTaxonomy(storeDirectory.verticals, storeDirectory.categories);
       if (requestID !== discoveryLoadRequestID.current) return;
-      directoryRequestKey.current = JSON.stringify([selectedCityID, "", "", "all", false, null, null]);
-      setState({ kind: "ready", stores: storeDirectory.stores, verticals, categories, favoriteStoreIDs: [], nextCursor: storeDirectory.nextCursor ?? "" });
+      directoryRequestKey.current = JSON.stringify([selectedCityID, "", "", "", "", "all", false, null, null]);
+      setState({ kind: "ready", stores: storeDirectory.stores, verticals, categories, shortcuts: storeDirectory.shortcuts ?? [], favoriteStoreIDs: [], nextCursor: storeDirectory.nextCursor ?? "" });
       void Promise.allSettled([listPublicDiscoveryContent(selectedCityID), listPublicPromotions(selectedCityID)]).then((results) => {
         if (requestID !== discoveryLoadRequestID.current) return;
         setMarketing({
@@ -127,9 +128,10 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   useEffect(() => {
     nearbyAddressRequestID.current += 1;
-    directoryRequestKey.current = selectedCityID ? JSON.stringify([selectedCityID, "", "", "all", false, null, null]) : "";
+    directoryRequestKey.current = selectedCityID ? JSON.stringify([selectedCityID, "", "", "", "", "all", false, null, null]) : "";
     setSelectedVerticalID("");
     setSelectedCategoryID("");
+    setSelectedShortcutID("");
     setDirectoryLocation(undefined);
     setNearestAddress(null);
     setNearbyAddressState({ kind: "closed" });
@@ -149,13 +151,14 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         q: directoryQuery,
         verticalId: selectedVerticalID,
         categoryId: directoryMode ? selectedCategoryID : "",
+        shortcutId: directoryMode ? selectedShortcutID : "",
         favoritesOnly: directoryFavoritesOnly,
         sort: directorySort,
         limit: 20,
         location: directoryLocation,
       }).then((page) => {
         if (directoryRequestID.current !== requestID) return;
-        setState((current) => current.kind === "ready" ? { ...current, stores: page.stores, verticals: Array.isArray(page.verticals) ? page.verticals : current.verticals, categories: Array.isArray(page.categories) ? page.categories : current.categories, nextCursor: page.nextCursor ?? "" } : current);
+        setState((current) => current.kind === "ready" ? { ...current, stores: page.stores, verticals: Array.isArray(page.verticals) ? page.verticals : current.verticals, categories: Array.isArray(page.categories) ? page.categories : current.categories, shortcuts: Array.isArray(page.shortcuts) ? page.shortcuts : current.shortcuts, nextCursor: page.nextCursor ?? "" } : current);
       }).catch(() => {
         if (directoryRequestID.current === requestID) setDirectoryError(true);
       }).finally(() => {
@@ -166,7 +169,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       clearTimeout(timer);
       directoryRequestID.current += 1;
     };
-  }, [currentDirectoryKey, directoryFavoritesOnly, directoryLocation, directoryMode, directoryQuery, directorySort, selectedCategoryID, selectedCityID, selectedVerticalID, state.kind]);
+  }, [currentDirectoryKey, directoryFavoritesOnly, directoryLocation, directoryMode, directoryQuery, directorySort, selectedCategoryID, selectedShortcutID, selectedCityID, selectedVerticalID, state.kind]);
 
   // Orderability is evaluated server-side against the current Sana'a clock.
   // Re-read displayed stores on focus and periodically without resetting filters or scroll.
@@ -183,6 +186,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
             q: directoryQuery,
             verticalId: selectedVerticalID,
             categoryId: directoryMode ? selectedCategoryID : "",
+        shortcutId: directoryMode ? selectedShortcutID : "",
             favoritesOnly: directoryFavoritesOnly,
             sort: directorySort,
             limit: 20,
@@ -208,7 +212,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     void refreshOrderability();
     const timer = setInterval(() => void refreshOrderability(), 60_000);
     return () => { active = false; clearInterval(timer); };
-  }, [selectedCityID, state.kind, displayedStoreCount, directoryLoading, directoryQuery, selectedVerticalID, selectedCategoryID, directoryMode, directoryFavoritesOnly, directorySort, directoryLocation]));
+  }, [selectedCityID, state.kind, displayedStoreCount, directoryLoading, directoryQuery, selectedVerticalID, selectedCategoryID, selectedShortcutID, directoryMode, directoryFavoritesOnly, directorySort, directoryLocation]));
 
   async function loadMoreStores() {
     if (state.kind !== "ready" || !state.nextCursor || loadingMoreStores || !selectedCityID) return;
@@ -221,6 +225,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         q: directoryQuery,
         verticalId: selectedVerticalID,
         categoryId: directoryMode ? selectedCategoryID : "",
+        shortcutId: directoryMode ? selectedShortcutID : "",
         favoritesOnly: directoryFavoritesOnly,
         sort: directorySort,
         limit: 20,
@@ -282,10 +287,22 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     return { verticals, categories, trail, children };
   }, [selectedCategoryID, selectedVerticalID, state]);
   const selectedVertical = taxonomy.verticals.find((vertical) => vertical.id === selectedVerticalID);
+  const shoppingShortcuts = state.kind === "ready"
+    ? state.shortcuts.filter((item) => item.verticalId === selectedVerticalID)
+    : [];
+  const selectCategory = (categoryID: string) => {
+    setSelectedCategoryID(categoryID);
+    setSelectedShortcutID("");
+  };
+  const selectShortcut = (shortcutID: string) => {
+    setSelectedShortcutID(shortcutID);
+    setSelectedCategoryID("");
+  };
 
   function selectVertical(verticalID: string) {
     setSelectedVerticalID(verticalID);
     setSelectedCategoryID("");
+    setSelectedShortcutID("");
   }
 
   const mediaContent = useMemo(() => marketing.content.filter((item) => Boolean(item.mediaUri)), [marketing.content]);
@@ -438,18 +455,25 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         </ScrollView>
       </View> : null}
 
+      {selectedVertical && shoppingShortcuts.length > 0 ? <View style={styles.categoryShortcutBlock} accessibilityLabel={`تسوق حسب احتياجك في ${selectedVertical.nameAr}`}>
+        <BthwaniSectionHeader title="تسوق حسب احتياجك" />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryShortcutContent}>
+          <BthwaniChip label="عرض الكل" selected={!selectedShortcutID && !selectedCategoryID} onPress={() => selectShortcut("")} />
+          {shoppingShortcuts.map((item) => <BthwaniChip key={item.id} label={item.titleAr} selected={selectedShortcutID === item.id} onPress={() => selectShortcut(item.id)} />)}
+        </ScrollView>
+      </View> : null}
       {selectedVertical ? <View style={styles.categoryShortcutBlock} accessibilityLabel={`فئات ${selectedVertical.nameAr}`}>
         <BthwaniSectionHeader title={`فئات ${selectedVertical.nameAr}`} subtitle="تظهر المنتجات بعد اختيار الفئة أو فتح المتجر" />
         <ScrollView accessibilityLabel={`التدرج الهرمي لفئات ${selectedVertical.nameAr}`} contentContainerStyle={styles.categoryShortcutContent} horizontal showsHorizontalScrollIndicator={false}>
-          <BthwaniChip label="كل فئات المنتجات" selected={!selectedCategoryID} onPress={() => setSelectedCategoryID("")} />
-          {taxonomy.trail.map((category, index) => <BthwaniChip key={category.id} label={category.nameAr} selected={index === taxonomy.trail.length - 1} onPress={() => setSelectedCategoryID(category.id)} />)}
-          {taxonomy.children.map((category) => <Pressable key={category.id} accessibilityRole="button" accessibilityLabel={`فتح فئة ${category.nameAr}`} accessibilityState={{ selected: selectedCategoryID === category.id }} onPress={() => setSelectedCategoryID(category.id)} style={[styles.categoryTile, selectedCategoryID === category.id && styles.categoryTileSelected]}>
+          <BthwaniChip label="كل فئات المنتجات" selected={!selectedCategoryID} onPress={() => selectCategory("")} />
+          {taxonomy.trail.map((category, index) => <BthwaniChip key={category.id} label={category.nameAr} selected={index === taxonomy.trail.length - 1} onPress={() => selectCategory(category.id)} />)}
+          {taxonomy.children.map((category) => <Pressable key={category.id} accessibilityRole="button" accessibilityLabel={`فتح فئة ${category.nameAr}`} accessibilityState={{ selected: selectedCategoryID === category.id }} onPress={() => selectCategory(category.id)} style={[styles.categoryTile, selectedCategoryID === category.id && styles.categoryTileSelected]}>
             {category.imageUri ? <Image source={{ uri: category.imageUri }} accessibilityLabel={`صورة ${category.nameAr}`} style={styles.categoryTileImage} resizeMode="cover" /> : <View style={styles.categoryTileFallback}><Text style={styles.categoryTileInitial}>{category.nameAr.slice(0, 1)}</Text></View>}
             <Text numberOfLines={2} style={styles.categoryTileName}>{category.nameAr}</Text>
             <Text numberOfLines={1} style={styles.categoryTileParent}>{taxonomy.trail[taxonomy.trail.length - 1]?.nameAr ?? selectedVertical.nameAr}</Text>
           </Pressable>)}
         </ScrollView>
-        {taxonomy.children.length === 0 ? <Text style={styles.categoryTreeEmpty}>{selectedCategoryID ? "وصلت إلى أدق فئة متاحة؛ المتاجر والمنتجات المطابقة معروضة أدناه." : "لا توجد فئات عامة متاحة لهذا النشاط الآن؛ افتح متجرًا لعرض منتجاته ومجموعاته."}</Text> : null}
+        {taxonomy.children.length === 0 ? <Text style={styles.categoryTreeEmpty}>{selectedCategoryID ? "وصلت إلى أدق فئة متاحة؛ المتاجر والمنتجات المطابقة معروضة أدناه." : "لا توجد فئات منتجات متاحة لهذا المجال الآن؛ يمكنك فتح المتجر وعرض منتجاته وأقسامه."}</Text> : null}
       </View> : null}
 
       {!searchIsActive && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
@@ -479,7 +503,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
       {searchScope === "products" && searchIsActive ? (
         <ProductSearchResults
-          onClearCategory={() => setSelectedCategoryID("")}
+          onClearCategory={() => selectCategory("")}
           query={query}
           selectedCategoryID={selectedCategoryID}
           selectedCityID={selectedCityID}

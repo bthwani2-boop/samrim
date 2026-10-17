@@ -166,6 +166,10 @@ paths:
   /dsh/joining-cases/{caseId}/review:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1review"
 
+  /dsh/catalog/shopping-shortcuts:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1shopping-shortcuts"
+  /dsh/catalog/shopping-shortcuts/{shortcutId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1shopping-shortcuts~1{shortcutId}"
   /dsh/catalog/verticals:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1verticals"
 
@@ -4981,9 +4985,122 @@ components:
           items:
             $ref: "#/components/schemas/StoreOrderability"
 
+    ShoppingShortcut:
+      type: object
+      required: [id, verticalId, titleAr, ordinal, active, version, storeTypeIds, categoryIds, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        verticalId:
+          type: string
+          maxLength: 128
+        titleAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        ordinal:
+          type: integer
+          minimum: 0
+          maximum: 9999
+        active:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        storeTypeIds:
+          type: array
+          items:
+            type: string
+        categoryIds:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ShoppingShortcutListResponse:
+      type: object
+      required: [shortcuts]
+      additionalProperties: false
+      properties:
+        shortcuts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShoppingShortcut"
+
+    ShoppingShortcutMutationRequest:
+      type: object
+      required: [verticalId, titleAr, ordinal, active, expectedVersion, storeTypeIds, categoryIds, reason]
+      additionalProperties: false
+      properties:
+        verticalId:
+          type: string
+          maxLength: 128
+        titleAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        ordinal:
+          type: integer
+          minimum: 0
+          maximum: 9999
+        active:
+          type: boolean
+        expectedVersion:
+          type: integer
+          minimum: 0
+        storeTypeIds:
+          type: array
+          items:
+            type: string
+        categoryIds:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+
+    ShoppingShortcutMutationResponse:
+      type: object
+      required: [shortcut, idempotentReplay]
+      additionalProperties: false
+      properties:
+        shortcut:
+          $ref: "#/components/schemas/ShoppingShortcut"
+        idempotentReplay:
+          type: boolean
+
+    PublicShoppingShortcut:
+      type: object
+      required: [id, verticalId, titleAr, ordinal]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        verticalId:
+          type: string
+          maxLength: 128
+        titleAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        ordinal:
+          type: integer
+          minimum: 0
+          maximum: 9999
+
     PublishedStoreListResponse:
       type: object
-      required: [stores, verticals, categories, limit]
+      required: [stores, verticals, categories, shortcuts, limit]
       additionalProperties: false
       properties:
         stores:
@@ -5000,6 +5117,11 @@ components:
           description: Active categories represented by customer-visible offers in eligible published Stores in this Service City.
           items:
             $ref: "#/components/schemas/CatalogCategory"
+        shortcuts:
+          type: array
+          description: Populated customer-facing shopping shortcuts, with no internal Store Type IDs.
+          items:
+            $ref: "#/components/schemas/PublicShoppingShortcut"
         limit:
           type: integer
           minimum: 1

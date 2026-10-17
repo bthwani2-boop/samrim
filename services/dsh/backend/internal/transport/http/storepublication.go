@@ -362,6 +362,7 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 		Query:                 r.URL.Query().Get("q"),
 		VerticalID:            r.URL.Query().Get("verticalId"),
 		CategoryID:            r.URL.Query().Get("categoryId"),
+		ShortcutID:            r.URL.Query().Get("shortcutId"),
 		FavoriteClientActorID: favoriteClientActorID,
 		Sort:                  r.URL.Query().Get("sort"),
 		Limit:                 limit,
@@ -405,9 +406,20 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 	for _, category := range categoryRecords {
 		categories = append(categories, toCatalogCategory(category))
 	}
+	shortcuts, err := postgres.ListPublicShoppingShortcuts(r.Context(), s.db, serviceCityID, r.URL.Query().Get("verticalId"))
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	publicShortcuts := make([]contract.PublicShoppingShortcut, 0, len(shortcuts))
+	for _, item := range shortcuts {
+		publicShortcuts = append(publicShortcuts, contract.PublicShoppingShortcut{
+			ID: item.ID, VerticalID: item.VerticalID, TitleAr: item.TitleAr, Ordinal: item.Ordinal,
+		})
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(contract.PublishedStoreListResponse{Stores: values, Verticals: verticals, Categories: categories, Limit: page.Limit, NextCursor: page.NextCursor})
+	_ = json.NewEncoder(w).Encode(contract.PublishedStoreListResponse{Stores: values, Verticals: verticals, Categories: categories, Shortcuts: publicShortcuts, Limit: page.Limit, NextCursor: page.NextCursor})
 }
 
 func (s *StorePublicationServer) readPublic(w http.ResponseWriter, r *http.Request) {

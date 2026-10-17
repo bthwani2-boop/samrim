@@ -38,6 +38,22 @@ The Commerce Vertical registry is canonical DSH data, not a hard-coded Governanc
 
 Keep four independent DSH-owned concepts distinct: `ServiceCity` is geographic operating scope; `CommerceVertical` classifies the Store's commercial activity; `CommercialStoreType` is a compatible business-model type within one vertical; and `CatalogCategory` is the shared Product taxonomy within a vertical. A Store-local `StorefrontSection` is a fifth, separate merchandising/grouping meaning. None is a synonym, a surrogate foreign key or an authority inferred from another label.
 
+`CommercialStoreType` is an internal, operational description of the actual Store
+business model, not a customer shopping category. For example, a retail butcher
+is a `ملحمة` and a poultry retailer is a `محل دواجن`; do not call either
+a slaughterhouse unless that is the actual admitted activity. Store-type IDs
+remain stable through label corrections; WLT commercial agreement and its
+transaction snapshot, not customer navigation, determine actual commissions.
+
+Customer shopping shortcuts are discovery projections over eligible Stores,
+shared categories, Store-local offers and promotions. A shortcut may group
+several Store types or Product sources under a simpler customer label such as
+`لحوم ودجاج`; it never becomes a `CommercialStoreType`, a mandatory
+`CatalogCategory` or a finance-policy selector. Only populated shortcuts
+with real eligible results appear, and common customer paths should reach
+sellable results without forcing traversal of every data hierarchy level.
+Neither `SHARED` nor `STORE_SCOPED` ownership is a customer-visible filter.
+
 A submitted first-Store joining case requires an active Service City, Commerce Vertical and compatible CommercialStoreType, but it does **not** require a pre-existing exhaustive shared Product library or every category of that vertical. An authorized Operator may establish the needed registry/taxonomy/Shared Product core ahead of onboarding as a current-program preparation choice; such preparation does not alter the Field role-admission prerequisites. Field may later use Shared Products, create permitted Store-scoped items and submit missing Shared Product proposals before Go-Live. Publication and customer-visible offer eligibility still enforce their separate catalog rules.
 
 Reference readiness means proven values and owner API readback for the particular admitted scenario, including active status and vertical/type/category compatibility where that relationship applies. Database schema existence, menu navigation or a test/demo record name alone is not proof of readiness. Do not automatically seed new actor/store/offer authority when initializing a catalog.

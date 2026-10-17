@@ -77,8 +77,9 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
     }
     return children;
   }, [categories]);
-  const rootCategories = categories.filter((category) => !category.parentCategoryId);
-  const detachedCategories = categories.filter((category) => category.parentCategoryId && !categoryIndex.has(category.parentCategoryId));
+  // Search/pagination may omit ancestors: keep every returned category in one tree.
+  // A row without a loaded parent retains its canonical path rather than becoming a fake root.
+  const visibleRootCategories = categories.filter((category) => !category.parentCategoryId || !categoryIndex.has(category.parentCategoryId));
   const [collapsedCategoryIDs, setCollapsedCategoryIDs] = useState<ReadonlySet<string>>(() => new Set());
   const selectedVertical = verticals.find((vertical) => vertical.id === verticalId);
   const focusedCategory = categoryIndex.get(categoryId) ?? categoryDetail;
@@ -381,7 +382,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
         {verticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr} · {vertical.nameEn}</option>)}
       </select>
     </label>
-    <p className="catalog-taxonomy-vertical-note">فئات المنتجات للنشاط المحدد؛ أقسام قائمة المتجر تُدار داخل المتجر.</p>
+    <p className="catalog-taxonomy-vertical-note">فئات المنتجات للمجال المحدد؛ أقسام المتجر المحلية تُدار داخل كل متجر.</p>
     {error ? <p className="identity-error" role="alert">{error}</p> : null}
     {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
 
@@ -426,16 +427,9 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
         {!loading && categories.length === 0 ? <div className="catalog-taxonomy-empty catalog-taxonomy-empty-inset"><strong>{categoryQuery ? "لا توجد فئات مطابقة" : "لا توجد فئات لهذا المجال التجاري"}</strong><p>{categoryQuery ? "غيّر نص البحث أو الحالة." : "أنشئ الفئة الرئيسية الأولى من الزر أعلى السجل، ثم أضف الفروع عند الحاجة."}</p></div> : null}
         {categories.length > 0 ? <>
           <div className="catalog-taxonomy-vertical-root"><span>المجال التجاري الرئيسي</span><strong>{selectedVertical?.nameAr ?? "المجال المحدد"}</strong></div>
-          {rootCategories.length ? <ul aria-label={`شجرة فئات ${selectedVertical?.nameAr ?? "المجال المحدد"}`} className="catalog-taxonomy-tree">
-            {rootCategories.map(renderCategoryNode)}
+          {visibleRootCategories.length ? <ul aria-label={`شجرة فئات ${selectedVertical?.nameAr ?? "المجال المحدد"}`} className="catalog-taxonomy-tree">
+            {visibleRootCategories.map(renderCategoryNode)}
           </ul> : null}
-          {detachedCategories.length ? <section className="catalog-taxonomy-detached" aria-labelledby="catalog-taxonomy-detached-title">
-            <h5 id="catalog-taxonomy-detached-title">فروع لم يظهر أبوها في النتائج الحالية</h5>
-            <p>فئات ذات أب خارج الصفحة الحالية؛ يظهر المسار الكامل لكل فئة.</p>
-            <ul aria-label="فروع أبوها خارج النتائج الحالية" className="catalog-taxonomy-tree">
-              {detachedCategories.map(renderCategoryNode)}
-            </ul>
-          </section> : null}
         </> : null}
       </div>
       {nextCursor ? <div className="catalog-category-editor-actions"><button type="button" className="button button-secondary" disabled={loading || filtering} onClick={() => void loadMoreCategories()}>{filtering ? "جارٍ التحميل…" : "تحميل الصفحة التالية"}</button></div> : null}

@@ -1,4 +1,64 @@
 paths:
+  /dsh/catalog/shopping-shortcuts:
+    get:
+      operationId: listShoppingShortcuts
+      summary: Operator-only display shortcut configuration
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - { name: verticalId, in: query, required: true, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200":
+          description: The Store types/categories target configuration is internal.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/ShoppingShortcutListResponse" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+    post:
+      operationId: createShoppingShortcut
+      summary: Create a customer display shortcut from compatible internal targets
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/ShoppingShortcutMutationRequest" }
+      responses:
+        "201":
+          description: Created shortcut.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/ShoppingShortcutMutationResponse" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+  /dsh/catalog/shopping-shortcuts/{shortcutId}:
+    patch:
+      operationId: updateShoppingShortcut
+      summary: Update a display shortcut without changing internal Store ownership
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - { name: shortcutId, in: path, required: true, schema: { type: string, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/ShoppingShortcutMutationRequest" }
+      responses:
+        "200":
+          description: Updated shortcut.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/ShoppingShortcutMutationResponse" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
   /dsh/catalog/category-trash:
     get:
       operationId: listDeletedCatalogCategories
