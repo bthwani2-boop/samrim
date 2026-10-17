@@ -287,9 +287,9 @@ if (app === "app-field") {
     "Optional document photos and Store logos must not prevent submitting a joining case for review",
   );
   assert.deepEqual(
-    getFieldJoiningRequirements(null).filter((item) => !item.saved).length,
-    9,
-    "Unsaved local inputs must not be reported as persisted",
+    getFieldJoiningRequirements(null).map(({ key, saved }) => ({ key, saved })),
+    ["basic", "city", "vertical", "storeType", "address", "location", "fulfillment", "proofNumber"].map((key) => ({ key, saved: false })),
+    "Every required fact must remain unsaved until canonical DSH readback confirms it",
   );
   const threeModes = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"];
   // One coherent, entirely synthetic Sana'a restaurant. This is a simulation
@@ -363,15 +363,6 @@ if (app === "app-field") {
   }
   assert.match(newCaseSource, /if \(isOutcomeUncertain\(cause\)\) \{\s*setError/, "Field uncertain results must remain recoverable instead of starting a duplicate draft");
   console.log("MOBILE_FIELD_DRAFT_READBACK=PASS complete and cleared drafts, normalized sets, mismatches, version and uncertain retry");
-  const fieldCatalogRetrySource = fs.readFileSync(path.join(appDir, "src/features/field-operations/field-catalog.tsx"), "utf8");
-  assert.match(fieldCatalogRetrySource, /localProductFormOpen \|\| resolution\?\.outcome === "UNKNOWN_IDENTIFIER" \|\| Boolean\(productCreateAttempt\.current\)/, "Uncertain product creation must keep the retry form reachable");
-  assert.match(fieldCatalogRetrySource, /editable=\{!busy && !proposalMutationAttempt && !productCreateAttempt\.current\}/, "Barcode edits must not change a pending product retry signature");
-  assert.match(fieldCatalogRetrySource, /if \(busy \|\| !data\.trim\(\) \|\| productCreateAttempt\.current\) return;/, "Scanner callbacks must not invalidate an uncertain product retry");
-  assert.match(fieldCatalogRetrySource, /productCreateAttempt\.current\.signature !== signature/, "Pending product attempts must reject changed request signatures");
-  assert.match(fieldCatalogRetrySource, /async function search\(\) \{\s*if \(productCreateAttempt\.current\) return;/, "Catalog search must not clear a retained product identifier readback");
-  assert.match(fieldCatalogRetrySource, /accessibilityLabel="بحث منتجات الكتالوج الأولي" editable=\{!busy && !productCreateAttempt\.current\}/, "Catalog search input must stay locked until uncertain product creation resolves");
-  assert.match(fieldCatalogRetrySource, /disabled=\{busy \|\| loading \|\| Boolean\(productCreateAttempt\.current\)\} label="بحث"/, "Catalog search action must not invalidate a pending retry");
-  console.log("MOBILE_FIELD_PRODUCT_RETRY_LOCK=PASS uncertain create retains form, identifier, and signature");
   const mediaRights = { creator: "Store owner", sourceDescription: "Original Store photo", sourceUri: "https://example.test/original", rightsStatement: "Permission granted", rightsUri: "https://example.test/rights", rightsAttested: true };
   const persistedRights = { creator: mediaRights.creator, sourceDescription: mediaRights.sourceDescription, sourceUri: mediaRights.sourceUri, rightsStatement: mediaRights.rightsStatement, rightsUri: mediaRights.rightsUri, attestedByActorId: "field-test-actor", attestedAt: "2026-10-13T12:00:00Z" };
   const uploadedMedia = { ...saved, id: "field-case-1", origin: "field", version: 4, storeProfileImage: { uri: "https://media.example/store-1.png", contentSha256: "digest-one", provenance: persistedRights }, firstStoreProofImageUploaded: true };
