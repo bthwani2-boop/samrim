@@ -43,17 +43,37 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
   const [editorOpen, setEditorOpen] = useState(false);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [imageMode, setImageMode] = useState(false);
-  const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const previewCanvas = useRef<HTMLCanvasElement>(null);
   const [mediaReason, setMediaReason] = useState("");
   const [mediaProvenance, setMediaProvenance] = useState<MediaProvenanceInput>({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
   const [mediaBusy, setMediaBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   useEffect(() => {
-    if (!mediaFile) { setPreviewUri(null); return; }
-    const uri = URL.createObjectURL(mediaFile);
-    setPreviewUri(uri);
-    return () => URL.revokeObjectURL(uri);
+    if (!mediaFile) return;
+    if (mediaFile.type !== "image/jpeg" && mediaFile.type !== "image/png") {
+      setError("اختر صورة JPEG أو PNG صالحة.");
+      setMediaFile(null);
+      return;
+    }
+    let cancelled = false;
+    void createImageBitmap(mediaFile).then((bitmap) => {
+      if (cancelled) { bitmap.close(); return; }
+      const canvas = previewCanvas.current;
+      if (canvas) {
+        const scale = Math.min(1, 512 / Math.max(bitmap.width, bitmap.height));
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      }
+      bitmap.close();
+    }).catch(() => {
+      if (!cancelled) {
+        setMediaFile(null);
+        setError("تعذر قراءة الصورة. اختر JPEG أو PNG سليمة.");
+      }
+    });
+    return () => { cancelled = true; };
   }, [mediaFile]);
 
   async function create() {
@@ -189,7 +209,7 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
         </> : selected ? <>
           <p className="unified-taxonomy-media-intro">صورة {selected.nameAr} · تُحفظ منفصلةً عن بيانات المجال</p>
           <div className="unified-taxonomy-image-picker">
-            {previewUri || selected.imageUri ? <img src={previewUri || selected.imageUri || ""} alt={previewUri ? "معاينة الصورة المختارة" : "الصورة الحالية"} /> : <span className="unified-taxonomy-image-placeholder" aria-hidden="true">{selected.nameAr.slice(0, 1)}</span>}
+            {mediaFile ? <canvas ref={previewCanvas} role="img" aria-label="معاينة الصورة المختارة" /> : selected.imageUri ? <img src={selected.imageUri} alt="الصورة الحالية" /> : <span className="unified-taxonomy-image-placeholder" aria-hidden="true">{selected.nameAr.slice(0, 1)}</span>}
             <div className="unified-taxonomy-image-picker-meta"><strong>{mediaFile ? "الصورة الجديدة" : "الصورة الحالية"}</strong>
               <small>{mediaFile ? mediaFile.name : selected.imageUri ? "اختر صورة لاستبدالها" : "اختر الصورة الأولى للمجال"}</small>
             </div>

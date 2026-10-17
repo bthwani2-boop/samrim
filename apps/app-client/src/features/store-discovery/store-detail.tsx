@@ -285,7 +285,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   }
 
   const reloadCatalog = useCallback(async (categoryID: string | null, query: string, favoriteOnly = favoritesView, popularOnly = popularView) => {
-    if (!storeId.trim() || !selectedCityID) return;
+    if (!storeId.trim() || !selectedCityID) return false;
     const requestID = catalogRequestID.current + 1;
     catalogRequestID.current = requestID;
     setCatalogRefreshing(true);
@@ -294,7 +294,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       const catalog = favoriteOnly
         ? await readFavoriteStoreCatalog(storeId, selectedCityID, 20)
         : await readPublicStoreCatalog(storeId, selectedCityID, categoryID ?? "", query.trim(), 20, "", "", popularOnly ? "MOST_ORDERED_30_DAYS" : "");
-      if (requestID !== catalogRequestID.current) return;
+      if (requestID !== catalogRequestID.current) return false;
       setSelectedCategoryID(favoriteOnly ? null : categoryID);
       setSelectedStoreSectionID(null);
       setActiveProductID("");
@@ -303,12 +303,24 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       setCatalogQuery(favoriteOnly ? "" : query);
       setState((current) => current.kind === "ready" ? { kind: "ready", store: current.store, catalog } : current);
       setCatalogTabs((current) => ({ ...current, [favoriteOnly ? 1 : popularOnly ? 2 : 0]: { catalog, categoryID: favoriteOnly ? null : categoryID, sectionID: null, query: favoriteOnly ? "" : query, productID: "" } }));
+      return true;
     } catch {
       if (requestID === catalogRequestID.current) setError("تعذر تحديث الكتالوج. يمكنك متابعة العناصر الحالية أو إعادة المحاولة.");
+      return false;
     } finally {
       if (requestID === catalogRequestID.current) setCatalogRefreshing(false);
     }
   }, [favoritesView, popularView, selectedCityID, storeId]);
+
+  const selectStoreSection = useCallback(async (sectionId: string) => {
+    if (catalogRefreshing) return;
+    if (selectedStoreSectionID === sectionId) { setSelectedStoreSectionID(null); return; }
+    if (selectedCategoryID || catalogQuery.trim() || favoritesView || popularView) {
+      if (await reloadCatalog(null, "", false, false)) setSelectedStoreSectionID(sectionId);
+      return;
+    }
+    setSelectedStoreSectionID(sectionId);
+  }, [catalogRefreshing, selectedStoreSectionID, selectedCategoryID, catalogQuery, favoritesView, popularView, reloadCatalog]);
 
   const selectCatalogTab = useCallback(async (index: number) => {
     if (index < 0 || index > 2 || state.kind !== "ready") return;
@@ -701,7 +713,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         <Pressable accessibilityRole="button" accessibilityLabel="الأكثر طلبًا خلال آخر 30 يومًا" accessibilityState={{ selected: popularView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(2)} style={[styles.catalogFilterChip, popularView && styles.catalogFilterChipSelected]}><BthwaniIcon name="trending" color={popularView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, popularView && styles.catalogFilterChipLabelSelected]}>الأكثر طلبًا</Text></Pressable>
         {!favoritesView ? state.catalog.sections.filter((section) => section.active).map((section) => {
           const selected = selectedStoreSectionID === section.id;
-          return <Pressable key={section.id} accessibilityRole="button" accessibilityLabel={`قسم ${section.nameAr}`} accessibilityState={{ selected }} onPress={() => setSelectedStoreSectionID((current) => current === section.id ? null : section.id)} style={[styles.catalogFilterChip, selected && styles.catalogFilterChipSelected]}><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, selected && styles.catalogFilterChipLabelSelected]}>{section.nameAr}</Text></Pressable>;
+          return <Pressable key={section.id} accessibilityRole="button" accessibilityLabel={`قسم ${section.nameAr}`} accessibilityState={{ selected }} onPress={() => void selectStoreSection(section.id)} style={[styles.catalogFilterChip, selected && styles.catalogFilterChipSelected]}><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, selected && styles.catalogFilterChipLabelSelected]}>{section.nameAr}</Text></Pressable>;
         }) : null}
         {!favoritesView ? visibleCategories.map(({ category, depth }) => renderCategoryChip(category, depth)) : null}
       </ScrollView>

@@ -569,6 +569,8 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 	return items, nextCursor, nil
 }
 
+var ErrCatalogSearchInvalidCursor = errors.New("catalog search cursor is invalid")
+
 type catalogSearchCursorPosition struct {
 	canonicalName string
 	offerID       string
@@ -588,25 +590,25 @@ func encodeCatalogSearchCursor(canonicalName, offerID, storeID, serviceCityID, v
 func decodeCatalogSearchCursor(cursor, storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID string, shortcutScope ...string) (catalogSearchCursorPosition, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return catalogSearchCursorPosition{}, errors.New("catalog cursor is invalid")
+		return catalogSearchCursorPosition{}, ErrCatalogSearchInvalidCursor
 	}
 	firstSeparator := bytes.IndexByte(decoded, 0)
 	if firstSeparator < 1 || firstSeparator == len(decoded)-1 {
-		return catalogSearchCursorPosition{}, errors.New("catalog cursor is invalid")
+		return catalogSearchCursorPosition{}, ErrCatalogSearchInvalidCursor
 	}
 	secondSeparatorRelative := bytes.IndexByte(decoded[firstSeparator+1:], 0)
 	if secondSeparatorRelative < 1 {
-		return catalogSearchCursorPosition{}, errors.New("catalog cursor is invalid")
+		return catalogSearchCursorPosition{}, ErrCatalogSearchInvalidCursor
 	}
 	secondSeparator := firstSeparator + 1 + secondSeparatorRelative
 	if len(decoded)-secondSeparator-1 != 16 {
-		return catalogSearchCursorPosition{}, errors.New("catalog cursor is invalid")
+		return catalogSearchCursorPosition{}, ErrCatalogSearchInvalidCursor
 	}
 	expected := catalogSearchCursorFingerprint(storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID, shortcutScope...)
 	actual := decoded[secondSeparator+1:]
 	for index := range expected {
 		if actual[index] != expected[index] {
-			return catalogSearchCursorPosition{}, errors.New("catalog cursor does not match the current search")
+			return catalogSearchCursorPosition{}, ErrCatalogSearchInvalidCursor
 		}
 	}
 	return catalogSearchCursorPosition{canonicalName: string(decoded[:firstSeparator]), offerID: string(decoded[firstSeparator+1 : secondSeparator])}, nil

@@ -663,6 +663,8 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "store filters, sort, limit, or cursor are invalid")
 	case errors.Is(err, postgres.ErrPublicStoreListInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "published store filters, limit, sort, or cursor are invalid")
+	case errors.Is(err, postgres.ErrCatalogSearchInvalidCursor):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog search cursor is invalid for this query")
 	case errors.Is(err, postgres.ErrServiceCityNotFound):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "serviceCityId must identify an active service city")
 	case errors.Is(err, postgres.ErrPublicationIdempotencyConflict):

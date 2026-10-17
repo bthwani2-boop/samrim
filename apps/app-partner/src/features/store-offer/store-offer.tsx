@@ -195,16 +195,21 @@ const theme = useAppearanceTheme();
   const [modifierOptionName, setModifierOptionName] = useState("");
   const [sectionName, setSectionName] = useState("");
   const [sections, setSections] = useState<ReadonlyArray<CatalogStorefrontSection>>([]);
+  const [sectionLoadError, setSectionLoadError] = useState("");
   const [selectedSectionID, setSelectedSectionID] = useState("");
   const [extensionOfferID, setExtensionOfferID] = useState("");
 
   const load = useCallback(async () => {
     const requestSequence = ++offerLoadSequence.current;
     const requestedPageCount = Math.max(1, offerLoadedPageCount.current);
-    setState({ kind: "loading" }); setOfferNextCursor(""); setLoadingMoreOffers(false); setError("");
+    setState({ kind: "loading" }); setOfferNextCursor(""); setLoadingMoreOffers(false); setError(""); setSectionLoadError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const [firstPage, registry, existingSections] = await Promise.all([dshClient().readOwnStoreOffers(token, storeId), dshClient().listCatalogVerticals(), dshClient().listCatalogStorefrontSections(token, storeId)]);
+      const [firstPage, registry, existingSections] = await Promise.all([
+        dshClient().readOwnStoreOffers(token, storeId),
+        dshClient().listCatalogVerticals(),
+        dshClient().listCatalogStorefrontSections(token, storeId).catch((cause: unknown) => { reportError(cause); return null; }),
+      ]);
       const offers = [...firstPage.offers];
       let nextCursor = firstPage.nextCursor ?? "";
       let loadedPageCount = 1;
@@ -218,7 +223,8 @@ const theme = useAppearanceTheme();
       }
       if (requestSequence !== offerLoadSequence.current) return;
       setVerticals(registry);
-      setSections(existingSections.sections);
+      setSections(existingSections?.sections ?? []);
+      if (!existingSections) setSectionLoadError("تعذر تحميل أقسام المتجر. العروض متاحة، ويمكن إعادة تحميل الأقسام.");
       const proposals = await dshClient().listOwnCatalogProductProposals(token);
       if (requestSequence !== offerLoadSequence.current) return;
       offerLoadedPageCount.current = loadedPageCount;
@@ -635,7 +641,8 @@ const theme = useAppearanceTheme();
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const existing = sections.find((item) => item.nameAr.trim() === sectionName.trim());
+      const normalizedSectionName = sectionName.trim().replace(/\s+/g, " ");
+      const existing = sections.find((item) => item.nameAr.trim().replace(/\s+/g, " ") === normalizedSectionName);
       const created = existing ? { section: existing } : await dshClient().createCatalogStorefrontSection(token, storeId, { nameAr: sectionName, ordinal: 0, active: true });
       const section = extensionOfferID && !created.section.offerIds.includes(extensionOfferID) ? (await dshClient().attachCatalogOfferToSection(token, storeId, created.section.id, extensionOfferID)).section : created.section;
       setSections((current) => [...current.filter((item) => item.id !== section.id), section]);
@@ -737,6 +744,7 @@ const theme = useAppearanceTheme();
        </> : null}
        {catalogReady ? <View style={styles.managementBlock}><Text style={styles.itemTitle}>أقسام وإضافات المتجر</Text><Text style={styles.muted}>اختر عرضًا بالاسم ثم أنشئ مجموعة إضافات أو قسم عرض.</Text><View style={styles.offerPicker}>{state.kind === "ready" ? state.offers.map((offer) => <BthwaniChip key={offer.offerId} label={offer.productName} onPress={() => setExtensionOfferID(offer.offerId)} selected={extensionOfferID === offer.offerId} />) : null}</View><TextInput accessibilityLabel="اسم مجموعة الإضافات" editable={!busy} onChangeText={setModifierName} placeholder="اسم مجموعة الإضافات" value={modifierName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="اسم خيار الإضافة" editable={!busy} onChangeText={setModifierOptionName} placeholder="اسم خيار اختياري" value={modifierOptionName} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!modifierName.trim()} label="إنشاء مجموعة إضافات وربطها" onPress={() => void createModifiersAndAttach()} variant="secondary" />{sections.length ? <View style={styles.managementBlock}>
         <Text style={styles.fieldLabel}>الأقسام الحالية</Text>
+        {sectionLoadError ? <View><Text style={styles.warning}>{sectionLoadError}</Text><BthwaniButton label="إعادة تحميل الأقسام" onPress={() => void load()} variant="secondary" /></View> : null}
         <View style={styles.choiceRow}>{sections.map((section) => <BthwaniChip key={section.id} label={section.nameAr} disabled={busy} selected={selectedSectionID === section.id} onPress={() => setSelectedSectionID(section.id)} />)}</View>
         <BthwaniButton busy={busy} disabled={busy || !extensionOfferID || !selectedSectionID || sections.some((section) => section.id === selectedSectionID && section.offerIds.includes(extensionOfferID))} label="ربط العرض بالقسم المحدد" onPress={() => void attachToExistingSection()} variant="secondary" />
       </View> : null}<TextInput accessibilityLabel="اسم القسم" editable={!busy} onChangeText={setSectionName} placeholder="اسم قسم المتجر" value={sectionName} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!sectionName.trim()} label="إنشاء قسم وربطه" onPress={() => void createSectionAndAttach()} variant="secondary" /></View> : null}

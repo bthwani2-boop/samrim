@@ -2,10 +2,24 @@ package postgres
 
 import (
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestCatalogSearchCursorRejectsChangedShortcutScope(t *testing.T) {
+	cursor := encodeCatalogSearchCursor("coffee", "offer_1", "", "city_1", "vertical_1", "", "coffee", "", "", "shortcut_a")
+	if _, err := decodeCatalogSearchCursor(cursor, "", "city_1", "vertical_1", "", "coffee", "", "", "shortcut_a"); err != nil {
+		t.Fatalf("same shortcut scope rejected: %v", err)
+	}
+	if _, err := decodeCatalogSearchCursor(cursor, "", "city_1", "vertical_1", "", "coffee", "", "", "shortcut_b"); !errors.Is(err, ErrCatalogSearchInvalidCursor) {
+		t.Fatalf("changed shortcut scope must be invalid input, got %v", err)
+	}
+	if _, err := decodeCatalogSearchCursor("invalid", "", "city_1", "vertical_1", "", "coffee", "", "", "shortcut_a"); !errors.Is(err, ErrCatalogSearchInvalidCursor) {
+		t.Fatalf("malformed cursor must be invalid input, got %v", err)
+	}
+}
 
 func TestCatalogCategoryCursorBindsRegistryScope(t *testing.T) {
 	query := "قهوة عربية"

@@ -4,7 +4,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
+
+func TestPublicCatalogCursorErrorReturnsBadRequest(t *testing.T) {
+	response := httptest.NewRecorder()
+	writeStorePublicationError(response, postgres.ErrCatalogSearchInvalidCursor)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid public search cursor returned %d, want 400", response.Code)
+	}
+}
 
 func TestStoreCatalogRegistrationHasNoJoiningCaseWriters(t *testing.T) {
 	mux := newCatalogProductValidationMux(t)
