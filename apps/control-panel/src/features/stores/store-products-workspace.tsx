@@ -2,13 +2,14 @@
 
 import type { CatalogProduct, CatalogProductListResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogProductResponse, CreateStoreOfferRequest, UpdateStoreOfferRequest, MediaProvenanceInput } from "@bthwani/dsh";
 import { isMediaProvenanceInputValid } from "@bthwani/dsh";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
 import { StoreCatalogImportWorkspace } from "../central-catalog/store-catalog-import-workspace";
 
 type Mode = "shared" | "local";
 type Attempt = { productKey: string; offerKey: string; correlation: string; fingerprint: string };
 type ProductVariantOption = { value: string; name: string; kind: "DISCRETE" | "MEASURED" | "VARIABLE_MEASURE"; unit: string };
+type BulkEntry = ProductVariantOption & {price: string};
 
 const money = (amount: number) => new Intl.NumberFormat("ar-YE").format(amount) + " ر.ي";
 function createInput(variantId: string, priceMinor: number, kind: CreateStoreOfferRequest["quantityPolicy"]): CreateStoreOfferRequest {
@@ -44,6 +45,11 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
   const [sharedCursor,setSharedCursor]=useState("");
   const [sharedLoading,setSharedLoading]=useState(false);
   const [selection,setSelection]=useState("");
+  const [bulkMode,setBulkMode]=useState(false);
+  const [bulkEntries,setBulkEntries]=useState<Record<string,BulkEntry>>({});
+  const [bulkErrors,setBulkErrors]=useState<Record<string,string>>({});
+  const [bulkProgress,setBulkProgress]=useState("");
+  const bulkAttempts=useRef(new Map<string,{fingerprint:string;key:string;correlation:string}>());
   const [newName,setNewName]=useState("");
   const [newDescription,setNewDescription]=useState("");
   const [unitKind,setUnitKind]=useState<"DISCRETE"|"MEASURED">("DISCRETE");
@@ -118,6 +124,47 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
       setCursor("");setBack([]);setRefresh(v=>v+1);
     }catch(e){setError(e instanceof Error?e.message:"تعذرت إضافة المنتج. يمكن إعادة المحاولة دون تكرار العملية.");}
     finally{setBusy(false)}
+  }
+  async function addSelectedSharedOffers() {
+    if(busy)return;
+    const selected=Object.values(bulkEntries);
+    if(!selected.length||selected.some(v=>v.kind==="VARIABLE_MEASURE"||!inputPrice(v.price)))return;
+    setBusy(true);setBulkErrors({});setNotice("");setError("");
+    const successes:string[]=[];
+    const failures:Record<string,string>={};
+    let cursor=0;
+    let completed=0;
+    setBulkProgress("جارٍ حفظ 0 من "+selected.length);
+    const worker=async()=>{
+      while(cursor<selected.length){
+        const row=selected[cursor++];
+        if(!row)break;
+        const fingerprint=[storeId,row.value,row.price].join(":");
+        const old=bulkAttempts.current.get(row.value);
+        const current=old?.fingerprint===fingerprint?old:{fingerprint,key:crypto.randomUUID(),correlation:crypto.randomUUID()};
+        bulkAttempts.current.set(row.value,current);
+        try {
+          await payload<CatalogStoreOfferResponse>(await fetch("/api/stores/"+encodeURIComponent(storeId)+"/offers",{
+            method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":current.key,"X-Correlation-ID":current.correlation},
+            body:JSON.stringify(createInput(row.value,inputPrice(row.price),row.kind))
+          }));
+          successes.push(row.value);
+          bulkAttempts.current.delete(row.value);
+        }catch(cause){
+          failures[row.value]=cause instanceof Error?cause.message:"تعذر حفظ هذا العرض. أعد المحاولة.";
+        }finally{
+          completed++;
+          setBulkProgress("جارٍ حفظ "+completed+" من "+selected.length);
+        }
+      }
+    };
+    try {
+      await Promise.all(Array.from({length:Math.min(selected.length,3)},()=>worker()));
+      setBulkEntries(previous=>Object.fromEntries(Object.entries(previous).filter(([id])=>!successes.includes(id))));
+      setBulkErrors(failures);
+      setNotice("تم حفظ "+successes.length+" من "+selected.length+" كعروض مسودة."+(Object.keys(failures).length?" راجع الصفوف المتبقية وأعد المحاولة.":""));
+      if(successes.length){setCursor("");setBack([]);setRefresh(value=>value+1)}
+    }finally{setBusy(false);setBulkProgress("")}
   }
   async function readProduct(offer:CatalogStoreOffer) {
     setDetailsLoading(true);
@@ -200,12 +247,50 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
           <label>بحث بالاسم<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="اسم المنتج في الكتالوج المشترك" maxLength={160} disabled={busy}/></label>
           <button className="button button-secondary" type="submit" disabled={sharedLoading||busy}>بحث</button>
         </form>
-        <label>المنتج والنسخة
+        <div className="store-product-actions">
+          <button type="button" className="button button-secondary" disabled={busy} onClick={()=>{setBulkMode(!bulkMode);setError("");}}>
+            {bulkMode?"إضافة منتج واحد":"تحديد عدة منتجات"}
+          </button>
+        </div>
+        {!bulkMode?<label>المنتج والنسخة
           <select value={selection} onChange={e=>setSelection(e.target.value)} disabled={busy||sharedLoading}>
             <option value="">اختر المنتج</option>
             {variants.map(v=><option key={v.value} value={v.value}>{v.name} ({v.unit})</option>)}
           </select>
-        </label>
+        </label>:<div className="store-product-bulk">
+          <p className="store-profile-muted">حدد منتجات من النتائج ثم أدخل سعر كل منتج. التغييرات تخص هذا المتجر فقط.</p>
+          <div className="store-product-bulk-choices">
+            {variants.filter(v=>v.kind!=="VARIABLE_MEASURE").map(v=><label key={v.value}>
+              <input type="checkbox" disabled={busy} checked={Boolean(bulkEntries[v.value])} onChange={e=>{
+                setBulkEntries(current=>{
+                  const next={...current};
+                  if(e.target.checked)next[v.value]={...v,price:current[v.value]?.price??""};
+                  else delete next[v.value];
+                  return next;
+                });
+                setBulkErrors(current=>{const next={...current};delete next[v.value];return next});
+              }}/>
+              <span>{v.name}</span>
+            </label>)}
+          </div>
+          {Object.values(bulkEntries).length?<div className="store-product-bulk-rows">
+            {Object.values(bulkEntries).map(row=><div key={row.value} className="store-product-bulk-row">
+              <span>{row.name} ({row.unit})</span>
+              <label>السعر
+                <input type="number" inputMode="numeric" min="1" step="1" value={row.price} disabled={busy}
+                  onChange={e=>{const amount=e.target.value;setBulkEntries(current=>({...current,[row.value]:{...current[row.value]!,price:amount}}))}} />
+              </label>
+              <button type="button" className="button button-quiet" disabled={busy} onClick={()=>{
+                setBulkEntries(current=>{const next={...current};delete next[row.value];return next});
+                setBulkErrors(current=>{const next={...current};delete next[row.value];return next});
+              }}>إزالة</button>
+              {bulkErrors[row.value]?<p role="alert">{bulkErrors[row.value]}</p>:null}
+            </div>)}
+            <button type="button" className="button button-primary" disabled={busy||Object.values(bulkEntries).some(v=>!inputPrice(v.price))}
+              onClick={()=>void addSelectedSharedOffers()}>{busy?"جارٍ حفظ العروض…":"حفظ "+Object.keys(bulkEntries).length+" منتجات"}</button>
+            {bulkProgress?<p role="status">{bulkProgress}</p>:null}
+          </div>:null}
+        </div>}
         {sharedLoading?<p role="status">جارٍ البحث…</p>:variants.length===0?<p className="store-profile-muted">لم تُعثر على منتجات مطابقة. يمكنك إنشاء منتج خاص بهذا المتجر.</p>:null}
         {sharedCursor?<button className="button button-quiet" type="button" disabled={sharedLoading} onClick={()=>void find(appliedSearch,true,sharedCursor)}>المزيد من المنتجات</button>:null}
       </>:<>
@@ -218,8 +303,8 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
         </label>
         {unitKind==="MEASURED"?<label>الوحدة <select value={newUnit} disabled={busy} onChange={e=>setNewUnit(e.target.value as "GRAM"|"MILLILITER")}><option value="GRAM">جرام</option><option value="MILLILITER">ملليلتر</option></select></label>:null}
       </>}
-      <label>السعر بالريال اليمني<input type="number" min="1" step="1" inputMode="numeric" value={price} disabled={busy} onChange={e=>setPrice(e.target.value)}/></label>
-      <div className="store-product-actions"><button className="button button-primary" type="button" disabled={busy||!inputPrice(price)||(mode==="shared"?!chosen:!newName.trim()||!verticalId)} onClick={()=>void createOffer()}>{busy?"جارٍ الحفظ…":"حفظ المنتج"}</button></div>
+      {mode==="local"||!bulkMode?<><label>السعر بالريال اليمني<input type="number" min="1" step="1" inputMode="numeric" value={price} disabled={busy} onChange={e=>setPrice(e.target.value)}/></label>
+      <div className="store-product-actions"><button className="button button-primary" type="button" disabled={busy||!inputPrice(price)||(mode==="shared"?!chosen:!newName.trim()||!verticalId)} onClick={()=>void createOffer()}>{busy?"جارٍ الحفظ…":"حفظ المنتج"}</button></div></>:null}
     </div>:null}
     {importOpen?<StoreCatalogImportWorkspace fixedStore={{id:storeId,name:storeName}} onImported={()=>setRefresh(v=>v+1)}/>:null}
     {editing?<div className="store-product-editor" aria-label={"تعديل "+editing.productName}>

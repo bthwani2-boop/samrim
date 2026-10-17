@@ -2760,3 +2760,11 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 .store-profile-blockers{display:grid;gap:6px;margin:8px 0 0;padding:0;list-style:none}
 .store-profile-blockers li{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
 .store-profile-blockers li span{flex:1;min-width:0;overflow-wrap:anywhere}
+
+.store-product-bulk{display:grid;gap:10px}
+.store-product-bulk-choices,.store-product-bulk-rows{display:grid;gap:6px;max-height:340px;overflow-y:auto}
+.store-product-bulk-choices label,.store-product-bulk-row{display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--border-subtle);border-radius:8px}
+.store-product-bulk-choices label span,.store-product-bulk-row>span{min-width:0;flex:1;overflow-wrap:anywhere}
+.store-product-bulk-row label{width:130px;flex:none}
+.store-product-bulk-row p[role=alert]{margin:0;color:var(--danger,#b82727)}
+@media(max-width:540px){.store-product-bulk-row{flex-wrap:wrap}.store-product-bulk-row>span{flex-basis:100%}}
