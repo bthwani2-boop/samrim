@@ -1,21 +1,21 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, type CartResponse, type CustomerFulfillmentMode, formatMoney, fulfillmentModeLabel, type PublicCatalogResponse, type PublicPromotionView, type PublicDiscoveryContentView, type PublicStoreView, type StoreOrderability } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type CartResponse, type CustomerFulfillmentMode, formatMoney, fulfillmentModeLabel, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicPromotionView, type PublicStoreView, type StoreOrderability } from "@bthwani/dsh";
 import * as ExpoLinking from "expo-linking";
 import { type Href, useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, FlatList, Image, Pressable, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { AccessibilityInfo, Alert, FlatList, Image, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
-import type { GallerySourceRect } from "./store-product-gallery";
-import { StatusBar } from "expo-status-bar";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { currentIdentityState } from "../../bootstrap/identity";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { PromotionCard } from "./promotion-card";
-import { StoreProductSheet } from "./store-product-sheet";
 import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicDiscoveryContent, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
+import type { GallerySourceRect } from "./store-product-gallery";
+import { StoreProductSheet } from "./store-product-sheet";
 
 type DetailState =
   | { kind: "loading" }
@@ -38,16 +38,27 @@ type StoreBannerItem =
 type CatalogSnapshot = { catalog: PublicCatalogResponse; categoryID: string | null; query: string; productID: string };
 
 function buildDisplayCatalogRows(rows: StoreCatalogRow[], gridMode: boolean): StoreCatalogRow[] {
-  // Product cards scroll vertically; horizontal swipes change catalog tabs.
-  const offers = rows.filter((row): row is Extract<StoreCatalogRow, { kind: "offer" }> => row.kind === "offer");
-  const result: StoreCatalogRow[] = rows.filter((row) => row.kind === "heading" || row.kind === "empty");
-  if (!gridMode) {
-    result.push(...offers);
-  } else {
-    for (let index = 0; index < offers.length; index += 2) {
-      result.push({ kind: "grid", key: "grid:" + offers[index]!.offer.offerId, offers: offers.slice(index, index + 2).map((row) => row.offer) });
+  // Preserve Store-owned section boundaries in both list and grid modes.
+  // Combining all offers first silently discarded section headings and mixed sections.
+  if (!gridMode) return rows.filter((row) => row.kind !== "filters");
+  const result: StoreCatalogRow[] = [];
+  let pending: PublicCatalogResponse["offers"][number][] = [];
+  const flush = () => {
+    if (pending.length) {
+      result.push({ kind: "grid", key: "grid:" + pending[0]!.offerId, offers: pending });
+      pending = [];
     }
+  };
+  for (const row of rows) {
+    if (row.kind === "offer") {
+      pending.push(row.offer);
+      if (pending.length === 2) flush();
+      continue;
+    }
+    flush();
+    if (row.kind !== "filters") result.push(row);
   }
+  flush();
   return result;
 }
 
