@@ -311,12 +311,10 @@ test("taxonomy shows all four record types together and edits in one contextual 
   await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
   await surface.getByRole("button", { name: "تعديل مجال مقاضي" }).click();
   const verticalDrawer = page.getByRole("dialog", { name: "تعديل مجال" });
-  const media = verticalDrawer.locator(".unified-taxonomy-media-disclosure");
-  await expect(media).toBeVisible();
-  await expect(media).not.toHaveAttribute("open");
-  await media.locator("summary").click();
-  await expect(media).toHaveAttribute("open", "");
-  await expect(verticalDrawer.getByLabel("اختيار صورة")).toBeVisible();
+  await verticalDrawer.getByRole("button", { name: /صورة المجال/ }).click();
+  await expect(verticalDrawer.getByLabel("الاسم بالعربية")).toHaveCount(0);
+  await expect(verticalDrawer.getByLabel("اختيار صورة")).toBeAttached();
+  await expect(verticalDrawer.getByLabel("المنشئ أو المصوّر")).toHaveCount(0);
   const footer = verticalDrawer.locator(".unified-taxonomy-save-actions");
   const placement = await footer.evaluate((element) => ({
     left: element.getBoundingClientRect().left,
@@ -327,6 +325,60 @@ test("taxonomy shows all four record types together and edits in one contextual 
   expect(Math.abs(placement.bottom - placement.viewportHeight)).toBeLessThan(2);
   await verticalDrawer.getByRole("button", { name: "إغلاق لوحة التحرير" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("vertical image change remains compact and uploads audited media", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let vertical = { id: "grocery", nameAr: "مقاضي", nameEn: "Grocery", active: true, version: 1, imageUri: "" };
+  let upload: { headers: Record<string, string>; body: string | null } | undefined;
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    if (route.request().method() === "POST" && route.request().url().includes("/media")) {
+      upload = { headers: route.request().headers(), body: route.request().postData() };
+      vertical = { ...vertical, version: 2, imageUri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/fV0AAAAASUVORK5CYII=" };
+      await route.fulfill({ status: 200, json: { vertical } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: { verticals: [vertical] } });
+  });
+  await page.route("**/api/catalog/commercial-store-types**", (route) => route.fulfill({ status: 200, json: { storeTypes: [] } }));
+  await page.route("**/api/catalog/shopping-shortcuts**", (route) => route.fulfill({ status: 200, json: { shortcuts: [] } }));
+  await page.route("**/api/catalog/categories**", (route) => route.fulfill({ status: 200, json: { categories: [], nextCursor: "" } }));
+  await page.goto("/catalog/categories?verticalId=grocery");
+  await page.getByRole("button", { name: "تعديل مجال مقاضي" }).click();
+  const dialog = page.getByRole("dialog", { name: "تعديل مجال" });
+  await dialog.getByRole("button", { name: /صورة المجال/ }).click();
+  await expect(dialog.getByLabel("الاسم بالعربية")).toHaveCount(0);
+  await expect(dialog.getByLabel("المنشئ أو المصوّر")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "حفظ الصورة" })).toBeDisabled();
+  const chooserPromise = page.waitForEvent("filechooser");
+  await dialog.getByText("اختيار صورة", { exact: true }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
+    name: "new-image.png", mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/fV0AAAAASUVORK5CYII=", "base64"),
+  });
+  await expect(dialog.getByRole("img", { name: "معاينة الصورة المختارة" })).toBeVisible();
+  await expect(dialog.getByText("new-image.png")).toBeVisible();
+  await expect(dialog.getByLabel("المنشئ أو المصوّر")).toBeVisible();
+  await expect(dialog.getByLabel("رابط المصدر")).toBeHidden();
+  await dialog.getByLabel("المنشئ أو المصوّر").fill("مصور المتجر");
+  await dialog.getByLabel("مصدر الصورة", { exact: true }).fill("صورة أصلية للمجال");
+  await dialog.getByLabel("الإذن أو الترخيص").fill("أملك حق استخدام الصورة في الكتالوج");
+  await dialog.getByLabel("أقرّ بوجود إذن يسمح بعرض هذه الصورة").check();
+  await expect(dialog.getByRole("button", { name: "حفظ الصورة" })).toBeEnabled();
+  await page.screenshot({ path: "test-results/catalog-image-compact-dark.png", fullPage: true });
+  const scroll = await dialog.locator(".unified-taxonomy-drawer-body").evaluate((element) => ({ content: element.scrollHeight, viewport: element.clientHeight }));
+  expect(scroll.content - scroll.viewport).toBeLessThan(180);
+  await dialog.getByRole("button", { name: "حفظ الصورة" }).click();
+  await expect(dialog.getByRole("button", { name: /صورة المجال/ })).toBeVisible();
+  await expect(dialog.getByRole("img", { name: "معاينة الصورة المختارة" })).toHaveCount(0);
+  expect(upload?.headers["x-expected-version"]).toBe("1");
+  expect(upload?.headers["idempotency-key"]).toBeTruthy();
+  expect(upload?.body).toContain("new-image.png");
+  expect(upload?.body).toContain("مصور المتجر");
+  expect(upload?.body).toContain("أملك حق استخدام الصورة");
+  expect(upload?.body).toContain("true");
+  await expect(page.getByRole("button", { name: "تعديل مجال مقاضي" })).toBeVisible();
 });
 
 test("vertical registry does not present a category image as a vertical image", async ({ page }) => {

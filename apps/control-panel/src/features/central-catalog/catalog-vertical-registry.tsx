@@ -42,11 +42,19 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
   const [busy, setBusy] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [imageMode, setImageMode] = useState(false);
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [mediaReason, setMediaReason] = useState("");
   const [mediaProvenance, setMediaProvenance] = useState<MediaProvenanceInput>({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
   const [mediaBusy, setMediaBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (!mediaFile) { setPreviewUri(null); return; }
+    const uri = URL.createObjectURL(mediaFile);
+    setPreviewUri(uri);
+    return () => URL.revokeObjectURL(uri);
+  }, [mediaFile]);
 
   async function create() {
     if (!canEdit || mediaBusy) return;
@@ -92,6 +100,7 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
     setActive(vertical.active);
     setReason("");
     setMediaFile(null);
+    setImageMode(false);
     setMediaReason("");
     setMediaProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
     setError("");
@@ -107,6 +116,7 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
     setActive(true);
     setReason("");
     setMediaFile(null);
+    setImageMode(false);
     setMediaReason("");
     setMediaProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
   }
@@ -142,6 +152,7 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
       const payload = await parseResponse<{ vertical: CommerceVertical }>(response);
       setSelected(payload.vertical);
       setMediaFile(null);
+      setImageMode(false);
       setMediaReason("");
       setMediaProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
       setNotice(`تم إرفاق صورة المجال التجاري: ${payload.vertical.nameAr}.`);
@@ -160,27 +171,42 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
         {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit} onClick={() => { setSelected(null); setNameAr(""); setNameEn(""); setActive(true); setReason(""); setEditorOpen(true); }}>إضافة مجال تجاري</button> : null}
       </div> : null}
       {editorOpen ? <div className="access-form unified-taxonomy-vertical-form">
-        <label className="field-label" htmlFor="catalog-vertical-name-ar">الاسم بالعربية<input id="catalog-vertical-name-ar" maxLength={160} disabled={busy || !canEdit} value={nameAr} onChange={(event) => setNameAr(event.target.value)} placeholder="مطاعم" /></label>
-        <label className="field-label" htmlFor="catalog-vertical-name-en">الاسم بالإنجليزية<input id="catalog-vertical-name-en" maxLength={160} dir="auto" disabled={busy || !canEdit} value={nameEn} onChange={(event) => setNameEn(event.target.value)} placeholder="Restaurants" /></label>
-        <label className="catalog-category-active-toggle"><input id="catalog-vertical-active" type="checkbox" disabled={busy || mediaBusy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> {selected ? "المجال نشط" : "تفعيل المجال"}</label>
-        <label className="field-label" htmlFor="catalog-vertical-reason">سبب {selected ? "التعديل" : "الإضافة"}<TextArea id="catalog-vertical-reason" className="resize-none" rows={2} disabled={busy || !canEdit} minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-        <small className="muted">مطلوب لتوثيق التغيير · {reason.trim().length}/500</small>
-        {selected ? <details className="unified-taxonomy-media-disclosure">
-          <summary><span className="unified-taxonomy-media-summary">
-            {selected.imageUri ? <img src={selected.imageUri} alt="" /> : <span aria-hidden="true">{selected.nameAr.slice(0, 1)}</span>}
-            <span><strong>صورة المجال</strong><small>{selected.imageUri ? "الصورة الحالية · تغيير الصورة" : "لم تُرفق صورة · إضافة صورة"}</small></span>
-          </span></summary>
-          <div className="unified-taxonomy-media-fields">
-            <label className="field-label" htmlFor="catalog-vertical-image">اختيار صورة<input id="catalog-vertical-image" type="file" accept="image/jpeg,image/png" disabled={busy || mediaBusy || !canEdit} onChange={(event) => { setMediaFile(event.target.files?.[0] ?? null); setMediaProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); }} /></label>
-            <label className="field-label" htmlFor="catalog-vertical-image-reason">سبب الإرفاق<input id="catalog-vertical-image-reason" maxLength={500} disabled={busy || mediaBusy || !canEdit} value={mediaReason} onChange={(event) => setMediaReason(event.target.value)} /></label>
-            <CatalogMediaProvenanceFields idPrefix="catalog-vertical-media" disabled={busy || mediaBusy || !canEdit} value={mediaProvenance} onChange={setMediaProvenance} />
-            <button type="button" className="button button-secondary" disabled={busy || mediaBusy || !canEdit || !mediaFile || mediaReason.trim().length < 5 || !isMediaProvenanceInputValid(mediaProvenance)} onClick={() => void uploadVerticalImage()}>{mediaBusy ? "جارٍ رفع الصورة…" : selected.imageUri ? "استبدال صورة المجال" : "إرفاق صورة المجال"}</button>
+        {!imageMode ? <>
+          <label className="field-label" htmlFor="catalog-vertical-name-ar">الاسم بالعربية<input id="catalog-vertical-name-ar" maxLength={160} disabled={busy || !canEdit} value={nameAr} onChange={(event) => setNameAr(event.target.value)} placeholder="مطاعم" /></label>
+          <label className="field-label" htmlFor="catalog-vertical-name-en">الاسم بالإنجليزية<input id="catalog-vertical-name-en" maxLength={160} dir="auto" disabled={busy || !canEdit} value={nameEn} onChange={(event) => setNameEn(event.target.value)} placeholder="Restaurants" /></label>
+          <label className="catalog-category-active-toggle"><input id="catalog-vertical-active" type="checkbox" disabled={busy || mediaBusy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> {selected ? "المجال نشط" : "تفعيل المجال"}</label>
+          <label className="field-label" htmlFor="catalog-vertical-reason">سبب {selected ? "التعديل" : "الإضافة"}<TextArea id="catalog-vertical-reason" className="resize-none" rows={2} disabled={busy || !canEdit} minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+          <small className="muted">مطلوب لتوثيق التغيير · {reason.trim().length}/500</small>
+          {selected ? <button type="button" className="unified-taxonomy-image-entry" disabled={busy || mediaBusy || !canEdit} onClick={() => { setImageMode(true); setError(""); }}>
+            {selected.imageUri ? <img src={selected.imageUri} alt="" /> : <span className="unified-taxonomy-image-placeholder" aria-hidden="true">{selected.nameAr.slice(0, 1)}</span>}
+            <span><strong>صورة المجال</strong><small>{selected.imageUri ? "تغيير الصورة الحالية" : "إضافة صورة للمجال"}</small></span>
+            <span className="unified-taxonomy-image-entry-action" aria-hidden="true">تغيير</span>
+          </button> : <p className="muted">يمكن إرفاق الصورة بعد إنشاء المجال.</p>}
+          <div className="unified-taxonomy-save-actions">
+            <button type="button" className="button button-primary" disabled={busy || mediaBusy || !canEdit || reason.trim().length < 5} onClick={() => void create()}>{verticalSaveLabel(busy, Boolean(selected))}</button>
+            <button type="button" className="button button-secondary" disabled={busy || mediaBusy} onClick={cancelEdit}>إلغاء</button>
           </div>
-        </details> : <p className="muted">يمكن إرفاق الصورة بعد إنشاء المجال.</p>}
-        <div className="unified-taxonomy-save-actions">
-          <button type="button" className="button button-primary" disabled={busy || mediaBusy || !canEdit || reason.trim().length < 5} onClick={() => void create()}>{verticalSaveLabel(busy, Boolean(selected))}</button>
-          <button type="button" className="button button-secondary" disabled={busy || mediaBusy} onClick={cancelEdit}>إلغاء</button>
-        </div>
+        </> : selected ? <>
+          <p className="unified-taxonomy-media-intro">صورة {selected.nameAr} · تُحفظ منفصلةً عن بيانات المجال</p>
+          <div className="unified-taxonomy-image-picker">
+            {previewUri || selected.imageUri ? <img src={previewUri || selected.imageUri || ""} alt={previewUri ? "معاينة الصورة المختارة" : "الصورة الحالية"} /> : <span className="unified-taxonomy-image-placeholder" aria-hidden="true">{selected.nameAr.slice(0, 1)}</span>}
+            <div className="unified-taxonomy-image-picker-meta"><strong>{mediaFile ? "الصورة الجديدة" : "الصورة الحالية"}</strong>
+              <small>{mediaFile ? mediaFile.name : selected.imageUri ? "اختر صورة لاستبدالها" : "اختر الصورة الأولى للمجال"}</small>
+            </div>
+            <label className="button button-secondary unified-taxonomy-file-trigger">{mediaFile ? "اختيار أخرى" : "اختيار صورة"}
+              <input id="catalog-vertical-image" type="file" className="visually-hidden" accept="image/jpeg,image/png" disabled={busy || mediaBusy || !canEdit}
+                onChange={(event) => { setMediaFile(event.target.files?.[0] ?? null); setMediaReason(selected.imageUri ? "استبدال صورة المجال التجاري" : "إرفاق صورة المجال التجاري"); setMediaProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); }} />
+            </label>
+          </div>
+          {mediaFile ? <>
+            <CatalogMediaProvenanceFields compact idPrefix="catalog-vertical-media" disabled={busy || mediaBusy || !canEdit} value={mediaProvenance} onChange={setMediaProvenance} />
+            <p className="unified-taxonomy-media-hint">تُطلب بيانات المصدر والإذن مرة واحدة لهذه الصورة.</p>
+          </> : <p className="unified-taxonomy-media-hint">اختر صورة أولًا، ثم وثّق مصدرها وحق استخدامها.</p>}
+          <div className="unified-taxonomy-save-actions">
+            <button type="button" className="button button-primary" disabled={busy || mediaBusy || !canEdit || !mediaFile || !isMediaProvenanceInputValid(mediaProvenance)} onClick={() => void uploadVerticalImage()}>{mediaBusy ? "جارٍ حفظ الصورة…" : "حفظ الصورة"}</button>
+            <button type="button" className="button button-secondary" disabled={mediaBusy} onClick={() => { setImageMode(false); setMediaFile(null); setError(""); }}>رجوع</button>
+          </div>
+        </> : null}
       </div> : null}
       {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
       {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void onSaved()}>إعادة المحاولة</button></p> : null}
