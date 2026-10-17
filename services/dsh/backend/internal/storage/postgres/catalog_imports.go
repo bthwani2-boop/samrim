@@ -20,6 +20,7 @@ type CatalogImportRunRecord struct {
 }
 
 type StoreCatalogImportItemInput struct {
+	NewProduct              *CatalogProductInput
 	VariantID, StoreOfferID string
 	PriceMinor              int64
 	ExpectedVersion         int

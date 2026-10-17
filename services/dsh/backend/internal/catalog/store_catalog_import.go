@@ -60,57 +60,101 @@ func (s *Service) previewStoreCatalogImport(ctx context.Context, actorID, actorR
 
 	items := make([]postgres.CatalogImportItemRecord, 0, len(rows))
 	hashInputs := make([]postgres.CatalogImportItemInput, 0, len(rows))
+
 	seen := make(map[string]struct{}, len(rows))
+	store, err := postgres.ReadStore(ctx, s.db, storeID)
+	if err != nil {
+		return postgres.CatalogImportPreviewResult{}, err
+	}
 	for _, fileRow := range rows {
 		storeInput := &postgres.StoreCatalogImportItemInput{PriceMinor: fileRow.PriceMinor}
 		item := postgres.CatalogImportItemRecord{RowNumber: fileRow.RowNumber, StableKey: fmt.Sprintf("store-offer-row-%d", fileRow.RowNumber), Classification: "READY", StoreOfferInput: storeInput}
+		key := fileRow.Barcode
+		if key == "" {
+			key = "local:" + strings.ToLower(fileRow.Name) + ":" + fileRow.VariantTitle + ":" + fileRow.BaseUnit
+		}
 		if fileRow.ErrorCode != "" {
 			item.Classification = "INVALID_INPUT"
 			item.ErrorCode = stringPtr(fileRow.ErrorCode)
 			item.ErrorMessage = stringPtr(fileRow.ErrorMessage)
-		} else if _, duplicate := seen[fileRow.Barcode]; duplicate {
+		} else if _, duplicate := seen[key]; duplicate {
 			item.Classification = "DUPLICATE_INPUT"
 			item.ErrorCode = stringPtr("DUPLICATE_INPUT")
-			item.ErrorMessage = stringPtr("barcode is repeated in this import")
+			item.ErrorMessage = stringPtr("same product occurs more than once in the file")
 		} else {
-			seen[fileRow.Barcode] = struct{}{}
-			resolution, resolveErr := postgres.ResolveCatalogIdentifier(ctx, s.db, storeID, fileRow.Barcode)
-			if resolveErr != nil {
-				return postgres.CatalogImportPreviewResult{}, resolveErr
-			}
-			item.VariantID = stringPtr(resolution.VariantID)
-			switch resolution.Outcome {
-			case "UNKNOWN_IDENTIFIER":
-				item.Classification = "NEEDS_REVIEW"
-				item.ErrorCode = stringPtr("UNKNOWN_IDENTIFIER")
-				item.ErrorMessage = stringPtr("unknown barcode was held for catalog review; it will not create a product")
-			case "SHARED_PRODUCT_MATCH", "STORE_LOCAL_PRODUCT_MATCH":
-				storeInput.VariantID = resolution.VariantID
-				storeInput.Create = defaultImportedOffer(storeID, resolution.VariantID, fileRow.PriceMinor, resolution.MeasurementKind)
-			case "EXISTING_STORE_OFFER":
-				storeInput.VariantID = resolution.VariantID
-				storeInput.StoreOfferID = resolution.StoreOfferID
-				current, readErr := postgres.ReadCatalogOffer(ctx, s.db, resolution.StoreOfferID)
-				if readErr != nil {
-					return postgres.CatalogImportPreviewResult{}, readErr
+			seen[key] = struct{}{}
+			if fileRow.Barcode == "" {
+				input := postgres.CatalogProductInput{VerticalID: store.PrimaryVerticalID, Scope: "STORE_SCOPED",
+					StoreID: storeID, CanonicalName: fileRow.Name, VariantTitle: fileRow.VariantTitle,
+					MeasurementKind: fileRow.MeasurementKind, BaseUnit: fileRow.BaseUnit}
+				normalized, normalizeErr := normalizeCatalogProductInput(input)
+				if normalizeErr != nil {
+					item.Classification = "INVALID_INPUT"
+					item.ErrorCode = stringPtr("INVALID_INPUT")
+					item.ErrorMessage = stringPtr(importErrorMessage(normalizeErr))
+				} else {
+					matched, _, _, lookupErr := postgres.FindCatalogImportMatch(ctx, s.db, normalized)
+					if lookupErr != nil {
+						return postgres.CatalogImportPreviewResult{}, lookupErr
+					}
+					if matched != "" {
+						item.Classification = "DUPLICATE_EXISTING"
+						item.ErrorCode = stringPtr("DUPLICATE_EXISTING")
+						item.ErrorMessage = stringPtr("Store-local Product already exists; update its offer inside the Store")
+					} else {
+						var sharedExists bool
+						sharedErr := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM dsh.catalog_products p WHERE p.vertical_id=$1 AND p.scope='SHARED' AND p.deleted_at IS NULL AND lower(p.canonical_name)=lower($2))",
+							store.PrimaryVerticalID, normalized.CanonicalName).Scan(&sharedExists)
+						if sharedErr != nil {
+							return postgres.CatalogImportPreviewResult{}, sharedErr
+						}
+						if sharedExists {
+							item.Classification = "NEEDS_REVIEW"
+							item.ErrorCode = stringPtr("SHARED_PRODUCT_CANDIDATE")
+							item.ErrorMessage = stringPtr("matching shared product name exists; select its exact variant instead of duplicating")
+						} else {
+							storeInput.NewProduct = &normalized
+						}
+					}
 				}
-				if current.StoreID != storeID {
-					return postgres.CatalogImportPreviewResult{}, ErrStoreOwnershipForbidden
+			} else {
+				resolution, resolveErr := postgres.ResolveCatalogIdentifier(ctx, s.db, storeID, fileRow.Barcode)
+				if resolveErr != nil {
+					return postgres.CatalogImportPreviewResult{}, resolveErr
 				}
-				storeInput.ExpectedVersion = current.Version
-				storeInput.Update = postgres.CatalogOfferUpdateInput{
-					PriceMinor: fileRow.PriceMinor, Availability: current.Availability, PublicationState: current.PublicationState,
-					QuantityPolicy: current.QuantityPolicy, QuantityMinBaseUnits: offerQuantity(current.QuantityMinBaseUnits),
-					QuantityMaxBaseUnits: offerQuantity(current.QuantityMaxBaseUnits), QuantityStepBaseUnits: offerQuantity(current.QuantityStepBaseUnits),
-					PricingBasis: current.PricingBasis, PricingUnitBaseUnits: current.PricingUnitBaseUnits,
-					InventoryPolicy: current.InventoryPolicy, InventoryOnHandBaseUnits: current.InventoryOnHandBaseUnits,
+				item.VariantID = stringPtr(resolution.VariantID)
+				switch resolution.Outcome {
+				case "UNKNOWN_IDENTIFIER":
+					item.Classification = "NEEDS_REVIEW"
+					item.ErrorCode = stringPtr("UNKNOWN_IDENTIFIER")
+					item.ErrorMessage = stringPtr("unknown barcode was held for catalog review; it will not create a product")
+				case "SHARED_PRODUCT_MATCH", "STORE_LOCAL_PRODUCT_MATCH":
+					storeInput.VariantID = resolution.VariantID
+					storeInput.Create = defaultImportedOffer(storeID, resolution.VariantID, fileRow.PriceMinor, resolution.MeasurementKind)
+				case "EXISTING_STORE_OFFER":
+					storeInput.VariantID = resolution.VariantID
+					storeInput.StoreOfferID = resolution.StoreOfferID
+					current, readErr := postgres.ReadCatalogOffer(ctx, s.db, resolution.StoreOfferID)
+					if readErr != nil {
+						return postgres.CatalogImportPreviewResult{}, readErr
+					}
+					if current.StoreID != storeID {
+						return postgres.CatalogImportPreviewResult{}, ErrStoreOwnershipForbidden
+					}
+					storeInput.ExpectedVersion = current.Version
+					storeInput.Update = postgres.CatalogOfferUpdateInput{
+						PriceMinor: fileRow.PriceMinor, Availability: current.Availability, PublicationState: current.PublicationState,
+						QuantityPolicy: current.QuantityPolicy, QuantityMinBaseUnits: offerQuantity(current.QuantityMinBaseUnits),
+						QuantityMaxBaseUnits: offerQuantity(current.QuantityMaxBaseUnits), QuantityStepBaseUnits: offerQuantity(current.QuantityStepBaseUnits),
+						PricingBasis: current.PricingBasis, PricingUnitBaseUnits: current.PricingUnitBaseUnits,
+						InventoryPolicy: current.InventoryPolicy, InventoryOnHandBaseUnits: current.InventoryOnHandBaseUnits}
+				case "AMBIGUOUS_IDENTIFIER", "UNAVAILABLE_IN_STORE", "VARIABLE_MEASURE_IDENTIFIER":
+					item.Classification = "CONFLICT_EXISTING"
+					item.ErrorCode = stringPtr(resolution.Outcome)
+					item.ErrorMessage = stringPtr("identifier cannot update a customer-orderable Store offer")
+				default:
+					return postgres.CatalogImportPreviewResult{}, postgres.ErrCatalogImportInvalid
 				}
-			case "AMBIGUOUS_IDENTIFIER", "UNAVAILABLE_IN_STORE", "VARIABLE_MEASURE_IDENTIFIER":
-				item.Classification = "CONFLICT_EXISTING"
-				item.ErrorCode = stringPtr(resolution.Outcome)
-				item.ErrorMessage = stringPtr("identifier cannot be used to update a customer-orderable store offer")
-			default:
-				return postgres.CatalogImportPreviewResult{}, postgres.ErrCatalogImportInvalid
 			}
 		}
 		hashInputs = append(hashInputs, postgres.CatalogImportItemInput{RowNumber: item.RowNumber, StableKey: item.StableKey, StoreOfferInput: storeInput})
@@ -235,15 +279,38 @@ func (s *Service) commitStoreCatalogImport(ctx context.Context, actorID, actorRo
 		input := item.StoreOfferInput
 		itemKey := "store-catalog-import-" + postgres.HashCatalogQuickPriceItemKey("store-catalog-import", preview.Run.ID, fmt.Sprintf("%d", item.RowNumber))[:48]
 		rowCorrelation := "store-catalog-import-" + postgres.HashCatalogQuickPriceItemKey("store-catalog-import-correlation", preview.Run.ID, fmt.Sprintf("row:%d", item.RowNumber))[:48]
+
+		productID := ""
+		if input.NewProduct != nil {
+			productKey := itemKey + "-product"
+			created, productErr := postgres.CreateCatalogProduct(ctx, s.db, *input.NewProduct, productKey,
+				postgres.HashCatalogProductCreateRequest(*input.NewProduct), actorID, rowCorrelation)
+			if productErr != nil {
+				if markErr := postgres.MarkCatalogImportItem(ctx, s.db, preview.Run.ID, item.RowNumber, "FAILED", "", "", importErrorCode(productErr), importErrorMessage(productErr), false); markErr != nil {
+					return postgres.CatalogImportCommitResult{}, markErr
+				}
+				continue
+			}
+			productID = created.Product.ID
+			input.VariantID = firstVariantID(created.Product)
+			if input.VariantID == "" {
+				if markErr := postgres.MarkCatalogImportItem(ctx, s.db, preview.Run.ID, item.RowNumber, "FAILED", productID, "", "VARIANT_NOT_FOUND", "created Product has no variant", false); markErr != nil {
+					return postgres.CatalogImportCommitResult{}, markErr
+				}
+				continue
+			}
+			input.Create = defaultImportedOffer(storeID, input.VariantID, input.PriceMinor, input.NewProduct.MeasurementKind)
+		}
 		var offer postgres.CatalogStoreOfferResult
 		if input.StoreOfferID == "" {
+
 			input.Create.StoreID = storeID
 			offer, err = postgres.CreateCatalogOfferWithProvenance(ctx, s.db, input.Create, itemKey, postgres.HashCatalogOfferCreateRequest(input.Create), actorID, rowCorrelation, provenance)
 		} else {
 			offer, err = postgres.UpdateCatalogOfferWithProvenance(ctx, s.db, input.StoreOfferID, input.Update, input.ExpectedVersion, itemKey, postgres.HashCatalogOfferUpdateRequest(input.StoreOfferID, input.Update, input.ExpectedVersion), actorID, rowCorrelation, provenance)
 		}
 		if err != nil {
-			if markErr := postgres.MarkCatalogImportItem(ctx, s.db, preview.Run.ID, item.RowNumber, "FAILED", "", input.VariantID, importErrorCode(err), importErrorMessage(err), false); markErr != nil {
+			if markErr := postgres.MarkCatalogImportItem(ctx, s.db, preview.Run.ID, item.RowNumber, "FAILED", productID, input.VariantID, importErrorCode(err), importErrorMessage(err), false); markErr != nil {
 				return postgres.CatalogImportCommitResult{}, markErr
 			}
 			continue
@@ -252,7 +319,7 @@ func (s *Service) commitStoreCatalogImport(ctx context.Context, actorID, actorRo
 		if offer.Replayed {
 			classification = "REPLAYED"
 		}
-		if err = postgres.MarkCatalogImportItem(ctx, s.db, preview.Run.ID, item.RowNumber, classification, "", input.VariantID, "", "", true); err != nil {
+		if err = postgres.MarkCatalogImportItem(ctx, s.db, preview.Run.ID, item.RowNumber, classification, productID, input.VariantID, "", "", true); err != nil {
 			return postgres.CatalogImportCommitResult{}, err
 		}
 	}

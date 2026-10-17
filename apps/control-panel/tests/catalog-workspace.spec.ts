@@ -619,7 +619,8 @@ test("store import retries only failed rows with the original commit identity", 
   await page.goto("/catalog/import");
   const workspace = page.getByTestId("store-catalog-import-workspace");
   await workspace.getByLabel("المتجر المستهدف").selectOption("store-retry");
-  await workspace.getByLabel("ملف الباركود والأسعار").setInputFiles({
+  await expect(workspace).toContainText("عمودي الاسم والسعر");
+  await workspace.getByLabel("ملف المنتجات والأسعار").setInputFiles({
     name: "retry.csv", mimeType: "text/csv", buffer: Buffer.from("barcode,price\n6291000000012,100\n6291000000013,200\n"),
   });
   await workspace.getByRole("button", { name: "معاينة الملف" }).click();
