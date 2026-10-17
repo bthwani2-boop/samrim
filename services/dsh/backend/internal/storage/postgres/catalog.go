@@ -1979,7 +1979,7 @@ func UpdateCatalogOfferWithProvenance(ctx context.Context, db *sql.DB, offerID s
 
 func validCatalogOfferProvenance(value string) bool {
 	switch value {
-	case "PARTNER", "CONTROL_PANEL", "FIELD_INITIAL_CATALOG", "IMPORT", "QUICK_PRICES", "LEGACY":
+	case "PARTNER", "CONTROL_PANEL", "IMPORT", "QUICK_PRICES", "LEGACY":
 		return true
 	default:
 		return false

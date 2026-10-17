@@ -445,7 +445,6 @@ export function FieldCases() {
       {item.state === "approved" ? <>
         <BthwaniButton disabled={Boolean(busy)} label={agreementCaseID === item.id ? "إخفاء اتفاقية عمولة المتجر" : "عرض اتفاقية عمولة المتجر"} onPress={() => setAgreementCaseID((current) => current === item.id ? null : item.id)} variant="secondary" />
         {agreementCaseID === item.id ? <FieldCommercialAgreement caseID={item.id} /> : null}
-        <BthwaniButton disabled={Boolean(busy)} label="إعداد كتالوج المتجر الأولي" onPress={() => router.push(`/(app)/catalog/${encodeURIComponent(item.id)}` as Href)} variant="secondary" />
       </> : null}
       {item.state === "draft" ? <View style={styles.optionList}>
         <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="تعديل بيانات المسودة" onPress={() => router.push({ pathname: "/new-case", params: { caseId: item.id } } as Href)} variant="secondary" />

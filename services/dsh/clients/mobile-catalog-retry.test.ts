@@ -7,34 +7,6 @@ import { pathToFileURL } from "node:url";
 register(pathToFileURL(path.resolve(import.meta.dirname, "../../../packages/design-system/tools/ts-resolver.mjs")).href, import.meta.url);
 const { createDshMobileClient } = await import("./mobile.ts");
 
-test("Field barcode-free product creation reuses the same request key after an uncertain network failure", async () => {
-  const originalFetch = globalThis.fetch;
-  const calls: Array<{ path: string; headers: Headers; body: Record<string, unknown> }> = [];
-  globalThis.fetch = async (input, init) => {
-    calls.push({ path: new URL(String(input)).pathname, headers: new Headers(init?.headers), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
-    if (calls.length === 1) throw new TypeError("network disconnected after send");
-    return new Response(JSON.stringify({ product: { id: "stored-product", variants: [{ id: "stored-variant" }] }, idempotentReplay: true }), { status: 200, headers: { "Content-Type": "application/json" } });
-  };
-  try {
-    const client = createDshMobileClient("https://dsh.example.test", { cryptoRandomUUID: () => "fresh-unexpected-key" });
-    const product = { canonicalName: "وجبة دجاج", variantTitle: "الافتراضي", description: "", measurementKind: "DISCRETE" as const, baseUnit: "COUNT" as const };
-    await assert.rejects(client.createFieldCatalogProduct("field-token", "joining-case-1", product, "field-stable-key", "field-correlation-1"), (err: unknown) => (err as { kind?: string }).kind === "network");
-    const retried = await client.createFieldCatalogProduct("field-token", "joining-case-1", product, "field-stable-key", "field-correlation-1");
-    assert.equal(retried.product.id, "stored-product");
-    assert.equal(calls.length, 2);
-    assert.equal(calls[0]?.path, "/dsh/field/joining-cases/joining-case-1/catalog/products");
-    assert.equal(calls[1]?.path, calls[0]?.path);
-    for (const call of calls) {
-      assert.equal(call.headers.get("Idempotency-Key"), "field-stable-key");
-      assert.equal(call.headers.get("X-Correlation-ID"), "field-correlation-1");
-      assert.equal(call.body.identifierType, undefined);
-      assert.equal(call.body.identifierValue, undefined);
-    }
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
 test("Partner product creation preserves the caller retry key and isolates the intended Store", async () => {
   const originalFetch = globalThis.fetch;
   const calls: Array<{ path: string; headers: Headers; body: Record<string, unknown> }> = [];

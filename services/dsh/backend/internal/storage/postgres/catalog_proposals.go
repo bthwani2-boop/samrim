@@ -320,14 +320,6 @@ func ListCatalogProductProposalsForPartner(ctx context.Context, db *sql.DB, part
 	return listCatalogProductProposals(ctx, db, "PARTNER", partnerActorID, "", state, limit, rawCursor, "partner", partnerActorID)
 }
 
-func ListCatalogProductProposalsForField(ctx context.Context, db *sql.DB, fieldActorID, joiningCaseID, state string, limit int, rawCursor string) (CatalogProductProposalPage, error) {
-	fieldActorID, joiningCaseID = strings.TrimSpace(fieldActorID), strings.TrimSpace(joiningCaseID)
-	if fieldActorID == "" || joiningCaseID == "" {
-		return CatalogProductProposalPage{}, ErrCatalogProposalInvalid
-	}
-	return listCatalogProductProposals(ctx, db, "FIELD", fieldActorID, joiningCaseID, state, limit, rawCursor, "field:"+joiningCaseID, fieldActorID)
-}
-
 func ListCatalogProductProposalsForReview(ctx context.Context, db *sql.DB, state string, limit int, rawCursor string) (CatalogProductProposalPage, error) {
 	return listCatalogProductProposals(ctx, db, "", "", "", state, limit, rawCursor, "review", "")
 }

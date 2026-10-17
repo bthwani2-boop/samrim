@@ -50,7 +50,7 @@ DSH owns joining-case, Field standing admission/eligibility, assignment, Partner
 - Store publication is distinct from serviceability, catalog/offer eligibility and current operational orderability;
 - customer-visible Store publication requires applicable Store publication, active Service City assignment and catalog publication gates; current orderability is evaluated separately;
 - Store publication requires an active Store-specific `STORE_COMMERCIAL_AGREEMENT` for its enabled fulfillment modes, explicit acceptance by the bound Partner owner of the exact agreement version, and Finance approval; Store Type suggestions, Store creation and catalog readiness cannot substitute for these gates;
-- Field may perform authorized initial catalog work only for its assigned, bound joining Store before Go-Live; after successful publication that write authority ends and the Partner becomes the ongoing Store catalog operator;
+- The bound Partner manages the Store catalog before and after Go-Live through the Partner surface; Field admission and joining-case authority do not grant Store catalog writes;
 - a published Store may remain customer-discoverable as closed/paused when current Product/experience policy allows, but checkout may not treat publication as proof that the Store can accept orders now;
 - trusted case/business scope is derived server-side, never granted by request input;
 - mutations are concurrency-safe, idempotent and attributable.

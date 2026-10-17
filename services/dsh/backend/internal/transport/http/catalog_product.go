@@ -128,7 +128,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/stores/{storeId}/sections", s.listStorefrontSections)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/sections", s.createStorefrontSection)
 	mux.HandleFunc("PUT /dsh/stores/{storeId}/sections/{sectionId}/offers/{offerId}", s.attachOfferToSection)
-	s.registerFieldCatalog(mux)
+	s.registerCatalogIdentifier(mux)
 }
 
 func (s *CatalogServer) listVerticals(w http.ResponseWriter, r *http.Request) {
@@ -1104,10 +1104,6 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
 	case errors.Is(err, catalog.ErrStoreOwnershipForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "partner Store ownership is required")
-	case errors.Is(err, catalog.ErrFieldCatalogSessionForbidden):
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an active Field app session is required")
-	case errors.Is(err, postgres.ErrFieldCatalogAuthority):
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "Field catalog authority is limited to the assigned unpublished Store")
 	default:
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {
