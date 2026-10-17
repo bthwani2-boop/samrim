@@ -565,7 +565,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           {loadMoreStoresError ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل المزيد من المتاجر.</Text> : null}
           <BthwaniButton disabled={loadingMoreStores || directoryLoading} label={loadingMoreStores ? "جارٍ تحميل المزيد" : "تحميل المزيد من المتاجر"} onPress={() => void loadMoreStores()} variant="secondary" />
         </> : null}
-        {!searchIsActive && isAuthenticated ? <BthwaniSurface tone="inset" style={styles.multiStoreCta}><View style={styles.multiStoreCopy}><Text style={styles.eyebrow}>تجربة موحّدة</Text><Text style={styles.cardTitle}>اطلب من عدة متاجر</Text><Text style={styles.muted}>اجمع السلال، وأنشئ طلبًا مستقلًا لكل متجر مع نتيجة واضحة.</Text></View><BthwaniButton label="فتح الطلب المتعدد" onPress={() => router.push("/multi-store-checkout" as Href)} variant="secondary" /></BthwaniSurface> : null}
+        {!searchIsActive && isAuthenticated ? <Pressable accessibilityRole="button" accessibilityLabel="فتح الطلب المتعدد" onPress={() => router.push("/multi-store-checkout" as Href)} style={styles.multiStoreCta}><BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconLg} /><View style={styles.multiStoreCopy}><Text style={styles.multiStoreTitle}>اطلب من عدة متاجر</Text><Text numberOfLines={1} style={styles.multiStoreHint}>سلة موحّدة وطلبات مستقلة لكل متجر</Text></View><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></Pressable> : null}
       </View>}
       style={styles.flatList}
     />
@@ -798,8 +798,10 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     carouselDots: { alignItems: "center", flexDirection: "row", gap: spacing[1], justifyContent: "center" },
     carouselDot: { backgroundColor: theme.borderColorStrong, borderRadius: radius.round, height: 6, width: 6 },
     carouselDotActive: { backgroundColor: theme.actionBackground, height: 8, width: 18 },
-    multiStoreCta: { borderRadius: radius.lg, gap: spacing[2], padding: spacing[3] },
-    multiStoreCopy: { gap: spacing[1] },
+    multiStoreCta: { alignItems: "center", backgroundColor: theme.surfaceInset, borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], minHeight: 72, padding: spacing[3] },
+    multiStoreCopy: { flex: 1, gap: spacing[1] },
+    multiStoreTitle: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
+    multiStoreHint: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
   });
 }
 
