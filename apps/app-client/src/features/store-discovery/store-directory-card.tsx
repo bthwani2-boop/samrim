@@ -1,48 +1,24 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniIcon, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, fulfillmentModeLabel, type PublicStoreView } from "@bthwani/dsh";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { listPublicPromotions } from "./store-discovery-client";
-
-export type StorePromotionCache = Map<string, { count: number; checkedAt: number }>;
 
 export function StoreDirectoryCard({
-  store, activityLabel, cityId, favorite, favoriteBusy, imageFailed, onImageError, onOpen, onFavorite, promotionCache,
+  store, activityLabel, favorite, favoriteBusy, imageFailed, onImageError, onOpen, onFavorite, promotionCount,
 }: {
   store: PublicStoreView;
   activityLabel: string;
-  cityId: string;
   favorite: boolean;
   favoriteBusy: boolean;
   imageFailed: boolean;
   onImageError: () => void;
   onOpen: () => void;
   onFavorite: () => void;
-  promotionCache: StorePromotionCache;
+  promotionCount: number | null;
 }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  const cacheKey = cityId + ":" + store.id;
-  const [promotionCount, setPromotionCount] = useState<number | null>(() => promotionCache.get(cacheKey)?.count ?? null);
-  useEffect(() => {
-    if (!cityId) return;
-    const cached = promotionCache.get(cacheKey);
-    if (cached && Date.now() - cached.checkedAt < 60_000) {
-      setPromotionCount(cached.count);
-      return;
-    }
-    let active = true;
-    setPromotionCount(null);
-    void listPublicPromotions(cityId, store.id).then((result) => {
-      if (!active) return;
-      const count = result.promotions.length;
-      promotionCache.set(cacheKey, { count, checkedAt: Date.now() });
-      setPromotionCount(count);
-    }).catch(() => { if (active) setPromotionCount(null); });
-    return () => { active = false; };
-  }, [cityId, store.id, cacheKey, promotionCache]);
-
   const modes = availableCustomerFulfillmentModes(store.fulfillmentModes);
   const statuses = (store.orderabilityByMode ?? []).filter((item) => modes.includes(item.fulfillmentMode));
   const open = statuses.some((item) => item.state === "OPEN_FOR_ORDERS");
@@ -75,7 +51,7 @@ export function StoreDirectoryCard({
       {modes.length ? <Text numberOfLines={1} style={styles.modes}>{modes.map(fulfillmentModeLabel).join(" · ")}</Text> : null}
     </View>
     <View style={styles.actions}>
-      <BthwaniIconButton icon="favorite" label={(favorite ? "إزالة " : "إضافة ") + store.name + (favorite ? " من المفضلة" : " إلى المفضلة")} disabled={favoriteBusy} tone={favorite ? "primary" : "soft"} onPress={(event) => { event.stopPropagation(); onFavorite(); }} size={sizing.controlMd} />
+      <Pressable accessibilityRole="button" accessibilityLabel={(favorite ? "إزالة " : "إضافة ") + store.name + (favorite ? " من المفضلة" : " إلى المفضلة")} accessibilityState={{ checked: favorite, disabled: favoriteBusy }} disabled={favoriteBusy} hitSlop={8} onPress={(event) => { event.stopPropagation(); onFavorite(); }} style={[styles.favoriteAction, favorite && styles.favoriteSelected]}><Text style={styles.favoriteGlyph}>{favorite ? "♥" : "♡"}</Text></Pressable>
       {promotionCount !== null && promotionCount > 0 ? <Pressable accessibilityRole="button" accessibilityLabel={"عرض " + offersLabel + " في متجر " + store.name} onPress={(event) => { event.stopPropagation(); onOpen(); }} style={styles.offerButton}><Text numberOfLines={1} style={styles.offerLabel}>{offersLabel}</Text></Pressable> : null}
     </View>
   </Pressable>;
@@ -83,10 +59,10 @@ export function StoreDirectoryCard({
 
 function makeStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    card: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], padding: spacing[2], minHeight: 108, ...elevation.raised },
-    logo: { height: 76, width: 76, borderRadius: radius.lg, backgroundColor: theme.surfaceInset },
-    logoFallback: { height: 76, width: 76, borderRadius: radius.lg, alignItems: "center", justifyContent: "center", backgroundColor: theme.actionSoft },
-    copy: { flex: 1, minWidth: 0, alignItems: "stretch", gap: spacing[1] },
+    card: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: 112, overflow: "hidden", ...elevation.raised },
+    logo: { alignSelf: "stretch", minHeight: 112, width: 100, backgroundColor: theme.surfaceInset },
+    logoFallback: { alignSelf: "stretch", minHeight: 112, width: 100, alignItems: "center", justifyContent: "center", backgroundColor: theme.actionSoft },
+    copy: { flex: 1, minWidth: 0, alignItems: "stretch", gap: spacing[1], paddingVertical: spacing[2] },
     name: { ...typography.titleSm, color: theme.color, textAlign: "auto" },
     activity: { ...typography.caption, color: theme.colorMuted, textAlign: "auto" },
     location: { ...typography.caption, color: theme.colorMuted, textAlign: "auto" },
@@ -100,7 +76,10 @@ function makeStyles(theme: ReturnType<typeof resolveTheme>) {
     statusTextOpen: { color: theme.success },
     deliveryInfo: { ...typography.caption, color: theme.interactiveText, textAlign: "auto" },
     modes: { ...typography.caption, color: theme.colorMuted, textAlign: "auto" },
-    actions: { alignItems: "center", justifyContent: "space-between", gap: spacing[1], maxWidth: 80 },
+    actions: { alignItems: "center", justifyContent: "space-between", gap: spacing[1], maxWidth: 72, paddingEnd: spacing[2] },
+    favoriteAction: { alignItems: "center", justifyContent: "center", height: sizing.controlMd, width: sizing.controlMd, borderRadius: radius.round, backgroundColor: theme.actionSoft },
+    favoriteSelected: { backgroundColor: theme.surfaceInset },
+    favoriteGlyph: { color: theme.interactiveText, fontSize: 29, lineHeight: 35, textAlign: "center" },
     offerButton: { backgroundColor: theme.actionSoft, borderRadius: radius.round, paddingHorizontal: spacing[1], minHeight: 27, justifyContent: "center" },
     offerLabel: { ...typography.caption, color: theme.interactiveText, textAlign: "center" },
     pressed: { opacity: 0.7 },

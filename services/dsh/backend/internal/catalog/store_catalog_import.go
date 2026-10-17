@@ -18,14 +18,6 @@ func (s *Service) PreviewPartnerStoreCatalogImport(ctx context.Context, accessTo
 	return s.previewStoreCatalogImport(ctx, actorID, "PARTNER", storeID, "", filename, data, idempotencyKey, correlationID)
 }
 
-func (s *Service) PreviewFieldStoreCatalogImport(ctx context.Context, accessToken, joiningCaseID, filename string, data []byte, idempotencyKey, correlationID string) (postgres.CatalogImportPreviewResult, error) {
-	actorID, scope, err := s.requireFieldCatalog(ctx, accessToken, joiningCaseID)
-	if err != nil {
-		return postgres.CatalogImportPreviewResult{}, err
-	}
-	return s.previewStoreCatalogImport(ctx, actorID, "FIELD", scope.StoreID, scope.JoiningCaseID, filename, data, idempotencyKey, correlationID)
-}
-
 func (s *Service) PreviewOperatorStoreCatalogImport(ctx context.Context, actorID, storeID, filename string, data []byte, idempotencyKey, correlationID string) (postgres.CatalogImportPreviewResult, error) {
 	if err := s.requireOperatorPermission(ctx, actorID, "catalog"); err != nil {
 		return postgres.CatalogImportPreviewResult{}, err
@@ -149,14 +141,6 @@ func (s *Service) ReadPartnerStoreCatalogImport(ctx context.Context, accessToken
 	return s.readStoreCatalogImport(ctx, actorID, "PARTNER", storeID, "", runID)
 }
 
-func (s *Service) ReadFieldStoreCatalogImport(ctx context.Context, accessToken, joiningCaseID, runID string) (postgres.CatalogImportPreviewResult, error) {
-	actorID, scope, err := s.requireFieldCatalog(ctx, accessToken, joiningCaseID)
-	if err != nil {
-		return postgres.CatalogImportPreviewResult{}, err
-	}
-	return s.readStoreCatalogImport(ctx, actorID, "FIELD", scope.StoreID, scope.JoiningCaseID, runID)
-}
-
 func (s *Service) ReadOperatorStoreCatalogImport(ctx context.Context, actorID, runID string) (postgres.CatalogImportPreviewResult, error) {
 	if err := s.requireOperatorPermission(ctx, actorID, "catalog"); err != nil {
 		return postgres.CatalogImportPreviewResult{}, err
@@ -178,8 +162,6 @@ func (s *Service) readStoreCatalogImport(ctx context.Context, actorID, actorRole
 	}
 	if result.Run.Purpose != "STORE_OFFERS" || result.Run.ActorRole != actorRole || result.Run.ActingActorID != strings.TrimSpace(actorID) || result.Run.StoreID != strings.TrimSpace(storeID) || result.Run.JoiningCaseID != strings.TrimSpace(joiningCaseID) {
 		switch actorRole {
-		case "FIELD":
-			return postgres.CatalogImportPreviewResult{}, ErrFieldCatalogSessionForbidden
 		case "OPERATOR":
 			return postgres.CatalogImportPreviewResult{}, ErrOperatorNotActive
 		default:
@@ -198,17 +180,6 @@ func (s *Service) CommitPartnerStoreCatalogImport(ctx context.Context, accessTok
 		return postgres.CatalogImportCommitResult{}, err
 	}
 	return s.commitStoreCatalogImport(ctx, actorID, "PARTNER", storeID, runID, idempotencyKey, correlationID)
-}
-
-func (s *Service) CommitFieldStoreCatalogImport(ctx context.Context, accessToken, joiningCaseID, runID, idempotencyKey, correlationID string) (postgres.CatalogImportCommitResult, error) {
-	actorID, scope, err := s.requireFieldCatalog(ctx, accessToken, joiningCaseID)
-	if err != nil {
-		return postgres.CatalogImportCommitResult{}, err
-	}
-	if _, err = s.readStoreCatalogImport(ctx, actorID, "FIELD", scope.StoreID, scope.JoiningCaseID, runID); err != nil {
-		return postgres.CatalogImportCommitResult{}, err
-	}
-	return s.commitStoreCatalogImport(ctx, actorID, "FIELD", scope.StoreID, runID, idempotencyKey, correlationID)
 }
 
 func (s *Service) CommitOperatorStoreCatalogImport(ctx context.Context, actorID, runID, idempotencyKey, correlationID string) (postgres.CatalogImportCommitResult, error) {
@@ -236,7 +207,7 @@ func (s *Service) commitStoreCatalogImport(ctx context.Context, actorID, actorRo
 	if !((preview.Run.Mode == "preview" && preview.Run.State == "previewed") || (preview.Run.Mode == "commit" && preview.Run.State == "rejected")) {
 		return postgres.CatalogImportCommitResult{}, postgres.ErrCatalogImportInvalid
 	}
-	provenance := map[string]string{"FIELD": "FIELD_INITIAL_CATALOG", "PARTNER": "PARTNER", "OPERATOR": "CONTROL_PANEL"}[actorRole]
+	provenance := map[string]string{"PARTNER": "PARTNER", "OPERATOR": "CONTROL_PANEL"}[actorRole]
 	for _, item := range preview.Items {
 		if item.Classification != "READY" && item.Classification != "FAILED" {
 			continue

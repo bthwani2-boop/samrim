@@ -149,3 +149,19 @@ func TestEscapeCatalogSearchPrefixTreatsWildcardsLiterally(t *testing.T) {
 		t.Fatalf("escapeCatalogSearchPrefix() = %q, want %q", got, want)
 	}
 }
+
+func TestPublicCatalogShortcutScopeBindsProductCursor(t *testing.T) {
+	cursor := encodeCatalogSearchCursor("قهوة", "offer-1", "", "city-1", "grocery", "", "قهوة", "", "", "shortcut-meat")
+	if _, err := decodeCatalogSearchCursor(cursor, "", "city-1", "grocery", "", "قهوة", "", "", "shortcut-meat"); err != nil {
+		t.Fatalf("matching product shortcut cursor rejected: %v", err)
+	}
+	for _, id := range []string{"shortcut-bakery", ""} {
+		if _, err := decodeCatalogSearchCursor(cursor, "", "city-1", "grocery", "", "قهوة", "", "", id); err == nil {
+			t.Fatalf("product cursor reused under a different shortcut: %q", id)
+		}
+	}
+	ordinary := encodeCatalogSearchCursor("قهوة", "offer-1", "", "city-1", "grocery", "", "قهوة", "", "")
+	if _, err := decodeCatalogSearchCursor(ordinary, "", "city-1", "grocery", "", "قهوة", "", ""); err != nil {
+		t.Fatalf("existing unscoped product cursors should remain valid: %v", err)
+	}
+}

@@ -65,6 +65,10 @@ func TestPartnerFundedPlatformOfferIsNotVisibleOrRedeemableWithoutConsent(t *tes
 			}
 		}
 		assertHidden("before opt-in")
+		counts, err := postgres.CountPublicPromotionsForStores(ctx, db, city, []string{store})
+		if err != nil || counts[store] != 0 {
+			t.Fatalf("unconsented partner campaign must not contribute to public store badge: counts=%+v err=%v", counts, err)
+		}
 		// Verify legacy unsafe data is also fail-closed by both public listing and
 		// server-side checkout evaluation; never assume old flags were correct.
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET requires_partner_opt_in=false WHERE id=$1", offerID); err != nil {
@@ -85,6 +89,10 @@ func TestPartnerFundedPlatformOfferIsNotVisibleOrRedeemableWithoutConsent(t *tes
 		}
 		if !found {
 			t.Fatal("opted-in Store must see its partner-funded campaign")
+		}
+		counts, err = postgres.CountPublicPromotionsForStores(ctx, db, city, []string{store})
+		if err != nil || counts[store] != 1 {
+			t.Fatalf("opted-in partner campaign must contribute to public store badge: counts=%+v err=%v", counts, err)
 		}
 		promotion, discount, err := postgres.EvaluatePromotion(ctx, db, code, store, city, "test-customer", 1000, nil, false)
 		if err != nil || promotion.ID != offerID || discount != 100 {

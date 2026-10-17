@@ -146,7 +146,7 @@ func SetCatalogCategoryTrashed(ctx context.Context, db *sql.DB, categoryID, acto
 		_, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_categories SET deleted_at=NULL,deleted_by=NULL,deletion_reason=NULL,version=version+1,updated_at=clock_timestamp() WHERE id=$1", categoryID)
 	}
 	if err != nil {
-		return DeletedCatalogCategory{}, false, err
+		return DeletedCatalogCategory{}, false, catalogRegistryNameWriteError(err)
 	}
 	_, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_category_trash_audit(idempotency_key,category_id,actor_id,action,reason,expected_version,result_version) VALUES ($1,$2,$3,$4,$5,$6,$7)", key, categoryID, actorID, action, reason, version, version+1)
 	if err != nil {

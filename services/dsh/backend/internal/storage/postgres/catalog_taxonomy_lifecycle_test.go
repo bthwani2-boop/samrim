@@ -42,6 +42,18 @@ func TestCatalogCategoryTreeAndVerticalActivityLifecycle(t *testing.T) {
 		vertical := createClosureVertical(t, ctx, db, "tree-vertical-", suffix)
 		otherVertical := createClosureVertical(t, ctx, db, "tree-other-vertical-", suffix)
 		rootA := createClosureCategory(t, ctx, db, vertical.ID, "tree-root-a-"+suffix, "مشروبات", "Drinks", "", suffix)
+		// Identical Arabic or English sibling labels are rejected by database authority.
+		for index, duplicate := range []postgres.CatalogCategoryRecord{
+			{ID: "duplicate-category-ar-" + suffix, VerticalID: vertical.ID, NameAr: "مشروبات", NameEn: "Alternate Drinks", Active: true},
+			{ID: "duplicate-category-en-" + suffix, VerticalID: vertical.ID, NameAr: "مشروبات أخرى", NameEn: "Drinks", Active: true},
+		} {
+			reason := "Reject a duplicate sibling category name"
+			key := fmt.Sprintf("idem-duplicate-category-%d-%s", index, suffix)
+			_, err := postgres.CreateCatalogCategory(ctx, db, duplicate, key, postgres.HashCatalogCategoryCreateRequest(duplicate, reason), closureAudit("corr-"+key, reason))
+			if !errors.Is(err, postgres.ErrCatalogRegistryNameConflict) {
+				t.Fatalf("duplicate category sibling name index=%d error=%v, want conflict", index, err)
+			}
+		}
 		rootB := createClosureCategory(t, ctx, db, vertical.ID, "tree-root-b-"+suffix, "ساخنة", "Hot Drinks", "", suffix)
 		crossVertical := createClosureCategory(t, ctx, db, otherVertical.ID, "tree-cross-"+suffix, "فواكه", "Fruit", "", suffix)
 		child := createClosureCategory(t, ctx, db, vertical.ID, "tree-child-"+suffix, "قهوة", "Coffee", rootA.ID, suffix)

@@ -1,10 +1,9 @@
 "use client";
-import { useReadOnReturn } from "../shared/use-read-on-return";
 import { TextArea } from "@bthwani/design-system/web";
-
-import type { CommercialStoreType, CommerceVertical } from "@bthwani/dsh";
-import { useCallback, useEffect, useState } from "react";
+import type { CommerceVertical, CommercialStoreType } from "@bthwani/dsh";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type TypeListResponse = Readonly<{ storeTypes: ReadonlyArray<CommercialStoreType> }>;
 
@@ -47,10 +46,11 @@ function CommercialStoreTypeRegistryFeedback({ verticalId, vertical, notice, err
   </>;
 }
 
-export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: Readonly<{ verticals: ReadonlyArray<CommerceVertical>; verticalId: string }>) {
+export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId, editorOnly = false, initialId, onSaved, onClose }: Readonly<{ verticals: ReadonlyArray<CommerceVertical>; verticalId: string; editorOnly?: boolean; initialId?: string | undefined; onSaved?: () => Promise<void>; onClose?: () => void }>) {
   const { state } = useSession();
   const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("catalog") === true;
   const [items, setItems] = useState<ReadonlyArray<CommercialStoreType>>([]);
+  const initialized = useRef(false);
   const [nameAr, setNameAr] = useState("");
   const [nameEn, setNameEn] = useState("");
   const [reason, setReason] = useState("");
@@ -73,7 +73,7 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: Re
     finally { setLoading(false); }
   }, [verticalId]);
 
-  function edit(item: CommercialStoreType) {
+  const edit = useCallback((item: CommercialStoreType) => {
     setSelected(item);
     setEditorOpen(true);
     setNameAr(item.nameAr);
@@ -82,7 +82,7 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: Re
     setReason("");
     setError("");
     setNotice("");
-  }
+  }, []);
 
   const clearEditor = useCallback(() => {
     setSelected(null);
@@ -94,7 +94,20 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: Re
   }, []);
 
   useEffect(() => { clearEditor(); setNotice(""); void reload(); }, [clearEditor, reload]);
-  useReadOnReturn(() => reload(), Boolean(verticalId) && !loading && !busy && !editorOpen);
+  useReadOnReturn(() => reload(), !editorOnly && Boolean(verticalId) && !loading && !busy && !editorOpen);
+  useEffect(() => {
+    if (!editorOnly || initialized.current) return;
+    if (initialId) {
+      const item = items.find((entry) => entry.id === initialId);
+      if (!item) return;
+      initialized.current = true;
+      edit(item);
+    } else {
+      initialized.current = true;
+      clearEditor();
+      setEditorOpen(true);
+    }
+  }, [editorOnly, initialId, items, clearEditor, edit]);
 
   async function save() {
     if (!canEdit || !verticalId) return;
@@ -121,27 +134,28 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: Re
       setNotice(`${selected ? "تم تحديث" : "تم إنشاء"} نوع المتجر «${payload.storeType.nameAr}».`);
       clearEditor();
       await reload();
+      if (editorOnly) { await onSaved?.(); onClose?.(); }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر حفظ نوع المتجر.");
     } finally { setBusy(false); }
   }
 
   return <section className="catalog-taxonomy-section" aria-labelledby="commercial-store-type-title">
-    <div className="access-card-heading">
+    {!editorOnly ? <div className="access-card-heading">
 
       <h3 id="commercial-store-type-title">أنواع المتاجر التجارية</h3>
 
       {vertical ? <p className="muted">المجال التجاري: <strong>{vertical.nameAr}</strong></p> : <p className="muted">اختر مجالًا تجاريًا لعرض أنواعه.</p>}
       {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit || !verticalId || !vertical?.active || busy} onClick={() => { clearEditor(); setEditorOpen(true); setNotice(""); }}>نوع متجر جديد</button> : null}
-    </div>
+    </div> : null}
     <CommercialStoreTypeRegistryFeedback verticalId={verticalId} vertical={vertical} notice={notice} error={error} loading={loading} itemCount={items.length} />
-    {editorOpen ? <div className="access-form">
+    {editorOpen || (editorOnly && !initialId) ? <div className="access-form">
       <label className="field-label" htmlFor="commercial-type-name-ar">الاسم العربي<input id="commercial-type-name-ar" disabled={busy || !canEdit || !vertical?.active} value={nameAr} onChange={(event) => setNameAr(event.target.value)} placeholder="ملحمة" /></label>
       <label className="field-label" htmlFor="commercial-type-name-en">الاسم الإنجليزي<input id="commercial-type-name-en" disabled={busy || !canEdit || !vertical?.active} value={nameEn} onChange={(event) => setNameEn(event.target.value)} placeholder="Butcher" /></label>
       <label className="field-label"><input type="checkbox" disabled={busy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> نشط للاستخدام في ملفات الانضمام والسياسات</label>
-      <label className="field-label" htmlFor="commercial-type-reason">سبب التغيير<TextArea className="resize-none" id="commercial-type-reason" disabled={busy || !canEdit} minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-      <div className="catalog-registry-actions"><button type="button" className="button button-primary" disabled={busy || !canEdit || !vertical?.active} onClick={() => void save()}>{saveLabel}</button><button type="button" className="button button-secondary" disabled={busy} onClick={clearEditor}>إلغاء</button></div>
+      <label className="field-label" htmlFor="commercial-type-reason">سبب التغيير<TextArea className="resize-none" rows={2} id="commercial-type-reason" disabled={busy || !canEdit} minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+      <div className="catalog-registry-actions unified-taxonomy-save-actions"><button type="button" className="button button-primary" disabled={busy || !canEdit || !vertical?.active} onClick={() => void save()}>{saveLabel}</button><button type="button" className="button button-secondary" disabled={busy} onClick={() => { clearEditor(); if (editorOnly) onClose?.(); }}>إلغاء</button></div>
     </div> : null}
-    {items.length > 0 ? <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr><th>النوع التجاري</th><th>الاسم الدولي</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.nameAr}</strong></td><td><bdi dir="ltr">{item.nameEn}</bdi></td><td>{item.active ? "نشط" : "متوقف"}</td><td><button type="button" className="catalog-row-action" disabled={busy || !canEdit} onClick={() => edit(item)}>تعديل</button></td></tr>)}</tbody></table></div> : null}
+    {!editorOnly && items.length > 0 ? <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr><th>النوع التجاري</th><th>الاسم الدولي</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.nameAr}</strong></td><td><bdi dir="ltr">{item.nameEn}</bdi></td><td>{item.active ? "نشط" : "متوقف"}</td><td><button type="button" className="catalog-row-action" disabled={busy || !canEdit} onClick={() => edit(item)}>تعديل</button></td></tr>)}</tbody></table></div> : null}
   </section>;
 }

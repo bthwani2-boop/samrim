@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 var (
@@ -366,6 +368,43 @@ func ListPromotions(ctx context.Context, db *sql.DB, public bool, serviceCityID,
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+// CountPublicPromotionsForStores projects the public, city-scoped marketing
+// eligibility for one page of stores in a single query. Unlike the four-item
+// discovery carousel, store badges must not be limited by a global page cap.
+func CountPublicPromotionsForStores(ctx context.Context, db *sql.DB, cityID string, storeIDs []string) (map[string]int, error) {
+	counts := make(map[string]int, len(storeIDs))
+	if len(storeIDs) == 0 {
+		return counts, nil
+	}
+	if strings.TrimSpace(cityID) == "" {
+		return nil, ErrPromotionInvalid
+	}
+	rows, err := db.QueryContext(ctx, `SELECT s.id, COUNT(p.id)
+		FROM unnest($2::text[]) AS s(id)
+		LEFT JOIN dsh.commerce_promotions p ON
+			p.state='PUBLISHED' AND p.starts_at <= clock_timestamp()
+			AND (p.ends_at IS NULL OR p.ends_at > clock_timestamp())
+			AND (p.service_city_id IS NULL OR p.service_city_id=$1)
+			AND (p.store_id IS NULL OR p.store_id=s.id)
+			AND (p.store_id IS NOT NULL OR (p.funding_source='BTHWANI' AND p.requires_partner_opt_in=false)
+				OR EXISTS (SELECT 1 FROM dsh.commerce_promotion_store_opt_ins o
+					WHERE o.promotion_id=p.id AND o.store_id=s.id AND o.state='OPTED_IN'))
+		GROUP BY s.id`, cityID, pq.Array(storeIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var storeID string
+		var count int
+		if err := rows.Scan(&storeID, &count); err != nil {
+			return nil, err
+		}
+		counts[storeID] = count
+	}
+	return counts, rows.Err()
 }
 
 func CreatePromotion(ctx context.Context, db *sql.DB, input PromotionInput, idempotencyKey, requestHash string) (PromotionRecord, bool, error) {

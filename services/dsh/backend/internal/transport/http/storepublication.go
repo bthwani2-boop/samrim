@@ -362,6 +362,7 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 		Query:                 r.URL.Query().Get("q"),
 		VerticalID:            r.URL.Query().Get("verticalId"),
 		CategoryID:            r.URL.Query().Get("categoryId"),
+		ShortcutID:            r.URL.Query().Get("shortcutId"),
 		FavoriteClientActorID: favoriteClientActorID,
 		Sort:                  r.URL.Query().Get("sort"),
 		Limit:                 limit,
@@ -378,9 +379,19 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 		writeStoreAvailabilityError(w, err)
 		return
 	}
+	storeIDs := make([]string, 0, len(page.Stores))
+	for _, store := range page.Stores {
+		storeIDs = append(storeIDs, store.ID)
+	}
+	promotionCounts, err := postgres.CountPublicPromotionsForStores(r.Context(), s.db, serviceCityID, storeIDs)
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
 	values := make([]contract.PublicStoreView, 0, len(page.Stores))
 	for _, store := range page.Stores {
 		view := toPublicStoreView(store)
+		view.PromotionCount = promotionCounts[store.ID]
 		view.OrderabilityByMode = make([]contract.StoreOrderability, 0, len(orderabilityByStore[store.ID]))
 		for _, state := range orderabilityByStore[store.ID] {
 			view.OrderabilityByMode = append(view.OrderabilityByMode, toStoreOrderabilityView(state))
@@ -405,9 +416,20 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 	for _, category := range categoryRecords {
 		categories = append(categories, toCatalogCategory(category))
 	}
+	shortcuts, err := postgres.ListPublicShoppingShortcuts(r.Context(), s.db, serviceCityID, r.URL.Query().Get("verticalId"))
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	publicShortcuts := make([]contract.PublicShoppingShortcut, 0, len(shortcuts))
+	for _, item := range shortcuts {
+		publicShortcuts = append(publicShortcuts, contract.PublicShoppingShortcut{
+			ID: item.ID, VerticalID: item.VerticalID, TitleAr: item.TitleAr, Ordinal: item.Ordinal,
+		})
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(contract.PublishedStoreListResponse{Stores: values, Verticals: verticals, Categories: categories, Limit: page.Limit, NextCursor: page.NextCursor})
+	_ = json.NewEncoder(w).Encode(contract.PublishedStoreListResponse{Stores: values, Verticals: verticals, Categories: categories, Shortcuts: publicShortcuts, Limit: page.Limit, NextCursor: page.NextCursor})
 }
 
 func (s *StorePublicationServer) readPublic(w http.ResponseWriter, r *http.Request) {
@@ -538,6 +560,7 @@ func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *h
 	serviceCityID := strings.TrimSpace(r.URL.Query().Get("serviceCityId"))
 	categoryID := strings.TrimSpace(r.URL.Query().Get("categoryId"))
 	verticalID := strings.TrimSpace(r.URL.Query().Get("verticalId"))
+	shortcutID := strings.TrimSpace(r.URL.Query().Get("shortcutId"))
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 	limit := 20
@@ -549,7 +572,7 @@ func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *h
 		}
 		limit = parsed
 	}
-	if serviceCityID == "" || len(verticalID) > 128 || len(categoryID) > 128 || query == "" || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
+	if serviceCityID == "" || len(verticalID) > 128 || len(categoryID) > 128 || len(shortcutID) > 128 || query == "" || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog search scope or query is invalid")
 		return
 	}
@@ -557,7 +580,7 @@ func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *h
 		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "public catalog search is unavailable")
 		return
 	}
-	result, err := s.service.SearchPublicCatalog(r.Context(), serviceCityID, verticalID, categoryID, query, limit, cursor)
+	result, err := s.service.SearchPublicCatalog(r.Context(), serviceCityID, verticalID, categoryID, query, limit, cursor, shortcutID)
 	if err != nil {
 		writeStorePublicationError(w, err)
 		return

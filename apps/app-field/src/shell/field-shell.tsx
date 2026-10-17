@@ -50,7 +50,6 @@ function fieldHeaderTitle(routeName: string) {
     notifications: "الإشعارات",
     invitations: "دعوات الوصول للمتاجر",
     "new-case": "إضافة شريك",
-    "catalog/[caseId]": "الكتالوج الأولي",
   };
   return titles[routeName] ?? "الميدان";
 }

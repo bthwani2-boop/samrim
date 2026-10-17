@@ -6,7 +6,7 @@ import type { CatalogQuickPriceCommitRequest, CatalogQuickPriceCommitResponse, C
 import { formatMoney } from "./presentation/order-presentation";
 import { createDshMobileClient } from "./mobile";
 
-type StoreQuickPricesScope = Readonly<{ kind: "FIELD"; joiningCaseID: string }> | Readonly<{ kind: "PARTNER"; storeID: string }>;
+type StoreQuickPricesScope = Readonly<{ kind: "PARTNER"; storeID: string }>;
 type QuickPriceChange = CatalogQuickPriceUpdate;
 type QuickPriceAttempt = Readonly<{ fingerprint: string; idempotencyKey: string; correlationID: string }>;
 type QuickPriceFilter = "all" | "available" | "unavailable";
@@ -40,12 +40,6 @@ function quickPricePublicationLabel(state: CatalogStoreOffer["publicationState"]
     case "hidden": return "مخفي";
     default: return "مسودة";
   }
-}
-
-function scopeIntroduction(scope: StoreQuickPricesScope): string {
-  return scope.kind === "FIELD"
-    ? "عدّل عدة أسعار دفعة واحدة قبل إطلاق المتجر. تُحفظ الأسعار التي غيّرتها فقط، وتُراجع الأسعار الحالية قبل إعادة المحاولة عند حدوث تغيير."
-    : "رشّح عروض المتجر وعدّل عدة أسعار دفعة واحدة. تُحفظ الأسعار التي غيّرتها فقط، وتُراجع الأسعار الحالية قبل إعادة المحاولة عند حدوث تغيير.";
 }
 
 function changedQuickPriceRows(offers: ReadonlyArray<CatalogStoreOffer>, drafts: Readonly<Record<string, string>>): ReadonlyArray<QuickPriceChange> {
@@ -101,15 +95,13 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
   const [attempt, setAttempt] = useState<QuickPriceAttempt | null>(null);
 
   const read = useCallback(async (cursor = "", append = false) => {
-    const scopeKey = scope.kind === "FIELD" ? scope.joiningCaseID : scope.storeID;
+    const scopeKey = scope.storeID;
     if (!scopeKey.trim()) return;
     setLoading(!append);
     setError("");
     try {
       const token = await getAccessToken();
-      const page = scope.kind === "FIELD"
-        ? await client.listFieldQuickPrices(token, scope.joiningCaseID, { ...filters, limit: 50, cursor })
-        : await client.listOwnStoreQuickPrices(token, scope.storeID, { ...filters, limit: 50, cursor });
+      const page = await client.listOwnStoreQuickPrices(token, scope.storeID, { ...filters, limit: 50, cursor });
       setOffers((current) => append ? [...current, ...page.offers.filter((offer) => !current.some((known) => known.offerId === offer.offerId))] : page.offers);
       setNextCursor(page.nextCursor ?? "");
     } catch (cause) {
@@ -155,9 +147,7 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
     try {
       const token = await getAccessToken();
       const input: CatalogQuickPriceCommitRequest = { items: changes.map((change) => ({ ...change })) };
-      const result: CatalogQuickPriceCommitResponse = scope.kind === "FIELD"
-        ? await client.commitFieldQuickPrices(token, scope.joiningCaseID, input, currentAttempt.idempotencyKey, currentAttempt.correlationID)
-        : await client.commitOwnStoreQuickPrices(token, scope.storeID, input, currentAttempt.idempotencyKey, currentAttempt.correlationID);
+      const result: CatalogQuickPriceCommitResponse = await client.commitOwnStoreQuickPrices(token, scope.storeID, input, currentAttempt.idempotencyKey, currentAttempt.correlationID);
       const byId = new Map(result.items.map((item) => [item.offerId, item]));
       setOffers((current) => current.map((offer) => {
         const updated = byId.get(offer.offerId);
@@ -181,7 +171,7 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
 
   return <View accessibilityLabel="الأسعار السريعة" style={styles.card}>
     <Text style={styles.title}>الأسعار السريعة</Text>
-    <Text style={styles.muted}>{scopeIntroduction(scope)}</Text>
+    <Text style={styles.muted}>{"عدّل أسعار منتجات المتجر واحفظ التغييرات دفعة واحدة."}</Text>
     <TextInput accessibilityLabel="بحث الأسعار السريعة" editable={!busy} onChangeText={setQueryDraft} onSubmitEditing={applyFilters} placeholder="ابحث باسم المنتج أو خياره" returnKeyType="search" value={queryDraft} style={styles.input} />
     <TextInput accessibilityLabel="بحث فئات الأسعار السريعة" editable={!busy} onChangeText={setCategoryQuery} placeholder="ابحث عن فئة لتصفية النتائج" value={categoryQuery} style={styles.input} />
     <View style={styles.filters}>

@@ -161,26 +161,6 @@ func (s fieldRewardOutboxScenario) approveJoiningCase(fieldOrigin bool, suffix s
 	if err != nil || approved.Case.State != "approved" || approved.Case.StoreID == "" || approved.Case.Origin != created.Case.Origin {
 		s.t.Fatalf("approve %s-originated Joining Case: case=%+v error=%v", suffix, approved.Case, err)
 	}
-	if fieldOrigin {
-		admissionID := "catalog-auth-admission-" + suffix
-		if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.field_admissions(id,actor_id,full_name_ar,all_service_cities,state,requires_profile_review,version)
-			VALUES($1,$2,$3,true,'eligible',false,1)`, admissionID, fieldActorID, "مندوب اختبار الكتالوج"); err != nil {
-			s.t.Fatalf("create eligible Field admission for catalog authorization proof: %v", err)
-		}
-		scope, authErr := postgres.AuthorizeFieldCatalogCase(s.ctx, s.db, approved.Case.ID, fieldActorID)
-		if authErr != nil || scope.StoreID != approved.Case.StoreID || scope.StoreName == "" || scope.VerticalID != s.verticalID || scope.VerticalNameAr == "" {
-			s.t.Fatalf("eligible Field case lost its human-readable unpublished catalog authority: scope=%+v error=%v", scope, authErr)
-		}
-		if _, err := s.db.ExecContext(s.ctx, "UPDATE dsh.field_admissions SET requires_profile_review=true WHERE id=$1", admissionID); err != nil {
-			s.t.Fatalf("mark the fixture admission as requiring profile review: %v", err)
-		}
-		if _, authErr = postgres.AuthorizeFieldCatalogCase(s.ctx, s.db, approved.Case.ID, fieldActorID); authErr != postgres.ErrFieldCatalogAuthority {
-			s.t.Fatalf("Field catalog authority error for an admission requiring profile review = %v, want ErrFieldCatalogAuthority", authErr)
-		}
-		if _, err := s.db.ExecContext(s.ctx, "UPDATE dsh.field_admissions SET requires_profile_review=false WHERE id=$1", admissionID); err != nil {
-			s.t.Fatalf("restore the isolated Field admission proof fixture: %v", err)
-		}
-	}
 	return approved.Case.StoreID
 }
 

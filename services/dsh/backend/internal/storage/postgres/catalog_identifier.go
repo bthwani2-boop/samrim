@@ -7,16 +7,6 @@ import (
 	"strings"
 )
 
-var ErrFieldCatalogAuthority = errors.New("Field catalog authority is not active for this joining case")
-
-type FieldCatalogScope struct {
-	JoiningCaseID  string
-	StoreID        string
-	StoreName      string
-	VerticalID     string
-	VerticalNameAr string
-}
-
 type CatalogIdentifierResolution struct {
 	Outcome          string
 	StoreID          string
@@ -29,72 +19,6 @@ type CatalogIdentifierResolution struct {
 	MeasurementKind  string
 	BaseUnit         string
 	PublicationState string
-}
-
-func AuthorizeFieldCatalogCase(ctx context.Context, db *sql.DB, joiningCaseID, fieldActorID string) (FieldCatalogScope, error) {
-	if db == nil || strings.TrimSpace(joiningCaseID) == "" || strings.TrimSpace(fieldActorID) == "" {
-		return FieldCatalogScope{}, ErrFieldCatalogAuthority
-	}
-	var scope FieldCatalogScope
-	err := db.QueryRowContext(ctx, `
-		SELECT jc.id,s.id,s.name,s.primary_vertical_id,vertical.name_ar
-		FROM dsh.joining_cases jc
-		JOIN dsh.stores s ON s.id=jc.store_id
-		JOIN dsh.commerce_verticals vertical ON vertical.id=s.primary_vertical_id AND vertical.active=true
-		JOIN dsh.field_admissions admission ON admission.actor_id=jc.originating_field_actor_id
-		WHERE jc.id=$1
-		  AND jc.origin='field'
-		  AND jc.originating_field_actor_id=$2
-		  AND jc.state='approved'
-		  AND admission.state='eligible'
-		  AND admission.requires_profile_review=false
-		  AND s.publication_state='unpublished'
-		  AND s.primary_vertical_id=jc.first_store_vertical_id`, strings.TrimSpace(joiningCaseID), strings.TrimSpace(fieldActorID)).Scan(&scope.JoiningCaseID, &scope.StoreID, &scope.StoreName, &scope.VerticalID, &scope.VerticalNameAr)
-	if errors.Is(err, sql.ErrNoRows) {
-		return FieldCatalogScope{}, ErrFieldCatalogAuthority
-	}
-	return scope, err
-}
-
-func ListCatalogProductsForField(ctx context.Context, db *sql.DB, scope FieldCatalogScope, query string, limit int) ([]CatalogProductRecord, error) {
-	query = strings.TrimSpace(query)
-	if limit < 1 || limit > 100 || len([]rune(query)) > 160 || scope.StoreID == "" || scope.VerticalID == "" {
-		return nil, ErrFieldCatalogAuthority
-	}
-	rows, err := db.QueryContext(ctx, `
-		SELECT p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.description,p.brand,p.active,p.version,p.created_at,p.updated_at
-		FROM dsh.catalog_products p
-		WHERE p.vertical_id=$2
-		  AND p.active=true
-		  AND ((p.scope='SHARED' AND p.store_id IS NULL) OR (p.scope='STORE_SCOPED' AND p.store_id=$1))
-		  AND ($4='' OR lower(p.canonical_name) LIKE lower($4))
-		ORDER BY lower(p.canonical_name),p.id
-		LIMIT $3`, scope.StoreID, scope.VerticalID, limit, query+"%")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	products := make([]CatalogProductRecord, 0, limit)
-	for rows.Next() {
-		product, scanErr := readCatalogProductRow(rows)
-		if scanErr != nil {
-			return nil, scanErr
-		}
-		products = append(products, product)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-	if err = rows.Close(); err != nil {
-		return nil, err
-	}
-	for index := range products {
-		products[index], err = hydrateCatalogProduct(ctx, db, products[index])
-		if err != nil {
-			return nil, err
-		}
-	}
-	return products, nil
 }
 
 func ResolveCatalogIdentifier(ctx context.Context, db *sql.DB, storeID, identifierValue string) (CatalogIdentifierResolution, error) {

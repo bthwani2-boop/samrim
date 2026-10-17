@@ -5,7 +5,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import type { CatalogImportCommitResponse, CatalogImportItem, CatalogImportPreviewResponse, CatalogImportRunResponse } from "./generated/dsh-types";
 import type { DshCatalogImportFileInput, createDshMobileClient } from "./mobile";
 
-type StoreCatalogImportScope = Readonly<{ kind: "FIELD"; joiningCaseID: string }> | Readonly<{ kind: "PARTNER"; storeID: string }>;
+type StoreCatalogImportScope = Readonly<{ kind: "PARTNER"; storeID: string }>;
 type StoreCatalogImportResult = CatalogImportPreviewResponse | CatalogImportRunResponse | CatalogImportCommitResponse;
 type ImportAttempt = Readonly<{ previewKey: string; previewCorrelation: string; commitKey: string; commitCorrelation: string }>;
 
@@ -100,9 +100,7 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
     setNotice("");
     try {
       const token = await getAccessToken();
-      const previewResult = scope.kind === "FIELD"
-        ? await client.previewFieldStoreCatalogImport(token, scope.joiningCaseID, file, currentAttempt.previewKey, currentAttempt.previewCorrelation)
-        : await client.previewPartnerStoreCatalogImport(token, scope.storeID, file, currentAttempt.previewKey, currentAttempt.previewCorrelation);
+      const previewResult = await client.previewPartnerStoreCatalogImport(token, scope.storeID, file, currentAttempt.previewKey, currentAttempt.previewCorrelation)
       setResult(previewResult);
       setNotice("أُنشئت المعاينة من الملف. الصفوف المجهولة محفوظة للمراجعة ولن تنشئ منتجات تلقائيًا.");
     } catch {
@@ -126,9 +124,7 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
 
   async function readCurrentRun(runID: string) {
     const token = await getAccessToken();
-    return scope.kind === "FIELD"
-      ? await client.readFieldStoreCatalogImport(token, scope.joiningCaseID, runID)
-      : await client.readPartnerStoreCatalogImport(token, scope.storeID, runID);
+    return await client.readPartnerStoreCatalogImport(token, scope.storeID, runID)
   }
 
   async function commit() {
@@ -138,9 +134,7 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
     setNotice("");
     try {
       const token = await getAccessToken();
-      const committed = scope.kind === "FIELD"
-        ? await client.commitFieldStoreCatalogImport(token, scope.joiningCaseID, result.run.id, attempt.commitKey, attempt.commitCorrelation)
-        : await client.commitPartnerStoreCatalogImport(token, scope.storeID, result.run.id, attempt.commitKey, attempt.commitCorrelation);
+      const committed = await client.commitPartnerStoreCatalogImport(token, scope.storeID, result.run.id, attempt.commitKey, attempt.commitCorrelation)
       setResult(committed);
       if (committed.run.state === "committed") {
         await onCommitted?.();

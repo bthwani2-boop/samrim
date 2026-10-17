@@ -1,9 +1,10 @@
 "use client";
 import { TextArea } from "@bthwani/design-system/web";
 
-import type { CommerceVertical } from "@bthwani/dsh";
-import { useState } from "react";
+import { type CommerceVertical, isMediaProvenanceInputValid, type MediaProvenanceInput } from "@bthwani/dsh";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { appendMediaProvenance, CatalogMediaProvenanceFields } from "./catalog-media-provenance-fields";
 
 function readError(value: unknown): string {
   if (!value || typeof value !== "object") return "تعذر تنفيذ العملية.";
@@ -20,30 +21,35 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 function verticalSelectionActionLabel(isSelected: boolean): string {
-  return isSelected ? "المحدد" : "اختيار النشاط";
+  return isSelected ? "المحدد" : "اختيار المجال";
 }
 
 function verticalSaveLabel(busy: boolean, isEditing: boolean): string {
   if (busy) return "جارٍ الحفظ…";
   if (isEditing) return "حفظ التعديل";
-  return "إضافة نشاط تجاري";
+  return "إضافة مجال تجاري";
 }
 
-export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelectVertical, onSaved }: { verticals: ReadonlyArray<CommerceVertical>; selectedVerticalId: string; onSelectVertical: (verticalId: string) => void; onSaved: () => Promise<void> }) {
+export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelectVertical, onSaved, editorOnly = false, initialId, onClose }: { verticals: ReadonlyArray<CommerceVertical>; selectedVerticalId: string; onSelectVertical: (verticalId: string) => void; onSaved: () => Promise<void>; editorOnly?: boolean; initialId?: string | undefined; onClose?: () => void }) {
   const { state } = useSession();
   const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("catalog") === true;
   const [selected, setSelected] = useState<CommerceVertical | null>(null);
+  const initialized = useRef(false);
   const [nameAr, setNameAr] = useState("");
   const [nameEn, setNameEn] = useState("");
   const [reason, setReason] = useState("");
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaReason, setMediaReason] = useState("");
+  const [mediaProvenance, setMediaProvenance] = useState<MediaProvenanceInput>({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
+  const [mediaBusy, setMediaBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
   async function create() {
-    if (!canEdit) return;
+    if (!canEdit || mediaBusy) return;
     const normalizedNameAr = nameAr.trim();
     const normalizedNameEn = nameEn.trim();
     const normalizedReason = reason.trim();
@@ -70,6 +76,7 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
       setNameEn("");
       setReason("");
       await onSaved();
+      if (editorOnly) onClose?.();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "تعذر إنشاء المجال التجاري.");
     } finally {
@@ -77,47 +84,110 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
     }
   }
 
-  function edit(vertical: CommerceVertical) {
+  const edit = useCallback((vertical: CommerceVertical) => {
     setSelected(vertical);
     setEditorOpen(true);
     setNameAr(vertical.nameAr);
     setNameEn(vertical.nameEn);
     setActive(vertical.active);
     setReason("");
+    setMediaFile(null);
+    setMediaReason("");
+    setMediaProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
     setError("");
     setNotice("");
-  }
+  }, []);
 
   function cancelEdit() {
+    if (editorOnly) onClose?.();
     setSelected(null);
     setEditorOpen(false);
     setNameAr("");
     setNameEn("");
     setActive(true);
     setReason("");
+    setMediaFile(null);
+    setMediaReason("");
+    setMediaProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
+  }
+
+  useEffect(() => {
+    if (!editorOnly || initialized.current) return;
+    initialized.current = true;
+    if (initialId) {
+      const item = verticals.find((v) => v.id === initialId);
+      if (item) edit(item);
+    } else {
+      setSelected(null); setNameAr(""); setNameEn(""); setActive(true); setReason(""); setEditorOpen(true);
+    }
+    // Each editor mounts once per selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editorOnly, initialId, verticals, edit]);
+
+  async function uploadVerticalImage() {
+    if (!canEdit || !selected || !mediaFile || !isMediaProvenanceInputValid(mediaProvenance) || mediaReason.trim().length < 5) return;
+    setMediaBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const body = new FormData();
+      body.set("file", mediaFile, mediaFile.name || "vertical-image");
+      body.set("reason", mediaReason.trim());
+      appendMediaProvenance(body, mediaProvenance);
+      const response = await fetch(`/api/catalog/verticals/${encodeURIComponent(selected.id)}/media`, {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(selected.version) },
+        body,
+      });
+      const payload = await parseResponse<{ vertical: CommerceVertical }>(response);
+      setSelected(payload.vertical);
+      setMediaFile(null);
+      setMediaReason("");
+      setMediaProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
+      setNotice(`تم إرفاق صورة المجال التجاري: ${payload.vertical.nameAr}.`);
+      await onSaved();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "تعذر إرفاق صورة المجال التجاري.");
+    } finally {
+      setMediaBusy(false);
+    }
   }
 
   return (
     <section className="catalog-taxonomy-section" aria-labelledby="catalog-vertical-registry-title">
-      <div className="access-card-heading">
+      {!editorOnly ? <div className="access-card-heading">
         <h3 id="catalog-vertical-registry-title">المجالات التجارية</h3>
-        {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit} onClick={() => { setSelected(null); setNameAr(""); setNameEn(""); setActive(true); setReason(""); setEditorOpen(true); }}>إضافة نشاط تجاري</button> : null}
-      </div>
-      {editorOpen ? <div className="access-form">
-        <label className="field-label" htmlFor="catalog-vertical-name-ar">الاسم العربي<input id="catalog-vertical-name-ar" disabled={busy || !canEdit} value={nameAr} onChange={(event) => setNameAr(event.target.value)} placeholder="مطاعم" /></label>
-        <label className="field-label" htmlFor="catalog-vertical-name-en">الاسم الإنجليزي<input id="catalog-vertical-name-en" disabled={busy || !canEdit} value={nameEn} onChange={(event) => setNameEn(event.target.value)} placeholder="Restaurants" /></label>
-        <label className="field-label" htmlFor="catalog-vertical-active"><input id="catalog-vertical-active" type="checkbox" disabled={busy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> نشط عند الإنشاء</label>
-        <label className="field-label" htmlFor="catalog-vertical-reason">سبب الإضافة<TextArea id="catalog-vertical-reason" className="resize-none" disabled={busy || !canEdit} minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-        <small className="muted">سبب الإضافة مطلوب لتفعيل الحفظ (5–500 حرف). {reason.trim().length}/500</small>
-        <button type="button" className="button button-primary" disabled={busy || !canEdit || reason.trim().length < 5} onClick={() => void create()}>{verticalSaveLabel(busy, Boolean(selected))}</button>
-        <button type="button" className="button button-secondary" disabled={busy} onClick={cancelEdit}>{selected ? "إلغاء التعديل" : "إغلاق"}</button>
+        {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit} onClick={() => { setSelected(null); setNameAr(""); setNameEn(""); setActive(true); setReason(""); setEditorOpen(true); }}>إضافة مجال تجاري</button> : null}
+      </div> : null}
+      {editorOpen ? <div className="access-form unified-taxonomy-vertical-form">
+        <label className="field-label" htmlFor="catalog-vertical-name-ar">الاسم بالعربية<input id="catalog-vertical-name-ar" maxLength={160} disabled={busy || !canEdit} value={nameAr} onChange={(event) => setNameAr(event.target.value)} placeholder="مطاعم" /></label>
+        <label className="field-label" htmlFor="catalog-vertical-name-en">الاسم بالإنجليزية<input id="catalog-vertical-name-en" maxLength={160} dir="auto" disabled={busy || !canEdit} value={nameEn} onChange={(event) => setNameEn(event.target.value)} placeholder="Restaurants" /></label>
+        <label className="catalog-category-active-toggle"><input id="catalog-vertical-active" type="checkbox" disabled={busy || mediaBusy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> {selected ? "المجال نشط" : "تفعيل المجال"}</label>
+        <label className="field-label" htmlFor="catalog-vertical-reason">سبب {selected ? "التعديل" : "الإضافة"}<TextArea id="catalog-vertical-reason" className="resize-none" rows={2} disabled={busy || !canEdit} minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+        <small className="muted">مطلوب لتوثيق التغيير · {reason.trim().length}/500</small>
+        {selected ? <details className="unified-taxonomy-media-disclosure">
+          <summary><span className="unified-taxonomy-media-summary">
+            {selected.imageUri ? <img src={selected.imageUri} alt="" /> : <span aria-hidden="true">{selected.nameAr.slice(0, 1)}</span>}
+            <span><strong>صورة المجال</strong><small>{selected.imageUri ? "الصورة الحالية · تغيير الصورة" : "لم تُرفق صورة · إضافة صورة"}</small></span>
+          </span></summary>
+          <div className="unified-taxonomy-media-fields">
+            <label className="field-label" htmlFor="catalog-vertical-image">اختيار صورة<input id="catalog-vertical-image" type="file" accept="image/jpeg,image/png" disabled={busy || mediaBusy || !canEdit} onChange={(event) => { setMediaFile(event.target.files?.[0] ?? null); setMediaProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); }} /></label>
+            <label className="field-label" htmlFor="catalog-vertical-image-reason">سبب الإرفاق<input id="catalog-vertical-image-reason" maxLength={500} disabled={busy || mediaBusy || !canEdit} value={mediaReason} onChange={(event) => setMediaReason(event.target.value)} /></label>
+            <CatalogMediaProvenanceFields idPrefix="catalog-vertical-media" disabled={busy || mediaBusy || !canEdit} value={mediaProvenance} onChange={setMediaProvenance} />
+            <button type="button" className="button button-secondary" disabled={busy || mediaBusy || !canEdit || !mediaFile || mediaReason.trim().length < 5 || !isMediaProvenanceInputValid(mediaProvenance)} onClick={() => void uploadVerticalImage()}>{mediaBusy ? "جارٍ رفع الصورة…" : selected.imageUri ? "استبدال صورة المجال" : "إرفاق صورة المجال"}</button>
+          </div>
+        </details> : <p className="muted">يمكن إرفاق الصورة بعد إنشاء المجال.</p>}
+        <div className="unified-taxonomy-save-actions">
+          <button type="button" className="button button-primary" disabled={busy || mediaBusy || !canEdit || reason.trim().length < 5} onClick={() => void create()}>{verticalSaveLabel(busy, Boolean(selected))}</button>
+          <button type="button" className="button button-secondary" disabled={busy || mediaBusy} onClick={cancelEdit}>إلغاء</button>
+        </div>
       </div> : null}
       {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
       {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void onSaved()}>إعادة المحاولة</button></p> : null}
-      <div className="catalog-taxonomy-inline">
+      {!editorOnly ? <div className="catalog-taxonomy-inline">
         <strong>سجل الأنشطة</strong>
-        {verticals.length === 0 ? <p>لا توجد مجالات تجارية بعد. أضف مجالًا قبل إنشاء فئات المنتجات.</p> : <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr><th>المجال التجاري</th><th>الاسم الدولي</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>{verticals.map((vertical) => <tr key={vertical.id} className={selectedVerticalId === vertical.id ? "is-selected" : undefined}><td><strong>{vertical.nameAr}</strong></td><td><bdi dir="ltr">{vertical.nameEn}</bdi></td><td>{vertical.active ? "نشط" : "متوقف"}</td><td><div className="catalog-registry-actions"><button type="button" className="catalog-row-action" aria-pressed={selectedVerticalId === vertical.id} disabled={!vertical.active} onClick={() => onSelectVertical(vertical.id)}>{verticalSelectionActionLabel(selectedVerticalId === vertical.id)}</button><button type="button" className="catalog-row-action" disabled={busy || !canEdit} onClick={() => edit(vertical)}>تعديل</button></div></td></tr>)}</tbody></table></div>}
-      </div>
+        {verticals.length === 0 ? <p>لا توجد مجالات تجارية بعد. أضف مجالًا قبل إنشاء فئات المنتجات.</p> : <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr><th>المجال التجاري</th><th>الاسم الدولي</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>{verticals.map((vertical) => <tr key={vertical.id} className={selectedVerticalId === vertical.id ? "is-selected" : undefined}><td><div className="catalog-vertical-registry-identity">{vertical.imageUri ? <img src={vertical.imageUri} alt={`صورة ${vertical.nameAr}`} loading="lazy" decoding="async" /> : <span aria-hidden="true">{vertical.nameAr.slice(0, 1)}</span>}<strong>{vertical.nameAr}</strong></div></td><td><bdi dir="ltr">{vertical.nameEn}</bdi></td><td>{vertical.active ? "نشط" : "متوقف"}</td><td><div className="catalog-registry-actions"><button type="button" className="catalog-row-action" aria-pressed={selectedVerticalId === vertical.id} disabled={!vertical.active} onClick={() => onSelectVertical(vertical.id)}>{verticalSelectionActionLabel(selectedVerticalId === vertical.id)}</button><button type="button" className="catalog-row-action" disabled={busy || mediaBusy || !canEdit} onClick={() => edit(vertical)}>تعديل</button></div></td></tr>)}</tbody></table></div>}
+      </div> : null}
     </section>
   );
 }
