@@ -294,7 +294,7 @@ test("operator sees shared product categories as a hierarchy under their commerc
   const rootItem = tree.getByRole("listitem").first();
   const childList = rootItem.getByRole("list");
   const childItem = childList.getByRole("listitem").first();
-  await expect(page.getByLabel("المجال التجاري")).toHaveValue("grocery");
+  await expect(page.locator("#catalog-taxonomy-vertical")).toHaveValue("grocery");
   await expect(childItem.getByRole("button", { name: /قهوة Coffee/ })).toBeVisible();
   await expect(rootItem).toContainText("جذر المجال التجاري");
   await expect(childItem.locator(".catalog-taxonomy-child-count")).toContainText("ضمن مشروبات");
@@ -309,6 +309,15 @@ test("operator sees shared product categories as a hierarchy under their commerc
   const oneTree = page.getByRole("list", { name: "شجرة فئات المقاضي" });
   await expect(oneTree.getByRole("listitem").first()).toContainText("المقاضي / مشروبات / قهوة");
   await expect(page.getByRole("list", { name: "فروع أبوها خارج النتائج الحالية" })).toHaveCount(0);
+  const hierarchyRow = page.locator(".catalog-taxonomy-tree-row").first();
+  await expect(hierarchyRow).toBeVisible();
+  expect(await hierarchyRow.evaluate((node) => getComputedStyle(node).display)).toBe("grid");
+  const registryNavigation = page.getByRole("navigation", { name: "مساحات إدارة الكتالوج" });
+  await expect(registryNavigation).toBeVisible();
+  await registryNavigation.getByRole("button", { name: "أنواع المتاجر" }).click();
+  await expect(registryNavigation.getByRole("button", { name: "أنواع المتاجر" })).toHaveAttribute("aria-current", "page");
+  await registryNavigation.getByRole("button", { name: "فئات المنتجات" }).click();
+  await expect(page.getByRole("list", { name: "شجرة فئات المقاضي" })).toBeVisible();
 });
 
 test("vertical registry does not present a category image as a vertical image", async ({ page }) => {
@@ -331,7 +340,7 @@ test("vertical registry does not present a category image as a vertical image", 
   });
 
   await page.goto("/catalog/categories?verticalId=grocery");
-  await page.locator("details.catalog-vertical-settings > summary").click();
+  await page.getByRole("navigation", { name: "مساحات إدارة الكتالوج" }).getByRole("button", { name: "المجالات" }).click();
   await expect(page.getByRole("heading", { name: "المجالات التجارية" })).toBeVisible();
   await expect(page.getByRole("img", { name: "صورة المجال المقاضي" })).toHaveCount(0);
   await expect(page.getByText("لا توجد صورة جذر")).toHaveCount(0);

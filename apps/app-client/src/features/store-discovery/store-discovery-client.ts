@@ -87,8 +87,8 @@ export async function readPublicStoreCatalog(storeID: string, serviceCityID: str
   return client().readPublicStoreCatalog(storeID, serviceCityID, categoryID, query, limit, cursor, productID, sort);
 }
 
-export async function searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = ""): Promise<PublicCatalogSearchResponse> {
-  return client().searchPublicCatalog(serviceCityID, query, categoryID, limit, cursor, verticalID);
+export async function searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = "", shortcutID = ""): Promise<PublicCatalogSearchResponse> {
+  return client().searchPublicCatalog(serviceCityID, query, categoryID, limit, cursor, verticalID,shortcutID);
 }
 
 export async function evaluateStoreServiceability(storeID: string, addressID: string): Promise<ServiceabilityResponse> {

@@ -2634,3 +2634,74 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   .adaptive-record-workspace[data-split="true"] .partner-unified-table .partner-state-tag { font-size:11px;gap:4px;padding:4px 6px;white-space:normal; }
   .adaptive-record-workspace[data-split="true"] .partner-unified-table .partner-state-tag .record-indicator-symbol { inline-size:18px;block-size:18px; }
 }
+
+@layer composition {
+  /* One catalog workspace; each authority is a peer tab, not a nested card. */
+  .catalog-taxonomy-workspace { display:grid; gap:14px; min-inline-size:0; }
+  .catalog-taxonomy-toolbar { display:flex; align-items:end; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:12px 16px; border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-base); }
+  .catalog-taxonomy-tabs { display:flex; flex-wrap:wrap; align-items:center; gap:4px; min-inline-size:0; padding:4px; border-radius:9px; background:var(--surface-muted); }
+  .catalog-taxonomy-tab { padding:9px 13px; min-block-size:38px; border:0; border-radius:7px; background:transparent; color:var(--text-muted); font:inherit; font-size:13px; font-weight:650; cursor:pointer; }
+  .catalog-taxonomy-tab[aria-current="page"] { background:var(--surface-base); box-shadow:0 0 0 1px var(--border-subtle); color:var(--color-primary); }
+  .catalog-taxonomy-tab:focus-visible { outline:2px solid var(--color-primary); outline-offset:2px; }
+  .catalog-taxonomy-scope { display:grid; gap:5px; min-inline-size:min(220px,100%); max-inline-size:320px; color:var(--text-muted); font-size:12px; font-weight:650; }
+  .catalog-taxonomy-scope select { inline-size:100%; min-block-size:40px; }
+  .catalog-taxonomy-workspace > .catalog-taxonomy-section,
+  .catalog-taxonomy-workspace > .catalog-taxonomy-workbench { inline-size:100%; min-inline-size:0; margin:0; padding:16px; border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-base); }
+  .catalog-taxonomy-workspace .catalog-taxonomy-workbench-heading,
+  .catalog-taxonomy-workspace .catalog-taxonomy-section > .access-card-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin:0; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-section > .access-card-heading > p { flex:1 1 100%; margin:0; font-size:12px; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-main-action { min-block-size:38px; }
+  .catalog-taxonomy-workspace .catalog-category-filters { display:flex; align-items:end; flex-wrap:wrap; gap:10px; padding:12px; border:1px solid var(--border-subtle); border-radius:9px; background:var(--surface-muted); }
+  .catalog-taxonomy-workspace .catalog-category-filters > :is(label,.catalog-category-search-field) { flex:1 1 140px; min-inline-size:0; max-inline-size:270px; }
+  .catalog-taxonomy-workspace .catalog-category-search-field { flex:2 1 260px; max-inline-size:none; }
+  .catalog-taxonomy-workspace .catalog-category-filters select,
+  .catalog-taxonomy-workspace .catalog-category-filters input { min-block-size:38px; }
+  .catalog-taxonomy-results-line { display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; font-size:12px; color:var(--text-muted); }
+  .catalog-taxonomy-workspace .catalog-taxonomy-records { display:block; min-inline-size:0; overflow-x:auto; border:1px solid var(--border-subtle); border-radius:9px; background:var(--surface-base); }
+  .catalog-taxonomy-workspace .catalog-taxonomy-record-heading { display:grid; grid-template-columns:minmax(280px,2fr) minmax(140px,1fr) 85px 128px; gap:10px; min-inline-size:760px; padding:11px 13px; background:var(--surface-muted); border-block-end:1px solid var(--border-subtle); font-size:12px; font-weight:650; color:var(--text-muted); }
+  .catalog-taxonomy-workspace .catalog-taxonomy-vertical-root { display:none; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-tree { min-inline-size:760px; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-tree-children { margin-inline-start:16px; padding-inline-start:0; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-tree-row { display:grid; grid-template-columns:28px minmax(242px,2fr) minmax(130px,1fr) 85px 128px; gap:10px; align-items:center; min-block-size:62px; padding:9px 13px; border-block-end:1px solid var(--border-subtle); border-radius:0; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-tree-node:last-child > .catalog-taxonomy-tree-row { border-block-end:0; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-tree-row:hover { background:var(--surface-muted); }
+  .catalog-taxonomy-workspace .catalog-taxonomy-tree-select { display:grid; grid-template-columns:36px minmax(96px,.85fr) minmax(120px,1.15fr); align-items:center; gap:9px; inline-size:100%; min-inline-size:0; padding:0; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-tree-select > strong { text-align:start; overflow-wrap:anywhere; font-size:13px; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-tree-meta { display:grid; gap:3px; min-inline-size:0; color:var(--text-muted); font-size:11px; font-weight:400; overflow-wrap:anywhere; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-child-count { display:grid; gap:4px; min-inline-size:0; font-size:12px; color:var(--text-muted); }
+  .catalog-taxonomy-workspace .catalog-taxonomy-child-count small { font-size:11px; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-row-actions { justify-content:flex-end; flex-wrap:nowrap; gap:5px; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-row-actions button { white-space:nowrap; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-tree-status { display:inline-flex; align-items:center; justify-self:start; font-size:12px; }
+  .catalog-taxonomy-workspace .catalog-category-editor,
+  .catalog-taxonomy-workspace .catalog-category-detail { min-inline-size:0; padding:14px; background:var(--surface-muted); border:1px solid var(--border-subtle); }
+  .catalog-taxonomy-workspace .catalog-registry-table-wrap { inline-size:100%; max-inline-size:100%; overflow:auto; border:1px solid var(--border-subtle); border-radius:9px; }
+  .catalog-taxonomy-workspace .catalog-registry-table { inline-size:100%; min-inline-size:540px; border-collapse:collapse; }
+  .catalog-taxonomy-workspace .catalog-registry-table :is(th,td) { padding:12px 15px; text-align:start; border-block-end:1px solid var(--border-subtle); vertical-align:middle; }
+  .catalog-taxonomy-workspace .catalog-registry-table th { font-size:12px; font-weight:650; background:var(--surface-muted); color:var(--text-muted); }
+  .catalog-taxonomy-workspace .catalog-registry-table tr:last-child td { border-block-end:0; }
+  .catalog-taxonomy-workspace .catalog-registry-table tbody tr:hover { background:var(--surface-muted); }
+  .catalog-taxonomy-workspace .catalog-registry-table :is(th,td):last-child { inline-size:128px; }
+  .catalog-taxonomy-workspace .catalog-shortcut-editor { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; max-inline-size:none; inline-size:100%; padding:16px; border:1px solid var(--border-subtle); border-radius:9px; background:var(--surface-muted); }
+  .catalog-taxonomy-workspace .catalog-shortcut-editor > details { min-inline-size:0; border:1px solid var(--border-subtle); border-radius:9px; background:var(--surface-base); padding:10px 12px; }
+  .catalog-taxonomy-workspace .catalog-shortcut-editor > details summary { cursor:pointer; font-weight:650; }
+  .catalog-taxonomy-workspace .catalog-shortcut-editor > details > div { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:5px; margin-block-start:10px; max-block-size:240px; overflow:auto; }
+  .catalog-taxonomy-workspace .catalog-shortcut-editor > details label { display:flex; gap:8px; align-items:center; font-size:12px; }
+  .catalog-taxonomy-workspace .catalog-shortcut-editor > :last-child,
+  .catalog-taxonomy-workspace .catalog-shortcut-editor > :nth-last-child(2) { grid-column:1 / -1; }
+  .catalog-taxonomy-workspace .catalog-shortcut-editor .catalog-registry-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
+  .catalog-taxonomy-workspace .catalog-taxonomy-section { display:grid; gap:14px; }
+  @media (max-width:800px) {
+    .catalog-taxonomy-toolbar { padding:10px; }
+    .catalog-taxonomy-tabs { inline-size:100%; overflow-x:auto; flex-wrap:nowrap; }
+    .catalog-taxonomy-tab { flex:1 0 auto; white-space:nowrap; }
+    .catalog-taxonomy-scope { max-inline-size:100%; inline-size:100%; }
+    .catalog-taxonomy-workspace .catalog-shortcut-editor { grid-template-columns:minmax(0,1fr); }
+    .catalog-taxonomy-workspace .catalog-shortcut-editor > :is(details,label) { grid-column:1 / -1; }
+    .catalog-taxonomy-workspace .catalog-category-filters > :is(label,.catalog-category-search-field) { max-inline-size:none; }
+  }
+}
+
+@layer composition {
+  .catalog-taxonomy-workspace .catalog-shortcut-editor > .catalog-shortcut-active { grid-column:1 / -1; display:flex; align-items:center; gap:8px; justify-content:flex-start; }
+}

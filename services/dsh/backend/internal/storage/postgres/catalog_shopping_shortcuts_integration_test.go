@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"errors"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	"strings"
 )
 
 func (s *catalogRefoundationScenario) verifyShoppingShortcutDiscovery() {
@@ -36,6 +37,20 @@ func (s *catalogRefoundationScenario) verifyShoppingShortcutDiscovery() {
 	}
 	if publicShortcuts[0].ID != result.Shortcut.ID || publicShortcuts[1].ID != categoryResult.Shortcut.ID {
 		s.t.Fatalf("public shortcut order incorrect: %+v", publicShortcuts)
+	}
+	searchQuery := strings.Fields(s.productInput.CanonicalName)[0]
+	productMatches, err := postgres.SearchPublicCatalog(s.ctx, s.db, s.cityID, s.verticalID, "", searchQuery, 10, "", result.Shortcut.ID)
+	if err != nil || len(productMatches.Offers) == 0 {
+		s.t.Fatalf("Store-type shortcut did not return eligible products: %+v %v", productMatches, err)
+	}
+	for _, offer := range productMatches.Offers {
+		if offer.StoreID != "store_catalog_v1" {
+			s.t.Fatalf("Store-type shortcut leaked other Store product: %+v", offer)
+		}
+	}
+	noProductMatches, err := postgres.SearchPublicCatalog(s.ctx, s.db, s.cityID, s.verticalID, "", searchQuery, 10, "", "unknown-shortcut")
+	if err != nil || len(noProductMatches.Offers) != 0 {
+		s.t.Fatalf("unknown shortcut leaked product offers: %+v %v", noProductMatches, err)
 	}
 	page, err := postgres.ListPublishedStorePage(s.ctx, s.db, postgres.PublicStoreListQuery{ServiceCityID: s.cityID, ShortcutID: categoryResult.Shortcut.ID, Limit: 1})
 	if err != nil || len(page.Stores) != 1 || page.NextCursor == "" {

@@ -509,6 +509,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           selectedCityID={selectedCityID}
           selectedCityName={selectedCityName}
           selectedVerticalID={selectedVerticalID}
+          selectedShortcutID={selectedShortcutID}
         />
       ) : null}
 
@@ -592,12 +593,13 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   );
 }
 
-function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selectedCityName, selectedVerticalID, onClearCategory }: {
+function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selectedCityName, selectedVerticalID, selectedShortcutID, onClearCategory }: {
   query: string;
   selectedCategoryID: string;
   selectedCityID: string | null;
   selectedCityName: string;
   selectedVerticalID: string;
+  selectedShortcutID: string;
   onClearCategory: () => void;
 }) {
   const router = useRouter();
@@ -620,12 +622,12 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
     setLoadingMoreProducts(false);
     setLoadMoreProductsError(false);
     try {
-      const result = await searchPublicCatalog(selectedCityID, normalizedQuery, selectedCategoryID, 20, "", selectedVerticalID);
+      const result = await searchPublicCatalog(selectedCityID, normalizedQuery, selectedCategoryID, 20, "", selectedVerticalID,selectedShortcutID);
       if (productSearchRequestID.current === requestID) setProductSearch({ kind: "ready", offers: result.offers, nextCursor: result.nextCursor });
     } catch {
       if (productSearchRequestID.current === requestID) setProductSearch({ kind: "error" });
     }
-  }, [query, selectedCategoryID, selectedCityID, selectedVerticalID]);
+  }, [query, selectedCategoryID, selectedCityID, selectedVerticalID, selectedShortcutID]);
 
   useEffect(() => {
     if (!selectedCityID || !query.trim()) {
@@ -652,7 +654,7 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
     setLoadingMoreProducts(true);
     setLoadMoreProductsError(false);
     try {
-      const result = await searchPublicCatalog(selectedCityID, query.trim(), selectedCategoryID, 20, cursor, selectedVerticalID);
+      const result = await searchPublicCatalog(selectedCityID, query.trim(), selectedCategoryID, 20, cursor, selectedVerticalID,selectedShortcutID);
       if (productSearchRequestID.current === requestID) {
         setProductSearch((current) => current.kind === "ready" ? { kind: "ready", offers: [...current.offers, ...result.offers], nextCursor: result.nextCursor } : current);
       }

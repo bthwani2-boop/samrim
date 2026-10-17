@@ -550,6 +550,7 @@ func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *h
 	serviceCityID := strings.TrimSpace(r.URL.Query().Get("serviceCityId"))
 	categoryID := strings.TrimSpace(r.URL.Query().Get("categoryId"))
 	verticalID := strings.TrimSpace(r.URL.Query().Get("verticalId"))
+	shortcutID := strings.TrimSpace(r.URL.Query().Get("shortcutId"))
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 	limit := 20
@@ -561,7 +562,7 @@ func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *h
 		}
 		limit = parsed
 	}
-	if serviceCityID == "" || len(verticalID) > 128 || len(categoryID) > 128 || query == "" || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
+	if serviceCityID == "" || len(verticalID) > 128 || len(categoryID) > 128 || len(shortcutID) > 128 || query == "" || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog search scope or query is invalid")
 		return
 	}
@@ -569,7 +570,7 @@ func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *h
 		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "public catalog search is unavailable")
 		return
 	}
-	result, err := s.service.SearchPublicCatalog(r.Context(), serviceCityID, verticalID, categoryID, query, limit, cursor)
+	result, err := s.service.SearchPublicCatalog(r.Context(), serviceCityID, verticalID, categoryID, query, limit, cursor, shortcutID)
 	if err != nil {
 		writeStorePublicationError(w, err)
 		return

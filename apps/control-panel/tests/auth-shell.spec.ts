@@ -1299,14 +1299,14 @@ test("operator creates a canonical commerce vertical before onboarding partners"
   });
   await page.goto("/catalog/categories");
   await expect(page.getByLabel("المعرف البرمجي", { exact: true })).toHaveCount(0);
-  await page.locator("details.catalog-vertical-settings > summary").click();
-  await page.getByRole("button", { name: "إضافة نشاط تجاري" }).click();
+  await page.getByRole("navigation", { name: "مساحات إدارة الكتالوج" }).getByRole("button", { name: "المجالات" }).click();
+  await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
   await page.locator("#catalog-vertical-name-ar").fill("مطاعم");
   await page.locator("#catalog-vertical-name-en").fill("Restaurants");
 
   await page.locator("#catalog-vertical-reason").fill("إنشاء فئة جديدة للاختبار");
-  await page.getByRole("button", { name: "إضافة نشاط تجاري" }).click();
-  await expect(page.getByLabel("المجال التجاري")).toHaveValue("vertical_0123456789abcdef0123456789abcdef");
+  await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
+  await expect(page.locator("#catalog-taxonomy-vertical")).toHaveValue("vertical_0123456789abcdef0123456789abcdef");
   expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", active: true, reason: "إنشاء فئة جديدة للاختبار" });
 });
 

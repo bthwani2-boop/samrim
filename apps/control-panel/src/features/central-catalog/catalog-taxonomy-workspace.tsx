@@ -7,19 +7,28 @@ import { CatalogCommercialStoreTypeRegistry } from "./catalog-commercial-store-t
 import { CatalogShoppingShortcutRegistry } from "./catalog-shopping-shortcut-registry";
 import { CatalogVerticalRegistry } from "./catalog-vertical-registry";
 
+type CatalogTab = "categories" | "types" | "shortcuts" | "verticals";
+
 async function readResponse<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => null) as { error?: { message?: string } } | null;
-  if (!response.ok) throw new Error(body?.error?.message || "تعذر قراءة سجل الفئات.");
+  if (!response.ok) throw new Error(body?.error?.message || "تعذّر تحميل بيانات الكتالوج.");
   return body as T;
 }
 
+const tabs: ReadonlyArray<Readonly<{ id: CatalogTab; label: string }>> = [
+  { id: "categories", label: "فئات المنتجات" },
+  { id: "types", label: "أنواع المتاجر" },
+  { id: "shortcuts", label: "اختصارات التسوق" },
+  { id: "verticals", label: "المجالات" },
+];
+
 export function CatalogTaxonomyWorkspace() {
+  const [activeTab, setActiveTab] = useState<CatalogTab>("categories");
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [verticalId, setVerticalId] = useState("");
   const [categories, setCategories] = useState<CatalogCategoryListResponse["categories"]>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [categoryId, setCategoryId] = useState("");
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [loadingVerticals, setLoadingVerticals] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [error, setError] = useState("");
@@ -32,16 +41,17 @@ export function CatalogTaxonomyWorkspace() {
       const response = await fetch("/api/catalog/verticals?includeInactive=true", { cache: "no-store" });
       const body = await readResponse<{ verticals: ReadonlyArray<CommerceVertical> }>(response);
       setVerticals(body.verticals);
-      const shared = body.verticals.filter((item) => item.active);
       const requestedVerticalId = new URL(window.location.href).searchParams.get("verticalId") ?? "";
       const requestedCategoryId = new URL(window.location.href).searchParams.get("categoryId") ?? "";
       setCategoryId((current) => current || requestedCategoryId);
       setVerticalId((current) => {
         const preferredId = current || requestedVerticalId;
-        return shared.some((item) => item.id === preferredId) ? preferredId : shared.find((item) => item.active)?.id ?? "";
+        return body.verticals.some((item) => item.id === preferredId)
+          ? preferredId
+          : body.verticals.find((item) => item.active)?.id ?? "";
       });
-    } catch (error_) {
-      setError(error_ instanceof Error ? error_.message : "تعذر قراءة الفئات.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "تعذّر تحميل المجالات.");
     } finally {
       setLoadingVerticals(false);
     }
@@ -67,17 +77,18 @@ export function CatalogTaxonomyWorkspace() {
       if (requestId !== categoryLoadSequence.current) return;
       setCategories((current) => append ? [...current, ...body.categories] : body.categories);
       setNextCursor(body.nextCursor ?? "");
-    } catch (error_) {
-      if (requestId === categoryLoadSequence.current) setError(error_ instanceof Error ? error_.message : "تعذر قراءة الفئات.");
+    } catch (cause) {
+      if (requestId === categoryLoadSequence.current) setError(cause instanceof Error ? cause.message : "تعذّر تحميل فئات المنتجات.");
     } finally {
       if (!silent && requestId === categoryLoadSequence.current) setLoadingCategories(false);
     }
   }, []);
 
   useEffect(() => { void loadVerticals(); }, [loadVerticals]);
-  useEffect(() => { void loadCategories(verticalId); }, [verticalId, loadCategories]);
+  useEffect(() => {
+    if (activeTab === "categories") void loadCategories(verticalId);
+  }, [activeTab, verticalId, loadCategories]);
 
-  const sharedVerticals = verticals.filter((item) => item.active);
   const chooseVertical = useCallback((nextVerticalId: string) => {
     categoryLoadSequence.current += 1;
     setVerticalId(nextVerticalId);
@@ -87,20 +98,35 @@ export function CatalogTaxonomyWorkspace() {
     setError("");
   }, []);
 
-  return <section className="catalog-taxonomy-workspace" aria-label="إدارة الفئات">
-    {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" disabled={loadingVerticals || loadingCategories} onClick={() => { void loadVerticals(); if (verticalId) void loadCategories(verticalId); }}>إعادة قراءة السجل</button></p> : null}
-    <CatalogCategoryRegistry key={verticalId} verticals={sharedVerticals} verticalId={verticalId} onVerticalChange={chooseVertical} categories={categories} nextCursor={nextCursor} onFilter={(query, status, sort, cursor, append) => loadCategories(verticalId, query, status, sort, cursor, append)} categoryId={categoryId} onCategoryChange={setCategoryId} loading={loadingVerticals || loadingCategories} onSaved={() => loadCategories(verticalId, "", "all", "name_asc", "", false, true)} management={<section aria-label="إدارة المجالات وأنواع المتاجر">
-      <details className="catalog-vertical-settings">
-        <summary><span>إدارة المجالات</span><small>{verticals.length} مجال</small></summary>
-        <CatalogVerticalRegistry verticals={verticals} selectedVerticalId={verticalId} onSelectVertical={chooseVertical} onSaved={loadVerticals} />
-      </details>
-      {verticalId ? <section aria-label="أنواع المتاجر الداخلية">
-        <p className="catalog-taxonomy-vertical-note">نوع المتجر تصنيف إداري داخلي للانضمام والسياسات المالية؛ ولا يظهر باعتباره تصنيفًا للعميل.</p>
-        <CatalogCommercialStoreTypeRegistry verticals={verticals} verticalId={verticalId} />
-        <details className="catalog-vertical-settings" onToggle={(event) => setShortcutsOpen(event.currentTarget.open)}><summary><span>اختصارات التسوق</span><small>ظهور العملاء</small></summary>
-          {shortcutsOpen ? <CatalogShoppingShortcutRegistry verticalId={verticalId} /> : null}
-        </details>
-      </section> : null}
-    </section>} />
+  return <section className="catalog-taxonomy-workspace" aria-label="إدارة الكتالوج">
+    <div className="catalog-taxonomy-toolbar">
+      <nav className="catalog-taxonomy-tabs" aria-label="مساحات إدارة الكتالوج">
+        {tabs.map((tab) => <button key={tab.id} type="button" className="catalog-taxonomy-tab"
+          aria-current={activeTab === tab.id ? "page" : undefined}
+          onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
+      </nav>
+      <label className="catalog-taxonomy-scope" htmlFor="catalog-taxonomy-vertical">
+        <span>المجال</span>
+        <select id="catalog-taxonomy-vertical" value={verticalId} disabled={loadingVerticals || verticals.length === 0}
+          onChange={(event) => chooseVertical(event.target.value)}>
+          {verticals.length === 0 ? <option value="">لا توجد مجالات متاحة</option> : null}
+          {verticals.map((item) => <option key={item.id} value={item.id}>{item.nameAr}{!item.active ? " — معطّل" : ""}</option>)}
+        </select>
+      </label>
+    </div>
+    {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary"
+      disabled={loadingVerticals || loadingCategories}
+      onClick={() => { void loadVerticals(); if (activeTab === "categories" && verticalId) void loadCategories(verticalId); }}>إعادة المحاولة</button></p> : null}
+    {activeTab === "categories" ? <CatalogCategoryRegistry key={verticalId} verticals={verticals} verticalId={verticalId}
+      onVerticalChange={chooseVertical} categories={categories} nextCursor={nextCursor}
+      onFilter={(query, status, sort, cursor, append) => loadCategories(verticalId, query, status, sort, cursor, append)}
+      categoryId={categoryId} onCategoryChange={setCategoryId} loading={loadingVerticals || loadingCategories}
+      onSaved={() => loadCategories(verticalId, "", "all", "name_asc", "", false, true)}
+      onManageVerticals={() => setActiveTab("verticals")} /> : null}
+    {activeTab === "types" && verticalId ? <CatalogCommercialStoreTypeRegistry verticals={verticals} verticalId={verticalId} /> : null}
+    {activeTab === "shortcuts" && verticalId ? <CatalogShoppingShortcutRegistry verticalId={verticalId} /> : null}
+    {activeTab === "verticals" ? <CatalogVerticalRegistry verticals={verticals} selectedVerticalId={verticalId}
+      onSelectVertical={chooseVertical} onSaved={loadVerticals} /> : null}
+    {!verticalId && activeTab !== "verticals" ? <p role="status" className="catalog-taxonomy-empty">أنشئ مجالًا أو فعّل أحد المجالات لبدء إدارة الكتالوج.</p> : null}
   </section>;
 }

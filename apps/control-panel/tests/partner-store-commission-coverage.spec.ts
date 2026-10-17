@@ -147,7 +147,7 @@ test("catalog taxonomy creates and revises a commercial store type under its ver
   });
 
   await page.goto("/catalog/categories?verticalId=food");
-  await page.locator(".catalog-vertical-settings > summary").click();
+  await page.getByRole("navigation", { name: "مساحات إدارة الكتالوج" }).getByRole("button", { name: "أنواع المتاجر" }).click();
   const registry = page.getByRole("region", { name: "أنواع المتاجر التجارية" });
   await expect(registry.getByRole("heading", { name: "أنواع المتاجر التجارية" })).toBeVisible();
   await expect(registry.getByText("لا توجد أنواع متجر مسجلة لهذا المجال بعد.")).toBeVisible();

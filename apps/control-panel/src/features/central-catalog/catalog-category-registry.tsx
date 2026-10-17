@@ -24,7 +24,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
-export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChange, categories, nextCursor, onFilter, categoryId, onCategoryChange, loading, onSaved, management }: {
+export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChange, categories, nextCursor, onFilter, categoryId, onCategoryChange, loading, onSaved, onManageVerticals }: {
   verticals: ReadonlyArray<CommerceVertical>;
   verticalId: string;
   onVerticalChange: (verticalId: string) => void;
@@ -35,7 +35,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   onCategoryChange: (categoryId: string) => void;
   loading: boolean;
   onSaved: () => Promise<void>;
-  management?: ReactNode;
+  onManageVerticals: () => void;
 }) {
   const { state } = useSession();
   const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("catalog") === true;
@@ -64,7 +64,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   const [filtering, setFiltering] = useState(false);
   const parentSearchSequence = useRef(0);
   const categoryDetailSequence = useRef(0);
-  const verticalSettingsRef = useRef<HTMLDivElement>(null);
+
 
   const categoryIndex = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const categoryChildren = useMemo(() => {
@@ -374,15 +374,8 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       <div>
         <h3 id="catalog-category-registry-title">فئات المجال المحدد</h3>
       </div>
-      <button type="button" className="button button-primary catalog-taxonomy-main-action" disabled={!canEdit || busy} onClick={() => { if (verticalReady) openCreate(); else if (selectedVertical || verticals.length === 0) { const settings = verticalSettingsRef.current; settings?.querySelector("summary")?.click(); settings?.scrollIntoView({ behavior: "smooth", block: "center" }); } else onVerticalChange(verticals.find((vertical) => vertical.active)?.id ?? ""); }}>{mainActionLabel}</button>
+      <button type="button" className="button button-primary catalog-taxonomy-main-action" disabled={!canEdit || busy} onClick={() => { if (verticalReady) openCreate(); else if (selectedVertical || verticals.length === 0) { onManageVerticals(); } else onVerticalChange(verticals.find((vertical) => vertical.active)?.id ?? ""); }}>{mainActionLabel}</button>
     </div>
-    <label className="field-label catalog-taxonomy-vertical-label" htmlFor="catalog-taxonomy-vertical">المجال التجاري
- <select id="catalog-taxonomy-vertical" value={verticalId} disabled={loading || busy || verticals.length === 0} onChange={(event) => onVerticalChange(event.target.value)}>
-        {verticals.length === 0 ? <option value="">لا توجد مجالات تجارية ذات فئات منتجات</option> : null}
-        {verticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr} · {vertical.nameEn}</option>)}
-      </select>
-    </label>
-    <p className="catalog-taxonomy-vertical-note">فئات المنتجات للمجال المحدد؛ أقسام المتجر المحلية تُدار داخل كل متجر.</p>
     {error ? <p className="identity-error" role="alert">{error}</p> : null}
     {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
 
@@ -463,6 +456,6 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
     </> : null}
     {!verticalReady && verticalId ? <div className="catalog-taxonomy-empty"><strong>المجال المحدد غير نشط</strong><p>فعّل هذا المجال من إعدادات المجالات التجارية أولًا.</p></div> : null}
     {!verticalId ? <div className="catalog-taxonomy-empty"><strong>لا توجد مجالات تجارية نشطة</strong><p>فعّل مجالًا من إدارة المجالات التجارية أدناه.</p></div> : null}
-    <div ref={verticalSettingsRef}>{management}</div>
+
   </section>;
 }

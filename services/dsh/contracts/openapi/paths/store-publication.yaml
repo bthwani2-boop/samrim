@@ -345,6 +345,11 @@ paths:
           required: false
           description: Restrict customer-visible product offers to Stores in this active Commerce Vertical.
           schema: { type: string, maxLength: 128 }
+        - name: shortcutId
+          in: query
+          required: false
+          description: Match eligible customer shopping shortcuts in product results and pagination.
+          schema: { type: string, maxLength: 128 }
         - name: limit
           in: query
           required: false

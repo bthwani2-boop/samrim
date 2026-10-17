@@ -146,14 +146,14 @@ export function CatalogShoppingShortcutRegistry({ verticalId }: Readonly<{ verti
     {notice ? <output className="managed-status managed-status-success">{notice}</output> : null}
     {loading ? <output>جارٍ قراءة اختصارات التسوق ومصادرها…</output> : null}
     {!loading && items.length === 0 && !error ? <p className="muted">لا توجد اختصارات لهذا المجال. لا تظهر اختصارات فارغة للعملاء.</p> : null}
-    {editing ? <div className="access-form" aria-label="محرر اختصار التسوق">
+    {editing ? <fieldset className="access-form catalog-shortcut-editor" aria-label="محرر اختصار التسوق">
       <label className="field-label">اسم الاختصار الظاهر للعميل
         <input disabled={saving || !canEdit} value={titleAr} maxLength={160} onChange={(event) => setTitleAr(event.target.value)} placeholder="لحوم ودجاج" />
       </label>
       <label className="field-label">ترتيب الظهور
         <input type="number" min={0} max={9999} disabled={saving || !canEdit} value={ordinal} onChange={(event) => setOrdinal(Number(event.target.value))} />
       </label>
-      <label className="field-label"><input type="checkbox" checked={active} disabled={saving || !canEdit} onChange={(event) => setActive(event.target.checked)} /> تفعيل الاختصار</label>
+      <label className="field-label catalog-shortcut-active"><input type="checkbox" checked={active} disabled={saving || !canEdit} onChange={(event) => setActive(event.target.checked)} /> تفعيل الاختصار</label>
       <details open><summary>أنواع المتاجر المناسبة ({typeIds.length} محدد)</summary>
         <div>{types.filter((item) => item.active || typeIds.includes(item.id)).map((item) => <label className="field-label" key={item.id}>
           <input type="checkbox" checked={typeIds.includes(item.id)} disabled={!canEdit || saving || !item.active} onChange={() => toggle(item.id, typeIds, setTypeIds)} /> {item.nameAr}{!item.active ? " (غير نشط)" : ""}
@@ -171,7 +171,7 @@ export function CatalogShoppingShortcutRegistry({ verticalId }: Readonly<{ verti
         <button type="button" className="button button-primary" disabled={!canEdit || saving} onClick={() => void save()}>{saving ? "جارٍ الحفظ…" : "حفظ الاختصار"}</button>
         <button type="button" className="button button-secondary" disabled={saving} onClick={clearEditor}>إلغاء</button>
       </div>
-    </div> : null}
+    </fieldset> : null}
     {items.length ? <div className="catalog-registry-table-wrap"><table className="catalog-registry-table">
       <thead><tr><th>الاختصار</th><th>المصادر</th><th>الحالة</th><th>الإدارة</th></tr></thead>
       <tbody>{items.map((item) => <tr key={item.id}>
