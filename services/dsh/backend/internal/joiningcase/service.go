@@ -331,8 +331,15 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	commercialTypeID := strings.TrimSpace(input.FirstStoreCommercialTypeID)
 	latitude := input.FirstStoreLatitude
 	longitude := input.FirstStoreLongitude
-	workingHours, hoursErr := json.Marshal(input.FirstStoreWorkingHours)
-	if caseID == "" || hoursErr != nil || !postgres.ValidateStoreWorkingHours(workingHours) || len([]rune(ownerFullName)) < 2 || len([]rune(ownerFullName)) > 160 || len([]rune(businessName)) < 2 || len([]rune(businessName)) > 160 || len([]rune(firstStoreName)) < 2 || len([]rune(firstStoreName)) > 160 || len([]rune(firstStoreAddress)) < 4 || len([]rune(firstStoreAddress)) > 500 || (proofNumber != "" && !validJoiningCaseProofNumber(proofNumber)) || len([]rune(notes)) > 1000 || !validJoiningCaseProofType(proofType) || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || expectedVersion < 1 || !validCoordinates(latitude, longitude) || len(input.FirstStoreFulfillmentModes) == 0 {
+	var workingHours json.RawMessage
+	if len(input.FirstStoreWorkingHours.Intervals) > 0 {
+		var hoursErr error
+		workingHours, hoursErr = json.Marshal(input.FirstStoreWorkingHours)
+		if hoursErr != nil || !postgres.ValidateStoreWorkingHours(workingHours) {
+			return postgres.JoiningCaseResult{}, ErrInvalidInput
+		}
+	}
+	if caseID == "" || len([]rune(ownerFullName)) < 2 || len([]rune(ownerFullName)) > 160 || len([]rune(businessName)) < 2 || len([]rune(businessName)) > 160 || len([]rune(firstStoreName)) < 2 || len([]rune(firstStoreName)) > 160 || len([]rune(firstStoreAddress)) < 4 || len([]rune(firstStoreAddress)) > 500 || (proofNumber != "" && !validJoiningCaseProofNumber(proofNumber)) || len([]rune(notes)) > 1000 || !validJoiningCaseProofType(proofType) || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || expectedVersion < 1 || !validCoordinates(latitude, longitude) || len(input.FirstStoreFulfillmentModes) == 0 {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
 	rawModes := make([]string, len(input.FirstStoreFulfillmentModes))

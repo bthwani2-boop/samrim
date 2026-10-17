@@ -1,7 +1,7 @@
-import { isValidStoreWorkingHours, type JoiningCaseView } from "@bthwani/dsh";
+import type { JoiningCaseView } from "@bthwani/dsh";
 
 export type FieldJoiningRequirement = Readonly<{
-  key: "basic" | "city" | "vertical" | "storeType" | "address" | "location" | "hours" | "fulfillment" | "proofNumber";
+  key: "basic" | "city" | "vertical" | "storeType" | "address" | "location" | "fulfillment" | "proofNumber";
   label: string;
   saved: boolean;
 }>;
@@ -20,7 +20,6 @@ export function getFieldJoiningRequirements(saved: JoiningCaseView | null): Read
     { key: "storeType", label: "نوع المتجر", saved: Boolean(saved?.firstStoreCommercialTypeId) },
     { key: "address", label: "عنوان المتجر", saved: Boolean(saved?.firstStoreAddress && Array.from(saved.firstStoreAddress.trim()).length >= 4) },
     { key: "location", label: "موقع المتجر", saved: Boolean(saved?.firstStoreLatitude != null && saved.firstStoreLongitude != null && (saved.firstStoreLatitude !== 0 || saved.firstStoreLongitude !== 0)) },
-    { key: "hours", label: "ساعات العمل", saved: Boolean(saved?.firstStoreWorkingHours?.intervals?.length && isValidStoreWorkingHours(saved.firstStoreWorkingHours.intervals)) },
     { key: "fulfillment", label: "طرق التوصيل", saved: Boolean(saved?.firstStoreFulfillmentModes.length) },
     { key: "proofNumber", label: "نوع ورقم الإثبات", saved: Boolean(saved?.firstStoreProofType && saved.firstStoreProofNumberPresent) },
   ];

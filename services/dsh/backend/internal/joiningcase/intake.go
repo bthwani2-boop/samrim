@@ -28,8 +28,15 @@ func NormalizeCreateRequest(input contract.CreateJoiningCaseRequest) (postgres.J
 	if walletProviderKey != "" {
 		walletProviderKey, providerKeyValid = postgres.NormalizeWalletProviderKey(walletProviderKey)
 	}
-	workingHours, hoursErr := json.Marshal(input.FirstStoreWorkingHours)
-	if hoursErr != nil || !postgres.ValidateStoreWorkingHours(workingHours) || len(input.FirstStoreFulfillmentModes) == 0 {
+	var workingHours json.RawMessage
+	if len(input.FirstStoreWorkingHours.Intervals) > 0 {
+		var hoursErr error
+		workingHours, hoursErr = json.Marshal(input.FirstStoreWorkingHours)
+		if hoursErr != nil || !postgres.ValidateStoreWorkingHours(workingHours) {
+			return postgres.JoiningCaseRequest{}, ErrInvalidInput
+		}
+	}
+	if len(input.FirstStoreFulfillmentModes) == 0 {
 		return postgres.JoiningCaseRequest{}, ErrInvalidInput
 	}
 	rawModes := make([]string, len(input.FirstStoreFulfillmentModes))

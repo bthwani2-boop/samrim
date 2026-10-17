@@ -26,6 +26,7 @@ var (
 	CommercialAgreementNotReadyReason    = "COMMERCIAL_AGREEMENT_NOT_READY"
 	StoreLogoNotReadyReason              = "STORE_LOGO_NOT_READY"
 	StoreCoverNotReadyReason             = "STORE_COVER_NOT_READY"
+	StoreScheduleNotReadyReason          = "STORE_SCHEDULE_NOT_READY"
 )
 
 type PublicationReadiness struct {
@@ -443,6 +444,13 @@ func (s *Service) ReadinessForStore(ctx context.Context, store postgres.StoreRec
 	}
 	if !city.Active {
 		return blockedReadiness(ServiceCityNotEligibleReason), nil
+	}
+	availability, err := postgres.ReadStoreOperationalAvailability(ctx, s.db, store.ID)
+	if err != nil {
+		return PublicationReadiness{}, err
+	}
+	if availability.ScheduleMode == "WEEKLY" && len(availability.WeeklySchedule) == 0 {
+		return blockedReadiness(StoreScheduleNotReadyReason), nil
 	}
 	// A logo belongs to the published Store card, not to Field acquisition.
 	// Operators/Partners can add it after approval through the existing media owner.

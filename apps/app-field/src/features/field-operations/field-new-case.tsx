@@ -151,7 +151,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   const formLocked = busy || caseLoading || Boolean(pendingDraftAttempt) || Boolean(createdCase && createdCase.case.state !== "draft" && createdCase.case.state !== "needs_correction");
   const phoneValid = /^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(input.contactPhoneE164));
   const enteredHours = toStoreWorkingHoursIntervals(workingHoursByDay);
-  const operationComplete = Boolean(input.serviceCityId && input.firstStoreVerticalId && input.firstStoreCommercialTypeId && input.firstStoreAddress.trim().length >= 4 && selectedStoreOrigin && input.firstStoreFulfillmentModes.length && enteredHours.length && isValidStoreWorkingHours(enteredHours));
+  const operationComplete = Boolean(input.serviceCityId && input.firstStoreVerticalId && input.firstStoreCommercialTypeId && input.firstStoreAddress.trim().length >= 4 && selectedStoreOrigin && input.firstStoreFulfillmentModes.length );
   const stepComplete = [
     phoneValid && input.ownerFullName.trim().length >= 2 && Boolean(input.businessName.trim() && input.firstStoreName.trim()),
     operationComplete && Boolean(selectedProofType && (input.firstStoreProofNumber.trim() || createdCase?.case.firstStoreProofNumberPresent) && !proofDetailsDirty),
@@ -175,7 +175,6 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
     storeType: Boolean(input.firstStoreCommercialTypeId),
     address: input.firstStoreAddress.trim().length >= 4,
     location: Boolean(selectedStoreOrigin),
-    hours: enteredHours.length > 0 && isValidStoreWorkingHours(enteredHours),
     fulfillment: input.firstStoreFulfillmentModes.length > 0,
     proofNumber: Boolean(selectedProofType && (input.firstStoreProofNumber.trim() || savedDraft?.firstStoreProofNumberPresent)),
   };
@@ -188,7 +187,6 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       address: input.firstStoreAddress.trim() !== (savedDraft?.firstStoreAddress ?? "").trim(),
       location: Math.abs((selectedStoreOrigin?.latitude ?? 0) - (savedDraft?.firstStoreLatitude ?? 0)) > 0.000001 ||
         Math.abs((selectedStoreOrigin?.longitude ?? 0) - (savedDraft?.firstStoreLongitude ?? 0)) > 0.000001,
-      hours: hoursSignature(enteredHours) !== hoursSignature(savedDraft?.firstStoreWorkingHours?.intervals ?? []),
       fulfillment: [...input.firstStoreFulfillmentModes].sort().join("|") !== [...(savedDraft?.firstStoreFulfillmentModes ?? [])].sort().join("|"),
       proofNumber: proofDetailsDirty,
     })[key];
@@ -821,7 +819,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
             <View style={{ flex: 1, gap: 8, minWidth: 0 }}><Text style={styles.label}>العنوان النصي</Text><TextInput onFocus={focusField} accessibilityLabel="عنوان المتجر" editable={!formLocked} multiline placeholder="الحي، الشارع، أقرب معلم" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 72, paddingTop: 10, textAlignVertical: "top" }]} value={input.firstStoreAddress} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreAddress: value }))} />{input.firstStoreAddress.trim().length > 0 && Array.from(input.firstStoreAddress.trim()).length < 4 ? <Text accessibilityRole="alert" style={styles.error}>العنوان قصير؛ اذكر الحي أو أقرب معلم (4 أحرف على الأقل).</Text> : null}<Text style={styles.muted}>{selectedStoreOrigin ? "تم تحديد الموقع" : "حدد الموقع تلقائيًا أو افتح الخريطة للتحديد اليدوي"}</Text></View>
           </View>
         </View> : null}
-        {activeStep === 1 ? <FieldWorkingHoursEditor disabled={formLocked} onChange={setWorkingHoursByDay} value={workingHoursByDay} /> : null}
+        {activeStep === 1 ? <View><Text style={styles.muted}>ساعات العمل اختيارية عند الانضمام؛ حددها الآن أو أكملها قبل نشر المتجر. لن يُفتح متجر بلا جدول معتمد.</Text><FieldWorkingHoursEditor disabled={formLocked} onChange={setWorkingHoursByDay} value={workingHoursByDay}/></View> : null}
         {activeStep === 1 ? <>
         <View style={styles.compactCard}>
         <Text style={styles.label}>ملاحظات (اختياري)</Text>

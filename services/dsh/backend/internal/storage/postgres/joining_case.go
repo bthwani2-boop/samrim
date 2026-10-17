@@ -681,7 +681,7 @@ func ValidateJoiningCaseIntakeReadiness(current JoiningCaseRecord) error {
 			return ErrJoiningCaseState
 		}
 	}
-	if strings.TrimSpace(current.OwnerFullName) == "" || strings.TrimSpace(current.BusinessName) == "" || strings.TrimSpace(current.FirstStoreName) == "" || strings.TrimSpace(current.FirstStoreAddress) == "" || !ValidateStoreWorkingHours(current.FirstStoreWorkingHours) || strings.TrimSpace(current.FirstStoreProofType) == "" || !current.FirstStoreProofNumberPresent {
+	if strings.TrimSpace(current.OwnerFullName) == "" || strings.TrimSpace(current.BusinessName) == "" || strings.TrimSpace(current.FirstStoreName) == "" || strings.TrimSpace(current.FirstStoreAddress) == "" || (len(current.FirstStoreWorkingHours) > 0 && !ValidateStoreWorkingHours(current.FirstStoreWorkingHours)) || strings.TrimSpace(current.FirstStoreProofType) == "" || !current.FirstStoreProofNumberPresent {
 		return ErrJoiningCaseState
 	}
 	if strings.TrimSpace(current.FirstStoreServiceCityID) == "" {

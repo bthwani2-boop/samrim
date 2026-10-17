@@ -391,7 +391,7 @@ func (s *Service) CorrectJoiningCase(ctx context.Context, accessToken, caseID st
 	if current.Case.ContactPhoneE164 != normalized.Phone || current.Case.WalletProviderKey != normalized.WalletProviderKey {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	if normalized.OwnerFullName == "" || normalized.BusinessName == "" || normalized.FirstStoreName == "" || len([]rune(normalized.FirstStoreAddress)) < 4 || !postgres.ValidateStoreWorkingHours(normalized.FirstStoreWorkingHours) || len(normalized.FulfillmentModes) == 0 || normalized.FirstStoreProofType == "" || normalized.ServiceCityID == "" || normalized.VerticalID == "" || normalized.CommercialTypeID == "" || (normalized.Latitude == 0 && normalized.Longitude == 0) {
+	if normalized.OwnerFullName == "" || normalized.BusinessName == "" || normalized.FirstStoreName == "" || len([]rune(normalized.FirstStoreAddress)) < 4 || (len(normalized.FirstStoreWorkingHours) > 0 && !postgres.ValidateStoreWorkingHours(normalized.FirstStoreWorkingHours)) || len(normalized.FulfillmentModes) == 0 || normalized.FirstStoreProofType == "" || normalized.ServiceCityID == "" || normalized.VerticalID == "" || normalized.CommercialTypeID == "" || (normalized.Latitude == 0 && normalized.Longitude == 0) {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
 	mutation := postgres.CorrectJoiningCaseInput{CaseID: caseID, ActorID: identity.Subject, OriginatingFieldActorID: identity.Subject,

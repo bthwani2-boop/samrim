@@ -112,6 +112,45 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if err != nil || len(operatorSearch.Cases) != 1 || operatorSearch.Cases[0].ID != created.Case.ID {
 			t.Fatalf("operator owner-name search did not return the joining case: %+v err=%v", operatorSearch, err)
 		}
+		// A Field intake can omit operating hours. Approval must create a CLOSED
+		// weekly schedule, never the historical ALWAYS_OPEN fallback.
+		noHoursRequest := createRequest
+		noHoursRequest.Phone = "+967700000199"
+		noHoursRequest.FirstStoreName = "متجر بلا ساعات مبدئية"
+		noHoursRequest.FirstStoreWorkingHours = nil
+		noHoursCase, err := postgres.CreateJoiningCaseForField(ctx, db, postgres.CreateJoiningCaseInput{
+			IdempotencyKey: "idem-join-no-hours-create", RequestHash: postgres.HashJoiningCaseRequest(noHoursRequest),
+			ActingActorID: fieldActorID, CorrelationID: "corr-join-no-hours-create", EvidenceKeyring: evidenceKeys, Request: noHoursRequest,
+		})
+		if err != nil {
+			t.Fatalf("create intake without hours: %v", err)
+		}
+		noHoursAdmission, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, noHoursCase.Case.ID, fieldActorID, noHoursCase.Case.Version,
+			"idem-join-no-hours-admit", postgres.HashFieldJoiningCaseAdmission(noHoursCase.Case.ID, fieldActorID, noHoursCase.Case.Version), "corr-join-no-hours-admit")
+		if err != nil || noHoursAdmission.Case.State != "admission_requested" {
+			t.Fatalf("admission without hours: %+v err=%v", noHoursAdmission, err)
+		}
+		noHoursSubmitted, err := postgres.SubmitJoiningCase(ctx, db, noHoursCase.Case.ID, otherPartner, noHoursAdmission.Case.Version,
+			"idem-join-no-hours-submit", postgres.HashJoiningCaseSubmit(noHoursCase.Case.ID, otherPartner, noHoursAdmission.Case.Version),
+			operatorActor, "corr-join-no-hours-submit")
+		if err != nil || noHoursSubmitted.Case.State != "submitted" {
+			t.Fatalf("submit without hours: %+v err=%v", noHoursSubmitted, err)
+		}
+		noHoursApproved, err := postgres.ReviewJoiningCase(ctx, db, postgres.ReviewJoiningCaseInput{
+			CaseID: noHoursCase.Case.ID, Decision: "approved", ExpectedVersion: noHoursSubmitted.Case.Version,
+			SettlementPeriod: "DAILY", TermsPolicyVersion: "partner-financial-terms:v1",
+			IdempotencyKey: "idem-join-no-hours-approve",
+			RequestHash:    postgres.HashJoiningCaseReviewWithFinancialTerms(noHoursCase.Case.ID, "approved", "", noHoursSubmitted.Case.Version, "DAILY", "partner-financial-terms:v1"),
+			ActingActorID:  operatorActor, CorrelationID: "corr-join-no-hours-approve",
+		})
+		if err != nil || noHoursApproved.Case.State != "approved" || noHoursApproved.Case.StoreID == "" {
+			t.Fatalf("approve Store without intake hours: %+v err=%v", noHoursApproved, err)
+		}
+		noHoursAvailability, err := postgres.ReadStoreOperationalAvailability(ctx, db, noHoursApproved.Case.StoreID)
+		if err != nil || noHoursAvailability.ScheduleMode != "WEEKLY" || len(noHoursAvailability.WeeklySchedule) != 0 {
+			t.Fatalf("Store without submitted operating hours must remain closed: %+v err=%v", noHoursAvailability, err)
+		}
+
 		submittedHash := postgres.HashJoiningCaseSubmit(created.Case.ID, partnerActor, admission.Case.Version)
 		submitted, err := postgres.SubmitJoiningCase(ctx, db, created.Case.ID, partnerActor, admission.Case.Version, "idem-join-field-submit", submittedHash, operatorActor, "corr-join-field-submit")
 		if err != nil || submitted.Case.PartnerActorID != partnerActor || submitted.Case.State != "submitted" {

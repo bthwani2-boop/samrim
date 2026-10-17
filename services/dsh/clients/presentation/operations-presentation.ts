@@ -38,6 +38,9 @@ const publicationReadinessBlockedReasonLabels: Record<StorePublicationBlockedRea
   CATALOG_NOT_READY: "لا يوجد كتالوج أو عرض منشور صالح يجعل المتجر جاهزًا",
   STORE_LOGO_NOT_READY: "شعار المتجر غير جاهز؛ أضفه من ملف المتجر قبل النشر للعملاء",
   STORE_COVER_NOT_READY: "صورة غلاف المتجر غير جاهزة للنشر",
+  STORE_SCHEDULE_NOT_READY: "ساعات عمل المتجر لم تُحدد بعد؛ أكملها من ملف المتجر قبل النشر",
+  COMMERCIAL_AGREEMENT_NOT_READY: "اتفاقية المتجر لم تُقبل وتُعتمد ماليًا بعد",
+  READINESS_UNAVAILABLE: "تعذر التحقق من جاهزية المتجر حاليًا؛ أعد المحاولة",
 };
 
 const storeOfferPublicationLabels: Record<StoreOfferPublicationState, string> = {
