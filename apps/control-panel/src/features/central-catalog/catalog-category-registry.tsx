@@ -467,8 +467,8 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
         </details>
       </section> : null}
     </> : null}
-    {!verticalReady && verticalId ? <div className="catalog-taxonomy-empty"><strong>المجال المحدد لا يستخدم المنتجات المشتركة</strong><p>اختر مجالًا بمسار «منتجات مشتركة» أو عدّل المسار من إعدادات المجالات التجارية أدناه.</p></div> : null}
-    {!verticalId ? <div className="catalog-taxonomy-empty"><strong>لا توجد مجالات تجارية نشطة للمنتجات المشتركة</strong><p>فعّل مجالًا بمسار «منتجات مشتركة» من إدارة المجالات التجارية أدناه.</p></div> : null}
+    {!verticalReady && verticalId ? <div className="catalog-taxonomy-empty"><strong>المجال المحدد غير نشط</strong><p>فعّل هذا المجال من إعدادات المجالات التجارية أولًا.</p></div> : null}
+    {!verticalId ? <div className="catalog-taxonomy-empty"><strong>لا توجد مجالات تجارية نشطة</strong><p>فعّل مجالًا من إدارة المجالات التجارية أدناه.</p></div> : null}
     <div ref={verticalSettingsRef}>{management}</div>
   </section>;
 }
