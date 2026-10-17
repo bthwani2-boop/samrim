@@ -2756,3 +2756,7 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 .store-product-local-editor{display:grid;gap:10px;border-top:1px solid var(--border-subtle);padding-top:14px}
 .store-product-local-editor h4{margin:0;font-size:14px}
 .store-product-editor input:not([type=checkbox]),.store-product-editor select{color:var(--ink,inherit)}
+
+.store-profile-blockers{display:grid;gap:6px;margin:8px 0 0;padding:0;list-style:none}
+.store-profile-blockers li{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.store-profile-blockers li span{flex:1;min-width:0;overflow-wrap:anywhere}

@@ -213,5 +213,9 @@ func nullableFloatValue(value *float64) float64 {
 }
 
 func toPublicationReadiness(readiness storepublication.PublicationReadiness) contract.StorePublicationReadiness {
-	return contract.StorePublicationReadiness{Ready: readiness.Ready, BlockedReason: readiness.BlockedReason}
+	reasons := make([]contract.StorePublicationBlockedReason, 0, len(readiness.BlockedReasons))
+	for _, reason := range readiness.BlockedReasons {
+		reasons = append(reasons, contract.StorePublicationBlockedReason(reason))
+	}
+	return contract.StorePublicationReadiness{Ready: readiness.Ready, BlockedReason: contract.StorePublicationBlockedReason(readiness.BlockedReason), BlockedReasons: reasons}
 }

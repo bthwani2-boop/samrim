@@ -61,7 +61,7 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
   const accountState = partnerError ? "تعذرت القراءة" : !account ? "غير متاحة" : !account.enabled || !account.securityEnabled ? "موقوف" : account.activatedAt ? "نشط" : "بانتظار التفعيل";
   const ready = store.publicationReadiness.ready;
   const publication = publicationStateLabel(store.publicationState);
-  const blocker = !ready ? publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason) : "";
+  const blockers = !ready ? (store.publicationReadiness.blockedReasons?.length ? store.publicationReadiness.blockedReasons : store.publicationReadiness.blockedReason ? [store.publicationReadiness.blockedReason] : []) : [];
   const caseView = partner?.joiningCase;
   const cover = store.storeCoverImage?.uri;
 
@@ -148,7 +148,17 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
 
     <section className="store-profile-alert" data-ready={ready} aria-label={ready ? "جاهزية النشر" : "المطلوب قبل النشر"}>
       <div><strong>{ready ? "جاهزية النشر" : "المطلوب قبل النشر"}</strong>
-        <p>{ready ? "المتجر مستوفٍ لشروط النشر الحالية." : blocker}</p></div>
+        {ready ? <p>المتجر مستوفٍ لشروط النشر الحالية.</p> : <ul className="store-profile-blockers">
+          {blockers.length ? blockers.map((reason,i) => <li key={reason}>
+            <span>{publicationReadinessBlockedReasonLabel(reason)}</span>
+            <button type="button" className="button button-quiet" onClick={() => {
+              if(reason==="CATALOG_NOT_READY")selectTab("products");
+              else if(reason==="STORE_SCHEDULE_NOT_READY")selectTab("hours");
+              else if(reason==="FINANCIAL_PROFILE_NOT_READY"||reason==="COMMERCIAL_AGREEMENT_NOT_READY")selectTab(canViewFinance?"finance":"documents");
+              else selectTab("basics");
+            }}>معالجة</button>
+          </li>) : <li>{publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason)}</li>}
+        </ul>}</div>
       {!ready ? <button type="button" className="button button-secondary" onClick={openEditor}>معالجة النقص</button> : null}
     </section>
 

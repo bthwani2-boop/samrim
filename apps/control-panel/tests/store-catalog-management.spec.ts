@@ -4,7 +4,7 @@ const store = {
  id:"store-catalog-proof",partnerActorId:"partner-proof",name:"متجر اختباري",partnerName:"شريك تجريبي",
  serviceCityName:"صنعاء",primaryVerticalName:"مطاعم",serviceCityId:"sanaa",primaryVerticalId:"restaurants",
  commercialStoreTypeId:null,deliveryOrigin:null,fulfillmentModes:["BTHWANI_CAPTAIN"],version:1,
- publicationState:"unpublished",publicationReadiness:{ready:false,blockedReason:"CATALOG_NOT_READY"},
+ publicationState:"unpublished",publicationReadiness:{ready:false,blockedReason:"STORE_SCHEDULE_NOT_READY",blockedReasons:["STORE_SCHEDULE_NOT_READY","CATALOG_NOT_READY"]},
  createdAt:"2026-10-16T00:00:00Z",updatedAt:"2026-10-16T00:00:00Z"
 };
 const shared = {
@@ -35,6 +35,8 @@ test("Store file creates its own draft offer from a Shared Product without partn
  await page.goto("/partners?inspect=store-catalog-proof");
  const inspector=page.locator(".store-profile");
  await expect(inspector).toBeVisible();
+ await expect(inspector.locator(".store-profile-blockers")).toContainText("ساعات عمل المتجر");
+ await expect(inspector.locator(".store-profile-blockers")).toContainText("لا يوجد كتالوج");
  await inspector.getByRole("tab",{name:/المنتجات/}).click();
  const editor=inspector.locator(".store-product-management");
  await expect(editor).toBeVisible();

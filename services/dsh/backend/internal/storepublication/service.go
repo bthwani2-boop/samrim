@@ -30,8 +30,9 @@ var (
 )
 
 type PublicationReadiness struct {
-	Ready         bool
-	BlockedReason string
+	Ready          bool
+	BlockedReason  string
+	BlockedReasons []string
 }
 
 type Service struct {
@@ -432,61 +433,67 @@ func (s *Service) ReadPublished(ctx context.Context, storeID, serviceCityID stri
 }
 
 func (s *Service) ReadinessForStore(ctx context.Context, store postgres.StoreRecord) (PublicationReadiness, error) {
+	// One canonical list for Store file, publication guard, and operator actionability.
+	// Each independent requirement is read from its existing owning service.
+	var missing []string
 	if strings.TrimSpace(store.ServiceCityID) == "" {
-		return blockedReadiness(ServiceCityNotEligibleReason), nil
-	}
-	city, err := postgres.ReadServiceCity(ctx, s.db, store.ServiceCityID)
-	if errors.Is(err, postgres.ErrServiceCityNotFound) {
-		return blockedReadiness(ServiceCityNotEligibleReason), nil
-	}
-	if err != nil {
-		return PublicationReadiness{}, err
-	}
-	if !city.Active {
-		return blockedReadiness(ServiceCityNotEligibleReason), nil
+		missing = append(missing, ServiceCityNotEligibleReason)
+	} else {
+		city, err := postgres.ReadServiceCity(ctx, s.db, store.ServiceCityID)
+		if errors.Is(err, postgres.ErrServiceCityNotFound) {
+			missing = append(missing, ServiceCityNotEligibleReason)
+		} else if err != nil {
+			return PublicationReadiness{}, err
+		} else if !city.Active {
+			missing = append(missing, ServiceCityNotEligibleReason)
+		}
 	}
 	availability, err := postgres.ReadStoreOperationalAvailability(ctx, s.db, store.ID)
 	if err != nil {
 		return PublicationReadiness{}, err
 	}
 	if availability.ScheduleMode == "WEEKLY" && len(availability.WeeklySchedule) == 0 {
-		return blockedReadiness(StoreScheduleNotReadyReason), nil
+		missing = append(missing, StoreScheduleNotReadyReason)
 	}
-	// A logo belongs to the published Store card, not to Field acquisition.
-	// Operators/Partners can add it after approval through the existing media owner.
 	logo, err := postgres.ReadStoreProfileMedia(ctx, s.db, "", store.ID)
 	if err != nil {
 		return PublicationReadiness{}, err
 	}
 	if logo == nil {
-		return blockedReadiness(StoreLogoNotReadyReason), nil
+		missing = append(missing, StoreLogoNotReadyReason)
 	}
 	cover, err := postgres.ReadStoreCoverMedia(ctx, s.db, "", store.ID)
 	if err != nil {
 		return PublicationReadiness{}, err
 	}
 	if cover == nil {
-		return blockedReadiness(StoreCoverNotReadyReason), nil
+		missing = append(missing, StoreCoverNotReadyReason)
 	}
 	catalogReady, err := postgres.HasPublishableCatalog(ctx, s.db, store.ID)
 	if err != nil {
 		return PublicationReadiness{}, err
 	}
 	if !catalogReady {
-		return blockedReadiness(CatalogNotReadyReason), nil
+		missing = append(missing, CatalogNotReadyReason)
 	}
-	partnerReadiness, err := s.ReadinessForPartner(ctx, store.PartnerActorID)
-	if err != nil || !partnerReadiness.Ready {
-		return partnerReadiness, err
+	partner, err := s.ReadinessForPartner(ctx, store.PartnerActorID)
+	if err != nil {
+		return PublicationReadiness{}, err
+	}
+	if !partner.Ready {
+		missing = append(missing, partner.BlockedReason)
 	}
 	agreementReady, err := s.activeCommercialAgreementForStore(ctx, store.ID)
 	if err != nil {
 		return PublicationReadiness{}, err
 	}
 	if !agreementReady {
-		return blockedReadiness(CommercialAgreementNotReadyReason), nil
+		missing = append(missing, CommercialAgreementNotReadyReason)
 	}
-	return partnerReadiness, nil
+	if len(missing) > 0 {
+		return PublicationReadiness{BlockedReason: missing[0], BlockedReasons: missing}, nil
+	}
+	return PublicationReadiness{Ready: true, BlockedReasons: []string{}}, nil
 }
 
 func (s *Service) activeCommercialAgreementForStore(ctx context.Context, storeID string) (bool, error) {
@@ -529,7 +536,7 @@ func (s *Service) ReadinessForPartner(ctx context.Context, partnerActorID string
 }
 
 func blockedReadiness(reason string) PublicationReadiness {
-	return PublicationReadiness{BlockedReason: reason}
+	return PublicationReadiness{BlockedReason: reason, BlockedReasons: []string{reason}}
 }
 
 func evaluatePartnerReadiness(partner identityclient.ActorRoleView) PublicationReadiness {
