@@ -20,13 +20,13 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 function verticalSelectionActionLabel(isSelected: boolean): string {
-  return isSelected ? "المحدد" : "اختيار النشاط";
+  return isSelected ? "المحدد" : "اختيار المجال";
 }
 
 function verticalSaveLabel(busy: boolean, isEditing: boolean): string {
   if (busy) return "جارٍ الحفظ…";
   if (isEditing) return "حفظ التعديل";
-  return "إضافة نشاط تجاري";
+  return "إضافة مجال تجاري";
 }
 
 export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelectVertical, onSaved }: { verticals: ReadonlyArray<CommerceVertical>; selectedVerticalId: string; onSelectVertical: (verticalId: string) => void; onSaved: () => Promise<void> }) {
@@ -101,7 +101,7 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
     <section className="catalog-taxonomy-section" aria-labelledby="catalog-vertical-registry-title">
       <div className="access-card-heading">
         <h3 id="catalog-vertical-registry-title">المجالات التجارية</h3>
-        {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit} onClick={() => { setSelected(null); setNameAr(""); setNameEn(""); setActive(true); setReason(""); setEditorOpen(true); }}>إضافة نشاط تجاري</button> : null}
+        {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit} onClick={() => { setSelected(null); setNameAr(""); setNameEn(""); setActive(true); setReason(""); setEditorOpen(true); }}>إضافة مجال تجاري</button> : null}
       </div>
       {editorOpen ? <div className="access-form">
         <label className="field-label" htmlFor="catalog-vertical-name-ar">الاسم العربي<input id="catalog-vertical-name-ar" disabled={busy || !canEdit} value={nameAr} onChange={(event) => setNameAr(event.target.value)} placeholder="مطاعم" /></label>
