@@ -3086,6 +3086,7 @@ export type PromotionListResponse = {
 };
 
 export type PublicPromotionView = {
+  readonly storeId?: string;
   readonly id: string;
   readonly code: string;
   readonly nameAr: string;

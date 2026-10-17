@@ -9357,6 +9357,9 @@ components:
       properties:
         id:
           type: string
+        storeId:
+          type: string
+          description: Public store that owns this promotion when store-scoped.
         code:
           type: string
         nameAr:

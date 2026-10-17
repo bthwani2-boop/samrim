@@ -3086,6 +3086,7 @@ type PromotionListResponse struct {
 }
 
 type PublicPromotionView struct {
+	StoreID          string        `json:"storeId,omitempty"`
 	ID               string        `json:"id"`
 	Code             string        `json:"code"`
 	NameAr           string        `json:"nameAr"`

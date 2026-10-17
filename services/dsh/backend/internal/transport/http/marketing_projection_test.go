@@ -53,12 +53,12 @@ func TestPublicPromotionProjectionOmitsOperatorAndEligibilityInternals(t *testin
 		t.Fatalf("marshal public promotion projection: %v", err)
 	}
 	serialized := string(payload)
-	for _, forbidden := range []string{"fundingSource", "storeId", "serviceCityId", "state", "startsAt", "redemptionLimit", "redeemedCount", "version", "createdByActorId", "createdAt", "updatedAt", "operator-private-1", "store-private-1", "city-private-1"} {
+	for _, forbidden := range []string{"fundingSource", "serviceCityId", "state", "startsAt", "redemptionLimit", "redeemedCount", "version", "createdByActorId", "createdAt", "updatedAt", "operator-private-1", "city-private-1"} {
 		if strings.Contains(serialized, forbidden) {
 			t.Errorf("public promotion payload exposes %q: %s", forbidden, serialized)
 		}
 	}
-	for _, required := range []string{"promotion-public-1", "SAVE10", "خصم للعملاء", "وصف العرض", "endsAt"} {
+	for _, required := range []string{"promotion-public-1", "SAVE10", "خصم للعملاء", "وصف العرض", "endsAt", "store-private-1"} {
 		if !strings.Contains(serialized, required) {
 			t.Errorf("public promotion payload omits %q: %s", required, serialized)
 		}

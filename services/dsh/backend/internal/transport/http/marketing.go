@@ -708,7 +708,7 @@ func toPromotionView(item postgres.PromotionRecord) contract.PromotionView {
 }
 
 func toPublicPromotionView(item postgres.PromotionRecord) contract.PublicPromotionView {
-	return contract.PublicPromotionView{ID: item.ID, Code: item.Code, NameAr: item.NameAr, DescriptionAr: item.DescriptionAr, Kind: contract.PromotionKind(item.Kind), ValueMinor: int(item.ValueMinor), MaxDiscountMinor: intValue(item.MaxDiscountMinor), EndsAt: item.EndsAt}
+	return contract.PublicPromotionView{StoreID: item.StoreID, ID: item.ID, Code: item.Code, NameAr: item.NameAr, DescriptionAr: item.DescriptionAr, Kind: contract.PromotionKind(item.Kind), ValueMinor: int(item.ValueMinor), MaxDiscountMinor: intValue(item.MaxDiscountMinor), EndsAt: item.EndsAt}
 }
 
 func toDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.DiscoveryContentView {

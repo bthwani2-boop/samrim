@@ -1,48 +1,24 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniIcon, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, fulfillmentModeLabel, type PublicStoreView } from "@bthwani/dsh";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { listPublicPromotions } from "./store-discovery-client";
-
-export type StorePromotionCache = Map<string, { count: number; checkedAt: number }>;
 
 export function StoreDirectoryCard({
-  store, activityLabel, cityId, favorite, favoriteBusy, imageFailed, onImageError, onOpen, onFavorite, promotionCache,
+  store, activityLabel, favorite, favoriteBusy, imageFailed, onImageError, onOpen, onFavorite, promotionCount,
 }: {
   store: PublicStoreView;
   activityLabel: string;
-  cityId: string;
   favorite: boolean;
   favoriteBusy: boolean;
   imageFailed: boolean;
   onImageError: () => void;
   onOpen: () => void;
   onFavorite: () => void;
-  promotionCache: StorePromotionCache;
+  promotionCount: number | null;
 }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  const cacheKey = cityId + ":" + store.id;
-  const [promotionCount, setPromotionCount] = useState<number | null>(() => promotionCache.get(cacheKey)?.count ?? null);
-  useEffect(() => {
-    if (!cityId) return;
-    const cached = promotionCache.get(cacheKey);
-    if (cached && Date.now() - cached.checkedAt < 60_000) {
-      setPromotionCount(cached.count);
-      return;
-    }
-    let active = true;
-    setPromotionCount(null);
-    void listPublicPromotions(cityId, store.id).then((result) => {
-      if (!active) return;
-      const count = result.promotions.length;
-      promotionCache.set(cacheKey, { count, checkedAt: Date.now() });
-      setPromotionCount(count);
-    }).catch(() => { if (active) setPromotionCount(null); });
-    return () => { active = false; };
-  }, [cityId, store.id, cacheKey, promotionCache]);
-
   const modes = availableCustomerFulfillmentModes(store.fulfillmentModes);
   const statuses = (store.orderabilityByMode ?? []).filter((item) => modes.includes(item.fulfillmentMode));
   const open = statuses.some((item) => item.state === "OPEN_FOR_ORDERS");

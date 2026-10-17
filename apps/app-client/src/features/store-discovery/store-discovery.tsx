@@ -8,7 +8,7 @@ import { serviceCityDisplayName, useServiceCityScope } from "../service-city/ser
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { PromotionCard } from "./promotion-card";
-import { StoreDirectoryCard, type StorePromotionCache } from "./store-directory-card";
+import { StoreDirectoryCard } from "./store-directory-card";
 import { listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
 
 type DiscoveryState =
@@ -53,7 +53,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const [selectedShortcutID, setSelectedShortcutID] = useState("");
   const [favoriteBusyStoreID, setFavoriteBusyStoreID] = useState("");
   const [failedStoreImageIDs, setFailedStoreImageIDs] = useState<ReadonlySet<string>>(() => new Set());
-  const promotionCache = useRef<StorePromotionCache>(new Map());
   const [favoriteError, setFavoriteError] = useState("");
   const [directoryLocation, setDirectoryLocation] = useState<{ latitude: number; longitude: number } | undefined>();
   const [nearestAddress, setNearestAddress] = useState<DeliveryAddress | null>(null);
@@ -550,14 +549,13 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       renderItem={({ item: store }) => <StoreDirectoryCard
         store={store}
         activityLabel={state.kind === "ready" ? state.verticals.find((vertical) => vertical.id === store.primaryVerticalId)?.nameAr ?? "" : ""}
-        cityId={selectedCityID ?? ""}
         favorite={state.kind === "ready" && state.favoriteStoreIDs.includes(store.id)}
         favoriteBusy={Boolean(favoriteBusyStoreID)}
         imageFailed={failedStoreImageIDs.has(store.id)}
         onImageError={() => setFailedStoreImageIDs((current) => new Set(current).add(store.id))}
         onOpen={() => router.push(("/store/" + encodeURIComponent(store.id)) as Href)}
         onFavorite={() => { void toggleFavorite(store.id); }}
-        promotionCache={promotionCache.current}
+        promotionCount={marketing.error ? null : marketing.promotions.filter((promotion) => promotion.storeId === store.id).length}
       />}
       ListEmptyComponent={directoryMode ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} /> : null}
       ListFooterComponent={<View style={styles.footer}>
