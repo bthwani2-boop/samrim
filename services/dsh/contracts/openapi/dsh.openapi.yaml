@@ -4202,6 +4202,15 @@ components:
           type: integer
           minimum: 0
 
+    CatalogStorefrontSectionListResponse:
+      type: object
+      required: [sections]
+      additionalProperties: false
+      properties:
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogStorefrontSection"
     CatalogStorefrontSectionResponse:
       type: object
       required: [section]

@@ -172,6 +172,14 @@ func (s *Service) ReadModifierGroup(ctx context.Context, accessToken, storeID, g
 	return item, nil
 }
 
+// ListStorefrontSections reads owner-scoped section membership.
+func (s *Service) ListStorefrontSections(ctx context.Context, accessToken, storeID string) ([]postgres.CatalogStorefrontSectionRecord, error) {
+	if _, err := s.requireStoreOwner(ctx, accessToken, storeID); err != nil {
+		return nil, err
+	}
+	return postgres.ListOwnedCatalogStorefrontSections(ctx, s.db, storeID)
+}
+
 func (s *Service) CreateStorefrontSection(ctx context.Context, accessToken, storeID string, input postgres.CatalogStorefrontSectionInput) (postgres.CatalogStorefrontSectionRecord, error) {
 	if _, err := s.requireStoreOwner(ctx, accessToken, storeID); err != nil {
 		return postgres.CatalogStorefrontSectionRecord{}, err

@@ -69,6 +69,7 @@ func TestCatalogProductRoutesStopAtCanonicalAuthAndInputBoundaries(t *testing.T)
 		{name: "operator store offers reject invalid limit", method: http.MethodGet, path: "/dsh/operator/stores/store-1/offers?limit=101", authority: "service", status: http.StatusBadRequest, code: "INVALID_INPUT"},
 		{name: "operator store offers reject cursor too long", method: http.MethodGet, path: "/dsh/operator/stores/store-1/offers?cursor=" + strings.Repeat("x", 2049), authority: "service", status: http.StatusBadRequest, code: "INVALID_INPUT"},
 		{name: "offer list has no partner session", method: http.MethodGet, path: "/dsh/stores/store-1/offers", status: http.StatusUnauthorized, code: "UNAUTHENTICATED"},
+		{name: "store section list has no partner session", method: http.MethodGet, path: "/dsh/stores/store-1/sections", status: http.StatusUnauthorized, code: "UNAUTHENTICATED"},
 		{name: "offer create has no partner session", method: http.MethodPost, path: "/dsh/stores/store-1/offers", status: http.StatusUnauthorized, code: "UNAUTHENTICATED"},
 		{name: "offer update has no partner session", method: http.MethodPatch, path: "/dsh/stores/store-1/offers/offer-1", status: http.StatusUnauthorized, code: "UNAUTHENTICATED"},
 		{name: "media read has no configured store", method: http.MethodGet, path: "/dsh/catalog/media/assets/product/image.png", status: http.StatusServiceUnavailable, code: "MEDIA_STORAGE_UNAVAILABLE"},

@@ -1538,6 +1538,15 @@ paths:
         "200": { description: Attached modifier group readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferResponse" } } } }
 
   /dsh/stores/{storeId}/sections:
+    get:
+      operationId: listCatalogStorefrontSections
+      summary: Read active storefront sections for authorized Store owner
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      responses:
+        "200": { description: Owned Store sections., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStorefrontSectionListResponse" } } } }
     post:
       operationId: createCatalogStorefrontSection
       summary: Create a Store-owned storefront section

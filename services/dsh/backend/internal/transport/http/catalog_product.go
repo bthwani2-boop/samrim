@@ -124,6 +124,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/stores/{storeId}/modifier-groups", s.createModifierGroup)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/modifier-groups/{groupId}/options", s.createModifierOption)
 	mux.HandleFunc("PUT /dsh/stores/{storeId}/offers/{offerId}/modifier-groups/{groupId}", s.attachModifierGroup)
+	mux.HandleFunc("GET /dsh/stores/{storeId}/sections", s.listStorefrontSections)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/sections", s.createStorefrontSection)
 	mux.HandleFunc("PUT /dsh/stores/{storeId}/sections/{sectionId}/offers/{offerId}", s.attachOfferToSection)
 	s.registerFieldCatalog(mux)
