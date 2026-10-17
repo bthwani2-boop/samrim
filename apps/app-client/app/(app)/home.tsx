@@ -43,7 +43,6 @@ export default function ClientHomeRoute() {
   return (
     <View style={styles.root}>
       <ClientPublicHeader
-        hideSearchAction
         onSearchOpenChange={setSearchVisibility}
         onSearchQueryChange={setSearchQuery}
         searchOpen={searchOpen}

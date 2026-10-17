@@ -1,5 +1,5 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type PublicCommerceVertical, type PublicShoppingShortcut, type PublicDiscoveryContentView, type PublicPromotionView, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -415,27 +415,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           setDiscoveryContainerWidth((current) => Math.abs(current - nextWidth) < 1 ? current : nextWidth);
         }}
       >
-      <View style={[styles.discoveryHeading, !searchIsActive && styles.discoveryHero]}>
-        {!searchIsActive ? <>
-          <View style={styles.discoveryHeroCopy}>
-            <Text style={styles.discoveryEyebrow}>{selectedCityName ? `تسوق في ${selectedCityName}` : "تسوق من المتاجر المتاحة"}</Text>
-            <Text style={styles.discoveryTitle}>ماذا تحتاج اليوم؟</Text>
-            <Text style={styles.discoverySubtitle}>ابحث مباشرة أو اختر نشاطًا للبدء.</Text>
-          </View>
-          <BthwaniSearchField
-          accessibilityLabel="البحث عن متجر أو منتج"
-          autoCapitalize="none"
-          autoCorrect={false}
-          onChangeText={(value) => { if (value) onSearchOpenChange?.(true); if (onSearchQueryChange) onSearchQueryChange(value); else router.setParams({ q: value, focus: value ? "search" : "" }); }}
-          onClear={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "", focus: "" }); }}
-          placeholder="ابحث عن متجر أو منتج"
-          returnKeyType="search"
-          value={query}
-          containerStyle={styles.discoverySearch}
-          />
-        </> : <View style={styles.discoverySearchHeading}><Text style={[styles.discoveryTitle, styles.discoveryTitleDefault]}>ابحث في بثواني</Text><Text style={[styles.discoverySubtitle, styles.discoverySubtitleDefault]}>{selectedCityName ? `نتائج مدينة ${selectedCityName}` : "اختر مدينة الخدمة لعرض النتائج المتاحة"}</Text></View>}
-      </View>
-
       {searchIsActive ? <View accessibilityLabel="نطاق البحث" style={styles.searchScopes}>
         <BthwaniChip label="المتاجر" selected={searchScope === "stores"} onPress={() => { if (onSearchScopeChange) onSearchScopeChange("stores"); else router.setParams({ scope: "stores" }); }} />
         <BthwaniChip label="المنتجات" selected={searchScope === "products"} onPress={() => { if (onSearchScopeChange) onSearchScopeChange("products"); else router.setParams({ scope: "products" }); }} />
@@ -445,7 +424,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         <BthwaniSectionHeader title="تسوق حسب المجال" />
         <ScrollView accessibilityLabel="المجالات التجارية" contentContainerStyle={styles.activityTiles} horizontal showsHorizontalScrollIndicator={false}>
           <Pressable accessibilityRole="button" accessibilityLabel="عرض جميع المجالات والمتاجر" accessibilityState={{ selected: !selectedVerticalID }} onPress={() => selectVertical("")} style={[styles.activityTile, !selectedVerticalID && styles.activityTileSelected]}>
-            <View style={[styles.activityMark, !selectedVerticalID && styles.activityMarkSelected]}><BthwaniIcon name="store" color={!selectedVerticalID ? theme.onAction : theme.interactiveText} size={sizing.iconLg} /></View>
+            <View style={[styles.activityMark, !selectedVerticalID && styles.activityMarkSelected]}><BthwaniIcon name="store" color={!selectedVerticalID ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /></View>
             <Text numberOfLines={1} style={[styles.activityTileName, !selectedVerticalID && styles.activityTileNameSelected]}>الكل</Text>
           </Pressable>
           {taxonomy.verticals.map((vertical, index) => <Pressable key={vertical.id} accessibilityRole="button" accessibilityLabel={`تصفح نشاط ${vertical.nameAr}`} accessibilityState={{ selected: selectedVerticalID === vertical.id }} onPress={() => selectVertical(vertical.id)} style={[styles.activityTile, selectedVerticalID === vertical.id && styles.activityTileSelected]}>
@@ -733,16 +712,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     flatList: { flex: 1 },
     screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
     footer: { gap: spacing[3], paddingBottom: spacing[4] },
-    discoveryHeading: { gap: spacing[1] },
-    discoveryHero: { backgroundColor: theme.interactiveText, borderRadius: radius.xl, gap: spacing[3], padding: spacing[4], ...elevation.raised },
-    discoveryHeroCopy: { alignItems: "flex-end", gap: spacing[1] },
-    discoverySearchHeading: { alignItems: "flex-end", gap: spacing[1] },
-    discoveryEyebrow: { ...typography.label, color: theme.actionBackground, textAlign: "right" },
-    discoveryTitle: { ...typography.titleLg, color: theme.onAction, textAlign: "right" },
-    discoverySubtitle: { ...typography.bodySm, color: theme.onAction, opacity: opacity.subtle, textAlign: "right" },
-    discoveryTitleDefault: { color: theme.color },
-    discoverySubtitleDefault: { color: theme.colorMuted, opacity: 1 },
-    discoverySearch: { width: "100%" },
     searchScopes: { flexDirection: "row", gap: spacing[2] },
     productSearchSection: { gap: spacing[3] },
     productSkeletons: { gap: spacing[3] },
@@ -796,14 +765,14 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     error: { ...typography.bodySm, color: theme.danger },
     categoryShortcutBlock: { gap: spacing[1] },
     categoryShortcutContent: { alignItems: "flex-start", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
-    activityTiles: { alignItems: "flex-start", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
-    activityTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], minHeight: 116, justifyContent: "center", padding: spacing[2], width: 96 },
+    activityTiles: { alignItems: "center", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
+    activityTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.round, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: sizing.controlLg, justifyContent: "center", paddingHorizontal: spacing[2] },
     activityTileSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
-    activityMark: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: 56, justifyContent: "center", width: 56 },
+    activityMark: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: sizing.avatarSm, justifyContent: "center", width: sizing.avatarSm },
     activityMarkWarm: { backgroundColor: theme.surfaceInset },
     activityMarkSelected: { backgroundColor: theme.interactiveText },
-    activityInitial: { ...typography.titleLg, color: theme.interactiveText },
-    activityTileName: { ...typography.label, color: theme.color, maxWidth: "100%", textAlign: "center" },
+    activityInitial: { ...typography.label, color: theme.interactiveText },
+    activityTileName: { ...typography.label, color: theme.color, textAlign: "center" },
     activityTileNameSelected: { color: theme.interactiveText },
     categoryTreeEmpty: { ...typography.caption, color: theme.colorMuted, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
     categoryTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2], width: 112 },
