@@ -111,6 +111,29 @@ func TestStoreImportUnbarcodedProductCreatesOneLocalProductAndOffer(t *testing.T
 	if err != nil || len(duplicate.Items) != 1 || duplicate.Items[0].Classification != "DUPLICATE_EXISTING" {
 		t.Fatalf("repeat file must not create another Product: %+v err=%v", duplicate, err)
 	}
+
+	sameNameNewVariant := []byte("اسم المنتج,النسخة,السعر\nبيتزا محلية,صغير,2000\n")
+	variantDuplicate, err := service.previewStoreCatalogImport(ctx, actorID, "OPERATOR", storeID, "", "variant.csv", sameNameNewVariant, "menu-variant-preview", "menu-variant-corr")
+	if err != nil || len(variantDuplicate.Items) != 1 || variantDuplicate.Items[0].Classification != "DUPLICATE_EXISTING" {
+		t.Fatalf("same Store Product name with a different variant must not fork Product identity: %+v err=%v", variantDuplicate, err)
+	}
+	staleFile := []byte("اسم المنتج,السعر\nفطيرة تجربة,800\n")
+	stalePreview, err := service.previewStoreCatalogImport(ctx, actorID, "OPERATOR", storeID, "", "stale.csv", staleFile, "menu-stale-preview", "menu-stale-corr")
+	if err != nil || len(stalePreview.Items) != 1 || stalePreview.Items[0].Classification != "READY" {
+		t.Fatalf("pre-collision preview: %+v err=%v", stalePreview, err)
+	}
+	concurrentProduct := postgres.CatalogProductInput{VerticalID: verticalID, StoreID: storeID, Scope: "STORE_SCOPED", CanonicalName: "فطيرة تجربة", VariantTitle: "الافتراضي", MeasurementKind: "DISCRETE", BaseUnit: "COUNT"}
+	if _, err = postgres.CreateCatalogProduct(ctx, db, concurrentProduct, "other-writer-local-product", postgres.HashCatalogProductCreateRequest(concurrentProduct), actorID, "other-writer-corr"); err != nil {
+		t.Fatalf("insert competing canonical Product after preview: %v", err)
+	}
+	staleResult, err := service.commitStoreCatalogImport(ctx, actorID, "OPERATOR", storeID, stalePreview.Run.ID, "menu-stale-commit", "menu-stale-commit-corr")
+	if err != nil || len(staleResult.Items) != 1 || staleResult.Items[0].Classification != "FAILED" {
+		t.Fatalf("stale preview must fail closed rather than duplicate: %+v err=%v", staleResult, err)
+	}
+	var staleCount int
+	if err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.catalog_products WHERE store_id=$1 AND canonical_name=$2", storeID, "فطيرة تجربة").Scan(&staleCount); err != nil || staleCount != 1 {
+		t.Fatalf("stale preview duplicated Store Product: count=%d err=%v", staleCount, err)
+	}
 	measuredFile := []byte("اسم المنتج,الوحدة,السعر\nعصير فراولة,ملليلتر,900\n")
 	measuredPreview, err := service.previewStoreCatalogImport(ctx, actorID, "OPERATOR", storeID, "", "measured.csv", measuredFile, "menu-measured-preview", "menu-measured-corr-1")
 	if err != nil || len(measuredPreview.Items) != 1 || measuredPreview.Items[0].Classification != "READY" {

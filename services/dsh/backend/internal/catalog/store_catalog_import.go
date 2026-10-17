@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -93,28 +94,20 @@ func (s *Service) previewStoreCatalogImport(ctx context.Context, actorID, actorR
 					item.ErrorCode = stringPtr("INVALID_INPUT")
 					item.ErrorMessage = stringPtr(importErrorMessage(normalizeErr))
 				} else {
-					matched, _, _, lookupErr := postgres.FindCatalogImportMatch(ctx, s.db, normalized)
+					localExists, sharedExists, lookupErr := storeImportNameConflicts(ctx, s.db, storeID, store.PrimaryVerticalID, normalized.CanonicalName)
 					if lookupErr != nil {
 						return postgres.CatalogImportPreviewResult{}, lookupErr
 					}
-					if matched != "" {
+					if localExists {
 						item.Classification = "DUPLICATE_EXISTING"
 						item.ErrorCode = stringPtr("DUPLICATE_EXISTING")
-						item.ErrorMessage = stringPtr("Store-local Product already exists; update its offer inside the Store")
+						item.ErrorMessage = stringPtr("Store-local Product name already exists; edit its variants or offers instead")
+					} else if sharedExists {
+						item.Classification = "NEEDS_REVIEW"
+						item.ErrorCode = stringPtr("SHARED_PRODUCT_CANDIDATE")
+						item.ErrorMessage = stringPtr("matching Shared Product name exists; select its exact variant instead of duplicating")
 					} else {
-						var sharedExists bool
-						sharedErr := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM dsh.catalog_products p WHERE p.vertical_id=$1 AND p.scope='SHARED' AND p.deleted_at IS NULL AND lower(p.canonical_name)=lower($2))",
-							store.PrimaryVerticalID, normalized.CanonicalName).Scan(&sharedExists)
-						if sharedErr != nil {
-							return postgres.CatalogImportPreviewResult{}, sharedErr
-						}
-						if sharedExists {
-							item.Classification = "NEEDS_REVIEW"
-							item.ErrorCode = stringPtr("SHARED_PRODUCT_CANDIDATE")
-							item.ErrorMessage = stringPtr("matching shared product name exists; select its exact variant instead of duplicating")
-						} else {
-							storeInput.NewProduct = &normalized
-						}
+						storeInput.NewProduct = &normalized
 					}
 				}
 			} else {
@@ -162,6 +155,15 @@ func (s *Service) previewStoreCatalogImport(ctx context.Context, actorID, actorR
 	}
 	run := postgres.CatalogImportRunRecord{ID: runID, ActingActorID: actorID, SourceSHA256: sourceSHA, Purpose: "STORE_OFFERS", ActorRole: actorRole, StoreID: storeID, JoiningCaseID: strings.TrimSpace(joiningCaseID)}
 	return postgres.CreateCatalogImportPreview(ctx, s.db, run, items, idempotencyKey, postgres.HashCatalogImportPreviewRequest(run.ID, run.SourceSHA256, hashInputs), correlationID)
+}
+
+func storeImportNameConflicts(ctx context.Context, db *sql.DB, storeID, verticalID, name string) (bool, bool, error) {
+	var local, shared bool
+	err := db.QueryRowContext(ctx, `SELECT
+   EXISTS(SELECT 1 FROM dsh.catalog_products WHERE scope='STORE_SCOPED' AND store_id=$1 AND deleted_at IS NULL AND lower(canonical_name)=lower($3)),
+   EXISTS(SELECT 1 FROM dsh.catalog_products WHERE scope='SHARED' AND vertical_id=$2 AND deleted_at IS NULL AND lower(canonical_name)=lower($3))`,
+		storeID, verticalID, name).Scan(&local, &shared)
+	return local, shared, err
 }
 
 func storeCatalogImportRunID(storeID, joiningCaseID, sourceSHA, idempotencyKey string) string {
@@ -283,6 +285,26 @@ func (s *Service) commitStoreCatalogImport(ctx context.Context, actorID, actorRo
 		productID := ""
 		if input.NewProduct != nil {
 			productKey := itemKey + "-product"
+			var alreadyCreated bool
+			if err = s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM dsh.catalog_product_mutation_idempotency WHERE idempotency_key=$1)", productKey).Scan(&alreadyCreated); err != nil {
+				return postgres.CatalogImportCommitResult{}, err
+			}
+			if !alreadyCreated {
+				local, shared, checkErr := storeImportNameConflicts(ctx, s.db, storeID, input.NewProduct.VerticalID, input.NewProduct.CanonicalName)
+				if checkErr != nil {
+					return postgres.CatalogImportCommitResult{}, checkErr
+				}
+				if local || shared {
+					code, message := "DUPLICATE_EXISTING", "Store-local Product name already exists"
+					if shared && !local {
+						code, message = "SHARED_PRODUCT_CANDIDATE", "Shared Product name was added after preview; review before importing"
+					}
+					if markErr := postgres.MarkCatalogImportItem(ctx, s.db, preview.Run.ID, item.RowNumber, "FAILED", "", "", code, message, false); markErr != nil {
+						return postgres.CatalogImportCommitResult{}, markErr
+					}
+					continue
+				}
+			}
 			created, productErr := postgres.CreateCatalogProduct(ctx, s.db, *input.NewProduct, productKey,
 				postgres.HashCatalogProductCreateRequest(*input.NewProduct), actorID, rowCorrelation)
 			if productErr != nil {
