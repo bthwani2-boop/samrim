@@ -83,10 +83,10 @@ export function StoreDirectoryCard({
 
 function makeStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    card: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], padding: spacing[2], minHeight: 108, ...elevation.raised },
-    logo: { height: 76, width: 76, borderRadius: radius.lg, backgroundColor: theme.surfaceInset },
-    logoFallback: { height: 76, width: 76, borderRadius: radius.lg, alignItems: "center", justifyContent: "center", backgroundColor: theme.actionSoft },
-    copy: { flex: 1, minWidth: 0, alignItems: "stretch", gap: spacing[1] },
+    card: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: 112, overflow: "hidden", ...elevation.raised },
+    logo: { alignSelf: "stretch", minHeight: 112, width: 100, backgroundColor: theme.surfaceInset },
+    logoFallback: { alignSelf: "stretch", minHeight: 112, width: 100, alignItems: "center", justifyContent: "center", backgroundColor: theme.actionSoft },
+    copy: { flex: 1, minWidth: 0, alignItems: "stretch", gap: spacing[1], paddingVertical: spacing[2] },
     name: { ...typography.titleSm, color: theme.color, textAlign: "auto" },
     activity: { ...typography.caption, color: theme.colorMuted, textAlign: "auto" },
     location: { ...typography.caption, color: theme.colorMuted, textAlign: "auto" },
@@ -100,7 +100,7 @@ function makeStyles(theme: ReturnType<typeof resolveTheme>) {
     statusTextOpen: { color: theme.success },
     deliveryInfo: { ...typography.caption, color: theme.interactiveText, textAlign: "auto" },
     modes: { ...typography.caption, color: theme.colorMuted, textAlign: "auto" },
-    actions: { alignItems: "center", justifyContent: "space-between", gap: spacing[1], maxWidth: 80 },
+    actions: { alignItems: "center", justifyContent: "space-between", gap: spacing[1], maxWidth: 72, paddingEnd: spacing[2] },
     offerButton: { backgroundColor: theme.actionSoft, borderRadius: radius.round, paddingHorizontal: spacing[1], minHeight: 27, justifyContent: "center" },
     offerLabel: { ...typography.caption, color: theme.interactiveText, textAlign: "center" },
     pressed: { opacity: 0.7 },
