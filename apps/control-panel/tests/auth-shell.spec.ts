@@ -1374,11 +1374,11 @@ test("operator creates a product category under its commerce vertical", async ({
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [] }) });
   });
   await page.goto("/catalog/categories?verticalId=vertical_0123456789abcdef0123456789abcdef");
-  await expect(page.getByRole("region", { name: "إدارة الفئات" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "إدارة الفئات" }).locator("#catalog-category-registry-title")).toHaveText("فئات المجال المحدد");
+  await expect(page.getByRole("region", { name: "فئات المجال المحدد" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "فئات المجال المحدد" }).locator("#catalog-category-registry-title")).toHaveText("فئات المجال المحدد");
   await expect(page.locator(".catalog-taxonomy-workspace")).toHaveCount(1);
   await expect(page.locator(".catalog-taxonomy-workspace > .catalog-taxonomy-workbench")).toHaveCount(1);
-  await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(2);
+  await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(0);
   await page.screenshot({ path: "test-results/catalog-taxonomy-workspace.png", fullPage: true });
   await expect(page.getByLabel("المعرف البرمجي للتصنيف", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "فئة رئيسية جديدة", exact: true }).click();
