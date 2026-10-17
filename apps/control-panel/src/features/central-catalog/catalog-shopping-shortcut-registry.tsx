@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import type { CatalogCategoryListItem, CommercialStoreType, ShoppingShortcut, ShoppingShortcutListResponse } from "@bthwani/dsh";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 
 type Option = Readonly<{ id: string; nameAr: string; active: boolean }>;
@@ -34,7 +34,7 @@ async function readOptions(verticalId: string) {
   throw new Error("نتائج الفئات كثيرة ولم يكتمل تحميلها. استخدم البحث في إدارة الفئات أولًا.");
 }
 
-export function CatalogShoppingShortcutRegistry({ verticalId }: Readonly<{ verticalId: string }>) {
+export function CatalogShoppingShortcutRegistry({ verticalId, editorOnly = false, initialId, onSaved, onClose }: Readonly<{ verticalId: string; editorOnly?: boolean; initialId?: string | undefined; onSaved?: () => Promise<void>; onClose?: () => void }>) {
   const { state } = useSession();
   const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("catalog") === true;
   const [items, setItems] = useState<ReadonlyArray<ShoppingShortcut>>([]);
@@ -53,6 +53,7 @@ export function CatalogShoppingShortcutRegistry({ verticalId }: Readonly<{ verti
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const reloadSequence = useRef(0);
+  const initialized = useRef(false);
 
   const clearEditor = useCallback(() => {
     setSelected(null);
@@ -88,7 +89,7 @@ export function CatalogShoppingShortcutRegistry({ verticalId }: Readonly<{ verti
 
   useEffect(() => { clearEditor(); setNotice(""); void reload(); }, [clearEditor, reload]);
 
-  function edit(item: ShoppingShortcut) {
+  const edit = useCallback((item: ShoppingShortcut) => {
     setSelected(item);
     setTitleAr(item.titleAr);
     setOrdinal(item.ordinal);
@@ -99,7 +100,21 @@ export function CatalogShoppingShortcutRegistry({ verticalId }: Readonly<{ verti
     setNotice("");
     setError("");
     setEditing(true);
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!editorOnly || initialized.current) return;
+    if (initialId) {
+      const item = items.find((entry) => entry.id === initialId);
+      if (!item) return;
+      initialized.current = true;
+      edit(item);
+    } else {
+      initialized.current = true;
+      clearEditor();
+      setEditing(true);
+    }
+  }, [editorOnly, initialId, items, clearEditor, edit]);
 
   function toggle(id: string, current: ReadonlyArray<string>, set: (next: ReadonlyArray<string>) => void) {
     set(current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
@@ -132,21 +147,22 @@ export function CatalogShoppingShortcutRegistry({ verticalId }: Readonly<{ verti
       setNotice(`تم حفظ الاختصار «${payload.shortcut.titleAr}».`);
       clearEditor();
       await reload();
+      if (editorOnly) { await onSaved?.(); onClose?.(); }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر حفظ اختصار التسوق."); }
     finally { setSaving(false); }
   }
 
   return <section className="catalog-taxonomy-section" aria-labelledby="shopping-shortcut-heading">
-    <div className="access-card-heading">
+    {!editorOnly ? <div className="access-card-heading">
       <h3 id="shopping-shortcut-heading">اختصارات التسوق للعملاء</h3>
       <p className="muted">أسماء مبسطة تجمع أنواع متاجر أو فئات منتجات. لا تغيّر عمولات المتاجر أو تصنيفاتها الداخلية. تظهر للعملاء فقط عند وجود عروض مؤهلة.</p>
       {!editing ? <button type="button" className="button button-primary" disabled={!canEdit || !verticalId || loading || saving} onClick={() => { clearEditor(); setEditing(true); }}>إضافة اختصار</button> : null}
-    </div>
+    </div> : null}
     {error ? <p role="alert" className="identity-error">{error} <button type="button" onClick={() => void reload()}>إعادة القراءة</button></p> : null}
     {notice ? <output className="managed-status managed-status-success">{notice}</output> : null}
     {loading ? <output>جارٍ قراءة اختصارات التسوق ومصادرها…</output> : null}
     {!loading && items.length === 0 && !error ? <p className="muted">لا توجد اختصارات لهذا المجال. لا تظهر اختصارات فارغة للعملاء.</p> : null}
-    {editing ? <fieldset className="access-form catalog-shortcut-editor" aria-label="محرر اختصار التسوق">
+    {editing || (editorOnly && !initialId) ? <fieldset className="access-form catalog-shortcut-editor" aria-label="محرر اختصار التسوق">
       <label className="field-label">اسم الاختصار الظاهر للعميل
         <input disabled={saving || !canEdit} value={titleAr} maxLength={160} onChange={(event) => setTitleAr(event.target.value)} placeholder="لحوم ودجاج" />
       </label>
@@ -167,12 +183,12 @@ export function CatalogShoppingShortcutRegistry({ verticalId }: Readonly<{ verti
       <label className="field-label">سبب الإضافة أو التعديل
         <textarea rows={2} value={reason} maxLength={500} disabled={!canEdit || saving} onChange={(event) => setReason(event.target.value)} />
       </label>
-      <div className="catalog-registry-actions">
+      <div className="catalog-registry-actions unified-taxonomy-save-actions">
         <button type="button" className="button button-primary" disabled={!canEdit || saving} onClick={() => void save()}>{saving ? "جارٍ الحفظ…" : "حفظ الاختصار"}</button>
-        <button type="button" className="button button-secondary" disabled={saving} onClick={clearEditor}>إلغاء</button>
+        <button type="button" className="button button-secondary" disabled={saving} onClick={() => { clearEditor(); if (editorOnly) onClose?.(); }}>إلغاء</button>
       </div>
     </fieldset> : null}
-    {items.length ? <div className="catalog-registry-table-wrap"><table className="catalog-registry-table">
+    {!editorOnly && items.length ? <div className="catalog-registry-table-wrap"><table className="catalog-registry-table">
       <thead><tr><th>الاختصار</th><th>المصادر</th><th>الحالة</th><th>الإدارة</th></tr></thead>
       <tbody>{items.map((item) => <tr key={item.id}>
         <td><strong>{item.titleAr}</strong></td>

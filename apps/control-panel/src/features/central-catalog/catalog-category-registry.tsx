@@ -2,7 +2,7 @@
 import { TextArea } from "@bthwani/design-system/web";
 
 import { type CatalogCategoryListItem, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CommerceVertical, isMediaProvenanceInputValid, type MediaProvenanceInput } from "@bthwani/dsh";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { CatalogAttributePolicyWorkspace } from "./catalog-attribute-policy-workspace";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "./catalog-media-provenance-fields";
@@ -24,7 +24,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
-export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChange, categories, nextCursor, onFilter, categoryId, onCategoryChange, loading, onSaved, onManageVerticals }: {
+export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChange, categories, nextCursor, onFilter, categoryId, onCategoryChange, loading, onSaved, onManageVerticals, editorOnly = false, initialId, onClose }: {
   verticals: ReadonlyArray<CommerceVertical>;
   verticalId: string;
   onVerticalChange: (verticalId: string) => void;
@@ -36,6 +36,9 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   loading: boolean;
   onSaved: () => Promise<void>;
   onManageVerticals: () => void;
+  editorOnly?: boolean;
+  initialId?: string | undefined;
+  onClose?: () => void;
 }) {
   const { state } = useSession();
   const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("catalog") === true;
@@ -56,6 +59,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   const [mediaProvenance, setMediaProvenance] = useState<MediaProvenanceInput>({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
   const [busy, setBusy] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [showMedia, setShowMedia] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [categoryQuery, setCategoryQuery] = useState("");
@@ -63,6 +67,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   const [categorySort, setCategorySort] = useState<CategorySort>("name_asc");
   const [filtering, setFiltering] = useState(false);
   const parentSearchSequence = useRef(0);
+  const editorInitialized = useRef(false);
   const categoryDetailSequence = useRef(0);
 
 
@@ -113,7 +118,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
     return () => { activeRequest = false; };
   }, [categories, categoryId, verticalId]);
 
-  function openCreate(nextParentCategoryId = "") {
+  const openCreate = useCallback((nextParentCategoryId = "") => {
     parentSearchSequence.current += 1;
     setEditingCategory(null);
     setConfirmTrash(false);
@@ -129,9 +134,9 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
     setError("");
     setNotice("");
     setEditorOpen(true);
-  }
+  }, [categories, categoryIndex]);
 
-  function edit(category: CatalogCategoryListItem) {
+  const edit = useCallback((category: CatalogCategoryListItem) => {
     const parentRequestId = ++parentSearchSequence.current;
     setEditingCategory(category);
     setConfirmTrash(false);
@@ -153,9 +158,10 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
     setReason("");
     setError("");
     setNotice("");
-  }
+  }, [onCategoryChange]);
 
   function closeEditor() {
+    if (editorOnly) onClose?.();
     parentSearchSequence.current += 1;
     setEditingCategory(null);
     setConfirmTrash(false);
@@ -169,6 +175,21 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
     setReason("");
     setError("");
   }
+
+  useEffect(() => {
+    if (!editorOnly || editorInitialized.current) return;
+    if (initialId) {
+      const item = categories.find((category) => category.id === initialId);
+      if (!item) return;
+      editorInitialized.current = true;
+      edit(item);
+    } else {
+      editorInitialized.current = true;
+      openCreate();
+    }
+    // An editor instance represents a single selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editorOnly, initialId, categories, edit, openCreate]);
 
   async function searchParents(cursor = "", append = false) {
     if (!verticalId) return;
@@ -262,6 +283,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       setCategorySort("name_asc");
       onCategoryChange(payload.category.id);
       await onSaved();
+      if (editorOnly) onClose?.();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "تعذر حفظ الفئة.");
     } finally {
@@ -347,7 +369,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
         ? `ضمن ${parent.nameAr}`
         : "ضمن المسار المحفوظ · الأب خارج النتائج الحالية";
     return <li key={category.id} className="catalog-taxonomy-tree-node">
-      <div className={"catalog-taxonomy-tree-row" + (category.id === categoryId ? " is-selected" : "")}>
+      <div className={`catalog-taxonomy-tree-row${category.id === categoryId ? " is-selected" : ""}`}>
         {children.length ? <button type="button" className="catalog-taxonomy-tree-toggle" aria-label={`${collapsed ? "توسيع" : "طي"} فروع ${category.nameAr}`} aria-expanded={!collapsed} onClick={() => setCollapsedCategoryIDs((current) => {
           const next = new Set(current);
           if (next.has(category.id)) next.delete(category.id); else next.add(category.id);
@@ -359,7 +381,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
           <span className="catalog-taxonomy-tree-meta"><bdi dir="ltr">{category.nameEn}</bdi><span>{category.pathAr}</span></span>
         </button>
         <span className="catalog-taxonomy-child-count"><span>{locationLabel}</span>{children.length ? <small>{children.length} فئات فرعية محمّلة</small> : null}</span>
-        <span className={"catalog-taxonomy-tree-status" + (category.active ? " is-active" : "")}>{category.active ? "نشطة" : "متوقفة"}</span>
+        <span className={`catalog-taxonomy-tree-status${category.active ? " is-active" : ""}`}>{category.active ? "نشطة" : "متوقفة"}</span>
         <div className="catalog-taxonomy-row-actions">
           <button type="button" className="catalog-row-action" disabled={!canEdit || busy || !category.active} onClick={() => openCreate(category.id)}>＋ فرعية</button>
           <button type="button" className="catalog-row-action" disabled={!canEdit || busy} onClick={() => edit(category)}>تعديل</button>
@@ -370,31 +392,33 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   }
 
   return <section className="access-card catalog-taxonomy-workbench" aria-labelledby="catalog-category-registry-title">
-    <div className="catalog-taxonomy-workbench-heading">
+    {!editorOnly ? <div className="catalog-taxonomy-workbench-heading">
       <div>
         <h3 id="catalog-category-registry-title">فئات المجال المحدد</h3>
       </div>
       <button type="button" className="button button-primary catalog-taxonomy-main-action" disabled={!canEdit || busy} onClick={() => { if (verticalReady) openCreate(); else if (selectedVertical || verticals.length === 0) { onManageVerticals(); } else onVerticalChange(verticals.find((vertical) => vertical.active)?.id ?? ""); }}>{mainActionLabel}</button>
-    </div>
+    </div> : null}
     {error ? <p className="identity-error" role="alert">{error}</p> : null}
     {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
 
     {editorOpen ? <div className="catalog-category-editor">
-      <div className="catalog-category-detail-heading">
+      {!editorOnly ? <div className="catalog-category-detail-heading">
         <span className="catalog-category-monogram" aria-hidden="true">{nameAr.trim().slice(0, 1) || "＋"}</span>
         <div><span className="eyebrow">{categoryEditorEyebrow}</span><h4>{editingCategory ? "تعديل الفئة" : "إضافة فئة"}</h4></div>
-      </div>
-      <form className="catalog-category-filters" noValidate onSubmit={(event) => { event.preventDefault(); void searchParents(); }}>
-        <label className="field-label" htmlFor="catalog-category-parent-search">بحث عن الفئة الأعلى<input id="catalog-category-parent-search" type="search" maxLength={160} value={parentSearch} disabled={busy || !canEdit || !verticalId} onChange={(event) => setParentSearch(event.target.value)} placeholder="اتركه فارغًا لعرض الفئات المحملة أو ابحث بالاسم" /></label>
-        <button type="submit" className="button button-secondary" disabled={busy || parentLoading || !verticalId}>{parentLoading ? "جارٍ البحث…" : "بحث"}</button>
-      </form>
-      <label className="field-label" htmlFor="catalog-category-parent">تتبع الفئة<select id="catalog-category-parent" disabled={busy || !canEdit || !verticalId} value={parentCategoryId} onChange={(event) => setParentCategoryId(event.target.value)}><option value="">فئة رئيسية</option>{parentOptions.filter((category) => category.id !== editingCategory?.id).map((category) => <option value={category.id} key={category.id}>{category.pathAr}{category.active ? "" : " · متوقفة"}</option>)}</select></label>
+      </div> : null}
+      <details className="unified-taxonomy-parent-search"><summary>تغيير الفئة الأعلى بالبحث</summary>
+        <form className="catalog-category-filters" noValidate onSubmit={(event) => { event.preventDefault(); void searchParents(); }}>
+          <label className="field-label" htmlFor="catalog-category-parent-search">اسم الفئة<input id="catalog-category-parent-search" type="search" maxLength={160} value={parentSearch} disabled={busy || !canEdit || !verticalId} onChange={(event) => setParentSearch(event.target.value)} placeholder="ابحث عن الفئة الأعلى…" /></label>
+          <button type="submit" className="button button-secondary" disabled={busy || parentLoading || !verticalId}>{parentLoading ? "جارٍ البحث…" : "بحث"}</button>
+        </form>
+      </details>
+      <label className="field-label" htmlFor="catalog-category-parent">الفئة الأعلى<select id="catalog-category-parent" disabled={busy || !canEdit || !verticalId} value={parentCategoryId} onChange={(event) => setParentCategoryId(event.target.value)}><option value="">فئة رئيسية</option>{parentOptions.filter((category) => category.id !== editingCategory?.id).map((category) => <option value={category.id} key={category.id}>{category.pathAr}{category.active ? "" : " · متوقفة"}</option>)}</select></label>
       {parentNextCursor ? <button type="button" className="button button-quiet" disabled={parentLoading} onClick={() => void searchParents(parentNextCursor, true)}>تحميل المزيد من الفئات الأعلى</button> : null}
 
       <label className="field-label" htmlFor="catalog-category-name-ar">الاسم بالعربية<input id="catalog-category-name-ar" disabled={busy || !canEdit} value={nameAr} onChange={(event) => setNameAr(event.target.value)} maxLength={160} autoComplete="off" /></label>
       <label className="field-label" htmlFor="catalog-category-name-en">الاسم بالإنجليزية<input id="catalog-category-name-en" disabled={busy || !canEdit} value={nameEn} onChange={(event) => setNameEn(event.target.value)} maxLength={160} dir="auto" autoComplete="off" /></label>
       {editingCategory ? <label className="catalog-category-active-toggle"><input id="catalog-category-active" type="checkbox" disabled={busy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> إظهار الفئة للمنتجات</label> : null}
-      <label className="field-label" htmlFor="catalog-category-reason">سبب التغيير<TextArea id="catalog-category-reason" className="resize-none" disabled={busy || !canEdit} minLength={5} maxLength={500} rows={2} value={reason} onChange={(event) => setReason(event.target.value)} aria-describedby="catalog-category-reason-help" /></label>
+      <label className="field-label" htmlFor="catalog-category-reason">سبب {editingCategory ? "تعديل" : "إضافة"} الفئة<TextArea id="catalog-category-reason" className="resize-none" disabled={busy || !canEdit} minLength={5} maxLength={500} rows={2} value={reason} onChange={(event) => setReason(event.target.value)} aria-describedby="catalog-category-reason-help" /></label>
       <small id="catalog-category-reason-help" className="muted">مطلوب للتوثيق · {reason.trim().length}/500</small>
       {editingCategory && canEdit ? <div className="catalog-category-editor-actions">
         {!confirmTrash ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => setConfirmTrash(true)}>نقل الفئة إلى سلة المحذوفات</button> : <>
@@ -403,10 +427,11 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
           <button type="button" className="button button-secondary" disabled={busy} onClick={() => setConfirmTrash(false)}>إلغاء</button>
         </>}
       </div> : null}
-      <div className="catalog-category-editor-actions"><button type="button" className="button button-primary" disabled={busy || !canEdit || reason.trim().length < 5} onClick={() => void saveCategory()}>{categoryEditorActionLabel}</button><button type="button" className="button button-secondary" disabled={busy} onClick={closeEditor}>إلغاء</button></div>
+      {editorOnly && editingCategory ? <button type="button" className="button button-secondary" onClick={() => setShowMedia((value) => !value)} aria-expanded={showMedia}>{showMedia ? "إخفاء الصورة والخصائص" : "الصورة والخصائص"}</button> : null}
+      <div className="catalog-category-editor-actions unified-taxonomy-save-actions"><button type="button" className="button button-primary" disabled={busy || !canEdit || reason.trim().length < 5} onClick={() => void saveCategory()}>{categoryEditorActionLabel}</button><button type="button" className="button button-secondary" disabled={busy} onClick={closeEditor}>إلغاء</button></div>
     </div> : null}
 
-    {verticalId && selectedVertical?.active ? <>
+    {!editorOnly && verticalId && selectedVertical?.active ? <>
       <form className="catalog-category-filters" noValidate onSubmit={(event) => { event.preventDefault(); void filterCategories(); }}>
         <div className="catalog-category-search-field"><label className="field-label" htmlFor="catalog-category-search">بحث<input id="catalog-category-search" type="search" maxLength={160} value={categoryQuery} disabled={loading || filtering} onChange={(event) => setCategoryQuery(event.target.value)} placeholder="اسم الفئة بالعربية أو الإنجليزية" /></label>{categoryQuery ? <button type="button" className="button button-quiet catalog-category-clear" aria-label="مسح بحث الفئات" disabled={filtering} onClick={() => { setCategoryQuery(""); setCategoryStatus("all"); setCategorySort("name_asc"); void filterCategories("", "all", "name_asc"); }}>مسح</button> : null}</div>
         <label className="field-label" htmlFor="catalog-category-status">الحالة<select id="catalog-category-status" value={categoryStatus} disabled={loading || filtering} onChange={(event) => setCategoryStatus(event.target.value as CategoryStatus)}><option value="all">كل الحالات</option><option value="active">نشطة</option><option value="inactive">متوقفة</option></select></label>
@@ -426,14 +451,16 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
         </> : null}
       </div>
       {nextCursor ? <div className="catalog-category-editor-actions"><button type="button" className="button button-secondary" disabled={loading || filtering} onClick={() => void loadMoreCategories()}>{filtering ? "جارٍ التحميل…" : "تحميل الصفحة التالية"}</button></div> : null}
-      {focusedCategory && !editorOpen ? <section className="catalog-category-detail" aria-labelledby="catalog-category-detail-title">
+
+    </> : null}
+      {focusedCategory && (!editorOpen || (editorOnly && showMedia)) ? <section className="catalog-category-detail" aria-labelledby="catalog-category-detail-title">
         <div className="catalog-category-detail-heading">
           {focusedCategory.imageUri ? <img className="catalog-category-detail-image" src={focusedCategory.imageUri} alt={`صورة ${focusedCategory.nameAr}`} /> : <span className="catalog-category-monogram" aria-hidden="true">{focusedCategory.nameAr.slice(0, 1)}</span>}
           <div><span className="eyebrow">{focusedCategory.parentCategoryId ? "فئة فرعية" : "فئة رئيسية"}</span><h4 id="catalog-category-detail-title">{focusedCategory.nameAr}</h4><bdi dir="ltr">{focusedCategory.nameEn}</bdi></div>
         </div>
         <p className="catalog-category-breadcrumb">{focusedCategory.pathAr}</p>
         <a className="button button-secondary" href={`/catalog/products?verticalId=${encodeURIComponent(verticalId)}&categoryId=${encodeURIComponent(focusedCategory.id)}`}>عرض المنتجات في هذه الفئة وفروعها</a>
-        <span className={"catalog-state-pill " + (focusedCategory.active ? "is-active" : "is-inactive")}>{focusedCategory.active ? "نشطة" : "متوقفة"}</span>
+        <span className={`catalog-state-pill ${focusedCategory.active ? "is-active" : "is-inactive"}`}>{focusedCategory.active ? "نشطة" : "متوقفة"}</span>
         <div className="catalog-category-media-editor">
           <div className="catalog-category-media-preview">{focusedCategory.imageUri ? <img src={focusedCategory.imageUri} alt={`معاينة صورة ${focusedCategory.nameAr}`} /> : <span aria-hidden="true">صورة الفئة</span>}</div>
           <div className="catalog-category-media-controls">
@@ -444,18 +471,17 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
             <button type="button" className="button button-secondary" disabled={!canEdit || busy || !categoryImageFile || mediaReason.trim().length < 5 || !isMediaProvenanceInputValid(mediaProvenance)} onClick={() => void uploadCategoryImage(focusedCategory)}>{categoryImageActionLabel}</button>
           </div>
         </div>
-        <div className="catalog-category-detail-actions">
+        {!editorOnly ? <div className="catalog-category-detail-actions">
           <button type="button" className="button button-primary" disabled={!canEdit || busy || !focusedCategory.active} onClick={() => openCreate(focusedCategory.id)}>إضافة فئة فرعية</button>
           <button type="button" className="button button-secondary" disabled={!canEdit || busy} onClick={() => edit(focusedCategory)}>تعديل الفئة</button>
-        </div>
+        </div> : null}
         <details className="catalog-category-properties">
           <summary>خصائص المنتجات وقواعد هذه الفئة</summary>
           <CatalogAttributePolicyWorkspace key={focusedCategory.id} verticalId={verticalId} categoryId={focusedCategory.id} />
         </details>
       </section> : null}
-    </> : null}
-    {!verticalReady && verticalId ? <div className="catalog-taxonomy-empty"><strong>المجال المحدد غير نشط</strong><p>فعّل هذا المجال من إعدادات المجالات التجارية أولًا.</p></div> : null}
-    {!verticalId ? <div className="catalog-taxonomy-empty"><strong>لا توجد مجالات تجارية نشطة</strong><p>فعّل مجالًا من إدارة المجالات التجارية أدناه.</p></div> : null}
+    {!editorOnly && !verticalReady && verticalId ? <div className="catalog-taxonomy-empty"><strong>المجال المحدد غير نشط</strong><p>فعّل هذا المجال من إعدادات المجالات التجارية أولًا.</p></div> : null}
+    {!editorOnly && !verticalId ? <div className="catalog-taxonomy-empty"><strong>لا توجد مجالات تجارية نشطة</strong><p>فعّل مجالًا من إدارة المجالات التجارية أدناه.</p></div> : null}
 
   </section>;
 }

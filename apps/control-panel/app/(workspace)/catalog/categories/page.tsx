@@ -2,7 +2,7 @@ import { CatalogTaxonomyWorkspace } from "../../../../src/features/central-catal
 import { CatalogWorkspace } from "../../../../src/features/central-catalog/catalog-workspace";
 
 export default function CatalogCategoriesPage() {
-  return <CatalogWorkspace resource="categories"><CatalogTaxonomyWorkspace /></CatalogWorkspace>;
+  return <CatalogWorkspace resource="categories" title="التصنيفات"><CatalogTaxonomyWorkspace /></CatalogWorkspace>;
 }
 
-export const metadata = { title: "فئات المنتجات" };
+export const metadata = { title: "التصنيفات" };
