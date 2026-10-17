@@ -43,10 +43,10 @@ function classificationLabel(item: CatalogImportItem): string {
   }
 }
 
-export function StoreCatalogImportWorkspace() {
+export function StoreCatalogImportWorkspace({fixedStore,onImported}:Readonly<{fixedStore?:StoreImportOption;onImported?:()=>void}> = {}) {
   const [stores, setStores] = useState<OperatorStoreListResponse["stores"]>([]);
-  const [storeID, setStoreID] = useState("");
-  const [selectedStore, setSelectedStore] = useState<StoreImportOption | null>(null);
+  const [storeID, setStoreID] = useState(fixedStore?.id ?? "");
+  const [selectedStore, setSelectedStore] = useState<StoreImportOption | null>(fixedStore ?? null);
   const [storeSearch, setStoreSearch] = useState("");
   const [appliedStoreSearch, setAppliedStoreSearch] = useState("");
   const [storeCursor, setStoreCursor] = useState("");
@@ -75,6 +75,7 @@ export function StoreCatalogImportWorkspace() {
       setStoreCursor(params.get("storeCursor") ?? "");
       setStoreCursorStack(history?.storeCatalogImportCursors ?? []);
     };
+    if (fixedStore) {setStoreListReady(true);return;}
     syncStoreListFromUrl();
     setStoreListReady(true);
     window.addEventListener("popstate", syncStoreListFromUrl);
@@ -83,6 +84,7 @@ export function StoreCatalogImportWorkspace() {
 
   useEffect(() => {
     if (!storeListReady) return;
+    if (fixedStore) {setStoresLoading(false);return;}
     const controller = new AbortController();
     const sequence = storeRequestSequence.current + storeListRefresh + 1;
     storeRequestSequence.current = sequence;
@@ -208,7 +210,7 @@ export function StoreCatalogImportWorkspace() {
       });
       const committed = await readJson<ImportResult>(response);
       setResult(committed);
-      if (committed.run.state === "committed") setCommitAttempt(null);
+      if (committed.run.state === "committed") {setCommitAttempt(null);onImported?.();}
       setNotice(committed.run.state === "committed"
         ? "اعتمد النظام الصفوف الصالحة، وتم حفظ الصفوف غير المعروفة للمراجعة دون إنشاء منتجات."
         : "تعذر اعتماد بعض الصفوف. الصفوف المحفوظة لن تتكرر؛ أعد اعتماد الصفوف الفاشلة فقط.");
@@ -226,7 +228,7 @@ export function StoreCatalogImportWorkspace() {
       <h2 id="store-catalog-import-title">استيراد كتالوج المتجر</h2>
       <p className="muted">ارفع ملف CSV أو Excel لمراجعة المنتجات والأسعار قبل الحفظ. الحد 5000 صف و20 ميغابايت.</p>
     </div>
-    <div className="catalog-import-store-picker" aria-busy={storesLoading}>
+    {!fixedStore ? <div className="catalog-import-store-picker" aria-busy={storesLoading}>
       <form className="catalog-import-store-search" noValidate onSubmit={(event) => { event.preventDefault(); navigateStoreList(storeSearch.trim().slice(0, 128), "", []); }}>
         <label className="field-label" htmlFor="store-catalog-import-store-search">ابحث عن متجر بالاسم<input id="store-catalog-import-store-search" type="search" value={storeSearch} maxLength={128} onChange={(event) => setStoreSearch(event.target.value)} placeholder="اكتب اسم المتجر ثم ابحث" disabled={Boolean(busy)} /></label>
         <button type="submit" className="button button-secondary" disabled={storesLoading || Boolean(busy)}>بحث</button>
@@ -248,7 +250,7 @@ export function StoreCatalogImportWorkspace() {
         <span>صفحة {storeCursorStack.length + 1}</span>
         <button type="button" className="button button-secondary" disabled={storesLoading || Boolean(busy) || !nextStoreCursor} onClick={() => navigateStoreList(appliedStoreSearch, nextStoreCursor, [...storeCursorStack, storeCursor])}>التالي</button>
       </nav> : null}
-    </div>
+    </div> : <p className="store-profile-muted">الاستيراد إلى المتجر المحدد: <strong>{fixedStore.name}</strong></p>}
     <label className="field-label" htmlFor="store-catalog-import-file">ملف الباركود والأسعار<input id="store-catalog-import-file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={Boolean(busy)} onChange={(event) => selectFile(event.target.files?.[0] ?? null)} /></label>
     {file ? <p className="muted">{file.name} · {(file.size / (1024 * 1024)).toFixed(2)} ميغابايت</p> : null}
     <button type="button" className="button button-primary" disabled={Boolean(busy) || !file || !storeID.trim()} onClick={() => void preview()}>{busy === "preview" ? "جارٍ إنشاء المعاينة…" : "معاينة الملف"}</button>

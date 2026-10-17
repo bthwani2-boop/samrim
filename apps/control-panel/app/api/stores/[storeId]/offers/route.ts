@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, listOperatorStoreOffers } from "../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, listOperatorStoreOffers, createOperatorStoreCatalogOffer } from "../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../src/server/security/csrf";
@@ -30,4 +31,24 @@ export async function GET(request: Request, context: { params: Promise<{ storeId
     const payload = dshErrorPayload(error);
     return fail(payload.code, payload.message, dshHttpStatus(error));
   }
+}
+
+
+async function operatorCatalogAccess(request: Request) {
+ if(!verifySameOrigin(request))return {response:fail("FORBIDDEN","Cross-origin request rejected",403)};
+ const identity=await readOperatorSession();if(!identity)return {response:fail("UNAUTHENTICATED","Authentication required",401)};
+ if(identity.role!=="operator")return {response:fail("FORBIDDEN","Operator access required",403)};
+ const denied=operatorWorkspacePermissionDenied(identity,"partners");if(denied)return {response:denied};
+ return {actorId:identity.subject};
+}
+function operatorCatalogMutation(request:Request){const idempotencyKey=request.headers.get("Idempotency-Key")?.trim()??"";return idempotencyKey.length>=8?{idempotencyKey,correlationId:request.headers.get("X-Correlation-ID")?.trim()||randomUUID()}:null;}
+function operatorCatalogError(cause:unknown){if(isDshClientError(cause)){const value=dshErrorPayload(cause);return fail(value.code,value.message,dshHttpStatus(cause))}return fail("INTERNAL_ERROR","Store catalog mutation failed",500)}
+export async function POST(request: Request, ctx: {params:Promise<{storeId:string}>}) {
+ const permit=await operatorCatalogAccess(request);if(permit.response)return permit.response;
+ const {storeId}=await ctx.params;const attempt=operatorCatalogMutation(request);
+ if(!storeId||storeId.length>128||!attempt)return fail("INVALID_INPUT","Store or idempotency key invalid",400);
+ const input=await request.json().catch(()=>null);
+ if(!input||typeof input!=="object"||typeof input.variantId!=="string"||!Number.isSafeInteger(input.priceMinor)||input.priceMinor<1)return fail("INVALID_INPUT","Invalid Store offer",400);
+ try{const result=await createOperatorStoreCatalogOffer(storeId,input,{operatorActorId:permit.actorId!,...attempt});return NextResponse.json(result.payload,{status:result.status,headers:{"Cache-Control":"no-store"}})}
+ catch(cause){return operatorCatalogError(cause)}
 }

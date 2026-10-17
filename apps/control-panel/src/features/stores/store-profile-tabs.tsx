@@ -6,7 +6,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { StoreAvailabilityControls } from "./store-availability-controls";
 import { StoreBranchesPreview } from "./store-branches-preview";
-import { StoreOffersPreview } from "./store-offers-preview";
+import { StoreProductsWorkspace } from "./store-products-workspace";
 import { StoreOperationsPreview } from "./store-operations-preview";
 
 type Store = StorePublicationResponse["store"];
@@ -91,7 +91,7 @@ export function StoreProfileTabs({ activeTab, store, partner, partnerError, canV
 
     <Panel id="products" selected={activeTab === "products"}>
       <div className="store-profile-tab-grid">
-        <Card title="المنتجات والأسعار والتوفر"><StoreOffersPreview storeId={store.id}/></Card>
+        <Card title="المنتجات والأسعار والتوفر"><StoreProductsWorkspace storeId={store.id} verticalId={store.primaryVerticalId} storeName={store.name}/></Card>
       </div>
     </Panel>
 

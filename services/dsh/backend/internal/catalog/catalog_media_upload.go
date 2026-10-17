@@ -227,3 +227,15 @@ func (s *Service) ReconcileMediaStorage(ctx context.Context) error {
 	}
 	return firstErr
 }
+
+func (s *Service) UploadStoreProductMediaForOperator(ctx context.Context, actorID, storeID, productID string, input CatalogMediaUploadInput) (postgres.CatalogProductResult, error) {
+	product, err := s.ReadStoreProductForOperator(ctx, actorID, storeID, productID)
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if product.Scope != "STORE_SCOPED" {
+		return postgres.CatalogProductResult{}, postgres.ErrCatalogProductOwnership
+	}
+	input.ProductID = strings.TrimSpace(productID)
+	return s.uploadCatalogProductMedia(ctx, strings.TrimSpace(actorID), input)
+}

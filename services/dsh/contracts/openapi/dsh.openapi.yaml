@@ -308,6 +308,21 @@ paths:
   /dsh/catalog/imports/preview:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1imports~1preview"
 
+  /dsh/operator/stores/{storeId}/products:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1products"
+
+  /dsh/operator/stores/{storeId}/offers:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1offers"
+
+  /dsh/operator/stores/{storeId}/offers/{offerId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1offers~1{offerId}"
+
+  /dsh/operator/stores/{storeId}/products/{productId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1products~1{productId}"
+
+  /dsh/operator/stores/{storeId}/products/{productId}/media/upload:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1products~1{productId}~1media~1upload"
+
   /dsh/catalog/store-imports/preview:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1store-imports~1preview"
 

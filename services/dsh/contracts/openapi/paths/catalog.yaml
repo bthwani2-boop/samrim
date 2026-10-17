@@ -1376,3 +1376,119 @@ paths:
       responses:
         "200": { description: Customer-visible catalog readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PublicCatalogResponse" } } } }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
+  /dsh/operator/stores/{storeId}/products:
+    get:
+      operationId: listOperatorStoreCatalogProducts
+      summary: Search Shared Products compatible with the selected Store for Operator catalog preparation
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 160 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 2048 } }
+      responses:
+        "200": { description: Store-compatible Shared Product page., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductListResponse" } } } }
+    post:
+      operationId: createOperatorStoreProduct
+      summary: Create a Store-scoped Product as an authorized Operator
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCatalogProductRequest" } }
+      responses:
+        "201": { description: Created Store-scoped product., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
+  /dsh/operator/stores/{storeId}/offers:
+    post:
+      operationId: createOperatorStoreOffer
+      summary: Create StoreOffer with operator attribution
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateStoreOfferRequest" } }
+      responses:
+        "201": { description: Created Store offer in draft., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferResponse" } } } }
+  /dsh/operator/stores/{storeId}/offers/{offerId}:
+    patch:
+      operationId: updateOperatorStoreOffer
+      summary: Update a StoreOffer with operator attribution and optimistic concurrency
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/OfferId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateStoreOfferRequest" } }
+      responses:
+        "200": { description: Updated StoreOffer readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferResponse" } } } }
+
+  /dsh/operator/stores/{storeId}/products/{productId}:
+    get:
+      operationId: readOperatorStoreProduct
+      summary: Read a Shared or this Store's locally owned Product
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProductId"
+      responses:
+        "200": { description: Store-scoped readable Product., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProduct" } } } }
+    patch:
+      operationId: updateOperatorStoreProduct
+      summary: Edit the name and description of a Store-scoped Product with operator audit
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProductId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCatalogProductRequest" } }
+      responses:
+        "200": { description: Updated Product readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
+  /dsh/operator/stores/{storeId}/products/{productId}/media/upload:
+    post:
+      operationId: uploadOperatorStoreProductMedia
+      summary: Upload a primary or gallery image for a Store-local Product
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProductId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/UploadCatalogProductMediaRequest"
+      responses:
+        "201": { description: Uploaded image and canonical product readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
