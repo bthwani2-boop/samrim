@@ -109,15 +109,20 @@ func RecordDiscoveryContentEvent(ctx context.Context, db *sql.DB, input Discover
 	}
 	if input.EventType == "CONVERSION" {
 		// Conversion means an order created after a recorded click, attributed
-		// to the same content and session within the last 24 hours. Knowing an
-		// order ID alone is not evidence that marketing led to that order.
+		// to the latest clicked content in the same session within 24 hours.
+		// Knowing an order ID or an older click alone is not attribution.
 		if err := db.QueryRowContext(ctx, `SELECT EXISTS (
 			SELECT 1 FROM dsh.commerce_orders orders
-			JOIN dsh.discovery_content_events click ON click.content_id=$1
+			JOIN LATERAL (
+				SELECT click.content_id
+				FROM dsh.discovery_content_events click
+				WHERE click.event_type='CLICK' AND click.client_session_id=$4
+				  AND click.occurred_at<=orders.created_at
+				  AND click.occurred_at>=orders.created_at-interval '24 hours'
+				ORDER BY click.occurred_at DESC,click.id DESC
+				LIMIT 1
+			) latest_click ON latest_click.content_id=$1
 			WHERE orders.id=$2 AND orders.client_actor_id=$3
-			  AND click.event_type='CLICK' AND click.client_session_id=$4
-			  AND click.occurred_at<=orders.created_at
-			  AND click.occurred_at>=orders.created_at-interval '24 hours'
 		)`, input.ContentID, input.OrderID, input.ClientActorID, input.ClientSessionID).Scan(&eligible); err != nil {
 			return err
 		}
@@ -135,7 +140,7 @@ func RecordDiscoveryContentEvent(ctx context.Context, db *sql.DB, input Discover
 		}
 	}
 	result, err := db.ExecContext(ctx, `INSERT INTO dsh.discovery_content_events(id,client_event_id,content_id,event_type,client_session_id,client_actor_id,order_id)
-		VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,'')) ON CONFLICT (client_event_id) DO NOTHING`, input.ID, input.ClientEventID, input.ContentID, input.EventType, input.ClientSessionID, input.ClientActorID, input.OrderID)
+		VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,'')) ON CONFLICT DO NOTHING`, input.ID, input.ClientEventID, input.ContentID, input.EventType, input.ClientSessionID, input.ClientActorID, input.OrderID)
 	if err != nil {
 		return err
 	}
