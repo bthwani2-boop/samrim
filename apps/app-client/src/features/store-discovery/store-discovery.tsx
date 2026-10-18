@@ -326,7 +326,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   }
 
   const categoryTabs = selectedVertical ? <>
-    <BthwaniChip label="كل فئات المنتجات" selected={!selectedCategoryID} onPress={() => selectCategory("")} />
     {taxonomy.trail.map((category, index) => <BthwaniChip key={category.id} label={category.nameAr} selected={index === taxonomy.trail.length - 1} onPress={() => selectCategory(category.id)} />)}
     {taxonomy.children.map((category) => <BthwaniChip key={category.id} label={category.nameAr} selected={selectedCategoryID === category.id} onPress={() => selectCategory(category.id)} />)}
   </> : null;

@@ -28,7 +28,7 @@ test("store sorting and category navigation use one horizontal, same-sized chip 
 
 test("category root, ancestors and children render identically sized chips without old image tiles", () => {
   assert.match(source, /const categoryTabs = selectedVertical \? <>/);
-  assert.match(source, /<BthwaniChip label="كل فئات المنتجات"/);
+  assert.doesNotMatch(source, /<BthwaniChip label="كل فئات المنتجات"/);
   assert.match(source, /taxonomy\.trail\.map\(\(category, index\) => <BthwaniChip/);
   assert.match(source, /taxonomy\.children\.map\(\(category\) => <BthwaniChip/);
   assert.doesNotMatch(source, /styles\.categoryTile/);
