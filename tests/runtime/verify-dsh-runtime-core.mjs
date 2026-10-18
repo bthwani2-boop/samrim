@@ -1451,6 +1451,118 @@ if (promotionCancellation.status !== 201 || promotionCancellation.body?.order?.s
 }
 console.log("DSH_PROMOTIONS_DISCOVERY=PASS");
 
+// Connected approval-to-checkout proof for an operator-funded + Partner-funded campaign.
+// All actors and payment records here belong to the disposable CI runtime.
+const sharedCode = "SHARED" + suffix.replace(/[^A-Za-z0-9]/g, "").slice(-12).toUpperCase();
+const sharedCampaignID = "promotion-shared-" + suffix;
+const sharedCreate = await request(dshBase, "POST", "/dsh/operator/promotions", {
+  token: dshToken, headers: serviceHeaders(actingOperatorID, "shared-create-" + suffix),
+  body: { id: sharedCampaignID, code: sharedCode, nameAr: "حملة بتمويل مشترك", kind: "FIXED",
+    valueMinor: 300, fundingSource: "SHARED", fundingSharePartnerPercent: 40,
+    requiresPartnerOptIn: true, serviceCityId: cityA,
+    startsAt: new Date(Date.now() - 60_000).toISOString(), redemptionLimit: 1, discountBudgetLimitMinor: 300 },
+});
+if (sharedCreate.status !== 201 || sharedCreate.body?.promotion?.state !== "DRAFT"
+  || sharedCreate.body.promotion.fundingSource !== "SHARED") fail("shared promotion draft failed", JSON.stringify(sharedCreate));
+const sharedPublish = await request(dshBase, "POST", "/dsh/operator/promotions/" + encodeURIComponent(sharedCampaignID) + "/publication", {
+  token: dshToken, headers: serviceHeaders(actingOperatorID, "shared-publish-" + suffix, crypto.randomUUID(), sharedCreate.body.promotion.version),
+  body: { state: "PUBLISHED" },
+});
+const sharedPath = "/dsh/partner/stores/" + encodeURIComponent(first.storeID) + "/campaigns";
+const sharedCampaigns = await request(dshBase, "GET", sharedPath, { token: first.accessToken });
+const sharedVisibleBefore = await request(dshBase, "GET", "/dsh/public/promotions?serviceCityId=" + encodeURIComponent(cityA) + "&storeId=" + encodeURIComponent(first.storeID));
+const sharedOtherStore = await request(dshBase, "GET", "/dsh/public/promotions?serviceCityId=" + encodeURIComponent(cityA) + "&storeId=" + encodeURIComponent(second.storeID));
+const sharedWrongPartner = await request(dshBase, "GET", sharedPath, { token: second.accessToken });
+const sharedCampaign = sharedCampaigns.body?.campaigns?.find((campaign) => campaign.promotion?.id === sharedCampaignID);
+if (sharedPublish.status !== 201 || sharedPublish.body?.promotion?.state !== "PUBLISHED" || sharedCampaigns.status !== 200
+  || !sharedCampaign || sharedCampaign.storeOptInState || sharedCampaign.storeOptInVersion !== 0
+  || sharedVisibleBefore.body?.promotions?.some((promotion) => promotion.id === sharedCampaignID)
+  || sharedOtherStore.body?.promotions?.some((promotion) => promotion.id === sharedCampaignID)
+  || sharedWrongPartner.status !== 403) {
+  fail("unapproved shared campaign became visible or Partner authorization failed", JSON.stringify({
+    sharedPublish, sharedCampaigns, sharedVisibleBefore, sharedOtherStore, sharedWrongPartner,
+  }));
+}
+const sharedCart = await request(dshBase, "POST", "/dsh/cart/lines", {
+  token: client.accessToken, headers: partnerHeaders("shared-cart-" + suffix, 0),
+  body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] },
+});
+const sharedCartID = String(sharedCart.body?.cart?.id || "");
+if (sharedCart.status !== 201 || !sharedCartID) fail("shared campaign cart unavailable", JSON.stringify(sharedCart));
+const sharedQuoteInput = { cartId: sharedCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", promotionCode: sharedCode };
+const sharedQuoteBefore = await request(dshBase, "POST", "/dsh/cart/quote", {
+  token: client.accessToken, headers: { "X-Expected-Version": "1" }, body: sharedQuoteInput,
+});
+if (sharedQuoteBefore.status !== 409 || sharedQuoteBefore.body?.error?.code !== "PROMOTION_UNAVAILABLE") {
+  fail("shared campaign permitted client discount before Partner consent", JSON.stringify(sharedQuoteBefore));
+}
+const sharedDecisionPath = sharedPath + "/" + encodeURIComponent(sharedCampaignID) + "/opt-in";
+const sharedOptInHeaders = partnerHeaders("shared-optin-" + suffix, 1);
+const sharedApproved = await request(dshBase, "POST", sharedDecisionPath, {
+  token: first.accessToken, headers: sharedOptInHeaders, body: { decision: "OPTED_IN" },
+});
+const sharedReplay = await request(dshBase, "POST", sharedDecisionPath, {
+  token: first.accessToken, headers: sharedOptInHeaders, body: { decision: "OPTED_IN" },
+});
+const sharedVisibleAfter = await request(dshBase, "GET", "/dsh/public/promotions?serviceCityId=" + encodeURIComponent(cityA) + "&storeId=" + encodeURIComponent(first.storeID));
+const sharedOtherAfter = await request(dshBase, "GET", "/dsh/public/promotions?serviceCityId=" + encodeURIComponent(cityA) + "&storeId=" + encodeURIComponent(second.storeID));
+if (sharedApproved.status !== 201 || sharedApproved.body?.campaign?.storeOptInState !== "OPTED_IN"
+  || sharedReplay.status !== 200 || sharedReplay.body?.idempotentReplay !== true
+  || !sharedVisibleAfter.body?.promotions?.some((promotion) => promotion.id === sharedCampaignID)
+  || sharedOtherAfter.body?.promotions?.some((promotion) => promotion.id === sharedCampaignID)) {
+  fail("Partner approval and Store-scoped shared publication failed", JSON.stringify({
+    sharedApproved, sharedReplay, sharedVisibleAfter, sharedOtherAfter,
+  }));
+}
+const sharedQuote = await request(dshBase, "POST", "/dsh/cart/quote", {
+  token: client.accessToken, headers: { "X-Expected-Version": "1" }, body: sharedQuoteInput,
+});
+const sharedPayable = 2100 - 300 + deliveryFeeMinor;
+if (sharedQuote.status !== 200 || sharedQuote.body?.quote?.discountMinor !== 300
+  || sharedQuote.body?.quote?.totalAmountMinor !== sharedPayable) fail("consented shared quote incorrect", JSON.stringify(sharedQuote));
+const sharedCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", {
+  token: client.accessToken, headers: partnerHeaders("shared-checkout-" + suffix, 1),
+  body: { ...sharedQuoteInput, expectedTotalAmountMinor: sharedPayable },
+});
+const sharedOrderID = String(sharedCheckout.body?.order?.id || "");
+const sharedPaymentID = String(sharedCheckout.body?.order?.paymentIntentId || "");
+if (sharedCheckout.status !== 201 || !sharedOrderID || !sharedPaymentID
+  || sharedCheckout.body.order.discountMinor !== 300 || sharedCheckout.body.order.promotionCode !== sharedCode) {
+  fail("shared Partner-approved checkout did not persist the campaign", JSON.stringify(sharedCheckout));
+}
+const sharedFunding = sql("SELECT count(*) FROM wlt.order_promotion_funding WHERE order_id='" + sqlLiteral(sharedOrderID)
+  + "' AND payment_intent_id='" + sqlLiteral(sharedPaymentID) + "' AND promotion_id='" + sqlLiteral(sharedCampaignID)
+  + "' AND promotion_version=" + sharedPublish.body.promotion.version
+  + " AND funding_source='SHARED' AND partner_share_percent=40 AND discount_minor=300"
+  + " AND partner_funded_minor=120 AND bthwani_funded_minor=180 AND currency='YER' AND kind='ORDER'");
+const sharedRedemption = sql("SELECT count(*) FROM dsh.commerce_promotion_redemptions WHERE order_id='" + sqlLiteral(sharedOrderID) + "' AND discount_minor=300");
+if (sharedFunding !== "1" || sharedRedemption !== "1") fail("shared funding split was not frozen exactly once", JSON.stringify({ sharedFunding, sharedRedemption, sharedCheckout }));
+const sharedCancelled = await request(dshBase, "POST", "/dsh/orders/" + encodeURIComponent(sharedOrderID) + "/cancel", {
+  token: client.accessToken, headers: partnerHeaders("shared-cancel-" + suffix, 1),
+});
+await waitForSQL("SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='" + sqlLiteral(sharedOrderID) + "'",
+  "POSTED", "shared campaign cancellation did not reach WLT");
+const sharedPaymentAfter = await request(wltBase, "GET", "/wlt/v1/payment-intents/" + encodeURIComponent(sharedPaymentID), { token: wltToken });
+const sharedRedemptionsAfter = sql("SELECT count(*) FROM dsh.commerce_promotion_redemptions WHERE order_id='" + sqlLiteral(sharedOrderID) + "'");
+const sharedBudgetAfter = sql("SELECT redeemed_count::text || ':' || discount_spent_minor::text FROM dsh.commerce_promotions WHERE id='" + sqlLiteral(sharedCampaignID) + "'");
+const sharedFundingAfter = sql("SELECT count(*) FROM wlt.order_promotion_funding WHERE order_id='" + sqlLiteral(sharedOrderID) + "' AND kind='ORDER'");
+if (sharedCancelled.status !== 201 || sharedCancelled.body?.order?.state !== "CANCELLED"
+  || sharedPaymentAfter.body?.paymentIntent?.state !== "CANCELLED" || sharedRedemptionsAfter !== "0"
+  || sharedBudgetAfter !== "0:0" || sharedFundingAfter !== "1") {
+  fail("shared promotion cancellation did not reconcile both funding owners", JSON.stringify({
+    sharedCancelled, sharedPaymentAfter, sharedRedemptionsAfter, sharedBudgetAfter, sharedFundingAfter,
+  }));
+}
+const sharedDeclined = await request(dshBase, "POST", sharedDecisionPath, {
+  token: first.accessToken, headers: partnerHeaders("shared-decline-" + suffix, 1), body: { decision: "DECLINED" },
+});
+const sharedVisibleDeclined = await request(dshBase, "GET", "/dsh/public/promotions?serviceCityId=" + encodeURIComponent(cityA) + "&storeId=" + encodeURIComponent(first.storeID));
+if (sharedDeclined.status !== 201 || sharedDeclined.body?.campaign?.storeOptInState !== "DECLINED"
+  || sharedVisibleDeclined.body?.promotions?.some((promotion) => promotion.id === sharedCampaignID)) {
+  fail("Partner withdrawal did not stop new campaign visibility", JSON.stringify({ sharedDeclined, sharedVisibleDeclined }));
+}
+console.log("DSH_SHARED_PROMOTION_CONSENT_FUNDING=PASS");
+
 const multiCartAResponse = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`multi-store-cart-a-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 const multiCartBResponse = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`multi-store-cart-b-${suffix}`, 0), body: { storeId: second.storeID, storeOfferId: offerBID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (multiCartAResponse.status !== 201 || multiCartBResponse.status !== 201 || !multiCartAResponse.body?.cart?.id || !multiCartBResponse.body?.cart?.id) fail("multi-store child cart fixtures failed", JSON.stringify({ multiCartAResponse, multiCartBResponse }));
