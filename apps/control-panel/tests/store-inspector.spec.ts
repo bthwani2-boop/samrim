@@ -62,7 +62,8 @@ test("store inspection separates forbidden and malformed reads from readiness an
   await expect(inspector.getByRole("alert")).toContainText("غير صالحة");
   state = "ready";
   await inspector.getByRole("button", { name: "إعادة قراءة المعاينة", exact: true }).click();
-  await expect(inspector.getByText("المتجر مستوفٍ لشروط النشر الحالية.", { exact: true })).toBeVisible();
+  await expect(inspector).toContainText("رحلة المتجر — منشور للعملاء");
+  await expect(inspector).toContainText("النشر للعميل: مكتمل");
 });
 
 test("a malformed store registry is recoverable and never claimed empty", async ({ page }) => {
@@ -93,14 +94,14 @@ test("store inline management preserves the selected registry query", async ({ p
   await expect(trigger).toBeVisible();
   await trigger.click();
   const inspector = page.getByRole("region", { name: "تفاصيل المتجر", exact: true });
-  await expect(inspector.getByText("المتجر مستوفٍ لشروط النشر الحالية.", { exact: true })).toBeVisible();
+  await expect(inspector).toContainText("رحلة المتجر — منشور للعملاء");
   await inspector.getByRole("button", { name: "إدارة المتجر" }).click();
   await expect(page.locator(".adaptive-record-workspace")).toHaveAttribute("data-full", "true");
   await expect(inspector.getByRole("region", { name: "إدارة بيانات المتجر" })).toBeVisible();
   await expect(inspector.getByRole("heading", { name: "تحرير المتجر" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("store-inline-management.png"), fullPage: false });
   await inspector.getByRole("tab", { name: "نظرة عامة" }).click();
-  await expect(inspector.getByText("المتجر مستوفٍ لشروط النشر الحالية.", { exact: true }).first()).toBeVisible();
+  await expect(inspector).toContainText("رحلة المتجر — منشور للعملاء");
   const restored = new URL(page.url()).searchParams;
   expect(restored.get("cursor")).toBe("page-2");
   expect(restored.get("q")).toBe("اختبار");
