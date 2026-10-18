@@ -89,6 +89,23 @@ test("marketing content retains its screen and honest event-count visualization"
   await expect(panel).toContainText("لا تعبر عن معدل تحويل أو أرباح");
 });
 
+test("marketing content previews the selected banner locally without publishing", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.goto("/marketing/content");
+  await page.getByText("إنشاء محتوى اكتشاف", { exact: true }).click();
+  await page.getByRole("textbox", { name: "عنوان المحتوى" }).fill("عرض الخضروات");
+  await page.getByLabel("ملف صورة المحتوى").setInputFiles({
+    name: "banner.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/bT8AAAAASUVORK5CYII=", "base64"),
+  });
+  const preview = page.getByTestId("marketing-content-preview");
+  await expect(preview).toBeVisible();
+  await expect(preview.getByText("عرض الخضروات")).toBeVisible();
+  await expect(preview.locator("img")).toHaveAttribute("src", /^blob:/);
+  await expect(preview).toContainText("معاينة تقريبية");
+});
+
 test("marketing analytics failure remains an explicit error and never becomes a false zero", async ({ page }) => {
   await provideMarketingReads(page);
   await page.route("**/api/marketing/analytics?**", (route) => route.fulfill({ status: 503, json: { error: { message: "مصدر التحليلات غير متاح" } } }));

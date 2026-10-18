@@ -48,7 +48,14 @@ export function MarketingContentWorkspace() {
   const [targetLoading, setTargetLoading] = useState(false);
   const [targetMessage, setTargetMessage] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState("");
   const [mediaProvenance, setMediaProvenance] = useState<MediaProvenanceInput>(emptyMediaProvenance());
+  useEffect(() => {
+    if (!mediaFile || !["image/jpeg", "image/png"].includes(mediaFile.type.toLowerCase())) { setMediaPreviewUrl(""); return; }
+    const url = URL.createObjectURL(mediaFile);
+    setMediaPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [mediaFile]);
   const attemptReady = Boolean(pendingStorageKey) && loadedStorageKey === pendingStorageKey && !storageError;
   const load = useCallback(async (query: { search?: string; state?: string; kind?: string; sort?: "priority" | "created_desc"; cursor?: string } = {}) => {
     const sequence = ++registrySequence.current;
@@ -397,6 +404,16 @@ export function MarketingContentWorkspace() {
           <label className="field-label" htmlFor="marketing-content-kind">نوع المحتوى<select id="marketing-content-kind" aria-label="نوع المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.kind} onChange={(event) => setContentForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="BANNER">بنر رئيسي</option><option value="CAROUSEL">شريحة كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
           <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required disabled={busy || !attemptReady || Boolean(pendingCreate && mediaFile)} onChange={(event) => { setMediaFile(event.target.files?.[0] ?? null); if (!pendingCreate) setMediaProvenance(emptyMediaProvenance()); }} /></label><CatalogMediaProvenanceFields idPrefix="marketing-content-media" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={mediaProvenance} onChange={setMediaProvenance} />
           {mediaFile ? <p className="muted" data-testid="marketing-content-file">{mediaFile.name} · {(mediaFile.size / 1024).toFixed(0)} كيلوبايت</p> : <p className="muted">JPEG أو PNG، حتى 10 ميجابايت.</p>}
+          {mediaPreviewUrl ? <figure aria-label="معاينة صورة المحتوى قبل النشر" data-testid="marketing-content-preview" style={{ gridColumn: "1 / -1", margin: 0, maxWidth: contentForm.kind === "SHORT_FORM" ? 180 : 360 }}>
+            <div style={{ aspectRatio: contentForm.kind === "SHORT_FORM" ? "6 / 7" : "5 / 2", borderRadius: 12, overflow: "hidden", position: "relative" }}>
+              <img src={mediaPreviewUrl} alt="معاينة الصورة المختارة" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <div style={{ position: "absolute", insetInline: 0, bottom: 0, padding: 8, color: "#FFFFFF", background: "rgba(0,0,0,0.75)" }}>
+                <strong>{contentForm.titleAr.trim() || "عنوان المحتوى"}</strong>
+                {contentForm.bodyAr.trim() ? <div>{contentForm.bodyAr.trim()}</div> : null}
+              </div>
+            </div>
+            <figcaption className="muted">معاينة تقريبية على الهاتف · لا تُنشر حتى تعتمد المسودة</figcaption>
+          </figure> : null}
           <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.targetType} onChange={(event) => { setTargetSearch(""); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setCategoryVerticalId(""); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option><option value="PROMOTION">عرض</option></select></label>
           {contentForm.targetType !== "INFO" ? <>
             {contentForm.targetType === "CATEGORY" ? <label className="field-label" htmlFor="marketing-content-category-vertical">المجال التجاري<select id="marketing-content-category-vertical" aria-label="المجال التجاري للفئة" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={categoryVerticalId} onChange={(event) => { setCategoryVerticalId(event.target.value); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }}><option value="">اختر المجال التجاري</option>{categoryVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label> : null}

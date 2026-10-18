@@ -286,7 +286,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     if (nearbyAddressState.loadingMore) nearbyAddressLoadMoreLabel = "جارٍ تحميل العناوين";
   }
 
-  const hasMarketingItems = marketing.content.length > 0 || marketing.promotions.length > 0;
+  const hasMarketingItems = marketing.content.some((item) => item.kind !== "BANNER" || !item.mediaUri) || marketing.promotions.length > 0;
 
   const taxonomy = useMemo(() => {
     if (state.kind !== "ready") return { verticals: [], categories: [], trail: [], children: [] };
@@ -330,8 +330,11 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     {taxonomy.children.map((category) => <BthwaniChip key={category.id} label={category.nameAr} selected={selectedCategoryID === category.id} onPress={() => selectCategory(category.id)} />)}
   </> : null;
 
-  const mediaContent = useMemo(() => marketing.content.filter((item) => Boolean(item.mediaUri)), [marketing.content]);
+  const bannerContent = useMemo(() => marketing.content.filter((item) => item.kind === "BANNER" && Boolean(item.mediaUri)), [marketing.content]);
+  const carouselContent = useMemo(() => marketing.content.filter((item) => item.kind === "CAROUSEL" && Boolean(item.mediaUri)), [marketing.content]);
+  const shortFormContent = useMemo(() => marketing.content.filter((item) => item.kind === "SHORT_FORM" && Boolean(item.mediaUri)), [marketing.content]);
   const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri), [marketing.content]);
+  const showHomeMarketing = !searchIsActive && !selectedVerticalID && !selectedCategoryID && !selectedShortcutID;
 
   function openDiscoveryContent(contentId: string) {
     void recordDiscoveryClick(contentId);
@@ -459,6 +462,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         <BthwaniChip label="المنتجات" selected={searchScope === "products"} onPress={() => { if (onSearchScopeChange) onSearchScopeChange("products"); else router.setParams({ scope: "products" }); }} />
       </View> : null}
 
+      {showHomeMarketing && bannerContent.length ? <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={bannerContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" /> : null}
+
       {taxonomy.verticals.length ? <View style={styles.categoryShortcutBlock} accessibilityLabel="المجالات التجارية الرئيسية">
         <ScrollView accessibilityLabel="المجالات التجارية" contentContainerStyle={styles.activityTiles} horizontal showsHorizontalScrollIndicator={false}>
           <Pressable accessibilityRole="button" accessibilityLabel="عرض جميع المجالات والمتاجر" accessibilityState={{ selected: !selectedVerticalID }} onPress={() => selectVertical("")} style={[styles.activityTile, !selectedVerticalID && styles.activityTileSelected]}>
@@ -472,9 +477,14 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         </ScrollView>
       </View> : null}
 
-      {!searchIsActive && !selectedVerticalID && !selectedCategoryID && !selectedShortcutID && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
-        {mediaContent.length ? <>
-          <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={mediaContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} />
+      {showHomeMarketing && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
+        {carouselContent.length ? <>
+          <BthwaniSectionHeader title="مختارات وعروض" />
+          <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={carouselContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="شرائح العروض" />
+        </> : null}
+        {shortFormContent.length ? <>
+          <BthwaniSectionHeader title="قصص المتاجر" />
+          <DiscoveryMediaCarousel cardWidth={Math.min(180, carouselCardWidth)} items={shortFormContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="قصص المتاجر" shortForm />
         </> : null}
         {textContent.length ? <>
           <BthwaniSectionHeader title="مختارات لك" subtitle="محتوى منشور من بثواني" />
@@ -809,6 +819,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     mediaScroll: { marginHorizontal: -spacing[1] },
     mediaScrollContent: { gap: spacing[2] },
     mediaCard: { backgroundColor: theme.surface, borderRadius: radius.lg, height: 144, overflow: "hidden", ...elevation.raised },
+    shortFormCard: { height: 210 },
     mediaImage: { height: "100%", width: "100%" },
     mediaCaption: { backgroundColor: theme.actionBackground, bottom: 0, gap: spacing[1], left: 0, paddingHorizontal: spacing[3], paddingVertical: spacing[1], position: "absolute", right: 0 },
     mediaCaptionTitle: { ...typography.titleSm, color: theme.onAction, textAlign: "right" },
@@ -825,7 +836,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   });
 }
 
-function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen }: { cardWidth: number; items: ReadonlyArray<PublicDiscoveryContentView>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>; onOpen: (item: PublicDiscoveryContentView) => void }) {
+function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label, shortForm = false }: { cardWidth: number; items: ReadonlyArray<PublicDiscoveryContentView>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>; onOpen: (item: PublicDiscoveryContentView) => void; label: string; shortForm?: boolean }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [failedMedia, setFailedMedia] = useState<ReadonlySet<string>>(() => new Set());
   const scrollRef = useRef<ScrollView>(null);
@@ -849,10 +860,10 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen }: { c
   }
 
   return (
-    <View accessibilityLabel={activeItem ? `العروض، ${activeItem.titleAr}، ${activeIndex + 1} من ${items.length}` : "العروض"} style={styles.mediaCarousel}>
+    <View accessibilityLabel={activeItem ? `${label}، ${activeItem.titleAr}، ${activeIndex + 1} من ${items.length}` : label} style={styles.mediaCarousel}>
       <ScrollView
         ref={scrollRef}
-        accessibilityLabel="شرائح العروض"
+        accessibilityLabel={label}
         contentContainerStyle={styles.mediaScrollContent}
         horizontal
         onMomentumScrollEnd={(event) => {
@@ -866,7 +877,7 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen }: { c
       >
         {items.map((item) => {
           const card = (
-            <View key={item.id} style={[styles.mediaCard, { width: cardWidth }]}>
+            <View key={item.id} style={[styles.mediaCard, shortForm && styles.shortFormCard, { width: cardWidth }]}>
               {failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text style={styles.muted}>{item.bodyAr}</Text> : null}<Text style={styles.mediaFallbackHint}>تعذر تحميل الصورة. اضغط لعرض التفاصيل.</Text></View> : <>
                 <Image accessibilityLabel={`صورة ${item.titleAr}`} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={styles.mediaImage} resizeMode="cover" />
                 <View pointerEvents="none" style={styles.mediaCaption}>
