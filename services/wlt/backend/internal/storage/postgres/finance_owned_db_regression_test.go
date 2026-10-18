@@ -153,6 +153,11 @@ func TestFundedPromotionSettlesIntoConservedPartnerEarnings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.source, func(t *testing.T) {
 			orderID := store + "-settled-" + tt.source
+			promotionID := "promotion-" + s.suffix
+			before, err := ReadPromotionSettlementSummary(s.ctx, s.db, promotionID)
+			if err != nil {
+				t.Fatal(err)
+			}
 			intent, replay, err := CreatePaymentIntent(s.ctx, s.db, CreatePaymentIntentInput{
 				ExternalReference: orderID + "-reference", PayerActorID: "customer-" + s.suffix,
 				OrderID: orderID, AmountMinor: 4000, Currency: "YER", Method: domain.MethodCashOnDelivery,
@@ -162,7 +167,7 @@ func TestFundedPromotionSettlesIntoConservedPartnerEarnings(t *testing.T) {
 					Currency: "YER", SubtotalMinor: 5000, DiscountMinor: 1000,
 					CashAmountMinor: 4000, CustomerPayableMinor: 4000, PolicyVersion: "proof",
 					PromotionFunding: &PromotionFundingInput{
-						PromotionID: "promotion-" + s.suffix, PromotionVersion: 1,
+						PromotionID: promotionID, PromotionVersion: 1,
 						PromotionCode: "SAVE", StoreID: store,
 						FundingSource: tt.source, PartnerSharePercent: tt.share,
 						DiscountMinor: 1000,
@@ -172,6 +177,10 @@ func TestFundedPromotionSettlesIntoConservedPartnerEarnings(t *testing.T) {
 			})
 			if err != nil || replay {
 				t.Fatalf("create canonical funded payment: replay=%t err=%v", replay, err)
+			}
+			unsettled, summaryErr := ReadPromotionSettlementSummary(s.ctx, s.db, promotionID)
+			if summaryErr != nil || unsettled != before {
+				t.Fatalf("unsettled order counted as expense: before=%+v after=%+v err=%v", before, unsettled, summaryErr)
 			}
 			_, replay, err = CollectPaymentIntent(s.ctx, s.db, CollectPaymentIntentInput{
 				IntentID: intent.ID, CollectedAmountMinor: 4000, CollectedByActorID: captain,
@@ -189,6 +198,14 @@ func TestFundedPromotionSettlesIntoConservedPartnerEarnings(t *testing.T) {
 			earning, replay, err := FinalizePartnerOrderEarning(s.ctx, s.db, earningInput)
 			if err != nil || replay {
 				t.Fatalf("post funded merchant earning: replay=%t err=%v", replay, err)
+			}
+			posted, summaryErr := ReadPromotionSettlementSummary(s.ctx, s.db, promotionID)
+			if summaryErr != nil || posted.SettledOrderCount != before.SettledOrderCount+1 ||
+				posted.SettledDiscountMinor != before.SettledDiscountMinor+1000 ||
+				posted.PartnerFundedMinor != before.PartnerFundedMinor+tt.wantPartner ||
+				posted.PlatformFrozenMinor != before.PlatformFrozenMinor+tt.wantBthwani ||
+				posted.PlatformPostedExpenseMinor != before.PlatformPostedExpenseMinor+tt.wantBthwani {
+				t.Fatalf("settlement summary must reflect ledger once: before=%+v after=%+v err=%v", before, posted, summaryErr)
 			}
 			if earning.GrossProductMinor != 5000-tt.wantPartner ||
 				earning.PartnerNetMinor+earning.CommissionMinor != earning.GrossProductMinor ||

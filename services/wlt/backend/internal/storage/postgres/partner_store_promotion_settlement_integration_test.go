@@ -29,6 +29,11 @@ func TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce(t *testing.T) 
 			t.Run(mode+"/"+source.name, func(t *testing.T) {
 				store := fmt.Sprintf("promo-store-%s-%s-%s", mode, source.name, s.suffix)
 				order := fmt.Sprintf("promo-order-%s-%s-%s", mode, source.name, s.suffix)
+				promotionID := "promo-" + s.suffix
+				before, err := ReadPromotionSettlementSummary(s.ctx, s.db, promotionID)
+				if err != nil {
+					t.Fatal(err)
+				}
 				customer := "promo-customer-" + order
 				cashMinor := 4000 - source.internalMinor
 				fundingSource := source.name
@@ -84,7 +89,7 @@ func TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce(t *testing.T) 
 						SubtotalMinor: 5000, DiscountMinor: 1000, CashAmountMinor: cashMinor,
 						InternalBalanceAmountMinor: source.internalMinor, CustomerPayableMinor: 4000, PolicyVersion: "promo-proof-v1",
 						PromotionFunding: &PromotionFundingInput{
-							PromotionID: "promo-" + s.suffix, PromotionVersion: 1, PromotionCode: "SAVE",
+							PromotionID: promotionID, PromotionVersion: 1, PromotionCode: "SAVE",
 							StoreID: store, FundingSource: fundingSource, PartnerSharePercent: source.share, DiscountMinor: 1000,
 						},
 					},
@@ -108,6 +113,14 @@ func TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce(t *testing.T) 
 				record, replay, err := RecordPartnerStoreCashCommission(s.ctx, s.db, input)
 				if err != nil || replay {
 					t.Fatalf("posted commission replay=%t err=%v", replay, err)
+				}
+				posted, readErr := ReadPromotionSettlementSummary(s.ctx, s.db, promotionID)
+				if readErr != nil || posted.SettledOrderCount != before.SettledOrderCount+1 ||
+					posted.SettledDiscountMinor != before.SettledDiscountMinor+1000 ||
+					posted.PartnerFundedMinor != before.PartnerFundedMinor+source.partnerMinor ||
+					posted.PlatformFrozenMinor != before.PlatformFrozenMinor+source.platformMinor ||
+					posted.PlatformPostedExpenseMinor != before.PlatformPostedExpenseMinor+source.platformMinor {
+					t.Fatalf("store settlement readback differs from canonical ledger: before=%+v posted=%+v err=%v", before, posted, readErr)
 				}
 				if record.GrossProductMinor != 5000-source.partnerMinor {
 					t.Fatalf("wrong funded gross=%d", record.GrossProductMinor)

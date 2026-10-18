@@ -6,6 +6,37 @@ info:
 servers:
   - url: http://localhost:18083
 paths:
+  /wlt/v1/operator/promotion-settlement/{promotionId}:
+    get:
+      operationId: readOperatorPromotionSettlement
+      summary: WLT-owned posted promotion settlement totals, not reservation or net refund totals
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Posted order settlement readback from WLT, without inferred refund or delivery totals.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [promotionId, settledOrderCount, settledDiscountMinor, partnerFundedMinor, platformFrozenMinor, platformPostedExpenseMinor, currency, basis]
+                properties:
+                  promotionId: { type: string }
+                  settledOrderCount: { type: integer, minimum: 0 }
+                  settledDiscountMinor: { type: integer, minimum: 0 }
+                  partnerFundedMinor: { type: integer, minimum: 0 }
+                  platformFrozenMinor: { type: integer, minimum: 0 }
+                  platformPostedExpenseMinor: { type: integer }
+                  currency: { type: string, enum: [YER] }
+                  basis: { type: string, enum: [POSTED_SETTLEMENT_NOT_NET_REFUNDS] }
+        '400': { description: Invalid promotion identifier. }
+        '401': { description: WLT service authorization required. }
+        '502': { description: WLT storage unavailable. }
   /wlt/v1/operator/distance-band-fee-policies:
     get:
       operationId: readDistanceBandFeePolicy

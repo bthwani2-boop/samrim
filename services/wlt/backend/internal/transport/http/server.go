@@ -91,6 +91,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/remit", s.remitCash)
 	mux.HandleFunc("POST /wlt/v1/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileCashRemittance)
 	mux.HandleFunc("POST /wlt/v1/delivery-quotes", s.deliveryQuote)
+	mux.HandleFunc("GET /wlt/v1/operator/promotion-settlement/{promotionId}", s.readOperatorPromotionSettlement)
 	mux.HandleFunc("GET /wlt/v1/operator/policy-history", s.readOperatorPolicyHistory)
 	mux.HandleFunc("GET /wlt/v1/operator/policy-registry", s.readOperatorPolicyRegistry)
 	mux.HandleFunc("GET /wlt/v1/operator/captain-minimum-balance-policy", s.readCaptainMinimumBalancePolicy)
