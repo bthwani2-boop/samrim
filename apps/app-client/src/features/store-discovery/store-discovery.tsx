@@ -44,6 +44,12 @@ type NearbyAddressState =
   | { kind: "error" }
   | { kind: "ready"; addresses: ReadonlyArray<DeliveryAddress>; nextCursor: string; loadingMore: boolean; moreError: boolean };
 
+function uniqueNearbyAddress(addresses: ReadonlyArray<DeliveryAddress>, cityID: string, nextCursor: string): DeliveryAddress | null {
+  if (nextCursor) return null;
+  const eligible = addresses.filter((address) => address.serviceCityId === cityID && Number.isFinite(address.latitude) && Number.isFinite(address.longitude));
+  return eligible.length === 1 ? eligible[0] ?? null : null;
+}
+
 export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, searchOpen, searchQuery, searchScope: controlledSearchScope, onSearchOpenChange, onSearchScopeChange, onSearchQueryChange }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; searchOpen?: boolean; searchQuery?: string; searchScope?: "stores" | "products"; onSearchOpenChange?: (open: boolean) => void; onSearchScopeChange?: (scope: "stores" | "products") => void; onSearchQueryChange?: (query: string) => void }) {
   const router = useRouter();
   const { q: rawQuery, focus: rawFocus, scope: rawScope } = useLocalSearchParams<{ q?: string | string[]; focus?: string | string[]; scope?: string | string[] }>();
@@ -338,6 +344,11 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     try {
       const page = await listOwnDeliveryAddresses();
       if (requestID !== nearbyAddressRequestID.current) return;
+      const onlyAddress = uniqueNearbyAddress(page.addresses, selectedCityID, page.nextCursor ?? "");
+      if (onlyAddress) {
+        selectNearbyAddress(onlyAddress);
+        return;
+      }
       setNearbyAddressState({ kind: "ready", addresses: page.addresses, nextCursor: page.nextCursor ?? "", loadingMore: false, moreError: false });
     } catch {
       if (requestID === nearbyAddressRequestID.current) setNearbyAddressState({ kind: "error" });
