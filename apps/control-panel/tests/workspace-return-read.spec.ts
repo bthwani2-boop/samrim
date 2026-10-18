@@ -25,7 +25,7 @@ for (const [path, endpoint, empty] of [
     valid = true;
     await page.getByRole("button", { name: "إعادة المحاولة", exact: true }).click();
     await expect(page.getByText(empty, { exact: true })).toBeVisible();
-    await page.getByText(path.endsWith("promotions") ? "إنشاء عرض أو حملة" : "إنشاء محتوى اكتشاف", { exact: true }).click();
+    await page.getByText(path.endsWith("promotions") ? "إعداد خصم أو قسيمة" : "إنشاء محتوى اكتشاف", { exact: true }).click();
     const draft = page.getByLabel(path.endsWith("promotions") ? "اسم العرض" : "عنوان المحتوى", { exact: true });
     await draft.fill("مسودة محفوظة أثناء الرجوع");
     const before = reads;

@@ -559,11 +559,15 @@ test("marketing create recovery reconciles promotions and resumes content with t
   });
 
   await page.goto("/marketing/promotions");
-  await page.getByText("إنشاء عرض أو حملة", { exact: true }).click();
+  await page.getByText("إعداد خصم أو قسيمة", { exact: true }).click();
   await page.getByLabel("رمز العرض", { exact: true }).fill("RESTORE10");
   await page.getByLabel("اسم العرض").fill("عرض الاستعادة");
-  await page.getByRole("button", { name: "إنشاء مسودة العرض" }).click();
-  await expect(page.getByText("تعذر تأكيد الحفظ؛ أعد المحاولة.")).toBeVisible();
+  await page.getByLabel("نسبة الخصم").fill("10");
+  await page.getByRole("button", { name: "التالي: النطاق والموعد" }).click();
+  await page.getByRole("button", { name: "التالي: التمويل والضوابط" }).click();
+  await page.getByRole("button", { name: "التالي: المراجعة" }).click();
+  await page.getByRole("button", { name: "حفظ مسودة العرض" }).click();
+  await expect(page.getByTestId("marketing-promotions-workspace").getByRole("alert")).toContainText("تعذر تأكيد الحفظ؛ أعد المحاولة.");
   expect(promotionPostCount).toBe(1);
   await page.reload();
   await expect(page.getByText("تمت قراءة العرض المنشأ من السجل؛ استعيدت نتيجته دون إنشاء نسخة أخرى.")).toBeVisible();
