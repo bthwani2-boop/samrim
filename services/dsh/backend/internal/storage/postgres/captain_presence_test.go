@@ -10,14 +10,14 @@ import (
 func TestCaptainOpportunityIntensityHasNoExactCounts(t *testing.T) {
 	for _, tc := range []struct {
 		count int64
-		want string
+		want  string
 	}{{6, "LOW"}, {9, "LOW"}, {10, "MEDIUM"}, {19, "MEDIUM"}, {20, "HIGH"}} {
 		if got := captainOpportunityIntensity(tc.count); got != tc.want {
 			t.Fatalf("order count %d intensity=%q, want %q", tc.count, got, tc.want)
 		}
 	}
 	sample := CaptainOpportunityHeatmap{
-		Cells: []CaptainOpportunityCell{{Latitude: 15.35, Longitude: 44.15, Intensity: "LOW"}},
+		Cells:      []CaptainOpportunityCell{{Latitude: 15.35, Longitude: 44.15, Intensity: "LOW"}},
 		MeasuredAt: time.Now().UTC(), SampleStatus: "AVAILABLE",
 		SignalType: "HISTORICAL_ACTIVITY", PolicyVersion: "STORE_ORIGIN_V1",
 	}

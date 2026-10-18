@@ -24,6 +24,8 @@ Store-affiliated Partner Captain eligibility belongs to `STORE_CAPTAIN_MEMBERSHI
 
 - only a ready `BTHWANI_CAPTAIN` order is platform-dispatchable;
 - ranking nearby available Captains may use an authorized, recent foreground GPS fix kept only as their latest dispatch presence; it never authorizes Client live tracking, delivery movement logs, or publication of Captains' positions in opportunity maps;
+- an outstanding offer reserves availability but does not erase fresh dispatch presence needed for immediate redistribution after rejection or expiry; the assigned winner's dispatch presence is cleared, and explicit offline/suspension also clears it;
+- pre-acceptance offer details disclose only the coarse service-city delivery area, never the Customer's full address or destination coordinates; only the assigned Captain may read the precise delivery task;
 - opportunity zones reflect sufficiently aggregated historical `BTHWANI_CAPTAIN` Store-origin order activity, not Captain positions, delivery addresses, live offers, or guaranteed assignments;
 - one platform-dispatch batch creates no more than three concurrent offers to distinct eligible available Captains;
 - only an eligible available Captain with required financial exposure capacity may accept an applicable COD offer;

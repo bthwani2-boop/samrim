@@ -90,7 +90,7 @@ export function CaptainOffers() {
   }, [isFocused, activeActorID, loadedActorID, busy, loading]);
 
   const scopedOffers = isCurrentCaptainActor(loadedActorID, activeActorID) ? offers : [];
-  const filteredOffers = useMemo(() => { const query = searchQuery.trim().toLocaleLowerCase(); if (!query) return scopedOffers; return scopedOffers.filter((offer) => [offer.id, offer.orderId, offer.storeName, offer.customerAddressText].join(" ").toLocaleLowerCase().includes(query)); }, [scopedOffers, searchQuery]);
+  const filteredOffers = useMemo(() => { const query = searchQuery.trim().toLocaleLowerCase(); if (!query) return scopedOffers; return scopedOffers.filter((offer) => [offer.id, offer.orderId, offer.storeName, offer.deliveryAreaText].join(" ").toLocaleLowerCase().includes(query)); }, [scopedOffers, searchQuery]);
 
   const orderedOffers = [...filteredOffers].sort((left, right) => Number(right.state === "offered") - Number(left.state === "offered"));
 
@@ -145,7 +145,7 @@ export function CaptainOffers() {
           <BthwaniStatusBadge icon={offer.state === "offered" ? "deliveries" : "orders"} label={captainOfferStateLabel(offer.state)} tone={offer.state === "offered" ? "info" : "neutral"} />
         </View>
         <View style={styles.offerDetail}>
-          <Text style={styles.offerAddress}>{offer.customerAddressText}</Text>
+          <Text style={styles.offerAddress}>منطقة التوصيل: {offer.deliveryAreaText}</Text>
         </View>
         <View style={styles.offerDetail}>
           <Text style={styles.offerLabel}>التحصيل النقدي</Text>

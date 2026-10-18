@@ -79,7 +79,7 @@ type CaptainOffer struct {
 	UpdatedAt            time.Time
 	StoreName            string
 	StoreProfileImageURI string
-	CustomerAddressText  string
+	DeliveryAreaText     string
 	AmountDueMinor       int64
 	Currency             string
 	PaymentMethod        string
@@ -1305,7 +1305,7 @@ func ListCaptainOffers(ctx context.Context, db *sql.DB, actorID string, limit in
 	if err := canonicalizeCaptainOffersTx(ctx, tx, strings.TrimSpace(actorID)); err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),o.address_text,o.payment_cash_amount_minor,o.currency,o.payment_method,o.payment_state
+	rows, err := tx.QueryContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),COALESCE((SELECT NULLIF(city.display_name_ar,'') FROM dsh.service_cities city WHERE city.id=o.service_city_id),'منطقة الخدمة'),o.payment_cash_amount_minor,o.currency,o.payment_method,o.payment_state
 		FROM dsh.captain_dispatch_offers offer
 		JOIN dsh.commerce_orders o ON o.id=offer.order_id
 		JOIN dsh.stores s ON s.id=o.store_id
@@ -1318,7 +1318,7 @@ func ListCaptainOffers(ctx context.Context, db *sql.DB, actorID string, limit in
 	items := make([]CaptainOffer, 0)
 	for rows.Next() {
 		var item CaptainOffer
-		if err := rows.Scan(&item.ID, &item.OrderID, &item.CaptainActorID, &item.SourceStoreID, &item.State, &item.ExpiresAt, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.StoreName, &item.StoreProfileImageURI, &item.CustomerAddressText, &item.AmountDueMinor, &item.Currency, &item.PaymentMethod, &item.PaymentState); err != nil {
+		if err := rows.Scan(&item.ID, &item.OrderID, &item.CaptainActorID, &item.SourceStoreID, &item.State, &item.ExpiresAt, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.StoreName, &item.StoreProfileImageURI, &item.DeliveryAreaText, &item.AmountDueMinor, &item.Currency, &item.PaymentMethod, &item.PaymentState); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -1381,11 +1381,11 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 		return CaptainOfferResult{}, err
 	}
 	var offer CaptainOffer
-	err = tx.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),o.address_text,o.payment_cash_amount_minor,o.currency,o.payment_method,o.payment_state
+	err = tx.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),COALESCE((SELECT NULLIF(city.display_name_ar,'') FROM dsh.service_cities city WHERE city.id=o.service_city_id),'منطقة الخدمة'),o.payment_cash_amount_minor,o.currency,o.payment_method,o.payment_state
 		FROM dsh.captain_dispatch_offers offer
 		JOIN dsh.commerce_orders o ON o.id=offer.order_id
 		JOIN dsh.stores s ON s.id=o.store_id
-		WHERE offer.id=$1 FOR UPDATE OF offer`, offerID).Scan(&offer.ID, &offer.OrderID, &offer.CaptainActorID, &offer.SourceStoreID, &offer.State, &offer.ExpiresAt, &offer.Version, &offer.CreatedAt, &offer.UpdatedAt, &offer.StoreName, &offer.StoreProfileImageURI, &offer.CustomerAddressText, &offer.AmountDueMinor, &offer.Currency, &offer.PaymentMethod, &offer.PaymentState)
+		WHERE offer.id=$1 FOR UPDATE OF offer`, offerID).Scan(&offer.ID, &offer.OrderID, &offer.CaptainActorID, &offer.SourceStoreID, &offer.State, &offer.ExpiresAt, &offer.Version, &offer.CreatedAt, &offer.UpdatedAt, &offer.StoreName, &offer.StoreProfileImageURI, &offer.DeliveryAreaText, &offer.AmountDueMinor, &offer.Currency, &offer.PaymentMethod, &offer.PaymentState)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainOfferResult{}, ErrCaptainOfferNotFound
 	}
@@ -1524,6 +1524,11 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 		}
 	}
 	if offer.SourceStoreID == "" {
+		// The winner is now assigned, so dispatch presence is no longer needed.
+		// Losing captains retain only their time-bounded latest presence.
+		if _, err := tx.ExecContext(ctx, `DELETE FROM dsh.captain_presence_latest WHERE captain_actor_id=$1`, captainActorID); err != nil {
+			return CaptainOfferResult{}, err
+		}
 		if err := supersedePendingCaptainOffersTx(ctx, tx, offer.OrderID, offer.ID, captainActorID, correlationID); err != nil {
 			return CaptainOfferResult{}, err
 		}
@@ -2393,9 +2398,9 @@ func reserveCaptainAvailabilityTx(ctx context.Context, tx *sql.Tx, admissionID, 
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM dsh.captain_presence_latest WHERE captain_actor_id=$1`, actorID); err != nil {
-		return err
-	}
+	// An offer only reserves the captain temporarily. Keep their last fresh
+	// presence so a rejected/expired offer can be dispatched again without
+	// requiring a new GPS fix; the 15-minute freshness gate still applies.
 	_, err = tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash) VALUES('captain_availability_changed',$1,$2,$3,$4,$5,'available','unavailable',$6,$7,$8)`, idempotencyKey, correlationID, actingActorID, admissionID, actorID, version-1, version, requestHash)
 	return err
 }
@@ -2443,11 +2448,11 @@ func readCaptainOfferTx(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, where string, args ...any) (CaptainOffer, error) {
 	var item CaptainOffer
-	err := source.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),o.address_text,o.payment_cash_amount_minor,o.currency,o.payment_method,o.payment_state
+	err := source.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),COALESCE((SELECT NULLIF(city.display_name_ar,'') FROM dsh.service_cities city WHERE city.id=o.service_city_id),'منطقة الخدمة'),o.payment_cash_amount_minor,o.currency,o.payment_method,o.payment_state
 		FROM dsh.captain_dispatch_offers offer
 		JOIN dsh.commerce_orders o ON o.id=offer.order_id
 		JOIN dsh.stores s ON s.id=o.store_id
-		WHERE `+where, args...).Scan(&item.ID, &item.OrderID, &item.CaptainActorID, &item.SourceStoreID, &item.State, &item.ExpiresAt, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.StoreName, &item.StoreProfileImageURI, &item.CustomerAddressText, &item.AmountDueMinor, &item.Currency, &item.PaymentMethod, &item.PaymentState)
+		WHERE `+where, args...).Scan(&item.ID, &item.OrderID, &item.CaptainActorID, &item.SourceStoreID, &item.State, &item.ExpiresAt, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.StoreName, &item.StoreProfileImageURI, &item.DeliveryAreaText, &item.AmountDueMinor, &item.Currency, &item.PaymentMethod, &item.PaymentState)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainOffer{}, ErrCaptainOfferNotFound
 	}

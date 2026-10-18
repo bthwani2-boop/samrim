@@ -16,13 +16,13 @@ type CaptainOpportunityCell struct {
 }
 
 type CaptainOpportunityHeatmap struct {
-	Cells        []CaptainOpportunityCell `json:"cells"`
-	MeasuredAt   time.Time                `json:"measuredAt"`
-	WindowStart  time.Time                `json:"windowStart"`
-	WindowEnd    time.Time                `json:"windowEnd"`
-	SignalType   string                   `json:"signalType"`
-	SampleStatus string                   `json:"sampleStatus"`
-	PolicyVersion string                  `json:"policyVersion"`
+	Cells         []CaptainOpportunityCell `json:"cells"`
+	MeasuredAt    time.Time                `json:"measuredAt"`
+	WindowStart   time.Time                `json:"windowStart"`
+	WindowEnd     time.Time                `json:"windowEnd"`
+	SignalType    string                   `json:"signalType"`
+	SampleStatus  string                   `json:"sampleStatus"`
+	PolicyVersion string                   `json:"policyVersion"`
 }
 
 func captainOpportunityIntensity(orderCount int64) string {
@@ -46,10 +46,10 @@ func ReadCaptainOpportunityHeatmap(ctx context.Context, db *sql.DB) (CaptainOppo
 	end := time.Now().UTC().Truncate(24 * time.Hour)
 	start := end.AddDate(0, 0, -7)
 	result := CaptainOpportunityHeatmap{
-		Cells: make([]CaptainOpportunityCell, 0),
+		Cells:      make([]CaptainOpportunityCell, 0),
 		MeasuredAt: end, WindowStart: start, WindowEnd: end,
-		SignalType: "HISTORICAL_ACTIVITY",
-		SampleStatus: "INSUFFICIENT_DATA",
+		SignalType:    "HISTORICAL_ACTIVITY",
+		SampleStatus:  "INSUFFICIENT_DATA",
 		PolicyVersion: "STORE_ORIGIN_V1",
 	}
 	rows, err := db.QueryContext(ctx, `SELECT floor(s.delivery_origin_latitude::double precision / 0.10)::integer,
@@ -77,7 +77,7 @@ func ReadCaptainOpportunityHeatmap(ctx context.Context, db *sql.DB) (CaptainOppo
 			return CaptainOpportunityHeatmap{}, err
 		}
 		result.Cells = append(result.Cells, CaptainOpportunityCell{
-			Latitude: (float64(latitudeCell) + 0.5) * 0.10,
+			Latitude:  (float64(latitudeCell) + 0.5) * 0.10,
 			Longitude: (float64(longitudeCell) + 0.5) * 0.10,
 			Intensity: captainOpportunityIntensity(orderCount),
 		})

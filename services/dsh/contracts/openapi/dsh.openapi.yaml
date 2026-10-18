@@ -6388,7 +6388,7 @@ components:
 
     CaptainOffer:
       type: object
-      required: [id, orderId, captainActorId, sourceStoreId, fulfillmentMode, state, expiresAt, version, createdAt, updatedAt, storeName, customerAddressText, amountDueMinor, currency, paymentMethod, paymentState]
+      required: [id, orderId, captainActorId, sourceStoreId, fulfillmentMode, state, expiresAt, version, createdAt, updatedAt, storeName, deliveryAreaText, amountDueMinor, currency, paymentMethod, paymentState]
       additionalProperties: false
       properties:
         id:
@@ -6423,7 +6423,7 @@ components:
         storeProfileImage:
           $ref: "#/components/schemas/StoreProfileImage"
           nullable: true
-        customerAddressText:
+        deliveryAreaText:
           type: string
           minLength: 1
         amountDueMinor:

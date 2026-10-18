@@ -23,6 +23,7 @@ export function CaptainReadiness() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [locationPermissionGranted, setLocationPermissionGranted] = useState<boolean | null>(null);
   const [activityCounts, setActivityCounts] = useState<{ offers: number | null; deliveries: number | null }>({ offers: null, deliveries: null });
 
   const load = useCallback(async (): Promise<boolean> => {
@@ -33,6 +34,7 @@ export function CaptainReadiness() {
     setAdmission(null);
     setLoadedActorID("");
     setActivityCounts({ offers: null, deliveries: null });
+    setLocationPermissionGranted(null);
     setError("");
     if (!actorID) {
       setLoading(false);
@@ -47,6 +49,10 @@ export function CaptainReadiness() {
       if (sequence !== readSequence.current || current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return false;
       setAdmission(response.admission);
       setLoadedActorID(actorID);
+      void Location.getForegroundPermissionsAsync().then((permission) => {
+        const latest = currentIdentityState();
+        if (sequence === readSequence.current && latest.kind === "authenticated" && isCurrentCaptainActor(actorID, latest.identity.subject.trim())) setLocationPermissionGranted(permission.granted);
+      }).catch(() => {});
       // Summary counts are optional; a full bounded list cannot establish an exact total.
       void Promise.allSettled([api.listOwnCaptainOffers(token), api.listOwnCaptainAssignments(token)]).then(([offersResult, assignmentsResult]) => {
         const latest = currentIdentityState();
@@ -93,16 +99,24 @@ export function CaptainReadiness() {
       const token = await getUsableIdentityAccessToken();
       const current = currentIdentityState();
       if (current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return;
-      await captainClient().setCaptainAvailability(token, available, currentAdmission.version);
       if (available) {
-        try {
-          const permission = await Location.requestForegroundPermissionsAsync();
-          if (permission.granted) void publishCaptainPresence().catch(() => {});
-        } catch { /* Availability remains canonical even if location permission is declined. */ }
+        const permission = await Location.requestForegroundPermissionsAsync();
+        setLocationPermissionGranted(permission.granted);
+        if (!permission.granted) {
+          setError("اسمح بالموقع أثناء استخدام التطبيق لبدء استقبال عروض التوصيل القريبة. لم تتغير حالة توفرك.");
+          return;
+        }
+      }
+      await captainClient().setCaptainAvailability(token, available, currentAdmission.version);
+      let presenceFailed = false;
+      if (available) {
+        try { await publishCaptainPresence(true); }
+        catch { presenceFailed = true; }
       }
       const after = currentIdentityState();
       if (after.kind !== "authenticated" || !isCurrentCaptainActor(actorID, after.identity.subject.trim())) return;
       if (!(await load())) setError("وصل رد تغيير التوفر، لكن تعذرت قراءة الحالة الجديدة. حدّث الجاهزية قبل إجراء آخر.");
+      else if (presenceFailed) setError("تم تشغيل التوفر، لكن لم نتمكن من تحديث موقعك. تأكد من تشغيل الموقع والاتصال وحدّث الجاهزية.");
     } catch (cause) {
       console.error("DSH Captain availability failed", cause);
       const current = currentIdentityState();
@@ -138,6 +152,7 @@ export function CaptainReadiness() {
           </View>
           <BthwaniStatusBadge icon={eligible ? "success" : "warning"} label={captainAdmissionStateLabel(currentAdmission.state)} tone={eligible ? "success" : "warning"} />
         </View>
+        {eligible && available && locationPermissionGranted === false ? <Text accessibilityRole="alert" style={styles.error}>التوفر مفعل، لكن إذن الموقع غير متاح ولن تظهر عروض القرب حتى تمنحه وتحدّث الموقع.</Text> : null}
         {eligible ? <BthwaniButton
           busy={busy}
           disabled={busy || loading}

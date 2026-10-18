@@ -847,7 +847,7 @@ func toCaptainOffer(value postgres.CaptainOffer) contract.CaptainOffer {
 	} else {
 		fulfillmentMode = contract.FulfillmentMode("BTHWANI_CAPTAIN")
 	}
-	return contract.CaptainOffer{ID: value.ID, OrderID: value.OrderID, CaptainActorID: value.CaptainActorID, SourceStoreID: sourceStoreID, FulfillmentMode: fulfillmentMode, State: value.State, ExpiresAt: value.ExpiresAt, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, StoreName: value.StoreName, StoreProfileImage: toStoreProfileImageURI(value.StoreProfileImageURI), CustomerAddressText: value.CustomerAddressText, AmountDueMinor: int(value.AmountDueMinor), Currency: value.Currency, PaymentMethod: contract.PaymentMethod(value.PaymentMethod), PaymentState: contract.PaymentState(value.PaymentState)}
+	return contract.CaptainOffer{ID: value.ID, OrderID: value.OrderID, CaptainActorID: value.CaptainActorID, SourceStoreID: sourceStoreID, FulfillmentMode: fulfillmentMode, State: value.State, ExpiresAt: value.ExpiresAt, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, StoreName: value.StoreName, StoreProfileImage: toStoreProfileImageURI(value.StoreProfileImageURI), DeliveryAreaText: value.DeliveryAreaText, AmountDueMinor: int(value.AmountDueMinor), Currency: value.Currency, PaymentMethod: contract.PaymentMethod(value.PaymentMethod), PaymentState: contract.PaymentState(value.PaymentState)}
 }
 
 func toCaptainAssignment(value postgres.CaptainAssignment) contract.CaptainAssignment {

@@ -88,6 +88,10 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 			if err := db.QueryRowContext(ctx, "SELECT captain_actor_id FROM dsh.captain_dispatch_offers WHERE id=$1", offeredID).Scan(&offeredActor); err != nil {
 				t.Fatal(err)
 			}
+			var stillFresh bool
+			if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.captain_presence_latest WHERE captain_actor_id=$1 AND updated_at>clock_timestamp()-interval '15 minutes')`, offeredActor).Scan(&stillFresh); err != nil || !stillFresh {
+				t.Fatalf("offered captain must retain fresh presence until resolved: %s fresh=%v err=%v", offeredActor, stillFresh, err)
+			}
 			if offeredActor == nearby[0].ActorID || offeredActor == "dispatch-captain-5" {
 				t.Fatalf("wallet-ineligible or stale captain received an offer: %s", offeredActor)
 			}
@@ -205,6 +209,10 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 		}
 		if assignments != 1 {
 			t.Fatalf("wanted one captain assignment got %d", assignments)
+		}
+		var winningPresence int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM dsh.captain_presence_latest WHERE captain_actor_id=(SELECT captain_actor_id FROM dsh.captain_assignments WHERE order_id=$1 AND state='assigned')`, orderID).Scan(&winningPresence); err != nil || winningPresence != 0 {
+			t.Fatalf("assigned winner must not keep dispatch presence: count=%d err=%v", winningPresence, err)
 		}
 		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.captain_audit WHERE order_id=$1 AND event_type='dispatch_offer_superseded'", orderID).Scan(&audited); err != nil {
 			t.Fatal(err)

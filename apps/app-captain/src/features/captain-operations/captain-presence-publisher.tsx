@@ -37,10 +37,10 @@ async function sendCurrentPresence() {
   lastSubmittedAt = Date.now();
   lastSubmittedActor = after.identity.subject;
 }
-export async function publishCaptainPresence() {
+export async function publishCaptainPresence(force = false) {
   const session = currentIdentityState();
   if (session.kind !== "authenticated") return;
-  if (lastSubmittedActor === session.identity.subject && Date.now() - lastSubmittedAt < 60_000) return;
+  if (!force && lastSubmittedActor === session.identity.subject && Date.now() - lastSubmittedAt < 60_000) return;
   await sendCurrentPresence();
 }
 export function CaptainPresencePublisher() {

@@ -66,7 +66,7 @@ export function CaptainOpportunities() {
         coordinate: { latitude: cell.latitude, longitude: cell.longitude },
         title: intensityLabel[cell.intensity],
       }))} />
-      {data.cells.map((cell, index) => <Text key={"zone-" + index} style={styles.muted}>منطقة {index + 1}: {intensityLabel[cell.intensity]}</Text>)}
+      {data.cells.map((cell, index) => <Text key={cell.latitude + ":" + cell.longitude} style={styles.muted}>منطقة {index + 1}: {intensityLabel[cell.intensity]}</Text>)}
       <Text style={styles.muted}>تُعرض مراكز مناطق واسعة وليست مواقع متاجر بعينها.</Text>
       <BthwaniButton label="تحديث المؤشر" variant="secondary" onPress={() => void refresh()} />
     </View> : null}
