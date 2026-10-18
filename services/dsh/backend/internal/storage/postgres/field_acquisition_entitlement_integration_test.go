@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +64,9 @@ func runFieldRewardPublicationOutboxScenario(t *testing.T, ctx context.Context, 
 	scenario.publishStore(controlStoreID, "control")
 	item := scenario.readPendingFieldPublication(fieldStoreID)
 	scenario.verifyDeferrals(item.ID)
+	scenario.verifyRepublishWake(fieldStoreID, item.ID, 2, false)
 	scenario.verifyRetryAndPostLifecycle(item.ID)
+	scenario.verifyRepublishWake(fieldStoreID, item.ID, 4, true)
 }
 
 func (s fieldRewardOutboxScenario) prepareSchema(records []postgres.MigrationRecord, migrationSQL []string) {
@@ -181,6 +184,28 @@ func (s fieldRewardOutboxScenario) readPendingFieldPublication(fieldStoreID stri
 		s.t.Fatalf("outbox did not preserve Field acquisition provenance: %+v", item)
 	}
 	return item
+}
+
+func (s fieldRewardOutboxScenario) verifyRepublishWake(storeID, outboxID string, storeVersion int, alreadyPosted bool) {
+	s.t.Helper()
+	change := func(state string, version int) {
+		s.t.Helper()
+		key := "field-wake-" + state + "-" + strconv.Itoa(version)
+		result, err := postgres.SetStorePublication(s.ctx, s.db, storeID, state, version, key,
+			postgres.HashStorePublicationRequest(storeID, state, version), "field-wake-operator", "field-wake-proof")
+		if err != nil || result.Store.PublicationState != state || result.Store.Version != version+1 {
+			s.t.Fatalf("field publication %s from version %d: result=%+v err=%v", state, version, result, err)
+		}
+	}
+	change("hidden", storeVersion)
+	change("published", storeVersion+1)
+	if alreadyPosted {
+		assertFieldRewardOutboxState(s.t, s.ctx, s.db, outboxID, "POSTED", "", 3)
+		assertFieldRewardPublicationPending(s.t, s.ctx, s.db, outboxID, 0, 0)
+	} else {
+		assertFieldRewardOutboxState(s.t, s.ctx, s.db, outboxID, "PENDING", "customer-visible publication is not currently true", 0)
+		assertFieldRewardPublicationPending(s.t, s.ctx, s.db, outboxID, 1, 0)
+	}
 }
 
 func (s fieldRewardOutboxScenario) verifyDeferrals(outboxID string) {
