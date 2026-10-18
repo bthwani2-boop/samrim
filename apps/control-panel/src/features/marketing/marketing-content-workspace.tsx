@@ -6,7 +6,7 @@ import { useSession } from "../../session/session-provider";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { MarketingStateIndicator } from "./marketing-state-indicator";
-import { apiMessage, clearPendingMarketingCreate, dateTimeLocalValue, emptyMediaProvenance, futureDateInput, futureEndDateInput, type PendingDiscoveryContentCreate, persistMarketingCreate, readActiveServiceCities, readDiscoveryContentById, readPendingDiscoveryContentCreate, sha256File } from "./marketing-workspace";
+import { apiMessage, clearPendingMarketingCreate, dateTimeLocalValue, emptyMediaProvenance, futureDateInput, futureEndDateInput, type PendingDiscoveryContentCreate, persistMarketingCreate, readActiveServiceCities, readDiscoveryContentById, readPendingDiscoveryContentCreate, readPromotionById, sha256File } from "./marketing-workspace";
 
 export function MarketingContentWorkspace() {
   const { state: sessionState } = useSession();
@@ -40,6 +40,9 @@ export function MarketingContentWorkspace() {
   const [contentForm, setContentForm] = useState({ titleAr: "", bodyAr: "", kind: "BANNER" as "BANNER" | "CAROUSEL" | "SHORT_FORM", targetType: "INFO" as "STORE" | "PRODUCT" | "CATEGORY" | "PROMOTION" | "INFO", targetId: "", serviceCityId: "", ordinal: "0" });
   const [targetOptions, setTargetOptions] = useState<ReadonlyArray<{ id: string; label: string; detail?: string }>>([]);
   const [targetSearch, setTargetSearch] = useState("");
+  const linkedPromotionRef = useRef("");
+  const linkedPromotionAttemptRef = useRef("");
+  const [editorOpen, setEditorOpen] = useState(false);
   const [categoryVerticals, setCategoryVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [categoryVerticalId, setCategoryVerticalId] = useState("");
   const [targetCursor, setTargetCursor] = useState("");
@@ -79,6 +82,30 @@ export function MarketingContentWorkspace() {
     return () => { cancelled = true; };
   }, [mediaFile, contentForm.kind]);
   const attemptReady = Boolean(pendingStorageKey) && loadedStorageKey === pendingStorageKey && !storageError;
+
+  // A linked banner uses the existing canonical promotion and discovery target
+  // owners. Never trust an identifier from a URL as proof of publication.
+  useEffect(() => {
+    if (!attemptReady || pendingCreate) return;
+    const promotionID = new URLSearchParams(window.location.search).get("promotionId")?.trim() ?? "";
+    if (!promotionID || linkedPromotionAttemptRef.current === promotionID) return;
+    linkedPromotionAttemptRef.current = promotionID;
+    let active = true;
+    void readPromotionById(promotionID).then((promotion) => {
+      if (!active) return;
+      if (!promotion || promotion.state !== "PUBLISHED") {
+        setMessage("العرض المحدد غير منشور أو غير متاح. اختر عرضًا منشورًا من سجل العروض.");
+        return;
+      }
+      linkedPromotionRef.current = promotion.id;
+      setContentForm((current) => ({ ...current, targetType: "PROMOTION", targetId: "", serviceCityId: promotion.serviceCityId ?? "" }));
+      setTargetSearch(promotion.code);
+      setEditorOpen(true);
+    }).catch(() => {
+      if (active) setMessage("تعذر التحقق من العرض المرتبط. أعد فتحه من سجل العروض.");
+    });
+    return () => { active = false; };
+  }, [attemptReady, pendingCreate]);
   const load = useCallback(async (query: { search?: string; state?: string; kind?: string; sort?: "priority" | "created_desc"; cursor?: string } = {}) => {
     const sequence = ++registrySequence.current;
     setLoading(true);
@@ -175,9 +202,21 @@ export function MarketingContentWorkspace() {
     void fetch(`/api/marketing/content/targets?${params.toString()}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         const body = await response.json().catch(() => null) as { options?: ReadonlyArray<{ id: string; label: string; detail?: string }>; nextCursor?: string; error?: { message?: string } } | null;
+        if (controller.signal.aborted) return;
         if (!response.ok) throw new Error(body?.error?.message ?? "تعذر تحميل الوجهات.");
-        setTargetOptions((current) => targetCursor ? [...current.filter((item) => !(body?.options ?? []).some((next) => next.id === item.id)), ...(body?.options ?? [])] : body?.options ?? []);
+        const options = body?.options ?? [];
+        setTargetOptions((current) => targetCursor ? [...current.filter((item) => !options.some((next) => next.id === item.id)), ...options] : options);
         setTargetNextCursor(body?.nextCursor ?? "");
+        if (contentForm.targetType === "PROMOTION" && linkedPromotionRef.current && !targetCursor) {
+          const selected = options.find((option) => option.id === linkedPromotionRef.current);
+          if (selected) {
+            linkedPromotionRef.current = "";
+            setContentForm((current) => current.targetType === "PROMOTION" ? { ...current, targetId: selected.id } : current);
+            setMessage("تم ربط البنر بالعرض المنشور. اختر الصورة وراجع التفاصيل قبل إنشاء المسودة.");
+          } else {
+            setTargetMessage("العرض المرتبط غير مؤهل للظهور الآن. اختر عرضًا منشورًا من النتائج.");
+          }
+        }
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
@@ -421,7 +460,7 @@ export function MarketingContentWorkspace() {
     <div className="work-stack" data-testid="marketing-content-workspace">
       {storageError ? <p className="managed-status managed-status-warning" role="alert">{storageError}</p> : null}
       {pendingCreate ? <p className="managed-status managed-status-warning" role="status">{pendingCreateStatusMessage}</p> : null}
-      <details className="access-card marketing-create-disclosure" open={Boolean(pendingCreate)}>
+      <details className="access-card marketing-create-disclosure" open={Boolean(pendingCreate) || editorOpen} onToggle={(event) => setEditorOpen(event.currentTarget.open)}>
         <summary className="section-heading marketing-create-summary">إنشاء محتوى اكتشاف</summary>
         <div className="access-card-heading"><h2>إنشاء بطاقة اكتشاف</h2></div>
         <p className="muted">المحتوى المنشور المرتبط بمتجر أو منتج من كتالوجه أو عرض مرتبط به يظهر في شريط واجهة ذلك المتجر. اختر الوجهة الصحيحة؛ لا يُعرض محتوى متجر داخل متجر آخر.</p>
@@ -442,10 +481,10 @@ export function MarketingContentWorkspace() {
             <figcaption className="muted">معاينة تقريبية على الهاتف · لا تُنشر حتى تعتمد المسودة</figcaption>
             {mediaPreviewError ? <p className="managed-status managed-status-warning" role="alert">{mediaPreviewError}</p> : null}
           </figure> : null}
-          <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.targetType} onChange={(event) => { setTargetSearch(""); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setCategoryVerticalId(""); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option><option value="PROMOTION">عرض</option></select></label>
+          <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.targetType} onChange={(event) => { linkedPromotionRef.current = ""; setTargetSearch(""); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setCategoryVerticalId(""); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option><option value="PROMOTION">عرض</option></select></label>
           {contentForm.targetType !== "INFO" ? <>
             {contentForm.targetType === "CATEGORY" ? <label className="field-label" htmlFor="marketing-content-category-vertical">المجال التجاري<select id="marketing-content-category-vertical" aria-label="المجال التجاري للفئة" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={categoryVerticalId} onChange={(event) => { setCategoryVerticalId(event.target.value); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }}><option value="">اختر المجال التجاري</option>{categoryVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label> : null}
-            <label className="field-label">بحث في الوجهات<input aria-label="بحث في الوجهات" maxLength={128} placeholder={targetSearchPlaceholder} disabled={busy || Boolean(pendingCreate) || !attemptReady} value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); setTargetCursor(""); setTargetCursorStack([]); setTargetOptions([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }} /></label>
+            <label className="field-label">بحث في الوجهات<input aria-label="بحث في الوجهات" maxLength={128} placeholder={targetSearchPlaceholder} disabled={busy || Boolean(pendingCreate) || !attemptReady} value={targetSearch} onChange={(event) => { linkedPromotionRef.current = ""; setTargetSearch(event.target.value); setTargetCursor(""); setTargetCursorStack([]); setTargetOptions([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }} /></label>
             <label className="field-label" htmlFor="marketing-content-target-option">الوجهة المعتمدة<select id="marketing-content-target-option" aria-label="الوجهة المعتمدة" value={contentForm.targetId} disabled={busy || Boolean(pendingCreate) || !attemptReady || targetLoading || targetOptions.length === 0} onChange={(event) => setContentForm((current) => ({ ...current, targetId: event.target.value }))}>
               <option value="">{targetLoading ? "جارٍ تحميل الوجهات…" : "اختر وجهة من السجلات"}</option>
               {targetOptions.map((option) => <option key={option.id} value={option.id}>{option.detail ? `${option.label} · ${option.detail}` : option.label}</option>)}
@@ -455,7 +494,7 @@ export function MarketingContentWorkspace() {
             {targetMessage ? <p className="muted" role="status">{targetMessage}</p> : null}
 
           </> : null}
-          <label className="field-label" htmlFor="marketing-content-city">مدينة الخدمة<select id="marketing-content-city" aria-label="مدينة خدمة المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.serviceCityId} onChange={(event) => { setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, serviceCityId: event.target.value, targetId: "" })); }}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
+          <label className="field-label" htmlFor="marketing-content-city">مدينة الخدمة<select id="marketing-content-city" aria-label="مدينة خدمة المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.serviceCityId} onChange={(event) => { linkedPromotionRef.current = ""; setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, serviceCityId: event.target.value, targetId: "" })); }}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
           <label className="field-label">بداية النشر<input aria-label="بداية المحتوى" type="datetime-local" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentStartsAt} onChange={(event) => setContentStartsAt(event.target.value)} /></label>
           <label className="field-label">نهاية النشر<input aria-label="نهاية المحتوى" type="datetime-local" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentEndsAt} onChange={(event) => setContentEndsAt(event.target.value)} /></label>
           <label className="field-label">ترتيب العرض<input aria-label="ترتيب المحتوى" inputMode="numeric" type="number" min="0" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.ordinal} onChange={(event) => setContentForm((current) => ({ ...current, ordinal: event.target.value }))} /></label>

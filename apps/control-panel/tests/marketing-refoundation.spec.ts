@@ -219,3 +219,31 @@ test("operator Store-specific campaign never offers unauthorized Partner funding
   await expect(page.getByText("المتجر المحدد يموله بثواني فقط.", { exact: false })).toBeVisible();
   await expect(page.getByRole("spinbutton", { name: "حصة الشريك من التمويل" })).toHaveCount(0);
 });
+
+
+test("published promotion opens a validated banner draft with its canonical destination", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.route("**/api/marketing/content/targets?**", async (route) => {
+    const query = new URL(route.request().url()).searchParams;
+    await route.fulfill({ status: 200, json: {
+      options: query.get("targetType") === "PROMOTION" && query.get("query") === "SMOKE"
+        ? [{ id: "promotion-smoke", label: "عرض تجريبي" }] : [],
+      nextCursor: "",
+    } });
+  });
+  await page.goto("/marketing/promotions");
+  const linked = page.getByRole("link", { name: "إنشاء بنر للعرض" });
+  await expect(linked).toHaveAttribute("href", "/marketing/content?promotionId=promotion-smoke");
+  await linked.click();
+  await expect(page.locator("#marketing-content-target")).toHaveValue("PROMOTION");
+  await expect(page.getByRole("textbox", { name: "بحث في الوجهات" })).toHaveValue("SMOKE");
+  await expect(page.locator("#marketing-content-target-option")).toHaveValue("promotion-smoke");
+  await expect(page.getByText("تم ربط البنر بالعرض المنشور.", { exact: false })).toBeVisible();
+});
+
+test("unverified promotion links do not silently create marketing targets", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.goto("/marketing/content?promotionId=untrusted-promotion");
+  await expect(page.getByText("العرض المحدد غير منشور أو غير متاح.", { exact: false })).toBeVisible();
+  await expect(page.locator("#marketing-content-target")).toHaveValue("INFO");
+});
