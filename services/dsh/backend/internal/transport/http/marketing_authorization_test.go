@@ -88,10 +88,10 @@ func TestMarketingContentOperatorRoutesRejectMissingMarketingPermission(t *testi
 
 func TestPartnerMarketingErrorsPreserveAuthorizationBoundary(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		err error
+		name   string
+		err    error
 		status int
-		code string
+		code   string
 	}{
 		{"no session", errPartnerPromotionSession, http.StatusUnauthorized, "UNAUTHENTICATED"},
 		{"wrong Store owner", errPartnerPromotionStoreAuthority, http.StatusForbidden, "FORBIDDEN"},

@@ -1497,12 +1497,12 @@ if (sharedQuoteBefore.status !== 409 || sharedQuoteBefore.body?.error?.code !== 
   fail("shared campaign permitted client discount before Partner consent", JSON.stringify(sharedQuoteBefore));
 }
 const sharedDecisionPath = sharedPath + "/" + encodeURIComponent(sharedCampaignID) + "/opt-in";
-const sharedOptInHeaders = partnerHeaders("shared-optin-" + suffix, 1);
+const sharedOptInHeaders = { "Idempotency-Key": "shared-optin-" + suffix, "X-Correlation-ID": "shared-optin-" + suffix };
 const sharedApproved = await request(dshBase, "POST", sharedDecisionPath, {
-  token: first.accessToken, headers: sharedOptInHeaders, body: { decision: "OPTED_IN" },
+  token: first.accessToken, headers: sharedOptInHeaders, body: { decision: "OPTED_IN", expectedVersion: 1 },
 });
 const sharedReplay = await request(dshBase, "POST", sharedDecisionPath, {
-  token: first.accessToken, headers: sharedOptInHeaders, body: { decision: "OPTED_IN" },
+  token: first.accessToken, headers: sharedOptInHeaders, body: { decision: "OPTED_IN", expectedVersion: 1 },
 });
 const sharedVisibleAfter = await request(dshBase, "GET", "/dsh/public/promotions?serviceCityId=" + encodeURIComponent(cityA) + "&storeId=" + encodeURIComponent(first.storeID));
 const sharedOtherAfter = await request(dshBase, "GET", "/dsh/public/promotions?serviceCityId=" + encodeURIComponent(cityA) + "&storeId=" + encodeURIComponent(second.storeID));
@@ -1554,7 +1554,7 @@ if (sharedCancelled.status !== 201 || sharedCancelled.body?.order?.state !== "CA
   }));
 }
 const sharedDeclined = await request(dshBase, "POST", sharedDecisionPath, {
-  token: first.accessToken, headers: partnerHeaders("shared-decline-" + suffix, 1), body: { decision: "DECLINED" },
+  token: first.accessToken, headers: { "Idempotency-Key": "shared-decline-" + suffix, "X-Correlation-ID": "shared-decline-" + suffix }, body: { decision: "DECLINED", expectedVersion: 1 },
 });
 const sharedVisibleDeclined = await request(dshBase, "GET", "/dsh/public/promotions?serviceCityId=" + encodeURIComponent(cityA) + "&storeId=" + encodeURIComponent(first.storeID));
 if (sharedDeclined.status !== 201 || sharedDeclined.body?.campaign?.storeOptInState !== "DECLINED"

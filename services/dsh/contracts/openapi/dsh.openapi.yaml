@@ -9449,11 +9449,14 @@ components:
     CampaignOptInRequest:
       type: object
       additionalProperties: false
-      required: [decision]
+      required: [decision, expectedVersion]
       properties:
         decision:
           type: string
           enum: [OPTED_IN, DECLINED]
+        expectedVersion:
+          type: integer
+          minimum: 1
 
     PartnerCampaignOptInResponse:
       type: object
@@ -9464,6 +9467,18 @@ components:
           $ref: "#/components/schemas/PartnerCampaignView"
         idempotentReplay:
           type: boolean
+
+    PartnerPromotionStateRequest:
+      type: object
+      required: [state, expectedVersion]
+      additionalProperties: false
+      properties:
+        state:
+          type: string
+          enum: [PUBLISHED, PAUSED, ENDED]
+        expectedVersion:
+          type: integer
+          minimum: 1
 
     MarketingPublicationRequest:
       type: object

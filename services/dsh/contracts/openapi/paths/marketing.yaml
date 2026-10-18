@@ -339,15 +339,11 @@ paths:
           schema: { type: string, minLength: 1, maxLength: 128 }
         - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
         - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
-        - name: X-Expected-Version
-          in: header
-          required: true
-          schema: { type: integer, minimum: 1 }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingPublicationRequest" }
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerPromotionStateRequest" }
       responses:
         "200":
           description: Canonical promotion state readback.

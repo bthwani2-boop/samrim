@@ -341,7 +341,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const normalizedPromotion = promotionID.trim();
       if (!normalizedStore || !normalizedPromotion || !Number.isInteger(expectedVersion) || expectedVersion < 1 || !["PUBLISHED", "PAUSED", "ENDED"].includes(input.state)) throw new Error("DSH_PARTNER_PROMOTION_STATE_INPUT_INVALID");
       const path = dshOperationPaths.setPartnerStorePromotionState.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{promotionId}", encodeURIComponent(normalizedPromotion));
-      return userRequest<PromotionResponse>(accessToken, path, dshOperationPaths.setPartnerStorePromotionState.method, input, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
+      return userRequest<PromotionResponse>(accessToken, path, dshOperationPaths.setPartnerStorePromotionState.method, { ...input, expectedVersion }, mutationHeaders(idempotencyKey, correlationID));
     },
     async readPartnerStoreOperationalAvailability(accessToken: string, storeID: string): Promise<PartnerStoreOperationalAvailabilityResponse> {
       const normalizedStore = storeID.trim();
@@ -830,12 +830,12 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.listPartnerStoreCampaigns.path.replace("{storeId}", encodeURIComponent(normalized));
       return userRequest<PartnerCampaignListResponse>(accessToken, path, dshOperationPaths.listPartnerStoreCampaigns.method);
     },
-    async optInPartnerStoreCampaign(accessToken: string, storeID: string, promotionID: string, input: CampaignOptInRequest, expectedVersion: number): Promise<PartnerCampaignOptInResponse> {
+    async optInPartnerStoreCampaign(accessToken: string, storeID: string, promotionID: string, input: Pick<CampaignOptInRequest, "decision">, expectedVersion: number): Promise<PartnerCampaignOptInResponse> {
       const normalizedStore = storeID.trim();
       const normalizedPromotion = promotionID.trim();
       if (!normalizedStore || !normalizedPromotion || expectedVersion < 1) throw new Error("DSH_PROMOTION_INPUT_INVALID");
       const path = dshOperationPaths.optInPartnerStoreCampaign.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{promotionId}", encodeURIComponent(normalizedPromotion));
-      return userRequest<PartnerCampaignOptInResponse>(accessToken, path, dshOperationPaths.optInPartnerStoreCampaign.method, input, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+      return userRequest<PartnerCampaignOptInResponse>(accessToken, path, dshOperationPaths.optInPartnerStoreCampaign.method, { ...input, expectedVersion }, mutationHeaders());
     },
     async transitionStoreOrder(accessToken: string, storeID: string, orderID: string, input: OrderTransitionRequest, expectedVersion: number): Promise<OrderResponse> {
       const normalizedStore = storeID.trim();

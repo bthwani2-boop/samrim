@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -111,13 +110,12 @@ func (s *MarketingServer) optInPartnerStoreCampaign(w http.ResponseWriter, r *ht
 		writeMarketingError(w, err)
 		return
 	}
-	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
-	if err != nil || expected < 1 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a positive X-Expected-Version is required")
-		return
-	}
 	var input contract.CampaignOptInRequest
 	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if input.ExpectedVersion < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a positive expectedVersion is required")
 		return
 	}
 	state := strings.ToUpper(strings.TrimSpace(input.Decision))
@@ -125,7 +123,7 @@ func (s *MarketingServer) optInPartnerStoreCampaign(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "decision must be OPTED_IN or DECLINED")
 		return
 	}
-	record, replayed, err := postgres.SetPartnerCampaignOptIn(r.Context(), s.db, r.PathValue("promotionId"), r.PathValue("storeId"), actorID, state, expected, idempotencyKey, correlationID)
+	record, replayed, err := postgres.SetPartnerCampaignOptIn(r.Context(), s.db, r.PathValue("promotionId"), r.PathValue("storeId"), actorID, state, input.ExpectedVersion, idempotencyKey, correlationID)
 	if err != nil {
 		writeMarketingError(w, err)
 		return
@@ -225,17 +223,16 @@ func (s *MarketingServer) setPartnerStorePromotionState(w http.ResponseWriter, r
 	if !ok {
 		return
 	}
-	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
-	if err != nil || expected < 1 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a positive X-Expected-Version is required")
-		return
-	}
 	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
 		writeMarketingError(w, err)
 		return
 	}
-	var input contract.MarketingPublicationRequest
+	var input contract.PartnerPromotionStateRequest
 	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if input.ExpectedVersion < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a positive expectedVersion is required")
 		return
 	}
 	item, err := postgres.ReadPromotion(r.Context(), s.db, r.PathValue("promotionId"))
@@ -247,7 +244,7 @@ func (s *MarketingServer) setPartnerStorePromotionState(w http.ResponseWriter, r
 		writeMarketingError(w, postgres.ErrPromotionNotFound)
 		return
 	}
-	updated, replayed, err := postgres.SetPromotionState(r.Context(), s.db, item.ID, input.State, idempotencyKey, postgres.HashMarketingFacts("promotion-state", item.ID, input.State, fmt.Sprint(expected)), expected)
+	updated, replayed, err := postgres.SetPromotionState(r.Context(), s.db, item.ID, input.State, idempotencyKey, postgres.HashMarketingFacts("promotion-state", item.ID, input.State, fmt.Sprint(input.ExpectedVersion)), input.ExpectedVersion)
 	if err != nil {
 		writeMarketingError(w, err)
 		return
