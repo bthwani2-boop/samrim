@@ -89,3 +89,15 @@ func TestPublicDiscoveryContentProjectionOmitsOperatorAndPublicationInternals(t 
 }
 
 func int64Pointer(value int64) *int64 { return &value }
+
+func TestOperatorPromotionRegistryAcceptsEndedStateForHistoricalReadback(t *testing.T) {
+	valid := httptest.NewRequest("GET", "/dsh/operator/promotions?state=ENDED&sort=starts_desc&limit=25", nil)
+	query, err := parseOperatorPromotionRegistryQuery(valid)
+	if err != nil || query.State != "ENDED" {
+		t.Fatalf("historical ended promotions must remain queryable: %+v err=%v", query, err)
+	}
+	invalid := httptest.NewRequest("GET", "/dsh/operator/promotions?state=UNKNOWN&sort=starts_desc&limit=25", nil)
+	if _, err := parseOperatorPromotionRegistryQuery(invalid); err == nil {
+		t.Fatal("unknown promotion state must remain rejected")
+	}
+}
