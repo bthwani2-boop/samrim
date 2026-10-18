@@ -247,3 +247,41 @@ test("unverified promotion links do not silently create marketing targets", asyn
   await expect(page.getByText("العرض المحدد غير منشور أو غير متاح.", { exact: false })).toBeVisible();
   await expect(page.locator("#marketing-content-target")).toHaveValue("INFO");
 });
+
+
+test("marketing center provides five genuine sections with honest summary scope", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.goto("/marketing");
+  await expect(page.getByRole("heading", { name: "التسويق والمحتوى" })).toBeVisible();
+  const navigation = page.getByRole("navigation", { name: "أقسام التسويق" });
+  for (const name of ["نظرة عامة", "الحملات والعروض", "المحتوى والظهور", "مشاركة الشركاء", "الأداء والتحليلات"]) {
+    await expect(navigation.getByRole("button", { name })).toBeVisible();
+  }
+  await expect(page.getByText("العروض الفعالة", { exact: true })).toBeVisible();
+  await expect(page.getByText("موافقات المتاجر المنتظرة ليست ضمن سجل المشغّل الحالي", { exact: false })).toBeVisible();
+  await navigation.getByRole("button", { name: "مشاركة الشركاء" }).click();
+  await expect(page.getByRole("heading", { name: "حملات تتطلب موافقة الشركاء" })).toBeVisible();
+  await expect(page.getByText("حالة كل قبول أو رفض وعدد المتاجر المنتظرة: غير متاحين", { exact: false })).toBeVisible();
+  await navigation.getByRole("button", { name: "الأداء والتحليلات" }).click();
+  await page.getByLabel("اختر المحتوى لقراءة نتائجه").selectOption("content-smoke");
+  await expect(page.getByText("طلبات منشأة منسوبة", { exact: true })).toBeVisible();
+  await expect(page.getByText("الطلبات المكتملة، وقيمة الخصم المسوّاة، ومصاريف WLT الفعلية: غير متاحة", { exact: false })).toBeVisible();
+  await expect(page.locator(".marketing-analytics-breakdown")).toContainText("٣");
+});
+
+test("marketing summary never claims complete counts for paginated registries", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.route("**/api/marketing/promotions?**", async (route) => route.fulfill({
+    status: 200, json: { promotions: [{ id: "partial-promo", nameAr: "عرض مجدول", state: "PUBLISHED", startsAt: "2099-01-01T00:00:00.000Z" }], nextCursor: "next-page" },
+  }));
+  await page.goto("/marketing");
+  await expect(page.getByText("هذه أعداد جزئية من أول 100 سجل", { exact: false })).toBeVisible();
+});
+
+test("marketing summary reports backend unavailability instead of fabricated zeros", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.route("**/api/marketing/promotions?**", async (route) => route.fulfill({ status: 503, json: { error: { message: "Unavailable" } } }));
+  await page.goto("/marketing");
+  await expect(page.getByRole("alert").getByText("تعذرت قراءة البيانات الحالية.", { exact: false })).toBeVisible();
+  await expect(page.getByText("العروض الفعالة", { exact: true })).toHaveCount(0);
+});

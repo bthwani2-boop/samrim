@@ -52,6 +52,11 @@ export async function POST(request: Request) {
     return errorResponse("INVALID_INPUT", "promotion id, code, name, kind, value and startsAt are required", 400);
   }
 
+  const rawBudgetLimit = body.discountBudgetLimitMinor;
+  if (rawBudgetLimit !== undefined && rawBudgetLimit !== null && (!Number.isSafeInteger(rawBudgetLimit) || Number(rawBudgetLimit) < 1)) {
+    return errorResponse("INVALID_INPUT", "discountBudgetLimitMinor must be a positive safe integer", 400);
+  }
+
   const fundingSource = String(body.fundingSource ?? "");
   if (!["PARTNER", "BTHWANI", "SHARED"].includes(fundingSource)) return errorResponse("INVALID_INPUT", "a valid funding source is required", 400);
   const fundingShare = Number(body.fundingSharePartnerPercent);
@@ -93,6 +98,7 @@ export async function POST(request: Request) {
     ...(serviceCityId ? { serviceCityId } : {}),
     ...(typeof body.endsAt === "string" && body.endsAt.trim() ? { endsAt: body.endsAt.trim() } : {}),
     ...(Number.isSafeInteger(body.redemptionLimit) && Number(body.redemptionLimit) > 0 ? { redemptionLimit: Number(body.redemptionLimit) } : {}),
+    ...(rawBudgetLimit !== undefined && rawBudgetLimit !== null ? { discountBudgetLimitMinor: Number(rawBudgetLimit) } : {}),
   };
   try {
     const result = await createMarketingPromotion(input, { operatorActorId: identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey });
