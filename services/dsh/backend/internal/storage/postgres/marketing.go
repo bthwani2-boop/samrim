@@ -1092,35 +1092,53 @@ func ListPartnerEligibleCampaigns(ctx context.Context, db *sql.DB, storeID strin
 // opt-in decision for a platform campaign, versioned and idempotent.
 func SetPartnerCampaignOptIn(ctx context.Context, db *sql.DB, promotionID, storeID, actorID, state string, expectedVersion int, idempotencyKey, correlationID string) (PartnerCampaignRecord, bool, error) {
 	promotionID, storeID, actorID, state = strings.TrimSpace(promotionID), strings.TrimSpace(storeID), strings.TrimSpace(actorID), strings.ToUpper(strings.TrimSpace(state))
-	if db == nil || promotionID == "" || storeID == "" || actorID == "" || (state != "OPTED_IN" && state != "DECLINED") || expectedVersion < 1 {
+	idempotencyKey, correlationID = strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
+	if db == nil || promotionID == "" || storeID == "" || actorID == "" || (state != "OPTED_IN" && state != "DECLINED") || expectedVersion < 1 || idempotencyKey == "" || correlationID == "" {
 		return PartnerCampaignRecord{}, false, ErrPromotionInvalid
 	}
+	requestHash := HashMarketingFacts("partner-campaign-opt-in", promotionID, storeID, actorID, state, strconv.Itoa(expectedVersion))
+	resourceID := promotionID + ":" + storeID
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return PartnerCampaignRecord{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:marketing:optin:"+promotionID+":"+storeID); err != nil {
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:marketing:idempotency:"+idempotencyKey); err != nil {
 		return PartnerCampaignRecord{}, false, err
 	}
-	var currentVersion int
-	var currentState string
-	err = tx.QueryRowContext(ctx, "SELECT version,state FROM dsh.commerce_promotion_store_opt_ins WHERE promotion_id=$1 AND store_id=$2 FOR UPDATE", promotionID, storeID).Scan(&currentVersion, &currentState)
-	replayed := err == nil && currentVersion == expectedVersion && currentState == state
-	if errors.Is(err, sql.ErrNoRows) {
-		if expectedVersion != 1 {
-			return PartnerCampaignRecord{}, false, ErrPromotionVersionConflict
-		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.commerce_promotion_store_opt_ins(promotion_id,store_id,actor_id,state,version) VALUES($1,$2,$3,$4,1)", promotionID, storeID, actorID, state); err != nil {
+	var previousResource, previousHash, previousType, previousOperation string
+	err = tx.QueryRowContext(ctx, "SELECT resource_id,request_hash,resource_type,operation FROM dsh.commerce_marketing_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&previousResource, &previousHash, &previousType, &previousOperation)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return PartnerCampaignRecord{}, false, err
+	}
+	replayed := err == nil
+	if replayed && (previousResource != resourceID || previousHash != requestHash || previousType != "PROMOTION" || previousOperation != "UPDATE") {
+		return PartnerCampaignRecord{}, false, ErrPromotionIdempotencyConflict
+	}
+	if !replayed {
+		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:marketing:optin:"+promotionID+":"+storeID); err != nil {
 			return PartnerCampaignRecord{}, false, err
 		}
-	} else if err != nil {
-		return PartnerCampaignRecord{}, false, err
-	} else if !replayed {
-		if currentVersion != expectedVersion {
+		var currentVersion int
+		var currentState string
+		err = tx.QueryRowContext(ctx, "SELECT version,state FROM dsh.commerce_promotion_store_opt_ins WHERE promotion_id=$1 AND store_id=$2 FOR UPDATE", promotionID, storeID).Scan(&currentVersion, &currentState)
+		if errors.Is(err, sql.ErrNoRows) {
+			if expectedVersion != 1 {
+				return PartnerCampaignRecord{}, false, ErrPromotionVersionConflict
+			}
+			if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.commerce_promotion_store_opt_ins(promotion_id,store_id,actor_id,state,version) VALUES($1,$2,$3,$4,1)", promotionID, storeID, actorID, state); err != nil {
+				return PartnerCampaignRecord{}, false, err
+			}
+		} else if err != nil {
+			return PartnerCampaignRecord{}, false, err
+		} else if currentVersion != expectedVersion {
 			return PartnerCampaignRecord{}, false, ErrPromotionVersionConflict
+		} else if currentState != state {
+			if _, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_promotion_store_opt_ins SET state=$3,actor_id=$4,version=version+1,updated_at=clock_timestamp() WHERE promotion_id=$1 AND store_id=$2", promotionID, storeID, state, actorID); err != nil {
+				return PartnerCampaignRecord{}, false, err
+			}
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_promotion_store_opt_ins SET state=$3,actor_id=$4,version=version+1,updated_at=clock_timestamp() WHERE promotion_id=$1 AND store_id=$2", promotionID, storeID, state, actorID); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.commerce_marketing_mutation_idempotency(idempotency_key,request_hash,resource_type,resource_id,operation) VALUES($1,$2,'PROMOTION',$3,'UPDATE')", idempotencyKey, requestHash, resourceID); err != nil {
 			return PartnerCampaignRecord{}, false, err
 		}
 	}

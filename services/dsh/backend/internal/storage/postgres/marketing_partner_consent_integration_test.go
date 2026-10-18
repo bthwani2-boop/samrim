@@ -79,6 +79,13 @@ func TestPartnerFundedPlatformOfferIsNotVisibleOrRedeemableWithoutConsent(t *tes
 		if err != nil || replayed || opted.StoreOptInState != "OPTED_IN" {
 			t.Fatalf("partner opt-in: %+v replay=%v err=%v", opted, replayed, err)
 		}
+		again, replayed, err := postgres.SetPartnerCampaignOptIn(ctx, db, offerID, store, "consent-partner", "OPTED_IN", 1, "consent-optin", "consent-correlation")
+		if err != nil || !replayed || again.StoreOptInVersion != 1 {
+			t.Fatalf("idempotent opt-in retry changed the decision: %+v replay=%v err=%v", again, replayed, err)
+		}
+		if _, _, err := postgres.SetPartnerCampaignOptIn(ctx, db, offerID, store, "consent-partner", "DECLINED", 1, "consent-optin", "consent-correlation"); !errors.Is(err, postgres.ErrPromotionIdempotencyConflict) {
+			t.Fatalf("divergent reuse of decision key must conflict: %v", err)
+		}
 		public, err := postgres.ListPromotions(ctx, db, true, city, store)
 		if err != nil {
 			t.Fatal(err)
@@ -98,5 +105,14 @@ func TestPartnerFundedPlatformOfferIsNotVisibleOrRedeemableWithoutConsent(t *tes
 		if err != nil || promotion.ID != offerID || discount != 100 {
 			t.Fatalf("authorized checkout eligibility: promotion=%+v discount=%d err=%v", promotion, discount, err)
 		}
+		declined, replayed, err := postgres.SetPartnerCampaignOptIn(ctx, db, offerID, store, "consent-partner", "DECLINED", 1, "consent-decline", "consent-correlation")
+		if err != nil || replayed || declined.StoreOptInState != "DECLINED" || declined.StoreOptInVersion != 2 {
+			t.Fatalf("new Partner decision must advance its version once: %+v replay=%v err=%v", declined, replayed, err)
+		}
+		declinedAgain, replayed, err := postgres.SetPartnerCampaignOptIn(ctx, db, offerID, store, "consent-partner", "DECLINED", 1, "consent-decline", "consent-correlation")
+		if err != nil || !replayed || declinedAgain.StoreOptInVersion != 2 {
+			t.Fatalf("decision retry must not mutate a newer version: %+v replay=%v err=%v", declinedAgain, replayed, err)
+		}
+		assertHidden("after Partner decline")
 	})
 }
