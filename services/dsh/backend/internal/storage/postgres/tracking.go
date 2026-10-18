@@ -140,6 +140,12 @@ func UpdateCaptainLocation(ctx context.Context, db *sql.DB, assignmentID, captai
 	}}, nil
 }
 
+// The client must never be shown an old or future-dated position as live.
+func captainTrackingIsFresh(updatedAt, now time.Time) bool {
+	age := now.Sub(updatedAt)
+	return age >= 0 && age <= 15*time.Minute
+}
+
 func ReadClientOrderTracking(ctx context.Context, db *sql.DB, orderID, clientActorID string) (ClientOrderTracking, error) {
 	orderID = strings.TrimSpace(orderID)
 	clientActorID = strings.TrimSpace(clientActorID)
@@ -175,6 +181,10 @@ func ReadClientOrderTracking(ctx context.Context, db *sql.DB, orderID, clientAct
 	if !latitude.Valid || !longitude.Valid || !version.Valid || !updatedAt.Valid {
 		result.TrackingState = "AWAITING_LOCATION"
 		return result, nil
+	}
+	if !captainTrackingIsFresh(updatedAt.Time, time.Now()) {
+		result.TrackingState = "STALE"
+		return result, nil // Do not expose outdated precise coordinates.
 	}
 	result.TrackingState = "LIVE"
 	result.CaptainLocation = &CaptainLocationSnapshot{

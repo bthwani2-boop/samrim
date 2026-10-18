@@ -6740,7 +6740,7 @@ components:
 
     OrderTrackingState:
       type: string
-      enum: [NOT_ASSIGNED, AWAITING_LOCATION, LIVE, COMPLETED]
+      enum: [NOT_ASSIGNED, AWAITING_LOCATION, LIVE, STALE, COMPLETED]
 
     OrderTrackingResponse:
       type: object
