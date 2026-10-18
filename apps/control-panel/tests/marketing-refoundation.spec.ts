@@ -97,12 +97,17 @@ test("marketing content previews the selected banner locally without publishing"
   await page.getByLabel("ملف صورة المحتوى").setInputFiles({
     name: "banner.png",
     mimeType: "image/png",
-    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/bT8AAAAASUVORK5CYII=", "base64"),
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGO846bBwMDAxMDAwMDAAAAQVgFOyh0XIgAAAABJRU5ErkJggg==", "base64"),
   });
   const preview = page.getByTestId("marketing-content-preview");
   await expect(preview).toBeVisible();
   await expect(preview.getByText("عرض الخضروات")).toBeVisible();
-  await expect(preview.locator("img")).toHaveAttribute("src", /^blob:/);
+  await expect(preview.getByRole("img", { name: "معاينة الصورة المختارة" })).toBeVisible();
+  await expect(preview.locator("img")).toHaveCount(0);
+  await expect.poll(async () => preview.locator("canvas").evaluate((canvas) => {
+    const bitmap = canvas as HTMLCanvasElement;
+    return (bitmap.getContext("2d")?.getImageData(0, 0, 1, 1).data[3] ?? 0) > 0;
+  })).toBe(true);
   await expect(preview).toContainText("معاينة تقريبية");
 });
 
