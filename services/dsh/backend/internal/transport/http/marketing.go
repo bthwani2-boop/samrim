@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -349,11 +350,22 @@ func (s *MarketingServer) listOperatorPromotions(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, response)
 }
 
+// Fingerprint every validated commercial field, including share allocation,
+// opt-in, targeting and caps. The request correlation ID is tracing metadata,
+// not part of the business operation's idempotent identity.
+func operatorPromotionCreateHash(input contract.CreatePromotionRequest, actingActorID string) (string, error) {
+	payload, err := json.Marshal(input)
+	if err != nil {
+		return "", err
+	}
+	return postgres.HashMarketingFacts("promotion-create:v2", actingActorID, string(payload)), nil
+}
+
 func (s *MarketingServer) createOperatorPromotion(w http.ResponseWriter, r *http.Request) {
 	if !s.operatorAuthorized(w, r) {
 		return
 	}
-	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
+	acting, _, idempotency, ok := requiredMutationHeaders(w, r)
 	if !ok {
 		return
 	}
@@ -385,12 +397,17 @@ func (s *MarketingServer) createOperatorPromotion(w http.ResponseWriter, r *http
 	}
 	threshold := promotionThreshold(int64(input.MinOrderSubtotalMinor))
 	budgetLimit := promotionThreshold(int64(input.DiscountBudgetLimitMinor))
+	requestHash, hashErr := operatorPromotionCreateHash(input, acting)
+	if hashErr != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "unable to fingerprint promotion")
+		return
+	}
 	item, replayed, err := postgres.CreatePromotion(r.Context(), s.db, postgres.PromotionInput{
 		ID: input.ID, Code: input.Code, NameAr: input.NameAr, DescriptionAr: input.DescriptionAr, Kind: string(input.Kind), ValueMinor: int64(input.ValueMinor), MaxDiscountMinor: maxDiscount,
 		// The operator owns the funding source and allocation for platform-authored
 		// promotions; partner-authored Store promotions stay partner-borne.
 		FundingSource: string(input.FundingSource), FundingSharePartnerPercent: fundingShare, StoreID: input.StoreID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, RequiresPartnerOptIn: input.RequiresPartnerOptIn, MinOrderSubtotalMinor: threshold, Targets: promotionTargets(input.Targets), RedemptionLimit: limit, DiscountBudgetLimitMinor: budgetLimit, CreatedByActorID: acting,
-	}, idempotency, postgres.HashMarketingFacts("promotion-create", input.ID, input.Code, input.NameAr, input.DescriptionAr, string(input.Kind), fmt.Sprint(input.ValueMinor), string(input.FundingSource), input.StoreID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.RedemptionLimit), fmt.Sprint(input.DiscountBudgetLimitMinor), correlation))
+	}, idempotency, requestHash)
 	if err != nil {
 		writeMarketingError(w, err)
 		return
