@@ -107,6 +107,7 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
   const [selectedTarget, setSelectedTarget] = useState<TargetOption | null>(null);
   const [targetLoading, setTargetLoading] = useState(false);
   const [endingPromotion, setEndingPromotion] = useState<PromotionView | null>(null);
+  const [consentingCampaign, setConsentingCampaign] = useState<PartnerCampaignView | null>(null);
 
   const load = useCallback(async (): Promise<Readonly<{ promotions: OperatorPromotionRegistryResponse; campaigns: PartnerCampaignListResponse }> | null> => {
     if (!authenticated || !storeID) return null;
@@ -293,10 +294,32 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
         {threshold ? <Text style={styles.muted}>حد الطلب: {formatMoney(threshold, "YER")}</Text> : null}
         <Text style={campaign.storeOptInState === "OPTED_IN" ? styles.notice : styles.muted}>{campaignDecisionLabel(campaign)}</Text>
       </View>{requiresPartnerOptIn(campaign.promotion) ? <View style={styles.actions}>
-        <BthwaniButton busy={busy} disabled={campaign.storeOptInState === "OPTED_IN"} label="مشاركة" onPress={() => void decideCampaign(campaign, "OPTED_IN")} variant="secondary" />
+        <BthwaniButton busy={busy} disabled={campaign.storeOptInState === "OPTED_IN"} label="مشاركة" onPress={() => setConsentingCampaign(campaign)} variant="secondary" />
         <BthwaniButton busy={busy} disabled={campaign.storeOptInState === "DECLINED"} label="رفض" onPress={() => void decideCampaign(campaign, "DECLINED")} variant="secondary" />
       </View> : null}</View>; })}
     </View>
+    <BthwaniConfirmDialog
+      busy={busy}
+      confirmLabel="أوافق على المشاركة"
+      description={consentingCampaign ? [
+        `الحملة: ${consentingCampaign.promotion.nameAr}`,
+        `الخصم: ${benefitLabel(consentingCampaign.promotion)}`,
+        fundingLabel(consentingCampaign.promotion),
+        promotionScopeLabel(consentingCampaign.promotion),
+        `من ${new Date(consentingCampaign.promotion.startsAt).toLocaleString("ar-YE")}${consentingCampaign.promotion.endsAt ? " إلى " + new Date(consentingCampaign.promotion.endsAt).toLocaleString("ar-YE") : ""}`,
+        consentingCampaign.promotion.redemptionLimit ? `حد الاستخدام: ${consentingCampaign.promotion.redemptionLimit}` : "",
+        consentingCampaign.promotion.discountBudgetLimitMinor ? `الحد الأقصى لقيمة الخصومات: ${formatMoney(consentingCampaign.promotion.discountBudgetLimitMinor, "YER")}` : "",
+        "تؤكد المشاركة في هذه الشروط فقط، ولا تمنح موافقة على تغييرات مالية لاحقة.",
+      ].filter(Boolean).join("\n") : ""}
+      onCancel={() => setConsentingCampaign(null)}
+      onConfirm={() => {
+        const campaign = consentingCampaign;
+        setConsentingCampaign(null);
+        if (campaign) void decideCampaign(campaign, "OPTED_IN");
+      }}
+      title="مراجعة شروط مشاركة المتجر"
+      visible={Boolean(consentingCampaign)}
+    />
     <BthwaniConfirmDialog
       busy={busy}
       confirmLabel="إنهاء العرض"
@@ -322,7 +345,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     formTitle: { ...typography.label, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, notice: { ...typography.bodySm, color: theme.interactiveText },
     error: { ...typography.bodySm, color: theme.warning }, loading: { alignItems: "center", padding: spacing[3] },
     form: { borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, padding: spacing[3], textAlign: "left" },
+    input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, padding: spacing[3] },
     kindRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] }, searchRow: { alignItems: "center", flexDirection: "row", gap: spacing[2] }, searchInput: { flex: 1 },
     list: { maxHeight: 520 }, bucket: { gap: spacing[2], marginBottom: spacing[3] }, bucketTitle: { ...typography.label, color: theme.interactiveText },
     row: { alignItems: "flex-start", borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], justifyContent: "space-between", padding: spacing[3] },
