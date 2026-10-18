@@ -11,7 +11,7 @@ import { recordPendingDiscoveryConversion } from "../store-discovery/discovery-a
 import { checkoutRecipient, DeliveryRecipientForm, deliveryRecipientIsValid, type DeliveryRecipientInput } from "./delivery-recipient-form";
 
 type CartState = { kind: "loading" } | { kind: "empty" } | { kind: "ready"; cart: Cart } | { kind: "error" };
-type QuoteState = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; quote: CheckoutQuote } | { kind: "invalid" } | { kind: "error" };
+type QuoteState = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; quote: CheckoutQuote } | { kind: "invalid" } | { kind: "error"; message: string };
 type WalletState = { kind: "loading" } | { kind: "ready"; availableMinor: number } | { kind: "error" };
 type PendingCartCheckoutAttempt = Readonly<{ version: 1; actorID: string; storeID: string; cartID: string; idempotencyKey: string; correlationID: string; request: CheckoutRequest; expectedCartVersion: number }>;
 
@@ -99,6 +99,16 @@ function cartMutationErrorMessage(error: unknown): string {
   if (code === "OFFER_UNAVAILABLE") return "لم يعد أحد المنتجات متاحًا. حدّث السلة لمراجعة المنتجات الحالية.";
   if (code === "CART_CLOSED") return "أُغلقت السلة. افتح كتالوج المتجر لبدء سلة جديدة.";
   return "تعذر تحديث السلة. أعد المحاولة بعد قراءة الحالة الحالية.";
+}
+
+function quoteFailureMessage(error: unknown, appliedCode: string): string {
+  const code = errorCode(error);
+  if (code === "PROMOTION_UNAVAILABLE") return "هذا العرض غير متاح لهذا المتجر أو لم تعد شروطه مستوفاة. امسح الرمز واضغط «تطبيق» لإعادة حساب الإجمالي دون خصم، أو اختر عرضًا آخر.";
+  if (code === "INVALID_INPUT" && appliedCode) return "رمز العرض غير صالح. صححه أو امسحه ثم اضغط «تطبيق» لإعادة حساب الإجمالي.";
+  if (code === "UNSERVICEABLE") return "العنوان المختار خارج نطاق توصيل المتجر. اختر عنوانًا مؤهلًا ثم أعد حساب الإجمالي.";
+  if (code === "FULFILLMENT_MODE_UNAVAILABLE") return "طريقة الاستلام المختارة لم تعد متاحة؛ اختر طريقة أخرى ثم أعد حساب الإجمالي.";
+  if (code === "WLT_DELIVERY_FEE_UNAVAILABLE") return "تعذر الحصول على رسوم التوصيل حاليًا؛ أعد المحاولة قبل تأكيد الطلب.";
+  return "تعذر حساب الإجمالي. حدّث السلة أو أعد المحاولة قبل الإتمام.";
 }
 
 function isQuantityAllowed(line: Cart["lines"][number], quantity: number): boolean {
@@ -272,7 +282,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
       if (requestID === quoteRequestID.current) setQuote({ kind: "ready", quote: result.quote });
     } catch (cause) {
       console.error("DSH checkout quote failed", cause);
-      if (requestID === quoteRequestID.current) setQuote({ kind: "error" });
+      if (requestID === quoteRequestID.current) setQuote({ kind: "error", message: quoteFailureMessage(cause, appliedPromotionCode) });
     }
   }, [appliedPromotionCode, fulfillmentMode, pickupMode, quoteAddressID, serviceableAddressId, storeId]);
 
@@ -461,7 +471,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
           </View>
           {quote.kind === "loading" ? <Text accessibilityLiveRegion="polite" style={styles.muted}>جارٍ حساب الإجمالي النهائي…</Text> : null}
           {quote.kind === "invalid" ? <Text accessibilityRole="alert" style={styles.warning}>لن يُحتسب إجمالي الطلب حتى تزيل المنتجات التي تغير توفرها أو كميتها المسموحة أو خياراتها.</Text> : null}
-          {quote.kind === "error" ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>تعذر حساب الإجمالي. حدّث السلة أو أعد المحاولة قبل الإتمام.</Text> : null}
+          {quote.kind === "error" ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{quote.message}</Text> : null}
           {quote.kind === "idle" && !pickupMode && !serviceableAddressId ? <Text style={styles.warning}>اختر عنوانًا مؤهلًا لعرض رسوم التوصيل والإجمالي النهائي.</Text> : null}
           {quote.kind === "error" ? <BthwaniButton label="إعادة حساب الإجمالي" onPress={() => { if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /> : null}
         </View>

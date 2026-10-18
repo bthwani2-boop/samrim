@@ -266,6 +266,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
   }, [categoryId, loadBanner, productId, selectedCityID, storeId]);
 
+  function openStorePromotion(code: string) {
+    router.push(`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}&promotionCode=${encodeURIComponent(code)}` as Href);
+  }
+
   async function retryPromotions() {
     if (!selectedCityID) return;
     const requestID = promotionRequestID.current + 1;
@@ -817,7 +821,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
               </Pressable> : item.kind === "offer" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`${bannerOffers.length ? "عرض المنتج الرائج" : "عرض المنتج"} ${item.offer.productName}`} onPress={() => openOfferDetails(item.offer.offerId)} style={[styles.bannerCard, { width: bannerWidth }]}>
                 {item.offer.media[0]?.uri ? <Image source={{ uri: item.offer.media[0].uri }} accessibilityLabel={`صورة ${item.offer.productName}`} resizeMode="cover" style={styles.bannerImage} /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="trending" color={theme.interactiveText} size={sizing.iconMd} /></View>}
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>{bannerOffers.length ? "الأكثر طلبًا" : "من منتجات المتجر"}</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.offer.productName}</Text><Text style={styles.bannerPrice}>{storeMoney(item.offer.priceMinor, item.offer.currency)}</Text></View>
-              </Pressable> : <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`عرض ${item.promotion.nameAr}: ${promotionBenefit(item.promotion)}`} onPress={() => Alert.alert(item.promotion.nameAr, `${item.promotion.descriptionAr}\n${promotionBenefit(item.promotion)}\nرمز العرض: ${item.promotion.code}`)} style={[styles.bannerCard, { width: bannerWidth }]}>
+              </Pressable> : <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`عرض ${item.promotion.nameAr}: ${promotionBenefit(item.promotion)}`} onPress={() => openStorePromotion(item.promotion.code)} style={[styles.bannerCard, { width: bannerWidth }]}>
                 <View style={styles.bannerPromotionMark}><Text style={styles.bannerPromotionMarkText}>عرض</Text></View>
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>من عروض المتجر</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.promotion.nameAr}</Text><Text numberOfLines={1} style={styles.bannerPrice}>{promotionBenefit(item.promotion)} · الرمز {item.promotion.code}</Text></View>
               </Pressable>)}
@@ -831,7 +835,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           {promotionError ? <View style={styles.promotionNotice}><Text accessibilityRole="alert" style={styles.validationError}>تعذر قراءة عروض هذا المتجر؛ يمكنك متابعة الطلب من دونها.</Text><BthwaniButton label="إعادة قراءة العروض" onPress={() => void retryPromotions()} variant="secondary" /></View> : null}
           {!promotionLoading && !promotionError && promotions.length > 0 ? <>
             <BthwaniSectionHeader title="عروض هذا المتجر" subtitle="تُطبّق الأكواد على الطلبات المؤهلة من هذا المتجر." />
-            <View style={styles.promotionList}>{promotions.map((promotion) => <PromotionCard key={promotion.id} promotion={promotion} onUse={() => router.push((`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}&promotionCode=${encodeURIComponent(promotion.code)}`) as Href)} />)}</View>
+            <View style={styles.promotionList}>{promotions.map((promotion) => <PromotionCard key={promotion.id} promotion={promotion} onUse={() => openStorePromotion(promotion.code)} />)}</View>
           </> : null}
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           {favoriteLoadError ? <BthwaniSurface tone="inset" style={styles.favoriteNotice}><Text style={styles.muted}>تعذر تحديث حالة المفضلة من الخادم.</Text><BthwaniButton busy={favoriteLoading} label="إعادة المحاولة" onPress={() => void reloadFavorites()} variant="secondary" /></BthwaniSurface> : null}
