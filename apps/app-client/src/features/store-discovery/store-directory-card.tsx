@@ -25,88 +25,99 @@ export function StoreDirectoryCard({
   const paused = !open && statuses.some((item) => item.state === "PAUSED");
   const scheduledClosed = statuses.length > 0 && statuses.every((item) => item.state === "CLOSED_BY_SCHEDULE");
   const statusLabel = !statuses.length ? "" : open ? "مفتوح" : paused ? "متوقف مؤقتًا" : scheduledClosed ? "مغلق" : "غير متاح";
-  const address = store.addressLine?.trim() ?? "";
-  const distanceLabel = typeof store.distanceMeters === "number" && Number.isFinite(store.distanceMeters) && store.distanceMeters > 0
-    ? (store.distanceMeters / 1000).toFixed(1) + " كم" : "";
-  const locationLabel = [activityLabel.trim(), address, distanceLabel].filter(Boolean).join(" · ");
-  const hasPlatformDelivery = modes.includes("BTHWANI_CAPTAIN");
-  const hasPartnerDelivery = modes.includes("PARTNER_CAPTAIN");
-  let deliveryLabel = "";
-  if (hasPlatformDelivery && hasPartnerDelivery) deliveryLabel = "توصيل";
-  else if (hasPlatformDelivery) deliveryLabel = "توصيل بثواني";
-  else if (hasPartnerDelivery) deliveryLabel = "توصيل المتجر";
+  const locationLabel = [activityLabel.trim(), store.addressLine?.trim() ?? ""].filter(Boolean).join(" · ");
+
+  const platformDelivery = modes.includes("BTHWANI_CAPTAIN");
+  const partnerDelivery = modes.includes("PARTNER_CAPTAIN");
+  const deliveryLabel = platformDelivery && partnerDelivery ? "توصيل" : platformDelivery ? "توصيل بثواني" : partnerDelivery ? "توصيل المتجر" : "";
   const modeLabel = [deliveryLabel, modes.includes("CUSTOMER_PICKUP") ? "استلام" : ""].filter(Boolean).join(" · ");
-  const hasRating = store.ratingCount > 0 && Number.isFinite(store.ratingAverage);
-  const reviewLabel = hasRating ? "★ " + store.ratingAverage.toFixed(1) : "";
+
+  const hasRating = store.ratingCount > 0 && Number.isFinite(store.ratingAverage) && store.ratingAverage >= 1 && store.ratingAverage <= 5;
+  const ratingValue = hasRating ? store.ratingAverage.toFixed(1) : "";
   const offerLabel = promotionCount !== null && promotionCount > 0
-    ? promotionCount === 1 ? "عرض متاح" : promotionCount + " عروض" : "";
+    ? promotionCount === 1 ? "عرض متاح" : `${promotionCount} عروض` : "";
+  const serviceLabel = [modeLabel, offerLabel].filter(Boolean).join(" · ");
 
   return <Pressable
     accessibilityRole="button"
-    accessibilityLabel={["فتح متجر " + store.name, statusLabel, hasRating ? "تقييم " + store.ratingAverage.toFixed(1) + " من خمسة" : "", offerLabel].filter(Boolean).join("، ")}
+    accessibilityLabel={[`فتح متجر ${store.name}`, statusLabel, hasRating ? `تقييم ${ratingValue} من خمسة` : "", offerLabel].filter(Boolean).join("، ")}
     onPress={onOpen}
     style={({ pressed }) => [styles.card, pressed && styles.pressed]}
   >
-    {store.storeProfileImage?.uri && !imageFailed
-      ? <Image
-        accessibilityLabel={"شعار متجر " + store.name}
-        onError={onImageError}
-        source={{ uri: store.storeProfileImage.uri }}
-        resizeMode="contain"
-        style={styles.logo}
-      />
-      : <View style={styles.logoFallback}><BthwaniIcon name="store" size={sizing.iconLg} color={theme.interactiveText} /></View>}
-    <View style={styles.copy}>
-      <Text style={styles.name} numberOfLines={1}>{store.name}</Text>
-      {locationLabel ? <Text style={styles.location} numberOfLines={1}>{locationLabel}</Text> : null}
-      {statusLabel || modeLabel ? <View style={styles.serviceRow}>
-        {statusLabel ? <View style={[styles.status, open && styles.statusOpen]}>
-          <View style={[styles.dot, open && styles.dotOpen]} />
-          <Text numberOfLines={1} style={[styles.statusText, open && styles.statusTextOpen]}>{statusLabel}</Text>
-        </View> : null}
-        {modeLabel ? <Text style={styles.modes} numberOfLines={1}>{modeLabel}</Text> : null}
-      </View> : null}
-      {hasRating || offerLabel ? <View style={styles.benefits}>
-        {hasRating ? <Text accessibilityLabel={"تقييم المتجر " + store.ratingAverage.toFixed(1) + " من خمسة، من " + store.ratingCount + " أشخاص"} style={styles.rating}>{reviewLabel}</Text> : null}
-        {offerLabel ? <Text style={styles.offerLabel} numberOfLines={1}>{offerLabel}</Text> : null}
+    <View style={styles.logoColumn}>
+      <View style={styles.logoFrame}>
+        {store.storeProfileImage?.uri && !imageFailed
+          ? <Image
+            accessibilityLabel={`شعار متجر ${store.name}`}
+            onError={onImageError}
+            source={{ uri: store.storeProfileImage.uri }}
+            resizeMode="contain"
+            style={styles.logo}
+          />
+          : <View style={styles.logoFallback}><BthwaniIcon name="store" size={sizing.iconLg} color={theme.interactiveText} /></View>}
+      </View>
+      {hasRating ? <View style={styles.ratingPill} accessibilityLabel={`تقييم المتجر ${ratingValue} من خمسة، من ${store.ratingCount} أشخاص`}>
+        <Text style={styles.ratingStar}>★</Text>
+        <Text style={styles.ratingValue}>{ratingValue}</Text>
       </View> : null}
     </View>
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={(favorite ? "إزالة " : "إضافة ") + store.name + (favorite ? " من المفضلة" : " إلى المفضلة")}
-      accessibilityState={{ checked: favorite, disabled: favoriteBusy }}
-      disabled={favoriteBusy}
-      hitSlop={8}
-      onPress={(event) => { event.stopPropagation(); onFavorite(); }}
-      style={[styles.favoriteAction, favorite && styles.favoriteSelected]}
-    >
-      <Text style={styles.favoriteGlyph}>{favorite ? "♥" : "♡"}</Text>
-    </Pressable>
+
+    <View style={styles.copy}>
+      <Text style={styles.name} numberOfLines={2}>{store.name}</Text>
+      {locationLabel ? <Text style={styles.location} numberOfLines={1}>{locationLabel}</Text> : null}
+      {serviceLabel ? <Text style={styles.service} numberOfLines={1}>{serviceLabel}</Text> : null}
+    </View>
+
+    <View style={styles.actions}>
+      {statusLabel ? <View style={[styles.status, open ? styles.statusOpen : paused ? styles.statusPaused : styles.statusClosed]}>
+        <View style={[styles.statusDot, open ? styles.dotOpen : paused ? styles.dotPaused : styles.dotClosed]} />
+        <Text style={[styles.statusText, open ? styles.statusTextOpen : paused ? styles.statusTextPaused : styles.statusTextClosed]} numberOfLines={2}>{statusLabel}</Text>
+      </View> : null}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${favorite ? "إزالة" : "إضافة"} ${store.name} ${favorite ? "من المفضلة" : "إلى المفضلة"}`}
+        accessibilityState={{ checked: favorite, disabled: favoriteBusy }}
+        disabled={favoriteBusy}
+        hitSlop={8}
+        onPress={(event) => { event.stopPropagation(); onFavorite(); }}
+        style={[styles.favoriteAction, favorite && styles.favoriteSelected]}
+      >
+        <Text style={styles.favoriteGlyph}>{favorite ? "♥" : "♡"}</Text>
+      </Pressable>
+    </View>
   </Pressable>;
 }
 
 function makeStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    card: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: 100, overflow: "hidden", ...elevation.raised },
-    logo: { alignSelf: "stretch", minHeight: 100, width: 92, backgroundColor: theme.surfaceInset },
-    logoFallback: { alignSelf: "stretch", minHeight: 100, width: 92, alignItems: "center", justifyContent: "center", backgroundColor: theme.actionSoft },
-    copy: { flex: 1, minWidth: 0, gap: spacing[1], paddingVertical: spacing[2] },
-    name: { ...typography.titleSm, color: theme.color, textAlign: "auto" },
-    location: { ...typography.caption, color: theme.colorMuted, textAlign: "auto" },
-    serviceRow: { alignItems: "center", flexDirection: "row", gap: spacing[2], minWidth: 0 },
-    status: { alignItems: "center", flexDirection: "row", gap: spacing[1], backgroundColor: theme.surfaceInset, borderRadius: radius.round, paddingHorizontal: spacing[1], paddingVertical: 2 },
+    card: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: 116, paddingVertical: spacing[2], paddingHorizontal: spacing[2], ...elevation.raised },
+    logoColumn: { alignItems: "center", alignSelf: "center", gap: spacing[1], width: 84 },
+    logoFrame: { alignItems: "center", justifyContent: "center", height: 78, width: 82, borderRadius: radius.md, backgroundColor: theme.surfaceInset, overflow: "hidden" },
+    logo: { height: 74, width: 78 },
+    logoFallback: { alignItems: "center", justifyContent: "center", height: 74, width: 78 },
+    ratingPill: { alignItems: "center", justifyContent: "center", flexDirection: "row", gap: spacing[1], backgroundColor: theme.warningSoft, borderRadius: radius.round, minHeight: 20, paddingHorizontal: spacing[2], maxWidth: 82 },
+    ratingStar: { fontSize: 14, lineHeight: 18, color: theme.warning },
+    ratingValue: { ...typography.label, color: theme.color },
+    copy: { flex: 1, minWidth: 0, gap: spacing[1], justifyContent: "center" },
+    name: { ...typography.titleSm, color: theme.color },
+    location: { ...typography.caption, color: theme.colorMuted },
+    service: { ...typography.caption, color: theme.colorSecondary },
+    actions: { alignItems: "center", alignSelf: "stretch", justifyContent: "center", gap: spacing[2], width: 66 },
+    status: { alignItems: "center", justifyContent: "center", flexDirection: "row", gap: spacing[1], borderRadius: radius.round, paddingHorizontal: spacing[1], paddingVertical: spacing[1], width: 66, minHeight: 26 },
     statusOpen: { backgroundColor: theme.successSoft },
-    dot: { height: 6, width: 6, borderRadius: radius.round, backgroundColor: theme.colorMuted },
+    statusPaused: { backgroundColor: theme.warningSoft },
+    statusClosed: { backgroundColor: theme.dangerSoft },
+    statusDot: { height: 6, width: 6, borderRadius: radius.round },
     dotOpen: { backgroundColor: theme.success },
-    statusText: { ...typography.caption, color: theme.colorMuted },
+    dotPaused: { backgroundColor: theme.warning },
+    dotClosed: { backgroundColor: theme.danger },
+    statusText: { ...typography.caption, flexShrink: 1, textAlign: "center" },
     statusTextOpen: { color: theme.success },
-    modes: { ...typography.caption, color: theme.colorMuted, flex: 1, minWidth: 0, textAlign: "auto" },
-    benefits: { alignItems: "center", flexDirection: "row", gap: spacing[2], minWidth: 0 },
-    rating: { ...typography.caption, color: theme.warning },
-    offerLabel: { ...typography.caption, color: theme.interactiveText },
-    favoriteAction: { alignItems: "center", justifyContent: "center", height: sizing.controlMd, width: sizing.controlMd, borderRadius: radius.round, backgroundColor: theme.actionSoft, marginEnd: spacing[2] },
-    favoriteSelected: { backgroundColor: theme.surfaceInset },
-    favoriteGlyph: { color: theme.interactiveText, fontSize: 26, lineHeight: 32, textAlign: "center" },
-    pressed: { opacity: 0.7 },
+    statusTextPaused: { color: theme.warningText },
+    statusTextClosed: { color: theme.dangerText },
+    favoriteAction: { alignItems: "center", justifyContent: "center", height: sizing.controlMd, width: sizing.controlMd, borderRadius: radius.round, backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: borders.hairline },
+    favoriteSelected: { backgroundColor: theme.actionSoft, borderColor: theme.actionSoft },
+    favoriteGlyph: { color: theme.interactiveText, fontSize: 25, lineHeight: 31, textAlign: "center" },
+    pressed: { opacity: 0.76 },
   });
 }

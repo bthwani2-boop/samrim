@@ -15,7 +15,6 @@ const compiled = ts.transpileModule(functions, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React },
 }).outputText;
 const React = { createElement(type, props, ...children) { return { type, props: props ?? {}, children: children.flat() }; } };
-const tokens = new Proxy({}, { get: (_object, prop) => prop });
 const context = {
   React,
   useAppearanceTheme: () => ({
@@ -59,7 +58,7 @@ test("uses the store logo only, without reading cover images or cropping the log
   assert.equal(images[0].props.source.uri, "https://example.test/logo.png");
   assert.equal(images[0].props.resizeMode, "contain");
   assert.ok(!source.includes("store.storeCoverImage"), "card must not use cover image");
-  assert.ok(element.props.style({ pressed: false }).some((value) => value.minHeight === 100));
+  assert.ok(element.props.style({ pressed: false }).some((value) => value.minHeight === 116));
 });
 
 test("missing or failed logo has a simple store icon fallback", () => {
@@ -86,7 +85,7 @@ test("different orderability states and real benefits are grounded in store data
   const unavailable = visibleText(render({ orderabilityByMode: [{ fulfillmentMode: "PARTNER_CAPTAIN", state: "OPERATIONALLY_UNAVAILABLE" }] }));
   assert.match(unavailable, /غير متاح/);
   const rated = visibleText(render({ ratingCount: 12, ratingAverage: 4.3 }, { promotionCount: 2 }));
-  assert.match(rated, /★ 4\.3/);
+  assert.match(rated, /4\.3/);
   assert.match(rated, /2 عروض/);
   assert.match(visibleText(render({}, { promotionCount: 1 })), /عرض متاح/);
 });
@@ -111,4 +110,52 @@ test("failed-image state is scoped by store id and logo URI to allow refreshed a
   const expected = 'JSON.stringify([store.id, store.storeProfileImage?.uri ?? ""])';
   assert.ok(directory.includes("imageFailed={failedStoreImageIDs.has(" + expected + ")}"));
   assert.ok(directory.includes("new Set(current).add(" + expected + ")"));
+});
+
+test("rating is directly beneath the logo rather than in the center or status column", () => {
+  const root = render({ ratingCount: 18, ratingAverage: 4.8 });
+  const columns = root.children.filter((item) => item?.type === "View");
+  assert.equal(columns.length, 3);
+  const [logoColumn, contentColumn, actionColumn] = columns;
+  assert.equal(logoColumn.props.style.width, 84);
+  assert.equal(descendants(logoColumn, "Image").length, 1);
+  assert.match(visibleText(logoColumn), /★.*4\.8/s);
+  assert.doesNotMatch(visibleText(contentColumn), /4\.8/);
+  assert.doesNotMatch(visibleText(actionColumn), /4\.8/);
+  assert.equal(descendants(render({ ratingCount: 0, ratingAverage: 0 }), "Image").length, 1);
+  assert.doesNotMatch(visibleText(render({ ratingCount: 0 })), /★/);
+  assert.doesNotMatch(visibleText(render({ ratingCount: 12, ratingAverage: 8 })), /★/);
+});
+
+test("status and favorite are vertically aligned in a single fixed left column", () => {
+  const root = render();
+  const actionColumn = root.children.at(-1);
+  assert.equal(actionColumn.props.style.width, 66);
+  assert.equal(actionColumn.props.style.alignItems, "center");
+  assert.equal(descendants(actionColumn, "Pressable").length, 1);
+  assert.match(visibleText(actionColumn), /مفتوح/);
+  assert.match(visibleText(actionColumn), /♡/);
+  assert.doesNotMatch(visibleText(root.children.at(1)), /مفتوح/);
+});
+
+test("short and long store names share the same native RTL text column without forced alignment", () => {
+  for (const name of ["سام", "سوبر ماركت الخير"]) {
+    const column = render({ name }).children[1];
+    assert.equal(column.props.style.flex, 1);
+    assert.equal(column.props.style.minWidth, 0);
+    assert.equal(column.props.style.alignItems, undefined);
+    for (const field of column.children.filter((item) => item?.type === "Text")) {
+      assert.equal(field.props.style.textAlign, undefined);
+      assert.equal(field.props.style.writingDirection, undefined);
+      assert.equal(field.props.style.direction, undefined);
+    }
+  }
+});
+
+test("store card never invents arrival estimates or distance in the catalog", () => {
+  const root = render({ distanceMeters: 1200, ratingCount: 0 });
+  const text = visibleText(root);
+  assert.doesNotMatch(text, /دقيقة|1\.2 كم|لا تقييمات بعد/);
+  assert.match(text, /توصيل المتجر/);
+  assert.doesNotMatch(source, /storeCoverImage|preparationMinutes/);
 });
