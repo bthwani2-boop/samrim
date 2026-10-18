@@ -133,7 +133,13 @@ function MarketingAuthorizedCenter() {
       {visited.includes(section.id) ? <>
         <p className="muted">{section.description}</p>
         {section.id === "campaigns" ? <MarketingPromotionsWorkspace /> : section.id === "content" ? <MarketingContentWorkspace /> : null}
-        {section.id === "overview" && active === section.id ? <MarketingOverviewSummary /> : null}
+        {section.id === "overview" && active === section.id ? <>
+          <div className="marketing-entry-choices">
+            <Link className="marketing-entry-choice" href="/marketing/content"><strong>إعلان دون خصم</strong><span>اختر المحتوى والصورة والوجهة المناسبة.</span></Link>
+            <Link className="marketing-entry-choice" href="/marketing/promotions"><strong>خصم أو قسيمة</strong><span>حدد الخصم والممول والنطاق ثم احفظ مسودة للمراجعة.</span></Link>
+          </div>
+          <MarketingOverviewSummary />
+        </> : null}
         {["partners", "analytics"].includes(section.id) && active === section.id ? <>
           {isLoading ? <p role="status">جارٍ تحديث سجلات التسويق...</p> : loadError ? <div role="alert" className="access-card"><p>{loadError}</p><button className="button button-secondary" type="button" onClick={() => setReadVersion((version) => version + 1)}>إعادة المحاولة</button></div> : snapshot ? section.id === "partners" ? <PartnerCampaignSummary snapshot={snapshot} /> : <ContentAnalyticsSummary snapshot={snapshot} /> : null}
         </> : null}

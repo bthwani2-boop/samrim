@@ -2776,3 +2776,34 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 .marketing-local-preview.is-story .marketing-local-preview-visual{aspect-ratio:6/7}
 .marketing-local-preview-canvas{display:block;inline-size:100%;block-size:100%}
 .marketing-local-preview-overlay{position:absolute;inset-inline:0;bottom:0;padding:8px;color:var(--color-primary);background:var(--surface-overlay)}
+
+/* One guided, finance-safe operator promotion flow; shared DS tokens only. */
+@layer components {
+  .marketing-entry-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .marketing-entry-choice {
+    display: grid; align-content: start; justify-items: start; gap: 6px; min-inline-size: 0;
+    text-align: start; padding: 16px; background: var(--surface-base); color: var(--color-primary);
+    border: 1px solid var(--border-strong); border-radius: 10px; cursor: pointer; text-decoration: none;
+  }
+  .marketing-entry-choice:hover, .marketing-entry-choice:focus-visible { border-color: var(--action-bg); text-decoration: none; }
+  .marketing-entry-choice strong { font-size: 15px; }
+  .marketing-entry-choice span { color: var(--text-muted); font-size: 13px; font-weight: 400; }
+  .marketing-flow-steps { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+  .marketing-flow-steps span {
+    display: inline-flex; align-items: center; padding: 7px 12px; border: 1px solid var(--border-subtle);
+    border-radius: 7px; color: var(--text-muted); background: var(--surface-muted); font-size: 12px;
+  }
+  .marketing-flow-steps [aria-current="step"] { background: var(--action-bg); color: var(--color-on-action); border-color: var(--action-bg); }
+  .marketing-flow-steps [data-done="true"] { color: var(--color-primary); border-color: var(--border-strong); }
+  .marketing-flow-fields { max-inline-size: 840px; }
+  .marketing-flow-note { grid-column: 1 / -1; font-size: 13px; color: var(--text-muted); }
+  .marketing-flow-actions { margin-block-start: 14px; }
+  .marketing-flow-review { display: grid; gap: 12px; max-inline-size: 840px; }
+  .marketing-flow-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .marketing-flow-facts > div { min-inline-size: 0; padding: 11px; background: var(--surface-muted); border: 1px solid var(--border-subtle); border-radius: 8px; }
+  .marketing-flow-facts dt { color: var(--text-muted); font-size: 12px; }
+  .marketing-flow-facts dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+  @media (max-width: 720px) {
+    .marketing-entry-choices, .marketing-flow-facts { grid-template-columns: 1fr; }
+  }
+}

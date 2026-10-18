@@ -199,6 +199,50 @@ test("marketing promotion state cannot be claimed without a newer canonical vers
 });
 
 
+
+test("guided marketing creation keeps discount values while moving through stages and never posts before confirmation", async ({ page }) => {
+  await provideMarketingReads(page);
+  let mutations = 0;
+  await page.route("**/api/marketing/promotions**", async (route) => {
+    if (route.request().method() !== "GET") mutations++;
+    await route.fulfill({ status: 200, json: { promotions: [], nextCursor: "" } });
+  });
+  await page.goto("/marketing/promotions");
+  await expect(page.getByRole("link", { name: /إعلان دون خصم/ })).toHaveAttribute("href", "/marketing/content");
+  await page.getByRole("button", { name: /خصم أو قسيمة/ }).click();
+  await expect(page.getByRole("navigation", { name: "مراحل إعداد الخصم" })).toBeVisible();
+  const code = page.getByRole("textbox", { name: "رمز العرض" });
+  await expect(code).toHaveValue(/^BT-[A-F0-9]{10}$/);
+  await page.getByRole("textbox", { name: "اسم العرض" }).fill("حملة الجمعة");
+  await page.getByRole("spinbutton", { name: "نسبة الخصم" }).fill("20");
+  await page.getByRole("button", { name: "التالي: النطاق والموعد" }).click();
+  await expect(page.locator("#promotion-city")).toBeVisible();
+  await page.getByRole("button", { name: "التالي: التمويل والضوابط" }).click();
+  await page.locator("#promotion-funding-source").selectOption("SHARED");
+  await page.getByRole("spinbutton", { name: "حصة الشريك من التمويل" }).fill("40");
+  await page.getByRole("button", { name: "التالي: المراجعة" }).click();
+  const review = page.getByRole("region", { name: "مراجعة العرض قبل الحفظ" });
+  await expect(review).toContainText("حملة الجمعة");
+  await expect(review).toContainText("الشريك 40%، بثواني 60%");
+  await expect(review).toContainText("مطلوبة قبل المشاركة");
+  await expect(review).toContainText("لم تحدد سقفًا إجماليًا");
+  expect(mutations).toBe(0);
+  await page.locator(".marketing-flow-actions").getByRole("button", { name: "السابق" }).click();
+  await page.locator(".marketing-flow-actions").getByRole("button", { name: "السابق" }).click();
+  await page.locator(".marketing-flow-actions").getByRole("button", { name: "السابق" }).click();
+  await expect(page.getByRole("spinbutton", { name: "نسبة الخصم" })).toHaveValue("20");
+  expect(mutations).toBe(0);
+});
+
+test("guided marketing flow blocks invalid discounts and stays on the current stage", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.goto("/marketing/promotions");
+  await page.getByRole("button", { name: /خصم أو قسيمة/ }).click();
+  await page.getByRole("button", { name: "التالي: النطاق والموعد" }).click();
+  await expect(page.getByRole("alert").getByText("أدخل اسم العرض وقيمة خصم صحيحة قبل المتابعة.")).toBeVisible();
+  await expect(page.locator("#promotion-city")).toHaveCount(0);
+});
+
 test("operator Store-specific campaign never offers unauthorized Partner funding", async ({ page }) => {
   await provideMarketingReads(page);
   await page.route("**/api/service-cities", (route) =>
@@ -206,14 +250,15 @@ test("operator Store-specific campaign never offers unauthorized Partner funding
   await page.route("**/api/marketing/content/targets?**", (route) =>
     route.fulfill({ status: 200, json: { options: [{ id: "marketing-store", label: "متجر تجريبي" }] } }));
   await page.goto("/marketing/promotions");
-  await page.getByText("إنشاء عرض أو حملة", { exact: true }).click();
-  const funding = page.locator("#promotion-funding-source");
-  await funding.selectOption("SHARED");
-  await expect(page.getByRole("spinbutton", { name: "حصة الشريك من التمويل" })).toBeVisible();
+  await page.getByText("إعداد خصم أو قسيمة", { exact: true }).click();
+  await page.getByRole("textbox", { name: "اسم العرض" }).fill("خصم متجر تجريبي");
+  await page.getByRole("button", { name: "التالي: النطاق والموعد" }).click();
   await page.locator("#promotion-city").selectOption("marketing-city");
   await page.getByRole("textbox", { name: "بحث متجر الحملة" }).fill("متجر");
   await expect(page.locator("#promotion-store option[value='marketing-store']")).toHaveCount(1);
   await page.locator("#promotion-store").selectOption("marketing-store");
+  await page.getByRole("button", { name: "التالي: التمويل والضوابط" }).click();
+  const funding = page.locator("#promotion-funding-source");
   await expect(funding).toHaveValue("BTHWANI");
   await expect(funding.locator("option[value='SHARED']")).toHaveAttribute("disabled", "");
   await expect(funding.locator("option[value='PARTNER']")).toHaveAttribute("disabled", "");
@@ -254,6 +299,8 @@ test("marketing center provides five genuine sections with honest summary scope"
   await provideMarketingReads(page);
   await page.goto("/marketing");
   await expect(page.getByRole("heading", { name: "التسويق والمحتوى" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /إعلان دون خصم/ })).toHaveAttribute("href", "/marketing/content");
+  await expect(page.getByRole("link", { name: /خصم أو قسيمة/ })).toHaveAttribute("href", "/marketing/promotions");
   const navigation = page.getByRole("navigation", { name: "أقسام التسويق" });
   for (const name of ["نظرة عامة", "الحملات والعروض", "المحتوى والظهور", "مشاركة الشركاء", "الأداء والتحليلات"]) {
     await expect(navigation.getByRole("button", { name })).toBeVisible();
