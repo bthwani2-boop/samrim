@@ -111,6 +111,11 @@ func TestStoreCommercialAgreementLifecycleAndOrderSnapshots(t *testing.T) {
 			FulfillmentMode: "PARTNER_CAPTAIN", Currency: "YER", SubtotalMinor: 10000, DiscountMinor: 1000,
 			InternalBalanceAmountMinor: 0, CashAmountMinor: 9000, CustomerPayableMinor: 9000,
 			PolicyVersion: "store-type-default-is-suggestion-only",
+			PromotionFunding: &PromotionFundingInput{
+				PromotionID: "agreement-test-partner-promotion", PromotionVersion: 1,
+				PromotionCode: "AGREEMENT", StoreID: storeID,
+				FundingSource: "PARTNER", DiscountMinor: 1000,
+			},
 		}
 		created, _, err := CreatePaymentIntent(scenario.ctx, scenario.db, CreatePaymentIntentInput{
 			ExternalReference: externalReference, PayerActorID: customerID, OrderID: orderID, AmountMinor: 9000,

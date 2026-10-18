@@ -56,6 +56,11 @@ func validateCustomerPaymentAllocation(i CustomerPaymentAllocationInput) error {
 	if i.FulfillmentMode != "BTHWANI_CAPTAIN" && i.DeliveryFeeMinor != 0 {
 		return ErrCustomerPaymentAllocationInvalidInput
 	}
+	// Every newly created discounted order needs an explicit, frozen funding
+	// source. Legacy payment allocations without this row remain readable.
+	if i.DiscountMinor > 0 && i.PromotionFunding == nil {
+		return ErrCustomerPaymentAllocationInvalidInput
+	}
 	if funding := i.PromotionFunding; funding != nil &&
 		(i.DiscountMinor <= 0 || funding.DiscountMinor != i.DiscountMinor ||
 			strings.TrimSpace(funding.StoreID) != strings.TrimSpace(i.StoreID)) {
