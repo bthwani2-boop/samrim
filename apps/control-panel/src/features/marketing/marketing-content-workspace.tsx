@@ -338,7 +338,12 @@ export function MarketingContentWorkspace() {
       const response = await fetch(`/api/marketing/content/${encodeURIComponent(item.id)}/publication`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(item.version) }, body: JSON.stringify({ state }) });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiMessage(body));
+      const canonical = await readDiscoveryContentById(item.id);
+      if (!canonical || canonical.state !== state || canonical.version <= item.version) {
+        throw new Error("أُرسل تغيير النشر لكن لم تؤكد القراءة المعتمدة الحالة والإصدار الجديدين. أعد قراءة السجل قبل إعادة الإجراء.");
+      }
       await load();
+      setMessage(state === "PUBLISHED" ? "نُشر المحتوى وأُكدت حالته من السجل." : "أُوقف المحتوى وأُكدت حالته من السجل.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر تحديث نشر المحتوى.");
     } finally {

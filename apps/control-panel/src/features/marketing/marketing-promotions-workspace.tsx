@@ -327,8 +327,8 @@ export function MarketingPromotionsWorkspace() {
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiMessage(body));
       const canonical = await readPromotionById(item.id);
-      if (!canonical || canonical.state !== nextState) {
-        throw new Error("تم إرسال تغيير حالة العرض لكن لم تثبت القراءة المعتمدة النتيجة المطلوبة. أعد قراءة السجل قبل أي إجراء آخر.");
+      if (!canonical || canonical.state !== nextState || canonical.version <= item.version) {
+        throw new Error("تم إرسال تغيير حالة العرض لكن لم تثبت القراءة المعتمدة الحالة والإصدار الجديدين. أعد قراءة السجل قبل أي إجراء آخر.");
       }
       await load();
       setMessage(nextState === "PUBLISHED" ? "نُشر العرض وأُكدت حالته من السجل." : "أُوقف العرض وأُكدت حالته من السجل.");
