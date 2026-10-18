@@ -501,6 +501,9 @@ paths:
   /dsh/public/discovery-content/{contentId}/target:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content~1{contentId}~1target"
 
+  /dsh/operator/promotions/{promotionId}/settlement-summary:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1settlement-summary"
+
   /dsh/operator/promotions:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions"
 
@@ -9187,6 +9190,36 @@ components:
     PromotionFundingSource:
       type: string
       enum: [PARTNER, BTHWANI, SHARED]
+
+    PromotionSettlementSummary:
+      type: object
+      additionalProperties: false
+      required: [promotionId, settledOrderCount, settledDiscountMinor, partnerFundedMinor, platformFrozenMinor, platformPostedExpenseMinor, currency, basis]
+      properties:
+        promotionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        settledOrderCount:
+          type: integer
+          minimum: 0
+        settledDiscountMinor:
+          type: integer
+          minimum: 0
+        partnerFundedMinor:
+          type: integer
+          minimum: 0
+        platformFrozenMinor:
+          type: integer
+          minimum: 0
+        platformPostedExpenseMinor:
+          type: integer
+        currency:
+          type: string
+          enum: [YER]
+        basis:
+          type: string
+          enum: [POSTED_SETTLEMENT_NOT_NET_REFUNDS]
 
     PromotionView:
       type: object

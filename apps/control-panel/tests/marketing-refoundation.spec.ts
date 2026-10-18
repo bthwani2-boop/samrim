@@ -285,3 +285,31 @@ test("marketing summary reports backend unavailability instead of fabricated zer
   await expect(page.getByRole("alert").getByText("تعذرت قراءة البيانات الحالية.", { exact: false })).toBeVisible();
   await expect(page.getByText("العروض الفعالة", { exact: true })).toHaveCount(0);
 });
+
+
+test("marketing settlement report reads posted WLT expense without inventing refunds", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.route("**/api/marketing/promotions/promotion-smoke/settlement-summary", async (route) =>
+    route.fulfill({ status: 200, json: {
+      promotionId: "promotion-smoke", settledOrderCount: 2, settledDiscountMinor: 1000,
+      partnerFundedMinor: 400, platformFrozenMinor: 600, platformPostedExpenseMinor: 600,
+      currency: "YER", basis: "POSTED_SETTLEMENT_NOT_NET_REFUNDS",
+    } }));
+  await page.goto("/marketing/promotions");
+  await page.getByRole("button", { name: "نتائج التسوية" }).click();
+  const region = page.getByRole("region", { name: "نتائج تسوية العرض" });
+  await expect(region).toContainText("طلبات وصلت للتسوية");
+  await expect(region).toContainText("مصروف بثواني المرحّل في القيود");
+  await expect(region).toContainText("600");
+  await expect(region).toContainText("ليست صافي المصروف بعد الاستردادات");
+});
+
+test("marketing settlement does not turn WLT failure into zero expense", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.route("**/api/marketing/promotions/promotion-smoke/settlement-summary", async (route) =>
+    route.fulfill({ status: 503, json: { error: { code: "WLT_UNAVAILABLE" } } }));
+  await page.goto("/marketing/promotions");
+  await page.getByRole("button", { name: "نتائج التسوية" }).click();
+  await expect(page.getByRole("alert").getByText("القراءة المالية غير متاحة الآن", { exact: false })).toBeVisible();
+  await expect(page.getByText("مصروف بثواني المرحّل في القيود")).toHaveCount(0);
+});
