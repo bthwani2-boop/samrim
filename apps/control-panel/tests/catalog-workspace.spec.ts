@@ -334,7 +334,7 @@ test("vertical image change remains compact and uploads audited media", async ({
   await page.route("**/api/catalog/verticals**", async (route) => {
     if (route.request().method() === "POST" && route.request().url().includes("/media")) {
       upload = { headers: route.request().headers(), body: route.request().postData() };
-      vertical = { ...vertical, version: 2, imageUri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/fV0AAAAASUVORK5CYII=" };
+      vertical = { ...vertical, version: 2, imageUri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8//8/AwMDEwMDAwMDAwAkBgMB/DXemwAAAABJRU5ErkJggg==" };
       await route.fulfill({ status: 200, json: { vertical } });
       return;
     }
@@ -355,7 +355,7 @@ test("vertical image change remains compact and uploads audited media", async ({
   const chooser = await chooserPromise;
   await chooser.setFiles({
     name: "new-image.png", mimeType: "image/png",
-    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/fV0AAAAASUVORK5CYII=", "base64"),
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8//8/AwMDEwMDAwMDAwAkBgMB/DXemwAAAABJRU5ErkJggg==", "base64"),
   });
   await expect(dialog.getByRole("img", { name: "معاينة الصورة المختارة" })).toBeVisible();
   await expect(dialog.getByText("new-image.png")).toBeVisible();
@@ -660,9 +660,9 @@ test("operator manages an optional customer shortcut without changing internal S
   });
   await page.route("**/api/catalog/attributes**", (route) => route.fulfill({ status: 200, json: { definitions: [] } }));
   await page.goto("/catalog/categories?verticalId=grocery");
-  await page.getByText("اختصارات التسوق", { exact: true }).click();
-  await expect(page.getByRole("heading", { name: "اختصارات التسوق للعملاء" })).toBeVisible();
-  await page.getByRole("button", { name: "إضافة اختصار" }).click();
+  await page.locator(".unified-taxonomy-create > button").click();
+  await page.locator(".unified-taxonomy-create-menu > button").nth(3).click();
+  await expect(page.getByRole("dialog", { name: "إضافة اختصار تسوق" })).toBeVisible();
   const editor = page.getByLabel("محرر اختصار التسوق");
   await editor.getByRole("textbox", { name: "اسم الاختصار الظاهر للعميل" }).fill("لحوم ودجاج");
   await editor.getByRole("checkbox", { name: "ملحمة" }).check();
@@ -670,8 +670,8 @@ test("operator manages an optional customer shortcut without changing internal S
   await editor.getByRole("checkbox", { name: "لحوم" }).check();
   await editor.getByRole("textbox", { name: "سبب الإضافة أو التعديل" }).fill("تبسيط تصفح المقاضي");
   await editor.getByRole("button", { name: "حفظ الاختصار" }).click();
-  await expect(page.getByText("تم حفظ الاختصار «لحوم ودجاج».")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "إضافة اختصار تسوق" })).toHaveCount(0);
   expect(saved).toMatchObject({ verticalId: "grocery", titleAr: "لحوم ودجاج", expectedVersion: 0,
     storeTypeIds: ["butcher"], categoryIds: ["meat"], active: true });
-  await expect(page.getByRole("row", { name: /لحوم ودجاج/ })).toContainText("1 نوع متجر، 1 فئة");
+  await expect(page.locator(".unified-taxonomy-table tbody tr").filter({ hasText: "لحوم ودجاج" })).toContainText("1 نوع متجر · 1 فئة");
 });

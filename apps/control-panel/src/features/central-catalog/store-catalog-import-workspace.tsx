@@ -64,6 +64,7 @@ export function StoreCatalogImportWorkspace({fixedStore,onImported}:Readonly<{fi
   const [previewAttempt, setPreviewAttempt] = useState<Readonly<{ runId: string; idempotencyKey: string; correlationId: string }> | null>(null);
   const [commitAttempt, setCommitAttempt] = useState<Readonly<{ runId: string; idempotencyKey: string; correlationId: string }> | null>(null);
   const storeRequestSequence = useRef(0);
+  const isFixedStore = Boolean(fixedStore);
 
   useEffect(() => {
     const syncStoreListFromUrl = () => {
@@ -75,16 +76,16 @@ export function StoreCatalogImportWorkspace({fixedStore,onImported}:Readonly<{fi
       setStoreCursor(params.get("storeCursor") ?? "");
       setStoreCursorStack(history?.storeCatalogImportCursors ?? []);
     };
-    if (fixedStore) {setStoreListReady(true);return;}
+    if (isFixedStore) {setStoreListReady(true);return;}
     syncStoreListFromUrl();
     setStoreListReady(true);
     window.addEventListener("popstate", syncStoreListFromUrl);
     return () => window.removeEventListener("popstate", syncStoreListFromUrl);
-  }, []);
+  }, [isFixedStore]);
 
   useEffect(() => {
     if (!storeListReady) return;
-    if (fixedStore) {setStoresLoading(false);return;}
+    if (isFixedStore) {setStoresLoading(false);return;}
     const controller = new AbortController();
     const sequence = storeRequestSequence.current + storeListRefresh + 1;
     storeRequestSequence.current = sequence;
@@ -115,7 +116,7 @@ export function StoreCatalogImportWorkspace({fixedStore,onImported}:Readonly<{fi
         if (sequence === storeRequestSequence.current) setStoresLoading(false);
       });
     return () => controller.abort();
-  }, [appliedStoreSearch, storeCursor, storeListReady, storeListRefresh]);
+  }, [appliedStoreSearch, storeCursor, storeListReady, storeListRefresh, isFixedStore]);
 
   function navigateStoreList(query: string, cursor: string, cursorStack: ReadonlyArray<string>) {
     const url = new URL(window.location.href);

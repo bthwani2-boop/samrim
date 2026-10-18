@@ -71,7 +71,8 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
   const [attempt,setAttempt]=useState<Attempt|null>(null);
   const [editAttempt,setEditAttempt]=useState<{key:string;fingerprint:string}|null>(null);
   const [importOpen,setImportOpen]=useState(false);
-  const load = useCallback(async(signal?:AbortSignal)=>{
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh is the intentional retry and saved-product readback trigger.
+  useEffect(()=>{const controller=new AbortController();const signal=controller.signal;const load=async()=>{
     setLoading(true);
     try {
       const params=new URLSearchParams({limit:"30",cursor});
@@ -80,8 +81,7 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
       setOffers(value.offers);setNextCursor(value.nextCursor??"");setError("");
     } catch(e) { if(!signal?.aborted)setError(e instanceof Error?e.message:"تعذر تحميل المنتجات."); }
     finally{if(!signal?.aborted)setLoading(false)}
-  },[storeId,cursor]);
-  useEffect(()=>{const controller=new AbortController();void load(controller.signal);return ()=>controller.abort()},[load,refresh]);
+  };void load();return ()=>controller.abort()},[storeId,cursor,refresh]);
 
   const find = useCallback(async(q:string,append=false,cursorValue="")=>{
     setSharedLoading(true);setError("");
@@ -237,11 +237,11 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
     </div>
     {notice?<p role="status" className="success-inline">{notice}</p>:null}
     {error?<p role="alert" className="identity-error">{error}<button type="button" className="button button-quiet" onClick={()=>{setRefresh(v=>v+1);setError("")}}>تحديث</button></p>:null}
-    {openAdd?<div className="store-product-editor" aria-label="إضافة منتج">
-      <div className="store-product-mode" role="group" aria-label="مصدر المنتج">
+    {openAdd?<section className="store-product-editor" aria-label="إضافة منتج">
+      <fieldset className="store-product-mode" aria-label="مصدر المنتج">
         <button className={"button "+(mode==="shared"?"button-primary":"button-secondary")} type="button" disabled={busy} onClick={()=>{setMode("shared");setAttempt(null)}}>اختيار منتج موجود</button>
         <button className={"button "+(mode==="local"?"button-primary":"button-secondary")} type="button" disabled={busy} onClick={()=>{setMode("local");setAttempt(null)}}>إنشاء منتج للمتجر</button>
-      </div>
+      </fieldset>
       {mode==="shared"?<>
         <form onSubmit={e=>{e.preventDefault();setAppliedSearch(search);setSelection("");void find(search)}} className="store-product-search">
           <label>بحث بالاسم<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="اسم المنتج في الكتالوج المشترك" maxLength={160} disabled={busy}/></label>
@@ -305,9 +305,9 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
       </>}
       {mode==="local"||!bulkMode?<><label>السعر بالريال اليمني<input type="number" min="1" step="1" inputMode="numeric" value={price} disabled={busy} onChange={e=>setPrice(e.target.value)}/></label>
       <div className="store-product-actions"><button className="button button-primary" type="button" disabled={busy||!inputPrice(price)||(mode==="shared"?!chosen:!newName.trim()||!verticalId)} onClick={()=>void createOffer()}>{busy?"جارٍ الحفظ…":"حفظ المنتج"}</button></div></>:null}
-    </div>:null}
+    </section>:null}
     {importOpen?<StoreCatalogImportWorkspace fixedStore={{id:storeId,name:storeName}} onImported={()=>setRefresh(v=>v+1)}/>:null}
-    {editing?<div className="store-product-editor" aria-label={"تعديل "+editing.productName}>
+    {editing?<section className="store-product-editor" aria-label={"تعديل "+editing.productName}>
       <div className="store-product-toolbar"><strong>{editing.productName} — {editing.variantTitle}</strong><button className="button button-quiet" type="button" disabled={busy} onClick={()=>setEditing(null)}>إلغاء</button></div>
       <label>السعر<input type="number" min="1" step="1" value={editPrice} disabled={busy} onChange={e=>setEditPrice(e.target.value)}/></label>
       <label className="store-product-check"><input type="checkbox" checked={editAvailable} disabled={busy} onChange={e=>setEditAvailable(e.target.checked)}/> متاح للطلب</label>
@@ -323,7 +323,7 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
         {photo?<><CatalogMediaProvenanceFields compact idPrefix={"product-media-"+editing.offerId} disabled={busy} value={provenance} onChange={setProvenance}/>
           <button type="button" className="button button-secondary" disabled={busy||photo.size>10*1024*1024||!isMediaProvenanceInputValid(provenance)} onClick={()=>void uploadPhoto()}>رفع صورة المنتج</button></>:null}
       </div>:<p className="store-profile-muted">هذا منتج مشترك؛ يمكن تعديل سعره وتوفره لهذا المتجر هنا، أما اسمه وصورته المشتركة فتداران من الكتالوج المركزي.</p>:null}
-    </div>:null}
+    </section>:null}
     {loading?<p role="status" className="store-profile-muted">جارٍ تحميل المنتجات…</p>:null}
     {!loading&&offers.length===0?<p className="store-profile-empty">لا توجد عروض منتجات لهذا المتجر. استخدم «إضافة منتج» للبدء.</p>:null}
     {!loading&&offers.length>0?<div className="store-product-list">
