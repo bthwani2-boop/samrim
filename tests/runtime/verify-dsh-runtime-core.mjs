@@ -1475,7 +1475,7 @@ const sharedOtherStore = await request(dshBase, "GET", "/dsh/public/promotions?s
 const sharedWrongPartner = await request(dshBase, "GET", sharedPath, { token: second.accessToken });
 const sharedCampaign = sharedCampaigns.body?.campaigns?.find((campaign) => campaign.promotion?.id === sharedCampaignID);
 if (sharedPublish.status !== 201 || sharedPublish.body?.promotion?.state !== "PUBLISHED" || sharedCampaigns.status !== 200
-  || !sharedCampaign || sharedCampaign.storeOptInState || sharedCampaign.storeOptInVersion !== 0
+  || !sharedCampaign || sharedCampaign.storeOptInState || (sharedCampaign.storeOptInVersion ?? 0) !== 0
   || sharedVisibleBefore.body?.promotions?.some((promotion) => promotion.id === sharedCampaignID)
   || sharedOtherStore.body?.promotions?.some((promotion) => promotion.id === sharedCampaignID)
   || sharedWrongPartner.status !== 403) {

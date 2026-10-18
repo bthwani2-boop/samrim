@@ -742,6 +742,10 @@ func optionalTimeString(value *time.Time) string {
 
 func writeMarketingError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, errPartnerPromotionSession):
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an active Partner session is required")
+	case errors.Is(err, errPartnerPromotionStoreAuthority):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "promotions access to this Store is denied")
 	case errors.Is(err, postgres.ErrPromotionInvalid), errors.Is(err, postgres.ErrDiscoveryContentInvalid), errors.Is(err, postgres.ErrDiscoveryContentEventInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing input is invalid")
 	case errors.Is(err, postgres.ErrPromotionNotFound), errors.Is(err, postgres.ErrDiscoveryContentNotFound), errors.Is(err, postgres.ErrDiscoveryContentEventNotFound):

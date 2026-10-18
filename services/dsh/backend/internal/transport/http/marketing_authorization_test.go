@@ -85,3 +85,25 @@ func TestMarketingContentOperatorRoutesRejectMissingMarketingPermission(t *testi
 		t.Fatalf("service authentication missing: got %d", unauth.Code)
 	}
 }
+
+func TestPartnerMarketingErrorsPreserveAuthorizationBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err error
+		status int
+		code string
+	}{
+		{"no session", errPartnerPromotionSession, http.StatusUnauthorized, "UNAUTHENTICATED"},
+		{"wrong Store owner", errPartnerPromotionStoreAuthority, http.StatusForbidden, "FORBIDDEN"},
+		{"wrapped wrong Store owner", fmt.Errorf("store grant: %w", errPartnerPromotionStoreAuthority), http.StatusForbidden, "FORBIDDEN"},
+		{"storage error", fmt.Errorf("database unavailable"), http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			writeMarketingError(response, tc.err)
+			if response.Code != tc.status || !strings.Contains(response.Body.String(), `"`+tc.code+`"`) {
+				t.Fatalf("error %v got %d: %s, expected %d %s", tc.err, response.Code, response.Body.String(), tc.status, tc.code)
+			}
+		})
+	}
+}
