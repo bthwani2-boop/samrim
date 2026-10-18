@@ -1896,3 +1896,13 @@ export async function readMarketingSummary(context: DshOperatorReadContext): Pro
     { "X-Acting-Actor-ID": context.operatorActorId.trim() },
   )).payload;
 }
+
+// Operator and Captain see the same coarse, privacy-filtered Store-origin signal.
+import type { CaptainOpportunityHeatmap } from "@bthwani/dsh";
+
+export async function readOperatorOpportunities(context: DshOperatorReadContext): Promise<CaptainOpportunityHeatmap> {
+  const response = await requestDshJson<CaptainOpportunityHeatmap>("GET", "/dsh/operator/opportunities", undefined, {
+    "X-Acting-Actor-ID": context.operatorActorId,
+  });
+  return response.payload;
+}

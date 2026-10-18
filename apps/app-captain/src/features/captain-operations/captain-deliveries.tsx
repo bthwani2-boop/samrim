@@ -4,7 +4,7 @@ import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Linking, Text, TextInput, View } from "react-native";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
@@ -22,6 +22,16 @@ type PendingCaptainCompletionAttempt = Readonly<{
   idempotencyKey: string;
   correlationID: string;
 }>;
+
+function openCaptainDirections(latitude: number, longitude: number) {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+    Alert.alert("موقع غير متاح", "تعذر تحديد وجهة صحيحة لفتح الاتجاهات.");
+    return;
+  }
+  const destination = `${latitude},${longitude}`;
+  void Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`)
+    .catch(() => Alert.alert("تعذر فتح الخريطة", "تحقق من توفر تطبيق خرائط أو اتصال بالإنترنت."));
+}
 
 function pendingCaptainCompletionKey(actorID: string): string {
   return `bthwani.captain.delivery-completion.pending.v1.${encodeURIComponent(actorID)}`;
@@ -377,6 +387,11 @@ export function CaptainDeliveries() {
                     { id: "destination", coordinate: task.customerDestination, title: "عنوان العميل" },
                   ]}
                 />
+                <View style={styles.row}>
+                  <BthwaniButton label="الاتجاهات إلى المتجر" variant="secondary" style={styles.actionButton} onPress={() => openCaptainDirections(task.pickupOrigin.latitude, task.pickupOrigin.longitude)} />
+                  <BthwaniButton label="الاتجاهات إلى العميل" variant="secondary" style={styles.actionButton} onPress={() => openCaptainDirections(task.customerDestination.latitude, task.customerDestination.longitude)} />
+                </View>
+                <Text style={styles.muted}>الملاحة تستخدم موقع جهازك ولا تشارك مسارك المباشر مع العميل.</Text>
                 <Text style={styles.muted}>حالة الطلب: {orderStateLabel(task.orderState)}</Text>
                 <Text style={styles.payment}>{paymentMethodLabel(task.paymentMethod, task.fulfillmentMode, task.amountDueMinor)} · {paymentStateLabel(task.paymentState, task.paymentMethod, task.fulfillmentMode, task.amountDueMinor)}</Text>
                 {task.fulfillmentMode === "BTHWANI_CAPTAIN" ? <Text style={task.deliveryFeeMinor === 0 ? styles.warning : styles.payment}>أجرة التوصيل المستحقة: {task.deliveryFeeMinor === undefined ? "جارٍ التحقق من WLT" : formatMoney(task.deliveryFeeMinor, task.currency)}. تُضاف لمحفظتك بعد إغلاق التسوية.</Text> : <Text style={styles.muted}>أجرة كابتن المتجر تُحدَّد وفق اتفاقه المباشر مع المتجر.</Text>}

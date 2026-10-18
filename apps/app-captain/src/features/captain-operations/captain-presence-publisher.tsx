@@ -16,16 +16,11 @@ async function sendCurrentPresence() {
   const api = captainClient();
   const admission = await api.readOwnCaptainAdmission(token);
   const available = admission.admission.state === "eligible" && admission.admission.availabilityState === "available";
-  let inCustody = false;
-  if (!available) {
-    const assignments = await api.listOwnCaptainAssignments(token);
-    inCustody = assignments.assignments.some((assignment) => assignment.state === "in_custody");
-  }
   const current = currentIdentityState();
   if (!shouldPublishCaptainPresence(
     AppState.currentState === "active", permission.granted,
     current.kind === "authenticated" && current.identity.subject === before.identity.subject,
-    available, inCustody,
+    available,
   )) return;
   const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
   const after = currentIdentityState();

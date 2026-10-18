@@ -1,22 +1,33 @@
 package postgres
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+)
 
-func TestCaptainPresenceHeatmapModes(t *testing.T) {
+func TestCaptainOpportunityIntensityHasNoExactCounts(t *testing.T) {
 	for _, tc := range []struct {
-		mode string
-		size float64
-	}{
-		{"wide", .10}, {"balanced", .05}, {"detailed", .025},
-	} {
-		got, ok := captainPresenceCellSize(tc.mode)
-		if !ok || got != tc.size {
-			t.Fatalf("%s: %g/%v", tc.mode, got, ok)
+		count int64
+		want string
+	}{{6, "LOW"}, {9, "LOW"}, {10, "MEDIUM"}, {19, "MEDIUM"}, {20, "HIGH"}} {
+		if got := captainOpportunityIntensity(tc.count); got != tc.want {
+			t.Fatalf("order count %d intensity=%q, want %q", tc.count, got, tc.want)
 		}
 	}
-	for _, mode := range []string{"", "unknown", "live", "detailed;delete"} {
-		if _, ok := captainPresenceCellSize(mode); ok {
-			t.Fatalf("accepted %s", mode)
+	sample := CaptainOpportunityHeatmap{
+		Cells: []CaptainOpportunityCell{{Latitude: 15.35, Longitude: 44.15, Intensity: "LOW"}},
+		MeasuredAt: time.Now().UTC(), SampleStatus: "AVAILABLE",
+		SignalType: "HISTORICAL_ACTIVITY", PolicyVersion: "STORE_ORIGIN_V1",
+	}
+	b, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leaked := range []string{"orderId", "storeId", "captainActorId", "clientActorId", "count", "customerAddress", "addressText"} {
+		if strings.Contains(string(b), leaked) {
+			t.Fatalf("opportunity map leaked source detail %s", leaked)
 		}
 	}
 }

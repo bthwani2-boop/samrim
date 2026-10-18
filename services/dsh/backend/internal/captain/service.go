@@ -27,8 +27,6 @@ var (
 	ErrPaymentUnavailable             = errors.New("payment collection is unavailable")
 	ErrCaptainWalletInsufficientFunds = errors.New("captain wallet cannot cover COD exposure")
 	ErrCollectionAmountMismatch       = errors.New("collected amount does not match the order amount")
-	ErrLocationStateConflict          = errors.New("captain location is only publishable while the order is in custody")
-	ErrLocationIdempotencyConflict    = errors.New("captain location idempotency key conflicts with a previous request")
 )
 
 type Service struct {
@@ -399,30 +397,19 @@ func (s *Service) UpdatePresence(ctx context.Context, accessToken string, latitu
 	return postgres.UpdateCaptainPresence(ctx, s.db, identity.Subject, latitude, longitude)
 }
 
-// PresenceHeatmap is operator-only; there are no individual coordinates in its response.
-func (s *Service) PresenceHeatmap(ctx context.Context, actorID, mode string) ([]postgres.CaptainPresenceCell, error) {
+// Opportunity zones are derived from Store-origin orders, not Captain GPS.
+func (s *Service) OpportunitiesForOperator(ctx context.Context, actorID string) (postgres.CaptainOpportunityHeatmap, error) {
 	if err := s.requireOperator(ctx, actorID); err != nil {
-		return nil, err
+		return postgres.CaptainOpportunityHeatmap{}, err
 	}
-	return postgres.ReadCaptainPresenceHeatmap(ctx, s.db, mode)
+	return postgres.ReadCaptainOpportunityHeatmap(ctx, s.db)
 }
 
-func (s *Service) UpdateLocation(ctx context.Context, accessToken, assignmentID string, latitude, longitude float64, idempotencyKey, correlationID string) (postgres.CaptainLocationResult, error) {
-	identity, err := s.requireCaptain(ctx, accessToken)
-	if err != nil {
-		return postgres.CaptainLocationResult{}, err
+func (s *Service) OpportunitiesForCaptain(ctx context.Context, accessToken string) (postgres.CaptainOpportunityHeatmap, error) {
+	if _, err := s.requireCaptain(ctx, accessToken); err != nil {
+		return postgres.CaptainOpportunityHeatmap{}, err
 	}
-	if !validMutation(idempotencyKey, correlationID, identity.Subject) || strings.TrimSpace(assignmentID) == "" {
-		return postgres.CaptainLocationResult{}, ErrInvalidInput
-	}
-	result, err := postgres.UpdateCaptainLocation(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, latitude, longitude, strings.TrimSpace(idempotencyKey), postgres.HashCaptainLocationRequest(assignmentID, latitude, longitude), strings.TrimSpace(correlationID))
-	if errors.Is(err, postgres.ErrCaptainLocationConflict) {
-		return postgres.CaptainLocationResult{}, ErrLocationStateConflict
-	}
-	if errors.Is(err, postgres.ErrCaptainLocationIdempotency) {
-		return postgres.CaptainLocationResult{}, ErrLocationIdempotencyConflict
-	}
-	return result, err
+	return postgres.ReadCaptainOpportunityHeatmap(ctx, s.db)
 }
 
 func (s *Service) Pickup(ctx context.Context, accessToken, assignmentID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {

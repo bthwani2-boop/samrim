@@ -50,6 +50,7 @@ func TestCaptainRegisteredRoutesRejectUnauthenticatedRequests(t *testing.T) {
 	server.Register(mux)
 
 	routes := captainRegisteredRoutes(t)
+	// The assignment GPS route is gone; both authorized opportunity projections have been added.
 	if len(routes) != 38 {
 		t.Fatalf("Captain route census changed: got %d, want 38; review authentication for every new or removed route", len(routes))
 	}

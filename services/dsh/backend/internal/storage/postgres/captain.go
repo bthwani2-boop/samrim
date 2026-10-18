@@ -735,6 +735,12 @@ func SetCaptainAvailability(ctx context.Context, db *sql.DB, actorID string, ava
 			return CaptainAdmission{}, false, err
 		}
 	}
+	// End of shift removes the last dispatch GPS fix in the same transaction.
+	if !available {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM dsh.captain_presence_latest WHERE captain_actor_id=$1`, actorID); err != nil {
+			return CaptainAdmission{}, false, err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,admission_id,result_version) VALUES($1,$2,'availability',$3,$4)`, idempotencyKey, requestHash, admission.ID, admission.Version); err != nil {
 		return CaptainAdmission{}, false, err
 	}
@@ -861,6 +867,9 @@ func SuspendCaptainAdmission(ctx context.Context, db *sql.DB, actorID, idempoten
 
 	var suspended CaptainAdmission
 	if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_admissions SET state='suspended',availability_state='unavailable',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='eligible' RETURNING id,actor_id,COALESCE(full_name_ar,''),state,availability_state,requires_profile_review,version,created_at,updated_at`, admission.ID).Scan(&suspended.ID, &suspended.ActorID, &suspended.FullNameAr, &suspended.State, &suspended.AvailabilityState, &suspended.RequiresProfileReview, &suspended.Version, &suspended.CreatedAt, &suspended.UpdatedAt); err != nil {
+		return CaptainAdmission{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM dsh.captain_presence_latest WHERE captain_actor_id=$1`, actorID); err != nil {
 		return CaptainAdmission{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash) VALUES('captain_admission_suspended',$1,$2,$3,$4,$5,'eligible','suspended',$6,$7,$8)`, idempotencyKey, correlationID, actingActorID, suspended.ID, actorID, admission.Version, suspended.Version, requestHash); err != nil {
@@ -2382,6 +2391,9 @@ func reserveCaptainAvailabilityTx(ctx context.Context, tx *sql.Tx, admissionID, 
 		return ErrCaptainNoAvailable
 	}
 	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM dsh.captain_presence_latest WHERE captain_actor_id=$1`, actorID); err != nil {
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash) VALUES('captain_availability_changed',$1,$2,$3,$4,$5,'available','unavailable',$6,$7,$8)`, idempotencyKey, correlationID, actingActorID, admissionID, actorID, version-1, version, requestHash)

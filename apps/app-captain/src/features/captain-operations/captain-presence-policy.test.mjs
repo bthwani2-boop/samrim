@@ -6,8 +6,8 @@ test("presence is periodic, never continuous",()=>{
 });
 test("no location for background, sign-out, denial or off-shift",()=>{
     for(const flags of [[false,true,true,true,false],[true,false,true,true,false],[true,true,false,true,false],[true,true,true,false,false]]){
-        assert.equal(shouldPublishCaptainPresence(...flags),false);
+        assert.equal(shouldPublishCaptainPresence(...flags.slice(0,4)),false);
     }
-    assert.equal(shouldPublishCaptainPresence(true,true,true,true,false),true);
-    assert.equal(shouldPublishCaptainPresence(true,true,true,false,true),true);
+    assert.equal(shouldPublishCaptainPresence(true,true,true,true),true);
+    assert.equal(shouldPublishCaptainPresence(true,true,true,false),false);
 });
