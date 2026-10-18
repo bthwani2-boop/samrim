@@ -580,8 +580,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         activityLabel={state.kind === "ready" ? state.verticals.find((vertical) => vertical.id === store.primaryVerticalId)?.nameAr ?? "" : ""}
         favorite={state.kind === "ready" && state.favoriteStoreIDs.includes(store.id)}
         favoriteBusy={Boolean(favoriteBusyStoreID)}
-        imageFailed={failedStoreImageIDs.has(store.id)}
-        onImageError={() => setFailedStoreImageIDs((current) => new Set(current).add(store.id))}
+        imageFailed={failedStoreImageIDs.has(JSON.stringify([store.id, store.storeProfileImage?.uri ?? ""]))}
+        onImageError={() => setFailedStoreImageIDs((current) => new Set(current).add(JSON.stringify([store.id, store.storeProfileImage?.uri ?? ""])))}
         onOpen={() => router.push(("/store/" + encodeURIComponent(store.id)) as Href)}
         onFavorite={() => { void toggleFavorite(store.id); }}
         promotionCount={store.promotionCount}
