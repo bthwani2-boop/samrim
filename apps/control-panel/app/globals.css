@@ -2775,4 +2775,4 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 .marketing-local-preview-visual{position:relative;overflow:hidden;border-radius:12px;aspect-ratio:5/2}
 .marketing-local-preview.is-story .marketing-local-preview-visual{aspect-ratio:6/7}
 .marketing-local-preview-canvas{display:block;inline-size:100%;block-size:100%}
-.marketing-local-preview-overlay{position:absolute;inset-inline:0;bottom:0;padding:8px;color:#fff;background:rgba(0,0,0,.75)}
+.marketing-local-preview-overlay{position:absolute;inset-inline:0;bottom:0;padding:8px;color:var(--color-primary);background:var(--surface-overlay)}
