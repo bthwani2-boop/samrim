@@ -322,6 +322,11 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const mediaContent = useMemo(() => marketing.content.filter((item) => Boolean(item.mediaUri)), [marketing.content]);
   const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri), [marketing.content]);
 
+  function openDiscoveryContent(contentId: string) {
+    void recordDiscoveryClick(contentId);
+    router.push(`/discovery-content/${encodeURIComponent(contentId)}` as Href);
+  }
+
   async function openNearbyAddressChooser() {
     if (!selectedCityID || nearbyAddressState.kind === "loading") return;
     if (nearestAddress?.serviceCityId === selectedCityID && directoryLocation) {
@@ -453,11 +458,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
       {!searchIsActive && !selectedVerticalID && !selectedCategoryID && !selectedShortcutID && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
         {mediaContent.length ? <>
-          <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={mediaContent} styles={styles} theme={theme} onOpen={(item) => {
-            void recordDiscoveryClick(item.id);
-            if (item.targetType === "STORE" && item.targetId) router.push(`/store/${encodeURIComponent(item.targetId)}` as Href);
-            else router.push(`/discovery-content/${encodeURIComponent(item.id)}` as Href);
-          }} />
+          <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={mediaContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} />
         </> : null}
         {textContent.length ? <>
           <BthwaniSectionHeader title="مختارات لك" subtitle="محتوى منشور من بثواني" />
@@ -465,7 +466,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
             let contentKindLabel = "قصة قصيرة";
             if (item.kind === "BANNER") contentKindLabel = "إعلان";
             else if (item.kind === "CAROUSEL") contentKindLabel = "اختيارات";
-            return <BthwaniSurface key={item.id} tone="inset" style={styles.marketingCard}><Text style={styles.eyebrow}>{contentKindLabel}</Text><Text style={styles.cardTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text style={styles.muted}>{item.bodyAr}</Text> : null}</BthwaniSurface>;
+            return <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`فتح محتوى ${item.titleAr}`} onPress={() => openDiscoveryContent(item.id)}><BthwaniSurface tone="inset" style={styles.marketingCard}><Text style={styles.eyebrow}>{contentKindLabel}</Text><Text style={styles.cardTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text style={styles.muted}>{item.bodyAr}</Text> : null}<Text style={styles.mediaFallbackHint}>عرض التفاصيل والوجهة</Text></BthwaniSurface></Pressable>;
           })}</View>
         </> : null}
         {marketing.promotions.length ? <>

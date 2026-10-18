@@ -105,7 +105,7 @@ function isQuantityAllowed(line: Cart["lines"][number], quantity: number): boole
   return quantity >= line.quantityMinBaseUnits && quantity <= line.quantityMaxBaseUnits && (quantity - line.quantityMinBaseUnits) % line.quantityStepBaseUnits === 0;
 }
 
-export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfillmentMode }: { storeId: string; addresses: ReadonlyArray<DeliveryAddress>; serviceableAddressId?: string | undefined; fulfillmentMode: FulfillmentMode }) {
+export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfillmentMode, initialPromotionCode = "" }: { storeId: string; addresses: ReadonlyArray<DeliveryAddress>; serviceableAddressId?: string | undefined; fulfillmentMode: FulfillmentMode; initialPromotionCode?: string }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<CartState>({ kind: "loading" });
@@ -119,8 +119,12 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   const [error, setError] = useState("");
   const [order, setOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
-  const [promotionCode, setPromotionCode] = useState("");
+  const [promotionCode, setPromotionCode] = useState(initialPromotionCode.trim().toUpperCase());
   const [appliedPromotionCode, setAppliedPromotionCode] = useState("");
+  useEffect(() => {
+    setPromotionCode(initialPromotionCode.trim().toUpperCase());
+    setAppliedPromotionCode("");
+  }, [initialPromotionCode]);
   const [recipient, setRecipient] = useState<DeliveryRecipientInput>({ mode: "SELF" });
   const quoteRequestID = useRef(0);
   const checkoutSubmitting = useRef(false);
@@ -427,6 +431,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
           <Text style={styles.muted}>{cartNeedsReview ? "مجموع المنتجات غير متاح حتى إزالة المنتجات التي تحتاج مراجعة." : `مجموع المنتجات: ${formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}`}</Text>
           <View style={styles.promotionBox}>
             <Text style={styles.fulfillmentTitle}>رمز العرض</Text>
+            {initialPromotionCode ? <Text style={styles.muted}>رمز العرض جاهز من المتجر. اضغط «تطبيق» ليتحقق النظام من الأهلية.</Text> : null}
             <View style={styles.promotionRow}><TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" editable={!mutationBusy} onChangeText={setPromotionCode} placeholder="مثال: WELCOME10" placeholderTextColor={theme.colorMuted} style={styles.promotionInput} value={promotionCode} /><BthwaniButton disabled={mutationBusy || (!pickupMode && !serviceableAddressId)} label="تطبيق" onPress={() => { if (promotionNeedsApply) setAppliedPromotionCode(promotionCode.trim().toUpperCase()); else if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /></View>
           </View>
           {verifiedQuote ? <>
