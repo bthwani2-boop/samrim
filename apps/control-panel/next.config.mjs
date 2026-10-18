@@ -23,6 +23,20 @@ const nextConfig = {
   devIndicators: false,
   // Keep Next dev from scaffolding agent instruction files inside this app.
   agentRules: false,
+  async redirects() {
+    // Canonicalize browser navigation in local development only.
+    const canonicalOrigin = process.env.CONTROL_PANEL_PUBLIC_ORIGIN?.trim();
+    if (process.env.NODE_ENV !== "development" || !/^http:\/\/localhost:\d+$/.test(canonicalOrigin ?? "")) return [];
+    return [{
+      source: "/:path*",
+      has: [
+        { type: "host", value: "127\\.0\\.0\\.1" },
+        { type: "header", key: "accept", value: ".*text/html.*" },
+      ],
+      destination: `${canonicalOrigin}/:path*`,
+      permanent: false,
+    }];
+  },
   async headers() {
     return [
       {

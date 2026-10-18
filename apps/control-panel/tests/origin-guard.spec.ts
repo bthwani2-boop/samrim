@@ -7,6 +7,22 @@ const forbiddenError = {
   },
 };
 
+test("local browser navigation canonicalizes 127.0.0.1 to localhost", async ({ page, request }) => {
+  const canonical = process.env.CONTROL_PANEL_PUBLIC_ORIGIN?.trim();
+  test.skip(process.env.BTHWANI_ENV !== "development" || canonical !== "http://localhost:13000", "Local development only");
+
+  const alias = "http://127.0.0.1:13000";
+  const redirect = await request.get(`${alias}/partners?view=joining`, {
+    maxRedirects: 0,
+    headers: { Accept: "text/html" },
+  });
+  expect(redirect.status()).toBe(307);
+  expect(redirect.headers().location).toBe(`${canonical}/partners?view=joining`);
+
+  await page.goto(`${alias}/?from=loopback`);
+  expect(new URL(page.url()).origin).toBe(canonical);
+});
+
 test("control-panel mutations accept only the configured loopback origin", async ({ page }) => {
   const navigation = await page.goto("/");
   expect(navigation).not.toBeNull();
