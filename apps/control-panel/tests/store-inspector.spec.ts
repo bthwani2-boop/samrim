@@ -295,7 +295,10 @@ test("mobile cards expose states and keep selection and preview recovery usable"
   const trigger = storeCard.getByRole("button", { name: /إدارة المتجر/ });
   await trigger.click();
   const inspector = page.getByRole("region", { name: "تفاصيل المتجر", exact: true });
-  await expect(inspector).toContainText("المطلوب قبل النشر");
+  // Published stores remain published even when readiness degrades later.
+  await expect(inspector).toContainText("رحلة المتجر — منشور للعملاء");
+  await expect(inspector).toContainText("تجهيز الهوية والاتفاقية والكتالوج: قيد الاستكمال");
+  await expect(inspector).toContainText("النشر للعميل: مكتمل");
   await expect(inspector.getByRole("button", { name: "إعادة قراءة المعاينة" })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(inspector).toHaveCount(0);
