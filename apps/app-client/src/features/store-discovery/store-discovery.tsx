@@ -325,6 +325,12 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     setSelectedShortcutID("");
   }
 
+  const categoryTabs = selectedVertical ? <>
+    <BthwaniChip label="كل فئات المنتجات" selected={!selectedCategoryID} onPress={() => selectCategory("")} />
+    {taxonomy.trail.map((category, index) => <BthwaniChip key={category.id} label={category.nameAr} selected={index === taxonomy.trail.length - 1} onPress={() => selectCategory(category.id)} />)}
+    {taxonomy.children.map((category) => <BthwaniChip key={category.id} label={category.nameAr} selected={selectedCategoryID === category.id} onPress={() => selectCategory(category.id)} />)}
+  </> : null;
+
   const mediaContent = useMemo(() => marketing.content.filter((item) => Boolean(item.mediaUri)), [marketing.content]);
   const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri), [marketing.content]);
 
@@ -492,20 +498,15 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           {shoppingShortcuts.map((item) => <BthwaniChip key={item.id} label={item.titleAr} selected={selectedShortcutID === item.id} onPress={() => selectShortcut(item.id)} />)}
         </ScrollView>
       </View> : null}
-      {selectedVertical ? <View style={styles.categoryShortcutBlock} accessibilityLabel={`فئات ${selectedVertical.nameAr}`}>
-        <ScrollView accessibilityLabel={`التدرج الهرمي لفئات ${selectedVertical.nameAr}`} contentContainerStyle={styles.categoryShortcutContent} horizontal showsHorizontalScrollIndicator={false}>
-          <BthwaniChip label="كل فئات المنتجات" selected={!selectedCategoryID} onPress={() => selectCategory("")} />
-          {taxonomy.trail.map((category, index) => <BthwaniChip key={category.id} label={category.nameAr} selected={index === taxonomy.trail.length - 1} onPress={() => selectCategory(category.id)} />)}
-          {taxonomy.children.map((category) => <Pressable key={category.id} accessibilityRole="button" accessibilityLabel={`فتح فئة ${category.nameAr}`} accessibilityState={{ selected: selectedCategoryID === category.id }} onPress={() => selectCategory(category.id)} style={[styles.categoryTile, selectedCategoryID === category.id && styles.categoryTileSelected]}>
-            {category.imageUri ? <Image source={{ uri: category.imageUri }} accessibilityLabel={`صورة ${category.nameAr}`} style={styles.categoryTileImage} resizeMode="cover" /> : <View style={styles.categoryTileFallback}><BthwaniIcon name="categories" color={theme.interactiveText} size={sizing.iconLg} /></View>}
-            <Text numberOfLines={2} style={styles.categoryTileName}>{category.nameAr}</Text>
-          </Pressable>)}
-        </ScrollView>
-        {taxonomy.children.length === 0 ? <Text style={styles.categoryTreeEmpty}>{selectedCategoryID ? "وصلت إلى أدق فئة متاحة؛ المتاجر والمنتجات المطابقة معروضة أدناه." : "لا توجد فئات منتجات متاحة لهذا المجال الآن؛ يمكنك فتح المتجر وعرض منتجاته وأقسامه."}</Text> : null}
-      </View> : null}
 
       {!searchIsActive && marketing.error ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل بعض العروض والمحتوى. يمكنك متابعة تصفح المتاجر.</Text> : null}
 
+      {searchScope === "products" && searchIsActive && categoryTabs ? <>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="تصفية المنتجات حسب الفئة" contentContainerStyle={styles.filterRow}>
+          {categoryTabs}
+        </ScrollView>
+        {selectedVertical && taxonomy.children.length === 0 ? <Text style={styles.categoryTreeEmpty}>{selectedCategoryID ? "وصلت إلى أدق فئة متاحة؛ المتاجر والمنتجات المطابقة معروضة أدناه." : "لا توجد فئات منتجات متاحة لهذا المجال الآن؛ يمكنك فتح المتجر وعرض منتجاته وأقسامه."}</Text> : null}
+      </> : null}
       {searchScope === "products" && searchIsActive ? (
         <ProductSearchResults
           onClearCategory={() => selectCategory("")}
@@ -520,7 +521,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
       {searchScope === "stores" || !searchIsActive ? <>
       <BthwaniSectionHeader title={searchIsActive ? "نتائج المتاجر" : "المتاجر المتاحة"} subtitle={`${filteredStores.length} متجر معروض`} />
-      <View style={styles.filterRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="تصفية المتاجر والفئات" contentContainerStyle={styles.filterRow}>
         <BthwaniChip label="كل المتاجر" selected={storeFilter === "all"} onPress={() => setStoreFilter("all")} />
         <BthwaniChip label="الأحدث" selected={storeFilter === "newest"} onPress={() => setStoreFilter("newest")} />
         <BthwaniChip
@@ -548,7 +549,9 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
             setStoreFilter("favorites");
           }}
         />
-      </View>
+        {categoryTabs}
+      </ScrollView>
+      {selectedVertical && taxonomy.children.length === 0 ? <Text style={styles.categoryTreeEmpty}>{selectedCategoryID ? "وصلت إلى أدق فئة متاحة؛ المتاجر والمنتجات المطابقة معروضة أدناه." : "لا توجد فئات منتجات متاحة لهذا المجال الآن؛ يمكنك فتح المتجر وعرض منتجاته وأقسامه."}</Text> : null}
       {favoriteError ? <Text accessibilityRole="alert" style={styles.error}>{favoriteError}</Text> : null}
       {storeFilter === "nearest" && nearestAddress ? <Text style={styles.nearestAddressSummary}>الأقرب إلى: {nearestAddress.addressText}</Text> : null}
       {nearbyAddressState.kind !== "closed" ? <BthwaniSurface accessibilityLabel="اختيار عنوان لترتيب المتاجر الأقرب" style={styles.nearestAddressChooser} tone="inset">
@@ -750,7 +753,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     productPrice: { ...typography.label, color: theme.interactiveText },
     eyebrow: { ...typography.label, color: theme.interactiveText },
     list: { gap: spacing[3] },
-    filterRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    filterRow: { alignItems: "center", flexDirection: "row", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
     nearestAddressChooser: { gap: spacing[2], padding: spacing[3] },
     nearestAddressHeading: { alignItems: "flex-start", flexDirection: "row", gap: spacing[2], justifyContent: "space-between" },
     nearestAddressCopy: { flex: 1, gap: spacing[1] },
@@ -800,12 +803,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     activityTileName: { ...typography.label, color: theme.color, textAlign: "center" },
     activityTileNameSelected: { color: theme.interactiveText },
     categoryTreeEmpty: { ...typography.caption, color: theme.colorMuted, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
-    categoryTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2], width: 94 },
-    categoryTileSelected: { borderColor: theme.interactiveText, borderWidth: 2 },
-    categoryTileImage: { backgroundColor: theme.surfaceInset, borderRadius: radius.md, height: 60, width: 76 },
-    categoryTileFallback: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: 60, justifyContent: "center", width: 76 },
-    categoryTileInitial: { ...typography.titleLg, color: theme.interactiveText },
-    categoryTileName: { ...typography.label, color: theme.color, minHeight: 34, textAlign: "center" },
     marketingBlock: { gap: spacing[3] },
     marketingList: { gap: spacing[2] },
     marketingCard: { borderRadius: radius.lg, gap: spacing[1], padding: spacing[3] },
