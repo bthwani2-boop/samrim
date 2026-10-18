@@ -40,12 +40,15 @@ export async function recordDiscoveryImpression(contentID: string): Promise<void
 export async function recordDiscoveryClick(contentID: string): Promise<void> {
   if (!contentID.trim()) return;
   try {
+    const sessionID = await clientSessionID();
+    await recordPublicDiscoveryContentEvent({ clientEventId: analyticsID(), contentId: contentID, eventType: "CLICK", clientSessionId: sessionID });
+    // Conversion attribution requires a click already acknowledged by DSH.
+    // Never save an unrecorded click as the last-click source of truth.
     try {
       await SecureStore.setItemAsync(LAST_CLICK_KEY, JSON.stringify({ contentId: contentID, clickedAt: Date.now() }));
     } catch {
-      // A click remains measurable even when durable attribution storage is unavailable.
+      // The click was recorded, but this device cannot persist attribution.
     }
-    await recordPublicDiscoveryContentEvent({ clientEventId: analyticsID(), contentId: contentID, eventType: "CLICK", clientSessionId: await clientSessionID() });
   } catch (error) {
     console.warn("Discovery click was not recorded", error);
   }
