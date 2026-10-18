@@ -3,7 +3,7 @@ import { BthwaniButton, BthwaniConfirmDialog, useAppearanceTheme } from "@bthwan
 import type { StoreCommercialAgreement, StoreCommercialAgreementProposalRequest, StoreFulfillmentMode } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, AppState, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
@@ -11,6 +11,7 @@ import { parsePercentToBps, percentTextFromBps, sameAgreementRates } from "./fie
 
 type AgreementAttempt = Readonly<{ input: StoreCommercialAgreementProposalRequest; idempotencyKey: string; correlationID: string }>;
 type RateDraft = Partial<Record<StoreFulfillmentMode, string>>;
+const DEFAULT_PROPOSAL_REASON = "مقترح عمولة للمتجر بانتظار مراجعة وقبول المالك";
 
 const modeLabels: Readonly<Record<StoreFulfillmentMode, string>> = {
   BTHWANI_CAPTAIN: "توصيل بثواني",
@@ -92,7 +93,11 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
     }
   }, [caseID]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    const listener = AppState.addEventListener("change", (state) => { if (state === "active") void load(); });
+    return () => listener.remove();
+  }, [load]);
 
   const pending = agreements.find((item) => item.status === "PROPOSED" || item.status === "PARTNER_ACCEPTED");
   const active = agreements.find((item) => item.status === "ACTIVE");
@@ -104,10 +109,10 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
     if (busy || !canPropose) return;
     let currentAttempt = attempt;
     if (!attempt) {
-      const normalizedReason = reason.trim();
+      const normalizedReason = reason.trim() || DEFAULT_PROPOSAL_REASON;
       const proposalRates = modes.map((fulfillmentMode) => ({ fulfillmentMode, commissionRateBps: parsePercentToBps(rates[fulfillmentMode] ?? "") }));
       if (normalizedReason.length < 8 || normalizedReason.length > 500 || proposalRates.some((item) => item.commissionRateBps === null)) {
-        setError("أدخل سببًا من 8 إلى 500 حرف ونسبة صحيحة لكل طريقة تشغيل بين 0% و100% وبحد أقصى منزلتين عشريتين.");
+        setError("راجع نسب العمولة لكل طريقة تشغيل (0% إلى 100% بمنزلتين عشريتين)، وأدخل سببًا صالحًا فقط إذا اخترت كتابة سبب خاص بالتفاوض.");
         return;
       }
       const canonicalRates = proposalRates.map((item) => ({ fulfillmentMode: item.fulfillmentMode, commissionRateBps: item.commissionRateBps as number }));
@@ -148,7 +153,7 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
 
   if (loading) return <View style={styles.card}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الاتفاقية التجارية…</Text></View>;
   const previewRates = modes.map((fulfillmentMode) => ({ fulfillmentMode, commissionRateBps: parsePercentToBps(rates[fulfillmentMode] ?? "") }));
-  const proposalReady = reason.trim().length >= 8 && reason.trim().length <= 500 && previewRates.every((item) => item.commissionRateBps !== null);
+  const proposalReady = (!reason.trim() || (reason.trim().length >= 8 && reason.trim().length <= 500)) && previewRates.every((item) => item.commissionRateBps !== null);
   const proposalSummary = previewRates.map((item) => `${modeLabels[item.fulfillmentMode]}: ${item.commissionRateBps === null ? "غير صالح" : percentTextFromBps(item.commissionRateBps)}%`).join("، ");
   return <View style={styles.card}>
     <Text style={styles.heading}>اتفاقية عمولة المتجر</Text>
@@ -163,13 +168,14 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
     {legacyPublishedStore ? <Text style={styles.error}>تتطلب بيانات المتجر المنشورة القديمة اتفاقية صريحة. سيظل المتجر محجوبًا عن العميل حتى قبول الشريك واعتماد المالية.</Text> : null}
     {publicationState === "hidden" || (publicationState === "published" && !legacyPublishedStore) ? <Text style={styles.muted}>انتهت صلاحية اقتراح الميدان بعد انتقال المتجر إلى ما بعد الإطلاق.</Text> : null}
     {canPropose ? <>
+      <Text style={styles.muted}>المرحلة 2 من 3: راجع النسب المقترحة من السياسة المعتمدة. إذا وافقت عليها كما هي، أرسلها دون كتابة سبب. سيقبلها صاحب المتجر، ثم تعتمدها المالية.</Text>
       <Text style={styles.muted}>ابدأ من النسب المقترحة لنوع المتجر عند توفرها، ثم أدخل النسب المتفاوض عليها لكل طريقة تشغيل. النسب المقترحة لا تصبح شروطًا مالية.</Text>
       {defaultsUnavailable ? <Text style={styles.muted}>تعذر تحميل القيم المقترحة؛ أدخل النسبة المتفاوض عليها يدويًا لكل طريقة تشغيل.</Text> : null}
       {modes.map((mode) => <View key={mode} style={styles.row}>
         <Text style={styles.body}>{modeLabels[mode]}</Text>
         <TextInput accessibilityLabel={`نسبة عمولة ${modeLabels[mode]} بالمئة`} editable={!busy && !attempt} keyboardType="decimal-pad" maxLength={6} onChangeText={(value) => setRates((current) => ({ ...current, [mode]: toAsciiDigits(value).replace(",", ".").replace(/[^0-9.]/g, "").slice(0, 6) }))} placeholder="النسبة من 0% إلى 100%" value={rates[mode] ?? ""} style={styles.input} />
       </View>)}
-      <TextInput accessibilityLabel="سبب اقتراح اتفاقية عمولة المتجر" editable={!busy && !attempt} maxLength={500} multiline onChangeText={setReason} placeholder="سبب التفاوض على هذه النسب" value={reason} style={styles.input} />
+      <TextInput accessibilityLabel="سبب اقتراح اتفاقية عمولة المتجر" editable={!busy && !attempt} maxLength={500} multiline onChangeText={setReason} placeholder="سبب خاص بالتفاوض (اختياري؛ يُسجل السبب القياسي تلقائيًا)" value={reason} style={styles.input} />
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <BthwaniButton busy={busy} disabled={busy || (!attempt && !proposalReady)} label={attempt ? "إعادة التحقق من إرسال المقترح" : "مراجعة المقترح قبل الإرسال"} onPress={() => { if (attempt) void propose(); else setConfirmProposal(true); }} />
     </> : null}

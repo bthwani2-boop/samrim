@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniChip, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type JoiningCaseResponse, publicationStateLabel, type PublicationState, type StoreFulfillmentMode } from "@bthwani/dsh";
+import { type JoiningCaseResponse, type PublicationState, publicationStateLabel, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { type Href, Link } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
@@ -73,6 +73,12 @@ function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, canPro
   }
 
   return <View style={styles.managementSections}>
+    {store.owned && store.publicationState !== "published" ? <View style={styles.card} accessibilityLabel="تجهيز متجرك">
+      <Text style={styles.value}>المرحلة 2 من 3: تجهيز المتجر</Text>
+      <Text style={styles.muted}>تم إنشاء متجرك، لكنه لم يظهر للعملاء بعد. يمكنك تجهيز المنتجات والصور الآن. راجع اتفاقية العمولة عندما تصلك؛ وبعد قبولك تعتمدها المالية وينشر المشغّل المتجر.</Text>
+      <BthwaniButton label="مراجعة الاتفاقية والصور" onPress={() => showSection("settings")} variant="secondary" />
+      {canCatalog ? <BthwaniButton label="تجهيز المنتجات" onPress={() => showSection("catalog")} variant="secondary" /> : null}
+    </View> : null}
     <View style={styles.choiceRow} accessibilityLabel="أقسام إدارة المتجر">
       {sections.map((item) => <BthwaniChip key={item.id} label={item.label} selected={section === item.id} onPress={() => showSection(item.id)} />)}
     </View>

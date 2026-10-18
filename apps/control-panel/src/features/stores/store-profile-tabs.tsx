@@ -6,8 +6,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { StoreAvailabilityControls } from "./store-availability-controls";
 import { StoreBranchesPreview } from "./store-branches-preview";
-import { StoreProductsWorkspace } from "./store-products-workspace";
 import { StoreOperationsPreview } from "./store-operations-preview";
+import { StoreProductsWorkspace } from "./store-products-workspace";
 
 type Store = StorePublicationResponse["store"];
 type StoreProfileTabsProps = Readonly<{
@@ -198,6 +198,8 @@ export function StoreProfileTabs({ activeTab, store, partner, partnerError, canV
     </Panel>
 
     {canViewFinance ? <Panel id="finance" selected={activeTab === "finance"}>
+      <p className="store-profile-muted">قرار اعتماد اتفاقية المتجر يتم من مساحة المالية، بعد قبول مالك المتجر للشروط.</p>
+      <Link className="button button-secondary" href="/finance/partner-store-commissions">فتح اتفاقيات المتاجر في المالية</Link>
       <div className="store-profile-tab-grid"><Unavailable title="الحسابات والتسويات" reason="قراءة الأرصدة والإيرادات وعمولات هذا المتجر تتطلب عقدًا ماليًا محميًا من WLT. لا تُعرض أرقام تجريبية هنا على أنها قيود حقيقية."/>
         <Card title="الحدود المالية"><p className="store-profile-muted">البيانات المالية مرئية فقط لمن يملك صلاحية المالية. عمليات التسوية لا تُنفذ تلقائيًا من صفحة المتجر.</p></Card></div>
     </Panel> : null}

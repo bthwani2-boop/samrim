@@ -73,7 +73,9 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
 
   useEffect(() => {
     void readStore();
-    return () => { requestSequence.current += 1; };
+    const rereadOnReturn = () => { if (document.visibilityState === "visible") void readStore(false); };
+    document.addEventListener("visibilitychange", rereadOnReturn);
+    return () => { document.removeEventListener("visibilitychange", rereadOnReturn); requestSequence.current += 1; };
   }, [readStore]);
 
   useEffect(() => {
@@ -219,6 +221,7 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
   }
 
   const store = publication?.store;
+  const blockers = store?.publicationReadiness.ready ? [] : store?.publicationReadiness.blockedReasons?.length ? store.publicationReadiness.blockedReasons : store?.publicationReadiness.blockedReason ? [store.publicationReadiness.blockedReason] : [];
   return (
     <section className={`workspace-page store-workspace ${embedded ? "store-workspace-embedded" : ""}`} aria-label={embedded ? "إدارة بيانات المتجر وتوصيله وصوره" : undefined} aria-labelledby={embedded ? undefined : "store-workspace-title"}>
       {embedded ? null : <PageHeader id="store-workspace-title" title={store?.name ?? "ملف المتجر"} actions={<Link className="button button-secondary" href={registryHref}>الشركاء والمتاجر</Link>} />}
@@ -228,6 +231,32 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
       {notice ? <output className="managed-status managed-status-success">{notice}</output> : null}
 
       {store ? <>
+        {embedded ? null : <section id="store-onboarding-readiness" className="store-detail-section" aria-label="رحلة انضمام ونشر المتجر">
+          <div className="store-detail-heading"><h2>رحلة المتجر من التسجيل إلى النشر</h2><span className="status-badge">{store.publicationState === "published" ? "منشور" : store.publicationReadiness.ready ? "جاهز للنشر" : "قيد التجهيز"}</span></div>
+          <ol>
+            <li>تسجيل واعتماد المتجر — مكتمل.</li>
+            <li>تجهيز الهوية والاتفاقية والكتالوج — {store.publicationReadiness.ready ? "مكتمل." : "قيد الاستكمال."}</li>
+            <li>النشر للعميل — {store.publicationState === "published" ? "مكتمل." : "لم يكتمل بعد."}</li>
+          </ol>
+          {store.publicationState === "published" ? <p className="muted">المتجر ظاهر للعملاء، لكن يجب التحقق من أوقات العمل والتوفر قبل استقبال الطلبات.</p> :
+            store.publicationReadiness.ready ? <p><a href="#store-publication-title" className="button button-primary">انتقل لنشر المتجر</a></p> : <>
+              <p>هذه المتطلبات فقط تمنع النشر الآن. يستطيع كل طرف إكمال مهمته دون انتظار تجهيز الصور والمنتجات:</p>
+              <ul>
+                {blockers.map((reason) => <li key={reason}>
+                  {publicationReadinessBlockedReasonLabel(reason)} — {reason === "PARTNER_IDENTITY_NOT_ELIGIBLE" ?
+                    <Link href={"/partners/actors/" + encodeURIComponent(store.partnerActorId)}>متابعة تفعيل حساب الشريك</Link> :
+                  reason === "COMMERCIAL_AGREEMENT_NOT_READY" ?
+                    <Link href="/finance/partner-store-commissions">اتفاقية العمولة: موافقة الشريك ثم اعتماد المالية</Link> :
+                  reason === "STORE_LOGO_NOT_READY" || reason === "STORE_COVER_NOT_READY" ?
+                    <a href="#store-images">إضافة الشعار أو الغلاف</a> :
+                  reason === "CATALOG_NOT_READY" ? <span>جهّز المنتجات من قسم الكتالوج الخاص بالمتجر.</span> :
+                  reason === "STORE_SCHEDULE_NOT_READY" ? <span>حدّد أوقات العمل من إعدادات تشغيل المتجر.</span> :
+                  reason === "FINANCIAL_PROFILE_NOT_READY" ? <span>يُراجع المشغّل الربط المالي بعد اعتماد الانضمام.</span> :
+                    <span>راجع بيانات المتجر وصلاحية مدينة الخدمة.</span>}
+                </li>)}
+              </ul>
+            </>}
+        </section>}
         {embedded ? null : <section className="partner-case-summary" aria-label="ملخص حالة المتجر">
           <div className="partner-case-summary-main">
             <div><h2>{store.name}</h2><p>الشريك: {store.partnerName || "حساب مرتبط"}</p><p>{publicationStateLabel(store.publicationState)} · {store.publicationReadiness.ready ? "جاهز للنشر" : publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason)}</p></div>
@@ -259,12 +288,12 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
           {internalPhotos.length ? <div className="store-internal-photo-grid">{internalPhotos.map((photo) => <figure key={photo.id}><img src={`/api/stores/${encodeURIComponent(storeId)}/internal-photos/${encodeURIComponent(photo.id)}`} alt="صورة ميدانية داخلية للمتجر" loading="lazy" /><figcaption><time dateTime={photo.createdAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium" }).format(new Date(photo.createdAt))}</time></figcaption></figure>)}</div> : !internalPhotosError ? <p className="muted">لا توجد صور ميدانية داخلية لهذا المتجر.</p> : null}
         </section>
 
-        {embedded ? null : <StoreImageEditor key={storeId} storeId={storeId} name={store.name} onSaved={() => { void readStore(false); onUpdated?.(); }} />}
+        {embedded ? null : <div id="store-images"><StoreImageEditor key={storeId} storeId={storeId} name={store.name} onSaved={() => { void readStore(false); onUpdated?.(); }} /></div>}
 
         {embedded ? null : <section className="store-detail-section" aria-labelledby="store-publication-title">
           <div className="store-detail-heading"><div><h2 id="store-publication-title">النشر والجاهزية</h2></div><span className={`status-badge status-${store.publicationState}`}>{publicationStateLabel(store.publicationState)}</span></div>
           <p>{store.publicationReadiness.ready ? "المتجر مستوفٍ لشروط النشر الحالية." : `الجاهزية: ${publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason)}`}</p>
-          <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || (!store.publicationReadiness.ready && store.publicationState !== "published")} onClick={() => void changePublication()}>{busy ? "جارٍ الحفظ…" : store.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void readStore()}>إعادة قراءة النشر</button></div>
+          <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || (!store.publicationReadiness.ready && store.publicationState !== "published")} onClick={() => void changePublication()}>{busy ? "جارٍ الحفظ…" : store.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر"}</button></div>
         </section>}
 
         {!embedded ? <section className="store-detail-section" aria-labelledby="store-fulfillment-title">

@@ -2,7 +2,7 @@ import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type PublicCommerceVertical, type PublicDiscoveryContentView, type PublicPromotionView, type PublicShoppingShortcut, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, I18nManager, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
@@ -10,6 +10,21 @@ import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { PromotionCard } from "./promotion-card";
 import { StoreDirectoryCard } from "./store-directory-card";
 import { listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
+
+function activityIcon(nameAr: string, nameEn: string): ComponentProps<typeof BthwaniIcon>["name"] {
+  const label = (nameAr + " " + nameEn).toLowerCase();
+  if (/مطاعم|مطعم|restaurant|food|وجبات/.test(label)) return "restaurant";
+  if (/مقاضي|بقال|سوبر|مواد غذائي|grocery|supermarket/.test(label)) return "grocery";
+  if (/صيدلي|دواء|pharmac|health/.test(label)) return "health";
+  if (/حلوي|حلويات|كيك|مخبز|dessert|bakery/.test(label)) return "desserts";
+  if (/إلكتروني|الكتروني|هواتف|electronic|device/.test(label)) return "electronics";
+  if (/هدايا|ورود|زهور|gift|flower/.test(label)) return "gifts";
+  if (/عسل|تمور|honey/.test(label)) return "honey";
+  if (/ملابس|أزياء|عطور|تجميل|fashion|beauty/.test(label)) return "beauty";
+  if (/متاجر عالمية|مول|mall|global store/.test(label)) return "mall";
+  if (/منزلي|home project/.test(label)) return "home-projects";
+  return "store";
+}
 
 type DiscoveryState =
   | { kind: "loading" }
@@ -309,6 +324,10 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   async function openNearbyAddressChooser() {
     if (!selectedCityID || nearbyAddressState.kind === "loading") return;
+    if (nearestAddress?.serviceCityId === selectedCityID && directoryLocation) {
+      setStoreFilter("nearest");
+      return;
+    }
     const requestID = ++nearbyAddressRequestID.current;
     setNearbyAddressState({ kind: "loading" });
     try {
@@ -425,8 +444,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
             <View style={[styles.activityMark, !selectedVerticalID && styles.activityMarkSelected]}><BthwaniIcon name="store" color={!selectedVerticalID ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /></View>
             <Text numberOfLines={1} style={[styles.activityTileName, !selectedVerticalID && styles.activityTileNameSelected]}>الكل</Text>
           </Pressable>
-          {taxonomy.verticals.map((vertical, index) => <Pressable key={vertical.id} accessibilityRole="button" accessibilityLabel={`تصفح نشاط ${vertical.nameAr}`} accessibilityState={{ selected: selectedVerticalID === vertical.id }} onPress={() => selectVertical(vertical.id)} style={[styles.activityTile, selectedVerticalID === vertical.id && styles.activityTileSelected]}>
-            <View style={[styles.activityMark, index % 2 === 1 && styles.activityMarkWarm, selectedVerticalID === vertical.id && styles.activityMarkSelected]}><Text style={[styles.activityInitial, selectedVerticalID === vertical.id && styles.activityTileNameSelected]}>{vertical.nameAr.slice(0, 1)}</Text></View>
+          {taxonomy.verticals.map((vertical) => <Pressable key={vertical.id} accessibilityRole="button" accessibilityLabel={`تصفح نشاط ${vertical.nameAr}`} accessibilityState={{ selected: selectedVerticalID === vertical.id }} onPress={() => selectVertical(vertical.id)} style={[styles.activityTile, selectedVerticalID === vertical.id && styles.activityTileSelected]}>
+            <View style={[styles.activityMark, selectedVerticalID === vertical.id && styles.activityMarkSelected]}><BthwaniIcon name={activityIcon(vertical.nameAr, vertical.nameEn)} color={selectedVerticalID === vertical.id ? theme.onAction : theme.interactiveText} size={sizing.iconMd} /></View>
             <Text numberOfLines={1} style={[styles.activityTileName, selectedVerticalID === vertical.id && styles.activityTileNameSelected]}>{vertical.nameAr}</Text>
           </Pressable>)}
         </ScrollView>
@@ -466,7 +485,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           <BthwaniChip label="كل فئات المنتجات" selected={!selectedCategoryID} onPress={() => selectCategory("")} />
           {taxonomy.trail.map((category, index) => <BthwaniChip key={category.id} label={category.nameAr} selected={index === taxonomy.trail.length - 1} onPress={() => selectCategory(category.id)} />)}
           {taxonomy.children.map((category) => <Pressable key={category.id} accessibilityRole="button" accessibilityLabel={`فتح فئة ${category.nameAr}`} accessibilityState={{ selected: selectedCategoryID === category.id }} onPress={() => selectCategory(category.id)} style={[styles.categoryTile, selectedCategoryID === category.id && styles.categoryTileSelected]}>
-            {category.imageUri ? <Image source={{ uri: category.imageUri }} accessibilityLabel={`صورة ${category.nameAr}`} style={styles.categoryTileImage} resizeMode="cover" /> : <View style={styles.categoryTileFallback}><Text style={styles.categoryTileInitial}>{category.nameAr.slice(0, 1)}</Text></View>}
+            {category.imageUri ? <Image source={{ uri: category.imageUri }} accessibilityLabel={`صورة ${category.nameAr}`} style={styles.categoryTileImage} resizeMode="cover" /> : <View style={styles.categoryTileFallback}><BthwaniIcon name="categories" color={theme.interactiveText} size={sizing.iconLg} /></View>}
             <Text numberOfLines={2} style={styles.categoryTileName}>{category.nameAr}</Text>
           </Pressable>)}
         </ScrollView>
@@ -760,7 +779,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     categoryShortcutBlock: { gap: spacing[1], paddingVertical: spacing[1] },
     categoryShortcutContent: { alignItems: "flex-start", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
     activityTiles: { alignItems: "center", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
-    activityTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "column", gap: spacing[1], minHeight: 80, minWidth: 88, justifyContent: "center", paddingHorizontal: spacing[2], paddingVertical: spacing[2] },
+    activityTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "column", gap: spacing[1], minHeight: 68, minWidth: 78, justifyContent: "center", paddingHorizontal: spacing[2], paddingVertical: spacing[2] },
     activityTileSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
     activityMark: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: sizing.avatarSm, justifyContent: "center", width: sizing.avatarSm },
     activityMarkWarm: { backgroundColor: theme.surfaceInset },
@@ -781,9 +800,9 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     mediaCarousel: { gap: spacing[2] },
     mediaScroll: { marginHorizontal: -spacing[1] },
     mediaScrollContent: { gap: spacing[2] },
-    mediaCard: { backgroundColor: theme.surface, borderRadius: radius.lg, height: 168, overflow: "hidden", ...elevation.raised },
+    mediaCard: { backgroundColor: theme.surface, borderRadius: radius.lg, height: 144, overflow: "hidden", ...elevation.raised },
     mediaImage: { height: "100%", width: "100%" },
-    mediaCaption: { backgroundColor: theme.actionBackground, bottom: 0, gap: spacing[1], left: 0, paddingHorizontal: spacing[3], paddingVertical: spacing[2], position: "absolute", right: 0 },
+    mediaCaption: { backgroundColor: theme.actionBackground, bottom: 0, gap: spacing[1], left: 0, paddingHorizontal: spacing[3], paddingVertical: spacing[1], position: "absolute", right: 0 },
     mediaCaptionTitle: { ...typography.titleSm, color: theme.onAction, textAlign: "right" },
     mediaCaptionBody: { ...typography.caption, color: theme.onAction, textAlign: "right" },
     mediaFallback: { alignItems: "center", backgroundColor: theme.actionSoft, height: "100%", justifyContent: "center", padding: spacing[4], width: "100%" },

@@ -38,8 +38,7 @@ export function StoreDirectoryCard({
       : <View style={styles.logoFallback}><BthwaniIcon name="store" size={sizing.iconLg} color={theme.interactiveText} /></View>}
     <View style={styles.copy}>
       <Text style={styles.name} numberOfLines={1}>{store.name}</Text>
-      {activityLabel ? <Text style={styles.activity} numberOfLines={1}>{activityLabel}</Text> : null}
-      {locationLabel ? <Text style={styles.location} numberOfLines={1}>{locationLabel}{distanceLabel ? " · " + distanceLabel : ""}</Text> : null}
+      <Text style={styles.location} numberOfLines={1}>{[activityLabel, locationLabel, distanceLabel].filter(Boolean).join(" · ")}</Text>
       <View style={styles.facts}>
         <Text accessibilityLabel={store.ratingCount > 0 ? "تقييم المتجر " + store.ratingAverage.toFixed(1) + " من خمسة، من " + store.ratingCount + " أشخاص" : "لم يُقيّم المتجر بعد"} style={styles.rating}>{reviewLabel}</Text>
         <View style={[styles.status, open && styles.statusOpen]}>
@@ -47,8 +46,7 @@ export function StoreDirectoryCard({
           <Text numberOfLines={1} style={[styles.statusText, open && styles.statusTextOpen]}>{statusLabel}</Text>
         </View>
       </View>
-      {preparationMinutes !== null ? <Text numberOfLines={1} style={styles.deliveryInfo}>وقت التجهيز: {preparationMinutes} دقيقة</Text> : null}
-      {modes.length ? <Text numberOfLines={1} style={styles.modes}>{modes.map(fulfillmentModeLabel).join(" · ")}</Text> : null}
+      {preparationMinutes !== null || modes.length ? <Text numberOfLines={1} style={styles.deliveryInfo}>{[preparationMinutes !== null ? `تجهيز ${preparationMinutes} دقيقة` : "", ...modes.map(fulfillmentModeLabel)].filter(Boolean).join(" · ")}</Text> : null}
     </View>
     <View style={styles.actions}>
       <Pressable accessibilityRole="button" accessibilityLabel={(favorite ? "إزالة " : "إضافة ") + store.name + (favorite ? " من المفضلة" : " إلى المفضلة")} accessibilityState={{ checked: favorite, disabled: favoriteBusy }} disabled={favoriteBusy} hitSlop={8} onPress={(event) => { event.stopPropagation(); onFavorite(); }} style={[styles.favoriteAction, favorite && styles.favoriteSelected]}><Text style={styles.favoriteGlyph}>{favorite ? "♥" : "♡"}</Text></Pressable>
@@ -59,10 +57,10 @@ export function StoreDirectoryCard({
 
 function makeStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    card: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: 112, overflow: "hidden", ...elevation.raised },
-    logo: { alignSelf: "stretch", minHeight: 112, width: 100, backgroundColor: theme.surfaceInset },
-    logoFallback: { alignSelf: "stretch", minHeight: 112, width: 100, alignItems: "center", justifyContent: "center", backgroundColor: theme.actionSoft },
-    copy: { flex: 1, minWidth: 0, alignItems: "stretch", gap: spacing[1], paddingVertical: spacing[2] },
+    card: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: 96, overflow: "hidden", ...elevation.raised },
+    logo: { alignSelf: "stretch", minHeight: 96, width: 88, backgroundColor: theme.surfaceInset },
+    logoFallback: { alignSelf: "stretch", minHeight: 96, width: 88, alignItems: "center", justifyContent: "center", backgroundColor: theme.actionSoft },
+    copy: { flex: 1, minWidth: 0, alignItems: "stretch", gap: spacing[1], paddingVertical: spacing[1] },
     name: { ...typography.titleSm, color: theme.color, textAlign: "auto" },
     activity: { ...typography.caption, color: theme.colorMuted, textAlign: "auto" },
     location: { ...typography.caption, color: theme.colorMuted, textAlign: "auto" },
@@ -79,7 +77,7 @@ function makeStyles(theme: ReturnType<typeof resolveTheme>) {
     actions: { alignItems: "center", justifyContent: "space-between", gap: spacing[1], maxWidth: 72, paddingEnd: spacing[2] },
     favoriteAction: { alignItems: "center", justifyContent: "center", height: sizing.controlMd, width: sizing.controlMd, borderRadius: radius.round, backgroundColor: theme.actionSoft },
     favoriteSelected: { backgroundColor: theme.surfaceInset },
-    favoriteGlyph: { color: theme.interactiveText, fontSize: 29, lineHeight: 35, textAlign: "center" },
+    favoriteGlyph: { color: theme.interactiveText, fontSize: 26, lineHeight: 32, textAlign: "center" },
     offerButton: { backgroundColor: theme.actionSoft, borderRadius: radius.round, paddingHorizontal: spacing[1], minHeight: 27, justifyContent: "center" },
     offerLabel: { ...typography.caption, color: theme.interactiveText, textAlign: "center" },
     pressed: { opacity: 0.7 },
