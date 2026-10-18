@@ -55,6 +55,7 @@ func TestMarketingContentOperatorRoutesRejectMissingMarketingPermission(t *testi
 	server.Register(mux)
 	cases := []struct{ name, method, path, body string }{
 		{"list", "GET", "/dsh/operator/discovery-content", ""},
+		{"summary", "GET", "/dsh/operator/marketing/summary", ""},
 		{"analytics", "GET", "/dsh/operator/discovery-content/analytics?contentId=test", ""},
 		{"create", "POST", "/dsh/operator/discovery-content", ""},
 		{"publish", "POST", "/dsh/operator/discovery-content/test/publication", `{"state":"PUBLISHED"}`},

@@ -20,6 +20,7 @@ async function provideMarketingReads(page: Page) {
       "/api/auth/session": { identity },
       "/api/notifications": { notifications: [], unreadCount: 0, nextCursor: "" },
       "/api/service-cities": { cities: [] },
+      "/api/marketing/summary": { activePromotions: 125, scheduledPromotions: 2, endedPromotions: 3, draftPromotions: 4, pausedPromotions: 5, activeContent: 6, asOf: "2026-10-18T19:00:00Z" },
       "/api/marketing/promotions": {
         promotions: [{
           id: "promotion-smoke",
@@ -258,7 +259,7 @@ test("marketing center provides five genuine sections with honest summary scope"
     await expect(navigation.getByRole("button", { name })).toBeVisible();
   }
   await expect(page.getByText("العروض الفعالة", { exact: true })).toBeVisible();
-  await expect(page.getByText("موافقات المتاجر المنتظرة ليست ضمن سجل المشغّل الحالي", { exact: false })).toBeVisible();
+  await expect(page.getByText("موافقات المتاجر المنتظرة لم تُربط بعد بتقرير المشغّل", { exact: false })).toBeVisible();
   await navigation.getByRole("button", { name: "مشاركة الشركاء" }).click();
   await expect(page.getByRole("heading", { name: "حملات تتطلب موافقة الشركاء" })).toBeVisible();
   await expect(page.getByText("حالة كل قبول أو رفض وعدد المتاجر المنتظرة: غير متاحين", { exact: false })).toBeVisible();
@@ -269,20 +270,20 @@ test("marketing center provides five genuine sections with honest summary scope"
   await expect(page.locator(".marketing-analytics-breakdown")).toContainText("٣");
 });
 
-test("marketing summary never claims complete counts for paginated registries", async ({ page }) => {
+test("marketing overview uses server totals despite a paginated promotions registry", async ({ page }) => {
   await provideMarketingReads(page);
   await page.route("**/api/marketing/promotions?**", async (route) => route.fulfill({
     status: 200, json: { promotions: [{ id: "partial-promo", nameAr: "عرض مجدول", state: "PUBLISHED", startsAt: "2099-01-01T00:00:00.000Z" }], nextCursor: "next-page" },
   }));
   await page.goto("/marketing");
-  await expect(page.getByText("هذه أعداد جزئية من أول 100 سجل", { exact: false })).toBeVisible();
+  await expect(page.getByText("إجماليات كاملة من سجلات DSH", { exact: false })).toBeVisible();
 });
 
 test("marketing summary reports backend unavailability instead of fabricated zeros", async ({ page }) => {
   await provideMarketingReads(page);
-  await page.route("**/api/marketing/promotions?**", async (route) => route.fulfill({ status: 503, json: { error: { message: "Unavailable" } } }));
+  await page.route("**/api/marketing/summary?**", async (route) => route.fulfill({ status: 503, json: { error: { message: "Unavailable" } } }));
   await page.goto("/marketing");
-  await expect(page.getByRole("alert").getByText("تعذرت قراءة البيانات الحالية.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("alert").getByText("تعذرت قراءة إجماليات التسويق", { exact: false })).toBeVisible();
   await expect(page.getByText("العروض الفعالة", { exact: true })).toHaveCount(0);
 });
 
@@ -312,4 +313,13 @@ test("marketing settlement does not turn WLT failure into zero expense", async (
   await page.getByRole("button", { name: "نتائج التسوية" }).click();
   await expect(page.getByRole("alert").getByText("القراءة المالية غير متاحة الآن", { exact: false })).toBeVisible();
   await expect(page.getByText("مصروف بثواني المرحّل في القيود")).toHaveCount(0);
+});
+
+test("overview uses DSH full-registry aggregates instead of first-page counts", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.goto("/marketing");
+  const overview = page.getByRole("region", { name: "نظرة عامة" });
+  await expect(overview).toContainText("إجماليات كاملة من سجلات DSH");
+  await expect(overview).toContainText("١٢٥");
+  await expect(overview).toContainText("٦");
 });

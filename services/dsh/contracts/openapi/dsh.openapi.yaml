@@ -504,6 +504,9 @@ paths:
   /dsh/operator/promotions/{promotionId}/settlement-summary:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1settlement-summary"
 
+  /dsh/operator/marketing/summary:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1summary"
+
   /dsh/operator/promotions:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions"
 
@@ -9339,6 +9342,33 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    OperatorMarketingSummary:
+      type: object
+      additionalProperties: false
+      required: [activePromotions, scheduledPromotions, endedPromotions, draftPromotions, pausedPromotions, activeContent, asOf]
+      properties:
+        activePromotions:
+          type: integer
+          minimum: 0
+        scheduledPromotions:
+          type: integer
+          minimum: 0
+        endedPromotions:
+          type: integer
+          minimum: 0
+        draftPromotions:
+          type: integer
+          minimum: 0
+        pausedPromotions:
+          type: integer
+          minimum: 0
+        activeContent:
+          type: integer
+          minimum: 0
+        asOf:
+          type: string
+          format: date-time
 
     OperatorPromotionRegistryResponse:
       type: object

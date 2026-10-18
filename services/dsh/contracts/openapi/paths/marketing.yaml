@@ -82,6 +82,21 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/operator/marketing/summary:
+    get:
+      operationId: readOperatorMarketingSummary
+      summary: Read complete operator publication-state aggregates without page truncation
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      responses:
+        "200":
+          description: Aggregated counts across the entire promotion and discovery content registries.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/OperatorMarketingSummary" } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/operator/promotions:
     get:
       operationId: listOperatorPromotions

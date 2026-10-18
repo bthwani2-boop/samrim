@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
 import { MarketingContentWorkspace } from "./marketing-content-workspace";
+import { MarketingOverviewSummary } from "./marketing-overview-summary";
 import { MarketingPromotionsWorkspace } from "./marketing-promotions-workspace";
 
 type Section = "overview" | "campaigns" | "content" | "partners" | "analytics";
@@ -39,34 +40,6 @@ async function readMarketingRegistry(signal: AbortSignal): Promise<RegistrySnaps
     promotionsPartial: Boolean(promotions.nextCursor),
     contentPartial: Boolean(content.nextCursor),
   };
-}
-
-function RegistrySummary({ snapshot }: Readonly<{ snapshot: RegistrySnapshot }>) {
-  const now = Date.now();
-  const active = snapshot.promotions.filter((item) => item.state === "PUBLISHED" && Date.parse(item.startsAt) <= now && (!item.endsAt || Date.parse(item.endsAt) > now)).length;
-  const scheduled = snapshot.promotions.filter((item) => item.state === "PUBLISHED" && Date.parse(item.startsAt) > now).length;
-  const ended = snapshot.promotions.filter((item) => item.state === "ENDED" || (item.state !== "DRAFT" && item.endsAt && Date.parse(item.endsAt) <= now)).length;
-  const draft = snapshot.promotions.filter((item) => item.state === "DRAFT").length;
-  const paused = snapshot.promotions.filter((item) => item.state === "PAUSED" && (!item.endsAt || Date.parse(item.endsAt) > now)).length;
-  const liveContent = snapshot.content.filter((item) => item.state === "PUBLISHED" && Date.parse(item.startsAt) <= now && (!item.endsAt || Date.parse(item.endsAt) > now)).length;
-  return <>
-    <div className="ops-summary-grid">
-      {[
-        { name: "العروض الفعالة", value: active },
-        { name: "العروض المجدولة", value: scheduled },
-        { name: "العروض المنتهية", value: ended },
-        { name: "المسودات", value: draft },
-        { name: "العروض المتوقفة", value: paused },
-        { name: "المحتوى المنشور الساري", value: liveContent },
-      ].map(({ name, value }) => <div className="ops-summary" key={name}><span>{name}</span><strong>{value.toLocaleString("ar-YE")}</strong></div>)}
-    </div>
-    <p className="muted" role="note">{snapshot.promotionsPartial || snapshot.contentPartial ? "هذه أعداد جزئية من أول 100 سجل بكل قائمة، وليست إجماليات المنصة." : "الأعداد مستخرجة من السجلين الكاملين المقروءين حاليًا؛ حالة الوقت محسوبة عند القراءة."} حالات النشر لا تثبت أهلية الخصم أو موافقة الشريك أو توفر الميزانية.</p>
-    <div className="access-card">
-      <h2>تنبيهات تحتاج إجراءً</h2>
-      <p>موافقات المتاجر المنتظرة ليست ضمن سجل المشغّل الحالي؛ حالتها الإجمالية غير متاحة ولا تُحسب صفرًا.</p>
-      <p>حالة فشل النشر تُراجع من سجل كل محتوى أو عرض، ولا تُستنتج من عدد المسودات.</p>
-    </div>
-  </>;
 }
 
 function PartnerCampaignSummary({ snapshot }: Readonly<{ snapshot: RegistrySnapshot }>) {
@@ -135,7 +108,7 @@ function MarketingAuthorizedCenter() {
   const [readVersion, setReadVersion] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   useEffect(() => {
-    if (!["overview", "partners", "analytics"].includes(active)) return;
+    if (!["partners", "analytics"].includes(active)) return;
     const controller = new AbortController();
     if (readVersion > 0) setSnapshot(null);
     setIsLoading(true);
@@ -160,8 +133,9 @@ function MarketingAuthorizedCenter() {
       {visited.includes(section.id) ? <>
         <p className="muted">{section.description}</p>
         {section.id === "campaigns" ? <MarketingPromotionsWorkspace /> : section.id === "content" ? <MarketingContentWorkspace /> : null}
-        {["overview", "partners", "analytics"].includes(section.id) && active === section.id ? <>
-          {isLoading ? <p role="status">جارٍ تحديث سجلات التسويق...</p> : loadError ? <div role="alert" className="access-card"><p>{loadError}</p><button className="button button-secondary" type="button" onClick={() => setReadVersion((version) => version + 1)}>إعادة المحاولة</button></div> : snapshot ? section.id === "overview" ? <RegistrySummary snapshot={snapshot} /> : section.id === "partners" ? <PartnerCampaignSummary snapshot={snapshot} /> : <ContentAnalyticsSummary snapshot={snapshot} /> : null}
+        {section.id === "overview" && active === section.id ? <MarketingOverviewSummary /> : null}
+        {["partners", "analytics"].includes(section.id) && active === section.id ? <>
+          {isLoading ? <p role="status">جارٍ تحديث سجلات التسويق...</p> : loadError ? <div role="alert" className="access-card"><p>{loadError}</p><button className="button button-secondary" type="button" onClick={() => setReadVersion((version) => version + 1)}>إعادة المحاولة</button></div> : snapshot ? section.id === "partners" ? <PartnerCampaignSummary snapshot={snapshot} /> : <ContentAnalyticsSummary snapshot={snapshot} /> : null}
         </> : null}
       </> : null}
     </section>)}
