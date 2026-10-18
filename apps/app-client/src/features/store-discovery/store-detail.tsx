@@ -1,21 +1,21 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, type CartResponse, type CustomerFulfillmentMode, formatMoney, fulfillmentModeLabel, type PublicCatalogResponse, type PublicPromotionView, type PublicDiscoveryContentView, type PublicStoreView, type StoreOrderability } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type CartResponse, type CustomerFulfillmentMode, formatMoney, fulfillmentModeLabel, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicPromotionView, type PublicStoreView, type StoreOrderability } from "@bthwani/dsh";
 import * as ExpoLinking from "expo-linking";
 import { type Href, useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, FlatList, Image, Pressable, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { AccessibilityInfo, Alert, FlatList, Image, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
-import type { GallerySourceRect } from "./store-product-gallery";
-import { StatusBar } from "expo-status-bar";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { currentIdentityState } from "../../bootstrap/identity";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { PromotionCard } from "./promotion-card";
-import { StoreProductSheet } from "./store-product-sheet";
 import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicDiscoveryContent, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
+import type { GallerySourceRect } from "./store-product-gallery";
+import { StoreProductSheet } from "./store-product-sheet";
 
 type DetailState =
   | { kind: "loading" }
@@ -25,7 +25,6 @@ type DetailState =
 type StoreCatalogRow =
   | { kind: "grid"; key: string; offers: PublicCatalogResponse["offers"] }
   | { kind: "filters"; key: string }
-  | { kind: "section"; key: string; title: string }
   | { kind: "heading"; key: string; title: string; subtitle: string }
   | { kind: "empty"; key: string; title: string }
   | { kind: "offer"; key: string; offer: PublicCatalogResponse["offers"][number] };
@@ -35,19 +34,28 @@ type StoreBannerItem =
   | { kind: "offer"; key: string; offer: PublicCatalogResponse["offers"][number] }
   | { kind: "promotion"; key: string; promotion: PublicPromotionView };
 
-type CatalogSnapshot = { catalog: PublicCatalogResponse; categoryID: string | null; query: string; productID: string };
+type CatalogSnapshot = { catalog: PublicCatalogResponse; categoryID: string | null; sectionID: string | null; query: string; productID: string };
 
 function buildDisplayCatalogRows(rows: StoreCatalogRow[], gridMode: boolean): StoreCatalogRow[] {
-  // Product cards scroll vertically; horizontal swipes change catalog tabs.
-  const offers = rows.filter((row): row is Extract<StoreCatalogRow, { kind: "offer" }> => row.kind === "offer");
-  const result: StoreCatalogRow[] = rows.filter((row) => row.kind === "heading" || row.kind === "empty");
-  if (!gridMode) {
-    result.push(...offers);
-  } else {
-    for (let index = 0; index < offers.length; index += 2) {
-      result.push({ kind: "grid", key: "grid:" + offers[index]!.offer.offerId, offers: offers.slice(index, index + 2).map((row) => row.offer) });
+  if (!gridMode) return rows.filter((row) => row.kind !== "filters");
+  const result: StoreCatalogRow[] = [];
+  let pending: PublicCatalogResponse["offers"][number][] = [];
+  const flush = () => {
+    if (pending.length) {
+      result.push({ kind: "grid", key: "grid:" + pending[0]!.offerId, offers: pending });
+      pending = [];
     }
+  };
+  for (const row of rows) {
+    if (row.kind === "offer") {
+      pending.push(row.offer);
+      if (pending.length === 2) flush();
+      continue;
+    }
+    flush();
+    if (row.kind !== "filters") result.push(row);
   }
+  flush();
   return result;
 }
 
@@ -76,6 +84,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [busyOfferId, setBusyOfferId] = useState("");
   const [addedOfferId, setAddedOfferId] = useState("");
   const [selectedCategoryID, setSelectedCategoryID] = useState<string | null>(null);
+  const [selectedStoreSectionID, setSelectedStoreSectionID] = useState<string | null>(null);
   const [activeProductID, setActiveProductID] = useState("");
   const [detailOffer, setDetailOffer] = useState<PublicCatalogResponse["offers"][number] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -229,7 +238,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       if (requestID !== storeRequestID.current) return;
       setFavoriteLoadError(false);
       setState({ kind: "ready", store, catalog });
-      setCatalogTabs({ 0: { catalog, categoryID: categoryId.trim() || null, query: "", productID: productId.trim() } });
+      setCatalogTabs({ 0: { catalog, categoryID: categoryId.trim() || null, sectionID: null, query: "", productID: productId.trim() } });
       if (currentIdentityState().kind === "authenticated") {
         void Promise.allSettled([listFavoriteStoreIDs(), listFavoriteStoreOfferIDs(storeId)]).then(([storesResult, offersResult]) => {
           if (requestID !== storeRequestID.current) return;
@@ -257,6 +266,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
   }, [categoryId, loadBanner, productId, selectedCityID, storeId]);
 
+  function openStorePromotion(code: string) {
+    router.push(`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}&promotionCode=${encodeURIComponent(code)}` as Href);
+  }
+
   async function retryPromotions() {
     if (!selectedCityID) return;
     const requestID = promotionRequestID.current + 1;
@@ -276,7 +289,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   }
 
   const reloadCatalog = useCallback(async (categoryID: string | null, query: string, favoriteOnly = favoritesView, popularOnly = popularView) => {
-    if (!storeId.trim() || !selectedCityID) return;
+    if (!storeId.trim() || !selectedCityID) return false;
     const requestID = catalogRequestID.current + 1;
     catalogRequestID.current = requestID;
     setCatalogRefreshing(true);
@@ -285,20 +298,33 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       const catalog = favoriteOnly
         ? await readFavoriteStoreCatalog(storeId, selectedCityID, 20)
         : await readPublicStoreCatalog(storeId, selectedCityID, categoryID ?? "", query.trim(), 20, "", "", popularOnly ? "MOST_ORDERED_30_DAYS" : "");
-      if (requestID !== catalogRequestID.current) return;
+      if (requestID !== catalogRequestID.current) return false;
       setSelectedCategoryID(favoriteOnly ? null : categoryID);
+      setSelectedStoreSectionID(null);
       setActiveProductID("");
       setFavoritesView(favoriteOnly);
       setPopularView(!favoriteOnly && popularOnly);
       setCatalogQuery(favoriteOnly ? "" : query);
       setState((current) => current.kind === "ready" ? { kind: "ready", store: current.store, catalog } : current);
-      setCatalogTabs((current) => ({ ...current, [favoriteOnly ? 1 : popularOnly ? 2 : 0]: { catalog, categoryID: favoriteOnly ? null : categoryID, query: favoriteOnly ? "" : query, productID: "" } }));
+      setCatalogTabs((current) => ({ ...current, [favoriteOnly ? 1 : popularOnly ? 2 : 0]: { catalog, categoryID: favoriteOnly ? null : categoryID, sectionID: null, query: favoriteOnly ? "" : query, productID: "" } }));
+      return true;
     } catch {
       if (requestID === catalogRequestID.current) setError("تعذر تحديث الكتالوج. يمكنك متابعة العناصر الحالية أو إعادة المحاولة.");
+      return false;
     } finally {
       if (requestID === catalogRequestID.current) setCatalogRefreshing(false);
     }
   }, [favoritesView, popularView, selectedCityID, storeId]);
+
+  const selectStoreSection = useCallback(async (sectionId: string) => {
+    if (catalogRefreshing) return;
+    if (selectedStoreSectionID === sectionId) { setSelectedStoreSectionID(null); return; }
+    if (selectedCategoryID || catalogQuery.trim() || favoritesView || popularView) {
+      if (await reloadCatalog(null, "", false, false)) setSelectedStoreSectionID(sectionId);
+      return;
+    }
+    setSelectedStoreSectionID(sectionId);
+  }, [catalogRefreshing, selectedStoreSectionID, selectedCategoryID, catalogQuery, favoritesView, popularView, reloadCatalog]);
 
   const selectCatalogTab = useCallback(async (index: number) => {
     if (index < 0 || index > 2 || state.kind !== "ready") return;
@@ -307,10 +333,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       return;
     }
     if (index === activeTab) {
-      if (index === 0 && selectedCategoryID) await reloadCatalog(null, "", false, false);
+      if (index === 0 && (selectedCategoryID || selectedStoreSectionID)) await reloadCatalog(null, "", false, false);
       return;
     }
-    setCatalogTabs((current) => ({ ...current, [activeTab]: { catalog: state.catalog, categoryID: selectedCategoryID, query: catalogQuery, productID: activeProductID } }));
+    setCatalogTabs((current) => ({ ...current, [activeTab]: { catalog: state.catalog, categoryID: selectedCategoryID, sectionID: selectedStoreSectionID, query: catalogQuery, productID: activeProductID } }));
     catalogRequestID.current += 1;
     setLoadingMore(false);
     setCatalogSearchOpen(false);
@@ -318,6 +344,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setPopularView(index === 2);
     const saved = catalogTabs[index];
     setSelectedCategoryID(saved?.categoryID ?? null);
+    setSelectedStoreSectionID(saved?.sectionID ?? null);
     setCatalogQuery(saved?.query ?? "");
     setActiveProductID(saved?.productID ?? "");
     setError("");
@@ -328,7 +355,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
     setState({ kind: "ready", store: state.store, catalog: { ...state.catalog, offers: [], sections: [], nextCursor: null } });
     await reloadCatalog(null, "", index === 1, index === 2);
-  }, [activeTab, activeProductID, catalogQuery, catalogTabs, reloadCatalog, router, selectedCategoryID, state, storeId]);
+  }, [activeTab, activeProductID, catalogQuery, catalogTabs, reloadCatalog, router, selectedCategoryID, selectedStoreSectionID, state, storeId]);
 
   useEffect(() => {
     void load();
@@ -399,7 +426,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
   };
   appendCategoryLevel(null, 0);
-  const catalogRows = buildCatalogRows(state.catalog, favoritesView, popularView, selectedCategoryID, catalogQuery, catalogRefreshing);
+  const catalogRows = buildCatalogRows(state.catalog, favoritesView, popularView, selectedCategoryID, selectedStoreSectionID, catalogQuery, catalogRefreshing);
   const visibleCatalogRows = buildDisplayCatalogRows(catalogRows, gridMode);
   const switchCatalogTabOnSwipe = (translationX: number) => {
     if (catalogRefreshing || mutationBusy || detailOffer) return;
@@ -684,10 +711,14 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       <Pressable accessibilityRole="button" accessibilityLabel={gridMode ? "عرض المنتجات كقائمة" : "عرض المنتجات كمربعات"} accessibilityState={{ selected: gridMode }} onPress={() => setGridMode((current) => !current)} style={styles.layoutToggle}>
         {gridMode ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.layoutListGlyph}>{[0, 1, 2].map((index) => <View key={index} style={styles.layoutListLine} />)}</View> : <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.layoutGridGlyph}>{[0, 1, 2, 3].map((index) => <View key={index} style={styles.layoutGridSquare} />)}</View>}
       </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel="الكل" accessibilityState={{ selected: !favoritesView && !popularView && !selectedCategoryID, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(0)} style={[styles.catalogFilterChip, styles.pinnedAllChip, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipSelected]}><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, !favoritesView && !popularView && !selectedCategoryID && styles.catalogFilterChipLabelSelected]}>الكل</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="الكل" accessibilityState={{ selected: !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(0)} style={[styles.catalogFilterChip, styles.pinnedAllChip, !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID && styles.catalogFilterChipSelected]}><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID && styles.catalogFilterChipLabelSelected]}>الكل</Text></Pressable>
       <ScrollView horizontal style={styles.categoryScroller} contentContainerStyle={styles.categoryRail} showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Pressable accessibilityRole="button" accessibilityLabel="المفضلة" accessibilityState={{ selected: favoritesView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(1)} style={[styles.catalogFilterChip, favoritesView && styles.catalogFilterChipSelected]}><BthwaniIcon name="favorite" color={favoritesView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, favoritesView && styles.catalogFilterChipLabelSelected]}>المفضلة</Text></Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="الأكثر طلبًا خلال آخر 30 يومًا" accessibilityState={{ selected: popularView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(2)} style={[styles.catalogFilterChip, popularView && styles.catalogFilterChipSelected]}><BthwaniIcon name="trending" color={popularView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, popularView && styles.catalogFilterChipLabelSelected]}>الأكثر طلبًا</Text></Pressable>
+        {!favoritesView ? state.catalog.sections.filter((section) => section.active).map((section) => {
+          const selected = selectedStoreSectionID === section.id;
+          return <Pressable key={section.id} accessibilityRole="button" accessibilityLabel={`قسم ${section.nameAr}`} accessibilityState={{ selected }} onPress={() => void selectStoreSection(section.id)} style={[styles.catalogFilterChip, selected && styles.catalogFilterChipSelected]}><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, selected && styles.catalogFilterChipLabelSelected]}>{section.nameAr}</Text></Pressable>;
+        }) : null}
         {!favoritesView ? visibleCategories.map(({ category, depth }) => renderCategoryChip(category, depth)) : null}
       </ScrollView>
     </View>
@@ -714,7 +745,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
               {item.offers.length === 1 ? <View style={styles.gridCell} /> : null}
             </View>
           </GestureDetector>;
-          if (item.kind === "section") return <Text accessibilityRole="header" style={styles.sectionTitle}>{item.title}</Text>;
           if (item.kind === "heading") return <BthwaniSectionHeader title={item.title} subtitle={item.subtitle} />;
           return <GestureDetector gesture={tabSwipeGesture}><View><BthwaniSurface tone="inset" style={styles.emptySection}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /><Text style={styles.sectionTitle}>{item.title}</Text></BthwaniSurface></View></GestureDetector>;
         }}
@@ -785,13 +815,13 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
 
           {bannerItems.length ? <View style={styles.bannerBlock}>
             <ScrollView ref={bannerRef} horizontal snapToInterval={bannerStep} decelerationRate="fast" contentContainerStyle={{ paddingHorizontal: bannerSidePadding, gap: spacing[1] }} onTouchStart={() => setBannerPaused(true)} onTouchEnd={() => setBannerPaused(false)} onMomentumScrollEnd={(event) => { setBannerIndex(Math.max(0, Math.min(bannerItems.length - 1, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / bannerStep)))); setBannerPaused(false); }} showsHorizontalScrollIndicator={false}>
-              {bannerItems.map((item) => item.kind === "content" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={"تفاصيل " + item.content.titleAr} onPress={() => { void recordDiscoveryClick(item.content.id); if (item.content.targetType === "STORE" || !item.content.targetId) Alert.alert(item.content.titleAr, item.content.bodyAr || "من جديد المتجر"); else router.push(("/discovery-content/" + encodeURIComponent(item.content.id)) as Href); }} style={[styles.bannerCard, { width: bannerWidth }]}>
+              {bannerItems.map((item) => item.kind === "content" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={"تفاصيل " + item.content.titleAr} onPress={() => { void recordDiscoveryClick(item.content.id); router.push(("/discovery-content/" + encodeURIComponent(item.content.id)) as Href); }} style={[styles.bannerCard, { width: bannerWidth }]}>
                 {item.content.mediaUri ? <Image source={{ uri: item.content.mediaUri }} accessibilityLabel={"صورة " + item.content.titleAr} style={styles.bannerImage} resizeMode="cover" /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>جديد المتجر</Text><Text numberOfLines={2} style={styles.bannerProduct}>{item.content.titleAr}</Text><Text numberOfLines={2} style={styles.bannerPrice}>{item.content.bodyAr}</Text></View>
               </Pressable> : item.kind === "offer" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`${bannerOffers.length ? "عرض المنتج الرائج" : "عرض المنتج"} ${item.offer.productName}`} onPress={() => openOfferDetails(item.offer.offerId)} style={[styles.bannerCard, { width: bannerWidth }]}>
                 {item.offer.media[0]?.uri ? <Image source={{ uri: item.offer.media[0].uri }} accessibilityLabel={`صورة ${item.offer.productName}`} resizeMode="cover" style={styles.bannerImage} /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="trending" color={theme.interactiveText} size={sizing.iconMd} /></View>}
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>{bannerOffers.length ? "الأكثر طلبًا" : "من منتجات المتجر"}</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.offer.productName}</Text><Text style={styles.bannerPrice}>{storeMoney(item.offer.priceMinor, item.offer.currency)}</Text></View>
-              </Pressable> : <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`عرض ${item.promotion.nameAr}: ${promotionBenefit(item.promotion)}`} onPress={() => Alert.alert(item.promotion.nameAr, `${item.promotion.descriptionAr}\n${promotionBenefit(item.promotion)}\nرمز العرض: ${item.promotion.code}`)} style={[styles.bannerCard, { width: bannerWidth }]}>
+              </Pressable> : <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`عرض ${item.promotion.nameAr}: ${promotionBenefit(item.promotion)}`} onPress={() => openStorePromotion(item.promotion.code)} style={[styles.bannerCard, { width: bannerWidth }]}>
                 <View style={styles.bannerPromotionMark}><Text style={styles.bannerPromotionMarkText}>عرض</Text></View>
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>من عروض المتجر</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.promotion.nameAr}</Text><Text numberOfLines={1} style={styles.bannerPrice}>{promotionBenefit(item.promotion)} · الرمز {item.promotion.code}</Text></View>
               </Pressable>)}
@@ -805,7 +835,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           {promotionError ? <View style={styles.promotionNotice}><Text accessibilityRole="alert" style={styles.validationError}>تعذر قراءة عروض هذا المتجر؛ يمكنك متابعة الطلب من دونها.</Text><BthwaniButton label="إعادة قراءة العروض" onPress={() => void retryPromotions()} variant="secondary" /></View> : null}
           {!promotionLoading && !promotionError && promotions.length > 0 ? <>
             <BthwaniSectionHeader title="عروض هذا المتجر" subtitle="تُطبّق الأكواد على الطلبات المؤهلة من هذا المتجر." />
-            <View style={styles.promotionList}>{promotions.map((promotion) => <PromotionCard key={promotion.id} promotion={promotion} />)}</View>
+            <View style={styles.promotionList}>{promotions.map((promotion) => <PromotionCard key={promotion.id} promotion={promotion} onUse={() => openStorePromotion(promotion.code)} />)}</View>
           </> : null}
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           {favoriteLoadError ? <BthwaniSurface tone="inset" style={styles.favoriteNotice}><Text style={styles.muted}>تعذر تحديث حالة المفضلة من الخادم.</Text><BthwaniButton busy={favoriteLoading} label="إعادة المحاولة" onPress={() => void reloadFavorites()} variant="secondary" /></BthwaniSurface> : null}
@@ -1069,11 +1099,21 @@ function dshMutationErrorMessage(cause: unknown, fallback: string): string {
   return fallback;
 }
 
-function buildCatalogRows(catalog: PublicCatalogResponse, favoritesView: boolean, popularView: boolean, categoryID: string | null, query: string, refreshing = false): StoreCatalogRow[] {
+function buildCatalogRows(catalog: PublicCatalogResponse, favoritesView: boolean, popularView: boolean, categoryID: string | null, sectionID: string | null, query: string, refreshing = false): StoreCatalogRow[] {
   const activeSections = catalog.sections.filter((section) => section.active);
+  const selectedSection = activeSections.find((section) => section.id === sectionID);
   const sectionOfferIds = new Set(activeSections.flatMap((section) => section.offerIds));
+  const sectionOffers = selectedSection
+    ? selectedSection.offerIds.map((offerID) => catalog.offers.find((offer) => offer.offerId === offerID)).filter((offer): offer is PublicCatalogResponse["offers"][number] => offer !== undefined)
+    : catalog.offers;
   const emptyOfferMessage = favoritesView
     ? "لم تحفظ منتجات من هذا المتجر بعد"
+    : selectedSection
+      ? query.trim()
+        ? `لا توجد منتجات مطابقة في ${selectedSection.nameAr}`
+        : catalog.nextCursor
+          ? `حمّل المزيد لعرض بقية منتجات ${selectedSection.nameAr}`
+          : `لا توجد منتجات متاحة في ${selectedSection.nameAr} حاليًا`
     : popularView
       ? query.trim()
         ? "لا توجد منتجات مطابقة"
@@ -1084,24 +1124,25 @@ function buildCatalogRows(catalog: PublicCatalogResponse, favoritesView: boolean
   const catalogRows: StoreCatalogRow[] = [];
   const seenOfferIDs = new Set<string>();
 
-  if (catalog.offers.length === 0) catalogRows.push({ kind: "empty", key: "catalog-empty", title: emptyOfferMessage });
+  if (sectionOffers.length === 0) catalogRows.push({ kind: "empty", key: "catalog-empty", title: emptyOfferMessage });
   const appendOffer = (offer: PublicCatalogResponse["offers"][number]) => {
     if (seenOfferIDs.has(offer.offerId)) return;
     seenOfferIDs.add(offer.offerId);
     catalogRows.push({ kind: "offer", key: `offer:${offer.offerId}`, offer });
   };
-  if (catalog.offers.length > 0 && !favoritesView && !popularView) {
+  if (sectionOffers.length > 0 && selectedSection) {
+    sectionOffers.forEach(appendOffer);
+  } else if (sectionOffers.length > 0 && !favoritesView && !popularView) {
     for (const section of activeSections) {
       const sectionOffers = section.offerIds
         .map((offerID) => catalog.offers.find((offer) => offer.offerId === offerID))
         .filter((offer): offer is PublicCatalogResponse["offers"][number] => offer !== undefined && !seenOfferIDs.has(offer.offerId));
       if (sectionOffers.length === 0) continue;
-      catalogRows.push({ kind: "section", key: `section:${section.id}`, title: section.nameAr });
       sectionOffers.forEach(appendOffer);
     }
-    catalog.offers.filter((offer) => !sectionOfferIds.has(offer.offerId)).forEach(appendOffer);
-  } else if (catalog.offers.length > 0) {
-    catalog.offers.forEach(appendOffer);
+    sectionOffers.filter((offer) => !sectionOfferIds.has(offer.offerId)).forEach(appendOffer);
+  } else if (sectionOffers.length > 0) {
+    sectionOffers.forEach(appendOffer);
   }
 
   return catalogRows;

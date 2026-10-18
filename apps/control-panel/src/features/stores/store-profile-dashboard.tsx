@@ -61,7 +61,7 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
   const accountState = partnerError ? "تعذرت القراءة" : !account ? "غير متاحة" : !account.enabled || !account.securityEnabled ? "موقوف" : account.activatedAt ? "نشط" : "بانتظار التفعيل";
   const ready = store.publicationReadiness.ready;
   const publication = publicationStateLabel(store.publicationState);
-  const blocker = !ready ? publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason) : "";
+  const blockers = !ready ? (store.publicationReadiness.blockedReasons?.length ? store.publicationReadiness.blockedReasons : store.publicationReadiness.blockedReason ? [store.publicationReadiness.blockedReason] : []) : [];
   const caseView = partner?.joiningCase;
   const cover = store.storeCoverImage?.uri;
 
@@ -146,10 +146,36 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
       <div className="store-profile-kpi"><span className="store-profile-kpi-icon" data-tone="success" aria-hidden="true">✓</span><div><span>تم التسليم</span><strong>{orderSummary?.deliveredCount ?? "—"}</strong><small>ضمن جميع الطلبات</small></div></div>
     </section> : null}
 
-    <section className="store-profile-alert" data-ready={ready} aria-label={ready ? "جاهزية النشر" : "المطلوب قبل النشر"}>
-      <div><strong>{ready ? "جاهزية النشر" : "المطلوب قبل النشر"}</strong>
-        <p>{ready ? "المتجر مستوفٍ لشروط النشر الحالية." : blocker}</p></div>
-      {!ready ? <button type="button" className="button button-secondary" onClick={openEditor}>معالجة النقص</button> : null}
+    <section className="store-profile-alert" data-ready={ready} aria-label="رحلة انضمام ونشر المتجر" id="store-onboarding-readiness">
+      <div>
+        <strong>رحلة المتجر — {store.publicationState === "published" ? "منشور للعملاء" : ready ? "جاهز للنشر" : "قيد التجهيز"}</strong>
+        <ol className="store-profile-blockers">
+          <li>تسجيل واعتماد المتجر: مكتمل.</li>
+          <li>تجهيز الهوية والاتفاقية والكتالوج: {ready ? "مكتمل." : "قيد الاستكمال."}</li>
+          <li>النشر للعميل: {store.publicationState === "published" ? "مكتمل." : "لم يكتمل بعد."}</li>
+        </ol>
+        {store.publicationState === "published" ? <p>المتجر منشور. تحقق أيضًا من أوقات العمل والتوفر الفعلي لاستقبال الطلبات؛ النشر وحده لا يعني أن المتجر مفتوح الآن.</p> : ready ? <p>اكتملت شروط الجاهزية. يمكن للمشغّل الآن استخدام زر «نشر المتجر» أعلى هذا الملف.</p> : <>
+          <p>المطلوب الآن — كل إجراء لدى صاحبه، ويمكن إكمال الصور والمنتجات بالتوازي مع الاتفاقية:</p>
+          <ul className="store-profile-blockers">
+            {blockers.map((reason) => <li key={reason}>
+              <span>{publicationReadinessBlockedReasonLabel(reason)}</span>
+              {reason === "PARTNER_IDENTITY_NOT_ELIGIBLE" ?
+                <Link className="button button-quiet" href={"/partners/actors/" + encodeURIComponent(store.partnerActorId)}>حساب الشريك</Link> :
+              reason === "COMMERCIAL_AGREEMENT_NOT_READY" ?
+                (canViewFinance ? <Link className="button button-quiet" href="/finance/partner-store-commissions">مراجعة الاتفاقية في المالية</Link> : <span>بانتظار الشريك والمالية</span>) :
+              reason === "STORE_LOGO_NOT_READY" || reason === "STORE_COVER_NOT_READY" ?
+                <button className="button button-quiet" type="button" onClick={() => setImageRole(reason === "STORE_LOGO_NOT_READY" ? "primary" : "cover")}>إضافة الصورة</button> :
+                <button className="button button-quiet" type="button" onClick={() => {
+                  if (reason === "CATALOG_NOT_READY") selectTab("products");
+                  else if (reason === "STORE_SCHEDULE_NOT_READY") selectTab("hours");
+                  else if (reason === "FINANCIAL_PROFILE_NOT_READY") selectTab(canViewFinance ? "finance" : "documents");
+                  else selectTab("basics");
+                }}>معالجة النقص</button>}
+            </li>)}
+          </ul>
+          {blockers.includes("COMMERCIAL_AGREEMENT_NOT_READY") && canViewFinance ? <p>في صفحة المالية اختر اتفاقية هذا المتجر. لا يُنفذ الاعتماد إلا بعد قبول مالك المتجر لشروطها.</p> : null}
+        </>}
+      </div>
     </section>
 
     <div className="store-profile-content store-sheet-dashboard">

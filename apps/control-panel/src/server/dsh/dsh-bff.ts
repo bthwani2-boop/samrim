@@ -1,3 +1,40 @@
+
+export function readOperatorStoreProduct(storeId: string, productId: string, context: DshOperatorReadContext): Promise<CatalogProduct> {
+  const path=dshOperationPaths.readOperatorStoreProduct.path.replace("{storeId}",encodeURIComponent(storeId)).replace("{productId}",encodeURIComponent(productId));
+  return requestDshJson<CatalogProduct>("GET",path,undefined,{"X-Acting-Actor-ID":context.operatorActorId}).then(r=>r.payload);
+}
+export function updateOperatorStoreProduct(storeId:string,productId:string,input:UpdateCatalogProductRequest,context:StorePublicationMutationContext){
+  validateVersionedMutationContext(context);
+  const path=dshOperationPaths.updateOperatorStoreProduct.path.replace("{storeId}",encodeURIComponent(storeId)).replace("{productId}",encodeURIComponent(productId));
+  return requestDshJson<CatalogProductResponse>("PATCH",path,input,{"X-Acting-Actor-ID":context.operatorActorId,"X-Correlation-ID":context.correlationId,"Idempotency-Key":context.idempotencyKey,"X-Expected-Version":String(context.expectedVersion)});
+}
+export function uploadOperatorStoreProductMedia(storeId:string,productId:string,file:File,provenance:MediaProvenanceInput,context:StorePublicationMutationContext){
+  validateVersionedMutationContext(context);
+  if(!isMediaProvenanceInputValid(provenance))throw new Error("PRODUCT_MEDIA_PROVENANCE_REQUIRED");
+  const path=dshOperationPaths.uploadOperatorStoreProductMedia.path.replace("{storeId}",encodeURIComponent(storeId)).replace("{productId}",encodeURIComponent(productId));
+  const body=new FormData();body.set("role","primary");body.set("file",file,file.name);appendMediaProvenance(body,provenance);
+  return requestDshMultipart<CatalogProductResponse>("POST",path,body,{"X-Acting-Actor-ID":context.operatorActorId,"X-Correlation-ID":context.correlationId,"Idempotency-Key":context.idempotencyKey,"X-Expected-Version":String(context.expectedVersion)});
+}
+
+import type { CatalogStoreOfferResponse, CreateStoreOfferRequest, UpdateStoreOfferRequest } from "@bthwani/dsh";
+
+export function listOperatorStoreCatalogProducts(storeId: string, q: string, cursor: string, context: DshOperatorReadContext): Promise<CatalogProductListResponse> {
+  const query = new URLSearchParams({ q, cursor, limit: "30" });
+  return requestDshJson<CatalogProductListResponse>("GET", `/dsh/operator/stores/${encodeURIComponent(storeId)}/products?${query}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId }).then((r) => r.payload);
+}
+export function createOperatorStoreCatalogProduct(storeId: string, input: CreateCatalogProductRequest, context: JoiningCaseMutationContext) {
+  validateAttributedMutationContext(context);
+  return requestDshJson<CatalogProductResponse>("POST", `/dsh/operator/stores/${encodeURIComponent(storeId)}/products`, input, { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey });
+}
+export function createOperatorStoreCatalogOffer(storeId: string, input: CreateStoreOfferRequest, context: JoiningCaseMutationContext) {
+  validateAttributedMutationContext(context);
+  return requestDshJson<CatalogStoreOfferResponse>("POST", `/dsh/operator/stores/${encodeURIComponent(storeId)}/offers`, input, { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey });
+}
+export function updateOperatorStoreCatalogOffer(storeId: string, offerId: string, input: UpdateStoreOfferRequest, context: StorePublicationMutationContext) {
+  validateVersionedMutationContext(context);
+  return requestDshJson<CatalogStoreOfferResponse>("PATCH", `/dsh/operator/stores/${encodeURIComponent(storeId)}/offers/${encodeURIComponent(offerId)}`, input, { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey, "X-Expected-Version": String(context.expectedVersion) });
+}
+
 import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
 import type { CatalogStoreOfferListResponse, HRAccessRequest as DshHRAccessRequest, HRAccessRequestInput as DshHRAccessRequestInput, HRAccessRequestMutationResponse as DshHRAccessRequestMutationResponse, HRAccessRequestPage as DshHRAccessRequestPage, HRAccessRequestReadResponse as DshHRAccessRequestReadResponse, HREmployee as DshHREmployee, HREmployeePage as DshHREmployeePage, HRUpdateEmployeeRequest as DshHRUpdateEmployeeRequest, HRUpdateEmployeeResponse as DshHRUpdateEmployeeResponse, StoreTypeCommissionDefaultsResponse as DshStoreTypeCommissionDefaultsResponse, FinanceStoreCommercialAgreementQueueResponse, HRCreateEmployeeRequest, JoiningCaseProofDetailsResponse, OperatorFieldActivityResponse, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreCommercialAgreementListResponse, StoreCommercialAgreementMutationResponse, StoreImagesResponse, StorePayoutRecipientListResponse, UpdateCatalogAttributeDefinitionRequest, UpdateCatalogAttributeEnumOptionRequest } from "@bthwani/dsh";
 import { type ActorLegalName, type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionListResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogAttributeDefinitionListResponse, type CatalogAttributeDefinitionResponse, type CatalogAttributeEnumOptionListResponse, type CatalogAttributeEnumOptionResponse, type CatalogAttributeRuleListResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProduct, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductRegistryResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CommercialStoreTypeListResponse, type CommercialStoreTypeResponse, type CreateCatalogAttributeDefinitionRequest, type CreateCatalogAttributeEnumOptionRequest, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateCommercialStoreTypeRequest, type CreateCustomerWithdrawalIntakeRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type CustomerWithdrawalDecisionRequest, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAcquisitionRewardPolicy, type FieldAdmissionListResponse, type FieldAdmissionRequest, type FieldAdmissionResponse, type FinanceEvidenceDocument, isMediaProvenanceInputValid, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedCaptainAvailabilityRequest, type ManagedRoleMutationRequest, type ManagedRoleReenrollmentRequest, type MarketingPublicationRequest, type MediaProvenanceInput, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorFieldFinanceRosterResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreListResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreCommercialTypeRequest, type SetStoreCommercialTypeResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type StoreTypeCommissionDefaultsResponse, type StoreTypeCommissionDefaultUpdateResponse, type SubmitActorLegalNameRequest, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateCommercialStoreTypeRequest, type UpdateServiceCityRequest, type UpdateStoreTypeCommissionDefaultRequest, type UpsertCatalogAttributeRuleRequest, type VerifyActorLegalNameRequest } from "@bthwani/dsh";
@@ -1354,6 +1391,19 @@ export async function uploadCatalogCategoryMedia(categoryId: string, file: File,
   return requestDshMultipart<CatalogCategoryResponse>(dshOperationPaths.uploadCatalogCategoryMedia.method, path, body, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
+export async function uploadCommerceVerticalMedia(verticalId: string, file: File, reason: string, provenance: MediaProvenanceInput, context: JoiningCaseMutationContext & Readonly<{ expectedVersion: number }>): Promise<Readonly<{ status: number; payload: CommerceVerticalResponse }>> {
+  const normalizedReason = reason.trim();
+  if (!verticalId.trim() || file.size < 1 || file.size > 10 * 1024 * 1024 || normalizedReason.length < 5 || normalizedReason.length > 500 || !isMediaProvenanceInputValid(provenance)) throw new Error("DSH_VERTICAL_MEDIA_UPLOAD_INPUT_INVALID");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_VERTICAL_MEDIA_UPLOAD_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.uploadCommerceVerticalMedia.path.replace("{verticalId}", encodeURIComponent(verticalId.trim()));
+  const body = new FormData();
+  body.set("file", file, file.name || "vertical-image");
+  body.set("reason", normalizedReason);
+  appendMediaProvenance(body, provenance);
+  return requestDshMultipart<CommerceVerticalResponse>(dshOperationPaths.uploadCommerceVerticalMedia.method, path, body, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
 export async function submitJoiningCase(caseId: string, context: DshVersionedMutationContext & Readonly<{ idempotencyKey: string }>): Promise<Readonly<{ status: number; payload: JoiningCaseResponse }>> {
   if (!caseId.trim()) throw new Error("DSH_JOINING_CASE_ID_REQUIRED");
   validateVersionedMutationContext(context);
@@ -1807,4 +1857,25 @@ export async function updateOperatorStoreAvailability(storeId: string, input: St
     "PATCH", `/dsh/operations/stores/${encodeURIComponent(storeId.trim())}/operational-availability`, input,
     { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() }
   );
+}
+
+// Shopping shortcuts are catalog-owned presentation definitions, not commercial types.
+import type { ShoppingShortcutListResponse, ShoppingShortcutMutationRequest, ShoppingShortcutMutationResponse } from "@bthwani/dsh";
+
+export async function listShoppingShortcuts(context: DshOperatorReadContext, verticalId: string): Promise<ShoppingShortcutListResponse> {
+  if (!context.operatorActorId.trim() || !verticalId.trim()) throw new Error("DSH_SHOPPING_SHORTCUT_READ_INVALID");
+  const q = new URLSearchParams({ verticalId: verticalId.trim() });
+  return (await requestDshJson<ShoppingShortcutListResponse>(dshOperationPaths.listShoppingShortcuts.method,
+    `${dshOperationPaths.listShoppingShortcuts.path}?${q}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function mutateShoppingShortcut(input: ShoppingShortcutMutationRequest, context: JoiningCaseMutationContext, id = ""): Promise<Readonly<{ status: number; payload: ShoppingShortcutMutationResponse }>> {
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_SHOPPING_SHORTCUT_IDEMPOTENCY_INVALID");
+  const update = Boolean(id);
+  const operation = update ? dshOperationPaths.updateShoppingShortcut : dshOperationPaths.createShoppingShortcut;
+  const path = update ? operation.path.replace("{shortcutId}", encodeURIComponent(id.trim())) : operation.path;
+  return requestDshJson<ShoppingShortcutMutationResponse>(operation.method, path, input, {
+    "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim(),
+  });
 }

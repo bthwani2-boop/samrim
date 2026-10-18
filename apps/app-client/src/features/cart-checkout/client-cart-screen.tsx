@@ -26,9 +26,10 @@ type ServiceabilityState =
   | { kind: "error"; addressId: string };
 
 export default function ClientCartScreen() {
-  const { storeId: rawStoreId, fulfillmentMode: rawFulfillmentMode } = useLocalSearchParams<{ storeId?: string | string[]; fulfillmentMode?: string | string[] }>();
+  const { storeId: rawStoreId, fulfillmentMode: rawFulfillmentMode, promotionCode: rawPromotionCode } = useLocalSearchParams<{ storeId?: string | string[]; fulfillmentMode?: string | string[]; promotionCode?: string | string[] }>();
   const storeId = Array.isArray(rawStoreId) ? rawStoreId[0] ?? "" : rawStoreId ?? "";
   const requestedFulfillmentMode = Array.isArray(rawFulfillmentMode) ? rawFulfillmentMode[0] ?? "" : rawFulfillmentMode ?? "";
+  const requestedPromotionCode = Array.isArray(rawPromotionCode) ? rawPromotionCode[0] ?? "" : rawPromotionCode ?? "";
   const router = useRouter();
   const { selectedCityID } = useServiceCityScope();
   const theme = useAppearanceTheme();
@@ -148,7 +149,7 @@ export default function ClientCartScreen() {
           {serviceability.kind === "error" ? <Text accessibilityRole="alert" style={styles.error}>تعذر تقييم العنوان. أعد المحاولة.</Text> : null}
         </View>
       </> : fulfillmentMode === "CUSTOMER_PICKUP" ? <BthwaniSurface tone="inset" style={styles.addressCard}><Text style={styles.addressText}>استلم بنفسك من المتجر</Text><Text style={styles.muted}>اذهب إلى المتجر لاستلام طلبك وادفع قيمة المنتجات نقدًا للمتجر.</Text></BthwaniSurface> : <Text accessibilityRole="alert" style={styles.error}>اختر أحد أوضاع الطلب المتاحة لإتمام الشراء.</Text>}
-      {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} addresses={addressesState.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} /> : null}
+      {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} addresses={addressesState.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} initialPromotionCode={requestedPromotionCode} /> : null}
     </View>
   );
 }

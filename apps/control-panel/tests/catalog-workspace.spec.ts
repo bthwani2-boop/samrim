@@ -126,6 +126,8 @@ test("catalog modes preserve product filters and use one workbench", async ({ pa
   const modes = page.getByRole("group", { name: "إدارة الكتالوج" });
   const search = page.getByRole("textbox", { name: "البحث في المنتجات" });
   await search.fill("أرز");
+  await modes.getByRole("button", { name: "الفئات" }).click();
+  await expect(page.getByRole("region", { name: "التصنيفات الموحدة" })).toBeVisible();
   await modes.getByRole("button", { name: "مقترحات الشركاء" }).click();
   await expect(page).toHaveURL(/catalogView=proposals/);
   await expect(page.getByRole("heading", { name: "المقترحات المقدمة" })).toBeVisible();
@@ -260,55 +262,123 @@ test("catalog XLSX import commits ready rows while preserving conflicts", async 
   expect(commitCount).toBe(1);
 });
 
-test("operator sees shared product categories as a hierarchy under their commerce vertical", async ({ page }) => {
+test("taxonomy shows all four record types together and edits in one contextual drawer", async ({ page }) => {
   await stubAuthenticatedSession(page);
-  const vertical = { id: "grocery", nameAr: "المقاضي", nameEn: "Groceries", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" };
-  const root = { id: "grocery-drinks", verticalId: "grocery", parentCategoryId: null, nameAr: "مشروبات", nameEn: "Beverages", pathAr: "المقاضي / مشروبات", pathEn: "Groceries / Beverages", active: true, version: 1, createdAt: vertical.createdAt, updatedAt: vertical.updatedAt };
-  const child = { id: "grocery-coffee", verticalId: "grocery", parentCategoryId: root.id, nameAr: "قهوة", nameEn: "Coffee", pathAr: "المقاضي / مشروبات / قهوة", pathEn: "Groceries / Beverages / Coffee", active: true, version: 1, createdAt: vertical.createdAt, updatedAt: vertical.updatedAt };
-  await page.route("**/api/catalog/verticals**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [vertical] }) });
-  });
+  const vertical = { id: "grocery", nameAr: "مقاضي", nameEn: "Grocery", active: true, version: 1 };
+  const root = { id: "drinks", verticalId: vertical.id, parentCategoryId: null, nameAr: "مشروبات", nameEn: "Drinks", pathAr: "مقاضي / مشروبات", active: true, version: 1 };
+  let child = { id: "coffee", verticalId: vertical.id, parentCategoryId: "drinks", nameAr: "قهوة", nameEn: "Coffee", pathAr: "مقاضي / مشروبات / قهوة", active: true, version: 1 };
+  await page.route("**/api/catalog/verticals**", (route) => route.fulfill({ status: 200, json: { verticals: [vertical] } }));
+  await page.route("**/api/catalog/commercial-store-types**", (route) => route.fulfill({ status: 200, json: { storeTypes: [{ id: "market", verticalId: vertical.id, nameAr: "سوبر ماركت", nameEn: "Market", active: true, version: 1 }] } }));
+  await page.route("**/api/catalog/shopping-shortcuts**", (route) => route.fulfill({ status: 200, json: { shortcuts: [{ id: "deals", verticalId: vertical.id, titleAr: "العروض اليومية", active: true, ordinal: 0, version: 1, storeTypeIds: ["market"], categoryIds: [] }] } }));
   await page.route("**/api/catalog/categories**", async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname.endsWith("/attribute-rules")) {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: [] }) });
+    if (route.request().method() === "PATCH" && url.pathname.endsWith("/coffee")) {
+      const changes = route.request().postDataJSON() as { nameAr: string; nameEn: string };
+      child = { ...child, nameAr: changes.nameAr, nameEn: changes.nameEn, version: 2 };
+      await route.fulfill({ status: 200, json: { category: child } });
       return;
     }
-    if (route.request().method() === "GET" && url.pathname.endsWith(`/${root.id}`)) {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ category: root }) });
-      return;
-    }
-    if (route.request().method() === "GET" && url.pathname.endsWith(`/${child.id}`)) {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ category: child }) });
-      return;
-    }
-    const categories = url.searchParams.get("query")?.toLowerCase().includes("coffee") ? [child] : [root, child];
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories, nextCursor: "" }) });
+    if (url.pathname.endsWith("/drinks")) { await route.fulfill({ status: 200, json: { category: root } }); return; }
+    if (url.pathname.endsWith("/coffee")) { await route.fulfill({ status: 200, json: { category: child } }); return; }
+    const text = url.searchParams.get("query") ?? "";
+    await route.fulfill({ status: 200, json: { categories: text ? [child].filter((item) => item.nameEn.toLowerCase().includes(text.toLowerCase())) : [root, child], nextCursor: "" } });
   });
-  await page.route("**/api/catalog/attributes**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ definitions: [] }) });
-  });
-
   await page.goto("/catalog/categories?verticalId=grocery");
-  const tree = page.getByRole("list", { name: "شجرة فئات المقاضي" });
-  const rootItem = tree.getByRole("listitem").first();
-  const childList = rootItem.getByRole("list");
-  const childItem = childList.getByRole("listitem").first();
-  await expect(page.getByLabel("المجال التجاري")).toHaveValue("grocery");
-  await expect(childItem.getByRole("button", { name: /قهوة Coffee/ })).toBeVisible();
-  await expect(rootItem).toContainText("جذر المجال التجاري");
-  await expect(childItem.locator(".catalog-taxonomy-child-count")).toContainText("ضمن مشروبات");
-  await rootItem.getByRole("button", { name: "طي فروع مشروبات" }).click();
-  await expect(childList).toHaveCount(0);
-  await rootItem.getByRole("button", { name: /مشروبات Beverages/ }).click();
-  await expect(page.getByRole("link", { name: "عرض المنتجات في هذه الفئة وفروعها" })).toHaveAttribute("href", /categoryId=grocery-drinks/);
+  const surface = page.getByRole("region", { name: "التصنيفات الموحدة" });
+  await expect(surface).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "مساحات إدارة الكتالوج" })).toHaveCount(0);
+  const table = surface.locator(".unified-taxonomy-table");
+  await expect(table.getByRole("row")).toHaveCount(6);
+  for (const label of ["مجال", "نوع متجر", "فئة منتجات", "اختصار تسوق"]) {
+    await expect(table.locator(".unified-taxonomy-kind").filter({ hasText: label }).first()).toBeVisible();
+  }
+  await surface.getByRole("button", { name: "تعديل فئة منتجات قهوة" }).click();
+  const drawer = page.getByRole("dialog", { name: "تعديل فئة منتجات" });
+  await expect(drawer).toBeVisible();
+  await drawer.getByLabel("الاسم بالعربية").fill("قهوة محمصة");
+  await drawer.getByLabel("سبب تعديل الفئة").fill("توحيد اسم الفئة التجارية");
+  await drawer.getByRole("button", { name: "حفظ التعديل" }).click();
+  await expect(drawer).toHaveCount(0);
+  await expect(table.getByRole("row", { name: /قهوة محمصة/ })).toBeVisible();
+  await surface.getByLabel("بحث شامل").fill("Coffee");
+  await expect(table.getByRole("row", { name: /قهوة محمصة/ })).toBeVisible();
+  await surface.getByLabel("بحث شامل").fill("");
+  await surface.getByRole("button", { name: /إضافة عنصر/ }).click();
+  await surface.getByRole("button", { name: "إضافة نوع متجر" }).click();
+  await expect(page.getByRole("dialog", { name: "إضافة نوع متجر" })).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "إلغاء" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await surface.getByRole("button", { name: "تعديل مجال مقاضي" }).click();
+  const verticalDrawer = page.getByRole("dialog", { name: "تعديل مجال" });
+  await verticalDrawer.getByRole("button", { name: /صورة المجال/ }).click();
+  await expect(verticalDrawer.getByLabel("الاسم بالعربية")).toHaveCount(0);
+  await expect(verticalDrawer.getByLabel("اختيار صورة")).toBeAttached();
+  await expect(verticalDrawer.getByLabel("المنشئ أو المصوّر")).toHaveCount(0);
+  const footer = verticalDrawer.locator(".unified-taxonomy-save-actions");
+  const placement = await footer.evaluate((element) => ({
+    left: element.getBoundingClientRect().left,
+    bottom: element.getBoundingClientRect().bottom,
+    viewportHeight: window.innerHeight,
+  }));
+  expect(placement.left).toBeLessThan(2);
+  expect(Math.abs(placement.bottom - placement.viewportHeight)).toBeLessThan(2);
+  await verticalDrawer.getByRole("button", { name: "إغلاق لوحة التحرير" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
 
-  const filters = page.locator("form.catalog-category-filters");
-  await filters.getByLabel("بحث").fill("Coffee");
-  await filters.getByRole("button", { name: "بحث", exact: true }).click();
-  const detachedTree = page.getByRole("list", { name: "فروع أبوها خارج النتائج الحالية" });
-  await expect(detachedTree.getByRole("listitem").first()).toContainText("المقاضي / مشروبات / قهوة");
-  await expect(page.getByRole("list", { name: "شجرة فئات المقاضي" })).toHaveCount(0);
+test("vertical image change remains compact and uploads audited media", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let vertical = { id: "grocery", nameAr: "مقاضي", nameEn: "Grocery", active: true, version: 1, imageUri: "" };
+  let upload: { headers: Record<string, string>; body: string | null } | undefined;
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    if (route.request().method() === "POST" && route.request().url().includes("/media")) {
+      upload = { headers: route.request().headers(), body: route.request().postData() };
+      vertical = { ...vertical, version: 2, imageUri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8//8/AwMDEwMDAwMDAwAkBgMB/DXemwAAAABJRU5ErkJggg==" };
+      await route.fulfill({ status: 200, json: { vertical } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: { verticals: [vertical] } });
+  });
+  await page.route("**/api/catalog/commercial-store-types**", (route) => route.fulfill({ status: 200, json: { storeTypes: [] } }));
+  await page.route("**/api/catalog/shopping-shortcuts**", (route) => route.fulfill({ status: 200, json: { shortcuts: [] } }));
+  await page.route("**/api/catalog/categories**", (route) => route.fulfill({ status: 200, json: { categories: [], nextCursor: "" } }));
+  await page.goto("/catalog/categories?verticalId=grocery");
+  await page.getByRole("button", { name: "تعديل مجال مقاضي" }).click();
+  const dialog = page.getByRole("dialog", { name: "تعديل مجال" });
+  await dialog.getByRole("button", { name: /صورة المجال/ }).click();
+  await expect(dialog.getByLabel("الاسم بالعربية")).toHaveCount(0);
+  await expect(dialog.getByLabel("المنشئ أو المصوّر")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "حفظ الصورة" })).toBeDisabled();
+  const chooserPromise = page.waitForEvent("filechooser");
+  await dialog.getByText("اختيار صورة", { exact: true }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
+    name: "new-image.png", mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8//8/AwMDEwMDAwMDAwAkBgMB/DXemwAAAABJRU5ErkJggg==", "base64"),
+  });
+  await expect(dialog.getByRole("img", { name: "معاينة الصورة المختارة" })).toBeVisible();
+  await expect(dialog.getByText("new-image.png")).toBeVisible();
+  await expect(dialog.getByLabel("المنشئ أو المصوّر")).toBeVisible();
+  await expect(dialog.getByLabel("رابط المصدر")).toBeHidden();
+  await dialog.getByLabel("المنشئ أو المصوّر").fill("مصور المتجر");
+  await dialog.getByLabel("مصدر الصورة", { exact: true }).fill("صورة أصلية للمجال");
+  await dialog.getByLabel("الإذن أو الترخيص").fill("أملك حق استخدام الصورة في الكتالوج");
+  await dialog.getByLabel("أقرّ بوجود إذن يسمح بعرض هذه الصورة").check();
+  await expect(dialog.getByRole("button", { name: "حفظ الصورة" })).toBeEnabled();
+  await page.screenshot({ path: "test-results/catalog-image-compact-dark.png", fullPage: true });
+  const scroll = await dialog.locator(".unified-taxonomy-drawer-body").evaluate((element) => ({ content: element.scrollHeight, viewport: element.clientHeight }));
+  expect(scroll.content - scroll.viewport).toBeLessThan(180);
+  await dialog.getByRole("button", { name: "حفظ الصورة" }).click();
+  await expect(dialog.getByRole("button", { name: /صورة المجال/ })).toBeVisible();
+  await expect(dialog.getByRole("img", { name: "معاينة الصورة المختارة" })).toHaveCount(0);
+  expect(upload?.headers["x-expected-version"]).toBe("1");
+  expect(upload?.headers["idempotency-key"]).toBeTruthy();
+  expect(upload?.body).toContain("new-image.png");
+  expect(upload?.body).toContain("مصور المتجر");
+  expect(upload?.body).toContain("أملك حق استخدام الصورة");
+  expect(upload?.body).toContain("true");
+  await expect(page.getByRole("button", { name: "تعديل مجال مقاضي" })).toBeVisible();
 });
 
 test("vertical registry does not present a category image as a vertical image", async ({ page }) => {
@@ -331,8 +401,8 @@ test("vertical registry does not present a category image as a vertical image", 
   });
 
   await page.goto("/catalog/categories?verticalId=grocery");
-  await page.locator("details.catalog-vertical-settings > summary").click();
-  await expect(page.getByRole("heading", { name: "المجالات التجارية" })).toBeVisible();
+  await page.getByRole("button", { name: "تعديل مجال المقاضي" }).click();
+  await expect(page.getByRole("dialog", { name: "تعديل مجال" })).toBeVisible();
   await expect(page.getByRole("img", { name: "صورة المجال المقاضي" })).toHaveCount(0);
   await expect(page.getByText("لا توجد صورة جذر")).toHaveCount(0);
 });
@@ -374,6 +444,8 @@ test("category media upload records rights and displays the canonical replacemen
   });
 
   await page.goto("/catalog/categories?verticalId=grocery&categoryId=grocery-drinks");
+  await page.getByRole("button", { name: "تعديل فئة منتجات مشروبات" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "الصورة والخصائص" }).click();
   const uploadButton = page.getByRole("button", { name: "إرفاق الصورة" });
   await expect(uploadButton).toBeDisabled();
   await page.locator("#catalog-category-image").setInputFiles({
@@ -455,6 +527,8 @@ test("catalog attribute and enum option status changes use optimistic versions a
   });
 
   await page.goto("/catalog/categories?verticalId=grocery&categoryId=grocery-drinks");
+  await page.getByRole("button", { name: "تعديل فئة منتجات مشروبات" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "الصورة والخصائص" }).click();
   await expect(page.getByRole("heading", { name: "مشروبات", exact: true, level: 4 })).toBeVisible();
   await page.locator("details.catalog-category-properties > summary").click();
   await page.getByLabel("سبب التغيير").fill("إيقاف خاصية اللون مؤقتًا");
@@ -545,7 +619,8 @@ test("store import retries only failed rows with the original commit identity", 
   await page.goto("/catalog/import");
   const workspace = page.getByTestId("store-catalog-import-workspace");
   await workspace.getByLabel("المتجر المستهدف").selectOption("store-retry");
-  await workspace.getByLabel("ملف الباركود والأسعار").setInputFiles({
+  await expect(workspace).toContainText("عمودي الاسم والسعر");
+  await workspace.getByLabel("ملف المنتجات والأسعار").setInputFiles({
     name: "retry.csv", mimeType: "text/csv", buffer: Buffer.from("barcode,price\n6291000000012,100\n6291000000013,200\n"),
   });
   await workspace.getByRole("button", { name: "معاينة الملف" }).click();
@@ -561,4 +636,42 @@ test("store import retries only failed rows with the original commit identity", 
   expect(commitKeys).toHaveLength(2);
   expect(commitKeys[0]).toBeTruthy();
   expect(commitKeys[1]).toBe(commitKeys[0]);
+});
+
+test("operator manages an optional customer shortcut without changing internal Store Type", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const vertical = { id: "grocery", nameAr: "المقاضي", nameEn: "Grocery", active: true, version: 1 };
+  const storeType = { id: "butcher", verticalId: "grocery", nameAr: "ملحمة", nameEn: "Butcher", active: true, version: 1 };
+  const category = { id: "meat", verticalId: "grocery", nameAr: "لحوم", nameEn: "Meat", parentCategoryId: null, active: true, version: 1, pathAr: "لحوم" };
+  let saved: Record<string, unknown> | null = null;
+  await page.route("**/api/catalog/verticals**", (route) => route.fulfill({ status: 200, json: { verticals: [vertical] } }));
+  await page.route("**/api/catalog/categories**", (route) => route.fulfill({ status: 200, json: { categories: [category], nextCursor: "" } }));
+  await page.route("**/api/catalog/commercial-store-types**", (route) => route.fulfill({ status: 200, json: { storeTypes: [storeType] } }));
+  await page.route("**/api/catalog/shopping-shortcuts**", async (route) => {
+    if (route.request().method() === "POST") {
+      saved = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({ status: 201, json: {
+        shortcut: { id: "meat-shortcut", ...saved, version: 1, createdAt: "2026-10-17T00:00:00Z", updatedAt: "2026-10-17T00:00:00Z" },
+        idempotentReplay: false,
+      } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: { shortcuts: saved ? [{ id: "meat-shortcut", ...saved, version: 1, createdAt: "2026-10-17T00:00:00Z", updatedAt: "2026-10-17T00:00:00Z" }] : [] } });
+  });
+  await page.route("**/api/catalog/attributes**", (route) => route.fulfill({ status: 200, json: { definitions: [] } }));
+  await page.goto("/catalog/categories?verticalId=grocery");
+  await page.locator(".unified-taxonomy-create > button").click();
+  await page.locator(".unified-taxonomy-create-menu > button").nth(3).click();
+  await expect(page.getByRole("dialog", { name: "إضافة اختصار تسوق" })).toBeVisible();
+  const editor = page.getByLabel("محرر اختصار التسوق");
+  await editor.getByRole("textbox", { name: "اسم الاختصار الظاهر للعميل" }).fill("لحوم ودجاج");
+  await editor.getByRole("checkbox", { name: "ملحمة" }).check();
+  await editor.locator("details").nth(1).locator("summary").click();
+  await editor.getByRole("checkbox", { name: "لحوم" }).check();
+  await editor.getByRole("textbox", { name: "سبب الإضافة أو التعديل" }).fill("تبسيط تصفح المقاضي");
+  await editor.getByRole("button", { name: "حفظ الاختصار" }).click();
+  await expect(page.getByRole("dialog", { name: "إضافة اختصار تسوق" })).toHaveCount(0);
+  expect(saved).toMatchObject({ verticalId: "grocery", titleAr: "لحوم ودجاج", expectedVersion: 0,
+    storeTypeIds: ["butcher"], categoryIds: ["meat"], active: true });
+  await expect(page.locator(".unified-taxonomy-table tbody tr").filter({ hasText: "لحوم ودجاج" })).toContainText("1 نوع متجر · 1 فئة");
 });

@@ -124,6 +124,9 @@ func TestFundedPaymentRequiresMatchingAllocation(t *testing.T) {
 		name string
 		edit func(*CustomerPaymentAllocationInput)
 	}{
+		{"discount-without-funding", func(a *CustomerPaymentAllocationInput) {
+			a.PromotionFunding = nil
+		}},
 		{"zero-discount", func(a *CustomerPaymentAllocationInput) {
 			a.DiscountMinor = 0
 			a.SubtotalMinor = a.CustomerPayableMinor

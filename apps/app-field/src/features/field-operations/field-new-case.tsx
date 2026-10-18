@@ -22,7 +22,7 @@ import { useOwnFieldAdmission } from "./use-field-admission";
 
 type PendingDraftAttempt =
   | Readonly<{ kind: "create"; request: CreateFieldJoiningCaseDraftRequest; idempotencyKey: string; correlationID: string }>
-  | Readonly<{ kind: "update"; caseID: string; expectedVersion: number; request: CreateFieldJoiningCaseDraftRequest; idempotencyKey: string; correlationID: string }>;
+  | Readonly<{ kind: "update" | "correct"; caseID: string; expectedVersion: number; request: CreateFieldJoiningCaseDraftRequest; idempotencyKey: string; correlationID: string }>;
 type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput; source: "camera" | "library" }>;
 type WalletProvider = Awaited<ReturnType<ReturnType<typeof fieldClient>["listWalletProviders"]>>["walletProviders"][number];
 type PendingImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: StoreImageDraft; idempotencyKey: string; correlationID: string }>;
@@ -123,7 +123,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   const [selectedStoreOrigin, setSelectedStoreOrigin] = useState<BthwaniMapCoordinate | null>(null);
   const [showLocationMap, setShowLocationMap] = useState(false);
   const [createdCase, setCreatedCase] = useState<JoiningCaseResponse | null>(null);
-  const headerTitle = caseId || createdCase ? "تعديل مسودة الشريك" : "إضافة شريك";
+  const headerTitle = createdCase?.case.state === "needs_correction" ? "تصحيح طلب الانضمام" : caseId || createdCase ? "تعديل مسودة الشريك" : "إضافة شريك";
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [commercialTypes, setCommercialTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
@@ -148,10 +148,10 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   const [pendingImageAttempt, setPendingImageAttempt] = useState<PendingImageAttempt | null>(null);
   const preloadedVerticalID = useRef("");
   const commercialTypeReadSequence = useRef(0);
-  const formLocked = busy || caseLoading || Boolean(pendingDraftAttempt) || Boolean(createdCase && createdCase.case.state !== "draft");
+  const formLocked = busy || caseLoading || Boolean(pendingDraftAttempt) || Boolean(createdCase && createdCase.case.state !== "draft" && createdCase.case.state !== "needs_correction");
   const phoneValid = /^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(input.contactPhoneE164));
   const enteredHours = toStoreWorkingHoursIntervals(workingHoursByDay);
-  const operationComplete = Boolean(input.serviceCityId && input.firstStoreVerticalId && input.firstStoreCommercialTypeId && input.firstStoreAddress.trim().length >= 4 && selectedStoreOrigin && input.firstStoreFulfillmentModes.length && enteredHours.length && isValidStoreWorkingHours(enteredHours));
+  const operationComplete = Boolean(input.serviceCityId && input.firstStoreVerticalId && input.firstStoreCommercialTypeId && input.firstStoreAddress.trim().length >= 4 && selectedStoreOrigin && input.firstStoreFulfillmentModes.length );
   const stepComplete = [
     phoneValid && input.ownerFullName.trim().length >= 2 && Boolean(input.businessName.trim() && input.firstStoreName.trim()),
     operationComplete && Boolean(selectedProofType && (input.firstStoreProofNumber.trim() || createdCase?.case.firstStoreProofNumberPresent) && !proofDetailsDirty),
@@ -175,7 +175,6 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
     storeType: Boolean(input.firstStoreCommercialTypeId),
     address: input.firstStoreAddress.trim().length >= 4,
     location: Boolean(selectedStoreOrigin),
-    hours: enteredHours.length > 0 && isValidStoreWorkingHours(enteredHours),
     fulfillment: input.firstStoreFulfillmentModes.length > 0,
     proofNumber: Boolean(selectedProofType && (input.firstStoreProofNumber.trim() || savedDraft?.firstStoreProofNumberPresent)),
   };
@@ -188,14 +187,13 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       address: input.firstStoreAddress.trim() !== (savedDraft?.firstStoreAddress ?? "").trim(),
       location: Math.abs((selectedStoreOrigin?.latitude ?? 0) - (savedDraft?.firstStoreLatitude ?? 0)) > 0.000001 ||
         Math.abs((selectedStoreOrigin?.longitude ?? 0) - (savedDraft?.firstStoreLongitude ?? 0)) > 0.000001,
-      hours: hoursSignature(enteredHours) !== hoursSignature(savedDraft?.firstStoreWorkingHours?.intervals ?? []),
       fulfillment: [...input.firstStoreFulfillmentModes].sort().join("|") !== [...(savedDraft?.firstStoreFulfillmentModes ?? [])].sort().join("|"),
       proofNumber: proofDetailsDirty,
     })[key];
     const confirmed = saved && !changed;
     return { key, label, confirmed, pending: !confirmed && pendingReadiness[key] };
   });
-  const needsSave = walletChanged || readinessLabels.some((item) => !item.confirmed);
+  const needsSave = createdCase?.case.state === "needs_correction" || walletChanged || readinessLabels.some((item) => !item.confirmed);
 
   useEffect(() => { navigation.setOptions({ headerTitle }); }, [headerTitle, navigation]);
 
@@ -256,8 +254,8 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         const response = await fieldClient().readOwnFieldJoiningCase(token, caseId);
         if (!active) return;
         const current = response.case;
-        if (current.state !== "draft") {
-          setError("يمكن تعديل المسودات فقط. اقرأ الحالة الحالية من قائمة الشركاء.");
+        if (current.state !== "draft" && current.state !== "needs_correction") {
+          setError("هذا الطلب ليس مسودة أو طلبًا مُعادًا للتصحيح.");
           return;
         }
         const hoursByDay: Record<number, Array<EditableWorkingHoursInterval>> = {};
@@ -341,7 +339,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   }, [input.firstStoreVerticalId, loadCommercialTypes]);
 
   async function createCase(submitAfterSave = false) {
-    if (busy || draftConflictNeedsRead || (createdCase && createdCase.case.state !== "draft")) return;
+    if (busy || draftConflictNeedsRead || (createdCase && createdCase.case.state !== "draft" && createdCase.case.state !== "needs_correction")) return;
     // Drafts may be incomplete, but nonempty fields must satisfy server limits.
     if (!pendingDraftAttempt) {
       const owner = input.ownerFullName.trim();
@@ -394,7 +392,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         ...(selectedStoreOrigin ? { firstStoreLatitude: selectedStoreOrigin.latitude, firstStoreLongitude: selectedStoreOrigin.longitude } : {}),
       };
       attempt = createdCase
-        ? { kind: "update", caseID: createdCase.case.id, expectedVersion: createdCase.case.version, request, idempotencyKey: `field_joining_case_draft_update_${Crypto.randomUUID()}`, correlationID: `field_joining_case_draft_corr_${Crypto.randomUUID()}` }
+        ? { kind: createdCase.case.state === "needs_correction" ? "correct" : "update", caseID: createdCase.case.id, expectedVersion: createdCase.case.version, request, idempotencyKey: `field_joining_case_draft_update_${Crypto.randomUUID()}`, correlationID: `field_joining_case_draft_corr_${Crypto.randomUUID()}` }
         : { kind: "create", request, idempotencyKey: `field_joining_case_create_${Crypto.randomUUID()}`, correlationID: `field_joining_case_corr_${Crypto.randomUUID()}` };
     }
     setPendingDraftAttempt(attempt);
@@ -402,11 +400,13 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const response = attempt.kind === "update"
-        ? await fieldClient().updateFieldJoiningCaseDraft(token, attempt.caseID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID)
-        : await fieldClient().createFieldJoiningCase(token, attempt.request, attempt.idempotencyKey, attempt.correlationID);
+      const response = attempt.kind === "correct"
+        ? await fieldClient().correctFieldJoiningCase(token, attempt.caseID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID)
+        : attempt.kind === "update"
+          ? await fieldClient().updateFieldJoiningCaseDraft(token, attempt.caseID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID)
+          : await fieldClient().createFieldJoiningCase(token, attempt.request, attempt.idempotencyKey, attempt.correlationID);
       const canonical = await fieldClient().readOwnFieldJoiningCase(token, response.case.id).catch((cause: unknown) => { throw markFieldDraftReadbackUncertain(cause); });
-      if (canonical.case.id !== response.case.id || !fieldDraftMatchesReadback(attempt.request, canonical.case, response.case.version)) {
+      if (canonical.case.id !== response.case.id || !fieldDraftMatchesReadback(attempt.request, canonical.case, response.case.version, attempt.kind === "correct" ? "submitted" : "draft")) {
         throw new Error("FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH");
       }
       setCreatedCase(canonical);
@@ -418,14 +418,14 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       setDraftConflictNeedsRead(false);
       setPendingDraftAttempt(null);
       let optionalMediaUnconfirmed = false;
-      if (storeImage && isMediaProvenanceInputValid(storeImage.provenance)) {
+      if (attempt.kind !== "correct" && storeImage && isMediaProvenanceInputValid(storeImage.provenance)) {
         if (!await uploadStoreImage(canonical, storeImage)) optionalMediaUnconfirmed = true;
       }
-      if (storeImage && !isMediaProvenanceInputValid(storeImage.provenance)) {
+      if (attempt.kind !== "correct" && storeImage && !isMediaProvenanceInputValid(storeImage.provenance)) {
         optionalMediaUnconfirmed = true;
         setError("حُفظت المسودة. أكّد حق عرض شعار المتجر لإكمال رفعه.");
       }
-      if (reviewPhoto) {
+      if (attempt.kind !== "correct" && reviewPhoto) {
         try {
           const latest = await fieldClient().readOwnFieldJoiningCase(token, canonical.case.id);
           if (!await uploadReviewPhoto(latest, reviewPhoto)) optionalMediaUnconfirmed = true;
@@ -434,6 +434,10 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
           optionalMediaUnconfirmed = true;
           setError("حُفظت المسودة، لكن تعذر التحقق من رفع الصورة الداخلية الاختيارية. يمكنك إرسال الطلب دونها.");
         }
+      }
+      if (attempt.kind === "correct") {
+        router.replace({pathname:"/cases",params:{caseId:canonical.case.id}} as Href);
+        return;
       }
       if (submitAfterSave) {
         const latest = await fieldClient().readOwnFieldJoiningCase(token, canonical.case.id);
@@ -469,7 +473,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       } else {
         setPendingDraftAttempt(null);
         const code = dshErrorCode(cause);
-        if (attempt.kind === "update" && code === "VERSION_CONFLICT") {
+        if ((attempt.kind === "update" || attempt.kind === "correct") && code === "VERSION_CONFLICT") {
           try {
             const token = await getUsableIdentityAccessToken();
             setCreatedCase(await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID));
@@ -686,6 +690,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       {caseId && !caseLoading && error.startsWith("تعذر قراءة المسودة") ? <BthwaniButton label="إعادة قراءة المسودة" onPress={() => setCaseLoadRetry((value) => value + 1)} variant="secondary" /> : null}
       {admissionState.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة حالة التفعيل…</Text></View> : null}
       {admissionState.kind === "missing" ? <View style={styles.card}><Text style={styles.cardTitle}>لم يكتمل تفعيل الحساب</Text><Text style={styles.muted}>تواصل مع فريق التشغيل لإكمال تسجيلك للميدان.</Text></View> : null}
+      {createdCase?.case.state === "needs_correction" ? <View style={styles.compactCard}><Text style={styles.sectionTitle}>الطلب مُعاد للتصحيح</Text><Text style={styles.error}>{createdCase.case.correctionReason || "صحّح البيانات المطلوبة ثم أعد إرسال الطلب."}</Text><Text style={styles.muted}>يُعاد إرسال الطلب للمراجعة عند الحفظ، دون إنشاء طلب جديد.</Text></View> : null}
       {admissionState.kind === "ready" && admissionActionability !== "available" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إضافة شريك الآن</Text><Text style={styles.muted}>{admissionActionability === "profile_review" ? "ملفك يحتاج مراجعة قبل إضافة شريك. تواصل مع فريق التشغيل لاستكمالها." : `حالة التفعيل الحالية: ${fieldAdmissionStateLabel(admissionState.admission.state)}. تابع الحالة أو تواصل مع فريق التشغيل.`}</Text></View> : null}
       {admissionState.kind === "error" ? <View style={styles.card}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة حالة تفعيلك الآن. أعد المحاولة عند توفر الاتصال.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void loadAdmission()} variant="secondary" /></View> : null}
       {admissionActionability === "available" && (!caseId || Boolean(createdCase)) ? <>
@@ -814,21 +819,21 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
             <View style={{ flex: 1, gap: 8, minWidth: 0 }}><Text style={styles.label}>العنوان النصي</Text><TextInput onFocus={focusField} accessibilityLabel="عنوان المتجر" editable={!formLocked} multiline placeholder="الحي، الشارع، أقرب معلم" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 72, paddingTop: 10, textAlignVertical: "top" }]} value={input.firstStoreAddress} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreAddress: value }))} />{input.firstStoreAddress.trim().length > 0 && Array.from(input.firstStoreAddress.trim()).length < 4 ? <Text accessibilityRole="alert" style={styles.error}>العنوان قصير؛ اذكر الحي أو أقرب معلم (4 أحرف على الأقل).</Text> : null}<Text style={styles.muted}>{selectedStoreOrigin ? "تم تحديد الموقع" : "حدد الموقع تلقائيًا أو افتح الخريطة للتحديد اليدوي"}</Text></View>
           </View>
         </View> : null}
-        {activeStep === 1 ? <FieldWorkingHoursEditor disabled={formLocked} onChange={setWorkingHoursByDay} value={workingHoursByDay} /> : null}
+        {activeStep === 1 ? <View><Text style={styles.muted}>ساعات العمل اختيارية عند الانضمام؛ حددها الآن أو أكملها قبل نشر المتجر. لن يُفتح متجر بلا جدول معتمد.</Text><FieldWorkingHoursEditor disabled={formLocked} onChange={setWorkingHoursByDay} value={workingHoursByDay}/></View> : null}
         {activeStep === 1 ? <>
         <View style={styles.compactCard}>
         <Text style={styles.label}>ملاحظات (اختياري)</Text>
         <TextInput onFocus={focusField} accessibilityLabel="ملاحظات اختيارية" editable={!formLocked} multiline maxLength={1000} placeholder="أي تفاصيل إضافية للمراجعة" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 64, paddingTop: 10, textAlignVertical: "top" }]} value={input.firstStoreNotes ?? ""} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreNotes: value }))} />
         <Text style={styles.sectionTitle}>شعار (لوجو) المتجر · اختياري عند الانضمام</Text>
         <Text style={styles.muted}>يمكن إرفاق الشعار الآن أو إضافته لاحقًا من الإدارة. لا يمنع إرساله للمراجعة، لكنه مطلوب قبل نشر المتجر للعملاء.</Text>
-        {storeImage ? <Image accessibilityLabel="معاينة شعار المتجر" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="cover" /> : null}
-        {storeImage ? <FieldMediaProvenanceEditor key={storeImage.uri} creatorName={admissionState.kind === "ready" ? admissionState.admission.fullNameAr ?? "" : ""} disabled={formLocked} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} source={storeImage.source} value={storeImage.provenance} /> : null}
-        <View style={styles.optionList}>
+        {createdCase?.case.state !== "needs_correction" && storeImage ? <Image accessibilityLabel="معاينة شعار المتجر" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="cover" /> : null}
+        {createdCase?.case.state !== "needs_correction" && storeImage ? <FieldMediaProvenanceEditor key={storeImage.uri} creatorName={admissionState.kind === "ready" ? admissionState.admission.fullNameAr ?? "" : ""} disabled={formLocked} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} source={storeImage.source} value={storeImage.provenance} /> : null}
+        {createdCase?.case.state !== "needs_correction" ? <View style={styles.optionList}>
           <BthwaniButton disabled={formLocked} label={storeImage ? "تغيير الصورة" : "من الجهاز"} onPress={() => void pickStoreImage("library")} variant="secondary" />
           <BthwaniButton disabled={formLocked} label="الكاميرا" onPress={() => void pickStoreImage("camera")} variant="secondary" />
+        </View> : null}
         </View>
-        </View>
-        <View style={styles.compactCard}>
+        {createdCase?.case.state !== "needs_correction" ? <View style={styles.compactCard}>
           <Text style={styles.sectionTitle}>صورة المتجر الفعلية (اختياري)</Text>
           <Text style={styles.muted}>للمراجعة الداخلية فقط للتأكد من ملاءمة المتجر. لا تظهر للعملاء، ولا تصبح صورة شعار المتجر، وتُحذف بعد اعتماد الطلب.</Text>
           {reviewPhoto ? <Image accessibilityLabel="معاينة صورة المتجر الداخلية" source={{ uri: reviewPhoto.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : null}
@@ -838,7 +843,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
             <BthwaniButton disabled={formLocked} label="من الجهاز" onPress={() => void pickReviewPhoto("library")} variant="secondary" />
           </View>
           {reviewPhoto && createdCase ? <BthwaniButton disabled={busy} busy={busy} label="حفظ الصورة الداخلية الاختيارية" onPress={() => void uploadReviewPhoto(createdCase, reviewPhoto)} variant="secondary" /> : null}
-        </View>
+        </View> : null}
         <View style={styles.compactCard} accessibilityLiveRegion="polite">
           <Text style={styles.sectionTitle}>جاهزية الإرسال</Text>
           {readinessLabels.map(({ key, label, confirmed, pending }) =>
@@ -858,7 +863,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
           <Link href={"/cases" as Href} asChild><BthwaniButton label="فتح الشركاء" variant="secondary" /></Link>
         </View>
       ) : null}
-      {createdCase && createdCase.case.state === "draft" && activeStep === 1 ? <View accessibilityLiveRegion="polite" style={styles.compactCard}>
+      {createdCase && (createdCase.case.state === "draft" || createdCase.case.state === "needs_correction") && activeStep === 1 ? <View accessibilityLiveRegion="polite" style={styles.compactCard}>
         <Text style={styles.muted}>المسودة محفوظة · {joiningCaseStateLabel(createdCase.case.state)}</Text>
         {pendingImageAttempt && storeImage ? <BthwaniButton busy={busy} disabled={busy} label="التحقق من رفع شعار المتجر" onPress={() => void retryStoreImage()} variant="secondary" /> : null}
         <Link href={{ pathname: "/cases", params: { caseId: createdCase.case.id } } as Href} asChild>
@@ -875,8 +880,8 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
           <View style={{ flexDirection: "row", gap: spacing[2] }}>
             {activeStep > 0 ? <View style={{ flex: 1 }}><BthwaniButton label="السابق" disabled={formLocked} onPress={() => { setActiveStep((current) => current - 1); setError(""); }} variant="secondary" /></View> : null}
             {activeStep < joiningSteps.length - 1 ? <View style={{ flex: 1 }}><BthwaniButton label="التالي" disabled={formLocked} onPress={() => { setActiveStep((current) => current + 1); setError(""); }} /></View> : null}
-            <View style={{ flex: 1 }}><BthwaniButton busy={busy} disabled={busy || draftConflictNeedsRead || (!pendingDraftAttempt && formLocked)} label={pendingDraftAttempt ? "تحقق من الحفظ" : draftConflict ? "حفظ التغييرات" : createdCase ? "حفظ التعديلات" : "حفظ المسودة"} onPress={() => void createCase()} variant="secondary" /></View>
-            {activeStep === 1 ? <View style={{ flex: 1 }}><BthwaniButton busy={busy} disabled={busy || draftConflictNeedsRead || (!pendingDraftAttempt && formLocked)} label="حفظ وإرسال للمراجعة" onPress={() => void createCase(true)} /></View> : null}
+            <View style={{ flex: 1 }}><BthwaniButton busy={busy} disabled={busy || draftConflictNeedsRead || (!pendingDraftAttempt && formLocked)} label={pendingDraftAttempt ? "تحقق من الحفظ" : createdCase?.case.state === "needs_correction" ? "تصحيح وإعادة إرسال" : draftConflict ? "حفظ التغييرات" : createdCase ? "حفظ التعديلات" : "حفظ المسودة"} onPress={() => void createCase()} variant="secondary" /></View>
+            {activeStep === 1 && createdCase?.case.state !== "needs_correction" ? <View style={{ flex: 1 }}><BthwaniButton busy={busy} disabled={busy || draftConflictNeedsRead || (!pendingDraftAttempt && formLocked)} label="حفظ وإرسال للمراجعة" onPress={() => void createCase(true)} /></View> : null}
           </View>
         </View>
       ) : null}

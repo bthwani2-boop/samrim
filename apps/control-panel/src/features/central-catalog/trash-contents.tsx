@@ -26,8 +26,8 @@ export function TrashContents() {
     : (sections[0]?.key ?? "products");
 
   return (
-    <div className="catalog-taxonomy-workspace">
-      <div className="catalog-category-filters">
+    <div className="work-stack">
+      <div className="workspace-toolbar">
         <span className="muted">نوع العنصر</span>
         {sections.map((section) => (
           <button

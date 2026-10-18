@@ -89,6 +89,28 @@ test("marketing content retains its screen and honest event-count visualization"
   await expect(panel).toContainText("لا تعبر عن معدل تحويل أو أرباح");
 });
 
+test("marketing content previews the selected banner locally without publishing", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.goto("/marketing/content");
+  await page.getByText("إنشاء محتوى اكتشاف", { exact: true }).click();
+  await page.getByRole("textbox", { name: "عنوان المحتوى" }).fill("عرض الخضروات");
+  await page.getByLabel("ملف صورة المحتوى").setInputFiles({
+    name: "banner.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGO846bBwMDAxMDAwMDAAAAQVgFOyh0XIgAAAABJRU5ErkJggg==", "base64"),
+  });
+  const preview = page.getByTestId("marketing-content-preview");
+  await expect(preview).toBeVisible();
+  await expect(preview.getByText("عرض الخضروات")).toBeVisible();
+  await expect(preview.getByRole("img", { name: "معاينة الصورة المختارة" })).toBeVisible();
+  await expect(preview.locator("img")).toHaveCount(0);
+  await expect.poll(async () => preview.locator("canvas").evaluate((canvas) => {
+    const bitmap = canvas as HTMLCanvasElement;
+    return (bitmap.getContext("2d")?.getImageData(0, 0, 1, 1).data[3] ?? 0) > 0;
+  })).toBe(true);
+  await expect(preview).toContainText("معاينة تقريبية");
+});
+
 test("marketing analytics failure remains an explicit error and never becomes a false zero", async ({ page }) => {
   await provideMarketingReads(page);
   await page.route("**/api/marketing/analytics?**", (route) => route.fulfill({ status: 503, json: { error: { message: "مصدر التحليلات غير متاح" } } }));
@@ -97,4 +119,80 @@ test("marketing analytics failure remains an explicit error and never becomes a 
   const panel = page.getByRole("complementary").filter({ hasText: "تحليلات المحتوى" });
   await expect(panel.getByRole("alert")).toHaveText("مصدر التحليلات غير متاح");
   await expect(panel.locator("progress")).toHaveCount(0);
+});
+
+test("marketing content publication waits for canonical readback, not just an HTTP success", async ({ page }) => {
+  await provideMarketingReads(page);
+  let didPost = false;
+  await page.route("**/api/marketing/content**", async (route) => {
+    if (route.request().method() === "POST") {
+      didPost = true;
+      await route.fulfill({ status: 200, json: { state: "PAUSED", version: 3 } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: {
+      items: [{
+        id: "content-smoke", titleAr: "بنر تجريبي", mediaUri: null,
+        kind: "BANNER", targetType: "INFO", state: "PUBLISHED",
+        version: 2, ordinal: 1, startsAt: "2026-10-10T10:00:00Z",
+      }],
+      nextCursor: "",
+    } });
+  });
+  await page.goto("/marketing/content");
+  await page.getByRole("table", { name: "سجل محتوى الاكتشاف" })
+    .getByRole("button", { name: "إيقاف المحتوى" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "لم تؤكد القراءة المعتمدة" })).toBeVisible();
+  expect(didPost).toBe(true);
+  await expect(page.getByText("أُوقف المحتوى وأُكدت حالته من السجل.")).toHaveCount(0);
+});
+
+test("marketing content publication confirms the versioned canonical state", async ({ page }) => {
+  await provideMarketingReads(page);
+  let paused = false;
+  await page.route("**/api/marketing/content**", async (route) => {
+    if (route.request().method() === "POST") {
+      paused = true;
+      await route.fulfill({ status: 200, json: { state: "PAUSED", version: 3 } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: {
+      items: [{
+        id: "content-smoke", titleAr: "بنر تجريبي", mediaUri: null,
+        kind: "BANNER", targetType: "INFO",
+        state: paused ? "PAUSED" : "PUBLISHED",
+        version: paused ? 3 : 2, ordinal: 1,
+        startsAt: "2026-10-10T10:00:00Z",
+      }],
+      nextCursor: "",
+    } });
+  });
+  await page.goto("/marketing/content");
+  await page.getByRole("table", { name: "سجل محتوى الاكتشاف" })
+    .getByRole("button", { name: "إيقاف المحتوى" }).click();
+  await expect(page.getByText("أُوقف المحتوى وأُكدت حالته من السجل.")).toBeVisible();
+  await expect(page.getByRole("table", { name: "سجل محتوى الاكتشاف" })).toContainText("موقوف");
+});
+
+test("marketing promotion state cannot be claimed without a newer canonical version", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.route("**/api/marketing/promotions**", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({ status: 200, json: { state: "PAUSED", version: 3 } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: {
+      promotions: [{
+        id: "promotion-smoke", nameAr: "عرض تجريبي", code: "SMOKE",
+        kind: "PERCENTAGE", valueMinor: 10, fundingSource: "BTHWANI",
+        targets: [], state: "PAUSED", version: 2, startsAt: "2026-10-10T10:00:00Z",
+      }],
+      nextCursor: "",
+    } });
+  });
+  await page.goto("/marketing/promotions");
+  await page.getByRole("table", { name: "سجل العروض" })
+    .getByRole("button", { name: "نشر العرض" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "الحالة والإصدار الجديدين" })).toBeVisible();
+  await expect(page.getByText("نُشر العرض وأُكدت حالته من السجل.")).toHaveCount(0);
 });

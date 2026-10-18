@@ -2,7 +2,7 @@ import { borders, radius, type resolveTheme, spacing, typography } from "@bthwan
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, AppState, StyleSheet, Text, View } from "react-native";
 
 import { currentIdentityState } from "../../bootstrap/identity";
 import { isConfirmedOwnStoreAgreementAcceptance } from "./store-agreement-acceptance-readback";
@@ -12,6 +12,8 @@ import {
   readOwnStoreCommercialAgreements,
   type StoreCommercialAgreement,
 } from "./store-commercial-agreement-client";
+
+const DEFAULT_ACCEPTANCE_REASON = "أوافق على نسب العمولة وشروط الاتفاقية المعروضة";
 
 type AcceptanceAttempt = Readonly<{
   agreementId: string;
@@ -77,7 +79,6 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
   const activeScope = useRef(storageKey);
   activeScope.current = storageKey;
   const readSequence = useRef(0);
-  const [reasonByAgreement, setReasonByAgreement] = useState<Record<string, string>>({});
   const [pendingAttempt, setPendingAttempt] = useState<AcceptanceAttempt | null>(null);
   const [pendingStorageReady, setPendingStorageReady] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -133,7 +134,6 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
           setNotice("أُعيدت قراءة الاتفاقية بعد محاولة سابقة؛ راجع حالتها الحالية قبل اتخاذ إجراء.");
         } else {
           setPendingAttempt(savedAttempt);
-          setReasonByAgreement((values) => ({ ...values, [savedAttempt.agreementId]: savedAttempt.reason }));
         }
       } else {
         setPendingAttempt(null);
@@ -154,20 +154,20 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
   }, [actorID, storageKey, storeID]);
 
   useEffect(() => {
-    setReasonByAgreement({});
     setAgreementToConfirm(null);
     setNotice("");
     void load();
-    return () => { readSequence.current += 1; };
+    const listener = AppState.addEventListener("change", (state) => { if (state === "active") void load(); });
+    return () => { listener.remove(); readSequence.current += 1; };
   }, [load]);
 
   function requestAcceptanceConfirmation(agreement: StoreCommercialAgreement) {
     if (activeScope.current !== storageKey || agreementsScope !== storageKey ||
       agreement.storeId !== storeID || agreement.partnerActorId !== actorID) return;
     const savedAttempt = pendingAttempt?.agreementId === agreement.agreementId ? pendingAttempt : null;
-    const reason = savedAttempt?.reason ?? (reasonByAgreement[agreement.agreementId] ?? "").trim();
+    const reason = savedAttempt?.reason ?? DEFAULT_ACCEPTANCE_REASON;
     if (Array.from(reason.trim()).length < 8 || Array.from(reason.trim()).length > 500) {
-      setError("اكتب سبب قبول من 8 إلى 500 حرف قبل التأكيد.");
+      setError("تعذر تجهيز إقرار القبول. أعد قراءة الاتفاقية ثم حاول مجددًا.");
       return;
     }
     setError("");
@@ -183,9 +183,9 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       setError("تحقق أولًا من محاولة القبول المحفوظة قبل قبول اتفاقية أخرى.");
       return;
     }
-    const reason = savedAttempt?.reason ?? (reasonByAgreement[agreement.agreementId] ?? "").trim();
+    const reason = savedAttempt?.reason ?? DEFAULT_ACCEPTANCE_REASON;
     if (Array.from(reason.trim()).length < 8 || Array.from(reason.trim()).length > 500) {
-      setError("اكتب سبب قبول من 8 إلى 500 حرف قبل التأكيد.");
+      setError("تعذر تجهيز إقرار القبول. أعد قراءة الاتفاقية ثم حاول مجددًا.");
       return;
     }
 
@@ -251,10 +251,9 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       {readingCurrentStore && visibleAgreements === null ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة اتفاقيات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الاتفاقيات…</Text></View> : null}
       {visibleError ? <Text accessibilityRole="alert" style={styles.error}>{visibleError}</Text> : null}
       {visibleNotice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{visibleNotice}</Text> : null}
-      {visibleAgreements?.length === 0 ? <Text style={styles.muted}>لا توجد اتفاقية متجر بانتظارك حاليًا.</Text> : null}
+      {visibleAgreements?.length === 0 ? <Text style={styles.muted}>لا توجد اتفاقية بانتظارك الآن. يعمل الميداني على إعداد المقترح؛ ستظهر هنا عندما تُرسل. يمكنك تجهيز المنتجات والصور بالتوازي.</Text> : null}
       {visibleAgreements?.map((agreement) => {
         const savedAttempt = scopedPendingAttempt?.agreementId === agreement.agreementId ? scopedPendingAttempt : null;
-        const reason = savedAttempt?.reason ?? reasonByAgreement[agreement.agreementId] ?? "";
         const canAccept = agreement.status === "PROPOSED" && pendingStorageReady && !loading && (!scopedPendingAttempt || Boolean(savedAttempt));
         return (
           <View key={agreement.agreementId} style={styles.agreement}>
@@ -269,22 +268,11 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
               </View>
             )) : <Text style={styles.error}>لا تحتوي الاتفاقية على معدلات تشغيل صالحة.</Text>}
             {agreement.status === "PROPOSED" ? <View style={styles.acceptance}>
-              <Text style={styles.muted}>اكتب سبب موافقتك، ثم اضغط زر القبول لإرسال قرارك.</Text>
-              <TextInput
-                accessibilityLabel="سبب قبول اتفاقية المتجر"
-                editable={!busyAgreementID && !savedAttempt && !scopedPendingAttempt}
-                maxLength={500}
-                multiline
-                onChangeText={(value) => setReasonByAgreement((current) => ({ ...current, [agreement.agreementId]: value }))}
-                placeholder="سبب القبول (8 أحرف على الأقل)"
-                placeholderTextColor={theme.colorMuted}
-                style={styles.reasonInput}
-                value={reason}
-              />
+              <Text style={styles.muted}>راجع النسب أعلاه ثم اضغط «مراجعة وتأكيد القبول». يُسجل إقرارك باسمك، وبعده تعتمد المالية الاتفاقية قبل نشر المتجر.</Text>
               {savedAttempt ? <Text style={styles.muted}>محاولة قبول سابقة غير محسومة؛ تحقق من نتيجتها قبل إعادة المحاولة.</Text> : null}
               <BthwaniButton
                 busy={busyAgreementID === agreement.agreementId}
-                disabled={!canAccept || (!savedAttempt && Array.from(reason.trim()).length < 8)}
+                disabled={!canAccept}
                 label={savedAttempt ? "إعادة محاولة القبول" : "مراجعة وتأكيد القبول"}
                 onPress={() => requestAcceptanceConfirmation(agreement)}
               />
@@ -331,7 +319,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     rateLabel: { ...typography.label, color: theme.color },
     rateValue: { ...typography.bodySm, color: theme.color, textAlign: "left", writingDirection: "ltr" },
     acceptance: { gap: spacing[2], paddingTop: spacing[2] },
-    reasonInput: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 88, padding: spacing[3], textAlignVertical: "top" },
     notice: { ...typography.bodySm, color: theme.interactiveText },
     error: { ...typography.bodySm, color: theme.danger },
   });

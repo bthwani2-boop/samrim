@@ -2,10 +2,24 @@ package postgres
 
 import (
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestCatalogSearchCursorRejectsChangedShortcutScope(t *testing.T) {
+	cursor := encodeCatalogSearchCursor("coffee", "offer_1", "", "city_1", "vertical_1", "", "coffee", "", "", "shortcut_a")
+	if _, err := decodeCatalogSearchCursor(cursor, "", "city_1", "vertical_1", "", "coffee", "", "", "shortcut_a"); err != nil {
+		t.Fatalf("same shortcut scope rejected: %v", err)
+	}
+	if _, err := decodeCatalogSearchCursor(cursor, "", "city_1", "vertical_1", "", "coffee", "", "", "shortcut_b"); !errors.Is(err, ErrCatalogSearchInvalidCursor) {
+		t.Fatalf("changed shortcut scope must be invalid input, got %v", err)
+	}
+	if _, err := decodeCatalogSearchCursor("invalid", "", "city_1", "vertical_1", "", "coffee", "", "", "shortcut_a"); !errors.Is(err, ErrCatalogSearchInvalidCursor) {
+		t.Fatalf("malformed cursor must be invalid input, got %v", err)
+	}
+}
 
 func TestCatalogCategoryCursorBindsRegistryScope(t *testing.T) {
 	query := "قهوة عربية"
@@ -147,5 +161,21 @@ func TestCatalogSearchCursorRejectsMalformedTokens(t *testing.T) {
 func TestEscapeCatalogSearchPrefixTreatsWildcardsLiterally(t *testing.T) {
 	if got, want := escapeCatalogSearchPrefix("!_%"), "!!!_!%%"; got != want {
 		t.Fatalf("escapeCatalogSearchPrefix() = %q, want %q", got, want)
+	}
+}
+
+func TestPublicCatalogShortcutScopeBindsProductCursor(t *testing.T) {
+	cursor := encodeCatalogSearchCursor("قهوة", "offer-1", "", "city-1", "grocery", "", "قهوة", "", "", "shortcut-meat")
+	if _, err := decodeCatalogSearchCursor(cursor, "", "city-1", "grocery", "", "قهوة", "", "", "shortcut-meat"); err != nil {
+		t.Fatalf("matching product shortcut cursor rejected: %v", err)
+	}
+	for _, id := range []string{"shortcut-bakery", ""} {
+		if _, err := decodeCatalogSearchCursor(cursor, "", "city-1", "grocery", "", "قهوة", "", "", id); err == nil {
+			t.Fatalf("product cursor reused under a different shortcut: %q", id)
+		}
+	}
+	ordinary := encodeCatalogSearchCursor("قهوة", "offer-1", "", "city-1", "grocery", "", "قهوة", "", "")
+	if _, err := decodeCatalogSearchCursor(ordinary, "", "city-1", "grocery", "", "قهوة", "", ""); err != nil {
+		t.Fatalf("existing unscoped product cursors should remain valid: %v", err)
 	}
 }

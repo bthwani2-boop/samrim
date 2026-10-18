@@ -60,7 +60,7 @@ func TestParseStoreCatalogImportXLSXAndRejectsOver5000Rows(t *testing.T) {
 func TestParseStoreCatalogImportRejectsUnsupportedOrMalformedFiles(t *testing.T) {
 	for _, test := range []struct{ name, body string }{
 		{"inventory.json", "{}"},
-		{"inventory.csv", "name,price\nTea,50\n"},
+		{"inventory.csv", "ignored,price\nTea,50\n"},
 		{"inventory.csv", "barcode,price\n\"unterminated,20\n"},
 	} {
 		if _, err := ParseStoreCatalogImportFile(test.name, []byte(test.body)); err == nil {
@@ -88,5 +88,28 @@ func TestParseStoreCatalogImportAcceptsFiveThousandRowsWithPartialErrors(t *test
 	}
 	if rows[253].ErrorCode != "INVALID_INPUT" || rows[252].ErrorCode != "" || rows[254].ErrorCode != "" {
 		t.Fatalf("one invalid row must not invalidate adjacent valid rows: before=%q invalid=%q after=%q", rows[252].ErrorCode, rows[253].ErrorCode, rows[254].ErrorCode)
+	}
+}
+
+func TestParseStoreCatalogImportUnknownUnitCannotBeHiddenByValidPrice(t *testing.T) {
+	rows, err := ParseStoreCatalogImportFile("unknown-unit.csv", []byte("name,unit,price\nUnknown item,BAD_UNIT,500\n"))
+	if err != nil || len(rows) != 1 || rows[0].ErrorCode != "INVALID_INPUT" {
+		t.Fatalf("invalid unit was accepted: %+v err=%v", rows, err)
+	}
+}
+func TestParseStoreCatalogImportAcceptsUnbarcodedLocalProducts(t *testing.T) {
+	data := []byte("اسم المنتج,السعر,الوحدة,الحجم\nعصير فراولة,900,ملليلتر,الكوب\nبيتزا خاصة,2500,قطعة,الافتراضي\n,500,قطعة,\n")
+	rows, err := ParseStoreCatalogImportFile("local-items.csv", data)
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("rows=%+v err=%v", rows, err)
+	}
+	if rows[0].Name != "عصير فراولة" || rows[0].Barcode != "" || rows[0].PriceMinor != 900 || rows[0].MeasurementKind != "MEASURED" || rows[0].BaseUnit != "MILLILITER" || rows[0].VariantTitle != "الكوب" {
+		t.Fatalf("measured local product lost CSV fields: %+v", rows[0])
+	}
+	if rows[1].Name != "بيتزا خاصة" || rows[1].PriceMinor != 2500 || rows[1].MeasurementKind != "DISCRETE" || rows[1].BaseUnit != "COUNT" || rows[1].ErrorCode != "" {
+		t.Fatalf("discrete Store-local Product invalid: %+v", rows[1])
+	}
+	if rows[2].ErrorCode != "INVALID_INPUT" {
+		t.Fatalf("missing name was accepted: %+v", rows[2])
 	}
 }

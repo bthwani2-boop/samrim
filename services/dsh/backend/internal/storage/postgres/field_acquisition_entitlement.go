@@ -45,7 +45,12 @@ func enqueueFieldAcquisitionRewardPublicationTx(ctx context.Context, tx *sql.Tx,
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO dsh.field_acquisition_entitlement_outbox(id,store_id,joining_case_id,partner_actor_id,field_actor_id,vertical_id,commercial_store_type_id,idempotency_key,request_hash,correlation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (store_id) DO NOTHING`, outboxID, storeID, joiningCaseID, partnerActorID, fieldActorID, verticalID, commercialStoreTypeID, idempotencyKey, requestHash, strings.TrimSpace(correlationID))
+	// Re-publication must wake a previously deferred, still-unpaid entitlement.
+	// Preserve its original facts and never reopen an already posted reward.
+	_, err = tx.ExecContext(ctx, `INSERT INTO dsh.field_acquisition_entitlement_outbox(id,store_id,joining_case_id,partner_actor_id,field_actor_id,vertical_id,commercial_store_type_id,idempotency_key,request_hash,correlation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		ON CONFLICT (store_id) DO UPDATE SET next_attempt_at=clock_timestamp(),updated_at=clock_timestamp()
+		WHERE dsh.field_acquisition_entitlement_outbox.state NOT IN ('POSTED','WAITING_CLASSIFICATION')
+		  AND dsh.field_acquisition_entitlement_outbox.joining_case_id=EXCLUDED.joining_case_id`, outboxID, storeID, joiningCaseID, partnerActorID, fieldActorID, verticalID, commercialStoreTypeID, idempotencyKey, requestHash, strings.TrimSpace(correlationID))
 	return err
 }
 

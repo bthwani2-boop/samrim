@@ -53,6 +53,10 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/catalog/verticals", s.listVerticals)
 	mux.HandleFunc("POST /dsh/catalog/verticals", s.createVertical)
 	mux.HandleFunc("PATCH /dsh/catalog/verticals/{verticalId}", s.updateVertical)
+	mux.HandleFunc("POST /dsh/catalog/verticals/{verticalId}/media/upload", s.uploadCommerceVerticalMedia)
+	mux.HandleFunc("GET /dsh/catalog/shopping-shortcuts", s.listShoppingShortcuts)
+	mux.HandleFunc("POST /dsh/catalog/shopping-shortcuts", s.createShoppingShortcut)
+	mux.HandleFunc("PATCH /dsh/catalog/shopping-shortcuts/{shortcutId}", s.updateShoppingShortcut)
 	mux.HandleFunc("GET /dsh/catalog/commercial-store-types", s.listCommercialStoreTypes)
 	mux.HandleFunc("POST /dsh/catalog/commercial-store-types", s.createCommercialStoreType)
 	mux.HandleFunc("PATCH /dsh/catalog/commercial-store-types/{storeTypeId}", s.updateCommercialStoreType)
@@ -110,6 +114,13 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/catalog/product-proposals/review-queue", s.listProductProposalReviewQueue)
 	mux.HandleFunc("POST /dsh/catalog/product-proposals/{proposalId}/review", s.reviewProductProposal)
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/offers", s.listOperatorStoreOffers)
+	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/products", s.listOperatorStoreCatalogProducts)
+	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/products", s.createOperatorStoreProduct)
+	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/products/{productId}", s.readOperatorStoreProduct)
+	mux.HandleFunc("PATCH /dsh/operator/stores/{storeId}/products/{productId}", s.updateOperatorStoreProduct)
+	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/products/{productId}/media/upload", s.uploadOperatorStoreProductMedia)
+	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/offers", s.createOperatorStoreOffer)
+	mux.HandleFunc("PATCH /dsh/operator/stores/{storeId}/offers/{offerId}", s.updateOperatorStoreOffer)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/offers", s.listOffers)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/catalog/imports/preview", s.previewPartnerStoreCatalogImport)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/catalog/imports/{runId}", s.readPartnerStoreCatalogImport)
@@ -121,9 +132,10 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/stores/{storeId}/modifier-groups", s.createModifierGroup)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/modifier-groups/{groupId}/options", s.createModifierOption)
 	mux.HandleFunc("PUT /dsh/stores/{storeId}/offers/{offerId}/modifier-groups/{groupId}", s.attachModifierGroup)
+	mux.HandleFunc("GET /dsh/stores/{storeId}/sections", s.listStorefrontSections)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/sections", s.createStorefrontSection)
 	mux.HandleFunc("PUT /dsh/stores/{storeId}/sections/{sectionId}/offers/{offerId}", s.attachOfferToSection)
-	s.registerFieldCatalog(mux)
+	s.registerCatalogIdentifier(mux)
 }
 
 func (s *CatalogServer) listVerticals(w http.ResponseWriter, r *http.Request) {
@@ -419,6 +431,32 @@ func (s *CatalogServer) uploadCategoryMedia(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.CatalogCategoryResponse{Category: toCatalogCategory(item)})
+}
+
+func (s *CatalogServer) uploadCommerceVerticalMedia(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, expected, ok := requiredVersionedCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	if s.media == nil {
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+		return
+	}
+	upload, ok := parseCatalogMediaUpload(w, r)
+	if !ok {
+		return
+	}
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	item, err := s.service.UploadCommerceVerticalMedia(r.Context(), acting, catalog.CommerceVerticalMediaUploadInput{VerticalID: r.PathValue("verticalId"), IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Provenance: upload.provenance, Bytes: upload.bytes, Reason: reason})
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CommerceVerticalResponse{Vertical: toCommerceVertical(item)})
 }
 
 func (s *CatalogServer) listProducts(w http.ResponseWriter, r *http.Request) {
@@ -921,7 +959,7 @@ func catalogLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 	return limit, true
 }
 func toCommerceVertical(item postgres.CommerceVerticalRecord) contract.CommerceVertical {
-	return contract.CommerceVertical{ID: item.ID, NameAr: item.NameAr, NameEn: item.NameEn, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.CommerceVertical{ID: item.ID, NameAr: item.NameAr, NameEn: item.NameEn, ImageUri: item.ImageURI, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 func toCommercialStoreType(item postgres.CommercialStoreTypeRecord) contract.CommercialStoreType {
 	return contract.CommercialStoreType{ID: item.ID, VerticalID: item.VerticalID, NameAr: item.NameAr, NameEn: item.NameEn, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
@@ -1001,6 +1039,12 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "catalog record was not found")
 	case errors.Is(err, postgres.ErrCatalogIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different catalog facts")
+	case errors.Is(err, postgres.ErrShoppingShortcutInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "shopping shortcut fields and compatible targets are required")
+	case errors.Is(err, postgres.ErrShoppingShortcutNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "shopping shortcut does not exist")
+	case errors.Is(err, postgres.ErrCatalogRegistryNameConflict):
+		writeError(w, http.StatusConflict, "CATALOG_NAME_EXISTS", "a catalog name already exists in this scope")
 	case errors.Is(err, postgres.ErrCatalogAttributeDefinitionExists):
 		writeError(w, http.StatusConflict, "ATTRIBUTE_EXISTS", "an attribute with this identifier or code already exists in the vertical")
 	case errors.Is(err, postgres.ErrCatalogAttributeOptionExists):
@@ -1067,10 +1111,6 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
 	case errors.Is(err, catalog.ErrStoreOwnershipForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "partner Store ownership is required")
-	case errors.Is(err, catalog.ErrFieldCatalogSessionForbidden):
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an active Field app session is required")
-	case errors.Is(err, postgres.ErrFieldCatalogAuthority):
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "Field catalog authority is limited to the assigned unpublished Store")
 	default:
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {

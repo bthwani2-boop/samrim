@@ -12,10 +12,10 @@ import (
 // SearchPublicCatalog applies the same live Partner Identity and Store-specific
 // WLT agreement gates used by customer Store discovery. DSH's catalog SQL alone
 // cannot know when either external authority revokes eligibility.
-func (s *Service) SearchPublicCatalog(ctx context.Context, serviceCityID, verticalID, categoryID, query string, limit int, cursor string) (postgres.PublicCatalogSearchRecord, error) {
+func (s *Service) SearchPublicCatalog(ctx context.Context, serviceCityID, verticalID, categoryID, query string, limit int, cursor string, shortcutScope ...string) (postgres.PublicCatalogSearchRecord, error) {
 	return collectEligiblePublicCatalogOffers(ctx, limit, cursor,
 		func(ctx context.Context, nextLimit int, nextCursor string) (postgres.PublicCatalogSearchRecord, error) {
-			return postgres.SearchPublicCatalog(ctx, s.db, serviceCityID, verticalID, categoryID, query, nextLimit, nextCursor)
+			return postgres.SearchPublicCatalog(ctx, s.db, serviceCityID, verticalID, categoryID, query, nextLimit, nextCursor, shortcutScope...)
 		},
 		func(ctx context.Context, storeID string) (bool, error) {
 			_, err := s.ReadPublished(ctx, storeID, serviceCityID)

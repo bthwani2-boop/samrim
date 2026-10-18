@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
   const denied = operatorWorkspacePermissionDenied(identity, "catalog");
-  if (denied) return denied;
+  if (denied && operatorWorkspacePermissionDenied(identity, "partners")) return denied;
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   if (idempotencyKey.length < 8) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
   const form = await request.formData().catch(() => null);

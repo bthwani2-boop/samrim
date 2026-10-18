@@ -3,10 +3,10 @@
 import { type CommerceVertical, type DiscoveryContentAnalytics, type DiscoveryContentView, isMediaProvenanceInputValid, type MediaProvenanceInput, type OperatorDiscoveryContentRegistryResponse, type ServiceCity } from "@bthwani/dsh";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { MarketingStateIndicator } from "./marketing-state-indicator";
-import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
-import { apiMessage, futureDateInput, futureEndDateInput, emptyMediaProvenance, readPendingDiscoveryContentCreate, clearPendingMarketingCreate, persistMarketingCreate, dateTimeLocalValue, sha256File, readDiscoveryContentById, readActiveServiceCities, PendingDiscoveryContentCreate } from "./marketing-workspace";
+import { apiMessage, clearPendingMarketingCreate, dateTimeLocalValue, emptyMediaProvenance, futureDateInput, futureEndDateInput, type PendingDiscoveryContentCreate, persistMarketingCreate, readActiveServiceCities, readDiscoveryContentById, readPendingDiscoveryContentCreate, sha256File } from "./marketing-workspace";
 
 export function MarketingContentWorkspace() {
   const { state: sessionState } = useSession();
@@ -48,7 +48,36 @@ export function MarketingContentWorkspace() {
   const [targetLoading, setTargetLoading] = useState(false);
   const [targetMessage, setTargetMessage] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const mediaPreviewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [mediaPreviewError, setMediaPreviewError] = useState("");
   const [mediaProvenance, setMediaProvenance] = useState<MediaProvenanceInput>(emptyMediaProvenance());
+  const canPreviewMedia = Boolean(mediaFile && ["image/jpeg", "image/png"].includes(mediaFile.type.toLowerCase()));
+  useEffect(() => {
+    setMediaPreviewError("");
+    if (!mediaFile || !["image/jpeg", "image/png"].includes(mediaFile.type.toLowerCase())) return;
+    let cancelled = false;
+    // Decode raster data into a canvas without placing a user-derived URL in the DOM.
+    void createImageBitmap(mediaFile).then((bitmap) => {
+      try {
+        const canvas = mediaPreviewCanvasRef.current;
+        if (cancelled || !canvas) return;
+        canvas.width = contentForm.kind === "SHORT_FORM" ? 240 : 600;
+        canvas.height = contentForm.kind === "SHORT_FORM" ? 280 : 240;
+        const context = canvas.getContext("2d");
+        if (!context) { setMediaPreviewError("تعذر عرض معاينة الصورة على هذا الجهاز."); return; }
+        const scale = Math.max(canvas.width / bitmap.width, canvas.height / bitmap.height);
+        const width = bitmap.width * scale;
+        const height = bitmap.height * scale;
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(bitmap, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+      } finally {
+        bitmap.close();
+      }
+    }).catch(() => {
+      if (!cancelled) setMediaPreviewError("تعذر معاينة الملف؛ اختر صورة JPEG أو PNG صالحة.");
+    });
+    return () => { cancelled = true; };
+  }, [mediaFile, contentForm.kind]);
   const attemptReady = Boolean(pendingStorageKey) && loadedStorageKey === pendingStorageKey && !storageError;
   const load = useCallback(async (query: { search?: string; state?: string; kind?: string; sort?: "priority" | "created_desc"; cursor?: string } = {}) => {
     const sequence = ++registrySequence.current;
@@ -331,7 +360,12 @@ export function MarketingContentWorkspace() {
       const response = await fetch(`/api/marketing/content/${encodeURIComponent(item.id)}/publication`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(item.version) }, body: JSON.stringify({ state }) });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiMessage(body));
+      const canonical = await readDiscoveryContentById(item.id);
+      if (!canonical || canonical.state !== state || canonical.version <= item.version) {
+        throw new Error("أُرسل تغيير النشر لكن لم تؤكد القراءة المعتمدة الحالة والإصدار الجديدين. أعد قراءة السجل قبل إعادة الإجراء.");
+      }
       await load();
+      setMessage(state === "PUBLISHED" ? "نُشر المحتوى وأُكدت حالته من السجل." : "أُوقف المحتوى وأُكدت حالته من السجل.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر تحديث نشر المحتوى.");
     } finally {
@@ -397,6 +431,17 @@ export function MarketingContentWorkspace() {
           <label className="field-label" htmlFor="marketing-content-kind">نوع المحتوى<select id="marketing-content-kind" aria-label="نوع المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.kind} onChange={(event) => setContentForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="BANNER">بنر رئيسي</option><option value="CAROUSEL">شريحة كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
           <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required disabled={busy || !attemptReady || Boolean(pendingCreate && mediaFile)} onChange={(event) => { setMediaFile(event.target.files?.[0] ?? null); if (!pendingCreate) setMediaProvenance(emptyMediaProvenance()); }} /></label><CatalogMediaProvenanceFields idPrefix="marketing-content-media" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={mediaProvenance} onChange={setMediaProvenance} />
           {mediaFile ? <p className="muted" data-testid="marketing-content-file">{mediaFile.name} · {(mediaFile.size / 1024).toFixed(0)} كيلوبايت</p> : <p className="muted">JPEG أو PNG، حتى 10 ميجابايت.</p>}
+          {canPreviewMedia ? <figure aria-label="معاينة صورة المحتوى قبل النشر" data-testid="marketing-content-preview" className={contentForm.kind === "SHORT_FORM" ? "marketing-local-preview is-story" : "marketing-local-preview"}>
+            <div className="marketing-local-preview-visual">
+              <canvas ref={mediaPreviewCanvasRef} role="img" aria-label="معاينة الصورة المختارة" width={contentForm.kind === "SHORT_FORM" ? 240 : 600} height={contentForm.kind === "SHORT_FORM" ? 280 : 240} className="marketing-local-preview-canvas" />
+              <div className="marketing-local-preview-overlay">
+                <strong>{contentForm.titleAr.trim() || "عنوان المحتوى"}</strong>
+                {contentForm.bodyAr.trim() ? <div>{contentForm.bodyAr.trim()}</div> : null}
+              </div>
+            </div>
+            <figcaption className="muted">معاينة تقريبية على الهاتف · لا تُنشر حتى تعتمد المسودة</figcaption>
+            {mediaPreviewError ? <p className="managed-status managed-status-warning" role="alert">{mediaPreviewError}</p> : null}
+          </figure> : null}
           <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.targetType} onChange={(event) => { setTargetSearch(""); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setCategoryVerticalId(""); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option><option value="PROMOTION">عرض</option></select></label>
           {contentForm.targetType !== "INFO" ? <>
             {contentForm.targetType === "CATEGORY" ? <label className="field-label" htmlFor="marketing-content-category-vertical">المجال التجاري<select id="marketing-content-category-vertical" aria-label="المجال التجاري للفئة" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={categoryVerticalId} onChange={(event) => { setCategoryVerticalId(event.target.value); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }}><option value="">اختر المجال التجاري</option>{categoryVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label> : null}

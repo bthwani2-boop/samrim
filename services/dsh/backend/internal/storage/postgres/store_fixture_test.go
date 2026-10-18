@@ -26,12 +26,12 @@ func insertCanonicalStoreFixture(t *testing.T, ctx context.Context, db *sql.DB, 
 		t.Fatalf("read Commerce Vertical fixture %s: %v", verticalID, err)
 	}
 	if !verticalExists {
-		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_verticals(id,name_ar,name_en) VALUES($1,$2,$3)", verticalID, "مجال اختبار", "Test Vertical "+fixture.ID); err != nil {
+		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_verticals(id,name_ar,name_en) VALUES($1,$2,$3)", verticalID, "مجال اختبار "+fixture.ID, "Test Vertical "+fixture.ID); err != nil {
 			t.Fatalf("insert Commerce Vertical fixture %s: %v", verticalID, err)
 		}
 	}
 	storeTypeID := fixture.ID + "-type"
-	if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commercial_store_types(id,vertical_id,name_ar,name_en) VALUES($1,$2,$3,$4)", storeTypeID, verticalID, "نوع متجر اختبار", "Test Store Type "+fixture.ID); err != nil {
+	if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commercial_store_types(id,vertical_id,name_ar,name_en) VALUES($1,$2,$3,$4)", storeTypeID, verticalID, "نوع متجر اختبار "+fixture.ID, "Test Store Type "+fixture.ID); err != nil {
 		t.Fatalf("insert commercial Store Type fixture %s: %v", storeTypeID, err)
 	}
 	publicationState := fixture.PublicationState

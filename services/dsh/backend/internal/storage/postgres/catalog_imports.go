@@ -20,6 +20,7 @@ type CatalogImportRunRecord struct {
 }
 
 type StoreCatalogImportItemInput struct {
+	NewProduct              *CatalogProductInput
 	VariantID, StoreOfferID string
 	PriceMinor              int64
 	ExpectedVersion         int
@@ -193,27 +194,50 @@ func CreateCatalogImportPreview(ctx context.Context, db *sql.DB, run CatalogImpo
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_import_runs(id,acting_actor_id,source_sha256,mode,state,accepted_count,conflict_count,purpose,actor_role,store_id,joining_case_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),NULLIF($11,''))", run.ID, run.ActingActorID, run.SourceSHA256, run.Mode, run.State, run.AcceptedCount, run.ConflictCount, run.Purpose, run.ActorRole, run.StoreID, run.JoiningCaseID); err != nil {
 		return CatalogImportPreviewResult{}, err
 	}
-	for _, item := range items {
-		var payload []byte
-		var marshalErr error
-		if run.Purpose == "STORE_OFFERS" {
-			if item.StoreOfferInput == nil {
+
+	// Store imports can contain 5,000 items. Insert in bounded groups rather
+	// than issuing one PostgreSQL round trip per item inside this transaction.
+	const previewBatchSize = 200
+	for begin := 0; begin < len(items); begin += previewBatchSize {
+		limit := begin + previewBatchSize
+		if limit > len(items) {
+			limit = len(items)
+		}
+		var statement strings.Builder
+		statement.WriteString("INSERT INTO dsh.catalog_import_run_items(run_id,row_number,stable_key,payload,classification,product_id,variant_id,error_code,error_message,committed) VALUES ")
+		args := make([]any, 0, (limit-begin)*10)
+		for _, item := range items[begin:limit] {
+			if item.RowNumber < 1 || strings.TrimSpace(item.StableKey) == "" {
 				return CatalogImportPreviewResult{}, ErrCatalogImportInvalid
 			}
-			payload, marshalErr = json.Marshal(item.StoreOfferInput)
-		} else {
-			payload, marshalErr = json.Marshal(item.Input)
+			var payload []byte
+			var marshalErr error
+			if run.Purpose == "STORE_OFFERS" {
+				if item.StoreOfferInput == nil {
+					return CatalogImportPreviewResult{}, ErrCatalogImportInvalid
+				}
+				payload, marshalErr = json.Marshal(item.StoreOfferInput)
+			} else {
+				payload, marshalErr = json.Marshal(item.Input)
+			}
+			if marshalErr != nil {
+				return CatalogImportPreviewResult{}, marshalErr
+			}
+			if len(args) > 0 {
+				statement.WriteByte(',')
+			}
+			offset := len(args)
+			fmt.Fprintf(&statement, "($%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d)",
+				offset+1, offset+2, offset+3, offset+4, offset+5, offset+6, offset+7, offset+8, offset+9, offset+10)
+			args = append(args, run.ID, item.RowNumber, item.StableKey, payload, item.Classification,
+				nullableImportString(item.ProductID), nullableImportString(item.VariantID),
+				nullableImportString(item.ErrorCode), nullableImportString(item.ErrorMessage), item.Committed)
 		}
-		if marshalErr != nil {
-			return CatalogImportPreviewResult{}, marshalErr
-		}
-		if item.RowNumber < 1 || strings.TrimSpace(item.StableKey) == "" {
-			return CatalogImportPreviewResult{}, ErrCatalogImportInvalid
-		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO dsh.catalog_import_run_items(run_id,row_number,stable_key,payload,classification,product_id,variant_id,error_code,error_message,committed) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, run.ID, item.RowNumber, item.StableKey, payload, item.Classification, nullableImportString(item.ProductID), nullableImportString(item.VariantID), nullableImportString(item.ErrorCode), nullableImportString(item.ErrorMessage), item.Committed); err != nil {
+		if _, err = tx.ExecContext(ctx, statement.String(), args...); err != nil {
 			return CatalogImportPreviewResult{}, err
 		}
 	}
+
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_import_mutation_idempotency(idempotency_key,request_hash,run_id,operation,result_state) VALUES($1,$2,$3,'preview',$4)", idempotencyKey, requestHash, run.ID, run.State); err != nil {
 		return CatalogImportPreviewResult{}, err
 	}

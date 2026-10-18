@@ -806,6 +806,34 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/field/joining-cases/{caseId}/correction:
+    patch:
+      operationId: correctFieldJoiningCase
+      summary: Correct and resubmit a returned Field-originated Joining Case as its originating Field actor
+      security: [{ userBearer: [] }]
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateFieldJoiningCaseDraftRequest" }
+      responses:
+        "200":
+          description: Corrected and submitted Field Joining Case
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/field/joining-cases/{caseId}/submit:
     post:
       operationId: submitFieldJoiningCase

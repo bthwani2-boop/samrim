@@ -1,6 +1,6 @@
 import { borders, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogIdentifierResolution, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, formatMoney, isMediaProvenanceInputValid, type MeasurementKind, type MediaProvenanceInput, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
+import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogIdentifierResolution, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStorefrontSection, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, formatMoney, isMediaProvenanceInputValid, type MeasurementKind, type MediaProvenanceInput, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
 import { MobileStoreCatalogImportWorkspace } from "@bthwani/dsh/mobile/store-catalog-import";
 import { MobileStoreQuickPricesWorkspace } from "@bthwani/dsh/mobile/store-quick-prices";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -194,15 +194,22 @@ const theme = useAppearanceTheme();
   const [modifierName, setModifierName] = useState("");
   const [modifierOptionName, setModifierOptionName] = useState("");
   const [sectionName, setSectionName] = useState("");
+  const [sections, setSections] = useState<ReadonlyArray<CatalogStorefrontSection>>([]);
+  const [sectionLoadError, setSectionLoadError] = useState("");
+  const [selectedSectionID, setSelectedSectionID] = useState("");
   const [extensionOfferID, setExtensionOfferID] = useState("");
 
   const load = useCallback(async () => {
     const requestSequence = ++offerLoadSequence.current;
     const requestedPageCount = Math.max(1, offerLoadedPageCount.current);
-    setState({ kind: "loading" }); setOfferNextCursor(""); setLoadingMoreOffers(false); setError("");
+    setState({ kind: "loading" }); setOfferNextCursor(""); setLoadingMoreOffers(false); setError(""); setSectionLoadError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const [firstPage, registry] = await Promise.all([dshClient().readOwnStoreOffers(token, storeId), dshClient().listCatalogVerticals()]);
+      const [firstPage, registry, existingSections] = await Promise.all([
+        dshClient().readOwnStoreOffers(token, storeId),
+        dshClient().listCatalogVerticals(),
+        dshClient().listCatalogStorefrontSections(token, storeId).catch((cause: unknown) => { reportError(cause); return null; }),
+      ]);
       const offers = [...firstPage.offers];
       let nextCursor = firstPage.nextCursor ?? "";
       let loadedPageCount = 1;
@@ -216,6 +223,8 @@ const theme = useAppearanceTheme();
       }
       if (requestSequence !== offerLoadSequence.current) return;
       setVerticals(registry);
+      setSections(existingSections?.sections ?? []);
+      if (!existingSections) setSectionLoadError("تعذر تحميل أقسام المتجر. العروض متاحة، ويمكن إعادة تحميل الأقسام.");
       const proposals = await dshClient().listOwnCatalogProductProposals(token);
       if (requestSequence !== offerLoadSequence.current) return;
       offerLoadedPageCount.current = loadedPageCount;
@@ -228,6 +237,8 @@ const theme = useAppearanceTheme();
     if (offerLoadedStoreID.current !== storeId) {
       offerLoadedStoreID.current = storeId;
       offerLoadedPageCount.current = 1;
+      setSelectedSectionID("");
+      setSections([]);
     }
     void load();
     return () => { offerLoadSequence.current += 1; };
@@ -628,8 +639,28 @@ const theme = useAppearanceTheme();
   async function createSectionAndAttach() {
     if (busy || !sectionName.trim()) return;
     setBusy(true); setError("");
-    try { const token = await getUsableIdentityAccessToken(); const section = await dshClient().createCatalogStorefrontSection(token, storeId, { nameAr: sectionName, ordinal: 0, active: true }); if (extensionOfferID) await dshClient().attachCatalogOfferToSection(token, storeId, section.section.id, extensionOfferID); setSectionName(""); }
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const normalizedSectionName = sectionName.trim().replace(/\s+/g, " ");
+      const existing = sections.find((item) => item.nameAr.trim().replace(/\s+/g, " ") === normalizedSectionName);
+      const created = existing ? { section: existing } : await dshClient().createCatalogStorefrontSection(token, storeId, { nameAr: sectionName, ordinal: 0, active: true });
+      const section = extensionOfferID && !created.section.offerIds.includes(extensionOfferID) ? (await dshClient().attachCatalogOfferToSection(token, storeId, created.section.id, extensionOfferID)).section : created.section;
+      setSections((current) => [...current.filter((item) => item.id !== section.id), section]);
+      setSelectedSectionID(section.id);
+      setSectionName("");
+    }
     catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
+  }
+
+  async function attachToExistingSection() {
+    const existing = sections.find((section) => section.id === selectedSectionID);
+    if (busy || !existing || !extensionOfferID || existing.offerIds.includes(extensionOfferID)) return;
+    setBusy(true); setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const result = await dshClient().attachCatalogOfferToSection(token, storeId, existing.id, extensionOfferID);
+      setSections((current) => current.map((section) => section.id === existing.id ? result.section : section));
+    } catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
 
   function renderAttributeFields(rules: ReadonlyArray<CatalogAttributeRule>, drafts: AttributeDrafts, enumOptions: Readonly<Record<string, ReadonlyArray<string>>>, update: (key: string, value: string) => void) {
@@ -711,7 +742,12 @@ const theme = useAppearanceTheme();
       {catalogReady ? <View style={styles.managementBlock}><Text style={styles.itemTitle}>إضافة منتج لقائمة المتجر</Text><Text style={styles.muted}>الاسم والوصف والصورة والنسخة تخص هذا المتجر. أقسام القائمة تنظّم منتجاته للعميل.</Text><TextInput accessibilityLabel="اسم منتج المتجر" editable={!busy} onChangeText={setStoreProductName} placeholder="اسم المنتج" value={storeProductName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="وصف منتج المتجر" editable={!busy} maxLength={4000} multiline onChangeText={setStoreProductDescription} placeholder="وصف المنتج (اختياري)" value={storeProductDescription} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={busy || Boolean(pendingProductMedia)} label={storeProductImage ? "تغيير صورة المنتج" : "اختيار صورة من الجهاز"} onPress={() => void pickStoreProductImage()} variant="secondary" />{storeProductImage ? <Image accessibilityLabel={`معاينة صورة ${storeProductName || "المنتج"}`} source={{ uri: storeProductImage.uri }} resizeMode="cover" style={styles.productImage} /> : <Text style={styles.muted}>اختر صورة لرفعها مع المنتج أو اتركه دون صورة.</Text>}{storeProductImage ? <MediaProvenanceFields value={storeProductImageProvenance} onChange={setStoreProductImageProvenance} disabled={busy || Boolean(pendingProductMedia)} styles={styles} /> : null}{pendingProductMedia ? <BthwaniButton busy={busy} disabled={busy} label="إعادة رفع صورة المنتج" onPress={() => void retryProductMedia()} /> : null}<Text style={styles.fieldLabel}>هوية القياس</Text><View style={styles.choiceList}>{(["DISCRETE", "MEASURED", "VARIABLE_MEASURE"] as MeasurementKind[]).map((value) => <BthwaniChip key={value} label={measurementKindLabel(value)} onPress={() => { setStoreProductMeasurementKind(value); setStoreProductBaseUnit(""); }} selected={storeProductMeasurementKind === value} />)}</View><Text style={styles.fieldLabel}>الوحدة الأساسية</Text><View style={styles.choiceRow}>{baseUnitOptions(storeProductMeasurementKind).map((value) => <BthwaniChip key={value} label={baseUnitLabel(value)} onPress={() => setStoreProductBaseUnit(value)} selected={storeProductBaseUnit === value} />)}</View><BthwaniButton busy={busy} disabled={busy || Boolean(pendingProductMedia) || !storeProductName.trim() || !verticalId || !storeProductMeasurementKind || !storeProductBaseUnit || (Boolean(storeProductImage) && !isMediaProvenanceInputValid(storeProductImageProvenance))} label="إنشاء منتج المتجر" onPress={() => void createStoreProduct()} variant="secondary" /></View> : null}
        {catalogReady ? <><View style={styles.managementBlock}><Text style={styles.itemTitle}>اقتراح منتج للمراجعة</Text><Text style={styles.muted}>أرسل اسم المنتج وتصنيفه للمراجعة؛ لا يظهر قبل اعتماد المراجعة.</Text><TextInput accessibilityLabel="اسم المقترح" editable={!busy} onChangeText={setProposalName} placeholder="اسم المنتج المقترح" value={proposalName} style={[styles.input, busy && styles.disabledInput]} /><Text style={styles.muted}>{verticals.find((vertical) => vertical.id === verticalId)?.nameAr ?? ""}</Text><Text style={styles.fieldLabel}>التصنيف</Text><Text style={styles.muted}>يعرض كل خيار مساره من المجال التجاري إلى فئة المنتج المحددة، لتوضيح التفرّع قبل إرسال المقترح.</Text><View style={styles.choiceList}>{proposalCategories.map((category) => <BthwaniChip key={category.id} label={category.pathAr} onPress={() => { setProposalCategoryID(category.id); setProposalAttributeDrafts({}); }} selected={proposalCategoryID === category.id} />)}</View><TextInput accessibilityLabel="بحث في الفئات" placeholder="ابحث باسم الفئة" value={proposalCategoryQuery} onChangeText={setProposalCategoryQuery} style={styles.input} />{proposalCategoriesLoading ? <Text style={styles.muted}>جارٍ تحميل الفئات…</Text> : null}{!proposalCategoriesLoading && proposalCategories.length === 0 ? <Text style={styles.muted}>لا توجد فئات مطابقة.</Text> : null}{proposalCategoryNextCursor ? <BthwaniButton busy={proposalCategoriesLoading} disabled={proposalCategoriesLoading} label="تحميل المزيد من الفئات" onPress={() => void loadMoreProposalCategories()} variant="secondary" /> : null}<Text style={styles.fieldLabel}>هوية القياس</Text><View style={styles.choiceList}>{(["DISCRETE", "MEASURED", "VARIABLE_MEASURE"] as MeasurementKind[]).map((value) => <BthwaniChip key={value} label={measurementKindLabel(value)} onPress={() => { setProposalMeasurementKind(value); setProposalBaseUnit(""); }} selected={proposalMeasurementKind === value} />)}</View><Text style={styles.fieldLabel}>الوحدة الأساسية</Text><View style={styles.choiceRow}>{baseUnitOptions(proposalMeasurementKind).map((value) => <BthwaniChip key={value} label={baseUnitLabel(value)} onPress={() => setProposalBaseUnit(value)} selected={proposalBaseUnit === value} />)}</View>{proposalRuleState === "loading" ? <Text style={styles.muted}>جارٍ قراءة خصائص التصنيف…</Text> : null}{proposalRuleState === "error" ? <Text style={styles.warning}>تعذرت قراءة قواعد الخصائص. أعد المحاولة قبل إرسال المقترح.</Text> : null}{proposalRuleState !== "loading" && proposalRuleState !== "error" ? renderAttributeFields(proposalAttributeRules, proposalAttributeDrafts, proposalEnumOptions, (key, value) => setProposalAttributeDrafts((current) => ({ ...current, [key]: value }))) : null}<BthwaniButton busy={busy} disabled={proposalRuleState !== "ready" || !proposalName.trim() || !proposalVerticalID.trim() || !proposalCategoryID.trim() || !proposalMeasurementKind || !proposalBaseUnit} label="إرسال المقترح" onPress={() => void createProposal()} variant="secondary" />{state.kind === "ready" && state.proposals.length ? state.proposals.map((proposal) => <Text key={proposal.id} style={styles.muted}>{catalogProductProposalStateLabel(proposal.state)}{proposal.correctionReason ? ` · ${proposal.correctionReason}` : ""}</Text>) : null}{proposalNextCursor ? <BthwaniButton busy={busy} disabled={busy} label="تحميل المزيد من المقترحات" onPress={() => void loadMoreProposals()} variant="secondary" /> : null}</View>
        </> : null}
-       {catalogReady ? <View style={styles.managementBlock}><Text style={styles.itemTitle}>أقسام وإضافات المتجر</Text><Text style={styles.muted}>اختر عرضًا بالاسم ثم أنشئ مجموعة إضافات أو قسم عرض.</Text><View style={styles.offerPicker}>{state.kind === "ready" ? state.offers.map((offer) => <BthwaniChip key={offer.offerId} label={offer.productName} onPress={() => setExtensionOfferID(offer.offerId)} selected={extensionOfferID === offer.offerId} />) : null}</View><TextInput accessibilityLabel="اسم مجموعة الإضافات" editable={!busy} onChangeText={setModifierName} placeholder="اسم مجموعة الإضافات" value={modifierName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="اسم خيار الإضافة" editable={!busy} onChangeText={setModifierOptionName} placeholder="اسم خيار اختياري" value={modifierOptionName} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!modifierName.trim()} label="إنشاء مجموعة إضافات وربطها" onPress={() => void createModifiersAndAttach()} variant="secondary" /><TextInput accessibilityLabel="اسم القسم" editable={!busy} onChangeText={setSectionName} placeholder="اسم قسم المتجر" value={sectionName} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!sectionName.trim()} label="إنشاء قسم وربطه" onPress={() => void createSectionAndAttach()} variant="secondary" /></View> : null}
+       {catalogReady ? <View style={styles.managementBlock}><Text style={styles.itemTitle}>أقسام وإضافات المتجر</Text><Text style={styles.muted}>اختر عرضًا بالاسم ثم أنشئ مجموعة إضافات أو قسم عرض.</Text><View style={styles.offerPicker}>{state.kind === "ready" ? state.offers.map((offer) => <BthwaniChip key={offer.offerId} label={offer.productName} onPress={() => setExtensionOfferID(offer.offerId)} selected={extensionOfferID === offer.offerId} />) : null}</View><TextInput accessibilityLabel="اسم مجموعة الإضافات" editable={!busy} onChangeText={setModifierName} placeholder="اسم مجموعة الإضافات" value={modifierName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="اسم خيار الإضافة" editable={!busy} onChangeText={setModifierOptionName} placeholder="اسم خيار اختياري" value={modifierOptionName} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!modifierName.trim()} label="إنشاء مجموعة إضافات وربطها" onPress={() => void createModifiersAndAttach()} variant="secondary" />{sections.length ? <View style={styles.managementBlock}>
+        <Text style={styles.fieldLabel}>الأقسام الحالية</Text>
+        {sectionLoadError ? <View><Text style={styles.warning}>{sectionLoadError}</Text><BthwaniButton label="إعادة تحميل الأقسام" onPress={() => void load()} variant="secondary" /></View> : null}
+        <View style={styles.choiceRow}>{sections.map((section) => <BthwaniChip key={section.id} label={section.nameAr} disabled={busy} selected={selectedSectionID === section.id} onPress={() => setSelectedSectionID(section.id)} />)}</View>
+        <BthwaniButton busy={busy} disabled={busy || !extensionOfferID || !selectedSectionID || sections.some((section) => section.id === selectedSectionID && section.offerIds.includes(extensionOfferID))} label="ربط العرض بالقسم المحدد" onPress={() => void attachToExistingSection()} variant="secondary" />
+      </View> : null}<TextInput accessibilityLabel="اسم القسم" editable={!busy} onChangeText={setSectionName} placeholder="اسم قسم المتجر" value={sectionName} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!sectionName.trim()} label="إنشاء قسم وربطه" onPress={() => void createSectionAndAttach()} variant="secondary" /></View> : null}
       {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة عروض المتجر…</Text></View> : null}
       {state.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error || "تعذر قراءة عروض المتجر."}</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
         {state.kind === "ready" && state.offers.length === 0 ? <Text style={styles.muted}>لا توجد عروض مرتبطة بهذا المتجر بعد.</Text> : null}

@@ -126,7 +126,7 @@ func CreateCommercialStoreType(ctx context.Context, db *sql.DB, item CommercialS
 		}
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO dsh.commercial_store_types(id,vertical_id,name_ar,name_en,active) VALUES($1,$2,$3,$4,$5)`, item.ID, item.VerticalID, item.NameAr, item.NameEn, item.Active); err != nil {
-		return CommercialStoreTypeResult{}, err
+		return CommercialStoreTypeResult{}, catalogRegistryNameWriteError(err)
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO dsh.catalog_registry_mutation_idempotency(idempotency_key,request_hash,entity_type,entity_id) VALUES($1,$2,'commercial_store_type',$3)`, idempotencyKey, requestHash, item.ID); err != nil {
 		return CommercialStoreTypeResult{}, err
@@ -181,7 +181,7 @@ func UpdateCommercialStoreType(ctx context.Context, db *sql.DB, id string, input
 		return CommercialStoreTypeResult{}, ErrCatalogVersionConflict
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE dsh.commercial_store_types SET name_ar=$2,name_en=$3,active=$4,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$5`, id, input.NameAr, input.NameEn, input.Active, input.ExpectedVersion); err != nil {
-		return CommercialStoreTypeResult{}, err
+		return CommercialStoreTypeResult{}, catalogRegistryNameWriteError(err)
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO dsh.catalog_registry_mutation_idempotency(idempotency_key,request_hash,entity_type,entity_id) VALUES($1,$2,'commercial_store_type',$3)`, idempotencyKey, requestHash, id); err != nil {
 		return CommercialStoreTypeResult{}, err

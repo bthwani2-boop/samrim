@@ -31,7 +31,7 @@ function canCommitStoreImport(result: ImportResult | null): boolean {
 function classificationLabel(item: CatalogImportItem): string {
   switch (item.classification) {
     case "READY": return "جاهز";
-    case "NEEDS_REVIEW": return "باركود غير معروف للمراجعة";
+    case "NEEDS_REVIEW": return "يحتاج مراجعة المنتج";
     case "DUPLICATE_INPUT": return "مكرر في الملف";
     case "DUPLICATE_EXISTING": return "مطابق للسجل";
     case "CONFLICT_EXISTING": return "تعارض مع السجل";
@@ -43,10 +43,10 @@ function classificationLabel(item: CatalogImportItem): string {
   }
 }
 
-export function StoreCatalogImportWorkspace() {
+export function StoreCatalogImportWorkspace({fixedStore,onImported}:Readonly<{fixedStore?:StoreImportOption;onImported?:()=>void}> = {}) {
   const [stores, setStores] = useState<OperatorStoreListResponse["stores"]>([]);
-  const [storeID, setStoreID] = useState("");
-  const [selectedStore, setSelectedStore] = useState<StoreImportOption | null>(null);
+  const [storeID, setStoreID] = useState(fixedStore?.id ?? "");
+  const [selectedStore, setSelectedStore] = useState<StoreImportOption | null>(fixedStore ?? null);
   const [storeSearch, setStoreSearch] = useState("");
   const [appliedStoreSearch, setAppliedStoreSearch] = useState("");
   const [storeCursor, setStoreCursor] = useState("");
@@ -64,6 +64,7 @@ export function StoreCatalogImportWorkspace() {
   const [previewAttempt, setPreviewAttempt] = useState<Readonly<{ runId: string; idempotencyKey: string; correlationId: string }> | null>(null);
   const [commitAttempt, setCommitAttempt] = useState<Readonly<{ runId: string; idempotencyKey: string; correlationId: string }> | null>(null);
   const storeRequestSequence = useRef(0);
+  const isFixedStore = Boolean(fixedStore);
 
   useEffect(() => {
     const syncStoreListFromUrl = () => {
@@ -75,14 +76,16 @@ export function StoreCatalogImportWorkspace() {
       setStoreCursor(params.get("storeCursor") ?? "");
       setStoreCursorStack(history?.storeCatalogImportCursors ?? []);
     };
+    if (isFixedStore) {setStoreListReady(true);return;}
     syncStoreListFromUrl();
     setStoreListReady(true);
     window.addEventListener("popstate", syncStoreListFromUrl);
     return () => window.removeEventListener("popstate", syncStoreListFromUrl);
-  }, []);
+  }, [isFixedStore]);
 
   useEffect(() => {
     if (!storeListReady) return;
+    if (isFixedStore) {setStoresLoading(false);return;}
     const controller = new AbortController();
     const sequence = storeRequestSequence.current + storeListRefresh + 1;
     storeRequestSequence.current = sequence;
@@ -113,7 +116,7 @@ export function StoreCatalogImportWorkspace() {
         if (sequence === storeRequestSequence.current) setStoresLoading(false);
       });
     return () => controller.abort();
-  }, [appliedStoreSearch, storeCursor, storeListReady, storeListRefresh]);
+  }, [appliedStoreSearch, storeCursor, storeListReady, storeListRefresh, isFixedStore]);
 
   function navigateStoreList(query: string, cursor: string, cursorStack: ReadonlyArray<string>) {
     const url = new URL(window.location.href);
@@ -208,9 +211,9 @@ export function StoreCatalogImportWorkspace() {
       });
       const committed = await readJson<ImportResult>(response);
       setResult(committed);
-      if (committed.run.state === "committed") setCommitAttempt(null);
+      if (committed.run.state === "committed") {setCommitAttempt(null);onImported?.();}
       setNotice(committed.run.state === "committed"
-        ? "اعتمد النظام الصفوف الصالحة، وتم حفظ الصفوف غير المعروفة للمراجعة دون إنشاء منتجات."
+        ? "حُفظت المنتجات والأسعار الصالحة، وأُبقيت الصفوف المتعارضة للمراجعة دون إنشاء نسخ مكررة."
         : "تعذر اعتماد بعض الصفوف. الصفوف المحفوظة لن تتكرر؛ أعد اعتماد الصفوف الفاشلة فقط.");
       await readRun(committed.run.id);
     } catch (cause) {
@@ -224,9 +227,9 @@ export function StoreCatalogImportWorkspace() {
     <div className="access-card-heading">
 
       <h2 id="store-catalog-import-title">استيراد كتالوج المتجر</h2>
-      <p className="muted">ارفع ملف CSV أو Excel لمراجعة المنتجات والأسعار قبل الحفظ. الحد 5000 صف و20 ميغابايت.</p>
+      <p className="muted">ارفع CSV أو Excel بعمودي الاسم والسعر لإنشاء أصناف محلية دون باركود، أو الباركود والسعر لتحديث عروض معروفة. الوحدة اختيارية (قطعة، جرام، ملليلتر). راجع النتائج قبل الحفظ؛ الحد 5000 صف و20 ميغابايت.</p>
     </div>
-    <div className="catalog-import-store-picker" aria-busy={storesLoading}>
+    {!fixedStore ? <div className="catalog-import-store-picker" aria-busy={storesLoading}>
       <form className="catalog-import-store-search" noValidate onSubmit={(event) => { event.preventDefault(); navigateStoreList(storeSearch.trim().slice(0, 128), "", []); }}>
         <label className="field-label" htmlFor="store-catalog-import-store-search">ابحث عن متجر بالاسم<input id="store-catalog-import-store-search" type="search" value={storeSearch} maxLength={128} onChange={(event) => setStoreSearch(event.target.value)} placeholder="اكتب اسم المتجر ثم ابحث" disabled={Boolean(busy)} /></label>
         <button type="submit" className="button button-secondary" disabled={storesLoading || Boolean(busy)}>بحث</button>
@@ -248,13 +251,13 @@ export function StoreCatalogImportWorkspace() {
         <span>صفحة {storeCursorStack.length + 1}</span>
         <button type="button" className="button button-secondary" disabled={storesLoading || Boolean(busy) || !nextStoreCursor} onClick={() => navigateStoreList(appliedStoreSearch, nextStoreCursor, [...storeCursorStack, storeCursor])}>التالي</button>
       </nav> : null}
-    </div>
-    <label className="field-label" htmlFor="store-catalog-import-file">ملف الباركود والأسعار<input id="store-catalog-import-file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={Boolean(busy)} onChange={(event) => selectFile(event.target.files?.[0] ?? null)} /></label>
+    </div> : <p className="store-profile-muted">الاستيراد إلى المتجر المحدد: <strong>{fixedStore.name}</strong></p>}
+    <label className="field-label" htmlFor="store-catalog-import-file">ملف المنتجات والأسعار<input id="store-catalog-import-file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={Boolean(busy)} onChange={(event) => selectFile(event.target.files?.[0] ?? null)} /></label>
     {file ? <p className="muted">{file.name} · {(file.size / (1024 * 1024)).toFixed(2)} ميغابايت</p> : null}
     <button type="button" className="button button-primary" disabled={Boolean(busy) || !file || !storeID.trim()} onClick={() => void preview()}>{busy === "preview" ? "جارٍ إنشاء المعاينة…" : "معاينة الملف"}</button>
     {result ? <div className="managed-status managed-status-info" role="status">
       <strong>الحالة: {result.run.state === "previewed" ? "معاينة جاهزة" : result.run.state === "committed" ? "تم الاعتماد" : "تحتاج مراجعة"} · الجاهز: {result.run.acceptedCount} · المراجعة أو التعارض: {result.run.conflictCount}</strong>
-      <p>يُحل كل باركود على الكتالوج المشترك ومحلي المتجر. الباركود غير المعروف لا ينشئ منتجًا تلقائيًا.</p>
+      <p>الباركود المعروف يُربط بمنتجه، والمجهول يبقى للمراجعة. الصنف بلا باركود يصبح منتجًا محليًا لهذا المتجر فقط عند عدم وجود تطابق؛ الأسماء المتشابهة مع منتج مشترك تُوقف للمراجعة.</p>
       <ol>{result.items.map((item) => <li key={`${item.rowNumber}-${item.stableKey}`}>السطر {item.rowNumber} · {classificationLabel(item)}{item.errorMessage ? ` · ${item.errorMessage}` : item.committed ? " · كُتب " : ""}</li>)}</ol>
       {canCommitStoreImport(result) ? <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void commit()}>{busy === "commit" ? "جارٍ الاعتماد…" : result.run.state === "rejected" ? "إعادة اعتماد الصفوف الفاشلة" : "اعتماد الصفوف الصالحة"}</button> : null}
       {result.run.state === "rejected" ? <p className="muted">اكتملت الصفوف الناجحة؛ يمكنك إعادة محاولة الصفوف الفاشلة دون تكرار ما حُفظ. راجع أسباب الفشل قبل إعادة الاعتماد.</p> : null}

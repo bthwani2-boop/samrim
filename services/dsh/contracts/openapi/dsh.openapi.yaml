@@ -166,11 +166,18 @@ paths:
   /dsh/joining-cases/{caseId}/review:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1review"
 
+  /dsh/catalog/shopping-shortcuts:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1shopping-shortcuts"
+  /dsh/catalog/shopping-shortcuts/{shortcutId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1shopping-shortcuts~1{shortcutId}"
   /dsh/catalog/verticals:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1verticals"
 
   /dsh/catalog/verticals/{verticalId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1verticals~1{verticalId}"
+
+  /dsh/catalog/verticals/{verticalId}/media/upload:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1verticals~1{verticalId}~1media~1upload"
 
   /dsh/catalog/commercial-store-types:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1commercial-store-types"
@@ -301,44 +308,37 @@ paths:
   /dsh/catalog/imports/preview:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1imports~1preview"
 
+  /dsh/operator/stores/{storeId}/products:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1products"
+
+  /dsh/operator/stores/{storeId}/offers:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1offers"
+
+  /dsh/operator/stores/{storeId}/offers/{offerId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1offers~1{offerId}"
+
+  /dsh/operator/stores/{storeId}/products/{productId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1products~1{productId}"
+
+  /dsh/operator/stores/{storeId}/products/{productId}/media/upload:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1products~1{productId}~1media~1upload"
+
   /dsh/catalog/store-imports/preview:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1store-imports~1preview"
 
   /dsh/catalog/identifiers/resolve:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1identifiers~1resolve"
 
-  /dsh/field/catalog/identifiers/resolve:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1catalog~1identifiers~1resolve"
 
-  /dsh/field/joining-cases/{caseId}/catalog:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog"
 
-  /dsh/field/joining-cases/{caseId}/catalog/products:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1products"
 
-  /dsh/field/joining-cases/{caseId}/catalog/offers:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1offers"
 
-  /dsh/field/joining-cases/{caseId}/catalog/offers/{offerId}:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1offers~1{offerId}"
 
-  /dsh/field/joining-cases/{caseId}/catalog/quick-prices:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1quick-prices"
 
-  /dsh/field/joining-cases/{caseId}/catalog/quick-prices/commit:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1quick-prices~1commit"
 
-  /dsh/field/joining-cases/{caseId}/catalog/imports/preview:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1imports~1preview"
 
-  /dsh/field/joining-cases/{caseId}/catalog/product-proposals:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1product-proposals"
 
-  /dsh/field/joining-cases/{caseId}/catalog/product-proposals/{proposalId}/submit:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1product-proposals~1{proposalId}~1submit"
 
-  /dsh/field/joining-cases/{caseId}/catalog/product-proposals/{proposalId}:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1product-proposals~1{proposalId}"
 
   /dsh/catalog/imports/{runId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1imports~1{runId}"
@@ -352,11 +352,7 @@ paths:
   /dsh/catalog/store-imports/{runId}/commit:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1store-imports~1{runId}~1commit"
 
-  /dsh/field/joining-cases/{caseId}/catalog/imports/{runId}:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1imports~1{runId}"
 
-  /dsh/field/joining-cases/{caseId}/catalog/imports/{runId}/commit:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1imports~1{runId}~1commit"
 
   /dsh/stores/{storeId}/offers:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1offers"
@@ -954,6 +950,9 @@ paths:
 
   /dsh/field/joining-cases/{caseId}/draft:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1draft"
+
+  /dsh/field/joining-cases/{caseId}/correction:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1correction"
 
   /dsh/field/joining-cases/{caseId}/submit:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1submit"
@@ -2031,6 +2030,9 @@ components:
           minLength: 5
           maxLength: 500
 
+    StorePublicationBlockedReason:
+      type: string
+      enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, FINANCIAL_PROFILE_NOT_READY, SERVICE_CITY_NOT_ELIGIBLE, STORE_LOGO_NOT_READY, STORE_COVER_NOT_READY, STORE_SCHEDULE_NOT_READY, CATALOG_NOT_READY, COMMERCIAL_AGREEMENT_NOT_READY, READINESS_UNAVAILABLE]
     StorePublicationReadiness:
       type: object
       required: [ready]
@@ -2039,8 +2041,11 @@ components:
         ready:
           type: boolean
         blockedReason:
-          type: string
-          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, FINANCIAL_PROFILE_NOT_READY, SERVICE_CITY_NOT_ELIGIBLE, STORE_LOGO_NOT_READY, STORE_COVER_NOT_READY, CATALOG_NOT_READY]
+          $ref: "#/components/schemas/StorePublicationBlockedReason"
+        blockedReasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorePublicationBlockedReason"
 
     StoreView:
       type: object
@@ -3759,20 +3764,6 @@ components:
           minLength: 1
           maxLength: 128
 
-    FieldCatalogIdentifierResolveRequest:
-      type: object
-      required: [joiningCaseId, identifierValue]
-      additionalProperties: false
-      properties:
-        joiningCaseId:
-          type: string
-          minLength: 1
-          maxLength: 128
-        identifierValue:
-          type: string
-          minLength: 1
-          maxLength: 128
-
     CatalogIdentifierResolution:
       type: object
       required: [outcome, storeId]
@@ -3815,70 +3806,6 @@ components:
       properties:
         resolution:
           $ref: "#/components/schemas/CatalogIdentifierResolution"
-
-    CreateFieldCatalogProductRequest:
-      type: object
-      required: [canonicalName, variantTitle, measurementKind, baseUnit]
-      additionalProperties: false
-      properties:
-        canonicalName:
-          type: string
-          minLength: 1
-          maxLength: 160
-        description:
-          type: string
-          maxLength: 4000
-        brand:
-          type: string
-          nullable: true
-          maxLength: 160
-        variantTitle:
-          type: string
-          minLength: 1
-          maxLength: 160
-        measurementKind:
-          $ref: "#/components/schemas/MeasurementKind"
-        baseUnit:
-          $ref: "#/components/schemas/BaseUnit"
-        identifierType:
-          type: string
-          nullable: true
-          enum: [GTIN, EAN, UPC, SKU]
-        identifierValue:
-          type: string
-          nullable: true
-          maxLength: 128
-
-    FieldCatalogReadResponse:
-      type: object
-      required: [joiningCaseId, storeId, storeName, verticalId, verticalNameAr, products, offers]
-      additionalProperties: false
-      properties:
-        joiningCaseId:
-          type: string
-        storeId:
-          type: string
-        storeName:
-          type: string
-          minLength: 2
-          maxLength: 160
-        verticalId:
-          type: string
-        verticalNameAr:
-          type: string
-          minLength: 2
-          maxLength: 160
-        products:
-          type: array
-          items:
-            $ref: "#/components/schemas/CatalogProduct"
-        offers:
-          type: array
-          items:
-            $ref: "#/components/schemas/CatalogStoreOffer"
-        nextCursor:
-          type: string
-          nullable: true
 
     CatalogProductProposal:
       type: object
@@ -4198,6 +4125,15 @@ components:
           type: integer
           minimum: 0
 
+    CatalogStorefrontSectionListResponse:
+      type: object
+      required: [sections]
+      additionalProperties: false
+      properties:
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogStorefrontSection"
     CatalogStorefrontSectionResponse:
       type: object
       required: [section]
@@ -4313,6 +4249,9 @@ components:
           type: string
         nameEn:
           type: string
+        imageUri:
+          type: string
+          description: Canonical DSH media URI for the CommerceVertical illustration.
         active:
           type: boolean
         version:
@@ -4739,7 +4678,7 @@ components:
 
     PublicStoreView:
       type: object
-      required: [id, name, serviceCity, primaryVerticalId, categoryIds, fulfillmentModes, orderabilityByMode, version, ratingAverage, ratingCount, publishedAt, createdAt, updatedAt]
+      required: [id, name, serviceCity, primaryVerticalId, categoryIds, fulfillmentModes, orderabilityByMode, version, ratingAverage, ratingCount, promotionCount, publishedAt, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -4791,6 +4730,10 @@ components:
         ratingCount:
           type: integer
           minimum: 0
+        promotionCount:
+          type: integer
+          minimum: 0
+          description: Count of published city-eligible promotions applicable to this Store, including opted-in global campaigns.
         publishedAt:
           type: string
           format: date-time
@@ -4981,9 +4924,122 @@ components:
           items:
             $ref: "#/components/schemas/StoreOrderability"
 
+    ShoppingShortcut:
+      type: object
+      required: [id, verticalId, titleAr, ordinal, active, version, storeTypeIds, categoryIds, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        verticalId:
+          type: string
+          maxLength: 128
+        titleAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        ordinal:
+          type: integer
+          minimum: 0
+          maximum: 9999
+        active:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        storeTypeIds:
+          type: array
+          items:
+            type: string
+        categoryIds:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ShoppingShortcutListResponse:
+      type: object
+      required: [shortcuts]
+      additionalProperties: false
+      properties:
+        shortcuts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShoppingShortcut"
+
+    ShoppingShortcutMutationRequest:
+      type: object
+      required: [verticalId, titleAr, ordinal, active, expectedVersion, storeTypeIds, categoryIds, reason]
+      additionalProperties: false
+      properties:
+        verticalId:
+          type: string
+          maxLength: 128
+        titleAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        ordinal:
+          type: integer
+          minimum: 0
+          maximum: 9999
+        active:
+          type: boolean
+        expectedVersion:
+          type: integer
+          minimum: 0
+        storeTypeIds:
+          type: array
+          items:
+            type: string
+        categoryIds:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+
+    ShoppingShortcutMutationResponse:
+      type: object
+      required: [shortcut, idempotentReplay]
+      additionalProperties: false
+      properties:
+        shortcut:
+          $ref: "#/components/schemas/ShoppingShortcut"
+        idempotentReplay:
+          type: boolean
+
+    PublicShoppingShortcut:
+      type: object
+      required: [id, verticalId, titleAr, ordinal]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        verticalId:
+          type: string
+          maxLength: 128
+        titleAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        ordinal:
+          type: integer
+          minimum: 0
+          maximum: 9999
+
     PublishedStoreListResponse:
       type: object
-      required: [stores, verticals, categories, limit]
+      required: [stores, verticals, categories, shortcuts, limit]
       additionalProperties: false
       properties:
         stores:
@@ -5000,6 +5056,11 @@ components:
           description: Active categories represented by customer-visible offers in eligible published Stores in this Service City.
           items:
             $ref: "#/components/schemas/CatalogCategory"
+        shortcuts:
+          type: array
+          description: Populated customer-facing shopping shortcuts, with no internal Store Type IDs.
+          items:
+            $ref: "#/components/schemas/PublicShoppingShortcut"
         limit:
           type: integer
           minimum: 1

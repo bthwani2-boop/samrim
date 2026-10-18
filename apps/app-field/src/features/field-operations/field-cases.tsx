@@ -412,18 +412,15 @@ export function FieldCases() {
       badgeTone = "neutral";
     }
 
-    let nextStepText: string;
-    if (item.state === "draft") {
-      nextStepText = "الخطوة التالية: راجع بيانات الشريك وأرسل الطلب للمراجعة.";
-    } else if (item.state === "admission_requested") {
-      nextStepText = "استلم فريق التشغيل الطلب؛ سيظهر للشريك بعد مراجعة الانضمام.";
-    } else if (item.state === "submitted") {
-      nextStepText = "أُرسل طلب الانضمام إلى الشريك وفريق التشغيل للمراجعة.";
-    } else if (item.state === "needs_correction") {
-      nextStepText = "الخطوة التالية: يصحح الشريك المرتبط البيانات ويعيد الإرسال.";
-    } else {
-      nextStepText = "اعتمد فريق التشغيل الطلب؛ يتابع المتجر التفعيل قبل ظهوره للعملاء.";
-    }
+    const nextStepText = item.state === "draft"
+      ? "المرحلة 1 من 3: أكمل بيانات المتجر وأرسل الطلب للمراجعة."
+      : item.state === "admission_requested"
+        ? "المرحلة 1 من 3: الطلب بانتظار إحالته للمشغّل. لا تحتاج إلى تقديم طلب جديد."
+        : item.state === "submitted"
+          ? "المرحلة 1 من 3: المشغّل يراجع الطلب. ستظهر أي ملاحظات تصحيح هنا."
+          : item.state === "needs_correction"
+            ? "المرحلة 1 من 3: صحح الملاحظات أدناه ثم أعد إرسال الطلب نفسه."
+            : "المرحلة 2 من 3: تم اعتماد الانضمام وإنشاء المتجر، لكنه لم يُنشر بعد. راجع مقترح العمولة إن لم يُرسل؛ بعده يقبل الشريك ثم تعتمد المالية. المشغّل هو من ينشر المتجر.";
     const walletProviderName = walletProviders.find((provider) => provider.key === item.walletProviderKey)?.displayNameAr ?? item.walletProviderKey;
 
     let storeImageButtonLabel: string;
@@ -443,13 +440,13 @@ export function FieldCases() {
       {item.state === "needs_correction" && item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}
       <Text style={styles.muted}>{nextStepText}</Text>
       {item.state === "approved" ? <>
-        <BthwaniButton disabled={Boolean(busy)} label={agreementCaseID === item.id ? "إخفاء اتفاقية عمولة المتجر" : "عرض اتفاقية عمولة المتجر"} onPress={() => setAgreementCaseID((current) => current === item.id ? null : item.id)} variant="secondary" />
+        <Text style={styles.muted}>المطلوب منك الآن: متابعة مقترح عمولة المتجر فقط إذا لم يُرسل. قبول الشريك والاعتماد المالي والنشر ليست مهام الميداني.</Text>
+        <BthwaniButton disabled={Boolean(busy)} label={agreementCaseID === item.id ? "إخفاء اتفاقية العمولة" : "متابعة اتفاقية العمولة"} onPress={() => setAgreementCaseID((current) => current === item.id ? null : item.id)} variant="secondary" />
         {agreementCaseID === item.id ? <FieldCommercialAgreement caseID={item.id} /> : null}
-        <BthwaniButton disabled={Boolean(busy)} label="إعداد كتالوج المتجر الأولي" onPress={() => router.push(`/(app)/catalog/${encodeURIComponent(item.id)}` as Href)} variant="secondary" />
       </> : null}
-      {item.state === "draft" ? <View style={styles.optionList}>
-        <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="تعديل بيانات المسودة" onPress={() => router.push({ pathname: "/new-case", params: { caseId: item.id } } as Href)} variant="secondary" />
-        <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="صور واجهة المتجر" onPress={() => void openStoreImage(item)} variant="secondary" />
+      {(item.state === "draft" || item.state === "needs_correction") ? <View style={styles.optionList}>
+        <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label={item.state === "needs_correction" ? "تصحيح الطلب وإعادة إرساله" : "تعديل بيانات المسودة"} onPress={() => router.push({ pathname: "/new-case", params: { caseId: item.id } } as Href)} variant="secondary" />
+        {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="صور واجهة المتجر" onPress={() => void openStoreImage(item)} variant="secondary" /> : null}
       </View> : null}
       {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy)} label="إرسال للمراجعة" onPress={() => setCaseToSubmit(item)} /> : null}
       {mediaCase?.case.id === item.id ? <View style={styles.card}>

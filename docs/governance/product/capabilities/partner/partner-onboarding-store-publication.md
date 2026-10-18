@@ -31,7 +31,7 @@ DSH owns joining-case, Field standing admission/eligibility, assignment, Partner
 - the public Store logo and a separate public Store cover image are required visual assets **before publication**, not a Field intake, admission, review or Store-creation blocker. Field may attach them during intake; authorized Operators or Partners may add/replace them later through the governed Store media owner. After creation, media management is scoped to each canonical Store independently of its joining case: its owning Partner and authorized active Operator may read and replace the logo or cover, preserving version conflicts, upload recovery and provenance. A published Store must have both canonical active assets. The logo is reused as Store identity across Customer, Partner and Operator views; the cover is shown on the customer storefront. Optional Field premises photos form a multi-image Store-owned internal album, accessible only through authorized internal routes and never returned by public projections. The optional case-only premises review photo remains separate and is never public or copied to Store media;
 - weekly working hours are expressed in the selected Service City's local time and support closed days and multiple opening intervals in a day; optional onboarding notes are available to the Operator reviewer and do not replace structured intake facts;
 - at first-Store creation, accepted joining-case working hours initialize the canonical `STORE_OPERATIONAL_AVAILABILITY` schedule in the same transaction, including overnight windows; the intake and Store business-hours snapshot remain historical context, not a second authority for live orderability; later authorized Partner/Operator changes use the operational-availability owner only;
-- owner contact, address, map location, working hours, fulfillment modes and other submitted first-Store facts are preserved through review/correction and copied into their canonical Store owner at creation; the case remains the auditable intake snapshot;
+- owner contact, address, map location, chosen fulfillment modes and other first-Store intake facts remain auditable. Operating hours are optional during joining intake; when omitted the approved Store starts with an empty WEEKLY schedule (closed), never an inferred 24/7 schedule, and must receive an explicit operating schedule before publication;
 - first-Store Store Type may be corrected before Store creation only through the governed case-correction path;
 - after Store creation, only an active authorized Operator path may change the Store's durable enabled fulfillment-mode policy; Partner surfaces cannot mutate that durable policy;
 - Partner may change only the temporary operational availability allowed by `STORE_OPERATIONAL_AVAILABILITY`; pausing a mode never enables/disables the durable admitted mode policy;
@@ -46,11 +46,11 @@ DSH owns joining-case, Field standing admission/eligibility, assignment, Partner
 - a Field admission candidate captures the person's submitted name and contact phone, Service City and official-wallet provider preference; Identity alone accepts the canonical identity name and verified phone, and the provider preference does not create a payout destination;
 - Field may originate/progress authorized joining work but cannot create Identity actors/roles, approve its own submission or publish a Store;
 - owner review is distinct from Field submission;
-- only a bound Partner may correct and resubmit its `needs_correction` case as one governed atomic business transition; Operator does not impersonate that resubmission;
+- a bound Partner **or the original, currently eligible Field actor** may correct and resubmit a `needs_correction` Field-originated case through the same DSH atomic, versioned correction writer. Field correction requires that exact originating Field actor and a previously bound Partner actor; the Operator cannot impersonate either actor, approve its own correction, or change the case owner;
 - Store publication is distinct from serviceability, catalog/offer eligibility and current operational orderability;
 - customer-visible Store publication requires applicable Store publication, active Service City assignment and catalog publication gates; current orderability is evaluated separately;
 - Store publication requires an active Store-specific `STORE_COMMERCIAL_AGREEMENT` for its enabled fulfillment modes, explicit acceptance by the bound Partner owner of the exact agreement version, and Finance approval; Store Type suggestions, Store creation and catalog readiness cannot substitute for these gates;
-- Field may perform authorized initial catalog work only for its assigned, bound joining Store before Go-Live; after successful publication that write authority ends and the Partner becomes the ongoing Store catalog operator;
+- The bound Partner manages the Store catalog before and after Go-Live through the Partner surface; Field admission and joining-case authority do not grant Store catalog writes;
 - a published Store may remain customer-discoverable as closed/paused when current Product/experience policy allows, but checkout may not treat publication as proof that the Store can accept orders now;
 - trusted case/business scope is derived server-side, never granted by request input;
 - mutations are concurrency-safe, idempotent and attributable.
@@ -60,7 +60,7 @@ DSH owns joining-case, Field standing admission/eligibility, assignment, Partner
 The following are **different admission/operation gates**, not one compulsory global bootstrap chain:
 
 - **Field candidate and standing admission:** an authorized Operator, DSH Field-admission policy/eligibility and the selected active Service City scope (or an admitted all-cities scope), plus any currently required active official-wallet provider option. A complete shared Product catalog, Store, JoiningCase or Store-specific agreement is **not** a prerequisite for admitting or activating a Field actor.
-- **Field JoiningCase intake/submission:** the Field actor must have current standing and permitted case scope; the first Store requires an active canonical Service City, one active Commerce Vertical and a compatible active Commercial Store Type, along with its admitted contact, evidence, location, schedule and fulfillment-mode facts. DSH validates actual registry records, not presentation labels or client selections as authority.
+- **Field JoiningCase intake/submission:** the Field actor must have current standing and permitted case scope; the first Store requires an active canonical Service City, one active Commerce Vertical and a compatible active Commercial Store Type, along with submitted contact, evidence, location and fulfillment modes. Working hours can be completed later; omitted hours initialize a CLOSED WEEKLY Store schedule and block publication until explicitly configured. DSH validates actual registry records, not presentation labels or client selections as authority.
 - **Partner role admission:** only the approved DSH joining/ownership or admitted Store-delegation eligibility may request the `partner` role from Identity; a candidate or phone input alone does not create Partner standing.
 - **Store publication:** separate, later Store-specific agreement acceptance/Finance approval, admitted initial catalog readiness and final Operator readiness; creating a Field account, JoiningCase, Partner account or Store never implies publication or current orderability.
 
@@ -80,7 +80,7 @@ PARTNER
 → DSH Partner eligibility
 → authorized Identity Partner role admission and access
 → canonical draft Store + owner binding
-→ bound Partner confirmation/correction of onboarding data
+→ bound Partner or original Field actor corrects returned onboarding data if requested (own attributed session only)
 → WLT Store-specific agreement proposal
 → bound Partner acceptance of the exact agreement terms
 → Finance approval and WLT activation

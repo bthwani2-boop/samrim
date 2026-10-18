@@ -34,6 +34,18 @@ const iconNames: Record<MobileIconName, ReturnType<typeof Icon.select>> = {
   close: Icon.select({ ios: "xmark", android: require("@expo/material-symbols/close.xml") }),
   eye: Icon.select({ ios: "eye", android: require("@expo/material-symbols/visibility.xml") }),
   "eye-off": Icon.select({ ios: "eye.slash", android: require("@expo/material-symbols/visibility_off.xml") }),
+  categories: Icon.select({ ios: "square.grid.3x3", android: require("@expo/material-symbols/grid_view.xml") }),
+  restaurant: Icon.select({ ios: "fork.knife", android: require("@expo/material-symbols/restaurant.xml") }),
+  grocery: Icon.select({ ios: "basket", android: require("@expo/material-symbols/shopping_basket.xml") }),
+  desserts: Icon.select({ ios: "birthday.cake", android: require("@expo/material-symbols/cake.xml") }),
+  beauty: Icon.select({ ios: "tshirt", android: require("@expo/material-symbols/checkroom.xml") }),
+  electronics: Icon.select({ ios: "laptopcomputer.and.iphone", android: require("@expo/material-symbols/devices.xml") }),
+  health: Icon.select({ ios: "cross.case", android: require("@expo/material-symbols/local_pharmacy.xml") }),
+  gifts: Icon.select({ ios: "gift", android: require("@expo/material-symbols/redeem.xml") }),
+  "home-projects": Icon.select({ ios: "house", android: require("@expo/material-symbols/home_work.xml") }),
+  "auto-parts": Icon.select({ ios: "wrench.and.screwdriver", android: require("@expo/material-symbols/build.xml") }),
+  honey: Icon.select({ ios: "leaf", android: require("@expo/material-symbols/hive.xml") }),
+  mall: Icon.select({ ios: "bag", android: require("@expo/material-symbols/local_mall.xml") }),
 };
 
 export function BthwaniIcon({

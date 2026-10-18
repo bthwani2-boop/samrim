@@ -12,12 +12,27 @@ export function appendMediaProvenance(form: FormData, value: MediaProvenanceInpu
   form.set("rightsAttested", String(value.rightsAttested));
 }
 
-export function CatalogMediaProvenanceFields({ idPrefix, disabled, value, onChange }: {
+export function CatalogMediaProvenanceFields({ idPrefix, disabled, value, onChange, compact = false }: {
   idPrefix: string;
   disabled: boolean;
   value: MediaProvenanceInput;
   onChange: (value: MediaProvenanceInput) => void;
+  compact?: boolean;
 }) {
+  if (compact) return <fieldset className="catalog-media-provenance-compact">
+    <legend className="visually-hidden">مصدر الصورة وحقوق الاستخدام</legend>
+    <label className="field-label" htmlFor={`${idPrefix}-creator`}>المنشئ أو المصوّر<input id={`${idPrefix}-creator`} disabled={disabled} maxLength={200} placeholder="اسم الشخص أو الجهة" value={value.creator} onChange={(event) => onChange({ ...value, creator: event.target.value })} /></label>
+    <label className="field-label" htmlFor={`${idPrefix}-source`}>مصدر الصورة<input id={`${idPrefix}-source`} disabled={disabled} maxLength={1000} placeholder="مصدر الحصول على الصورة" value={value.sourceDescription} onChange={(event) => onChange({ ...value, sourceDescription: event.target.value })} /></label>
+    <label className="field-label catalog-media-compact-rights" htmlFor={`${idPrefix}-rights`}>الإذن أو الترخيص<input id={`${idPrefix}-rights`} disabled={disabled} maxLength={2000} placeholder="بيان يوضح حق استخدام الصورة" value={value.rightsStatement} onChange={(event) => onChange({ ...value, rightsStatement: event.target.value })} /></label>
+    <label className="catalog-media-compact-consent" htmlFor={`${idPrefix}-attested`}><input id={`${idPrefix}-attested`} type="checkbox" disabled={disabled} checked={value.rightsAttested} onChange={(event) => onChange({ ...value, rightsAttested: event.target.checked })} /> أقرّ بوجود إذن يسمح بعرض هذه الصورة</label>
+    <details className="catalog-media-compact-extra"><summary>روابط المصدر والترخيص (اختيارية)</summary>
+      <div>
+        <label className="field-label" htmlFor={`${idPrefix}-source-uri`}>رابط المصدر<input id={`${idPrefix}-source-uri`} disabled={disabled} type="url" maxLength={2048} value={value.sourceUri ?? ""} onChange={(event) => onChange({ ...value, sourceUri: event.target.value })} /></label>
+        <label className="field-label" htmlFor={`${idPrefix}-rights-uri`}>رابط الترخيص<input id={`${idPrefix}-rights-uri`} disabled={disabled} type="url" maxLength={2048} value={value.rightsUri ?? ""} onChange={(event) => onChange({ ...value, rightsUri: event.target.value })} /></label>
+      </div>
+    </details>
+  </fieldset>;
+
   return <fieldset className="catalog-media-provenance">
     <legend>مصدر الصورة وحقوق استخدامها</legend>
     <label className="field-label" htmlFor={`${idPrefix}-creator`}>اسم المنشئ أو المصوّر<input id={`${idPrefix}-creator`} disabled={disabled} maxLength={200} value={value.creator} onChange={(event) => onChange({ ...value, creator: event.target.value })} /></label>

@@ -10,6 +10,11 @@ import (
 // Split overnight windows at midnight so the customer's orderability clock
 // has exactly the same meaning as the approved joining-case schedule.
 func operationalWindowsFromJoiningHours(raw json.RawMessage) ([]StoreScheduleWindow, error) {
+	// A newly approved Store with no submitted operating hours starts CLOSED.
+	// Its Partner or Operator sets an explicit schedule before publication.
+	if len(raw) == 0 {
+		return []StoreScheduleWindow{}, nil
+	}
 	if !ValidateStoreWorkingHours(raw) {
 		return nil, ErrStoreOperationalAvailabilityInvalid
 	}

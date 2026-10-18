@@ -209,5 +209,33 @@ func (s *Service) ReconcileMediaStorage(ctx context.Context) error {
 			firstErr = err
 		}
 	}
+	verticalAssets, err := postgres.ListCommerceVerticalMediaAssetsForCleanup(ctx, s.db, 100)
+	if err != nil {
+		return err
+	}
+	for _, asset := range verticalAssets {
+		if err := s.media.Delete(ctx, asset.ObjectKey); err != nil {
+			_ = postgres.MarkCommerceVerticalMediaAssetCleanupFailure(ctx, s.db, asset.ID, err.Error())
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if err := postgres.MarkCommerceVerticalMediaAssetDeleted(ctx, s.db, asset.ID); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
 	return firstErr
+}
+
+func (s *Service) UploadStoreProductMediaForOperator(ctx context.Context, actorID, storeID, productID string, input CatalogMediaUploadInput) (postgres.CatalogProductResult, error) {
+	product, err := s.ReadStoreProductForOperator(ctx, actorID, storeID, productID)
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if product.Scope != "STORE_SCOPED" {
+		return postgres.CatalogProductResult{}, postgres.ErrCatalogProductOwnership
+	}
+	input.ProductID = strings.TrimSpace(productID)
+	return s.uploadCatalogProductMedia(ctx, strings.TrimSpace(actorID), input)
 }

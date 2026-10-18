@@ -1098,41 +1098,35 @@ const retryItem = retryCommitRecovered.body?.items?.find((item) => item.rowNumbe
 if (retryPreview.status !== 201 || retryCommitFailed.status !== 200 || retryCommitFailed.body?.run?.state !== "rejected" || retryCommitFailed.body?.items?.[0]?.classification !== "FAILED" || retryCategoryCreate.status !== 201 || retryCommitRecovered.status !== 200 || retryCommitRecovered.body?.run?.state !== "committed" || retryItem?.classification !== "IMPORTED") fail("catalog import rejected-run recovery retry failed", JSON.stringify({ retryPreview, retryCommitFailed, retryCategoryCreate, retryCommitRecovered }));
 console.log("DSH_CATALOG_IMPORT=PASS");
 
+// Field owns partner admission; once approved, the partner owns Store catalog
+// writes. The retired field/joining-cases/.../catalog routes intentionally 404.
 const fieldCatalogUnbarcodedInput = { canonicalName: `Field Shared No Barcode ${suffix}`, verticalId: verticalID, scope: "SHARED", variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }] };
 const fieldCatalogUnbarcodedCreate = await request(dshBase, "POST", "/dsh/catalog/products", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-shared-no-barcode-${suffix}`), body: fieldCatalogUnbarcodedInput });
-const fieldCatalogUnbarcodedID = String(fieldCatalogUnbarcodedCreate.body?.product?.id || "");
+const fieldCatalogUnbarcodedVariantID = String(fieldCatalogUnbarcodedCreate.body?.product?.variants?.[0]?.id || "");
 const fieldCatalogPartnerPhone = `+96776${crypto.randomInt(1_000_000, 9_999_999)}`;
 const fieldCatalogPartner = await createApprovedPartner(fieldCatalogPartnerPhone, "Field Catalog Runtime", cityA, "field");
-const fieldCatalogPath = `/dsh/field/joining-cases/${encodeURIComponent(fieldCatalogPartner.caseID)}/catalog`;
-const fieldCatalogInitialRead = await request(dshBase, "GET", `${fieldCatalogPath}?limit=100`, { token: fieldAccessToken });
-const fieldCatalogListedShared = fieldCatalogInitialRead.body?.products?.find((item) => item.id === productID);
-const fieldCatalogListedUnbarcoded = fieldCatalogInitialRead.body?.products?.find((item) => item.id === fieldCatalogUnbarcodedID);
-const fieldCatalogBarcodeResolve = await request(dshBase, "POST", "/dsh/field/catalog/identifiers/resolve", { token: fieldAccessToken, body: { joiningCaseId: fieldCatalogPartner.caseID, identifierValue: productInput.identifierValue } });
-const fieldCatalogNoBarcodeSearch = await request(dshBase, "GET", `${fieldCatalogPath}?limit=100&q=${encodeURIComponent(fieldCatalogUnbarcodedInput.canonicalName)}`, { token: fieldAccessToken });
-const fieldCatalogUnbarcodedVariantID = String(fieldCatalogUnbarcodedCreate.body?.product?.variants?.[0]?.id || "");
-const fieldCatalogSharedOfferKey = `field-shared-offer-${suffix}`;
-const fieldCatalogSharedOfferBody = discreteCreateOffer(variantID, 777);
-const fieldCatalogSharedOffer = await request(dshBase, "POST", `${fieldCatalogPath}/offers`, { token: fieldAccessToken, headers: partnerHeaders(fieldCatalogSharedOfferKey), body: fieldCatalogSharedOfferBody });
-const fieldCatalogSharedOfferReplay = await request(dshBase, "POST", `${fieldCatalogPath}/offers`, { token: fieldAccessToken, headers: partnerHeaders(fieldCatalogSharedOfferKey), body: fieldCatalogSharedOfferBody });
-const fieldCatalogNoBarcodeOffer = await request(dshBase, "POST", `${fieldCatalogPath}/offers`, { token: fieldAccessToken, headers: partnerHeaders(`field-no-barcode-offer-${suffix}`), body: discreteCreateOffer(fieldCatalogUnbarcodedVariantID, 888) });
-const fieldLocalIdentifier = `FIELD-${suffix}`;
-const fieldLocalIdentifierResolve = await request(dshBase, "POST", "/dsh/field/catalog/identifiers/resolve", { token: fieldAccessToken, body: { joiningCaseId: fieldCatalogPartner.caseID, identifierValue: fieldLocalIdentifier } });
-const fieldLocalProductBody = { canonicalName: `Field Local Product ${suffix}`, description: "Disposable runtime Field initial-catalog fixture", variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", identifierType: "SKU", identifierValue: fieldLocalIdentifier };
-const fieldLocalProductKey = `field-local-product-${suffix}`;
-const fieldLocalProduct = await request(dshBase, "POST", `${fieldCatalogPath}/products`, { token: fieldAccessToken, headers: partnerHeaders(fieldLocalProductKey), body: fieldLocalProductBody });
-const fieldLocalProductReplay = await request(dshBase, "POST", `${fieldCatalogPath}/products`, { token: fieldAccessToken, headers: partnerHeaders(fieldLocalProductKey), body: fieldLocalProductBody });
-const fieldLocalProductID = String(fieldLocalProduct.body?.product?.id || "");
-const fieldLocalVariantID = String(fieldLocalProduct.body?.product?.variants?.[0]?.id || "");
-const fieldLocalIdentifierRead = await request(dshBase, "POST", "/dsh/field/catalog/identifiers/resolve", { token: fieldAccessToken, body: { joiningCaseId: fieldCatalogPartner.caseID, identifierValue: fieldLocalIdentifier } });
-const fieldCatalogLocalOfferKey = `field-local-offer-${suffix}`;
-const fieldCatalogLocalOfferBody = discreteCreateOffer(fieldLocalVariantID, 999);
-const fieldCatalogLocalOffer = await request(dshBase, "POST", `${fieldCatalogPath}/offers`, { token: fieldAccessToken, headers: partnerHeaders(fieldCatalogLocalOfferKey), body: fieldCatalogLocalOfferBody });
-const fieldCatalogLocalOfferReplay = await request(dshBase, "POST", `${fieldCatalogPath}/offers`, { token: fieldAccessToken, headers: partnerHeaders(fieldCatalogLocalOfferKey), body: fieldCatalogLocalOfferBody });
-const fieldCatalogFinalRead = await request(dshBase, "GET", `${fieldCatalogPath}?limit=100`, { token: fieldAccessToken });
-if (fieldCatalogUnbarcodedCreate.status !== 201 || !fieldCatalogUnbarcodedID || !fieldCatalogUnbarcodedVariantID || fieldCatalogPartner.activeAgreement?.status !== "ACTIVE" || fieldCatalogInitialRead.status !== 200 || fieldCatalogInitialRead.body?.joiningCaseId !== fieldCatalogPartner.caseID || fieldCatalogInitialRead.body?.storeId !== fieldCatalogPartner.storeID || fieldCatalogListedShared?.scope !== "SHARED" || !fieldCatalogListedShared?.variants?.some((variant) => variant.identifiers?.some((identifier) => identifier.value === productInput.identifierValue)) || fieldCatalogListedUnbarcoded?.scope !== "SHARED" || (fieldCatalogListedUnbarcoded?.variants?.[0]?.identifiers?.length ?? -1) !== 0 || fieldCatalogBarcodeResolve.status !== 200 || fieldCatalogBarcodeResolve.body?.resolution?.outcome !== "SHARED_PRODUCT_MATCH" || fieldCatalogBarcodeResolve.body.resolution.productId !== productID || fieldCatalogNoBarcodeSearch.status !== 200 || !fieldCatalogNoBarcodeSearch.body?.products?.some((item) => item.id === fieldCatalogUnbarcodedID && item.scope === "SHARED") || fieldCatalogSharedOffer.status !== 201 || fieldCatalogSharedOffer.body?.offer?.priceMinor !== 777 || fieldCatalogSharedOfferReplay.status !== 200 || fieldCatalogSharedOfferReplay.body?.idempotentReplay !== true || fieldCatalogNoBarcodeOffer.status !== 201 || fieldCatalogNoBarcodeOffer.body?.offer?.priceMinor !== 888 || fieldLocalIdentifierResolve.status !== 200 || fieldLocalIdentifierResolve.body?.resolution?.outcome !== "UNKNOWN_IDENTIFIER" || fieldLocalProduct.status !== 201 || fieldLocalProduct.body?.product?.scope !== "STORE_SCOPED" || fieldLocalProduct.body.product.storeId !== fieldCatalogPartner.storeID || fieldLocalProductReplay.status !== 200 || fieldLocalProductReplay.body?.idempotentReplay !== true || fieldLocalIdentifierRead.status !== 200 || fieldLocalIdentifierRead.body?.resolution?.outcome !== "STORE_LOCAL_PRODUCT_MATCH" || fieldLocalIdentifierRead.body.resolution.productId !== fieldLocalProductID || fieldCatalogLocalOffer.status !== 201 || fieldCatalogLocalOffer.body?.offer?.priceMinor !== 999 || fieldCatalogLocalOfferReplay.status !== 200 || fieldCatalogLocalOfferReplay.body?.idempotentReplay !== true || fieldCatalogFinalRead.status !== 200 || ![fieldCatalogSharedOffer.body?.offer?.offerId, fieldCatalogNoBarcodeOffer.body?.offer?.offerId, fieldCatalogLocalOffer.body?.offer?.offerId].every((id) => fieldCatalogFinalRead.body?.offers?.some((item) => item.offerId === id && item.publicationState === "draft"))) {
-  fail("Field initial catalog shared/barcode/local/quick-price journey or owner-scoped readback failed", JSON.stringify({ fieldCatalogUnbarcodedCreate, fieldCatalogPartner: { caseID: fieldCatalogPartner.caseID, storeID: fieldCatalogPartner.storeID, activeAgreement: fieldCatalogPartner.activeAgreement }, fieldCatalogInitialRead, fieldCatalogBarcodeResolve, fieldCatalogNoBarcodeSearch, fieldCatalogSharedOffer, fieldCatalogSharedOfferReplay, fieldCatalogNoBarcodeOffer, fieldLocalIdentifierResolve, fieldLocalProduct, fieldLocalProductReplay, fieldLocalIdentifierRead, fieldCatalogLocalOffer, fieldCatalogLocalOfferReplay, fieldCatalogFinalRead }));
+const fieldStoreOffersPath = `/dsh/stores/${encodeURIComponent(fieldCatalogPartner.storeID)}/offers`;
+const fieldCatalogPartnerInitialRead = await request(dshBase, "GET", fieldStoreOffersPath, { token: fieldCatalogPartner.accessToken });
+const fieldCatalogUnauthorizedRead = await request(dshBase, "GET", fieldStoreOffersPath, { token: fieldAccessToken });
+const fieldCatalogPartnerOfferBody = discreteCreateOffer(fieldCatalogUnbarcodedVariantID, 888);
+const fieldCatalogPartnerOfferKey = `field-handoff-offer-${suffix}`;
+const fieldCatalogPartnerOffer = await request(dshBase, "POST", fieldStoreOffersPath, { token: fieldCatalogPartner.accessToken, headers: partnerHeaders(fieldCatalogPartnerOfferKey), body: fieldCatalogPartnerOfferBody });
+const fieldCatalogPartnerOfferReplay = await request(dshBase, "POST", fieldStoreOffersPath, { token: fieldCatalogPartner.accessToken, headers: partnerHeaders(fieldCatalogPartnerOfferKey), body: fieldCatalogPartnerOfferBody });
+const fieldCatalogPartnerReadback = await request(dshBase, "GET", fieldStoreOffersPath, { token: fieldCatalogPartner.accessToken });
+if (fieldCatalogUnbarcodedCreate.status !== 201 || !fieldCatalogUnbarcodedVariantID ||
+    fieldCatalogPartner.activeAgreement?.status !== "ACTIVE" ||
+    fieldCatalogPartnerInitialRead.status !== 200 ||
+    fieldCatalogUnauthorizedRead.status !== 403 ||
+    fieldCatalogPartnerOffer.status !== 201 ||
+    fieldCatalogPartnerOffer.body?.offer?.priceMinor !== 888 ||
+    fieldCatalogPartnerOffer.body?.offer?.publicationState !== "draft" ||
+    fieldCatalogPartnerOfferReplay.status !== 200 ||
+    fieldCatalogPartnerOfferReplay.body?.idempotentReplay !== true ||
+    fieldCatalogPartnerReadback.status !== 200 ||
+    !fieldCatalogPartnerReadback.body?.offers?.some((offer) => offer.offerId === fieldCatalogPartnerOffer.body?.offer?.offerId)) {
+  fail("Field-to-Partner catalog ownership handoff failed", JSON.stringify({ fieldCatalogUnbarcodedCreate, fieldCatalogPartner: { caseID: fieldCatalogPartner.caseID, storeID: fieldCatalogPartner.storeID, activeAgreement: fieldCatalogPartner.activeAgreement }, fieldCatalogPartnerInitialRead, fieldCatalogUnauthorizedRead, fieldCatalogPartnerOffer, fieldCatalogPartnerOfferReplay, fieldCatalogPartnerReadback }));
 }
-console.log("DSH_FIELD_INITIAL_CATALOG=PASS");
+console.log("DSH_FIELD_PARTNER_CATALOG_HANDOFF=PASS");
 console.log("DSH_STORE_OFFER=PASS");
 console.log("DSH_PROPOSAL_LIFECYCLE=PASS");
 
@@ -1424,6 +1418,12 @@ const promotionPaymentIntentID = String(promotionCheckout.body.order.paymentInte
 const promotionPayment = await request(wltBase, "GET", `/wlt/v1/payment-intents/${encodeURIComponent(promotionPaymentIntentID)}`, { token: wltToken });
 const promotionAllocationCount = sql(`SELECT count(*) FROM wlt.customer_payment_allocations WHERE order_id='${sqlLiteral(promotionOrderID)}' AND subtotal_minor=2100 AND discount_minor=300 AND customer_payable_minor=${promotionPayableMinor} AND cash_amount_minor=${promotionPayableMinor}`);
 const promotionRedemptionCount = sql(`SELECT count(*) FROM dsh.commerce_promotion_redemptions WHERE promotion_id='${sqlLiteral(promotionID)}' AND order_id='${sqlLiteral(promotionOrderID)}' AND discount_minor=300`);
+const promotionFrozenFunding = sql(`SELECT count(*) FROM wlt.order_promotion_funding
+  WHERE order_id='${sqlLiteral(promotionOrderID)}' AND payment_intent_id='${sqlLiteral(promotionPaymentIntentID)}'
+    AND promotion_id='${sqlLiteral(promotionID)}' AND promotion_version=${promotionPublish.body.promotion.version}
+    AND store_id='${sqlLiteral(first.storeID)}' AND funding_source='BTHWANI'
+    AND discount_minor=300 AND partner_funded_minor=0 AND bthwani_funded_minor=300
+    AND currency='YER' AND kind='ORDER'`);
 const reusedPromotionCart = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`marketing-reuse-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (reusedPromotionCart.status !== 201 || !reusedPromotionCart.body?.cart?.id) fail("promotion reuse cart fixture failed", JSON.stringify(reusedPromotionCart));
 const reusedPromotionCartID = String(reusedPromotionCart.body.cart.id);
@@ -1434,10 +1434,21 @@ const reusedPromotionFallbackOrderID = String(reusedPromotionFallbackCheckout.bo
 const reusedPromotionFallbackPaymentID = String(reusedPromotionFallbackCheckout.body?.order?.paymentIntentId || "");
 const reusedPromotionFallbackCancellation = reusedPromotionFallbackOrderID ? await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(reusedPromotionFallbackOrderID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(`marketing-reuse-fallback-cancel-${suffix}`, 1) }) : null;
 if (reusedPromotionFallbackOrderID) await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='${sqlLiteral(reusedPromotionFallbackOrderID)}'`, "POSTED", "promotion reuse fallback cancellation did not reconcile");
-if (promotionPayment.status !== 200 || promotionPayment.body?.paymentIntent?.amountMinor !== promotionPayableMinor || promotionAllocationCount !== "1" || promotionRedemptionCount !== "1" || reusedPromotionQuote.status !== 409 || reusedPromotionQuote.body?.error?.code !== "PROMOTION_UNAVAILABLE" || reusedPromotionFallbackCheckout.status !== 201 || reusedPromotionFallbackCancellation?.status !== 201 || reusedPromotionFallbackCancellation.body?.order?.state !== "CANCELLED") fail("promotion funding, redemption, or reuse boundary failed", JSON.stringify({ promotionCheckout, promotionPayment, promotionAllocationCount, promotionRedemptionCount, reusedPromotionQuote, reusedPromotionFallbackCheckout, reusedPromotionFallbackCancellation }));
+if (promotionPayment.status !== 200 || promotionPayment.body?.paymentIntent?.amountMinor !== promotionPayableMinor || promotionAllocationCount !== "1" || promotionRedemptionCount !== "1" || promotionFrozenFunding !== "1" || reusedPromotionQuote.status !== 409 || reusedPromotionQuote.body?.error?.code !== "PROMOTION_UNAVAILABLE" || reusedPromotionFallbackCheckout.status !== 201 || reusedPromotionFallbackCancellation?.status !== 201 || reusedPromotionFallbackCancellation.body?.order?.state !== "CANCELLED") fail("promotion funding, redemption, or reuse boundary failed", JSON.stringify({ promotionCheckout, promotionPayment, promotionAllocationCount, promotionRedemptionCount, reusedPromotionQuote, reusedPromotionFallbackCheckout, reusedPromotionFallbackCancellation }));
 const promotionCancellation = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(promotionOrderID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(`marketing-cancel-${suffix}`, 1) });
 await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='${sqlLiteral(promotionOrderID)}'`, "POSTED", "promotion cancellation financial handoff did not reconcile");
-if (promotionCancellation.status !== 201 || promotionCancellation.body?.order?.state !== "CANCELLED") fail("promotion cancellation did not release the temporary proof order", JSON.stringify(promotionCancellation));
+const cancelledPromotionPayment = await request(wltBase, "GET", `/wlt/v1/payment-intents/${encodeURIComponent(promotionPaymentIntentID)}`, { token: wltToken });
+const cancelledPromotionRedemptions = sql(`SELECT count(*) FROM dsh.commerce_promotion_redemptions WHERE order_id='${sqlLiteral(promotionOrderID)}'`);
+const releasedPromotionBudget = sql(`SELECT redeemed_count::text || ':' || discount_spent_minor::text FROM dsh.commerce_promotions WHERE id='${sqlLiteral(promotionID)}'`);
+const preservedFundingSnapshot = sql(`SELECT count(*) FROM wlt.order_promotion_funding WHERE order_id='${sqlLiteral(promotionOrderID)}'
+  AND discount_minor=300 AND funding_source='BTHWANI' AND bthwani_funded_minor=300 AND partner_funded_minor=0`);
+if (promotionCancellation.status !== 201 || promotionCancellation.body?.order?.state !== "CANCELLED"
+  || cancelledPromotionPayment.status !== 200 || cancelledPromotionPayment.body?.paymentIntent?.state !== "CANCELLED"
+  || cancelledPromotionRedemptions !== "0" || releasedPromotionBudget !== "0:0" || preservedFundingSnapshot !== "1") {
+  fail("promotion cancellation did not reconcile DSH redemption, WLT payment and frozen funding", JSON.stringify({
+    promotionCancellation, cancelledPromotionPayment, cancelledPromotionRedemptions, releasedPromotionBudget, preservedFundingSnapshot,
+  }));
+}
 console.log("DSH_PROMOTIONS_DISCOVERY=PASS");
 
 const multiCartAResponse = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`multi-store-cart-a-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });

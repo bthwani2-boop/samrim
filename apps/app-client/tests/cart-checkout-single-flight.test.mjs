@@ -45,7 +45,8 @@ function scenario({ accessToken, persist, submit, recover } = {}) {
     mutationBusy: false,
     state: { kind: "ready", cart: { id: "cart-1", version: 3, lines: [{}] } },
     quote: { kind: "ready", quote: { cartId: "cart-1", storeId: "store-1", cartVersion: 3, addressId: "", fulfillmentMode: "CUSTOMER_PICKUP", promotionCode: "", totalAmountMinor: 200 } },
-    internalBalanceInput: "0",
+    mixedWalletInput: "",
+    paymentChoice: "cash",
     parseMinorAmount: () => 0,
     wallet: { kind: "ready", availableMinor: 0 },
     recipient: { mode: "SELF" },
@@ -306,4 +307,42 @@ test("legacy pending checkout cannot resubmit without accepted amount", () => {
     "a withheld legacy retry must release its loading state");
   assert.doesNotMatch(source.slice(legacyGuard, submitAfterGuard), /deleteItemAsync/,
     "a legacy pending attempt must not be silently erased");
+});
+
+test("checkout quote explains unavailable, invalid and out-of-scope offers without submitting an order", async () => {
+  const helper = ast.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "quoteFailureMessage");
+  assert.ok(helper, "quote error message must be defined in the real checkout");
+  const code = ts.transpileModule(helper.getText(ast), { compilerOptions }).outputText;
+  const quoteFailureMessage = vm.runInNewContext(
+    "function errorCode(error) { return error?.code ?? ''; }\n" + code + "\nquoteFailureMessage",
+  );
+  assert.match(quoteFailureMessage({ code: "PROMOTION_UNAVAILABLE" }, "SAVE10"), /العرض غير متاح/);
+  assert.match(quoteFailureMessage({ code: "INVALID_INPUT" }, "SAVE10"), /رمز العرض غير صالح/);
+  assert.match(quoteFailureMessage({ code: "UNSERVICEABLE" }, ""), /العنوان/);
+  assert.match(quoteFailureMessage({ code: "FULFILLMENT_MODE_UNAVAILABLE" }, ""), /طريقة الاستلام/);
+  assert.match(quoteFailureMessage({ code: "WLT_DELIVERY_FEE_UNAVAILABLE" }, ""), /رسوم التوصيل/);
+  assert.match(quoteFailureMessage({ code: "UNKNOWN" }, ""), /تعذر حساب الإجمالي/);
+
+  const calls = [];
+  const callback = ts.transpileModule(
+    "function errorCode(error) { return error?.code ?? ''; }\n" + code + "\nconst refreshQuote = " + refreshQuoteNode.initializer.getText(ast) + "; refreshQuote;",
+    { compilerOptions },
+  ).outputText;
+  const refreshQuote = vm.runInNewContext(callback, {
+    appliedPromotionCode: "SAVE10",
+    pickupMode: true,
+    fulfillmentMode: "CUSTOMER_PICKUP",
+    quoteAddressID: "",
+    serviceableAddressId: undefined,
+    storeId: "store-1",
+    quoteRequestID: { current: 0 },
+    setQuote: (state) => calls.push(state),
+    getUsableIdentityAccessToken: async () => "token",
+    client: () => ({ quoteCheckout: async () => { throw { code: "PROMOTION_UNAVAILABLE" }; } }),
+    useCallback: (fn) => fn,
+    console: { error: () => {} },
+  });
+  await refreshQuote({ id: "cart-1", version: 1, lines: [] });
+  assert.equal(calls.at(-1).kind, "error");
+  assert.match(calls.at(-1).message, /العرض غير متاح/);
 });

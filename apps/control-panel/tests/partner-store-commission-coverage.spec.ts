@@ -126,6 +126,8 @@ test("catalog taxonomy creates and revises a commercial store type under its ver
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [], nextCursor: "" }) });
   });
 
+  await page.route("**/api/catalog/shopping-shortcuts**", (route) => route.fulfill({ status: 200, json: { shortcuts: [] } }));
+
   let currentType: Record<string, unknown> | undefined;
   let createBody: Record<string, unknown> | undefined;
   let updateBody: Record<string, unknown> | undefined;
@@ -147,25 +149,30 @@ test("catalog taxonomy creates and revises a commercial store type under its ver
   });
 
   await page.goto("/catalog/categories?verticalId=food");
-  await page.locator(".catalog-vertical-settings > summary").click();
-  const registry = page.getByRole("region", { name: "أنواع المتاجر التجارية" });
-  await expect(registry.getByRole("heading", { name: "أنواع المتاجر التجارية" })).toBeVisible();
-  await expect(registry.getByText("لا توجد أنواع متجر مسجلة لهذا المجال بعد.")).toBeVisible();
-  await registry.getByRole("button", { name: "نوع متجر جديد" }).click();
+  await expect(page.locator(".unified-taxonomy-table tbody tr").filter({ hasText: "ملحمة" })).toHaveCount(0);
+  await page.locator(".unified-taxonomy-create > button").click();
+  await page.locator(".unified-taxonomy-create-menu > button").nth(1).click();
+  const registry = page.getByRole("dialog", { name: "إضافة نوع متجر" });
+  await expect(registry).toBeVisible();
   await page.locator("#commercial-type-name-ar").fill("ملحمة");
   await page.locator("#commercial-type-name-en").fill("Butcher");
   await page.locator("#commercial-type-reason").fill("إضافة نوع متجر متخصص");
   await registry.getByRole("button", { name: "إنشاء نوع المتجر" }).click();
-  await expect(registry.getByText("تم إنشاء نوع المتجر «ملحمة».")).toBeVisible();
-  await expect(registry.getByRole("cell", { name: "Butcher" })).toBeVisible();
+  await expect(registry).toHaveCount(0);
+  const createdRow = page.locator(".unified-taxonomy-table tbody tr").filter({ hasText: "ملحمة" });
+  await expect(createdRow).toContainText("Butcher");
+  await expect(createdRow).toContainText("نشط");
   expect(createBody).toMatchObject({ verticalId: "food", nameAr: "ملحمة", nameEn: "Butcher", active: true, reason: "إضافة نوع متجر متخصص" });
 
-  await registry.getByRole("button", { name: "تعديل" }).click();
+  await createdRow.getByRole("button", { name: "تعديل نوع متجر ملحمة" }).click();
+  const editDialog = page.getByRole("dialog", { name: "تعديل نوع متجر" });
+  await expect(editDialog).toBeVisible();
   await page.locator("#commercial-type-name-ar").fill("ملحمة محلية");
   await page.getByLabel("نشط للاستخدام في ملفات الانضمام والسياسات").uncheck();
   await page.locator("#commercial-type-reason").fill("إيقاف نوع غير مستخدم");
-  await registry.getByRole("button", { name: "حفظ نوع المتجر" }).click();
-  await expect(registry.getByText("تم تحديث نوع المتجر «ملحمة محلية». ", { exact: false })).toBeVisible();
-  await expect(registry.getByRole("cell", { name: "متوقف" })).toBeVisible();
+  await editDialog.getByRole("button", { name: "حفظ نوع المتجر" }).click();
+  await expect(editDialog).toHaveCount(0);
+  const updatedRow = page.locator(".unified-taxonomy-table tbody tr").filter({ hasText: "ملحمة محلية" });
+  await expect(updatedRow).toContainText("متوقف");
   expect(updateBody).toMatchObject({ nameAr: "ملحمة محلية", nameEn: "Butcher", active: false, expectedVersion: 1, reason: "إيقاف نوع غير مستخدم" });
 });

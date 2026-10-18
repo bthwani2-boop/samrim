@@ -11,9 +11,13 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
-func withFreshDatabase(t *testing.T, rootDB *sql.DB, databaseURL string, test func(context.Context, *sql.DB, []postgres.MigrationRecord, []string)) {
+func withFreshDatabase(t *testing.T, rootDB *sql.DB, databaseURL string, test func(context.Context, *sql.DB, []postgres.MigrationRecord, []string), timeout ...time.Duration) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	limit := 30 * time.Second
+	if len(timeout) > 0 {
+		limit = timeout[0]
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
 	databaseName := fmt.Sprintf("dsh_catalog_test_%d", time.Now().UnixNano())
 	if _, err := rootDB.ExecContext(ctx, "CREATE DATABASE "+databaseName); err != nil {

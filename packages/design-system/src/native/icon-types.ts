@@ -24,4 +24,16 @@ export type MobileIconName =
   | "notifications"
   | "close"
   | "eye"
-  | "eye-off";
+  | "eye-off"
+  | "categories"
+  | "restaurant"
+  | "grocery"
+  | "desserts"
+  | "beauty"
+  | "electronics"
+  | "health"
+  | "gifts"
+  | "home-projects"
+  | "auto-parts"
+  | "honey"
+  | "mall";

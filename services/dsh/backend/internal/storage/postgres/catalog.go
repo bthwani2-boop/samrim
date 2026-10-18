@@ -23,6 +23,7 @@ var (
 	ErrCatalogCategoryNotFound          = errors.New("catalog category was not found")
 	ErrCatalogCategoryInvalidCursor     = errors.New("catalog category cursor is invalid")
 	ErrCatalogIdempotencyConflict       = errors.New("catalog idempotency key was already used with different facts")
+	ErrCatalogRegistryNameConflict      = errors.New("catalog registry name already exists in this scope")
 	ErrCatalogVersionConflict           = errors.New("catalog version is stale")
 	ErrCatalogAttributeRuleInvalid      = errors.New("catalog attribute rule is invalid")
 	ErrCatalogAttributeDefinitionExists = errors.New("catalog attribute definition already exists")
@@ -49,6 +50,7 @@ var (
 
 type CommerceVerticalRecord struct {
 	ID, NameAr, NameEn   string
+	ImageURI             string
 	Active               bool
 	Version              int
 	CreatedAt, UpdatedAt time.Time
@@ -359,7 +361,7 @@ func CreateCommerceVertical(ctx context.Context, db *sql.DB, item CommerceVertic
 		}
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.commerce_verticals(id,name_ar,name_en,active) VALUES($1,$2,$3,$4)", item.ID, item.NameAr, item.NameEn, item.Active); err != nil {
-		return CommerceVerticalResult{}, err
+		return CommerceVerticalResult{}, catalogRegistryNameWriteError(err)
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_registry_mutation_idempotency(idempotency_key,request_hash,entity_type,entity_id) VALUES($1,$2,'vertical',$3)", idempotencyKey, requestHash, item.ID); err != nil {
 		return CommerceVerticalResult{}, err
@@ -449,7 +451,7 @@ func CreateCatalogCategory(ctx context.Context, db *sql.DB, item CatalogCategory
 		}
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_categories(id,vertical_id,parent_category_id,name_ar,name_en,active) VALUES($1,$2,NULLIF($3,''),$4,$5,$6)", item.ID, item.VerticalID, item.ParentCategoryID, item.NameAr, item.NameEn, item.Active); err != nil {
-		return CatalogCategoryRecord{}, err
+		return CatalogCategoryRecord{}, catalogRegistryNameWriteError(err)
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_registry_mutation_idempotency(idempotency_key,request_hash,entity_type,entity_id) VALUES($1,$2,'category',$3)", idempotencyKey, requestHash, item.ID); err != nil {
 		return CatalogCategoryRecord{}, err
@@ -508,7 +510,7 @@ func UpdateCommerceVertical(ctx context.Context, db *sql.DB, verticalID string, 
 		return CommerceVerticalResult{}, ErrCatalogVersionConflict
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE dsh.commerce_verticals SET name_ar=$2,name_en=$3,active=$4,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$5`, verticalID, input.NameAr, input.NameEn, input.Active, input.ExpectedVersion); err != nil {
-		return CommerceVerticalResult{}, err
+		return CommerceVerticalResult{}, catalogRegistryNameWriteError(err)
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_registry_mutation_idempotency(idempotency_key,request_hash,entity_type,entity_id) VALUES($1,$2,'vertical',$3)", idempotencyKey, requestHash, verticalID); err != nil {
 		return CommerceVerticalResult{}, err
@@ -630,7 +632,7 @@ func UpdateCatalogCategory(ctx context.Context, db *sql.DB, categoryID string, i
 		}
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE dsh.catalog_categories SET parent_category_id=NULLIF($2,''),name_ar=$3,name_en=$4,active=$5,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$6`, categoryID, input.ParentCategoryID, input.NameAr, input.NameEn, input.Active, input.ExpectedVersion); err != nil {
-		return CatalogCategoryRecord{}, false, err
+		return CatalogCategoryRecord{}, false, catalogRegistryNameWriteError(err)
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_registry_mutation_idempotency(idempotency_key,request_hash,entity_type,entity_id) VALUES($1,$2,'category',$3)", idempotencyKey, requestHash, categoryID); err != nil {
 		return CatalogCategoryRecord{}, false, err
@@ -653,7 +655,7 @@ func UpdateCatalogCategory(ctx context.Context, db *sql.DB, categoryID string, i
 
 func readCommerceVerticalForUpdateTx(ctx context.Context, tx *sql.Tx, id string) (CommerceVerticalRecord, error) {
 	var item CommerceVerticalRecord
-	err := tx.QueryRowContext(ctx, `SELECT id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.commerce_verticals WHERE id=$1 FOR UPDATE`, id).Scan(&item.ID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := tx.QueryRowContext(ctx, `SELECT id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at FROM dsh.commerce_verticals WHERE id=$1 FOR UPDATE`, id).Scan(&item.ID, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CommerceVerticalRecord{}, ErrCatalogVerticalNotFound
 	}
@@ -679,7 +681,7 @@ func readCatalogCategoryForUpdateTx(ctx context.Context, tx *sql.Tx, id string) 
 }
 func readCommerceVerticalTx(ctx context.Context, tx *sql.Tx, id string) (CommerceVerticalRecord, error) {
 	var item CommerceVerticalRecord
-	err := tx.QueryRowContext(ctx, "SELECT id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.commerce_verticals WHERE id=$1", id).Scan(&item.ID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := tx.QueryRowContext(ctx, "SELECT id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at FROM dsh.commerce_verticals WHERE id=$1", id).Scan(&item.ID, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
 func readCatalogCategoryTx(ctx context.Context, tx *sql.Tx, id string) (CatalogCategoryRecord, error) {
@@ -698,7 +700,7 @@ func ListCommerceVerticals(ctx context.Context, db *sql.DB, activeOnly bool) ([]
 	if activeOnly {
 		where = " WHERE active=true"
 	}
-	rows, err := db.QueryContext(ctx, "SELECT id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.commerce_verticals"+where+" ORDER BY lower(name_en),id")
+	rows, err := db.QueryContext(ctx, "SELECT id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at FROM dsh.commerce_verticals"+where+" ORDER BY lower(name_en),id")
 	if err != nil {
 		return nil, err
 	}
@@ -706,7 +708,7 @@ func ListCommerceVerticals(ctx context.Context, db *sql.DB, activeOnly bool) ([]
 	items := []CommerceVerticalRecord{}
 	for rows.Next() {
 		var item CommerceVerticalRecord
-		if err = rows.Scan(&item.ID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err = rows.Scan(&item.ID, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -715,7 +717,7 @@ func ListCommerceVerticals(ctx context.Context, db *sql.DB, activeOnly bool) ([]
 }
 func ReadCommerceVertical(ctx context.Context, db *sql.DB, id string) (CommerceVerticalRecord, error) {
 	var item CommerceVerticalRecord
-	err := db.QueryRowContext(ctx, "SELECT id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.commerce_verticals WHERE id=$1", strings.TrimSpace(id)).Scan(&item.ID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := db.QueryRowContext(ctx, "SELECT id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at FROM dsh.commerce_verticals WHERE id=$1", strings.TrimSpace(id)).Scan(&item.ID, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CommerceVerticalRecord{}, ErrCatalogVerticalNotFound
 	}
@@ -1977,7 +1979,7 @@ func UpdateCatalogOfferWithProvenance(ctx context.Context, db *sql.DB, offerID s
 
 func validCatalogOfferProvenance(value string) bool {
 	switch value {
-	case "PARTNER", "CONTROL_PANEL", "FIELD_INITIAL_CATALOG", "IMPORT", "QUICK_PRICES", "LEGACY":
+	case "PARTNER", "CONTROL_PANEL", "IMPORT", "QUICK_PRICES", "LEGACY":
 		return true
 	default:
 		return false
@@ -2226,4 +2228,19 @@ func nullableString(value sql.NullString) *string {
 func isUniqueViolation(err error) bool {
 	var pqErr *pq.Error
 	return errors.As(err, &pqErr) && pqErr.Code == "23505"
+}
+
+// catalogRegistryNameWriteError maps only known registry label uniqueness failures;
+// unrelated unique violations (including IDs and idempotency) remain distinct.
+func catalogRegistryNameWriteError(err error) error {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Code == "23505" {
+		switch pqErr.Constraint {
+		case "commerce_verticals_name_ar_uq", "commerce_verticals_name_en_uq",
+			"commercial_store_types_vertical_name_ar_uq", "commercial_store_types_vertical_name_en_uq",
+			"catalog_categories_sibling_name_ar_uq", "catalog_categories_sibling_name_en_uq", "catalog_shopping_shortcuts_vertical_title_uq":
+			return ErrCatalogRegistryNameConflict
+		}
+	}
+	return err
 }

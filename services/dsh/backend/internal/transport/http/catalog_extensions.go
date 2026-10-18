@@ -386,6 +386,23 @@ func (s *CatalogServer) attachModifierGroup(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, contract.CatalogStoreOfferResponse{Offer: toStoreOffer(item)})
 }
 
+func (s *CatalogServer) listStorefrontSections(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
+		return
+	}
+	items, err := s.service.ListStorefrontSections(r.Context(), bearerToken(r), r.PathValue("storeId"))
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	sections := make([]contract.CatalogStorefrontSection, 0, len(items))
+	for _, item := range items {
+		sections = append(sections, toCatalogStorefrontSection(item))
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogStorefrontSectionListResponse{Sections: sections})
+}
+
 func (s *CatalogServer) createStorefrontSection(w http.ResponseWriter, r *http.Request) {
 	_, _, _, ok := requiredPartnerOfferHeaders(w, r, false)
 	if !ok {

@@ -89,45 +89,6 @@ func (s *CatalogServer) commitPartnerStoreCatalogImport(w http.ResponseWriter, r
 	writeJSON(w, http.StatusOK, contract.CatalogImportCommitResponse{Run: toCatalogImportRun(result.Run), Items: toCatalogImportItems(result.Items), IdempotentReplay: result.Replayed})
 }
 
-func (s *CatalogServer) previewFieldStoreCatalogImport(w http.ResponseWriter, r *http.Request) {
-	correlation, idempotency, _, ok := requiredPartnerOfferHeaders(w, r, false)
-	if !ok {
-		return
-	}
-	file, ok := readStoreCatalogImportUpload(w, r, false)
-	if !ok {
-		return
-	}
-	result, err := s.service.PreviewFieldStoreCatalogImport(r.Context(), bearerToken(r), r.PathValue("caseId"), file.filename, file.data, idempotency, correlation)
-	if err != nil {
-		writeCatalogError(w, err)
-		return
-	}
-	writeCatalogImportPreview(w, result)
-}
-
-func (s *CatalogServer) readFieldStoreCatalogImport(w http.ResponseWriter, r *http.Request) {
-	result, err := s.service.ReadFieldStoreCatalogImport(r.Context(), bearerToken(r), r.PathValue("caseId"), r.PathValue("runId"))
-	if err != nil {
-		writeCatalogError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, contract.CatalogImportRunResponse{Run: toCatalogImportRun(result.Run), Items: toCatalogImportItems(result.Items)})
-}
-
-func (s *CatalogServer) commitFieldStoreCatalogImport(w http.ResponseWriter, r *http.Request) {
-	correlation, idempotency, _, ok := requiredPartnerOfferHeaders(w, r, false)
-	if !ok {
-		return
-	}
-	result, err := s.service.CommitFieldStoreCatalogImport(r.Context(), bearerToken(r), r.PathValue("caseId"), r.PathValue("runId"), idempotency, correlation)
-	if err != nil {
-		writeCatalogError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, contract.CatalogImportCommitResponse{Run: toCatalogImportRun(result.Run), Items: toCatalogImportItems(result.Items), IdempotentReplay: result.Replayed})
-}
-
 func (s *CatalogServer) previewOperatorStoreCatalogImport(w http.ResponseWriter, r *http.Request) {
 	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
 	if !ok {

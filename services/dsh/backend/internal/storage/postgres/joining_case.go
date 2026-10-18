@@ -125,6 +125,7 @@ type CreateJoiningCaseInput struct {
 }
 
 type CorrectJoiningCaseInput struct {
+	OriginatingFieldActorID                       string
 	CaseID, ActorID, BusinessName, FirstStoreName string
 	OwnerFullName, FirstStoreAddress              string
 	FirstStoreWorkingHours                        json.RawMessage
@@ -680,7 +681,7 @@ func ValidateJoiningCaseIntakeReadiness(current JoiningCaseRecord) error {
 			return ErrJoiningCaseState
 		}
 	}
-	if strings.TrimSpace(current.OwnerFullName) == "" || strings.TrimSpace(current.BusinessName) == "" || strings.TrimSpace(current.FirstStoreName) == "" || strings.TrimSpace(current.FirstStoreAddress) == "" || !ValidateStoreWorkingHours(current.FirstStoreWorkingHours) || strings.TrimSpace(current.FirstStoreProofType) == "" || !current.FirstStoreProofNumberPresent {
+	if strings.TrimSpace(current.OwnerFullName) == "" || strings.TrimSpace(current.BusinessName) == "" || strings.TrimSpace(current.FirstStoreName) == "" || strings.TrimSpace(current.FirstStoreAddress) == "" || (len(current.FirstStoreWorkingHours) > 0 && !ValidateStoreWorkingHours(current.FirstStoreWorkingHours)) || strings.TrimSpace(current.FirstStoreProofType) == "" || !current.FirstStoreProofNumberPresent {
 		return ErrJoiningCaseState
 	}
 	if strings.TrimSpace(current.FirstStoreServiceCityID) == "" {
@@ -812,7 +813,8 @@ func correctAndResubmitJoiningCase(ctx context.Context, db *sql.DB, input Correc
 	if current.Case.State != "needs_correction" {
 		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
-	if current.Case.PartnerActorID == "" || current.Case.PartnerActorID != actorID {
+	if current.Case.PartnerActorID == "" || (current.Case.PartnerActorID != actorID &&
+		!(current.Case.Origin == "field" && current.Case.OriginatingFieldActorID == actorID && input.OriginatingFieldActorID == actorID)) {
 		return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
 	}
 	if strings.TrimSpace(input.FirstStoreProofNumber) == "" && (!current.Case.FirstStoreProofNumberPresent || strings.TrimSpace(input.FirstStoreProofType) != current.Case.FirstStoreProofType) {
@@ -850,8 +852,9 @@ func correctAndResubmitJoiningCase(ctx context.Context, db *sql.DB, input Correc
 			return JoiningCaseResult{}, err
 		}
 	}
-	query := `UPDATE dsh.joining_cases SET owner_full_name=NULLIF($2,''),business_name=$3,first_store_name=$4,first_store_address=NULLIF($5,''),first_store_working_hours=NULLIF($6,'')::jsonb,first_store_proof_type=NULLIF($7,''),first_store_notes=NULLIF($8,''),first_store_service_city_id=NULLIF($9,''),first_store_vertical_id=NULLIF($10,''),first_store_commercial_type_id=$11,first_store_latitude=$12,first_store_longitude=$13,first_store_fulfillment_modes=$14,state='submitted',correction_reason=NULL,reviewed_by=NULL,store_id=NULL,settlement_period=NULL,financial_profile_id=NULL,financial_profile_state='REQUIRED',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND partner_actor_id=$15 AND state='needs_correction' AND version=$16 RETURNING id`
-	if err := tx.QueryRowContext(ctx, query, current.Case.ID, input.OwnerFullName, businessName, firstStoreName, input.FirstStoreAddress, string(input.FirstStoreWorkingHours), proofType, input.FirstStoreNotes, serviceCityID, verticalID, commercialTypeID, latitude, longitude, pq.Array(input.FulfillmentModes), actorID, expectedVersion).Scan(&updatedID); err != nil {
+	query := `UPDATE dsh.joining_cases SET owner_full_name=NULLIF($2,''),business_name=$3,first_store_name=$4,first_store_address=NULLIF($5,''),first_store_working_hours=NULLIF($6,'')::jsonb,first_store_proof_type=NULLIF($7,''),first_store_notes=NULLIF($8,''),first_store_service_city_id=NULLIF($9,''),first_store_vertical_id=NULLIF($10,''),first_store_commercial_type_id=$11,first_store_latitude=$12,first_store_longitude=$13,first_store_fulfillment_modes=$14,state='submitted',correction_reason=NULL,reviewed_by=NULL,store_id=NULL,settlement_period=NULL,financial_profile_id=NULL,financial_profile_state='REQUIRED',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='needs_correction' AND version=$16 AND
+    (partner_actor_id=$15 OR (origin='field' AND originating_field_actor_id=$15 AND $17=$15 AND partner_actor_id IS NOT NULL)) RETURNING id`
+	if err := tx.QueryRowContext(ctx, query, current.Case.ID, input.OwnerFullName, businessName, firstStoreName, input.FirstStoreAddress, string(input.FirstStoreWorkingHours), proofType, input.FirstStoreNotes, serviceCityID, verticalID, commercialTypeID, latitude, longitude, pq.Array(input.FulfillmentModes), actorID, expectedVersion, input.OriginatingFieldActorID).Scan(&updatedID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return JoiningCaseResult{}, ErrJoiningCaseVersion
 		}

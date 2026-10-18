@@ -137,6 +137,29 @@ func ReadCatalogModifierGroup(ctx context.Context, db *sql.DB, groupID string) (
 	return items[0], nil
 }
 
+// ListOwnedCatalogStorefrontSections includes unpublished offers for the authorized owner.
+func ListOwnedCatalogStorefrontSections(ctx context.Context, db *sql.DB, storeID string) ([]CatalogStorefrontSectionRecord, error) {
+	rows, err := db.QueryContext(ctx, `SELECT s.id,s.store_id,s.name_ar,s.name_en,s.ordinal,s.active,s.version,s.created_at,s.updated_at,
+   COALESCE(array_agg(so.offer_id ORDER BY so.ordinal,so.offer_id) FILTER (WHERE so.offer_id IS NOT NULL), ARRAY[]::text[])
+   FROM dsh.catalog_storefront_sections s
+   LEFT JOIN dsh.catalog_storefront_section_offers so ON so.section_id=s.id
+   WHERE s.store_id=$1 AND s.active=true
+   GROUP BY s.id ORDER BY s.ordinal,s.id`, strings.TrimSpace(storeID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]CatalogStorefrontSectionRecord, 0)
+	for rows.Next() {
+		var item CatalogStorefrontSectionRecord
+		if err := rows.Scan(&item.ID, &item.StoreID, &item.NameAr, &item.NameEn, &item.Ordinal, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, pq.Array(&item.OfferIDs)); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func ReadCatalogStorefrontSection(ctx context.Context, db *sql.DB, sectionID string) (CatalogStorefrontSectionRecord, error) {
 	rows, err := db.QueryContext(ctx, `SELECT s.id,s.store_id,s.name_ar,s.name_en,s.ordinal,s.active,s.version,s.created_at,s.updated_at,
 		COALESCE(array_agg(so.offer_id ORDER BY so.ordinal,so.offer_id) FILTER (WHERE so.offer_id IS NOT NULL), ARRAY[]::text[])

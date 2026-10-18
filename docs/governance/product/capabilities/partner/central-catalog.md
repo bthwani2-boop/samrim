@@ -25,6 +25,11 @@ system.
 of a Store. A Store has exactly one `primary_vertical_id` in the admitted Product model. A
 Partner is not vertical-scoped and may own Stores in different verticals.
 
+Each `CommerceVertical` may own one illustrative image URI managed through DSH's
+catalog media storage, provenance and rights attestation. The image helps people
+recognize a vertical; it does not change its classification or eligibility rules,
+and it remains separate from Category and Product media.
+
 The joining case requires the first-Store vertical before admission. The value
 is preserved through review, correction and resubmission and is transferred to
 the Store atomically with Store creation. An existing Store with no vertical
@@ -38,7 +43,23 @@ The Commerce Vertical registry is canonical DSH data, not a hard-coded Governanc
 
 Keep four independent DSH-owned concepts distinct: `ServiceCity` is geographic operating scope; `CommerceVertical` classifies the Store's commercial activity; `CommercialStoreType` is a compatible business-model type within one vertical; and `CatalogCategory` is the shared Product taxonomy within a vertical. A Store-local `StorefrontSection` is a fifth, separate merchandising/grouping meaning. None is a synonym, a surrogate foreign key or an authority inferred from another label.
 
-A submitted first-Store joining case requires an active Service City, Commerce Vertical and compatible CommercialStoreType, but it does **not** require a pre-existing exhaustive shared Product library or every category of that vertical. An authorized Operator may establish the needed registry/taxonomy/Shared Product core ahead of onboarding as a current-program preparation choice; such preparation does not alter the Field role-admission prerequisites. Field may later use Shared Products, create permitted Store-scoped items and submit missing Shared Product proposals before Go-Live. Publication and customer-visible offer eligibility still enforce their separate catalog rules.
+`CommercialStoreType` is an internal, operational description of the actual Store
+business model, not a customer shopping category. For example, a retail butcher
+is a `ملحمة` and a poultry retailer is a `محل دواجن`; do not call either
+a slaughterhouse unless that is the actual admitted activity. Store-type IDs
+remain stable through label corrections; WLT commercial agreement and its
+transaction snapshot, not customer navigation, determine actual commissions.
+
+Customer shopping shortcuts are discovery projections over eligible Stores,
+shared categories, Store-local offers and promotions. A shortcut may group
+several Store types or Product sources under a simpler customer label such as
+`لحوم ودجاج`; it never becomes a `CommercialStoreType`, a mandatory
+`CatalogCategory` or a finance-policy selector. Only populated shortcuts
+with real eligible results appear, and common customer paths should reach
+sellable results without forcing traversal of every data hierarchy level.
+Neither `SHARED` nor `STORE_SCOPED` ownership is a customer-visible filter.
+
+A submitted first-Store joining case requires an active Service City, Commerce Vertical and compatible CommercialStoreType, but it does **not** require a pre-existing exhaustive shared Product library or every category of that vertical. An authorized Operator may establish the needed registry/taxonomy/Shared Product core ahead of onboarding as a current-program preparation choice; such preparation does not alter the Field role-admission prerequisites. The activated Partner may use Shared Products, create permitted Store-scoped items and submit missing Shared Product proposals before Go-Live. Publication and customer-visible offer eligibility still enforce their separate catalog rules.
 
 Reference readiness means proven values and owner API readback for the particular admitted scenario, including active status and vertical/type/category compatibility where that relationship applies. Database schema existence, menu navigation or a test/demo record name alone is not proof of readiness. Do not automatically seed new actor/store/offer authority when initializing a catalog.
 
@@ -183,9 +204,9 @@ canonical readback; the Control Panel is not a business owner.
 
 Catalog bulk/import mutation has one canonical DSH writer path. Any admitted import mechanism must validate before mutation, distinguish duplicate/conflict from new identity, require an explicit commit boundary, preserve attributable audit and finish with canonical readback. Missing input never implies deletion, blind upsert is forbidden, and retry/resume cannot silently create a different identity.
 
-Field, Partner and authorized Operator catalog work use one Store Catalog import flow with surface-specific authorization. It accepts XLSX and CSV rows with a barcode and price when the identifier is known; the user does not need internal IDs or enums. One run parses, normalizes and resolves rows, previews results, commits valid rows and leaves unresolved rows for review. An invalid or conflicting minority does not discard valid rows. A run is replay-safe and auditable, and the current Product target supports 5,000 rows in one run; internal chunking does not create multiple user-visible imports or a hard 1,000-row cap.
+Partner and authorized Operator catalog work use one Store Catalog import flow with surface-specific authorization. It accepts XLSX and CSV rows with known barcode + price, or Store-local product name + price and optional unit/variant without a barcode; the user does not need internal IDs or enums. Name-only rows create a Store-scoped Product and its draft StoreOffer through existing canonical writers after explicit preview/commit, never a Shared Product. An existing Store-scoped match is held instead of duplicated, a potential Shared name match requires review, and unknown barcodes remain held for review. One run parses, normalizes and resolves rows, previews results, commits valid rows and leaves unresolved rows for review. An invalid or conflicting minority does not discard valid rows. A run is replay-safe and auditable, and the current Product target supports 5,000 rows in one run; internal chunking does not create multiple user-visible imports or a hard 1,000-row cap.
 
-Quick Prices edits use the canonical `StoreOffer` mutation. Search and category/brand/package filters help find products, including without-price, already-offered, not-offered and hidden items. Bulk changes show a summary and require an explicit commit. Listing a Shared Product never adds an offer. Only changed rows mutate, and the canonical audit preserves old/new price, actor, time and provenance. Field, Partner and Control Panel barcode scans use one DSH resolver with Store context and the scanned identifier; it distinguishes an existing Store offer, Shared match, Store-local match, unknown identifier and variable-measure identifier. Store SKU is not a global barcode, and variable-measure codes are not silently treated as GTINs.
+Quick Prices edits use the canonical `StoreOffer` mutation. Search and category/brand/package filters help find products, including without-price, already-offered, not-offered and hidden items. Bulk changes show a summary and require an explicit commit. Listing a Shared Product never adds an offer. Only changed rows mutate, and the canonical audit preserves old/new price, actor, time and provenance. Partner and Control Panel barcode scans use one DSH resolver with Store context and the scanned identifier; it distinguishes an existing Store offer, Shared match, Store-local match, unknown identifier and variable-measure identifier. Store SKU is not a global barcode, and variable-measure codes are not silently treated as GTINs.
 
 Partners can browse/search Shared Products, inspect Variants and identifiers,
 select Variants and create StoreOffers alongside their Store-scoped items.
@@ -195,14 +216,7 @@ preference may help route entry but cannot restrict a Store to one ownership
 scope. Cross-Store access, Shared Product mutation and direct Shared Product
 creation are denied.
 
-Before Go-Live, Field may search the Shared Catalog, scan identifiers, create
-StoreOffers and set initial price/availability, create Store-scoped Products,
-import the initial Store assortment, and submit Shared Product proposals or
-corrections for its authorized joining Store. DSH enforces that joining-case,
-Store and pre-publication scope server-side. Field cannot approve or merge
-Shared identities or directly change Shared media. Its initial catalog write
-authority ends at successful Go-Live; the Partner then owns ongoing Store
-catalog operations.
+Store product and offer preparation before and after Go-Live uses one canonical DSH Store Catalog writer. The Partner app and authorized Operator Store record can create and update Store-scoped products and offers through distinct attributed identities; Operator management stays inside the Store record, not the Shared Catalog registry. Store publication remains gated by publishable offers and the independent Partner, commercial-agreement, profile-media and Operator readiness rules. Operator Store-file management may select multiple compatible Shared variants, set Store-specific prices and create their StoreOffers with bounded concurrent calls through the existing Store owner API, preserving per-item idempotency and actionable failures. This is not a second importer or Product registry. Field joining-case admission does not grant catalog-writing authority. A Store-specific Operator import accepts either the existing Store management permission (`partners`) or the existing shared-catalog permission (`catalog`), but neither permission alone grants the other domain's mutations; each import is bound to its specified Store and Operator.
 
 ## Evolution and migration invariants
 

@@ -365,6 +365,49 @@ func (s *Service) SubmitJoiningCase(ctx context.Context, accessToken, caseID str
 	return postgres.RequestFieldJoiningCaseAdmission(ctx, s.db, caseID, identity.Subject, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashFieldJoiningCaseAdmission(caseID, identity.Subject, expectedVersion), strings.TrimSpace(correlationID))
 }
 
+// CorrectJoiningCase reuses the canonical Partner correction writer, but only
+// for the Field actor who created this returned, not-yet-approved application.
+func (s *Service) CorrectJoiningCase(ctx context.Context, accessToken, caseID string, expectedVersion int, idempotencyKey, correlationID string, request contract.CreateJoiningCaseRequest) (postgres.JoiningCaseResult, error) {
+	identity, err := s.requireEligibleField(ctx, accessToken)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	normalized, err := joiningcase.NormalizeFieldDraftRequest(request)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	caseID = strings.TrimSpace(caseID)
+	idempotencyKey, correlationID = strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
+	if caseID == "" || expectedVersion < 1 || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 || len(correlationID) < 8 || len(correlationID) > 128 {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	current, err := postgres.ReadJoiningCaseForField(ctx, s.db, identity.Subject, caseID)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	if current.Case.State != "needs_correction" || current.Case.Origin != "field" || current.Case.PartnerActorID == "" {
+		return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState
+	}
+	if current.Case.ContactPhoneE164 != normalized.Phone || current.Case.WalletProviderKey != normalized.WalletProviderKey {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	if normalized.OwnerFullName == "" || normalized.BusinessName == "" || normalized.FirstStoreName == "" || len([]rune(normalized.FirstStoreAddress)) < 4 || (len(normalized.FirstStoreWorkingHours) > 0 && !postgres.ValidateStoreWorkingHours(normalized.FirstStoreWorkingHours)) || len(normalized.FulfillmentModes) == 0 || normalized.FirstStoreProofType == "" || normalized.ServiceCityID == "" || normalized.VerticalID == "" || normalized.CommercialTypeID == "" || (normalized.Latitude == 0 && normalized.Longitude == 0) {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	mutation := postgres.CorrectJoiningCaseInput{CaseID: caseID, ActorID: identity.Subject, OriginatingFieldActorID: identity.Subject,
+		OwnerFullName: normalized.OwnerFullName, BusinessName: normalized.BusinessName, FirstStoreName: normalized.FirstStoreName,
+		FirstStoreAddress: normalized.FirstStoreAddress, FirstStoreWorkingHours: normalized.FirstStoreWorkingHours,
+		FirstStoreProofType: normalized.FirstStoreProofType, FirstStoreProofNumber: normalized.FirstStoreProofNumber, FirstStoreNotes: normalized.FirstStoreNotes,
+		EvidenceKeyring: s.evidenceKeys, ExpectedVersion: expectedVersion, IdempotencyKey: idempotencyKey, CorrelationID: correlationID,
+		ServiceCityID: normalized.ServiceCityID, VerticalID: normalized.VerticalID, CommercialTypeID: normalized.CommercialTypeID,
+		Latitude: normalized.Latitude, Longitude: normalized.Longitude, FulfillmentModes: normalized.FulfillmentModes}
+	mutation.RequestHash, err = joiningcase.HashFieldDraftUpdateRequest(s.evidenceKeys, identity.Subject, caseID, expectedVersion, normalized.FirstStoreProofNumber == "", normalized)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	return postgres.CorrectAndResubmitJoiningCase(ctx, s.db, mutation)
+}
+
 func (s *Service) requireField(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
 	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
 	if err != nil {
