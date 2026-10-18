@@ -1418,6 +1418,12 @@ const promotionPaymentIntentID = String(promotionCheckout.body.order.paymentInte
 const promotionPayment = await request(wltBase, "GET", `/wlt/v1/payment-intents/${encodeURIComponent(promotionPaymentIntentID)}`, { token: wltToken });
 const promotionAllocationCount = sql(`SELECT count(*) FROM wlt.customer_payment_allocations WHERE order_id='${sqlLiteral(promotionOrderID)}' AND subtotal_minor=2100 AND discount_minor=300 AND customer_payable_minor=${promotionPayableMinor} AND cash_amount_minor=${promotionPayableMinor}`);
 const promotionRedemptionCount = sql(`SELECT count(*) FROM dsh.commerce_promotion_redemptions WHERE promotion_id='${sqlLiteral(promotionID)}' AND order_id='${sqlLiteral(promotionOrderID)}' AND discount_minor=300`);
+const promotionFrozenFunding = sql(`SELECT count(*) FROM wlt.order_promotion_funding
+  WHERE order_id='${sqlLiteral(promotionOrderID)}' AND payment_intent_id='${sqlLiteral(promotionPaymentIntentID)}'
+    AND promotion_id='${sqlLiteral(promotionID)}' AND promotion_version=${promotionPublish.body.promotion.version}
+    AND store_id='${sqlLiteral(first.storeID)}' AND funding_source='BTHWANI'
+    AND discount_minor=300 AND partner_funded_minor=0 AND bthwani_funded_minor=300
+    AND currency='YER' AND kind='ORDER'`);
 const reusedPromotionCart = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`marketing-reuse-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (reusedPromotionCart.status !== 201 || !reusedPromotionCart.body?.cart?.id) fail("promotion reuse cart fixture failed", JSON.stringify(reusedPromotionCart));
 const reusedPromotionCartID = String(reusedPromotionCart.body.cart.id);
@@ -1428,10 +1434,21 @@ const reusedPromotionFallbackOrderID = String(reusedPromotionFallbackCheckout.bo
 const reusedPromotionFallbackPaymentID = String(reusedPromotionFallbackCheckout.body?.order?.paymentIntentId || "");
 const reusedPromotionFallbackCancellation = reusedPromotionFallbackOrderID ? await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(reusedPromotionFallbackOrderID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(`marketing-reuse-fallback-cancel-${suffix}`, 1) }) : null;
 if (reusedPromotionFallbackOrderID) await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='${sqlLiteral(reusedPromotionFallbackOrderID)}'`, "POSTED", "promotion reuse fallback cancellation did not reconcile");
-if (promotionPayment.status !== 200 || promotionPayment.body?.paymentIntent?.amountMinor !== promotionPayableMinor || promotionAllocationCount !== "1" || promotionRedemptionCount !== "1" || reusedPromotionQuote.status !== 409 || reusedPromotionQuote.body?.error?.code !== "PROMOTION_UNAVAILABLE" || reusedPromotionFallbackCheckout.status !== 201 || reusedPromotionFallbackCancellation?.status !== 201 || reusedPromotionFallbackCancellation.body?.order?.state !== "CANCELLED") fail("promotion funding, redemption, or reuse boundary failed", JSON.stringify({ promotionCheckout, promotionPayment, promotionAllocationCount, promotionRedemptionCount, reusedPromotionQuote, reusedPromotionFallbackCheckout, reusedPromotionFallbackCancellation }));
+if (promotionPayment.status !== 200 || promotionPayment.body?.paymentIntent?.amountMinor !== promotionPayableMinor || promotionAllocationCount !== "1" || promotionRedemptionCount !== "1" || promotionFrozenFunding !== "1" || reusedPromotionQuote.status !== 409 || reusedPromotionQuote.body?.error?.code !== "PROMOTION_UNAVAILABLE" || reusedPromotionFallbackCheckout.status !== 201 || reusedPromotionFallbackCancellation?.status !== 201 || reusedPromotionFallbackCancellation.body?.order?.state !== "CANCELLED") fail("promotion funding, redemption, or reuse boundary failed", JSON.stringify({ promotionCheckout, promotionPayment, promotionAllocationCount, promotionRedemptionCount, reusedPromotionQuote, reusedPromotionFallbackCheckout, reusedPromotionFallbackCancellation }));
 const promotionCancellation = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(promotionOrderID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(`marketing-cancel-${suffix}`, 1) });
 await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='${sqlLiteral(promotionOrderID)}'`, "POSTED", "promotion cancellation financial handoff did not reconcile");
-if (promotionCancellation.status !== 201 || promotionCancellation.body?.order?.state !== "CANCELLED") fail("promotion cancellation did not release the temporary proof order", JSON.stringify(promotionCancellation));
+const cancelledPromotionPayment = await request(wltBase, "GET", `/wlt/v1/payment-intents/${encodeURIComponent(promotionPaymentIntentID)}`, { token: wltToken });
+const cancelledPromotionRedemptions = sql(`SELECT count(*) FROM dsh.commerce_promotion_redemptions WHERE order_id='${sqlLiteral(promotionOrderID)}'`);
+const releasedPromotionBudget = sql(`SELECT redeemed_count::text || ':' || discount_spent_minor::text FROM dsh.commerce_promotions WHERE id='${sqlLiteral(promotionID)}'`);
+const preservedFundingSnapshot = sql(`SELECT count(*) FROM wlt.order_promotion_funding WHERE order_id='${sqlLiteral(promotionOrderID)}'
+  AND discount_minor=300 AND funding_source='BTHWANI' AND bthwani_funded_minor=300 AND partner_funded_minor=0`);
+if (promotionCancellation.status !== 201 || promotionCancellation.body?.order?.state !== "CANCELLED"
+  || cancelledPromotionPayment.status !== 200 || cancelledPromotionPayment.body?.paymentIntent?.state !== "CANCELLED"
+  || cancelledPromotionRedemptions !== "0" || releasedPromotionBudget !== "0:0" || preservedFundingSnapshot !== "1") {
+  fail("promotion cancellation did not reconcile DSH redemption, WLT payment and frozen funding", JSON.stringify({
+    promotionCancellation, cancelledPromotionPayment, cancelledPromotionRedemptions, releasedPromotionBudget, preservedFundingSnapshot,
+  }));
+}
 console.log("DSH_PROMOTIONS_DISCOVERY=PASS");
 
 const multiCartAResponse = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`multi-store-cart-a-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
