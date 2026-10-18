@@ -128,21 +128,32 @@ func discoveryContentTargetEligibilityPredicate(contentAlias, serviceCityPlaceho
 			  AND promotion.state='PUBLISHED'
 			  AND promotion.starts_at<=` + atExpression + `
 			  AND (promotion.ends_at IS NULL OR promotion.ends_at>` + atExpression + `)
+			  AND (promotion.redemption_limit IS NULL OR promotion.redeemed_count < promotion.redemption_limit)
+			  AND (promotion.discount_budget_limit_minor IS NULL OR promotion.discount_spent_minor < promotion.discount_budget_limit_minor)
 			  AND (` + serviceCityPlaceholder + `='' OR promotion.service_city_id IS NULL OR promotion.service_city_id='' OR promotion.service_city_id=` + serviceCityPlaceholder + `)
 			  AND (promotion.service_city_id IS NULL OR promotion.service_city_id='' OR EXISTS (
 				  SELECT 1 FROM dsh.service_cities promotion_city
 				  WHERE promotion_city.id=promotion.service_city_id AND promotion_city.active=true
 			  ))
-			  AND (promotion.store_id IS NULL OR promotion.store_id='' OR EXISTS (
-				  SELECT 1
-				  FROM dsh.stores store
-				  JOIN dsh.service_cities city ON city.id=store.service_city_id AND city.active=true
-				  WHERE store.id=promotion.store_id
-				    AND (` + serviceCityPlaceholder + `='' OR store.service_city_id=` + serviceCityPlaceholder + `)
-				    AND store.publication_state='published'
-				    AND store.publication_changed_at IS NOT NULL
-				    AND (promotion.service_city_id IS NULL OR promotion.service_city_id='' OR promotion.service_city_id=store.service_city_id)
-			  ))
+			  AND (
+				  ((promotion.store_id IS NULL OR promotion.store_id='')
+				    AND promotion.funding_source='BTHWANI' AND promotion.requires_partner_opt_in=false)
+				  OR (promotion.store_id IS NOT NULL AND promotion.store_id<>'' AND EXISTS (
+				    SELECT 1
+				    FROM dsh.stores store
+				    JOIN dsh.service_cities city ON city.id=store.service_city_id AND city.active=true
+				    WHERE store.id=promotion.store_id
+				      AND (` + serviceCityPlaceholder + `='' OR store.service_city_id=` + serviceCityPlaceholder + `)
+				      AND store.publication_state='published'
+				      AND store.publication_changed_at IS NOT NULL
+				      AND (promotion.service_city_id IS NULL OR promotion.service_city_id='' OR promotion.service_city_id=store.service_city_id)
+				      AND EXISTS (
+				        SELECT 1 FROM dsh.catalog_store_offers offer
+				        WHERE offer.store_id=store.id
+				          AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
+				      )
+				  ))
+			  )
 		))
 		OR (` + contentAlias + `.target_type='PRODUCT' AND EXISTS (
 			SELECT 1
