@@ -196,3 +196,26 @@ test("marketing promotion state cannot be claimed without a newer canonical vers
   await expect(page.getByRole("status").filter({ hasText: "الحالة والإصدار الجديدين" })).toBeVisible();
   await expect(page.getByText("نُشر العرض وأُكدت حالته من السجل.")).toHaveCount(0);
 });
+
+
+test("operator Store-specific campaign never offers unauthorized Partner funding", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.route("**/api/service-cities", (route) =>
+    route.fulfill({ status: 200, json: { cities: [{ id: "marketing-city", displayNameAr: "صنعاء", active: true }] } }));
+  await page.route("**/api/marketing/content/targets?**", (route) =>
+    route.fulfill({ status: 200, json: { options: [{ id: "marketing-store", label: "متجر تجريبي" }] } }));
+  await page.goto("/marketing/promotions");
+  await page.getByText("إنشاء عرض أو حملة", { exact: true }).click();
+  const funding = page.locator("#promotion-funding-source");
+  await funding.selectOption("SHARED");
+  await expect(page.getByRole("spinbutton", { name: "حصة الشريك من التمويل" })).toBeVisible();
+  await page.locator("#promotion-city").selectOption("marketing-city");
+  await page.getByRole("textbox", { name: "بحث متجر الحملة" }).fill("متجر");
+  await expect(page.locator("#promotion-store option[value='marketing-store']")).toHaveCount(1);
+  await page.locator("#promotion-store").selectOption("marketing-store");
+  await expect(funding).toHaveValue("BTHWANI");
+  await expect(funding.locator("option[value='SHARED']")).toHaveAttribute("disabled", "");
+  await expect(funding.locator("option[value='PARTNER']")).toHaveAttribute("disabled", "");
+  await expect(page.getByText("المتجر المحدد يموله بثواني فقط.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("spinbutton", { name: "حصة الشريك من التمويل" })).toHaveCount(0);
+});
