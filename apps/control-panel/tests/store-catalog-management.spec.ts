@@ -41,8 +41,8 @@ test("Store file creates its own draft offer from a Shared Product without partn
  await page.goto("/partners?inspect=store-catalog-proof");
  const inspector=page.locator(".store-profile");
  await expect(inspector).toBeVisible();
- await expect(inspector.locator(".store-profile-blockers")).toContainText("ساعات عمل المتجر");
- await expect(inspector.locator(".store-profile-blockers")).toContainText("لا يوجد كتالوج");
+ await expect(inspector.locator("ul.store-profile-blockers")).toContainText("ساعات عمل المتجر");
+ await expect(inspector.locator("ul.store-profile-blockers")).toContainText("لا يوجد كتالوج");
  await inspector.getByRole("tab",{name:/المنتجات/}).click();
  const editor=inspector.locator(".store-product-management");
  await expect(editor).toBeVisible();

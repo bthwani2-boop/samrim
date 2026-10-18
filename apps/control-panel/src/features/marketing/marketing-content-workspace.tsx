@@ -431,10 +431,10 @@ export function MarketingContentWorkspace() {
           <label className="field-label" htmlFor="marketing-content-kind">نوع المحتوى<select id="marketing-content-kind" aria-label="نوع المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.kind} onChange={(event) => setContentForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="BANNER">بنر رئيسي</option><option value="CAROUSEL">شريحة كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
           <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required disabled={busy || !attemptReady || Boolean(pendingCreate && mediaFile)} onChange={(event) => { setMediaFile(event.target.files?.[0] ?? null); if (!pendingCreate) setMediaProvenance(emptyMediaProvenance()); }} /></label><CatalogMediaProvenanceFields idPrefix="marketing-content-media" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={mediaProvenance} onChange={setMediaProvenance} />
           {mediaFile ? <p className="muted" data-testid="marketing-content-file">{mediaFile.name} · {(mediaFile.size / 1024).toFixed(0)} كيلوبايت</p> : <p className="muted">JPEG أو PNG، حتى 10 ميجابايت.</p>}
-          {canPreviewMedia ? <figure aria-label="معاينة صورة المحتوى قبل النشر" data-testid="marketing-content-preview" style={{ gridColumn: "1 / -1", margin: 0, maxWidth: contentForm.kind === "SHORT_FORM" ? 180 : 360 }}>
-            <div style={{ aspectRatio: contentForm.kind === "SHORT_FORM" ? "6 / 7" : "5 / 2", borderRadius: 12, overflow: "hidden", position: "relative" }}>
-              <canvas ref={mediaPreviewCanvasRef} role="img" aria-label="معاينة الصورة المختارة" width={contentForm.kind === "SHORT_FORM" ? 240 : 600} height={contentForm.kind === "SHORT_FORM" ? 280 : 240} style={{ width: "100%", height: "100%", display: "block" }} />
-              <div style={{ position: "absolute", insetInline: 0, bottom: 0, padding: 8, color: "#FFFFFF", background: "rgba(0,0,0,0.75)" }}>
+          {canPreviewMedia ? <figure aria-label="معاينة صورة المحتوى قبل النشر" data-testid="marketing-content-preview" className={contentForm.kind === "SHORT_FORM" ? "marketing-local-preview is-story" : "marketing-local-preview"}>
+            <div className="marketing-local-preview-visual">
+              <canvas ref={mediaPreviewCanvasRef} role="img" aria-label="معاينة الصورة المختارة" width={contentForm.kind === "SHORT_FORM" ? 240 : 600} height={contentForm.kind === "SHORT_FORM" ? 280 : 240} className="marketing-local-preview-canvas" />
+              <div className="marketing-local-preview-overlay">
                 <strong>{contentForm.titleAr.trim() || "عنوان المحتوى"}</strong>
                 {contentForm.bodyAr.trim() ? <div>{contentForm.bodyAr.trim()}</div> : null}
               </div>

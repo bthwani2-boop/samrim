@@ -1142,7 +1142,7 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await fulfillmentModes.getByRole("checkbox", { name: "استلم بنفسك من المتجر" }).check();
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
 
-  await expect(page.getByRole("status")).toContainText("الحالة: مسودة");
+  await expect(page.locator(".status-badge").filter({ hasText: "الحالة: مسودة" })).toBeVisible();
   expect(requestBody).toEqual({ ...operatorJoiningCaseDraft, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] });
 });
 
@@ -1621,7 +1621,7 @@ test("partner Store publication exposes the canonical readiness block", async ({
   await page.getByRole("checkbox", { name: "توصيل بثواني · مسؤولية المنصة" }).check();
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
   await page.getByRole("link", { name: "فتح ملف المتجر" }).click();
-  await page.getByRole("button", { name: "إعادة قراءة النشر" }).click();
+  await expect(page.getByText("الجاهزية: هوية الشريك أو صلاحية دوره غير جاهزة للنشر", { exact: true })).toBeVisible();
   for (const reason of publicationReasons) {
     blockedReason = reason.code;
     await page.getByRole("button", { name: "إعادة القراءة" }).click();
