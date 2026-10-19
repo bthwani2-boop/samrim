@@ -3,14 +3,12 @@ import type { PartnerAccessibleStore, StoreAccessPermission } from "@bthwani/dsh
 export type PartnerSurface = "orders" | "products" | "wallet" | "more" | "store" | "account";
 export type PartnerSurfacePath = "/orders" | "/products" | "/wallet" | "/more" | "/store" | "/account";
 
-/** The only four primary destinations; store/account remain protected deep-link routes. */
-export const PARTNER_SURFACE_ORDER: ReadonlyArray<PartnerSurface> = ["orders", "products", "wallet", "more"];
 const PARTNER_SURFACE_PATHS: Record<PartnerSurface, PartnerSurfacePath> = {
   orders: "/orders", products: "/products", wallet: "/wallet",
   more: "/more", store: "/store", account: "/account",
 };
 
-export const STORE_SURFACE_PERMISSIONS: ReadonlyArray<StoreAccessPermission> = ["store_operations", "promotions"];
+const STORE_SURFACE_PERMISSIONS: ReadonlyArray<StoreAccessPermission> = ["store_operations", "promotions"];
 const WALLET_SURFACE_PERMISSIONS: ReadonlyArray<StoreAccessPermission> = ["finance_read", "payout_request"];
 
 export type PartnerAuthority = Readonly<{
@@ -41,10 +39,6 @@ export function derivePartnerAuthority(stores: ReadonlyArray<PartnerAccessibleSt
     "account" as const,
   ];
   return { owner, surfaces, canUse: (surface) => surfaces.includes(surface) };
-}
-
-export function partnerSurfacePath(surface: PartnerSurface): PartnerSurfacePath {
-  return PARTNER_SURFACE_PATHS[surface];
 }
 
 export function canonicalPartnerSurfacePath(authority: PartnerAuthority): PartnerSurfacePath {
