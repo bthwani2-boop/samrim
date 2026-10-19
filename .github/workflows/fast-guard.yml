@@ -156,6 +156,7 @@ jobs:
           apps/app-captain/src/features/captain-operations/captain-task-eligibility.test.mjs
           apps/app-client/src/features/location-core/address-pagination.test.mjs
           apps/app-client/src/features/orders/order-session-scope.test.mjs
+          apps/app-client/src/features/orders/order-list-filter.test.mjs
           apps/app-client/tests/cart-checkout-single-flight.test.mjs
           apps/app-client/tests/discovery-click-attribution.test.mjs
           apps/app-client/tests/multi-store-quote-consent.test.mjs

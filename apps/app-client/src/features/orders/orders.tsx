@@ -1,12 +1,13 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, formatOrderDate, fulfillmentModeLabel, paymentStateLabel, type Cart, type Order, orderStateLabel } from "@bthwani/dsh";
+import { createDshMobileClient, formatMoney, formatOrderDate, fulfillmentModeLabel, orderPaymentDisclosure, paymentStateLabel, type Cart, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { ClientOpenCarts } from "./client-open-carts";
+import { matchesOrderFilters } from "./order-list-filter";
 import { isClientActorScopeCurrent } from "./order-session-scope";
 
 type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string; nextCursor: string } | { kind: "error" } | { kind: "auth_required" };
@@ -73,13 +74,7 @@ export default function ClientOrders() {
 
   const visibleOrders = useMemo(() => {
     if (state.kind !== "ready") return [];
-    return state.orders.filter((order) => {
-      const byMode = fulfillmentFilter === "all" || (fulfillmentFilter === "pickup" ? order.fulfillmentMode === "CUSTOMER_PICKUP" : order.fulfillmentMode !== "CUSTOMER_PICKUP");
-      const completed = order.state === "DELIVERED" || order.state === "PICKED_UP";
-      const stopped = order.state === "REJECTED" || order.state === "CANCELLED" || order.state === "DELIVERY_FAILED";
-      const byStatus = statusFilter === "all" || (statusFilter === "completed" ? completed : statusFilter === "stopped" ? stopped : !completed && !stopped);
-      return byMode && byStatus;
-    });
+    return state.orders.filter((order) => matchesOrderFilters(order, fulfillmentFilter, statusFilter));
   }, [fulfillmentFilter, state, statusFilter]);
 
   const loadMore = useCallback(async () => {
@@ -187,8 +182,7 @@ export default function ClientOrders() {
   }
   if (activeTab === "carts" && activeActorID) {
     return <View style={styles.container} accessibilityLabel="سلال العميل">
-      <Text style={styles.eyebrow}>متابعة رحلتك</Text>
-      <Text style={styles.title}>طلباتي وسلالي</Text>
+      <Text style={styles.title}>سلالي</Text>
       <View style={styles.filterRow} accessibilityLabel="التبديل بين الطلبات والسلال">
         <BthwaniChip label="طلباتي" selected={false} onPress={() => setActiveTab("orders")} />
         <BthwaniChip label="سلالي" selected onPress={() => {}} />
@@ -205,9 +199,8 @@ export default function ClientOrders() {
 
   return (
     <View style={styles.container} accessibilityLabel="طلبات العميل">
-      <Text style={styles.eyebrow}>متابعة رحلتك</Text>
       <View style={styles.headingRow}>
-        <View style={styles.headingCopy}><Text style={styles.title}>طلباتي</Text><Text style={styles.muted}>تابع حالة طلباتك وافتح أي طلب لمراجعة التفاصيل الحالية.</Text></View>
+        <Text style={styles.title}>طلباتي</Text>
         <BthwaniButton accessibilityLabel="تحديث قائمة الطلبات" busy={refreshing} label="تحديث" onPress={() => void load(true)} variant="secondary" />
       </View>
       <View style={styles.filterRow} accessibilityLabel="التبديل بين الطلبات والسلال">
@@ -216,15 +209,15 @@ export default function ClientOrders() {
       </View>
       {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{refreshError}</Text> : null}
       <View accessibilityLabel="تصفية الطلبات حسب طريقة الاستلام" style={styles.filterRow}>
-        <BthwaniChip label="الكل" selected={fulfillmentFilter === "all"} onPress={() => setFulfillmentFilter("all")} />
-        <BthwaniChip label="التوصيل" selected={fulfillmentFilter === "delivery"} onPress={() => setFulfillmentFilter("delivery")} />
-        <BthwaniChip label="الاستلام من المتجر" selected={fulfillmentFilter === "pickup"} onPress={() => setFulfillmentFilter("pickup")} />
+        <BthwaniChip label="كل الطرق" selected={fulfillmentFilter === "all"} onPress={() => setFulfillmentFilter("all")} />
+        <BthwaniChip label="توصيل" selected={fulfillmentFilter === "delivery"} onPress={() => setFulfillmentFilter("delivery")} />
+        <BthwaniChip label="استلام من المتجر" selected={fulfillmentFilter === "pickup"} onPress={() => setFulfillmentFilter("pickup")} />
       </View>
       <View accessibilityLabel="تصفية الطلبات حسب الحالة" style={styles.filterRow}>
         <BthwaniChip label="كل الحالات" selected={statusFilter === "all"} onPress={() => setStatusFilter("all")} />
-        <BthwaniChip label="قيد التنفيذ" selected={statusFilter === "active"} onPress={() => setStatusFilter("active")} />
+        <BthwaniChip label="جارية" selected={statusFilter === "active"} onPress={() => setStatusFilter("active")} />
         <BthwaniChip label="مكتملة" selected={statusFilter === "completed"} onPress={() => setStatusFilter("completed")} />
-        <BthwaniChip label="ملغاة أو متعثرة" selected={statusFilter === "stopped"} onPress={() => setStatusFilter("stopped")} />
+        <BthwaniChip label="ملغاة / متعثرة" selected={statusFilter === "stopped"} onPress={() => setStatusFilter("stopped")} />
       </View>
       {repeatError ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{repeatError}</Text> : null}
       {state.orders.length === 0 ? (
@@ -244,11 +237,19 @@ export default function ClientOrders() {
       ) : (
         <View style={styles.list}>
           {visibleOrders.map((order) => <View key={order.id} style={styles.order}>
-            <Pressable accessibilityRole="button" accessibilityLabel={`قراءة الطلب من ${order.storeName} بتاريخ ${formatOrderDate(order.createdAt)}`} onPress={() => router.push(`/orders/${encodeURIComponent(order.id)}` as Href)} style={({ pressed }) => [styles.orderLink, pressed && styles.pressed]}>
-              <View style={styles.orderTop}><View style={styles.orderTitleBlock}><Text style={styles.orderTitle}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.orderAddress} numberOfLines={1}>{order.fulfillmentMode === "CUSTOMER_PICKUP" ? `${fulfillmentModeLabel(order.fulfillmentMode)} · ${order.storeName}` : order.addressText}</Text></View><View style={styles.statusPill}><Text style={styles.statusText}>{orderStateLabel(order.state)}</Text></View></View>
-              <View style={styles.orderBottom}><View style={styles.orderMetaBlock}><Text style={styles.orderMeta}>{order.lines.length} {order.lines.length === 1 ? "منتج" : "منتجات"}</Text><Text style={styles.orderPayment}>{paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}</Text></View><Text style={styles.orderTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
+            <Pressable accessibilityRole="button" accessibilityLabel={`تفاصيل طلب ${order.storeName}، ${orderStateLabel(order.state)}`} onPress={() => router.push(`/orders/${encodeURIComponent(order.id)}` as Href)} style={({ pressed }) => [styles.orderLink, pressed && styles.pressed]}>
+              <View style={styles.orderTop}>
+                <View style={styles.orderTitleBlock}><Text style={styles.orderTitle} numberOfLines={1}>{order.storeName}</Text><Text style={styles.orderDate}>{formatOrderDate(order.createdAt)}</Text></View>
+                <View style={styles.statusPill}><Text style={[styles.statusText, (order.state === "DELIVERED" || order.state === "PICKED_UP") && styles.statusSuccess, (order.state === "CANCELLED" || order.state === "REJECTED" || order.state === "DELIVERY_FAILED") && styles.statusStopped]}>{orderStateLabel(order.state)}</Text></View>
+              </View>
+              <Text style={styles.orderMeta}>{order.lines.length} {order.lines.length === 1 ? "منتج" : "منتجات"} · {fulfillmentModeLabel(order.fulfillmentMode)}</Text>
+              <View style={styles.orderBottom}>
+                <View style={styles.orderMetaBlock}><Text style={styles.orderPayment} numberOfLines={2}>{order.state === "CANCELLED" || order.state === "REJECTED" ? orderPaymentDisclosure(order).status : paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}</Text></View>
+                <View style={styles.priceBlock}><Text style={styles.priceLabel}>{order.state === "CANCELLED" || order.state === "REJECTED" ? "الإجمالي السابق" : "الإجمالي"}</Text><Text style={styles.orderTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text></View>
+                <BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} />
+              </View>
             </Pressable>
-            {order.state === "DELIVERED" || order.state === "PICKED_UP" ? <BthwaniButton accessibilityLabel={`تكرار طلب ${order.storeName}`} busy={repeatingOrderID === order.id} disabled={Boolean(repeatingOrderID)} label="تكرار الطلب" onPress={() => void repeatOrder(order)} variant="secondary" /> : null}
+            {(order.state === "DELIVERED" || order.state === "PICKED_UP") && order.lines.length > 0 ? <BthwaniButton accessibilityLabel={`تكرار طلب ${order.storeName}`} busy={repeatingOrderID === order.id} disabled={Boolean(repeatingOrderID)} label="إعادة الطلب" onPress={() => void repeatOrder(order)} variant="secondary" /> : null}
           </View>)}
         </View>
       )}
@@ -262,30 +263,32 @@ export default function ClientOrders() {
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    container: { backgroundColor: theme.background, flexGrow: 1, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
-    eyebrow: { ...typography.label, color: theme.interactiveText },
-    title: { ...typography.hero, color: theme.color },
+    container: { backgroundColor: theme.background, flexGrow: 1, gap: spacing[3], paddingBottom: spacing[5], width: "100%" },
+    title: { ...typography.titleLg, color: theme.color },
     muted: { ...typography.bodySm, color: theme.colorMuted },
-    headingRow: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
-    headingCopy: { flex: 1, gap: spacing[1] },
-    filterRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    headingRow: { alignItems: "center", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+    filterRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing[1] },
     error: { ...typography.bodySm, color: theme.danger },
     state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[10], width: "100%" },
     emptyState: { alignItems: "center", borderRadius: radius.xl, gap: spacing[3], padding: spacing[5] },
     emptyIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
     cardTitle: { ...typography.titleSm, color: theme.color, textAlign: "center" },
-    list: { gap: spacing[3] },
-    order: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4], ...elevation.raised },
-    orderLink: { gap: spacing[3] },
+    list: { gap: spacing[2] },
+    order: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3], ...elevation.raised },
+    orderLink: { gap: spacing[2] },
     orderTop: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
     orderTitleBlock: { flex: 1, gap: spacing[1] },
     orderTitle: { ...typography.titleSm, color: theme.color },
-    orderAddress: { ...typography.caption, color: theme.colorMuted },
+    orderDate: { ...typography.caption, color: theme.colorMuted },
     statusPill: { backgroundColor: theme.actionSoft, borderRadius: radius.round, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
     statusText: { ...typography.caption, color: theme.interactiveText, textAlign: "center" },
-    orderBottom: { alignItems: "center", borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", gap: spacing[2], paddingTop: spacing[3] },
-    orderMeta: { ...typography.bodySm, color: theme.colorMuted, flex: 1 },
+    statusSuccess: { color: theme.success },
+    statusStopped: { color: theme.danger },
+    orderBottom: { alignItems: "center", borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", gap: spacing[2], paddingTop: spacing[2] },
+    orderMeta: { ...typography.bodySm, color: theme.colorMuted },
     orderMetaBlock: { flex: 1, gap: spacing[1] },
+    priceBlock: { alignItems: "flex-end", gap: spacing[1] },
+    priceLabel: { ...typography.caption, color: theme.colorMuted },
     orderPayment: { ...typography.caption, color: theme.interactiveText },
     orderTotal: { ...typography.bodyStrong, color: theme.color },
     pressed: { opacity: opacity.subtle },
