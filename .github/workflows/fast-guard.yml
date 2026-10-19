@@ -51,7 +51,7 @@ jobs:
           if changed '^(services/dsh/backend/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'dsh=true' >> "$GITHUB_OUTPUT"; fi
           if changed '^(services/wlt/backend/|go\.work(\.sum)?$)'; then echo 'wlt=true' >> "$GITHUB_OUTPUT"; fi
           if changed '^(services/identity/backend/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'identity=true' >> "$GITHUB_OUTPUT"; fi
-          if changed '^(\.github/workflows/fast-guard\.yml$|services/(dsh|wlt)/backend/.*(payment|financial|wallet|order|checkout|settlement|promotion|payout|compensation|postgres)|services/(dsh|wlt)/database/)'; then echo 'finance=true' >> "$GITHUB_OUTPUT"; fi
+          if changed '^(\.github/workflows/fast-guard\.yml$|services/(dsh|wlt)/backend/.*(captain|dispatch|assignment|delivery|payment|financial|wallet|order|checkout|settlement|promotion|payout|compensation|postgres)|services/(dsh|wlt)/database/)'; then echo 'finance=true' >> "$GITHUB_OUTPUT"; fi
           if changed '^(apps/|packages/|services/(dsh|identity)/((clients|tools)/|project\.json$)|services/wlt/((clients|tools)/|project\.json$)|tools/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|nx\.json$|tsconfig\.base\.json$|biome\.json$)'; then echo 'node=true' >> "$GITHUB_OUTPUT"; fi
 
       - name: Reject committed secrets
@@ -109,7 +109,13 @@ jobs:
           unset WLT_TEST_DATABASE_URL
           export BTHWANI_EXPECTED_DATABASE_NAME=dsh_proof
           export DSH_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_proof?sslmode=disable"
-          (cd services/dsh/backend && go test ./internal/storage/postgres -run TestPartnerFinanceAndPayoutStoreAuthorityBoundary -count=1 -timeout 7m)
+          # DSH migrations are applied only inside child databases created by
+          # the existing integration tests; never touch the persistent local DB.
+          export BTHWANI_ENV=test
+          export BTHWANI_FINANCIAL_PROOF_ISOLATED=1
+          export DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL="$DSH_DATABASE_URL"
+          (cd services/dsh/backend && go test ./internal/storage/postgres -run '^(TestPartnerFinanceAndPayoutStoreAuthorityBoundary|TestCaptainParallelDispatchThreeOnlyOneWins|TestFinancialHandoffUnknownOutcomeAndConcurrentWorkers|TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay)$' -count=1 -timeout 9m)
+          unset DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL
           # Existing end-to-end adapter proof needs two pristine databases and
           # the real WLT HTTP handler. Never point it at the durable local world.
           docker exec "$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "CREATE DATABASE wlt_a04_realfunding;"
