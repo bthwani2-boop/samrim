@@ -104,6 +104,70 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 	if err != nil || balance != 1200 {
 		t.Fatalf("initial wallet funded by canonical simulator: balance=%d err=%v", balance, err)
 	}
+	// WLT owns the simulator lifecycle. Delayed and unknown results cannot
+	// create ledger money; a subsequent success must credit exactly once.
+	for _, scenario := range []struct {
+		name         string
+		outcomes     []string
+		finalState   string
+		finalBalance int64
+	}{
+		{name: "failure", outcomes: []string{"FAILURE"}, finalState: "FAILED"},
+		{name: "unknown", outcomes: []string{"UNKNOWN"}, finalState: "UNKNOWN"},
+		{name: "delayed-then-success", outcomes: []string{"DELAYED", "UNKNOWN", "SUCCESS"}, finalState: "SETTLED", finalBalance: 501},
+	} {
+		actorID := "proof-sim-" + scenario.name
+		extra, _, createErr := postgres.CreateCashInFundingIntent(ctx, db, postgres.CreateCashInFundingIntentInput{
+			ActorType: "customer", ActorID: actorID, AmountMinor: 501, Currency: "YER",
+			ProviderKey: postgres.DevelopmentSimulatorProvider, IdempotencyKey: "sim-create-" + scenario.name,
+			CorrelationID: "sim-create-corr-" + scenario.name,
+		})
+		if createErr != nil {
+			t.Fatalf("%s create intent: %v", scenario.name, createErr)
+		}
+		for _, outcome := range scenario.outcomes {
+			input := postgres.ApplyCashInFundingResultInput{
+				FundingIntentID: extra.ID, Outcome: outcome,
+				ActorID: actorID, IdempotencyKey: "sim-result-" + scenario.name + "-" + outcome,
+				CorrelationID: "sim-result-corr-" + scenario.name + "-" + outcome,
+			}
+			if outcome == "SUCCESS" {
+				input.ProviderTransactionReference = "sim-txn-" + extra.ID
+			}
+			applied, replay, applyErr := postgres.ApplyCashInFundingResult(ctx, db, input)
+			if applyErr != nil || replay {
+				t.Fatalf("%s %s failed: replay=%t err=%v", scenario.name, outcome, replay, applyErr)
+			}
+			wantBalance := int64(0)
+			if outcome == "SUCCESS" {
+				wantBalance = 501
+			}
+			actual, readErr := postgres.ReadWalletBalance(ctx, db, "customer", actorID)
+			if readErr != nil || actual != wantBalance {
+				t.Fatalf("%s %s unexpected balance=%d expected=%d err=%v", scenario.name, outcome, actual, wantBalance, readErr)
+			}
+			if outcome == "SUCCESS" {
+				again, duplicated, retryErr := postgres.ApplyCashInFundingResult(ctx, db, input)
+				if retryErr != nil || !duplicated || again.ID != applied.ID ||
+					again.LedgerTransactionID == nil || applied.LedgerTransactionID == nil ||
+					*again.LedgerTransactionID != *applied.LedgerTransactionID {
+					t.Fatalf("simulated success replay diverged: replay=%t err=%v applied=%v again=%v", duplicated, retryErr, applied.LedgerTransactionID, again.LedgerTransactionID)
+				}
+				after, balanceErr := postgres.ReadWalletBalance(ctx, db, "customer", actorID)
+				if balanceErr != nil || after != 501 {
+					t.Fatalf("replayed credit was not exactly once: balance=%d err=%v", after, balanceErr)
+				}
+			}
+		}
+		canonical, readErr := postgres.ReadCashInFundingIntent(ctx, db, extra.ID)
+		if readErr != nil || canonical.State != scenario.finalState {
+			t.Fatalf("%s state mismatch=%s err=%v", scenario.name, canonical.State, readErr)
+		}
+		final, balanceErr := postgres.ReadWalletBalance(ctx, db, "customer", actorID)
+		if balanceErr != nil || final != scenario.finalBalance {
+			t.Fatalf("%s final balance mismatch=%d err=%v", scenario.name, final, balanceErr)
+		}
+	}
 	payment, _, err := postgres.CreatePaymentIntent(ctx, db, postgres.CreatePaymentIntentInput{
 		ExternalReference: "proof-pickup-payment", PayerActorID: customer, OrderID: order,
 		AmountMinor: 300, Currency: "YER", Method: domain.MethodCashAtStore,

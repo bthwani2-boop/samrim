@@ -163,6 +163,7 @@ jobs:
           apps/app-client/tests/store-discovery-marketing-slots.test.mjs
           apps/app-client/tests/store-promotion-handoff.test.mjs
           services/dsh/clients/presentation/order-payment-disclosure.test.mjs
+          services/dsh/clients/cash-in-simulator.test.mjs
           apps/app-partner/src/features/order-management/order-page-records.test.mjs
           apps/app-partner/src/features/partner-onboarding/store-access-canonical-readback.test.mjs
           apps/control-panel/src/features/notifications/notification-operation-link.test.mjs
