@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import MapView, { type MapPressEvent, Marker, PROVIDER_GOOGLE, type Region } from "react-native-maps";
+import MapView, { Circle, type MapPressEvent, Marker, PROVIDER_GOOGLE, type Region } from "react-native-maps";
 import { spacing, typography } from "../tokens";
 import { useAppearanceTheme } from "./appearance";
 import { BthwaniButton } from "./primitives";
@@ -13,13 +13,23 @@ export type BthwaniMapMarker = Readonly<{
   description?: string;
 }>;
 
+export type BthwaniMapCircle = Readonly<{
+  id: string;
+  coordinate: BthwaniMapCoordinate;
+  radiusMeters: number;
+  fillColor: string;
+  strokeColor: string;
+}>;
+
 type BthwaniMapProps = Readonly<{
   accessibilityLabel: string;
   markers?: ReadonlyArray<BthwaniMapMarker>;
+  circles?: ReadonlyArray<BthwaniMapCircle>;
   selection?: BthwaniMapCoordinate | null;
   selectionTitle?: string;
   onSelectCoordinate?: (coordinate: BthwaniMapCoordinate) => void;
   height?: number;
+  edgeToEdge?: boolean;
   initialCoordinate?: BthwaniMapCoordinate | null;
 }>;
 
@@ -28,8 +38,8 @@ function coordinateSpan(values: ReadonlyArray<number>) {
   return Math.max(0.025, (Math.max(...values) - Math.min(...values)) * 1.8);
 }
 
-function initialRegion(markers: ReadonlyArray<BthwaniMapMarker>, selection?: BthwaniMapCoordinate | null, initialCoordinate?: BthwaniMapCoordinate | null): Region {
-  const coordinates = [...markers.map((marker) => marker.coordinate), ...(selection ? [selection] : [])];
+function initialRegion(markers: ReadonlyArray<BthwaniMapMarker>, circles: ReadonlyArray<BthwaniMapCircle>, selection?: BthwaniMapCoordinate | null, initialCoordinate?: BthwaniMapCoordinate | null): Region {
+  const coordinates = [...markers.map((marker) => marker.coordinate), ...circles.map((circle) => circle.coordinate), ...(selection ? [selection] : [])];
   if (coordinates.length === 0 && initialCoordinate) coordinates.push(initialCoordinate);
   // No city coordinates are present in ServiceCity. Start with country context
   // instead of implying that an unselected store is located in Sana'a.
@@ -41,15 +51,15 @@ function initialRegion(markers: ReadonlyArray<BthwaniMapMarker>, selection?: Bth
   return { latitude, longitude, latitudeDelta: latitudeSpan, longitudeDelta: longitudeSpan };
 }
 
-export function BthwaniMap({ accessibilityLabel, markers = [], selection, selectionTitle = "الموقع المحدد", onSelectCoordinate, height = 220, initialCoordinate }: BthwaniMapProps) {
+export function BthwaniMap({ accessibilityLabel, markers = [], circles = [], selection, selectionTitle = "الموقع المحدد", onSelectCoordinate, height = 220, initialCoordinate, edgeToEdge = false }: BthwaniMapProps) {
   const theme = useAppearanceTheme();
   const map = useRef<MapView>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [retryCount, setRetryCount] = useState(0);
   const selectionLatitude = selection?.latitude;
   const selectionLongitude = selection?.longitude;
-  const hasMarkerRegion = markers.length > 0 || initialCoordinate != null;
-  const markerRegion = initialRegion(markers, null, initialCoordinate);
+  const hasMarkerRegion = markers.length > 0 || circles.length > 0 || initialCoordinate != null;
+  const markerRegion = initialRegion(markers, circles, null, initialCoordinate);
   const { latitude, longitude, latitudeDelta, longitudeDelta } = markerRegion;
   useEffect(() => {
     if (selectionLatitude === undefined || selectionLongitude === undefined) return;
@@ -74,12 +84,12 @@ export function BthwaniMap({ accessibilityLabel, markers = [], selection, select
   }
 
   return (
-    <View accessibilityLabel={accessibilityLabel} style={[styles.frame, { height, backgroundColor: theme.surface }]}>
+    <View accessibilityLabel={accessibilityLabel} style={[styles.frame, { height, backgroundColor: theme.surface }, edgeToEdge && { borderRadius: 0 }] }>
       <MapView
         key={retryCount}
         ref={map}
         provider={PROVIDER_GOOGLE}
-        initialRegion={initialRegion(markers, selection, initialCoordinate)}
+        initialRegion={initialRegion(markers, circles, selection, initialCoordinate)}
         loadingEnabled
         loadingBackgroundColor={theme.surface}
         loadingIndicatorColor={theme.interactiveText}
@@ -88,6 +98,7 @@ export function BthwaniMap({ accessibilityLabel, markers = [], selection, select
         {...(onSelectCoordinate ? { onPress: selectMapPoint } : {})}
         style={StyleSheet.absoluteFill}
       >
+        {circles.map((circle) => <Circle key={circle.id} center={circle.coordinate} radius={circle.radiusMeters} fillColor={circle.fillColor} strokeColor={circle.strokeColor} strokeWidth={1.5} />)}
         {markers.map((marker) => (
           <Marker key={marker.id} coordinate={marker.coordinate} title={marker.title} {...(marker.description ? { description: marker.description } : {})} />
         ))}

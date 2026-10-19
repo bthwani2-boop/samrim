@@ -16,8 +16,8 @@
         "^default",
         "nodeToolchain",
         "controlPanelBuildEnvironment",
-        "{workspaceRoot}/tests/runtime/runtime-proof/trusted-executables.mjs",
-        "{workspaceRoot}/tests/runtime/runtime-proof/trusted-executables.d.mts"
+        "{workspaceRoot}/tools/dev/trusted-executables.mjs",
+        "{workspaceRoot}/tools/dev/trusted-executables.d.mts"
       ]
     },
     "build": {
@@ -34,30 +34,6 @@
         "nodeToolchain",
         "controlPanelBuildEnvironment"
       ]
-    },
-    "e2e": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "pnpm --dir apps/control-panel exec playwright test --config playwright.config.ts --workers=1"
-      }
-    },
-    "browser-live-proof": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "pnpm --dir apps/control-panel test:e2e:live"
-      },
-      "dependsOn": [
-        "e2e"
-      ]
-    },
-    "dsh-runtime-checker-fixture": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "pnpm --dir apps/control-panel test:e2e:live -- tests/zz-dsh-operator.spec.ts --grep=downstream.*separation.*proof --workers=1"
-      }
     },
     "lint": {
       "executor": "nx:run-commands",

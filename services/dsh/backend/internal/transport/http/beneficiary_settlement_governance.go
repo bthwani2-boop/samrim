@@ -26,6 +26,7 @@ func (s *BeneficiaryFinanceServer) RegisterSettlementGovernance(mux *http.ServeM
 	mux.HandleFunc("POST /dsh/operator/payout-requests/{payoutId}/approve", s.approveOperatorPayout)
 	mux.HandleFunc("POST /dsh/operator/payout-requests/{payoutId}/cancel", s.cancelOperatorPayout)
 	mux.HandleFunc("POST /dsh/operator/settlement-batches", s.createOperatorSettlementBatch)
+	mux.HandleFunc("GET /dsh/operator/promotions/{promotionId}/settlement-summary", s.readOperatorPromotionSettlementSummary)
 	mux.HandleFunc("GET /dsh/operator/settlement-batches", s.listOperatorSettlementBatches)
 	mux.HandleFunc("GET /dsh/operator/settlement-batches/{batchId}", s.readOperatorSettlementBatch)
 	mux.HandleFunc("POST /dsh/operator/settlement-batches/{batchId}/export", s.exportOperatorSettlementBatch)

@@ -5,9 +5,10 @@ import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { readOwnStoreOperationalAvailability, updateOwnStoreOperationalAvailability } from "./store-readback-client";
+import { PartnerWeeklyHoursEditor, type PartnerWorkingWindow } from "./partner-weekly-hours-editor";
 
 type AvailabilityState = { kind: "loading" } | { kind: "ready"; value: PartnerStoreOperationalAvailabilityResponse } | { kind: "error" };
-type WindowDraft = Readonly<{ dayOfWeek: number; opensAt: string; closesAt: string }>;
+type WindowDraft = PartnerWorkingWindow;
 type AvailabilityDraft = Readonly<{
   scheduleMode: "ALWAYS_OPEN" | "WEEKLY";
   weeklySchedule: ReadonlyArray<WindowDraft>;
@@ -22,10 +23,6 @@ type PendingAttempt = Readonly<{
   idempotencyKey: string;
   correlationID: string;
 }>;
-
-const WEEKDAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"] as const;
-const DEFAULT_OPEN = "09:00";
-const DEFAULT_CLOSE = "17:00";
 
 function minuteLabel(value: number): string {
   const hour = Math.floor(value / 60).toString().padStart(2, "0");
@@ -179,17 +176,6 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
     return () => { requestSequence.current += 1; };
   }, [load]);
 
-  function addWindow(dayOfWeek: number) {
-    setDraft((current) => current ? { ...current, weeklySchedule: [...current.weeklySchedule, { dayOfWeek, opensAt: DEFAULT_OPEN, closesAt: DEFAULT_CLOSE }] } : current);
-  }
-
-  function updateWindow(index: number, patch: Partial<WindowDraft>) {
-    setDraft((current) => current ? { ...current, weeklySchedule: current.weeklySchedule.map((window, row) => row === index ? { ...window, ...patch } : window) } : current);
-  }
-
-  function removeWindow(index: number) {
-    setDraft((current) => current ? { ...current, weeklySchedule: current.weeklySchedule.filter((_, row) => row !== index) } : current);
-  }
 
   async function save() {
     if (state.kind !== "ready" || !draft || busy) return;
@@ -232,27 +218,14 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
   if (state.kind === "loading") return <View style={styles.card}><ActivityIndicator accessibilityLabel="جارٍ قراءة إتاحة المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة ساعات العمل وإمكانية استقبال الطلبات…</Text></View>;
   if (state.kind === "error" || !draft) return <View style={styles.card}><Text accessibilityRole="alert" style={styles.error}>تعذرت قراءة الإتاحة المعتمدة للمتجر.</Text><BthwaniButton label="إعادة القراءة" onPress={() => void load()} variant="secondary" /></View>;
 
-  const current = state.value.availability;
   return <View style={styles.card}>
     <View style={styles.heading}><Text style={styles.title}>استقبال الطلبات</Text></View>
     <View style={styles.block}>
-      <Text style={styles.label}>ساعات استقبال الطلبات</Text>
       <View style={styles.chips}>
         <BthwaniChip accessibilityLabel="المتجر مفتوح دائمًا" disabled={disabled} label="مفتوح دائمًا" onPress={() => setDraft((value) => value ? { ...value, scheduleMode: "ALWAYS_OPEN" } : value)} selected={draft.scheduleMode === "ALWAYS_OPEN"} />
         <BthwaniChip accessibilityLabel="تحديد ساعات أسبوعية" disabled={disabled} label="ساعات أسبوعية" onPress={() => setDraft((value) => value ? { ...value, scheduleMode: "WEEKLY" } : value)} selected={draft.scheduleMode === "WEEKLY"} />
       </View>
-      {draft.scheduleMode === "WEEKLY" ? <><View style={styles.days}>{WEEKDAYS.map((day, dayOfWeek) => {
-        const windows = draft.weeklySchedule.map((window, index) => ({ window, index })).filter(({ window }) => window.dayOfWeek === dayOfWeek);
-        return <View key={day} style={styles.dayCard}>
-          <View style={styles.dayHeader}><Text style={styles.label}>{day}</Text><Switch accessibilityLabel={`ساعات عمل يوم ${day}`} disabled={disabled} onValueChange={(enabled) => enabled ? addWindow(dayOfWeek) : setDraft((value) => value ? { ...value, weeklySchedule: value.weeklySchedule.filter((window) => window.dayOfWeek !== dayOfWeek) } : value)} value={windows.length > 0} /></View>
-          {windows.map(({ window, index }) => <View key={`${day}-${index}`} style={styles.windowRow}>
-            <View style={styles.timeField}><Text style={styles.muted}>من</Text><TextInput accessibilityLabel={`بداية فترة ${day}`} editable={!disabled} keyboardType="numbers-and-punctuation" maxLength={5} onChangeText={(opensAt) => updateWindow(index, { opensAt: toAsciiDigits(opensAt) })} placeholder="09:00" value={window.opensAt} style={styles.input} /></View>
-            <View style={styles.timeField}><Text style={styles.muted}>إلى</Text><TextInput accessibilityLabel={`نهاية فترة ${day}`} editable={!disabled} keyboardType="numbers-and-punctuation" maxLength={5} onChangeText={(closesAt) => updateWindow(index, { closesAt: toAsciiDigits(closesAt) })} placeholder="17:00" value={window.closesAt} style={styles.input} /></View>
-            <BthwaniButton disabled={disabled} label="حذف الفترة" onPress={() => removeWindow(index)} variant="secondary" />
-          </View>)}
-          {windows.length > 0 ? <BthwaniButton disabled={disabled} label="إضافة فترة أخرى" onPress={() => addWindow(dayOfWeek)} variant="secondary" /> : null}
-        </View>;
-      })}</View></> : null}
+      {draft.scheduleMode === "WEEKLY" ? <PartnerWeeklyHoursEditor disabled={disabled} windows={draft.weeklySchedule} onChange={(weeklySchedule) => setDraft((value) => value ? { ...value, weeklySchedule } : value)} /> : null}
     </View>
     <View style={styles.settingRow}><View style={styles.settingCopy}><Text style={styles.label}>إيقاف استقبال الطلبات مؤقتًا</Text>{draft.paused ? <Text style={styles.muted}>{draft.pauseUntil ? `حتى ${draft.pauseUntil} بتوقيت اليمن` : "حتى الاستئناف يدويًا"}</Text> : null}</View><Switch accessibilityLabel="إيقاف استقبال الطلبات مؤقتًا" disabled={disabled} onValueChange={(paused) => setDraft((value) => value ? { ...value, paused, pauseReason: paused ? value.pauseReason : "", pauseUntil: paused ? value.pauseUntil : null } : value)} value={draft.paused} /></View>
     {draft.paused ? <>
@@ -294,11 +267,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     notice: { ...typography.label, color: theme.actionBackground },
     block: { gap: spacing[2] },
     chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
-    days: { gap: spacing[2] },
-    dayCard: { backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    dayHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-    windowRow: { alignItems: "flex-end", flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
-    timeField: { flex: 1, gap: spacing[1], minWidth: 90 },
     input: { backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, minHeight: 44, paddingHorizontal: spacing[2], textAlign: "right" },
     settingRow: { alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "space-between" },
     settingCopy: { flex: 1, gap: spacing[1] },

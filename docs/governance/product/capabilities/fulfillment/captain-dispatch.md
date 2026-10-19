@@ -8,7 +8,7 @@ CAPABILITY_ID: CAPTAIN_DISPATCH
 
 ## Outcome
 
-A ready `BTHWANI_CAPTAIN` Store Order receives at most one active DSH dispatch offer/assignment with governed Captain eligibility, response timeout, capacity and concurrency-safe reassignment.
+A ready `BTHWANI_CAPTAIN` Store Order may receive up to three concurrent DSH dispatch offers to eligible Captains, but at most one active assignment. The first valid, transactionally committed acceptance wins; all other open offers are superseded with capacity and financial exposure reconciled. Partner Captain dispatch remains separately governed.
 
 ## Ownership
 
@@ -23,8 +23,15 @@ Store-affiliated Partner Captain eligibility belongs to `STORE_CAPTAIN_MEMBERSHI
 ## Invariants
 
 - only a ready `BTHWANI_CAPTAIN` order is platform-dispatchable;
+- the Captain app has three primary tabs: Home, Wallet and Account. Home is a full-height map that displays privacy-safe opportunity circles while idle and the canonical Store/Customer destination during an assigned mission; delivery actions remain on the internally reachable Deliveries route. Incoming offers are short non-modal floating cards on Home, never a full-screen interruption of active navigation; offers expire when not accepted and are suppressed while a mission is active or its state cannot be verified. An availability Switch writes through to DSH, and a separate device GPS status Switch reflects Android permissions/services. GPS activation requests OS permission/service enablement; deactivation opens OS location settings (no simulated silent OS toggle). Disabling GPS while available requires stopping dispatch availability first;
+- ranking nearby available Captains may use an authorized, recent foreground GPS fix kept only as their latest dispatch presence; it never authorizes Client live tracking, delivery movement logs, or publication of Captains' positions in opportunity maps;
+- an outstanding offer reserves availability but does not erase fresh dispatch presence needed for immediate redistribution after rejection or expiry; the assigned winner's dispatch presence is cleared, and explicit offline/suspension also clears it;
+- pre-acceptance offer details disclose only the coarse service-city delivery area, never the Customer's full address or destination coordinates; only the assigned Captain may read the precise delivery task;
+- the Captain home and Operator Operations map overlay geographic circles for recent 30-minute platform delivery demand (orange) and available Captains' coarse density (teal) together by default without layer-selection tabs; the Captain presence input is only the latest authorized dispatch fix, not routes. Require a minimum safe number of independent Stores/orders or Captains before publishing any cell; never expose individual Captain coordinates, Customer delivery destinations, raw counts, live offers or guaranteed assignments;
+- one platform-dispatch batch creates no more than three concurrent offers to distinct eligible available Captains;
 - only an eligible available Captain with required financial exposure capacity may accept an applicable COD offer;
-- one order has at most one active assignment;
+- one order has at most one active assignment, regardless of competing acceptances;
+- successful assignment supersedes all losing open offers and restores their available capacity and financial holds through their owning services;
 - capacity, eligibility and financial authorization are owner-backed and enforced under concurrency;
 - only the authenticated offered Captain may accept/reject the live offer;
 - expiry and rejection are durable decisions;

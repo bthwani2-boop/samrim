@@ -791,48 +791,6 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
-  /dsh/captains/me/assignments/{assignmentId}/location:
-    post:
-      operationId: updateCaptainLocation
-      summary: Publish the authenticated Captain's foreground location for an in-custody assignment
-      security:
-        - userBearer: []
-      parameters:
-        - name: assignmentId
-          in: path
-          required: true
-          schema:
-            type: string
-            minLength: 1
-            maxLength: 128
-        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "../dsh.openapi.yaml#/components/schemas/CaptainLocationUpdateRequest"
-      responses:
-        "200":
-          description: Canonical latest foreground location readback.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainLocationResponse"
-        "400":
-          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
-        "401":
-          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
-        "403":
-          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
-        "404":
-          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
-        "409":
-          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
-        "502":
-          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
-
   /dsh/captains/me/assignments/{assignmentId}/pickup:
     post:
       operationId: completeCaptainPickup
@@ -1275,5 +1233,53 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
         "409":
           $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/me/opportunities:
+    get:
+      operationId: readOwnCaptainOpportunities
+      summary: Read privacy-safe historical Store-origin opportunity zones for the authenticated Captain
+      security:
+        - userBearer: []
+      responses:
+        "200":
+          description: Coarse regions with categorical activity intensity; no actor, address, Store or order coordinates
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainOpportunityHeatmap"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/operator/opportunities:
+    get:
+      operationId: readOperatorOpportunities
+      summary: Read privacy-safe historical Store-origin opportunity zones for an authorized Operator
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: X-Acting-Actor-ID
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Same coarse opportunity zones as the Captain surface
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainOpportunityHeatmap"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"

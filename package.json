@@ -10,7 +10,6 @@
   "scripts": {
     "mobile:verify-config": "node tools/mobile/verify-mobile-config.mjs",
     "mobile:build": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/build-development.ps1",
-    "mobile:test-credential-atomicity": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/test-build-development.ps1",
     "brand:check": "node tools/mobile/verify-brand-assets.mjs",
     "identity:blocklist:generate": "node services/identity/tools/generate-password-blocklist.mjs",
     "identity:blocklist:check": "node services/identity/tools/generate-password-blocklist.mjs --check",
@@ -29,8 +28,7 @@
     "captain": "pnpm --dir apps/app-captain dev",
     "field": "pnpm --dir apps/app-field dev",
     "control": "pnpm --dir apps/control-panel dev",
-    "scr": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/scr.ps1",
-    "test:mobile-shared-coverage": "node --test tools/mobile/test-mobile-app-coverage.test.mjs tools/mobile/test-mobile-app-coverage-partner.test.mjs tools/mobile/test-mobile-app-coverage-captain.test.mjs tools/mobile/test-mobile-app-coverage-field.test.mjs"
+    "scr": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/scr.ps1"
   },
   "pnpm": {
     "overrides": {

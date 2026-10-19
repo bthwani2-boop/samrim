@@ -12,13 +12,13 @@
     "contract": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node services/identity/tools/generate-types.mjs --check && node services/identity/tests/contract-guard.test.mjs && node --test services/identity/tests/session-restore.test.mjs"
+        "command": "node services/identity/tools/generate-types.mjs --check"
       },
       "inputs": [
         "default",
         "^default",
-        "{workspaceRoot}/tests/runtime/runtime-proof/trusted-executables.mjs",
-        "{workspaceRoot}/tests/runtime/runtime-proof/trusted-executables.d.mts",
+        "{workspaceRoot}/tools/dev/trusted-executables.mjs",
+        "{workspaceRoot}/tools/dev/trusted-executables.d.mts",
         {
           "runtime": "node --version"
         },

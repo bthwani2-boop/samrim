@@ -16,16 +16,11 @@ async function sendCurrentPresence() {
   const api = captainClient();
   const admission = await api.readOwnCaptainAdmission(token);
   const available = admission.admission.state === "eligible" && admission.admission.availabilityState === "available";
-  let inCustody = false;
-  if (!available) {
-    const assignments = await api.listOwnCaptainAssignments(token);
-    inCustody = assignments.assignments.some((assignment) => assignment.state === "in_custody");
-  }
   const current = currentIdentityState();
   if (!shouldPublishCaptainPresence(
     AppState.currentState === "active", permission.granted,
     current.kind === "authenticated" && current.identity.subject === before.identity.subject,
-    available, inCustody,
+    available,
   )) return;
   const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
   const after = currentIdentityState();
@@ -42,10 +37,10 @@ async function sendCurrentPresence() {
   lastSubmittedAt = Date.now();
   lastSubmittedActor = after.identity.subject;
 }
-export async function publishCaptainPresence() {
+export async function publishCaptainPresence(force = false) {
   const session = currentIdentityState();
   if (session.kind !== "authenticated") return;
-  if (lastSubmittedActor === session.identity.subject && Date.now() - lastSubmittedAt < 60_000) return;
+  if (!force && lastSubmittedActor === session.identity.subject && Date.now() - lastSubmittedAt < 60_000) return;
   await sendCurrentPresence();
 }
 export function CaptainPresencePublisher() {

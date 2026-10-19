@@ -288,9 +288,11 @@ func ReadClientDeliveryProof(ctx context.Context, db *sql.DB, orderID, clientAct
 }
 
 type OperatorOperationRecord struct {
-	Order      OrderRecord
-	StoreName  string
-	Assignment *CaptainAssignment
+	Order                         OrderRecord
+	StoreName                     string
+	Assignment                    *CaptainAssignment
+	CustomerSuccessfulOrdersCount int
+	SuccessfulOrderOrdinal        int
 }
 
 type OperatorOperationListRecord struct {
@@ -767,6 +769,28 @@ func ReadOperatorOperation(ctx context.Context, db *sql.DB, orderID string) (Ope
 		operation.Assignment = &assignment
 	} else if !errors.Is(assignmentErr, ErrCaptainAssignmentNotFound) {
 		return OperatorOperationRecord{}, assignmentErr
+	}
+	// Order state alone is not completion proof. Use terminal state AND its
+	// canonical completion event; a Captain pickup is not customer delivery.
+	err = db.QueryRowContext(ctx, `
+WITH completed AS (
+	SELECT o.id, (SELECT min(a.created_at) FROM dsh.captain_audit a
+		WHERE a.order_id=o.id AND a.event_type='delivery_completed') AS completed_at
+	FROM dsh.commerce_orders o
+	WHERE o.client_actor_id=$1 AND o.state='DELIVERED' AND o.fulfillment_mode<>'CUSTOMER_PICKUP'
+	UNION ALL
+	SELECT o.id, (SELECT min(a.created_at) FROM dsh.commerce_order_audit a
+		WHERE a.order_id=o.id AND a.event_type='order_picked_up') AS completed_at
+	FROM dsh.commerce_orders o
+	WHERE o.client_actor_id=$1 AND o.state='PICKED_UP' AND o.fulfillment_mode='CUSTOMER_PICKUP'
+), ranked AS (
+	SELECT id, row_number() OVER (ORDER BY completed_at,id) AS ordinal
+	FROM completed WHERE completed_at IS NOT NULL
+)
+SELECT count(*)::integer, COALESCE(max(ordinal) FILTER (WHERE id=$2),0)::integer FROM ranked
+`, order.ClientActorID, order.ID).Scan(&operation.CustomerSuccessfulOrdersCount, &operation.SuccessfulOrderOrdinal)
+	if err != nil {
+		return OperatorOperationRecord{}, err
 	}
 	return operation, nil
 }

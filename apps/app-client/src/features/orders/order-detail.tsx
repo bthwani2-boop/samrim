@@ -1,6 +1,6 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniMap, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, type OrderTrackingResponse, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import { createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -38,27 +38,12 @@ export default function ClientOrderDetail() {
   const [cancelError, setCancelError] = useState("");
   const [adjustmentBusy, setAdjustmentBusy] = useState("");
   const [adjustmentError, setAdjustmentError] = useState("");
-  const [tracking, setTracking] = useState<{ kind: "loading" } | { kind: "ready"; value: OrderTrackingResponse } | { kind: "error" }>({ kind: "loading" });
   const [deliveryProof, setDeliveryProof] = useState<{ kind: "loading" } | { kind: "ready"; value: DeliveryProofResponse } | { kind: "error" }>({ kind: "loading" });
   const [orderRating, setOrderRating] = useState<{ kind: "hidden" | "loading" } | { kind: "ready"; value: OrderRatingResponse } | { kind: "empty" } | { kind: "error" }>({ kind: "hidden" });
   const [selectedRating, setSelectedRating] = useState(0);
   const [review, setReview] = useState("");
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [ratingError, setRatingError] = useState("");
-
-  const refreshTracking = useCallback(async () => {
-    const session = currentIdentityState();
-    if (!orderId.trim() || session.kind !== "authenticated") return;
-    const actorID = session.identity.subject.trim();
-    try {
-      const token = await getUsableIdentityAccessToken();
-      const value = await client().readClientOrderTracking(token, orderId);
-      if (hasCurrentClientActor(actorID) && value.orderId === orderId) setTracking({ kind: "ready", value });
-    } catch (error) {
-      console.error("DSH client order tracking read failed", error);
-      if (hasCurrentClientActor(actorID)) setTracking({ kind: "error" });
-    }
-  }, [orderId]);
 
   const refreshDeliveryProof = useCallback(async () => {
     const session = currentIdentityState();
@@ -114,7 +99,6 @@ export default function ClientOrderDetail() {
     else setState({ kind: "loading" });
     setRefreshError("");
     setCancelError("");
-    setTracking({ kind: "loading" });
     setDeliveryProof({ kind: "loading" });
     setOrderRating({ kind: "loading" });
     try {
@@ -125,7 +109,6 @@ export default function ClientOrderDetail() {
       setState({ kind: "ready", order, actorID });
       await refreshDeliveryProof();
       if (sequence !== loadSequence.current || !hasCurrentClientActor(actorID)) return;
-      if (order.fulfillmentMode === "BTHWANI_CAPTAIN") await refreshTracking();
       if (sequence !== loadSequence.current || !hasCurrentClientActor(actorID)) return;
       await refreshRating(order.state);
     } catch (error) {
@@ -137,7 +120,7 @@ export default function ClientOrderDetail() {
     } finally {
       if (sequence === loadSequence.current) setRefreshing(false);
     }
-  }, [orderId, refreshDeliveryProof, refreshRating, refreshTracking]);
+  }, [orderId, refreshDeliveryProof, refreshRating]);
 
   const submitRating = useCallback(async () => {
     if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || !hasCurrentClientActor(state.actorID) || (state.order.state !== "DELIVERED" && state.order.state !== "PICKED_UP") || selectedRating < 1 || ratingSubmitting) return;
@@ -166,14 +149,13 @@ export default function ClientOrderDetail() {
       const result = await client().cancelClientOrder(token, state.order.id, state.order.version);
       if (!hasCurrentClientActor(state.actorID) || result.order.id !== orderId) return;
       setState({ kind: "ready", order: result.order, actorID: state.actorID });
-      await refreshTracking();
     } catch (error) {
       console.error("DSH client order cancellation failed", error);
       if (hasCurrentClientActor(state.actorID)) setCancelError("تعذر إلغاء الطلب. ربما بدأ المتجر معالجته؛ حدّث الحالة وحاول مرة أخرى.");
     } finally {
       setCancelling(false);
     }
-  }, [activeActorID, cancelling, orderId, refreshTracking, state]);
+  }, [activeActorID, cancelling, orderId, state]);
 
   const decideAdjustment = useCallback(async (adjustmentId: string, decision: "ACCEPT" | "REJECT") => {
     if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || !hasCurrentClientActor(state.actorID) || adjustmentBusy) return;
@@ -227,9 +209,9 @@ export default function ClientOrderDetail() {
 
   useEffect(() => {
     if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || state.order.fulfillmentMode === "CUSTOMER_PICKUP" || ["DELIVERED", "DELIVERY_FAILED", "CANCELLED", "PICKED_UP"].includes(state.order.state)) return;
-    const timer = setInterval(() => { void refreshTracking(); }, 30_000);
+    const timer = setInterval(() => { void load(true); }, 60_000);
     return () => clearInterval(timer);
-  }, [activeActorID, orderId, refreshTracking, state]);
+  }, [activeActorID, load, orderId, state]);
 
   if (state.kind === "ready" && !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId)) return <View style={styles.state} accessibilityLabel="جارٍ التحقق من صاحب الطلب"><BthwaniSkeleton height={128} /><Text style={styles.muted}>جارٍ التحقق من الجلسة وملكية الطلب…</Text></View>;
   if (state.kind === "auth_required") return <View style={styles.state}><BthwaniIcon name="account" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>سجّل الدخول لعرض تفاصيل الطلب</Text><Text style={styles.muted}>سجّل الدخول أولًا ثم افتح الطلب مرة أخرى.</Text><BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/orders" as Href)} /></View>;
@@ -303,17 +285,6 @@ export default function ClientOrderDetail() {
             <BthwaniButton busy={ratingSubmitting} disabled={selectedRating < 1 || ratingSubmitting} label="حفظ تقييم المتجر" onPress={() => void submitRating()} />
           </> : null}
         </BthwaniSurface>
-      </> : null}
-      {!isStorePickup ? <>
-      <BthwaniSectionHeader title="التتبع المباشر" subtitle="يظهر الموقع أثناء عهدة الكابتن فقط" />
-      <BthwaniSurface tone="base" style={styles.trackingSurface}>
-        {tracking.kind === "loading" ? <Text style={styles.muted}>جارٍ قراءة حالة التتبع…</Text> : null}
-        {tracking.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة التتبع الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
-        {tracking.kind === "ready" && tracking.value.trackingState === "NOT_ASSIGNED" ? <Text style={styles.muted}>سيظهر التتبع بعد إسناد الطلب إلى كابتن.</Text> : null}
-        {tracking.kind === "ready" && tracking.value.trackingState === "AWAITING_LOCATION" ? <Text style={styles.muted}>تم إسناد الطلب، وبانتظار أول تحديث موقع من الكابتن.</Text> : null}
-        {tracking.kind === "ready" && tracking.value.trackingState === "COMPLETED" ? <Text style={styles.muted}>{trackingCompletionMessage(order.state)}</Text> : null}
-        {tracking.kind === "ready" && tracking.value.trackingState === "LIVE" && tracking.value.captainLocation ? <><Text style={styles.trackingTitle}>الكابتن في الطريق</Text><Text style={styles.muted}>آخر تحديث: {formatTrackingTime(tracking.value.captainLocation.updatedAt)}</Text><BthwaniMap accessibilityLabel="خريطة تتبع طلبك" markers={[{ id: "destination", coordinate: { latitude: order.addressLatitude, longitude: order.addressLongitude }, title: "عنوان التوصيل" }, ...(order.pickupLocation ? [{ id: "pickup", coordinate: order.pickupLocation, title: `استلام من ${order.storeName}` }] : [])]} selection={{ latitude: tracking.value.captainLocation.latitude, longitude: tracking.value.captainLocation.longitude }} selectionTitle="موقع الكابتن" /><BthwaniButton label="فتح الموقع على الخريطة" onPress={() => void Linking.openURL(`geo:${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}?q=${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}`)} variant="secondary" /></> : null}
-      </BthwaniSurface>
       </> : null}
       {isStorePickup ? <>
         <BthwaniSectionHeader title="موقع الاستلام" />
@@ -392,16 +363,4 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     reviewInput: { ...typography.body, backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 120, padding: spacing[3] },
     reviewText: { ...typography.body, color: theme.color, textAlign: "right" },
   });
-}
-
-function formatTrackingTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "غير معروف";
-  return new Intl.DateTimeFormat("ar-YE", { dateStyle: "short", timeStyle: "short" }).format(date);
-}
-
-function trackingCompletionMessage(state: Order["state"]): string {
-  if (state === "DELIVERY_FAILED") return "تعذرت محاولة التوصيل، فأوقفنا التتبع المباشر إلى أن يعالج المشغل الحالة.";
-  if (state === "CANCELLED") return "أُلغي الطلب، لذلك أوقفنا التتبع المباشر.";
-  return "اكتملت رحلة التوصيل، وتم إيقاف عرض الموقع.";
 }

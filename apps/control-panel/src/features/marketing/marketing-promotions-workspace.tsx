@@ -1,15 +1,18 @@
 "use client";
 
 import { type CommerceVertical, type CreatePromotionRequest, formatMoney, type OperatorPromotionRegistryResponse, type PromotionView, type ServiceCity } from "@bthwani/dsh";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { MarketingPromotionSettlementReadback } from "./marketing-promotion-settlement-readback";
 import { MarketingStateIndicator } from "./marketing-state-indicator";
-import { promotionTargetSummary, apiMessage, futureDateInput, emptyPromotionForm, readPendingPromotionCreate, clearPendingMarketingCreate, persistMarketingCreate, dateTimeLocalValue, readPromotionById, readActiveServiceCities, PendingPromotionCreate, PromotionTargetKind, MarketingTargetOption, PromotionFormState } from "./marketing-workspace";
+import { apiMessage, clearPendingMarketingCreate, dateTimeLocalValue, emptyPromotionForm, futureDateInput, type MarketingTargetOption, type PendingPromotionCreate, type PromotionFormState, type PromotionTargetKind, persistMarketingCreate, promotionTargetSummary, readActiveServiceCities, readPendingPromotionCreate, readPromotionById } from "./marketing-workspace";
 
 export function MarketingPromotionsWorkspace() {
   const { state: sessionState } = useSession();
   const operatorActorId = sessionState.kind === "authenticated" && sessionState.identity.role === "operator" ? sessionState.identity.subject : "";
+  const canReadFinance = sessionState.kind === "authenticated" && sessionState.identity.permissions?.includes("finance");
   const pendingStorageKey = operatorActorId ? "bthwani.control.marketing.promotion-create.v1." + encodeURIComponent(operatorActorId) : "";
   const [registry, setRegistry] = useState<OperatorPromotionRegistryResponse | null>(null);
   const [registryError, setRegistryError] = useState("");
@@ -31,6 +34,12 @@ export function MarketingPromotionsWorkspace() {
   const [storageError, setStorageError] = useState("");
   const [attemptChecking, setAttemptChecking] = useState(false);
   const [promotionForm, setPromotionForm] = useState<PromotionFormState>(emptyPromotionForm);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState<"basics" | "scope" | "limits" | "review">("basics");
+  const [wizardError, setWizardError] = useState("");
+  useEffect(() => {
+    if (pendingCreate) { setEditorOpen(true); setWizardStep("review"); }
+  }, [pendingCreate]);
   const [storeSearch, setStoreSearch] = useState("");
   const [storeOptions, setStoreOptions] = useState<ReadonlyArray<MarketingTargetOption>>([]);
   const [storeLookupLoading, setStoreLookupLoading] = useState(false);
@@ -280,7 +289,7 @@ export function MarketingPromotionsWorkspace() {
           startsAt: starts.toISOString(),
           requiresPartnerOptIn: !promotionForm.storeId && (promotionForm.requiresPartnerOptIn || promotionForm.fundingSource !== "BTHWANI"),
           ...(promotionForm.fundingSource === "SHARED" ? { fundingSharePartnerPercent: fundingShare } : {}),
-          ...(promotionForm.maxDiscountMinor ? { maxDiscountMinor: Number(promotionForm.maxDiscountMinor) } : {}),
+          ...(promotionForm.kind === "PERCENTAGE" && promotionForm.maxDiscountMinor ? { maxDiscountMinor: Number(promotionForm.maxDiscountMinor) } : {}),
           ...(promotionForm.redemptionLimit ? { redemptionLimit: Number(promotionForm.redemptionLimit) } : {}),
           ...(budgetLimit !== null ? { discountBudgetLimitMinor: budgetLimit } : {}),
           ...(promotionForm.minOrderSubtotalMinor ? { minOrderSubtotalMinor: Number(promotionForm.minOrderSubtotalMinor) } : {}),
@@ -312,7 +321,11 @@ export function MarketingPromotionsWorkspace() {
       setSearch(""); setAppliedSearch(""); setState("DRAFT"); setSort("starts_desc"); setCursor(""); setCursorStack([]);
       await load({ search: "", state: "DRAFT", sort: "starts_desc", cursor: "" });
       setMessage("تم إنشاء العرض وقراءته كمسودة من السجل. انشره من السجل عندما يصبح جاهزًا.");
+      setEditorOpen(false);
+      setWizardStep("basics");
+      setWizardError("");
     } catch (error) {
+      setWizardError(error instanceof Error ? error.message : "تعذر إنشاء العرض.");
       setMessage(error instanceof Error ? error.message : "تعذر إنشاء العرض.");
     } finally {
       setBusy(false);
@@ -340,6 +353,56 @@ export function MarketingPromotionsWorkspace() {
   }
 
   const formLocked = busy || Boolean(pendingCreate) || !attemptReady;
+  const wizardSteps = [
+    { id: "basics", label: "الخصم" },
+    { id: "scope", label: "النطاق والموعد" },
+    { id: "limits", label: "التمويل والضوابط" },
+    { id: "review", label: "المراجعة" },
+  ] as const;
+  const wizardIndex = wizardSteps.findIndex((item) => item.id === wizardStep);
+
+  function advanceWizard() {
+    setWizardError("");
+    if (wizardStep === "basics") {
+      const amount = Number(promotionForm.valueMinor);
+      if (!promotionForm.nameAr.trim() || !promotionForm.code.trim() ||
+          !Number.isSafeInteger(amount) || amount <= 0 ||
+          (promotionForm.kind === "PERCENTAGE" && amount > 100)) {
+        setWizardError("أدخل اسم العرض وقيمة خصم صحيحة قبل المتابعة.");
+        return;
+      }
+    }
+    if (wizardStep === "scope") {
+      const start = new Date(startsAt);
+      const end = endsAt ? new Date(endsAt) : null;
+      if (!Number.isFinite(start.getTime()) || (end && (!Number.isFinite(end.getTime()) || end <= start)) ||
+          (promotionForm.targetKind !== "NONE" && !promotionForm.targetId)) {
+        setWizardError("تحقق من مدة العرض وحدد المنتج أو الفئة المطلوبة من السجلات المعتمدة.");
+        return;
+      }
+    }
+    if (wizardStep === "limits") {
+      const share = Number(promotionForm.fundingSharePartnerPercent);
+      const positiveOrBlank = [promotionForm.kind === "PERCENTAGE" ? promotionForm.maxDiscountMinor : "", promotionForm.minOrderSubtotalMinor,
+        promotionForm.redemptionLimit, promotionForm.discountBudgetLimitMinor]
+        .every((v) => v === "" || (Number.isSafeInteger(Number(v)) && Number(v) > 0));
+      if (!positiveOrBlank || (promotionForm.fundingSource === "SHARED" && (!Number.isSafeInteger(share) || share < 1 || share > 99))) {
+        setWizardError("راجع حدود الخصم والميزانية وحصة التمويل؛ يجب أن تكون قيمًا صحيحة موجبة.");
+        return;
+      }
+    }
+    const nextStep = wizardSteps[wizardIndex + 1];
+    if (nextStep) setWizardStep(nextStep.id);
+  }
+
+  function startPromotionEditor() {
+    if (!promotionForm.code.trim() && !pendingCreate) {
+      setPromotionForm((current) => ({ ...current, code: "BT-" + crypto.randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase() }));
+    }
+    setWizardStep(pendingCreate ? "review" : "basics");
+    setWizardError("");
+    setEditorOpen(true);
+  }
   const selectedStoreLabel = promotionForm.storeId ? storeOptions.find((item) => item.id === promotionForm.storeId)?.label ?? "متجر معتمد" : "";
   const selectedTargetLabel = promotionForm.targetId ? targetOptions.find((item) => item.id === promotionForm.targetId)?.label ?? "هدف معتمد" : "";
 
@@ -347,25 +410,38 @@ export function MarketingPromotionsWorkspace() {
     <div className="work-stack" data-testid="marketing-promotions-workspace">
       {storageError ? <p className="managed-status managed-status-warning" role="alert">{storageError}</p> : null}
       {pendingCreate ? <p className="managed-status managed-status-warning" role="status">{attemptChecking ? "جارٍ التحقق من نتيجة المحاولة المحفوظة …" : "المحاولة لم تُحسم بعد. الحقول مقفلة وستعيد المحاولة بالبيانات والمفتاح نفسيهما."}</p> : null}
-      <details className="access-card marketing-create-disclosure" open={Boolean(pendingCreate)}>
-        <summary className="section-heading marketing-create-summary">إنشاء عرض أو حملة</summary>
-        <div className="access-card-heading"><h2>إنشاء عرض</h2><p className="muted">مصدر التمويل والنطاق والمشاركة حقائق صريحة؛ العرض يُنشأ كمسودة ثم يُنشر بعد المراجعة.</p></div>
-        <div className="workspace-form-grid">
+      <section className="marketing-entry-choices" aria-label="نوع النشاط التسويقي">
+        <Link className="marketing-entry-choice" href="/marketing/content">
+          <strong>إعلان دون خصم</strong><span>بنر أو صورة تقود إلى متجر أو منتج، دون تغيير السعر.</span>
+        </Link>
+        <button className="marketing-entry-choice" type="button" onClick={startPromotionEditor}>
+          <strong>خصم أو قسيمة</strong><span>حدد القيمة والجمهور والممول، ثم راجع المسودة قبل نشرها.</span>
+        </button>
+      </section>
+      <details className="access-card marketing-create-disclosure" open={Boolean(pendingCreate) || editorOpen} onToggle={(event) => {
+        if (pendingCreate) return;
+        if (event.currentTarget.open && !editorOpen) startPromotionEditor();
+        if (!event.currentTarget.open && editorOpen) setEditorOpen(false);
+      }}>
+        <summary className="section-heading marketing-create-summary">إعداد خصم أو قسيمة</summary>
+        <div className="access-card-heading"><h2>إعداد خصم جديد</h2><p className="muted">أربع مراحل قصيرة. يُحفظ العرض أولًا كمسودة؛ لا يُنشر أو يخصم من أي عميل بمجرد إنشاء المسودة.</p></div>
+        <nav className="marketing-flow-steps" aria-label="مراحل إعداد الخصم">
+          {wizardSteps.map((step, index) => <span key={step.id} aria-current={wizardStep === step.id ? "step" : undefined} data-done={index < wizardIndex ? "true" : undefined}>{index + 1}. {step.label}</span>)}
+        </nav>
+        {wizardStep === "basics" ? <div className="workspace-form-grid marketing-flow-fields">
           <label className="field-label">رمز العرض<input aria-label="رمز العرض" placeholder="WELCOME10" disabled={formLocked} value={promotionForm.code} onChange={(event) => setPromotionForm((current) => ({ ...current, code: event.target.value }))} /></label>
           <label className="field-label">اسم العرض<input aria-label="اسم العرض" placeholder="خصم العملاء الجدد" disabled={formLocked} value={promotionForm.nameAr} onChange={(event) => setPromotionForm((current) => ({ ...current, nameAr: event.target.value }))} /></label>
           <label className="field-label">وصف العرض<input aria-label="وصف العرض" placeholder="خصم على الطلب" disabled={formLocked} value={promotionForm.descriptionAr} onChange={(event) => setPromotionForm((current) => ({ ...current, descriptionAr: event.target.value }))} /></label>
           <label className="field-label">آلية الخصم<select aria-label="نوع العرض" disabled={formLocked} value={promotionForm.kind} onChange={(event) => setPromotionForm((current) => ({ ...current, kind: event.target.value as PromotionFormState["kind"] }))}><option value="PERCENTAGE">نسبة مئوية</option><option value="FIXED">قيمة ثابتة</option></select></label>
           <label className="field-label">{promotionForm.kind === "PERCENTAGE" ? "نسبة الخصم" : "قيمة الخصم بالريال اليمني"}<input aria-label={promotionForm.kind === "PERCENTAGE" ? "نسبة الخصم" : "قيمة الخصم بالريال اليمني"} inputMode="numeric" type="number" min="1" disabled={formLocked} value={promotionForm.valueMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, valueMinor: event.target.value }))} /></label>
           {promotionForm.kind === "PERCENTAGE" ? <label className="field-label">الحد الأعلى للخصم (اختياري)<input aria-label="الحد الأعلى للخصم بالريال اليمني" inputMode="numeric" type="number" min="1" placeholder="بالريال اليمني" disabled={formLocked} value={promotionForm.maxDiscountMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, maxDiscountMinor: event.target.value }))} /></label> : null}
-          <label className="field-label" htmlFor="promotion-funding-source">مصدر التمويل<select id="promotion-funding-source" disabled={formLocked} value={promotionForm.fundingSource} onChange={(event) => setPromotionForm((current) => ({ ...current, fundingSource: event.target.value as CreatePromotionRequest["fundingSource"] }))}><option value="BTHWANI">بثواني</option><option value="SHARED">مشترك</option><option value="PARTNER">الشريك</option></select></label>
-          {promotionForm.fundingSource === "SHARED" ? <label className="field-label">حصة الشريك من التمويل (%)<input aria-label="حصة الشريك من التمويل" inputMode="numeric" type="number" min="1" max="99" disabled={formLocked} value={promotionForm.fundingSharePartnerPercent} onChange={(event) => setPromotionForm((current) => ({ ...current, fundingSharePartnerPercent: event.target.value }))} /></label> : null}
-          <label className="field-label">الحد الأدنى للطلب (اختياري)<input aria-label="حد الطلب الأدنى" inputMode="numeric" type="number" min="1" placeholder="بالريال اليمني" disabled={formLocked} value={promotionForm.minOrderSubtotalMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, minOrderSubtotalMinor: event.target.value }))} /></label>
-          <label className="field-label">عدد مرات الاستخدام (اختياري)<input aria-label="حد الاستخدام" inputMode="numeric" type="number" min="1" placeholder="اتركه بلا حد" disabled={formLocked} value={promotionForm.redemptionLimit} onChange={(event) => setPromotionForm((current) => ({ ...current, redemptionLimit: event.target.value }))} /></label>
-          <label className="field-label">سقف مجموع الخصومات (اختياري، ر.ي)<input aria-label="سقف مجموع خصومات الحملة" inputMode="numeric" type="number" min="1" placeholder="يتحقق الخادم من المبلغ عند الدفع" disabled={formLocked} value={promotionForm.discountBudgetLimitMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, discountBudgetLimitMinor: event.target.value }))} /></label>
+          <p className="marketing-flow-note">الرمز يُنشأ تلقائيًا للتعريف بالعرض ويمكن تغييره. الرمز وحده لا يثبت أن الخصم سيُطبّق تلقائيًا؛ الأهلية يحددها الخادم.</p>
+        </div> : null}
+        {wizardStep === "scope" ? <div className="workspace-form-grid marketing-flow-fields">
           <label className="field-label" htmlFor="promotion-city">مدينة الخدمة<select id="promotion-city" disabled={formLocked} value={promotionForm.serviceCityId} onChange={(event) => { setStoreSearch(""); setStoreOptions([]); setPromotionForm((current) => ({ ...current, serviceCityId: event.target.value, storeId: "" })); }}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
 
           <label className="field-label">بحث عن متجر (اختياري)<input aria-label="بحث متجر الحملة" maxLength={128} placeholder={promotionForm.serviceCityId ? "اسم المتجر" : "اختر مدينة أولًا"} disabled={formLocked || !promotionForm.serviceCityId} value={storeSearch} onChange={(event) => { setStoreSearch(event.target.value); setPromotionForm((current) => ({ ...current, storeId: "", requiresPartnerOptIn: current.requiresPartnerOptIn })); }} /></label>
-          <label className="field-label" htmlFor="promotion-store">نطاق المتجر<select id="promotion-store" disabled={formLocked || storeLookupLoading || storeOptions.length === 0} value={promotionForm.storeId} onChange={(event) => setPromotionForm((current) => ({ ...current, storeId: event.target.value, requiresPartnerOptIn: event.target.value ? false : current.requiresPartnerOptIn }))}><option value="">حملة منصة / كل المتاجر المؤهلة</option>{storeOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+          <label className="field-label" htmlFor="promotion-store">نطاق المتجر<select id="promotion-store" disabled={formLocked || storeLookupLoading || storeOptions.length === 0} value={promotionForm.storeId} onChange={(event) => setPromotionForm((current) => ({ ...current, storeId: event.target.value, requiresPartnerOptIn: event.target.value ? false : current.requiresPartnerOptIn, fundingSource: event.target.value ? "BTHWANI" : current.fundingSource, fundingSharePartnerPercent: event.target.value ? "" : current.fundingSharePartnerPercent }))}><option value="">حملة منصة / كل المتاجر المؤهلة</option>{storeOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
           {storeLookupMessage ? <p className="muted" role="status">{storeLookupMessage}</p> : null}
           {selectedStoreLabel ? <p className="muted">المتجر المختار: {selectedStoreLabel}</p> : null}
 
@@ -377,11 +453,38 @@ export function MarketingPromotionsWorkspace() {
             {targetMessage ? <p className="muted" role="status">{targetMessage}</p> : null}
             {selectedTargetLabel ? <p className="muted">الهدف المختار: {selectedTargetLabel}</p> : null}
           </> : null}
-
-          <label className="field-label"><input type="checkbox" disabled={formLocked || Boolean(promotionForm.storeId) || promotionForm.fundingSource !== "BTHWANI"} checked={!promotionForm.storeId && (promotionForm.requiresPartnerOptIn || promotionForm.fundingSource !== "BTHWANI")} onChange={(event) => setPromotionForm((current) => ({ ...current, requiresPartnerOptIn: event.target.checked }))} /> {promotionForm.fundingSource !== "BTHWANI" && !promotionForm.storeId ? "موافقة كل شريك على تمويل الخصم إلزامية قبل المشاركة" : "تتطلب الحملة موافقة الشريك قبل المشاركة"}</label>
           <label className="field-label">بداية العرض<input aria-label="بداية العرض" type="datetime-local" disabled={formLocked} value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></label>
           <label className="field-label">نهاية العرض<input aria-label="نهاية العرض" type="datetime-local" disabled={formLocked} value={endsAt} onChange={(event) => setEndsAt(event.target.value)} /></label>
-          <button className="button" type="button" disabled={busy || attemptChecking || !attemptReady} onClick={() => void createPromotion()}>{pendingCreate ? "التحقق / إعادة محاولة الإنشاء" : "إنشاء مسودة العرض"}</button>
+        </div> : null}
+        {wizardStep === "limits" ? <div className="workspace-form-grid marketing-flow-fields">
+          <label className="field-label" htmlFor="promotion-funding-source">مصدر التمويل<select id="promotion-funding-source" disabled={formLocked} value={promotionForm.fundingSource} onChange={(event) => setPromotionForm((current) => ({ ...current, fundingSource: event.target.value as CreatePromotionRequest["fundingSource"] }))}><option value="BTHWANI">بثواني</option><option value="SHARED" disabled={Boolean(promotionForm.storeId)}>مشترك</option><option value="PARTNER" disabled={Boolean(promotionForm.storeId)}>الشريك</option></select></label>
+          {promotionForm.storeId ? <p className="muted" role="status">المتجر المحدد يموله بثواني فقط. لتمويل الشركاء استخدم حملة منصة بموافقتهم، أو دع الشريك ينشئ عرضه.</p> : null}
+          {promotionForm.fundingSource === "SHARED" ? <label className="field-label">حصة الشريك من التمويل (%)<input aria-label="حصة الشريك من التمويل" inputMode="numeric" type="number" min="1" max="99" disabled={formLocked} value={promotionForm.fundingSharePartnerPercent} onChange={(event) => setPromotionForm((current) => ({ ...current, fundingSharePartnerPercent: event.target.value }))} /></label> : null}
+          <label className="field-label">الحد الأدنى للطلب (اختياري)<input aria-label="حد الطلب الأدنى" inputMode="numeric" type="number" min="1" placeholder="بالريال اليمني" disabled={formLocked} value={promotionForm.minOrderSubtotalMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, minOrderSubtotalMinor: event.target.value }))} /></label>
+          <label className="field-label">عدد مرات الاستخدام (اختياري)<input aria-label="حد الاستخدام" inputMode="numeric" type="number" min="1" placeholder="اتركه بلا حد" disabled={formLocked} value={promotionForm.redemptionLimit} onChange={(event) => setPromotionForm((current) => ({ ...current, redemptionLimit: event.target.value }))} /></label>
+          <label className="field-label">سقف مجموع الخصومات (اختياري، ر.ي)<input aria-label="سقف مجموع خصومات الحملة" inputMode="numeric" type="number" min="1" placeholder="يتحقق الخادم من المبلغ عند الدفع" disabled={formLocked} value={promotionForm.discountBudgetLimitMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, discountBudgetLimitMinor: event.target.value }))} /></label>
+          <label className="field-label"><input type="checkbox" disabled={formLocked || Boolean(promotionForm.storeId) || promotionForm.fundingSource !== "BTHWANI"} checked={!promotionForm.storeId && (promotionForm.requiresPartnerOptIn || promotionForm.fundingSource !== "BTHWANI")} onChange={(event) => setPromotionForm((current) => ({ ...current, requiresPartnerOptIn: event.target.checked }))} /> {promotionForm.fundingSource !== "BTHWANI" && !promotionForm.storeId ? "موافقة كل شريك على تمويل الخصم إلزامية قبل المشاركة" : "تتطلب الحملة موافقة الشريك قبل المشاركة"}</label>
+          <p className="marketing-flow-note">تمويل الشريك أو التمويل المشترك يحتاج موافقته الصريحة قبل مشاركته. لا يؤثر الخصم في مستحق الكابتن.</p>
+        </div> : null}
+        {wizardStep === "review" ? <section className="marketing-flow-review" aria-label="مراجعة العرض قبل الحفظ">
+          <h3>راجع ما سيُحفظ كمسودة</h3>
+          <dl className="marketing-flow-facts">
+            <div><dt>العرض</dt><dd>{promotionForm.nameAr || "لم يُسمَّ بعد"}</dd></div>
+            <div><dt>الخصم</dt><dd>{promotionForm.kind === "PERCENTAGE" ? promotionForm.valueMinor + "%" : formatMoney(Number(promotionForm.valueMinor || 0), "YER")}</dd></div>
+            <div><dt>النطاق</dt><dd>{selectedStoreLabel || (promotionForm.serviceCityId ? cities.find((item) => item.id === promotionForm.serviceCityId)?.displayNameAr || "المدينة المختارة" : "كل المدن والمتاجر المؤهلة")}{selectedTargetLabel ? " · " + selectedTargetLabel : ""}</dd></div>
+            <div><dt>التمويل</dt><dd>{promotionForm.fundingSource === "SHARED" ? "مشترك: الشريك " + promotionForm.fundingSharePartnerPercent + "%، بثواني " + (100 - Number(promotionForm.fundingSharePartnerPercent)) + "%" : promotionForm.fundingSource === "PARTNER" ? "الشريك بالكامل" : "بثواني بالكامل"}</dd></div>
+            <div><dt>سقف الخصومات</dt><dd>{promotionForm.discountBudgetLimitMinor ? formatMoney(Number(promotionForm.discountBudgetLimitMinor), "YER") : "لا يوجد سقف إجمالي محدد"}</dd></div>
+            <div><dt>موافقة الشريك</dt><dd>{!promotionForm.storeId && (promotionForm.requiresPartnerOptIn || promotionForm.fundingSource !== "BTHWANI") ? "مطلوبة قبل المشاركة" : "غير مطلوبة لهذه الإعدادات"}</dd></div>
+            <div><dt>الفترة</dt><dd>{startsAt || "غير محددة"} — {endsAt || "دون نهاية محددة"}</dd></div>
+          </dl>
+          {!promotionForm.discountBudgetLimitMinor ? <p className="managed-status managed-status-warning" role="note">لم تحدد سقفًا إجماليًا للخصومات. راجع هذا القرار قبل إنشاء المسودة.</p> : null}
+          <p className="muted">المراجعة تلخص إدخالاتك فقط، وليست تحققًا ماليًا أو إثبات أهلية. يعيد الخادم فحص الشروط عند الحفظ والطلب.</p>
+        </section> : null}
+        {wizardError ? <p className="managed-status managed-status-warning" role="alert">{wizardError}</p> : null}
+        <div className="action-row marketing-flow-actions">
+          {wizardIndex > 0 && !pendingCreate ? <button className="button button-secondary" type="button" onClick={() => { setWizardError(""); setWizardStep(wizardSteps[wizardIndex - 1]?.id ?? "basics"); }}>السابق</button> : null}
+          {wizardStep !== "review" ? <button className="button" type="button" disabled={formLocked} onClick={advanceWizard}>التالي: {wizardSteps[wizardIndex + 1]?.label}</button>
+            : <button className="button" type="button" disabled={busy || attemptChecking || !attemptReady} onClick={() => void createPromotion()}>{pendingCreate ? "التحقق / إعادة محاولة الإنشاء" : "حفظ مسودة العرض"}</button>}
         </div>
       </details>
 
@@ -394,7 +497,7 @@ export function MarketingPromotionsWorkspace() {
           <label className="field-label" htmlFor="promotion-sort">ترتيب البداية<select id="promotion-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="starts_desc">الأحدث بداية</option><option value="starts_asc">الأقدم بداية</option></select></label>
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
         </form>
-        {registry?.promotions.length ? <div className="table-wrap"><table className="data-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr><th scope="col">العرض</th><th scope="col">الرمز</th><th scope="col">القيمة</th><th scope="col">التمويل والنطاق</th><th scope="col">الحالة</th><th scope="col">البداية</th><th scope="col">الإجراء</th></tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}</th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? item.valueMinor + "%" : formatMoney(item.valueMinor, "YER")}</td><td>{item.fundingSource === "SHARED" ? "مشترك · حصة الشريك " + (item.fundingSharePartnerPercent ?? 0) + "%" : item.fundingSource === "BTHWANI" ? "بثواني" : "الشريك"}<br />{item.storeId ? "متجر محدد" : item.serviceCityId ? "حملة مدينة" : "حملة منصة"}{item.requiresPartnerOptIn ? " · تتطلب موافقة" : ""}<br />{promotionTargetSummary(item)}{item.minOrderSubtotalMinor ? <><br />حد الطلب {formatMoney(item.minOrderSubtotalMinor, "YER")}</> : null}{item.discountBudgetLimitMinor ? <><br />سقف الخصومات: {formatMoney(item.discountBudgetLimitMinor, "YER")} · مستخدم: {formatMoney(item.discountSpentMinor ?? 0, "YER")}</> : null}</td><td><MarketingStateIndicator state={item.state} /></td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td>{item.state === "ENDED" ? <span className="muted">لا إجراء</span> : <button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button>}</td></tr>)}</tbody></table></div> : null}
+        {registry?.promotions.length ? <div className="table-wrap"><table className="data-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr><th scope="col">العرض</th><th scope="col">الرمز</th><th scope="col">القيمة</th><th scope="col">التمويل والنطاق</th><th scope="col">الحالة</th><th scope="col">البداية</th><th scope="col">الإجراء</th></tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}</th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? item.valueMinor + "%" : formatMoney(item.valueMinor, "YER")}</td><td>{item.fundingSource === "SHARED" ? "مشترك · حصة الشريك " + (item.fundingSharePartnerPercent ?? 0) + "%" : item.fundingSource === "BTHWANI" ? "بثواني" : "الشريك"}<br />{item.storeId ? "متجر محدد" : item.serviceCityId ? "حملة مدينة" : "حملة منصة"}{item.requiresPartnerOptIn ? " · تتطلب موافقة" : ""}<br />{promotionTargetSummary(item)}{item.minOrderSubtotalMinor ? <><br />حد الطلب {formatMoney(item.minOrderSubtotalMinor, "YER")}</> : null}{item.discountBudgetLimitMinor ? <><br />سقف الخصومات: {formatMoney(item.discountBudgetLimitMinor, "YER")} · مستخدم: {formatMoney(item.discountSpentMinor ?? 0, "YER")}</> : null}</td><td><MarketingStateIndicator state={item.state} /></td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className="action-row">{item.state === "ENDED" ? <span className="muted">لا إجراء</span> : <button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button>}{item.state === "PUBLISHED" ? <Link className="button button-quiet" href={`/marketing/content?promotionId=${encodeURIComponent(item.id)}`}>إنشاء بنر للعرض</Link> : null}{canReadFinance ? <MarketingPromotionSettlementReadback promotionId={item.id} /> : null}</div></td></tr>)}</tbody></table></div> : null}
         {!registry?.promotions.length && loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة العروض…</p> : null}
         {registry && !registry.promotions.length && !loading && !registryError ? <p className="collection-state">لا توجد عروض مطابقة.</p> : null}
         <nav className="pagination" aria-label="صفحات سجل العروض"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>

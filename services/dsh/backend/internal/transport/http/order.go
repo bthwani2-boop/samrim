@@ -47,7 +47,6 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/orders/{orderId}/delivery-proof", s.readDeliveryProof)
 	mux.HandleFunc("GET /dsh/orders/{orderId}/rating", s.readRating)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/rating", s.createRating)
-	mux.HandleFunc("GET /dsh/orders/{orderId}/tracking", s.readTracking)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/cancel", s.cancel)
 	mux.HandleFunc("GET /dsh/operator/operations", s.listOperatorOperations)
 	mux.HandleFunc("GET /dsh/operator/home-analytics", s.readOperatorHomeAnalytics)
@@ -266,7 +265,7 @@ func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.Op
 			HandoffState:   operation.Assignment.Handoff.State,
 		}
 	}
-	return contract.OperatorOperation{Order: toOrder(operation.Order), StoreName: operation.StoreName, Assignment: assignment}
+	return contract.OperatorOperation{Order: toOrder(operation.Order), StoreName: operation.StoreName, Assignment: assignment, CustomerSuccessfulOrdersCount: operation.CustomerSuccessfulOrdersCount, SuccessfulOrderOrdinal: operation.SuccessfulOrderOrdinal}
 }
 
 func toOperatorOperationListItem(operation postgres.OperatorOperationListRecord) contract.OperatorOperationListItem {
@@ -401,28 +400,6 @@ func (s *OrderServer) markConversationRead(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.OrderConversationReadResponse{OrderID: strings.TrimSpace(r.PathValue("orderId")), MessageID: messageID, ReadAt: readAt})
-}
-
-func (s *OrderServer) readTracking(w http.ResponseWriter, r *http.Request) {
-	if bearerToken(r) == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
-		return
-	}
-	tracking, err := s.service.ReadTracking(r.Context(), bearerToken(r), r.PathValue("orderId"))
-	if err != nil {
-		writeOrderError(w, err)
-		return
-	}
-	response := contract.OrderTrackingResponse{OrderID: tracking.OrderID, OrderState: contract.OrderState(tracking.OrderState), TrackingState: contract.OrderTrackingState(tracking.TrackingState)}
-	if tracking.AssignmentID != nil {
-		assignmentID := *tracking.AssignmentID
-		response.AssignmentID = &assignmentID
-	}
-	if tracking.CaptainLocation != nil {
-		location := toCaptainLocationSnapshot(*tracking.CaptainLocation)
-		response.CaptainLocation = &location
-	}
-	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *OrderServer) readDeliveryProof(w http.ResponseWriter, r *http.Request) {

@@ -14,18 +14,22 @@ export default function PartnerAppLayout() {
   const onUnauthenticated = useCallback(() => {
     router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href);
   }, [pathname, router]);
-  return <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}><PartnerStoreScopeProvider><PartnerTabs /></PartnerStoreScopeProvider></AuthenticatedMobileBoundary>;
+  return <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}>
+    <PartnerStoreScopeProvider><PartnerTabs /></PartnerStoreScopeProvider>
+  </AuthenticatedMobileBoundary>;
 }
 
 function PartnerTabs() {
   const theme = useAppearanceTheme();
   const { authority } = usePartnerStoreScope();
   const tabOptions = useMemo(() => createPartnerTabOptions(theme, authority.canUse("orders")), [theme, authority]);
-  return <Tabs screenOptions={tabOptions}>
-    <Tabs.Screen name="store" options={authority.canUse("store") ? { title: "المتجر", tabBarAccessibilityLabel: "إدارة المتجر" } : { href: null }} />
-    <Tabs.Screen name="orders" options={authority.canUse("orders") ? { title: "الطلبات", tabBarAccessibilityLabel: "طلبات المتجر" } : { href: null }} />
-    <Tabs.Screen name="wallet" options={authority.canUse("wallet") ? { title: "المحفظة", tabBarAccessibilityLabel: "محفظة الشريك" } : { href: null }} />
-    <Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "حساب الشريك" }} />
+  return <Tabs initialRouteName="orders" screenOptions={tabOptions}>
+    <Tabs.Screen name="orders" options={authority.canUse("orders") ? { title: "الطلبات", tabBarAccessibilityLabel: "الطلبات" } : { href: null }} />
+    <Tabs.Screen name="products" options={authority.canUse("products") ? { title: "المنتجات", tabBarAccessibilityLabel: "المنتجات" } : { href: null }} />
+    <Tabs.Screen name="wallet" options={authority.canUse("wallet") ? { title: "المحفظة", tabBarAccessibilityLabel: "المحفظة" } : { href: null }} />
+    <Tabs.Screen name="more" options={{ title: "المزيد", tabBarAccessibilityLabel: "الإدارة والإعدادات" }} />
+    <Tabs.Screen name="store" options={{ href: null }} />
+    <Tabs.Screen name="account" options={{ href: null }} />
     <Tabs.Screen name="onboarding" options={{ href: null }} />
   </Tabs>;
 }

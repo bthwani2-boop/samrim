@@ -26,7 +26,9 @@ DSH owns operational delivery lifecycle/result, bounded tracking projection, Ord
 - Captain receives only the bounded recipient contact/instructions needed for current delivery and that data grants no account/financial authority;
 - failed/blocked attempt remains explicit canonical state until legal recovery;
 - a recoverable failure preserves physical-custody responsibility until governed recovery/return/custody transition resolves it;
-- customer/Partner/Operator tracking is a DSH projection, not a writer;
+- Client/Partner/Operator order progress is a DSH lifecycle-state projection, not a live GPS feed;
+- Captain foreground GPS supports nearest-available dispatch; the Captain may navigate locally to Store pickup and the authorized Customer address;
+- DSH does not expose Captain coordinates or movement to the Client, and does not accept per-assignment location updates; current dispatch presence is not a movement-history feed;
 - restart/retry use canonical readback rather than local state.
 
 ## Failure and recovery

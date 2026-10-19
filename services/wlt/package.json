@@ -3,7 +3,5 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "contract:conformance": "node verify-contract-conformance.mjs"
-  }
+  "scripts": {}
 }

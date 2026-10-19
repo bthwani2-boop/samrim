@@ -244,7 +244,13 @@ func readOrderConversationOrder(ctx context.Context, source rowQueryer, orderID,
 		return orderConversationOrder{}, ErrOrderConversationForbidden
 	}
 	if role == "captain" {
-		if err := source.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM dsh.captain_assignments WHERE order_id=$1 AND captain_actor_id=$2 AND state IN ('assigned','in_custody','delivered','delivery_failed'))`, orderID, actorID).Scan(&order.CaptainParticipant); err != nil {
+		// Once operational delivery ends, chat and location are no longer
+		// part of the Captain's working view; Client/Partner dispute records
+		// remain available through their existing authorized routes.
+		if order.State == "DELIVERED" || order.State == "PICKED_UP" || order.State == "REJECTED" || order.State == "CANCELLED" {
+			return orderConversationOrder{}, ErrOrderConversationForbidden
+		}
+		if err := source.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM dsh.captain_assignments WHERE order_id=$1 AND captain_actor_id=$2 AND state IN ('assigned','in_custody','delivery_failed'))`, orderID, actorID).Scan(&order.CaptainParticipant); err != nil {
 			return orderConversationOrder{}, err
 		}
 		if !order.CaptainParticipant {

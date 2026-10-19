@@ -5,11 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -53,6 +53,7 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/public/discovery-content", s.listPublicDiscoveryContent)
 	mux.HandleFunc("POST /dsh/public/discovery-content/events", s.recordPublicDiscoveryContentEvent)
 	mux.HandleFunc("GET /dsh/public/discovery-content/{contentId}/target", s.resolvePublicDiscoveryContentTarget)
+	mux.HandleFunc("GET /dsh/operator/marketing/summary", s.readOperatorMarketingSummary)
 	mux.HandleFunc("GET /dsh/operator/promotions", s.listOperatorPromotions)
 	mux.HandleFunc("POST /dsh/operator/promotions", s.createOperatorPromotion)
 	mux.HandleFunc("POST /dsh/operator/promotions/{promotionId}/publication", s.setOperatorPromotionPublication)
@@ -111,13 +112,12 @@ func (s *MarketingServer) optInPartnerStoreCampaign(w http.ResponseWriter, r *ht
 		writeMarketingError(w, err)
 		return
 	}
-	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
-	if err != nil || expected < 1 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a positive X-Expected-Version is required")
-		return
-	}
 	var input contract.CampaignOptInRequest
 	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if input.ExpectedVersion < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a positive expectedVersion is required")
 		return
 	}
 	state := strings.ToUpper(strings.TrimSpace(input.Decision))
@@ -125,7 +125,7 @@ func (s *MarketingServer) optInPartnerStoreCampaign(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "decision must be OPTED_IN or DECLINED")
 		return
 	}
-	record, replayed, err := postgres.SetPartnerCampaignOptIn(r.Context(), s.db, r.PathValue("promotionId"), r.PathValue("storeId"), actorID, state, expected, idempotencyKey, correlationID)
+	record, replayed, err := postgres.SetPartnerCampaignOptIn(r.Context(), s.db, r.PathValue("promotionId"), r.PathValue("storeId"), actorID, state, input.ExpectedVersion, idempotencyKey, correlationID)
 	if err != nil {
 		writeMarketingError(w, err)
 		return
@@ -136,7 +136,11 @@ func (s *MarketingServer) optInPartnerStoreCampaign(w http.ResponseWriter, r *ht
 func (s *MarketingServer) partnerSessionActorID(ctx context.Context, accessToken string) (string, error) {
 	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
 	if err != nil {
-		return "", errPartnerPromotionSession
+		var identityErr *identityclient.Error
+		if errors.As(err, &identityErr) && identityErr.Status == http.StatusUnauthorized {
+			return "", errPartnerPromotionSession
+		}
+		return "", err
 	}
 	actorID := strings.TrimSpace(identity.Subject)
 	if identity.Role != "partner" || identity.Surface != "app-partner" || actorID == "" {
@@ -225,17 +229,16 @@ func (s *MarketingServer) setPartnerStorePromotionState(w http.ResponseWriter, r
 	if !ok {
 		return
 	}
-	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
-	if err != nil || expected < 1 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a positive X-Expected-Version is required")
-		return
-	}
 	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
 		writeMarketingError(w, err)
 		return
 	}
-	var input contract.MarketingPublicationRequest
+	var input contract.PartnerPromotionStateRequest
 	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if input.ExpectedVersion < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a positive expectedVersion is required")
 		return
 	}
 	item, err := postgres.ReadPromotion(r.Context(), s.db, r.PathValue("promotionId"))
@@ -247,7 +250,7 @@ func (s *MarketingServer) setPartnerStorePromotionState(w http.ResponseWriter, r
 		writeMarketingError(w, postgres.ErrPromotionNotFound)
 		return
 	}
-	updated, replayed, err := postgres.SetPromotionState(r.Context(), s.db, item.ID, input.State, idempotencyKey, postgres.HashMarketingFacts("promotion-state", item.ID, input.State, fmt.Sprint(expected)), expected)
+	updated, replayed, err := postgres.SetPromotionState(r.Context(), s.db, item.ID, input.State, idempotencyKey, postgres.HashMarketingFacts("promotion-state", item.ID, input.State, fmt.Sprint(input.ExpectedVersion)), input.ExpectedVersion)
 	if err != nil {
 		writeMarketingError(w, err)
 		return
@@ -352,11 +355,22 @@ func (s *MarketingServer) listOperatorPromotions(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, response)
 }
 
+// Fingerprint every validated commercial field, including share allocation,
+// opt-in, targeting and caps. The request correlation ID is tracing metadata,
+// not part of the business operation's idempotent identity.
+func operatorPromotionCreateHash(input contract.CreatePromotionRequest, actingActorID string) (string, error) {
+	payload, err := json.Marshal(input)
+	if err != nil {
+		return "", err
+	}
+	return postgres.HashMarketingFacts("promotion-create:v2", actingActorID, string(payload)), nil
+}
+
 func (s *MarketingServer) createOperatorPromotion(w http.ResponseWriter, r *http.Request) {
 	if !s.operatorAuthorized(w, r) {
 		return
 	}
-	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
+	acting, _, idempotency, ok := requiredMutationHeaders(w, r)
 	if !ok {
 		return
 	}
@@ -388,12 +402,17 @@ func (s *MarketingServer) createOperatorPromotion(w http.ResponseWriter, r *http
 	}
 	threshold := promotionThreshold(int64(input.MinOrderSubtotalMinor))
 	budgetLimit := promotionThreshold(int64(input.DiscountBudgetLimitMinor))
+	requestHash, hashErr := operatorPromotionCreateHash(input, acting)
+	if hashErr != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "unable to fingerprint promotion")
+		return
+	}
 	item, replayed, err := postgres.CreatePromotion(r.Context(), s.db, postgres.PromotionInput{
 		ID: input.ID, Code: input.Code, NameAr: input.NameAr, DescriptionAr: input.DescriptionAr, Kind: string(input.Kind), ValueMinor: int64(input.ValueMinor), MaxDiscountMinor: maxDiscount,
 		// The operator owns the funding source and allocation for platform-authored
 		// promotions; partner-authored Store promotions stay partner-borne.
 		FundingSource: string(input.FundingSource), FundingSharePartnerPercent: fundingShare, StoreID: input.StoreID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, RequiresPartnerOptIn: input.RequiresPartnerOptIn, MinOrderSubtotalMinor: threshold, Targets: promotionTargets(input.Targets), RedemptionLimit: limit, DiscountBudgetLimitMinor: budgetLimit, CreatedByActorID: acting,
-	}, idempotency, postgres.HashMarketingFacts("promotion-create", input.ID, input.Code, input.NameAr, input.DescriptionAr, string(input.Kind), fmt.Sprint(input.ValueMinor), string(input.FundingSource), input.StoreID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.RedemptionLimit), fmt.Sprint(input.DiscountBudgetLimitMinor), correlation))
+	}, idempotency, requestHash)
 	if err != nil {
 		writeMarketingError(w, err)
 		return
@@ -742,6 +761,10 @@ func optionalTimeString(value *time.Time) string {
 
 func writeMarketingError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, errPartnerPromotionSession):
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an active Partner session is required")
+	case errors.Is(err, errPartnerPromotionStoreAuthority):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "promotions access to this Store is denied")
 	case errors.Is(err, postgres.ErrPromotionInvalid), errors.Is(err, postgres.ErrDiscoveryContentInvalid), errors.Is(err, postgres.ErrDiscoveryContentEventInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing input is invalid")
 	case errors.Is(err, postgres.ErrPromotionNotFound), errors.Is(err, postgres.ErrDiscoveryContentNotFound), errors.Is(err, postgres.ErrDiscoveryContentEventNotFound):

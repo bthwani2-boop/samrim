@@ -62,6 +62,41 @@ paths:
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
 
+  /dsh/operator/promotions/{promotionId}/settlement-summary:
+    get:
+      operationId: readOperatorPromotionSettlementSummary
+      summary: Read WLT-posted economic promotion settlements, never click-based revenue
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - name: promotionId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Settled order and ledger expense totals, not net refunds.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PromotionSettlementSummary" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/marketing/summary:
+    get:
+      operationId: readOperatorMarketingSummary
+      summary: Read complete operator publication-state aggregates without page truncation
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      responses:
+        "200":
+          description: Aggregated counts across the entire promotion and discovery content registries.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/OperatorMarketingSummary" } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/operator/promotions:
     get:
       operationId: listOperatorPromotions
@@ -339,15 +374,11 @@ paths:
           schema: { type: string, minLength: 1, maxLength: 128 }
         - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
         - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
-        - name: X-Expected-Version
-          in: header
-          required: true
-          schema: { type: integer, minimum: 1 }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingPublicationRequest" }
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerPromotionStateRequest" }
       responses:
         "200":
           description: Canonical promotion state readback.

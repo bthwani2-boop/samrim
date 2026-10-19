@@ -44,7 +44,7 @@ func parseOperatorPromotionRegistryQuery(r *http.Request) (postgres.OperatorProm
 		sort = "starts_desc"
 	}
 	limit, err := parseOperatorMarketingRegistryLimit(params.Get("limit"))
-	if err != nil || utf8.RuneCountInString(search) > 128 || len(serviceCityID) > 128 || (state != "" && state != "DRAFT" && state != "PUBLISHED" && state != "PAUSED") || (sort != "starts_desc" && sort != "starts_asc") {
+	if err != nil || utf8.RuneCountInString(search) > 128 || len(serviceCityID) > 128 || (state != "" && state != "DRAFT" && state != "PUBLISHED" && state != "PAUSED" && state != "ENDED") || (sort != "starts_desc" && sort != "starts_asc") {
 		return postgres.OperatorPromotionRegistryQuery{}, postgres.ErrPromotionInvalid
 	}
 	query := postgres.OperatorPromotionRegistryQuery{Search: search, State: state, ServiceCityID: serviceCityID, Sort: sort, Limit: limit}

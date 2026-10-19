@@ -9,7 +9,7 @@ import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { isCurrentCaptainActor } from "./captain-session-scope";
 
-export function CaptainOffers() {
+export function CaptainOffers({ compact = false, popup = false, suppressed = false }: { compact?: boolean; popup?: boolean; suppressed?: boolean } = {}) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
   const isFocused = useIsFocused();
@@ -23,6 +23,7 @@ export function CaptainOffers() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [dismissedOfferId, setDismissedOfferId] = useState("");
 
   const load = useCallback(async (): Promise<boolean> => {
     const sequence = ++readSequence.current;
@@ -64,12 +65,12 @@ export function CaptainOffers() {
       setLoading(false);
       return;
     }
-    void load();
-  }, [activeActorID, load]);
+    if (!suppressed) void load();
+  }, [activeActorID, load, suppressed]);
   // Losing offers disappear from the active screen after the server's
   // atomic supersession, without requiring the other captain to tap Refresh.
   useEffect(() => {
-    if (!isFocused || !activeActorID || loadedActorID !== activeActorID || loading) return;
+    if (!isFocused || suppressed || !activeActorID || loadedActorID !== activeActorID || loading) return;
     let cancelled = false;
     const refresh = async () => {
       if (busy) return;
@@ -85,14 +86,15 @@ export function CaptainOffers() {
         // Explicit Refresh retains its normal error/retry path.
       }
     };
-    const timer = setInterval(() => void refresh(), 5000);
+    const timer = setInterval(() => void refresh(), popup ? 2500 : 5000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [isFocused, activeActorID, loadedActorID, busy, loading]);
+  }, [isFocused, suppressed, activeActorID, loadedActorID, busy, loading, popup]);
 
   const scopedOffers = isCurrentCaptainActor(loadedActorID, activeActorID) ? offers : [];
-  const filteredOffers = useMemo(() => { const query = searchQuery.trim().toLocaleLowerCase(); if (!query) return scopedOffers; return scopedOffers.filter((offer) => [offer.id, offer.orderId, offer.storeName, offer.customerAddressText].join(" ").toLocaleLowerCase().includes(query)); }, [scopedOffers, searchQuery]);
+  const filteredOffers = useMemo(() => { const query = searchQuery.trim().toLocaleLowerCase(); if (!query) return scopedOffers; return scopedOffers.filter((offer) => [offer.id, offer.orderId, offer.storeName, offer.deliveryAreaText].join(" ").toLocaleLowerCase().includes(query)); }, [scopedOffers, searchQuery]);
 
-  const orderedOffers = [...filteredOffers].sort((left, right) => Number(right.state === "offered") - Number(left.state === "offered"));
+  const orderedOffers = [...filteredOffers].filter((offer) => !compact || (offer.state === "offered" && Date.parse(offer.expiresAt) > Date.now()))
+    .sort((left, right) => Number(right.state === "offered") - Number(left.state === "offered"));
 
   async function respond(offer: CaptainOffer, decision: "accept" | "reject") {
     if (busy || loading || !isCurrentCaptainActor(loadedActorID, activeActorID) || !offers.some((current) => current.id === offer.id && current.version === offer.version && current.state === "offered")) return;
@@ -123,17 +125,44 @@ export function CaptainOffers() {
     }
   }
 
+  if (popup) {
+    // Non-modal: never cover the map or steal navigation. The Captain may
+    // wait until safely stopped; unaccepted offers expire on the server.
+    const offer = orderedOffers.find((item) => item.state === "offered"
+      && Date.parse(item.expiresAt) > Date.now() && item.id !== dismissedOfferId);
+    if (!isFocused || suppressed || (!offer && !error)) return null;
+    return <View pointerEvents="box-none" style={{ position: "absolute", bottom: 12, left: 12, right: 12 }}
+      accessibilityLabel="تنبيه عرض توصيل">
+      <View style={{ padding: 12, borderRadius: 16, backgroundColor: theme.surface, gap: 8 }}>
+        {offer ? <>
+          <Text style={styles.cardTitle} numberOfLines={1}>عرض جديد · {offer.storeName}</Text>
+          <Text style={styles.muted} numberOfLines={1}>{offer.deliveryAreaText} · {formatMoney(offer.amountDueMinor, offer.currency)}</Text>
+          <Text style={styles.muted}>تعامل مع العرض بعد التوقف بأمان.</Text>
+          <View style={styles.row}>
+            <BthwaniButton busy={busy === offer.id} disabled={Boolean(busy)}
+              label="قبول" onPress={() => void respond(offer, "accept")} style={styles.actionButton} />
+            <BthwaniButton disabled={Boolean(busy)} label="رفض"
+              onPress={() => void respond(offer, "reject")} style={styles.actionButton} variant="secondary" />
+            <BthwaniButton disabled={Boolean(busy)} label="لاحقًا"
+              onPress={() => setDismissedOfferId(offer.id)} style={styles.actionButton} variant="secondary" />
+          </View>
+        </> : null}
+        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      </View>
+    </View>;
+  }
+
   return (
     <View style={styles.container} accessibilityLabel="عروض التوصيل">
-      <Text style={styles.readinessTitle}>عروض التوصيل</Text>
+      <Text style={styles.readinessTitle}>{compact ? "العروض المتاحة" : "عروض التوصيل"}</Text>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ جلب العروض…</Text></View> : null}
-      {!loading && !error && !filteredOffers.length ? <View style={styles.card}>
-        <Text style={styles.cardTitle}>{scopedOffers.length ? "لا توجد نتائج للبحث" : "لا توجد عروض جديدة الآن"}</Text>
-        <Text style={styles.muted}>{scopedOffers.length ? "غيّر عبارة البحث أو امسحها لعرض جميع العروض." : "يمكنك متابعة توصيلاتك الحالية أو تحديث العروض لاحقًا."}</Text>
-        {!scopedOffers.length ? <Link href={"/deliveries" as Href} asChild><BthwaniButton label="عرض التوصيلات الحالية" variant="secondary" /></Link> : null}
+      {!loading && !error && !orderedOffers.length ? <View style={compact ? styles.readinessActions : styles.card}>
+        <Text style={styles.cardTitle}>{compact ? "لا توجد عروض متاحة الآن" : scopedOffers.length ? "لا توجد نتائج للبحث" : "لا توجد عروض جديدة الآن"}</Text>
+        <Text style={styles.muted}>{compact ? "ستظهر العروض الجديدة هنا تلقائيًا عند توفرها." : scopedOffers.length ? "غيّر عبارة البحث أو امسحها لعرض جميع العروض." : "يمكنك متابعة توصيلاتك الحالية أو تحديث العروض لاحقًا."}</Text>
+        {!compact && !scopedOffers.length ? <Link href={"/deliveries" as Href} asChild><BthwaniButton label="عرض التوصيلات الحالية" variant="secondary" /></Link> : null}
       </View> : null}
-      {!loading ? orderedOffers.map((offer) => <View key={offer.id} style={styles.card}>
+      {!loading ? orderedOffers.map((offer) => <View key={offer.id} style={compact ? styles.compactOfferCard : styles.card}>
         <View style={styles.orderHeader}>
           <View style={styles.offerIdentity}>
             {offer.storeProfileImage?.uri ? <Image accessibilityLabel={"شعار متجر " + offer.storeName} source={{ uri: offer.storeProfileImage.uri }} style={styles.offerThumbnail} resizeMode="cover" /> : null}
@@ -145,7 +174,7 @@ export function CaptainOffers() {
           <BthwaniStatusBadge icon={offer.state === "offered" ? "deliveries" : "orders"} label={captainOfferStateLabel(offer.state)} tone={offer.state === "offered" ? "info" : "neutral"} />
         </View>
         <View style={styles.offerDetail}>
-          <Text style={styles.offerAddress}>{offer.customerAddressText}</Text>
+          <Text style={styles.offerAddress}>منطقة التوصيل: {offer.deliveryAreaText}</Text>
         </View>
         <View style={styles.offerDetail}>
           <Text style={styles.offerLabel}>التحصيل النقدي</Text>
@@ -159,7 +188,7 @@ export function CaptainOffers() {
           <BthwaniButton disabled={Boolean(busy) || loading || !isCurrentCaptainActor(loadedActorID, activeActorID)} label="رفض" onPress={() => void respond(offer, "reject")} style={styles.actionButton} variant="secondary" />
         </View> : null}
       </View>) : null}
-      <BthwaniButton busy={Boolean(busy) || loading} disabled={Boolean(busy) || loading} label="تحديث العروض" onPress={() => void load()} variant="secondary" />
+      {!compact ? <BthwaniButton busy={Boolean(busy) || loading} disabled={Boolean(busy) || loading} label="تحديث العروض" onPress={() => void load()} variant="secondary" /> : null}
     </View>
   );
 }

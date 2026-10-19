@@ -16,8 +16,6 @@ export function createPartnerSurfaceStyles(theme: ReturnType<typeof resolveTheme
     metaLabel: { ...typography.caption, color: theme.colorMuted },
     formInput: { backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 48, paddingHorizontal: spacing[3], textAlign: "right" },
     choiceRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
-    managementSections: { gap: spacing[3] },
-    hiddenSection: { display: "none" },
     choice: { backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, justifyContent: "center", minHeight: 40, paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
     choiceSelected: { backgroundColor: theme.actionSoft, borderColor: theme.actionBackground },
     choiceText: { ...typography.bodySm, color: theme.color },

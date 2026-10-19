@@ -64,14 +64,6 @@ func (s *Service) Read(ctx context.Context, accessToken, orderID string) (postgr
 	}
 }
 
-func (s *Service) ReadTracking(ctx context.Context, accessToken, orderID string) (postgres.ClientOrderTracking, error) {
-	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
-	if err != nil {
-		return postgres.ClientOrderTracking{}, err
-	}
-	return postgres.ReadClientOrderTracking(ctx, s.db, orderID, identity)
-}
-
 func (s *Service) ReadClientDeliveryProof(ctx context.Context, accessToken, orderID string) (postgres.DeliveryProofRecord, error) {
 	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
 	if err != nil {

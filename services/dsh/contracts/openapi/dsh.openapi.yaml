@@ -501,6 +501,12 @@ paths:
   /dsh/public/discovery-content/{contentId}/target:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content~1{contentId}~1target"
 
+  /dsh/operator/promotions/{promotionId}/settlement-summary:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1settlement-summary"
+
+  /dsh/operator/marketing/summary:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1summary"
+
   /dsh/operator/promotions:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions"
 
@@ -652,9 +658,6 @@ paths:
 
   /dsh/orders/{orderId}/rating:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1rating"
-
-  /dsh/orders/{orderId}/tracking:
-    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1tracking"
 
   /dsh/orders/{orderId}/cancel:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1cancel"
@@ -860,6 +863,12 @@ paths:
   /dsh/captains/me/availability:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1availability"
 
+  /dsh/captains/me/opportunities:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1opportunities"
+
+  /dsh/operator/opportunities:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1operator~1opportunities"
+
   /dsh/captains/me/offers:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1offers"
 
@@ -875,9 +884,6 @@ paths:
 
   /dsh/captains/me/assignments/{assignmentId}/delivery-task:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1delivery-task"
-
-  /dsh/captains/me/assignments/{assignmentId}/location:
-    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1location"
 
   /dsh/captains/me/assignments/{assignmentId}/pickup:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1pickup"
@@ -6382,7 +6388,7 @@ components:
 
     CaptainOffer:
       type: object
-      required: [id, orderId, captainActorId, sourceStoreId, fulfillmentMode, state, expiresAt, version, createdAt, updatedAt, storeName, customerAddressText, amountDueMinor, currency, paymentMethod, paymentState]
+      required: [id, orderId, captainActorId, sourceStoreId, fulfillmentMode, state, expiresAt, version, createdAt, updatedAt, storeName, deliveryAreaText, amountDueMinor, currency, paymentMethod, paymentState]
       additionalProperties: false
       properties:
         id:
@@ -6417,7 +6423,7 @@ components:
         storeProfileImage:
           $ref: "#/components/schemas/StoreProfileImage"
           nullable: true
-        customerAddressText:
+        deliveryAreaText:
           type: string
           minLength: 1
         amountDueMinor:
@@ -6691,69 +6697,48 @@ components:
           minimum: -180
           maximum: 180
 
-    CaptainLocationUpdateRequest:
+    CaptainOpportunityCell:
       type: object
-      required: [latitude, longitude]
       additionalProperties: false
+      required: [latitude, longitude, intensity, kind]
       properties:
         latitude:
           type: number
-          minimum: -90
-          maximum: 90
         longitude:
           type: number
-          minimum: -180
-          maximum: 180
+        intensity:
+          type: string
+          enum: [LOW, MEDIUM, HIGH]
+        kind:
+          type: string
+          enum: [ORDERS, CAPTAINS]
 
-    CaptainLocationSnapshot:
+    CaptainOpportunityHeatmap:
       type: object
-      required: [latitude, longitude, updatedAt]
       additionalProperties: false
+      required: [cells, measuredAt, windowStart, windowEnd, signalType, sampleStatus, policyVersion]
       properties:
-        latitude:
-          type: number
-          minimum: -90
-          maximum: 90
-        longitude:
-          type: number
-          minimum: -180
-          maximum: 180
-        updatedAt:
+        cells:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptainOpportunityCell"
+        measuredAt:
           type: string
           format: date-time
-
-    CaptainLocationResponse:
-      type: object
-      required: [location, idempotentReplay]
-      additionalProperties: false
-      properties:
-        location:
-          $ref: "#/components/schemas/CaptainLocationSnapshot"
-        idempotentReplay:
-          type: boolean
-
-    OrderTrackingState:
-      type: string
-      enum: [NOT_ASSIGNED, AWAITING_LOCATION, LIVE, COMPLETED]
-
-    OrderTrackingResponse:
-      type: object
-      required: [orderId, orderState, trackingState, assignmentId, captainLocation]
-      additionalProperties: false
-      properties:
-        orderId:
+        windowStart:
           type: string
-        orderState:
-          $ref: "#/components/schemas/OrderState"
-        trackingState:
-          $ref: "#/components/schemas/OrderTrackingState"
-        assignmentId:
+          format: date-time
+        windowEnd:
           type: string
-          nullable: true
-          x-go-pointer: true
-        captainLocation:
-          $ref: "#/components/schemas/CaptainLocationSnapshot"
-          nullable: true
+          format: date-time
+        signalType:
+          type: string
+          enum: [RECENT_ACTIVITY]
+        sampleStatus:
+          type: string
+          enum: [AVAILABLE, INSUFFICIENT_DATA]
+        policyVersion:
+          type: string
 
     NotificationKind:
       type: string
@@ -8916,7 +8901,7 @@ components:
 
     OperatorOperation:
       type: object
-      required: [order, storeName, assignment]
+      required: [order, storeName, assignment, customerSuccessfulOrdersCount, successfulOrderOrdinal]
       additionalProperties: false
       properties:
         order:
@@ -8926,6 +8911,14 @@ components:
         assignment:
           $ref: "#/components/schemas/OperatorAssignmentSummary"
           nullable: true
+        customerSuccessfulOrdersCount:
+          type: integer
+          minimum: 0
+          description: Confirmed customer completions across Captain delivery and customer pickup, not placed or failed orders.
+        successfulOrderOrdinal:
+          type: integer
+          minimum: 0
+          description: Chronological successful-completion rank of this order, or zero while not completed.
 
     OperatorOperationListItem:
       type: object
@@ -9188,6 +9181,36 @@ components:
       type: string
       enum: [PARTNER, BTHWANI, SHARED]
 
+    PromotionSettlementSummary:
+      type: object
+      additionalProperties: false
+      required: [promotionId, settledOrderCount, settledDiscountMinor, partnerFundedMinor, platformFrozenMinor, platformPostedExpenseMinor, currency, basis]
+      properties:
+        promotionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        settledOrderCount:
+          type: integer
+          minimum: 0
+        settledDiscountMinor:
+          type: integer
+          minimum: 0
+        partnerFundedMinor:
+          type: integer
+          minimum: 0
+        platformFrozenMinor:
+          type: integer
+          minimum: 0
+        platformPostedExpenseMinor:
+          type: integer
+        currency:
+          type: string
+          enum: [YER]
+        basis:
+          type: string
+          enum: [POSTED_SETTLEMENT_NOT_NET_REFUNDS]
+
     PromotionView:
       type: object
       required: [id, code, nameAr, descriptionAr, kind, valueMinor, fundingSource, requiresPartnerOptIn, targets, state, startsAt, redeemedCount, version, createdByActorId, createdAt, updatedAt]
@@ -9306,6 +9329,33 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    OperatorMarketingSummary:
+      type: object
+      additionalProperties: false
+      required: [activePromotions, scheduledPromotions, endedPromotions, draftPromotions, pausedPromotions, activeContent, asOf]
+      properties:
+        activePromotions:
+          type: integer
+          minimum: 0
+        scheduledPromotions:
+          type: integer
+          minimum: 0
+        endedPromotions:
+          type: integer
+          minimum: 0
+        draftPromotions:
+          type: integer
+          minimum: 0
+        pausedPromotions:
+          type: integer
+          minimum: 0
+        activeContent:
+          type: integer
+          minimum: 0
+        asOf:
+          type: string
+          format: date-time
 
     OperatorPromotionRegistryResponse:
       type: object
@@ -9449,11 +9499,14 @@ components:
     CampaignOptInRequest:
       type: object
       additionalProperties: false
-      required: [decision]
+      required: [decision, expectedVersion]
       properties:
         decision:
           type: string
           enum: [OPTED_IN, DECLINED]
+        expectedVersion:
+          type: integer
+          minimum: 1
 
     PartnerCampaignOptInResponse:
       type: object
@@ -9464,6 +9517,18 @@ components:
           $ref: "#/components/schemas/PartnerCampaignView"
         idempotentReplay:
           type: boolean
+
+    PartnerPromotionStateRequest:
+      type: object
+      required: [state, expectedVersion]
+      additionalProperties: false
+      properties:
+        state:
+          type: string
+          enum: [PUBLISHED, PAUSED, ENDED]
+        expectedVersion:
+          type: integer
+          minimum: 1
 
     MarketingPublicationRequest:
       type: object
