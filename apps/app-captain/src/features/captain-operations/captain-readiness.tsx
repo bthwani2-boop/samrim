@@ -1,74 +1,100 @@
-import { BthwaniButton, BthwaniIconButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { sizing } from "@bthwani/design-system";
+import { BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import * as Location from "expo-location";
-import { publishCaptainPresence } from "./captain-presence-publisher";
-import { type CaptainAdmission, captainAdmissionStateLabel, captainAvailabilityStateLabel } from "@bthwani/dsh";
-import { type Href, Link, useFocusEffect } from "expo-router";
+import { type CaptainAdmission, captainAdmissionStateLabel } from "@bthwani/dsh";
+import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Linking, Platform, Switch, Text, View } from "react-native";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
+import { publishCaptainPresence } from "./captain-presence-publisher";
 import { isCurrentCaptainActor } from "./captain-session-scope";
 
-export function CaptainReadiness() {
+async function isPhoneLocationReady() {
+  const [permission, services] = await Promise.all([
+    Location.getForegroundPermissionsAsync(),
+    Location.hasServicesEnabledAsync(),
+  ]);
+  return permission.granted && services;
+}
+
+async function openPhoneLocationSettings() {
+  if (Platform.OS === "android") {
+    try {
+      await Linking.sendIntent("android.settings.LOCATION_SOURCE_SETTINGS");
+      return;
+    } catch { /* Android vendors can disallow the location settings intent. */ }
+  }
+  await Linking.openSettings();
+}
+
+export function CaptainReadiness({ overlay = false, missionActive = false }: { overlay?: boolean; missionActive?: boolean } = {}) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
-  const [admission, setAdmission] = useState<CaptainAdmission | null>(null);
-  const [loadedActorID, setLoadedActorID] = useState("");
   const [identityState, setIdentityState] = useState(currentIdentityState);
-  const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
-  const readSequence = useRef(0);
-  const [loading, setLoading] = useState(true);
+  const actorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
+  const [loadedActorID, setLoadedActorID] = useState("");
+  const [admission, setAdmission] = useState<CaptainAdmission | null>(null);
+  const [hasActiveDelivery, setHasActiveDelivery] = useState(false);
+  const [assignmentsUnknown, setAssignmentsUnknown] = useState(false);
+  const [gpsReady, setGpsReady] = useState(false);
+  const [gpsChecked, setGpsChecked] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [locationPermissionGranted, setLocationPermissionGranted] = useState<boolean | null>(null);
-  const [activityCounts, setActivityCounts] = useState<{ offers: number | null; deliveries: number | null }>({ offers: null, deliveries: null });
+  const readSequence = useRef(0);
+
+  const refreshGps = useCallback(async () => {
+    try {
+      const ready = await isPhoneLocationReady();
+      setGpsReady(ready);
+      setGpsChecked(true);
+      return ready;
+    } catch {
+      setGpsReady(false);
+      setGpsChecked(true);
+      return false;
+    }
+  }, []);
 
   const load = useCallback(async (): Promise<boolean> => {
     const sequence = ++readSequence.current;
-    const session = currentIdentityState();
-    const actorID = session.kind === "authenticated" ? session.identity.subject.trim() : "";
+    const before = currentIdentityState();
+    const target = before.kind === "authenticated" ? before.identity.subject.trim() : "";
     setLoading(true);
-    setAdmission(null);
-    setLoadedActorID("");
-    setActivityCounts({ offers: null, deliveries: null });
-    setLocationPermissionGranted(null);
-    setError("");
-    if (!actorID) {
+    if (!target) {
+      setAdmission(null);
+      setHasActiveDelivery(false);
+      setAssignmentsUnknown(false);
+      setLoadedActorID("");
+      setError("سجّل الدخول لقراءة حالة الكابتن.");
       setLoading(false);
-      setError("سجّل الدخول لقراءة جاهزية الكابتن.");
       return false;
     }
     try {
       const token = await getUsableIdentityAccessToken();
       const api = captainClient();
       const response = await api.readOwnCaptainAdmission(token);
-      const current = currentIdentityState();
-      if (sequence !== readSequence.current || current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return false;
+      // New offers are blocked while a pickup/delivery remains assigned.
+      // Read existing work before presenting a writable availability switch.
+      const assignments = await api.listOwnCaptainAssignments(token).catch(() => null);
+      const after = currentIdentityState();
+      if (sequence !== readSequence.current || after.kind !== "authenticated" || !isCurrentCaptainActor(target, after.identity.subject.trim())) return false;
       setAdmission(response.admission);
-      setLoadedActorID(actorID);
-      void Location.getForegroundPermissionsAsync().then((permission) => {
-        const latest = currentIdentityState();
-        if (sequence === readSequence.current && latest.kind === "authenticated" && isCurrentCaptainActor(actorID, latest.identity.subject.trim())) setLocationPermissionGranted(permission.granted);
-      }).catch(() => {});
-      // Summary counts are optional; a full bounded list cannot establish an exact total.
-      void Promise.allSettled([api.listOwnCaptainOffers(token), api.listOwnCaptainAssignments(token)]).then(([offersResult, assignmentsResult]) => {
-        const latest = currentIdentityState();
-        if (sequence !== readSequence.current || latest.kind !== "authenticated" || !isCurrentCaptainActor(actorID, latest.identity.subject.trim())) return;
-        setActivityCounts({
-          offers: offersResult.status === "fulfilled" && offersResult.value.offers.length < 50
-            ? offersResult.value.offers.filter((offer) => offer.state === "offered" && Date.parse(offer.expiresAt) > Date.now()).length : null,
-          deliveries: assignmentsResult.status === "fulfilled" && assignmentsResult.value.assignments.length < 50
-            ? assignmentsResult.value.assignments.filter((assignment) => assignment.state === "assigned" || assignment.state === "in_custody").length : null,
-        });
-      });
+      setHasActiveDelivery(assignments?.assignments.some((item) => item.state === "assigned" || item.state === "in_custody") ?? false);
+      setAssignmentsUnknown(assignments === null);
+      setLoadedActorID(target);
       return true;
-    } catch (cause) {
-      console.error("DSH Captain admission readback failed", cause);
-      const current = currentIdentityState();
-      if (sequence === readSequence.current && current.kind === "authenticated" && isCurrentCaptainActor(actorID, current.identity.subject.trim())) setError("تعذر قراءة جاهزية الكابتن. أعد المحاولة.");
+    } catch {
+      const after = currentIdentityState();
+      if (sequence === readSequence.current && after.kind === "authenticated" && isCurrentCaptainActor(target, after.identity.subject.trim())) {
+        setAdmission(null);
+        setHasActiveDelivery(false);
+        setAssignmentsUnknown(false);
+        setLoadedActorID("");
+        setError("تعذرت قراءة حالة التوفر. افتح الصفحة مجددًا للمحاولة.");
+      }
       return false;
     } finally {
       if (sequence === readSequence.current) setLoading(false);
@@ -76,99 +102,197 @@ export function CaptainReadiness() {
   }, []);
 
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
-  useFocusEffect(useCallback(() => {
-    if (!activeActorID) {
-      readSequence.current += 1;
-      setAdmission(null);
-      setLoadedActorID("");
-      setActivityCounts({ offers: null, deliveries: null });
-      setLoading(false);
-    } else {
-      void load();
-    }
-    return () => { readSequence.current += 1; };
-  }, [activeActorID, load]));
-  const currentAdmission = isCurrentCaptainActor(loadedActorID, activeActorID) ? admission : null;
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refreshGps();
+    });
+    return () => subscription.remove();
+  }, [refreshGps]);
 
-  async function setAvailability(available: boolean) {
-    if (!currentAdmission || busy || loading || !isCurrentCaptainActor(loadedActorID, activeActorID) || currentAdmission.state !== "eligible" || currentAdmission.availabilityState === (available ? "available" : "unavailable")) return;
-    const actorID = loadedActorID;
+  useFocusEffect(useCallback(() => {
+    setError("");
+    void refreshGps();
+    if (actorID) void load();
+    else { setAdmission(null); setHasActiveDelivery(false); setAssignmentsUnknown(false); setLoadedActorID(""); setLoading(false); }
+    return () => { readSequence.current += 1; };
+  }, [load, refreshGps, actorID]));
+
+  const current = isCurrentCaptainActor(loadedActorID, actorID) ? admission : null;
+  const eligible = current?.state === "eligible";
+  const available = current?.availabilityState === "available";
+  const newOffersBlockedByDelivery = hasActiveDelivery && !available;
+  const newOffersBlockedByUnknownWork = assignmentsUnknown && !available;
+
+  async function toggleAvailability(next: boolean) {
+    if (!current || !eligible || busy || loading || available === next) return;
+    if (next && assignmentsUnknown) {
+      setError("تعذر فحص مهامك الحالية. أعد فتح الرئيسية للتحقق قبل بدء العمل.");
+      return;
+    }
+    if (next && hasActiveDelivery) {
+      setError("لديك توصيل جارٍ. أكمله أو عالج تعثره من التوصيلات أولًا.");
+      return;
+    }
+    const target = actorID;
     setBusy(true);
     setError("");
     try {
-      const token = await getUsableIdentityAccessToken();
-      const current = currentIdentityState();
-      if (current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return;
-      if (available) {
+      if (next) {
         const permission = await Location.requestForegroundPermissionsAsync();
-        setLocationPermissionGranted(permission.granted);
         if (!permission.granted) {
-          setError("اسمح بالموقع أثناء استخدام التطبيق لبدء استقبال عروض التوصيل القريبة. لم تتغير حالة توفرك.");
+          setGpsReady(false);
+          setError("اسمح بموقع الهاتف أولًا لبدء استقبال العروض.");
+          return;
+        }
+        if (!(await Location.hasServicesEnabledAsync())) {
+          setGpsReady(false);
+          setError("خدمات GPS مغلقة. افتح مفتاح GPS أولًا.");
           return;
         }
       }
-      await captainClient().setCaptainAvailability(token, available, currentAdmission.version);
-      let presenceFailed = false;
-      if (available) {
-        try { await publishCaptainPresence(true); }
-        catch { presenceFailed = true; }
+      const token = await getUsableIdentityAccessToken();
+      const before = currentIdentityState();
+      if (before.kind !== "authenticated" || !isCurrentCaptainActor(target, before.identity.subject.trim())) return;
+      await captainClient().setCaptainAvailability(token, next, current.version);
+      const confirmed = await load();
+      if (!confirmed) {
+        setError("لا يمكن تأكيد التوفر الآن؛ ستُقرأ الحالة من الخادم عند العودة.");
+        return;
       }
-      const after = currentIdentityState();
-      if (after.kind !== "authenticated" || !isCurrentCaptainActor(actorID, after.identity.subject.trim())) return;
-      if (!(await load())) setError("وصل رد تغيير التوفر، لكن تعذرت قراءة الحالة الجديدة. حدّث الجاهزية قبل إجراء آخر.");
-      else if (presenceFailed) setError("تم تشغيل التوفر، لكن لم نتمكن من تحديث موقعك. تأكد من تشغيل الموقع والاتصال وحدّث الجاهزية.");
-    } catch (cause) {
-      console.error("DSH Captain availability failed", cause);
-      const current = currentIdentityState();
-      if (current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return;
-      const verified = await load();
-      setError(verified
-        ? "لم نتأكد من نتيجة تغيير التوفر. راجع الحالة الجديدة قبل أي محاولة أخرى."
-        : "لم نتأكد من نتيجة تغيير التوفر وتعذرت قراءة الجاهزية؛ لن نرسل تغييرًا آخر حتى تنجح إعادة القراءة.");
+      if (next) {
+        try { await publishCaptainPresence(true); }
+        catch { setError("التوفر مُفعّل لكن تعذر نشر موقعك. تحقق من GPS والاتصال."); }
+      }
+    } catch {
+      const confirmed = await load();
+      setError(confirmed
+        ? "تعذر تأكيد تغيير التوفر؛ اعتمد الحالة الظاهرة قبل المحاولة من جديد."
+        : "تعذرت قراءة نتيجة تغيير التوفر، فلا ترسل طلبًا آخر حتى تُقرأ الحالة.");
     } finally {
+      await refreshGps();
       setBusy(false);
     }
   }
 
-  const eligible = currentAdmission?.state === "eligible";
-  const available = currentAdmission?.availabilityState === "available";
-  const offersLabel = activityCounts.offers === null ? "العروض" : "العروض (" + activityCounts.offers + ")";
-  const deliveriesLabel = activityCounts.deliveries === null ? "التوصيلات" : "التوصيلات (" + activityCounts.deliveries + ")";
-  const highlightDeliveries = (activityCounts.deliveries ?? 0) > 0;
-  const highlightOffers = !highlightDeliveries && (activityCounts.offers ?? 0) > 0;
+  async function togglePhoneGps(next: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      if (!next) {
+        if (available) {
+          setError("أوقف التوفر أولًا قبل إيقاف GPS؛ حتى لا تُعرض عليك طلبات دون موقع.");
+          return;
+        }
+        // Android does not permit a third-party application to silently
+        // disable the device location provider. The Switch mirrors OS truth.
+        await openPhoneLocationSettings();
+        return;
+      }
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        setError("امنح التطبيق إذن الموقع من إعدادات الهاتف.");
+        await Linking.openSettings();
+        return;
+      }
+      if (!(await Location.hasServicesEnabledAsync())) {
+        if (Platform.OS === "android") {
+          try { await Location.enableNetworkProviderAsync(); }
+          catch { await openPhoneLocationSettings(); }
+        } else {
+          await openPhoneLocationSettings();
+        }
+      }
+      const ready = await refreshGps();
+      if (!ready) setError("فعّل خدمات الموقع في إعدادات الهاتف؛ سيظهر المفتاح مفعّلًا عند نجاح ذلك.");
+      else if (available) {
+        try { await publishCaptainPresence(true); }
+        catch { setError("GPS يعمل، لكن تعذر تحديث موقع التوزيع. تحقق من الاتصال."); }
+      }
+    } catch {
+      setError("تعذر فتح إعدادات الموقع. يمكنك تشغيل GPS يدويًا من إعدادات الهاتف.");
+    } finally {
+      await refreshGps();
+      setBusy(false);
+    }
+  }
 
-  return (
-    <View style={styles.container} accessibilityLabel="جاهزية الكابتن">
-      <View style={styles.readinessPageHeading}>
-        <Text style={styles.readinessTitle}>الجاهزية</Text>
-        <BthwaniIconButton icon="refresh" label="تحديث الجاهزية والعروض والتوصيلات" disabled={busy || loading} onPress={() => void load()} size={sizing.controlSm} tone="soft" />
+  if (overlay) return <View style={{ marginHorizontal: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 7, borderRadius: 16, backgroundColor: "rgba(15,29,40,0.73)" }} accessibilityLabel="التحكم بالجاهزية على الخريطة">
+    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-around", gap: 10 }}>
+      <View style={{ flex: 1, alignItems: "center", gap: 3 }}>
+        <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "700" }}>{missionActive ? "المهمة" : "التوفر"}</Text>
+        {missionActive ? <Text style={{ color: "#FFFFFF", fontSize: 12 }}>مشغول</Text> :
+          <Switch accessibilityLabel="مفتاح توفر الكابتن" accessibilityRole="switch"
+            value={available} disabled={!eligible || busy || loading || newOffersBlockedByDelivery || newOffersBlockedByUnknownWork}
+            onValueChange={(value) => void toggleAvailability(value)}
+            trackColor={{ false: "#76818A", true: "#78D8A7" }}
+            thumbColor={available ? "#087F46" : "#F9FAFB"} />}
       </View>
-      {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحديث الحالة…</Text></View> : null}
-      {!loading && currentAdmission ? <View style={styles.readinessHero}>
-        <View style={styles.readinessHeroHeader}>
-          <View style={styles.readinessHeroCopy}>
-            <Text style={styles.readinessEyebrow}>حالة العمل</Text>
-            <Text style={styles.readinessStatus}>{captainAvailabilityStateLabel(currentAdmission.availabilityState)}</Text>
-          </View>
-          <BthwaniStatusBadge icon={eligible ? "success" : "warning"} label={captainAdmissionStateLabel(currentAdmission.state)} tone={eligible ? "success" : "warning"} />
-        </View>
-        {eligible && available && locationPermissionGranted === false ? <Text accessibilityRole="alert" style={styles.error}>التوفر مفعل، لكن إذن الموقع غير متاح ولن تظهر عروض القرب حتى تمنحه وتحدّث الموقع.</Text> : null}
-        {eligible ? <BthwaniButton
-          busy={busy}
-          disabled={busy || loading}
-          label={available ? "إيقاف استقبال العروض" : "بدء استقبال العروض"}
-          onPress={() => void setAvailability(!available)}
-          variant={available ? "secondary" : "primary"}
-        /> : <Text style={styles.muted}>تغيير التوفر متاح بعد اعتماد الكابتن.</Text>}
-      </View> : null}
-      {!loading && currentAdmission ? <View style={styles.readinessActions}>
-        <Text style={styles.sectionTitle}>العمل الآن</Text>
-        <View style={styles.row}>
-          <Link href={"/offers" as Href} asChild><BthwaniButton label={offersLabel} style={styles.actionButton} variant={highlightOffers ? "primary" : "secondary"} /></Link>
-          <Link href={"/deliveries" as Href} asChild><BthwaniButton label={deliveriesLabel} style={styles.actionButton} variant={highlightDeliveries ? "primary" : "secondary"} /></Link>
-        </View>
-      </View> : null}
-      {error ? <View style={styles.readinessError}><Text accessibilityRole="alert" style={styles.error}>{error}</Text><BthwaniButton disabled={busy || loading} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
+      <View style={{ width: 1, height: 35, backgroundColor: "rgba(255,255,255,0.25)" }} />
+      <View style={{ flex: 1, alignItems: "center", gap: 3 }}>
+        <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "700" }}>GPS</Text>
+        <Switch accessibilityLabel="مفتاح GPS الهاتف" accessibilityRole="switch"
+          value={gpsReady} disabled={busy || !gpsChecked}
+          onValueChange={(value) => void togglePhoneGps(value)}
+          trackColor={{ false: "#76818A", true: "#78D8A7" }}
+          thumbColor={gpsReady ? "#087F46" : "#F9FAFB"} />
+      </View>
+      <View style={{ width: 1, height: 35, backgroundColor: "rgba(255,255,255,0.25)" }} />
+      <View style={{ flex: 1.2, gap: 5 }}>
+        {missionActive ? <Text style={{ fontSize: 12, color: "#FFFFFF", fontWeight: "700" }}>وجهة التوصيل</Text> : <>
+          <Text style={{ fontSize: 12, color: "#FFFFFF", fontWeight: "700" }}>
+            <Text style={{ color: "#FF9A50" }}>● </Text>الطلبات
+          </Text>
+          <Text style={{ fontSize: 12, color: "#FFFFFF", fontWeight: "700" }}>
+            <Text style={{ color: "#55D9CE" }}>● </Text>الكباتن
+          </Text>
+        </>}
+      </View>
     </View>
-  );
+    {error ? <Text accessibilityRole="alert" style={{ color: "#FFE4B3", fontSize: 12 }}>{error}</Text> : null}
+    {newOffersBlockedByDelivery && !missionActive ? <Text accessibilityRole="alert" style={{ color: "#FFE4B3", fontSize: 12 }}>مشغول بتوصيل جارٍ · افتح إجراءات المهمة أسفل الخريطة</Text> : null}
+    {newOffersBlockedByUnknownWork ? <Text accessibilityRole="alert" style={{ color: "#FFE4B3", fontSize: 12 }}>تعذر التحقق من المهام</Text> : null}
+    {!eligible && current ? <Text style={{ color: "#FFE4B3", fontSize: 11 }}>التوفر يتطلب اعتماد الحساب</Text> : null}
+    {loading && !current ? <ActivityIndicator size="small" color="#FFFFFF" /> : null}
+  </View>;
+
+  return <View style={styles.container} accessibilityLabel="جاهزية الكابتن">
+    <Text style={styles.readinessTitle}>الجاهزية</Text>
+    {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الجاهزية…</Text></View> : null}
+    {current ? <View style={styles.readinessHero}>
+      <View style={styles.readinessHeroHeader}>
+        <Text style={styles.readinessEyebrow}>حالة الحساب</Text>
+        <BthwaniStatusBadge icon={eligible ? "success" : "warning"} label={captainAdmissionStateLabel(current.state)} tone={eligible ? "success" : "warning"} />
+      </View>
+      <View style={styles.readinessSwitchRow}>
+        <View style={styles.readinessHeroCopy}>
+          <Text style={styles.cardTitle}>التوفر لاستقبال العروض</Text>
+          <Text style={styles.muted}>{available ? "متاح للعمل" : newOffersBlockedByDelivery ? "مشغول بتوصيل جارٍ" : "غير متاح حاليًا"}</Text>
+        </View>
+        <Switch accessibilityLabel="مفتاح توفر الكابتن" accessibilityRole="switch"
+          value={available} disabled={!eligible || busy || loading || newOffersBlockedByDelivery || newOffersBlockedByUnknownWork}
+          onValueChange={(value) => void toggleAvailability(value)}
+          trackColor={{ false: theme.borderColor, true: theme.successSoft }}
+          thumbColor={available ? theme.success : theme.surface}
+        />
+      </View>
+      <View style={styles.readinessSwitchRow}>
+        <View style={styles.readinessHeroCopy}>
+          <Text style={styles.cardTitle}>GPS الهاتف</Text>
+          <Text style={styles.muted}>{gpsReady ? "الموقع يعمل" : gpsChecked ? "الموقع متوقف أو الإذن غير متاح" : "جارٍ التحقق من الموقع…"}</Text>
+        </View>
+        <Switch accessibilityLabel="مفتاح GPS الهاتف" accessibilityRole="switch"
+          value={gpsReady} disabled={busy || !gpsChecked}
+          onValueChange={(value) => void togglePhoneGps(value)}
+          trackColor={{ false: theme.borderColor, true: theme.successSoft }}
+          thumbColor={gpsReady ? theme.success : theme.surface}
+        />
+      </View>
+      <Text style={styles.muted}>مفتاح GPS يعكس حالة الهاتف، وقد يفتح إعدادات الموقع.</Text>
+      {newOffersBlockedByDelivery ? <Text style={styles.muted}>أكمل التوصيل الحالي أو عالج تعثره من التوصيلات قبل استقبال طلب جديد.</Text> : null}
+      {newOffersBlockedByUnknownWork ? <Text style={styles.muted}>تعذرت قراءة التوصيلات؛ أعد فتح الرئيسية للتحقق.</Text> : null}
+      {!eligible ? <Text style={styles.muted}>يُفعّل التوفر بعد اعتماد الكابتن.</Text> : null}
+    </View> : null}
+    {error ? <View style={styles.readinessError}><Text accessibilityRole="alert" style={styles.error}>{error}</Text></View> : null}
+  </View>;
 }

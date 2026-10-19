@@ -6700,7 +6700,7 @@ components:
     CaptainOpportunityCell:
       type: object
       additionalProperties: false
-      required: [latitude, longitude, intensity]
+      required: [latitude, longitude, intensity, kind]
       properties:
         latitude:
           type: number
@@ -6709,6 +6709,9 @@ components:
         intensity:
           type: string
           enum: [LOW, MEDIUM, HIGH]
+        kind:
+          type: string
+          enum: [ORDERS, CAPTAINS]
 
     CaptainOpportunityHeatmap:
       type: object
@@ -6730,7 +6733,7 @@ components:
           format: date-time
         signalType:
           type: string
-          enum: [HISTORICAL_ACTIVITY]
+          enum: [RECENT_ACTIVITY]
         sampleStatus:
           type: string
           enum: [AVAILABLE, INSUFFICIENT_DATA]
@@ -8898,7 +8901,7 @@ components:
 
     OperatorOperation:
       type: object
-      required: [order, storeName, assignment]
+      required: [order, storeName, assignment, customerSuccessfulOrdersCount, successfulOrderOrdinal]
       additionalProperties: false
       properties:
         order:
@@ -8908,6 +8911,14 @@ components:
         assignment:
           $ref: "#/components/schemas/OperatorAssignmentSummary"
           nullable: true
+        customerSuccessfulOrdersCount:
+          type: integer
+          minimum: 0
+          description: Confirmed customer completions across Captain delivery and customer pickup, not placed or failed orders.
+        successfulOrderOrdinal:
+          type: integer
+          minimum: 0
+          description: Chronological successful-completion rank of this order, or zero while not completed.
 
     OperatorOperationListItem:
       type: object

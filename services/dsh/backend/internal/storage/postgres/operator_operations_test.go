@@ -208,8 +208,55 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 			t.Fatalf("client pickup order is missing the store name or current location: %+v", pickupOrder)
 		}
 		detail, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_02")
-		if err != nil || detail.StoreName != "متجر العمليات" || detail.Order.StoreName != "متجر العمليات" || detail.Order.PickupLocation == nil || detail.Order.PickupLocation.Latitude != 15.369445 || detail.Order.PickupLocation.Longitude != 44.191006 {
-			t.Fatalf("operator detail read model is missing store pickup details: %+v err=%v", detail, err)
+		if err != nil || detail.StoreName != "متجر العمليات" || detail.Order.StoreName != "متجر العمليات" || detail.Order.PickupLocation == nil || detail.Order.PickupLocation.Latitude != 15.369445 || detail.Order.PickupLocation.Longitude != 44.191006 || detail.CustomerSuccessfulOrdersCount != 0 || detail.SuccessfulOrderOrdinal != 0 {
+			t.Fatalf("operator detail read model is missing store pickup or initial successful-order facts: %+v err=%v", detail, err)
+		}
+		// The first three successes are based on completed deliveries or customer
+		// pickups, not created orders, Captain store pickup, or current state alone.
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.commerce_orders SET state='PICKED_UP',version=version+1 WHERE id='operator_order_02'`); err != nil {
+			t.Fatalf("complete customer pickup: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,from_state,to_state,from_version,result_version,request_hash,created_at)
+			VALUES('order_picked_up','ops-pickup-1','ops-pickup-corr','partner_operator_ops','operator_order_02','READY_FOR_PICKUP','PICKED_UP',2,3,'pickup-proof',timestamp '2026-09-18 06:02:00+00')`); err != nil {
+			t.Fatalf("insert canonical pickup completion audit: %v", err)
+		}
+		afterPickup, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_02")
+		if err != nil || afterPickup.CustomerSuccessfulOrdersCount != 1 || afterPickup.SuccessfulOrderOrdinal != 1 {
+			t.Fatalf("customer pickup must be first confirmed success: %+v err=%v", afterPickup, err)
+		}
+		awaiting, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_01")
+		if err != nil || awaiting.CustomerSuccessfulOrdersCount != 1 || awaiting.SuccessfulOrderOrdinal != 0 {
+			t.Fatalf("an open delivery must not count as a successful order: %+v err=%v", awaiting, err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.commerce_orders SET state='DELIVERED',version=version+1 WHERE id='operator_order_01'`); err != nil {
+			t.Fatalf("mark first delivery terminal: %v", err)
+		}
+		withoutProof, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_01")
+		if err != nil || withoutProof.CustomerSuccessfulOrdersCount != 1 || withoutProof.SuccessfulOrderOrdinal != 0 {
+			t.Fatalf("terminal state without canonical delivery proof must not count: %+v err=%v", withoutProof, err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,to_state,result_version,request_hash,created_at)
+			VALUES('delivery_completed','ops-delivery-1','ops-delivery-corr','captain_operator_ops','operator_order_01','delivered',2,'delivery-proof',timestamp '2026-09-18 06:03:00+00')`); err != nil {
+			t.Fatalf("insert canonical Captain delivery completion audit: %v", err)
+		}
+		afterDelivery, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_01")
+		if err != nil || afterDelivery.CustomerSuccessfulOrdersCount != 2 || afterDelivery.SuccessfulOrderOrdinal != 2 {
+			t.Fatalf("confirmed Captain delivery must count after completed customer pickup: %+v err=%v", afterDelivery, err)
+		}
+		firstSuccess, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_02")
+		if err != nil || firstSuccess.CustomerSuccessfulOrdersCount != 2 || firstSuccess.SuccessfulOrderOrdinal != 1 {
+			t.Fatalf("customer success rank must remain completion-event ordered: %+v err=%v", firstSuccess, err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.commerce_orders SET state='DELIVERED',version=version+1 WHERE id='operator_order_03'`); err != nil {
+			t.Fatalf("mark third delivery terminal: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,to_state,result_version,request_hash,created_at)
+			VALUES('delivery_completed','ops-delivery-3','ops-delivery-corr-3','captain_operator_ops','operator_order_03','delivered',2,'delivery-proof-3',timestamp '2026-09-18 06:04:00+00')`); err != nil {
+			t.Fatalf("insert third canonical delivery completion audit: %v", err)
+		}
+		thirdSuccess, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_03")
+		if err != nil || thirdSuccess.CustomerSuccessfulOrdersCount != 3 || thirdSuccess.SuccessfulOrderOrdinal != 3 {
+			t.Fatalf("third confirmed success must be ranked and bounded: %+v err=%v", thirdSuccess, err)
 		}
 	})
 }

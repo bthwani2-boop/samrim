@@ -1921,11 +1921,10 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 		if err := consumeOrderInventoryTx(ctx, tx, orderID); err != nil {
 			return CaptainAssignment{}, false, err
 		}
-		if fulfillmentMode == FulfillmentModeBthwaniCaptain {
-			if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_admissions SET availability_state='available',version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND state='eligible' AND requires_profile_review=false AND availability_state='unavailable'", captainActorID); err != nil {
-				return CaptainAssignment{}, false, err
-			}
-		}
+		// Completion closes the assignment only. Dispatch availability is the
+		// Captain's explicit decision, not a side effect of delivery settlement.
+		// Re-enabling automatically here can issue a new offer before the Captain
+		// is safely stopped, and invalidates the UI's versioned availability switch.
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,assignment_id,result_version) VALUES($1,$2,'complete',$3,$4,$5)`, idempotencyKey, requestHash, orderID, assignmentID, assignment.Version+1); err != nil {
 		return CaptainAssignment{}, false, err
@@ -2155,7 +2154,7 @@ func ReadCaptainDeliveryTask(ctx context.Context, db *sql.DB, assignmentID, capt
 		JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
 		JOIN dsh.commerce_orders o ON o.id=a.order_id
 		JOIN dsh.stores s ON s.id=o.store_id
-		WHERE a.id=$1 AND a.captain_actor_id=$2 AND a.state <> 'reassigned'`, strings.TrimSpace(assignmentID), strings.TrimSpace(captainActorID)).Scan(
+		WHERE a.id=$1 AND a.captain_actor_id=$2 AND a.state IN ('assigned','in_custody','delivery_failed') AND o.state NOT IN ('DELIVERED','PICKED_UP','REJECTED','CANCELLED')`, strings.TrimSpace(assignmentID), strings.TrimSpace(captainActorID)).Scan(
 		&task.AssignmentID, &task.OrderReference, &task.StoreID, &task.StoreName, &task.StoreProfileImageURI, &pickupLatitude, &pickupLongitude,
 		&task.CustomerAddressText, &destinationLatitude, &destinationLongitude, &task.OrderState, &task.HandoffState, &task.DeliveryState,
 		&task.PaymentMethod, &task.PaymentState, &task.AmountDueMinor, &task.Currency, &task.FulfillmentMode,
@@ -2206,7 +2205,7 @@ func ListCaptainAssignments(ctx context.Context, db *sql.DB, actorID string, lim
 	if err := canonicalizeCaptainOffersTx(ctx, tx, strings.TrimSpace(actorID)); err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM dsh.captain_assignments WHERE captain_actor_id=$1 AND state<>'reassigned' ORDER BY created_at DESC,id DESC LIMIT $2`, actorID, limit)
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM dsh.captain_assignments WHERE captain_actor_id=$1 AND state IN ('assigned','in_custody','delivery_failed') ORDER BY created_at DESC,id DESC LIMIT $2`, actorID, limit)
 	if err != nil {
 		return nil, err
 	}

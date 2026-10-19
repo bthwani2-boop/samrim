@@ -30,6 +30,7 @@ test("operator opens the referenced order without marking a notification read", 
   await page.route("**/api/operations/order-123", (route) => route.fulfill({ json: {
     operation: {
       storeName: "متجر تجريبي", assignment: null,
+      customerSuccessfulOrdersCount: 1, successfulOrderOrdinal: 0,
       order: {
         id: "order-123", storeId: "store-123", state: "CREATED",
         fulfillmentMode: "CUSTOMER_PICKUP", createdAt: "2026-10-14T01:00:00Z",
@@ -47,6 +48,7 @@ test("operator opens the referenced order without marking a notification read", 
   await open.click();
   await expect(page).toHaveURL(/\/operations\/order-123\?tab=overview/);
   await expect(page.getByRole("heading", { name: "طلب من متجر تجريبي" })).toBeVisible();
+  await expect(page.getByText(/أكمل العميل 1 من أول 3 طلبات ناجحة/)).toBeVisible();
   expect(readMutations).toBe(0);
 });
 

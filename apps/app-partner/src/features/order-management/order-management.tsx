@@ -27,6 +27,7 @@ function nextState(order: Order): OrderTransitionRequest["state"] | null {
 }
 
 const queueFilters = [
+  { key: "ACTIVE", label: "قيد المتابعة", states: ["CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "READY_FOR_PICKUP", "CAPTAIN_ASSIGNED"] },
   { key: "ALL", label: "الكل", states: undefined },
   { key: "NEEDS_ACTION", label: "تحتاج إجراء", states: ["CREATED"] },
   { key: "PREPARING", label: "قيد التجهيز", states: ["PARTNER_ACCEPTED", "PREPARING"] },
@@ -67,7 +68,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [sidecarError, setSidecarError] = useState("");
-  const [filter, setFilter] = useState<QueueFilter>("ALL");
+  const [filter, setFilter] = useState<QueueFilter>("ACTIVE");
   const [pickupCodes, setPickupCodes] = useState<Readonly<Record<string, string>>>({});
   const [adjustmentQuantities, setAdjustmentQuantities] = useState<Readonly<Record<string, string>>>({});
   const [confirmation, setConfirmation] = useState<OrderConfirmation>(null);
@@ -224,8 +225,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
 
   return (
     <View style={styles.container} accessibilityLabel="إدارة طلبات المتجر">
-      <Text style={styles.title}>طلبات المتجر</Text>
-      <Text style={styles.muted}>تابع الطلبات حسب ما يحتاج إجراءً الآن، ثم افتح تفاصيل المنتجات عند الحاجة.</Text>
+      <Text style={styles.title}>الطلبات</Text>
 
       {!loading && attention ? (
         <View style={styles.summaryRow} accessibilityLabel="ملخص طابور الطلبات">

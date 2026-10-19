@@ -17,9 +17,9 @@ func TestCaptainOpportunityIntensityHasNoExactCounts(t *testing.T) {
 		}
 	}
 	sample := CaptainOpportunityHeatmap{
-		Cells:      []CaptainOpportunityCell{{Latitude: 15.35, Longitude: 44.15, Intensity: "LOW"}},
+		Cells:      []CaptainOpportunityCell{{Latitude: 15.35, Longitude: 44.15, Intensity: "LOW", Kind: "ORDERS"}, {Latitude: 15.35, Longitude: 44.15, Intensity: "MEDIUM", Kind: "CAPTAINS"}},
 		MeasuredAt: time.Now().UTC(), SampleStatus: "AVAILABLE",
-		SignalType: "HISTORICAL_ACTIVITY", PolicyVersion: "STORE_ORIGIN_V1",
+		SignalType: "RECENT_ACTIVITY", PolicyVersion: "RECENT_COARSE_V2",
 	}
 	b, err := json.Marshal(sample)
 	if err != nil {

@@ -265,7 +265,7 @@ func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.Op
 			HandoffState:   operation.Assignment.Handoff.State,
 		}
 	}
-	return contract.OperatorOperation{Order: toOrder(operation.Order), StoreName: operation.StoreName, Assignment: assignment}
+	return contract.OperatorOperation{Order: toOrder(operation.Order), StoreName: operation.StoreName, Assignment: assignment, CustomerSuccessfulOrdersCount: operation.CustomerSuccessfulOrdersCount, SuccessfulOrderOrdinal: operation.SuccessfulOrderOrdinal}
 }
 
 func toOperatorOperationListItem(operation postgres.OperatorOperationListRecord) contract.OperatorOperationListItem {

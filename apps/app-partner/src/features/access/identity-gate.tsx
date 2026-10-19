@@ -17,7 +17,7 @@ const identity = { role, surface, restoreIdentitySession, currentIdentityState, 
 
 export default function IdentityGate() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
-  const safeReturnTo = resolveInternalReturnPath(returnTo, "/store", /^(?:\/store|\/notifications|\/orders|\/wallet|\/account|\/onboarding)$/u) as Href;
+  const safeReturnTo = resolveInternalReturnPath(returnTo, "/orders", /^(?:\/store|\/notifications|\/orders|\/products|\/wallet|\/more|\/account|\/onboarding)$/u) as Href;
 
   return (
     <ManagedIdentityFlow

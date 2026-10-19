@@ -60,6 +60,10 @@ func TestCaptainCompletionReplaysAfterOrderTransitions(t *testing.T) {
 				if _, err := db.ExecContext(ctx, "INSERT INTO dsh.service_cities(id,display_name_ar,active) VALUES($1,$2,true)", cityID, "مدينة اختبار الكابتن"); err != nil {
 					t.Fatalf("insert service city: %v", err)
 				}
+				if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_admissions(id,actor_id,full_name_ar,state,availability_state,requires_profile_review,version)
+					VALUES('captain-replay-admission',$1,'كابتن اختبار','eligible','unavailable',false,1)`, captainActorID); err != nil {
+					t.Fatalf("create unavailable Captain admission: %v", err)
+				}
 				insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: storeID, PartnerActorID: "captain-replay-partner", Name: "متجر اختبار الكابتن"})
 				if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES($1,$2,$3,'checked_out',1)", cartID, "captain-replay-client", storeID); err != nil {
 					t.Fatalf("insert cart: %v", err)
@@ -118,6 +122,23 @@ func TestCaptainCompletionReplaysAfterOrderTransitions(t *testing.T) {
 				}
 				if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.captain_audit WHERE idempotency_key=$1 AND event_type='delivery_completed'", idempotencyKey).Scan(&auditCount); err != nil || auditCount != 1 {
 					t.Fatalf("completion audit rows = %d, %v; want one", auditCount, err)
+				}
+				var availability string
+				var admissionVersion int
+				if err := db.QueryRowContext(ctx, "SELECT availability_state,version FROM dsh.captain_admissions WHERE actor_id=$1", captainActorID).Scan(&availability, &admissionVersion); err != nil || availability != "unavailable" || admissionVersion != 1 {
+					t.Fatalf("delivery completion must not auto-enable Captain: %s, version=%d err=%v", availability, admissionVersion, err)
+				}
+				// After successful delivery the Captain loses customer location/chat
+				// access. The ledger receipt and immutable audit remain untouched.
+				current, err := postgres.ListCaptainAssignments(ctx, db, captainActorID, 20)
+				if err != nil || len(current) != 0 {
+					t.Fatalf("delivered assignment still in live Captain workspace: %+v err=%v", current, err)
+				}
+				if _, err := postgres.ReadCaptainDeliveryTask(ctx, db, assignmentID, captainActorID); !errors.Is(err, postgres.ErrCaptainDeliveryTaskNotFound) {
+					t.Fatalf("delivered customer address must be inaccessible: %v", err)
+				}
+				if _, err := postgres.ReadOrderConversation(ctx, db, orderID, captainActorID, "captain", 10); !errors.Is(err, postgres.ErrOrderConversationForbidden) {
+					t.Fatalf("delivered customer chat must be inaccessible to Captain: %v", err)
 				}
 			})
 		})

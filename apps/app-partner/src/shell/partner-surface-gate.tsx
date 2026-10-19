@@ -19,6 +19,9 @@ export function PartnerSurfaceGate({ surface, children }: Readonly<PropsWithChil
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
 
+  // Account and invitations remain reachable when store-scope discovery is unavailable.
+  if (surface === "more" || surface === "account") return <>{children}</>;
+
   if (state.kind === "loading") {
     return <View style={styles.card}><ActivityIndicator accessibilityLabel="جارٍ التحقق من صلاحية الوصول" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ التحقق من صلاحيات وصولك إلى هذه المساحة…</Text></View>;
   }
