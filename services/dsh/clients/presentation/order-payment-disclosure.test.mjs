@@ -1,0 +1,37 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import { orderPaymentDisclosure } from "./order-presentation.ts";
+
+const cashDelivery = {
+  state: "CREATED",
+  paymentState: "REQUIRES_COLLECTION",
+  paymentMethod: "CASH_ON_DELIVERY",
+  fulfillmentMode: "BTHWANI_CAPTAIN",
+  cashAmountMinor: 14864,
+  currency: "YER",
+};
+
+test("cancelled payment readback does not request cash or delivery collection", () => {
+  const disclosure = orderPaymentDisclosure({ ...cashDelivery, state: "CANCELLED", paymentState: "CANCELLED" });
+  assert.match(disclosure.status, /أُلغي التحصيل/);
+  assert.doesNotMatch(disclosure.amount + disclosure.status, /النقد المتبقي|بانتظار التحصيل|الدفع نقدًا|عند التسليم/);
+});
+
+test("cancelled order with lagging collection readback fails closed instead of requesting cash", () => {
+  const disclosure = orderPaymentDisclosure({ ...cashDelivery, state: "CANCELLED" });
+  assert.match(disclosure.status, /غير مؤكدة|غير متطابقة|مراجعة/);
+  assert.doesNotMatch(disclosure.amount + disclosure.status, /النقد المتبقي|بانتظار التحصيل|الدفع نقدًا|عند التسليم/);
+});
+
+test("collected rejected order does not silently promise an automatic refund", () => {
+  const disclosure = orderPaymentDisclosure({ ...cashDelivery, state: "REJECTED", paymentState: "COLLECTED" });
+  assert.match(disclosure.status, /استرداد|مراجعة/);
+  assert.doesNotMatch(disclosure.amount + disclosure.status, /النقد المتبقي|بانتظار التحصيل|الدفع نقدًا/);
+});
+
+test("active order retains the canonical cash payment terms", () => {
+  const disclosure = orderPaymentDisclosure(cashDelivery);
+  assert.match(disclosure.amount, /النقد المتبقي عند الاستلام/);
+  assert.match(disclosure.status, /بانتظار التحصيل/);
+});
