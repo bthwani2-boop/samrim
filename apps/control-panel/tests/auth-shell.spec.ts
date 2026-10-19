@@ -1031,7 +1031,7 @@ test("partner commission remittance resumes with its stored receipt after an unc
   await expect(page.getByLabel("المبلغ بالريال اليمني")).toHaveValue("5000");
   await expect(page.getByLabel("المبلغ بالريال اليمني")).toBeDisabled();
   await page.getByRole("button", { name: "إعادة المحاولة بنفس العملية" }).click();
-  await expect(page.getByRole("status")).toContainText("سُجلت الحوالة bank-transfer-1");
+  await expect(page.locator("p.state-success[role=\"status\"]")).toContainText("سُجلت الحوالة bank-transfer-1");
   await expect(page.getByRole("link", { name: "فتح إيصال الحوالة" })).toHaveAttribute("href", "/api/finance/evidence/finance-receipt-1");
   expect(remittanceRequests).toHaveLength(2);
   const original = remittanceRequests[0];
@@ -1093,7 +1093,7 @@ test("partner commission remittance keeps its recovery key when WLT returns an u
   await page.reload();
   await expect(page.getByText(/بقيت محاولة غير محسومة/)).toBeVisible();
   await page.getByRole("button", { name: "إعادة المحاولة بنفس العملية" }).click();
-  await expect(page.getByRole("status")).toContainText("سُجلت الحوالة bank-transfer-2");
+  await expect(page.locator("p.state-success[role=\"status\"]")).toContainText("سُجلت الحوالة bank-transfer-2");
   expect(remittanceRequests).toHaveLength(2);
   const original = remittanceRequests[0];
   const replay = remittanceRequests[1];
