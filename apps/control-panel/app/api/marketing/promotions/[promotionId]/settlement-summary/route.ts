@@ -11,7 +11,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "operator access is required", 403);
-  const denied = operatorWorkspacePermissionDenied(identity, "marketing");
+  const denied = operatorWorkspacePermissionDenied(identity, "finance");
   if (denied) return denied;
   const { promotionId } = await params;
   if (!promotionId || promotionId.length > 128) return errorResponse("INVALID_INPUT", "invalid promotionId", 400);

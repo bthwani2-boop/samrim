@@ -1,6 +1,7 @@
 package transporthttp
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -84,6 +85,41 @@ func TestMarketingContentOperatorRoutesRejectMissingMarketingPermission(t *testi
 	mux.ServeHTTP(unauth, missingAuth)
 	if unauth.Code != http.StatusUnauthorized {
 		t.Fatalf("service authentication missing: got %d", unauth.Code)
+	}
+}
+
+func TestPartnerPromotionIdentityFailureClassification(t *testing.T) {
+	const token = "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+	for _, status := range []int{http.StatusUnauthorized, http.StatusServiceUnavailable} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			identityServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"error":{"code":"IDENTITY_UNAVAILABLE","message":"identity service unavailable"}}`))
+			}))
+			defer identityServer.Close()
+			endpoint, err := identityintegration.ResolveBaseURL(identityServer.URL, "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			identityClient, err := identityintegration.New(endpoint, token)
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := &MarketingServer{identity: identityClient}
+			_, err = server.partnerSessionActorID(context.Background(), "partner-access-token")
+			if err == nil {
+				t.Fatal("expected identity failure")
+			}
+			response := httptest.NewRecorder()
+			writeMarketingError(response, err)
+			want := http.StatusBadGateway
+			if status == http.StatusUnauthorized {
+				want = http.StatusUnauthorized
+			}
+			if response.Code != want {
+				t.Fatalf("Identity %d returned %d, want %d: %s", status, response.Code, want, response.Body.String())
+			}
+		})
 	}
 }
 

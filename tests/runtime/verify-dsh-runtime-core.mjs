@@ -1472,6 +1472,12 @@ console.log("DSH_PROMOTIONS_DISCOVERY=PASS");
 // All actors and payment records here belong to the disposable CI runtime.
 const sharedCode = "SHARED" + suffix.replace(/[^A-Za-z0-9]/g, "").slice(-12).toUpperCase();
 const sharedCampaignID = "promotion-shared-" + suffix;
+const sharedPromotionIsVisible = (response) => {
+  if (response.status !== 200 || !Array.isArray(response.body?.promotions)) {
+    fail("shared public promotion response invalid", JSON.stringify(response));
+  }
+  return response.body.promotions.some((promotion) => promotion.id === sharedCampaignID);
+};
 const sharedCreate = await request(dshBase, "POST", "/dsh/operator/promotions", {
   token: dshToken, headers: serviceHeaders(actingOperatorID, "shared-create-" + suffix),
   body: { id: sharedCampaignID, code: sharedCode, nameAr: "حملة بتمويل مشترك", kind: "FIXED",
@@ -1493,8 +1499,8 @@ const sharedWrongPartner = await request(dshBase, "GET", sharedPath, { token: se
 const sharedCampaign = sharedCampaigns.body?.campaigns?.find((campaign) => campaign.promotion?.id === sharedCampaignID);
 if (sharedPublish.status !== 201 || sharedPublish.body?.promotion?.state !== "PUBLISHED" || sharedCampaigns.status !== 200
   || !sharedCampaign || sharedCampaign.storeOptInState || (sharedCampaign.storeOptInVersion ?? 0) !== 0
-  || sharedVisibleBefore.body?.promotions?.some((promotion) => promotion.id === sharedCampaignID)
-  || sharedOtherStore.body?.promotions?.some((promotion) => promotion.id === sharedCampaignID)
+  || sharedPromotionIsVisible(sharedVisibleBefore)
+  || sharedPromotionIsVisible(sharedOtherStore)
   || sharedWrongPartner.status !== 403) {
   fail("unapproved shared campaign became visible or Partner authorization failed", JSON.stringify({
     sharedPublish, sharedCampaigns, sharedVisibleBefore, sharedOtherStore, sharedWrongPartner,
@@ -1525,8 +1531,8 @@ const sharedVisibleAfter = await request(dshBase, "GET", "/dsh/public/promotions
 const sharedOtherAfter = await request(dshBase, "GET", "/dsh/public/promotions?serviceCityId=" + encodeURIComponent(cityA) + "&storeId=" + encodeURIComponent(second.storeID));
 if (sharedApproved.status !== 201 || sharedApproved.body?.campaign?.storeOptInState !== "OPTED_IN"
   || sharedReplay.status !== 200 || sharedReplay.body?.idempotentReplay !== true
-  || !sharedVisibleAfter.body?.promotions?.some((promotion) => promotion.id === sharedCampaignID)
-  || sharedOtherAfter.body?.promotions?.some((promotion) => promotion.id === sharedCampaignID)) {
+  || !sharedPromotionIsVisible(sharedVisibleAfter)
+  || sharedPromotionIsVisible(sharedOtherAfter)) {
   fail("Partner approval and Store-scoped shared publication failed", JSON.stringify({
     sharedApproved, sharedReplay, sharedVisibleAfter, sharedOtherAfter,
   }));

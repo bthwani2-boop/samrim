@@ -136,7 +136,11 @@ func (s *MarketingServer) optInPartnerStoreCampaign(w http.ResponseWriter, r *ht
 func (s *MarketingServer) partnerSessionActorID(ctx context.Context, accessToken string) (string, error) {
 	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
 	if err != nil {
-		return "", errPartnerPromotionSession
+		var identityErr *identityclient.Error
+		if errors.As(err, &identityErr) && identityErr.Status == http.StatusUnauthorized {
+			return "", errPartnerPromotionSession
+		}
+		return "", err
 	}
 	actorID := strings.TrimSpace(identity.Subject)
 	if identity.Role != "partner" || identity.Surface != "app-partner" || actorID == "" {

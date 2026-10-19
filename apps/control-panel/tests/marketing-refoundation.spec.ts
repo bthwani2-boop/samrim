@@ -4,7 +4,7 @@ const identity = {
   subject: "marketing-review-operator",
   sessionId: "marketing-review-session",
   role: "operator",
-  permissions: ["marketing"],
+  permissions: ["marketing", "finance"],
   surface: "control-panel",
   expiresAt: "2099-01-01T00:00:00.000Z",
 };
@@ -350,6 +350,16 @@ test("marketing settlement report reads posted WLT expense without inventing ref
   await expect(region).toContainText("مصروف بثواني المرحّل في القيود");
   await expect(region).toContainText("600");
   await expect(region).toContainText("ليست صافي المصروف بعد الاستردادات");
+});
+
+test("marketing-only operators never see financial settlement controls", async ({ page }) => {
+  await provideMarketingReads(page);
+  await page.route("**/api/auth/session**", (route) => route.fulfill({
+    status: 200, json: { identity: { ...identity, permissions: ["marketing"] } },
+  }));
+  await page.goto("/marketing/promotions");
+  await expect(page.getByRole("table", { name: "سجل العروض" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "نتائج التسوية" })).toHaveCount(0);
 });
 
 test("marketing settlement does not turn WLT failure into zero expense", async ({ page }) => {

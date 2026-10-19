@@ -16,12 +16,11 @@ test("operations overlay recent orders and coarse available Captains without lay
     windowEnd: new Date().toISOString(), signalType: "RECENT_ACTIVITY",
     sampleStatus: "AVAILABLE", policyVersion: "RECENT_COARSE_V2",
   } }));
-  // Keep the explicit theme deterministic and intercept the SDK request so this
-  // proof does not depend on Google Maps credentials, network timing, or tiles.
+  // Supply the Maps API before hydration to avoid an SDK loading race.
+  // The test proves rendered circles and theme tokens without external map tiles.
   await page.addInitScript({ content: `document.documentElement.dataset.theme="light";` });
-  await page.route("https://maps.googleapis.com/maps/api/js**", (route) => route.fulfill({
-    contentType: "application/javascript",
-    body: `window.google={maps:{
+  await page.addInitScript({
+    content: `window.google={maps:{
       Map:class {
         constructor(node){this.root=node}
         fitBounds(){} setCenter(){}
@@ -38,7 +37,7 @@ test("operations overlay recent orders and coarse available Captains without lay
       },
       LatLngBounds:class {extend(){}}
     }};`,
-  }));
+  });
   await page.goto("/operations");
   const map = page.getByRole("region", { name: "دوائر الطلبات والكباتن على خريطة واحدة" });
   await expect(map.getByTestId("map-heat-circle")).toHaveCount(2);
