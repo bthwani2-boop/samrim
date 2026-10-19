@@ -13,20 +13,42 @@ type MapsAPI = {
 };
 declare global { interface Window { google?: { maps: MapsAPI } } }
 
-const activityColors = {
-  ORDERS: { fillColor: "#EA6F24", strokeColor: "#C75A17" },
-  CAPTAINS: { fillColor: "#0C9B97", strokeColor: "#087E7A" },
-} as const;
+type ActivityColors = Record<HeatCell["kind"], string>;
 const activityRadius = { LOW: 1050, MEDIUM: 1750, HIGH: 2450 } as const;
 const activityOpacity = { LOW: 0.22, MEDIUM: 0.31, HIGH: 0.42 } as const;
+
+function readActivityColors(): ActivityColors | null {
+  const style = getComputedStyle(document.documentElement);
+  const orders = style.getPropertyValue("--warning-text").trim();
+  const captains = style.getPropertyValue("--success-text").trim();
+  return orders && captains ? { ORDERS: orders, CAPTAINS: captains } : null;
+}
 
 function CircleMap({ cells }: { cells: ReadonlyArray<HeatCell> }) {
   const node = useRef<HTMLDivElement>(null);
   const map = useRef<MapHandle | null>(null);
   const circles = useRef<MapCircleHandle[]>([]);
   const [loaded, setLoaded] = useState(Boolean(typeof window !== "undefined" && window.google?.maps));
+  const [colors, setColors] = useState<ActivityColors | null>(null);
   const [mapError, setMapError] = useState(false);
   const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_API_KEY;
+
+  useEffect(() => {
+    const update = () => {
+      const next = readActivityColors();
+      if (!next) return;
+      setColors((current) => current?.ORDERS === next.ORDERS && current.CAPTAINS === next.CAPTAINS ? current : next);
+    };
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    media.addEventListener("change", update);
+    return () => {
+      observer.disconnect();
+      media.removeEventListener("change", update);
+    };
+  }, []);
 
   useEffect(() => {
     if (!key || loaded) return;
@@ -51,7 +73,7 @@ function CircleMap({ cells }: { cells: ReadonlyArray<HeatCell> }) {
   useEffect(() => {
     const api = window.google?.maps;
     const first = cells[0];
-    if (!loaded || !api || !node.current) return;
+    if (!loaded || !api || !node.current || !colors) return;
     if (!map.current) {
       map.current = new api.Map(node.current, {
         center: first ? { lat: first.latitude, lng: first.longitude } : { lat: 15.5, lng: 47.5 },
@@ -66,14 +88,14 @@ function CircleMap({ cells }: { cells: ReadonlyArray<HeatCell> }) {
       bounds.extend(center);
       circles.current.push(new api.Circle({
         map: map.current, center, radius: activityRadius[cell.intensity],
-        fillColor: activityColors[cell.kind].fillColor, fillOpacity: activityOpacity[cell.intensity],
-        strokeColor: activityColors[cell.kind].strokeColor, strokeOpacity: 0.86, strokeWeight: 1.5,
+        fillColor: colors[cell.kind], fillOpacity: activityOpacity[cell.intensity],
+        strokeColor: colors[cell.kind], strokeOpacity: 0.86, strokeWeight: 1.5,
       }));
     }
     if (cells.length > 1) map.current.fitBounds(bounds);
     else if (first) map.current.setCenter({ lat: first.latitude, lng: first.longitude });
     return () => { for (const circle of circles.current) circle.setMap(null); circles.current = []; };
-  }, [loaded, cells]);
+  }, [loaded, cells, colors]);
 
   if (!key || mapError) return <p role="status">تعذر تحميل خرائط Google. تحقق من مفتاح الخرائط والصلاحيات.</p>;
   return <section aria-label="دوائر الطلبات والكباتن على خريطة واحدة" className="ops-activity-map">

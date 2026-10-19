@@ -16,10 +16,12 @@ test("operations overlay recent orders and coarse available Captains without lay
     windowEnd: new Date().toISOString(), signalType: "RECENT_ACTIVITY",
     sampleStatus: "AVAILABLE", policyVersion: "RECENT_COARSE_V2",
   } }));
-  // Supply a deterministic browser-side Maps API before React initializes.
-  // No external SDK timing or third-party network request should affect the proof.
-  await page.addInitScript({ content: `
-    window.google={maps:{
+  // Keep the explicit theme deterministic and intercept the SDK request so this
+  // proof does not depend on Google Maps credentials, network timing, or tiles.
+  await page.addInitScript({ content: `document.documentElement.dataset.theme="light";` });
+  await page.route("https://maps.googleapis.com/maps/api/js**", (route) => route.fulfill({
+    contentType: "application/javascript",
+    body: `window.google={maps:{
       Map:class {
         constructor(node){this.root=node}
         fitBounds(){} setCenter(){}
@@ -29,18 +31,59 @@ test("operations overlay recent orders and coarse available Captains without lay
           this.node=document.createElement("span");
           this.node.setAttribute("data-testid","map-heat-circle");
           this.node.setAttribute("data-fill",options.fillColor);
+          this.node.setAttribute("data-stroke",options.strokeColor);
           options.map.root.appendChild(this.node);
         }
         setMap(map){if(!map)this.node.remove()}
       },
       LatLngBounds:class {extend(){}}
-    }};
-  ` });
+    }};`,
+  }));
   await page.goto("/operations");
   const map = page.getByRole("region", { name: "دوائر الطلبات والكباتن على خريطة واحدة" });
   await expect(map.getByTestId("map-heat-circle")).toHaveCount(2);
-  await expect(map.getByTestId("map-heat-circle").nth(0)).toHaveAttribute("data-fill", "#EA6F24");
-  await expect(map.getByTestId("map-heat-circle").nth(1)).toHaveAttribute("data-fill", "#0C9B97");
+  const readSeriesColors = () => page.evaluate(() => {
+    const toHex = (value: string) => `#${(value.match(/\d+/g) ?? []).map((part) => Number(part).toString(16).padStart(2, "0")).join("")}`;
+    const orderLegend = document.querySelector(".ops-activity-legend-orders");
+    const captainLegend = document.querySelector(".ops-activity-legend-captains");
+    const circles = Array.from(document.querySelectorAll<HTMLElement>("[data-testid=map-heat-circle]"));
+    const rootStyle = getComputedStyle(document.documentElement);
+    return {
+      orderToken: rootStyle.getPropertyValue("--warning-text").trim().toLowerCase(),
+      orderLegend: orderLegend ? toHex(getComputedStyle(orderLegend).color) : "",
+      orderFill: circles[0]?.dataset.fill?.toLowerCase() ?? "",
+      orderStroke: circles[0]?.dataset.stroke?.toLowerCase() ?? "",
+      captainToken: rootStyle.getPropertyValue("--success-text").trim().toLowerCase(),
+      captainLegend: captainLegend ? toHex(getComputedStyle(captainLegend).color) : "",
+      captainFill: circles[1]?.dataset.fill?.toLowerCase() ?? "",
+      captainStroke: circles[1]?.dataset.stroke?.toLowerCase() ?? "",
+    };
+  });
+  const expectSeriesColorsToMatch = async () => {
+    const colors = await readSeriesColors();
+    expect(colors.orderLegend).toBe(colors.orderToken);
+    expect(colors.orderFill).toBe(colors.orderToken);
+    expect(colors.orderStroke).toBe(colors.orderToken);
+    expect(colors.captainLegend).toBe(colors.captainToken);
+    expect(colors.captainFill).toBe(colors.captainToken);
+    expect(colors.captainStroke).toBe(colors.captainToken);
+  };
+  await expectSeriesColorsToMatch();
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+  await expect.poll(async () => {
+    const colors = await readSeriesColors();
+    return colors.orderFill === colors.orderToken && colors.orderStroke === colors.orderToken
+      && colors.captainFill === colors.captainToken && colors.captainStroke === colors.captainToken;
+  }).toBe(true);
+  await expectSeriesColorsToMatch();
+  await page.evaluate(() => document.documentElement.removeAttribute("data-theme"));
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect.poll(async () => {
+    const colors = await readSeriesColors();
+    return colors.orderFill === colors.orderToken && colors.orderStroke === colors.orderToken
+      && colors.captainFill === colors.captainToken && colors.captainStroke === colors.captainToken;
+  }).toBe(true);
+  await expectSeriesColorsToMatch();
   await expect(page.getByRole("button", { name: "دوائر الكباتن" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "دوائر الطلبات" })).toHaveCount(0);
   await expect(page.getByText(/آخر 30 دقيقة/)).toBeVisible();
