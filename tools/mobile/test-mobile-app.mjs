@@ -50,8 +50,8 @@ assert.ok(fs.existsSync(entryPath), `${app}: missing app/index.tsx`);
 // authenticated workflow body or act as a navigation substitute.
 const routePaths =
   app === "app-client" ? ["home.tsx", "orders.tsx", "orders/[orderId].tsx", "cart/[storeId].tsx", "wallet-cash-in.tsx", "account.tsx"] :
-  app === "app-partner" ? ["store.tsx", "orders.tsx", "onboarding.tsx", "account.tsx"] :
-  app === "app-captain" ? ["home.tsx", "offers.tsx", "deliveries.tsx", "account.tsx"] :
+  app === "app-partner" ? ["orders.tsx", "products.tsx", "wallet.tsx", "more.tsx", "store.tsx", "account.tsx", "onboarding.tsx"] :
+  app === "app-captain" ? ["home.tsx", "offers.tsx", "deliveries.tsx", "wallet.tsx", "account.tsx"] :
   ["home.tsx", "cases.tsx", "wallet.tsx", "new-case.tsx", "account.tsx"];
 const appRouteDir = path.join(appDir, "app", "(app)");
 assert.ok(fs.existsSync(path.join(appRouteDir, "_layout.tsx")), `${app}: missing authenticated route layout`);
@@ -78,8 +78,8 @@ if (app === "app-client") {
 }
 const tabRoutes =
   app === "app-client" ? ["home", "orders", "account", "cart/[storeId]", "orders/[orderId]"] :
-  app === "app-partner" ? ["store", "orders", "account", "onboarding"] :
-  app === "app-captain" ? ["home", "offers", "deliveries", "account"] :
+  app === "app-partner" ? ["orders", "products", "wallet", "more", "store", "account", "onboarding"] :
+  app === "app-captain" ? ["home", "offers", "deliveries", "wallet", "account"] :
   ["home", "cases", "wallet", "account", "new-case"];
  let previousTabRouteIndex = -1;
  for (const tabRoute of tabRoutes) {
@@ -137,16 +137,16 @@ if (app === "app-partner") {
     const routeContent = fs.readFileSync(path.join(appRouteDir, `${route}.tsx`), "utf8");
     assert.ok(routeContent.includes(`PartnerSurfaceGate surface="${route}"`), `${app}: the ${route} route must be guarded by the authority surface gate`);
   }
-  assert.ok(layoutContent.includes('authority.canUse("store")') && layoutContent.includes('authority.canUse("orders")') && layoutContent.includes('authority.canUse("wallet")'), `${app}: tab visibility must derive from the live authority projection`);
-  assert.equal(layoutContent.split("{ href: null }").length, 5, `${app}: exactly the three authority-gated tabs plus onboarding may be hidden from navigation`);
+  assert.ok(["orders", "products", "wallet"].every((surface) => layoutContent.includes(`authority.canUse("${surface}")`)), `${app}: primary restricted tabs must derive from the live authority projection`);
+  assert.equal((layoutContent.match(/\{ href: null \}/g) ?? []).length, 6, `${app}: exactly three authority-gated primary tabs and three protected deep-link routes must be hidden when appropriate`);
   assert.ok(shellContent.includes("canSearchOrders"), `${app}: the header search entry must be gated by orders authority`);
   assert.ok(shellContent.includes('navigate("orders", { focus: "search" })'), `${app}: the authorized search entry must keep targeting the orders surface`);
   const accountContent = fs.readFileSync(path.join(appDir, "src", "features", "account", "account.tsx"), "utf8");
-  assert.ok(accountContent.includes("usePartnerStoreScope") && accountContent.includes("authority.canUse"), `${app}: account workspace entry points must derive from live authority`);
+  assert.ok(accountContent.includes("AppearancePicker") && accountContent.includes("logoutIdentity"), `${app}: account must retain appearance and logout without duplicating store authority ownership`);
   assert.ok(accountContent.includes("PartnerAccessInvitationsCard"), `${app}: the account surface must keep identity-directed access invitations reachable`);
   const partnerStoreContent = fs.readFileSync(path.join(appDir, "src", "features", "partner-onboarding", "partner-store.tsx"), "utf8");
-  assert.ok(partnerStoreContent.includes("STORE_SURFACE_PERMISSIONS"), `${app}: the Store surface selector must list only stores with material store functions`);
-  assert.ok(partnerStoreContent.includes("isStoreSurfaceEligible"), `${app}: the Store surface must land on a store with material store functions`);
+  assert.ok(partnerStoreContent.includes("eligibleForSection(store, section)") && partnerStoreContent.includes('store.permissions.includes("store_operations")') && partnerStoreContent.includes('store.permissions.includes("promotions")'), `${app}: store sections must be gated by per-store material grants`);
+  assert.ok(partnerStoreContent.includes("selectedStore && eligibleForSection(selectedStore, section)") && partnerStoreContent.includes("requiredPermissions={requiredPermissions(section)}"), `${app}: selected store and selector must preserve section-specific authority`);
   const partnerOrdersContent = fs.readFileSync(path.join(appDir, "src", "features", "partner-onboarding", "partner-orders.tsx"), "utf8");
   assert.ok(partnerOrdersContent.includes('requiredPermissions={["orders"]}'), `${app}: the orders selector must stay scoped to stores granting orders`);
   const storeAccessContent = fs.readFileSync(path.join(appDir, "src", "features", "partner-onboarding", "partner-store-access.tsx"), "utf8");
@@ -521,24 +521,24 @@ if (app === "app-partner") {
   const accessibleStore = (id, owned, permissions) => ({ id, name: `متجر ${id}`, serviceCityId: "city", primaryVerticalId: "vertical", publicationState: "published", fulfillmentModes: [], owned, permissions });
   const surfacesOf = (stores) => derivePartnerAuthority(stores).surfaces;
 
-  assert.deepEqual(surfacesOf([accessibleStore("owned", true, [])]), ["store", "orders", "wallet", "account"], "app-partner: owner must keep the four current surfaces");
-  assert.deepEqual(surfacesOf([accessibleStore("orders-staff", false, ["orders"])]), ["orders", "account"], "app-partner: ORDER_STAFF must not see Store management or Wallet");
-  assert.deepEqual(surfacesOf([accessibleStore("catalog-staff", false, ["catalog"])]), ["store", "account"], "app-partner: CATALOG_STAFF must not see Orders or Wallet without a grant");
-  assert.deepEqual(surfacesOf([accessibleStore("operations-staff", false, ["store_operations"])]), ["store", "account"], "app-partner: store_operations must unlock only the Store surface");
-  assert.deepEqual(surfacesOf([accessibleStore("promotions-staff", false, ["promotions"])]), ["store", "account"], "app-partner: promotions must unlock only the Store surface");
-  assert.deepEqual(surfacesOf([accessibleStore("accountant", false, ["finance_read"])]), ["wallet", "account"], "app-partner: ACCOUNTANT with finance_read must see Wallet and nothing more");
-  assert.deepEqual(surfacesOf([accessibleStore("accountant", false, ["finance_read", "payout_request"])]), ["wallet", "account"], "app-partner: payout_request must keep the Wallet surface without adding other surfaces");
-  assert.deepEqual(surfacesOf([accessibleStore("delivery-staff", false, ["fulfillment", "orders"])]), ["orders", "account"], "app-partner: DELIVERY_STAFF must see only the surfaces its orders/fulfillment grants require");
-  assert.deepEqual(surfacesOf([accessibleStore("fulfillment-only", false, ["fulfillment"])]), ["account"], "app-partner: fulfillment without orders must not open a Store surface without a material function inside it");
-  assert.deepEqual(surfacesOf([accessibleStore("multi-a", false, ["orders"]), accessibleStore("multi-b", false, ["catalog"])]), ["store", "orders", "account"], "app-partner: multi-store actors must see the union of authorized surfaces");
+  assert.deepEqual(surfacesOf([accessibleStore("owned", true, [])]), ["orders", "products", "wallet", "more", "store", "account"], "app-partner: owner must reach the four primary tabs and two protected management routes");
+  assert.deepEqual(surfacesOf([accessibleStore("orders-staff", false, ["orders"])]), ["orders", "more", "account"], "app-partner: ORDER_STAFF must not see Store management, Products or Wallet");
+  assert.deepEqual(surfacesOf([accessibleStore("catalog-staff", false, ["catalog"])]), ["products", "more", "account"], "app-partner: CATALOG_STAFF must see Products without Orders, Store management or Wallet");
+  assert.deepEqual(surfacesOf([accessibleStore("operations-staff", false, ["store_operations"])]), ["more", "store", "account"], "app-partner: store_operations must unlock the Store deep-link surface, not privileged primary tabs");
+  assert.deepEqual(surfacesOf([accessibleStore("promotions-staff", false, ["promotions"])]), ["more", "store", "account"], "app-partner: promotions must unlock the Store deep-link surface, not privileged primary tabs");
+  assert.deepEqual(surfacesOf([accessibleStore("accountant", false, ["finance_read"])]), ["wallet", "more", "account"], "app-partner: ACCOUNTANT must see Wallet without Orders, Products or Store permissions");
+  assert.deepEqual(surfacesOf([accessibleStore("accountant", false, ["finance_read", "payout_request"])]), ["wallet", "more", "account"], "app-partner: payout_request must keep the Wallet surface without adding restricted primary tabs");
+  assert.deepEqual(surfacesOf([accessibleStore("delivery-staff", false, ["fulfillment", "orders"])]), ["orders", "more", "account"], "app-partner: DELIVERY_STAFF must see only the Orders primary tab and shared settings");
+  assert.deepEqual(surfacesOf([accessibleStore("fulfillment-only", false, ["fulfillment"])]), ["more", "account"], "app-partner: fulfillment without orders must not unlock privileged workspaces");
+  assert.deepEqual(surfacesOf([accessibleStore("multi-a", false, ["orders"]), accessibleStore("multi-b", false, ["catalog"])]), ["orders", "products", "more", "account"], "app-partner: multi-store actors must see the union of authorized Orders and Products workspaces");
   assert.equal(derivePartnerAuthority([accessibleStore("multi-a", false, ["orders"]), accessibleStore("multi-b", false, ["catalog"])]).canUse("wallet"), false, "app-partner: one store's permissions must never leak another surface from another store's grant");
   assert.equal(derivePartnerAuthority([accessibleStore("multi-a", false, ["orders"]), accessibleStore("multi-b", false, ["finance_read"])]).canUse("wallet"), true, "app-partner: wallet authority must come only from a store that actually grants it");
-  assert.deepEqual(surfacesOf([]), ["store", "account"], "app-partner: zero accessible stores must keep the identity-scoped Store empty state reachable");
-  assert.deepEqual(RESOLVING_PARTNER_AUTHORITY.surfaces, ["account"], "app-partner: resolving authority must fail safe to the Account surface only");
-  assert.equal(canonicalPartnerSurfacePath(derivePartnerAuthority([accessibleStore("owned", true, [])])), "/store", "app-partner: owner canonical landing must stay Store");
+  assert.deepEqual(surfacesOf([]), ["more", "store", "account"], "app-partner: zero accessible stores must keep the Store empty state and More reachable without privileged tabs");
+  assert.deepEqual(RESOLVING_PARTNER_AUTHORITY.surfaces, ["more", "account"], "app-partner: resolving authority must show only nonprivileged More and Account surfaces");
+  assert.equal(canonicalPartnerSurfacePath(derivePartnerAuthority([accessibleStore("owned", true, [])])), "/orders", "app-partner: owner canonical landing must use Orders");
   assert.equal(canonicalPartnerSurfacePath(derivePartnerAuthority([accessibleStore("orders-staff", false, ["orders"])])), "/orders", "app-partner: ORDER_STAFF canonical landing must be Orders");
   assert.equal(canonicalPartnerSurfacePath(derivePartnerAuthority([accessibleStore("accountant", false, ["finance_read"])])), "/wallet", "app-partner: ACCOUNTANT canonical landing must be Wallet");
-  assert.equal(canonicalPartnerSurfacePath(RESOLVING_PARTNER_AUTHORITY), "/account", "app-partner: resolving canonical landing must be Account");
+  assert.equal(canonicalPartnerSurfacePath(RESOLVING_PARTNER_AUTHORITY), "/more", "app-partner: resolving canonical landing must use a nonprivileged route");
 
   const scopeContextContent = fs.readFileSync(path.join(appDir, "src", "features", "partner-onboarding", "partner-store-scope-context.tsx"), "utf8");
   assert.ok(scopeContextContent.includes("derivePartnerAuthority"), "app-partner: the accessible-store scope must own the authority derivation");
