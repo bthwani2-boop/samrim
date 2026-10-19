@@ -1157,6 +1157,68 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OfficialWalletDestinationResponse' }
+  /wlt/v1/settlement-intakes:
+    post:
+      operationId: createSettlementIntake
+      summary: Create nonfinancial settlement intake, without requiring an official wallet destination
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actorType, actorId, requestedBy, amountMode]
+              properties:
+                actorType: { type: string, enum: [field, captain, partner] }
+                actorId: { type: string }
+                requestedBy: { type: string }
+                amountMode: { type: string, enum: [FULL_AVAILABLE, SPECIFIED] }
+                amountMinor: { type: integer, minimum: 1 }
+                storeIds: { type: array, items: { type: string } }
+                storeAmounts: { type: array, items: { type: object } }
+      responses:
+        "201": { description: Intake recorded; ledger and payout holds unchanged. }
+        "200": { description: Same idempotency key and facts replay. }
+  /wlt/v1/settlement-intakes/{actorType}/{actorId}:
+    get:
+      operationId: listSettlementIntakes
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: actorType, in: path, required: true, schema: { type: string } }
+        - { name: actorId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Canonical beneficiary intake history. }
+  /wlt/v1/settlement-intakes/by-id/{intakeId}:
+    get:
+      operationId: readSettlementIntake
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: intakeId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Canonical single intake. }
+  /wlt/v1/operator/settlement-intakes:
+    get:
+      operationId: listOperatorSettlementIntakes
+      security: [{ serviceToken: [] }]
+      responses:
+        "200": { description: Finance-operator pending intake queue. }
+  /wlt/v1/operator/settlement-intakes/{intakeId}/convert:
+    post:
+      operationId: convertSettlementIntake
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: intakeId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Intake linked only to exact previously held canonical payout. }
+  /wlt/v1/operator/settlement-intakes/{intakeId}/cancel:
+    post:
+      operationId: cancelSettlementIntake
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: intakeId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Cancelled without ledger effect. }
   /wlt/v1/payout-intents:
     post:
       operationId: createPayoutIntent

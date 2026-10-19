@@ -105,7 +105,7 @@ jobs:
           export BTHWANI_EXPECTED_DATABASE_USER=postgres
           export BTHWANI_EXPECTED_DATABASE_NAME=wlt_proof
           export WLT_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/wlt_proof?sslmode=disable"
-          (cd services/wlt/backend && go test ./internal/storage/postgres -run "^(TestFundedPromotionPaymentPersistedReplayHasOneFrozenSplit|TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce|TestFieldAcquisitionEntitlementPostgresLifecycle|TestConcurrentFieldAcquisitionReplayHasOneLedgerEffect|TestPartnerStoreFinanceAndRecipientSettlementLifecycle)$" -count=1 -timeout 7m)
+          (cd services/wlt/backend && go test ./internal/storage/postgres -run "^(TestFundedPromotionPaymentPersistedReplayHasOneFrozenSplit|TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce|TestFieldAcquisitionEntitlementPostgresLifecycle|TestConcurrentFieldAcquisitionReplayHasOneLedgerEffect|TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestSettlementIntakeWithoutDestinationPreservesFieldLedger|TestSettlementIntakePartnerStoreScopeWithoutHold)$" -count=1 -timeout 7m)
           unset WLT_TEST_DATABASE_URL
           export BTHWANI_EXPECTED_DATABASE_NAME=dsh_proof
           export DSH_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_proof?sslmode=disable"

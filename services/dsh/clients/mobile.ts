@@ -20,6 +20,9 @@ export type DshMobileClientOptions = Readonly<{
 }>;
 
 export type PayoutIntentResponse = Readonly<{ payout: PayoutRequest; idempotentReplay: boolean }>;
+export type SettlementIntake = Readonly<{ id: string; actorType: "partner" | "captain" | "field"; actorId: string; requestedBy: string; amountMode: "FULL_AVAILABLE" | "SPECIFIED"; requestedAmountMinor?: number; resolvedAmountMinor: number; currency: string; storeAllocations: readonly Readonly<{ storeId: string; amountMinor: number }>[]; status: "REQUESTED" | "CONVERTED" | "CANCELLED"; payoutReference?: string; payoutStatus?: string; payoutUpdatedAt?: string; createdAt: string }>;
+export type SettlementIntakeResponse = Readonly<{ intake: SettlementIntake; idempotentReplay: boolean }>;
+export type SettlementIntakeListResponse = Readonly<{ intakes: readonly SettlementIntake[] }>;
 
 export type DshNativeMultipartUpload = (request: Readonly<{
   url: string;
@@ -410,6 +413,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalized) throw new Error("DSH_FUNDING_INTENT_ID_REQUIRED");
       const path = dshOperationPaths.simulateOwnFundingIntent.path.replace("{fundingIntentId}", encodeURIComponent(normalized));
       return userRequest<BeneficiaryFundingIntentResponse>(accessToken, path, dshOperationPaths.simulateOwnFundingIntent.method, { outcome }, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async listOwnSettlementIntakes(accessToken: string): Promise<SettlementIntakeListResponse> {
+      return userRequest<SettlementIntakeListResponse>(accessToken, "/dsh/me/settlement-intakes", "GET");
+    },
+    async createOwnSettlementIntake(accessToken: string, amountMode: "FULL_AVAILABLE" | "SPECIFIED", amountMinor?: number, idempotencyKey?: string, correlationID?: string): Promise<SettlementIntakeResponse> {
+      if (amountMode === "SPECIFIED" && (!Number.isSafeInteger(amountMinor) || (amountMinor ?? 0) <= 0)) throw new Error("DSH_SETTLEMENT_AMOUNT_INVALID");
+      return userRequest<SettlementIntakeResponse>(accessToken, "/dsh/me/settlement-intakes", "POST", { amountMode, ...(amountMinor === undefined ? {} : { amountMinor }) }, mutationHeaders(idempotencyKey, correlationID));
     },
     async createOwnPayoutIntent(accessToken: string, amountMode: "FULL_AVAILABLE" | "SPECIFIED", amountMinor?: number, idempotencyKey?: string, correlationID?: string): Promise<PayoutIntentResponse> {
       if (amountMode === "SPECIFIED" && (!Number.isSafeInteger(amountMinor) || (amountMinor ?? 0) <= 0)) throw new Error("DSH_PAYOUT_AMOUNT_INVALID");
@@ -802,6 +812,12 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (options.q) query.set("q", options.q);
       if (options.cursor) query.set("cursor", options.cursor);
       return userRequest<PartnerOrdersResponse>(accessToken, `${dshOperationPaths.listPartnerOrders.path}?${query.toString()}`, dshOperationPaths.listPartnerOrders.method);
+    },
+    async listPartnerSettlementIntakes(accessToken: string): Promise<SettlementIntakeListResponse> {
+      return userRequest<SettlementIntakeListResponse>(accessToken, "/dsh/partner/settlement-intakes", "GET");
+    },
+    async createPartnerSettlementIntake(accessToken: string, input: PartnerPayoutRequestCreateRequest, idempotencyKey: string, correlationID: string): Promise<SettlementIntakeResponse> {
+      return userRequest<SettlementIntakeResponse>(accessToken, "/dsh/partner/settlement-intakes", "POST", input, { ...mutationHeaders(), "Idempotency-Key": idempotencyKey, "X-Correlation-ID": correlationID });
     },
     async createPartnerPayoutRequest(accessToken: string, input: PartnerPayoutRequestCreateRequest, idempotencyKey: string, correlationID: string): Promise<PartnerPayoutRequestResponse> {
       if (!input.scopeMode) throw new Error("DSH_PARTNER_PAYOUT_INPUT_INVALID");

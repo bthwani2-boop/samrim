@@ -129,6 +129,12 @@ Partner owners may read financial totals aggregated across their owned Stores. A
 
 Customer balance withdrawal is not a customer-facing or self-service payout capability. A rare exception begins with an Operations-recorded request and authorization/evidence; WLT resolves the eligible internal balance and reserves the approved amount. Authorized Finance staff approve and perform the manual external transfer, attach transfer-specific receipt evidence, and bind the transfer to the period/batch statement evidence. A different authorized operator independently reconciles the transfer and statement row. WLT reduces the customer liability only after required reconciliation; unknown, mismatched or unsupported outcomes remain held/open as an explicit exception. This process is distinct from Customer funding, Partner/Captain/Field earnings settlement and Captain COD remittance.
 
+## Beneficiary settlement intake before external transfer
+
+A Partner, BThwani Captain, or Field actor with WLT-attributed positive eligible funds may submit an auditable, idempotent **settlement intake** to the Finance queue without an already verified official-wallet destination. An intake only records the server-resolved requested amount and, for Partners, the exact authorized Store allocation. It is **not** a payout, does not create a hold or ledger entry, and does not mean money has been sent. Only one open intake per beneficiary may exist; replay keeps the same business identity.
+
+Finance independently verifies the current beneficiary identity, official destination, authority, eligible amounts, and partner Store recipient routing before using the existing WLT payout creation path. That path alone holds available funds and requires a verified active destination; manual transfer, receipt verification, statement reconciliation, and terminal ledger settlement retain their established independent-operator controls. The intake is linked to the resulting payout only after canonical readback. Missing credentials, destination, funding, eligibility, or reconciliation leave the intake pending with an actionable reason rather than fabricating a transfer.
+
 ## Cross-owner reliability
 
 If an operational owner event creates a financial effect:

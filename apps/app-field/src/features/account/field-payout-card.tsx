@@ -29,6 +29,8 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pendingAttempt, setPendingAttempt] = useState<PayoutAttempt | null>(null);
+  const [intake, setIntake] = useState<{ id: string; status: string; resolvedAmountMinor: number; payoutStatus?: string; payoutReference?: string; payoutUpdatedAt?: string } | null>(null);
+  const [pendingIntakeAttempt, setPendingIntakeAttempt] = useState<PayoutAttempt | null>(null);
   const [confirmMode, setConfirmMode] = useState<"FULL_AVAILABLE" | "SPECIFIED" | null>(null);
   const load = useCallback(async () => {
     if (!authenticated) return;
@@ -39,8 +41,12 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
       if (actor.kind === "authenticated") {
         const raw = await SecureStore.getItemAsync(`bthwani.field.payout.pending.v1.${encodeURIComponent(actor.identity.subject)}`);
         if (raw) setPendingAttempt(JSON.parse(raw) as PayoutAttempt);
+        const pendingIntake = await SecureStore.getItemAsync(`bthwani.field.settlement-intake.pending.v1.${encodeURIComponent(actor.identity.subject)}`);
+        if (pendingIntake) setPendingIntakeAttempt(JSON.parse(pendingIntake) as PayoutAttempt);
       }
       setState((await fieldClient().readOwnPayoutState(token)).state);
+      const intakes = (await fieldClient().listOwnSettlementIntakes(token)).intakes;
+      setIntake(intakes[0] ?? null);
     } catch (cause) {
       console.warn("DSH field payout state readback failed", cause);
       setError("تعذر قراءة حالة طلب التسوية.");
@@ -86,6 +92,32 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
       setBusy(false);
     }
   };
+  const requestIntake = async (mode: "FULL_AVAILABLE" | "SPECIFIED") => {
+    const actor = currentIdentityState();
+    if (actor.kind !== "authenticated" || !state || state.eligibleAvailableMinor <= 0) return;
+    const key = `bthwani.field.settlement-intake.pending.v1.${encodeURIComponent(actor.identity.subject)}`;
+    const parsed = mode === "SPECIFIED" ? Number(toAsciiDigits(amount).replace(/\D/g, "")) : undefined;
+    if (mode === "SPECIFIED" && (!Number.isSafeInteger(parsed) || (parsed ?? 0) <= 0 || (parsed ?? 0) > state.eligibleAvailableMinor)) {
+      setError("مبلغ طلب التسوية غير صالح."); return;
+    }
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const saved = pendingIntakeAttempt ?? { mode, ...(parsed === undefined ? {} : { amountMinor: parsed }), idempotencyKey: `field_intake_${Crypto.randomUUID()}`, correlationID: `field_intake_corr_${Crypto.randomUUID()}` };
+      await SecureStore.setItemAsync(key, JSON.stringify(saved));
+      setPendingIntakeAttempt(saved);
+      const token = await getUsableIdentityAccessToken();
+      const created = await fieldClient().createOwnSettlementIntake(token, saved.mode, saved.amountMinor, saved.idempotencyKey, saved.correlationID);
+      const readback = (await fieldClient().listOwnSettlementIntakes(token)).intakes.find((item) => item.id === created.intake.id);
+      if (!readback || readback.status !== "REQUESTED" || readback.resolvedAmountMinor !== created.intake.resolvedAmountMinor) throw new Error("SETTLEMENT_INTAKE_READBACK_MISMATCH");
+      setIntake(readback);
+      await SecureStore.deleteItemAsync(key);
+      setPendingIntakeAttempt(null);
+      setNotice("وصل طلب التسوية إلى قسم المالية. ستُراجع وجهة التحويل قبل الصرف.");
+      setAmount("");
+    } catch {
+      setError("لم يتم تأكيد الطلب. يمكنك استعادة المحاولة بنفس المرجع دون تكرار الطلب.");
+    } finally { setBusy(false); }
+  };
   const destinationReady = state?.destination?.status === "ACTIVE_FOR_PAYOUT" && state.destination.verificationStatus === "VERIFIED";
   const parsedConfirmAmount = Number(toAsciiDigits(amount.trim()).replace(/\D/g, ""));
   const confirmAmount = confirmMode === "FULL_AVAILABLE" ? state?.eligibleAvailableMinor ?? 0 : Number.isSafeInteger(parsedConfirmAmount) ? parsedConfirmAmount : 0;
@@ -93,9 +125,13 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
   let payoutActions: ReactNode = null;
   if (pendingAttempt) {
     payoutActions = <><Text style={styles.muted}>هناك طلب سابق لم تُحسم حالته بعد. تحقّق منه قبل طلب تسوية أخرى.</Text><BthwaniButton busy={busy} label="التحقق من الطلب المحفوظ" onPress={() => void request(pendingAttempt.mode)} /></>;
+  } else if (intake?.status === "REQUESTED") {
+    payoutActions = <Text style={styles.muted}>طلب التسوية قيد مراجعة المالية. لا يلزم انتظار اعتماد الوجهة لتقديمه.</Text>;
   } else if (destinationReady && state && state.eligibleAvailableMinor > 0) {
     payoutActions = <><BthwaniButton busy={busy} label="طلب تسوية كامل المتاح" onPress={() => setConfirmMode("FULL_AVAILABLE")} variant="secondary" /><TextInput accessibilityLabel="مبلغ تسوية الميداني المحدد بالريال اليمني" keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/\D/g, ""))} placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} disabled={!specifiedAmountReady} label="طلب المبلغ المحدد" onPress={() => setConfirmMode("SPECIFIED")} variant="secondary" />
     </>;
+  } else if (!destinationReady && state && state.eligibleAvailableMinor > 0) {
+    payoutActions = intake?.status === "REQUESTED" ? <Text style={styles.muted}>طلب التسوية قيد مراجعة المالية. سيتم التحقق من وجهة التحويل قبل الصرف.</Text> : <BthwaniButton busy={busy} label="طلب تسوية من المالية" onPress={() => setConfirmMode("FULL_AVAILABLE")} variant="secondary" />;
   } else if (destinationReady && state) {
     payoutActions = <Text style={styles.muted}>لا يوجد رصيد متاح لطلب التسوية الآن.</Text>;
   }
@@ -113,10 +149,11 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
         <View style={styles.metricTile}><Text style={styles.metricLabel}>محجوز</Text><Text style={styles.metric}>{formatMoney(state.heldMinor, state.currency)}</Text></View>
       </View>
       {payoutActions}
+      {intake ? <Text style={styles.muted}>حالة الطلب: {intake.status === "CANCELLED" ? "ملغى" : intake.payoutStatus === "COMPLETED" ? "مكتمل ومطابق" : intake.status === "CONVERTED" ? "في إجراءات الصرف والمطابقة" : "بانتظار مراجعة المالية"}{intake.payoutReference ? ` · المرجع: ${intake.payoutReference}` : ""}{intake.payoutStatus === "COMPLETED" && intake.payoutUpdatedAt ? ` · ${new Date(intake.payoutUpdatedAt).toLocaleDateString("ar-YE")}` : ""}</Text> : null}
     </> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    <BthwaniConfirmDialog busy={busy} confirmLabel="تأكيد طلب التسوية" description={confirmMode && state ? `سيُنشأ طلب تسوية بمبلغ ${formatMoney(confirmAmount, state.currency)} إلى وجهة المحفظة الرسمية المعتمدة، وسيُحجز المبلغ للمراجعة.` : ""} onCancel={() => setConfirmMode(null)} onConfirm={() => { const mode = confirmMode; setConfirmMode(null); if (mode) void request(mode); }} title="مراجعة طلب التسوية" visible={Boolean(confirmMode)} />
+    <BthwaniConfirmDialog busy={busy} confirmLabel="تأكيد طلب التسوية" description={confirmMode && state ? `سيُنشأ طلب تسوية بمبلغ ${formatMoney(confirmAmount, state.currency)} إلى وجهة المحفظة الرسمية المعتمدة، وسيُحجز المبلغ للمراجعة.` : ""} onCancel={() => setConfirmMode(null)} onConfirm={() => { const mode = confirmMode; setConfirmMode(null); if (mode) void (destinationReady ? request(mode) : requestIntake(mode)); }} title="مراجعة طلب التسوية" visible={Boolean(confirmMode)} />
   </BthwaniSurface>;
 }
 

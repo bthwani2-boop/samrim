@@ -1,4 +1,100 @@
 paths:
+  /dsh/me/settlement-intakes:
+    get:
+      operationId: listOwnSettlementIntakes
+      summary: List the authenticated Captain or Field actor's pending and prior settlement requests
+      security: [{ serviceBearer: [] }]
+      responses:
+        "200": { description: Canonical WLT settlement requests without implied holds or transfers. }
+    post:
+      operationId: createOwnSettlementIntake
+      summary: Submit a settlement request without requiring a verified transfer destination
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amountMode]
+              properties:
+                amountMode: { type: string, enum: [FULL_AVAILABLE, SPECIFIED] }
+                amountMinor: { type: integer, minimum: 1 }
+      responses:
+        "201": { description: WLT intake recorded with no payout hold. }
+        "200": { description: Idempotent replay of the same request. }
+        "409": { description: An intake is already open or available funds are insufficient. }
+  /dsh/partner/settlement-intakes:
+    get:
+      operationId: listPartnerSettlementIntakes
+      security: [{ serviceBearer: [] }]
+      responses:
+        "200": { description: Authenticated Partner's canonical settlement requests. }
+    post:
+      operationId: createPartnerSettlementIntake
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scopeMode, storeIds]
+              properties:
+                scopeMode: { type: string, enum: [FULL_AVAILABLE, SPECIFIED] }
+                storeIds: { type: array, items: { type: string } }
+                storeAmounts:
+                  type: array
+                  items:
+                    type: object
+                    required: [storeId, amountMinor]
+                    properties:
+                      storeId: { type: string }
+                      amountMinor: { type: integer, minimum: 1 }
+      responses:
+        "201": { description: Store-scoped WLT settlement intake created. }
+        "200": { description: Idempotent replay. }
+        "403": { description: Partner lacks payout authority for the requested Stores. }
+  /dsh/operator/settlement-intakes:
+    get:
+      operationId: listOperatorSettlementIntakes
+      security: [{ serviceBearer: [] }]
+      responses:
+        "200": { description: Finance-authorized unified pending settlement inbox. }
+  /dsh/operator/settlement-intakes/{intakeId}/convert:
+    post:
+      operationId: convertOperatorSettlementIntake
+      summary: Revalidate destination and funds and convert intake into a held WLT payout
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { name: intakeId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Intake linked to a WLT canonical held payout. }
+        "409": { description: Destination, beneficiary, Store authority, or funds not ready. }
+  /dsh/operator/settlement-intakes/{intakeId}/cancel:
+    post:
+      operationId: cancelOperatorSettlementIntake
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { name: intakeId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 512 }
+      responses:
+        "200": { description: Request cancelled without any hold or ledger movement. }
+
   /dsh/operator/actors/{actorId}/legal-name/pending:
     get:
       operationId: readOperatorPendingActorLegalName

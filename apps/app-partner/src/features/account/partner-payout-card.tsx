@@ -20,6 +20,12 @@ function storageKey() {
     return `bthwani.partner.payout.pending.v2.${encodeURIComponent(actor.identity.subject)}`;
 }
 
+function intakeStorageKey() {
+  const actor = currentIdentityState();
+  if (actor.kind !== "authenticated") throw new Error("PARTNER_SESSION_REQUIRED");
+  return `bthwani.partner.settlement-intake.pending.v1.${encodeURIComponent(actor.identity.subject)}`;
+}
+
 type PayoutMode = "FULL_AVAILABLE" | "SPECIFIED";
 type LegacyAttempt = Readonly<{ mode: PayoutMode; storeAmounts?: ReadonlyArray<{ storeId: string; amountMinor: number }>; idempotencyKey: string; correlationID: string; walletOwnerActorId?: string; reviewRequired?: boolean }>;
 
@@ -35,6 +41,8 @@ export function PartnerPayoutCard() {
   const [mode, setMode] = useState<PayoutMode>("FULL_AVAILABLE");
   const [storeAmounts, setStoreAmounts] = useState<Readonly<Record<string, string>>>({});
   const [lastRequest, setLastRequest] = useState<PartnerPayoutRequestView | null>(null);
+  const [intake, setIntake] = useState<{ id: string; status: string; resolvedAmountMinor: number; payoutStatus?: string; payoutReference?: string; payoutUpdatedAt?: string } | null>(null);
+  const [pendingIntake, setPendingIntake] = useState<{ body: PartnerPayoutRequestCreateRequest; idempotencyKey: string; correlationID: string } | null>(null);
   const [busy, setBusy] = useState(authenticated);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -59,6 +67,10 @@ export function PartnerPayoutCard() {
         else throw new Error("INVALID_SAVED_PAYOUT");
       }
       const summary = (await client().readOwnPartnerPayoutSummary(token)).summary;
+      const intakes = (await client().listPartnerSettlementIntakes(token)).intakes;
+      setIntake(intakes[0] ?? null);
+      const savedIntake = await SecureStore.getItemAsync(intakeStorageKey());
+      if (savedIntake) setPendingIntake(JSON.parse(savedIntake) as { body: PartnerPayoutRequestCreateRequest; idempotencyKey: string; correlationID: string });
       setState(summary);
       setSelected((current) => current.length ? current.filter((id) => summary.stores.some((store) => store.storeId === id)) : summary.stores.map((store) => store.storeId));
     } catch { setState(null); setSelectedSummary(null); setError("تعذر قراءة نطاق طلب الصرف المصرح به."); }
@@ -168,6 +180,33 @@ export function PartnerPayoutCard() {
     finally { setBusy(false); }
   };
 
+  const requestIntake = async () => {
+    if (!selectedSummary || selected.length === 0 || !selectedSummary.attributionComplete) return;
+    const amounts = selected.flatMap((storeId) => {
+      const value = Number(toAsciiDigits(storeAmounts[storeId] ?? ""));
+      const store = selectedSummary.stores.find((item) => item.storeId === storeId);
+      return Number.isSafeInteger(value) && value > 0 && store && value <= store.eligibleAvailableMinor ? [{ storeId, amountMinor: value }] : [];
+    });
+    if (mode === "SPECIFIED" && amounts.length !== selected.length) { setError("حدد مبلغًا صحيحًا لكل متجر."); return; }
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const saved = pendingIntake ?? {
+        body: mode === "SPECIFIED" ? { scopeMode: mode, storeIds: selected, storeAmounts: amounts } : { scopeMode: mode, storeIds: selected },
+        idempotencyKey: `partner_intake_${Crypto.randomUUID()}`, correlationID: `partner_intake_corr_${Crypto.randomUUID()}`,
+      };
+      await SecureStore.setItemAsync(intakeStorageKey(), JSON.stringify(saved));
+      setPendingIntake(saved);
+      const token = await getUsableIdentityAccessToken();
+      const created = await client().createPartnerSettlementIntake(token, saved.body, saved.idempotencyKey, saved.correlationID);
+      if (created.intake.status !== "REQUESTED" || created.intake.resolvedAmountMinor <= 0) throw new Error("SETTLEMENT_INTAKE_INVALID_READBACK");
+      setIntake(created.intake);
+      await SecureStore.deleteItemAsync(intakeStorageKey());
+      setPendingIntake(null);
+      setNotice("وصل طلب تسوية المتاجر إلى المالية. سيتم التحقق من وجهة التحويل قبل الصرف.");
+    } catch {
+      setError("لم نتأكد من استلام الطلب. استخدم نفس المحاولة للاستعادة دون إنشاء طلب آخر.");
+    } finally { setBusy(false); }
+  };
   const storeNames = Object.fromEntries((state?.stores ?? []).map((store) => [store.storeId, store.storeName]));
   const selectedOwners = [...new Set((selectedSummary?.stores ?? []).map((store) => store.partnerActorId))];
   const singleWallet = selectedOwners.length === 1 && (!legacyKey?.walletOwnerActorId || selectedOwners[0] === legacyKey.walletOwnerActorId);
@@ -182,6 +221,7 @@ export function PartnerPayoutCard() {
   });
   const requestPreviewMinor = mode === "FULL_AVAILABLE" ? selectedSummary?.eligibleAvailableMinor ?? 0 : specifiedTotalMinor;
   const requestReady = Boolean(selectedSummary && singleWallet && selectedSummary.eligibleAvailableMinor > 0 && selectedSummary.attributionComplete && (mode === "FULL_AVAILABLE" || specifiedAmountsReady));
+  const destinationReady = Boolean(selectedSummary && selectedSummary.stores.filter((store) => selected.includes(store.storeId)).every((store) => store.payoutReady));
   return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="طلب صرف الشريك">
     <Text style={styles.title}>طلب صرف مستحقات المتاجر</Text>
     <Text style={styles.muted}>هذه المساحة تستخدم صلاحية طلب الصرف لكل متجر. قراءة التقارير المالية وتغيير المستلم صلاحيتان مستقلتان.</Text>
@@ -205,9 +245,10 @@ export function PartnerPayoutCard() {
         }) : null}
         {selectedSummary ? <Text style={styles.metric}>المتاح للمتاجر المختارة: {formatMoney(selectedSummary.eligibleAvailableMinor, selectedSummary.currency)}</Text> : null}
         {selected.length && selectedSummary && !singleWallet ? <Text style={styles.error}>اختر متاجر مالك واحد لكل طلب صرف.</Text> : null}
-        <BthwaniButton busy={busy} disabled={!requestReady} label="مراجعة طلب الصرف" onPress={() => setConfirmRequest(true)} variant="secondary" />
+        <BthwaniButton busy={busy} disabled={!requestReady || intake?.status === "REQUESTED"} label={intake?.status === "REQUESTED" ? "طلب التسوية لدى المالية" : destinationReady ? "مراجعة طلب الصرف" : "طلب تسوية من المالية"} onPress={() => setConfirmRequest(true)} variant="secondary" />
       </>}
     </> : null}
+    {intake ? <Text style={styles.muted}>حالة طلب التسوية: {intake.status === "CANCELLED" ? "ملغى" : intake.payoutStatus === "COMPLETED" ? "مكتمل ومطابق" : intake.status === "CONVERTED" ? "قيد الصرف والمطابقة" : "بانتظار مراجعة المالية"}{intake.payoutReference ? ` · المرجع: ${intake.payoutReference}` : ""}{intake.payoutStatus === "COMPLETED" && intake.payoutUpdatedAt ? ` · ${new Date(intake.payoutUpdatedAt).toLocaleDateString("ar-YE")}` : ""}</Text> : null}
     {lastRequest ? <View style={styles.requestBox}>
       <Text style={styles.lineTitle}>الطلب المعتمد: {formatMoney(lastRequest.totalAmountMinor, lastRequest.currency)}</Text>
       {lastRequest.stores.map((allocation) => <Text key={allocation.storeId} style={styles.muted}>{storeNames[allocation.storeId] ?? "متجر ضمن الطلب"}: {formatMoney(allocation.amountMinor, allocation.currency)} · تم تثبيت مستلم الصرف عند إنشاء الطلب</Text>)}
@@ -221,7 +262,7 @@ export function PartnerPayoutCard() {
       confirmLabel="تأكيد طلب الصرف"
       description={selectedSummary ? `سيُنشأ طلب صرف بمبلغ ${formatMoney(requestPreviewMinor, selectedSummary.currency)} للمتاجر المختارة، وسيُقسم إلى حوالات وفق مستلم الصرف المعتمد لكل متجر.` : ""}
       onCancel={() => setConfirmRequest(false)}
-      onConfirm={() => { setConfirmRequest(false); void request(); }}
+      onConfirm={() => { setConfirmRequest(false); void (destinationReady ? request() : requestIntake()); }}
       title="مراجعة طلب الصرف"
       visible={confirmRequest}
     />
