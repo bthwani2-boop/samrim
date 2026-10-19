@@ -11,8 +11,8 @@ paths:
       summary: Submit a settlement request without requiring a verified transfer destination
       security: [{ serviceBearer: [] }]
       parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationId"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKey"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
       requestBody:
         required: true
         content:
@@ -37,8 +37,8 @@ paths:
       operationId: createPartnerSettlementIntake
       security: [{ serviceBearer: [] }]
       parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationId"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKey"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
       requestBody:
         required: true
         content:
