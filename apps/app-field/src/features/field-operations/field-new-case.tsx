@@ -166,8 +166,6 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
     normalizeYemenPhoneE164(input.contactPhoneE164) !== savedDraft.contactPhoneE164
   ));
   const walletChanged = Boolean(savedDraft && input.walletProviderKey !== (savedDraft.walletProviderKey ?? ""));
-  const hoursSignature = (hours: typeof enteredHours) =>
-    hours.map((item) => [item.dayOfWeek, item.opensAt, item.closesAt, item.closesNextDay].join(":")).sort().join("|");
   const pendingReadiness: Record<(typeof joiningReadiness)[number]["key"], boolean> = {
     basic: Boolean(stepComplete[0]),
     city: Boolean(input.serviceCityId),
@@ -187,7 +185,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       address: input.firstStoreAddress.trim() !== (savedDraft?.firstStoreAddress ?? "").trim(),
       location: Math.abs((selectedStoreOrigin?.latitude ?? 0) - (savedDraft?.firstStoreLatitude ?? 0)) > 0.000001 ||
         Math.abs((selectedStoreOrigin?.longitude ?? 0) - (savedDraft?.firstStoreLongitude ?? 0)) > 0.000001,
-      fulfillment: [...input.firstStoreFulfillmentModes].sort().join("|") !== [...(savedDraft?.firstStoreFulfillmentModes ?? [])].sort().join("|"),
+      fulfillment: [...input.firstStoreFulfillmentModes].sort((a, b) => a.localeCompare(b)).join("|") !== [...(savedDraft?.firstStoreFulfillmentModes ?? [])].sort((a, b) => a.localeCompare(b)).join("|"),
       proofNumber: proofDetailsDirty,
     })[key];
     const confirmed = saved && !changed;

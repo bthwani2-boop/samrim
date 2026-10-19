@@ -22,7 +22,7 @@ export function storeAccessPermissionsMutationIdentity(
   expectedVersion: number,
   next: ReadonlyArray<StoreAccessPermission>,
 ): string {
-  return JSON.stringify([storeID, grantID, expectedVersion, [...next].sort()]);
+  return JSON.stringify([storeID, grantID, expectedVersion, [...next].sort((a, b) => a.localeCompare(b))]);
 }
 
 export function storeAccessPermissionsReadbackConfirmed(
@@ -35,5 +35,5 @@ export function storeAccessPermissionsReadbackConfirmed(
     canonical.delegateActorId === previous.delegateActorId &&
     canonical.version > previous.version &&
     next.length > 0 &&
-    [...canonical.permissions].sort().join("|") === [...next].sort().join("|"));
+    [...canonical.permissions].sort((a, b) => a.localeCompare(b)).join("|") === [...next].sort((a, b) => a.localeCompare(b)).join("|"));
 }
