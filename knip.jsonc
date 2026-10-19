@@ -5,44 +5,56 @@
       "entry": [
         "tools/go/format-check.mjs",
         "tools/security/verify-secrets.mjs",
-        "tests/runtime/mailpit-challenge.mjs",
-        "tests/runtime/runtime-proof/canonical-dsh-migration-history.mjs",
-        "tests/runtime/runtime-proof/challenge-source.mjs",
-        "tests/runtime/runtime-proof/trusted-executables.mjs",
-        "tests/runtime/runtime-proof/trusted-executables.d.mts",
-        "tests/runtime/verify-dsh-baseline.mjs",
-        "tests/runtime/verify-dsh-location-runtime.mjs",
-        "tests/runtime/verify-dsh-runtime-core.mjs",
-        "tests/runtime/verify-identity-migrations.mjs",
-        "tests/runtime/verify-identity-runtime.mjs",
         "tools/mobile/export-mobile-smoke.mjs",
         "tools/mobile/hash-mobile-secret-input.mjs",
-        "tools/mobile/test-mobile-app.mjs"
+        "tools/dev/trusted-executables.mjs",
+        "tools/dev/trusted-executables.d.mts"
       ]
     },
     "apps/app-captain": {
-      "entry": ["index.js", "app/**/*.ts", "app/**/*.tsx", "app.config.ts"]
+      "entry": [
+        "index.js",
+        "app/**/*.ts",
+        "app/**/*.tsx",
+        "app.config.ts"
+      ]
     },
     "apps/app-client": {
-      "entry": ["index.js", "app/**/*.ts", "app/**/*.tsx", "app.config.ts"]
+      "entry": [
+        "index.js",
+        "app/**/*.ts",
+        "app/**/*.tsx",
+        "app.config.ts"
+      ]
     },
     "apps/app-field": {
-      "entry": ["index.js", "app/**/*.ts", "app/**/*.tsx", "app.config.ts"]
+      "entry": [
+        "index.js",
+        "app/**/*.ts",
+        "app/**/*.tsx",
+        "app.config.ts"
+      ]
     },
     "apps/app-partner": {
-      "entry": ["index.js", "app/**/*.ts", "app/**/*.tsx", "app.config.ts"]
+      "entry": [
+        "index.js",
+        "app/**/*.ts",
+        "app/**/*.tsx",
+        "app.config.ts"
+      ]
     },
     "apps/control-panel": {
       "entry": [
         "hash-secret-input.mjs",
-        "app/**/route.ts",
-        "playwright.global-setup.ts",
-        "tests/**/*.spec.ts"
-      ],
-      "playwright": false
+        "app/**/route.ts"
+      ]
     },
     "packages/design-system": {
-      "entry": ["src/index.ts", "src/native/index.tsx", "tools/verify-theme-authority.mjs"]
+      "entry": [
+        "src/index.ts",
+        "src/native/index.tsx",
+        "tools/verify-theme-authority.mjs"
+      ]
     }
   },
   "ignore": [
@@ -50,13 +62,11 @@
     "apps/*/fingerprint.config.js",
     "services/dsh/tools/generate-types.mjs",
     "services/identity/tools/generate-types.mjs",
-    "services/identity/tests/contract-guard.test.mjs",
     "tools/mobile/define-samrim-expo-app.d.cts"
   ],
   "ignoreBinaries": [
     "build",
     "go",
-    "playwright",
     "expo",
     "gofmt",
     "pwsh",

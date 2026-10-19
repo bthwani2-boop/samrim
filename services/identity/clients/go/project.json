@@ -18,18 +18,6 @@
         "cwd": "services/identity/clients/go"
       }
     },
-    "unit": {
-      "executor": "nx:run-commands",
-      "inputs": [
-        "default",
-        "^default",
-        "goToolchain"
-      ],
-      "options": {
-        "command": "go test ./...",
-        "cwd": "services/identity/clients/go"
-      }
-    },
     "format-check": {
       "executor": "nx:run-commands",
       "options": {

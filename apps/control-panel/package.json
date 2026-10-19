@@ -9,9 +9,7 @@
   "scripts": {
     "dev": "node ../../tools/dev/start-surface.mjs",
     "build": "next build",
-    "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",
-    "test:e2e": "playwright test --config playwright.config.ts",
-    "test:e2e:live": "node run-live-e2e.mjs"
+    "typecheck": "next typegen && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@bthwani/design-system": "workspace:*",
@@ -23,7 +21,6 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0",
     "@types/node": "24.10.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",

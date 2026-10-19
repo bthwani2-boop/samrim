@@ -37,7 +37,7 @@ function runnerGoCandidates(name) {
   const toolCache = process.env.RUNNER_TOOL_CACHE;
   if (!path.isAbsolute(toolCache)) return [];
 
-  const repoRoot = path.resolve(import.meta.dirname, "../../..");
+  const repoRoot = path.resolve(import.meta.dirname, "../..");
   const workspace = fs.readFileSync(path.join(repoRoot, "go.work"), "utf8");
   const version = /^go\s+(\d+\.\d+(?:\.\d+)?)\s*$/m.exec(workspace)?.[1];
   if (!version) throw new Error("trusted Go version is missing from go.work");

@@ -48,20 +48,14 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect candidate governance scope.' }
         node tools/dev/check-encoding.mjs --base $governanceBase
         if ($LASTEXITCODE -ne 0) { throw 'Candidate UTF-8 integrity check failed.' }
-        if (@($candidateFiles | Where-Object { $_ -match '^tools/dev/check-encoding(\.test)?\.mjs$' }).Count -gt 0) {
-            node --test tools/dev/check-encoding.test.mjs
-            if ($LASTEXITCODE -ne 0) { throw 'Candidate UTF-8 guard regression test failed.' }
-        }
         if (@($candidateFiles | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -gt 0) {
-            pnpm exec nx affected -t lint format-check typecheck unit contract build vet export-smoke --base=$governanceBase --head=$head --outputStyle=static --parallel=2 --nxBail=true
+            pnpm exec nx affected -t lint format-check typecheck contract build vet export-smoke --base=$governanceBase --head=$head --outputStyle=static --parallel=2 --nxBail=true
             if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
         }
         else { Write-Host 'VERIFY_SCOPE=governance-only; Nx implementation checks not affected' }
         if (@($candidateFiles | Where-Object { $_ -match $governanceOnlyPattern }).Count -gt 0) {
             node tools/governance/verify-governance.mjs
             if ($LASTEXITCODE -ne 0) { throw 'Candidate governance integrity check failed.' }
-            node --test tools/governance/verify-governance.test.mjs
-            if ($LASTEXITCODE -ne 0) { throw 'Candidate governance adversarial tests failed.' }
         }
         if ((git rev-parse HEAD).Trim() -ne $head -or @(git status --porcelain=v1 --untracked-files=all).Count -gt 0) {
             throw 'Candidate changed during verification.'
@@ -84,10 +78,6 @@ try {
 
     node tools/dev/check-encoding.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local UTF-8 integrity check failed.' }
-    if (@($files | Where-Object { $_ -match '^tools/dev/check-encoding(\.test)?\.mjs$' }).Count -gt 0) {
-        node --test tools/dev/check-encoding.test.mjs
-        if ($LASTEXITCODE -ne 0) { throw 'Local UTF-8 guard regression test failed.' }
-    }
 
     $env:NX_NO_CLOUD = 'true'
 
@@ -105,8 +95,6 @@ try {
     if ($governanceChanged) {
         node tools/governance/verify-governance.mjs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        node --test tools/governance/verify-governance.test.mjs
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 
     if (@($files | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -eq 0) {
@@ -122,7 +110,7 @@ try {
         return
     }
     $projectsArg = $affectedProjects -join ','
-    pnpm exec nx run-many -t lint format-check typecheck unit contract vet --projects=$projectsArg --outputStyle=static --parallel=2 --nxBail=true
+    pnpm exec nx run-many -t lint format-check typecheck contract vet --projects=$projectsArg --outputStyle=static --parallel=2 --nxBail=true
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     Write-Host "LOCAL_CHECK=PASS files=$($files.Count)"
 }

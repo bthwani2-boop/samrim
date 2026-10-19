@@ -8,6 +8,6 @@
 - `powershell/` — repository-wide PowerShell syntax check.
 - `security/` — repository secret-safety scan.
 
-Owner-specific tooling belongs with its app, service or package. Cross-owner runtime/integration proofs live under `tests/runtime/`.
+Owner-specific tooling belongs with its app, service or package. Shared trusted executable resolution for contract generation lives under `tools/dev/`.
 
 Daily local commands are defined by the live root/app `package.json` files. Do not add a wrapper when a standard command or existing owner already solves the problem.
