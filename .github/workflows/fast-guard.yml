@@ -130,14 +130,27 @@ jobs:
         if: steps.changed.outputs.node == 'true'
         run: pnpm install --frozen-lockfile
 
-      - name: Protect checkout, order isolation, and Captain handoff
+      - name: Protect checkout, finance, access, and user-facing handoffs
         if: steps.changed.outputs.node == 'true'
         run: >-
           node --test
-          apps/app-client/tests/cart-checkout-single-flight.test.mjs
-          apps/app-client/src/features/orders/order-session-scope.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-no-live-tracking.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-presence-policy.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-session-scope.test.mjs
           apps/app-captain/src/features/captain-operations/captain-task-eligibility.test.mjs
+          apps/app-client/src/features/location-core/address-pagination.test.mjs
+          apps/app-client/src/features/orders/order-session-scope.test.mjs
+          apps/app-client/tests/cart-checkout-single-flight.test.mjs
+          apps/app-client/tests/discovery-click-attribution.test.mjs
+          apps/app-client/tests/multi-store-quote-consent.test.mjs
+          apps/app-client/tests/store-discovery-marketing-slots.test.mjs
+          apps/app-client/tests/store-promotion-handoff.test.mjs
           apps/app-partner/src/features/order-management/order-page-records.test.mjs
+          apps/control-panel/src/features/notifications/notification-operation-link.test.mjs
+          apps/control-panel/src/features/notifications/notification-readback.test.mjs
+          apps/control-panel/src/features/operations/operational-age.test.mjs
+          apps/control-panel/src/server/field/scoped-page.test.mjs
+          apps/control-panel/tests/marketing-budget-route.test.mjs
 
       - name: Lint and typecheck affected projects
         if: steps.changed.outputs.node == 'true'
