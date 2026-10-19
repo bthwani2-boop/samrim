@@ -1,0 +1,106 @@
+name: Fast Guard
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-guard-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: fast-guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PUSH_BEFORE_SHA: ${{ github.event.before }}
+      NX_NO_CLOUD: "true"
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scope changed files and check patch integrity
+        id: changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          base="${PR_BASE_SHA:-${PUSH_BEFORE_SHA:-}}"
+          if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            base="$(git rev-parse HEAD^)"
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          git diff --check "$base" "$CANDIDATE_SHA"
+          git diff --name-only "$base" "$CANDIDATE_SHA" > "$RUNNER_TEMP/changed-files"
+          cat "$RUNNER_TEMP/changed-files"
+          changed() { grep -Eq "$1" "$RUNNER_TEMP/changed-files"; }
+          if changed '^(services/dsh/backend/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'dsh=true' >> "$GITHUB_OUTPUT"; fi
+          if changed '^(services/wlt/backend/|go\.work(\.sum)?$)'; then echo 'wlt=true' >> "$GITHUB_OUTPUT"; fi
+          if changed '^(services/identity/backend/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'identity=true' >> "$GITHUB_OUTPUT"; fi
+          if changed '^(apps/|packages/|services/(dsh|identity)/((clients|tools)/|project\.json$)|services/wlt/((clients|tools)/|project\.json$)|tools/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|nx\.json$|tsconfig\.base\.json$|biome\.json$)'; then echo 'node=true' >> "$GITHUB_OUTPUT"; fi
+
+      - name: Reject committed secrets
+        run: node tools/security/verify-secrets.mjs
+
+      - name: Set up Go only for affected services
+        if: steps.changed.outputs.dsh == 'true' || steps.changed.outputs.wlt == 'true' || steps.changed.outputs.identity == 'true'
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: '1.27.1'
+          cache: true
+          cache-dependency-path: |
+            services/dsh/backend/go.sum
+            services/wlt/backend/go.sum
+            services/identity/backend/go.sum
+
+      - name: Check DSH checkout and financial handoffs
+        if: steps.changed.outputs.dsh == 'true'
+        working-directory: services/dsh/backend
+        run: go test ./... -count=1
+
+      - name: Check wallet invariants and payment replay
+        if: steps.changed.outputs.wlt == 'true'
+        working-directory: services/wlt/backend
+        run: go test ./... -count=1
+
+      - name: Check Identity sessions and authorization
+        if: steps.changed.outputs.identity == 'true'
+        working-directory: services/identity/backend
+        run: go test ./... -count=1
+
+      - name: Set up pnpm
+        if: steps.changed.outputs.node == 'true'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          version: 10.34.0
+          run_install: false
+
+      - name: Set up Node
+        if: steps.changed.outputs.node == 'true'
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '24.17.0'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install workspace only for affected JS or TS code
+        if: steps.changed.outputs.node == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint and typecheck affected projects
+        if: steps.changed.outputs.node == 'true'
+        shell: bash
+        run: pnpm exec nx affected -t lint,typecheck,contract --base="${{ steps.changed.outputs.base }}" --head="$CANDIDATE_SHA" --parallel=3 --nxBail=true --outputStyle=static
