@@ -1393,6 +1393,23 @@ const checkout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: c
 if (checkout.status !== 201 || checkout.body?.order?.state !== "CREATED" || checkout.body.order.version !== 1 || checkout.body.order.fulfillmentMode !== "BTHWANI_CAPTAIN" || checkout.body.order.totalAmountMinor !== mainOrderTotal || checkout.body.order.paymentMethod !== "CASH_ON_DELIVERY" || checkout.body.order.paymentState !== "REQUIRES_COLLECTION" || typeof checkout.body.order.paymentIntentId !== "string" || checkout.body.order.lines?.[0]?.requestedQuantityBaseUnits !== 2 || checkout.body.order.lines?.[0]?.unitPriceMinor !== 2100 || checkout.body.order.lines?.[0]?.modifierAmountMinor !== 0 || checkout.body.order.lines?.[0]?.modifierSnapshots?.length !== 0 || checkout.body.order.lines?.[0]?.attributeSnapshots?.length !== 3 || !checkout.body.order.lines?.[0]?.attributeSnapshots?.some((snapshot) => snapshot.attributeId === enumAttributeID && snapshot.valueKind === "ENUM" && snapshot.enumValue === "Dark")) fail("cart checkout did not create an immutable Order/payment snapshot", JSON.stringify(checkout));
 const checkoutLineID = String(checkout.body.order.lines?.[0]?.id || "");
 const orderID = String(checkout.body.order.id);
+// The normal checkout must be visible to its own Partner immediately, before
+// any operator endpoint, manual dispatch, or Partner state transition is called.
+const partnerInitialOrder = await request(dshBase, "GET", `/dsh/stores/${first.storeID}/orders/${encodeURIComponent(orderID)}`, { token: first.accessToken });
+const partnerInitialOrders = await request(dshBase, "GET", `/dsh/stores/${first.storeID}/orders?limit=20`, { token: first.accessToken });
+const partnerInitialAppQueue = await request(dshBase, "GET", `/dsh/partner/orders?storeIds=${encodeURIComponent(first.storeID)}&state=CREATED&limit=50`, { token: first.accessToken });
+expectSQL(`SELECT count(*) FROM dsh.commerce_orders WHERE id='${sqlLiteral(orderID)}' AND cart_id='${sqlLiteral(cartID)}' AND store_id='${sqlLiteral(first.storeID)}' AND client_actor_id='${sqlLiteral(client.actorID)}' AND state='CREATED' AND version=1`, "1", "checkout must persist exactly one initial CREATED Order for this client and Partner");
+expectSQL(`SELECT count(*) FROM dsh.commerce_order_audit WHERE order_id='${sqlLiteral(orderID)}' AND event_type='order_created' AND acting_actor_id='${sqlLiteral(client.actorID)}' AND to_state='CREATED' AND result_version=1`, "1", "normal checkout must have exactly one client-originated creation event, without operator action");
+if (partnerInitialOrder.status !== 200 || partnerInitialOrder.body?.order?.id !== orderID ||
+  partnerInitialOrder.body.order.storeId !== first.storeID || partnerInitialOrder.body.order.state !== "CREATED" ||
+  partnerInitialOrder.body.order.version !== 1 || partnerInitialOrder.body.order.paymentState !== "REQUIRES_COLLECTION" ||
+  partnerInitialOrders.status !== 200 ||
+  partnerInitialOrders.body?.orders?.filter((item) => item.id === orderID && item.state === "CREATED").length !== 1 ||
+  partnerInitialAppQueue.status !== 200 ||
+  partnerInitialAppQueue.body?.orders?.filter((item) => item.id === orderID && item.state === "CREATED").length !== 1) {
+  fail("normal checkout did not reach the Partner's actual app queue immediately as one CREATED Order", JSON.stringify({ partnerInitialOrder, partnerInitialOrders, partnerInitialAppQueue }));
+}
+console.log("DSH_CHECKOUT_PARTNER_INITIAL_VISIBILITY=PASS");
 
 const promotionCode = `SAVE${suffix.replace(/[^A-Za-z0-9]/g, "").slice(-12).toUpperCase()}`;
 const promotionCreate = await request(dshBase, "POST", "/dsh/operator/promotions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-promotion-create-${suffix}`), body: { id: `promotion-${suffix}`, code: promotionCode, nameAr: `خصم تجريبي ${suffix}`, descriptionAr: "خصم على الطلب التجريبي", kind: "FIXED", valueMinor: 300, fundingSource: "BTHWANI", storeId: first.storeID, serviceCityId: cityA, startsAt: new Date(Date.now() - 60_000).toISOString() } });
@@ -1715,6 +1732,9 @@ expectSQL(`SELECT count(*) FROM dsh.commerce_order_line_modifier_snapshots WHERE
 expectSQL(`SELECT count(*) FROM dsh.commerce_order_line_attribute_snapshots WHERE order_line_id='${sqlLiteral(checkoutLineID)}'`, "3", "Order typed Attribute snapshot readback is incomplete");
 const checkoutReplay = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(checkoutKey, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", expectedTotalAmountMinor: checkoutQuote.body.quote.totalAmountMinor } });
 if (checkoutReplay.status !== 200 || checkoutReplay.body?.idempotentReplay !== true || checkoutReplay.body.order.id !== orderID || checkoutReplay.body.order.version !== 1) fail("checkout idempotency replay failed", JSON.stringify(checkoutReplay));
+expectSQL(`SELECT count(*) FROM dsh.commerce_orders WHERE cart_id='${sqlLiteral(cartID)}' AND store_id='${sqlLiteral(first.storeID)}'`, "1", "replayed checkout produced a duplicate Order for the same cart");
+expectSQL(`SELECT count(*) FROM dsh.commerce_order_audit WHERE order_id='${sqlLiteral(orderID)}' AND event_type='order_created'`, "1", "replayed checkout produced a duplicate creation event");
+console.log("DSH_CHECKOUT_EXACTLY_ONCE=PASS");
 const closedCart = await request(dshBase, "GET", `/dsh/cart?storeId=${encodeURIComponent(first.storeID)}`, { token: client.accessToken });
 if (closedCart.status !== 404) fail("checked-out cart remained an open cart", JSON.stringify(closedCart));
 const rejectedCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`payment-reject-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
