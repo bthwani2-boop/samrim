@@ -68,6 +68,24 @@ export function paymentStateLabel(state: PaymentState, method?: PaymentMethod, f
   return "الدفع غير مرتبط";
 }
 
+export function orderPaymentDisclosure(order: Pick<Order, "state" | "paymentState" | "paymentMethod" | "fulfillmentMode" | "cashAmountMinor" | "currency">): Readonly<{ amount: string; status: string }> {
+  if (order.state === "CANCELLED" || order.state === "REJECTED") {
+    if (order.paymentState === "CANCELLED") {
+      return { amount: "لا يوجد نقد مطلوب عند استلام هذا الطلب المغلق.", status: "أُلغي التحصيل" };
+    }
+    if (order.paymentState === "COLLECTED") {
+      return { amount: "تم تسجيل دفع لهذا الطلب سابقًا.", status: "مراجعة أي استرداد مطلوبة؛ لا يعني إغلاق الطلب اكتمال الاسترداد." };
+    }
+    return { amount: "الطلب مغلق؛ لا يوجد تسليم جارٍ.", status: "حالة التحصيل غير مؤكدة بعد إغلاق الطلب. حدّث الحالة أو تواصل مع الدعم للمراجعة." };
+  }
+  return {
+    amount: order.cashAmountMinor === 0
+      ? "مغطى بالكامل من رصيد المحفظة"
+      : `النقد المتبقي عند الاستلام: ${formatMoney(order.cashAmountMinor, order.currency)}`,
+    status: `${paymentMethodLabel(order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)} · ${paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}`,
+  };
+}
+
 export function formatOrderDate(value: string): string {
   return new Intl.DateTimeFormat(arabicTextLatinNumbersLocale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }

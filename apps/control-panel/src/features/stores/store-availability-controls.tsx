@@ -31,7 +31,7 @@ function compatible(a:StoreOperationalAvailabilityRequest,b:StoreOperationalAvai
     (a.pauseReason??null)===(b.pauseReason??null) &&
     (a.preparationMinutes??null)===(b.preparationMinutes??null) &&
     JSON.stringify(ordered(a.weeklySchedule))===JSON.stringify(ordered(b.weeklySchedule)) &&
-    [...a.unavailableFulfillmentModes].sort().join(",")===[...b.unavailableFulfillmentModes].sort().join(",");
+    [...a.unavailableFulfillmentModes].sort((a, b) => a.localeCompare(b)).join(",")===[...b.unavailableFulfillmentModes].sort((a, b) => a.localeCompare(b)).join(",");
 }
 export function StoreAvailabilityControls({storeId,enabledModes}:Readonly<{storeId:string;enabledModes:ReadonlyArray<StoreFulfillmentMode>}>) {
   const [source,setSource] = useState<PartnerStoreOperationalAvailabilityResponse|null>(null);

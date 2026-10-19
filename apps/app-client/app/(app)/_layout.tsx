@@ -20,7 +20,8 @@ export default function ClientAppLayout() {
     <Tabs screenOptions={tabOptions}>
       <Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarAccessibilityLabel: "الرئيسية" }} />
       <Tabs.Screen name="orders" options={{ title: "الطلبات", tabBarAccessibilityLabel: "الطلبات" }} />
-      <Tabs.Screen name="wallet" options={{ title: "المحفظة", tabBarAccessibilityLabel: "المحفظة" }} />
+      <Tabs.Screen name="subscriptions" options={{ title: "الاشتراكات", tabBarAccessibilityLabel: "الاشتراكات" }} />
+      <Tabs.Screen name="wallet" options={{ href: null }} />
       <Tabs.Screen name="wallet-cash-in" options={{ href: null, headerShown: false, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "الحساب" }} />
       <Tabs.Screen name="addresses" options={{ href: null }} />

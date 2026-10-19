@@ -9,6 +9,7 @@ export type StoreAccessInvitationInboxProps = Readonly<{
   cryptoRandomUUID: () => string;
   getAccessToken: () => Promise<string>;
   showTitle?: boolean;
+  hideWhenEmpty?: boolean;
 }>;
 
 function grantStateLabel(state: StoreAccessGrant["state"]): string {
@@ -34,7 +35,7 @@ const permissionLabels: Readonly<Record<string, string>> = {
   fulfillment: "التوصيل والاستلام",
 };
 
-export function StoreAccessInvitationInbox({ baseURL, cryptoRandomUUID, getAccessToken, showTitle = true }: StoreAccessInvitationInboxProps) {
+export function StoreAccessInvitationInbox({ baseURL, cryptoRandomUUID, getAccessToken, showTitle = true, hideWhenEmpty = false }: StoreAccessInvitationInboxProps) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [items, setItems] = useState<ReadonlyArray<StoreAccessGrant>>([]);
@@ -88,6 +89,8 @@ export function StoreAccessInvitationInbox({ baseURL, cryptoRandomUUID, getAcces
       setBusyGrantID("");
     }
   }
+
+  if (hideWhenEmpty && (loading || (!error && items.length === 0))) return null;
 
   return <View style={styles.container}>
     {showTitle ? <BthwaniSectionHeader title="دعوات الوصول للمتاجر" subtitle="اقبل الدعوة أولًا؛ تفعيل صلاحيات المتجر يحتاج جلسة شريك مستقلة." /> : <Text style={styles.muted}>اقبل الدعوة أولًا؛ تفعيل صلاحيات المتجر يحتاج جلسة شريك مستقلة.</Text>}

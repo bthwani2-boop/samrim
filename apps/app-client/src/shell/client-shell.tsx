@@ -93,7 +93,7 @@ export function ClientScrollScreen({ children }: PropsWithChildren) {
 
 export function createClientTabOptions(theme: ReturnType<typeof resolveTheme>) {
   const styles = createStyles(theme);
-  const icons = { home: "home", orders: "orders", wallet: "wallet", account: "account" } as const;
+  const icons = { home: "home", orders: "orders", subscriptions: "gifts", account: "account" } as const;
   return ({ route }: { route: { name: string } }) => ({
     headerShown: route.name !== "home",
     header: ({ route: headerRoute, navigation }: { route: { params?: unknown }; navigation: unknown }) => {

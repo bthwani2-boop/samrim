@@ -15,8 +15,8 @@ export function storeInvitationReadbackConfirmed(
     canonical.version < submitted.version) return false;
 
   if (!["pending_acceptance", "pending_role_admission", "pending_partner_activation", "active"].includes(canonical.state)) return false;
-  const expected = [...requestedPermissions].sort().join("|");
+  const expected = [...requestedPermissions].sort((a, b) => a.localeCompare(b)).join("|");
   return expected.length > 0 &&
-    [...submitted.permissions].sort().join("|") === expected &&
-    [...canonical.permissions].sort().join("|") === expected;
+    [...submitted.permissions].sort((a, b) => a.localeCompare(b)).join("|") === expected &&
+    [...canonical.permissions].sort((a, b) => a.localeCompare(b)).join("|") === expected;
 }

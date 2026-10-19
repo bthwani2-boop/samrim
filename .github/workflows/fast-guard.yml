@@ -51,14 +51,14 @@ jobs:
           if changed '^(services/dsh/backend/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'dsh=true' >> "$GITHUB_OUTPUT"; fi
           if changed '^(services/wlt/backend/|go\.work(\.sum)?$)'; then echo 'wlt=true' >> "$GITHUB_OUTPUT"; fi
           if changed '^(services/identity/backend/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'identity=true' >> "$GITHUB_OUTPUT"; fi
-          if changed '^(services/(dsh|wlt)/backend/.*(payment|financial|wallet|order|checkout|settlement|promotion|payout|compensation|postgres)|services/(dsh|wlt)/database/)'; then echo 'finance=true' >> "$GITHUB_OUTPUT"; fi
+          if changed '^(\.github/workflows/fast-guard\.yml$|services/(dsh|wlt)/backend/.*(captain|dispatch|assignment|delivery|payment|financial|wallet|order|checkout|settlement|promotion|payout|compensation|postgres)|services/(dsh|wlt)/database/)'; then echo 'finance=true' >> "$GITHUB_OUTPUT"; fi
           if changed '^(apps/|packages/|services/(dsh|identity)/((clients|tools)/|project\.json$)|services/wlt/((clients|tools)/|project\.json$)|tools/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|nx\.json$|tsconfig\.base\.json$|biome\.json$)'; then echo 'node=true' >> "$GITHUB_OUTPUT"; fi
 
       - name: Reject committed secrets
         run: node tools/security/verify-secrets.mjs
 
       - name: Set up Go only for affected services
-        if: steps.changed.outputs.dsh == 'true' || steps.changed.outputs.wlt == 'true' || steps.changed.outputs.identity == 'true' || steps.changed.outputs.node == 'true'
+        if: steps.changed.outputs.dsh == 'true' || steps.changed.outputs.wlt == 'true' || steps.changed.outputs.identity == 'true' || steps.changed.outputs.node == 'true' || steps.changed.outputs.finance == 'true'
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version: '1.27.1'
@@ -109,7 +109,23 @@ jobs:
           unset WLT_TEST_DATABASE_URL
           export BTHWANI_EXPECTED_DATABASE_NAME=dsh_proof
           export DSH_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_proof?sslmode=disable"
-          (cd services/dsh/backend && go test ./internal/storage/postgres -run TestPartnerFinanceAndPayoutStoreAuthorityBoundary -count=1 -timeout 7m)
+          # DSH migrations are applied only inside child databases created by
+          # the existing integration tests; never touch the persistent local DB.
+          export BTHWANI_ENV=test
+          export BTHWANI_FINANCIAL_PROOF_ISOLATED=1
+          export DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL="$DSH_DATABASE_URL"
+          (cd services/dsh/backend && go test ./internal/storage/postgres -run '^(TestPartnerFinanceAndPayoutStoreAuthorityBoundary|TestCaptainParallelDispatchThreeOnlyOneWins|TestFinancialHandoffUnknownOutcomeAndConcurrentWorkers|TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay)$' -count=1 -timeout 9m)
+          unset DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL
+          # Existing end-to-end adapter proof needs two pristine databases and
+          # the real WLT HTTP handler. Never point it at the durable local world.
+          docker exec "$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "CREATE DATABASE wlt_a04_realfunding;"
+          docker exec "$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "CREATE DATABASE dsh_a04_realfunding;"
+          export BTHWANI_ENV=test
+          export BTHWANI_FINANCIAL_PROOF_ISOLATED=1
+          export BTHWANI_EXPECTED_DATABASE_NAME=wlt_a04_realfunding
+          export WLT_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/wlt_a04_realfunding?sslmode=disable"
+          export DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_a04_realfunding?sslmode=disable"
+          (cd services/wlt/backend && go test ./cmd/api -run '^TestIsolatedDSHToRealWLTStorePickupMixedPayment$' -count=1 -v -timeout 7m)
 
       - name: Set up pnpm
         if: steps.changed.outputs.node == 'true'
@@ -140,12 +156,16 @@ jobs:
           apps/app-captain/src/features/captain-operations/captain-task-eligibility.test.mjs
           apps/app-client/src/features/location-core/address-pagination.test.mjs
           apps/app-client/src/features/orders/order-session-scope.test.mjs
+          apps/app-client/src/features/orders/order-list-filter.test.mjs
           apps/app-client/tests/cart-checkout-single-flight.test.mjs
           apps/app-client/tests/discovery-click-attribution.test.mjs
           apps/app-client/tests/multi-store-quote-consent.test.mjs
           apps/app-client/tests/store-discovery-marketing-slots.test.mjs
           apps/app-client/tests/store-promotion-handoff.test.mjs
+          services/dsh/clients/presentation/order-payment-disclosure.test.mjs
+          services/dsh/clients/cash-in-simulator.test.mjs
           apps/app-partner/src/features/order-management/order-page-records.test.mjs
+          apps/app-partner/src/features/partner-onboarding/store-access-canonical-readback.test.mjs
           apps/control-panel/src/features/notifications/notification-operation-link.test.mjs
           apps/control-panel/src/features/notifications/notification-readback.test.mjs
           apps/control-panel/src/features/operations/operational-age.test.mjs

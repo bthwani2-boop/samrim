@@ -4,12 +4,12 @@ function hoursFingerprint(value: StoreWeeklyWorkingHours | null | undefined): st
   return (value?.intervals ?? [])
     .map(({ dayOfWeek, opensAt, closesAt, closesNextDay }) =>
       `${dayOfWeek}:${opensAt}:${closesAt}:${closesNextDay ? 1 : 0}`)
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
     .join("|");
 }
 
 function modesFingerprint(value: ReadonlyArray<string>): string {
-  return [...value].sort().join("|");
+  return [...value].sort((a, b) => a.localeCompare(b)).join("|");
 }
 
 // Identical corrections for the same case version must use the same idempotency
