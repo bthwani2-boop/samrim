@@ -2807,3 +2807,9 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
     .marketing-entry-choices, .marketing-flow-facts { grid-template-columns: 1fr; }
   }
 }
+
+/* The operator activity map keeps its geometry and legend in the sole presentation owner. */
+.ops-activity-map { position: relative; inline-size: 100%; block-size: 360px; overflow: hidden; border-radius: 12px; }
+.ops-activity-map-canvas { inline-size: 100%; block-size: 100%; }
+.ops-activity-legend-orders { color: #C75A17; }
+.ops-activity-legend-captains { color: #087E7A; }

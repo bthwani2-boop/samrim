@@ -16,27 +16,26 @@ test("operations overlay recent orders and coarse available Captains without lay
     windowEnd: new Date().toISOString(), signalType: "RECENT_ACTIVITY",
     sampleStatus: "AVAILABLE", policyVersion: "RECENT_COARSE_V2",
   } }));
-  await page.route("**/maps.googleapis.com/maps/api/js?**", (route) => route.fulfill({
-    contentType: "text/javascript",
-    body: `
-      window.google={maps:{
-        Map:class {
-          constructor(node){this.root=node}
-          fitBounds(){} setCenter(){}
-        },
-        Circle:class {
-          constructor(options){
-            this.node=document.createElement("span");
-            this.node.setAttribute("data-testid","map-heat-circle");
-            this.node.setAttribute("data-fill",options.fillColor);
-            options.map.root.appendChild(this.node);
-          }
-          setMap(map){if(!map)this.node.remove()}
-        },
-        LatLngBounds:class {extend(){}}
-      }};
-    `,
-  }));
+  // Supply a deterministic browser-side Maps API before React initializes.
+  // No external SDK timing or third-party network request should affect the proof.
+  await page.addInitScript({ content: `
+    window.google={maps:{
+      Map:class {
+        constructor(node){this.root=node}
+        fitBounds(){} setCenter(){}
+      },
+      Circle:class {
+        constructor(options){
+          this.node=document.createElement("span");
+          this.node.setAttribute("data-testid","map-heat-circle");
+          this.node.setAttribute("data-fill",options.fillColor);
+          options.map.root.appendChild(this.node);
+        }
+        setMap(map){if(!map)this.node.remove()}
+      },
+      LatLngBounds:class {extend(){}}
+    }};
+  ` });
   await page.goto("/operations");
   const map = page.getByRole("region", { name: "دوائر الطلبات والكباتن على خريطة واحدة" });
   await expect(map.getByTestId("map-heat-circle")).toHaveCount(2);

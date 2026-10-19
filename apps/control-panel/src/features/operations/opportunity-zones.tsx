@@ -76,8 +76,8 @@ function CircleMap({ cells }: { cells: ReadonlyArray<HeatCell> }) {
   }, [loaded, cells]);
 
   if (!key || mapError) return <p role="status">تعذر تحميل خرائط Google. تحقق من مفتاح الخرائط والصلاحيات.</p>;
-  return <section aria-label="دوائر الطلبات والكباتن على خريطة واحدة" style={{ width: "100%", height: 360, borderRadius: 12, overflow: "hidden", position: "relative" }}>
-    <div ref={node} style={{ width: "100%", height: "100%" }} />
+  return <section aria-label="دوائر الطلبات والكباتن على خريطة واحدة" className="ops-activity-map">
+    <div ref={node} className="ops-activity-map-canvas" />
     {!loaded ? <p role="status">جارٍ تحميل خريطة النشاط…</p> : null}
   </section>;
 }
@@ -120,8 +120,8 @@ export function OpportunityZones() {
   return <section className="ops-page-intro" aria-label="الخريطة الحرارية الآنية للطلبات والكباتن">
     <h2>الخريطة الحرارية الآنية</h2>
     <p>دوائر الطلبات والكباتن المتاحين معًا، خلال آخر 30 دقيقة. تتحدث كل دقيقة دون عرض مواقع الأفراد أو مساراتهم.</p>
-    <p><strong style={{ color: activityColors.ORDERS.strokeColor }}>● الطلبات</strong>{" · "}
-      <strong style={{ color: activityColors.CAPTAINS.strokeColor }}>● الكباتن المتاحون</strong>
+    <p><strong className="ops-activity-legend-orders">● الطلبات</strong>{" · "}
+      <strong className="ops-activity-legend-captains">● الكباتن المتاحون</strong>
       {" · "}الدائرة الأكبر تعني نشاطًا أعلى
     </p>
     {loading && !value ? <p role="status">جارٍ قراءة الخريطة…</p> : null}
