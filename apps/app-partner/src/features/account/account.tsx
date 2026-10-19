@@ -1,5 +1,5 @@
 import { radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { AppearancePicker, BthwaniButton, BthwaniSectionHeader, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { AppearancePicker, BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { logoutIdentity } from "../../bootstrap/identity";
@@ -26,11 +26,9 @@ export default function PartnerAccount() {
 
   return <View style={styles.container} accessibilityLabel="حساب الشريك">
     <Text style={styles.title}>الحساب والإعدادات</Text>
-    <BthwaniSectionHeader title="دعوات الوصول" subtitle="الدعوات الموجهة إلى حسابك من مالكي المتاجر." />
     <PartnerAccessInvitationsCard />
-    <BthwaniSectionHeader title="مظهر التطبيق" subtitle="يُحفظ اختيارك على هذا الجهاز." />
     <BthwaniSurface tone="raised" style={styles.appearancePanel}>
-      <AppearancePicker title="المظهر" helper="فاتح أو داكن أو حسب الجهاز." />
+      <AppearancePicker title="المظهر" helper="" />
     </BthwaniSurface>
     <BthwaniButton busy={busy} disabled={busy} label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} onPress={() => void logout()} variant="secondary" />
     {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}

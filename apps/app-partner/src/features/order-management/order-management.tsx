@@ -6,7 +6,7 @@ import { useLocalSearchParams } from "expo-router";
 
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
 import { mergeOrderPageRecords } from "./order-page-records";
@@ -69,6 +69,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const [error, setError] = useState("");
   const [sidecarError, setSidecarError] = useState("");
   const [filter, setFilter] = useState<QueueFilter>("ACTIVE");
+  const [expandedOrderIds, setExpandedOrderIds] = useState<ReadonlySet<string>>(() => new Set());
   const [pickupCodes, setPickupCodes] = useState<Readonly<Record<string, string>>>({});
   const [adjustmentQuantities, setAdjustmentQuantities] = useState<Readonly<Record<string, string>>>({});
   const [confirmation, setConfirmation] = useState<OrderConfirmation>(null);
@@ -225,9 +226,9 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
 
   return (
     <View style={styles.container} accessibilityLabel="إدارة طلبات المتجر">
-      <Text style={styles.title}>الطلبات</Text>
+      <View style={styles.toolbar}><Text style={styles.title}>الطلبات</Text><BthwaniButton busy={loading || Boolean(busy)} disabled={loading || Boolean(busy)} label="تحديث" onPress={() => void load()} variant="quiet" /></View>
 
-      {!loading && attention ? (
+      {!loading && attention && (attention.newOrders + attention.awaitingDispatch + attention.deliveryRecovery > 0) ? (
         <View style={styles.summaryRow} accessibilityLabel="ملخص طابور الطلبات">
           <View style={styles.summaryCard}><Text style={styles.summaryValue}>{attention.newOrders}</Text><Text style={styles.summaryLabel}>تحتاج إجراء</Text></View>
           <View style={styles.summaryCard}><Text style={styles.summaryValue}>{attention.awaitingDispatch}</Text><Text style={styles.summaryLabel}>بانتظار التسليم</Text></View>
@@ -235,9 +236,9 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
         </View>
       ) : null}
 
-      <View style={styles.filterRow} accessibilityLabel="تصفية طلبات المتجر">
+      <ScrollView horizontal accessibilityLabel="تصفية طلبات المتجر" contentContainerStyle={styles.filterRow} showsHorizontalScrollIndicator={false}>
         {queueFilters.map(({ key, label }) => <BthwaniChip key={key} disabled={loading || Boolean(busy)} label={label} onPress={() => setFilter(key)} selected={filter === key} />)}
-      </View>
+      </ScrollView>
 
       {loading ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة طلبات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الطلبات…</Text></View> : null}
       {sidecarError ? <Text accessibilityRole="alert" style={styles.muted}>{sidecarError}</Text> : null}
@@ -292,11 +293,13 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
           <View key={order.id} style={styles.order}>
             <View style={styles.orderHeader}>
               <View style={styles.orderHeaderCopy}>
-                <Text style={styles.orderTitle}>{storeId ? `طلب بتاريخ ${formatOrderDate(order.createdAt)}` : `${order.storeName} · طلب بتاريخ ${formatOrderDate(order.createdAt)}`}</Text>
-                <Text style={styles.muted}>{order.lines.length} منتج · {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{order.cashAmountMinor === 0 ? "لا يوجد نقد مطلوب؛ المبلغ مغطى من رصيد العميل" : `النقد المطلوب عند الاستلام: ${formatMoney(order.cashAmountMinor, order.currency)}`}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)} · {paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}</Text>
+                <Text style={styles.orderTitle}>{storeId ? `طلب · ${formatOrderDate(order.createdAt)}` : `${order.storeName} · ${formatOrderDate(order.createdAt)}`}</Text>
+                <Text style={styles.muted}>{order.lines.length} منتج · {formatMoney(order.totalAmountMinor, order.currency)}</Text>{expandedOrderIds.has(order.id) ? <><Text style={styles.payment}>{order.cashAmountMinor === 0 ? "لا يوجد نقد مطلوب؛ المبلغ مغطى من رصيد العميل" : `النقد المطلوب عند الاستلام: ${formatMoney(order.cashAmountMinor, order.currency)}`}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)} · {paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}</Text></> : null}
               </View>
               <BthwaniStatusBadge icon={badgeIcon} label={orderStateLabel(order.state)} tone={badgeTone} />
             </View>
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: expandedOrderIds.has(order.id) }} accessibilityLabel={expandedOrderIds.has(order.id) ? "إخفاء تفاصيل الطلب" : "تفاصيل الطلب"} onPress={() => setExpandedOrderIds((current) => { const next = new Set(current); if (next.has(order.id)) next.delete(order.id); else next.add(order.id); return next; })} style={styles.expandButton}><Text style={styles.expandText}>{expandedOrderIds.has(order.id) ? "إخفاء التفاصيل" : "عرض التفاصيل"}</Text></Pressable>
+            {expandedOrderIds.has(order.id) ? <>
             <Text style={styles.muted}>{order.fulfillmentMode === "CUSTOMER_PICKUP" ? "طريقة الاستلام: الاستلام من المتجر" : `العنوان: ${order.addressText}`}</Text>
             {order.fulfillmentMode !== "CUSTOMER_PICKUP" ? <View style={styles.handoff}>
               <Text style={styles.lineTitle}>{order.recipient.mode === "OTHER" ? "مستلم الطلب" : "المستلم: صاحب الطلب"}</Text>
@@ -333,15 +336,16 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
             {canFulfillOrder(order.storeId) && order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "READY_FOR_DISPATCH" ? <View style={styles.handoff} accessibilityLabel="إسناد طلب التوصيل إلى كابتن المتجر"><Text style={styles.lineTitle}>إسناد الطلب إلى كابتن المتجر</Text>{dispatchOffer?.state === "offered" ? <Text style={styles.muted}>أُرسل الطلب إلى {captainChoices.find((captain) => captain.actorId === dispatchOffer.captainActorId)?.label ?? "كابتن المتجر"} وبانتظار قبوله.</Text> : <>{dispatchOffer ? <Text style={styles.muted}>{dispatchOffer.state === "rejected" ? "رفض الكابتن العرض. يمكنك إرساله إلى كابتن آخر." : "انتهت مهلة العرض. يمكنك إرساله إلى كابتن آخر."}</Text> : null}{captainChoices.length ? captainChoices.map((captain) => <BthwaniButton key={captain.actorId} busy={busy === order.id} disabled={actionDisabled} label={`إرسال الطلب إلى ${captain.label}`} onPress={() => void dispatchToStoreCaptain(order, captain.actorId)} variant="secondary" />) : <Text style={styles.muted}>لا يوجد كابتن نشط مرتبط بهذا المتجر. أرسل دعوة للكابتن واطلب منه قبولها في تطبيق الكابتن.</Text>}</>}</View> : null}
             {order.state === "READY_FOR_PICKUP" ? <View style={styles.pickupConfirmation}><TextInput accessibilityLabel="رمز الاستلام الذي قدمه العميل" editable={!actionDisabled} keyboardType="number-pad" maxLength={6} onChangeText={(value) => setPickupCodes((current) => ({ ...current, [order.id]: toAsciiDigits(value).replace(/[^0-9]/g, "").slice(0, 6) }))} placeholder="رمز الاستلام من العميل" placeholderTextColor={theme.colorMuted} style={styles.pickupCodeInput} textAlign="center" value={pickupCodes[order.id] ?? ""} /><BthwaniButton busy={busy === order.id} disabled={actionDisabled || toAsciiDigits(pickupCodes[order.id] ?? "").length !== 6} label="تأكيد استلام العميل" onPress={() => void confirmStorePickup(order)} />{order.fulfillmentMode === "CUSTOMER_PICKUP" && order.paymentMethod === "CASH_AT_STORE" && order.paymentState === "REQUIRES_COLLECTION" ? <BthwaniButton disabled={actionDisabled} label="العميل لم يحضر" onPress={() => markPickupNoShow(order)} variant="danger" /> : null}</View> : null}
             {canFulfillOrder(order.storeId) && order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "DELIVERED" ? <View style={styles.pickupConfirmation}><Text style={styles.lineTitle}>تسوية طلب توصيل المتجر</Text>{settlementContent}</View> : null}
+            </> : null}
             {next ? <View style={styles.actionRow}>{hasOpenAdjustments && (next === "READY_FOR_DISPATCH" || next === "READY_FOR_PICKUP") ? <Text style={styles.error}>لا يمكن تجهيز الطلب للتسليم قبل حسم التعديل والتسوية المالية.</Text> : null}<BthwaniButton busy={busy === order.id} disabled={actionDisabled || (hasOpenAdjustments && (next === "READY_FOR_DISPATCH" || next === "READY_FOR_PICKUP"))} label={nextActionLabel} onPress={() => void transition(order)} style={styles.actionButton} />{next === "PARTNER_ACCEPTED" ? <BthwaniButton disabled={actionDisabled} label="رفض الطلب" onPress={() => void transition(order, "REJECTED")} style={styles.actionButton} variant="danger" /> : null}</View> : null}
-            <OrderConversation orderId={order.id} />
+            {expandedOrderIds.has(order.id) ? <OrderConversation orderId={order.id} /> : null}
           </View>
         );
       })}
 
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {hasMore ? <BthwaniButton busy={loadingMore} disabled={loading || loadingMore || Boolean(busy)} label="تحميل طلبات أكثر" onPress={() => void load({ append: true, cursor })} variant="secondary" /> : null}
-      <BthwaniButton busy={loading || Boolean(busy)} disabled={loading || Boolean(busy)} label="تحديث الطلبات" onPress={() => void load()} variant="secondary" />
+
       <BthwaniConfirmDialog
         busy={Boolean(confirmation && busy === confirmation.order.id)}
         confirmLabel={confirmation?.kind === "pickup_no_show" ? "تأكيد عدم الحضور" : "إرسال للعميل"}
@@ -394,16 +398,19 @@ function attributeSnapshotValue(attribute: Order["lines"][number]["attributeSnap
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[3], marginTop: spacing[4], padding: spacing[3], width: "100%" },
-    title: { ...typography.titleSm, color: theme.color },
+    container: { gap: spacing[3], paddingTop: spacing[3], width: "100%" },
+    toolbar: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+    expandButton: { alignSelf: "flex-start", minHeight: 40, justifyContent: "center", paddingHorizontal: spacing[2] },
+    expandText: { ...typography.label, color: theme.interactiveText },
+    title: { ...typography.titleMd, color: theme.color },
     muted: { ...typography.bodySm, color: theme.colorMuted },
     state: { alignItems: "center", gap: spacing[2], paddingVertical: spacing[2] },
     summaryRow: { flexDirection: "row", gap: spacing[2] },
     summaryCard: { alignItems: "center", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, flex: 1, gap: spacing[1], padding: spacing[2] },
     summaryValue: { ...typography.titleSm, color: theme.actionBackground },
     summaryLabel: { ...typography.label, color: theme.colorMuted, textAlign: "center" },
-    filterRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing[1] },
-    order: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
+    filterRow: { flexDirection: "row", alignItems: "center", gap: spacing[2], paddingBottom: spacing[1] },
+    order: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
     payment: { ...typography.bodySm, color: theme.interactiveText },
     lines: { gap: spacing[2], marginTop: spacing[1] },
     line: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[1], paddingTop: spacing[2] },

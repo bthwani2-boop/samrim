@@ -74,7 +74,7 @@ export function PartnerStore() {
 
   return <View style={styles.container}>
     <View style={styles.headerRow}>
-      <Text style={styles.sectionTitle}>{SECTION_TITLES[section]}</Text>
+      <Text style={styles.value}>{SECTION_TITLES[section]}</Text>
       <BthwaniButton label="المزيد" variant="secondary" onPress={() => router.replace("/more" as Href)} />
     </View>
     {stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={requiredPermissions(section)} /> : null}
