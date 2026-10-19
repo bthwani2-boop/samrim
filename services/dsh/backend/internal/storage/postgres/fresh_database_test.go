@@ -13,7 +13,8 @@ import (
 
 func withFreshDatabase(t *testing.T, rootDB *sql.DB, databaseURL string, test func(context.Context, *sql.DB, []postgres.MigrationRecord, []string), timeout ...time.Duration) {
 	t.Helper()
-	limit := 30 * time.Second
+	// Schema migration takes longer under cold Docker volumes; keep the proof bounded.
+	limit := 3 * time.Minute
 	if len(timeout) > 0 {
 		limit = timeout[0]
 	}
