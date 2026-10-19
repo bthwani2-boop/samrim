@@ -178,7 +178,6 @@ export default function ClientOrders() {
   }
   if (activeTab === "carts" && activeActorID) {
     return <View style={styles.container} accessibilityLabel="سلال العميل">
-      <Text style={styles.title}>سلالي</Text>
       <View style={styles.filterRow} accessibilityLabel="التبديل بين الطلبات والسلال">
         <BthwaniChip label="طلباتي" selected={false} onPress={() => setActiveTab("orders")} />
         <BthwaniChip label="سلالي" selected onPress={() => {}} />
