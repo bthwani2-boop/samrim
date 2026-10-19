@@ -623,6 +623,32 @@ export async function listOperatorPayoutRequests(status: string, context: DshOpe
   return (await requestDshJson<OperatorPayoutListResponse>(dshOperationPaths.listOperatorPayoutRequests.method, `${dshOperationPaths.listOperatorPayoutRequests.path}${query}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
+export type OperatorSettlementIntake = Readonly<{
+  id: string; actorType: "partner" | "captain" | "field"; actorId: string; requestedBy: string;
+  resolvedAmountMinor: number; currency: "YER"; status: "REQUESTED" | "CONVERTED" | "CANCELLED";
+  storeAllocations: readonly Readonly<{ storeId: string; amountMinor: number }>[];
+  payoutReference?: string; payoutStatus?: string; payoutUpdatedAt?: string; createdAt: string;
+}>;
+export async function listOperatorSettlementIntakes(context: DshOperatorReadContext): Promise<Readonly<{ intakes: readonly OperatorSettlementIntake[] }>> {
+  if (!context.operatorActorId.trim()) throw new Error("DSH_SETTLEMENT_INTAKE_OPERATOR_REQUIRED");
+  return (await requestDshJson<Readonly<{ intakes: readonly OperatorSettlementIntake[] }>>("GET", "/dsh/operator/settlement-intakes", undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+export async function convertOperatorSettlementIntake(intakeId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ intake: OperatorSettlementIntake }>> {
+  validateAttributedMutationContext(context);
+  if (!intakeId.trim() || intakeId.length > 128) throw new Error("DSH_SETTLEMENT_INTAKE_ID_REQUIRED");
+  return (await requestDshJson<Readonly<{ intake: OperatorSettlementIntake }>>("POST", "/dsh/operator/settlement-intakes/" + encodeURIComponent(intakeId.trim()) + "/convert", {}, {
+    "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim(),
+  })).payload;
+}
+
+export async function cancelOperatorSettlementIntake(intakeId: string, reason: string, context: JoiningCaseMutationContext): Promise<Readonly<{ intake: OperatorSettlementIntake }>> {
+  validateAttributedMutationContext(context);
+  if (!intakeId.trim() || intakeId.length > 128 || !reason.trim() || reason.trim().length > 512) throw new Error("DSH_SETTLEMENT_INTAKE_CANCEL_INPUT_INVALID");
+  return (await requestDshJson<Readonly<{ intake: OperatorSettlementIntake }>>("POST", "/dsh/operator/settlement-intakes/" + encodeURIComponent(intakeId.trim()) + "/cancel", { reason: reason.trim() }, {
+    "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim(),
+  })).payload;
+}
+
 export type FinanceEvidencePurpose = "TRANSFER_RECEIPT" | "SETTLEMENT_STATEMENT" | "CUSTOMER_WITHDRAWAL_REQUEST";
 export type OperatorFinanceEvidenceResponse = Readonly<{ document: FinanceEvidenceDocument }>;
 export type OperatorSettlementStatement = Readonly<{ id: string; batchId?: string | null; providerKey: string; currency: "YER"; periodStart: string; periodEnd: string; evidenceDocumentId: string; filename: string; artifactSHA256: string; uploadedBy: string; createdAt: string }>;

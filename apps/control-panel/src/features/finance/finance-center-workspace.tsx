@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { PageHeader } from "../../shell/page-header";
+import { SettlementIntakeInbox } from "./settlement-intake-inbox";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 
 const CashCustodyWorkspace = dynamic(() => import("./cash-custody-workspace").then((module) => module.CashCustodyWorkspace));
@@ -259,6 +260,7 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
         : <button type="button" className="button button-secondary" onClick={() => void refresh()} disabled={loading}>
           {loading ? "جارٍ التحديث…" : "تحديث البيانات"}
         </button>} />
+    {!activeWorkflow ? <SettlementIntakeInbox /> : null}
     {activeWorkflow ? <div className="finance-center-active">
       <div className="finance-center-active-header">
         <div><h2>{workflowLabels[activeWorkflow]}</h2><p className="muted">الإجراءات الأصلية والصلاحيات المالية محفوظة داخل المركز نفسه.</p></div>

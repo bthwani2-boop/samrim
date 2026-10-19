@@ -17,6 +17,9 @@ import (
 
 func (s *BeneficiaryFinanceServer) RegisterSettlementGovernance(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/payout-requests", s.listOperatorPayoutRequests)
+	mux.HandleFunc("GET /dsh/operator/settlement-intakes", s.listOperatorSettlementIntakes)
+	mux.HandleFunc("POST /dsh/operator/settlement-intakes/{intakeId}/convert", s.convertOperatorSettlementIntake)
+	mux.HandleFunc("POST /dsh/operator/settlement-intakes/{intakeId}/cancel", s.cancelOperatorSettlementIntake)
 	mux.HandleFunc("GET /dsh/operator/beneficiaries", s.listOperatorBeneficiaryPayoutStates)
 	mux.HandleFunc("GET /dsh/operator/field-finance-roster", s.listOperatorFieldFinanceRoster)
 	mux.HandleFunc("GET /dsh/operator/beneficiaries/{actorType}/{actorId}/financial-statement", s.readOperatorFinancialStatement)

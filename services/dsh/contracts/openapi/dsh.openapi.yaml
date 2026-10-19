@@ -736,6 +736,17 @@ paths:
   /dsh/me/funding-intents/{fundingIntentId}/simulate:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1funding-intents~1{fundingIntentId}~1simulate"
 
+  /dsh/me/settlement-intakes:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1settlement-intakes"
+  /dsh/partner/settlement-intakes:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1partner~1settlement-intakes"
+  /dsh/operator/settlement-intakes:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-intakes"
+  /dsh/operator/settlement-intakes/{intakeId}/convert:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-intakes~1{intakeId}~1convert"
+  /dsh/operator/settlement-intakes/{intakeId}/cancel:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-intakes~1{intakeId}~1cancel"
+
   /dsh/me/payout-intents:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1payout-intents"
 
