@@ -1,8 +1,8 @@
 import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type BeneficiaryWalletResponse, type CashInFundingIntent, createDshMobileClient, formatMoney } from "@bthwani/dsh";
+import { type BeneficiaryWalletResponse, type CashInFundingIntent, type WalletProvider, createDshMobileClient, formatMoney } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { type Href, useRouter } from "expo-router";
+import { type Href, useFocusEffect, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -63,6 +63,25 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [providers, setProviders] = useState<ReadonlyArray<WalletProvider>>([]);
+  const [providersStatus, setProvidersStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  const loadProviders = useCallback(async () => {
+    setProvidersStatus("loading");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const response = await api().listWalletProviders(token);
+      setProviders(response.walletProviders.filter((provider) => provider.active));
+      setProvidersStatus("ready");
+    } catch {
+      setProviders([]);
+      setProvidersStatus("error");
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    if (mode === "wallet") void loadProviders();
+  }, [mode, loadProviders]));
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -163,23 +182,35 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
       <BthwaniSurface accessibilityLabel="رصيد المحفظة" style={styles.walletPanel}>
         <View style={styles.balanceCard}>
           <View style={styles.balanceCopy}>
-            <Text style={styles.balanceLabel}>رصيدك</Text>
+            <Text style={styles.balanceLabel}>الرصيد المتاح</Text>
             {state ? <Text accessibilityLabel={"الرصيد " + formatMoney(state.availableMinor, state.currency)} style={styles.balanceValue}>{formatMoney(state.availableMinor, state.currency)}</Text> : <Text style={styles.balanceValue}>{busy ? "…" : "—"}</Text>}
           </View>
           <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} />
+        </View>
+        <View style={styles.providersSection}>
+          <Text style={styles.providersTitle}>المحافظ المعتمدة</Text>
+          {providersStatus === "loading" ? <ActivityIndicator accessibilityLabel="جارٍ قراءة المحافظ المعتمدة" color={theme.actionBackground} /> : null}
+          {providersStatus === "ready" && providers.length > 0 ? <View style={styles.providersGrid}>
+            {providers.map((provider) => <View key={provider.key} style={styles.providerItem} accessibilityLabel={`مزود محفظة نشط: ${provider.displayNameAr}`}>
+              <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[5]} />
+              <Text style={styles.providerName} numberOfLines={2}>{provider.displayNameAr}</Text>
+            </View>)}
+          </View> : null}
+          {providersStatus === "ready" && providers.length === 0 ? <Text style={styles.muted}>لا توجد محافظ معتمدة حاليًا.</Text> : null}
+          {providersStatus === "error" ? <BthwaniButton label="تعذر قراءة المحافظ — إعادة المحاولة" onPress={() => void loadProviders()} variant="secondary" /> : null}
         </View>
         {recentCompensations.length ? <View style={styles.walletCredits}>
           <Text style={styles.creditHeading}>تعويضات أُضيفت إلى محفظتك</Text>
           {recentCompensations.map((credit) => <View key={credit.id} style={styles.walletCredit}>
             <Text style={styles.creditAmount}>+ {formatMoney(credit.amountMinor, credit.currency)}</Text>
-            <Text style={styles.muted}>تعويض عن الطلب {credit.orderId} — متاح للشراء من أي متجر</Text>
+            <Text style={styles.muted}>تعويض عن الطلب {credit.orderId}</Text>
           </View>)}
         </View> : null}
         {userHasPending ? <Text style={styles.pendingCopy}>طلب شحن قيد التأكيد: {formatMoney(pending!.amountMinor, "YER")}.</Text> : null}
         {busy && !wallet ? <ActivityIndicator accessibilityLabel="جارٍ قراءة الرصيد" color={theme.actionBackground} /> : null}
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         {userCanAddFunds ? <BthwaniButton disabled={busy} label="＋ إضافة رصيد" onPress={onAddFunds ?? (() => router.push("/wallet-cash-in" as Href))} /> : null}
-        {!userCanAddFunds && state ? <Text style={styles.muted}>الشحن غير متاح حاليًا.</Text> : null}
+        {!userCanAddFunds && state ? <Text style={styles.muted}>شحن الرصيد غير متاح حاليًا.</Text> : null}
         {!state && error ? <BthwaniButton disabled={busy} label="تحديث" onPress={() => void load()} variant="secondary" /> : null}
       </BthwaniSurface>
     );
@@ -244,7 +275,12 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    walletPanel: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[4], marginTop: spacing[4], padding: spacing[4] },
+    walletPanel: { borderRadius: radius.xl, gap: spacing[4], marginTop: spacing[3], padding: spacing[3] },
+    providersSection: { gap: spacing[3] },
+    providersTitle: { ...typography.titleSm, color: theme.color, textAlign: "right" },
+    providersGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: spacing[2] },
+    providerItem: { alignItems: "center", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: 64, padding: spacing[3], width: "48%" },
+    providerName: { ...typography.bodyStrong, color: theme.color, flex: 1, textAlign: "right" },
     walletCredits: { gap: spacing[2] },
     walletCredit: { backgroundColor: theme.actionSoft, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] },
     creditHeading: { ...typography.titleSm, color: theme.color, textAlign: "right" },
