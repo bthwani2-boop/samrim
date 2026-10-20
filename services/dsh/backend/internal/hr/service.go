@@ -200,8 +200,21 @@ func scan(row rowScanner) (Employee, error) {
 
 const employeeColumns = "id,full_name_ar,phone_e164,department,job_title,manager_employee_id,start_date,work_location,status,operator_actor_id,version,created_at"
 
+// Immutable SQL statement variants; all input values use database parameters.
+const (
+	employeeSelectByID          = "SELECT " + employeeColumns + " FROM dsh.hr_employees WHERE id=$1"
+	employeeSelectByIDForUpdate = "SELECT " + employeeColumns + " FROM dsh.hr_employees WHERE id=$1 FOR UPDATE"
+	employeeSelectByIDForShare  = "SELECT " + employeeColumns + " FROM dsh.hr_employees WHERE id=$1 FOR SHARE"
+	employeeSelectByOperator    = "SELECT " + employeeColumns + " FROM dsh.hr_employees WHERE operator_actor_id=$1"
+	employeeSelectList          = `SELECT ` + employeeColumns + `
+        FROM dsh.hr_employees
+        WHERE ($1='' OR lower(full_name_ar) LIKE '%' || lower($1) || '%' OR lower(department) LIKE '%' || lower($1) || '%')
+        AND ($2::timestamptz IS NULL OR (created_at,id)<($2::timestamptz,$3))
+        ORDER BY created_at DESC,id DESC LIMIT $4`
+)
+
 func read(ctx context.Context, db rowQueryer, id string) (Employee, error) {
-	result, err := scan(db.QueryRowContext(ctx, "SELECT "+employeeColumns+" FROM dsh.hr_employees WHERE id=$1", id))
+	result, err := scan(db.QueryRowContext(ctx, employeeSelectByID, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Employee{}, ErrNotFound
 	}
@@ -211,7 +224,7 @@ func ReadByOperatorActor(ctx context.Context, db *sql.DB, actorID string) (Emplo
 	if db == nil || !strings.HasPrefix(actorID, "act_") || len(actorID) > 128 {
 		return Employee{}, ErrInvalid
 	}
-	result, err := scan(db.QueryRowContext(ctx, "SELECT "+employeeColumns+" FROM dsh.hr_employees WHERE operator_actor_id=$1", actorID))
+	result, err := scan(db.QueryRowContext(ctx, employeeSelectByOperator, actorID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Employee{}, ErrNotFound
 	}
@@ -242,11 +255,7 @@ func List(ctx context.Context, db *sql.DB, query, encoded string, limit int) (Pa
 		since = c.CreatedAt
 		afterID = c.ID
 	}
-	rows, err := db.QueryContext(ctx, `SELECT `+employeeColumns+`
-        FROM dsh.hr_employees
-        WHERE ($1='' OR lower(full_name_ar) LIKE '%' || lower($1) || '%' OR lower(department) LIKE '%' || lower($1) || '%')
-        AND ($2::timestamptz IS NULL OR (created_at,id)<($2::timestamptz,$3))
-        ORDER BY created_at DESC,id DESC LIMIT $4`, query, since, afterID, limit+1)
+	rows, err := db.QueryContext(ctx, employeeSelectList, query, since, afterID, limit+1)
 	if err != nil {
 		return Page{}, err
 	}

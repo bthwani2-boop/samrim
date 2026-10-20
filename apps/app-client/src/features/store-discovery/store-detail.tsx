@@ -12,6 +12,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { currentIdentityState } from "../../bootstrap/identity";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
+import { summarizeStoreAvailability } from "./store-availability-summary";
 import { PromotionCard } from "./promotion-card";
 import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicDiscoveryContent, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 import type { GallerySourceRect } from "./store-product-gallery";
@@ -406,7 +407,9 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
 
   const heroImageURI = !failedStoreCover ? state.store.storeCoverImage?.uri : undefined;
   const storeAddress = state.store.addressLine?.trim();
-  const currentOrderability = (orderabilityByMode ?? state.store.orderabilityByMode).find((item) => item.fulfillmentMode === selectedFulfillmentMode);
+  const effectiveOrderability = orderabilityByMode ?? state.store.orderabilityByMode;
+  const currentOrderability = effectiveOrderability.find((item) => item.fulfillmentMode === selectedFulfillmentMode);
+  const availabilitySummary = summarizeStoreAvailability(effectiveOrderability, selectedFulfillmentMode);
   const canOrderSelected = Boolean(selectedFulfillmentMode && currentOrderability?.state === "OPEN_FOR_ORDERS");
   const activeCatalogCategories = state.catalog.categories.filter((category) => category.active);
   const selectedCategory = activeCatalogCategories.find((category) => category.id === selectedCategoryID);
@@ -652,7 +655,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         <BthwaniIconButton disabled={Boolean(favoriteOfferBusyID)} icon="favorite" label={favoriteOfferIDs.has(offer.offerId) ? "إزالة المنتج من المفضلة" : "إضافة المنتج للمفضلة"} onPress={() => void toggleOfferFavorite(offer.offerId)} size={sizing.controlMd} style={styles.productFavorite} tone={favoriteOfferIDs.has(offer.offerId) ? "primary" : "soft"} />
       </View>
       <Pressable accessibilityRole="button" onPress={() => openGalleryFromImage(offer.offerId)} style={styles.gridCopy}><Text numberOfLines={2} style={[styles.itemTitle, styles.gridCopyText]}>{offer.productName}</Text><Text numberOfLines={1} style={[styles.productUnit, styles.gridCopyText]}>{offer.variantTitle || (offer.pricingBasis === "PER_MEASURE" ? formatQuantity(offer.baseUnit, offer.pricingUnitBaseUnits) : "عبوة")}</Text></Pressable>
-      <View style={styles.gridBottom}><Text numberOfLines={1} style={styles.productActionPrice}>{storeMoney(offer.priceMinor, offer.currency)}</Text><Pressable accessibilityRole="button" accessibilityLabel={"اختيار كمية " + offer.productName + " وإضافتها للسلة"} disabled={mutationBusy} accessibilityState={{ disabled: mutationBusy }} onPress={(event) => void openOfferDetails(offer.offerId, "quick", event.nativeEvent.pageY)} style={styles.addOfferButton}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconSm} /><Text style={styles.addOfferPlus}>+</Text></Pressable></View>
+      <View style={styles.gridBottom}><Text numberOfLines={1} style={styles.productActionPrice}>{storeMoney(offer.priceMinor, offer.currency)}</Text><Pressable accessibilityRole="button" accessibilityLabel={"اختيار كمية " + offer.productName + " وإضافتها للسلة"} disabled={mutationBusy || !canOrderSelected} accessibilityState={{ disabled: mutationBusy || !canOrderSelected }} onPress={(event) => void openOfferDetails(offer.offerId, "quick", event.nativeEvent.pageY)} style={[styles.addOfferButton, !canOrderSelected && { opacity: 0.4 }]}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconSm} /><Text style={styles.addOfferPlus}>+</Text></Pressable></View>
     </BthwaniSurface>;
     return (
       <View key={offer.offerId}>
@@ -690,10 +693,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`اختيار كمية وإضافة ${offer.productName} إلى السلة`}
-              accessibilityState={{ disabled: mutationBusy }}
-              disabled={mutationBusy}
+              accessibilityState={{ disabled: mutationBusy || !canOrderSelected }}
+              disabled={mutationBusy || !canOrderSelected}
               onPress={(event) => void openOfferDetails(offer.offerId, "quick", event.nativeEvent.pageY)}
-              style={styles.addOfferButton}
+              style={[styles.addOfferButton, !canOrderSelected && { opacity: 0.4 }]}
             >
               <BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconSm} />
               <Text style={styles.addOfferPlus}>+</Text>
@@ -792,7 +795,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         <View style={styles.storeInfoStatusRow}>
           <View style={styles.storeInfoStat}>
             <Text style={styles.storeInfoStatLabel}>حالة المتجر</Text>
-            <View style={styles.orderStatusBadge}><Text style={styles.orderStatusBadgeText}>{selectedFulfillmentMode ? orderabilityBadge(currentOrderability) : "جار التحقق"}</Text></View>
+            <View style={styles.orderStatusBadge}><Text style={styles.orderStatusBadgeText}>{availabilitySummary.label}</Text></View>
           </View>
           <View style={styles.storeInfoStat}>
             <Text style={styles.storeInfoStatLabel}>مدة التجهيز</Text>
@@ -803,9 +806,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             <Text accessibilityLabel={"تقييم المتجر " + (state.store.ratingCount ? state.store.ratingAverage.toFixed(1) : "0.0") + " من خمسة، عدد المقيّمين " + state.store.ratingCount} style={styles.storeInfoStatValue}>{"★ " + (state.store.ratingCount ? state.store.ratingAverage.toFixed(1) : "0.0") + " · " + state.store.ratingCount + " تقييم"}</Text>
           </View>
         </View>
+        {availabilitySummary.reason ? <Text accessibilityRole="alert" style={styles.muted}>{availabilitySummary.reason}</Text> : null}
         {fulfillmentModes.length ? <View style={styles.storeInfoModes} accessibilityLabel="طرق الطلب المتاحة">
           {fulfillmentModes.map((mode) => {
-            const orderability = (orderabilityByMode ?? state.store.orderabilityByMode).find((item) => item.fulfillmentMode === mode);
+            const orderability = effectiveOrderability.find((item) => item.fulfillmentMode === mode);
             return <Pressable key={mode} accessibilityRole="radio" accessibilityLabel={fulfillmentModeLabel(mode)} accessibilityHint={fulfillmentModeDescription(mode) + " " + orderabilityEta(orderability)} accessibilityState={{ checked: selectedFulfillmentMode === mode }} onPress={() => { setSelectedFulfillmentMode(mode); setError(""); }} style={[styles.storeInfoMode, selectedFulfillmentMode === mode && styles.storeInfoModeSelected]}>
               <Text numberOfLines={2} style={[styles.storeInfoModeText, selectedFulfillmentMode === mode && styles.storeInfoModeTextSelected]}>{fulfillmentModeLabel(mode)}</Text>
             </Pressable>;
@@ -859,7 +863,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         busy={mutationBusy || detailLoading}
         added={Boolean(detailOffer && addedOfferId === detailOffer.offerId)}
         fulfillmentSelected={canOrderSelected}
-        orderingUnavailableMessage={selectedFulfillmentMode ? "المتجر لا يستقبل طلبات بهذه الطريقة حاليًا." : "اختر طريقة الطلب من صفحة المتجر أولًا."}
+        orderingUnavailableMessage={availabilitySummary.reason || (selectedFulfillmentMode ? "المتجر لا يستقبل طلبات بهذه الطريقة حاليًا." : "اختر طريقة الطلب من صفحة المتجر أولًا.")}
         error={error}
         onQuantityChange={(quantity) => { if (detailOffer) setQuantities((current) => ({ ...current, [detailOffer.offerId]: String(quantity) })); }}
         onToggleModifier={(groupID, optionID, maxSelections) => { if (detailOffer) toggleModifier(detailOffer, groupID, optionID, maxSelections); }}
@@ -889,14 +893,6 @@ function fulfillmentModeDescription(mode: CustomerFulfillmentMode): string {
 
 function storeMoney(amountMinor: number, currency: string): string {
   return (currency === "YER" ? formatMoney(amountMinor, "YER") : `${amountMinor} ${currency}`).replace(/ريال يمني/g, "ريال");
-}
-
-function orderabilityBadge(orderability: StoreOrderability | undefined): string {
-  if (!orderability) return "جار التحقق";
-  if (orderability.state === "OPEN_FOR_ORDERS") return "مفتوح";
-  if (orderability.state === "CLOSED_BY_SCHEDULE") return "مغلق";
-  if (orderability.state === "PAUSED") return "متوقف";
-  return "غير متاح";
 }
 
 function orderabilityEta(orderability: StoreOrderability | undefined): string {

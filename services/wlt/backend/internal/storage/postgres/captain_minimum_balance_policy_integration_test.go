@@ -24,7 +24,9 @@ func TestCaptainMinimumBalancePolicyPostgresLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	// The policy fixture cleanup runs with t.Cleanup, after test defers.
+	// Register the database close first so cleanup can still delete its rows.
+	t.Cleanup(func() { _ = db.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
 	if err = migrateFieldAcquisitionTestSchema(ctx, db); err != nil {

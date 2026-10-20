@@ -23,7 +23,7 @@ func ReadAccessRequestByProfile(ctx context.Context, db *sql.DB, profileID strin
 	if db == nil || !strings.HasPrefix(profileID, "oprof_") || len(profileID) > 128 {
 		return AccessRequest{}, ErrInvalid
 	}
-	result, err := scanAccess(db.QueryRowContext(ctx, accessSelect+" WHERE r.operator_profile_id=$1", profileID))
+	result, err := scanAccess(db.QueryRowContext(ctx, accessSelectByProfile, profileID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return AccessRequest{}, ErrNotFound
 	}
@@ -56,7 +56,7 @@ func AdmitAccessRequest(ctx context.Context, db *sql.DB, requestID, profileID, o
 		if previousID != requestID || previousHash != hash {
 			return AdmissionResult{}, ErrConflict
 		}
-		request, e := scanAccess(tx.QueryRowContext(ctx, accessSelect+" WHERE r.id=$1", requestID))
+		request, e := scanAccess(tx.QueryRowContext(ctx, accessSelectByID, requestID))
 		if e != nil {
 			return AdmissionResult{}, e
 		}
@@ -75,7 +75,7 @@ func AdmitAccessRequest(ctx context.Context, db *sql.DB, requestID, profileID, o
 	if !errors.Is(err, sql.ErrNoRows) {
 		return AdmissionResult{}, err
 	}
-	request, err := scanAccess(tx.QueryRowContext(ctx, accessSelect+" WHERE r.id=$1 FOR UPDATE OF r", requestID))
+	request, err := scanAccess(tx.QueryRowContext(ctx, accessSelectByIDForUpdate, requestID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return AdmissionResult{}, ErrNotFound
 	}

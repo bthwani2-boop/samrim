@@ -287,8 +287,18 @@ func ReadClientDeliveryProof(ctx context.Context, db *sql.DB, orderID, clientAct
 	return proof, nil
 }
 
+type OperatorOperationEventRecord struct {
+	ID        string
+	Source    string
+	EventType string
+	State     string
+	At        time.Time
+}
+
 type OperatorOperationRecord struct {
 	Order                         OrderRecord
+	History                       []OperatorOperationEventRecord
+	HistoryHasMore                bool
 	StoreName                     string
 	Assignment                    *CaptainAssignment
 	CustomerSuccessfulOrdersCount int
@@ -790,6 +800,35 @@ WITH completed AS (
 SELECT count(*)::integer, COALESCE(max(ordinal) FILTER (WHERE id=$2),0)::integer FROM ranked
 `, order.ClientActorID, order.ID).Scan(&operation.CustomerSuccessfulOrdersCount, &operation.SuccessfulOrderOrdinal)
 	if err != nil {
+		return OperatorOperationRecord{}, err
+	}
+	// The operator timeline uses persisted facts, never a reconstructed state
+	// sequence. Bound the read and signal explicitly when older events exist.
+	rows, err := db.QueryContext(ctx, `
+SELECT id::text, source, event_type, to_state, created_at FROM (
+	SELECT 'order'::text AS source, event_type, to_state, created_at, id
+	FROM dsh.commerce_order_audit WHERE order_id=$1
+	UNION ALL
+	SELECT 'captain'::text AS source, event_type, to_state, created_at, id
+	FROM dsh.captain_audit WHERE order_id=$1
+) history ORDER BY created_at DESC, source, id DESC LIMIT 101`, order.ID)
+	if err != nil {
+		return OperatorOperationRecord{}, err
+	}
+	defer rows.Close()
+	operation.History = make([]OperatorOperationEventRecord, 0)
+	for rows.Next() {
+		var event OperatorOperationEventRecord
+		if err := rows.Scan(&event.ID, &event.Source, &event.EventType, &event.State, &event.At); err != nil {
+			return OperatorOperationRecord{}, err
+		}
+		if len(operation.History) == 100 {
+			operation.HistoryHasMore = true
+			break
+		}
+		operation.History = append(operation.History, event)
+	}
+	if err := rows.Err(); err != nil {
 		return OperatorOperationRecord{}, err
 	}
 	return operation, nil

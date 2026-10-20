@@ -2,10 +2,10 @@ import { borders, elevation, radius, type resolveTheme, sizing, spacing, typogra
 import { BthwaniButton, BthwaniIcon, BthwaniIconButton, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, type Notification } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { type Href, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type Href, useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 
 const copy = {
   accessibilityLabel: "إشعارات الشريك",
@@ -23,11 +23,18 @@ function dshClient() {
   return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() });
 }
 
+function activeActorID(): string {
+  const session = currentIdentityState();
+  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+}
+
 export function NotificationsInbox() {
   const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const authenticated = currentIdentityState().kind === "authenticated";
+  const [actorID, setActorID] = useState(activeActorID);
+  const authenticated = Boolean(actorID);
+  const requestID = useRef(0);
   const [items, setItems] = useState<ReadonlyArray<Notification>>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(authenticated);
@@ -38,37 +45,57 @@ export function NotificationsInbox() {
   const readItems = useMemo(() => items.filter((item) => Boolean(item.readAt)), [items]);
 
   const load = useCallback(async (preserveCurrent = false) => {
-    if (!authenticated) return;
+    if (!actorID || activeActorID() !== actorID) return;
+    const sequence = ++requestID.current;
     if (preserveCurrent) setRefreshing(true); else setLoading(true);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (sequence !== requestID.current || activeActorID() !== actorID) return;
       const response = await dshClient().listNotifications(token, 50);
+      if (sequence !== requestID.current || activeActorID() !== actorID) return;
       setItems(response.notifications);
       setUnreadCount(response.unreadCount);
     } catch (cause) {
       console.error("DSH partner notifications readback failed", cause);
-      setError("تعذر قراءة الإشعارات. أعد المحاولة.");
+      if (sequence === requestID.current && activeActorID() === actorID) setError("تعذر قراءة الإشعارات. أعد المحاولة.");
     } finally {
-      if (preserveCurrent) setRefreshing(false); else setLoading(false);
+      if (sequence === requestID.current && activeActorID() === actorID) {
+        if (preserveCurrent) setRefreshing(false); else setLoading(false);
+      }
     }
-  }, [authenticated]);
+  }, [actorID]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => subscribeIdentitySession(() => {
+    requestID.current += 1;
+    setActorID(activeActorID());
+    setItems([]);
+    setUnreadCount(0);
+    setLoading(false);
+    setRefreshing(false);
+    setBusy("");
+    setError("");
+  }), []);
+
+  useFocusEffect(useCallback(() => {
+    void load();
+    return () => { requestID.current += 1; };
+  }, [load]));
 
   async function markRead(item: Notification) {
-    if (item.readAt || busy) return;
+    if (item.readAt || busy || !actorID || activeActorID() !== actorID) return;
     setBusy(item.id);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (activeActorID() !== actorID) return;
       await dshClient().markNotificationRead(token, item.id);
-      await load(true);
+      if (activeActorID() === actorID) await load(true);
     } catch (cause) {
       console.error("DSH partner notification read-state write failed", cause);
-      setError("تعذر تحديث حالة الإشعار.");
+      if (activeActorID() === actorID) setError("تعذر تحديث حالة الإشعار.");
     } finally {
-      setBusy("");
+      if (activeActorID() === actorID) setBusy("");
     }
   }
 

@@ -84,6 +84,16 @@ const accessSelect = `SELECT r.id,r.employee_id,r.employee_name_snapshot,r.phone
  r.reason,r.requested_permissions,r.state,COALESCE(r.operator_profile_id,''),r.requested_by_actor_id,r.created_at,r.rejected_at,COALESCE(r.rejection_reason,''),COALESCE(r.rejected_by_actor_id,''),r.version,COALESCE(e.operator_actor_id,'')
  FROM dsh.hr_operator_access_requests r JOIN dsh.hr_employees e ON e.id=r.employee_id`
 
+// Query text is fixed at compile time; request values are bound to SQL parameters.
+const (
+	accessSelectByID          = accessSelect + " WHERE r.id=$1"
+	accessSelectByIDForUpdate = accessSelect + " WHERE r.id=$1 FOR UPDATE OF r"
+	accessSelectByProfile     = accessSelect + " WHERE r.operator_profile_id=$1"
+	accessSelectList          = accessSelect + ` WHERE ($1='' OR r.employee_id=$1)
+ AND ($2::timestamptz IS NULL OR (r.created_at,r.id)<($2::timestamptz,$3))
+ ORDER BY r.created_at DESC,r.id DESC LIMIT $4`
+)
+
 func scanAccess(row rowScanner) (AccessRequest, error) {
 	var a AccessRequest
 	err := row.Scan(&a.ID, &a.EmployeeID, &a.EmployeeName, &a.PhoneE164, &a.Department, &a.JobTitle,
@@ -94,7 +104,7 @@ func ReadAccessRequest(ctx context.Context, db *sql.DB, id string) (AccessReques
 	if db == nil || !strings.HasPrefix(id, "hreq_") || len(id) != 37 {
 		return AccessRequest{}, ErrInvalid
 	}
-	a, err := scanAccess(db.QueryRowContext(ctx, accessSelect+" WHERE r.id=$1", id))
+	a, err := scanAccess(db.QueryRowContext(ctx, accessSelectByID, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return AccessRequest{}, ErrNotFound
 	}
@@ -119,9 +129,7 @@ func ListAccessRequests(ctx context.Context, db *sql.DB, employeeID, encoded str
 		since = c.CreatedAt
 		afterID = c.ID
 	}
-	rows, err := db.QueryContext(ctx, accessSelect+` WHERE ($1='' OR r.employee_id=$1)
- AND ($2::timestamptz IS NULL OR (r.created_at,r.id)<($2::timestamptz,$3))
- ORDER BY r.created_at DESC,r.id DESC LIMIT $4`, employeeID, since, afterID, limit+1)
+	rows, err := db.QueryContext(ctx, accessSelectList, employeeID, since, afterID, limit+1)
 	if err != nil {
 		return AccessRequestPage{}, err
 	}
@@ -170,7 +178,7 @@ func CreateAccessRequest(ctx context.Context, db *sql.DB, input AccessRequestInp
 		if oldHash != hashString {
 			return AccessRequestResult{}, ErrConflict
 		}
-		a, e := scanAccess(tx.QueryRowContext(ctx, accessSelect+" WHERE r.id=$1", oldID))
+		a, e := scanAccess(tx.QueryRowContext(ctx, accessSelectByID, oldID))
 		if e != nil {
 			return AccessRequestResult{}, e
 		}
@@ -215,7 +223,7 @@ func CreateAccessRequest(ctx context.Context, db *sql.DB, input AccessRequestInp
 	if err != nil {
 		return AccessRequestResult{}, err
 	}
-	a, err := scanAccess(tx.QueryRowContext(ctx, accessSelect+" WHERE r.id=$1", id))
+	a, err := scanAccess(tx.QueryRowContext(ctx, accessSelectByID, id))
 	if err != nil {
 		return AccessRequestResult{}, err
 	}
@@ -257,7 +265,7 @@ func LinkAccessRequest(ctx context.Context, db *sql.DB, id, profileID, acting, c
 		if previousID != id || previousHash != hashString {
 			return AccessRequestResult{}, ErrConflict
 		}
-		a, e := scanAccess(tx.QueryRowContext(ctx, accessSelect+" WHERE r.id=$1", id))
+		a, e := scanAccess(tx.QueryRowContext(ctx, accessSelectByID, id))
 		if e != nil {
 			return AccessRequestResult{}, e
 		}
@@ -282,11 +290,11 @@ func LinkAccessRequest(ctx context.Context, db *sql.DB, id, profileID, acting, c
 	}
 	// The employee row lock serializes HR status/fact changes with linking.
 	// A profile created from an older HR snapshot must never be linked silently.
-	request, err := scanAccess(tx.QueryRowContext(ctx, accessSelect+" WHERE r.id=$1", id))
+	request, err := scanAccess(tx.QueryRowContext(ctx, accessSelectByID, id))
 	if err != nil {
 		return AccessRequestResult{}, err
 	}
-	employee, err := scan(tx.QueryRowContext(ctx, "SELECT "+employeeColumns+" FROM dsh.hr_employees WHERE id=$1 FOR UPDATE", request.EmployeeID))
+	employee, err := scan(tx.QueryRowContext(ctx, employeeSelectByIDForUpdate, request.EmployeeID))
 	if err != nil {
 		return AccessRequestResult{}, err
 	}
@@ -308,7 +316,7 @@ func LinkAccessRequest(ctx context.Context, db *sql.DB, id, profileID, acting, c
 	if err != nil {
 		return AccessRequestResult{}, err
 	}
-	a, err := scanAccess(tx.QueryRowContext(ctx, accessSelect+" WHERE r.id=$1", id))
+	a, err := scanAccess(tx.QueryRowContext(ctx, accessSelectByID, id))
 	if err != nil {
 		return AccessRequestResult{}, err
 	}

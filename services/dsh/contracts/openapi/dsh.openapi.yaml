@@ -8910,9 +8910,28 @@ components:
           type: string
           enum: [pending, store_confirmed, completed, superseded]
 
+    OperatorOperationEvent:
+      type: object
+      additionalProperties: false
+      required: [id, source, eventType, state, at]
+      properties:
+        id:
+          type: string
+          description: Audit-local stable identity, combined with source for event keys.
+        source:
+          type: string
+          enum: [order, captain]
+        eventType:
+          type: string
+        state:
+          type: string
+        at:
+          type: string
+          format: date-time
+
     OperatorOperation:
       type: object
-      required: [order, storeName, assignment, customerSuccessfulOrdersCount, successfulOrderOrdinal]
+      required: [order, storeName, assignment, customerSuccessfulOrdersCount, successfulOrderOrdinal, history, historyHasMore]
       additionalProperties: false
       properties:
         order:
@@ -8930,6 +8949,15 @@ components:
           type: integer
           minimum: 0
           description: Chronological successful-completion rank of this order, or zero while not completed.
+        history:
+          type: array
+          maxItems: 100
+          description: Latest persisted order and Captain audit events, newest first; absence does not imply an event occurred.
+          items:
+            $ref: "#/components/schemas/OperatorOperationEvent"
+        historyHasMore:
+          type: boolean
+          description: Older persisted events were excluded by the bounded history read.
 
     OperatorOperationListItem:
       type: object

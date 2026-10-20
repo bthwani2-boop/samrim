@@ -265,7 +265,11 @@ func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.Op
 			HandoffState:   operation.Assignment.Handoff.State,
 		}
 	}
-	return contract.OperatorOperation{Order: toOrder(operation.Order), StoreName: operation.StoreName, Assignment: assignment, CustomerSuccessfulOrdersCount: operation.CustomerSuccessfulOrdersCount, SuccessfulOrderOrdinal: operation.SuccessfulOrderOrdinal}
+	history := make([]contract.OperatorOperationEvent, 0, len(operation.History))
+	for _, event := range operation.History {
+		history = append(history, contract.OperatorOperationEvent{ID: event.ID, Source: event.Source, EventType: event.EventType, State: event.State, At: event.At})
+	}
+	return contract.OperatorOperation{Order: toOrder(operation.Order), StoreName: operation.StoreName, Assignment: assignment, CustomerSuccessfulOrdersCount: operation.CustomerSuccessfulOrdersCount, SuccessfulOrderOrdinal: operation.SuccessfulOrderOrdinal, History: history, HistoryHasMore: operation.HistoryHasMore}
 }
 
 func toOperatorOperationListItem(operation postgres.OperatorOperationListRecord) contract.OperatorOperationListItem {

@@ -214,6 +214,10 @@ func main() {
 		go runFieldAcquisitionRewardReconciliationLoop(ctx, time.Minute, storePublication.ReconcileFieldAcquisitionRewards)
 		go runFinancialHandoffReconciliationLoop(ctx, 5*time.Second, financialHandoff.Reconcile)
 		go runCaptainAutomaticDispatchLoop(ctx, 30*time.Second, captainServer.ReconcileAutomaticDispatch)
+		go runCaptainPresenceRetentionLoop(ctx, time.Minute, func(ctx context.Context) error {
+			_, err := postgres.PruneExpiredCaptainPresence(ctx, database)
+			return err
+		})
 		runMediaReconciliationLoop(ctx, time.Minute, reconcileMediaStorage)
 	}); err != nil {
 		log.Fatal(err)

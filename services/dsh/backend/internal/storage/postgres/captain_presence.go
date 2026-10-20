@@ -33,3 +33,18 @@ func UpdateCaptainPresence(ctx context.Context, db *sql.DB, actorID string, lat,
 	}
 	return updated, err
 }
+
+// PruneExpiredCaptainPresence removes obsolete dispatch fixes, not deliveries or
+// navigation history. Both the dispatch selector and opportunity map already
+// reject fixes older than 15 minutes; this enforces the same storage boundary.
+func PruneExpiredCaptainPresence(ctx context.Context, db *sql.DB) (int64, error) {
+	if db == nil {
+		return 0, errors.New("captain presence database unavailable")
+	}
+	result, err := db.ExecContext(ctx, `DELETE FROM dsh.captain_presence_latest
+		WHERE updated_at < clock_timestamp() - interval '15 minutes'`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}

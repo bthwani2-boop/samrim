@@ -78,6 +78,9 @@ export function orderPaymentDisclosure(order: Pick<Order, "state" | "paymentStat
     }
     return { amount: "الطلب مغلق؛ لا يوجد تسليم جارٍ.", status: "حالة التحصيل غير مؤكدة بعد إغلاق الطلب. حدّث الحالة أو تواصل مع الدعم للمراجعة." };
   }
+  if (order.paymentState === "COLLECTED") {
+    return { amount: "تم سداد المبلغ بالكامل.", status: "تم سداد المبلغ" };
+  }
   return {
     amount: order.cashAmountMinor === 0
       ? "مغطى بالكامل من رصيد المحفظة"

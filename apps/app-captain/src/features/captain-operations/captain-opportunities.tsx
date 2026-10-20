@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniMap, useAppearanceTheme } from "@bthwani/design-system/native";
-import type { CaptainAssignment, CaptainDeliveryTask, CaptainOpportunityHeatmap } from "@bthwani/dsh";
+import { isFreshOpportunitySample, type CaptainAssignment, type CaptainDeliveryTask, type CaptainOpportunityHeatmap } from "@bthwani/dsh";
 import * as Location from "expo-location";
 import { type Href, Link, useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
@@ -47,6 +47,9 @@ export function CaptainOpportunities({ mission = null, missionReadiness = "ready
     const before = currentIdentityState();
     if (!quiet) setLoading(true);
     setError("");
+    // A stalled refresh must never leave a stale density layer visible.
+    setData((previous) => previous && !isFreshOpportunitySample(previous.measuredAt)
+      ? null : previous);
     if (before.kind !== "authenticated") { setLoading(false); setData(null); return; }
     const actorID = before.identity.subject.trim();
     try {
@@ -55,7 +58,9 @@ export function CaptainOpportunities({ mission = null, missionReadiness = "ready
       const after = currentIdentityState();
       if (sequence !== requestSequence.current || after.kind !== "authenticated"
         || !isCurrentCaptainActor(actorID, after.identity.subject.trim())) return;
-      if (result.signalType !== "RECENT_ACTIVITY" || !Array.isArray(result.cells)
+      if (result.signalType !== "RECENT_ACTIVITY"
+        || !isFreshOpportunitySample(result.measuredAt)
+        || !Array.isArray(result.cells)
         || !result.cells.every((cell) => Number.isFinite(cell.latitude) && Number.isFinite(cell.longitude)
           && cell.intensity in radii && (cell.kind === "ORDERS" || cell.kind === "CAPTAINS"))) {
         throw new Error("INVALID_OPPORTUNITY_RESPONSE");
@@ -65,7 +70,8 @@ export function CaptainOpportunities({ mission = null, missionReadiness = "ready
       const after = currentIdentityState();
       if (sequence === requestSequence.current && after.kind === "authenticated"
         && isCurrentCaptainActor(actorID, after.identity.subject.trim())) {
-        setError("تعذر قراءة النشاط.");
+        setData(null);
+        setError("تعذر قراءة النشاط. لا تُعرض بيانات سابقة.");
       }
     } finally { if (sequence === requestSequence.current) setLoading(false); }
   }, [mission, missionReadiness]);

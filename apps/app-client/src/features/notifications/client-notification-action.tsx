@@ -29,7 +29,6 @@ export function ClientNotificationAction() {
 
   useFocusEffect(useCallback(() => {
     const sequence = ++requestID.current;
-    setUnreadCount(0);
     if (!actorID || currentClientActorID() !== actorID) return () => { requestID.current += 1; };
     void (async () => {
       try {

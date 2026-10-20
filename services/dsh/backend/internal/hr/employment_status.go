@@ -62,7 +62,7 @@ func SetEmploymentStatus(ctx context.Context, db *sql.DB, id string, input Emplo
 	if !errors.Is(err, sql.ErrNoRows) {
 		return EmploymentStatusResult{}, err
 	}
-	before, err := scan(tx.QueryRowContext(ctx, "SELECT "+employeeColumns+" FROM dsh.hr_employees WHERE id=$1 FOR UPDATE", id))
+	before, err := scan(tx.QueryRowContext(ctx, employeeSelectByIDForUpdate, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return EmploymentStatusResult{}, ErrNotFound
 	}

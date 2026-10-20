@@ -3,9 +3,9 @@ import { BthwaniButton, BthwaniIcon, BthwaniIconButton, BthwaniSkeleton, Bthwani
 import { createDshMobileClient, type Notification } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 
 const copy = {
   accessibilityLabel: "إشعارات الميدان",
@@ -21,11 +21,17 @@ function dshClient() {
   return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() });
 }
 
+function activeActorID(): string {
+  const session = currentIdentityState();
+  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+}
+
 export function NotificationsInbox() {
   const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const authenticated = currentIdentityState().kind === "authenticated";
+  const [actorID, setActorID] = useState(activeActorID);
+  const authenticated = Boolean(actorID);
   const [items, setItems] = useState<ReadonlyArray<Notification>>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
@@ -38,7 +44,7 @@ export function NotificationsInbox() {
   const focused = useRef(false);
 
   const load = useCallback(async (preserveCurrent = false, cursor = "") => {
-    if (!authenticated || !focused.current) return;
+    if (!actorID || activeActorID() !== actorID || !focused.current) return;
     const currentRequest = ++requestID.current;
     if (cursor) setLoadingMore(true);
     else {
@@ -50,7 +56,7 @@ export function NotificationsInbox() {
     try {
       const token = await getUsableIdentityAccessToken();
       const response = await dshClient().listNotifications(token, 50, cursor);
-      if (currentRequest === requestID.current) {
+      if (currentRequest === requestID.current && focused.current && activeActorID() === actorID) {
         setItems((current) => {
           if (!cursor) return response.notifications;
           const knownIDs = new Set(current.map((item) => item.id));
@@ -61,15 +67,28 @@ export function NotificationsInbox() {
       }
     } catch (cause) {
       console.warn("DSH field notifications readback failed", cause);
-      if (currentRequest === requestID.current) setError("تعذر قراءة الإشعارات. أعد المحاولة.");
+      if (currentRequest === requestID.current && focused.current && activeActorID() === actorID) setError("تعذر قراءة الإشعارات. أعد المحاولة.");
     } finally {
-      if (currentRequest === requestID.current) {
+      if (currentRequest === requestID.current && focused.current && activeActorID() === actorID) {
         if (cursor) setLoadingMore(false);
         else if (preserveCurrent) setRefreshing(false);
         else setLoading(false);
       }
     }
-  }, [authenticated]);
+  }, [actorID]);
+
+  useEffect(() => subscribeIdentitySession(() => {
+    requestID.current += 1;
+    setActorID(activeActorID());
+    setItems([]);
+    setNextCursor("");
+    setUnreadCount(0);
+    setLoading(false);
+    setRefreshing(false);
+    setLoadingMore(false);
+    setBusy("");
+    setError("");
+  }), []);
 
   const loadMore = useCallback(() => {
     if (!nextCursor || loadingMore || refreshing || loading) return;
@@ -83,18 +102,19 @@ export function NotificationsInbox() {
   }, [load]));
 
   async function markRead(item: Notification) {
-    if (item.readAt || busy) return;
+    if (item.readAt || busy || !actorID || activeActorID() !== actorID) return;
     setBusy(item.id);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (activeActorID() !== actorID) return;
       await dshClient().markNotificationRead(token, item.id);
-      if (focused.current) await load(true);
+      if (focused.current && activeActorID() === actorID) await load(true);
     } catch (cause) {
       console.warn("DSH field notification read-state write failed", cause);
-      if (focused.current) setError("تعذر تحديث حالة الإشعار.");
+      if (focused.current && activeActorID() === actorID) setError("تعذر تحديث حالة الإشعار.");
     } finally {
-      setBusy("");
+      if (activeActorID() === actorID) setBusy("");
     }
   }
 
@@ -125,7 +145,7 @@ export function NotificationsInbox() {
           <Text selectable style={styles.body}>{item.body}</Text>
           <Text selectable style={styles.date}>{formatNotificationDate(item.createdAt)}</Text>
         </Pressable>
-        {destination ? <BthwaniButton label={destination.label} onPress={() => router.push({ pathname: destination.pathname, ...("params" in destination ? { params: destination.params } : {}) } as Href)} variant="secondary" /> : null}
+        {destination ? <BthwaniButton label={destination.label} onPress={() => { if (actorID && activeActorID() === actorID) router.push({ pathname: destination.pathname, ...("params" in destination ? { params: destination.params } : {}) } as Href); }} variant="secondary" /> : null}
       </View>
     );
   }
