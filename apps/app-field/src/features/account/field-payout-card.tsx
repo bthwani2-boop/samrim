@@ -14,9 +14,16 @@ type PayoutAttempt = Readonly<{ mode: "FULL_AVAILABLE" | "SPECIFIED"; amountMino
 function destinationStatusLabel(state: BeneficiaryPayoutState["destination"]): string {
   if (!state) return "غير مهيأة";
   if (state.status === "ACTIVE_FOR_PAYOUT" && state.verificationStatus === "VERIFIED") return "معتمدة";
-  if (state.status === "SUSPENDED" || state.status === "RETIRED" || state.verificationStatus === "REJECTED" || state.verificationStatus === "STALE") return "غير متاحة للصرف";
-  if (state.verificationStatus === "PENDING_VERIFICATION" || state.status === "PENDING_APPROVAL") return "بانتظار التحقق والاعتماد";
+  if (state.status === "SUSPENDED" || state.status === "RETIRED" || state.verificationStatus === "REJECTED" || state.verificationStatus === "STALE") return "تحتاج مراجعة المالية";
+  if (state.status === "PENDING_APPROVAL") return "بانتظار اعتماد المالية";
+  if (state.verificationStatus === "PENDING_VERIFICATION") return "بانتظار تحقق المالية";
   return "قيد الإعداد";
+}
+
+function destinationGuidance(state: BeneficiaryPayoutState["destination"]): string {
+  if (!state) return "تُهيئها المالية قبل الصرف.";
+  if (state.status === "SUSPENDED" || state.status === "RETIRED" || state.verificationStatus === "REJECTED" || state.verificationStatus === "STALE") return "تراجعها المالية قبل الصرف.";
+  return "تعتمدها المالية قبل الصرف.";
 }
 
 export function FieldPayoutCard({ onWalletRefresh, refreshVersion }: Readonly<{ onWalletRefresh: () => void; refreshVersion: number }>) {
@@ -159,6 +166,7 @@ export function FieldPayoutCard({ onWalletRefresh, refreshVersion }: Readonly<{ 
             ? <Text style={styles.destinationValue}>{state.destination?.walletIdentifierMasked}</Text>
             : <Text style={styles.destinationWarning}>{destinationStatusLabel(state.destination)}</Text>}
         </Text>
+        {!destinationReady ? <Text style={styles.muted}>{destinationGuidance(state.destination)}</Text> : null}
       </View>
       <View style={styles.metrics}>
         <View style={styles.metricTile}><Text style={styles.metricLabel}>المتاح الآن</Text><Text style={styles.metric}>{formatMoney(state.eligibleAvailableMinor, state.currency)}</Text></View>

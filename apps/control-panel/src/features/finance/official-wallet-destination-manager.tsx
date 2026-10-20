@@ -66,7 +66,7 @@ function expectedReadback(attempt: DestinationAttempt, destination: OfficialWall
   return destination.status === "ACTIVE_FOR_PAYOUT" && destination.verificationStatus === "VERIFIED" && destination.approvedBy === attempt.operatorActorId && Boolean(destination.approvedAt);
 }
 
-export function OfficialWalletDestinationManager({ actorType, actorId }: Readonly<{ actorType: BeneficiaryActorType; actorId: string }>) {
+export function OfficialWalletDestinationManager({ actorType, actorId, initiallyExpanded = false }: Readonly<{ actorType: BeneficiaryActorType; actorId: string; initiallyExpanded?: boolean }>) {
   const { walletProviders } = useWalletProviders();
   const [intent, setIntent] = useState<WalletIntent | null>(null);
   const [operatorActorId, setOperatorActorId] = useState("");
@@ -223,7 +223,7 @@ export function OfficialWalletDestinationManager({ actorType, actorId }: Readonl
   const nextAction: DestinationAction | null = legacyStaleDestination ? "verify" : !destination || createAllowed ? "create" : destination.verificationStatus === "VERIFIED" ? "activate" : "verify";
   const nextActionLabel = nextAction === "create" ? "إنشاء مرشح من هوية ومزوّد مسجلين" : nextAction === "verify" ? legacyStaleDestination ? "إعادة التحقق من الوجهة نفسها" : "تحقق مستقل من الوجهة" : "اعتماد مستقل وتفعيل الوجهة";
 
-  return <details className="settlement-resource">
+  return <details className="settlement-resource" open={initiallyExpanded}>
     <summary className="button button-quiet">إدارة وجهة المحفظة الرسمية</summary>
     <div className="form-section">
       <p className="muted">الاسم والمحفظة من الحساب الموثق؛ المطلوب مراجع الأدلة فقط.</p>

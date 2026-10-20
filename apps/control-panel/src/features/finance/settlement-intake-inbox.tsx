@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { formatMoney } from "@bthwani/dsh";
+import { OfficialWalletDestinationManager } from "./official-wallet-destination-manager";
 
 type Intake = Readonly<{
   id: string; actorType: "partner" | "captain" | "field"; actorId: string;
@@ -16,6 +17,7 @@ export function SettlementIntakeInbox() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const [destinationIntakeId, setDestinationIntakeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -64,7 +66,7 @@ export function SettlementIntakeInbox() {
   }
   return <section className="panel work-stack" aria-label="طلبات التسوية الواردة">
     <div className="finance-toolbar">
-      <div><h2>طلبات التسوية الواردة</h2><p className="muted">طلبات الشركاء والكباتن والميدانيين تصل هنا قبل التحقق من وجهة التحويل. لا تُخصم أموال أو تُنفذ تحويلات بمجرد تقديم الطلب.</p></div>
+      <div><h2>طلبات التسوية الواردة</h2><p className="muted">الطلب لا يحجز رصيدًا. راجع الوجهة ثم أَحِل للصرف.</p></div>
       <button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading || busyId !== null}>{loading ? "جارٍ التحميل" : "تحديث الطلبات"}</button>
     </div>
     {error ? <p role="alert" className="identity-error">{error}</p> : null}
@@ -72,15 +74,24 @@ export function SettlementIntakeInbox() {
     {!loading && items.length === 0 ? <p className="muted">لا توجد طلبات تسوية جديدة.</p> : null}
     {items.length > 0 ? <div className="finance-table-wrap"><table className="finance-table">
       <thead><tr><th>المستفيد</th><th>المبلغ</th><th>الحالة</th><th>الإجراء</th></tr></thead>
-      <tbody>{items.map((item) => <tr key={item.id}>
+      <tbody>{items.map((item) => <Fragment key={item.id}><tr>
         <td>{actorLabels[item.actorType]} <small dir="auto">{item.actorId}</small></td>
         <td>{formatMoney(item.resolvedAmountMinor, item.currency)}{item.actorType === "partner" ? <small> · {item.storeAllocations.length} متجر</small> : null}</td>
-        <td>بانتظار مراجعة المالية ووجهة التحويل</td>
+        <td>بانتظار مراجعة المالية</td>
         <td><div className="finance-toolbar">
+          <button className="button button-secondary" type="button" aria-expanded={destinationIntakeId === item.id} disabled={busyId !== null} onClick={() => setDestinationIntakeId(destinationIntakeId === item.id ? null : item.id)}>{destinationIntakeId === item.id ? "إغلاق الوجهة" : "مراجعة وجهة الصرف"}</button>
           <button className="button button-secondary" type="button" disabled={busyId !== null} onClick={() => void convert(item.id)}>{busyId === item.id ? "جارٍ التحقق" : "التحقق والإحالة للصرف"}</button>
           <button className="button button-quiet" type="button" disabled={busyId !== null} onClick={() => { setCancelId(cancelId === item.id ? null : item.id);setCancelReason(""); }}>إلغاء الطلب</button>
         </div>{cancelId === item.id ? <div className="finance-toolbar"><input className="field-control" aria-label="سبب إلغاء طلب التسوية" placeholder="سبب الإلغاء" maxLength={512} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} /><button className="button button-secondary" type="button" disabled={busyId !== null || !cancelReason.trim()} onClick={() => void cancelIntake(item.id)}>تأكيد الإلغاء</button></div> : null}</td>
-      </tr>)}</tbody>
+      </tr>{destinationIntakeId === item.id ? <tr key={`destination-${item.id}`}>
+        <td colSpan={4} id={`finance-intake-destination-${encodeURIComponent(item.id)}`}>
+          <div className="form-section">
+            <h3>وجهة الصرف · {actorLabels[item.actorType]} · {formatMoney(item.resolvedAmountMinor, item.currency)}</h3>
+            <OfficialWalletDestinationManager key={item.id} actorType={item.actorType} actorId={item.actorId} initiallyExpanded />
+          </div>
+        </td>
+      </tr> : null}</Fragment>)}
+    </tbody>
     </table></div> : null}
   </section>;
 }
