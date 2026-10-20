@@ -1,6 +1,6 @@
 "use client";
 
-import type { CaptainOpportunityHeatmap } from "@bthwani/dsh";
+import { isFreshOpportunitySample, type CaptainOpportunityHeatmap } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type HeatCell = CaptainOpportunityHeatmap["cells"][number];
@@ -112,6 +112,7 @@ export function OpportunityZones() {
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
     setError("");
+    setValue((previous) => previous && !isFreshOpportunitySample(previous.measuredAt) ? null : previous);
     try {
       const response = await fetch("/api/operations/opportunities", {
         cache: "no-store", signal: AbortSignal.timeout(12_000),
@@ -119,13 +120,14 @@ export function OpportunityZones() {
       if (!response.ok) throw new Error("تعذر جلب خريطة النشاط؛ أعد المحاولة.");
       const body = await response.json() as CaptainOpportunityHeatmap;
       if (!body || body.signalType !== "RECENT_ACTIVITY" || !Array.isArray(body.cells)
-        || typeof body.measuredAt !== "string" || !body.cells.every((cell) =>
+        || !isFreshOpportunitySample(body.measuredAt) || !body.cells.every((cell) =>
           Number.isFinite(cell.latitude) && Number.isFinite(cell.longitude)
           && cell.intensity in activityRadius && (cell.kind === "ORDERS" || cell.kind === "CAPTAINS")
         )) throw new Error("بيانات خريطة النشاط غير صالحة.");
       setValue(body);
     } catch (cause) {
-      if (!quiet) setValue(null);
+      // Quiet polling failures must also remove potentially stale circles.
+      setValue(null);
       setError(cause instanceof Error ? cause.message : "تعذرت قراءة خريطة النشاط.");
     } finally {
       setLoading(false);
@@ -135,7 +137,12 @@ export function OpportunityZones() {
   useEffect(() => {
     void load();
     const timer = setInterval(() => void load(true), 60_000);
-    return () => clearInterval(timer);
+    const refreshOnReturn = () => { if (!document.hidden) void load(true); };
+    document.addEventListener("visibilitychange", refreshOnReturn);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshOnReturn);
+    };
   }, [load]);
 
   const cells = value?.cells ?? [];

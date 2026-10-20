@@ -126,5 +126,18 @@ func TestRecentOpportunityCirclesPrivacyAndWindow(t *testing.T) {
 		if err != nil || len(afterStore.Cells) != 0 || afterStore.SampleStatus != "INSUFFICIENT_DATA" {
 			t.Fatalf("sub-threshold demand must disappear: %+v err=%v", afterStore, err)
 		}
+		// Expiry is a physical deletion, not merely an application-side filter.
+		deleted, err := postgres.PruneExpiredCaptainPresence(ctx, db)
+		if err != nil || deleted != 1 {
+			t.Fatalf("expected one stale fix to be pruned: deleted=%d err=%v", deleted, err)
+		}
+		var retained int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM dsh.captain_presence_latest`).Scan(&retained); err != nil || retained != 4 {
+			t.Fatalf("must preserve four fresh dispatch fixes: retained=%d err=%v", retained, err)
+		}
+		deleted, err = postgres.PruneExpiredCaptainPresence(ctx, db)
+		if err != nil || deleted != 0 {
+			t.Fatalf("repeated cleanup must be idempotent: deleted=%d err=%v", deleted, err)
+		}
 	}, 80*time.Second)
 }
