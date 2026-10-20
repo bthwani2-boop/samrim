@@ -79,9 +79,9 @@ export default function CaptainHomeRoute() {
   }, []));
 
   return <View style={{ flex: 1 }}>
-    <CaptainOpportunities mission={mission} missionReadiness={missionReadiness} />
+    <CaptainOpportunities mission={missionReadiness === "ready" ? mission : null} missionReadiness={missionReadiness} />
     <View pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, top: 8 }}>
-      <CaptainReadiness overlay missionActive={Boolean(mission)} />
+      <CaptainReadiness overlay missionActive={missionReadiness === "ready" && Boolean(mission)} />
     </View>
     <CaptainOffers popup suppressed={Boolean(mission) || missionReadiness !== "ready"} />
   </View>;
