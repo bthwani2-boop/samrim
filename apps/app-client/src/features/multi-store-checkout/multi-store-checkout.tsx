@@ -6,7 +6,8 @@ import { type Href, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { isClientActorScopeCurrent } from "../orders/order-session-scope";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { cancelMultiStoreCheckout, createMultiStoreCheckout, listOwnDeliveryAddresses, listOwnOpenCarts, quoteMultiStoreChildCheckout, readOwnMultiStoreCheckout } from "../store-discovery/store-discovery-client";
 import { checkoutRecipient, DeliveryRecipientForm, deliveryRecipientIsValid, type DeliveryRecipientInput } from "../cart-checkout/delivery-recipient-form";
@@ -32,6 +33,11 @@ async function authenticatedClientActorID(): Promise<string> {
   const session = currentIdentityState();
   if (session.kind !== "authenticated" || !session.identity.subject.trim()) throw new Error("CLIENT_SESSION_REQUIRED");
   return session.identity.subject.trim();
+}
+
+function hasCurrentMultiStoreActor(actorID: string): boolean {
+  const session = currentIdentityState();
+  return session.kind === "authenticated" && isClientActorScopeCurrent(actorID, session.identity.subject.trim());
 }
 
 function pendingMultiStoreAttemptKey(actorID: string): string {
@@ -250,6 +256,10 @@ export default function MultiStoreCheckoutScreen() {
   const [recipient, setRecipient] = useState<DeliveryRecipientInput>({ mode: "SELF" });
   const loadRequestID = useRef(0);
   const submitInFlight = useRef(false);
+  const activeActorRef = useRef((() => {
+    const session = currentIdentityState();
+    return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+  })());
 
   const load = useCallback(async () => {
     const requestID = ++loadRequestID.current;
@@ -262,11 +272,15 @@ export default function MultiStoreCheckoutScreen() {
     setError("");
     try {
       const actorID = await authenticatedClientActorID();
+      const isCurrent = () => requestID === loadRequestID.current && hasCurrentMultiStoreActor(actorID);
+      if (!isCurrent()) return;
       const storageKey = pendingMultiStoreAttemptKey(actorID);
       const rawAttempt = await SecureStore.getItemAsync(storageKey);
+      if (!isCurrent()) return;
       const attempt = rawAttempt ? parsePendingMultiStoreAttempt(rawAttempt, actorID) : null;
       if (rawAttempt && !attempt) throw new Error("PENDING_MULTI_STORE_CHECKOUT_INVALID");
       const [cartResponse, addressResponse] = await Promise.all([listOwnOpenCarts(), listOwnDeliveryAddresses()]);
+      if (!isCurrent()) return;
       const currentCityCarts = cartResponse.carts.filter((cart) => cart.serviceCityId === selectedCityID);
       const otherCityCartCount = cartResponse.carts.length - currentCityCarts.length;
       const storeCarts = currentCityCarts.map((store) => ({ store, cart: { id: store.cartId, version: store.cartVersion, lineCount: store.lineCount } }));
@@ -274,16 +288,18 @@ export default function MultiStoreCheckoutScreen() {
       let unresolvedAttempt = attempt;
       let attemptError = "";
       if (attempt) {
+        if (!isCurrent()) return;
         const outcome = await resolvePendingMultiStoreAttempt(attempt);
         checkout = outcome.checkout;
         if (outcome.attempt) unresolvedAttempt = outcome.attempt;
         if (outcome.error) attemptError = "تعذر تأكيد نتيجة الطلب السابق. ستبقى المحاولة محفوظة؛ تحقق من حالتها لإكمال الاستعادة بأمان.";
         if (outcome.terminal) {
+          if (!isCurrent()) return;
           await SecureStore.deleteItemAsync(storageKey);
           unresolvedAttempt = null;
         }
       }
-      if (requestID !== loadRequestID.current) return;
+      if (!isCurrent()) return;
       if (attemptError) setError(attemptError);
       setPendingAttempt(unresolvedAttempt);
       if (storeCarts.length === 0 && !unresolvedAttempt && !checkout) {
@@ -305,7 +321,19 @@ export default function MultiStoreCheckoutScreen() {
 
   useEffect(() => {
     void load();
-    return () => { loadRequestID.current += 1; };
+    const unsubscribe = subscribeIdentitySession((session) => {
+      const nextActorID = session.kind === "authenticated" ? session.identity.subject.trim() : "";
+      if (nextActorID === activeActorRef.current) return;
+      activeActorRef.current = nextActorID;
+      loadRequestID.current += 1;
+      setState({ kind: "loading" });
+      setPendingAttempt(null);
+      setQuotePreview(null);
+      setError("");
+      if (nextActorID) void load();
+      else setState({ kind: "error" });
+    });
+    return () => { loadRequestID.current += 1; unsubscribe(); };
   }, [load]);
 
   async function submit() {
@@ -328,6 +356,7 @@ export default function MultiStoreCheckoutScreen() {
     let attemptPersisted = false;
     try {
       const actorID = await authenticatedClientActorID();
+      if (!hasCurrentMultiStoreActor(actorID)) return;
       const fingerprint = JSON.stringify({
         actorID,
         stores: selectedStoreCarts.map(({ store, cart, fulfillmentMode }) => [store.storeId, cart.id, cart.version, fulfillmentMode, fulfillmentMode === "CUSTOMER_PICKUP" ? "" : state.selectedAddressID]),
@@ -343,6 +372,7 @@ export default function MultiStoreCheckoutScreen() {
           }
           return { storeName: store.storeName, quote };
         }));
+        if (!hasCurrentMultiStoreActor(actorID)) return;
         const totalAmountMinor = quotes.reduce((sum, item) => sum + item.quote.totalAmountMinor, 0);
         if (!Number.isSafeInteger(totalAmountMinor)) throw new Error("INVALID_MULTI_STORE_TOTAL");
         // First action only displays the amount. No order or payment is created
@@ -366,8 +396,10 @@ export default function MultiStoreCheckoutScreen() {
         version: 3, kind: "CREATE", actorID, idempotencyKey: `multi_idem_${Crypto.randomUUID()}`, correlationID: `multi_corr_${Crypto.randomUUID()}`,
         request,
       };
+      if (!hasCurrentMultiStoreActor(actorID)) return;
       await SecureStore.setItemAsync(pendingMultiStoreAttemptKey(actorID), serializePendingMultiStoreAttempt(attempt));
       attemptPersisted = true;
+      if (!hasCurrentMultiStoreActor(actorID)) return;
       setPendingAttempt(attempt);
       let checkout: MultiStoreCheckout;
       try {
@@ -377,6 +409,7 @@ export default function MultiStoreCheckoutScreen() {
         if (!outcome.checkout) throw outcome.error ?? new Error("CHECKOUT_OUTCOME_UNKNOWN");
         checkout = outcome.checkout;
       }
+      if (!hasCurrentMultiStoreActor(actorID)) return;
       if (isTerminalMultiStoreCheckout(checkout)) {
         await SecureStore.deleteItemAsync(pendingMultiStoreAttemptKey(actorID));
         setPendingAttempt(null);
@@ -396,13 +429,17 @@ export default function MultiStoreCheckoutScreen() {
     setError("");
     try {
       const actorID = await authenticatedClientActorID();
+      if (!hasCurrentMultiStoreActor(actorID)) return;
       const attempt: PendingMultiStoreAttempt = {
         version: 3, kind: "CANCEL", actorID, idempotencyKey: `multi_cancel_${Crypto.randomUUID()}`, correlationID: `multi_cancel_corr_${Crypto.randomUUID()}`,
         checkoutID: state.checkout.id, expectedVersion: state.checkout.version,
       };
+      if (!hasCurrentMultiStoreActor(actorID)) return;
       await SecureStore.setItemAsync(pendingMultiStoreAttemptKey(actorID), serializePendingMultiStoreAttempt(attempt));
+      if (!hasCurrentMultiStoreActor(actorID)) return;
       setPendingAttempt(attempt);
       const outcome = await resolvePendingMultiStoreAttempt(attempt);
+      if (!hasCurrentMultiStoreActor(actorID)) return;
       const resolvedCheckout = outcome.checkout;
       if (!resolvedCheckout) throw outcome.error ?? new Error("MULTI_STORE_CANCEL_OUTCOME_UNKNOWN");
       if (outcome.terminal) {
