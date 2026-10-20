@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
+import { operationHistoryLabel } from "./operation-history";
 import { OperationLocationMap } from "./operation-location-map";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 
@@ -74,7 +75,11 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
       }
       const body = await response.json() as { operation?: OperatorOperation };
       if (sequence !== loadSequence.current) return false;
-      if (!body?.operation || body.operation.order?.id !== orderId) {
+      if (!body?.operation || body.operation.order?.id !== orderId
+        || !Array.isArray(body.operation.history) || typeof body.operation.historyHasMore !== "boolean"
+        || !body.operation.history.every((event) => event && (event.source === "order" || event.source === "captain")
+          && typeof event.id === "string" && event.id.length > 0 && typeof event.eventType === "string" && typeof event.state === "string"
+          && typeof event.at === "string" && Number.isFinite(Date.parse(event.at)))) {
         setError("استجابة تفاصيل الطلب غير صالحة. أعد القراءة.");
         return false;
       }
@@ -232,6 +237,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
           <h2 id="order-overview-title">ملخص الطلب</h2>
           <dl className="order-detail-facts">
 
+            <div><dt>رقم الطلب</dt><dd><code dir="ltr" style={{ overflowWrap: "anywhere" }}>{order.id}</code></dd></div>
             <div><dt>المتجر</dt><dd><Link href={`/partners/stores/${encodeURIComponent(order.storeId)}`}>{operation.storeName}</Link></dd></div>
             <div><dt>العميل</dt><dd><Link href={`/customers/${encodeURIComponent(order.clientActorId)}`}>فتح ملف العميل</Link></dd></div>
             {operation.successfulOrderOrdinal > 0 && operation.successfulOrderOrdinal <= 3 ? <div><dt>متابعة الطلبات الأولى</dt><dd>هذا الطلب الناجح رقم {operation.successfulOrderOrdinal} من أول 3 طلبات مكتملة للعميل. متابعة فقط دون تعطيل التسليم.</dd></div>
@@ -316,6 +322,20 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
           <Link className="order-detail-text-link" href="/captains">الانتقال إلى سجل الكباتن</Link>
         </section>
       )}
+
+      <section className="order-detail-panel" aria-labelledby="order-history-title">
+        <h2 id="order-history-title">سجل الأحداث</h2>
+        {operation.history.length > 0 ? (
+          <ol className="order-detail-list">
+            {operation.history.map((event) => <li key={`${event.source}-${event.id}`}>
+              <strong>{operationHistoryLabel(event)}</strong>
+              <time dateTime={event.at}>{formatOrderDate(event.at)}</time>
+            </li>)}
+          </ol>
+        ) : <p className="muted">لا توجد أحداث محفوظة متاحة لهذا الطلب.</p>}
+        {operation.historyHasMore ? <p className="muted">يظهر آخر 100 حدث فقط، وتوجد أحداث أقدم غير معروضة.</p> : null}
+        {order.state === "DELIVERY_FAILED" ? <p className="muted">يوضح السجل وقوع التعثر، ولا يُستنتج سبب محدد ما لم يكن مسجلًا في المصدر التشغيلي.</p> : null}
+      </section>
 
       {order.state === "DELIVERY_FAILED" ? (
         <section className="order-detail-panel" aria-labelledby="order-recovery-title">

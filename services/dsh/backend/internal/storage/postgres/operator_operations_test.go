@@ -224,6 +224,9 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil || afterPickup.CustomerSuccessfulOrdersCount != 1 || afterPickup.SuccessfulOrderOrdinal != 1 {
 			t.Fatalf("customer pickup must be first confirmed success: %+v err=%v", afterPickup, err)
 		}
+		if len(afterPickup.History) != 1 || afterPickup.History[0].Source != "order" || afterPickup.History[0].EventType != "order_picked_up" || afterPickup.History[0].State != "PICKED_UP" || afterPickup.HistoryHasMore {
+			t.Fatalf("operator history must reflect the persisted pickup audit without unrelated order events: %+v", afterPickup.History)
+		}
 		awaiting, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_01")
 		if err != nil || awaiting.CustomerSuccessfulOrdersCount != 1 || awaiting.SuccessfulOrderOrdinal != 0 {
 			t.Fatalf("an open delivery must not count as a successful order: %+v err=%v", awaiting, err)
@@ -242,6 +245,9 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		afterDelivery, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_01")
 		if err != nil || afterDelivery.CustomerSuccessfulOrdersCount != 2 || afterDelivery.SuccessfulOrderOrdinal != 2 {
 			t.Fatalf("confirmed Captain delivery must count after completed customer pickup: %+v err=%v", afterDelivery, err)
+		}
+		if len(afterDelivery.History) != 1 || afterDelivery.History[0].Source != "captain" || afterDelivery.History[0].EventType != "delivery_completed" || afterDelivery.History[0].State != "delivered" || afterDelivery.HistoryHasMore {
+			t.Fatalf("operator history must reflect actual Captain completion, not a guessed order transition: %+v", afterDelivery.History)
 		}
 		firstSuccess, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_02")
 		if err != nil || firstSuccess.CustomerSuccessfulOrdersCount != 2 || firstSuccess.SuccessfulOrderOrdinal != 1 {

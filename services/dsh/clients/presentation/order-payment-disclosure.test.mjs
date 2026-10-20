@@ -24,10 +24,22 @@ test("cancelled order with lagging collection readback fails closed instead of r
   assert.doesNotMatch(disclosure.amount + disclosure.status, /النقد المتبقي|بانتظار التحصيل|الدفع نقدًا|عند التسليم/);
 });
 
+test("rejected order with lagging collection readback does not request cash", () => {
+  const disclosure = orderPaymentDisclosure({ ...cashDelivery, state: "REJECTED" });
+  assert.match(disclosure.status, /غير مؤكدة|غير متطابقة|مراجعة/);
+  assert.doesNotMatch(disclosure.amount + disclosure.status, /النقد المتبقي|بانتظار التحصيل|الدفع نقدًا|عند التسليم/);
+});
+
 test("collected rejected order does not silently promise an automatic refund", () => {
   const disclosure = orderPaymentDisclosure({ ...cashDelivery, state: "REJECTED", paymentState: "COLLECTED" });
   assert.match(disclosure.status, /استرداد|مراجعة/);
   assert.doesNotMatch(disclosure.amount + disclosure.status, /النقد المتبقي|بانتظار التحصيل|الدفع نقدًا/);
+});
+
+test("collected active order does not ask for collection a second time", () => {
+  const disclosure = orderPaymentDisclosure({ ...cashDelivery, state: "DELIVERED", paymentState: "COLLECTED" });
+  assert.match(disclosure.amount + disclosure.status, /تم سداد المبلغ/);
+  assert.doesNotMatch(disclosure.amount + disclosure.status, /النقد المتبقي|بانتظار التحصيل|الدفع نقدًا|عند الاستلام|عند التسليم/);
 });
 
 test("active order retains the canonical cash payment terms", () => {

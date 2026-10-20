@@ -24,6 +24,10 @@ const views: ReadonlyArray<Readonly<{ id: View; label: string }>> = [
 const specificStates = [
   { value: "", label: "كل الحالات" },
   { value: "attention", label: "تحتاج قرارًا" },
+  { value: "CREATED", label: "طلب جديد" },
+  { value: "PARTNER_ACCEPTED", label: "قبله المتجر" },
+  { value: "PREPARING", label: "قيد التجهيز" },
+  { value: "READY_FOR_PICKUP", label: "جاهز لاستلام العميل" },
   { value: "READY_FOR_DISPATCH", label: "بانتظار كابتن" },
   { value: "DELIVERED", label: "تم التسليم" },
   { value: "CAPTAIN_ASSIGNED", label: "تم إسناد كابتن" },
@@ -152,7 +156,7 @@ export function OperationsWorkspace() {
       if (sequence !== loadSequence.current) return;
       if (!body || !Array.isArray(body.operations) || !body.operations.every(isRenderableOperation)
         || (body.nextCursor !== undefined && typeof body.nextCursor !== "string")
-        || (body.summary !== undefined && !isRenderableSummary(body.summary))) {
+        || !isRenderableSummary(body.summary)) {
         throw new Error("استجابة قائمة الطلبات غير صالحة. أعد المحاولة.");
       }
       setOperations(body.operations);
@@ -160,7 +164,10 @@ export function OperationsWorkspace() {
       setNextCursor(body.nextCursor ?? "");
     } catch (cause) {
       if (sequence !== loadSequence.current) return;
-      if (!retainRows || (cause && typeof cause === "object" && "status" in cause && (cause.status === 401 || cause.status === 403))) { setOperations([]); setSummary(null); }
+      // Never leave stale rows or a usable next cursor after an unverified read.
+      setOperations([]);
+      setSummary(null);
+      setNextCursor("");
       setErrorStatus(cause && typeof cause === "object" && "status" in cause && typeof cause.status === "number" ? cause.status : 0);
       const timedOut = cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError");
       setError(timedOut ? "استغرقت القراءة وقتًا طويلًا. أعد المحاولة." : cause instanceof Error ? cause.message : "تعذر قراءة مركز العمليات.");
@@ -198,18 +205,20 @@ export function OperationsWorkspace() {
       detail={selectedOrderId ? <AdaptiveRecordPanel
         title="ملف الطلب"
         onClose={closeSelected}
-        onPrevious={selectedIndex > 0 ? () => setSelectedOrderId(operations[selectedIndex - 1]!.orderId) : undefined}
-        onNext={selectedIndex >= 0 && selectedIndex < operations.length - 1 ? () => setSelectedOrderId(operations[selectedIndex + 1]!.orderId) : undefined}
+        onPrevious={selectedIndex > 0 ? () => {
+          const previous = operations[selectedIndex - 1];
+          if (previous) setSelectedOrderId(previous.orderId);
+        } : undefined}
+        onNext={selectedIndex >= 0 && selectedIndex < operations.length - 1 ? () => {
+          const next = operations[selectedIndex + 1];
+          if (next) setSelectedOrderId(next.orderId);
+        } : undefined}
       >
         <OrderOperationDetail orderId={selectedOrderId} embedded onClose={closeSelected} onUpdated={() => void load(true)} />
       </AdaptiveRecordPanel> : null}>
     <section className="operations-workspace ops-center" aria-label="مركز متابعة الطلبات">
       <div className="ops-page-intro">
         <p>متابعة الطلبات والتعامل مع ما يحتاج تدخلك من مكان واحد.</p>
-        <button type="button" className="button button-secondary ops-refresh" disabled={loading}
-          onClick={() => void load(true)} aria-label="تحديث قائمة الطلبات">
-          {loading ? "جارٍ التحديث…" : "تحديث"}
-        </button>
       </div>
 
       <div className="ops-tools">
@@ -286,7 +295,7 @@ export function OperationsWorkspace() {
                   const age = operationalAge(item.state, item.updatedAt, ageClock);
                   const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
                   return <tr key={item.orderId} className={age.needsReview ? "ops-row-review" : undefined}>
-                    <th scope="row">{item.storeName}</th>
+                    <th scope="row">{item.storeName}<small className="muted" dir="ltr" style={{ display: "block", overflowWrap: "anywhere" }}>{item.orderId}</small></th>
                     <td><span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span></td>
                     <td>{item.assignment ? <span className="ops-captain-cell">
                       <span>{captainAssignmentStateLabel(item.assignment.state)}</span>
@@ -307,7 +316,7 @@ export function OperationsWorkspace() {
                 const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
                 return <li key={item.orderId} className={"ops-mobile-order" + (age.needsReview ? " ops-mobile-order-review" : "")}>
                   <div className="ops-mobile-order-heading">
-                    <strong>{item.storeName}</strong>
+                    <strong>{item.storeName}</strong><small className="muted" dir="ltr">{item.orderId}</small>
                   </div>
                   <div className="ops-mobile-order-status">
                     <span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span>
