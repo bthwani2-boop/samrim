@@ -236,6 +236,40 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 	if err != nil || replayed || reserved.State != "ACTIVE" {
 		t.Fatalf("captain COD hold must exist before delivery: %+v replay=%t err=%v", reserved, replayed, err)
 	}
+	// A third independent actor exercises cancellation of mixed funding before
+	// collection. A replay must release the wallet reservation only once.
+	const cancelledOrder = "proof-cancel-order"
+	const cancelledCustomer = "proof-cancel-customer"
+	cancelFunding, _, err := postgres.CreateCashInFundingIntent(ctx, db, postgres.CreateCashInFundingIntentInput{
+		ActorType: "customer", ActorID: cancelledCustomer, AmountMinor: 1200,
+		Currency: "YER", ProviderKey: postgres.DevelopmentSimulatorProvider,
+		IdempotencyKey: "proof-cancel-customer-funding", CorrelationID: "proof-cancel-customer-funding-correlation",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := postgres.ApplyCashInFundingResult(ctx, db, postgres.ApplyCashInFundingResultInput{
+		FundingIntentID: cancelFunding.ID, Outcome: "SUCCESS",
+		ProviderTransactionReference: "proof-cancel-provider-receipt",
+		ActorID:                      "proof-synthetic-provider", IdempotencyKey: "proof-cancel-funding-success",
+		CorrelationID: "proof-cancel-funding-correlation",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cancelPayment, _, err := postgres.CreatePaymentIntent(ctx, db, postgres.CreatePaymentIntentInput{
+		ExternalReference: "proof-cancel-payment", PayerActorID: cancelledCustomer, OrderID: cancelledOrder,
+		AmountMinor: 300, Currency: "YER", Method: domain.MethodCashAtStore,
+		CustomerPaymentAllocation: &postgres.CustomerPaymentAllocationInput{
+			OrderID: cancelledOrder, StoreID: store, PartnerActorID: owner,
+			CommercialStoreTypeID: "proof-type", FulfillmentMode: "CUSTOMER_PICKUP",
+			Currency: "YER", SubtotalMinor: 1500, InternalBalanceAmountMinor: 1200,
+			CashAmountMinor: 300, CustomerPayableMinor: 1500, PolicyVersion: "proof-cancel-v1",
+		},
+		IdempotencyKey: "proof-cancel-payment-create", CorrelationID: "proof-cancel-payment-correlation",
+	})
+	if err != nil {
+		t.Fatalf("create cancellation-ready mixed payment: %v", err)
+	}
 	const token = "only-test-owned-wlt-token"
 	const cipher = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 	server, err := transporthttp.New(db, token, cipher, cipher)
@@ -275,6 +309,9 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 		"WLT_FINANCIAL_PROOF_COURIER_ORDER_ID="+courierOrder,
 		"WLT_FINANCIAL_PROOF_COURIER_PAYMENT_ID="+courierPayment.ID,
 		"WLT_FINANCIAL_PROOF_COURIER_CAPTAIN_ID="+courierCaptain,
+		"WLT_FINANCIAL_PROOF_CANCEL_ORDER_ID="+cancelledOrder,
+		"WLT_FINANCIAL_PROOF_CANCEL_PAYMENT_ID="+cancelPayment.ID,
+		"WLT_FINANCIAL_PROOF_CANCEL_CLIENT_ID="+cancelledCustomer,
 	)
 	output, err := cmd.CombinedOutput()
 	t.Log(string(output))
@@ -320,6 +357,18 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM wlt.partner_order_earnings WHERE order_id=$1",
 		courierOrder).Scan(&courierEarnings); err != nil || courierEarnings != 1 {
 		t.Fatalf("courier partner earnings count=%d err=%v", courierEarnings, err)
+	}
+	cancelled, err := postgres.ReadPaymentIntent(ctx, db, cancelPayment.ID)
+	if err != nil || cancelled.State != "CANCELLED" {
+		t.Fatalf("cancellation not persisted in WLT: %+v err=%v", cancelled, err)
+	}
+	restored, err := postgres.ReadWalletBalance(ctx, db, "customer", cancelledCustomer)
+	if err != nil || restored != 1200 {
+		t.Fatalf("cancelled mixed payment must return reserved 1200 once: %d err=%v", restored, err)
+	}
+	var cancelEarnings int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM wlt.partner_order_earnings WHERE order_id=$1", cancelledOrder).Scan(&cancelEarnings); err != nil || cancelEarnings != 0 {
+		t.Fatalf("cancelled order earned unexpected partner money: %d err=%v", cancelEarnings, err)
 	}
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
 		SELECT transaction_id FROM wlt.ledger_entries GROUP BY transaction_id

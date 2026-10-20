@@ -125,6 +125,7 @@ func TestRealWLTStorePickupMixedFundingReconcilesAcrossDatabases(t *testing.T) {
 		"proof-other-partner-session":   {"foreign-partner", "partner", "app-partner"},
 		"proof-courier-client-session":  {"proof-courier-customer", "client", "app-client"},
 		"proof-courier-captain-session": {"proof-courier-captain", "captain", "app-captain"},
+		"proof-cancel-client-session":   {"proof-cancel-customer", "client", "app-client"},
 	}
 	identityServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -324,5 +325,6 @@ func TestRealWLTStorePickupMixedFundingReconcilesAcrossDatabases(t *testing.T) {
 			payable, cash, record.CustomerPaymentAllocation, err)
 	}
 	verifyRealCourierMixedSettlement(t, ctx, db, mux, identityClient, client, proofKeys, service, partner, store, city)
+	verifyRealCancelMixedSettlement(t, ctx, db, mux, client, service, store, city)
 	t.Log(fmt.Sprintf("client proof HTTP -> partner pickup HTTP -> DSH outbox POSTED -> real WLT COLLECTED -> DSH payment COLLECTED; client/partner/operator share order=%s", orderID))
 }
