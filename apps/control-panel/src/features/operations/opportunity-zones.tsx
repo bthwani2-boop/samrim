@@ -55,8 +55,13 @@ function CircleMap({ cells }: { cells: ReadonlyArray<HeatCell> }) {
     const id = "bthwani-ops-maps-sdk";
     const existing = document.getElementById(id) as HTMLScriptElement | null;
     const script = existing ?? document.createElement("script");
-    const onLoad = () => setLoaded(Boolean(window.google?.maps));
-    const onError = () => setMapError(true);
+    const timeout = window.setTimeout(() => setMapError(true), 15_000);
+    const onLoad = () => {
+      clearTimeout(timeout);
+      if (window.google?.maps) setLoaded(true);
+      else setMapError(true);
+    };
+    const onError = () => { clearTimeout(timeout); setMapError(true); };
     script.addEventListener("load", onLoad);
     script.addEventListener("error", onError);
     if (!existing) {
@@ -67,7 +72,11 @@ function CircleMap({ cells }: { cells: ReadonlyArray<HeatCell> }) {
     } else if (window.google?.maps) {
       setLoaded(true);
     }
-    return () => { script.removeEventListener("load", onLoad); script.removeEventListener("error", onError); };
+    return () => {
+      clearTimeout(timeout);
+      script.removeEventListener("load", onLoad);
+      script.removeEventListener("error", onError);
+    };
   }, [key, loaded]);
 
   useEffect(() => {
@@ -108,8 +117,10 @@ export function OpportunityZones() {
   const [value, setValue] = useState<CaptainOpportunityHeatmap | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const latestRequest = useRef(0);
 
   const load = useCallback(async (quiet = false) => {
+    const request = ++latestRequest.current;
     if (!quiet) setLoading(true);
     setError("");
     setValue((previous) => previous && !isFreshOpportunitySample(previous.measuredAt) ? null : previous);
@@ -124,13 +135,15 @@ export function OpportunityZones() {
           Number.isFinite(cell.latitude) && Number.isFinite(cell.longitude)
           && cell.intensity in activityRadius && (cell.kind === "ORDERS" || cell.kind === "CAPTAINS")
         )) throw new Error("بيانات خريطة النشاط غير صالحة.");
+      if (request !== latestRequest.current) return;
       setValue(body);
     } catch (cause) {
+      if (request !== latestRequest.current) return;
       // Quiet polling failures must also remove potentially stale circles.
       setValue(null);
       setError(cause instanceof Error ? cause.message : "تعذرت قراءة خريطة النشاط.");
     } finally {
-      setLoading(false);
+      if (request === latestRequest.current) setLoading(false);
     }
   }, []);
 
@@ -140,6 +153,7 @@ export function OpportunityZones() {
     const refreshOnReturn = () => { if (!document.hidden) void load(true); };
     document.addEventListener("visibilitychange", refreshOnReturn);
     return () => {
+      latestRequest.current += 1;
       clearInterval(timer);
       document.removeEventListener("visibilitychange", refreshOnReturn);
     };
