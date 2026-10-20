@@ -79,6 +79,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
         || !Array.isArray(body.operation.history) || typeof body.operation.historyHasMore !== "boolean"
         || !body.operation.history.every((event) => event && (event.source === "order" || event.source === "captain")
           && typeof event.id === "string" && event.id.length > 0 && typeof event.eventType === "string" && typeof event.state === "string"
+          && typeof event.actorId === "string" && event.actorId.length > 0
           && typeof event.at === "string" && Number.isFinite(Date.parse(event.at)))) {
         setError("استجابة تفاصيل الطلب غير صالحة. أعد القراءة.");
         return false;
@@ -330,6 +331,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
             {operation.history.map((event) => <li key={`${event.source}-${event.id}`}>
               <strong>{operationHistoryLabel(event)}</strong>
               <time dateTime={event.at}>{formatOrderDate(event.at)}</time>
+              <small className="muted">المنفّذ: <code dir="ltr" style={{ overflowWrap: "anywhere" }}>{event.actorId}</code></small>
             </li>)}
           </ol>
         ) : <p className="muted">لا توجد أحداث محفوظة متاحة لهذا الطلب.</p>}

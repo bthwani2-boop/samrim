@@ -292,6 +292,7 @@ type OperatorOperationEventRecord struct {
 	Source    string
 	EventType string
 	State     string
+	ActorID   string
 	At        time.Time
 }
 
@@ -805,11 +806,11 @@ SELECT count(*)::integer, COALESCE(max(ordinal) FILTER (WHERE id=$2),0)::integer
 	// The operator timeline uses persisted facts, never a reconstructed state
 	// sequence. Bound the read and signal explicitly when older events exist.
 	rows, err := db.QueryContext(ctx, `
-SELECT id::text, source, event_type, to_state, created_at FROM (
-	SELECT 'order'::text AS source, event_type, to_state, created_at, id
+SELECT id::text, source, event_type, to_state, acting_actor_id, created_at FROM (
+	SELECT 'order'::text AS source, event_type, to_state, acting_actor_id, created_at, id
 	FROM dsh.commerce_order_audit WHERE order_id=$1
 	UNION ALL
-	SELECT 'captain'::text AS source, event_type, to_state, created_at, id
+	SELECT 'captain'::text AS source, event_type, to_state, acting_actor_id, created_at, id
 	FROM dsh.captain_audit WHERE order_id=$1
 ) history ORDER BY created_at DESC, source, id DESC LIMIT 101`, order.ID)
 	if err != nil {
@@ -819,7 +820,7 @@ SELECT id::text, source, event_type, to_state, created_at FROM (
 	operation.History = make([]OperatorOperationEventRecord, 0)
 	for rows.Next() {
 		var event OperatorOperationEventRecord
-		if err := rows.Scan(&event.ID, &event.Source, &event.EventType, &event.State, &event.At); err != nil {
+		if err := rows.Scan(&event.ID, &event.Source, &event.EventType, &event.State, &event.ActorID, &event.At); err != nil {
 			return OperatorOperationRecord{}, err
 		}
 		if len(operation.History) == 100 {

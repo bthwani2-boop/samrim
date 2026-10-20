@@ -8913,7 +8913,7 @@ components:
     OperatorOperationEvent:
       type: object
       additionalProperties: false
-      required: [id, source, eventType, state, at]
+      required: [id, source, eventType, state, actorId, at]
       properties:
         id:
           type: string
@@ -8925,6 +8925,9 @@ components:
           type: string
         state:
           type: string
+        actorId:
+          type: string
+          description: Identifier of the actor recorded by the canonical audit event; system actors are possible, and this is not a verified display name.
         at:
           type: string
           format: date-time

@@ -224,7 +224,7 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil || afterPickup.CustomerSuccessfulOrdersCount != 1 || afterPickup.SuccessfulOrderOrdinal != 1 {
 			t.Fatalf("customer pickup must be first confirmed success: %+v err=%v", afterPickup, err)
 		}
-		if len(afterPickup.History) != 1 || afterPickup.History[0].Source != "order" || afterPickup.History[0].EventType != "order_picked_up" || afterPickup.History[0].State != "PICKED_UP" || afterPickup.HistoryHasMore {
+		if len(afterPickup.History) != 1 || afterPickup.History[0].Source != "order" || afterPickup.History[0].EventType != "order_picked_up" || afterPickup.History[0].State != "PICKED_UP" || afterPickup.History[0].ActorID != "partner_operator_ops" || afterPickup.HistoryHasMore {
 			t.Fatalf("operator history must reflect the persisted pickup audit without unrelated order events: %+v", afterPickup.History)
 		}
 		awaiting, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_01")
@@ -246,7 +246,7 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil || afterDelivery.CustomerSuccessfulOrdersCount != 2 || afterDelivery.SuccessfulOrderOrdinal != 2 {
 			t.Fatalf("confirmed Captain delivery must count after completed customer pickup: %+v err=%v", afterDelivery, err)
 		}
-		if len(afterDelivery.History) != 1 || afterDelivery.History[0].Source != "captain" || afterDelivery.History[0].EventType != "delivery_completed" || afterDelivery.History[0].State != "delivered" || afterDelivery.HistoryHasMore {
+		if len(afterDelivery.History) != 1 || afterDelivery.History[0].Source != "captain" || afterDelivery.History[0].EventType != "delivery_completed" || afterDelivery.History[0].State != "delivered" || afterDelivery.History[0].ActorID != "captain_operator_ops" || afterDelivery.HistoryHasMore {
 			t.Fatalf("operator history must reflect actual Captain completion, not a guessed order transition: %+v", afterDelivery.History)
 		}
 		firstSuccess, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_02")
