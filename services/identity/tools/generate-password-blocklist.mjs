@@ -10,7 +10,7 @@ const sourcePath = path.join(root, "backend/internal/security/password_blocklist
 const outputPath = path.join(root, "backend/internal/security/password_blocklist_generated.go");
 const sourceVersion = "identity-passwords-v3";
 
-const values = [...new Set(fs.readFileSync(sourcePath, "utf8").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#")).map((line) => line.toLowerCase()))].sort();
+const values = [...new Set(fs.readFileSync(sourcePath, "utf8").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#")).map((line) => line.toLowerCase()))].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 if (values.length === 0) throw new Error("password blocklist source is empty");
 const canonical = values.join("\n") + "\n";
 const checksum = crypto.createHash("sha256").update(canonical).digest("hex");

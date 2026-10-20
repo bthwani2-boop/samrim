@@ -293,7 +293,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
 
 function sameIDs(left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean {
   if (left.length !== right.length) return false;
-  const sortedLeft = [...left].sort();
-  const sortedRight = [...right].sort();
+  const sortedLeft = [...left].sort((a, b) => a.localeCompare(b));
+  const sortedRight = [...right].sort((a, b) => a.localeCompare(b));
   return sortedLeft.every((id, index) => id === sortedRight[index]);
 }
