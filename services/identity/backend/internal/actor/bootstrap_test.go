@@ -269,7 +269,8 @@ func TestInitialOperatorPermissionAdministrationEnforcesScopeVersionAuditAndSess
 	if root.CreatedAt.IsZero() {
 		t.Fatal("initial operator role creation time is missing")
 	}
-	createdProfile, err := service.CreateOperatorProfile(ctx, "control-panel", root.ActorID, "profile-create-proof", "profile-create-key", domain.OperatorProfileCreateRequest{FullNameAr: "مشغل اختبار", PhoneE164: "+15555550124", JobTitle: "مسؤول دعم", Department: "العمليات"})
+	// DSH is the authorized HR onboarding caller; direct Control Panel creation is forbidden.
+	createdProfile, err := service.CreateOperatorProfile(ctx, "dsh", root.ActorID, "profile-create-proof", "profile-create-key", domain.OperatorProfileCreateRequest{FullNameAr: "مشغل اختبار", PhoneE164: "+15555550124", JobTitle: "مسؤول دعم", Department: "العمليات"})
 	if err != nil {
 		t.Fatalf("create isolated operator profile: %v", err)
 	}
