@@ -51,11 +51,14 @@ func CreateCancellationRequest(ctx context.Context, db *sql.DB, orderID, clientA
 	}
 	var owner, state string
 	err = tx.QueryRowContext(ctx, "SELECT client_actor_id,state FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID).Scan(&owner, &state)
-	if errors.Is(err, sql.ErrNoRows) || owner != clientActorID {
+	if errors.Is(err, sql.ErrNoRows) {
 		return CancellationRequestRecord{}, false, ErrCancellationRequestNotFound
 	}
 	if err != nil {
 		return CancellationRequestRecord{}, false, err
+	}
+	if owner != clientActorID {
+		return CancellationRequestRecord{}, false, ErrCancellationRequestNotFound
 	}
 	existing, lookup := scanCancellationRequest(tx.QueryRowContext(ctx, "SELECT "+cancellationRequestColumns+" FROM dsh.order_cancellation_requests WHERE idempotency_key=$1", idem))
 	if lookup == nil {
@@ -94,11 +97,14 @@ func CreateCancellationRequest(ctx context.Context, db *sql.DB, orderID, clientA
 func ReadClientCancellationRequest(ctx context.Context, db *sql.DB, orderID, clientActorID string) (CancellationRequestRecord, error) {
 	var owner string
 	err := db.QueryRowContext(ctx, "SELECT client_actor_id FROM dsh.commerce_orders WHERE id=$1", strings.TrimSpace(orderID)).Scan(&owner)
-	if errors.Is(err, sql.ErrNoRows) || owner != strings.TrimSpace(clientActorID) {
+	if errors.Is(err, sql.ErrNoRows) {
 		return CancellationRequestRecord{}, ErrCancellationRequestNotFound
 	}
 	if err != nil {
 		return CancellationRequestRecord{}, err
+	}
+	if owner != strings.TrimSpace(clientActorID) {
+		return CancellationRequestRecord{}, ErrCancellationRequestNotFound
 	}
 	x, err := scanCancellationRequest(db.QueryRowContext(ctx,
 		"SELECT "+cancellationRequestColumns+" FROM dsh.order_cancellation_requests WHERE order_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1", orderID))
