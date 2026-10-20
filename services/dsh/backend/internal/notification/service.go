@@ -179,6 +179,8 @@ func message(eventType, role, orderID, toState string) (string, string, string) 
 		return "ORDER_READY", "الطلب جاهز للتوصيل", fmt.Sprintf("الطلب رقم %s جاهز لاستلام الكابتن.", orderRef)
 	case "order_rejected":
 		return "ORDER_REJECTED", "تعذر قبول الطلب", fmt.Sprintf("تعذر قبول الطلب رقم %s.", orderRef)
+	case "order_cancelled":
+		return "ORDER_STATUS", "تم إلغاء الطلب", fmt.Sprintf("تم إلغاء الطلب رقم %s.", orderRef)
 	case "dispatch_offer_created":
 		return "CAPTAIN_OFFER", "طلب توصيل جديد", fmt.Sprintf("لديك عرض توصيل جديد للطلب رقم %s.", orderRef)
 	case "dispatch_offer_accepted":
