@@ -36,6 +36,32 @@ function WalletCompensationConfirmation({ amountMinor, onCancel, onConfirm }: Re
   </dialog>;
 }
 
+function OperatorCancellationConfirmation({ needsPartnerReview, onCancel, onConfirm }: Readonly<{
+  needsPartnerReview: boolean;
+  onCancel: () => void;
+  onConfirm: (reason: string, partnerReviewed: boolean) => void;
+}>) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [reason, setReason] = useState("");
+  const [partnerReviewed, setPartnerReviewed] = useState(false);
+  useEffect(() => { const dialog = dialogRef.current; if (dialog && !dialog.open) dialog.showModal(); }, []);
+  return <dialog ref={dialogRef} aria-labelledby="operator-cancellation-title" className="ops-wallet-confirm"
+    onCancel={(event) => { event.preventDefault(); onCancel(); }} onClose={onCancel}>
+    <h2 id="operator-cancellation-title">مراجعة إلغاء الطلب</h2>
+    <p>راجع حالة التجهيز مع الشريك قبل القرار. الإلغاء لا يضيف تعويضًا تلقائيًا إلى محفظة العميل.</p>
+    <label htmlFor="operator-cancellation-reason">سبب الإلغاء والقرار التشغيلي</label>
+    <textarea id="operator-cancellation-reason" className="input" rows={3} maxLength={500} required
+      value={reason} onChange={(event) => setReason(event.target.value)} placeholder="اذكر سبب الإلغاء ونتيجة مراجعة الحالة" />
+    {needsPartnerReview ? <label><input type="checkbox" checked={partnerReviewed}
+      onChange={(event) => setPartnerReviewed(event.target.checked)} /> تم التواصل مع الشريك والتحقق من عدم وجود مانع أو تكلفة غير محسومة</label> : null}
+    <div className="action-row">
+      <button type="button" className="button button-danger" onClick={() => onConfirm(reason.trim(), partnerReviewed)}
+        disabled={Array.from(reason.trim()).length < 12 || (needsPartnerReview && !partnerReviewed)}>تأكيد إلغاء الطلب</button>
+      <button type="button" className="button button-secondary" onClick={onCancel}>رجوع</button>
+    </div>
+  </dialog>;
+}
+
 export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpdated }: Readonly<{ orderId: string; embedded?: boolean; onClose?: () => void; onUpdated?: () => void }>) {
   const { state: sessionState } = useSession();
   const searchParams = useSearchParams();
@@ -51,6 +77,8 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
   const [notice, setNotice] = useState("");
   const [walletCreditedAdjustments, setWalletCreditedAdjustments] = useState<ReadonlySet<string>>(() => new Set());
   const [pendingWalletCompensation, setPendingWalletCompensation] = useState<PendingWalletCompensation | null>(null);
+  const [pendingCancellation, setPendingCancellation] = useState(false);
+  const cancellationAttemptKey = useRef("");
   const loadSequence = useRef(0);
   const actionSequence = useRef(0);
   const actionInFlight = useRef(false);
@@ -171,6 +199,49 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
     }
   }
 
+  async function cancelForOperations(reason: string, partnerReviewed: boolean) {
+    if (!operation || busy || loading || actionNeedsReadback || actionInFlight.current) return;
+    const current = operation.order;
+    if (current.id !== orderId || !["CREATED", "PARTNER_ACCEPTED", "PREPARING"].includes(current.state) ||
+        current.paymentState !== "REQUIRES_COLLECTION") return;
+    if (!cancellationAttemptKey.current) cancellationAttemptKey.current = crypto.randomUUID();
+    actionInFlight.current = true;
+    setBusy(true);
+    setActionNeedsReadback(true);
+    setActionError("");
+    setNotice("");
+    try {
+      const response = await identityFetch(`/api/operations/${encodeURIComponent(orderId)}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": cancellationAttemptKey.current },
+        body: JSON.stringify({ reason, partnerReviewed, expectedVersion: current.version }),
+      });
+      if (!response.ok) {
+        const message = await operationResponseMessage(response);
+        const refreshed = await load();
+        setActionError(refreshed ? message : `${message} تعذرت قراءة الحالة الحالية؛ تحقق من الطلب قبل المحاولة.`);
+        return;
+      }
+      setPendingCancellation(false);
+      const refreshed = await load();
+      if (refreshed && operation.order.id === orderId) {
+        setNotice("ألغيت العمليات الطلب وسُجل القرار. راجع الحالة المالية؛ لم يُضف تعويض تلقائي.");
+        cancellationAttemptKey.current = "";
+        onUpdated?.();
+      } else {
+        setActionError("تم استلام قرار الإلغاء لكن تعذر التحقق من الحالة. أعد قراءة الطلب قبل المحاولة.");
+      }
+    } catch {
+      const refreshed = await load();
+      setActionError(refreshed
+        ? "حدث انقطاع أثناء قرار الإلغاء. افحص الحالة المحفوظة قبل إعادة الطلب."
+        : "نتيجة الإلغاء غير مؤكدة. لا تعِد التنفيذ قبل قراءة حالة الطلب.");
+    } finally {
+      actionInFlight.current = false;
+      setBusy(false);
+    }
+  }
+
   async function creditCustomerWallet(adjustmentId: string, amountMinor: number) {
     if (busy || loading || amountMinor <= 0 || walletCreditedAdjustments.has(adjustmentId)) return;
     setPendingWalletCompensation(null);
@@ -210,6 +281,10 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
 
   const { order, assignment } = operation;
   const action = resolveOperatorAction({ state: order.state, assignment });
+  const canCancelOrder = sessionState.kind === "authenticated" && sessionState.identity.role === "operator" &&
+    sessionState.identity.permissions?.includes("operations") &&
+    ["CREATED", "PARTNER_ACCEPTED", "PREPARING"].includes(order.state) &&
+    order.paymentState === "REQUIRES_COLLECTION";
   const countLabel = new Intl.NumberFormat("ar-YE").format(order.lines.length);
 
   return (
@@ -221,8 +296,14 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
       <div className="order-detail-toolbar">
         {action ? <button type="button" className={`button ${action === "recover" ? "button-secondary" : "button-primary"}`} onClick={() => void runAction()} disabled={busy || loading || actionNeedsReadback}>{busy ? "جارٍ تنفيذ الإجراء…" : operationActionLabel(action)}</button> : <span className="muted">لا يتطلب هذا الطلب إجراءً مباشرًا من المشغل.</span>}
         <button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading || busy}>{loading ? "جارٍ القراءة…" : "إعادة قراءة الحالة"}</button>
+        {canCancelOrder ? <button type="button" className="button button-secondary" onClick={() => setPendingCancellation(true)} disabled={loading || busy || actionNeedsReadback}>مراجعة الإلغاء</button> : null}
       </div>
 
+      {pendingCancellation ? <OperatorCancellationConfirmation
+        needsPartnerReview={order.state === "PARTNER_ACCEPTED" || order.state === "PREPARING"}
+        onCancel={() => setPendingCancellation(false)}
+        onConfirm={(reason, partnerReviewed) => void cancelForOperations(reason, partnerReviewed)}
+      /> : null}
       {pendingWalletCompensation ? <WalletCompensationConfirmation
         amountMinor={pendingWalletCompensation.amountMinor}
         onCancel={() => setPendingWalletCompensation(null)}
@@ -331,6 +412,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
             {operation.history.map((event) => <li key={`${event.source}-${event.id}`}>
               <strong>{operationHistoryLabel(event)}</strong>
               <time dateTime={event.at}>{formatOrderDate(event.at)}</time>
+              {event.decisionReason ? <small className="muted">سبب الإلغاء: {event.decisionReason}</small> : null}
               <small className="muted">المنفّذ: <code dir="ltr" style={{ overflowWrap: "anywhere" }}>{event.actorId}</code></small>
             </li>)}
           </ol>

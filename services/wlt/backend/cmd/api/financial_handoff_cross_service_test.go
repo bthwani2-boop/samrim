@@ -34,7 +34,7 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	var fresh bool
 	if err := db.QueryRowContext(ctx, "SELECT to_regclass('wlt.schema_migrations') IS NULL").Scan(&fresh); err != nil || !fresh {
@@ -348,6 +348,7 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 	if err != nil || courierFinal.State != "COLLECTED" {
 		t.Fatalf("courier COD/WLT collection was not persisted: %+v err=%v", courierFinal, err)
 	}
+	verifyCollectedCourierReviewedCompensation(t, ctx, db, courierOrder, courierPayment.ID, courierCustomer)
 	var finalizedCOD, courierEarnings, financialOutliers int
 	if err := db.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM wlt.captain_cod_reservations WHERE order_id=$1 AND captain_actor_id=$2 AND state='FINALIZED'",

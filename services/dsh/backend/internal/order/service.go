@@ -13,13 +13,14 @@ import (
 )
 
 var (
-	ErrClientSessionForbidden       = errors.New("an active app-client session is required")
-	ErrPartnerSessionForbidden      = errors.New("an active app-partner session is required")
-	ErrConversationSessionForbidden = errors.New("an active order conversation session is required")
-	ErrStoreOwnershipForbidden      = errors.New("partner does not own this Store")
-	ErrOperatorNotActive            = errors.New("operator is not active")
-	ErrPaymentUnavailable           = errors.New("payment operation is unavailable")
-	ErrCashRemittanceInputInvalid   = errors.New("cash remittance reconciliation input is invalid")
+	ErrClientSessionForbidden             = errors.New("an active app-client session is required")
+	ErrPartnerSessionForbidden            = errors.New("an active app-partner session is required")
+	ErrConversationSessionForbidden       = errors.New("an active order conversation session is required")
+	ErrStoreOwnershipForbidden            = errors.New("partner does not own this Store")
+	ErrOperatorNotActive                  = errors.New("operator is not active")
+	ErrPaymentUnavailable                 = errors.New("payment operation is unavailable")
+	ErrCashRemittanceInputInvalid         = errors.New("cash remittance reconciliation input is invalid")
+	ErrOperatorCancellationReviewRequired = errors.New("partner status must be reviewed before operations cancellation")
 )
 
 type Service struct {
@@ -134,7 +135,47 @@ func (s *Service) ListForClient(ctx context.Context, accessToken string, limit i
 	return postgres.ListOrdersForClientPage(ctx, s.db, identity, limit, cursor)
 }
 
+// CancelForOperator requires the actual Operations permission and a reviewed decision.
+func (s *Service) CancelForOperator(ctx context.Context, orderID, actingActorID, reason string, partnerReviewed bool, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	reason = strings.TrimSpace(reason)
+	if strings.TrimSpace(orderID) == "" || expectedVersion < 1 || len([]rune(reason)) < 12 || len([]rune(reason)) > 500 ||
+		len(strings.TrimSpace(idempotencyKey)) < 8 || len(strings.TrimSpace(correlationID)) < 8 {
+		return postgres.OrderRecord{}, false, postgres.ErrOrderTransitionInvalid
+	}
+	current, err := postgres.ReadOrder(ctx, s.db, orderID)
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if (current.State == "PARTNER_ACCEPTED" || current.State == "PREPARING") && !partnerReviewed {
+		return postgres.OrderRecord{}, false, ErrOperatorCancellationReviewRequired
+	}
+	return postgres.CancelOrderForOperator(ctx, s.db, orderID, expectedVersion, strings.TrimSpace(idempotencyKey), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), reason, partnerReviewed)
+}
+
+// Client cancellation uses the immutable policy recorded with the original Order.
 func (s *Service) CancelForClient(ctx context.Context, accessToken, orderID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+	actor, err := s.requireSession(ctx, accessToken, "client", "app-client")
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if strings.TrimSpace(orderID) == "" || expectedVersion < 1 ||
+		len(strings.TrimSpace(idempotencyKey)) < 8 || len(strings.TrimSpace(correlationID)) < 8 {
+		return postgres.OrderRecord{}, false, postgres.ErrOrderTransitionInvalid
+	}
+	if _, err := postgres.ReadOrderForClient(ctx, s.db, orderID, actor); err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	return postgres.TransitionOrderWithPaymentCancellation(ctx, s.db, orderID, "CANCELLED", expectedVersion,
+		strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, "CANCELLED", expectedVersion),
+		actor, strings.TrimSpace(correlationID), "client_cancelled")
+}
+
+// Internal checkout rollback is retained for partially created multi-store
+// transactions only, not exposed as an ordinary customer Order cancellation.
+func (s *Service) CancelForCheckoutRecovery(ctx context.Context, accessToken, orderID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
 	if err != nil {
 		return postgres.OrderRecord{}, false, err
@@ -272,7 +313,7 @@ func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID
 	}
 	state = strings.TrimSpace(state)
 	if state == "CANCELLED" {
-		return postgres.TransitionOrderWithPaymentCancellation(ctx, s.db, orderID, state, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID), postgres.CancellationReasonPickupCustomerNoShow)
+		return postgres.OrderRecord{}, false, ErrStoreOwnershipForbidden
 	}
 	if state == "REJECTED" {
 		return postgres.TransitionOrderWithPaymentCancellation(ctx, s.db, orderID, "REJECTED", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID), "partner_rejected")

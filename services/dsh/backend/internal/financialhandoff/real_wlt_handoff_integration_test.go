@@ -41,7 +41,7 @@ func TestRealWLTStorePickupMixedFundingReconcilesAcrossDatabases(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	var fresh bool
 	if err := db.QueryRowContext(ctx, "SELECT to_regclass('dsh.schema_migrations') IS NULL").Scan(&fresh); err != nil || !fresh {

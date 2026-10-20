@@ -14,6 +14,7 @@ var ErrCommercialStoreTypeInvalid = errors.New("commercial store type facts are 
 
 type CommercialStoreTypeRecord struct {
 	ID, VerticalID, NameAr, NameEn string
+	CancellationMode               string
 	Active                         bool
 	Version                        int
 	CreatedAt, UpdatedAt           time.Time
@@ -39,7 +40,7 @@ func HashCommercialStoreTypeUpdateRequest(id string, input UpdateCommercialStore
 }
 
 func ListCommercialStoreTypes(ctx context.Context, db *sql.DB, verticalID string, activeOnly bool) ([]CommercialStoreTypeRecord, error) {
-	query := `SELECT type.id,type.vertical_id,type.name_ar,type.name_en,type.active,type.version,type.created_at,type.updated_at
+	query := `SELECT type.id,type.vertical_id,type.name_ar,type.name_en,type.active,type.version,type.created_at,type.updated_at,type.cancellation_mode
 		FROM dsh.commercial_store_types type JOIN dsh.commerce_verticals vertical ON vertical.id=type.vertical_id
 		WHERE type.vertical_id=$1 AND ($2=false OR (type.active=true AND vertical.active=true))`
 	query += " ORDER BY lower(type.name_en),type.id"
@@ -51,7 +52,7 @@ func ListCommercialStoreTypes(ctx context.Context, db *sql.DB, verticalID string
 	items := make([]CommercialStoreTypeRecord, 0)
 	for rows.Next() {
 		var item CommercialStoreTypeRecord
-		if err = rows.Scan(&item.ID, &item.VerticalID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err = rows.Scan(&item.ID, &item.VerticalID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.CancellationMode); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -65,7 +66,7 @@ func ReadCommercialStoreType(ctx context.Context, db *sql.DB, id string) (Commer
 		return CommercialStoreTypeRecord{}, ErrCommercialStoreTypeInvalid
 	}
 	var item CommercialStoreTypeRecord
-	err := db.QueryRowContext(ctx, `SELECT type.id,type.vertical_id,type.name_ar,type.name_en,type.active,type.version,type.created_at,type.updated_at FROM dsh.commercial_store_types type WHERE type.id=$1`, strings.TrimSpace(id)).Scan(&item.ID, &item.VerticalID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := db.QueryRowContext(ctx, `SELECT type.id,type.vertical_id,type.name_ar,type.name_en,type.active,type.version,type.created_at,type.updated_at,type.cancellation_mode FROM dsh.commercial_store_types type WHERE type.id=$1`, strings.TrimSpace(id)).Scan(&item.ID, &item.VerticalID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.CancellationMode)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CommercialStoreTypeRecord{}, ErrCommercialStoreTypeNotFound
 	}
@@ -78,7 +79,7 @@ func ReadActiveCommercialStoreType(ctx context.Context, db *sql.DB, id string) (
 		return CommercialStoreTypeRecord{}, ErrCommercialStoreTypeInvalid
 	}
 	var item CommercialStoreTypeRecord
-	err := db.QueryRowContext(ctx, `SELECT type.id,type.vertical_id,type.name_ar,type.name_en,type.active,type.version,type.created_at,type.updated_at FROM dsh.commercial_store_types type JOIN dsh.commerce_verticals vertical ON vertical.id=type.vertical_id WHERE type.id=$1 AND type.active=true AND vertical.active=true`, id).Scan(&item.ID, &item.VerticalID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := db.QueryRowContext(ctx, `SELECT type.id,type.vertical_id,type.name_ar,type.name_en,type.active,type.version,type.created_at,type.updated_at,type.cancellation_mode FROM dsh.commercial_store_types type JOIN dsh.commerce_verticals vertical ON vertical.id=type.vertical_id WHERE type.id=$1 AND type.active=true AND vertical.active=true`, id).Scan(&item.ID, &item.VerticalID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.CancellationMode)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CommercialStoreTypeRecord{}, ErrCommercialStoreTypeNotFound
 	}
@@ -203,7 +204,7 @@ func UpdateCommercialStoreType(ctx context.Context, db *sql.DB, id string, input
 
 func readCommercialStoreTypeTx(ctx context.Context, tx *sql.Tx, id string) (CommercialStoreTypeRecord, error) {
 	var item CommercialStoreTypeRecord
-	err := tx.QueryRowContext(ctx, `SELECT id,vertical_id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.commercial_store_types WHERE id=$1`, id).Scan(&item.ID, &item.VerticalID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := tx.QueryRowContext(ctx, `SELECT id,vertical_id,name_ar,name_en,active,version,created_at,updated_at,cancellation_mode FROM dsh.commercial_store_types WHERE id=$1`, id).Scan(&item.ID, &item.VerticalID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.CancellationMode)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CommercialStoreTypeRecord{}, ErrCommercialStoreTypeNotFound
 	}
@@ -212,7 +213,7 @@ func readCommercialStoreTypeTx(ctx context.Context, tx *sql.Tx, id string) (Comm
 
 func readCommercialStoreTypeForUpdateTx(ctx context.Context, tx *sql.Tx, id string) (CommercialStoreTypeRecord, error) {
 	var item CommercialStoreTypeRecord
-	err := tx.QueryRowContext(ctx, `SELECT id,vertical_id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.commercial_store_types WHERE id=$1 FOR UPDATE`, id).Scan(&item.ID, &item.VerticalID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := tx.QueryRowContext(ctx, `SELECT id,vertical_id,name_ar,name_en,active,version,created_at,updated_at,cancellation_mode FROM dsh.commercial_store_types WHERE id=$1 FOR UPDATE`, id).Scan(&item.ID, &item.VerticalID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.CancellationMode)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CommercialStoreTypeRecord{}, ErrCommercialStoreTypeNotFound
 	}

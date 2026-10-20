@@ -141,21 +141,23 @@ export default function ClientOrderDetail() {
   }, [activeActorID, orderId, ratingSubmitting, review, selectedRating, state]);
 
   const cancelOrder = useCallback(async () => {
-    if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || !hasCurrentClientActor(state.actorID) || state.order.state !== "CREATED" || cancelling) return;
+    if (state.kind !== "ready" || !hasCurrentClientActor(state.actorID) || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || cancelling ||
+      state.order.state !== "CREATED" || state.order.cancellationMode !== "CLIENT_BEFORE_ACCEPTANCE") return;
     setCancelling(true);
     setCancelError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await client().cancelClientOrder(token, state.order.id, state.order.version);
-      if (!hasCurrentClientActor(state.actorID) || result.order.id !== orderId) return;
-      setState({ kind: "ready", order: result.order, actorID: state.actorID });
-    } catch (error) {
-      console.error("DSH client order cancellation failed", error);
-      if (hasCurrentClientActor(state.actorID)) setCancelError("تعذر إلغاء الطلب. ربما بدأ المتجر معالجته؛ حدّث الحالة وحاول مرة أخرى.");
-    } finally {
-      setCancelling(false);
-    }
-  }, [activeActorID, cancelling, orderId, state]);
+      const outcome = await client().cancelClientOrder(token, state.order.id, state.order.version);
+      if (hasCurrentClientActor(state.actorID) && outcome.order.id === orderId) {
+        setState({ kind: "ready", actorID: state.actorID, order: outcome.order });
+      }
+    } catch {
+      if (hasCurrentClientActor(state.actorID)) {
+        await load(true);
+        setCancelError("تحقق من الحالة الحالية قبل أي محاولة إلغاء أخرى؛ قد تكون العملية سُجلت.");
+      }
+    } finally { setCancelling(false); }
+  }, [activeActorID, cancelling, load, orderId, state]);
 
   const decideAdjustment = useCallback(async (adjustmentId: string, decision: "ACCEPT" | "REJECT") => {
     if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || !hasCurrentClientActor(state.actorID) || adjustmentBusy) return;
@@ -185,13 +187,6 @@ export default function ClientOrderDetail() {
     Alert.alert("الموافقة على التعديل", "تُسجل موافقتك على تغيير الصنف أو كميته فقط. يبقى إجمالي الطلب الأصلي محفوظًا ولا ينفذ النظام استردادًا أو تحصيلًا إضافيًا حتى تكتمل التسوية المالية.", [
       { text: "مراجعة لاحقًا", style: "cancel" },
       { text: "موافقة مع تعليق الطلب للتسوية", onPress: () => void decideAdjustment(adjustmentId, decision) },
-    ]);
-  }
-
-  function requestCancel() {
-    Alert.alert("إلغاء الطلب", "سيتم إلغاء الطلب وإلغاء التحصيل النقدي. هل تريد المتابعة؟", [
-      { text: "متابعة الطلب", style: "cancel" },
-      { text: "إلغاء الطلب", style: "destructive", onPress: () => void cancelOrder() },
     ]);
   }
 
@@ -241,9 +236,10 @@ export default function ClientOrderDetail() {
         <View style={styles.summaryIcon}><BthwaniIcon name="orders" color={theme.onAction} size={sizing.iconXl} /></View>
         <View style={styles.summaryCopy}><Text style={styles.eyebrow}>طلبك</Text><Text style={styles.title}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.muted}>{isStorePickup ? `الاستلام من ${order.storeName}` : order.addressText}</Text></View>
       </BthwaniSurface>
-      <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} /><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentDisclosure.amount}</Text><Text style={styles.payment}>{paymentDisclosure.status}</Text></View><View style={styles.actionStack}><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" />{order.state === "CREATED" ? <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={cancelling || refreshing} label="إلغاء الطلب" onPress={requestCancel} variant="danger" /> : null}</View></View>
-      {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{refreshError}</Text> : null}
+      <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} /><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentDisclosure.amount}</Text><Text style={styles.payment}>{paymentDisclosure.status}</Text></View><View style={styles.actionStack}><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" />{order.state === "CREATED" && order.cancellationMode === "CLIENT_BEFORE_ACCEPTANCE" ? <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={refreshing || cancelling} label="إلغاء الطلب" variant="danger" onPress={() => Alert.alert("تأكيد الإلغاء", "يمكن إلغاء الطلب قبل قبول المتجر فقط. لا يتم تعويض إضافي تلقائيًا.", [{ text: "رجوع", style: "cancel" }, { text: "إلغاء الطلب", style: "destructive", onPress: () => void cancelOrder() }])} /> : null}</View></View>
+      {order.state !== "CANCELLED" && order.state !== "DELIVERED" && order.state !== "PICKED_UP" && (order.state !== "CREATED" || order.cancellationMode !== "CLIENT_BEFORE_ACCEPTANCE") ? <Text style={styles.muted}>لطلب الإلغاء تواصل مع قسم العمليات عبر الدعم. لا يمكن إلغاء الطلب ذاتيًا في هذه الحالة.</Text> : null}
       {cancelError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{cancelError}</Text> : null}
+      {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{refreshError}</Text> : null}
       {adjustmentError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{adjustmentError}</Text> : null}
       {order.adjustments.length ? <>
         <BthwaniSectionHeader title="تعديلات الطلب" subtitle="راجع التغيير المقترح قبل اتخاذ قرارك" />

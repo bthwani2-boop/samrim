@@ -70,17 +70,15 @@ func (s *MultiStoreCheckoutServer) read(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, contract.MultiStoreCheckoutResponse{Checkout: toMultiStoreCheckout(item), IdempotentReplay: false})
 }
 
+// A customer's commercial cancellation always requires Operations review.
+// Keep the legacy HTTP path as a fail-closed response for older installed apps.
+// Internal failure compensation remains separate from customer cancellation.
 func (s *MultiStoreCheckoutServer) cancel(w http.ResponseWriter, r *http.Request) {
-	correlation, idempotency, expected, ok := requiredMultiStoreMutationHeaders(w, r, true)
-	if !ok {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
 		return
 	}
-	item, replayed, err := s.service.Cancel(r.Context(), bearerToken(r), r.PathValue("checkoutId"), expected, idempotency, correlation)
-	if err != nil {
-		writeMultiStoreCheckoutError(w, err)
-		return
-	}
-	writeJSON(w, responseStatus(replayed), contract.MultiStoreCheckoutResponse{Checkout: toMultiStoreCheckout(item), IdempotentReplay: replayed})
+	writeError(w, http.StatusForbidden, "OPERATIONS_REVIEW_REQUIRED", "contact Operations to request cancellation; clients cannot cancel orders")
 }
 
 func requiredMultiStoreMutationHeaders(w http.ResponseWriter, r *http.Request, expectedRequired bool) (string, string, int, bool) {

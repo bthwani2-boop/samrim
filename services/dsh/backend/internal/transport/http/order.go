@@ -48,6 +48,7 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/orders/{orderId}/rating", s.readRating)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/rating", s.createRating)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/cancel", s.cancel)
+	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/cancel", s.cancelForOperator)
 	mux.HandleFunc("GET /dsh/operator/operations", s.listOperatorOperations)
 	mux.HandleFunc("GET /dsh/operator/home-analytics", s.readOperatorHomeAnalytics)
 	mux.HandleFunc("GET /dsh/operator/customers/{actorId}/orders", s.listOperatorCustomerOrders)
@@ -267,7 +268,7 @@ func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.Op
 	}
 	history := make([]contract.OperatorOperationEvent, 0, len(operation.History))
 	for _, event := range operation.History {
-		history = append(history, contract.OperatorOperationEvent{ID: event.ID, Source: event.Source, EventType: event.EventType, State: event.State, ActorID: event.ActorID, At: event.At})
+		history = append(history, contract.OperatorOperationEvent{ID: event.ID, Source: event.Source, EventType: event.EventType, State: event.State, ActorID: event.ActorID, DecisionReason: event.Reason, At: event.At})
 	}
 	return contract.OperatorOperation{Order: toOrder(operation.Order), StoreName: operation.StoreName, Assignment: assignment, CustomerSuccessfulOrdersCount: operation.CustomerSuccessfulOrdersCount, SuccessfulOrderOrdinal: operation.SuccessfulOrderOrdinal, History: history, HistoryHasMore: operation.HistoryHasMore}
 }
@@ -466,23 +467,66 @@ func (s *OrderServer) createRating(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, contract.OrderRatingResponse{Rating: toOrderRating(rating), IdempotentReplay: replayed})
 }
 
+// The server checks the immutable Order policy under the same lock as the state transition.
 func (s *OrderServer) cancel(w http.ResponseWriter, r *http.Request) {
 	if bearerToken(r) == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client identity comes from the session")
 		return
 	}
 	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
 	idempotency := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
 	if len(correlation) < 8 || len(correlation) > 128 || len(idempotency) < 8 || len(idempotency) > 128 || err != nil || expected < 1 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cancellation attribution, idempotency, and a positive expected version are required")
-		return
-	}
-	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cancellation ownership comes from the canonical client session")
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cancellation attribution, idempotency and expected version are required")
 		return
 	}
 	item, replayed, err := s.service.CancelForClient(r.Context(), bearerToken(r), r.PathValue("orderId"), expected, idempotency, correlation)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, contract.OrderResponse{Order: toOrder(item), IdempotentReplay: replayed})
+}
+
+func (s *OrderServer) cancelForOperator(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client authority headers are forbidden")
+		return
+	}
+	actor := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	idempotency := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if actor == "" || len(actor) > 128 || len(correlation) < 8 || len(correlation) > 128 ||
+		len(idempotency) < 8 || len(idempotency) > 128 || err != nil || expected < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "operator, version and audit headers are required")
+		return
+	}
+	var input struct {
+		Reason          string `json:"reason"`
+		PartnerReviewed bool   `json:"partnerReviewed"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if count := utf8.RuneCountInString(strings.TrimSpace(input.Reason)); count < 12 || count > 500 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "reviewed cancellation reason must contain 12 to 500 characters")
+		return
+	}
+	item, replayed, err := s.service.CancelForOperator(r.Context(), r.PathValue("orderId"),
+		actor, input.Reason, input.PartnerReviewed, expected, idempotency, correlation)
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -771,7 +815,7 @@ func toOrder(item postgres.OrderRecord) contract.Order {
 	if item.Recipient.Instructions != nil {
 		recipient.Instructions = *item.Recipient.Instructions
 	}
-	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, StoreName: item.StoreName, PickupLocation: pickupLocation, CartID: item.CartID, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, Recipient: recipient, State: contract.OrderState(item.State), SubtotalAmountMinor: int(item.SubtotalAmountMinor), DiscountMinor: int(item.DiscountMinor), PromotionID: item.PromotionID, PromotionCode: item.PromotionCode, TotalAmountMinor: int(item.TotalAmountMinor), CashAmountMinor: int(item.PaymentCashAmountMinor), Currency: item.Currency, PaymentMethod: contract.PaymentMethod(item.PaymentMethod), PaymentState: contract.PaymentState(item.PaymentState), PaymentIntentID: paymentIntentID, StoreCashHandoffState: item.StoreCashHandoffState, Version: item.Version, Lines: lines, Adjustments: adjustments, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, CancellationMode: item.CancellationMode, CancellationPolicyVersion: item.CancellationPolicyVersion, StoreName: item.StoreName, PickupLocation: pickupLocation, CartID: item.CartID, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, Recipient: recipient, State: contract.OrderState(item.State), SubtotalAmountMinor: int(item.SubtotalAmountMinor), DiscountMinor: int(item.DiscountMinor), PromotionID: item.PromotionID, PromotionCode: item.PromotionCode, TotalAmountMinor: int(item.TotalAmountMinor), CashAmountMinor: int(item.PaymentCashAmountMinor), Currency: item.Currency, PaymentMethod: contract.PaymentMethod(item.PaymentMethod), PaymentState: contract.PaymentState(item.PaymentState), PaymentIntentID: paymentIntentID, StoreCashHandoffState: item.StoreCashHandoffState, Version: item.Version, Lines: lines, Adjustments: adjustments, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toOrderRating(item postgres.OrderRatingRecord) contract.OrderRating {
@@ -835,6 +879,10 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Order adjustment or line was not found")
 	case errors.Is(err, postgres.ErrOrderAdjustmentIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different Order adjustment facts")
+	case errors.Is(err, orderdomain.ErrOperatorCancellationReviewRequired):
+		writeError(w, http.StatusConflict, "PARTNER_REVIEW_REQUIRED", "the partner must be reviewed before Operations cancels a preparing order")
+	case errors.Is(err, postgres.ErrOrderTransitionInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "order transition details are invalid")
 	case errors.Is(err, postgres.ErrOrderAdjustmentFinancialRequired):
 		writeError(w, http.StatusConflict, "ORDER_ADJUSTMENT_RECONCILIATION_REQUIRED", "open Order adjustments must be decided and financially reconciled before this transition can proceed")
 	case errors.Is(err, postgres.ErrOrderAdjustmentConflict):

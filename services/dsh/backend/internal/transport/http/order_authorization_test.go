@@ -51,8 +51,8 @@ func TestOrderRegisteredRoutesRejectUnauthenticatedRequests(t *testing.T) {
 
 	routes := orderRegisteredRoutes(t)
 	// The legacy live Captain tracking endpoint was removed; lifecycle state remains on orders.
-	if len(routes) != 22 {
-		t.Fatalf("Order route census changed: got %d, want 22; review authentication for every new or removed route", len(routes))
+	if len(routes) != 23 {
+		t.Fatalf("Order route census changed: got %d, want 23; review authentication for every new or removed route", len(routes))
 	}
 	for _, route := range routes {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {

@@ -34,9 +34,9 @@ func verifyRealCancelMixedSettlement(t *testing.T, ctx context.Context, db *sql.
 	if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(
 		id,client_actor_id,store_id,cart_id,service_city_id,serviceability_store_version,
 		state,total_amount_minor,currency,version,payment_intent_id,payment_method,payment_state,
-		fulfillment_mode,payment_cash_amount_minor)
+		fulfillment_mode,payment_cash_amount_minor,cancellation_mode,cancellation_policy_version)
 		VALUES($1,$2,$3,$4,$5,1,'CREATED',1500,'YER',1,$6,'CASH_AT_STORE',
-		'REQUIRES_COLLECTION','CUSTOMER_PICKUP',300)`,
+		'REQUIRES_COLLECTION','CUSTOMER_PICKUP',300,'CLIENT_BEFORE_ACCEPTANCE',1)`,
 		orderID, customer, store, cartID, city, intentID); err != nil {
 		t.Fatal(err)
 	}

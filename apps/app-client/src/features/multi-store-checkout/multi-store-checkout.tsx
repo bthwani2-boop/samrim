@@ -9,14 +9,13 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { isClientActorScopeCurrent } from "../orders/order-session-scope";
 import { useServiceCityScope } from "../service-city/service-city-scope";
-import { cancelMultiStoreCheckout, createMultiStoreCheckout, listOwnDeliveryAddresses, listOwnOpenCarts, quoteMultiStoreChildCheckout, readOwnMultiStoreCheckout } from "../store-discovery/store-discovery-client";
+import { createMultiStoreCheckout, listOwnDeliveryAddresses, listOwnOpenCarts, quoteMultiStoreChildCheckout, readOwnMultiStoreCheckout } from "../store-discovery/store-discovery-client";
 import { checkoutRecipient, DeliveryRecipientForm, deliveryRecipientIsValid, type DeliveryRecipientInput } from "../cart-checkout/delivery-recipient-form";
 
 type StoreCart = Readonly<{ store: ClientOpenCartSummary; cart: Readonly<{ id: string; version: number; lineCount: number }> }>;
 type PendingMultiStoreAttempt =
   | Readonly<{ version: 3; kind: "CREATE"; actorID: string; idempotencyKey: string; correlationID: string; request: MultiStoreCheckoutRequest }>
-  | Readonly<{ version: 2; kind: "LEGACY_CREATE"; actorID: string; idempotencyKey: string; correlationID: string; checkoutID: string }>
-  | Readonly<{ version: 3; kind: "CANCEL"; actorID: string; idempotencyKey: string; correlationID: string; checkoutID: string; expectedVersion: number }>;
+  | Readonly<{ version: 2; kind: "LEGACY_CREATE"; actorID: string; idempotencyKey: string; correlationID: string; checkoutID: string }>;
 type CompactCheckoutChild = readonly [cartID: string, storeID: string, addressID: string, cartVersion: number, fulfillmentMode: CustomerFulfillmentMode, expectedTotalAmountMinor: number, recipient: DeliveryRecipientInput];
 type CompactCheckoutRequest = readonly [id: string, children: ReadonlyArray<CompactCheckoutChild>];
 type ScreenState =
@@ -127,8 +126,9 @@ function parsePendingMultiStoreAttempt(raw: string | null, actorID: string): Pen
       const request = parseCheckoutRequest(value.request, true);
       return request ? { ...common, kind: "CREATE", request } : null;
     }
-    if (value.kind === "CANCEL" && typeof value.checkoutID === "string" && value.checkoutID.length > 0 && value.checkoutID.length <= 128 && Number.isSafeInteger(value.expectedVersion) && Number(value.expectedVersion) > 0) {
-      return { ...common, kind: "CANCEL", checkoutID: value.checkoutID, expectedVersion: Number(value.expectedVersion) };
+    // A saved cancellation from an earlier app version is READ ONLY. Never retry it.
+    if (value.kind === "CANCEL" && typeof value.checkoutID === "string" && value.checkoutID.length > 0 && value.checkoutID.length <= 128) {
+      return { version: 2, kind: "LEGACY_CREATE", actorID, idempotencyKey: value.idempotencyKey, correlationID: value.correlationID, checkoutID: value.checkoutID };
     }
     return null;
   } catch {
@@ -137,7 +137,7 @@ function parsePendingMultiStoreAttempt(raw: string | null, actorID: string): Pen
 }
 
 function serializePendingMultiStoreAttempt(attempt: PendingMultiStoreAttempt): string {
-  if (attempt.kind === "CANCEL" || attempt.kind === "LEGACY_CREATE") return JSON.stringify(attempt);
+  if (attempt.kind === "LEGACY_CREATE") return JSON.stringify(attempt);
   const request: CompactCheckoutRequest = [
     attempt.request.id,
     attempt.request.children.map((child) => [child.cartId, child.storeId, child.addressId, child.cartVersion, child.fulfillmentMode, child.expectedTotalAmountMinor, child.recipient ?? { mode: "SELF" }]),
@@ -155,63 +155,7 @@ function isTerminalMultiStoreCheckout(checkout: MultiStoreCheckout): boolean {
   return checkout.state === "COMPLETE" || checkout.state === "FAILED" || checkout.state === "PARTIAL_FAILURE" || checkout.state === "CANCELLED";
 }
 
-function canCancelMultiStoreCheckout(checkout: MultiStoreCheckout | undefined): checkout is MultiStoreCheckout {
-  return Boolean(checkout && checkout.state !== "PROCESSING" && checkout.children.some((child) => child.state === "SUCCEEDED"));
-}
-
-function isTerminalMultiStoreCancel(checkout: MultiStoreCheckout): boolean {
-  return checkout.children.every((child) => child.state !== "SUCCEEDED");
-}
-
-async function cancelAndReadBack(attempt: Extract<PendingMultiStoreAttempt, { kind: "CANCEL" }>): Promise<PendingMultiStoreOutcome> {
-  try {
-    const checkout = (await cancelMultiStoreCheckout(attempt.checkoutID, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID)).checkout;
-    return { checkout, terminal: isTerminalMultiStoreCancel(checkout) };
-  } catch (error) {
-    try {
-      const checkout = (await readOwnMultiStoreCheckout(attempt.checkoutID)).checkout;
-      return { checkout, terminal: isTerminalMultiStoreCancel(checkout), error };
-    } catch {
-      return { terminal: false, error };
-    }
-  }
-}
-
-async function persistAndRetryMultiStoreCancel(
-  attempt: Extract<PendingMultiStoreAttempt, { kind: "CANCEL" }>,
-  checkout: MultiStoreCheckout,
-): Promise<PendingMultiStoreOutcome> {
-  const rebasedAttempt: PendingMultiStoreAttempt = {
-    ...attempt,
-    idempotencyKey: `multi_cancel_${Crypto.randomUUID()}`,
-    correlationID: `multi_cancel_corr_${Crypto.randomUUID()}`,
-    expectedVersion: checkout.version,
-  };
-  try {
-    await SecureStore.setItemAsync(pendingMultiStoreAttemptKey(attempt.actorID), serializePendingMultiStoreAttempt(rebasedAttempt));
-  } catch (error) {
-    return { checkout, terminal: false, attempt, error };
-  }
-  return { ...(await cancelAndReadBack(rebasedAttempt)), attempt: rebasedAttempt };
-}
-
-async function resolvePendingMultiStoreCancel(attempt: Extract<PendingMultiStoreAttempt, { kind: "CANCEL" }>): Promise<PendingMultiStoreOutcome> {
-  let checkout: MultiStoreCheckout;
-  try {
-    checkout = (await readOwnMultiStoreCheckout(attempt.checkoutID)).checkout;
-  } catch (error) {
-    return { terminal: false, attempt, error };
-  }
-  if (isTerminalMultiStoreCancel(checkout)) return { checkout, terminal: true };
-  const outcome = await cancelAndReadBack(attempt);
-  const currentCheckout = outcome.checkout;
-  const canRebase = isDshHttpStatus(outcome.error, 409) && currentCheckout?.state !== "PROCESSING" && currentCheckout?.children.some((child) => child.state === "SUCCEEDED");
-  if (canRebase && currentCheckout) return persistAndRetryMultiStoreCancel(attempt, currentCheckout);
-  return { ...outcome, attempt };
-}
-
 async function resolvePendingMultiStoreAttempt(attempt: PendingMultiStoreAttempt): Promise<PendingMultiStoreOutcome> {
-  if (attempt.kind === "CANCEL") return resolvePendingMultiStoreCancel(attempt);
   if (attempt.kind === "LEGACY_CREATE") {
     try {
       const checkout = (await readOwnMultiStoreCheckout(attempt.checkoutID)).checkout;
@@ -423,48 +367,15 @@ export default function MultiStoreCheckoutScreen() {
     }
   }
 
-  async function cancel() {
-    if (busy || pendingAttempt || state.kind !== "ready" || !canCancelMultiStoreCheckout(state.checkout)) return;
-    setBusy(true);
-    setError("");
-    try {
-      const actorID = await authenticatedClientActorID();
-      if (!hasCurrentMultiStoreActor(actorID)) return;
-      const attempt: PendingMultiStoreAttempt = {
-        version: 3, kind: "CANCEL", actorID, idempotencyKey: `multi_cancel_${Crypto.randomUUID()}`, correlationID: `multi_cancel_corr_${Crypto.randomUUID()}`,
-        checkoutID: state.checkout.id, expectedVersion: state.checkout.version,
-      };
-      if (!hasCurrentMultiStoreActor(actorID)) return;
-      await SecureStore.setItemAsync(pendingMultiStoreAttemptKey(actorID), serializePendingMultiStoreAttempt(attempt));
-      if (!hasCurrentMultiStoreActor(actorID)) return;
-      setPendingAttempt(attempt);
-      const outcome = await resolvePendingMultiStoreAttempt(attempt);
-      if (!hasCurrentMultiStoreActor(actorID)) return;
-      const resolvedCheckout = outcome.checkout;
-      if (!resolvedCheckout) throw outcome.error ?? new Error("MULTI_STORE_CANCEL_OUTCOME_UNKNOWN");
-      if (outcome.terminal) {
-        await SecureStore.deleteItemAsync(pendingMultiStoreAttemptKey(actorID));
-        setPendingAttempt(null);
-      }
-      setState((current) => current.kind === "ready" ? { ...current, checkout: resolvedCheckout } : current);
-      if (outcome.attempt && !outcome.terminal) setPendingAttempt(outcome.attempt);
-      if (outcome.error) setError("تعذر تأكيد نتيجة الإلغاء. ستبقى المحاولة محفوظة؛ تحقق من حالتها لإكمال الاستعادة بأمان.");
-    } catch {
-      setError("تعذر إلغاء الطلبات التابعة بالكامل. ستظهر نتيجة كل متجر بشكل مستقل.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   if (state.kind === "loading") return <View style={styles.state} accessibilityLabel="جارٍ تجهيز طلب المتاجر"><BthwaniSkeleton width="50%" height={26} /><BthwaniSkeleton height={92} /><BthwaniSkeleton height={120} /></View>;
   if (state.kind === "error") return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" style={styles.title}>تعذر تجهيز الطلب المتعدد</Text><Text style={styles.muted}>تحقق من مدينة الخدمة والاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /></View>;
   if (state.kind === "empty") return <View style={styles.state}><BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>{state.otherCityCartCount > 0 ? "سلالك في مدينة خدمة أخرى" : "سلة التسوق فارغة"}</Text><Text style={styles.muted}>{state.otherCityCartCount > 0 ? "غيّر مدينة الخدمة لعرض السلال المحفوظة هناك." : "أضف منتجات من المتاجر لتظهر سلالك هنا."}</Text><BthwaniButton label="استكشف المتاجر" onPress={() => router.push("/home" as Href)} /><BthwaniButton label="تحديث السلال" onPress={() => void load()} variant="secondary" /></View>;
   if (state.kind === "single") return <View style={styles.state} accessibilityLabel="سلة متجر"><BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>لديك سلة من {state.storeCart.store.storeName}</Text><Text style={styles.muted}>{state.storeCart.cart.lineCount} منتجات جاهزة للمراجعة.</Text>{state.otherCityCartCount > 0 ? <Text style={styles.muted}>لديك أيضًا سلال محفوظة في مدينة خدمة أخرى.</Text> : null}<BthwaniButton label="فتح سلة المتجر" onPress={() => router.push(`/cart/${encodeURIComponent(state.storeCart.store.storeId)}` as Href)} /><BthwaniButton label="تحديث السلال" onPress={() => void load()} variant="secondary" /></View>;
 
   const checkout = state.checkout;
-  const canCancel = canCancelMultiStoreCheckout(checkout);
+
   if (pendingAttempt) return <View style={styles.container} accessibilityLabel="استعادة الطلب المتعدد"><BthwaniSurface tone="raised" style={styles.hero}><View style={styles.heroIcon}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconXl} /></View><View style={styles.heroCopy}><Text style={styles.eyebrow}>استعادة الطلب</Text><Text style={styles.title}>نتحقق من النتيجة المحفوظة</Text><Text style={styles.muted}>لن نرسل طلبًا جديدًا. نقرأ النتيجة أولًا ثم نتابع الطلب نفسه.</Text></View></BthwaniSurface>{checkout ? <CheckoutSummary checkout={checkout} styles={styles} theme={theme} /> : <BthwaniSurface tone="inset" style={styles.summary}><Text style={styles.cardTitle}>النتيجة لم تُحسم بعد</Text><Text style={styles.muted}>المحاولة محفوظة على هذا الجهاز لهذا الحساب. أعد التحقق عند عودة الاتصال.</Text></BthwaniSurface>}<BthwaniButton busy={busy} disabled={busy} label="تحقق وأكمل الاستعادة" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
-  if (checkout && state.storeCarts.length === 0) return <View style={styles.container} accessibilityLabel="نتيجة طلب المتاجر"><CheckoutSummary checkout={checkout} styles={styles} theme={theme} />{canCancel ? <BthwaniButton accessibilityLabel="إلغاء الطلب المتعدد" busy={busy} disabled={busy} label="إلغاء الطلبات التابعة" onPress={() => void cancel()} variant="secondary" /> : null}<BthwaniButton label="تحديث السلال" onPress={() => void load()} variant="secondary" /></View>;
+  if (checkout && state.storeCarts.length === 0) return <View style={styles.container} accessibilityLabel="نتيجة طلب المتاجر"><CheckoutSummary checkout={checkout} styles={styles} theme={theme} /><Text style={styles.muted}>يمكنك إلغاء الطلب التابع المؤهل من تفاصيله قبل قبول متجره؛ بخلاف ذلك تواصل مع العمليات.</Text><BthwaniButton label="تحديث السلال" onPress={() => void load()} variant="secondary" /></View>;
   const selectedStoreCarts = state.storeCarts.filter(({ store }) => state.selectedStoreIDs.includes(store.storeId));
   const hasUnsupportedStore = selectedStoreCarts.some(({ store }) => store.publicationState !== "published" || availableCustomerFulfillmentModes(store.fulfillmentModes).length === 0);
   const requiresDeliveryAddress = selectedStoreCarts.some(({ store }) => { const mode = state.fulfillmentModes[store.storeId]; return mode !== null && mode !== "CUSTOMER_PICKUP"; });
@@ -555,7 +466,7 @@ export default function MultiStoreCheckoutScreen() {
       {requiresDeliveryAddress ? <DeliveryRecipientForm allowOther onChange={(next) => { setQuotePreview(null); setRecipient(next); }} value={recipient} /> : null}
       {selectedStoresStatusContent}
       {checkoutActionContent}
-      {checkout && canCancel ? <BthwaniButton accessibilityLabel="إلغاء الطلب المتعدد" busy={busy} disabled={busy} label="إلغاء الطلبات التابعة" onPress={() => void cancel()} variant="secondary" /> : null}
+      {checkout ? <Text style={styles.muted}>يُقيّم إلغاء كل طلب تابع بشكل مستقل. افتح تفاصيله للإلغاء قبل قبول المتجر إذا سمحت سياسته، وإلا تواصل مع العمليات.</Text> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );

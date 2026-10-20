@@ -944,7 +944,7 @@ paths:
   /dsh/orders/{orderId}/cancel:
     post:
       operationId: cancelClientOrder
-      summary: Cancel the authenticated client's CREATED COD Order and cancel its WLT collection intent
+      summary: Cancel an eligible Order before Store acceptance under its immutable Store-Type policy
       security:
         - userBearer: []
       parameters:
@@ -960,7 +960,125 @@ paths:
             maxLength: 128
       responses:
         "201":
-          description: Order cancelled and its WLT cash-collection intent cancelled.
+          description: Order cancelled and original uncollected payment hold released asynchronously.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/OrderResponse"
+        "200":
+          description: Idempotent cancellation replay.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/OrderResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/operator/cancellation-policies/{storeTypeId}:
+    patch:
+      operationId: updateStoreTypeCancellationPolicy
+      summary: Update one Store Type's cancellation policy with immutable audited version
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - name: storeTypeId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [mode, reason]
+              properties:
+                mode:
+                  type: string
+                  enum: [OPERATIONS_ONLY, CLIENT_BEFORE_ACCEPTANCE]
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+      responses:
+        "201":
+          description: Updated cancellation policy with its new version.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CommercialStoreTypeResponse"
+        "200":
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CommercialStoreTypeResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+
+  /dsh/operator/operations/{orderId}/cancel:
+    post:
+      operationId: cancelOperatorOrder
+      summary: Operations-reviewed Order cancellation before collection; no automatic wallet compensation
+      description: Requires active Operations permission, a 12–500 character decision reason, the expected Order version, and partnerReviewed=true after Store acceptance or preparation. Financial hold release for uncollected payment is not a customer compensation; after collection, cancellation is forbidden.
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason, partnerReviewed]
+              properties:
+                reason:
+                  type: string
+                  minLength: 12
+                  maxLength: 500
+                partnerReviewed:
+                  type: boolean
+      responses:
+        "201":
+          description: Order cancelled by an authorized operator; uncollected payment cancellation queued.
           content:
             application/json:
               schema:
