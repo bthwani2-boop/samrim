@@ -60,6 +60,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/catalog/commercial-store-types", s.listCommercialStoreTypes)
 	mux.HandleFunc("POST /dsh/catalog/commercial-store-types", s.createCommercialStoreType)
 	mux.HandleFunc("PATCH /dsh/catalog/commercial-store-types/{storeTypeId}", s.updateCommercialStoreType)
+	mux.HandleFunc("PATCH /dsh/operator/cancellation-policies/{storeTypeId}", s.updateStoreTypeCancellationPolicy)
 	mux.HandleFunc("GET /dsh/catalog/categories", s.listCategories)
 	mux.HandleFunc("GET /dsh/catalog/categories/{categoryId}", s.readCategory)
 	mux.HandleFunc("GET /dsh/public/catalog/categories/{categoryId}/attribute-rules", s.listPublicCategoryAttributeRules)
@@ -962,7 +963,7 @@ func toCommerceVertical(item postgres.CommerceVerticalRecord) contract.CommerceV
 	return contract.CommerceVertical{ID: item.ID, NameAr: item.NameAr, NameEn: item.NameEn, ImageUri: item.ImageURI, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 func toCommercialStoreType(item postgres.CommercialStoreTypeRecord) contract.CommercialStoreType {
-	return contract.CommercialStoreType{ID: item.ID, VerticalID: item.VerticalID, NameAr: item.NameAr, NameEn: item.NameEn, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.CommercialStoreType{ID: item.ID, VerticalID: item.VerticalID, NameAr: item.NameAr, NameEn: item.NameEn, CancellationMode: item.CancellationMode, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 func toCatalogCategory(item postgres.CatalogCategoryRecord) contract.CatalogCategory {
 	return contract.CatalogCategory{ID: item.ID, VerticalID: item.VerticalID, ParentCategoryID: item.ParentCategoryID, NameAr: item.NameAr, NameEn: item.NameEn, ImageUri: item.ImageURI, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}

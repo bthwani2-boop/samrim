@@ -90,8 +90,8 @@ const { toAsciiDigits } = await import("../src/tokens/formatting.ts");
 if (toAsciiDigits("١٢٣٤٥٦٧٨٩٠ ۱۲۳۴۵۶۷۸۹۰") !== "1234567890 1234567890") {
   failures.push("Design System ASCII digit normalization is incomplete");
 }
-const lightKeys = Object.keys(lightThemeColors).sort();
-const darkKeys = Object.keys(darkThemeColors).sort();
+const lightKeys = Object.keys(lightThemeColors).sort((a, b) => a.localeCompare(b));
+const darkKeys = Object.keys(darkThemeColors).sort((a, b) => a.localeCompare(b));
 
 const missingInDark = lightKeys.filter((k) => !(k in darkThemeColors));
 const missingInLight = darkKeys.filter((k) => !(k in lightThemeColors));

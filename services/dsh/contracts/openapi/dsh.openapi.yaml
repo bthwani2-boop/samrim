@@ -659,9 +659,6 @@ paths:
   /dsh/orders/{orderId}/rating:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1rating"
 
-  /dsh/orders/{orderId}/cancel:
-    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1cancel"
-
   /dsh/notifications:
     $ref: "./paths/notifications.yaml#/paths/~1dsh~1notifications"
 
@@ -676,6 +673,21 @@ paths:
 
   /dsh/operator/operations/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}"
+
+  /dsh/orders/{orderId}/cancel:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1cancel"
+
+  /dsh/operator/cancellation-policies/{storeTypeId}:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cancellation-policies~1{storeTypeId}"
+
+  /dsh/orders/{orderId}/cancellation-request:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1cancellation-request"
+  /dsh/operator/cancellation-requests:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cancellation-requests"
+  /dsh/operator/cancellation-requests/{requestId}/decline:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cancellation-requests~1{requestId}~1decline"
+  /dsh/operator/operations/{orderId}/cancel:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cancel"
   /dsh/operator/customers/{actorId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1customers~1{actorId}~1orders"
 
@@ -4344,7 +4356,7 @@ components:
 
     CommercialStoreType:
       type: object
-      required: [id, verticalId, nameAr, nameEn, active, version, createdAt, updatedAt]
+      required: [id, verticalId, nameAr, nameEn, cancellationMode, active, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -4356,6 +4368,9 @@ components:
           type: string
         nameEn:
           type: string
+        cancellationMode:
+          type: string
+          enum: [OPERATIONS_ONLY, CLIENT_BEFORE_ACCEPTANCE]
         active:
           type: boolean
         version:
@@ -8638,7 +8653,7 @@ components:
 
     Order:
       type: object
-      required: [id, clientActorId, storeId, storeName, pickupLocation, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, recipient, state, subtotalAmountMinor, discountMinor, totalAmountMinor, cashAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, adjustments, createdAt, updatedAt]
+      required: [id, clientActorId, storeId, storeName, cancellationMode, cancellationPolicyVersion, pickupLocation, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, recipient, state, subtotalAmountMinor, discountMinor, totalAmountMinor, cashAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, adjustments, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -8649,6 +8664,12 @@ components:
           type: string
         storeName:
           type: string
+        cancellationMode:
+          type: string
+          enum: [OPERATIONS_ONLY, CLIENT_BEFORE_ACCEPTANCE]
+        cancellationPolicyVersion:
+          type: integer
+          minimum: 0
         pickupLocation:
           $ref: "#/components/schemas/OrderPickupLocation"
           nullable: true
@@ -8913,7 +8934,7 @@ components:
     OperatorOperationEvent:
       type: object
       additionalProperties: false
-      required: [id, source, eventType, state, at]
+      required: [id, source, eventType, state, actorId, decisionReason, at]
       properties:
         id:
           type: string
@@ -8925,6 +8946,13 @@ components:
           type: string
         state:
           type: string
+        actorId:
+          type: string
+          description: Identifier of the actor recorded by the canonical audit event; system actors are possible, and this is not a verified display name.
+        decisionReason:
+          type: string
+          maxLength: 500
+          description: Immutable Operations cancellation review reason; empty for other audit events.
         at:
           type: string
           format: date-time

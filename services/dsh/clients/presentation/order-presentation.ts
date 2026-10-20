@@ -3,7 +3,7 @@ import type { FulfillmentMode, Order, PaymentMethod, PaymentState } from "../gen
 const arabicTextLatinNumbersLocale = "ar-YE-u-nu-latn";
 
 const orderStateLabels: Record<Order["state"], string> = {
-  CREATED: "تم استلام الطلب",
+  CREATED: "بانتظار قبول المتجر",
   PARTNER_ACCEPTED: "قبله المتجر",
   PREPARING: "قيد التجهيز",
   READY_FOR_DISPATCH: "جاهز للتسليم إلى الكابتن",

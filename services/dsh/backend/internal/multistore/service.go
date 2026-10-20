@@ -172,7 +172,7 @@ func (s *Service) Cancel(ctx context.Context, accessToken, checkoutID string, ex
 		}
 		childKey := postgres.HashMarketingFacts("multi-store-child-cancel", checkout.ID, child.ID)
 		childCorrelation := postgres.HashMarketingFacts("multi-store-child-cancel-correlation", strings.TrimSpace(correlationID), checkout.ID, child.ID)
-		if _, _, cancelErr := s.order.CancelForClient(ctx, accessToken, child.OrderID, order.Version, childKey, childCorrelation); cancelErr != nil {
+		if _, _, cancelErr := s.order.CancelForCheckoutRecovery(ctx, accessToken, child.OrderID, order.Version, childKey, childCorrelation); cancelErr != nil {
 			return postgres.MultiStoreCheckoutRecord{}, false, ErrCheckoutInProgress
 		}
 		if _, markErr := postgres.MarkMultiStoreCheckoutChildCancelled(ctx, s.db, checkout.ID, child.ID); markErr != nil {

@@ -2,9 +2,9 @@ import { borders, elevation, radius, type resolveTheme, sizing, spacing, typogra
 import { BthwaniButton, BthwaniIcon, BthwaniMap, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, orderStateLabel, orderPaymentDisclosure } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { type Href, useLocalSearchParams, useRouter } from "expo-router";
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, AppState, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
 import { isClientOrderScopeCurrent } from "./order-session-scope";
@@ -32,10 +32,16 @@ export default function ClientOrderDetail() {
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
   const loadSequence = useRef(0);
+  const latestOrderState = useRef<Order["state"] | null>(null);
+  const [showCancellationForm, setShowCancellationForm] = useState(false);
+  const [showConversation, setShowConversation] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState("");
+  const [cancellationReview, setCancellationReview] = useState<{state: "PENDING" | "APPROVED" | "DECLINED"; decisionReason: string | null} | null>(null);
+  const [cancellationReviewBusy, setCancellationReviewBusy] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState("");
   const [adjustmentBusy, setAdjustmentBusy] = useState("");
   const [adjustmentError, setAdjustmentError] = useState("");
   const [deliveryProof, setDeliveryProof] = useState<{ kind: "loading" } | { kind: "ready"; value: DeliveryProofResponse } | { kind: "error" }>({ kind: "loading" });
@@ -89,6 +95,15 @@ export default function ClientOrderDetail() {
     }
   }, [orderId]);
 
+  const readCancellationReview = useCallback(async (token: string, requestedOrderID: string, actorID: string) => {
+    try {
+      const result = await client().readOrderCancellationReview(token, requestedOrderID);
+      if (hasCurrentClientActor(actorID)) setCancellationReview(result.request);
+    } catch (error) {
+      if (hasCurrentClientActor(actorID) && typeof error === "object" && error !== null && "status" in error && (error as {status?:unknown}).status === 404) setCancellationReview(null);
+    }
+  }, []);
+
   const load = useCallback(async (preserveCurrent = false) => {
     const sequence = ++loadSequence.current;
     const session = currentIdentityState();
@@ -99,28 +114,31 @@ export default function ClientOrderDetail() {
     else setState({ kind: "loading" });
     setRefreshError("");
     setCancelError("");
-    setDeliveryProof({ kind: "loading" });
-    setOrderRating({ kind: "loading" });
+    if (!preserveCurrent) {
+      setDeliveryProof({ kind: "loading" });
+      setOrderRating({ kind: "loading" });
+    }
     try {
       const token = await getUsableIdentityAccessToken();
       const order = (await client().readOrder(token, orderId)).order;
       const current = currentIdentityState();
       if (sequence !== loadSequence.current || current.kind !== "authenticated" || !isClientOrderScopeCurrent(actorID, order.id, current.identity.subject.trim(), orderId)) return;
+      latestOrderState.current = order.state;
       setState({ kind: "ready", order, actorID });
+      if (!["CANCELLED","DELIVERED","PICKED_UP","REJECTED"].includes(order.state)) void readCancellationReview(token,order.id,actorID);
       await refreshDeliveryProof();
-      if (sequence !== loadSequence.current || !hasCurrentClientActor(actorID)) return;
       if (sequence !== loadSequence.current || !hasCurrentClientActor(actorID)) return;
       await refreshRating(order.state);
     } catch (error) {
       console.error("DSH client order detail read failed", error);
       const current = currentIdentityState();
       if (sequence !== loadSequence.current || current.kind !== "authenticated" || current.identity.subject.trim() !== actorID) return;
-      if (preserveCurrent) setRefreshError("تعذر تحديث الحالة. أعد القراءة قبل اتخاذ قرار جديد.");
+      if (preserveCurrent) console.warn("DSH order automatic refresh deferred", error);
       else setState({ kind: "error" });
     } finally {
       if (sequence === loadSequence.current) setRefreshing(false);
     }
-  }, [orderId, refreshDeliveryProof, refreshRating]);
+  }, [orderId, readCancellationReview, refreshDeliveryProof, refreshRating]);
 
   const submitRating = useCallback(async () => {
     if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || !hasCurrentClientActor(state.actorID) || (state.order.state !== "DELIVERED" && state.order.state !== "PICKED_UP") || selectedRating < 1 || ratingSubmitting) return;
@@ -140,22 +158,42 @@ export default function ClientOrderDetail() {
     }
   }, [activeActorID, orderId, ratingSubmitting, review, selectedRating, state]);
 
+  const requestOperationsCancellation = useCallback(async () => {
+    if (state.kind !== "ready" || cancellationReviewBusy || cancellationReview?.state === "PENDING" ||
+        !hasCurrentClientActor(state.actorID) || ["CANCELLED","REJECTED","DELIVERED","PICKED_UP"].includes(state.order.state)) return;
+    setCancellationReviewBusy(true);
+    setCancelError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const result = await client().requestOrderCancellationReview(token, state.order.id, cancellationReason.trim(), Crypto.randomUUID());
+      if (hasCurrentClientActor(state.actorID)) setCancellationReview(result.request);
+    } catch {
+      if (hasCurrentClientActor(state.actorID)) {
+        const token = await getUsableIdentityAccessToken().catch(() => "");
+        if (token) await readCancellationReview(token, state.order.id, state.actorID);
+        setCancelError("لم تتأكد نتيجة طلب المراجعة. تحقق من الحالة قبل إعادة الإرسال.");
+      }
+    } finally { setCancellationReviewBusy(false); }
+  }, [state, cancellationReviewBusy, cancellationReview?.state, cancellationReason, readCancellationReview]);
+
   const cancelOrder = useCallback(async () => {
-    if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || !hasCurrentClientActor(state.actorID) || state.order.state !== "CREATED" || cancelling) return;
+    if (state.kind !== "ready" || !hasCurrentClientActor(state.actorID) || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || cancelling ||
+      state.order.state !== "CREATED" || state.order.cancellationMode !== "CLIENT_BEFORE_ACCEPTANCE") return;
     setCancelling(true);
     setCancelError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await client().cancelClientOrder(token, state.order.id, state.order.version);
-      if (!hasCurrentClientActor(state.actorID) || result.order.id !== orderId) return;
-      setState({ kind: "ready", order: result.order, actorID: state.actorID });
-    } catch (error) {
-      console.error("DSH client order cancellation failed", error);
-      if (hasCurrentClientActor(state.actorID)) setCancelError("تعذر إلغاء الطلب. ربما بدأ المتجر معالجته؛ حدّث الحالة وحاول مرة أخرى.");
-    } finally {
-      setCancelling(false);
-    }
-  }, [activeActorID, cancelling, orderId, state]);
+      const outcome = await client().cancelClientOrder(token, state.order.id, state.order.version);
+      if (hasCurrentClientActor(state.actorID) && outcome.order.id === orderId) {
+        setState({ kind: "ready", actorID: state.actorID, order: outcome.order });
+      }
+    } catch {
+      if (hasCurrentClientActor(state.actorID)) {
+        await load(true);
+        setCancelError("تحقق من الحالة الحالية قبل أي محاولة إلغاء أخرى؛ قد تكون العملية سُجلت.");
+      }
+    } finally { setCancelling(false); }
+  }, [activeActorID, cancelling, load, orderId, state]);
 
   const decideAdjustment = useCallback(async (adjustmentId: string, decision: "ACCEPT" | "REJECT") => {
     if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || !hasCurrentClientActor(state.actorID) || adjustmentBusy) return;
@@ -188,30 +226,29 @@ export default function ClientOrderDetail() {
     ]);
   }
 
-  function requestCancel() {
-    Alert.alert("إلغاء الطلب", "سيتم إلغاء الطلب وإلغاء التحصيل النقدي. هل تريد المتابعة؟", [
-      { text: "متابعة الطلب", style: "cancel" },
-      { text: "إلغاء الطلب", style: "destructive", onPress: () => void cancelOrder() },
-    ]);
-  }
-
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!activeActorID) {
       loadSequence.current += 1;
+      latestOrderState.current = null;
       setState({ kind: "auth_required" });
-      setRefreshError("");
       return;
     }
     void load();
-  }, [activeActorID, load]);
-
-  useEffect(() => {
-    if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || state.order.fulfillmentMode === "CUSTOMER_PICKUP" || ["DELIVERED", "DELIVERY_FAILED", "CANCELLED", "PICKED_UP"].includes(state.order.state)) return;
-    const timer = setInterval(() => { void load(true); }, 60_000);
-    return () => clearInterval(timer);
-  }, [activeActorID, load, orderId, state]);
+    const isActive = () => latestOrderState.current != null &&
+      !["DELIVERED", "DELIVERY_FAILED", "CANCELLED", "PICKED_UP", "REJECTED"].includes(latestOrderState.current);
+    const timer = setInterval(() => {
+      if (AppState.currentState === "active" && isActive()) void load(true);
+    }, 60_000);
+    const resume = AppState.addEventListener("change", next => {
+      if (next === "active" && isActive()) void load(true);
+    });
+    return () => {
+      clearInterval(timer);
+      resume.remove();
+    };
+  }, [activeActorID, load]));
 
   if (state.kind === "ready" && !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId)) return <View style={styles.state} accessibilityLabel="جارٍ التحقق من صاحب الطلب"><BthwaniSkeleton height={128} /><Text style={styles.muted}>جارٍ التحقق من الجلسة وملكية الطلب…</Text></View>;
   if (state.kind === "auth_required") return <View style={styles.state}><BthwaniIcon name="account" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>سجّل الدخول لعرض تفاصيل الطلب</Text><Text style={styles.muted}>سجّل الدخول أولًا ثم افتح الطلب مرة أخرى.</Text><BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/orders" as Href)} /></View>;
@@ -238,12 +275,56 @@ export default function ClientOrderDetail() {
     <View style={styles.container} accessibilityLabel="تفاصيل الطلب">
       <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى الطلبات" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>طلباتي</Text></Pressable>
       <BthwaniSurface tone="raised" style={styles.summary}>
-        <View style={styles.summaryIcon}><BthwaniIcon name="orders" color={theme.onAction} size={sizing.iconXl} /></View>
-        <View style={styles.summaryCopy}><Text style={styles.eyebrow}>طلبك</Text><Text style={styles.title}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.muted}>{isStorePickup ? `الاستلام من ${order.storeName}` : order.addressText}</Text></View>
+        <View style={styles.summaryCopy}>
+          <Text style={styles.title} numberOfLines={1}>{order.storeName}</Text>
+          <Text style={styles.muted}>{formatOrderDate(order.createdAt)}</Text>
+        </View>
       </BthwaniSurface>
-      <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} /><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentDisclosure.amount}</Text><Text style={styles.payment}>{paymentDisclosure.status}</Text></View><View style={styles.actionStack}><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" />{order.state === "CREATED" ? <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={cancelling || refreshing} label="إلغاء الطلب" onPress={requestCancel} variant="danger" /> : null}</View></View>
-      {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{refreshError}</Text> : null}
+      <View style={styles.status}>
+        <BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} />
+        <View style={styles.amountRow}>
+          <Text style={styles.muted}>الإجمالي</Text>
+          <Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text>
+        </View>
+        <Text style={styles.payment} numberOfLines={2}>{paymentDisclosure.amount}</Text>
+        {order.state === "CANCELLED" && order.paymentState !== "CANCELLED" ? <Text style={styles.payment}>{paymentDisclosure.status}</Text> : null}
+        {order.state === "CREATED" && order.cancellationMode === "CLIENT_BEFORE_ACCEPTANCE" ?
+          <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={refreshing || cancelling}
+            label="إلغاء الطلب" variant="secondary"
+            onPress={() => Alert.alert("إلغاء الطلب", "هل تريد إلغاء طلبك قبل قبول المتجر؟",
+              [{ text: "رجوع", style: "cancel" }, { text: "إلغاء الطلب", style: "destructive", onPress: () => void cancelOrder() }])} /> : null}
+      </View>
+      {!["CANCELLED", "DELIVERED", "PICKED_UP", "REJECTED"].includes(order.state) &&
+        (order.state !== "CREATED" || order.cancellationMode !== "CLIENT_BEFORE_ACCEPTANCE") ? (
+          <BthwaniSurface tone="base" style={styles.cancellationSupport}>
+            <Text style={styles.title}>طلب إلغاء</Text>
+            {cancellationReview?.state === "PENDING" ?
+              <Text style={styles.muted}>بانتظار مراجعة العمليات · الطلب ما زال نشطًا</Text> :
+             cancellationReview?.state === "APPROVED" ?
+              <Text style={styles.muted}>وافقت العمليات على الإلغاء.</Text> :
+              <>
+                {cancellationReview?.state === "DECLINED" && cancellationReview.decisionReason ?
+                  <Text style={styles.muted}>رُفض الطلب: {cancellationReview.decisionReason}</Text> : null}
+                {showCancellationForm ?
+                  <>
+                    <TextInput accessibilityLabel="سبب طلب الإلغاء" multiline maxLength={500}
+                      value={cancellationReason} onChangeText={setCancellationReason}
+                      style={styles.cancellationInput} placeholder="ما سبب الإلغاء؟"
+                      placeholderTextColor={theme.colorMuted} textAlign="right" />
+                    <BthwaniButton label="إرسال للعمليات" busy={cancellationReviewBusy}
+                      disabled={cancellationReviewBusy || cancellationReason.trim().length < 12}
+                      onPress={() => void requestOperationsCancellation()} />
+                    <Pressable accessibilityRole="button" onPress={() => setShowCancellationForm(false)}>
+                      <Text style={styles.muted}>رجوع</Text>
+                    </Pressable>
+                  </> :
+                  <BthwaniButton label="طلب مراجعة" variant="secondary"
+                    onPress={() => setShowCancellationForm(true)} />}
+              </>}
+          </BthwaniSurface>
+        ) : null}
       {cancelError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{cancelError}</Text> : null}
+      {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{refreshError}</Text> : null}
       {adjustmentError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{adjustmentError}</Text> : null}
       {order.adjustments.length ? <>
         <BthwaniSectionHeader title="تعديلات الطلب" subtitle="راجع التغيير المقترح قبل اتخاذ قرارك" />
@@ -259,23 +340,24 @@ export default function ClientOrderDetail() {
           </BthwaniSurface>;
         })}</View>
       </> : null}
-      <OrderConversation orderId={order.id} />
-      <BthwaniSectionHeader title={isStorePickup ? "رمز الاستلام الذاتي من المتجر" : "حالة التسليم"} subtitle={isStorePickup ? "أظهر الرمز لموظف المتجر عند استلامك الطلب" : "يسجل الكابتن تسليم الطلب، ويمكنك الإبلاغ عن أي مشكلة"} />
+      {((isStorePickup && ["READY_FOR_PICKUP", "PICKED_UP"].includes(order.state)) ||
+        (!isStorePickup && ["IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED"].includes(order.state)) ||
+        (deliveryProof.kind === "ready" && deliveryProof.value.state !== "PENDING")) ? <>
+      <BthwaniSectionHeader title={isStorePickup ? "رمز الاستلام" : "التسليم"} />
       <BthwaniSurface tone="base" style={styles.proofSurface}>
         {deliveryProof.kind === "loading" ? <Text style={styles.muted}>جارٍ تجهيز {proofLabel}…</Text> : null}
-        {deliveryProof.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة {proofLabel} الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
+        {deliveryProof.kind === "error" ? <Text style={styles.refreshError}>تعذر عرض {proofLabel} حاليًا.</Text> : null}
         {deliveryProof.kind === "ready" && deliveryProof.value.state === "PENDING" ? <><Text style={styles.proofTitle}>{proofLabel}</Text>{isStorePickup && deliveryProof.value.code ? <Text accessibilityLabel={proofLabel} style={styles.proofCode}>{deliveryProof.value.code}</Text> : null}<Text style={styles.muted}>{isStorePickup && deliveryProof.value.code ? proofAvailableMessage : proofWaitingMessage}</Text></> : null}
         {deliveryProof.kind === "ready" && deliveryProof.value.state === "VERIFIED" ? <><BthwaniStatusBadge icon="success" label={isStorePickup ? "تم تأكيد الاستلام" : "تم إثبات التسليم بالرمز"} tone="success" /><Text style={styles.muted}>{isStorePickup ? "تم قبول رمز الاستلام وتسجيل استلامك للطلب." : "تم قبول رمز التسليم وتسجيل الاستلام."}</Text></> : null}
-        {deliveryProof.kind === "ready" && deliveryProof.value.state === "CAPTAIN_CONFIRMED" ? <><BthwaniStatusBadge icon="success" label="أكد الكابتن تسليم الطلب" tone="success" /><Text style={styles.muted}>تأكيد الكابتن مسجل في النظام، وليس تحققًا مستقلًا برمز من العميل. يمكنك الإبلاغ عن أي اختلاف.</Text></> : null}
-      </BthwaniSurface>
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "CAPTAIN_CONFIRMED" ? <BthwaniStatusBadge icon="success" label="أكد الكابتن التسليم" tone="success" /> : null}
+      </BthwaniSurface></> : null}
       {completedState ? <>
-        <BthwaniSectionHeader title="تقييم المتجر" subtitle="قيّم المتجر الذي جهّز طلبك. تقييم المنتجات وجودة توصيل بثواني مستقلان عن تقييم المتجر." />
+        <BthwaniSectionHeader title="تقييم المتجر" />
         <BthwaniSurface tone="base" style={styles.ratingSurface}>
           {orderRating.kind === "loading" ? <Text style={styles.muted}>جارٍ قراءة التقييم…</Text> : null}
-          {orderRating.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة التقييم الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
+          {orderRating.kind === "error" ? <Text style={styles.refreshError}>تعذر عرض التقييم حاليًا.</Text> : null}
           {orderRating.kind === "ready" ? <><BthwaniStatusBadge icon="success" label="تم حفظ تقييم المتجر" tone="success" /><Text style={styles.muted}>{"★".repeat(orderRating.value.rating.rating)}{"☆".repeat(5 - orderRating.value.rating.rating)}</Text>{orderRating.value.rating.review ? <Text style={styles.reviewText}>{orderRating.value.rating.review}</Text> : null}</> : null}
           {orderRating.kind === "empty" ? <>
-            <Text style={styles.muted}>اختر من نجمة إلى خمس نجوم، ويمكنك إضافة ملاحظة قصيرة.</Text>
             <View accessibilityLabel="اختيار تقييم من نجمة إلى خمس نجوم" style={styles.ratingStars}>{[1, 2, 3, 4, 5].map((value) => <Pressable key={value} accessibilityRole="button" accessibilityLabel={`${value} نجوم`} onPress={() => setSelectedRating(value)} style={styles.ratingStar}><Text style={[styles.ratingStarText, value <= selectedRating ? styles.ratingStarSelected : null]}>{value <= selectedRating ? "★" : "☆"}</Text></Pressable>)}</View>
             <TextInput accessibilityLabel="مراجعة اختيارية" multiline maxLength={1000} onChangeText={setReview} placeholder="اكتب ملاحظتك (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.reviewInput} textAlign="right" value={review} />
             {ratingError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{ratingError}</Text> : null}
@@ -301,17 +383,18 @@ export default function ClientOrderDetail() {
         <BthwaniSectionHeader title="عنوان التوصيل" />
         <BthwaniSurface tone="base" style={styles.address}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.muted}>{order.addressText}</Text></BthwaniSurface>
       </>}
-      <BthwaniSectionHeader title="مستلم الطلب" />
+      {order.recipient.mode === "OTHER" ? <><BthwaniSectionHeader title="مستلم الطلب" />
       <BthwaniSurface tone="base" style={styles.trackingSurface}>
-        {order.recipient.mode === "OTHER" ? <>
-          <Text style={styles.proofTitle}>{order.recipient.name}</Text>
+        <Text style={styles.proofTitle}>{order.recipient.name}</Text>
           <Text selectable style={styles.muted}>رقم التواصل: {order.recipient.phoneE164}</Text>
           {order.recipient.instructions ? <Text style={styles.muted}>تعليمات التوصيل: {order.recipient.instructions}</Text> : null}
-        </> : <Text style={styles.muted}>صاحب الطلب</Text>}
-      </BthwaniSurface>
-      <BthwaniSectionHeader title="المنتجات" subtitle={`${order.lines.length} ${order.lines.length === 1 ? "منتج" : "منتجات"}`} />
+      </BthwaniSurface></> : null}
+      <BthwaniSectionHeader title={`المنتجات (${order.lines.length})`} />
       <View style={styles.lines}>{order.lines.map((line) => <BthwaniSurface key={line.id} tone="base" style={styles.line}><View style={styles.lineTop}><Text style={styles.lineTitle} numberOfLines={2}>{line.productName}</Text><Text style={styles.linePrice}>{formatMoney(line.lineAmountMinor, line.currency)}</Text></View><Text style={styles.muted}>{formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}{line.modifierSnapshots.length ? ` · ${line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}` : ""}</Text></BthwaniSurface>)}</View>
-      <Text style={styles.muted}>تُقرأ حالة الطلب الحالية من الخدمة عند كل فتح.</Text>
+      <BthwaniButton label={showConversation ? "إغلاق المحادثة" : "محادثة الطلب"}
+        variant="secondary" onPress={() => setShowConversation(value => !value)} />
+      {showConversation ? <OrderConversation orderId={order.id} /> : null}
+
     </View>
   );
 }
@@ -323,6 +406,9 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     backButton: { alignItems: "center", flexDirection: "row", gap: spacing[1], minHeight: sizing.controlMd },
     back: { ...typography.body, color: theme.interactiveText },
     summary: { alignItems: "center", borderRadius: radius.xl, flexDirection: "row", gap: spacing[3], padding: spacing[4], ...elevation.raised },
+    amountRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+    cancellationSupport: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    cancellationInput: { ...typography.body, backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 90, padding: spacing[3] },
     summaryIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
     summaryCopy: { flex: 1, gap: spacing[1] },
     eyebrow: { ...typography.label, color: theme.interactiveText },

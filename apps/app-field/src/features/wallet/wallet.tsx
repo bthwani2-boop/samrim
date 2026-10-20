@@ -23,5 +23,5 @@ export default function FieldWallet() {
   }, [isFocused]);
 
   const refresh = () => setRefreshVersion((version) => version + 1);
-  return <View style={[styles.container, { gap: spacing[4] }]} accessibilityLabel="محفظة الميدان"><FieldFinancialSummaryCard refreshVersion={refreshVersion} /><FieldPayoutCard onPayoutConfirmed={refresh} refreshVersion={refreshVersion} /><FieldWalletHistory refreshVersion={refreshVersion} /></View>;
+  return <View style={[styles.container, { gap: spacing[4] }]} accessibilityLabel="محفظة الميدان"><FieldFinancialSummaryCard refreshVersion={refreshVersion} /><FieldPayoutCard onWalletRefresh={refresh} refreshVersion={refreshVersion} /><FieldWalletHistory refreshVersion={refreshVersion} /></View>;
 }

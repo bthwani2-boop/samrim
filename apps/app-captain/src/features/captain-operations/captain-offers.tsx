@@ -82,8 +82,7 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
           setOffers(response.offers);
         }
       } catch {
-        // An interrupted quiet refresh preserves the previous visible state.
-        // Explicit Refresh retains its normal error/retry path.
+        // An interrupted background read preserves the previous visible state.
       }
     };
     const timer = setInterval(() => void refresh(), popup ? 2500 : 5000);
@@ -119,7 +118,7 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
         ? "رصيد محفظتك المتاح لا يكفي لضمان التحصيل النقدي لهذا الطلب. لم يُقبل العرض؛ يلزم توفير الرصيد عبر قناة شحن معتمدة."
         : verified
           ? "لم نتأكد من نتيجة الرد. راجع حالة العرض بعد إعادة القراءة، ثم تحقق من التوصيلات قبل أي محاولة جديدة."
-          : "لم نتأكد من نتيجة الرد وتعذرت إعادة قراءة العروض. لا تعِد إرسال القرار قبل نجاح تحديث العروض والتوصيلات.");
+          : "لم نتأكد من نتيجة الرد وتعذرت إعادة قراءة العروض. لا تعِد إرسال القرار حتى تظهر النتيجة المؤكدة تلقائيًا.");
     } finally {
       setBusy("");
     }
@@ -159,7 +158,7 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ جلب العروض…</Text></View> : null}
       {!loading && !error && !orderedOffers.length ? <View style={compact ? styles.readinessActions : styles.card}>
         <Text style={styles.cardTitle}>{compact ? "لا توجد عروض متاحة الآن" : scopedOffers.length ? "لا توجد نتائج للبحث" : "لا توجد عروض جديدة الآن"}</Text>
-        <Text style={styles.muted}>{compact ? "ستظهر العروض الجديدة هنا تلقائيًا عند توفرها." : scopedOffers.length ? "غيّر عبارة البحث أو امسحها لعرض جميع العروض." : "يمكنك متابعة توصيلاتك الحالية أو تحديث العروض لاحقًا."}</Text>
+        <Text style={styles.muted}>{compact ? "ستظهر العروض الجديدة هنا تلقائيًا عند توفرها." : scopedOffers.length ? "غيّر عبارة البحث أو امسحها لعرض جميع العروض." : "ستظهر العروض الجديدة تلقائيًا عند توفرها."}</Text>
         {!compact && !scopedOffers.length ? <Link href={"/deliveries" as Href} asChild><BthwaniButton label="عرض التوصيلات الحالية" variant="secondary" /></Link> : null}
       </View> : null}
       {!loading ? orderedOffers.map((offer) => <View key={offer.id} style={compact ? styles.compactOfferCard : styles.card}>
@@ -188,7 +187,7 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
           <BthwaniButton disabled={Boolean(busy) || loading || !isCurrentCaptainActor(loadedActorID, activeActorID)} label="رفض" onPress={() => void respond(offer, "reject")} style={styles.actionButton} variant="secondary" />
         </View> : null}
       </View>) : null}
-      {!compact ? <BthwaniButton busy={Boolean(busy) || loading} disabled={Boolean(busy) || loading} label="تحديث العروض" onPress={() => void load()} variant="secondary" /> : null}
+      {error && !compact ? <BthwaniButton busy={loading} disabled={Boolean(busy) || loading} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}
     </View>
   );
 }

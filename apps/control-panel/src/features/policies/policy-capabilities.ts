@@ -7,6 +7,12 @@ import type { OperationalIconName } from "../../shell/workspace-icon";
  */
 export const policyCapabilities = [
   {
+    key: "store-type-cancellation", href: "/policies?policy=store-type-cancellation&action=manage", label: "إلغاء الطلبات",
+    description: "تحديد إمكانية إلغاء العميل قبل قبول المتجر، أو مراجعة العمليات فقط حسب نوع المتجر.",
+    icon: "review", context: "أنواع المتاجر", summary: "سياسة الإلغاء حسب نوع المتجر",
+    scope: "نوع المتجر", owner: "DSH", createLabel: null, additionalPermission: null, list: null,
+  },
+  {
     key: "service-cities", href: "/policies?policy=service-cities&action=manage", label: "مدن الخدمة",
     description: "إدارة المدن المعتمدة المستخدمة في أهلية الخدمة والانضمام.",
     icon: "map", context: "تغطية المنصة", summary: "المدن المعتمدة وحالة إتاحتها",

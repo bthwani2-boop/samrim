@@ -25,25 +25,15 @@ type Row =
   | { kind: "access"; grant: StoreAccessGrant }
   | { kind: "store"; store: OperatorStoreSummary; partnerRole: ActorRoleView | null }
   | { kind: "partner"; actor: ActorRoleView };
-type Kind = "all" | "requests" | "joining" | "access" | "store" | "partner";
-type WorkspaceTab = "directory" | "requests";
+type Kind = "joining" | "access" | "store" | "partner";
+type WorkspaceTab = "directory" | "joining" | "access";
 const typesByTab: Record<WorkspaceTab, ReadonlyArray<{ value: Kind; label: string }>> = {
   directory: [{ value: "store", label: "المتاجر" }, { value: "partner", label: "الشركاء دون متجر" }],
-  requests: [
-    { value: "requests", label: "كل الطلبات والاعتمادات" },
-    { value: "joining", label: "طلبات الانضمام" },
-    { value: "access", label: "اعتمادات الوصول" },
-  ],
+  joining: [{ value: "joining", label: "طلبات الانضمام" }],
+  access: [{ value: "access", label: "اعتمادات الوصول" }],
 };
-const defaultKindByTab: Record<WorkspaceTab, Kind> = { directory: "store", requests: "requests" };
+const defaultKindByTab: Record<WorkspaceTab, Kind> = { directory: "store", joining: "joining", access: "access" };
 const statusesByKind: Record<Kind, ReadonlyArray<{ value: string; label: string }>> = {
-  all: [{ value: "", label: "جميع الحالات" }],
-  requests: [
-    { value: "", label: "جميع الحالات" }, { value: "submitted", label: "للمراجعة" },
-    { value: "admission_requested", label: "طلب قبول" }, { value: "needs_correction", label: "يحتاج تصحيحًا" },
-    { value: "draft", label: "مسودة" }, { value: "approved", label: "معتمد" },
-    { value: "pending_role_admission", label: "اعتماد وصول معلق" },
-  ],
   joining: [
     { value: "", label: "جميع الحالات" }, { value: "submitted", label: "للمراجعة" },
     { value: "admission_requested", label: "طلب قبول" }, { value: "needs_correction", label: "يحتاج تصحيحًا" },
@@ -71,14 +61,20 @@ export function PartnersWorkbench() {
   const searchParams = useSearchParams();
   const params = new URLSearchParams(searchParams.toString());
   const legacyView = params.get("view");
-  const activeTab: WorkspaceTab = params.get("tab") === "requests" || ["requests", "joining", "access"].includes(params.get("kind") ?? "") || legacyView === "joining" || legacyView === "access" ? "requests" : "directory";
+  const requestedStatus = params.get("status") || params.get("state") || "";
+  const requestedTab = params.get("tab");
+  const requestedKindParam = params.get("kind");
+  const activeTab: WorkspaceTab = requestedTab === "joining" || requestedTab === "access" ? requestedTab
+    : requestedTab === "directory" ? "directory"
+    : requestedKindParam === "joining" || legacyView === "joining" ? "joining"
+    : requestedKindParam === "access" || legacyView === "access" || requestedStatus === "pending_role_admission" ? "access"
+    : requestedTab === "requests" || requestedKindParam === "requests" ? "joining" : "directory";
   const legacyKind = legacyView === "joining" || legacyView === "access" ? legacyView :
     legacyView === "accounts" || params.get("mode") === "without_store" ? "partner" : params.get("mode") === "stores" ? "store" : "";
-  const requestedKind = params.get("kind") || legacyKind || defaultKindByTab[activeTab];
+  const requestedKind = requestedKindParam || legacyKind || defaultKindByTab[activeTab];
   const kindOptions = typesByTab[activeTab];
   const kind: Kind = kindOptions.some((entry) => entry.value === requestedKind) ? requestedKind as Kind : defaultKindByTab[activeTab];
   const statusOptions = statusesByKind[kind];
-  const requestedStatus = params.get("status") || params.get("state") || "";
   const status = statusOptions.some((entry) => entry.value === requestedStatus) ? requestedStatus : "";
   const city = activeTab === "directory" && kind === "store" ? (params.get("serviceCityId") ?? "").slice(0, 128) : "";
   const sort = params.get("sort") === "oldest" || params.get("sort") === "updated_asc" ? "oldest" : "newest";
@@ -130,7 +126,7 @@ export function PartnersWorkbench() {
   const navigate = (nextTab: WorkspaceTab, nextKind: Kind, nextStatus: string, nextCity: string, nextSort: string, nextQuery: string) => {
     page.clearForNavigation();
     const url = new URLSearchParams();
-    if (nextTab === "requests") url.set("tab", "requests");
+    if (nextTab !== "directory") url.set("tab", nextTab);
     if (nextKind !== defaultKindByTab[nextTab]) url.set("kind", nextKind);
     if (nextStatus) url.set("status", nextStatus);
     if (nextCity) url.set("serviceCityId", nextCity);
@@ -320,18 +316,20 @@ export function PartnersWorkbench() {
   const triggerKey = openStore ? `partner-store-${openStore}` : openCase ? `partner-case-${openCase}` : openGrant ? `partner-grant-${openGrant}` : openPartner ? `partner-actor-${openPartner}` : undefined;
   return <AdaptiveRecordWorkspace open={Boolean(selectedId)} detail={detail} preferenceKey="partners-unified" {...(triggerKey ? { triggerKey } : {})} onClose={close}>
     <section className="workspace-page partners-unified-workbench store-registry" aria-label="السجل الموحد للشركاء والمتاجر">
-      <PageHeader id="partners-unified-title" title="الشركاء والمتاجر" actions={<Link className="button button-primary" href="/partners/new">+ طلب انضمام جديد</Link>} />
+      <PageHeader id="partners-unified-title" title="الشركاء والمتاجر" actions={activeTab === "joining" ? <Link className="button button-primary" href="/partners/new">+ طلب انضمام جديد</Link> : null} />
       <RecordTabs id="partners-workspace" panelId="partners-workspace-panel" ariaLabel="أقسام الشركاء والمتاجر" className="partner-unified-section-tabs"
-        tabs={[{ key: "directory", label: "المتاجر والشركاء" }, { key: "requests", label: "طلبات الانضمام والاعتمادات" }]}
+        tabs={[{ key: "directory", label: "المتاجر والشركاء" }, { key: "joining", label: "طلبات الانضمام" }, { key: "access", label: "اعتمادات الوصول" }]}
         active={activeTab} onSelect={selectTab} />
       <section id="partners-workspace-panel" role="tabpanel" aria-labelledby={`partners-workspace-tab-${activeTab}`} className="partner-unified-tab-panel">
       <form className="workspace-toolbar partner-unified-toolbar" noValidate onSubmit={(event) => { event.preventDefault(); navigate(activeTab, kind, status, city, sort, search.trim().slice(0,100)); }}>
-        <label className="field-label" htmlFor="partner-unified-search">بحث في جميع السجلات
-          <input id="partner-unified-search" type="search" value={search} maxLength={100} onChange={(event) => setSearch(event.target.value)} placeholder="المتجر أو الشريك أو رقم الهاتف" />
+        <label className="field-label" htmlFor="partner-unified-search">{activeTab === "directory" ? "بحث في المتاجر والشركاء" : activeTab === "joining" ? "بحث في طلبات الانضمام" : "بحث في اعتمادات الوصول"}
+          <input id="partner-unified-search" type="search" value={search} maxLength={100} onChange={(event) => setSearch(event.target.value)} placeholder={activeTab === "directory" ? "المتجر أو الشريك أو رقم الهاتف" : activeTab === "joining" ? "اسم النشاط أو رقم الهاتف" : "اسم المتجر أو هاتف المدعو"} />
         </label>
+        {activeTab === "directory" ? <>
         <label className="field-label" htmlFor="partner-unified-kind">نوع السجل
           <select id="partner-unified-kind" value={kind} onChange={(event) => navigate(activeTab, event.target.value as Kind, "", "", sort, appliedSearch)}>{kindOptions.map((t) => <option value={t.value} key={t.value}>{t.label}</option>)}</select>
         </label>
+        </> : null}
         <label className="field-label" htmlFor="partner-unified-status">الحالة
           <select id="partner-unified-status" value={status} onChange={(event) => {
             const next = event.target.value;
@@ -352,13 +350,13 @@ export function PartnersWorkbench() {
         </div> : null}
       </form>
       {kind !== defaultKindByTab[activeTab] || status || city || appliedSearch ? <div className="partner-unified-active"><span>تم تطبيق مرشحات على العرض الحالي</span><button type="button" className="button button-secondary" onClick={() => { setSearch(""); navigate(activeTab, defaultKindByTab[activeTab], "", "", "newest", ""); }}>مسح المرشحات</button></div> : null}
-      <div className="partner-registry-summary"><span>{activeTab === "requests" ? "طلبات الانضمام واعتمادات الوصول" : "المتاجر وحسابات الشركاء"} · {rows.length} سجلًا في الصفحة</span>
+      <div className="partner-registry-summary"><span>{activeTab === "joining" ? "طلبات الانضمام" : activeTab === "access" ? "اعتمادات الوصول" : "المتاجر وحسابات الشركاء"} · {rows.length} سجلًا في الصفحة</span>
         {selectedRecords.length ? <div className="partner-registry-bulk-actions"><span>{selectedRecords.length} سجل محدد</span><button type="button" className="button button-secondary" onClick={exportSelected}>تصدير المحدد</button><button type="button" className="button button-secondary" onClick={() => setSelected(new Set())}>إلغاء التحديد</button></div> : null}</div>
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت قراءة السجلات</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => void load()}>إعادة المحاولة</button></div> : null}
       {loading && !rows.length ? <div className="collection-state" role="status">جارٍ تحميل سجلات الشركاء والمتاجر…</div> : null}
-      {!loading && !error && !rows.length ? <div className="collection-state"><strong>{nextCursor ? "لا توجد مطابقة في هذه الصفحة" : "لا توجد سجلات مطابقة"}</strong><p>{nextCursor ? "قد توجد نتائج أخرى في الصفحة التالية." : "جرّب تغيير نوع السجل أو المرشحات."}</p></div> : null}
+      {!loading && !error && !rows.length ? <div className="collection-state"><strong>{nextCursor ? "لا توجد مطابقة في هذه الصفحة" : "لا توجد سجلات مطابقة"}</strong><p>{nextCursor ? "قد توجد نتائج أخرى في الصفحة التالية." : activeTab === "directory" ? "جرّب تغيير نوع السجل أو المرشحات." : "جرّب تغيير الحالة أو كلمات البحث."}</p></div> : null}
       {rows.length > 0 ? <div className="store-registry-table-wrap partner-unified-table-wrap"><table className="operations-table partner-registry-table partner-unified-table">
-        <caption className="visually-hidden">{activeTab === "requests" ? kind === "requests" ? "طلبات الانضمام واعتمادات الوصول" : kind === "access" ? "اعتمادات وصول المتاجر" : "طلبات انضمام الشركاء" : kind === "partner" ? "حسابات الشركاء دون متجر" : "دليل المتاجر والشركاء"}</caption>
+        <caption className="visually-hidden">{activeTab === "joining" ? "طلبات انضمام الشركاء" : activeTab === "access" ? "اعتمادات وصول المتاجر" : kind === "partner" ? "حسابات الشركاء دون متجر" : "دليل المتاجر والشركاء"}</caption>
         <thead><tr><th scope="col">الشريك / المتجر والاتصال</th><th scope="col">النوع والموقع</th><th scope="col">الحالة</th><th scope="col">البيانات والخطوة المطلوبة</th><th scope="col">آخر تحديث</th><th scope="col">الإجراء</th></tr></thead>
         <tbody>{rows.map(renderRow)}</tbody>
       </table></div> : null}

@@ -59,6 +59,88 @@ func TestSettlementIntakePartnerStoreScopeWithoutHold(t *testing.T) {
 	}
 }
 
+// A payout with the same beneficiary, total and deterministic key must not
+// be linked to an intake when its Store-level entitlements differ.
+func TestSettlementIntakeRejectsDifferentPartnerStoreAllocations(t *testing.T) {
+	s := newFieldAcquisitionScenario(t)
+	owner, _, a, b, _, facts, staffFacts, cipher, _ := setupPartnerFinanceProof(t, s, true)
+	request := SettlementIntakeInput{
+		ActorType: "partner", ActorID: owner, RequestedBy: owner,
+		AmountMode: "SPECIFIED", StoreIDs: []string{a, b},
+		StoreAmounts:   []SettlementIntakeStore{{StoreID: a, AmountMinor: 1000}, {StoreID: b, AmountMinor: 2000}},
+		IdempotencyKey: "partner-intake-mismatch-" + s.suffix,
+		CorrelationID:  "partner-intake-mismatch-correlation-" + s.suffix,
+	}
+	intake, replayed, err := CreateSettlementIntake(s.ctx, s.db, request)
+	if err != nil || replayed {
+		t.Fatalf("create request: %+v replayed=%v err=%v", intake, replayed, err)
+	}
+	t.Cleanup(func() {
+		if _, err := s.db.ExecContext(context.Background(), "DELETE FROM wlt.beneficiary_settlement_intakes WHERE id=$1", intake.ID); err != nil {
+			t.Errorf("cleanup intake: %v", err)
+		}
+	})
+	payout, _, err := CreatePartitionedPartnerPayoutRequest(s.ctx, s.db, cipher, PartnerPayoutRequestInput{
+		PartnerActorID: owner, ScopeMode: "SPECIFIED",
+		RequestedStoreIDs: []string{a, b},
+		StoreAmounts:      []PartnerPayoutStoreAmount{{StoreID: a, AmountMinor: 1500}, {StoreID: b, AmountMinor: 1500}},
+		BeneficiaryFacts:  map[string]IdentityFacts{owner: facts, staffFacts.ActorID: staffFacts},
+		IdempotencyKey:    "settlement_conv_" + intake.ID, CorrelationID: "settlement_conv_corr_" + intake.ID,
+	})
+	if err != nil || payout.TotalAmountMinor != intake.ResolvedAmountMinor {
+		t.Fatalf("prepare same-total wrong-allocation payout: %+v err=%v", payout, err)
+	}
+	if _, err := ConvertSettlementIntake(s.ctx, s.db, intake.ID, payout.ID); !errors.Is(err, ErrSettlementIntakeInvalid) {
+		t.Fatalf("must reject changed Store allocations despite equal total and key: %v", err)
+	}
+	unconverted, err := ReadSettlementIntake(s.ctx, s.db, intake.ID)
+	if err != nil || unconverted.Status != "REQUESTED" || unconverted.PayoutReference != nil {
+		t.Fatalf("rejected conversion must preserve pending intake: %+v err=%v", unconverted, err)
+	}
+}
+
+// A payout that has released its hold must not be linked as executable.
+func TestSettlementIntakeRejectsCancelledPartnerPayout(t *testing.T) {
+	s := newFieldAcquisitionScenario(t)
+	owner, _, a, b, _, facts, staffFacts, cipher, _ := setupPartnerFinanceProof(t, s, true)
+	intake, _, err := CreateSettlementIntake(s.ctx, s.db, SettlementIntakeInput{
+		ActorType: "partner", ActorID: owner, RequestedBy: owner,
+		AmountMode: "SPECIFIED", StoreIDs: []string{a, b},
+		StoreAmounts:   []SettlementIntakeStore{{StoreID: a, AmountMinor: 1000}, {StoreID: b, AmountMinor: 2000}},
+		IdempotencyKey: "partner-intake-cancelled-" + s.suffix,
+		CorrelationID:  "partner-intake-cancelled-correlation-" + s.suffix,
+	})
+	if err != nil {
+		t.Fatalf("create intake: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := s.db.ExecContext(context.Background(), "DELETE FROM wlt.beneficiary_settlement_intakes WHERE id=$1", intake.ID); err != nil {
+			t.Errorf("cleanup cancelled payout intake: %v", err)
+		}
+	})
+	payout, _, err := CreatePartitionedPartnerPayoutRequest(s.ctx, s.db, cipher, PartnerPayoutRequestInput{
+		PartnerActorID: owner, ScopeMode: "SPECIFIED",
+		RequestedStoreIDs: []string{a, b},
+		StoreAmounts:      []PartnerPayoutStoreAmount{{StoreID: a, AmountMinor: 1000}, {StoreID: b, AmountMinor: 2000}},
+		BeneficiaryFacts:  map[string]IdentityFacts{owner: facts, staffFacts.ActorID: staffFacts},
+		IdempotencyKey:    "settlement_conv_" + intake.ID, CorrelationID: "settlement_conv_corr_" + intake.ID,
+	})
+	if err != nil || len(payout.Payouts) == 0 {
+		t.Fatalf("create payout for cancellation proof: %+v err=%v", payout, err)
+	}
+	_, err = CancelPayout(s.ctx, s.db, CancelPayoutInput{
+		PayoutID: payout.Payouts[0].ID, ActorID: "finance-operator",
+		Reason: "transfer not executed", IdempotencyKey: "cancel-child-" + s.suffix,
+		CorrelationID: "cancel-child-correlation-" + s.suffix,
+	})
+	if err != nil {
+		t.Fatalf("cancel held payout: %v", err)
+	}
+	if _, err = ConvertSettlementIntake(s.ctx, s.db, intake.ID, payout.ID); !errors.Is(err, ErrSettlementIntakeInvalid) {
+		t.Fatalf("cancelled underlying payout must not convert intake: %v", err)
+	}
+}
+
 // The Field reward is posted by WLT using its normal policy/ledger journey.
 // A settlement intake must remain available even before a payout destination
 // exists, without moving any funds or creating an outstanding payout hold.
@@ -111,8 +193,8 @@ func TestSettlementIntakeWithoutDestinationPreservesFieldLedger(t *testing.T) {
 		t.Fatalf("canonical inbox readback: %+v err=%v", intakes, err)
 	}
 	cancelled, err := CancelSettlementIntake(s.ctx, s.db, created.ID, "independent-finance-operator", "verified destination unavailable")
-	if err != nil || cancelled.Status != "CANCELLED" {
-		t.Fatalf("Finance cancellation failed: %+v err=%v", cancelled, err)
+	if err != nil || cancelled.Status != "CANCELLED" || cancelled.CancellationReason != "verified destination unavailable" || cancelled.CancelledAt == nil {
+		t.Fatalf("Finance cancellation reason/readback failed: %+v err=%v", cancelled, err)
 	}
 	second.CorrelationID = "field-second-correlation-" + s.suffix
 	newIntake, replay, err := CreateSettlementIntake(s.ctx, s.db, second)

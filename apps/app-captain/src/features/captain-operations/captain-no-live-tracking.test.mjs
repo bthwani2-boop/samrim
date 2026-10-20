@@ -35,6 +35,13 @@ test("captain GPS is reserved for active dispatch presence, not assignment track
   assert.equal(publisher.includes("watchPositionAsync"), false);
 });
 
+test("unverified captain mission does not disclose cached customer destination", () => {
+  const home = readFileSync(new URL("../../../app/(app)/home.tsx", import.meta.url), "utf8");
+  assert.match(home, /<CaptainOpportunities mission=\{missionReadiness === "ready" \? mission : null\}/);
+  assert.match(home, /missionActive=\{missionReadiness === "ready" && Boolean\(mission\)\}/);
+  assert.match(home, /suppressed=\{Boolean\(mission\) \|\| missionReadiness !== "ready"\}/);
+});
+
 test("client order detail does not expose live captain locations", () => {
   const clientDetail = readFileSync(new URL("../../../../app-client/src/features/orders/order-detail.tsx", import.meta.url), "utf8");
   assert.equal(clientDetail.includes("captainLocation"), false);

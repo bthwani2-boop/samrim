@@ -1178,6 +1178,15 @@ func CreateCatalogProduct(ctx context.Context, db *sql.DB, input CatalogProductI
 	return CatalogProductResult{Product: product}, nil
 }
 
+// Product identity and Store ownership are immutable on ordinary edits.
+// Store-local to Shared promotion requires its separate attributed cutover.
+func validateCatalogProductUpdateIdentity(current CatalogProductRecord, input CatalogProductUpdateInput) error {
+	if input.VerticalID != current.VerticalID || input.Scope != current.Scope || input.StoreID != current.StoreID {
+		return ErrCatalogProductScopeMismatch
+	}
+	return nil
+}
+
 func UpdateCatalogProduct(ctx context.Context, db *sql.DB, productID string, input CatalogProductUpdateInput, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (CatalogProductResult, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1212,7 +1221,10 @@ func UpdateCatalogProduct(ctx context.Context, db *sql.DB, productID string, inp
 	if current.Version != expectedVersion {
 		return CatalogProductResult{}, ErrCatalogVersionConflict
 	}
-	if input.VerticalID != current.VerticalID || len([]rune(input.Description)) > 4000 {
+	if err := validateCatalogProductUpdateIdentity(current, input); err != nil {
+		return CatalogProductResult{}, err
+	}
+	if len([]rune(input.Description)) > 4000 {
 		return CatalogProductResult{}, ErrCatalogProductScopeMismatch
 	}
 	if input.Scope != "SHARED" && input.Scope != "STORE_SCOPED" {

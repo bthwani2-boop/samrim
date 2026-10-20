@@ -47,6 +47,8 @@ type SettlementIntakeRecord struct {
 	PayoutReference      *string                 `json:"payoutReference,omitempty"`
 	PayoutStatus         string                  `json:"payoutStatus,omitempty"`
 	PayoutUpdatedAt      *time.Time              `json:"payoutUpdatedAt,omitempty"`
+	CancellationReason   string                  `json:"cancellationReason,omitempty"`
+	CancelledAt          *time.Time              `json:"cancelledAt,omitempty"`
 	CreatedAt            time.Time               `json:"createdAt"`
 }
 
@@ -228,13 +230,14 @@ type settlementIntakeReader interface {
 func readSettlementIntake(ctx context.Context, reader settlementIntakeReader, id string) (SettlementIntakeRecord, error) {
 	var item SettlementIntakeRecord
 	var amount sql.NullInt64
-	var payout sql.NullString
+	var payout, cancellationReason sql.NullString
+	var cancelledAt sql.NullTime
 	var stores []byte
 	err := reader.QueryRowContext(ctx, `SELECT id,actor_type,actor_id,requested_by,amount_mode,requested_amount_minor,
-    resolved_amount_minor,currency,store_allocations,status,payout_reference,created_at
+    resolved_amount_minor,currency,store_allocations,status,payout_reference,cancellation_reason,cancelled_at,created_at
     FROM wlt.beneficiary_settlement_intakes WHERE id=$1`, id).Scan(
 		&item.ID, &item.ActorType, &item.ActorID, &item.RequestedBy, &item.AmountMode, &amount, &item.ResolvedAmountMinor,
-		&item.Currency, &stores, &item.Status, &payout, &item.CreatedAt)
+		&item.Currency, &stores, &item.Status, &payout, &cancellationReason, &cancelledAt, &item.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return item, ErrSettlementIntakeNotFound
 	}
@@ -246,6 +249,12 @@ func readSettlementIntake(ctx context.Context, reader settlementIntakeReader, id
 	}
 	if payout.Valid {
 		item.PayoutReference = &payout.String
+	}
+	if cancellationReason.Valid {
+		item.CancellationReason = cancellationReason.String
+	}
+	if cancelledAt.Valid {
+		item.CancelledAt = &cancelledAt.Time
 	}
 	if err = json.Unmarshal(stores, &item.StoreAllocations); err != nil {
 		return item, err
@@ -301,9 +310,10 @@ func ConvertSettlementIntake(ctx context.Context, db *sql.DB, intakeID, payoutRe
 	var status, actorType, actorID string
 	var amount int64
 	var existing sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT status,actor_type,actor_id,resolved_amount_minor,payout_reference
+	var storedAllocations []byte
+	err = tx.QueryRowContext(ctx, `SELECT status,actor_type,actor_id,resolved_amount_minor,payout_reference,store_allocations
        FROM wlt.beneficiary_settlement_intakes WHERE id=$1 FOR UPDATE`, intakeID).
-		Scan(&status, &actorType, &actorID, &amount, &existing)
+		Scan(&status, &actorType, &actorID, &amount, &existing, &storedAllocations)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SettlementIntakeRecord{}, ErrSettlementIntakeNotFound
 	}
@@ -334,6 +344,31 @@ func ConvertSettlementIntake(ctx context.Context, db *sql.DB, intakeID, payoutRe
 	}
 	if !matched {
 		return SettlementIntakeRecord{}, ErrSettlementIntakeInvalid
+	}
+	if actorType == "partner" {
+		// The total alone does not prove that the held payout covers the
+		// same Stores and amounts as the original beneficiary request.
+		var expected []SettlementIntakeStore
+		if err := json.Unmarshal(storedAllocations, &expected); err != nil {
+			return SettlementIntakeRecord{}, ErrSettlementIntakeInvalid
+		}
+		payout, err := ReadPartnerPayoutRequestTx(ctx, tx, payoutReference)
+		if err != nil {
+			return SettlementIntakeRecord{}, err
+		}
+		if len(expected) == 0 || len(expected) != len(payout.Stores) || len(payout.Payouts) == 0 {
+			return SettlementIntakeRecord{}, ErrSettlementIntakeInvalid
+		}
+		for i, allocation := range expected {
+			if allocation.StoreID != payout.Stores[i].StoreID || allocation.AmountMinor != payout.Stores[i].AmountMinor {
+				return SettlementIntakeRecord{}, ErrSettlementIntakeInvalid
+			}
+		}
+		for _, child := range payout.Payouts {
+			if child.Status == "CANCELLED" {
+				return SettlementIntakeRecord{}, ErrSettlementIntakeInvalid
+			}
+		}
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE wlt.beneficiary_settlement_intakes
     SET status='CONVERTED',payout_reference=$2,updated_at=clock_timestamp() WHERE id=$1`, intakeID, payoutReference); err != nil {

@@ -1,6 +1,7 @@
 "use client";
 
 import type { OperatorMarketingSummary } from "@bthwani/dsh";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 export function MarketingOverviewSummary() {
@@ -48,7 +49,8 @@ export function MarketingOverviewSummary() {
     <p className="muted" role="note">إجماليات كاملة من سجلات DSH، وليست أعداد أول صفحة. تم احتساب حالات النشر عند {new Date(summary.asOf).toLocaleString("ar-YE")}؛ ولا تعني أهلية التمويل أو توافر المتجر.</p>
     <div className="access-card">
       <h2>تنبيهات تحتاج إجراءً</h2>
-      <p>موافقات المتاجر المنتظرة لم تُربط بعد بتقرير المشغّل؛ لا تُعرض كصفر.</p>
+      <p>لا يوفر الملخص الحالي عددًا موثوقًا لموافقات المتاجر. راجع الحملات التي تشترط موافقة الشريك؛ يتطلب عدّ المنتظرين تعريف المتاجر المؤهلة وحالة الرد لكل حملة.</p>
+      <Link className="button button-quiet" href="/marketing/promotions">مراجعة إعدادات موافقة الشريك في سجل العروض</Link>
       <p>أخطاء النشر تُراجع من سجل كل محتوى أو عرض، ولا تُستنتج من عدد المسودات.</p>
     </div>
   </>;

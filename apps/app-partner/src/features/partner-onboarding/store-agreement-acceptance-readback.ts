@@ -1,5 +1,10 @@
 import type { StoreCommercialAgreement } from "./store-commercial-agreement-client";
 
+// An agreement with no rates cannot be reviewed or knowingly accepted.
+export function hasReviewableStoreAgreementRates(agreement: Pick<StoreCommercialAgreement, "rates">): boolean {
+  return agreement.rates.length > 0;
+}
+
 export function isConfirmedOwnStoreAgreementAcceptance(
   candidate: StoreCommercialAgreement | undefined,
   expected: Readonly<{

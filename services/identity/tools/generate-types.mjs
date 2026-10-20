@@ -471,7 +471,7 @@ export function generateIdentityTypes() {
   referencedSchemas.clear();
   const rendered = schemaNames.map(renderSchema);
 
-  const missing = [...referencedSchemas].filter((name) => !schemaNameSet.has(name)).sort();
+  const missing = [...referencedSchemas].filter((name) => !schemaNameSet.has(name)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   if (missing.length > 0) {
     throw new Error("generated schema closure is missing referenced types: " + missing.join(", "));
   }

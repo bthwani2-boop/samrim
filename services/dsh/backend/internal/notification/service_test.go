@@ -46,3 +46,16 @@ func TestNotificationPresentationDifferentiatesClientAndPartner(t *testing.T) {
 		t.Fatalf("captain offer notification changed its public, order-only body: %q", body)
 	}
 }
+
+func TestNotificationPresentationReportsCancelledOrderWithoutPaymentClaim(t *testing.T) {
+	for _, role := range []string{"client", "partner", "operator"} {
+		kind, title, body := message("order_cancelled", role, "order-123", "CANCELLED")
+		if kind != "ORDER_STATUS" || title != "تم إلغاء الطلب" || body != "تم إلغاء الطلب رقم order-123." {
+			t.Fatalf("%s cancellation notification misrepresents the state: kind=%q title=%q body=%q", role, kind, title, body)
+		}
+	}
+	_, title, body := message("order_rejected", "client", "order-123", "REJECTED")
+	if title != "تعذر قبول الطلب" || body != "تعذر قبول الطلب رقم order-123." {
+		t.Fatalf("rejection notification changed while adding cancellation: title=%q body=%q", title, body)
+	}
+}

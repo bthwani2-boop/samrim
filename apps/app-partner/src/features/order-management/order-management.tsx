@@ -2,11 +2,11 @@ import { borders, radius, sizing, type resolveTheme, spacing, typography } from 
 import { BthwaniButton, BthwaniChip, BthwaniConfirmDialog, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { useLocalSearchParams } from "expo-router";
+import { useIsFocused, useLocalSearchParams } from "expo-router";
 
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
 import { mergeOrderPageRecords } from "./order-page-records";
@@ -50,6 +50,7 @@ function storeCaptainChoiceLabel(membership: StoreCaptainMembership): string {
 export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const isFocused = useIsFocused();
   const { q: rawQuery } = useLocalSearchParams<{ q?: string | string[] }>();
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const { stores: scopedStores } = usePartnerStoreScope();
@@ -75,10 +76,10 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const [confirmation, setConfirmation] = useState<OrderConfirmation>(null);
   const normalizedSearch = searchQuery.trim();
 
-  const load = useCallback(async (options: { append?: boolean; cursor?: string } = {}) => {
+  const load = useCallback(async (options: { append?: boolean; cursor?: string; quiet?: boolean } = {}) => {
     const generation = options.append ? loadGeneration.current : ++loadGeneration.current;
     if (options.append) setLoadingMore(true);
-    else {
+    else if (!options.quiet) {
       setLoading(true);
       setLoadingMore(false);
       setOrders([]);
@@ -136,23 +137,30 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
       setAssignments((current) => mergeOrderPageRecords(current, Object.fromEntries(assignmentResults.flatMap((entry) => entry.status === "fulfilled" && entry.value ? [entry.value] : [])), Boolean(options.append)));
       setDispatchOffers((current) => mergeOrderPageRecords(current, Object.fromEntries(offerResults.flatMap((entry) => entry.status === "fulfilled" && entry.value ? [entry.value] : [])), Boolean(options.append)));
       if (membershipResults.some((entry) => entry.status === "rejected") || assignmentResults.some((entry) => entry.status === "rejected") || offerResults.some((entry) => entry.status === "rejected")) {
-        setSidecarError("تم تحميل الطلبات، لكن تعذر قراءة بعض تفاصيل كباتن المتجر. يمكنك إعادة تحديث الطلبات.");
+        setSidecarError("تعذر قراءة بعض تفاصيل الكباتن، وستُحدّث تلقائيًا.");
       }
     } catch (cause) {
       console.error("DSH order list failed", cause);
-      if (generation === loadGeneration.current) setError("تعذر قراءة الطلبات. أعد المحاولة.");
+      if (generation === loadGeneration.current) setError("تعذر قراءة الطلبات. ستُعاد المحاولة تلقائيًا.");
     } finally {
-      if (generation === loadGeneration.current) { setLoading(false); setLoadingMore(false); }
+      if (generation === loadGeneration.current) { if (!options.quiet) setLoading(false); setLoadingMore(false); }
     }
   }, [canFulfillOrder, filter, normalizedSearch, storeId]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!isFocused || loading || busy) return;
+    const update = () => { if (AppState.currentState === "active") void load({ quiet: true }); };
+    const timer = setInterval(update, 20_000);
+    const resume = AppState.addEventListener("change", (state) => { if (state === "active") update(); });
+    return () => { clearInterval(timer); resume.remove(); };
+  }, [isFocused, loading, busy, load]);
 
   async function transition(order: Order, requestedState = nextState(order)) {
     if (!requestedState || busy || loading) return;
     setBusy(order.id); setError("");
     try { const token = await getUsableIdentityAccessToken(); await client().transitionStoreOrder(token, order.storeId, order.id, { state: requestedState }, order.version); await load(); }
-    catch (cause) { console.error("DSH order transition failed", cause); setError("تعذر تحديث حالة الطلب. أعد القراءة ثم حاول مرة أخرى."); }
+    catch (cause) { console.error("DSH order transition failed", cause); setError("تعذر تنفيذ الإجراء؛ انتظر ظهور الحالة المؤكدة قبل إعادة المحاولة."); }
     finally { setBusy(""); }
   }
 
@@ -167,7 +175,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
       setAdjustmentQuantities((current) => ({ ...current, [lineID]: "" }));
     } catch (cause) {
       console.error("DSH order adjustment proposal failed", cause);
-      setError("تعذر إرسال التعديل. حدّث الطلب وتحقق من حالته قبل إعادة المحاولة.");
+      setError("تعذر إرسال التعديل؛ تحقق من حالة الطلب بعد المزامنة التلقائية قبل إعادة المحاولة.");
     } finally { setBusy(""); }
   }
 
@@ -184,7 +192,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
       await client().transitionStoreOrder(token, order.storeId, order.id, { state: "PICKED_UP", code }, order.version);
       setPickupCodes((current) => ({ ...current, [order.id]: "" }));
       await load();
-    } catch (cause) { console.error("DSH store pickup confirmation failed", cause); setError("تعذر تأكيد رمز الاستلام. تحقق من الرمز ثم حدّث الطلب قبل إعادة المحاولة."); }
+    } catch (cause) { console.error("DSH store pickup confirmation failed", cause); setError("تعذر تأكيد الاستلام؛ تحقق من الرمز والحالة الظاهرة قبل المحاولة مجددًا."); }
     finally { setBusy(""); }
   }
 
@@ -195,7 +203,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
       const token = await getUsableIdentityAccessToken();
       await client().confirmPartnerCaptainCashHandoff(token, order.storeId, order.id, order.version);
       await load();
-    } catch (cause) { console.error("DSH Store Captain cash handoff confirmation failed", cause); setError("تعذر تأكيد استلام النقد من الكابتن. تحقق من الاستلام الفعلي ثم أعد قراءة الطلب قبل المحاولة."); }
+    } catch (cause) { console.error("DSH Store Captain cash handoff confirmation failed", cause); setError("تعذر تأكيد استلام النقد؛ تحقق من الاستلام الفعلي وانتظر الحالة المؤكدة قبل المحاولة مجددًا."); }
     finally { setBusy(""); }
   }
 
@@ -220,13 +228,13 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
       const result = await client().createPartnerStoreCaptainDispatchOffer(token, order.storeId, order.id, { captainActorId }, order.version);
       setDispatchOffers((current) => ({ ...current, [order.id]: result.offer }));
       await load();
-    } catch (cause) { console.error("DSH Store Captain dispatch failed", cause); setError("تعذر إرسال الطلب إلى كابتن المتجر. أعد قراءة الطلبات والعضويات ثم حاول مرة أخرى."); }
+    } catch (cause) { console.error("DSH Store Captain dispatch failed", cause); setError("تعذر إرسال الطلب إلى كابتن المتجر؛ تحقق من الحالة بعد المزامنة التلقائية قبل إعادة الإرسال."); }
     finally { setBusy(""); }
   }
 
   return (
     <View style={styles.container} accessibilityLabel="إدارة طلبات المتجر">
-      <View style={styles.toolbar}><Text style={styles.title}>الطلبات</Text><BthwaniButton busy={loading || Boolean(busy)} disabled={loading || Boolean(busy)} label="تحديث" onPress={() => void load()} variant="quiet" /></View>
+      <View style={styles.toolbar}><Text style={styles.title}>الطلبات</Text></View>
 
       {!loading && attention && (attention.newOrders + attention.awaitingDispatch + attention.deliveryRecovery > 0) ? (
         <View style={styles.summaryRow} accessibilityLabel="ملخص طابور الطلبات">

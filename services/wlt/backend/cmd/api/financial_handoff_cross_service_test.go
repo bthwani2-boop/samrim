@@ -34,7 +34,7 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	var fresh bool
 	if err := db.QueryRowContext(ctx, "SELECT to_regclass('wlt.schema_migrations') IS NULL").Scan(&fresh); err != nil || !fresh {
@@ -67,7 +67,10 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 		t.Fatal(err)
 	}
 	agreement, _, err := postgres.ProposeStoreCommercialAgreement(ctx, db, postgres.ProposeStoreCommercialAgreementInput{
-		StoreID: store, PartnerActorID: owner, Rates: []postgres.StoreCommercialAgreementRate{{FulfillmentMode: "CUSTOMER_PICKUP", CommissionRateBps: 1000}},
+		StoreID: store, PartnerActorID: owner, Rates: []postgres.StoreCommercialAgreementRate{
+			{FulfillmentMode: "CUSTOMER_PICKUP", CommissionRateBps: 1000},
+			{FulfillmentMode: "BTHWANI_CAPTAIN", CommissionRateBps: 1000},
+		},
 		ActorID: "proof-proposer", Reason: "owned isolated DSH-WLT proof", IdempotencyKey: "proof-store-propose", CorrelationID: "proof-propose-correlation",
 	})
 	if err != nil {
@@ -80,7 +83,7 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 	}
 	_, _, err = postgres.DecideStoreCommercialAgreement(ctx, db, postgres.StoreCommercialAgreementDecisionInput{
 		AgreementID: agreement.AgreementID, ExpectedVersion: agreement.AgreementVersion, Decision: "APPROVE",
-		ActorID: "proof-finance-approver", CurrentStorePartnerActorID: owner, CurrentFulfillmentModes: []string{"CUSTOMER_PICKUP"},
+		ActorID: "proof-finance-approver", CurrentStorePartnerActorID: owner, CurrentFulfillmentModes: []string{"CUSTOMER_PICKUP", "BTHWANI_CAPTAIN"},
 		Reason: "owned Store approval", IdempotencyKey: "proof-store-approve", CorrelationID: "proof-approve-correlation",
 	})
 	if err != nil {
@@ -182,6 +185,91 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The same owned WLT instance must also settle an actual Captain delivery.
+	// A funded Captain wallet is required to reserve the COD liability before
+	// DSH assigns delivery custody. The customer is distinct from pickup.
+	const courierOrder = "proof-courier-order"
+	const courierCustomer = "proof-courier-customer"
+	const courierCaptain = "proof-courier-captain"
+	for _, account := range []struct {
+		kind, actor string
+		amount      int64
+	}{
+		{"customer", courierCustomer, 1200},
+		{"captain", courierCaptain, 3000},
+	} {
+		funding, _, err := postgres.CreateCashInFundingIntent(ctx, db, postgres.CreateCashInFundingIntentInput{
+			ActorType: account.kind, ActorID: account.actor, AmountMinor: account.amount,
+			Currency: "YER", ProviderKey: postgres.DevelopmentSimulatorProvider,
+			IdempotencyKey: account.actor + "-funding", CorrelationID: account.actor + "-funding-correlation",
+		})
+		if err != nil {
+			t.Fatalf("prepare courier wallet for %s: %v", account.actor, err)
+		}
+		if _, _, err := postgres.ApplyCashInFundingResult(ctx, db, postgres.ApplyCashInFundingResultInput{
+			FundingIntentID: funding.ID, Outcome: "SUCCESS",
+			ProviderTransactionReference: account.actor + "-provider-receipt",
+			ActorID:                      "proof-synthetic-provider", IdempotencyKey: account.actor + "-credit",
+			CorrelationID: account.actor + "-credit-correlation",
+		}); err != nil {
+			t.Fatalf("fund courier account %s: %v", account.actor, err)
+		}
+	}
+	courierPayment, _, err := postgres.CreatePaymentIntent(ctx, db, postgres.CreatePaymentIntentInput{
+		ExternalReference: "proof-courier-payment", PayerActorID: courierCustomer, OrderID: courierOrder,
+		AmountMinor: 300, Currency: "YER", Method: domain.MethodCashOnDelivery,
+		CustomerPaymentAllocation: &postgres.CustomerPaymentAllocationInput{
+			OrderID: courierOrder, StoreID: store, PartnerActorID: owner,
+			CommercialStoreTypeID: "proof-type", FulfillmentMode: "BTHWANI_CAPTAIN",
+			Currency: "YER", SubtotalMinor: 1500, InternalBalanceAmountMinor: 1200,
+			CashAmountMinor: 300, CustomerPayableMinor: 1500, PolicyVersion: "proof-courier-v1",
+		},
+		IdempotencyKey: "proof-courier-payment-create", CorrelationID: "proof-courier-payment-correlation",
+	})
+	if err != nil {
+		t.Fatalf("create real courier mixed funding: %v", err)
+	}
+	reserved, replayed, err := postgres.ReserveCaptainCOD(ctx, db, postgres.CaptainCODReservationInput{
+		OrderID: courierOrder, PaymentIntentID: courierPayment.ID, CaptainActorID: courierCaptain,
+		IdempotencyKey: "proof-courier-cod-reserve", CorrelationID: "proof-courier-cod-reserve-correlation",
+	})
+	if err != nil || replayed || reserved.State != "ACTIVE" {
+		t.Fatalf("captain COD hold must exist before delivery: %+v replay=%t err=%v", reserved, replayed, err)
+	}
+	// A third independent actor exercises cancellation of mixed funding before
+	// collection. A replay must release the wallet reservation only once.
+	const cancelledOrder = "proof-cancel-order"
+	const cancelledCustomer = "proof-cancel-customer"
+	cancelFunding, _, err := postgres.CreateCashInFundingIntent(ctx, db, postgres.CreateCashInFundingIntentInput{
+		ActorType: "customer", ActorID: cancelledCustomer, AmountMinor: 1200,
+		Currency: "YER", ProviderKey: postgres.DevelopmentSimulatorProvider,
+		IdempotencyKey: "proof-cancel-customer-funding", CorrelationID: "proof-cancel-customer-funding-correlation",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := postgres.ApplyCashInFundingResult(ctx, db, postgres.ApplyCashInFundingResultInput{
+		FundingIntentID: cancelFunding.ID, Outcome: "SUCCESS",
+		ProviderTransactionReference: "proof-cancel-provider-receipt",
+		ActorID:                      "proof-synthetic-provider", IdempotencyKey: "proof-cancel-funding-success",
+		CorrelationID: "proof-cancel-funding-correlation",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cancelPayment, _, err := postgres.CreatePaymentIntent(ctx, db, postgres.CreatePaymentIntentInput{
+		ExternalReference: "proof-cancel-payment", PayerActorID: cancelledCustomer, OrderID: cancelledOrder,
+		AmountMinor: 300, Currency: "YER", Method: domain.MethodCashAtStore,
+		CustomerPaymentAllocation: &postgres.CustomerPaymentAllocationInput{
+			OrderID: cancelledOrder, StoreID: store, PartnerActorID: owner,
+			CommercialStoreTypeID: "proof-type", FulfillmentMode: "CUSTOMER_PICKUP",
+			Currency: "YER", SubtotalMinor: 1500, InternalBalanceAmountMinor: 1200,
+			CashAmountMinor: 300, CustomerPayableMinor: 1500, PolicyVersion: "proof-cancel-v1",
+		},
+		IdempotencyKey: "proof-cancel-payment-create", CorrelationID: "proof-cancel-payment-correlation",
+	})
+	if err != nil {
+		t.Fatalf("create cancellation-ready mixed payment: %v", err)
+	}
 	const token = "only-test-owned-wlt-token"
 	const cipher = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 	server, err := transporthttp.New(db, token, cipher, cipher)
@@ -218,6 +306,12 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 		"WLT_FINANCIAL_PROOF_PAYMENT_ID="+payment.ID,
 		"WLT_FINANCIAL_PROOF_ORDER_ID="+order,
 		"WLT_FINANCIAL_PROOF_PARTNER_ID="+owner,
+		"WLT_FINANCIAL_PROOF_COURIER_ORDER_ID="+courierOrder,
+		"WLT_FINANCIAL_PROOF_COURIER_PAYMENT_ID="+courierPayment.ID,
+		"WLT_FINANCIAL_PROOF_COURIER_CAPTAIN_ID="+courierCaptain,
+		"WLT_FINANCIAL_PROOF_CANCEL_ORDER_ID="+cancelledOrder,
+		"WLT_FINANCIAL_PROOF_CANCEL_PAYMENT_ID="+cancelPayment.ID,
+		"WLT_FINANCIAL_PROOF_CANCEL_CLIENT_ID="+cancelledCustomer,
 	)
 	output, err := cmd.CombinedOutput()
 	t.Log(string(output))
@@ -249,5 +343,38 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 	err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM wlt.partner_store_cash_commissions WHERE order_id=$1", order).Scan(&exact)
 	if err != nil || exact != 1 {
 		t.Fatalf("double earning under retries: count=%d err=%v", exact, err)
+	}
+	courierFinal, err := postgres.ReadPaymentIntent(ctx, db, courierPayment.ID)
+	if err != nil || courierFinal.State != "COLLECTED" {
+		t.Fatalf("courier COD/WLT collection was not persisted: %+v err=%v", courierFinal, err)
+	}
+	verifyCollectedCourierReviewedCompensation(t, ctx, db, courierOrder, courierPayment.ID, courierCustomer)
+	var finalizedCOD, courierEarnings, financialOutliers int
+	if err := db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM wlt.captain_cod_reservations WHERE order_id=$1 AND captain_actor_id=$2 AND state='FINALIZED'",
+		courierOrder, courierCaptain).Scan(&finalizedCOD); err != nil || finalizedCOD != 1 {
+		t.Fatalf("courier COD hold finalization count=%d err=%v", finalizedCOD, err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM wlt.partner_order_earnings WHERE order_id=$1",
+		courierOrder).Scan(&courierEarnings); err != nil || courierEarnings != 1 {
+		t.Fatalf("courier partner earnings count=%d err=%v", courierEarnings, err)
+	}
+	cancelled, err := postgres.ReadPaymentIntent(ctx, db, cancelPayment.ID)
+	if err != nil || cancelled.State != "CANCELLED" {
+		t.Fatalf("cancellation not persisted in WLT: %+v err=%v", cancelled, err)
+	}
+	restored, err := postgres.ReadWalletBalance(ctx, db, "customer", cancelledCustomer)
+	if err != nil || restored != 1200 {
+		t.Fatalf("cancelled mixed payment must return reserved 1200 once: %d err=%v", restored, err)
+	}
+	var cancelEarnings int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM wlt.partner_order_earnings WHERE order_id=$1", cancelledOrder).Scan(&cancelEarnings); err != nil || cancelEarnings != 0 {
+		t.Fatalf("cancelled order earned unexpected partner money: %d err=%v", cancelEarnings, err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
+		SELECT transaction_id FROM wlt.ledger_entries GROUP BY transaction_id
+		HAVING SUM(CASE WHEN direction='DEBIT' THEN amount_minor ELSE -amount_minor END)<>0
+	) unbalanced`).Scan(&financialOutliers); err != nil || financialOutliers != 0 {
+		t.Fatalf("WLT unbalanced ledger groups=%d err=%v", financialOutliers, err)
 	}
 }

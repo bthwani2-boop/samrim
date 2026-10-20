@@ -6,9 +6,11 @@ import { FieldAcquisitionPolicyWorkspace } from "../finance/field-acquisition-po
 import { PartnerFinancialTermsPolicyWorkspace } from "../finance/partner-financial-terms-policy-workspace";
 import type { PolicyResourceKey } from "./policy-capabilities";
 import { CaptainMinimumBalancePolicyWorkspace } from "./captain-minimum-balance-policy-workspace";
+import { StoreTypeCancellationPolicyWorkspace } from "./store-type-cancellation-policy-workspace";
 
 /** Single adapter table to existing owner-backed editors; no duplicate policy writers. */
 export const policyEditors: Record<PolicyResourceKey, ComponentType> = {
+  "store-type-cancellation": StoreTypeCancellationPolicyWorkspace,
   "service-cities": ServiceCityPanel,
   "wallet-providers": WalletProviderPolicyPanel,
   "delivery-fees": DeliveryFeePolicyWorkspace,

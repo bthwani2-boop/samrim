@@ -82,15 +82,22 @@ export function NotificationsInbox() {
     return () => { requestID.current += 1; };
   }, [load]));
 
-  async function markRead(item: Notification) {
-    if (item.readAt || busy || !actorID || activeActorID() !== actorID) return;
+  async function openNotification(item: Notification) {
+    if (busy || !actorID || activeActorID() !== actorID) return;
+    const offerOrderID = item.kind === "CAPTAIN_OFFER" ? item.orderId.trim() : "";
+    if (item.readAt) {
+      if (offerOrderID) router.push({ pathname: "/offers", params: { q: offerOrderID } } as Href);
+      return;
+    }
     setBusy(item.id);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       if (activeActorID() !== actorID) return;
       await dshClient().markNotificationRead(token, item.id);
-      if (activeActorID() === actorID) await load(true);
+      if (activeActorID() !== actorID) return;
+      if (offerOrderID) router.push({ pathname: "/offers", params: { q: offerOrderID } } as Href);
+      else await load(true);
     } catch (cause) {
       console.error("DSH captain notification read-state write failed", cause);
       if (activeActorID() === actorID) setError("تعذر تحديث حالة الإشعار.");
@@ -100,15 +107,17 @@ export function NotificationsInbox() {
   }
 
   function renderItem(item: Notification) {
+    const opensOffer = item.kind === "CAPTAIN_OFFER" && Boolean(item.orderId.trim());
+    const disabled = Boolean(busy) || (Boolean(item.readAt) && !opensOffer);
     return (
       <Pressable
         key={item.id}
         accessibilityRole="button"
         accessibilityLabel={item.title}
-        accessibilityHint={item.readAt ? undefined : "اضغط لتمييز الإشعار كمقروء"}
-        accessibilityState={{ busy: busy === item.id, disabled: Boolean(busy) }}
-        disabled={Boolean(busy)}
-        onPress={() => void markRead(item)}
+        accessibilityHint={opensOffer ? "فتح حالة العرض الحالية" : item.readAt ? undefined : "اضغط لتمييز الإشعار كمقروء"}
+        accessibilityState={{ busy: busy === item.id, disabled }}
+        disabled={disabled}
+        onPress={() => void openNotification(item)}
         style={({ pressed }) => [styles.item, !item.readAt && styles.unread, pressed && styles.pressed]}
       >
         <View style={styles.itemHeader}>

@@ -64,7 +64,7 @@ test("missing, malformed and nonpositive accepted totals are rejected before ret
 
 test("UI does not create a parent before customer sees the complete per-store quoted total", () => {
   const start = source.indexOf("async function submit()");
-  const end = source.indexOf("async function cancel()", start);
+  const end = source.indexOf('if (state.kind === "loading")', start);
   const submit = source.slice(start, end);
   const preview = submit.indexOf("setQuotePreview({ fingerprint, children: quotes, totalAmountMinor })");
   const persist = submit.indexOf("SecureStore.setItemAsync(");
@@ -77,4 +77,21 @@ test("UI does not create a parent before customer sees the complete per-store qu
   assert.ok(submit.indexOf("submitInFlight.current = true") < submit.indexOf("SecureStore.setItemAsync("), "single-flight lock precedes durable mutation");
   assert.match(submit, /finally \{\s*submitInFlight\.current = false;/);
   assert.match(source, /تأكيد الطلب بالمبلغ المعروض/);
+});
+
+test("parent checkout cancellation remains restricted and a historical pending cancel is readback-only", () => {
+  assert.doesNotMatch(source, /cancelMultiStoreCheckout\s*\(/);
+  assert.doesNotMatch(source, /async function cancel\s*\(/);
+  assert.doesNotMatch(source, /label="إلغاء الطلبات التابعة"/);
+  assert.match(source, /يُقيّم إلغاء كل طلب تابع بشكل مستقل/);
+  assert.match(source, /افتح تفاصيله للإلغاء قبل قبول المتجر/);
+  const legacy = {
+    version: 3, kind: "CANCEL", actorID: "client-1",
+    checkoutID: "parent-1", expectedVersion: 2,
+    idempotencyKey: "legacy-cancel-12345",
+    correlationID: "legacy-cancel-correlation",
+  };
+  const restored = api.parsePendingMultiStoreAttempt(JSON.stringify(legacy), "client-1");
+  assert.equal(restored?.kind, "LEGACY_CREATE", "old cancel receipt may be read but must not retry mutation");
+  assert.equal(restored.checkoutID, legacy.checkoutID);
 });

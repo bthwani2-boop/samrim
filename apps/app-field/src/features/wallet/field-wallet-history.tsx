@@ -129,6 +129,10 @@ export function FieldWalletHistory({ refreshVersion }: Readonly<{ refreshVersion
     }
   }, [payoutMoreLoading, payoutPage?.nextCursor]);
 
+  const historicalIntakes = (intakes ?? []).filter((intake) => intake.status !== "REQUESTED");
+  const hasPayoutHistory = historicalIntakes.length > 0 || Boolean(payoutPage?.requests.length) || Boolean(payoutPage?.nextCursor);
+  const showPayoutHistory = (payoutLoading && !payoutPage) || Boolean(payoutError) || hasPayoutHistory;
+
   return <BthwaniSurface tone="base" style={styles.card}>
     <Text style={styles.title}>سجل المحفظة</Text>
     {walletLoading && !walletPage ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل الحركات…</Text></View> : null}
@@ -151,15 +155,15 @@ export function FieldWalletHistory({ refreshVersion }: Readonly<{ refreshVersion
     {walletPage && walletPage.entries.length === 0 ? <Text style={styles.muted}>لا توجد حركات مسجلة.</Text> : null}
     {walletPage?.nextCursor ? <BthwaniButton busy={walletMoreLoading} label="عرض حركات أقدم" onPress={() => void loadMoreWallet()} variant="secondary" /> : null}
 
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>طلبات التسوية</Text>
-      {payoutLoading && !payoutPage ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل الطلبات…</Text></View> : null}
-      {payoutLoading && payoutPage ? <Text style={styles.muted}>جارٍ تحديث الطلبات…</Text> : null}
+    {showPayoutHistory ? <View style={styles.section}>
+      <Text style={styles.sectionTitle}>طلبات سابقة</Text>
+      {payoutLoading && !payoutPage ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ التحميل…</Text></View> : null}
+      {payoutLoading && payoutPage ? <Text style={styles.muted}>جارٍ التحديث…</Text> : null}
       {payoutError ? <Text accessibilityRole="alert" style={styles.error}>{payoutError}</Text> : null}
-      {intakes?.map((intake) => <View key={`intake-${intake.id}`} style={styles.request}>
+      {historicalIntakes.map((intake) => <View key={`intake-${intake.id}`} style={styles.request}>
         <View style={styles.entryMain}>
           <Text style={styles.value}>{formatMoney(intake.resolvedAmountMinor, intake.currency)}</Text>
-          <Text style={styles.label}>طلب تسوية · {settlementIntakeStatusLabel(intake)}</Text>
+          <Text style={styles.label}>{settlementIntakeStatusLabel(intake)}</Text>
         </View>
         <Text style={styles.muted}>{dateLabel(intake.createdAt)}</Text>
       </View>)}
@@ -170,9 +174,8 @@ export function FieldWalletHistory({ refreshVersion }: Readonly<{ refreshVersion
         </View>
         <Text style={styles.muted}>{dateLabel(request.createdAt)}</Text>
       </View>)}
-      {payoutPage?.requests.length === 0 && intakes?.length === 0 ? <Text style={styles.muted}>لا توجد طلبات تسوية مسجلة.</Text> : null}
       {payoutPage?.nextCursor ? <BthwaniButton busy={payoutMoreLoading} label="عرض طلبات أقدم" onPress={() => void loadMorePayouts()} variant="secondary" /> : null}
-    </View>
+    </View> : null}
   </BthwaniSurface>;
 }
 

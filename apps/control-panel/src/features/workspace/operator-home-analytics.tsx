@@ -38,7 +38,7 @@ function dayLabel(isoDay: string) {
     .format(new Date(isoDay + "T12:00:00Z"));
 }
 
-export function OperatorHomeCharts({ report, error }: Readonly<{ report: OperatorHomeAnalytics | null; error: string | undefined }>) {
+export function OperatorHomeCharts({ report, error, loading = false }: Readonly<{ report: OperatorHomeAnalytics | null; error: string | undefined; loading?: boolean }>) {
   const days = report?.days ?? [];
   const total = days.reduce((sum, day) => sum + day.orders, 0);
   const today = days.at(-1)?.orders ?? 0;
@@ -70,6 +70,7 @@ export function OperatorHomeCharts({ report, error }: Readonly<{ report: Operato
       <Link href="/operations" className={"bt-home-chart-link"}>استعراض الطلبات ←</Link>
     </div>
     {error ? <div className={"bt-home-chart-unavailable"} role="alert">تعذرت قراءة التحليلات: {error}</div>
+      : loading && !report ? <div className={"bt-home-chart-unavailable"} role="status">جارٍ قراءة التحليلات…</div>
       : !report ? <div className={"bt-home-chart-unavailable"} role="status">بيانات التحليلات غير متاحة حاليًا؛ لا تُعرض رسوم أو أرقام تقديرية.</div>
       : <div className={"bt-home-chart-grid"}>
         <div className={"bt-home-chart-chartArea"}>
