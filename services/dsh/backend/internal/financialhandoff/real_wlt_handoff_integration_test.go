@@ -80,7 +80,7 @@ func TestRealWLTStorePickupMixedFundingReconcilesAcrossDatabases(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,commercial_store_type_id,publication_state,fulfillment_modes)
-		VALUES($1,$2,'Test Pickup Store',$3,'proof-pickup-vertical','proof-pickup-type','unpublished',ARRAY['CUSTOMER_PICKUP'])`, store, partner, city); err != nil {
+		VALUES($1,$2,'Test Pickup Store',$3,'proof-pickup-vertical','proof-pickup-type','unpublished',ARRAY['CUSTOMER_PICKUP','BTHWANI_CAPTAIN'])`, store, partner, city); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES($1,$2,$3,'checked_out',1)", cart, customer, store); err != nil {
@@ -119,10 +119,12 @@ func TestRealWLTStorePickupMixedFundingReconcilesAcrossDatabases(t *testing.T) {
 	}
 	// The same canonical OrderId is visible to its authorized client and partner.
 	sessions := map[string]struct{ subject, role, surface string }{
-		"proof-client-session":        {customer, "client", "app-client"},
-		"proof-partner-session":       {partner, "partner", "app-partner"},
-		"proof-other-session":         {"foreign-client", "client", "app-client"},
-		"proof-other-partner-session": {"foreign-partner", "partner", "app-partner"},
+		"proof-client-session":          {customer, "client", "app-client"},
+		"proof-partner-session":         {partner, "partner", "app-partner"},
+		"proof-other-session":           {"foreign-client", "client", "app-client"},
+		"proof-other-partner-session":   {"foreign-partner", "partner", "app-partner"},
+		"proof-courier-client-session":  {"proof-courier-customer", "client", "app-client"},
+		"proof-courier-captain-session": {"proof-courier-captain", "captain", "app-captain"},
 	}
 	identityServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -321,5 +323,6 @@ func TestRealWLTStorePickupMixedFundingReconcilesAcrossDatabases(t *testing.T) {
 		t.Fatalf("DSH/WLT payable or cash diverged: DSH %d/%d WLT %+v err=%v",
 			payable, cash, record.CustomerPaymentAllocation, err)
 	}
+	verifyRealCourierMixedSettlement(t, ctx, db, mux, identityClient, client, proofKeys, service, partner, store, city)
 	t.Log(fmt.Sprintf("client proof HTTP -> partner pickup HTTP -> DSH outbox POSTED -> real WLT COLLECTED -> DSH payment COLLECTED; client/partner/operator share order=%s", orderID))
 }
