@@ -74,3 +74,21 @@ test("absent cap remains explicitly unbounded; no invented budget", async () => 
   assert.equal(response.status, 201);
   assert.equal(Object.hasOwn(submitted, "discountBudgetLimitMinor"), false);
 });
+
+test("invalid optional redemption, minimum order, and per-order discount limits never disappear silently", async () => {
+  for (const field of ["redemptionLimit", "minOrderSubtotalMinor", "maxDiscountMinor"]) {
+    for (const invalid of [0, -1, 1.5, "3", Number.MAX_SAFE_INTEGER + 1]) {
+      const { response, submitted } = await invoke({ ...minimalPromotion, [field]: invalid });
+      assert.equal(response.status, 400, `${field}=${invalid} must be rejected`);
+      assert.equal(submitted, undefined, `${field}=${invalid} must not reach DSH`);
+      assert.equal((await response.json()).error.code, "INVALID_INPUT");
+    }
+  }
+});
+
+test("valid optional redemption, minimum order, and discount limits reach DSH intact", async () => {
+  const limits = { redemptionLimit: 5, minOrderSubtotalMinor: 2000, maxDiscountMinor: 300 };
+  const { response, submitted } = await invoke({ ...minimalPromotion, kind: "PERCENTAGE", ...limits });
+  assert.equal(response.status, 201);
+  for (const field of Object.keys(limits)) assert.equal(submitted[field], limits[field]);
+});

@@ -56,6 +56,13 @@ export async function POST(request: Request) {
   if (rawBudgetLimit !== undefined && rawBudgetLimit !== null && (!Number.isSafeInteger(rawBudgetLimit) || Number(rawBudgetLimit) < 1)) {
     return errorResponse("INVALID_INPUT", "discountBudgetLimitMinor must be a positive safe integer", 400);
   }
+  // Reject malformed constraints rather than silently stripping them and widening eligibility.
+  for (const field of ["maxDiscountMinor", "minOrderSubtotalMinor", "redemptionLimit"] as const) {
+    const value = body[field];
+    if (value !== undefined && value !== null && (!Number.isSafeInteger(value) || Number(value) < 1)) {
+      return errorResponse("INVALID_INPUT", `${field} must be a positive safe integer`, 400);
+    }
+  }
 
   const fundingSource = String(body.fundingSource ?? "");
   if (!["PARTNER", "BTHWANI", "SHARED"].includes(fundingSource)) return errorResponse("INVALID_INPUT", "a valid funding source is required", 400);
