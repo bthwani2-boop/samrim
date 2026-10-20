@@ -1,12 +1,11 @@
 import { BthwaniButton, BthwaniMap, useAppearanceTheme } from "@bthwani/design-system/native";
-import type { CaptainAssignment, CaptainDeliveryTask, CaptainOpportunityHeatmap } from "@bthwani/dsh";
+import { isFreshOpportunitySample, type CaptainAssignment, type CaptainDeliveryTask, type CaptainOpportunityHeatmap } from "@bthwani/dsh";
 import * as Location from "expo-location";
 import { type Href, Link, useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
-import { isFreshOpportunitySample } from "./captain-opportunity-freshness";
 import { isCurrentCaptainActor } from "./captain-session-scope";
 
 type Mission = Readonly<{ assignment: CaptainAssignment; task: CaptainDeliveryTask }>;

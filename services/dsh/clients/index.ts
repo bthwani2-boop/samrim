@@ -6,4 +6,5 @@ export * from "./order-conversation-attempt";
 export * from "./cash-in-simulator";
 export * from "./presentation/order-presentation";
 export * from "./presentation/operations-presentation";
+export * from "./presentation/opportunity-freshness";
 export * from "./presentation/finance-presentation";

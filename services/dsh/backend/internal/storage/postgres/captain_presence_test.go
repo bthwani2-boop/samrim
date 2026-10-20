@@ -7,6 +7,12 @@ import (
 	"time"
 )
 
+func TestCaptainPresenceCleanupRequiresDatabase(t *testing.T) {
+	if _, err := PruneExpiredCaptainPresence(t.Context(), nil); err == nil {
+		t.Fatal("cleanup must not silently pass without a database")
+	}
+}
+
 func TestCaptainOpportunityIntensityHasNoExactCounts(t *testing.T) {
 	for _, tc := range []struct {
 		count int64
