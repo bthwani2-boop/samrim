@@ -9,6 +9,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/schema-
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/bootstrap-operator ./cmd/bootstrap-operator
 
 FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
+ARG SAMRIM_SOURCE_REVISION=unverified
+LABEL org.opencontainers.image.revision=$SAMRIM_SOURCE_REVISION
 RUN apk add --no-cache ca-certificates && addgroup -S identity && adduser -S -G identity identity
 WORKDIR /app
 COPY --from=build /out/api /api
