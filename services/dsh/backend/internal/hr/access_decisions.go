@@ -38,7 +38,7 @@ func DecideAccessRequest(ctx context.Context, db *sql.DB, id, action, reason str
 		if previousID != id || previousHash != hash {
 			return AccessRequestResult{}, ErrConflict
 		}
-		a, e := scanAccess(tx.QueryRowContext(ctx, accessSelect+" WHERE r.id=$1", id))
+		a, e := scanAccess(tx.QueryRowContext(ctx, accessSelectByID, id))
 		if e != nil {
 			return AccessRequestResult{}, e
 		}
@@ -50,7 +50,7 @@ func DecideAccessRequest(ctx context.Context, db *sql.DB, id, action, reason str
 	if !errors.Is(err, sql.ErrNoRows) {
 		return AccessRequestResult{}, err
 	}
-	request, err := scanAccess(tx.QueryRowContext(ctx, accessSelect+" WHERE r.id=$1 FOR UPDATE OF r", id))
+	request, err := scanAccess(tx.QueryRowContext(ctx, accessSelectByIDForUpdate, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return AccessRequestResult{}, ErrNotFound
 	}
@@ -62,7 +62,7 @@ func DecideAccessRequest(ctx context.Context, db *sql.DB, id, action, reason str
 	}
 	if action == "identity_provisioning" {
 		// The share lock prevents employment changes from racing the durable claim.
-		employee, e := scan(tx.QueryRowContext(ctx, "SELECT "+employeeColumns+" FROM dsh.hr_employees WHERE id=$1 FOR SHARE", request.EmployeeID))
+		employee, e := scan(tx.QueryRowContext(ctx, employeeSelectByIDForShare, request.EmployeeID))
 		if e != nil {
 			return AccessRequestResult{}, e
 		}
@@ -88,7 +88,7 @@ func DecideAccessRequest(ctx context.Context, db *sql.DB, id, action, reason str
 	if err != nil {
 		return AccessRequestResult{}, err
 	}
-	a, err := scanAccess(tx.QueryRowContext(ctx, accessSelect+" WHERE r.id=$1", id))
+	a, err := scanAccess(tx.QueryRowContext(ctx, accessSelectByID, id))
 	if err != nil {
 		return AccessRequestResult{}, err
 	}
