@@ -23,10 +23,17 @@ function missingFieldIntake(caseData: JoiningCaseView): string[] {
 }
 
 type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput; source: "camera" | "library" }>;
-type WalletProvider = Awaited<ReturnType<ReturnType<typeof fieldClient>["listWalletProviders"]>>["walletProviders"][number];
 type PendingStoreImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: StoreImageDraft; idempotencyKey: string; correlationID: string }>;
 type PendingInternalPhotoAttempt = Readonly<{ caseID: string; expectedVersion: number; image: DshImageUploadInput; idempotencyKey: string; correlationID: string }>;
 type FieldCasePagination = { sequence: number; query: string; cursor: string; loadingMore: boolean };
+
+function fieldCaseDisplayName(item: Pick<JoiningCaseSummary, "businessName" | "firstStoreName">): string {
+  const businessName = item.businessName.trim();
+  const firstStoreName = item.firstStoreName.trim();
+  if (!businessName) return firstStoreName;
+  if (!firstStoreName || businessName.toLocaleLowerCase("ar") === firstStoreName.toLocaleLowerCase("ar")) return businessName;
+  return `${businessName} · ${firstStoreName}`;
+}
 
 function isOutcomeUncertain(cause: unknown): boolean {
   if (cause instanceof Error && (cause.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH" || cause.message === "FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_UNAVAILABLE")) return true;
@@ -56,7 +63,6 @@ export function FieldCases() {
   const optionalMediaWarning = Boolean(routeCaseId) && (Array.isArray(rawMediaWarning) ? rawMediaWarning[0] : rawMediaWarning) === "1";
   const [appliedQuery, setAppliedQuery] = useState(routeQuery.trim());
   const [cases, setCases] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
-  const [walletProviders, setWalletProviders] = useState<ReadonlyArray<WalletProvider>>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -77,20 +83,6 @@ export function FieldCases() {
   const [caseToSubmit, setCaseToSubmit] = useState<JoiningCaseSummary | null>(null);
   const [agreementCaseID, setAgreementCaseID] = useState<string | null>(null);
   const pagination = useRef<FieldCasePagination>({ sequence: 0, query: routeQuery.trim(), cursor: "", loadingMore: false });
-
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      try {
-        const token = await getUsableIdentityAccessToken();
-        const response = await fieldClient().listWalletProviders(token);
-        if (active) setWalletProviders(response.walletProviders);
-      } catch (cause) {
-        console.warn("DSH Field wallet provider labels read failed", cause);
-      }
-    })();
-    return () => { active = false; };
-  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => setAppliedQuery(routeQuery.trim()), 250);
@@ -412,17 +404,6 @@ export function FieldCases() {
       badgeTone = "neutral";
     }
 
-    const nextStepText = item.state === "draft"
-      ? "المرحلة 1 من 3: أكمل بيانات المتجر وأرسل الطلب للمراجعة."
-      : item.state === "admission_requested"
-        ? "المرحلة 1 من 3: الطلب بانتظار إحالته للمشغّل. لا تحتاج إلى تقديم طلب جديد."
-        : item.state === "submitted"
-          ? "المرحلة 1 من 3: المشغّل يراجع الطلب. ستظهر أي ملاحظات تصحيح هنا."
-          : item.state === "needs_correction"
-            ? "المرحلة 1 من 3: صحح الملاحظات أدناه ثم أعد إرسال الطلب نفسه."
-            : "المرحلة 2 من 3: تم اعتماد الانضمام وإنشاء المتجر، لكنه لم يُنشر بعد. راجع مقترح العمولة إن لم يُرسل؛ بعده يقبل الشريك ثم تعتمد المالية. المشغّل هو من ينشر المتجر.";
-    const walletProviderName = walletProviders.find((provider) => provider.key === item.walletProviderKey)?.displayNameAr ?? item.walletProviderKey;
-
     let storeImageButtonLabel: string;
     if (storeImage) {
       storeImageButtonLabel = "اختيار صورة أخرى";
@@ -434,19 +415,16 @@ export function FieldCases() {
 
     return (
     <View style={selectedByRoute ? styles.summaryCard : styles.card}>
-      {selectedByRoute ? <Text accessibilityLiveRegion="polite" style={styles.cardTitle}>الطلب المحدد من التنبيه</Text> : null}
-      <View style={styles.orderHeader}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><BthwaniStatusBadge icon={badgeIcon} label={joiningCaseStateLabel(item.state)} tone={badgeTone} /></View>
-      <Text style={styles.muted}>المحفظة الرسمية: {walletProviderName || "غير محددة"}</Text>
+      {selectedByRoute ? <Text accessibilityLiveRegion="polite" style={styles.cardTitle}>من الإشعار</Text> : null}
+      <View style={styles.orderHeader}><Text style={styles.cardTitle}>{fieldCaseDisplayName(item)}</Text><BthwaniStatusBadge icon={badgeIcon} label={joiningCaseStateLabel(item.state)} tone={badgeTone} /></View>
       {item.state === "needs_correction" && item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}
-      <Text style={styles.muted}>{nextStepText}</Text>
       {item.state === "approved" ? <>
-        <Text style={styles.muted}>المطلوب منك الآن: متابعة مقترح عمولة المتجر فقط إذا لم يُرسل. قبول الشريك والاعتماد المالي والنشر ليست مهام الميداني.</Text>
         <BthwaniButton disabled={Boolean(busy)} label={agreementCaseID === item.id ? "إخفاء اتفاقية العمولة" : "متابعة اتفاقية العمولة"} onPress={() => setAgreementCaseID((current) => current === item.id ? null : item.id)} variant="secondary" />
         {agreementCaseID === item.id ? <FieldCommercialAgreement caseID={item.id} /> : null}
       </> : null}
       {(item.state === "draft" || item.state === "needs_correction") ? <View style={styles.optionList}>
-        <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label={item.state === "needs_correction" ? "تصحيح الطلب وإعادة إرساله" : "تعديل بيانات المسودة"} onPress={() => router.push({ pathname: "/new-case", params: { caseId: item.id } } as Href)} variant="secondary" />
-        {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="صور واجهة المتجر" onPress={() => void openStoreImage(item)} variant="secondary" /> : null}
+        <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label={item.state === "needs_correction" ? "تصحيح وإعادة إرسال" : "تعديل البيانات"} onPress={() => router.push({ pathname: "/new-case", params: { caseId: item.id } } as Href)} variant="secondary" />
+        {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="صور المتجر" onPress={() => void openStoreImage(item)} variant="secondary" /> : null}
       </View> : null}
       {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy)} label="إرسال للمراجعة" onPress={() => setCaseToSubmit(item)} /> : null}
       {mediaCase?.case.id === item.id ? <View style={styles.card}>
@@ -491,8 +469,6 @@ export function FieldCases() {
     paginationFooter = <View style={styles.caseListFooter}><Text accessibilityRole="alert" style={styles.error}>{paginationError}</Text><BthwaniButton disabled={Boolean(busy)} label="تحميل بقية الشركاء مجددًا" onPress={() => void loadMore()} variant="secondary" /></View>;
   } else if (nextCursor) {
     paginationFooter = <View style={styles.caseListFooter}><BthwaniButton disabled={Boolean(busy) || loading} label="تحميل المزيد من الشركاء" onPress={() => void loadMore()} variant="secondary" /></View>;
-  } else if (cases.length > 0) {
-    paginationFooter = <View style={styles.caseListFooter}><Text style={styles.muted}>عُرضت كل النتائج المطابقة.</Text></View>;
   }
 
   return <><FlatList
@@ -506,14 +482,12 @@ export function FieldCases() {
       : <View style={styles.state}><Text style={styles.muted}>{error || emptyMessage}</Text>{error ? <BthwaniButton disabled={Boolean(busy)} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}</View>}
     ListFooterComponent={paginationFooter}
     ListFooterComponentStyle={styles.caseListFooter}
-    ListHeaderComponent={<View style={styles.container}>
-      <Text style={styles.muted}>تابع الشركاء الذين تعمل على ضمهم، وأرسل بياناتهم للمراجعة عند اكتمالها.</Text>
-      {cases.length > 0 ? <Text style={styles.sectionTitle}>عدد الشركاء: {cases.length}{nextCursor ? " · توجد نتائج أخرى" : ""}</Text> : null}
+    ListHeaderComponent={Boolean((error && cases.length > 0) || caseSelectionError || optionalMediaWarning || notice) ? <View style={styles.container}>
       {error && cases.length > 0 ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {caseSelectionError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{caseSelectionError}</Text><BthwaniButton label="إعادة فتح الطلب" onPress={() => setSelectionRetry((value) => value + 1)} variant="secondary" /></View> : null}
       {optionalMediaWarning ? <Text accessibilityRole="alert" style={styles.error}>تم إرسال طلب الانضمام وحفظ حالته، لكن لم يُؤكّد رفع بعض الصور الاختيارية. لا تعتبرها محفوظة؛ يمكن استكمال الشعار قبل نشر المتجر بالتنسيق مع فريق التشغيل.</Text> : null}
       {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
-    </View>}
+    </View> : null}
     onRefresh={() => void load()}
     refreshing={loading && cases.length > 0}
     renderItem={renderCase}
@@ -524,14 +498,14 @@ export function FieldCases() {
   <BthwaniConfirmDialog
     busy={Boolean(caseToSubmit && busy === caseToSubmit.id)}
     confirmLabel="إرسال للمراجعة"
-    description={caseToSubmit ? `سيُغلق تحرير مسودة «${caseToSubmit.businessName} · ${caseToSubmit.firstStoreName}» لدى الميدان ويُنقل الطلب إلى مراجعة التشغيل والشريك. أكمل البيانات الأساسية؛ شعار المتجر اختياري الآن ومطلوب قبل نشر المتجر للعملاء.` : ""}
+    description={caseToSubmit ? `سيُرسل طلب «${fieldCaseDisplayName(caseToSubmit)}» للمراجعة ويتوقف تعديله مؤقتًا. الصور اختيارية الآن، ويلزم الشعار والغلاف قبل النشر.` : ""}
     onCancel={() => setCaseToSubmit(null)}
     onConfirm={() => {
       const item = caseToSubmit;
       setCaseToSubmit(null);
       if (item) void submitCase(item);
     }}
-    title="مراجعة إرسال طلب الانضمام"
+    title="إرسال الطلب؟"
     visible={Boolean(caseToSubmit)}
   /></>;
 }

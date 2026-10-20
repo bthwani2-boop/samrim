@@ -19,7 +19,7 @@ function destinationStatusLabel(state: BeneficiaryPayoutState["destination"]): s
   return "قيد الإعداد";
 }
 
-export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<{ refreshVersion: number; onPayoutConfirmed: () => void }>) {
+export function FieldPayoutCard({ onWalletRefresh, refreshVersion }: Readonly<{ onWalletRefresh: () => void; refreshVersion: number }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const authenticated = currentIdentityState().kind === "authenticated";
@@ -80,10 +80,10 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
         throw new Error("FIELD_PAYOUT_CANONICAL_READBACK_MISMATCH");
       }
       setState(canonical);
-      onPayoutConfirmed();
       await SecureStore.deleteItemAsync(storageKey);
       setPendingAttempt(null);
       setNotice(`أُرسل طلب التسوية: ${formatMoney(created.payout.resolvedAmountMinor, created.payout.currency)}.`);
+      onWalletRefresh();
       setAmount("");
     } catch (cause) {
       console.warn("DSH field payout intent failed", cause);
@@ -110,6 +110,7 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
       const readback = (await fieldClient().listOwnSettlementIntakes(token)).intakes.find((item) => item.id === created.intake.id);
       if (!readback || readback.status !== "REQUESTED" || readback.resolvedAmountMinor !== created.intake.resolvedAmountMinor) throw new Error("SETTLEMENT_INTAKE_READBACK_MISMATCH");
       setIntake(readback);
+      onWalletRefresh();
       await SecureStore.deleteItemAsync(key);
       setPendingIntakeAttempt(null);
       setNotice("وصل طلب التسوية إلى قسم المالية. ستُراجع وجهة التحويل قبل الصرف.");
@@ -135,12 +136,15 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
   if (pendingAttempt) {
     payoutActions = <><Text style={styles.muted}>هناك طلب سابق لم تُحسم حالته بعد. تحقّق منه قبل طلب تسوية أخرى.</Text><BthwaniButton busy={busy} label="التحقق من الطلب المحفوظ" onPress={() => void request(pendingAttempt.mode)} /></>;
   } else if (intake?.status === "REQUESTED") {
-    payoutActions = <Text style={styles.muted}>طلب التسوية قيد مراجعة المالية. لا يلزم انتظار اعتماد الوجهة لتقديمه.</Text>;
+    payoutActions = <View style={styles.openRequest}>
+      <Text style={styles.metric}>{formatMoney(intake.resolvedAmountMinor, intake.currency)}</Text>
+      <Text style={styles.muted}>{settlementIntakeStatusLabel(intake)}</Text>
+    </View>;
   } else if (destinationReady && state && state.eligibleAvailableMinor > 0) {
-    payoutActions = <><BthwaniButton busy={busy} label="طلب تسوية كامل المتاح" onPress={() => setConfirmMode("FULL_AVAILABLE")} variant="secondary" /><TextInput accessibilityLabel="مبلغ تسوية الميداني المحدد بالريال اليمني" keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/\D/g, ""))} placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} disabled={!specifiedAmountReady} label="طلب المبلغ المحدد" onPress={() => setConfirmMode("SPECIFIED")} variant="secondary" />
+    payoutActions = <><BthwaniButton busy={busy} label="طلب تسوية كامل المتاح" onPress={() => setConfirmMode("FULL_AVAILABLE")} variant="primary" /><TextInput accessibilityLabel="مبلغ تسوية الميداني المحدد بالريال اليمني" keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/\D/g, ""))} placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} disabled={!specifiedAmountReady} label="طلب المبلغ المحدد" onPress={() => setConfirmMode("SPECIFIED")} variant="secondary" />
     </>;
   } else if (!destinationReady && state && state.eligibleAvailableMinor > 0) {
-    payoutActions = <BthwaniButton busy={busy} label="طلب تسوية من المالية" onPress={() => setConfirmMode("FULL_AVAILABLE")} variant="secondary" />;
+    payoutActions = <BthwaniButton busy={busy} label="طلب تسوية كامل المتاح" onPress={() => setConfirmMode("FULL_AVAILABLE")} variant="primary" />;
   } else if (destinationReady && state) {
     payoutActions = <Text style={styles.muted}>لا يوجد رصيد متاح لطلب التسوية الآن.</Text>;
   }
@@ -150,15 +154,17 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
     {busy && state ? <Text style={styles.muted}>جارٍ تحديث بيانات التسوية…</Text> : null}
     {state ? <>
       <View style={styles.destination}>
-        <Text style={styles.metricLabel}>وجهة الصرف · {destinationStatusLabel(state.destination)}</Text>
-        {destinationReady ? <Text style={styles.destinationValue}>{state.destination?.walletIdentifierMasked}</Text> : <Text style={styles.muted}>{state.destination ? "وجهة الصرف غير جاهزة؛ راجع المالية للتحقق أو الاعتماد." : "لم تُهيّئ المالية وجهة صرف رسمية لهذا الحساب بعد."}</Text>}
+        <Text style={styles.destinationLabel}>
+          وجهة الصرف · {destinationReady
+            ? <Text style={styles.destinationValue}>{state.destination?.walletIdentifierMasked}</Text>
+            : <Text style={styles.destinationWarning}>{destinationStatusLabel(state.destination)}</Text>}
+        </Text>
       </View>
       <View style={styles.metrics}>
         <View style={styles.metricTile}><Text style={styles.metricLabel}>المتاح الآن</Text><Text style={styles.metric}>{formatMoney(state.eligibleAvailableMinor, state.currency)}</Text></View>
         <View style={styles.metricTile}><Text style={styles.metricLabel}>محجوز</Text><Text style={styles.metric}>{formatMoney(state.heldMinor, state.currency)}</Text></View>
       </View>
       {payoutActions}
-      {intake ? <Text style={styles.muted}>حالة الطلب: {settlementIntakeStatusLabel(intake)}{intake.payoutReference ? ` · المرجع: ${intake.payoutReference}` : ""}{intake.payoutStatus === "COMPLETED" && intake.payoutUpdatedAt ? ` · ${new Date(intake.payoutUpdatedAt).toLocaleDateString("ar-YE")}` : ""}</Text> : null}
     </> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
@@ -166,4 +172,4 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
   </BthwaniSurface>;
 }
 
-function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ card: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] }, title: { ...typography.titleSm, color: theme.color }, loading: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, destination: { backgroundColor: theme.actionSoft, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] }, destinationValue: { ...typography.bodyStrong, color: theme.color, writingDirection: "ltr" }, metrics: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] }, metricTile: { flexBasis: 136, flexGrow: 1, minWidth: 0 }, metricLabel: { ...typography.caption, color: theme.colorMuted }, metric: { ...typography.bodyStrong, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, padding: spacing[3], textAlign: "left", writingDirection: "ltr" }, notice: { ...typography.bodySm, color: theme.interactiveText }, error: { ...typography.bodySm, color: theme.warning } }); }
+function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ card: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] }, title: { ...typography.titleSm, color: theme.color }, loading: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, destination: { alignItems: "flex-start" }, destinationLabel: { ...typography.caption, color: theme.colorMuted, textAlign: "right", writingDirection: "rtl" }, destinationValue: { ...typography.bodyStrong, color: theme.color, writingDirection: "ltr" }, destinationWarning: { ...typography.caption, color: theme.warning }, metrics: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] }, metricTile: { flexBasis: 136, flexGrow: 1, minWidth: 0 }, openRequest: { borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[1], paddingTop: spacing[3] }, metricLabel: { ...typography.caption, color: theme.colorMuted }, metric: { ...typography.bodyStrong, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, padding: spacing[3], textAlign: "left", writingDirection: "ltr" }, notice: { ...typography.bodySm, color: theme.interactiveText }, error: { ...typography.bodySm, color: theme.warning } }); }
