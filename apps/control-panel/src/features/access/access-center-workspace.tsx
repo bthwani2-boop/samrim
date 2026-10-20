@@ -47,6 +47,15 @@ function displayDate(value?: string) {
   return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("ar-YE-u-nu-latn", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
+function maskPhoneForList(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return digits.length >= 4 ? "•••• " + digits.slice(-4) : "محجوب";
+}
+
+function phoneSuffixForList(value: string) {
+  return value.replace(/\D/g, "").slice(-4);
+}
+
 function operatorState(item: ActorRoleView) {
   if (!item.securityEnabled) return { state: "الهوية موقوفة", tone: "is-paused", attention: true };
   if (!item.enabled) return { state: "الدور موقوف", tone: "is-paused", attention: true };
@@ -82,7 +91,7 @@ function rowsFromPages(pages: Pages): Row[] {
     const result = operatorState(item);
     const count = item.operatorEnabledPermissionCount;
     return {
-      key: "operator:" + item.actorId, kind: "operators", name: item.fullNameAr || item.phoneE164,
+      key: "operator:" + item.actorId, kind: "operators", name: item.fullNameAr || "مشغّل",
       phone: item.phoneE164, job: item.jobTitle || "المسمى غير مسجل", department: item.department || "القسم غير مسجل",
       state: result.state, tone: result.tone, action: result.attention ? "إدارة الحساب" : "مراجعة الصلاحيات",
       attention: result.attention, timestamp: item.lastAuthenticatedAt || "",
@@ -403,7 +412,7 @@ export function AccessCenterWorkspace() {
         <thead><tr><th scope="col">الموظف / المشغّل</th><th scope="col">حالة الوصول</th><th scope="col">الصلاحيات</th><th scope="col">آخر نشاط / تحديث</th><th scope="col">الإجراء التالي</th></tr></thead>
         <tbody>
           {visible.map((row) => <tr key={row.key}>
-            <th scope="row"><div className="access-center-person"><strong>{row.name}</strong><span>{row.job} · {row.department}</span><small>{sourceLabel(row.kind)}{row.phone ? " · " : ""}<bdi dir="ltr">{row.phone}</bdi></small></div></th>
+            <th scope="row"><div className="access-center-person"><strong>{row.name}</strong><span>{row.job} · {row.department}</span><small>{sourceLabel(row.kind)}{row.phone ? <> · <span aria-hidden="true"><bdi dir="ltr">{maskPhoneForList(row.phone)}</bdi></span><span className="visually-hidden">رقم هاتف محجوب ينتهي بـ {phoneSuffixForList(row.phone)}</span></> : null}</small></div></th>
             <td><span className={"access-state-pill " + row.tone}>{row.state}</span></td>
             <td><span className="access-center-permissions">{row.permissions}</span></td>
             <td><span className="access-center-event-type">{row.kind === "requests" ? "تاريخ الطلب" : row.kind === "profiles" ? "تحديث الملف" : "آخر دخول موثّق"}</span>{row.timestamp ? <time dateTime={row.timestamp}>{displayDate(row.timestamp)}</time> : <span className="access-center-event-missing">لم يسجل دخولًا</span>}</td>
@@ -420,7 +429,7 @@ export function AccessCenterWorkspace() {
             <span className={"access-state-pill " + row.tone}>{row.state}</span>
           </div>
           <p>{row.job} · {row.department}</p>
-          <small>{sourceLabel(row.kind)}{row.phone ? " · " : ""}<bdi dir="ltr">{row.phone}</bdi></small>
+          <small>{sourceLabel(row.kind)}{row.phone ? <> · <span aria-hidden="true"><bdi dir="ltr">{maskPhoneForList(row.phone)}</bdi></span><span className="visually-hidden">رقم هاتف محجوب ينتهي بـ {phoneSuffixForList(row.phone)}</span></> : null}</small>
           <div className="access-center-mobile-meta">
             <span>{row.permissions}</span>
             {row.timestamp ? <time dateTime={row.timestamp}>{displayDate(row.timestamp)}</time> : <span>آخر نشاط غير متاح</span>}

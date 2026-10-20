@@ -29,6 +29,7 @@ export function SettlementIntakeInbox() {
       const body = await response.json() as { intakes?: readonly Intake[] };
       if (!Array.isArray(body.intakes)) throw new Error("استجابة المالية غير صالحة");
       setItems(body.intakes);
+      setDestinationIntakeId((selectedId) => body.intakes?.some((item) => item.id === selectedId) ? selectedId : null);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر تحميل طلبات التسوية");
@@ -75,7 +76,7 @@ export function SettlementIntakeInbox() {
     {items.length > 0 ? <div className="finance-table-wrap"><table className="finance-table">
       <thead><tr><th>المستفيد</th><th>المبلغ</th><th>الحالة</th><th>الإجراء</th></tr></thead>
       <tbody>{items.map((item) => <Fragment key={item.id}><tr>
-        <td>{actorLabels[item.actorType]} <small dir="auto">{item.actorId}</small></td>
+        <td>{actorLabels[item.actorType]}</td>
         <td>{formatMoney(item.resolvedAmountMinor, item.currency)}{item.actorType === "partner" ? <small> · {item.storeAllocations.length} متجر</small> : null}</td>
         <td>بانتظار مراجعة المالية</td>
         <td><div className="finance-toolbar">

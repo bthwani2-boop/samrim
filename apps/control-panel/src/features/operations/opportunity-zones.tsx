@@ -169,7 +169,7 @@ export function OpportunityZones() {
     </p>
     {loading && !value ? <p role="status">جارٍ قراءة الخريطة…</p> : null}
     {error ? <p role="alert">{error}</p> : null}
-    {value ? <CircleMap cells={cells} /> : null}
-    {value && !loading && cells.length === 0 ? <p>لا توجد عينة كافية لعرض دوائر النشاط بأمان حاليًا؛ لا يعني ذلك عدم وجود طلبات أو كباتن.</p> : null}
+    {value && cells.length > 0 ? <CircleMap cells={cells} /> : null}
+    {value && !loading && cells.length === 0 ? <p role="status">لا توجد عينة كافية لعرض دوائر النشاط بأمان حاليًا؛ لا يعني ذلك عدم وجود طلبات أو كباتن.</p> : null}
   </section>;
 }

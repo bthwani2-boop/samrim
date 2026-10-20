@@ -52,6 +52,7 @@ export function OperatorHome() {
   const [unreadNotifications, setUnreadNotifications] = useState<ReadonlyArray<Notification>>([]);
   const [unreadTotal, setUnreadTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingQueues, setLoadingQueues] = useState<ReadonlySet<QueueKey>>(() => new Set());
   const [refreshing, setRefreshing] = useState(false);
   const [errors, setErrors] = useState<Readonly<Partial<Record<QueueKey, string>>>>({});
   const [lastChecked, setLastChecked] = useState<string | null>(null);
@@ -59,7 +60,8 @@ export function OperatorHome() {
   const hasLoaded = useRef(false);
   const activeActor = useRef<string | null>(null);
   const actorKey = sessionState.kind === "authenticated" ? sessionState.identity.subject : null;
-  const pageLoading = loading || activeActor.current !== actorKey;
+  const actorChanging = !sessionReady || activeActor.current !== actorKey;
+  const pageLoading = loading || actorChanging;
 
   const loadQueues = useCallback(async () => {
     if (!sessionReady) return;
@@ -95,55 +97,67 @@ export function OperatorHome() {
       ...(canReadCatalog ? [{ key: "proposals" as const, url: "/api/catalog/proposals?state=submitted&limit=8" }] : []),
       { key: "notifications", url: "/api/notifications?limit=50" },
     ];
-    const results = await Promise.allSettled(requests.map(async ({ key, url }) => {
-      const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
-      if (!response.ok) throw new Error(await (key === "operations" || key === "operationsLive" ? operationResponseMessage(response) : responseMessage(response)));
-      return { key, body: await response.json().catch(() => null) as unknown };
-    }));
-    if (sequence !== requestSequence.current) return;
-    const nextErrors: Partial<Record<QueueKey, string>> = {};
-    results.forEach((result, index) => {
-      const request = requests[index];
-      if (!request) return;
-      if (result.status === "rejected") {
-        nextErrors[request.key] = queueFailureMessage(result.reason);
-        if (request.key === "notifications") setUnreadTotal(null);
-        if (request.key === "operationsLive") setSummary(null);
-        if (request.key === "homeAnalytics") setAnalytics(null);
-        return;
-      }
-      const { key, body } = result.value;
-      if (key === "homeAnalytics") {
-        if (isOperatorHomeAnalytics(body)) setAnalytics(body);
-        else { nextErrors.homeAnalytics = "استجابة التحليلات غير صالحة."; setAnalytics(null); }
-        return;
-      }
-      const collectionKey = key === "operations" || key === "operationsLive" ? "operations"
-        : key === "proposals" ? "proposals" : key === "notifications" ? "notifications" : "cases";
-      const data = body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : null;
-      if (!data || !Array.isArray(data[collectionKey])
-        || ((key === "operations" || key === "operationsLive") && !validOperations(data.operations))
-        || (key === "operationsLive" && data.summary !== undefined && !validSummary(data.summary))) {
-        nextErrors[key] = "استجابة قائمة العمل غير صالحة.";
-        if (key === "notifications") { setUnreadNotifications([]); setUnreadTotal(null); }
+    setLoadingQueues(new Set(requests.map(({ key }) => key)));
+    setErrors({});
+    const readAndApply = async ({ key, url }: QueueRequest) => {
+      let failure: string | null = null;
+      try {
+        const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
+        if (!response.ok) throw new Error(await (key === "operations" || key === "operationsLive" ? operationResponseMessage(response) : responseMessage(response)));
+        const body = await response.json().catch(() => null) as unknown;
+        if (sequence !== requestSequence.current) return;
+        if (key === "homeAnalytics") {
+          if (!isOperatorHomeAnalytics(body)) throw new Error("استجابة التحليلات غير صالحة.");
+          setAnalytics(body);
+          return;
+        }
+        const collectionKey = key === "operations" || key === "operationsLive" ? "operations"
+          : key === "proposals" ? "proposals" : key === "notifications" ? "notifications" : "cases";
+        const data = body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : null;
+        if (!data || !Array.isArray(data[collectionKey])
+          || ((key === "operations" || key === "operationsLive") && !validOperations(data.operations))
+          || (key === "operationsLive" && data.summary !== undefined && !validSummary(data.summary))) {
+          if (key === "notifications") { setUnreadNotifications([]); setUnreadTotal(null); }
+          if (key === "operationsLive") setSummary(null);
+          throw new Error("استجابة قائمة العمل غير صالحة.");
+        }
+        if (key === "operations") setOperations(data.operations as ReadonlyArray<OperatorOperationListItem>);
+        else if (key === "operationsLive") {
+          setLiveOperations(data.operations as ReadonlyArray<OperatorOperationListItem>);
+          setSummary(validSummary(data.summary) ? data.summary : null);
+        } else if (key === "joiningCases") setJoiningCases(data.cases as ReadonlyArray<JoiningCaseSummary>);
+        else if (key === "joiningAdmissions") setJoiningAdmissions(data.cases as ReadonlyArray<JoiningCaseSummary>);
+        else if (key === "proposals") setProposals(data.proposals as ReadonlyArray<CatalogProductProposal>);
+        else if (key === "notifications") {
+          const notifications = data.notifications as ReadonlyArray<Notification>;
+          setUnreadNotifications(notifications.filter((item) => !item.readAt).slice(0, 4));
+          setUnreadTotal(typeof data.unreadCount === "number" && Number.isSafeInteger(data.unreadCount) && data.unreadCount >= 0 ? data.unreadCount : null);
+        }
+      } catch (cause) {
+        if (sequence !== requestSequence.current) return;
+        if (key === "notifications") setUnreadTotal(null);
         if (key === "operationsLive") setSummary(null);
-        return;
+        if (key === "homeAnalytics") setAnalytics(null);
+        failure = queueFailureMessage(cause);
+      } finally {
+        if (sequence === requestSequence.current) {
+          setErrors((current) => {
+            const next = { ...current };
+            if (failure) next[key] = failure;
+            else delete next[key];
+            return next;
+          });
+          setLoadingQueues((current) => {
+            const next = new Set(current);
+            next.delete(key);
+            return next;
+          });
+        }
       }
-      if (key === "operations") setOperations(data.operations as ReadonlyArray<OperatorOperationListItem>);
-      else if (key === "operationsLive") {
-        setLiveOperations(data.operations as ReadonlyArray<OperatorOperationListItem>);
-        setSummary(validSummary(data.summary) ? data.summary : null);
-      } else if (key === "joiningCases") setJoiningCases(data.cases as ReadonlyArray<JoiningCaseSummary>);
-      else if (key === "joiningAdmissions") setJoiningAdmissions(data.cases as ReadonlyArray<JoiningCaseSummary>);
-      else if (key === "proposals") setProposals(data.proposals as ReadonlyArray<CatalogProductProposal>);
-      else if (key === "notifications") {
-        const notifications = data.notifications as ReadonlyArray<Notification>;
-        setUnreadNotifications(notifications.filter((item) => !item.readAt).slice(0, 4));
-        setUnreadTotal(typeof data.unreadCount === "number" && Number.isSafeInteger(data.unreadCount) && data.unreadCount >= 0 ? data.unreadCount : null);
-      }
-    });
+    };
+    await Promise.all(requests.map(readAndApply));
+    if (sequence !== requestSequence.current) return;
     setLastChecked(new Date().toISOString());
-    setErrors(nextErrors);
     hasLoaded.current = true;
     setLoading(false);
     setRefreshing(false);
@@ -169,29 +183,31 @@ export function OperatorHome() {
   const hasQueueError = (canReadOperations && Boolean(errors.operations))
     || (canReadPartners && (Boolean(errors.joiningAdmissions) || Boolean(errors.joiningCases)))
     || (canReadCatalog && Boolean(errors.proposals));
+  const hasLoadingActionQueues = (canReadOperations && loadingQueues.has("operations"))
+    || (canReadPartners && (loadingQueues.has("joiningAdmissions") || loadingQueues.has("joiningCases")))
+    || (canReadCatalog && loadingQueues.has("proposals"));
 
   return (
     <section className={"bt-home-page"} aria-labelledby="workspace-title">
       <PageHeader id="workspace-title" title="الرئيسية" status={<span className={"bt-home-refreshStatus"} role="status">
-        {refreshing ? "جارٍ تحديث البيانات…" : lastChecked ? <>آخر تحقق: <time dateTime={lastChecked}>{formatHomeDate(lastChecked)}</time></> : "مركز قيادة المنصة"}
+        {refreshing ? "جارٍ تحديث البيانات…" : loading ? "جارٍ قراءة البيانات…" : lastChecked ? <>آخر تحقق: <time dateTime={lastChecked}>{formatHomeDate(lastChecked)}</time></> : "مركز قيادة المنصة"}
       </span>} actions={<button type="button" className="button button-secondary" onClick={() => void loadQueues()} disabled={pageLoading || refreshing}>
         {Object.keys(errors).length ? "إعادة المحاولة" : "تحديث البيانات"}
       </button>} />
-      {pageLoading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تجهيز مركز القيادة</strong></div> : null}
-      {!pageLoading ? <div className={"home-dashboard " + "bt-home-homeDashboard"}>
+      {actorChanging ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تجهيز مركز القيادة</strong></div> : <div className={"home-dashboard " + "bt-home-homeDashboard"}>
         <div className={"bt-home-intro"}>
           <div><h2>مركز قيادة بثواني</h2><p>ابدأ بما يحتاج تدخلًا، ثم راقب حركة الطلبات. جميع البيانات من سجلات النظام الفعلية.</p></div>
           {canReadOperations ? <Link className={"bt-home-primaryLink"} href="/operations">فتح مركز العمليات <span aria-hidden="true">←</span></Link> : null}
         </div>
 
         {canReadOperations ? <section className={"bt-home-metrics"} aria-label="مؤشرات التشغيل">
-          <Metric label="جميع الطلبات المسجلة" value={summary?.totalCount ?? null} href="/operations" />
-          <Metric label="قيد التنفيذ" value={summary?.activeCount ?? null} href="/operations" tone="info" />
-          <Metric label="بانتظار الإسناد" value={summary?.awaitingDispatchCount ?? null} href="/operations?view=dispatch" tone="warning" />
-          <Metric label="تحتاج إجراءً" value={summary?.actionableCount ?? null} href="/operations?view=attention" tone="danger" />
-          <Metric label="تم تسليمها" value={summary?.deliveredCount ?? null} href="/operations?view=delivered" tone="success" />
+          <Metric label="جميع الطلبات المسجلة" value={summary?.totalCount ?? null} href="/operations" pending={loadingQueues.has("operationsLive")} />
+          <Metric label="قيد التنفيذ" value={summary?.activeCount ?? null} href="/operations" tone="info" pending={loadingQueues.has("operationsLive")} />
+          <Metric label="بانتظار الإسناد" value={summary?.awaitingDispatchCount ?? null} href="/operations?view=dispatch" tone="warning" pending={loadingQueues.has("operationsLive")} />
+          <Metric label="تحتاج إجراءً" value={summary?.actionableCount ?? null} href="/operations?view=attention" tone="danger" pending={loadingQueues.has("operationsLive")} />
+          <Metric label="تم تسليمها" value={summary?.deliveredCount ?? null} href="/operations?view=delivered" tone="success" pending={loadingQueues.has("operationsLive")} />
         </section> : null}
-        {canReadOperations && (errors.operationsLive || !summary) ? <p className={"bt-home-metricsNote"} role="status">
+        {canReadOperations && (errors.operationsLive || !loadingQueues.has("operationsLive") && !summary) ? <p className={"bt-home-metricsNote"} role="status">
           {errors.operationsLive ? "تعذر قراءة مؤشرات التشغيل؛ استخدم إعادة المحاولة." : "مؤشرات الإجمالي غير متاحة من الاستجابة الحالية؛ لن تُعرض أرقام تقديرية."}
         </p> : null}
 
@@ -204,6 +220,7 @@ export function OperatorHome() {
             </div>
             {!canReadOperations ? <p className={"bt-home-panelEmpty"}>متابعة الطلبات غير متاحة لصلاحيات الحساب.</p>
               : errors.operationsLive ? <div role="alert" className={"bt-home-panelError"}>تعذرت قراءة الطلبات: {errors.operationsLive}</div>
+              : loadingQueues.has("operationsLive") && liveOperations.length === 0 ? <p className="empty-inline" role="status">جارٍ قراءة معاينة الطلبات…</p>
               : liveOperations.length === 0 ? <div className={"bt-home-panelEmpty"}>لا توجد طلبات في المعاينة الحالية. <Link href="/operations">فتح العمليات</Link></div>
               : <div className={"bt-home-tableScroll"}><table className={"bt-home-operationsTable"}>
                 <thead><tr><th scope="col">الشريك</th><th scope="col">الحالة</th><th scope="col">آخر تحديث</th><th scope="col">الإجراء</th></tr></thead>
@@ -220,7 +237,8 @@ export function OperatorHome() {
           <section className={"home-work-area home-priority-work " + "bt-home-priorityPanel"} aria-labelledby="home-work-title">
             <div className={"bt-home-panelHeading"}><div><p className={"bt-home-eyebrow"}>حسب الصلاحية والأولوية</p><h2 id="home-work-title">قرارات تحتاج متابعة</h2><p>افتح القائمة المعنية لمعالجة الحالة من مصدرها.</p></div></div>
             {!hasActionQueues ? <p className="empty-inline">لا توجد قوائم عمل متاحة للصلاحيات الحالية.</p> : null}
-            {hasActionQueues && !hasActionableItems && !hasQueueError ? <div className="home-queue-empty">
+            {hasActionQueues && !hasActionableItems && !hasQueueError && hasLoadingActionQueues ? <p className="empty-inline" role="status">جارٍ قراءة قوائم العمل المتاحة…</p> : null}
+            {hasActionQueues && !hasActionableItems && !hasQueueError && !hasLoadingActionQueues ? <div className="home-queue-empty">
               <p><OperationalIcon name="active" />لا عناصر في معاينات العمل الحالية.</p>
               <nav aria-label="فتح قوائم العمل" className="home-queue-shortcuts">
                 {canReadOperations ? <HomeQueueShortcut icon="operations" title="العمليات" href="/operations?lane=attention" /> : null}
@@ -232,34 +250,34 @@ export function OperatorHome() {
               </nav>
             </div> : null}
             {hasActionQueues && (hasActionableItems || hasQueueError) ? <div className="home-queue-list">
-              {canReadOperations ? <HomeQueue id="operations" icon="operations" title="طلبات تحتاج إجراءً" href="/operations?lane=attention" error={errors.operations} empty={operations.length === 0} emptyMessage="لا عناصر في هذه المعاينة.">
+              {canReadOperations ? <HomeQueue id="operations" icon="operations" title="طلبات تحتاج إجراءً" href="/operations?lane=attention" error={errors.operations} loading={loadingQueues.has("operations")} empty={operations.length === 0} emptyMessage="لا عناصر في هذه المعاينة.">
                 <ul className="home-list">{operations.slice(0, 2).map((item) => <HomeRecord key={item.orderId} href={"/operations/" + encodeURIComponent(item.orderId)} title={item.storeName} state={orderStateLabel(item.state)} updatedAt={item.updatedAt} />)}</ul>
               </HomeQueue> : null}
               {canReadPartners ? <>
-                <HomeQueue id="admissions" icon="review" title="إحالات تنتظر القبول" href="/partners/joining?state=admission_requested" error={errors.joiningAdmissions} empty={joiningAdmissions.length === 0} emptyMessage="لا إحالات في هذه المعاينة.">
+                <HomeQueue id="admissions" icon="review" title="إحالات تنتظر القبول" href="/partners/joining?state=admission_requested" error={errors.joiningAdmissions} loading={loadingQueues.has("joiningAdmissions")} empty={joiningAdmissions.length === 0} emptyMessage="لا إحالات في هذه المعاينة.">
                   <ul className="home-list">{joiningAdmissions.slice(0, 2).map((item) => <HomeRecord key={item.id} href={"/partners/" + encodeURIComponent(item.id)} title={item.businessName} summary={item.firstStoreName} state={joiningCaseStateLabel(item.state)} updatedAt={item.updatedAt} />)}</ul>
                 </HomeQueue>
-                <HomeQueue id="joining" icon="partners" title="طلبات انضمام قيد المراجعة" href="/partners/joining?state=submitted" error={errors.joiningCases} empty={joiningCases.length === 0} emptyMessage="لا طلبات في هذه المعاينة.">
+                <HomeQueue id="joining" icon="partners" title="طلبات انضمام قيد المراجعة" href="/partners/joining?state=submitted" error={errors.joiningCases} loading={loadingQueues.has("joiningCases")} empty={joiningCases.length === 0} emptyMessage="لا طلبات في هذه المعاينة.">
                   <ul className="home-list">{joiningCases.slice(0, 2).map((item) => <HomeRecord key={item.id} href={"/partners/" + encodeURIComponent(item.id)} title={item.businessName} summary={item.firstStoreName} state={joiningCaseStateLabel(item.state)} updatedAt={item.updatedAt} />)}</ul>
                 </HomeQueue>
               </> : null}
-              {canReadCatalog ? <HomeQueue id="proposals" icon="catalog" title="مقترحات منتجات بانتظار المراجعة" href="/catalog/proposals" error={errors.proposals} empty={proposals.length === 0} emptyMessage="لا مقترحات في هذه المعاينة.">
+              {canReadCatalog ? <HomeQueue id="proposals" icon="catalog" title="مقترحات منتجات بانتظار المراجعة" href="/catalog/proposals" error={errors.proposals} loading={loadingQueues.has("proposals")} empty={proposals.length === 0} emptyMessage="لا مقترحات في هذه المعاينة.">
                 <ul className="home-list">{proposals.slice(0, 2).map((item) => <HomeRecord key={item.id} href={"/catalog/proposals?proposalId=" + encodeURIComponent(item.id)} title={item.proposedName} summary={item.proposedBrand ?? ""} state={catalogProductProposalStateLabel(item.state)} updatedAt={item.updatedAt} />)}</ul>
               </HomeQueue> : null}
             </div> : null}
           </section>
         </div>
 
-        {canReadOperations ? <OperatorHomeCharts report={analytics} error={errors.homeAnalytics} /> : null}
+        {canReadOperations ? <OperatorHomeCharts report={analytics} error={errors.homeAnalytics} loading={loadingQueues.has("homeAnalytics")} /> : null}
 
         <div className={"bt-home-bottomGrid"}>
           <section className={"home-work-area home-notifications " + "bt-home-activityPanel"} aria-labelledby="home-notifications-title">
             <div className="home-work-area-heading home-notifications-heading">
               <div><h2 id="home-notifications-title">آخر التنبيهات</h2><p className="home-unread-total" aria-live="polite">
-                {unreadTotal === null ? "إجمالي غير المقروءة غير متاح" : <>إجمالي غير المقروءة: <strong>{unreadTotal.toLocaleString("ar-YE")}</strong></>}
+                {loadingQueues.has("notifications") && unreadTotal === null ? "جارٍ قراءة الإشعارات غير المقروءة…" : unreadTotal === null ? "إجمالي غير المقروءة غير متاح" : <>إجمالي غير المقروءة: <strong>{unreadTotal.toLocaleString("ar-YE")}</strong></>}
               </p></div><Link href="/notifications">صندوق الإشعارات ←</Link>
             </div>
-            <QueueContent error={errors.notifications} emptyMessage={unreadTotal === 0 ? "أنت على اطلاع؛ لا إشعارات غير مقروءة." : unreadTotal === null ? "تعذر تحديد العدد. افتح صندوق الإشعارات للتحقق." : "لا إشعارات غير مقروءة في هذه المعاينة؛ راجع الصندوق لبقية النتائج."} hasItems={unreadNotifications.length > 0}>
+            <QueueContent error={errors.notifications} loading={loadingQueues.has("notifications")} emptyMessage={unreadTotal === 0 ? "أنت على اطلاع؛ لا إشعارات غير مقروءة." : unreadTotal === null ? "تعذر تحديد العدد. افتح صندوق الإشعارات للتحقق." : "لا إشعارات غير مقروءة في هذه المعاينة؛ راجع الصندوق لبقية النتائج."} hasItems={unreadNotifications.length > 0}>
               <ul className="home-list home-notification-list">{unreadNotifications.map((item) => <li key={item.id}>
                 <Link className="home-notification-link" href={notificationHref(item) ?? "/notifications"}>
                   <span className={"operator-notification-kind operator-notification-kind-" + notificationKindTone(item.kind)}>{notificationKindLabel(item.kind)}</span>
@@ -279,13 +297,13 @@ export function OperatorHome() {
             </nav>
           </section>
         </div>
-      </div> : null}
+      </div>}
     </section>
   );
 }
 
-function Metric({ label, value, href, tone = "default" }: Readonly<{ label: string; value: number | null; href: string; tone?: string }>) {
-  return <Link href={href} className={"bt-home-metric"} data-tone={tone}><span>{label}</span><strong>{value === null ? <><span aria-hidden="true">—</span><span className="visually-hidden">غير متاح</span></> : value.toLocaleString("ar-YE")}</strong><span className={"bt-home-metricCue"}>استعراض السجلات ←</span></Link>;
+function Metric({ label, value, href, tone = "default", pending = false }: Readonly<{ label: string; value: number | null; href: string; tone?: string; pending?: boolean }>) {
+  return <Link href={href} className={"bt-home-metric"} data-tone={tone}><span>{label}</span><strong>{value === null ? <><span aria-hidden="true">{pending ? "…" : "—"}</span><span className="visually-hidden">{pending ? "جارٍ التحميل" : "غير متاح"}</span></> : value.toLocaleString("ar-YE")}</strong><span className={"bt-home-metricCue"}>استعراض السجلات ←</span></Link>;
 }
 
 function operationTone(state: string) {
@@ -313,14 +331,15 @@ function HomeRecord({ href, title, summary, state, updatedAt }: Readonly<{ href:
       <small>آخر تحديث <time dateTime={updatedAt}>{formatHomeDate(updatedAt)}</time></small></span>
   </Link></li>;
 }
-function QueueContent({ error, emptyMessage, hasItems, children }: Readonly<{ error: string | undefined; emptyMessage: string; hasItems: boolean; children: ReactNode }>) {
+function QueueContent({ error, loading, emptyMessage, hasItems, children }: Readonly<{ error: string | undefined; loading: boolean; emptyMessage: string; hasItems: boolean; children: ReactNode }>) {
   if (error) return <p className="home-queue-error" role="alert">تعذرت القراءة: {error}</p>;
+  if (loading && !hasItems) return <p className="empty-inline" role="status">جارٍ قراءة هذه المعاينة…</p>;
   if (!hasItems) return <p className="empty-inline">{emptyMessage}</p>;
   return <>{children}</>;
 }
-function HomeQueue({ id, icon, title, href, error, empty, emptyMessage, children }: Readonly<{ id: string; icon: OperationalIconName; title: string; href: string; error: string | undefined; empty: boolean; emptyMessage: string; children: ReactNode }>) {
+function HomeQueue({ id, icon, title, href, error, loading, empty, emptyMessage, children }: Readonly<{ id: string; icon: OperationalIconName; title: string; href: string; error: string | undefined; loading: boolean; empty: boolean; emptyMessage: string; children: ReactNode }>) {
   return <section className="home-queue" aria-labelledby={"home-queue-" + id + "-title"}>
     <div className="home-queue-heading"><div><OperationalIcon name={icon} /><h3 id={"home-queue-" + id + "-title"}>{title}</h3></div><Link href={href}>فتح القائمة</Link></div>
-    <QueueContent error={error} emptyMessage={emptyMessage} hasItems={!empty}>{children}</QueueContent>
+    <QueueContent error={error} loading={loading} emptyMessage={emptyMessage} hasItems={!empty}>{children}</QueueContent>
   </section>;
 }
