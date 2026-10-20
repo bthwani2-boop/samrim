@@ -55,7 +55,7 @@ export function StoreTypeCancellationPolicyWorkspace() {
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [verticalId]);
-  useEffect(() => { setMode(current?.cancellationMode ?? "OPERATIONS_ONLY"); setReason(""); }, [current?.id, current?.cancellationMode, current?.version]);
+  useEffect(() => { setMode(current?.cancellationMode ?? "OPERATIONS_ONLY"); setReason(""); }, [current]);
 
   async function save() {
     if (!current || !canManage || busy || loading || reason.trim().length < 5) return;

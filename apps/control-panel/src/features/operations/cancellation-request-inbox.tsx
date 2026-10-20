@@ -23,7 +23,10 @@ export function CancellationRequestInbox({onOpenOrder, refreshVersion}:Readonly<
     }catch(cause){setError(cause instanceof Error?cause.message:"تعذر عرض طلبات الإلغاء");setItems([])}
     finally {setLoading(false)}
   },[]);
-  useEffect(()=>{void load()},[load,refreshVersion]);
+  useEffect(() => {
+    // The parent increments this version after an Operations action requiring a fresh queue.
+    if (refreshVersion >= 0) void load();
+  }, [load, refreshVersion]);
   async function decline(id:string) {
     if(busy||Array.from(reason.trim()).length<12)return;
     setBusy(true);setError("");
