@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, StyleSheet, Text, View } from "react-native";
 
 import { currentIdentityState } from "../../bootstrap/identity";
-import { isConfirmedOwnStoreAgreementAcceptance } from "./store-agreement-acceptance-readback";
+import { hasReviewableStoreAgreementRates, isConfirmedOwnStoreAgreementAcceptance } from "./store-agreement-acceptance-readback";
 import {
   acceptOwnStoreCommercialAgreement,
   newStoreAgreementMutationKeys,
@@ -163,7 +163,8 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
 
   function requestAcceptanceConfirmation(agreement: StoreCommercialAgreement) {
     if (activeScope.current !== storageKey || agreementsScope !== storageKey ||
-      agreement.storeId !== storeID || agreement.partnerActorId !== actorID) return;
+      agreement.storeId !== storeID || agreement.partnerActorId !== actorID ||
+      !hasReviewableStoreAgreementRates(agreement)) return;
     const savedAttempt = pendingAttempt?.agreementId === agreement.agreementId ? pendingAttempt : null;
     const reason = savedAttempt?.reason ?? DEFAULT_ACCEPTANCE_REASON;
     if (Array.from(reason.trim()).length < 8 || Array.from(reason.trim()).length > 500) {
@@ -177,7 +178,8 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
   async function accept(agreement: StoreCommercialAgreement) {
     if (acceptanceBusy.current || busyAgreementID || agreement.status !== "PROPOSED" || !storageKey ||
       !pendingStorageReady || agreementsScope !== storageKey || activeScope.current !== storageKey ||
-      agreement.storeId !== storeID || agreement.partnerActorId !== actorID) return;
+      agreement.storeId !== storeID || agreement.partnerActorId !== actorID ||
+      !hasReviewableStoreAgreementRates(agreement)) return;
     const savedAttempt = pendingAttempt?.agreementId === agreement.agreementId ? pendingAttempt : null;
     if (pendingAttempt && !savedAttempt) {
       setError("تحقق أولًا من محاولة القبول المحفوظة قبل قبول اتفاقية أخرى.");
@@ -254,7 +256,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       {visibleAgreements?.length === 0 ? <Text style={styles.muted}>لا توجد اتفاقية بانتظارك الآن. يعمل الميداني على إعداد المقترح؛ ستظهر هنا عندما تُرسل. يمكنك تجهيز المنتجات والصور بالتوازي.</Text> : null}
       {visibleAgreements?.map((agreement) => {
         const savedAttempt = scopedPendingAttempt?.agreementId === agreement.agreementId ? scopedPendingAttempt : null;
-        const canAccept = agreement.status === "PROPOSED" && pendingStorageReady && !loading && (!scopedPendingAttempt || Boolean(savedAttempt));
+        const canAccept = agreement.status === "PROPOSED" && hasReviewableStoreAgreementRates(agreement) && pendingStorageReady && !loading && (!scopedPendingAttempt || Boolean(savedAttempt));
         return (
           <View key={agreement.agreementId} style={styles.agreement}>
             <View style={styles.agreementHeading}>
