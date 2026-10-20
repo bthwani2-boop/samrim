@@ -230,7 +230,7 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
         {userCanAddFunds ? <BthwaniButton disabled={busy} label="＋ إضافة رصيد" onPress={onAddFunds ?? (() => router.push("/wallet-cash-in" as Href))} /> : null}
         {simulatorInDevelopment ? <Text style={styles.muted}>شحن تجريبي — لا توجد أموال حقيقية.</Text> : null}
         {!userCanAddFunds && state ? <Text style={styles.muted}>شحن الرصيد غير متاح حاليًا.</Text> : null}
-        {!state && error ? <BthwaniButton disabled={busy} label="تحديث" onPress={() => void load()} variant="secondary" /> : null}
+        {!state && error ? <BthwaniButton disabled={busy} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}
       </BthwaniSurface>
     );
   }

@@ -1042,6 +1042,132 @@ paths:
         "409":
           $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
 
+  /dsh/orders/{orderId}/cancellation-request:
+    get:
+      operationId: readClientCancellationReview
+      summary: Read the owner's latest cancellation review
+      security:
+        - userBearer: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Authorized cancellation request result
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+    post:
+      operationId: requestClientOrderCancellationReview
+      summary: Create an Operations support request; never cancels the Order itself
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+                  minLength: 12
+                  maxLength: 500
+      responses:
+        "201":
+          description: Operations review opened
+          content:
+            application/json:
+              schema:
+                type: object
+        "200":
+          description: Replay of the same review request
+          content:
+            application/json:
+              schema:
+                type: object
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+  /dsh/operator/cancellation-requests:
+    get:
+      operationId: listOperatorCancellationReviews
+      summary: Operations intake for pending cancellation requests
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      responses:
+        "200":
+          description: Authorized cancellation request result
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+  /dsh/operator/cancellation-requests/{requestId}/decline:
+    post:
+      operationId: declineOperatorCancellationReview
+      summary: Record Operations refusal with a reason
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+                  minLength: 12
+                  maxLength: 500
+      responses:
+        "200":
+          description: Authorized cancellation request result
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
   /dsh/operator/operations/{orderId}/cancel:
     post:
       operationId: cancelOperatorOrder

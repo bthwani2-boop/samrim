@@ -1675,6 +1675,11 @@ func transitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState st
 		return OrderRecord{}, false, err
 	}
 	if operatorCancellation {
+		if _, err := tx.ExecContext(ctx, `UPDATE dsh.order_cancellation_requests
+			SET state='APPROVED',operator_actor_id=$2,decision_reason=$3,decided_at=clock_timestamp()
+			WHERE order_id=$1 AND state='PENDING'`, orderID, actingActorID, strings.TrimSpace(decisionReason[0])); err != nil {
+			return OrderRecord{}, false, err
+		}
 		if len(decisionReason) != 2 || len([]rune(decisionReason[0])) < 12 || len([]rune(decisionReason[0])) > 500 {
 			return OrderRecord{}, false, ErrOrderTransitionInvalid
 		}

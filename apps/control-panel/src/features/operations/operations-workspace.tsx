@@ -10,6 +10,7 @@ import { useReadOnReturn } from "../shared/use-read-on-return";
 import { operationalAge } from "./operational-age";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 import { OrderOperationDetail } from "./order-operation-detail";
+import { CancellationRequestInbox } from "./cancellation-request-inbox";
 
 type View = "all" | "attention" | "dispatch" | "delivered";
 type Change = Readonly<{ view?: View; state?: string; q?: string; sort?: string }>;
@@ -101,6 +102,7 @@ export function OperationsWorkspace() {
   const [error, setError] = useState("");
   const [errorStatus, setErrorStatus] = useState(0);
   const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [cancellationInboxVersion, setCancellationInboxVersion] = useState(0);
   const loadSequence = useRef(0);
 
   useEffect(() => setSearch(searchFromUrl), [searchFromUrl]);
@@ -214,9 +216,10 @@ export function OperationsWorkspace() {
           if (next) setSelectedOrderId(next.orderId);
         } : undefined}
       >
-        <OrderOperationDetail orderId={selectedOrderId} embedded onClose={closeSelected} onUpdated={() => void load(true)} />
+        <OrderOperationDetail orderId={selectedOrderId} embedded onClose={closeSelected} onUpdated={() => {setCancellationInboxVersion(v => v+1); void load(true)}} />
       </AdaptiveRecordPanel> : null}>
     <section className="operations-workspace ops-center" aria-label="مركز متابعة الطلبات">
+      <CancellationRequestInbox onOpenOrder={setSelectedOrderId} refreshVersion={cancellationInboxVersion} />
       <div className="ops-page-intro">
         <p>متابعة الطلبات والتعامل مع ما يحتاج تدخلك من مكان واحد.</p>
       </div>

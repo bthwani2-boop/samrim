@@ -680,6 +680,12 @@ paths:
   /dsh/operator/cancellation-policies/{storeTypeId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cancellation-policies~1{storeTypeId}"
 
+  /dsh/orders/{orderId}/cancellation-request:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1cancellation-request"
+  /dsh/operator/cancellation-requests:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cancellation-requests"
+  /dsh/operator/cancellation-requests/{requestId}/decline:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cancellation-requests~1{requestId}~1decline"
   /dsh/operator/operations/{orderId}/cancel:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cancel"
   /dsh/operator/customers/{actorId}/orders:

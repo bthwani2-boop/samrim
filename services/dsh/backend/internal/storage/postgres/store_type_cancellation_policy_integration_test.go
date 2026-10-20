@@ -144,8 +144,58 @@ func TestStoreTypeCancellationPolicyAndLockedOrderTransition(t *testing.T) {
 		if err != nil || !replay {
 			t.Fatalf("operator replay: %t %v", replay, err)
 		}
+		reviewedOrder := saveOrder("support-reviewed", "OPERATIONS_ONLY", "REQUIRES_COLLECTION", 1)
+		first, replayed, err := postgres.CreateCancellationRequest(ctx, db, reviewedOrder, "cancel-proof-client",
+			"Please review my request to cancel this Store order", "support-first-attempt", "support-first-correlation")
+		if err != nil || replayed || first.State != "PENDING" {
+			t.Fatalf("support intake: %+v %t %v", first, replayed, err)
+		}
+		_, replayed, err = postgres.CreateCancellationRequest(ctx, db, reviewedOrder, "cancel-proof-client",
+			"Please review my request to cancel this Store order", "support-first-attempt", "support-first-correlation")
+		if err != nil || !replayed {
+			t.Fatalf("support replay: %t %v", replayed, err)
+		}
+		if _, _, err = postgres.CreateCancellationRequest(ctx, db, reviewedOrder, "foreign-client",
+			"Please review another customer's Order cancellation", "support-foreign-attempt", "support-foreign-correlation"); !errors.Is(err, postgres.ErrCancellationRequestNotFound) {
+			t.Fatalf("foreign actor access: %v", err)
+		}
+		if _, _, err = postgres.CreateCancellationRequest(ctx, db, reviewedOrder, "cancel-proof-client",
+			"Second request must not duplicate the outstanding ticket", "support-second-attempt", "support-second-correlation"); !errors.Is(err, postgres.ErrCancellationRequestConflict) {
+			t.Fatalf("duplicate pending request: %v", err)
+		}
+		if _, err = postgres.ReadClientCancellationRequest(ctx, db, reviewedOrder, "foreign-client"); !errors.Is(err, postgres.ErrCancellationRequestNotFound) {
+			t.Fatalf("foreign actor read: %v", err)
+		}
+		queue, err := postgres.ListPendingCancellationRequests(ctx, db, 10)
+		if err != nil || len(queue) != 1 || queue[0].OrderID != reviewedOrder {
+			t.Fatalf("operations intake queue: %+v %v", queue, err)
+		}
+		declined, err := postgres.DeclineCancellationRequest(ctx, db, first.ID, "cancel-proof-operator",
+			"Store has already committed to a custom preparation cost")
+		if err != nil || declined.State != "DECLINED" {
+			t.Fatalf("operator decline: %+v %v", declined, err)
+		}
+		second, _, err := postgres.CreateCancellationRequest(ctx, db, reviewedOrder, "cancel-proof-client",
+			"Please reconsider my cancellation with the Store", "support-reconsider-attempt", "support-reconsider-correlation")
+		if err != nil || second.State != "PENDING" {
+			t.Fatalf("support reconsideration: %+v %v", second, err)
+		}
+		reviewedResult, _, err := postgres.CancelOrderForOperator(ctx, db, reviewedOrder, 1,
+			"support-operator-cancel", "cancel-proof-operator", "support-operator-correlation",
+			"Store confirmed no preparation had begun and cancellation is approved", false)
+		if err != nil || reviewedResult.State != "CANCELLED" {
+			t.Fatalf("operator decision: %+v %v", reviewedResult, err)
+		}
+		last, err := postgres.ReadClientCancellationRequest(ctx, db, reviewedOrder, "cancel-proof-client")
+		if err != nil || last.State != "APPROVED" || last.OperatorActorID == nil {
+			t.Fatalf("client cannot read accepted decision: %+v %v", last, err)
+		}
+		queue, err = postgres.ListPendingCancellationRequests(ctx, db, 10)
+		if err != nil || len(queue) != 0 {
+			t.Fatalf("approved support still pending: %+v %v", queue, err)
+		}
 		var outbox, changes, audit int
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL'").Scan(&outbox); err != nil || outbox != 3 {
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL'").Scan(&outbox); err != nil || outbox != 4 {
 			t.Fatalf("outbox=%d err=%v", outbox, err)
 		}
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_type_cancellation_policy_audit").Scan(&changes); err != nil || changes != 1 {

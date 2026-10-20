@@ -46,7 +46,7 @@ func TestCancellationPolicyUpgradeFromV134PreservesOrders(t *testing.T) {
 		for _, query := range []string{
 			"INSERT INTO dsh.service_cities(id,display_name_ar,active) VALUES('upgrade-city','Test City',true)",
 			"INSERT INTO dsh.commerce_verticals(id,name_ar,name_en) VALUES('upgrade-vertical','Test Vertical','Test Vertical')",
-			"INSERT INTO dsh.commercial_store_types(id,vertical_id,name_ar,name_en) VALUES('upgrade-type','upgrade-vertical','Test Type','Test Type')",
+			"INSERT INTO dsh.commercial_store_types(id,vertical_id,name_ar,name_en) VALUES('upgrade-type','upgrade-vertical','محل خضروات وفواكه','Greengrocer')",
 			"INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,commercial_store_type_id,publication_state,fulfillment_modes) VALUES('upgrade-store','upgrade-partner','Test Store','upgrade-city','upgrade-vertical','upgrade-type','unpublished',ARRAY['CUSTOMER_PICKUP'])",
 			"INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES('upgrade-cart','upgrade-client','upgrade-store','checked_out',1)",
 			"INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,service_city_id,serviceability_store_version,state,total_amount_minor,currency,version,payment_intent_id,payment_method,payment_state,fulfillment_mode,payment_cash_amount_minor) VALUES('upgrade-order','upgrade-client','upgrade-store','upgrade-cart','upgrade-city',1,'CREATED',1500,'YER',1,'upgrade-payment','CASH_AT_STORE','REQUIRES_COLLECTION','CUSTOMER_PICKUP',300)",
@@ -67,12 +67,12 @@ func TestCancellationPolicyUpgradeFromV134PreservesOrders(t *testing.T) {
 			t.Fatalf("historical Order altered: %+v %v", order, err)
 		}
 		kind, err := postgres.ReadCommercialStoreType(ctx, db, "upgrade-type")
-		if err != nil || kind.CancellationMode != "OPERATIONS_ONLY" {
+		if err != nil || kind.CancellationMode != "CLIENT_BEFORE_ACCEPTANCE" {
 			t.Fatalf("historical Store Type lost: %+v %v", kind, err)
 		}
 		if _, _, err = postgres.UpdateStoreTypeCancellationMode(ctx, db, "upgrade-type",
-			"CLIENT_BEFORE_ACCEPTANCE", "Enable early cancellation", "upgrade-operator",
-			"upgrade-policy-change-key", "upgrade-policy-correlation", 1); err != nil {
+			"OPERATIONS_ONLY", "Switch this type to reviewed cancellations", "upgrade-operator",
+			"upgrade-policy-change-key", "upgrade-policy-correlation", 2); err != nil {
 			t.Fatal(err)
 		}
 		order, err = postgres.ReadOrder(ctx, db, "upgrade-order")

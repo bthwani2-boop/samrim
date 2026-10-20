@@ -2,7 +2,7 @@ import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, type ClientOpenCartSummary, type CheckoutQuote, type CustomerFulfillmentMode, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type MultiStoreCheckout, type MultiStoreCheckoutRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { type Href, useRouter } from "expo-router";
+import { type Href, useFocusEffect, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -199,6 +199,7 @@ export default function MultiStoreCheckoutScreen() {
   const [error, setError] = useState("");
   const [recipient, setRecipient] = useState<DeliveryRecipientInput>({ mode: "SELF" });
   const loadRequestID = useRef(0);
+  const hasFocused = useRef(false);
   const submitInFlight = useRef(false);
   const activeActorRef = useRef((() => {
     const session = currentIdentityState();
@@ -369,13 +370,13 @@ export default function MultiStoreCheckoutScreen() {
 
   if (state.kind === "loading") return <View style={styles.state} accessibilityLabel="جارٍ تجهيز طلب المتاجر"><BthwaniSkeleton width="50%" height={26} /><BthwaniSkeleton height={92} /><BthwaniSkeleton height={120} /></View>;
   if (state.kind === "error") return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" style={styles.title}>تعذر تجهيز الطلب المتعدد</Text><Text style={styles.muted}>تحقق من مدينة الخدمة والاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /></View>;
-  if (state.kind === "empty") return <View style={styles.state}><BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>{state.otherCityCartCount > 0 ? "سلالك في مدينة خدمة أخرى" : "سلة التسوق فارغة"}</Text><Text style={styles.muted}>{state.otherCityCartCount > 0 ? "غيّر مدينة الخدمة لعرض السلال المحفوظة هناك." : "أضف منتجات من المتاجر لتظهر سلالك هنا."}</Text><BthwaniButton label="استكشف المتاجر" onPress={() => router.push("/home" as Href)} /><BthwaniButton label="تحديث السلال" onPress={() => void load()} variant="secondary" /></View>;
-  if (state.kind === "single") return <View style={styles.state} accessibilityLabel="سلة متجر"><BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>لديك سلة من {state.storeCart.store.storeName}</Text><Text style={styles.muted}>{state.storeCart.cart.lineCount} منتجات جاهزة للمراجعة.</Text>{state.otherCityCartCount > 0 ? <Text style={styles.muted}>لديك أيضًا سلال محفوظة في مدينة خدمة أخرى.</Text> : null}<BthwaniButton label="فتح سلة المتجر" onPress={() => router.push(`/cart/${encodeURIComponent(state.storeCart.store.storeId)}` as Href)} /><BthwaniButton label="تحديث السلال" onPress={() => void load()} variant="secondary" /></View>;
+  if (state.kind === "empty") return <View style={styles.state}><BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>{state.otherCityCartCount > 0 ? "سلالك في مدينة خدمة أخرى" : "سلة التسوق فارغة"}</Text><Text style={styles.muted}>{state.otherCityCartCount > 0 ? "غيّر مدينة الخدمة لعرض السلال المحفوظة هناك." : "أضف منتجات من المتاجر لتظهر سلالك هنا."}</Text><BthwaniButton label="استكشف المتاجر" onPress={() => router.push("/home" as Href)} /></View>;
+  if (state.kind === "single") return <View style={styles.state} accessibilityLabel="سلة متجر"><BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>لديك سلة من {state.storeCart.store.storeName}</Text><Text style={styles.muted}>{state.storeCart.cart.lineCount} منتجات جاهزة للمراجعة.</Text>{state.otherCityCartCount > 0 ? <Text style={styles.muted}>لديك أيضًا سلال محفوظة في مدينة خدمة أخرى.</Text> : null}<BthwaniButton label="فتح سلة المتجر" onPress={() => router.push(`/cart/${encodeURIComponent(state.storeCart.store.storeId)}` as Href)} /></View>;
 
   const checkout = state.checkout;
 
   if (pendingAttempt) return <View style={styles.container} accessibilityLabel="استعادة الطلب المتعدد"><BthwaniSurface tone="raised" style={styles.hero}><View style={styles.heroIcon}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconXl} /></View><View style={styles.heroCopy}><Text style={styles.eyebrow}>استعادة الطلب</Text><Text style={styles.title}>نتحقق من النتيجة المحفوظة</Text><Text style={styles.muted}>لن نرسل طلبًا جديدًا. نقرأ النتيجة أولًا ثم نتابع الطلب نفسه.</Text></View></BthwaniSurface>{checkout ? <CheckoutSummary checkout={checkout} styles={styles} theme={theme} /> : <BthwaniSurface tone="inset" style={styles.summary}><Text style={styles.cardTitle}>النتيجة لم تُحسم بعد</Text><Text style={styles.muted}>المحاولة محفوظة على هذا الجهاز لهذا الحساب. أعد التحقق عند عودة الاتصال.</Text></BthwaniSurface>}<BthwaniButton busy={busy} disabled={busy} label="تحقق وأكمل الاستعادة" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
-  if (checkout && state.storeCarts.length === 0) return <View style={styles.container} accessibilityLabel="نتيجة طلب المتاجر"><CheckoutSummary checkout={checkout} styles={styles} theme={theme} /><Text style={styles.muted}>يمكنك إلغاء الطلب التابع المؤهل من تفاصيله قبل قبول متجره؛ بخلاف ذلك تواصل مع العمليات.</Text><BthwaniButton label="تحديث السلال" onPress={() => void load()} variant="secondary" /></View>;
+  if (checkout && state.storeCarts.length === 0) return <View style={styles.container} accessibilityLabel="نتيجة طلب المتاجر"><CheckoutSummary checkout={checkout} styles={styles} theme={theme} /><Text style={styles.muted}>يمكنك إلغاء الطلب التابع المؤهل من تفاصيله قبل قبول متجره؛ بخلاف ذلك تواصل مع العمليات.</Text></View>;
   const selectedStoreCarts = state.storeCarts.filter(({ store }) => state.selectedStoreIDs.includes(store.storeId));
   const hasUnsupportedStore = selectedStoreCarts.some(({ store }) => store.publicationState !== "published" || availableCustomerFulfillmentModes(store.fulfillmentModes).length === 0);
   const requiresDeliveryAddress = selectedStoreCarts.some(({ store }) => { const mode = state.fulfillmentModes[store.storeId]; return mode !== null && mode !== "CUSTOMER_PICKUP"; });

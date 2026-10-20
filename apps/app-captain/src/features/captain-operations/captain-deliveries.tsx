@@ -2,8 +2,9 @@ import { BthwaniButton, BthwaniMap, BthwaniStatusBadge, useAppearanceTheme } fro
 import { type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
+import { useIsFocused } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Image, Linking, Text, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, Image, Linking, Text, View } from "react-native";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
@@ -65,6 +66,7 @@ function hasCurrentDeliveryActor(actorID: string): boolean {
 export function CaptainDeliveries() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
+  const isFocused = useIsFocused();
   const [assignments, setAssignments] = useState<ReadonlyArray<CaptainAssignment>>([]);
   const [loadedActorID, setLoadedActorID] = useState("");
   const [identityState, setIdentityState] = useState(currentIdentityState);
@@ -81,17 +83,19 @@ export function CaptainDeliveries() {
   const [completionRejected, setCompletionRejected] = useState(false);
   const currentActorReadback = isCurrentCaptainActor(loadedActorID, activeActorID);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (quiet = false) => {
     const sequence = ++readSequence.current;
     const identity = currentIdentityState();
     const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
-    const stillCurrent = () => sequence === readSequence.current && hasCurrentDeliveryActor(actorID);
-    setLoading(true);
-    setLoadedActorID("");
-    setAssignments([]);
-    setPendingCompletion(null);
-    setTasks({});
-    setCompletionStorageReady(false);
+    const stillCurrent = () => sequence === readSequence.current && hasCurrentDeliveryActor(actorID) && (!quiet || !mutationInFlight.current);
+    if (!quiet) {
+      setLoading(true);
+      setLoadedActorID("");
+      setAssignments([]);
+      setPendingCompletion(null);
+      setTasks({});
+      setCompletionStorageReady(false);
+    }
     setError("");
     try {
       if (!actorID) throw new Error("CAPTAIN_SESSION_REQUIRED");
@@ -129,13 +133,13 @@ export function CaptainDeliveries() {
       setTasks(Object.fromEntries(taskEntries.filter((entry): entry is readonly [string, CaptainDeliveryTask] => entry !== null)));
     } catch (cause) {
       console.error("DSH Captain deliveries readback failed", cause);
-      if (sequence === readSequence.current && (!actorID || hasCurrentDeliveryActor(actorID))) {
+      if (sequence === readSequence.current && (!quiet || !mutationInFlight.current) && (!actorID || hasCurrentDeliveryActor(actorID))) {
         setAssignments([]);
         setTasks({});
         setError("تعذر قراءة التوصيلات. أعد المحاولة.");
       }
     } finally {
-      if (sequence === readSequence.current) setLoading(false);
+      if (sequence === readSequence.current && !quiet) setLoading(false);
     }
   }, []);
 
@@ -153,6 +157,13 @@ export function CaptainDeliveries() {
     }
     void load();
   }, [activeActorID, load]);
+  useEffect(() => {
+    if (!isFocused || !activeActorID || loading || busy || mutationInFlight.current) return;
+    const update = () => { if (AppState.currentState === "active" && !mutationInFlight.current) void load(true); };
+    const timer = setInterval(update, 20_000);
+    const resume = AppState.addEventListener("change", (state) => { if (state === "active") update(); });
+    return () => { clearInterval(timer); resume.remove(); };
+  }, [isFocused, activeActorID, loading, busy, load]);
 
   async function pickup(assignment: CaptainAssignment) {
     if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || mutationInFlight.current || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
@@ -261,7 +272,7 @@ export function CaptainDeliveries() {
       setPendingCompletion(null);
       setCompletionRejected(false);
       await load();
-      setError("ثبت أن المحاولة لم تُنفذ وأن المهمة ما زالت في عهدتك؛ حدّث التوصيلات ثم أعد تأكيد النتيجة.");
+      setError("ثبت أن المحاولة لم تُنفذ وأن المهمة ما زالت في عهدتك؛ يمكنك إعادة تأكيد النتيجة.");
     } catch (cause) {
       console.error("DSH Captain completion rejection reconciliation failed", cause);
       setError("تعذر تأكيد حالة المهمة. بقيت المحاولة الأصلية محفوظة كما هي.");
@@ -274,7 +285,7 @@ export function CaptainDeliveries() {
   if (!currentActorReadback) return (
     <View style={styles.container} accessibilityLabel="التحقق من تكليفات الكابتن">
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ التحقق من تكليفات الجلسة الحالية…</Text></View> : <Text style={styles.warning}>{completionStorageIssue ? "تعذر التحقق من محاولة التسليم المحفوظة. لا ترسل تأكيدًا جديدًا؛ راجع المحاولة مع المشغل." : activeActorID ? "تعذرت قراءة تكليفات هذه الجلسة. أعد القراءة." : "سجّل الدخول لعرض التوصيلات الخاصة بك."}</Text>}
-      <BthwaniButton busy={loading} disabled={loading || !activeActorID} label="إعادة قراءة التوصيلات" onPress={() => void load()} variant="secondary" />
+      {activeActorID && !loading ? <BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}
     </View>
   );
 
@@ -282,7 +293,7 @@ export function CaptainDeliveries() {
     <View style={styles.container} accessibilityLabel="التوصيلات الحالية">
       <Text style={styles.readinessTitle}>التوصيلات الحالية</Text>
       {pendingCompletion ? <View style={styles.warningBox}><Text style={styles.warning}>توجد محاولة تسليم محفوظة للمهمة؛ تحقق من نتيجتها قبل إنشاء محاولة جديدة.</Text><BthwaniButton busy={busy === pendingCompletion.assignmentID} disabled={Boolean(busy) || !completionStorageReady} label="التحقق من نتيجة التسليم" onPress={() => void retryPendingCompletion()} />{completionRejected ? <BthwaniButton busy={Boolean(busy)} disabled={Boolean(busy)} label="تحقق من المهمة لفتح تصحيح آمن" onPress={() => void replaceRejectedCompletionAfterReadback()} variant="secondary" /> : null}</View> : null}
-      {completionStorageIssue ? <Text accessibilityRole="alert" style={styles.error}>تعذر قراءة المحاولة الآمنة السابقة. لا تؤكد تسليمًا جديدًا؛ أعد قراءة الحالة أو اطلب مراجعة المشغل.</Text> : null}
+      {completionStorageIssue ? <Text accessibilityRole="alert" style={styles.error}>تعذر قراءة المحاولة الآمنة السابقة. لا تؤكد تسليمًا جديدًا حتى يتم التحقق تلقائيًا أو يراجع المشغل المحاولة.</Text> : null}
       {!completionStorageReady && !completionStorageIssue && !loading ? <Text accessibilityRole="alert" style={styles.warning}>تعذر التحقق من المحاولات المحفوظة؛ لن نرسل تأكيدًا حتى تنجح إعادة القراءة.</Text> : null}
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
       {!loading && assignments.length > 0 ? <Text style={styles.sectionTitle}>التكليفات ({assignments.length})</Text> : null}
@@ -351,8 +362,8 @@ export function CaptainDeliveries() {
                 {assignment.state === "in_custody" ? <Text style={styles.muted}>أكد التسليم بعد تسليم الطلب للمستلم. سيحفظ النظام هويتك ووقت التأكيد ويمكن للعميل الإبلاغ عن عدم الاستلام.</Text> : null}
                 <Text style={task.deliveryState === "delivery_failed" ? styles.warning : styles.progress}>{captainTaskProgressLabel(task)}</Text>
               </View>
-            ) : <Text style={styles.warning}>تعذر قراءة تفاصيل المهمة من الخدمة. أعد قراءة التوصيلات قبل الاستلام أو التسليم.</Text>}
-            {!taskReady && task ? <Text style={styles.warning}>تغيرت حالة المهمة بين القراءتين. أعد قراءة التوصيلات قبل أي إجراء.</Text> : null}
+            ) : <Text style={styles.warning}>تعذر قراءة تفاصيل المهمة. ستُعاد القراءة تلقائيًا قبل إتاحة إجراء جديد.</Text>}
+            {!taskReady && task ? <Text style={styles.warning}>تغيرت حالة المهمة؛ يجري التحقق منها تلقائيًا قبل إتاحة إجراء جديد.</Text> : null}
             {assignment.state === "assigned" && assignment.handoff.state === "store_confirmed" ? <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || !completionStorageReady || Boolean(pendingCompletion) || !taskReady} label="تأكيد استلام الطلب" onPress={() => void pickup(assignment)} /> : null}
             {assignment.state === "assigned" && assignment.handoff.state === "pending" ? <Text style={styles.muted}>بانتظار تأكيد المتجر قبل الاستلام.</Text> : null}
             {assignment.state === "in_custody" && pendingCompletion?.assignmentID === assignment.id ? <Text style={styles.warning}>يُحسم هذا الإجراء من المحاولة المحفوظة أعلاه.</Text> : null}
@@ -368,7 +379,6 @@ export function CaptainDeliveries() {
       }) : null}
        {!loading ? assignments.map((assignment) => <OrderConversation key={`conversation-${assignment.id}`} orderId={assignment.orderId} />) : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <BthwaniButton busy={Boolean(busy) || loading} disabled={Boolean(busy) || loading} label="تحديث التوصيلات" onPress={() => void load()} variant="secondary" />
     </View>
   );
 }
