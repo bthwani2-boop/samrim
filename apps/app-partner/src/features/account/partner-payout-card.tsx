@@ -1,6 +1,6 @@
 import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type PartnerPayoutRequestCreateRequest, type PartnerPayoutRequestView, type PartnerPayoutSummary, isDefinitiveDshMobileClientRejection } from "@bthwani/dsh";
+import { createDshMobileClient, formatMoney, type PartnerPayoutRequestCreateRequest, type PartnerPayoutRequestView, type PartnerPayoutSummary, isDefinitiveDshMobileClientRejection, settlementIntakeStatusLabel, type SettlementIntake } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -41,7 +41,7 @@ export function PartnerPayoutCard() {
   const [mode, setMode] = useState<PayoutMode>("FULL_AVAILABLE");
   const [storeAmounts, setStoreAmounts] = useState<Readonly<Record<string, string>>>({});
   const [lastRequest, setLastRequest] = useState<PartnerPayoutRequestView | null>(null);
-  const [intake, setIntake] = useState<{ id: string; status: string; resolvedAmountMinor: number; payoutStatus?: string; payoutReference?: string; payoutUpdatedAt?: string } | null>(null);
+  const [intake, setIntake] = useState<SettlementIntake | null>(null);
   const [pendingIntake, setPendingIntake] = useState<{ body: PartnerPayoutRequestCreateRequest; idempotencyKey: string; correlationID: string } | null>(null);
   const [busy, setBusy] = useState(authenticated);
   const [error, setError] = useState("");
@@ -222,6 +222,15 @@ export function PartnerPayoutCard() {
   const requestPreviewMinor = mode === "FULL_AVAILABLE" ? selectedSummary?.eligibleAvailableMinor ?? 0 : specifiedTotalMinor;
   const requestReady = Boolean(selectedSummary && singleWallet && selectedSummary.eligibleAvailableMinor > 0 && selectedSummary.attributionComplete && (mode === "FULL_AVAILABLE" || specifiedAmountsReady));
   const destinationReady = Boolean(selectedSummary && selectedSummary.stores.filter((store) => selected.includes(store.storeId)).every((store) => store.payoutReady));
+  let confirmDescription = "";
+  if (selectedSummary) {
+    const amountLabel = formatMoney(requestPreviewMinor, selectedSummary.currency);
+    if (destinationReady) {
+      confirmDescription = `سيُنشأ طلب صرف بمبلغ ${amountLabel} للمتاجر المختارة مع حجز المبلغ حتى إتمام التسوية المعتمدة.`;
+    } else {
+      confirmDescription = `سيُرسل طلب تسوية بمبلغ ${amountLabel} للمتاجر المختارة إلى المالية للمراجعة، دون حجز أو تحويل أي مبلغ الآن.`;
+    }
+  }
   return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="طلب صرف الشريك">
     <Text style={styles.title}>طلب صرف مستحقات المتاجر</Text>
     <Text style={styles.muted}>هذه المساحة تستخدم صلاحية طلب الصرف لكل متجر. قراءة التقارير المالية وتغيير المستلم صلاحيتان مستقلتان.</Text>
@@ -248,7 +257,7 @@ export function PartnerPayoutCard() {
         <BthwaniButton busy={busy} disabled={!requestReady || intake?.status === "REQUESTED"} label={intake?.status === "REQUESTED" ? "طلب التسوية لدى المالية" : destinationReady ? "مراجعة طلب الصرف" : "طلب تسوية من المالية"} onPress={() => setConfirmRequest(true)} variant="secondary" />
       </>}
     </> : null}
-    {intake ? <Text style={styles.muted}>حالة طلب التسوية: {intake.status === "CANCELLED" ? "ملغى" : intake.payoutStatus === "COMPLETED" ? "مكتمل ومطابق" : intake.status === "CONVERTED" ? "قيد الصرف والمطابقة" : "بانتظار مراجعة المالية"}{intake.payoutReference ? ` · المرجع: ${intake.payoutReference}` : ""}{intake.payoutStatus === "COMPLETED" && intake.payoutUpdatedAt ? ` · ${new Date(intake.payoutUpdatedAt).toLocaleDateString("ar-YE")}` : ""}</Text> : null}
+    {intake ? <Text style={styles.muted}>حالة طلب التسوية: {settlementIntakeStatusLabel(intake)}{intake.payoutReference ? ` · المرجع: ${intake.payoutReference}` : ""}{intake.payoutStatus === "COMPLETED" && intake.payoutUpdatedAt ? ` · ${new Date(intake.payoutUpdatedAt).toLocaleDateString("ar-YE")}` : ""}</Text> : null}
     {lastRequest ? <View style={styles.requestBox}>
       <Text style={styles.lineTitle}>الطلب المعتمد: {formatMoney(lastRequest.totalAmountMinor, lastRequest.currency)}</Text>
       {lastRequest.stores.map((allocation) => <Text key={allocation.storeId} style={styles.muted}>{storeNames[allocation.storeId] ?? "متجر ضمن الطلب"}: {formatMoney(allocation.amountMinor, allocation.currency)} · تم تثبيت مستلم الصرف عند إنشاء الطلب</Text>)}
@@ -259,11 +268,10 @@ export function PartnerPayoutCard() {
     {authenticated ? <BthwaniButton busy={busy} label="تحديث حالة الصرف" onPress={() => void load()} variant="secondary" /> : null}
     <BthwaniConfirmDialog
       busy={busy}
-      confirmLabel="تأكيد طلب الصرف"
-      description={selectedSummary ? `سيُنشأ طلب صرف بمبلغ ${formatMoney(requestPreviewMinor, selectedSummary.currency)} للمتاجر المختارة، وسيُقسم إلى حوالات وفق مستلم الصرف المعتمد لكل متجر.` : ""}
-      onCancel={() => setConfirmRequest(false)}
+      confirmLabel={destinationReady ? "تأكيد طلب الصرف" : "تأكيد طلب التسوية"}
+      description={confirmDescription} onCancel={() => setConfirmRequest(false)}
       onConfirm={() => { setConfirmRequest(false); void (destinationReady ? request() : requestIntake()); }}
-      title="مراجعة طلب الصرف"
+      title={destinationReady ? "مراجعة طلب الصرف" : "مراجعة طلب التسوية"}
       visible={confirmRequest}
     />
   </BthwaniSurface>;

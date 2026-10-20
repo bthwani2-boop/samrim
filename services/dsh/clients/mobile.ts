@@ -20,7 +20,16 @@ export type DshMobileClientOptions = Readonly<{
 }>;
 
 export type PayoutIntentResponse = Readonly<{ payout: PayoutRequest; idempotentReplay: boolean }>;
-export type SettlementIntake = Readonly<{ id: string; actorType: "partner" | "captain" | "field"; actorId: string; requestedBy: string; amountMode: "FULL_AVAILABLE" | "SPECIFIED"; requestedAmountMinor?: number; resolvedAmountMinor: number; currency: string; storeAllocations: readonly Readonly<{ storeId: string; amountMinor: number }>[]; status: "REQUESTED" | "CONVERTED" | "CANCELLED"; payoutReference?: string; payoutStatus?: string; payoutUpdatedAt?: string; createdAt: string }>;
+export type SettlementIntake = Readonly<{ id: string; actorType: "partner" | "captain" | "field"; actorId: string; requestedBy: string; amountMode: "FULL_AVAILABLE" | "SPECIFIED"; requestedAmountMinor?: number; resolvedAmountMinor: number; currency: "YER"; storeAllocations: readonly Readonly<{ storeId: string; amountMinor: number }>[]; status: "REQUESTED" | "CONVERTED" | "CANCELLED"; payoutReference?: string; payoutStatus?: string; payoutUpdatedAt?: string; createdAt: string }>;
+/** Display wording follows canonical WLT state, not device-side payout guesses. */
+export function settlementIntakeStatusLabel(intake: Pick<SettlementIntake, "status" | "payoutStatus">): string {
+  if (intake.status === "CANCELLED") return "ملغى";
+  if (intake.status === "REQUESTED") return "قيد مراجعة المالية";
+  if (intake.payoutStatus === "COMPLETED") return "مكتمل ومطابق";
+  if (intake.payoutStatus === "CANCELLED") return "صرف ملغى";
+  if (intake.status === "CONVERTED") return "قيد الصرف والمطابقة";
+  return "حالة التسوية غير محسومة";
+}
 export type SettlementIntakeResponse = Readonly<{ intake: SettlementIntake; idempotentReplay: boolean }>;
 export type SettlementIntakeListResponse = Readonly<{ intakes: readonly SettlementIntake[] }>;
 
