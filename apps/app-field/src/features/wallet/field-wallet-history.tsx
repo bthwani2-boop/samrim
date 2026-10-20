@@ -3,7 +3,7 @@ import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/desi
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { formatMoney, type FieldPayoutRequestHistoryPage, type FieldWalletHistoryPage } from "@bthwani/dsh";
+import { formatMoney, type FieldPayoutRequestHistoryPage, type FieldWalletHistoryPage, type SettlementIntake } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "../field-operations/field-client";
 
@@ -39,6 +39,7 @@ export function FieldWalletHistory({ refreshVersion }: Readonly<{ refreshVersion
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [walletPage, setWalletPage] = useState<FieldWalletHistoryPage | null>(null);
   const [payoutPage, setPayoutPage] = useState<FieldPayoutRequestHistoryPage | null>(null);
+  const [intakes, setIntakes] = useState<readonly SettlementIntake[] | null>(null);
   const [walletLoading, setWalletLoading] = useState(true);
   const [payoutLoading, setPayoutLoading] = useState(true);
   const [walletMoreLoading, setWalletMoreLoading] = useState(false);
@@ -53,14 +54,21 @@ export function FieldWalletHistory({ refreshVersion }: Readonly<{ refreshVersion
     setPayoutError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const [walletResult, payoutResult] = await Promise.allSettled([
+      const [walletResult, payoutResult, intakeResult] = await Promise.allSettled([
         fieldClient().listOwnFieldWalletHistory(token, 50),
         fieldClient().listOwnFieldPayoutRequests(token, 50),
+        fieldClient().listOwnSettlementIntakes(token),
       ]);
       if (walletResult.status === "fulfilled") setWalletPage(walletResult.value);
       else {
         console.warn("DSH field wallet journal readback failed", walletResult.reason);
         setWalletError("تعذر تحميل سجل حركات المحفظة.");
+      }
+      if (intakeResult.status === "fulfilled") setIntakes(intakeResult.value.intakes);
+      else {
+        console.warn("DSH field settlement intake history readback failed", intakeResult.reason);
+        setIntakes(null);
+        setPayoutError("تعذر قراءة طلبات التسوية الواردة. حاول التحديث.");
       }
       if (payoutResult.status === "fulfilled") setPayoutPage(payoutResult.value);
       else {
@@ -148,6 +156,13 @@ export function FieldWalletHistory({ refreshVersion }: Readonly<{ refreshVersion
       {payoutLoading && !payoutPage ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل الطلبات…</Text></View> : null}
       {payoutLoading && payoutPage ? <Text style={styles.muted}>جارٍ تحديث الطلبات…</Text> : null}
       {payoutError ? <Text accessibilityRole="alert" style={styles.error}>{payoutError}</Text> : null}
+      {intakes?.map((intake) => <View key={`intake-${intake.id}`} style={styles.request}>
+        <View style={styles.entryMain}>
+          <Text style={styles.value}>{formatMoney(intake.resolvedAmountMinor, intake.currency)}</Text>
+          <Text style={styles.label}>طلب تسوية · {intake.status === "CANCELLED" ? "ملغى" : intake.payoutStatus === "COMPLETED" ? "مكتمل ومطابق" : intake.status === "CONVERTED" ? "قيد الصرف والمطابقة" : "قيد مراجعة المالية"}</Text>
+        </View>
+        <Text style={styles.muted}>{dateLabel(intake.createdAt)}</Text>
+      </View>)}
       {payoutPage?.requests.map((request) => <View key={`${request.createdAt}-${request.amountMinor}-${request.status}`} style={styles.request}>
         <View style={styles.entryMain}>
           <Text style={styles.value}>{formatMoney(request.amountMinor, request.currency)}</Text>
@@ -155,7 +170,7 @@ export function FieldWalletHistory({ refreshVersion }: Readonly<{ refreshVersion
         </View>
         <Text style={styles.muted}>{dateLabel(request.createdAt)}</Text>
       </View>)}
-      {payoutPage && payoutPage.requests.length === 0 ? <Text style={styles.muted}>لا توجد طلبات تسوية مسجلة.</Text> : null}
+      {payoutPage && payoutPage.requests.length === 0 && intakes?.length === 0 ? <Text style={styles.muted}>لا توجد طلبات تسوية مسجلة.</Text> : null}
       {payoutPage?.nextCursor ? <BthwaniButton busy={payoutMoreLoading} label="عرض طلبات أقدم" onPress={() => void loadMorePayouts()} variant="secondary" /> : null}
     </View>
   </BthwaniSurface>;

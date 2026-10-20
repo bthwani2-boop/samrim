@@ -153,7 +153,7 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
     </> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    <BthwaniConfirmDialog busy={busy} confirmLabel="تأكيد طلب التسوية" description={confirmMode && state ? `سيُنشأ طلب تسوية بمبلغ ${formatMoney(confirmAmount, state.currency)} إلى وجهة المحفظة الرسمية المعتمدة، وسيُحجز المبلغ للمراجعة.` : ""} onCancel={() => setConfirmMode(null)} onConfirm={() => { const mode = confirmMode; setConfirmMode(null); if (mode) void (destinationReady ? request(mode) : requestIntake(mode)); }} title="مراجعة طلب التسوية" visible={Boolean(confirmMode)} />
+    <BthwaniConfirmDialog busy={busy} confirmLabel="تأكيد طلب التسوية" description={confirmMode && state ? (destinationReady ? `سيُنشأ طلب صرف بمبلغ ${formatMoney(confirmAmount, state.currency)} إلى وجهة التحويل المعتمدة، ويُحجز المبلغ حتى التسوية وفق السياسة.` : `سيصل طلب تسوية بمبلغ ${formatMoney(confirmAmount, state.currency)} إلى قسم المالية للمراجعة. لن يُحجز أو يُحوَّل أي مبلغ الآن؛ يلزم اعتماد وجهة التحويل قبل الصرف.`) : ""} onCancel={() => setConfirmMode(null)} onConfirm={() => { const mode = confirmMode; setConfirmMode(null); if (mode) void (destinationReady ? request(mode) : requestIntake(mode)); }} title="مراجعة طلب التسوية" visible={Boolean(confirmMode)} />
   </BthwaniSurface>;
 }
 

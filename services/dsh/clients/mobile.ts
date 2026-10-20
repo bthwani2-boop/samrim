@@ -20,7 +20,7 @@ export type DshMobileClientOptions = Readonly<{
 }>;
 
 export type PayoutIntentResponse = Readonly<{ payout: PayoutRequest; idempotentReplay: boolean }>;
-export type SettlementIntake = Readonly<{ id: string; actorType: "partner" | "captain" | "field"; actorId: string; requestedBy: string; amountMode: "FULL_AVAILABLE" | "SPECIFIED"; requestedAmountMinor?: number; resolvedAmountMinor: number; currency: string; storeAllocations: readonly Readonly<{ storeId: string; amountMinor: number }>[]; status: "REQUESTED" | "CONVERTED" | "CANCELLED"; payoutReference?: string; payoutStatus?: string; payoutUpdatedAt?: string; createdAt: string }>;
+export type SettlementIntake = Readonly<{ id: string; actorType: "partner" | "captain" | "field"; actorId: string; requestedBy: string; amountMode: "FULL_AVAILABLE" | "SPECIFIED"; requestedAmountMinor?: number; resolvedAmountMinor: number; currency: "YER"; storeAllocations: readonly Readonly<{ storeId: string; amountMinor: number }>[]; status: "REQUESTED" | "CONVERTED" | "CANCELLED"; payoutReference?: string; payoutStatus?: string; payoutUpdatedAt?: string; createdAt: string }>;
 export type SettlementIntakeResponse = Readonly<{ intake: SettlementIntake; idempotentReplay: boolean }>;
 export type SettlementIntakeListResponse = Readonly<{ intakes: readonly SettlementIntake[] }>;
 

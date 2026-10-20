@@ -259,11 +259,10 @@ export function PartnerPayoutCard() {
     {authenticated ? <BthwaniButton busy={busy} label="تحديث حالة الصرف" onPress={() => void load()} variant="secondary" /> : null}
     <BthwaniConfirmDialog
       busy={busy}
-      confirmLabel="تأكيد طلب الصرف"
-      description={selectedSummary ? `سيُنشأ طلب صرف بمبلغ ${formatMoney(requestPreviewMinor, selectedSummary.currency)} للمتاجر المختارة، وسيُقسم إلى حوالات وفق مستلم الصرف المعتمد لكل متجر.` : ""}
-      onCancel={() => setConfirmRequest(false)}
+      confirmLabel={destinationReady ? "تأكيد طلب الصرف" : "تأكيد طلب التسوية"}
+      description={selectedSummary ? (destinationReady ? `سيُنشأ طلب صرف بمبلغ ${formatMoney(requestPreviewMinor, selectedSummary.currency)} للمتاجر المختارة، ويُحجز المبلغ حتى إتمام التسوية المعتمدة.` : `سيصل طلب تسوية بمبلغ ${formatMoney(requestPreviewMinor, selectedSummary.currency)} للمتاجر المختارة إلى قسم المالية. لن يُحجز أو يُحوَّل أي مبلغ عند تقديم هذا الطلب.`) : ""} onCancel={() => setConfirmRequest(false)}
       onConfirm={() => { setConfirmRequest(false); void (destinationReady ? request() : requestIntake()); }}
-      title="مراجعة طلب الصرف"
+      title={destinationReady ? "مراجعة طلب الصرف" : "مراجعة طلب التسوية"}
       visible={confirmRequest}
     />
   </BthwaniSurface>;
