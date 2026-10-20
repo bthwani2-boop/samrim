@@ -1,6 +1,6 @@
 import { borders, radius, type resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type BeneficiaryPayoutState, formatMoney } from "@bthwani/dsh";
+import { type BeneficiaryPayoutState, formatMoney, settlementIntakeStatusLabel, type SettlementIntake } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -29,7 +29,7 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pendingAttempt, setPendingAttempt] = useState<PayoutAttempt | null>(null);
-  const [intake, setIntake] = useState<{ id: string; status: string; resolvedAmountMinor: number; payoutStatus?: string; payoutReference?: string; payoutUpdatedAt?: string } | null>(null);
+  const [intake, setIntake] = useState<SettlementIntake | null>(null);
   const [pendingIntakeAttempt, setPendingIntakeAttempt] = useState<PayoutAttempt | null>(null);
   const [confirmMode, setConfirmMode] = useState<"FULL_AVAILABLE" | "SPECIFIED" | null>(null);
   const load = useCallback(async () => {
@@ -122,6 +122,15 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
   const parsedConfirmAmount = Number(toAsciiDigits(amount.trim()).replace(/\D/g, ""));
   const confirmAmount = confirmMode === "FULL_AVAILABLE" ? state?.eligibleAvailableMinor ?? 0 : Number.isSafeInteger(parsedConfirmAmount) ? parsedConfirmAmount : 0;
   const specifiedAmountReady = Number.isSafeInteger(parsedConfirmAmount) && parsedConfirmAmount > 0 && Boolean(state) && parsedConfirmAmount <= (state?.eligibleAvailableMinor ?? 0);
+  let confirmDescription = "";
+  if (confirmMode && state) {
+    const amountLabel = formatMoney(confirmAmount, state.currency);
+    if (destinationReady) {
+      confirmDescription = `سيُنشأ طلب صرف بمبلغ ${amountLabel} إلى وجهة التحويل المعتمدة. يُحجز المبلغ حتى التسوية وفق السياسة.`;
+    } else {
+      confirmDescription = `سيصل طلب تسوية بمبلغ ${amountLabel} إلى قسم المالية للمراجعة، دون حجز أو تحويل أي مبلغ الآن. يُراجع حساب التحويل قبل الصرف.`;
+    }
+  }
   let payoutActions: ReactNode = null;
   if (pendingAttempt) {
     payoutActions = <><Text style={styles.muted}>هناك طلب سابق لم تُحسم حالته بعد. تحقّق منه قبل طلب تسوية أخرى.</Text><BthwaniButton busy={busy} label="التحقق من الطلب المحفوظ" onPress={() => void request(pendingAttempt.mode)} /></>;
@@ -131,7 +140,7 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
     payoutActions = <><BthwaniButton busy={busy} label="طلب تسوية كامل المتاح" onPress={() => setConfirmMode("FULL_AVAILABLE")} variant="secondary" /><TextInput accessibilityLabel="مبلغ تسوية الميداني المحدد بالريال اليمني" keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/\D/g, ""))} placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} disabled={!specifiedAmountReady} label="طلب المبلغ المحدد" onPress={() => setConfirmMode("SPECIFIED")} variant="secondary" />
     </>;
   } else if (!destinationReady && state && state.eligibleAvailableMinor > 0) {
-    payoutActions = intake?.status === "REQUESTED" ? <Text style={styles.muted}>طلب التسوية قيد مراجعة المالية. سيتم التحقق من وجهة التحويل قبل الصرف.</Text> : <BthwaniButton busy={busy} label="طلب تسوية من المالية" onPress={() => setConfirmMode("FULL_AVAILABLE")} variant="secondary" />;
+    payoutActions = <BthwaniButton busy={busy} label="طلب تسوية من المالية" onPress={() => setConfirmMode("FULL_AVAILABLE")} variant="secondary" />;
   } else if (destinationReady && state) {
     payoutActions = <Text style={styles.muted}>لا يوجد رصيد متاح لطلب التسوية الآن.</Text>;
   }
@@ -149,11 +158,11 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
         <View style={styles.metricTile}><Text style={styles.metricLabel}>محجوز</Text><Text style={styles.metric}>{formatMoney(state.heldMinor, state.currency)}</Text></View>
       </View>
       {payoutActions}
-      {intake ? <Text style={styles.muted}>حالة الطلب: {intake.status === "CANCELLED" ? "ملغى" : intake.payoutStatus === "COMPLETED" ? "مكتمل ومطابق" : intake.status === "CONVERTED" ? "في إجراءات الصرف والمطابقة" : "بانتظار مراجعة المالية"}{intake.payoutReference ? ` · المرجع: ${intake.payoutReference}` : ""}{intake.payoutStatus === "COMPLETED" && intake.payoutUpdatedAt ? ` · ${new Date(intake.payoutUpdatedAt).toLocaleDateString("ar-YE")}` : ""}</Text> : null}
+      {intake ? <Text style={styles.muted}>حالة الطلب: {settlementIntakeStatusLabel(intake)}{intake.payoutReference ? ` · المرجع: ${intake.payoutReference}` : ""}{intake.payoutStatus === "COMPLETED" && intake.payoutUpdatedAt ? ` · ${new Date(intake.payoutUpdatedAt).toLocaleDateString("ar-YE")}` : ""}</Text> : null}
     </> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    <BthwaniConfirmDialog busy={busy} confirmLabel="تأكيد طلب التسوية" description={confirmMode && state ? (destinationReady ? `سيُنشأ طلب صرف بمبلغ ${formatMoney(confirmAmount, state.currency)} إلى وجهة التحويل المعتمدة، ويُحجز المبلغ حتى التسوية وفق السياسة.` : `سيصل طلب تسوية بمبلغ ${formatMoney(confirmAmount, state.currency)} إلى قسم المالية للمراجعة. لن يُحجز أو يُحوَّل أي مبلغ الآن؛ يلزم اعتماد وجهة التحويل قبل الصرف.`) : ""} onCancel={() => setConfirmMode(null)} onConfirm={() => { const mode = confirmMode; setConfirmMode(null); if (mode) void (destinationReady ? request(mode) : requestIntake(mode)); }} title="مراجعة طلب التسوية" visible={Boolean(confirmMode)} />
+    <BthwaniConfirmDialog busy={busy} confirmLabel="تأكيد طلب التسوية" description={confirmDescription} onCancel={() => setConfirmMode(null)} onConfirm={() => { const mode = confirmMode; setConfirmMode(null); if (mode) void (destinationReady ? request(mode) : requestIntake(mode)); }} title="مراجعة طلب التسوية" visible={Boolean(confirmMode)} />
   </BthwaniSurface>;
 }
 

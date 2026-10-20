@@ -3,7 +3,7 @@ import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/desi
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { formatMoney, type FieldPayoutRequestHistoryPage, type FieldWalletHistoryPage, type SettlementIntake } from "@bthwani/dsh";
+import { formatMoney, type FieldPayoutRequestHistoryPage, type FieldWalletHistoryPage, type SettlementIntake, settlementIntakeStatusLabel } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "../field-operations/field-client";
 
@@ -159,7 +159,7 @@ export function FieldWalletHistory({ refreshVersion }: Readonly<{ refreshVersion
       {intakes?.map((intake) => <View key={`intake-${intake.id}`} style={styles.request}>
         <View style={styles.entryMain}>
           <Text style={styles.value}>{formatMoney(intake.resolvedAmountMinor, intake.currency)}</Text>
-          <Text style={styles.label}>طلب تسوية · {intake.status === "CANCELLED" ? "ملغى" : intake.payoutStatus === "COMPLETED" ? "مكتمل ومطابق" : intake.status === "CONVERTED" ? "قيد الصرف والمطابقة" : "قيد مراجعة المالية"}</Text>
+          <Text style={styles.label}>طلب تسوية · {settlementIntakeStatusLabel(intake)}</Text>
         </View>
         <Text style={styles.muted}>{dateLabel(intake.createdAt)}</Text>
       </View>)}
@@ -170,7 +170,7 @@ export function FieldWalletHistory({ refreshVersion }: Readonly<{ refreshVersion
         </View>
         <Text style={styles.muted}>{dateLabel(request.createdAt)}</Text>
       </View>)}
-      {payoutPage && payoutPage.requests.length === 0 && intakes?.length === 0 ? <Text style={styles.muted}>لا توجد طلبات تسوية مسجلة.</Text> : null}
+      {payoutPage?.requests.length === 0 && intakes?.length === 0 ? <Text style={styles.muted}>لا توجد طلبات تسوية مسجلة.</Text> : null}
       {payoutPage?.nextCursor ? <BthwaniButton busy={payoutMoreLoading} label="عرض طلبات أقدم" onPress={() => void loadMorePayouts()} variant="secondary" /> : null}
     </View>
   </BthwaniSurface>;
