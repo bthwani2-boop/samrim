@@ -1,6 +1,6 @@
 "use client";
 
-import type { CatalogProduct, CatalogProductListResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogProductResponse, CreateStoreOfferRequest, UpdateStoreOfferRequest, MediaProvenanceInput } from "@bthwani/dsh";
+import type { CatalogCategoryListResponse, CatalogProduct, CatalogProductListResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogProductResponse, CreateStoreOfferRequest, UpdateStoreOfferRequest, MediaProvenanceInput } from "@bthwani/dsh";
 import { isMediaProvenanceInputValid } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
@@ -34,6 +34,17 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
   const [back,setBack]=useState<ReadonlyArray<string>>([]);
   const [nextCursor,setNextCursor]=useState("");
   const [refresh,setRefresh]=useState(0);
+  const [categoryQuery,setCategoryQuery]=useState("");
+  useEffect(()=>{
+    if(!verticalId){setCategories([]);return;}
+    const controller=new AbortController();
+    const timer=setTimeout(()=>{void (async()=>{try{
+      const params=new URLSearchParams({verticalId,query:categoryQuery,limit:"100"});
+      const page=await payload<CatalogCategoryListResponse>(await fetch("/api/catalog/categories?"+params,{cache:"no-store",signal:controller.signal}));
+      if(!controller.signal.aborted)setCategories(page.categories.filter(category=>category.active));
+    }catch(e){if(!controller.signal.aborted)setError(e instanceof Error?e.message:"تعذرت قراءة فئات المنتجات.");}})();},200);
+    return ()=>{clearTimeout(timer);controller.abort();};
+  },[verticalId,categoryQuery]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const [notice,setNotice]=useState("");
@@ -52,6 +63,9 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
   const bulkAttempts=useRef(new Map<string,{fingerprint:string;key:string;correlation:string}>());
   const [newName,setNewName]=useState("");
   const [newDescription,setNewDescription]=useState("");
+  const [newCategoryId,setNewCategoryId]=useState("");
+  const [editCategoryId,setEditCategoryId]=useState("");
+  const [categories,setCategories]=useState<CatalogCategoryListResponse["categories"]>([]);
   const [unitKind,setUnitKind]=useState<"DISCRETE"|"MEASURED">("DISCRETE");
   const [newUnit,setNewUnit]=useState<"GRAM"|"MILLILITER">("GRAM");
   const [price,setPrice]=useState("");
@@ -97,7 +111,7 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
 
   const variants=useMemo<ProductVariantOption[]>(()=>shared.flatMap(product=>product.variants.filter(v=>v.active).map(v=>({value:v.id,name:product.canonicalName+" — "+v.title,kind:v.measurementKind,unit:v.baseUnit}))),[shared]);
   const chosen=variants.find(v=>v.value===selection);
-  const fingerprint=mode==="shared" ? [mode,selection,price].join(":") : [mode,newName,newDescription,unitKind,newUnit,price].join(":");
+  const fingerprint=mode==="shared" ? [mode,selection,price].join(":") : [mode,newName,newDescription,newCategoryId,unitKind,newUnit,price].join(":");
   async function createOffer() {
     const amount=inputPrice(price);
     if(!amount||busy||(mode==="shared"&&!chosen)||(mode==="local"&&(!newName.trim()||!verticalId)))return;
@@ -109,7 +123,7 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
       if(mode==="local"){
         const product=await payload<CatalogProductResponse>(await fetch("/api/stores/"+encodeURIComponent(storeId)+"/products",{
           method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":current.productKey,"X-Correlation-ID":current.correlation},
-          body:JSON.stringify({scope:"STORE_SCOPED",storeId,verticalId,canonicalName:newName.trim(),description:newDescription.trim(),variantTitle:"الافتراضي",measurementKind:unitKind,baseUnit:unitKind==="DISCRETE"?"COUNT":newUnit})
+          body:JSON.stringify({scope:"STORE_SCOPED",storeId,verticalId,canonicalName:newName.trim(),description:newDescription.trim(),categoryIds:newCategoryId?[newCategoryId]:[],variantTitle:"الافتراضي",measurementKind:unitKind,baseUnit:unitKind==="DISCRETE"?"COUNT":newUnit})
         }));
         variantId=product.product.variants[0]?.id??"";
         if(!variantId)throw new Error("تم إنشاء المنتج لكن لم تتوفر نسخته. أعد المحاولة لاستكمال عرضه.");
@@ -120,7 +134,7 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
         body:JSON.stringify(createInput(variantId,amount,kind))
       }));
       setNotice("تم حفظ المنتج في المتجر كمسودة. يمكن نشر العرض بعد استكمال بياناته.");
-      setPrice("");setNewName("");setNewDescription("");setSelection("");setOpenAdd(false);setAttempt(null);
+      setPrice("");setNewName("");setNewDescription("");setNewCategoryId("");setSelection("");setOpenAdd(false);setAttempt(null);
       setCursor("");setBack([]);setRefresh(v=>v+1);
     }catch(e){setError(e instanceof Error?e.message:"تعذرت إضافة المنتج. يمكن إعادة المحاولة دون تكرار العملية.");}
     finally{setBusy(false)}
@@ -170,7 +184,7 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
     setDetailsLoading(true);
     try {
       const data=await payload<CatalogProduct>(await fetch("/api/stores/"+encodeURIComponent(storeId)+"/products/"+encodeURIComponent(offer.productId),{cache:"no-store"}));
-      setProductDetails(data);setNameDraft(data.canonicalName);setDescriptionDraft(data.description??"");
+      setProductDetails(data);setNameDraft(data.canonicalName);setDescriptionDraft(data.description??"");setEditCategoryId(data.categoryIds?.[0]??"");
     }catch(e){setError(e instanceof Error?e.message:"تعذر قراءة بيانات المنتج.");}
     finally{setDetailsLoading(false)}
   }
@@ -181,11 +195,11 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
   async function saveProduct() {
     if(!productDetails||productDetails.scope!=="STORE_SCOPED"||!editing||busy)return;
     const name=nameDraft.trim();if(!name)return;
-    const fingerprint=[productDetails.id,productDetails.version,name,descriptionDraft].join(":");
+    const fingerprint=[productDetails.id,productDetails.version,name,descriptionDraft,editCategoryId].join(":");
     const current=productAttempt?.fingerprint===fingerprint?productAttempt:{key:crypto.randomUUID(),fingerprint};
     setProductAttempt(current);setBusy(true);setError("");
     try {
-      const input={canonicalName:name,description:descriptionDraft,verticalId:productDetails.verticalId??verticalId??"",scope:"STORE_SCOPED",storeId,active:productDetails.active};
+      const input={canonicalName:name,description:descriptionDraft,verticalId:productDetails.verticalId??verticalId??"",scope:"STORE_SCOPED",storeId,active:productDetails.active,...(editCategoryId===(productDetails.categoryIds?.[0]??"")?{}:{categoryIds:editCategoryId?[editCategoryId]:[]})};
       const data=await payload<CatalogProductResponse>(await fetch("/api/stores/"+encodeURIComponent(storeId)+"/products/"+encodeURIComponent(productDetails.id),{
         method:"PATCH",headers:{"Content-Type":"application/json","Idempotency-Key":current.key,"X-Expected-Version":String(productDetails.version)},body:JSON.stringify(input)
       }));
@@ -296,6 +310,7 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
       </>:<>
         <label>اسم المنتج<input value={newName} maxLength={160} disabled={busy} onChange={e=>setNewName(e.target.value)}/></label>
         <label>الوصف (اختياري)<input value={newDescription} maxLength={4000} disabled={busy} onChange={e=>setNewDescription(e.target.value)}/></label>
+        <label>فئة المنتج (اختياري)<input aria-label="بحث عن فئة المنتج" value={categoryQuery} onChange={e=>setCategoryQuery(e.target.value)} placeholder="بحث عن فئة"/><select aria-label="فئة المنتج الجديد" disabled={busy} value={newCategoryId} onChange={e=>setNewCategoryId(e.target.value)}><option value="">دون فئة</option>{categories.map(category=><option value={category.id} key={category.id}>{category.pathAr}</option>)}</select></label>
         <label>نوع المنتج
           <select value={unitKind} disabled={busy} onChange={e=>setUnitKind(e.target.value as "DISCRETE"|"MEASURED")}>
             <option value="DISCRETE">بالقطعة</option><option value="MEASURED">بالوزن أو الحجم</option>
@@ -318,6 +333,7 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
         <h4>بيانات المنتج الخاص بالمتجر</h4>
         <label>اسم المنتج<input value={nameDraft} maxLength={160} disabled={busy} onChange={e=>setNameDraft(e.target.value)} /></label>
         <label>الوصف<input value={descriptionDraft} maxLength={4000} disabled={busy} onChange={e=>setDescriptionDraft(e.target.value)} /></label>
+        <label>فئة المنتج<input aria-label="بحث عن الفئات" value={categoryQuery} onChange={e=>setCategoryQuery(e.target.value)} placeholder="بحث عن فئة"/><select aria-label="فئة المنتج الحالية" disabled={busy||!productDetails||productDetails.categoryIds.length>1} value={editCategoryId} onChange={e=>setEditCategoryId(e.target.value)}><option value="">دون فئة</option>{categories.map(category=><option value={category.id} key={category.id}>{category.pathAr}</option>)}</select></label>
         <button className="button button-secondary" type="button" disabled={busy||!nameDraft.trim()} onClick={()=>void saveProduct()}>حفظ بيانات المنتج</button>
         <label>صورة المنتج (JPEG أو PNG)<input type="file" accept="image/jpeg,image/png" disabled={busy} onChange={e=>{setPhoto(e.target.files?.[0]??null);setMediaAttempt(null)}} /></label>
         {photo?<><CatalogMediaProvenanceFields compact idPrefix={"product-media-"+editing.offerId} disabled={busy} value={provenance} onChange={setProvenance}/>
