@@ -43,6 +43,7 @@ type OrderConversationRecord struct {
 }
 
 type orderConversationOrder struct {
+	StoreID            string
 	ClientActorID      string
 	PartnerActorID     string
 	State              string
@@ -231,17 +232,30 @@ func readOrderConversationOrder(ctx context.Context, source rowQueryer, orderID,
 		lockClause = " FOR UPDATE"
 	}
 	var order orderConversationOrder
-	err := source.QueryRowContext(ctx, `SELECT o.client_actor_id,s.partner_actor_id,o.state,
+	err := source.QueryRowContext(ctx, `SELECT o.store_id,o.client_actor_id,s.partner_actor_id,o.state,
 		COALESCE((SELECT audit.created_at FROM dsh.commerce_order_audit audit WHERE audit.order_id=o.id AND audit.to_state=o.state ORDER BY audit.created_at DESC LIMIT 1),o.updated_at)
-		FROM dsh.commerce_orders o JOIN dsh.stores s ON s.id=o.store_id WHERE o.id=$1`+lockClause, orderID).Scan(&order.ClientActorID, &order.PartnerActorID, &order.State, &order.UpdatedAt)
+		FROM dsh.commerce_orders o JOIN dsh.stores s ON s.id=o.store_id WHERE o.id=$1`+lockClause, orderID).Scan(&order.StoreID, &order.ClientActorID, &order.PartnerActorID, &order.State, &order.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return orderConversationOrder{}, ErrOrderConversationNotFound
 	}
 	if err != nil {
 		return orderConversationOrder{}, err
 	}
-	if role == "client" && order.ClientActorID != actorID || role == "partner" && order.PartnerActorID != actorID {
+	if role == "client" && order.ClientActorID != actorID {
 		return orderConversationOrder{}, ErrOrderConversationForbidden
+	}
+	if role == "partner" && order.PartnerActorID != actorID {
+		// The Orders grant also authorizes delegated Partner staff to
+		// manage the Order. Keep its conversation under the same current
+		// active Store grant, not a separate owner-only permission model.
+		var allowed bool
+		if err := source.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM dsh.store_access_grants
+			WHERE store_id=$1 AND delegate_actor_id=$2 AND state='active' AND 'orders'=ANY(permissions))`, order.StoreID, actorID).Scan(&allowed); err != nil {
+			return orderConversationOrder{}, err
+		}
+		if !allowed {
+			return orderConversationOrder{}, ErrOrderConversationForbidden
+		}
 	}
 	if role == "captain" {
 		// Once operational delivery ends, chat and location are no longer

@@ -60,6 +60,52 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 			t.Fatalf("order readback lost the delivery-recipient snapshot: %+v err=%v", order.Recipient, err)
 		}
 
+		// Delegated Orders staff must share the owner conversation authority,
+		// but an inactive grant or a catalog-only grant must never expose it.
+		const staffID = "conversation-history-staff"
+		if _, err := postgres.ReadOrderConversation(ctx, db, orderID, staffID, "partner", 10); !errors.Is(err, postgres.ErrOrderConversationForbidden) {
+			t.Fatalf("ungranted Partner staff read Order conversation: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.store_access_grants
+			(id,store_id,owner_partner_actor_id,delegate_actor_id,permissions,state,version,expires_at,accepted_at)
+			VALUES('conversation-history-staff-grant',$1,'conversation-history-partner',$2,ARRAY['catalog'],'active',1,clock_timestamp()+interval '7 days',clock_timestamp())`, storeID, staffID); err != nil {
+			t.Fatalf("create delegated staff fixture: %v", err)
+		}
+		if _, err := postgres.ReadOrderConversation(ctx, db, orderID, staffID, "partner", 10); !errors.Is(err, postgres.ErrOrderConversationForbidden) {
+			t.Fatalf("catalog-only staff read Order conversation: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.store_access_grants SET permissions=ARRAY['orders']
+			WHERE id='conversation-history-staff-grant'`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := postgres.ReadOrderConversation(ctx, db, orderID, staffID, "partner", 10); err != nil {
+			t.Fatalf("Orders-authorized staff cannot read conversation: %v", err)
+		}
+		staffBody := "رسالة اختبار صلاحية الطلب"
+		staffMessage, staffReplay, err := postgres.SendOrderConversationMessage(ctx, db, orderID, staffID, "partner", staffBody,
+			"conversation-staff-message-key", postgres.HashOrderConversationMessageRequest(orderID, staffBody), "conversation-staff-correlation")
+		if err != nil || staffReplay {
+			t.Fatalf("Orders-authorized staff cannot send conversation message: replay=%t err=%v", staffReplay, err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.store_access_grants SET state='suspended'
+			WHERE id='conversation-history-staff-grant'`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := postgres.ReadOrderConversation(ctx, db, orderID, staffID, "partner", 10); !errors.Is(err, postgres.ErrOrderConversationForbidden) {
+			t.Fatalf("suspended staff can still read conversation: %v", err)
+		}
+		if _, _, err := postgres.SendOrderConversationMessage(ctx, db, orderID, staffID, "partner", staffBody,
+			"conversation-staff-suspended-key", postgres.HashOrderConversationMessageRequest(orderID, staffBody), "conversation-staff-suspended-correlation"); !errors.Is(err, postgres.ErrOrderConversationForbidden) {
+			t.Fatalf("suspended staff can still send conversation messages: %v", err)
+		}
+		if _, err := postgres.ReadOrderConversation(ctx, db, orderID, "ungranted-other-staff", "partner", 10); !errors.Is(err, postgres.ErrOrderConversationForbidden) {
+			t.Fatalf("foreign staff gained access through another person's grant: %v", err)
+		}
+		// Leave the existing bounded-history fixture untouched.
+		if _, err := db.ExecContext(ctx, "DELETE FROM dsh.commerce_order_conversation_messages WHERE id=$1", staffMessage.ID); err != nil {
+			t.Fatalf("remove temporary staff message from history fixture: %v", err)
+		}
+
 		const messageCount = 105
 		firstMessageID := ""
 		firstIdempotencyKey := ""
