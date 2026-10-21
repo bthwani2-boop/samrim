@@ -33,9 +33,11 @@ func newFieldFinanceValidationServer(t *testing.T) (*httptest.Server, *identityi
 		case r.Method == http.MethodGet && r.URL.Path == "/auth/session":
 			switch r.Header.Get("Authorization") {
 			case "Bearer field-session":
-				_ = json.NewEncoder(w).Encode(identityclient.ActorIdentity{Subject: "field-actor", Role: "field"})
+				_ = json.NewEncoder(w).Encode(identityclient.ActorIdentity{Subject: "field-actor", Role: "field", Surface: "app-field"})
+			case "Bearer wrong-field-surface":
+				_ = json.NewEncoder(w).Encode(identityclient.ActorIdentity{Subject: "field-actor", Role: "field", Surface: "app-client"})
 			case "Bearer partner-session":
-				_ = json.NewEncoder(w).Encode(identityclient.ActorIdentity{Subject: "partner-actor", Role: "partner"})
+				_ = json.NewEncoder(w).Encode(identityclient.ActorIdentity{Subject: "partner-actor", Role: "partner", Surface: "app-partner"})
 			default:
 				http.Error(w, `{"error":{"code":"UNAUTHENTICATED"}}`, http.StatusUnauthorized)
 			}
@@ -191,6 +193,7 @@ func TestFieldFinanceRequiresFieldSessionAndOperatorAuthority(t *testing.T) {
 	}{
 		{name: "field summary rejects missing session", path: "/dsh/fields/me/financial-summary", want: http.StatusUnauthorized},
 		{name: "field summary rejects another role", path: "/dsh/fields/me/financial-summary", auth: "Bearer partner-session", want: http.StatusForbidden},
+		{name: "field summary rejects token from another app", path: "/dsh/fields/me/financial-summary", auth: "Bearer wrong-field-surface", want: http.StatusForbidden},
 		{name: "operator summary rejects service unauthenticated", path: "/dsh/operator/fields/field-actor/financial-summary", auth: "Bearer invalid", acting: "operator", want: http.StatusUnauthorized},
 		{name: "operator summary requires actor", path: "/dsh/operator/fields/field-actor/financial-summary", auth: serviceToken, want: http.StatusBadRequest},
 		{name: "operator summary requires finance permission", path: "/dsh/operator/fields/field-actor/financial-summary", auth: serviceToken, acting: "restricted-operator", want: http.StatusForbidden},

@@ -503,6 +503,18 @@ func (s *BeneficiaryFinanceServer) requirePermission(w http.ResponseWriter, ctx 
 	return true
 }
 
+// Financial sessions must be issued for the application that owns the
+// authenticated actor role. A role alone never confers cross-app authority.
+func validOwnAppFinanceSession(identity identityclient.ActorIdentity) bool {
+	role := strings.ToLower(strings.TrimSpace(identity.Role))
+	return strings.TrimSpace(identity.Subject) != "" && identity.Surface == "app-"+role
+}
+
+func validBeneficiaryFinanceSession(identity identityclient.ActorIdentity) bool {
+	role := strings.ToLower(strings.TrimSpace(identity.Role))
+	return (role == "partner" || role == "captain" || role == "field") && validOwnAppFinanceSession(identity)
+}
+
 func (s *BeneficiaryFinanceServer) requireBeneficiarySession(w http.ResponseWriter, r *http.Request) (identityclient.ActorIdentity, bool) {
 	token := bearerToken(r)
 	if token == "" {
@@ -515,8 +527,8 @@ func (s *BeneficiaryFinanceServer) requireBeneficiarySession(w http.ResponseWrit
 		return identityclient.ActorIdentity{}, false
 	}
 	role := strings.ToLower(strings.TrimSpace(identity.Role))
-	if (role != "partner" && role != "captain" && role != "field") || strings.TrimSpace(identity.Subject) == "" {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active beneficiary session is required")
+	if !validBeneficiaryFinanceSession(identity) {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active beneficiary session on the matching app surface is required")
 		return identityclient.ActorIdentity{}, false
 	}
 	identity.Role = role
@@ -554,8 +566,8 @@ func (s *BeneficiaryFinanceServer) requireFundingSession(w http.ResponseWriter, 
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "Cash-In is admitted only for Customers and BThwani Captains")
 		return identityclient.ActorIdentity{}, "", false
 	}
-	if strings.TrimSpace(identity.Subject) == "" {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active wallet session is required")
+	if !validOwnAppFinanceSession(identity) {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active wallet session on the matching app surface is required")
 		return identityclient.ActorIdentity{}, "", false
 	}
 	identity.Role = role
