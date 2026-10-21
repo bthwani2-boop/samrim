@@ -79,7 +79,12 @@ export function CatalogTaxonomyWorkspace() {
       setCategories((old) => append ? [...old, ...body.categories] : body.categories);
       setNextCursor(body.nextCursor ?? "");
     } catch (cause) {
-      if (request === categoryRequest.current) setError(cause instanceof Error ? cause.message : "تعذّر تحميل فئات المنتجات.");
+      if (request !== categoryRequest.current) return;
+      if (!append) {
+        setCategories([]);
+        setNextCursor("");
+      }
+      setError(cause instanceof Error ? cause.message : "تعذّر تحميل فئات المنتجات.");
     }
   }, []);
 
@@ -97,7 +102,10 @@ export function CatalogTaxonomyWorkspace() {
       setTypes(typeBody.storeTypes);
       setShortcuts(shortcutBody.shortcuts);
     } catch (cause) {
-      if (request === scopeRequest.current) setError(cause instanceof Error ? cause.message : "تعذّر تحميل الأنواع والاختصارات.");
+      if (request !== scopeRequest.current) return;
+      setTypes([]);
+      setShortcuts([]);
+      setError(cause instanceof Error ? cause.message : "تعذّر تحميل الأنواع والاختصارات.");
     }
   }, []);
 
