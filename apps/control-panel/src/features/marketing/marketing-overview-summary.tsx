@@ -42,16 +42,18 @@ export function MarketingOverviewSummary() {
     { name: "العروض المتوقفة", value: summary.pausedPromotions },
     { name: "المحتوى المنشور الساري", value: summary.activeContent },
   ];
-  return <>
-    <div className="ops-summary-grid">
-      {counts.map(({ name, value }) => <div className="ops-summary" key={name}><span>{name}</span><strong>{value.toLocaleString("ar-YE")}</strong></div>)}
-    </div>
-    <p className="muted" role="note">إجماليات كاملة من سجلات DSH، وليست أعداد أول صفحة. تم احتساب حالات النشر عند {new Date(summary.asOf).toLocaleString("ar-YE")}؛ ولا تعني أهلية التمويل أو توافر المتجر.</p>
-    <div className="access-card">
-      <h2>تنبيهات تحتاج إجراءً</h2>
-      <p>لا يوفر الملخص الحالي عددًا موثوقًا لموافقات المتاجر. راجع الحملات التي تشترط موافقة الشريك؛ يتطلب عدّ المنتظرين تعريف المتاجر المؤهلة وحالة الرد لكل حملة.</p>
-      <Link className="button button-quiet" href="/marketing/promotions">مراجعة إعدادات موافقة الشريك في سجل العروض</Link>
-      <p>أخطاء النشر تُراجع من سجل كل محتوى أو عرض، ولا تُستنتج من عدد المسودات.</p>
-    </div>
-  </>;
+  const activeCounts = counts.filter(({ value }) => value > 0);
+  return <section className="marketing-overview-compact" aria-label="حالة التسويق">
+    {activeCounts.length > 0 ? <div className="marketing-overview-metrics">
+      {activeCounts.map(({ name, value }) => <div className="marketing-overview-metric" key={name}>
+        <span>{name}</span><strong>{value.toLocaleString("ar-YE")}</strong>
+      </div>)}
+    </div> : <p className="muted">لا توجد عروض أو مواد منشورة أو مسودات في الإجماليات الحالية.</p>}
+    <details className="marketing-overview-source">
+      <summary>عن الأرقام والمتابعة</summary>
+      <p>الإجماليات من سجلات DSH حتى {new Date(summary.asOf).toLocaleString("ar-YE")}، وليست من الصفحة الأولى. لا تثبت أهلية التمويل أو توافر المتجر.</p>
+      <p>عدد موافقات الشركاء غير متاح على مستوى الإجماليات؛ يجب مراجعة كل حملة في سجل العروض. أخطاء النشر تظهر في سجلاتها.</p>
+      <Link href="/marketing/promotions">سجل العروض وموافقة الشركاء</Link>
+    </details>
+  </section>;
 }

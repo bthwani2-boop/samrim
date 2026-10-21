@@ -261,7 +261,7 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
     <section className="work-stack" aria-labelledby="cash-custody-title">
       <div className="section-heading">
         <h2 id="cash-custody-title">النقد المحصل عند التسليم</h2>
-        <button type="button" className="button button-secondary" onClick={() => void loadRegistry()} disabled={loading}>{loading ? "جارٍ القراءة…" : "تحديث"}</button>
+
       </div>
 
       {registry ? <div className="finance-summary-grid" aria-busy={loading}>

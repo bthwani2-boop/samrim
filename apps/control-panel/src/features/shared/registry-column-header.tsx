@@ -69,7 +69,7 @@ export function RegistryColumnHeader({
           reposition();
         }
       }}>
-      <summary aria-controls={popoverId} title={"بحث أو تصفية أو ترتيب: " + label}>
+      <summary aria-controls={open && position ? popoverId : undefined} title={"بحث أو تصفية أو ترتيب: " + label}>
         <span>{label}</span>
         <span className="registry-column-arrow" aria-hidden="true">⌄</span>
         {active ? <span className="registry-column-active-mark" aria-hidden="true">•</span> : null}

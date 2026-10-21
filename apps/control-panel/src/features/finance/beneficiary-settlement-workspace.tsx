@@ -692,7 +692,7 @@ export function BeneficiarySettlementWorkspace({ actorType, initialQuery }: Bene
     else void transferAction(pending.action, pending.statementRowId ?? "");
   };
   return <section className="beneficiary-settlement-workspace" aria-labelledby="beneficiary-settlement-title">
-    <div className="finance-toolbar"><div><h2 id="beneficiary-settlement-title">{actorType === "field" ? "مستحقات الميداني" : "مستحقات وتسويات الشركاء والكباتن والميدان"}</h2></div>{actorType !== "field" ? <button className="button button-secondary" type="button" onClick={() => void read({ status, search, sort, cursor })} disabled={registryLoading}>{registryLoading ? "جارٍ التحديث…" : "تحديث السجل"}</button> : null}</div>
+    <div className="finance-toolbar"><div><h2 id="beneficiary-settlement-title">{actorType === "field" ? "مستحقات الميداني" : "مستحقات وتسويات الشركاء والكباتن والميدان"}</h2></div>{registryError ? <button className="button button-secondary" type="button" onClick={() => void read({ status, search, sort, cursor })} disabled={registryLoading}>إعادة محاولة القراءة</button> : null}</div>
     {actorType === "field" ? <>
       <p className="panel">الميداني مؤهل للاستحقاق بمجرد تفعيله. تُسجّل مكافأة كل متجر تلقائيًا بعد ظهوره للعملاء.</p>
       {registryLoading ? <p className="facts-grid" role="status">جارٍ تحميل سجل المستحقات…</p> : registryError ? <p className="facts-grid">ملخص الصفحة غير متاح حتى ينجح تحميل السجل.</p> : <>
