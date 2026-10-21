@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { formatMoney } from "@bthwani/dsh";
 import { OfficialWalletDestinationManager } from "./official-wallet-destination-manager";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 type Intake = Readonly<{
   id: string; actorType: "partner" | "captain" | "field"; actorId: string;
@@ -15,6 +16,12 @@ const actorLabels = { partner: "شريك", captain: "كابتن", field: "ميد
 // First-class Finance inbox: admission is not a payout and never implies a transfer.
 export function SettlementIntakeInbox() {
   const [items, setItems] = useState<readonly Intake[]>([]);
+  const [actorTypeFilter,setActorTypeFilter]=useState("all");
+  const [amountFilter,setAmountFilter]=useState("");
+  const visibleItems=items.filter((item)=>
+    (actorTypeFilter==="all"||item.actorType===actorTypeFilter)
+    && (!amountFilter.trim() || formatMoney(item.resolvedAmountMinor,item.currency).includes(amountFilter.trim()))
+  );
   const [busyId, setBusyId] = useState<string | null>(null);
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
@@ -76,9 +83,20 @@ export function SettlementIntakeInbox() {
     {error ? <div role="alert" className="identity-error">{error} <button type="button" className="button button-secondary" disabled={loading || busyId !== null} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
     {notice ? <p role="status" className="managed-status managed-status-info">{notice}</p> : null}
     {!loading && items.length === 0 ? <p className="muted">لا توجد طلبات تسوية جديدة.</p> : null}
+    {items.length>0&&(actorTypeFilter!=="all"||amountFilter.trim())?<p className="access-center-scope">معروض من قائمة الطلبات الواردة: {visibleItems.length} من {items.length} · تصفية محلية.</p>:null}
     {items.length > 0 ? <div className="finance-table-wrap"><table className="finance-table">
-      <thead><tr><th>المستفيد</th><th>المبلغ</th><th>الحالة</th><th>الإجراء</th></tr></thead>
-      <tbody>{items.map((item) => <Fragment key={item.id}><tr>
+      <thead><tr>
+        <RegistryColumnHeader label="المستفيد" scope="page" active={actorTypeFilter!=="all"}>
+          <label>نوع المستفيد<select value={actorTypeFilter} onChange={e=>setActorTypeFilter(e.target.value)}>
+            <option value="all">الجميع</option><option value="partner">شريك</option><option value="captain">كابتن</option><option value="field">ميداني</option>
+          </select></label>
+        </RegistryColumnHeader>
+        <RegistryColumnHeader label="المبلغ" scope="page" active={Boolean(amountFilter)}>
+          <label>بحث في المبلغ المعروض<input type="search" inputMode="numeric" value={amountFilter} onChange={e=>setAmountFilter(e.target.value)} /></label>
+        </RegistryColumnHeader>
+        <th scope="col">الحالة</th><th scope="col">الإجراء</th>
+      </tr></thead>
+      <tbody>{visibleItems.map((item) => <Fragment key={item.id}><tr>
         <td>{actorLabels[item.actorType]}</td>
         <td>{formatMoney(item.resolvedAmountMinor, item.currency)}{item.actorType === "partner" ? <small> · {item.storeAllocations.length} متجر</small> : null}</td>
         <td>بانتظار مراجعة المالية</td>
@@ -96,7 +114,7 @@ export function SettlementIntakeInbox() {
             <OfficialWalletDestinationManager key={item.id} actorType={item.actorType} actorId={item.actorId} initiallyExpanded />
           </div>
         </td>
-      </tr> : null}</Fragment>)}
+      </tr> : null}</Fragment>)}{visibleItems.length===0?<tr><td colSpan={4}>لا توجد طلبات مطابقة ضمن القائمة المحمّلة.</td></tr>:null}
     </tbody>
     </table></div> : null}
   </section>;

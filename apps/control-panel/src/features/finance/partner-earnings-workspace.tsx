@@ -14,6 +14,7 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWalletProviders, walletProviderLabel } from "../wallet-provider/use-wallet-providers";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 export type PartnerEarningsInitialQuery = Readonly<{
   cursor: string;
@@ -119,6 +120,14 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
   const pendingByPartner = useRef(new Map<string, PendingRemittance>());
   const activePartnerActorId = useRef(initialQuery.partnerActorId);
   const [items, setItems] = useState<PartnerCommissionReceivableRegistryResponse["items"]>([]);
+  const [nameFilter,setNameFilter]=useState("");
+  const [profileFilter,setProfileFilter]=useState("");
+  const [amountFilter,setAmountFilter]=useState("");
+  const visibleItems=items.filter(item=>
+    (!nameFilter.trim()||(item.businessName??"").toLocaleLowerCase().includes(nameFilter.trim().toLocaleLowerCase()))
+    && (!profileFilter.trim()||financialProfileStateLabel(item.profileState as PartnerFinancialSummary["profileState"]).includes(profileFilter.trim()))
+    && (!amountFilter.trim()||formatMoney(item.outstandingCommissionReceivableMinor,item.currency).includes(amountFilter.trim()))
+  );
   const [nextCursor, setNextCursor] = useState("");
   const [registryLoading, setRegistryLoading] = useState(true);
   const [summary, setSummary] = useState<PartnerFinancialSummary | null>(null);
@@ -366,13 +375,24 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
       </header>
 
       {error ? <p className="state-error" role="alert">{error}</p> : null}
-      <p className="muted" aria-live="polite">سجلات الصفحة الحالية: {items.length.toLocaleString("ar-YE")}{registryLoading ? " · جارٍ التحديث" : ""}</p>
+      <p className="muted" aria-live="polite">سجلات الصفحة الحالية: {items.length.toLocaleString("ar-YE")}{nameFilter||profileFilter||amountFilter ? " · معروض من الصفحة " + visibleItems.length : ""}{registryLoading ? " · جارٍ التحديث" : ""}</p>
 
       <div className="table-wrap">
         <table className="data-table">
           <caption className="sr-only">سجل أرصدة عمولات الشركاء المفتوحة</caption>
-          <thead><tr><th scope="col">الشريك</th><th scope="col">حالة الملف المالي</th><th scope="col">المبلغ المستحق</th><th scope="col">التفاصيل</th></tr></thead>
-          <tbody>{items.map((item) => {
+          <thead><tr>
+            <RegistryColumnHeader label="الشريك" scope="page" active={Boolean(nameFilter)}>
+              <label>اسم الشريك<input type="search" value={nameFilter} onChange={e=>setNameFilter(e.target.value)} /></label>
+            </RegistryColumnHeader>
+            <RegistryColumnHeader label="حالة الملف المالي" scope="page" active={Boolean(profileFilter)}>
+              <label>حالة الملف<input type="search" value={profileFilter} onChange={e=>setProfileFilter(e.target.value)} /></label>
+            </RegistryColumnHeader>
+            <RegistryColumnHeader label="المبلغ المستحق" scope="page" active={Boolean(amountFilter)}>
+              <label>بحث في المبلغ المعروض<input type="search" inputMode="numeric" value={amountFilter} onChange={e=>setAmountFilter(e.target.value)} /></label>
+            </RegistryColumnHeader>
+            <th scope="col">التفاصيل</th>
+          </tr></thead>
+          <tbody>{visibleItems.map((item) => {
             const displayName = item.businessName?.trim() || "شريك بثواني";
             const accessibleName = [displayName, item.partnerPhoneMasked?.trim()].filter(Boolean).join("، ");
             return <tr key={item.partnerActorId}>
@@ -381,7 +401,7 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
               <td>{formatMoney(item.outstandingCommissionReceivableMinor, item.currency)}</td>
               <td><button className="button button-quiet" type="button" onClick={() => navigate({ cursor: initialQuery.cursor, partnerActorId: item.partnerActorId })} aria-label={`فتح مستحقات ${accessibleName}`}>فتح التفاصيل</button></td>
             </tr>;
-          })}</tbody>
+          })}{items.length>0&&visibleItems.length===0?<tr><td colSpan={4}>لا توجد مطابقة ضمن مستحقات الصفحة الحالية.</td></tr>:null}</tbody>
         </table>
         {!registryLoading && items.length === 0 ? <p className="state-message">لا توجد مستحقات مفتوحة مطابقة لهذا البحث.</p> : null}
       </div>
