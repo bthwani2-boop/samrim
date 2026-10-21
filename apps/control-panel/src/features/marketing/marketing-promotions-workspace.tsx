@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { MarketingPromotionSettlementReadback } from "./marketing-promotion-settlement-readback";
 import { MarketingStateIndicator } from "./marketing-state-indicator";
 import { apiMessage, clearPendingMarketingCreate, dateTimeLocalValue, emptyPromotionForm, futureDateInput, type MarketingTargetOption, type PendingPromotionCreate, type PromotionFormState, type PromotionTargetKind, persistMarketingCreate, promotionTargetSummary, readActiveServiceCities, readPendingPromotionCreate, readPromotionById } from "./marketing-workspace";
@@ -21,6 +22,13 @@ export function MarketingPromotionsWorkspace() {
   const [appliedSearch, setAppliedSearch] = useState("");
   const [state, setState] = useState("");
   const [sort, setSort] = useState<"starts_desc" | "starts_asc">("starts_desc");
+  const [discountKind, setDiscountKind] = useState("all");
+  const [fundingFilter, setFundingFilter] = useState("all");
+  const pageFiltered = discountKind !== "all" || fundingFilter !== "all";
+  const visiblePromotions = (registry?.promotions ?? []).filter((item) =>
+    (discountKind === "all" || item.kind === discountKind)
+    && (fundingFilter === "all" || item.fundingSource === fundingFilter)
+  );
   const [cursor, setCursor] = useState("");
   const [cursorStack, setCursorStack] = useState<ReadonlyArray<string>>([]);
   const [loading, setLoading] = useState(false);
@@ -497,7 +505,37 @@ export function MarketingPromotionsWorkspace() {
           <label className="field-label" htmlFor="promotion-sort">ترتيب البداية<select id="promotion-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="starts_desc">الأحدث بداية</option><option value="starts_asc">الأقدم بداية</option></select></label>
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
         </form>
-        {registry?.promotions.length ? <div className="table-wrap"><table className="data-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr><th scope="col">العرض</th><th scope="col">الرمز</th><th scope="col">القيمة</th><th scope="col">التمويل والنطاق</th><th scope="col">الحالة</th><th scope="col">البداية</th><th scope="col">الإجراء</th></tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}</th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? item.valueMinor + "%" : formatMoney(item.valueMinor, "YER")}</td><td>{item.fundingSource === "SHARED" ? "مشترك · حصة الشريك " + (item.fundingSharePartnerPercent ?? 0) + "%" : item.fundingSource === "BTHWANI" ? "بثواني" : "الشريك"}<br />{item.storeId ? "متجر محدد" : item.serviceCityId ? "حملة مدينة" : "حملة منصة"}{item.requiresPartnerOptIn ? " · تتطلب موافقة" : ""}<br />{promotionTargetSummary(item)}{item.minOrderSubtotalMinor ? <><br />حد الطلب {formatMoney(item.minOrderSubtotalMinor, "YER")}</> : null}{item.discountBudgetLimitMinor ? <><br />سقف الخصومات: {formatMoney(item.discountBudgetLimitMinor, "YER")} · مستخدم: {formatMoney(item.discountSpentMinor ?? 0, "YER")}</> : null}</td><td><MarketingStateIndicator state={item.state} /></td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className="action-row">{item.state === "ENDED" ? <span className="muted">لا إجراء</span> : <button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button>}{item.state === "PUBLISHED" ? <Link className="button button-quiet" href={`/marketing/content?promotionId=${encodeURIComponent(item.id)}`}>إنشاء بنر للعرض</Link> : null}{canReadFinance ? <MarketingPromotionSettlementReadback promotionId={item.id} /> : null}</div></td></tr>)}</tbody></table></div> : null}
+        {registry && pageFiltered ? <p className="access-center-scope">معروض من الصفحة: {visiblePromotions.length} من {registry.promotions.length} عرضًا. مرشحات القيمة والتمويل تخص الصفحة الحالية.</p> : null}
+        {registry?.promotions.length ? <div className="table-wrap"><table className="data-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr>
+          <RegistryColumnHeader label="العرض" active={Boolean(appliedSearch)}>
+            <form onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0,128)); setCursor(""); setCursorStack([]); }}>
+              <label>الاسم أو الرمز<input type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+              <button type="submit" disabled={loading}>بحث</button>
+            </form>
+          </RegistryColumnHeader>
+          <th scope="col">الرمز</th>
+          <RegistryColumnHeader label="القيمة" scope="page" active={discountKind !== "all"}>
+            <label>نوع الخصم<select value={discountKind} onChange={(event) => setDiscountKind(event.target.value)}>
+              <option value="all">كل الأنواع</option><option value="PERCENTAGE">نسبة مئوية</option><option value="FIXED">مبلغ ثابت</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="التمويل والنطاق" scope="page" active={fundingFilter !== "all"}>
+            <label>جهة التمويل<select value={fundingFilter} onChange={(event) => setFundingFilter(event.target.value)}>
+              <option value="all">الجميع</option><option value="SHARED">مشترك</option><option value="BTHWANI">بثواني</option><option value="PARTNER">الشريك</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="الحالة" active={Boolean(state)}>
+            <label>حالة العرض<select value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}>
+              <option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option><option value="ENDED">منتهٍ</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="البداية" active={sort === "starts_asc"}>
+            <label>ترتيب البداية<select value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}>
+              <option value="starts_desc">الأحدث أولًا</option><option value="starts_asc">الأقدم أولًا</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <th scope="col">الإجراء</th>
+        </tr></thead><tbody>{visiblePromotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}</th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? item.valueMinor + "%" : formatMoney(item.valueMinor, "YER")}</td><td>{item.fundingSource === "SHARED" ? "مشترك · حصة الشريك " + (item.fundingSharePartnerPercent ?? 0) + "%" : item.fundingSource === "BTHWANI" ? "بثواني" : "الشريك"}<br />{item.storeId ? "متجر محدد" : item.serviceCityId ? "حملة مدينة" : "حملة منصة"}{item.requiresPartnerOptIn ? " · تتطلب موافقة" : ""}<br />{promotionTargetSummary(item)}{item.minOrderSubtotalMinor ? <><br />حد الطلب {formatMoney(item.minOrderSubtotalMinor, "YER")}</> : null}{item.discountBudgetLimitMinor ? <><br />سقف الخصومات: {formatMoney(item.discountBudgetLimitMinor, "YER")} · مستخدم: {formatMoney(item.discountSpentMinor ?? 0, "YER")}</> : null}</td><td><MarketingStateIndicator state={item.state} /></td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className="action-row">{item.state === "ENDED" ? <span className="muted">لا إجراء</span> : <button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button>}{item.state === "PUBLISHED" ? <Link className="button button-quiet" href={`/marketing/content?promotionId=${encodeURIComponent(item.id)}`}>إنشاء بنر للعرض</Link> : null}{canReadFinance ? <MarketingPromotionSettlementReadback promotionId={item.id} /> : null}</div></td></tr>)}{visiblePromotions.length === 0 ? <tr><td colSpan={7}>لا توجد عروض مطابقة في الصفحة الحالية.</td></tr> : null}</tbody></table></div> : null}
         {!registry?.promotions.length && loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة العروض…</p> : null}
         {registry && !registry.promotions.length && !loading && !registryError ? <p className="collection-state">لا توجد عروض مطابقة.</p> : null}
         <nav className="pagination" aria-label="صفحات سجل العروض"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>

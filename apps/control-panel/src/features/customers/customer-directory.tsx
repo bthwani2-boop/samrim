@@ -7,6 +7,7 @@ import { identityFetch } from "../../session/identity-fetch";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { CustomerProfile } from "./customer-profile";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 const pageSize = 20;
 const customerStatus = (customer: ActorRoleView) =>
@@ -22,6 +23,9 @@ export function CustomerDirectory() {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [state, setState] = useState("");
+  const [securityFilter, setSecurityFilter] = useState("all");
+  const [activityFilter, setActivityFilter] = useState("all");
+  const [pageSort, setPageSort] = useState("default");
   const [items, setItems] = useState<ReadonlyArray<ActorRoleView>>([]);
   const [cursor, setCursor] = useState("");
   const [history, setHistory] = useState<string[]>([]);
@@ -31,6 +35,16 @@ export function CustomerDirectory() {
   const [ready, setReady] = useState(false);
   const [revision, setRevision] = useState(0);
   const [selectedCustomer, setSelectedCustomer] = useState("");
+  const visibleItems = items.filter((customer) =>
+    (securityFilter === "all" || (securityFilter === "blocked" ? !customer.securityEnabled : customer.securityEnabled))
+    && (activityFilter === "all" || (activityFilter === "opened" ? Boolean(customer.lastAppOpenedAt ?? customer.lastAuthenticatedAt) : !customer.lastAppOpenedAt && !customer.lastAuthenticatedAt))
+  ).sort((a,b) => {
+    if (pageSort === "default") return 0;
+    const left = a.createdAt ? Date.parse(a.createdAt) : 0;
+    const right = b.createdAt ? Date.parse(b.createdAt) : 0;
+    return (pageSort === "oldest" ? 1 : -1) * (left - right);
+  });
+  const pageFiltersActive = securityFilter !== "all" || activityFilter !== "all" || pageSort !== "default";
   const requestId = useRef(0);
 
   const navigate = useCallback((q: string, enabled: string, pageCursor = "", stack: string[] = []) => {
@@ -135,9 +149,36 @@ export function CustomerDirectory() {
       <button type="button" className="button button-secondary" onClick={() => setRevision((v) => v + 1)}>إعادة المحاولة</button></div> : null}
     {loading && !items.length ? <div role="status" className="collection-state">جارٍ تحميل العملاء…</div> : null}
     {!loading && !error && !items.length ? <div className="collection-state"><strong>لا توجد حسابات مطابقة</strong><p>غيّر البحث أو الحالة.</p></div> : null}
+    {pageFiltersActive && items.length > 0 ? <p className="access-center-scope">معروض من الصفحة: {visibleItems.length} من {items.length} · مرشحات الأعمدة المحلية تخص الصفحة الحالية.</p> : null}
     {items.length > 0 ? <div className="customer-directory-table-wrap"><table className="operations-table customer-directory-table">
-      <thead><tr><th>العميل</th><th>الحساب</th><th>آخر استخدام</th><th>تاريخ الانضمام</th><th>الملف</th></tr></thead>
-      <tbody>{items.map((item) => <tr key={item.actorId}>
+      <thead><tr>
+        <RegistryColumnHeader label="العميل" active={Boolean(query)}>
+          <form onSubmit={(event) => { event.preventDefault(); navigate(search.trim(), state); }}>
+            <label>رقم الهاتف أو معرف العميل<input type="search" maxLength={100} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+            <button type="submit">بحث</button>
+          </form>
+        </RegistryColumnHeader>
+        <RegistryColumnHeader label="الحساب" active={Boolean(state || securityFilter !== "all")}>
+          <label>حالة الحساب<select value={state} onChange={(event) => navigate(query, event.target.value)}>
+            <option value="">جميع الحالات</option><option value="true">مفعّل</option><option value="false">موقوف</option>
+          </select></label>
+          <label>الحظر الأمني · الصفحة الحالية<select value={securityFilter} onChange={(event) => setSecurityFilter(event.target.value)}>
+            <option value="all">الكل</option><option value="blocked">محظور أمنيًا</option><option value="unblocked">غير محظور</option>
+          </select></label>
+        </RegistryColumnHeader>
+        <RegistryColumnHeader label="آخر استخدام" scope="page" active={activityFilter !== "all"}>
+          <label>نشاط العميل<select value={activityFilter} onChange={(event) => setActivityFilter(event.target.value)}>
+            <option value="all">الجميع</option><option value="opened">سبق استخدام التطبيق</option><option value="never">لم يُسجّل استخدام</option>
+          </select></label>
+        </RegistryColumnHeader>
+        <RegistryColumnHeader label="تاريخ الانضمام" scope="page" active={pageSort !== "default"}>
+          <label>الترتيب<select value={pageSort} onChange={(event) => setPageSort(event.target.value)}>
+            <option value="default">الترتيب الأصلي</option><option value="newest">الأحدث أولًا</option><option value="oldest">الأقدم أولًا</option>
+          </select></label>
+        </RegistryColumnHeader>
+        <th scope="col">الملف</th>
+      </tr></thead>
+      <tbody>{visibleItems.map((item) => <tr key={item.actorId}>
         <th scope="row"><span className="customer-name-cell"><span className="customer-avatar" aria-hidden="true">ع</span>
           <span><strong>{item.fullNameAr || "عميل بثواني"}</strong><bdi dir="ltr">{item.phoneE164}</bdi></span></span></th>
         <td><span className="customer-state-pill" data-state={!item.securityEnabled || !item.enabled ? "off" : "on"}>{customerStatus(item)}</span></td>
@@ -145,10 +186,10 @@ export function CustomerDirectory() {
         <td>{dateText(item.createdAt)}</td>
         <td><button type="button" className="partner-row-action" aria-label={`فتح ملف ${item.fullNameAr || item.phoneE164}`}
           onClick={() => selectCustomer(item.actorId)}>فتح الملف ←</button></td>
-      </tr>)}</tbody>
+      </tr>)}{visibleItems.length === 0 ? <tr><td colSpan={5}>لا توجد نتائج مطابقة في هذه الصفحة.</td></tr> : null}</tbody>
     </table></div> : null}
     {items.length > 0 ? <ul className="customer-directory-cards" aria-label="العملاء في الصفحة الحالية">
-      {items.map((item) => <li key={item.actorId} className="customer-directory-card">
+      {visibleItems.map((item) => <li key={item.actorId} className="customer-directory-card">
         <div className="customer-directory-card-head">
           <div className="customer-directory-card-name"><strong>{item.fullNameAr || "عميل بثواني"}</strong><bdi dir="ltr">{item.phoneE164}</bdi></div>
           <span className="customer-state-pill" data-state={!item.securityEnabled || !item.enabled ? "off" : "on"}>{customerStatus(item)}</span>
