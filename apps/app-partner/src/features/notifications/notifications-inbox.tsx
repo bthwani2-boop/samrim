@@ -9,12 +9,8 @@ import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySe
 
 const copy = {
   accessibilityLabel: "إشعارات الشريك",
-  eyebrow: "مركز تنبيهات المتجر",
-  description: "تابع تحديثات متجرك وطلباتك في قائمة واضحة ومنظمة.",
   unauthenticatedTitle: "سجّل الدخول لقراءة تحديثات متجرك",
   unauthenticatedDescription: "ستظهر هنا تحديثات المتجر والطلبات بعد تسجيل الدخول.",
-  unreadDescription: "ابدأ بالأحدث لتبقى على اطلاع بحالة طلبات متجرك.",
-  readDescription: "أنت على اطلاع بكل تحديثات متجرك وطلباتك.",
 };
 
 function dshClient() {
@@ -126,9 +122,7 @@ export function NotificationsInbox() {
     <View style={styles.container} accessibilityLabel={copy.accessibilityLabel}>
       <View style={styles.screenHeader}>
         <View style={styles.headingCopy}>
-          <Text style={styles.eyebrow}>{copy.eyebrow}</Text>
           <Text style={styles.title}>الإشعارات</Text>
-          <Text style={styles.description}>{copy.description}</Text>
         </View>
         <BthwaniIconButton icon="back" label="العودة" onPress={() => router.back()} size={sizing.controlSm} tone="soft" />
       </View>
@@ -158,8 +152,7 @@ export function NotificationsInbox() {
           <BthwaniSurface tone="raised" style={styles.summary}>
             <View style={styles.summaryIcon}><BthwaniIcon name="notifications" color={theme.interactiveText} size={sizing.iconLg} /></View>
             <View style={styles.summaryCopy}>
-              <Text style={styles.summaryTitle}>{unreadCount} إشعارات غير مقروءة</Text>
-              <Text style={styles.muted}>{unreadCount ? copy.unreadDescription : copy.readDescription}</Text>
+              <Text style={styles.summaryTitle}>{unreadCount === 0 ? "لا توجد إشعارات جديدة" : unreadCount === 1 ? "إشعار واحد غير مقروء" : unreadCount === 2 ? "إشعاران غير مقروءين" : `${unreadCount} إشعارات غير مقروءة`}</Text>
             </View>
           </BthwaniSurface>
           {unreadItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>الجديدة</Text><Text style={styles.groupCount}>{unreadItems.length}</Text></View><View style={styles.list}>{unreadItems.map(renderItem)}</View></View> : null}

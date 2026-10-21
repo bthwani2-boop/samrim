@@ -1268,7 +1268,7 @@ paths:
         - name: actionableOnly
           in: query
           required: false
-          description: When true, restricts the list to orders whose canonical state and current assignment allow an operator action.
+          description: When true, restricts the list to orders needing operator attention, including dispatch or recovery actions and early fulfillment states stalled for at least 30 minutes. A stalled order may require review without authorizing an automatic transition.
           schema:
             type: boolean
             default: false

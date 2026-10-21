@@ -264,5 +264,35 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil || thirdSuccess.CustomerSuccessfulOrdersCount != 3 || thirdSuccess.SuccessfulOrderOrdinal != 3 {
 			t.Fatalf("third confirmed success must be ranked and bounded: %+v err=%v", thirdSuccess, err)
 		}
+
+		// Old orders awaiting the partner must be visible for operator review,
+		// but recent work and completed orders must not pollute the queue.
+		for _, fixture := range []struct {
+			id    string
+			state string
+			age   time.Duration
+		}{
+			{"operator_review_stalled", "PREPARING", -90 * time.Minute},
+			{"operator_review_recent", "PREPARING", -5 * time.Minute},
+			{"operator_review_terminal", "DELIVERED", -90 * time.Minute},
+		} {
+			cartID := "cart_" + fixture.id
+			if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES($1,$2,$3,'checked_out',1)", cartID, "client_operator_ops", "store_operator_ops"); err != nil {
+				t.Fatalf("insert review cart %s: %v", fixture.id, err)
+			}
+			changedAt := time.Now().UTC().Add(fixture.age)
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,payment_cash_amount_minor,currency,version,created_at,updated_at)
+				VALUES($1,$2,$3,$4,$5,1,$6,15.3694457,44.1910064,$7,'CITY_SCOPE_V1','SERVICEABLE',1,1,$8,1800,1800,'YER',1,$9,$9)`, fixture.id, "client_operator_ops", "store_operator_ops", cartID, "address_"+fixture.id, "عنوان الاختبار", "sanaa_operator_ops", fixture.state, changedAt); err != nil {
+				t.Fatalf("insert review order %s: %v", fixture.id, err)
+			}
+		}
+		stalled, err := postgres.ListOrdersForOperator(ctx, db, "", "operator_review_", "updated_desc", true, 10, "")
+		if err != nil || len(stalled.Operations) != 1 || stalled.Operations[0].OrderID != "operator_review_stalled" || stalled.Summary.ActionableCount != 1 {
+			t.Fatalf("stalled order must be reviewable without exposing recent or terminal orders: %+v err=%v", stalled, err)
+		}
+		allReview, err := postgres.ListOrdersForOperator(ctx, db, "", "operator_review_", "updated_desc", false, 10, "")
+		if err != nil || len(allReview.Operations) != 3 || allReview.Summary.ActionableCount != 1 {
+			t.Fatalf("review counts must use the same eligibility predicate: %+v err=%v", allReview, err)
+		}
 	})
 }

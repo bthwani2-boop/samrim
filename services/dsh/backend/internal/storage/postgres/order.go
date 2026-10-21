@@ -676,7 +676,10 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		args = append(args, state)
 		where += " AND o.state=$" + strconv.Itoa(len(args))
 	}
-	const actionable = "(o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed'))"
+	// The operations attention queue includes stalled early fulfillment states, even
+	// when no automatic state transition is safe. Read-only review must not depend
+	// on an available dispatch action; terminal and customer-pickup states stay out.
+	const actionable = "(o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed') OR (o.state IN ('CREATED','PARTNER_ACCEPTED','PREPARING') AND o.updated_at <= statement_timestamp() - interval '30 minutes'))"
 	if actionableOnly {
 		where += " AND " + actionable
 	}
