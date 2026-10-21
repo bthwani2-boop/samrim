@@ -23,6 +23,7 @@ export function OperatorNotifications() {
   const [cursor, setCursor] = useState("");
   const [cursorStack, setCursorStack] = useState<ReadonlyArray<string>>([]);
   const [nextCursor, setNextCursor] = useState("");
+  const [visibleLimit, setVisibleLimit] = useState(10);
   const [routeStateReady, setRouteStateReady] = useState(false);
   const requestSequence = useRef(0);
   const readMutationInFlight = useRef(false);
@@ -33,6 +34,7 @@ export function OperatorNotifications() {
       const history = window.history.state as NotificationHistory | null;
       setCursor(params.get("cursor") ?? "");
       setCursorStack(history?.operatorNotificationCursors ?? []);
+      setVisibleLimit(10);
     };
     syncPageFromUrl();
     setRouteStateReady(true);
@@ -88,6 +90,7 @@ export function OperatorNotifications() {
     window.history.pushState({ ...historyState, operatorNotificationCursors: pageStack }, "", `${url.pathname}${url.search}${url.hash}`);
     setCursor(pageCursor);
     setCursorStack(pageStack);
+    setVisibleLimit(10);
   }
 
   async function markRead(item: Notification) {
@@ -117,8 +120,7 @@ export function OperatorNotifications() {
     }
   }
 
-  const [visibleLimit, setVisibleLimit] = useState(10);
-  useEffect(() => setVisibleLimit(10), [cursor]);
+
   const unreadItems = useMemo(() => items.filter((item) => !item.readAt), [items]);
   const readItems = useMemo(() => items.filter((item) => Boolean(item.readAt)), [items]);
   const visibleUnread = unreadItems.slice(0, visibleLimit);
