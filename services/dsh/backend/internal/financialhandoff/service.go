@@ -73,7 +73,7 @@ func (s *Service) apply(ctx context.Context, item postgres.FinancialHandoffOutbo
 		if cashAmount != item.AmountMinor {
 			return errors.New("DSH delivery outbox cash amount differs from the order payment allocation")
 		}
-		intent, err := s.wlt.EnsureCollected(ctx, item.PaymentIntentID, item.CaptainActorID, wltintegration.DerivedExternalReference("cash", item.IdempotencyKey), customerPayable, wltintegration.DerivedIdempotencyKey("collect", item.IdempotencyKey), item.CorrelationID)
+		intent, err := s.wlt.EnsureCollected(ctx, item.PaymentIntentID, wltintegration.MethodCashOnDelivery, item.CaptainActorID, wltintegration.DerivedExternalReference("cash", item.IdempotencyKey), customerPayable, wltintegration.DerivedIdempotencyKey("collect", item.IdempotencyKey), item.CorrelationID)
 		if err != nil {
 			return fmt.Errorf("collect COD: %w", err)
 		}
@@ -97,7 +97,7 @@ func (s *Service) apply(ctx context.Context, item postgres.FinancialHandoffOutbo
 		if cashAmount != item.AmountMinor {
 			return errors.New("DSH pickup outbox cash amount differs from the order payment allocation")
 		}
-		intent, err := s.wlt.EnsureCollected(ctx, item.PaymentIntentID, item.PartnerActorID, wltintegration.DerivedExternalReference("store-pickup-cash", item.IdempotencyKey), customerPayable, wltintegration.DerivedIdempotencyKey("store-pickup-collect", item.IdempotencyKey), item.CorrelationID)
+		intent, err := s.wlt.EnsureCollected(ctx, item.PaymentIntentID, wltintegration.MethodCashAtStore, item.PartnerActorID, wltintegration.DerivedExternalReference("store-pickup-cash", item.IdempotencyKey), customerPayable, wltintegration.DerivedIdempotencyKey("store-pickup-collect", item.IdempotencyKey), item.CorrelationID)
 		if err != nil {
 			return fmt.Errorf("collect store pickup cash: %w", err)
 		}
@@ -116,7 +116,7 @@ func (s *Service) apply(ctx context.Context, item postgres.FinancialHandoffOutbo
 		if cashAmount != item.AmountMinor || cashAmount == 0 {
 			return errors.New("DSH Store Captain outbox must match a positive cash allocation")
 		}
-		intent, err := s.wlt.EnsureCollected(ctx, item.PaymentIntentID, item.PartnerActorID, wltintegration.DerivedExternalReference("store-captain-cash", item.IdempotencyKey), customerPayable, wltintegration.DerivedIdempotencyKey("store-captain-cash-collect", item.IdempotencyKey), item.CorrelationID)
+		intent, err := s.wlt.EnsureCollected(ctx, item.PaymentIntentID, wltintegration.MethodCashAtStore, item.PartnerActorID, wltintegration.DerivedExternalReference("store-captain-cash", item.IdempotencyKey), customerPayable, wltintegration.DerivedIdempotencyKey("store-captain-cash-collect", item.IdempotencyKey), item.CorrelationID)
 		if err != nil {
 			return fmt.Errorf("collect Store Captain cash handoff: %w", err)
 		}
@@ -135,7 +135,7 @@ func (s *Service) apply(ctx context.Context, item postgres.FinancialHandoffOutbo
 		if cashAmount != 0 || item.AmountMinor != 0 {
 			return errors.New("DSH Store Captain balance settlement requires a zero cash allocation")
 		}
-		intent, err := s.wlt.EnsureCollected(ctx, item.PaymentIntentID, "", "", customerPayable, wltintegration.DerivedIdempotencyKey("store-captain-balance-settle", item.IdempotencyKey), item.CorrelationID)
+		intent, err := s.wlt.EnsureCollected(ctx, item.PaymentIntentID, wltintegration.MethodCashAtStore, "", "", customerPayable, wltintegration.DerivedIdempotencyKey("store-captain-balance-settle", item.IdempotencyKey), item.CorrelationID)
 		if err != nil {
 			return fmt.Errorf("settle Store Captain payment from customer balance: %w", err)
 		}
