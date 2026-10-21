@@ -191,6 +191,7 @@ export function OperationsWorkspace() {
     return () => clearInterval(timer);
   }, [cursorPage.ready, load, loading, view]);
 
+  const overdueOnPage = operations.filter((item) => operationalAge(item.state, item.updatedAt, ageClock).needsReview).length;
   const hasSearch = Boolean(searchFromUrl);
   const selectedFilter = preciseState || (view === "attention" ? "attention" : view === "dispatch" ? "READY_FOR_DISPATCH" : view === "delivered" ? "DELIVERED" : "");
   const selectedViewLabel = preciseState ? specificStates.find((item) => item.value === preciseState)?.label ?? preciseState
@@ -273,6 +274,9 @@ export function OperationsWorkspace() {
         </div>
       </section>
 
+      {overdueOnPage > 0 ? <p className="operations-attention-note" role="status">
+        {overdueOnPage.toLocaleString("ar-YE")} طلب متعثر أو متأخر في الصفحة الحالية. قد لا يظهر ضمن «تحتاج قرارًا»؛ افتح ملفه للتحقق من الخطوة التالية.
+      </p> : null}
       <div className="ops-list-heading">
         <div className="ops-list-name"><h2 id="operations-list-title">{selectedViewLabel}</h2>
           <span className="muted">{operations.length} طلب في هذه الصفحة{summary ? ` · ${summary.totalCount} إجمالي النتائج` : ""}{nextCursor ? " · المزيد في الصفحة التالية" : ""}</span>
@@ -298,7 +302,7 @@ export function OperationsWorkspace() {
                   const age = operationalAge(item.state, item.updatedAt, ageClock);
                   const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
                   return <tr key={item.orderId} className={age.needsReview ? "ops-row-review" : undefined}>
-                    <th scope="row">{item.storeName}<small className="muted" dir="ltr" style={{ display: "block", overflowWrap: "anywhere" }}>{item.orderId}</small></th>
+                    <th scope="row">{item.storeName}<small className="muted ops-order-short-id" dir="ltr" title={item.orderId}>#{item.orderId.slice(-8)}</small></th>
                     <td><span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span></td>
                     <td>{item.assignment ? <span className="ops-captain-cell">
                       <span>{captainAssignmentStateLabel(item.assignment.state)}</span>
@@ -308,7 +312,7 @@ export function OperationsWorkspace() {
                       <span className={age.needsReview ? "operations-attention" : "muted"}>{age.label}</span>
                       {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
                     </div></td>
-                    <td><button type="button" className="ops-row-open" aria-label={"فتح طلب من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>فتح</button></td>
+                    <td><button type="button" className="ops-row-open" aria-label={"فتح طلب " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>فتح</button></td>
                   </tr>;
                 })}
               </tbody>
@@ -319,7 +323,7 @@ export function OperationsWorkspace() {
                 const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
                 return <li key={item.orderId} className={"ops-mobile-order" + (age.needsReview ? " ops-mobile-order-review" : "")}>
                   <div className="ops-mobile-order-heading">
-                    <strong>{item.storeName}</strong><small className="muted" dir="ltr">{item.orderId}</small>
+                    <strong>{item.storeName}</strong><small className="muted ops-order-short-id" dir="ltr" title={item.orderId}>#{item.orderId.slice(-8)}</small>
                   </div>
                   <div className="ops-mobile-order-status">
                     <span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span>
@@ -331,7 +335,7 @@ export function OperationsWorkspace() {
                   </div>
                   <div className="ops-mobile-order-bottom">
                     <time dateTime={item.updatedAt}>آخر تحديث: {formatOrderDate(item.updatedAt)}</time>
-                    <button type="button" className="ops-row-open" aria-label={"فتح طلب من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>فتح الطلب</button>
+                    <button type="button" className="ops-row-open" aria-label={"فتح طلب " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>فتح الطلب</button>
                   </div>
                 </li>;
               })}

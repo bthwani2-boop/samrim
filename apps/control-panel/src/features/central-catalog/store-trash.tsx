@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type Store = Readonly<{ id: string; name: string; partnerActorId: string; version: number; deletedAt?: string; deletedBy?: string; deletionReason?: string }>;
 type StorePage = Readonly<{ stores: ReadonlyArray<Store>; nextCursor: string }>;
@@ -39,6 +40,8 @@ export function StoreTrash() {
     return () => controller.abort();
   }, [load]);
 
+  useReadOnReturn(() => { void load(new AbortController().signal); }, !loading && !busy && !confirmId);
+
   async function restore(item: Store) {
     if (busy || loading) return;
     setBusy(item.id); setError(""); setNotice("");
@@ -64,7 +67,7 @@ export function StoreTrash() {
       <Link className="button button-secondary" href="/partners">الشركاء والمتاجر</Link>
     </div>
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}
-    {error ? <p className="identity-error" role="alert">{error}</p> : null}
+    {error ? <div role="alert" className="identity-error">{error} <button type="button" className="button button-secondary" disabled={loading} onClick={() => void load(new AbortController().signal)}>إعادة المحاولة</button></div> : null}
     {loading ? <p className="muted">جارٍ تحميل المتاجر…</p> : !error && stores.length === 0 ? <p className="muted">لا توجد متاجر محذوفة في هذه الصفحة.</p> : null}
     {!loading && !error && stores.length > 0 ? <div className="partner-stores-table-wrap">
       <table className="operations-table"><thead><tr><th scope="col">المتجر</th><th scope="col">الحذف</th><th scope="col">السبب</th><th scope="col">الإجراء</th></tr></thead>
@@ -83,7 +86,7 @@ export function StoreTrash() {
       </table>
     </div> : null}
     <div className="catalog-category-filters">
-      <button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load(new AbortController().signal)}>تحديث</button>
+
       <button type="button" className="button button-secondary" disabled={loading || !history.length} onClick={() => { setCursor(history[history.length - 1] ?? ""); setHistory((items) => items.slice(0, -1)); }}>السابق</button>
       <button type="button" className="button button-secondary" disabled={loading || !nextCursor} onClick={() => { setHistory((items) => [...items, cursor]); setCursor(nextCursor); }}>التالي</button>
     </div>

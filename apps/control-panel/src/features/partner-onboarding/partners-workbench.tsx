@@ -361,11 +361,11 @@ export function PartnersWorkbench() {
         <tbody>{rows.map(renderRow)}</tbody>
       </table></div> : null}
       {rows.length > 0 ? <ul className="partner-unified-cards" aria-label="سجلات الشركاء على الهاتف">{rows.map(renderCard)}</ul> : null}
-      {activeTab === "directory" && kind === "store" && rows.length > 0 ? <aside className="record-legend partner-registry-legend" aria-label="دليل رموز الحساب والنشر والتوصيل">
+      {activeTab === "directory" && kind === "store" && rows.length > 0 ? <details className="partner-legend-details"><summary>دليل رموز الحالة</summary><aside className="record-legend partner-registry-legend" aria-label="دليل رموز الحساب والنشر والتوصيل">
         <div><strong>الحساب</strong><RecordIndicator legend icon="active" label="الحساب نشط" tone="success" /><RecordIndicator legend icon="pending" label="الحساب بانتظار التفعيل" tone="warning" /><RecordIndicator legend icon="paused" label="الحساب موقوف" tone="warning" /><RecordIndicator legend icon="unknown" label="حالة الحساب غير متاحة" /></div>
         <div><strong>النشر</strong><RecordIndicator legend icon="published" label="منشور" tone="success" /><RecordIndicator legend icon="unpublished" label="غير منشور" /><RecordIndicator legend icon="hidden" label="مخفي" /></div>
         <div><strong>التوصيل</strong><RecordIndicator legend icon="rider" label="توصيل بثواني" /><RecordIndicator legend icon="storeDelivery" label="توصيل المتجر" /><RecordIndicator legend icon="pickup" label="استلم بنفسك من المتجر" /></div>
-      </aside> : null}
+      </aside></details> : null}
       <footer className="registry-footer"><CursorPagination page={page} nextCursor={nextCursor} disabled={loading || Boolean(busyGrant)} label="صفحات السجل الموحد للشركاء" /></footer>
       </section>
     </section>

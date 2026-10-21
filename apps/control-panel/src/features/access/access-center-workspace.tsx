@@ -11,6 +11,7 @@ import { operatorWorkspacePermissions } from "../../session/operator-permissions
 import { useSession } from "../../session/session-provider";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { AccountAccessPanel } from "./account-access-panel";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 import { HRPermissionReview } from "./hr-permission-review";
 
 type Source = "requests" | "profiles" | "operators";
@@ -219,6 +220,8 @@ export function AccessCenterWorkspace() {
     void load(false, "");
   }, [root, load]);
 
+  useReadOnReturn(() => { if (!busy) void load(false); }, Boolean(root) && !loading && !busy && !selected);
+
   const rows = useMemo(() => rowsFromPages(pages), [pages]);
   const visible = useMemo(() => rows.filter((row) => {
     // Identity applies its canonical server search; only HR requests lack a server query.
@@ -400,7 +403,7 @@ export function AccessCenterWorkspace() {
         <option value="some">صلاحيات جزئية</option>
         <option value="complete">وصول كامل</option>
       </select></label>
-      <button type="button" className="button button-secondary" disabled={loading || busy} onClick={() => void load(false)}>تحديث</button>
+
       <Link className="button button-quiet" href="/hr/employees">الموظفون</Link>
     </div>
     <p className="access-center-scope">الأرقام والفرز تخص السجلات المحمّلة فقط. بحث المشغّلين خادمي؛ أما طلبات الموارد البشرية فيُبحث داخل صفحاتها المحمّلة.</p>

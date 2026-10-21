@@ -84,7 +84,7 @@ export function PoliciesCenterWorkspace() {
       const { path: url, collection } = list;
       void (async () => {
         try {
-          const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+          const response = await fetch(url, { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]) });
           if (!response.ok) throw new Error("read");
           const payload = await response.json() as Record<string, unknown>;
           const records = payload[collection];
@@ -210,7 +210,7 @@ export function PoliciesCenterWorkspace() {
     }
     peekButtonRef.current = button;
     const bounds = button.getBoundingClientRect();
-    const width = Math.min(340, window.innerWidth - 24);
+    const width = Math.min(400, window.innerWidth - 24);
     // Use viewport positioning so the preview remains anchored without reflowing the registry.
     const left = Math.max(12, Math.min(bounds.left - width + bounds.width, window.innerWidth - width - 12));
     const maxHeight = Math.min(410, window.innerHeight - 24);

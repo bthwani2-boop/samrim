@@ -685,6 +685,24 @@ export function CentralCatalog() {
               </tr>)}
             </tbody>
           </table>
+          <ul className="catalog-registry-mobile" aria-label="منتجات الصفحة الحالية">
+            {products.map((product) => <li key={product.id} className="catalog-registry-mobile-card">
+              <div className="catalog-registry-mobile-main">
+                <div className="catalog-registry-product">
+                  {product.primaryImageUri ? <img className="catalog-registry-product-image" src={product.primaryImageUri} alt="" loading="lazy" /> : <span className="catalog-registry-product-placeholder" aria-hidden="true">{product.canonicalName.trim().slice(0, 1) || "•"}</span>}
+                  <span><strong>{product.canonicalName}</strong>{product.brand ? <small>{product.brand}</small> : null}<small>{sharedVerticals.find((vertical) => vertical.id === product.verticalId)?.nameAr ?? "غير محدد"}</small></span>
+                </div>
+                <ActivityIndicator active={product.active} inactiveLabel="معطل" />
+              </div>
+              <div className="catalog-registry-mobile-meta">
+                <span>{product.categoryNamesAr?.slice(0, 2).join("، ") || "غير مصنف"}</span>
+                <span>{product.variantCount.toLocaleString("ar-YE")} نسخ · {product.storeCount.toLocaleString("ar-YE")} متاجر</span>
+              </div>
+              <button type="button" className="button button-secondary catalog-mobile-open" disabled={detailLoading} onClick={() => void selectProduct(product.id)} aria-label={`إدارة منتج ${product.canonicalName}`}>إدارة المنتج</button>
+            </li>)}
+            {loading && products.length === 0 ? <li role="status" className="collection-state">جارٍ قراءة المنتجات…</li> : null}
+            {!loading && !registryError && products.length === 0 ? <li className="collection-state">لا توجد منتجات مطابقة.</li> : null}
+          </ul>
         </div> : <div className="catalog-gallery-pane" aria-busy={loading}>
           {loading && products.length === 0 ? <p role="status">جارٍ قراءة السجل…</p> : null}
           {!loading && !registryError && products.length === 0 ? <p className="catalog-gallery-empty">لا توجد منتجات مطابقة للفلاتر.</p> : null}

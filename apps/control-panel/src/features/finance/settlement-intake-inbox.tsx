@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { formatMoney } from "@bthwani/dsh";
 import { OfficialWalletDestinationManager } from "./official-wallet-destination-manager";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type Intake = Readonly<{
   id: string; actorType: "partner" | "captain" | "field"; actorId: string;
@@ -36,6 +37,8 @@ export function SettlementIntakeInbox() {
     } finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useReadOnReturn(() => { void load(); }, !loading && busyId === null && cancelId === null && destinationIntakeId === null);
+
   async function convert(id: string) {
     setBusyId(id); setError(""); setNotice("");
     try {
@@ -68,9 +71,9 @@ export function SettlementIntakeInbox() {
   return <section className="panel work-stack" aria-label="طلبات التسوية الواردة">
     <div className="finance-toolbar">
       <div><h2>طلبات التسوية الواردة</h2><p className="muted">الطلب لا يحجز رصيدًا. راجع الوجهة ثم أَحِل للصرف.</p></div>
-      <button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading || busyId !== null}>{loading ? "جارٍ التحميل" : "تحديث الطلبات"}</button>
+
     </div>
-    {error ? <p role="alert" className="identity-error">{error}</p> : null}
+    {error ? <div role="alert" className="identity-error">{error} <button type="button" className="button button-secondary" disabled={loading || busyId !== null} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
     {notice ? <p role="status" className="managed-status managed-status-info">{notice}</p> : null}
     {!loading && items.length === 0 ? <p className="muted">لا توجد طلبات تسوية جديدة.</p> : null}
     {items.length > 0 ? <div className="finance-table-wrap"><table className="finance-table">
@@ -81,8 +84,10 @@ export function SettlementIntakeInbox() {
         <td>بانتظار مراجعة المالية</td>
         <td><div className="finance-toolbar">
           <button className="button button-secondary" type="button" aria-expanded={destinationIntakeId === item.id} disabled={busyId !== null} onClick={() => setDestinationIntakeId(destinationIntakeId === item.id ? null : item.id)}>{destinationIntakeId === item.id ? "إغلاق الوجهة" : "مراجعة وجهة الصرف"}</button>
-          <button className="button button-secondary" type="button" disabled={busyId !== null} onClick={() => void convert(item.id)}>{busyId === item.id ? "جارٍ التحقق" : "التحقق والإحالة للصرف"}</button>
-          <button className="button button-quiet" type="button" disabled={busyId !== null} onClick={() => { setCancelId(cancelId === item.id ? null : item.id);setCancelReason(""); }}>إلغاء الطلب</button>
+          <button className="button button-primary" type="button" disabled={busyId !== null} onClick={() => void convert(item.id)}>{busyId === item.id ? "جارٍ التحقق" : "التحقق والإحالة للصرف"}</button>
+          <details className="finance-intake-more"><summary>المزيد</summary>
+            <button className="button button-quiet" type="button" disabled={busyId !== null} onClick={() => { setCancelId(cancelId === item.id ? null : item.id);setCancelReason(""); }}>إلغاء الطلب</button>
+          </details>
         </div>{cancelId === item.id ? <div className="finance-toolbar"><input className="field-control" aria-label="سبب إلغاء طلب التسوية" placeholder="سبب الإلغاء" maxLength={512} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} /><button className="button button-secondary" type="button" disabled={busyId !== null || !cancelReason.trim()} onClick={() => void cancelIntake(item.id)}>تأكيد الإلغاء</button></div> : null}</td>
       </tr>{destinationIntakeId === item.id ? <tr key={`destination-${item.id}`}>
         <td colSpan={4} id={`finance-intake-destination-${encodeURIComponent(item.id)}`}>

@@ -117,8 +117,12 @@ export function OperatorNotifications() {
     }
   }
 
+  const [visibleLimit, setVisibleLimit] = useState(10);
+  useEffect(() => setVisibleLimit(10), [cursor]);
   const unreadItems = useMemo(() => items.filter((item) => !item.readAt), [items]);
   const readItems = useMemo(() => items.filter((item) => Boolean(item.readAt)), [items]);
+  const visibleUnread = unreadItems.slice(0, visibleLimit);
+  const visibleRead = readItems.slice(0, Math.max(0, visibleLimit - unreadItems.length));
 
   return (
     <section className="workspace-page operator-notifications" aria-labelledby="notifications-title">
@@ -127,9 +131,10 @@ export function OperatorNotifications() {
       {loading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تجهيز الإشعارات</strong></div> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة الإشعارات</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading || refreshing || Boolean(pendingId)} onClick={() => void load(cursor, true)}>إعادة المحاولة</button></div> : null}
       {!loading && !error && !items.length ? <div className="access-card operator-notifications-empty"><h2>لا توجد إشعارات حالياً</h2></div> : null}
-      {!loading && items.length ? <p className="operator-notification-page-status" role="status">{items.length} إشعارًا في الصفحة</p> : null}
-      {!loading && unreadItems.length ? <NotificationGroup title="الجديدة" count={unreadItems.length} items={unreadItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
-      {!loading && readItems.length ? <NotificationGroup title="المقروءة" count={readItems.length} items={readItems} pendingId={pendingId} onMarkRead={markRead} /> : null}
+      {!loading && items.length ? <p className="operator-notification-page-status" role="status">عرض {Math.min(visibleLimit, items.length)} من {items.length} إشعارًا في الصفحة</p> : null}
+      {!loading && visibleUnread.length ? <NotificationGroup title="الجديدة" count={unreadItems.length} items={visibleUnread} pendingId={pendingId} onMarkRead={markRead} /> : null}
+      {!loading && visibleRead.length ? <NotificationGroup title="المقروءة" count={readItems.length} items={visibleRead} pendingId={pendingId} onMarkRead={markRead} /> : null}
+      {!loading && !error && visibleLimit < items.length ? <button type="button" className="button button-secondary operator-notification-show-more" onClick={() => setVisibleLimit((current) => current + 10)}>عرض ١٠ إشعارات إضافية</button> : null}
       {!loading && (cursor || cursorStack.length > 0 || nextCursor) ? <nav className="operator-notification-pagination" aria-label="صفحات الإشعارات">
         <button type="button" className="button button-secondary" disabled={loading || refreshing || Boolean(pendingId) || (cursorStack.length === 0 && !cursor)} onClick={() => { const previous = [...cursorStack]; const previousCursor = previous.pop() ?? ""; navigatePage(previousCursor, previous); }}>الأحدث</button>
         <span>صفحة {cursorStack.length + 1}</span>

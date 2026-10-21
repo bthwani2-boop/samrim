@@ -257,9 +257,7 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
     <PageHeader id="finance-center-title" title="المالية"
       actions={activeWorkflow
         ? <button type="button" className="button button-secondary" onClick={closeTask}>العودة إلى المركز المالي</button>
-        : <button type="button" className="button button-secondary" onClick={() => void refresh()} disabled={loading}>
-          {loading ? "جارٍ التحديث…" : "تحديث البيانات"}
-        </button>} />
+        : errors.length > 0 ? <button type="button" className="button button-secondary" onClick={() => void refresh()} disabled={loading}>إعادة المحاولة</button> : undefined} />
     {!activeWorkflow ? <SettlementIntakeInbox /> : null}
     {activeWorkflow ? <div className="finance-center-active">
       <div className="finance-center-active-header">
