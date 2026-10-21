@@ -569,9 +569,9 @@ func ListOrdersForPartnerStores(ctx context.Context, db *sql.DB, storeIDs []stri
 }
 
 // canonicalOrderStates validates a bounded order-state filter: every entry must
-// be a canonical state and at most six states may be combined.
+// be a canonical state and at most seven states may be combined.
 func canonicalOrderStates(states []string) ([]string, error) {
-	if len(states) > 6 {
+	if len(states) > 7 {
 		return nil, ErrPartnerOrdersInvalidState
 	}
 	canonical := make([]string, 0, len(states))

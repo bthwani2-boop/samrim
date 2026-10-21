@@ -632,7 +632,7 @@ func orderStateFilter(w http.ResponseWriter, r *http.Request) (string, bool) {
 		return "", true
 	}
 	values := orderStateValues(state)
-	if len(values) == 0 || len(values) > 6 {
+	if len(values) == 0 || len(values) > 7 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "state filter is not a canonical order state list")
 		return "", false
 	}

@@ -1,13 +1,15 @@
-import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { radius, spacing } from "@bthwani/design-system";
+import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type PartnerStoreOperationalAvailabilityResponse, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { type Href, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
-import { Alert, Switch, Text, View } from "react-native";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { AppState, Text, View } from "react-native";
 import { readOwnStoreOperationalAvailability, updateOwnStoreOperationalAvailability } from "./store-readback-client";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 
 type UpdateAttempt = Readonly<{ input: StoreOperationalAvailabilityRequest; idempotencyKey: string; correlationID: string }>;
+type AvailabilityRead = "loading" | "error" | PartnerStoreOperationalAvailabilityResponse;
 
 function httpStatus(error: unknown): number | null {
   if (!error || typeof error !== "object") return null;
@@ -15,104 +17,145 @@ function httpStatus(error: unknown): number | null {
   return value.kind === "http" && typeof value.status === "number" ? value.status : null;
 }
 
+/** Routine order work has no operating-hours link or pause toggle.
+ * Only exceptions that prevent receiving new orders appear above the queue. */
 export function PartnerOrderAvailability({ storeID }: { storeID: string }) {
-  const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
-  const [status, setStatus] = useState<"loading" | "error" | PartnerStoreOperationalAvailabilityResponse>("loading");
+  const [status, setStatus] = useState<AvailabilityRead>("loading");
+  const [readError, setReadError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [pending, setPending] = useState<UpdateAttempt | null>(null);
+  const generation = useRef(0);
+  const busyRef = useRef(false);
+
+  const readAvailability = useCallback(async () => {
+    if (busyRef.current) return;
+    const current = ++generation.current;
+    try {
+      const confirmed = await readOwnStoreOperationalAvailability(storeID);
+      if (current !== generation.current) return;
+      setStatus(confirmed);
+      setReadError(false);
+    } catch {
+      if (current !== generation.current) return;
+      setStatus((previous) => previous === "loading" ? "error" : previous);
+      setReadError(true);
+    }
+  }, [storeID]);
 
   useFocusEffect(useCallback(() => {
-    let active = true;
-    setStatus("loading");
-    void readOwnStoreOperationalAvailability(storeID).then((value) => {
-      if (active) setStatus(value);
-    }).catch(() => { if (active) setStatus("error"); });
-    return () => { active = false; };
-  }, [storeID]));
+    void readAvailability();
+    const poll = setInterval(() => {
+      if (AppState.currentState === "active") void readAvailability();
+    }, 60_000);
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "active") void readAvailability();
+    });
+    return () => {
+      clearInterval(poll);
+      subscription.remove();
+      generation.current += 1;
+    };
+  }, [readAvailability]));
 
   const ready = typeof status === "object";
-  const paused = ready && status.availability.paused;
+  const paused = ready && status.availability.paused &&
+    (!status.availability.pauseUntil || Date.parse(status.availability.pauseUntil) > Date.now());
   const accepting = ready && status.orderabilityByMode.some((item) => item.state === "OPEN_FOR_ORDERS");
-  const label = status === "loading" ? "جارٍ قراءة الحالة"
-    : status === "error" ? "تعذر قراءة التوفر"
-    : paused ? "متوقف مؤقتًا"
-    : accepting ? "يستقبل الطلبات"
-    : status.orderabilityByMode.some((item) => item.state === "CLOSED_BY_SCHEDULE") ? "مغلق حسب ساعات العمل"
-    : "غير متاح حاليًا";
+  const scheduledClosed = ready && status.orderabilityByMode.some((item) => item.state === "CLOSED_BY_SCHEDULE");
+  const operationallyUnavailable = ready && status.orderabilityByMode.some((item) => item.state === "OPERATIONALLY_UNAVAILABLE");
 
-  async function updatePause(nextPaused: boolean) {
-    if (!ready || busy) return;
+  async function resumeOrders() {
+    if (!ready || !paused || busyRef.current) return;
     const availability = status.availability;
     const attempt = pending ?? {
       input: {
         scheduleMode: availability.scheduleMode,
         weeklySchedule: availability.weeklySchedule,
-        paused: nextPaused,
-        pauseReason: nextPaused ? "إيقاف استقبال الطلبات بطلب الشريك" : null,
+        paused: false,
+        pauseReason: null,
         pauseUntil: null,
         preparationMinutes: availability.preparationMinutes ?? null,
         unavailableFulfillmentModes: availability.unavailableFulfillmentModes,
         expectedVersion: availability.version,
       },
-      idempotencyKey: "partner_quick_pause_" + Crypto.randomUUID(),
-      correlationID: "partner_quick_pause_corr_" + Crypto.randomUUID(),
+      idempotencyKey: "partner_resume_" + Crypto.randomUUID(),
+      correlationID: "partner_resume_corr_" + Crypto.randomUUID(),
     };
     setPending(attempt);
+    busyRef.current = true;
+    generation.current += 1;
     setBusy(true);
     setError("");
     try {
       await updateOwnStoreOperationalAvailability(storeID, attempt.input, attempt.idempotencyKey, attempt.correlationID);
       const confirmed = await readOwnStoreOperationalAvailability(storeID);
       setStatus(confirmed);
+      setReadError(false);
       setPending(null);
     } catch (cause) {
       const code = httpStatus(cause);
       try {
         const confirmed = await readOwnStoreOperationalAvailability(storeID);
         setStatus(confirmed);
-        if (code === 409 || confirmed.availability.paused === attempt.input.paused) {
+        setReadError(false);
+        if (!confirmed.availability.paused) {
           setPending(null);
-          if (code === 409 && confirmed.availability.paused !== attempt.input.paused) setError("تغيرت الحالة من جهاز آخر؛ راجع الحالة الحالية قبل التعديل.");
           return;
         }
-      } catch { /* Keep the last confirmed value visible until retry. */ }
+        if (code === 409) {
+          setPending(null);
+          setError("تغيّرت حالة المتجر من جهاز آخر. راجع الحالة الظاهرة.");
+          return;
+        }
+      } catch {
+        setReadError(true);
+      }
       if (code !== null && code < 500) {
         setPending(null);
-        setError("لم يُقبل تغيير التوفر. راجع صلاحياتك وحاول مجددًا.");
+        setError("تعذر استئناف الطلبات. تحقق من صلاحيتك وحاول مجددًا.");
       } else {
-        setError("تعذر تأكيد التغيير. أعد المحاولة من المفتاح نفسه.");
+        setError("لم نتأكد من الاستئناف. أعد المحاولة للتحقق من الطلب المحفوظ نفسه.");
       }
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
 
-  function togglePause(nextPaused: boolean) {
-    if (!ready || busy) return;
-    if (pending) { void updatePause(pending.input.paused); return; }
-    if (!nextPaused) { void updatePause(false); return; }
-    Alert.alert("إيقاف استقبال الطلبات", "سيُوقف استقبال الطلبات الجديدة حتى تستأنف يدويًا. لن يتغير جدول الساعات.", [
-      { text: "إلغاء", style: "cancel" },
-      { text: "إيقاف مؤقت", style: "destructive", onPress: () => void updatePause(true) },
-    ]);
-  }
+  if (status === "loading") return null;
+  if (status === "error") return <View style={{ gap: spacing[1] }}>
+    <Text accessibilityRole="alert" style={styles.error}>تعذر التحقق من استقبال الطلبات.</Text>
+    <BthwaniButton variant="secondary" label="إعادة المحاولة" onPress={() => void readAvailability()} />
+  </View>;
 
-  return <View style={{ gap: 6 }}>
-    <View style={[styles.headerRow, { alignItems: "center" }]} accessibilityLabel="حالة استقبال الطلبات">
-      <View style={styles.headerCopy}>
-        <Text style={styles.metaLabel}>استقبال الطلبات</Text>
-        <BthwaniStatusBadge icon={accepting ? "success" : "warning"} label={label} tone={accepting ? "success" : "warning"} />
+  if (!paused && accepting && !readError) return null;
+
+  return <View accessibilityLabel="حالة استقبال الطلبات" style={{
+    backgroundColor: theme.surfaceInset, borderRadius: radius.md,
+    padding: spacing[3], gap: spacing[2],
+  }}>
+    {paused ? <View style={[styles.headerRow, { alignItems: "center" }]}>
+      <View style={[styles.headerCopy, { flex: 1 }]}>
+        <Text style={styles.value}>المتجر متوقف مؤقتًا</Text>
+        <Text style={styles.muted}>لن تصل طلبات جديدة حتى الاستئناف</Text>
       </View>
-      <View style={{ alignItems: "center", gap: 2 }}>
-        <Switch accessibilityLabel="إيقاف استقبال الطلبات مؤقتًا" accessibilityHint="التشغيل لا يغيّر جدول ساعات العمل" disabled={!ready || busy} onValueChange={togglePause} value={ready && paused} />
-        <Text style={styles.metaLabel}>إيقاف مؤقت</Text>
-      </View>
-      <BthwaniButton disabled={busy} label="الساعات" variant="secondary" onPress={() => router.push({ pathname: "/store", params: { section: "operations" } } as Href)} />
-    </View>
-    {pending ? <Text style={styles.muted}>يوجد تغيير لم نتأكد من نتيجته. اضغط المفتاح لإعادة محاولة الحفظ نفسها.</Text> : null}
+      <BthwaniButton
+        label={pending ? "التحقق من الاستئناف" : "استئناف الطلبات"}
+        disabled={busy}
+        busy={busy}
+        variant="secondary"
+        onPress={() => void resumeOrders()}
+      />
+    </View> : <Text style={styles.muted}>
+      {accepting ? "تعذر تحديث حالة الاستقبال؛ آخر حالة مؤكدة: يستقبل الطلبات." :
+        scheduledClosed ? "المتجر مغلق حسب ساعات العمل" :
+        operationallyUnavailable ? "استقبال الطلبات غير متاح حاليًا" :
+          "لا يستقبل المتجر طلبات جديدة حاليًا"}
+    </Text>}
+    {readError ? <BthwaniButton label="إعادة المحاولة" variant="quiet" onPress={() => void readAvailability()} /> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
   </View>;
 }

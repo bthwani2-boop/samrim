@@ -27,11 +27,10 @@ function nextState(order: Order): OrderTransitionRequest["state"] | null {
 }
 
 const queueFilters = [
-  { key: "ACTIVE", label: "النشطة", states: ["CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "READY_FOR_PICKUP", "CAPTAIN_ASSIGNED"] },
+  { key: "ACTIVE", label: "النشطة", states: ["CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "READY_FOR_PICKUP", "CAPTAIN_ASSIGNED", "IN_CUSTODY"] },
   { key: "NEEDS_ACTION", label: "جديدة", states: ["CREATED"] },
   { key: "PREPARING", label: "التجهيز", states: ["PARTNER_ACCEPTED", "PREPARING"] },
   { key: "HANDOFF", label: "التسليم", states: ["READY_FOR_DISPATCH", "READY_FOR_PICKUP", "CAPTAIN_ASSIGNED", "IN_CUSTODY"] },
-  { key: "ALL", label: "الكل", states: undefined },
   { key: "CLOSED", label: "مغلقة", states: ["DELIVERED", "REJECTED", "CANCELLED", "PICKED_UP", "DELIVERY_FAILED"] },
 ] as const;
 
@@ -232,7 +231,18 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
 
   return (
     <View style={styles.container} accessibilityLabel="إدارة طلبات المتجر">
-      <View style={styles.toolbar}><Text style={styles.title}>الطلبات</Text></View>
+      <View style={styles.toolbar}>
+        <Text style={styles.title}>{filter === "CLOSED" ? "سجل الطلبات" : "الطلبات"}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={filter === "CLOSED" ? "العودة إلى الطلبات النشطة" : "عرض سجل الطلبات"}
+          disabled={Boolean(busy)}
+          onPress={() => setFilter(filter === "CLOSED" ? "ACTIVE" : "CLOSED")}
+          style={styles.archiveButton}
+        >
+          <Text style={styles.archiveText}>{filter === "CLOSED" ? "النشطة" : "السجل"}</Text>
+        </Pressable>
+      </View>
 
       {!loading && attention && (attention.newOrders + attention.awaitingDispatch + attention.deliveryRecovery > 0) ? (
         <View style={styles.summaryRow} accessibilityLabel="ملخص طابور الطلبات">
@@ -242,13 +252,21 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
         </View>
       ) : null}
 
-      <ScrollView horizontal accessibilityLabel="تصفية طلبات المتجر" contentContainerStyle={styles.filterRow} showsHorizontalScrollIndicator={false}>
-        {queueFilters.map(({ key, label }) => <BthwaniChip key={key} disabled={loading || Boolean(busy)} label={label} onPress={() => setFilter(key)} selected={filter === key} />)}
-      </ScrollView>
+      {filter !== "CLOSED" ? <ScrollView horizontal accessibilityLabel="تصفية طلبات المتجر" contentContainerStyle={styles.filterRow} showsHorizontalScrollIndicator={false}>
+        {queueFilters.filter(({ key }) => key !== "CLOSED").map(({ key, label }) =>
+          <BthwaniChip key={key} disabled={loading || Boolean(busy)} label={label} onPress={() => setFilter(key)} selected={filter === key} />)}
+      </ScrollView> : null}
 
       {loading ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة طلبات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الطلبات…</Text></View> : null}
       {sidecarError ? <Text accessibilityRole="alert" style={styles.muted}>{sidecarError}</Text> : null}
-      {!loading && !orders.length ? <Text style={styles.muted}>لا توجد طلبات مطابقة حاليًا.</Text> : null}
+      {!loading && !orders.length && !error ? <Text style={styles.muted}>{
+        normalizedSearch ? "لا توجد طلبات تطابق البحث." :
+        filter === "ACTIVE" ? "لا توجد طلبات نشطة الآن. ستظهر الطلبات الجديدة تلقائيًا." :
+        filter === "NEEDS_ACTION" ? "لا توجد طلبات جديدة الآن." :
+        filter === "PREPARING" ? "لا توجد طلبات قيد التجهيز." :
+        filter === "HANDOFF" ? "لا توجد طلبات في مرحلة التسليم." :
+        "لا توجد طلبات في السجل حاليًا."
+      }</Text> : null}
 
       {orders.map((order) => {
         const next = nextState(order);
@@ -408,6 +426,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     container: { gap: spacing[3], paddingTop: spacing[3], width: "100%" },
     toolbar: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+    archiveButton: { minHeight: 44, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing[2] },
+    archiveText: { ...typography.label, color: theme.interactiveText },
     expandButton: { alignSelf: "flex-start", minHeight: 40, justifyContent: "center", paddingHorizontal: spacing[2] },
     expandText: { ...typography.label, color: theme.interactiveText },
     title: { ...typography.titleMd, color: theme.color },
