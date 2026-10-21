@@ -3,6 +3,7 @@
 import { formatMoney, officialWalletDestinationStatusLabel, officialWalletVerificationStatusLabel, payoutStatusLabel, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type CustomerWithdrawalIntakeSummary, type PayoutRequest } from "@bthwani/dsh";
 import { usePathname, useRouter } from "next/navigation";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type IntakeStatus = CustomerWithdrawalIntakeSummary["status"];
@@ -43,6 +44,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
   const router = useRouter();
   const pathname = usePathname() ?? "/finance/customer-withdrawals";
   const pendingMutations = useRef(new Map<string, Readonly<{ idempotencyKey: string; correlationId: string }>>());
+  const returnReadController = useRef<AbortController | null>(null);
   const [items, setItems] = useState<ReadonlyArray<CustomerWithdrawalIntakeSummary>>([]);
   const [maskedWalletSearch,setMaskedWalletSearch]=useState("");
   const [amountSearch,setAmountSearch]=useState("");
@@ -85,7 +87,11 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
       setItems(result.intakes);
       setNextCursor(result.nextCursor ?? "");
     } catch (value) {
-      if (!signal.aborted) setError(value instanceof Error ? value.message : "تعذر قراءة طابور سحوبات العملاء");
+      if (!signal.aborted) {
+        setItems([]);
+        setNextCursor("");
+        setError(value instanceof Error ? value.message : "تعذر قراءة طابور سحوبات العملاء");
+      }
     } finally {
       if (!signal.aborted) setLoading(false);
     }
@@ -115,6 +121,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
   }, []);
 
   useEffect(() => {
+    returnReadController.current?.abort();
     const controller = new AbortController();
     setStatus(initialQuery.status);
     setSearch(initialQuery.search);
@@ -128,6 +135,15 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
     void loadDetail(initialQuery.intakeId, controller.signal);
     return () => controller.abort();
   }, [initialQuery.intakeId, loadDetail]);
+
+  useEffect(() => () => returnReadController.current?.abort(), []);
+
+  useReadOnReturn(() => {
+    returnReadController.current?.abort();
+    const controller = new AbortController();
+    returnReadController.current = controller;
+    void loadRegistry(initialQuery, controller.signal);
+  }, !loading && !detailLoading && !initialQuery.intakeId);
 
   const navigate = (query: CustomerWithdrawalQueueQuery) => {
     router.push(`${pathname}?${queryString(query)}`, { scroll: false });
@@ -259,13 +275,6 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
 
   return (
     <section className="work-stack" aria-label="سجل سحوبات العملاء">
-      <div className="finance-toolbar">
-        <button className="button button-secondary" type="button" onClick={() => void loadRegistry(initialQuery, new AbortController().signal)} disabled={loading}>
-          تحديث السجل
-        </button>
-      </div>
-
-
       <form className="finance-toolbar" noValidate onSubmit={(event) => {
         event.preventDefault();
         navigate({ status, search: search.trim(), sort, cursor: "", intakeId: "" });
@@ -288,7 +297,10 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
         <button className="button button-secondary" type="submit" disabled={loading}>تطبيق البحث والترتيب</button>
       </form>
 
-      {error ? <p className="state-error" role="alert">{error}</p> : null}
+      {error ? <div className="managed-status managed-status-warning" role="alert">
+        <p>{error}</p>
+        <button className="button button-secondary" type="button" onClick={() => void loadRegistry(initialQuery, new AbortController().signal)} disabled={loading}>إعادة المحاولة</button>
+      </div> : null}
       {notice ? <p className="state-success" role="status">{notice}</p> : null}
       <p className="muted" aria-live="polite">{loading ? "جارٍ قراءة السجل…" : error ? "تعذر قراءة السجل" : `${items.length.toLocaleString("ar-YE")} سجلًا في الصفحة${pageFilterActive ? " · معروض من الصفحة " + visibleItems.length + " (مرشحات محلية)" : ""}`}</p>
 
@@ -296,25 +308,12 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
         <table className="finance-table">
           <caption className="sr-only">سجل طلبات سحب العملاء الاستثنائية من السجل المالي</caption>
           <thead><tr>
-            <RegistryColumnHeader label="العميل والطلب" active={Boolean(initialQuery.search)}>
-              <form noValidate onSubmit={(event)=>{event.preventDefault();navigate({status,search:search.trim(),sort,cursor:"",intakeId:""});}}>
-                <label>الاسم أو آخر أرقام المحفظة<input type="search" maxLength={128} value={search} onChange={e=>setSearch(e.target.value)} /></label>
-                <button type="submit" disabled={loading}>بحث</button>
-              </form>
-            </RegistryColumnHeader>
+            <th scope="col">العميل والطلب</th>
             <RegistryColumnHeader label="وجهة الصرف" scope="page" active={Boolean(maskedWalletSearch)}>
               <label>بحث في الرقم المحجوب<input type="search" value={maskedWalletSearch} onChange={e=>setMaskedWalletSearch(e.target.value)} /></label>
             </RegistryColumnHeader>
-            <RegistryColumnHeader label="الحالة" active={Boolean(initialQuery.status)}>
-              <label>حالة السحب<select value={status} onChange={e=>{const next=e.target.value;setStatus(next);navigate({status:next,search:initialQuery.search,sort:initialQuery.sort,cursor:"",intakeId:""});}}>
-                <option value="">كل الحالات</option>{Object.entries(intakeStatusLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}
-              </select></label>
-            </RegistryColumnHeader>
-            <RegistryColumnHeader label="وقت الطلب" active={sort==="requested_asc"}>
-              <label>ترتيب الطلبات<select value={sort} onChange={e=>{const next=e.target.value as RegistrySort;setSort(next);navigate({status:initialQuery.status,search:initialQuery.search,sort:next,cursor:"",intakeId:""});}}>
-                <option value="requested_desc">الأحدث أولًا</option><option value="requested_asc">الأقدم أولًا</option>
-              </select></label>
-            </RegistryColumnHeader>
+            <th scope="col">الحالة</th>
+            <th scope="col">وقت الطلب</th>
             <RegistryColumnHeader label="المبلغ" scope="page" active={Boolean(amountSearch)}>
               <label>بحث في المبلغ المعروض<input type="search" inputMode="numeric" value={amountSearch} onChange={e=>setAmountSearch(e.target.value)} /></label>
             </RegistryColumnHeader>

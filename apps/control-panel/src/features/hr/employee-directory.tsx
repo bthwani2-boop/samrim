@@ -167,7 +167,7 @@ export function EmployeeDirectory() {
       {selectedEmployee ? <EmployeeProfileWorkspace key={selectedEmployee} employeeId={selectedEmployee} embedded /> : null}
     </AdaptiveRecordPanel>}>
   <section className="workspace-page access-page hr-directory" aria-labelledby="hr-title">
-    <PageHeader id="hr-title" title="الموارد البشرية" actions={<button type="button" className="button button-primary" onClick={() => { setFormOpen((v) => !v); setError(""); }} aria-expanded={formOpen} aria-controls="employee-create">إضافة موظف</button>} />
+    <PageHeader id="hr-title" title="الموارد البشرية" actions={<button type="button" className="button button-primary" onClick={() => { setFormOpen((v) => !v); setError(""); }} aria-expanded={formOpen} aria-controls={formOpen ? "employee-create" : undefined}>إضافة موظف</button>} />
 
     {formOpen ? <form id="employee-create" className="access-create-form" noValidate onSubmit={(event) => void save(event)}>
       <h2>ملف موظف جديد</h2>
@@ -196,10 +196,6 @@ export function EmployeeDirectory() {
         <caption className="visually-hidden">دليل موظفي بثواني</caption>
         <thead><tr>
           <RegistryColumnHeader label="الموظف" active={Boolean(applied || pageSort !== "default")}>
-            <form onSubmit={(event) => { event.preventDefault(); setApplied(query.trim()); setCursor(""); setHistory([]); }}>
-              <label>الاسم أو القسم<input type="search" maxLength={80} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-              <button type="submit">بحث</button>
-            </form>
             <label>ترتيب الصفحة<select value={pageSort} onChange={(event) => setPageSort(event.target.value)}>
               <option value="default">الترتيب الأصلي</option><option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option>
             </select></label>
@@ -226,7 +222,7 @@ export function EmployeeDirectory() {
           <th scope="row">{person.fullNameAr}</th><td>{person.department}</td><td>{person.jobTitle}</td>
           <td>{person.operatorActorId ? "مرتبط بهوية تشغيل" : "بلا هوية تشغيل"}</td>
           <td className="indicator-column"><ActivityIndicator active={person.status === "active"} inactiveLabel="غير نشط" /></td>
-          <td><button type="button" className="button button-quiet" aria-label={`فتح ملف ${person.fullNameAr}`} data-adaptive-record-trigger={`employee-${index}`} onClick={() => openEmployee(person.id)}>فتح الملف</button></td>
+          <td><button type="button" className="button button-quiet" aria-label={`فتح الملف: ${person.fullNameAr}`} data-adaptive-record-trigger={`employee-${index}`} onClick={() => openEmployee(person.id)}>فتح الملف</button></td>
         </tr>)}
         {!loading && !error && visibleItems.length === 0 ? <tr><td colSpan={6}>لا يوجد موظفون مطابقون للبحث أو مرشحات الصفحة.</td></tr> : null}
         {loading ? <tr><td colSpan={6}>جارٍ تحميل الموظفين…</td></tr> : null}</tbody>
@@ -236,7 +232,7 @@ export function EmployeeDirectory() {
       {visibleItems.map((person, index) => <li className="employee-mobile-card" key={person.id}>
         <div className="employee-mobile-heading"><strong>{person.fullNameAr}</strong><ActivityIndicator active={person.status === "active"} inactiveLabel="غير نشط" /></div>
         <dl><div><dt>القسم</dt><dd>{person.department}</dd></div><div><dt>المسمى</dt><dd>{person.jobTitle}</dd></div><div><dt>الارتباط</dt><dd>{person.operatorActorId ? "هوية تشغيل مرتبطة" : "بلا هوية تشغيل"}</dd></div></dl>
-        <button type="button" className="button button-secondary" aria-label={`فتح ملف ${person.fullNameAr}`} data-adaptive-record-trigger={`employee-${index}`} onClick={() => openEmployee(person.id)}>فتح الملف</button>
+        <button type="button" className="button button-secondary" aria-label={`فتح الملف: ${person.fullNameAr}`} data-adaptive-record-trigger={`employee-${index}`} onClick={() => openEmployee(person.id)}>فتح الملف</button>
       </li>)}
       {!loading && !error && visibleItems.length === 0 ? <li className="collection-state">لا يوجد موظفون مطابقون للبحث أو مرشحات الصفحة.</li> : null}
     </ul>

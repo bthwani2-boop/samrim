@@ -386,7 +386,7 @@ export function AccessCenterWorkspace() {
       <button type="button" onClick={() => setMode("attention")} aria-pressed={mode === "attention"}><small>تحتاج متابعة</small><strong>{loading && !rows.length ? "—" : pending}</strong></button>
       <button type="button" onClick={() => setMode("all")} aria-pressed={mode === "all"}><small>سجلات محمّلة</small><strong>{loading && !rows.length ? "—" : rows.length}</strong></button>
       <button type="button" onClick={() => setMode("active")} aria-pressed={mode === "active"}><small>حسابات نشطة</small><strong>{loading && !rows.length ? "—" : active}</strong></button>
-      <button type="button" onClick={() => setMode("paused")} aria-pressed={mode === "paused"}><small>حسابات موقوفة</small><strong>{loading && !rows.length ? "—" : paused}</strong></button>
+      {paused > 0 || mode === "paused" || loading ? <button type="button" onClick={() => setMode("paused")} aria-pressed={mode === "paused"}><small>حسابات موقوفة</small><strong>{loading && !rows.length ? "—" : paused}</strong></button> : null}
     </section>
     <div className="access-center-toolbar">
       <form className="access-center-search" noValidate onSubmit={submitSearch}>
@@ -420,22 +420,9 @@ export function AccessCenterWorkspace() {
       <table className="operations-table access-table access-center-table">
         <caption className="visually-hidden">السجل الموحد لطلبات الوصول وملفات المراجعة والحسابات</caption>
         <thead><tr>
-          <RegistryColumnHeader label="الموظف / المشغّل" scope="page" active={Boolean(search)}>
-            <form noValidate onSubmit={submitSearch}>
-              <label>بحث بالاسم أو الهاتف أو القسم<input type="search" maxLength={100} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-              <button type="submit" disabled={loading}>بحث</button>
-            </form>
-          </RegistryColumnHeader>
-          <RegistryColumnHeader label="حالة الوصول" scope="page" active={mode !== "all"}>
-            <label>نوع العرض<select value={mode} onChange={(event) => setMode(event.target.value as Mode)}>
-              <option value="all">جميع السجلات المحمّلة</option><option value="attention">تحتاج متابعة</option><option value="requests">طلبات الوصول</option><option value="profiles">ملفات المراجعة</option><option value="operators">حسابات المشغّلين</option><option value="active">الحسابات النشطة</option><option value="paused">غير النشطة</option>
-            </select></label>
-          </RegistryColumnHeader>
-          <RegistryColumnHeader label="الصلاحيات" active={coverage !== "all"}>
-            <label>نطاق صلاحيات المشغّل<select value={coverage} onChange={(event) => changeCoverage(event.target.value as Coverage)} disabled={loading}>
-              <option value="all">كل النطاقات</option><option value="none">بدون صلاحيات</option><option value="some">صلاحيات جزئية</option><option value="complete">وصول كامل</option>
-            </select></label>
-          </RegistryColumnHeader>
+          <th scope="col">الموظف / المشغّل</th>
+          <th scope="col">حالة الوصول</th>
+          <th scope="col">الصلاحيات</th>
           <RegistryColumnHeader label="آخر نشاط / تحديث" scope="page" active={timeSort !== "default"}>
             <label>ترتيب المعروض<select value={timeSort} onChange={(event) => setTimeSort(event.target.value)}>
               <option value="default">الترتيب الأصلي</option><option value="desc">الأحدث أولًا</option><option value="asc">الأقدم أولًا</option>

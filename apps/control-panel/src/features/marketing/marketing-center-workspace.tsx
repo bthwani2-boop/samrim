@@ -131,7 +131,7 @@ function MarketingAuthorizedCenter() {
     </nav>
     {sections.map((section) => <section key={section.id} hidden={active !== section.id} aria-label={section.label} className="work-stack">
       {visited.includes(section.id) ? <>
-        <p className="muted">{section.description}</p>
+        {section.id !== "overview" ? <p className="visually-hidden">{section.description}</p> : null}
         {section.id === "campaigns" ? <MarketingPromotionsWorkspace /> : section.id === "content" ? <MarketingContentWorkspace /> : null}
         {section.id === "overview" && active === section.id ? <>
           <div className="marketing-entry-choices">
