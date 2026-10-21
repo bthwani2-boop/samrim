@@ -204,7 +204,12 @@ func MarkOrderConversationRead(ctx context.Context, db *sql.DB, orderID, actorID
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_conversation_read_state(actor_id,message_id,read_at)
 		SELECT $1,m.id,$3 FROM dsh.commerce_order_conversation_messages m
 		WHERE m.order_id=$2 AND (m.created_at,m.id) <= ($4,$5)
-		ON CONFLICT (actor_id,message_id) DO UPDATE SET read_at=EXCLUDED.read_at`, actorID, orderID, readAt, targetCreatedAt, messageID); err != nil {
+		ON CONFLICT (actor_id,message_id) DO NOTHING`, actorID, orderID, readAt, targetCreatedAt, messageID); err != nil {
+		return time.Time{}, err
+	}
+	// A retry must return the original read receipt, not manufacture a new read time.
+	if err := tx.QueryRowContext(ctx, `SELECT read_at FROM dsh.commerce_order_conversation_read_state
+		WHERE actor_id=$1 AND message_id=$2`, actorID, messageID).Scan(&readAt); err != nil {
 		return time.Time{}, err
 	}
 	if err := tx.Commit(); err != nil {

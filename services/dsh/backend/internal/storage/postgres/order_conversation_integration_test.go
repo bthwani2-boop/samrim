@@ -147,6 +147,19 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 			t.Fatalf("canonical conversation contains %d messages, %v; want %d", storedCount, err, messageCount)
 		}
 
+		firstReadAt, err := postgres.MarkOrderConversationRead(ctx, db, orderID, "conversation-history-partner", "partner", firstMessageID)
+		if err != nil {
+			t.Fatalf("mark first message read: %v", err)
+		}
+		retryReadAt, err := postgres.MarkOrderConversationRead(ctx, db, orderID, "conversation-history-partner", "partner", firstMessageID)
+		if err != nil || !firstReadAt.Equal(retryReadAt) {
+			t.Fatalf("retry replaced the original read receipt: first=%v retry=%v err=%v", firstReadAt, retryReadAt, err)
+		}
+		partnerHistory, err := postgres.ReadOrderConversation(ctx, db, orderID, "conversation-history-partner", "partner", 10)
+		if err != nil || partnerHistory.UnreadCount != messageCount-1 {
+			t.Fatalf("read receipt changed the unread boundary: count=%d err=%v", partnerHistory.UnreadCount, err)
+		}
+
 		pickupAt := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Microsecond)
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state='PICKED_UP',version=version+1,updated_at=$2 WHERE id=$1", orderID, pickupAt); err != nil {
 			t.Fatalf("complete pickup order: %v", err)
