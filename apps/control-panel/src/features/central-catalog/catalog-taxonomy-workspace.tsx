@@ -45,6 +45,7 @@ export function CatalogTaxonomyWorkspace() {
   const [chooseKind, setChooseKind] = useState(false);
   const categoryRequest = useRef(0);
   const scopeRequest = useRef(0);
+  const scopeLoadRequest = useRef(0);
   const serial = useRef(0);
 
   const loadVerticals = useCallback(async () => {
@@ -106,10 +107,13 @@ export function CatalogTaxonomyWorkspace() {
   }, [query]);
 
   useEffect(() => {
+    const request = ++scopeLoadRequest.current;
     setError("");
     setLoadingScope(true);
     void Promise.all([loadCategories(verticalId, searchedQuery, status), loadRelated(verticalId)])
-      .finally(() => setLoadingScope(false));
+      .finally(() => {
+        if (request === scopeLoadRequest.current) setLoadingScope(false);
+      });
   }, [verticalId, searchedQuery, status, loadCategories, loadRelated]);
 
   const refresh = useCallback(async () => {
@@ -134,9 +138,9 @@ export function CatalogTaxonomyWorkspace() {
       && (!search || [item.nameAr, item.nameEn, item.context, kindLabels[item.kind]].some((value) => value.toLocaleLowerCase().includes(search))));
   }, [verticals, verticalId, types, categories, shortcuts, kind, status, searchedQuery, selectedVertical?.nameAr]);
 
-  const visibleRows = useMemo(() => pageSort === "default" ? rows : [...rows].sort((a,b) =>
+  const visibleRows = useMemo(() => loadingScope ? [] : pageSort === "default" ? rows : [...rows].sort((a,b) =>
     (pageSort === "name_asc" ? 1 : -1) * a.nameAr.localeCompare(b.nameAr,"ar")
-  ), [rows,pageSort]);
+  ), [rows,pageSort,loadingScope]);
   function openEditor(nextKind: Kind, id?: string) {
     setEditor({ kind: nextKind, id, sequence: ++serial.current });
     setChooseKind(false);
