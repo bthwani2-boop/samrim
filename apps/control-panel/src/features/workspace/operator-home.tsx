@@ -234,6 +234,7 @@ function QueueContent({ error, loading, emptyMessage, hasItems, children }: Read
   return <>{children}</>;
 }
 function HomeQueue({ id, icon, title, href, error, loading, empty, emptyMessage, children }: Readonly<{ id: string; icon: OperationalIconName; title: string; href: string; error: string | undefined; loading: boolean; empty: boolean; emptyMessage: string; children: ReactNode }>) {
+  if (empty && !loading && !error) return null;
   return <section className="home-queue" aria-labelledby={"home-queue-" + id + "-title"}>
     <div className="home-queue-heading"><div><OperationalIcon name={icon} /><h3 id={"home-queue-" + id + "-title"}>{title}</h3></div><Link href={href}>فتح القائمة</Link></div>
     <QueueContent error={error} loading={loading} emptyMessage={emptyMessage} hasItems={!empty}>{children}</QueueContent>

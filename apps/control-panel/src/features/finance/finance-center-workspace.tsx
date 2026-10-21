@@ -15,6 +15,7 @@ import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adapti
 import { PageHeader } from "../../shell/page-header";
 import { SettlementIntakeInbox } from "./settlement-intake-inbox";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 const CashCustodyWorkspace = dynamic(() => import("./cash-custody-workspace").then((module) => module.CashCustodyWorkspace));
 const PartnerEarningsWorkspace = dynamic(() => import("./partner-earnings-workspace").then((module) => module.PartnerEarningsWorkspace));
@@ -174,6 +175,8 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<Filter>("attention");
   const [search, setSearch] = useState("");
+  const [stateText, setStateText] = useState("");
+  const [amountText, setAmountText] = useState("");
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [activeWorkflow, setActiveWorkflow] = useState<Workflow | null>(() => parseWorkflow(queryValue(initialQuery, "workflow")));
   const [activeRow, setActiveRow] = useState<FinancialRow | null>(null);
@@ -215,6 +218,16 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
   const matching = rows.filter((row) =>
     (filter === "all" || (filter === "attention" ? row.priority <= 2 : row.source === filter)) &&
     [row.subject, row.reference, row.category, row.state, row.nextStep].some((value) => value.toLocaleLowerCase("ar").includes(search.toLocaleLowerCase("ar").trim())),
+  );
+  // Finance is a union of bounded independent sources; never imply a global
+  // balance or an exhaustive search from these additional visible-row filters.
+  const normalizeDigits = (value: string) => value.replace(/[٠-٩۰-۹]/g, (digit) => {
+    const ordinal = digit.charCodeAt(0);
+    return String(ordinal >= 0x06f0 ? ordinal - 0x06f0 : ordinal - 0x0660);
+  });
+  const displayedRows = matching.filter((row) =>
+    (!stateText || (row.state + " " + row.nextStep).toLocaleLowerCase().includes(stateText.toLocaleLowerCase().trim()))
+    && (!amountText || normalizeDigits(row.amount).includes(normalizeDigits(amountText.trim())))
   );
   const selected = rows.find((row) => row.key === focusedKey) ?? null;
   const errors = sources.filter((source) => Boolean(visible?.[source.source]?.error));
@@ -297,13 +310,30 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
       <div className="finance-center-records">
         <div className="finance-center-records-header">
           <div><h2>سجل المتابعة المالية</h2><p>الأولوية أولًا · كل نوع محتفظ بمصدره المالي المستقل</p></div>
-          <span>{matching.length.toLocaleString("ar-YE")} سجلًا معروضًا</span>
+          <span>{displayedRows.length.toLocaleString("ar-YE")} سجلًا معروضًا · مرشحات هذا المركز تخص السجلات المحمّلة</span>
         </div>
         {loading && !hasData ? <p className="collection-state" role="status">جارٍ تحميل السجلات المالية…</p> : null}
         {hasData ? <div className="finance-center-table-scroll">
           <table className="finance-center-table">
-            <thead><tr><th scope="col">الجهة / المرجع</th><th scope="col">النوع</th><th scope="col">الحالة والخطوة التالية</th><th scope="col">المبلغ</th><th scope="col">الإجراء</th></tr></thead>
-            <tbody>{matching.map((row) => <tr key={row.key} data-priority={row.priority <= 2 ? "attention" : "normal"}>
+            <thead><tr>
+              <RegistryColumnHeader label="الجهة / المرجع" scope="page" active={Boolean(search)}>
+                <label>بحث في المعروض<input type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="الجهة أو المرجع" /></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="النوع" scope="page" active={filter !== "attention"}>
+                <label>نوع السجل<select value={filter} onChange={(event) => setFilter(event.target.value as Filter)}>
+                  <option value="attention">تحتاج مراجعة</option><option value="all">جميع المعروض</option>
+                  {sources.map((source) => <option key={source.source} value={source.source}>{source.label}</option>)}
+                </select></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="الحالة والخطوة التالية" scope="page" active={Boolean(stateText)}>
+                <label>حالة أو إجراء<input type="search" value={stateText} onChange={(event) => setStateText(event.target.value)} /></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="المبلغ" scope="page" active={Boolean(amountText)}>
+                <label>بحث في المبلغ المعروض<input type="search" inputMode="numeric" value={amountText} onChange={(event) => setAmountText(event.target.value)} /></label>
+              </RegistryColumnHeader>
+              <th scope="col">الإجراء</th>
+            </tr></thead>
+            <tbody>{displayedRows.map((row) => <tr key={row.key} data-priority={row.priority <= 2 ? "attention" : "normal"}>
               <th scope="row"><button className="finance-center-record-name" type="button" onClick={() => setFocusedKey(row.key)}>{row.subject}</button><small dir="auto">{row.reference}</small></th>
               <td><span className="finance-center-category">{row.category}</span></td>
               <td><strong>{row.state}</strong><small>{row.nextStep}</small></td>
@@ -314,7 +344,7 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
             </tr>)}</tbody>
           </table>
           <ul className="finance-center-mobile" aria-label="السجلات المالية المعروضة">
-            {matching.map((row) => <li key={row.key} data-priority={row.priority <= 2 ? "attention" : "normal"} data-selected={focusedKey === row.key ? "true" : undefined}>
+            {displayedRows.map((row) => <li key={row.key} data-priority={row.priority <= 2 ? "attention" : "normal"} data-selected={focusedKey === row.key ? "true" : undefined}>
               <div className="finance-center-mobile-heading">
                 <button type="button" className="finance-center-record-name" onClick={() => setFocusedKey(row.key)}>{row.subject}</button>
                 <span className="finance-center-category">{row.category}</span>
@@ -329,7 +359,7 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
               </div>
             </li>)}
           </ul>
-          {matching.length === 0 ? <div className="finance-center-empty">
+          {displayedRows.length === 0 ? <div className="finance-center-empty">
             <strong>{errors.length ? "لا توجد نتائج ضمن المصادر التي حُمّلت" : "لا توجد سجلات مطابقة"}</strong>
             <p>غيّر البحث أو المرشح، أو افتح السجل الكامل للنوع المطلوب.</p>
           </div> : null}

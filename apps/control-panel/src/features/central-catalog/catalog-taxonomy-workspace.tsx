@@ -3,6 +3,7 @@
 import type { CatalogCategoryListResponse, CommerceVertical, CommercialStoreType, ShoppingShortcut, ShoppingShortcutListResponse } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { CatalogCategoryRegistry } from "./catalog-category-registry";
 import { CatalogCommercialStoreTypeRegistry } from "./catalog-commercial-store-type-registry";
 import { CatalogShoppingShortcutRegistry } from "./catalog-shopping-shortcut-registry";
@@ -36,6 +37,7 @@ export function CatalogTaxonomyWorkspace() {
   const [searchedQuery, setSearchedQuery] = useState("");
   const [kind, setKind] = useState<Kind | "all">("all");
   const [status, setStatus] = useState<Status>("all");
+  const [pageSort, setPageSort] = useState<"default" | "name_asc" | "name_desc">("default");
   const [loading, setLoading] = useState(true);
   const [loadingScope, setLoadingScope] = useState(false);
   const [error, setError] = useState("");
@@ -141,6 +143,9 @@ export function CatalogTaxonomyWorkspace() {
       && (!search || [item.nameAr, item.nameEn, item.context, kindLabels[item.kind]].some((value) => value.toLocaleLowerCase().includes(search))));
   }, [verticals, verticalId, types, categories, shortcuts, kind, status, searchedQuery, selectedVertical?.nameAr]);
 
+  const visibleRows = useMemo(() => pageSort === "default" ? rows : [...rows].sort((a,b) =>
+    (pageSort === "name_asc" ? 1 : -1) * a.nameAr.localeCompare(b.nameAr,"ar")
+  ), [rows,pageSort]);
   function openEditor(nextKind: Kind, id?: string) {
     setEditor({ kind: nextKind, id, sequence: ++serial.current });
     setChooseKind(false);
@@ -190,9 +195,32 @@ export function CatalogTaxonomyWorkspace() {
     </div>
     <div className="unified-taxonomy-table-wrap">
       <table className="unified-taxonomy-table">
-        <thead><tr><th scope="col">العنصر</th><th scope="col">النوع</th><th scope="col">المجال / العلاقة</th><th scope="col">الحالة</th><th scope="col">الإجراء</th></tr></thead>
+        <thead><tr>
+          <RegistryColumnHeader label="العنصر" scope="page" active={Boolean(query || pageSort !== "default")}>
+            <label>البحث بالاسم<input type="search" value={query} maxLength={160} onChange={(event) => setQuery(event.target.value)} /></label>
+            <label>ترتيب القائمة<select value={pageSort} onChange={(event) => setPageSort(event.target.value as typeof pageSort)}>
+              <option value="default">الترتيب الأصلي</option><option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="النوع" scope="page" active={kind !== "all"}>
+            <label>نوع العنصر<select value={kind} onChange={(event) => setKind(event.target.value as Kind | "all")}>
+              <option value="all">جميع الأنواع</option>{(["vertical","type","category","shortcut"] as const).map((value) => <option key={value} value={value}>{kindLabels[value]}</option>)}
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="المجال / العلاقة" active={Boolean(verticalId)}>
+            <label>المجال<select value={verticalId} onChange={(event) => { setVerticalId(event.target.value); setCategoryId(""); setEditor(null); }}>
+              {verticals.map((v) => <option key={v.id} value={v.id}>{v.nameAr}</option>)}
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="الحالة" active={status !== "all"}>
+            <label>حالة العنصر<select value={status} onChange={(event) => setStatus(event.target.value as Status)}>
+              <option value="all">جميع الحالات</option><option value="active">نشط</option><option value="inactive">متوقف</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <th scope="col">الإجراء</th>
+        </tr></thead>
         <tbody>
-          {rows.map((item) => <tr key={`${item.kind}:${item.id}`}>
+          {visibleRows.map((item) => <tr key={`${item.kind}:${item.id}`}>
             <td><div className="unified-taxonomy-identity">
               {item.imageUri ? <img src={item.imageUri} alt="" loading="lazy" /> : <span className="unified-taxonomy-monogram" aria-hidden="true">{item.nameAr.slice(0, 1)}</span>}
               <div><strong>{item.nameAr}</strong>{item.nameEn ? <small dir="ltr">{item.nameEn}</small> : null}</div>
@@ -207,7 +235,7 @@ export function CatalogTaxonomyWorkspace() {
         </tbody>
       </table>
       <ul className="unified-taxonomy-mobile" aria-label="التصنيفات المعروضة">
-        {rows.map((item) => <li key={`${item.kind}:${item.id}`} className="unified-taxonomy-mobile-card">
+        {visibleRows.map((item) => <li key={`${item.kind}:${item.id}`} className="unified-taxonomy-mobile-card">
           <div className="unified-taxonomy-mobile-heading">
             <strong>{item.nameAr}</strong>
             <span className={`catalog-state-pill ${item.active ? "is-active" : "is-inactive"}`}>{item.active ? "نشط" : "متوقف"}</span>

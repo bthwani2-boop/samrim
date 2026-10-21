@@ -12,6 +12,7 @@ import { useSession } from "../../session/session-provider";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { AccountAccessPanel } from "./account-access-panel";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { HRPermissionReview } from "./hr-permission-review";
 
 type Source = "requests" | "profiles" | "operators";
@@ -154,6 +155,7 @@ export function AccessCenterWorkspace() {
     return oldView === "requests" ? "requests" : oldView === "operators" || oldView === "profiles" ? "profiles" : oldView === "permissions" ? "operators" : "all";
   });
   const [coverage, setCoverage] = useState<Coverage>("all");
+  const [timeSort, setTimeSort] = useState("default");
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -234,6 +236,11 @@ export function AccessCenterWorkspace() {
     if (mode === "paused") return row.kind === "operators" && row.state !== "نشط";
     return true;
   }), [rows, search, mode]);
+  const sortedVisible = useMemo(() => timeSort === "default" ? visible : [...visible].sort((a,b) => {
+    const av = a.timestamp ? Date.parse(a.timestamp) : -1;
+    const bv = b.timestamp ? Date.parse(b.timestamp) : -1;
+    return (timeSort === "asc" ? 1 : -1) * (av - bv);
+  }), [visible,timeSort]);
   const current = rows.find((row) => row.key === selected);
   const pending = rows.filter((row) => row.attention).length;
   const active = rows.filter((row) => row.kind === "operators" && row.state === "نشط").length;
@@ -412,9 +419,32 @@ export function AccessCenterWorkspace() {
     <div className="access-center-table-wrap" aria-busy={loading}>
       <table className="operations-table access-table access-center-table">
         <caption className="visually-hidden">السجل الموحد لطلبات الوصول وملفات المراجعة والحسابات</caption>
-        <thead><tr><th scope="col">الموظف / المشغّل</th><th scope="col">حالة الوصول</th><th scope="col">الصلاحيات</th><th scope="col">آخر نشاط / تحديث</th><th scope="col">الإجراء التالي</th></tr></thead>
+        <thead><tr>
+          <RegistryColumnHeader label="الموظف / المشغّل" scope="page" active={Boolean(search)}>
+            <form noValidate onSubmit={submitSearch}>
+              <label>بحث بالاسم أو الهاتف أو القسم<input type="search" maxLength={100} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+              <button type="submit" disabled={loading}>بحث</button>
+            </form>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="حالة الوصول" scope="page" active={mode !== "all"}>
+            <label>نوع العرض<select value={mode} onChange={(event) => setMode(event.target.value as Mode)}>
+              <option value="all">جميع السجلات المحمّلة</option><option value="attention">تحتاج متابعة</option><option value="requests">طلبات الوصول</option><option value="profiles">ملفات المراجعة</option><option value="operators">حسابات المشغّلين</option><option value="active">الحسابات النشطة</option><option value="paused">غير النشطة</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="الصلاحيات" active={coverage !== "all"}>
+            <label>نطاق صلاحيات المشغّل<select value={coverage} onChange={(event) => changeCoverage(event.target.value as Coverage)} disabled={loading}>
+              <option value="all">كل النطاقات</option><option value="none">بدون صلاحيات</option><option value="some">صلاحيات جزئية</option><option value="complete">وصول كامل</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="آخر نشاط / تحديث" scope="page" active={timeSort !== "default"}>
+            <label>ترتيب المعروض<select value={timeSort} onChange={(event) => setTimeSort(event.target.value)}>
+              <option value="default">الترتيب الأصلي</option><option value="desc">الأحدث أولًا</option><option value="asc">الأقدم أولًا</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <th scope="col">الإجراء التالي</th>
+        </tr></thead>
         <tbody>
-          {visible.map((row) => <tr key={row.key}>
+          {sortedVisible.map((row) => <tr key={row.key}>
             <th scope="row"><div className="access-center-person"><strong>{row.name}</strong><span>{row.job} · {row.department}</span><small>{sourceLabel(row.kind)}{row.phone ? <> · <span aria-hidden="true"><bdi dir="ltr">{maskPhoneForList(row.phone)}</bdi></span><span className="visually-hidden">رقم هاتف محجوب ينتهي بـ {phoneSuffixForList(row.phone)}</span></> : null}</small></div></th>
             <td><span className={"access-state-pill " + row.tone}>{row.state}</span></td>
             <td><span className="access-center-permissions">{row.permissions}</span></td>
@@ -426,7 +456,7 @@ export function AccessCenterWorkspace() {
         </tbody>
       </table>
       <ul className="access-center-mobile" aria-label="سجلات الوصول والصلاحيات">
-        {visible.map((row) => <li key={row.key}>
+        {sortedVisible.map((row) => <li key={row.key}>
           <div className="access-center-mobile-heading">
             <strong>{row.name}</strong>
             <span className={"access-state-pill " + row.tone}>{row.state}</span>
@@ -444,7 +474,7 @@ export function AccessCenterWorkspace() {
       </ul>
     </div>
     <div className="access-center-footer">
-      <span>{visible.length} سجلًا ظاهرًا{hasMore ? " · توجد صفحات أخرى" : ""}{awaiting ? " · " + awaiting + " بانتظار التفعيل" : ""}</span>
+      <span>{visible.length} سجلًا ظاهرًا{timeSort !== "default" ? " · الترتيب على السجلات المحمّلة فقط" : ""}{hasMore ? " · توجد صفحات أخرى" : ""}{awaiting ? " · " + awaiting + " بانتظار التفعيل" : ""}</span>
       {hasMore ? <button type="button" className="button button-secondary" disabled={loading || busy} onClick={() => void load(true)}>{loading ? "جارٍ التحميل…" : "تحميل المزيد"}</button> : null}
     </div>
 

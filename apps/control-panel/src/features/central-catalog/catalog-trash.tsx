@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 type TrashProduct = Readonly<{ id: string; canonicalName: string; version: number; deletedAt?: string; deletedBy?: string; deletionReason?: string }>;
 type TrashPage = Readonly<{ products: ReadonlyArray<TrashProduct>; nextCursor: string }>;
@@ -13,6 +14,8 @@ export function CatalogTrash() {
   const [history, setHistory] = useState<ReadonlyArray<string>>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [search, setSearch] = useState("");
+  const [reasonSearch, setReasonSearch] = useState("");
+  const [deletedSort, setDeletedSort] = useState("default");
   const [busy, setBusy] = useState("");
   const [confirmId, setConfirmId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -70,7 +73,15 @@ export function CatalogTrash() {
     }
   }
 
-  const visible = products.filter((item) => item.canonicalName.includes(search.trim()) || item.id.toLowerCase().includes(search.trim().toLowerCase()));
+  const visible = products.filter((item) =>
+    (item.canonicalName.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()) || item.id.toLowerCase().includes(search.trim().toLowerCase()))
+    && (!reasonSearch.trim() || (item.deletionReason ?? "").toLocaleLowerCase().includes(reasonSearch.trim().toLocaleLowerCase()))
+  ).sort((a,b) => {
+    if (deletedSort === "default") return 0;
+    const left = a.deletedAt ? Date.parse(a.deletedAt) : 0;
+    const right = b.deletedAt ? Date.parse(b.deletedAt) : 0;
+    return (deletedSort === "asc" ? 1 : -1) * (left - right);
+  });
   return (
     <div className="access-card">
       <div className="access-card-heading">
@@ -89,10 +100,24 @@ export function CatalogTrash() {
       {notice ? <p className="success-inline" role="status">{notice}</p> : null}
       {error ? <div role="alert"><p className="identity-error">{error}</p><button className="button button-secondary" type="button" disabled={loading} onClick={() => void load(new AbortController().signal)}>إعادة المحاولة</button></div> : null}
       {loading ? <p className="muted" role="status">جارٍ تحميل السلة…</p> : !error && products.length === 0 ? <p className="muted">لا توجد منتجات محذوفة في هذه الصفحة.</p> : !error && visible.length === 0 ? <p className="muted">لا توجد نتائج مطابقة في الصفحة الحالية.</p> : null}
+      {!loading && products.length > 0 ? <p className="access-center-scope">معروض من الصفحة: {visible.length} من {products.length} · لا يشمل البحث العناصر غير المحمّلة.</p> : null}
       {!loading && !error && visible.length > 0 ? (
         <div className="partner-stores-table-wrap">
           <table className="operations-table">
-            <thead><tr><th scope="col">المنتج</th><th scope="col">تاريخ الحذف</th><th scope="col">السبب</th><th scope="col">الإجراء</th></tr></thead>
+            <thead><tr>
+              <RegistryColumnHeader label="المنتج" scope="page" active={Boolean(search)}>
+                <label>اسم المنتج أو معرفه<input type="search" maxLength={160} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="تاريخ الحذف" scope="page" active={deletedSort !== "default"}>
+                <label>ترتيب التاريخ<select value={deletedSort} onChange={(event) => setDeletedSort(event.target.value)}>
+                  <option value="default">الترتيب الأصلي</option><option value="desc">الأحدث أولًا</option><option value="asc">الأقدم أولًا</option>
+                </select></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="السبب" scope="page" active={Boolean(reasonSearch)}>
+                <label>البحث في السبب<input type="search" value={reasonSearch} onChange={(event) => setReasonSearch(event.target.value)} /></label>
+              </RegistryColumnHeader>
+              <th scope="col">الإجراء</th>
+            </tr></thead>
             <tbody>{visible.map((product) => (
               <tr key={product.id}>
                 <th scope="row">{product.canonicalName}

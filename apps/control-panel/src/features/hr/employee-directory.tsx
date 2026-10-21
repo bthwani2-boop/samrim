@@ -7,6 +7,7 @@ import { identityFetch } from "../../session/identity-fetch";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { PageHeader } from "../../shell/page-header";
 import { ActivityIndicator, ActivityLegend } from "../shared/record-indicator";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { EmployeeManagerSelect } from "./employee-manager-select";
 import { EmployeeProfileWorkspace } from "./employee-profile-workspace";
@@ -34,6 +35,11 @@ export function EmployeeDirectory() {
   const [formOpen, setFormOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [applied, setApplied] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [jobFilter, setJobFilter] = useState("");
+  const [identityFilter, setIdentityFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [pageSort, setPageSort] = useState("default");
   const [items, setItems] = useState<readonly HREmployee[]>([]);
   const [cursor, setCursor] = useState("");
   const [history, setHistory] = useState<string[]>([]);
@@ -43,6 +49,13 @@ export function EmployeeDirectory() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [selectedEmployee, setSelectedEmployee] = useState("");
+  const pageFiltered = Boolean(departmentFilter || jobFilter || identityFilter !== "all" || statusFilter !== "all" || pageSort !== "default");
+  const visibleItems = items.filter((item) =>
+    (!departmentFilter || item.department.toLocaleLowerCase().includes(departmentFilter.toLocaleLowerCase()))
+    && (!jobFilter || item.jobTitle.toLocaleLowerCase().includes(jobFilter.toLocaleLowerCase()))
+    && (identityFilter === "all" || (identityFilter === "linked" ? Boolean(item.operatorActorId) : !item.operatorActorId))
+    && (statusFilter === "all" || item.status === statusFilter)
+  ).sort((a,b) => pageSort === "default" ? 0 : (pageSort === "name_asc" ? 1 : -1) * a.fullNameAr.localeCompare(b.fullNameAr,"ar"));
   const mutation = useRef<{ signature: string; key: string } | null>(null);
 
   const load = useCallback(async (overrides?: { q: string; cursor: string }) => {
@@ -177,27 +190,55 @@ export function EmployeeDirectory() {
       <label className="field-label">البحث عن موظف<input aria-label="ابحث عن موظف أو قسم" maxLength={80} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="الاسم أو القسم" /></label>
       <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
     </form>
+    {pageFiltered ? <p className="access-center-scope">معروض من الصفحة: {visibleItems.length} من {items.length} موظف · المرشحات الإضافية تخص الصفحة الحالية.</p> : null}
     <div className="access-table-wrap" aria-busy={loading}>
       <table className="operations-table access-table">
         <caption className="visually-hidden">دليل موظفي بثواني</caption>
-        <thead><tr><th scope="col">الموظف</th><th scope="col">القسم</th><th scope="col">المسمى</th><th scope="col">النوع</th><th scope="col" className="indicator-column">الحالة</th><th scope="col">التفاصيل</th></tr></thead>
-        <tbody>{items.map((person, index) => <tr key={person.id}>
+        <thead><tr>
+          <RegistryColumnHeader label="الموظف" active={Boolean(applied || pageSort !== "default")}>
+            <form onSubmit={(event) => { event.preventDefault(); setApplied(query.trim()); setCursor(""); setHistory([]); }}>
+              <label>الاسم أو القسم<input type="search" maxLength={80} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+              <button type="submit">بحث</button>
+            </form>
+            <label>ترتيب الصفحة<select value={pageSort} onChange={(event) => setPageSort(event.target.value)}>
+              <option value="default">الترتيب الأصلي</option><option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="القسم" scope="page" active={Boolean(departmentFilter)}>
+            <label>القسم في الصفحة<input type="search" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} /></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="المسمى" scope="page" active={Boolean(jobFilter)}>
+            <label>المسمى الوظيفي<input type="search" value={jobFilter} onChange={(event) => setJobFilter(event.target.value)} /></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="النوع" scope="page" active={identityFilter !== "all"}>
+            <label>ارتباط الحساب<select value={identityFilter} onChange={(event) => setIdentityFilter(event.target.value)}>
+              <option value="all">جميع الموظفين</option><option value="linked">مرتبط بهوية تشغيل</option><option value="unlinked">دون هوية تشغيل</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="الحالة" scope="page" active={statusFilter !== "all"}>
+            <label>حالة الموظف<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">جميع الحالات</option><option value="active">نشط</option><option value="inactive">غير نشط</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <th scope="col">التفاصيل</th>
+        </tr></thead>
+        <tbody>{visibleItems.map((person, index) => <tr key={person.id}>
           <th scope="row">{person.fullNameAr}</th><td>{person.department}</td><td>{person.jobTitle}</td>
           <td>{person.operatorActorId ? "مرتبط بهوية تشغيل" : "بلا هوية تشغيل"}</td>
           <td className="indicator-column"><ActivityIndicator active={person.status === "active"} inactiveLabel="غير نشط" /></td>
           <td><button type="button" className="button button-quiet" aria-label={`فتح ملف ${person.fullNameAr}`} data-adaptive-record-trigger={`employee-${index}`} onClick={() => openEmployee(person.id)}>فتح الملف</button></td>
         </tr>)}
-        {!loading && !error && items.length === 0 ? <tr><td colSpan={6}>لا يوجد موظفون مطابقون للبحث.</td></tr> : null}
+        {!loading && !error && visibleItems.length === 0 ? <tr><td colSpan={6}>لا يوجد موظفون مطابقون للبحث أو مرشحات الصفحة.</td></tr> : null}
         {loading ? <tr><td colSpan={6}>جارٍ تحميل الموظفين…</td></tr> : null}</tbody>
       </table>
     </div>
     <ul className="employee-mobile-list" aria-label="موظفو الصفحة الحالية" aria-busy={loading}>
-      {items.map((person, index) => <li className="employee-mobile-card" key={person.id}>
+      {visibleItems.map((person, index) => <li className="employee-mobile-card" key={person.id}>
         <div className="employee-mobile-heading"><strong>{person.fullNameAr}</strong><ActivityIndicator active={person.status === "active"} inactiveLabel="غير نشط" /></div>
         <dl><div><dt>القسم</dt><dd>{person.department}</dd></div><div><dt>المسمى</dt><dd>{person.jobTitle}</dd></div><div><dt>الارتباط</dt><dd>{person.operatorActorId ? "هوية تشغيل مرتبطة" : "بلا هوية تشغيل"}</dd></div></dl>
         <button type="button" className="button button-secondary" aria-label={`فتح ملف ${person.fullNameAr}`} data-adaptive-record-trigger={`employee-${index}`} onClick={() => openEmployee(person.id)}>فتح الملف</button>
       </li>)}
-      {!loading && !error && items.length === 0 ? <li className="collection-state">لا يوجد موظفون مطابقون للبحث.</li> : null}
+      {!loading && !error && visibleItems.length === 0 ? <li className="collection-state">لا يوجد موظفون مطابقون للبحث أو مرشحات الصفحة.</li> : null}
     </ul>
     <div className="form-actions">
       <ActivityLegend inactiveLabel="غير نشط" />

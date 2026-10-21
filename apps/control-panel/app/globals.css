@@ -2899,3 +2899,118 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
     .customer-directory-heading .customer-section-note { display:none; }
   }
 }
+
+/* Focused list records: use names as actions instead of a separate CTA column. */
+@layer composition {
+  .catalog-product-name-action {
+    display:inline-flex; align-items:center; min-block-size:36px; max-inline-size:100%;
+    padding:1px 3px; border:0; background:transparent; color:var(--color-primary);
+    font:inherit; font-weight:750; text-align:start; cursor:pointer;
+    overflow-wrap:anywhere;
+  }
+  .catalog-product-name-action:hover { color:var(--interactive-text); text-decoration:underline; }
+  .catalog-product-name-action:focus-visible { outline:2px solid var(--interactive-text); outline-offset:2px; border-radius:4px; }
+  .catalog-product-name-action:disabled { opacity:.6; cursor:wait; }
+  .store-registry-fulfillment-summary {
+    display:inline-block; max-inline-size:190px; white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; vertical-align:middle;
+  }
+  .partner-unified-table [data-kind="store"] .store-registry-identity-copy > strong {
+    line-height:1.4;
+  }
+  @media (max-width:700px) {
+    .catalog-product-name-action { min-block-size:44px; }
+  }
+}
+
+/* Admission: one-click hours preset; advanced day/period editor stays available. */
+@layer composition {
+  .joining-hours-section {
+    display:grid; gap:10px; padding:12px; border:1px solid var(--border-subtle);
+    border-radius:10px; background:var(--surface-base);
+  }
+  .joining-hours-brief { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; }
+  .joining-hours-brief > strong { font-size:14px; }
+  .joining-hours-brief > span { color:var(--text-muted); font-size:12px; }
+  .joining-hours-brief > button { margin-inline-start:auto; min-block-size:40px; }
+  .joining-hours-picker { border-block-start:1px solid var(--border-subtle); padding-block-start:6px; }
+  .joining-hours-picker > summary { display:inline-flex; min-block-size:40px; align-items:center; cursor:pointer; color:var(--interactive-text); font-weight:650; }
+  .joining-hours-days { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 12px; }
+  .joining-hours-day { min-inline-size:0; padding:7px; border:1px solid var(--border-subtle); border-radius:7px; }
+  .joining-hours-day > label { min-block-size:36px; }
+  @media(max-width:700px) {
+    .joining-hours-brief > button { margin-inline-start:0; }
+    .joining-hours-days { grid-template-columns:minmax(0,1fr); }
+    .joining-hours-day > label { min-block-size:44px; }
+  }
+}
+
+/* Shared column controls: table headings retain native keyboard/RTL semantics. */
+@layer composition {
+  .registry-column-head { position:relative; vertical-align:top; }
+  .registry-column-details { min-inline-size:0; }
+  .registry-column-details > summary {
+    display:flex; align-items:center; justify-content:space-between; gap:6px;
+    min-block-size:40px; cursor:pointer; font:inherit; font-weight:700;
+    padding:4px 2px; list-style:none; border-radius:6px; white-space:nowrap;
+  }
+  .registry-column-details > summary::-webkit-details-marker { display:none; }
+  .registry-column-details > summary:focus-visible { outline:2px solid var(--interactive-text); outline-offset:1px; }
+  .registry-column-details > summary:hover { color:var(--interactive-text); }
+  .registry-column-arrow { font-weight:700; font-size:14px; opacity:.66; }
+  .registry-column-details[open] .registry-column-arrow { transform:rotate(180deg); }
+  .registry-column-active-mark { color:var(--color-primary); font-size:18px; }
+  .registry-column-controls {
+    display:grid; gap:9px; min-inline-size:170px; max-inline-size:245px;
+    padding:9px 2px 12px;
+    font-weight:400; white-space:normal; line-height:1.4;
+  }
+  .registry-column-controls label { display:grid; gap:5px; font-size:12px; font-weight:600; }
+  .registry-column-controls small { display:block; color:var(--text-muted); font-size:11px; }
+  .registry-column-controls input,
+  .registry-column-controls select {
+    display:block; box-sizing:border-box; inline-size:100%; min-inline-size:0;
+    min-block-size:40px; padding-inline:8px; font:inherit;
+    border:1px solid var(--border-subtle); background:var(--surface-base);
+    color:var(--text-primary); border-radius:7px;
+  }
+  .registry-column-controls button {
+    min-block-size:40px; padding:6px 10px; cursor:pointer;
+    border:1px solid var(--border-subtle); border-radius:7px;
+    background:var(--surface-base); color:var(--interactive-text); font-weight:700;
+  }
+  .registry-column-controls form { display:grid; gap:7px; }
+  .registry-column-controls :is(input,select,button):focus-visible {
+    outline:2px solid var(--interactive-text); outline-offset:2px;
+  }
+  .registry-column-controls :is(input,select,button):disabled { opacity:.55; cursor:not-allowed; }
+}
+/* Column actions float above scrollable registries rather than expanding every row. */
+@layer composition {
+  .registry-column-popover {
+    position:fixed; z-index:1500; box-sizing:border-box;
+    inline-size:min(270px,calc(100vw - 16px));
+    max-block-size:min(70vh,calc(100vh - 20px));
+    overflow:auto; overscroll-behavior:contain;
+    border:1px solid var(--border-subtle);
+    border-radius:10px; box-shadow:0 16px 36px rgba(0,0,0,.19);
+    background:var(--surface-base); color:var(--text-primary,inherit);
+    padding:10px 12px;
+  }
+  .registry-column-popover .registry-column-controls {
+    max-inline-size:none; min-inline-size:0; padding:0;
+  }
+  .registry-column-popover-heading {
+    display:flex; align-items:center; justify-content:space-between;
+    gap:12px; font-size:13px;
+  }
+  .registry-column-popover-heading > button {
+    min-block-size:32px; border:0; background:transparent;
+    color:var(--interactive-text); cursor:pointer;
+    padding:3px 5px; font-size:12px;
+  }
+  .registry-column-head { vertical-align:middle; }
+  .registry-column-head .registry-column-details > summary {
+    min-block-size:36px; padding-block:0;
+  }
+}

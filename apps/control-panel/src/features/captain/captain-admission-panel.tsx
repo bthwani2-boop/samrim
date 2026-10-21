@@ -7,6 +7,7 @@ import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { responseMessage } from "../access/identity-error-message";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { CaptainCandidatePanel } from "./captain-candidate-panel";
 import { CaptainDetailWorkspace } from "./captain-detail-workspace";
 
@@ -19,8 +20,17 @@ export function CaptainAdmissionPanel() {
   const [query, setQuery] = useState("");
   const [enabledFilter, setEnabledFilter] = useState("");
   const [sort, setSort] = useState<"phone_asc" | "phone_desc">("phone_asc");
+  const [identityFilter, setIdentityFilter] = useState("all");
+  const [admissionFilter, setAdmissionFilter] = useState("all");
+  const [availabilityFilter, setAvailabilityFilter] = useState("all");
   const [items, setItems] = useState<ReadonlyArray<CaptainRecord>>([]);
   const [nextCursor, setNextCursor] = useState("");
+  const visibleCaptains = items.filter((captain) =>
+    (identityFilter === "all" || (identityFilter === "activated" ? Boolean(captain.activatedAt) : !captain.activatedAt))
+    && (admissionFilter === "all" || (admissionFilter === "none" ? !captain.admission : captain.admission?.state === admissionFilter))
+    && (availabilityFilter === "all" || captain.admission?.availabilityState === availabilityFilter)
+  );
+  const hasPageFilters = identityFilter !== "all" || admissionFilter !== "all" || availabilityFilter !== "all";
   const cursorPage = useCursorPage("captainCursor", JSON.stringify([query, enabledFilter, sort]), true, (key) => {
     try {
       const [savedQuery, enabled, savedSort] = JSON.parse(key);
@@ -281,8 +291,32 @@ export function CaptainAdmissionPanel() {
         {error ? <p className="identity-error" role="alert">{error}</p> : null}
         {loading && items.length === 0 ? <p role="status">جارٍ قراءة قائمة الكباتن…</p> : null}
         {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد نتائج</strong><p>جرّب إزالة المرشح أو البحث برقم آخر.</p></div> : null}
-        {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th scope="col">الاسم والهاتف</th><th scope="col">تسجيل الهوية</th><th scope="col">أهلية النظام</th><th scope="col">التوفر</th><th scope="col">إدارة الأهلية</th></tr></thead><tbody>
-          {items.map((captain, index) => {
+        {items.length > 0 && hasPageFilters ? <p className="access-center-scope">معروض من الصفحة: {visibleCaptains.length} من {items.length}. المرشحات الإضافية تخص الصفحة الحالية.</p> : null}
+        {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr>
+          <RegistryColumnHeader label="الاسم والهاتف">
+            <label>بحث برقم الهاتف<input type="search" inputMode="tel" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="رقم الكابتن" /></label>
+            <label>الترتيب<select value={sort} onChange={(event) => setSort(event.target.value as "phone_asc" | "phone_desc")}>
+              <option value="phone_asc">الهاتف تصاعديًا</option><option value="phone_desc">الهاتف تنازليًا</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="تسجيل الهوية" scope="page" active={identityFilter !== "all"}>
+            <label>حالة التسجيل<select value={identityFilter} onChange={(event) => setIdentityFilter(event.target.value)}>
+              <option value="all">جميع الحالات</option><option value="activated">مسجل</option><option value="pending">بانتظار التسجيل</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="أهلية النظام" scope="page" active={admissionFilter !== "all"}>
+            <label>الأهلية<select value={admissionFilter} onChange={(event) => setAdmissionFilter(event.target.value)}>
+              <option value="all">كل الحالات</option><option value="none">بلا أهلية</option><option value="pending_review">بانتظار المراجعة</option><option value="pending_identity">بانتظار الهوية</option><option value="eligible">مؤهل</option><option value="suspended">موقوف</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="التوفر" scope="page" active={availabilityFilter !== "all"}>
+            <label>حالة التوفر<select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)}>
+              <option value="all">الجميع</option><option value="available">متاح</option><option value="unavailable">غير متاح</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <th scope="col">إدارة الأهلية</th>
+        </tr></thead><tbody>
+          {visibleCaptains.map((captain, index) => {
             const requiresProfileReview = captain.admission?.requiresProfileReview === true;
             const operationallyEnabled = captain.enabled && captain.admission?.state === "eligible" && !requiresProfileReview;
             const mustDisableForProfileReview = requiresProfileReview && captain.admission?.state === "eligible";
@@ -321,6 +355,7 @@ export function CaptainAdmissionPanel() {
             </div></details> : <span className="muted">بانتظار اكتمال التسجيل والأهلية.</span>}</td>
           </tr>;
           })}
+          {visibleCaptains.length === 0 && !loading ? <tr><td colSpan={5}>لا توجد نتائج مطابقة في الصفحة الحالية. امسح مرشحات الأعمدة.</td></tr> : null}
         </tbody></table></div> : null}
     <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات الكباتن" />
       </section>
