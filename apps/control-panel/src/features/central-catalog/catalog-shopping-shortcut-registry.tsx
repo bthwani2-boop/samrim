@@ -3,6 +3,7 @@
 import type { CatalogCategoryListItem, CommercialStoreType, ShoppingShortcut, ShoppingShortcutListResponse } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 type Option = Readonly<{ id: string; nameAr: string; active: boolean; pathAr: string }>;
 type RegistryRead = Readonly<{ categories: ReadonlyArray<CatalogCategoryListItem>; nextCursor?: string }>;
@@ -52,6 +53,10 @@ export function CatalogShoppingShortcutRegistry({ verticalId, editorOnly = false
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [listQuery,setListQuery]=useState("");
+  const [listStatus,setListStatus]=useState("all");
+  const visibleShortcuts=items.filter(item=>(!listQuery.trim()||item.titleAr.toLocaleLowerCase().includes(listQuery.trim().toLocaleLowerCase()))
+    && (listStatus==="all" || item.active === (listStatus==="active")));
   const reloadSequence = useRef(0);
   const initialized = useRef(false);
 
@@ -189,13 +194,24 @@ export function CatalogShoppingShortcutRegistry({ verticalId, editorOnly = false
       </div>
     </fieldset> : null}
     {!editorOnly && items.length ? <div className="catalog-registry-table-wrap"><table className="catalog-registry-table">
-      <thead><tr><th>الاختصار</th><th>المصادر</th><th>الحالة</th><th>الإدارة</th></tr></thead>
-      <tbody>{items.map((item) => <tr key={item.id}>
+      <thead><tr>
+        <RegistryColumnHeader label="الاختصار" active={Boolean(listQuery)}>
+          <label>اسم الاختصار<input type="search" value={listQuery} onChange={e=>setListQuery(e.target.value)} /></label>
+        </RegistryColumnHeader>
+        <th scope="col">المصادر</th>
+        <RegistryColumnHeader label="الحالة" active={listStatus!=="all"}>
+          <label>الحالة<select value={listStatus} onChange={e=>setListStatus(e.target.value)}>
+            <option value="all">الجميع</option><option value="active">نشط</option><option value="inactive">معطل</option>
+          </select></label>
+        </RegistryColumnHeader>
+        <th scope="col">الإدارة</th>
+      </tr></thead>
+      <tbody>{visibleShortcuts.map((item) => <tr key={item.id}>
         <td><strong>{item.titleAr}</strong></td>
         <td>{item.storeTypeIds.length} نوع متجر، {item.categoryIds.length} فئة</td>
         <td>{item.active ? "نشط" : "معطل"}</td>
         <td><button type="button" className="catalog-row-action" disabled={saving || !canEdit} onClick={() => edit(item)}>تعديل</button></td>
-      </tr>)}</tbody>
+      </tr>)}{visibleShortcuts.length===0?<tr><td colSpan={4}>لا توجد اختصارات مطابقة.</td></tr>:null}</tbody>
     </table></div> : null}
   </section>;
 }
