@@ -3199,3 +3199,22 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
     .marketing-content-mobile-actions button {min-block-size:42px;}
   }
 }
+
+@layer composition {
+  /* Partners: one search on all sizes; column filters on desktop, compact toolbar on mobile. */
+  @media(min-width:701px) {
+    .partner-unified-toolbar > label.field-label:not(:first-child),
+    .partner-unified-toolbar > button[aria-expanded],
+    .partner-unified-toolbar > .partner-unified-extra {display:none;}
+    .partner-unified-toolbar > label.field-label:first-child {flex:1 1 auto;min-inline-size:220px;}
+  }
+}
+
+@layer composition {
+  .catalog-selection-bar {gap:6px 14px;color:var(--text-muted);font-size:12px;align-items:center;}
+  .catalog-selection-bar strong {font-size:13px;color:var(--color-primary);}
+  .catalog-result-source {position:relative;margin-inline-start:auto;}
+  .catalog-result-source>summary {display:inline-flex;align-items:center;min-block-size:38px;cursor:pointer;color:var(--text-muted);font-size:11px;}
+  .catalog-result-source small {display:block;padding:8px;font-size:11px;line-height:1.65;max-inline-size:270px;}
+  @media(max-width:700px) {.catalog-selection-bar {justify-content:flex-start;}.catalog-result-source {margin-inline-start:0;}}
+}

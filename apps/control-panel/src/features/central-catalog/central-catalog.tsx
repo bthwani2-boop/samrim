@@ -681,16 +681,20 @@ export function CentralCatalog() {
             <button type="button" className="button button-quiet" aria-pressed={viewMode === "table"} onClick={() => changeView("table")}>جدول المنتجات</button>
             <button type="button" className="button button-quiet" aria-pressed={viewMode === "gallery"} onClick={() => changeView("gallery")}>معرض الصور</button>
           </fieldset>
-          {!loading && !registryError ? <div className="catalog-selection-bar" aria-live="polite"><span>إجمالي المنتجات المطابقة للفلاتر: {registrySummary ? registrySummary.totalCount.toLocaleString("ar-YE") : "غير متاح"}</span><span>سجلات هذه الصفحة: {products.length.toLocaleString("ar-YE")}</span>{hasPageColumnFilters ? <span>معروض من الصفحة: {pageProducts.length.toLocaleString("ar-YE")} · لا تشمل مرشحات الأعداد الصفحات الأخرى</span> : null}{registrySummary ? <small>المصدر: الكتالوج المركزي · لقطة حالية عند <time dateTime={registrySummary.measuredAt}>{new Date(registrySummary.measuredAt).toLocaleString("ar-YE", { timeZone: "UTC" })}</time> UTC</small> : null}</div> : null}
+          {!loading && !registryError ? <div className="catalog-selection-bar" aria-live="polite">
+            <strong>{registrySummary ? registrySummary.totalCount.toLocaleString("ar-YE") : "—"} منتج مطابق</strong>
+            <span>{products.length.toLocaleString("ar-YE")} في الصفحة</span>
+            {hasPageColumnFilters ? <span>معروض من الصفحة: {pageProducts.length.toLocaleString("ar-YE")} · مرشحات العدد تخص الصفحة الحالية</span> : null}
+            {registrySummary ? <details className="catalog-result-source">
+              <summary>مصدر البيانات</summary>
+              <small>الكتالوج المركزي · آخر قراءة <time dateTime={registrySummary.measuredAt}>{new Date(registrySummary.measuredAt).toLocaleString("ar-YE", { timeZone: "UTC" })}</time> بالتوقيت العالمي</small>
+            </details> : null}
+          </div> : null}
         </div>
         {viewMode === "table" ? <div className="catalog-registry-table-wrap">
           <table className="catalog-registry-table">
             <thead><tr>
               <RegistryColumnHeader label="المنتج" active={Boolean(appliedQuery) || sort === "name_desc"}>
-                <form onSubmit={(event) => { event.preventDefault(); const q = query.trim(); setAppliedQuery(q); changeFilters({ query: q, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); }}>
-                  <label>المنتج أو العلامة<input type="search" maxLength={128} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-                  <button type="submit" disabled={loading}>بحث</button>
-                </form>
                 <label>ترتيب الاسم<select value={sort.startsWith("name_") ? sort : "name_asc"} onChange={(event) => { const next = event.target.value; setSort(next); changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort: next }); }}>
                   <option value="name_asc">أ–ي</option><option value="name_desc">ي–أ</option>
                 </select></label>

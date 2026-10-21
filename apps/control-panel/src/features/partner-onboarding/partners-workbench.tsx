@@ -359,12 +359,7 @@ export function PartnersWorkbench() {
       {rows.length > 0 ? <div className="store-registry-table-wrap partner-unified-table-wrap"><table className="operations-table partner-registry-table partner-unified-table">
         <caption className="visually-hidden">{activeTab === "joining" ? "طلبات انضمام الشركاء" : activeTab === "access" ? "اعتمادات وصول المتاجر" : kind === "partner" ? "حسابات الشركاء دون متجر" : "دليل المتاجر والشركاء"}</caption>
         <thead><tr>
-          <RegistryColumnHeader label="الشريك / المتجر" active={Boolean(appliedSearch)}>
-            <form onSubmit={(event) => { event.preventDefault(); navigate(activeTab, kind, status, city, sort, search.trim().slice(0,100)); }}>
-              <label>اسم المتجر أو الشريك<input type="search" maxLength={100} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-              <button type="submit">بحث</button>
-            </form>
-          </RegistryColumnHeader>
+          <th scope="col">الشريك / المتجر</th>
           {activeTab === "directory" ? <RegistryColumnHeader label="النوع والموقع" active={Boolean(city || kind !== defaultKindByTab[activeTab])}>
             <label>نوع السجل<select value={kind} onChange={(event) => navigate(activeTab, event.target.value as Kind, "", "", sort, appliedSearch)}>
               {kindOptions.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
