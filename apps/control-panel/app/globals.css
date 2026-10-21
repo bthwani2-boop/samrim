@@ -2067,6 +2067,22 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   }
 
 
+  .bt-home-extraMetrics { border:1px solid var(--border-subtle); border-radius:9px; padding:10px 12px; background:var(--surface-base); }
+  .bt-home-extraMetrics > summary, .bt-home-analytics-disclosure > summary { cursor:pointer; font-size:13px; font-weight:700; min-block-size:38px; align-content:center; }
+  .bt-home-extraMetrics[open] > summary { margin-block-end:9px; }
+  .bt-home-extraMetrics .bt-home-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .bt-home-notifications { background:var(--surface-base); border:1px solid var(--border-subtle); border-radius:11px; min-inline-size:0; overflow:hidden; }
+  .bt-home-notifications .bt-home-panelHeading { display:flex; justify-content:space-between; align-items:center; }
+  .bt-home-notifications .bt-home-panelHeading a { font-size:12px; color:var(--interactive-text); font-weight:700; }
+  .bt-home-notifications .home-list { padding:0 14px 12px; margin:0; }
+  .bt-home-notifications .home-record-link { min-block-size:42px; }
+  .bt-home-unreadCount { padding:8px 14px; color:var(--text-muted); font-size:12px; }
+  .bt-home-analytics-disclosure { min-inline-size:0; }
+  .bt-home-analytics-disclosure > summary { background:var(--surface-base); border:1px solid var(--border-subtle); border-radius:11px; padding:6px 14px; }
+  .bt-home-analytics-disclosure[open] > summary { margin-block-end:8px; }
+  :is(.bt-home-analytics-disclosure,.bt-home-extraMetrics) > summary:focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
+  @media (max-width:420px) { .bt-home-extraMetrics .bt-home-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
   /* src/features/workspace/operator-home-analytics.module.css (single-stylesheet owner) */
   .bt-home-chart-section { border: 1px solid var(--border-subtle); border-radius: 11px; min-inline-size: 0; overflow: hidden; background: var(--surface-base); }
   .bt-home-chart-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; padding: 18px 20px 15px; border-block-end: 1px solid var(--border-subtle); }

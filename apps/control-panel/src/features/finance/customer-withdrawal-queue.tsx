@@ -2,6 +2,7 @@
 
 import { formatMoney, officialWalletDestinationStatusLabel, officialWalletVerificationStatusLabel, payoutStatusLabel, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type CustomerWithdrawalIntakeSummary, type PayoutRequest } from "@bthwani/dsh";
 import { usePathname, useRouter } from "next/navigation";
+import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -274,6 +275,45 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
   const showReason = Boolean(intake && (intake.status === "REQUESTED" || intake.status === "DESTINATION_PENDING" || intake.status === "PAYOUT_HELD"));
 
   return (
+    <AdaptiveRecordWorkspace
+      open={Boolean(initialQuery.intakeId)}
+      preferenceKey="finance-customer-withdrawals"
+      triggerKey={initialQuery.intakeId}
+      onClose={() => navigate({ ...initialQuery, intakeId: "" })}
+      detail={initialQuery.intakeId ? <AdaptiveRecordPanel
+        title="مراجعة طلب السحب"
+        subtitle={intake?.beneficiaryName ?? ""}
+        onClose={() => navigate({ ...initialQuery, intakeId: "" })}>
+        <section className="access-card" aria-labelledby="customer-withdrawal-detail-title">
+          <h3 id="customer-withdrawal-detail-title">{intake ? `${intake.beneficiaryName} · ${intakeStatusLabels[intake.status]}` : "مراجعة طلب السحب"}</h3>
+          {detailLoading ? <p className="muted" role="status">جارٍ تحميل بيانات الطلب والرصيد والوجهة…</p> : null}
+          {detailError ? <p className="state-error" role="alert">{detailError}</p> : null}
+          {intake ? <>
+            <p className="muted">أُرسل {new Date(intake.requestedAt).toLocaleString("ar-YE")}</p>
+            <p>{intake.requestReason}</p>
+            <p>مستند التفويض: <a href={`/api/finance/evidence/${encodeURIComponent(intake.requestEvidenceDocumentId)}`}>فتح المستند الخاص</a></p>
+            <div className="finance-toolbar"><strong>الرصيد المؤهل الآن: {formatMoney(intake.eligibleAvailableMinor, intake.currency)}</strong><span>المحجوز: {formatMoney(intake.heldMinor, intake.currency)}</span>{intake.payoutAmountMinor != null && intake.payoutCurrency ? <span>مبلغ طلب الصرف: {formatMoney(intake.payoutAmountMinor, intake.payoutCurrency)}</span> : null}</div>
+            {destination ? <p className="muted">الوجهة: <bdi>{destination.walletIdentifierMasked}</bdi> · {officialWalletDestinationStatusLabel(destination.status)} · {officialWalletVerificationStatusLabel(destination.verificationStatus)}</p> : null}
+            {intake.resolutionReason ? <p className="muted">سبب الإغلاق: {intake.resolutionReason}</p> : null}
+            {showReason ? <label className="field-label" htmlFor="customer-withdrawal-reason">سبب الإجراء
+ <input id="customer-withdrawal-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={512} disabled={loading} />
+            </label> : null}
+            {intake.status === "REQUESTED" ? <div className="action-row"><button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void act("prepare-destination")}>تهيئة وجهة الصرف</button><button className="button button-quiet" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void act("reject")}>رفض الطلب</button></div> : null}
+            {intake.status === "DESTINATION_PENDING" && destination?.verificationStatus === "PENDING_VERIFICATION" ? <><label className="field-label" htmlFor="customer-withdrawal-verification-evidence">مرجع دليل التحقق المستقل
+ <input id="customer-withdrawal-verification-evidence" value={verificationEvidence} onChange={(event) => setVerificationEvidence(event.target.value)} maxLength={512} disabled={loading} />
+            </label><button className="button button-secondary" type="button" disabled={loading || !verificationEvidence.trim()} onClick={() => void act("verify-destination")}>تأكيد التحقق</button></> : null}
+            {intake.status === "DESTINATION_PENDING" && destination?.verificationStatus === "VERIFIED" ? <button className="button button-secondary" type="button" disabled={loading} onClick={() => void act("activate-destination")}>تفعيل وجهة الصرف</button> : null}
+            {intake.status === "DESTINATION_PENDING" && destination?.status === "ACTIVE_FOR_PAYOUT" ? <button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void act("accept")}>قبول وحجز الرصيد المؤهل</button> : null}
+            {intake.status === "PAYOUT_HELD" && intake.payoutStatus === "HELD" ? <><label className="field-label" htmlFor="customer-withdrawal-payout-evidence">مرجع دليل تهيئة الصرف
+ <input id="customer-withdrawal-payout-evidence" value={payoutEvidenceReference} onChange={(event) => setPayoutEvidenceReference(event.target.value)} maxLength={512} disabled={loading} />
+            </label><button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3 || !payoutEvidenceReference.trim()} onClick={() => void transitionPayout("prepare")}>تهيئة طلب الصرف</button></> : null}
+            {intake.status === "PAYOUT_HELD" && intake.payoutStatus === "PREPARED" ? <button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void transitionPayout("approve")}>اعتماد مستقل للصرف</button> : null}
+            {intake.status === "PAYOUT_HELD" && intake.payoutStatus === "APPROVED" ? <button className="button button-primary" type="button" disabled={loading} onClick={() => void createPayoutBatch()}>إنشاء الدفعة وفتح مكتب التنفيذ</button> : null}
+            {intake.status === "PAYOUT_HELD" && intake.payoutStatus && ["FROZEN", "EXECUTED", "COMPLETED", "EXCEPTION", "CANCELLED"].includes(intake.payoutStatus) ? <p className="muted">يتابع طلب الصرف في مسار الدفعات المشترك · {payoutStatusLabel(intake.payoutStatus as PayoutRequest["status"])}</p> : null}
+            {intake.status === "PAYOUT_HELD" && !intake.payoutStatus ? <p className="state-error">تعذر قراءة حالة طلب الصرف من السجل المالي؛ حدّث التفاصيل قبل المتابعة.</p> : null}
+          </> : null}
+        </section>
+      </AdaptiveRecordPanel> : null}>
     <section className="work-stack" aria-label="سجل سحوبات العملاء">
       <form className="finance-toolbar" noValidate onSubmit={(event) => {
         event.preventDefault();
@@ -337,40 +377,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
       </div>
       {nextCursor ? <button className="button button-quiet" type="button" onClick={() => navigate({ ...initialQuery, cursor: nextCursor, intakeId: "" })} disabled={loading}>تحميل السجلات التالية</button> : null}
 
-      {initialQuery.intakeId ? (
-        <section className="access-card" aria-labelledby="customer-withdrawal-detail-title">
-          <div className="finance-toolbar">
-            <div><h3 id="customer-withdrawal-detail-title">{intake ? `${intake.beneficiaryName} · ${intakeStatusLabels[intake.status]}` : "مراجعة طلب السحب"}</h3></div>
-            <button className="button button-quiet" type="button" onClick={() => navigate({ ...initialQuery, intakeId: "" })}>إغلاق التفاصيل</button>
-          </div>
-          {detailLoading ? <p className="muted" role="status">جارٍ تحميل بيانات الطلب والرصيد والوجهة…</p> : null}
-          {detailError ? <p className="state-error" role="alert">{detailError}</p> : null}
-          {intake ? <>
-            <p className="muted">أُرسل {new Date(intake.requestedAt).toLocaleString("ar-YE")}</p>
-            <p>{intake.requestReason}</p>
-            <p>مستند التفويض: <a href={`/api/finance/evidence/${encodeURIComponent(intake.requestEvidenceDocumentId)}`}>فتح المستند الخاص</a></p>
-            <div className="finance-toolbar"><strong>الرصيد المؤهل الآن: {formatMoney(intake.eligibleAvailableMinor, intake.currency)}</strong><span>المحجوز: {formatMoney(intake.heldMinor, intake.currency)}</span>{intake.payoutAmountMinor != null && intake.payoutCurrency ? <span>مبلغ طلب الصرف: {formatMoney(intake.payoutAmountMinor, intake.payoutCurrency)}</span> : null}</div>
-            {destination ? <p className="muted">الوجهة: <bdi>{destination.walletIdentifierMasked}</bdi> · {officialWalletDestinationStatusLabel(destination.status)} · {officialWalletVerificationStatusLabel(destination.verificationStatus)}</p> : null}
-            {intake.resolutionReason ? <p className="muted">سبب الإغلاق: {intake.resolutionReason}</p> : null}
-            {showReason ? <label className="field-label" htmlFor="customer-withdrawal-reason">سبب الإجراء
- <input id="customer-withdrawal-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={512} disabled={loading} />
-            </label> : null}
-            {intake.status === "REQUESTED" ? <div className="action-row"><button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void act("prepare-destination")}>تهيئة وجهة الصرف</button><button className="button button-quiet" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void act("reject")}>رفض الطلب</button></div> : null}
-            {intake.status === "DESTINATION_PENDING" && destination?.verificationStatus === "PENDING_VERIFICATION" ? <><label className="field-label" htmlFor="customer-withdrawal-verification-evidence">مرجع دليل التحقق المستقل
- <input id="customer-withdrawal-verification-evidence" value={verificationEvidence} onChange={(event) => setVerificationEvidence(event.target.value)} maxLength={512} disabled={loading} />
-            </label><button className="button button-secondary" type="button" disabled={loading || !verificationEvidence.trim()} onClick={() => void act("verify-destination")}>تأكيد التحقق</button></> : null}
-            {intake.status === "DESTINATION_PENDING" && destination?.verificationStatus === "VERIFIED" ? <button className="button button-secondary" type="button" disabled={loading} onClick={() => void act("activate-destination")}>تفعيل وجهة الصرف</button> : null}
-            {intake.status === "DESTINATION_PENDING" && destination?.status === "ACTIVE_FOR_PAYOUT" ? <button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void act("accept")}>قبول وحجز الرصيد المؤهل</button> : null}
-            {intake.status === "PAYOUT_HELD" && intake.payoutStatus === "HELD" ? <><label className="field-label" htmlFor="customer-withdrawal-payout-evidence">مرجع دليل تهيئة الصرف
- <input id="customer-withdrawal-payout-evidence" value={payoutEvidenceReference} onChange={(event) => setPayoutEvidenceReference(event.target.value)} maxLength={512} disabled={loading} />
-            </label><button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3 || !payoutEvidenceReference.trim()} onClick={() => void transitionPayout("prepare")}>تهيئة طلب الصرف</button></> : null}
-            {intake.status === "PAYOUT_HELD" && intake.payoutStatus === "PREPARED" ? <button className="button button-secondary" type="button" disabled={loading || reason.trim().length < 3} onClick={() => void transitionPayout("approve")}>اعتماد مستقل للصرف</button> : null}
-            {intake.status === "PAYOUT_HELD" && intake.payoutStatus === "APPROVED" ? <button className="button button-primary" type="button" disabled={loading} onClick={() => void createPayoutBatch()}>إنشاء الدفعة وفتح مكتب التنفيذ</button> : null}
-            {intake.status === "PAYOUT_HELD" && intake.payoutStatus && ["FROZEN", "EXECUTED", "COMPLETED", "EXCEPTION", "CANCELLED"].includes(intake.payoutStatus) ? <p className="muted">يتابع طلب الصرف في مسار الدفعات المشترك · {payoutStatusLabel(intake.payoutStatus as PayoutRequest["status"])}</p> : null}
-            {intake.status === "PAYOUT_HELD" && !intake.payoutStatus ? <p className="state-error">تعذر قراءة حالة طلب الصرف من السجل المالي؛ حدّث التفاصيل قبل المتابعة.</p> : null}
-          </> : null}
-        </section>
-      ) : null}
     </section>
+    </AdaptiveRecordWorkspace>
   );
 }
