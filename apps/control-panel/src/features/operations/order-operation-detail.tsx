@@ -9,6 +9,7 @@ import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
 import { operationHistoryLabel } from "./operation-history";
+import { operationalAge } from "./operational-age";
 import { OperationLocationMap } from "./operation-location-map";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 import { useReadOnReturn } from "../shared/use-read-on-return";
@@ -290,6 +291,8 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
 
   const { order, assignment } = operation;
   const action = resolveOperatorAction({ state: order.state, assignment });
+  const needsPartnerFollowup = ["CREATED", "PARTNER_ACCEPTED", "PREPARING"].includes(order.state)
+    && operationalAge(order.state, order.updatedAt, Date.now()).needsReview;
   const canCancelOrder = sessionState.kind === "authenticated" && sessionState.identity.role === "operator" &&
     sessionState.identity.permissions?.includes("operations") &&
     ["CREATED", "PARTNER_ACCEPTED", "PREPARING"].includes(order.state) &&
@@ -303,7 +306,9 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
         : <PageHeader id="order-operation-title" title={<>طلب من {operation.storeName}</>} status={<span className="status-badge">{orderStateLabel(order.state)}</span>} actions={<Link className="button button-secondary" href={returnHref()}>الطلبات</Link>} />}
 
       <div className="order-detail-toolbar">
-        {action ? <button type="button" className={`button ${action === "recover" ? "button-secondary" : "button-primary"}`} onClick={() => void runAction()} disabled={busy || loading || actionNeedsReadback}>{busy ? "جارٍ تنفيذ الإجراء…" : operationActionLabel(action)}</button> : <span className="muted">لا يتطلب هذا الطلب إجراءً مباشرًا من المشغل.</span>}
+        {action ? <button type="button" className={`button ${action === "recover" ? "button-secondary" : "button-primary"}`} onClick={() => void runAction()} disabled={busy || loading || actionNeedsReadback}>{busy ? "جارٍ تنفيذ الإجراء…" : operationActionLabel(action)}</button>
+          : needsPartnerFollowup ? <><span className="operations-attention">تأخر الطلب؛ راجع حالة التجهيز مع الشريك.</span><Link className="button button-secondary" href={`/partners/stores/${encodeURIComponent(order.storeId)}`}>فتح المتجر</Link></>
+          : <span className="muted">لا يتطلب هذا الطلب إجراءً مباشرًا من المشغل.</span>}
         {canCancelOrder ? <button type="button" className="button button-secondary" onClick={() => setPendingCancellation(true)} disabled={loading || busy || actionNeedsReadback}>مراجعة الإلغاء</button> : null}
       </div>
 
