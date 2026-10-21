@@ -19,7 +19,7 @@ const SECTION_TITLES: Readonly<Record<StoreSection, string>> = {
   operations: "التشغيل وساعات العمل",
   promotions: "العروض والتخفيضات",
   team: "الفريق والصلاحيات",
-  settings: "بيانات المتجر والاتفاقيات",
+  settings: "الصور والاتفاقيات",
 };
 
 function isStoreSection(value: string | undefined): value is StoreSection {
@@ -75,12 +75,11 @@ export function PartnerStore() {
   return <View style={styles.container}>
     <View style={styles.headerRow}>
       <Text style={styles.value}>{SECTION_TITLES[section]}</Text>
-      <BthwaniButton label="المزيد" variant="secondary" onPress={() => router.replace("/more" as Href)} />
+      <BthwaniButton label="رجوع" variant="quiet" onPress={() => router.canGoBack() ? router.back() : router.replace("/more" as Href)} />
     </View>
     {stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={requiredPermissions(section)} /> : null}
     {selectedStore && permitted ? <>
       <View style={styles.headerRow}>
-        <Text style={styles.value}>{selectedStore.name}</Text>
         <BthwaniStatusBadge icon={selectedStore.publicationState === "published" ? "success" : "warning"}
           label={selectedStore.publicationState === "published" ? "منشور" : selectedStore.publicationState === "unpublished" || selectedStore.publicationState === "hidden" ? publicationStateLabel(selectedStore.publicationState as PublicationState) : "حالة النشر غير متاحة"}
           tone={selectedStore.publicationState === "published" ? "success" : "warning"} />

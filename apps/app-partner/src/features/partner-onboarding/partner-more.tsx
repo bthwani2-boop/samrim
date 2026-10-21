@@ -15,8 +15,6 @@ export function PartnerMore() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => StyleSheet.create({
     screen: { gap: spacing[3], paddingTop: spacing[3] },
-    title: { ...typography.titleMd, color: theme.color },
-    context: { ...typography.caption, color: theme.colorMuted },
     panel: { backgroundColor: theme.surface, borderRadius: radius.lg, borderWidth: borders.hairline, borderColor: theme.borderColor, overflow: "hidden" },
     entry: { minHeight: 60, alignItems: "center", flexDirection: "row", gap: spacing[3], paddingHorizontal: spacing[4] },
     entryPressed: { backgroundColor: theme.surfaceInset },
@@ -37,11 +35,12 @@ export function PartnerMore() {
   const actions: MenuItem[] = [
     ...(can("store_operations") ? [{ label: "التشغيل وساعات العمل", icon: "store" as const, destination: "operations" as const }] : []),
     ...(can("promotions") ? [{ label: "العروض والتخفيضات", icon: "offers" as const, destination: "promotions" as const }] : []),
+    ...(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("catalog")) ? [{ label: "أدوات الكتالوج", icon: "cart" as const, href: "/products?panel=tools" as Href }] : []),
     ...(selectedStore?.owned ? [
       { label: "الفريق والصلاحيات", icon: "account" as const, destination: "team" as const },
-      { label: "بيانات المتجر", icon: "edit" as const, destination: "settings" as const },
+      { label: "الصور والاتفاقيات", icon: "edit" as const, destination: "settings" as const },
     ] : []),
-    ...(state.kind === "ready" && !stores.length ? [{ label: "إضافة متجر", icon: "add" as const, href: "/onboarding" as Href }] : []),
+    ...(state.kind === "ready" && !stores.length ? [{ label: "حالة الانضمام", icon: "store" as const, href: "/onboarding" as Href }] : []),
     { label: "الحساب والإعدادات", icon: "account", href: "/account" as Href },
   ];
 
@@ -51,9 +50,7 @@ export function PartnerMore() {
   }
 
   return <View style={styles.screen}>
-    <Text style={styles.title}>المزيد</Text>
     {stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={["store_operations", "promotions"]} /> : null}
-    {selectedStore && firstManageable ? <Text style={styles.context}>{selectedStore.name}</Text> : null}
     {state.kind === "error" ? <View style={{ gap: spacing[2] }}>
       <Text accessibilityRole="alert" style={styles.message}>تعذر تحميل المتاجر</Text>
       <BthwaniButton label="إعادة المحاولة" variant="secondary" onPress={() => void reload()} />

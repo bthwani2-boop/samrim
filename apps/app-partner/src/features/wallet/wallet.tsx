@@ -19,17 +19,19 @@ export default function PartnerWallet() {
   const canReadFinance = storeScope.stores.some((store) => store.owned || store.permissions.includes("finance_read"));
   const canRequestPayout = storeScope.stores.some((store) => store.owned || store.permissions.includes("payout_request"));
   const ownsAnyStore = storeScope.stores.some((store) => store.owned);
+  const activeMode = (mode === "summary" && canReadFinance) || (mode === "payout" && canRequestPayout) || (mode === "recipients" && ownsAnyStore)
+    ? mode : canReadFinance ? "summary" : canRequestPayout ? "payout" : "recipients";
 
   return <View style={[styles.container, { gap: spacing[3], paddingTop: spacing[3] }]} accessibilityLabel="محفظة الشريك">
     <Text style={{ ...typography.titleMd, color: theme.color }}>المحفظة</Text>
     <View style={styles.choiceRow}>
-      {canReadFinance ? <BthwaniChip label="الرصيد" selected={mode === "summary"} onPress={() => setMode("summary")} /> : null}
-      {canRequestPayout ? <BthwaniChip label="طلب صرف" selected={mode === "payout"} onPress={() => setMode("payout")} /> : null}
-      {ownsAnyStore ? <BthwaniChip label="حسابات الاستلام" selected={mode === "recipients"} onPress={() => setMode("recipients")} /> : null}
+      {canReadFinance ? <BthwaniChip label="الرصيد" selected={activeMode === "summary"} onPress={() => setMode("summary")} /> : null}
+      {canRequestPayout ? <BthwaniChip label="طلب صرف" selected={activeMode === "payout"} onPress={() => setMode("payout")} /> : null}
+      {ownsAnyStore ? <BthwaniChip label="حسابات الاستلام" selected={activeMode === "recipients"} onPress={() => setMode("recipients")} /> : null}
     </View>
-    {mode === "summary" && canReadFinance ? <PartnerFinancialSummaryCard key={`finance:${financeScopeKey}`} /> : null}
-    {mode === "payout" && canRequestPayout ? <PartnerPayoutCard key={`payout:${payoutScopeKey}`} /> : null}
-    {mode === "recipients" && ownsAnyStore ? <StorePayoutRecipientsCard key={`recipients:${ownerScopeKey}`} /> : null}
+    {activeMode === "summary" && canReadFinance ? <PartnerFinancialSummaryCard key={`finance:${financeScopeKey}`} /> : null}
+    {activeMode === "payout" && canRequestPayout ? <PartnerPayoutCard key={`payout:${payoutScopeKey}`} /> : null}
+    {activeMode === "recipients" && ownsAnyStore ? <StorePayoutRecipientsCard key={`recipients:${ownerScopeKey}`} /> : null}
     {!canReadFinance && !canRequestPayout && !ownsAnyStore ? <Text style={styles.muted}>لا توجد صلاحية مالية لهذا الحساب.</Text> : null}
   </View>;
 }
