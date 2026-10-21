@@ -3,6 +3,7 @@
 import { type CommerceVertical, type DiscoveryContentAnalytics, type DiscoveryContentView, isMediaProvenanceInputValid, type MediaProvenanceInput, type OperatorDiscoveryContentRegistryResponse, type ServiceCity } from "@bthwani/dsh";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { MarketingStateIndicator } from "./marketing-state-indicator";
@@ -457,9 +458,18 @@ export function MarketingContentWorkspace() {
   }
 
   return (
+    <AdaptiveRecordWorkspace preferenceKey="marketing-content" open={Boolean(analyticsContentId) && !editorOpen && !pendingCreate}
+      onClose={() => { analyticsSequence.current++; setAnalyticsContentId(""); setAnalytics(null); setAnalyticsError(""); }}
+      detail={analyticsContentId && !editorOpen && !pendingCreate ? <AdaptiveRecordPanel title="تحليلات المحتوى"
+        onClose={() => { analyticsSequence.current++; setAnalyticsContentId(""); setAnalytics(null); setAnalyticsError(""); }}>
+        {analyticsPanel}
+      </AdaptiveRecordPanel> : null}>
     <div className="work-stack" data-testid="marketing-content-workspace">
       {storageError ? <p className="managed-status managed-status-warning" role="alert">{storageError}</p> : null}
       {pendingCreate ? <p className="managed-status managed-status-warning" role="status">{pendingCreateStatusMessage}</p> : null}
+      {editorOpen || pendingCreate ? <section className="marketing-editor-mode" aria-label="إنشاء محتوى اكتشاف">
+        <div className="action-row"><button type="button" className="button button-secondary"
+          disabled={busy || Boolean(pendingCreate)} onClick={() => setEditorOpen(false)}>العودة إلى سجل المحتوى</button></div>
       <details className="access-card marketing-create-disclosure" open={Boolean(pendingCreate) || editorOpen} onToggle={(event) => setEditorOpen(event.currentTarget.open)}>
         <summary className="section-heading marketing-create-summary">إنشاء محتوى اكتشاف</summary>
         <div className="access-card-heading"><h2>إنشاء بطاقة اكتشاف</h2></div>
@@ -501,7 +511,9 @@ export function MarketingContentWorkspace() {
           <button className="button" type="button" disabled={busy || attemptChecking || !attemptReady} onClick={() => void createContent()}>{pendingCreate ? "التحقق / إعادة محاولة الإنشاء" : "إنشاء مسودة المحتوى"}</button>
         </div>
       </details>
-      <section className="access-card" aria-labelledby="marketing-content-title">
+      </section> : null}
+      {!editorOpen && !pendingCreate ? <section className="access-card" aria-labelledby="marketing-content-title">
+        <div className="action-row"><button type="button" className="button button-primary" onClick={() => { setEditorOpen(true); analyticsSequence.current++; setAnalyticsContentId(""); setAnalytics(null); setAnalyticsError(""); }}>إنشاء محتوى</button></div>
         <div className="access-card-heading"><h2 id="marketing-content-title">سجل محتوى الاكتشاف</h2>{message ? <p role="status" className="muted">{message}</p> : null}</div>
         <form className="registry-toolbar" noValidate onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0, 128)); setCursor(""); setCursorStack([]); }}>
           <label className="field-label" htmlFor="content-search">عنوان المحتوى<input id="content-search" aria-label="البحث في سجل المحتوى" type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
@@ -543,8 +555,8 @@ export function MarketingContentWorkspace() {
         {registryError ? <div role="alert" className="managed-status managed-status-warning"><p>{registryError}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
         {registry && !registry.items.length && !loading && !registryError ? <p className="collection-state">لا يوجد محتوى مطابق.</p> : null}
         <nav className="pagination" aria-label="صفحات سجل محتوى الاكتشاف"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
-        {analyticsPanel}
-      </section>
+      </section> : null}
     </div>
+    </AdaptiveRecordWorkspace>
   );
 }
