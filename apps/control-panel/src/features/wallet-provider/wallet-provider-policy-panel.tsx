@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { ActivityIndicator, ActivityLegend } from "../shared/record-indicator";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 const arabicNamePattern = /^[\p{Script=Arabic}\p{White_Space}\p{Number}\p{Punctuation}]+$/u;
 
@@ -125,7 +126,17 @@ export function WalletProviderPolicyPanel() {
       <span className="muted" role="status">{visibleProviders.length} من {providers.length} مزوّدًا{loading || error ? " · آخر قراءة" : ""}</span>
       <div className="table-wrap" aria-busy={loading}>
         <table className="reference-table"><caption className="visually-hidden">مزودو المحافظ الرسمية</caption>
-          <thead><tr><th scope="col">المزوّد</th><th scope="col" className="indicator-column">الحالة</th><th scope="col">الإجراء</th></tr></thead>
+          <thead><tr>
+            <RegistryColumnHeader label="المزوّد" active={Boolean(query)}>
+              <label>بحث في المحافظ<input type="search" maxLength={80} value={query} disabled={busy || loading || Boolean(editingKey)} onChange={e=>setQuery(e.target.value)} /></label>
+            </RegistryColumnHeader>
+            <RegistryColumnHeader label="الحالة" active={Boolean(status)}>
+              <label>حالة المزوّد<select value={status} disabled={busy || loading || Boolean(editingKey)} onChange={e=>setStatus(e.target.value)}>
+                <option value="">الجميع</option><option value="active">نشط</option><option value="inactive">متوقف</option>
+              </select></label>
+            </RegistryColumnHeader>
+            <th scope="col">الإجراء</th>
+          </tr></thead>
           <tbody>{visibleProviders.map((provider) => <tr key={provider.key}>
             <th scope="row">{editingKey === provider.key ? <label className="field-label record-edit-field" htmlFor={`wallet-provider-name-${provider.key}`}>اسم المزوّد<input ref={renameInput} id={`wallet-provider-name-${provider.key}`} maxLength={80} value={renamedValue} disabled={busy || loading} onChange={(event) => setRenamedValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") closeEdit(provider.key); if (event.key === "Enter" && !busy && !loading) { event.preventDefault(); void rename(provider); } }} /></label> : provider.displayNameAr}</th>
             <td className="indicator-column"><ActivityIndicator active={provider.active} activeLabel="نشطة" inactiveLabel="متوقفة" /></td>

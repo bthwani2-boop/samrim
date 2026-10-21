@@ -10,20 +10,22 @@ import (
 )
 
 type StoreCaptainMembership struct {
-	ID                 string
-	StoreID            string
-	StoreName          string
-	PartnerActorID     string
-	CaptainActorID     *string
-	CaptainNameAr      string
-	CaptainPhoneMasked string
-	State              string
-	Version            int
-	ExpiresAt          time.Time
-	AcceptedAt         *time.Time
-	RevokedAt          *time.Time
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	ID                    string
+	StoreID               string
+	StoreName             string
+	PartnerActorID        string
+	CaptainActorID        *string
+	InvitedCaptainActorID *string
+	DisplayNameAr         string
+	CaptainNameAr         string
+	CaptainPhoneMasked    string
+	State                 string
+	Version               int
+	ExpiresAt             time.Time
+	AcceptedAt            *time.Time
+	RevokedAt             *time.Time
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 var (
@@ -82,10 +84,10 @@ func CreateStoreCaptainInvitation(ctx context.Context, db *sql.DB, storeID, part
 	err = tx.QueryRowContext(ctx, `INSERT INTO dsh.store_captain_memberships
 		(id,store_id,partner_actor_id,invitation_token_hash,state,version,expires_at)
 		VALUES($1,$2,$3,$4,'pending',1,$5)
-		RETURNING id,store_id,partner_actor_id,captain_actor_id,state,version,expires_at,accepted_at,revoked_at,created_at,updated_at`,
+		RETURNING id,store_id,partner_actor_id,captain_actor_id,state,version,expires_at,accepted_at,revoked_at,created_at,updated_at,invited_captain_actor_id,display_name_ar`,
 		id, storeID, partnerActorID, tokenHash, expiresAt).Scan(
 		&membership.ID, &membership.StoreID, &membership.PartnerActorID, &membership.CaptainActorID,
-		&membership.State, &membership.Version, &membership.ExpiresAt, &membership.AcceptedAt, &membership.RevokedAt, &membership.CreatedAt, &membership.UpdatedAt)
+		&membership.State, &membership.Version, &membership.ExpiresAt, &membership.AcceptedAt, &membership.RevokedAt, &membership.CreatedAt, &membership.UpdatedAt, &membership.InvitedCaptainActorID, &membership.DisplayNameAr)
 	if err != nil {
 		return StoreCaptainMembership{}, false, fmt.Errorf("create Store Captain membership invitation: %w", err)
 	}
@@ -143,6 +145,9 @@ func AcceptStoreCaptainInvitation(ctx context.Context, db *sql.DB, tokenHash, ca
 	if membership.State != "pending" {
 		return StoreCaptainMembership{}, false, ErrStoreCaptainInvitationUsed
 	}
+	if membership.InvitedCaptainActorID != nil && *membership.InvitedCaptainActorID != captainActorID {
+		return StoreCaptainMembership{}, false, ErrStoreCaptainMembershipNotFound
+	}
 	var expired bool
 	if err := tx.QueryRowContext(ctx, "SELECT expires_at <= clock_timestamp() FROM dsh.store_captain_memberships WHERE id=$1", membership.ID).Scan(&expired); err != nil {
 		return StoreCaptainMembership{}, false, fmt.Errorf("check Store Captain invitation expiry: %w", err)
@@ -164,10 +169,10 @@ func AcceptStoreCaptainInvitation(ctx context.Context, db *sql.DB, tokenHash, ca
 	err = tx.QueryRowContext(ctx, `UPDATE dsh.store_captain_memberships
 		SET captain_actor_id=$2,state='active',version=version+1,accepted_at=clock_timestamp(),updated_at=clock_timestamp()
 		WHERE id=$1 AND state='pending' AND version=$3
-		RETURNING id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),partner_actor_id,captain_actor_id,state,version,expires_at,accepted_at,revoked_at,created_at,updated_at`,
+		RETURNING id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),partner_actor_id,captain_actor_id,state,version,expires_at,accepted_at,revoked_at,created_at,updated_at,invited_captain_actor_id,display_name_ar`,
 		membership.ID, captainActorID, membership.Version).Scan(
 		&accepted.ID, &accepted.StoreID, &accepted.StoreName, &accepted.PartnerActorID, &accepted.CaptainActorID,
-		&accepted.State, &accepted.Version, &accepted.ExpiresAt, &accepted.AcceptedAt, &accepted.RevokedAt, &accepted.CreatedAt, &accepted.UpdatedAt)
+		&accepted.State, &accepted.Version, &accepted.ExpiresAt, &accepted.AcceptedAt, &accepted.RevokedAt, &accepted.CreatedAt, &accepted.UpdatedAt, &accepted.InvitedCaptainActorID, &accepted.DisplayNameAr)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return StoreCaptainMembership{}, false, ErrStoreCaptainAlreadyMember
@@ -197,7 +202,7 @@ func ListStoreCaptainMemberships(ctx context.Context, db *sql.DB, storeID, partn
 	}
 	rows, err := db.QueryContext(ctx, `SELECT m.id,m.store_id,s.name,m.partner_actor_id,m.captain_actor_id,
 		CASE WHEN m.state='pending' AND m.expires_at <= clock_timestamp() THEN 'expired' ELSE m.state END,
-		m.version,m.expires_at,m.accepted_at,m.revoked_at,m.created_at,m.updated_at
+		m.version,m.expires_at,m.accepted_at,m.revoked_at,m.created_at,m.updated_at,m.invited_captain_actor_id,m.display_name_ar
 		FROM dsh.store_captain_memberships m JOIN dsh.stores s ON s.id=m.store_id
 		WHERE m.store_id=$1 AND m.partner_actor_id=$2 ORDER BY m.created_at DESC,m.id LIMIT 100`, storeID, partnerActorID)
 	if err != nil {
@@ -224,9 +229,9 @@ func ListCaptainStoreMemberships(ctx context.Context, db *sql.DB, captainActorID
 		return nil, ErrStoreCaptainMembershipConflict
 	}
 	rows, err := db.QueryContext(ctx, `SELECT m.id,m.store_id,s.name,m.partner_actor_id,m.captain_actor_id,m.state,
-		m.version,m.expires_at,m.accepted_at,m.revoked_at,m.created_at,m.updated_at
+		m.version,m.expires_at,m.accepted_at,m.revoked_at,m.created_at,m.updated_at,m.invited_captain_actor_id,m.display_name_ar
 		FROM dsh.store_captain_memberships m JOIN dsh.stores s ON s.id=m.store_id
-		WHERE m.captain_actor_id=$1 ORDER BY m.created_at DESC,m.id LIMIT 100`, captainActorID)
+		WHERE (m.captain_actor_id=$1 OR (m.invited_captain_actor_id=$1 AND m.state='pending' AND m.expires_at>clock_timestamp())) ORDER BY m.created_at DESC,m.id LIMIT 100`, captainActorID)
 	if err != nil {
 		return nil, fmt.Errorf("list Captain Store memberships: %w", err)
 	}
@@ -275,10 +280,10 @@ func TransitionStoreCaptainMembership(ctx context.Context, db *sql.DB, storeID, 
 	}
 	var current StoreCaptainMembership
 	err = tx.QueryRowContext(ctx, `SELECT id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),partner_actor_id,captain_actor_id,state,
-		version,expires_at,accepted_at,revoked_at,created_at,updated_at
+		version,expires_at,accepted_at,revoked_at,created_at,updated_at,invited_captain_actor_id,display_name_ar
 		FROM dsh.store_captain_memberships WHERE id=$1 AND store_id=$2 AND partner_actor_id=$3 FOR UPDATE`, membershipID, storeID, partnerActorID).Scan(
 		&current.ID, &current.StoreID, &current.StoreName, &current.PartnerActorID, &current.CaptainActorID,
-		&current.State, &current.Version, &current.ExpiresAt, &current.AcceptedAt, &current.RevokedAt, &current.CreatedAt, &current.UpdatedAt)
+		&current.State, &current.Version, &current.ExpiresAt, &current.AcceptedAt, &current.RevokedAt, &current.CreatedAt, &current.UpdatedAt, &current.InvitedCaptainActorID, &current.DisplayNameAr)
 	if errors.Is(err, sql.ErrNoRows) {
 		return StoreCaptainMembership{}, false, ErrStoreCaptainMembershipNotFound
 	}
@@ -329,9 +334,9 @@ func transitionStoreCaptainMembershipTx(ctx context.Context, tx *sql.Tx, current
 	err := tx.QueryRowContext(ctx, `UPDATE dsh.store_captain_memberships
 		SET state=$2,version=version+1,revoked_at=CASE WHEN $2='revoked' THEN clock_timestamp() ELSE NULL END,updated_at=clock_timestamp()
 		WHERE id=$1 AND version=$3
-		RETURNING id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),partner_actor_id,captain_actor_id,state,version,expires_at,accepted_at,revoked_at,created_at,updated_at`, current.ID, targetState, current.Version).Scan(
+		RETURNING id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),partner_actor_id,captain_actor_id,state,version,expires_at,accepted_at,revoked_at,created_at,updated_at,invited_captain_actor_id,display_name_ar`, current.ID, targetState, current.Version).Scan(
 		&updated.ID, &updated.StoreID, &updated.StoreName, &updated.PartnerActorID, &updated.CaptainActorID,
-		&updated.State, &updated.Version, &updated.ExpiresAt, &updated.AcceptedAt, &updated.RevokedAt, &updated.CreatedAt, &updated.UpdatedAt)
+		&updated.State, &updated.Version, &updated.ExpiresAt, &updated.AcceptedAt, &updated.RevokedAt, &updated.CreatedAt, &updated.UpdatedAt, &updated.InvitedCaptainActorID, &updated.DisplayNameAr)
 	if err != nil {
 		return StoreCaptainMembership{}, fmt.Errorf("transition Store Captain membership: %w", err)
 	}
@@ -345,13 +350,13 @@ type storeCaptainMembershipScanner interface {
 func scanStoreCaptainMembership(row storeCaptainMembershipScanner) (StoreCaptainMembership, error) {
 	var membership StoreCaptainMembership
 	err := row.Scan(&membership.ID, &membership.StoreID, &membership.StoreName, &membership.PartnerActorID, &membership.CaptainActorID,
-		&membership.State, &membership.Version, &membership.ExpiresAt, &membership.AcceptedAt, &membership.RevokedAt, &membership.CreatedAt, &membership.UpdatedAt)
+		&membership.State, &membership.Version, &membership.ExpiresAt, &membership.AcceptedAt, &membership.RevokedAt, &membership.CreatedAt, &membership.UpdatedAt, &membership.InvitedCaptainActorID, &membership.DisplayNameAr)
 	return membership, err
 }
 
 func readStoreCaptainMembershipByTokenTx(ctx context.Context, tx *sql.Tx, tokenHash string, forUpdate bool) (StoreCaptainMembership, error) {
 	query := `SELECT id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),partner_actor_id,captain_actor_id,state,
-		version,expires_at,accepted_at,revoked_at,created_at,updated_at FROM dsh.store_captain_memberships WHERE invitation_token_hash=$1`
+		version,expires_at,accepted_at,revoked_at,created_at,updated_at,invited_captain_actor_id,display_name_ar FROM dsh.store_captain_memberships WHERE invitation_token_hash=$1`
 	if forUpdate {
 		query += " FOR UPDATE"
 	}
@@ -370,9 +375,9 @@ func readStoreCaptainMembershipReplayTx(ctx context.Context, tx *sql.Tx, key, re
 	}
 	var membership StoreCaptainMembership
 	err = tx.QueryRowContext(ctx, `SELECT id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),partner_actor_id,captain_actor_id,state,
-		version,expires_at,accepted_at,revoked_at,created_at,updated_at FROM dsh.store_captain_memberships WHERE id=$1`, membershipID).Scan(
+		version,expires_at,accepted_at,revoked_at,created_at,updated_at,invited_captain_actor_id,display_name_ar FROM dsh.store_captain_memberships WHERE id=$1`, membershipID).Scan(
 		&membership.ID, &membership.StoreID, &membership.StoreName, &membership.PartnerActorID, &membership.CaptainActorID,
-		&membership.State, &membership.Version, &membership.ExpiresAt, &membership.AcceptedAt, &membership.RevokedAt, &membership.CreatedAt, &membership.UpdatedAt)
+		&membership.State, &membership.Version, &membership.ExpiresAt, &membership.AcceptedAt, &membership.RevokedAt, &membership.CreatedAt, &membership.UpdatedAt, &membership.InvitedCaptainActorID, &membership.DisplayNameAr)
 	if err != nil {
 		return StoreCaptainMembership{}, false, err
 	}

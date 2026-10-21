@@ -68,3 +68,10 @@ Unknown, unresolved or ambiguous phone/actor, declined/expired invitation, unaut
 ## Proof boundary
 
 Proof requires phone-based invitation, invitation acceptance, Partner-role activation where needed, positive authorized Store access, negative unrelated/cross-Store access, function-level denial, self-escalation denial, revocation readback, no access through a non-Partner session, no raw Actor-ID dependency in normal UX and preservation of WLT financial boundaries.
+
+
+## Store owner-created member accounts — approved 2026-10-21
+
+The Store owner creates a bounded member relationship by name, phone, Store scope and permission preset. The canonical Identity actor is created when missing, or reused when present. The owner's display label is not an Identity-verified legal name. Identity provisions a managed Partner role but never gives Store authorization: the member must verify their own phone and accept the DSH Store grant. No routine Operator approval is needed for new owner-created ordinary employees. Earlier pending-operator-admission records retain their recovery path.
+
+The owner can suspend, resume and revoke Store-specific access without taking possession of the person's credentials or changing roles at other Stores. DSH must validate Store ownership and the full permission set before provisioning Identity, and reject unauthorized/cross-Store access on each read and write. WLT's financial recipient controls remain owner-only and independent from delegated finance permissions.

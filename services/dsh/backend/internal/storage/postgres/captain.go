@@ -1017,7 +1017,8 @@ func CreateStoreCaptainDispatchOffer(ctx context.Context, db *sql.DB, storeID, o
 		return CaptainOffer{}, false, ErrCaptainDispatchConflict
 	}
 	var membershipID string
-	if err := tx.QueryRowContext(ctx, `SELECT id FROM dsh.store_captain_memberships WHERE store_id=$1 AND partner_actor_id=$2 AND captain_actor_id=$3 AND state='active' FOR SHARE`, storeID, partnerActorID, captainActorID).Scan(&membershipID); errors.Is(err, sql.ErrNoRows) {
+	var targetedActor sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT id,invited_captain_actor_id FROM dsh.store_captain_memberships WHERE store_id=$1 AND partner_actor_id=$2 AND captain_actor_id=$3 AND state='active' FOR SHARE`, storeID, partnerActorID, captainActorID).Scan(&membershipID, &targetedActor); errors.Is(err, sql.ErrNoRows) {
 		return CaptainOffer{}, false, ErrStoreCaptainMembershipNotFound
 	} else if err != nil {
 		return CaptainOffer{}, false, err
@@ -1025,7 +1026,10 @@ func CreateStoreCaptainDispatchOffer(ctx context.Context, db *sql.DB, storeID, o
 	var admissionState string
 	var requiresProfileReview bool
 	if err := tx.QueryRowContext(ctx, `SELECT state,requires_profile_review FROM dsh.captain_admissions WHERE actor_id=$1 FOR UPDATE`, captainActorID).Scan(&admissionState, &requiresProfileReview); errors.Is(err, sql.ErrNoRows) {
-		return CaptainOffer{}, false, ErrCaptainNotEligible
+		// Store-created, phone-verified Captains are not admitted into the public pool.
+		if !targetedActor.Valid || targetedActor.String != captainActorID {
+			return CaptainOffer{}, false, ErrCaptainNotEligible
+		}
 	} else if err != nil {
 		return CaptainOffer{}, false, err
 	} else if admissionState != "eligible" || requiresProfileReview {
@@ -1472,8 +1476,19 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 	}
 	var admissionID, admissionState, admissionAvailability string
 	var requiresProfileReview bool
+	var targetedMembership bool
+	if offer.SourceStoreID != "" {
+		var invited sql.NullString
+		err := tx.QueryRowContext(ctx, "SELECT invited_captain_actor_id FROM dsh.store_captain_memberships WHERE store_id=$1 AND captain_actor_id=$2 AND state='active' FOR SHARE", offer.SourceStoreID, captainActorID).Scan(&invited)
+		if err != nil {
+			return CaptainOfferResult{}, ErrCaptainNotEligible
+		}
+		targetedMembership = invited.Valid && invited.String == captainActorID
+	}
 	if err := tx.QueryRowContext(ctx, "SELECT id,state,availability_state,requires_profile_review FROM dsh.captain_admissions WHERE actor_id=$1 FOR UPDATE", captainActorID).Scan(&admissionID, &admissionState, &admissionAvailability, &requiresProfileReview); errors.Is(err, sql.ErrNoRows) {
-		return CaptainOfferResult{}, ErrCaptainNotEligible
+		if !targetedMembership {
+			return CaptainOfferResult{}, ErrCaptainNotEligible
+		}
 	} else if err != nil {
 		return CaptainOfferResult{}, err
 	} else if admissionState != "eligible" || requiresProfileReview {

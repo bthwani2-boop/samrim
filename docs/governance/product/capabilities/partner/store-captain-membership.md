@@ -42,3 +42,10 @@ PARTNER STORE OWNER
 ## Failure and recovery
 
 Unknown Captain identity, Captain without standing eligibility, declined/expired invitation, unauthorized Store scope, duplicate invitation/membership, stale accept/suspend/restore/remove and conflicting fulfillment eligibility converge on one DSH relationship truth. Retry cannot auto-accept on behalf of the Captain or create a duplicate membership.
+
+
+## Store owner-created Captains — approved 2026-10-21
+
+An authorized Store owner creates or reuses the Captain's canonical Identity account by name and phone and creates an inactive invitation addressed to that exact actor. The invited Captain proves phone possession, activates their account and accepts their Store membership in the Captain app. A different Captain must not see or accept the invitation. The owner's display label is not an independently verified legal name.
+
+A Store-targeted, accepted Captain need not also join the platform's general dispatch pool, and membership must never make the Captain eligible for public-pool orders. Suspension blocks new Store offers without rewriting existing custody. Existing unsafe/suspended general admission must not be bypassed. Legacy code invitations remain temporarily supported solely for compatibility.

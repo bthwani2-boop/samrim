@@ -14,7 +14,6 @@ type ActorInput struct{ PhoneE164 string }
 
 var (
 	ErrInvitePhoneInvalid = errors.New("Store access invite phone is invalid")
-	ErrInviteActorMissing = errors.New("no Identity actor matches the Store access invite phone")
 )
 
 type Client struct{ inner *identityclient.Client }
@@ -91,24 +90,7 @@ func (c *Client) SearchFieldRolesByPhoneE164(ctx context.Context, phone string) 
 	return c.inner.SearchRolesAnyStatus(ctx, "field", strings.TrimSpace(phone))
 }
 
-func (c *Client) ResolvePartnerInviteByPhone(ctx context.Context, rawPhone string) (identityclient.ActorRoleView, error) {
-	phone, err := normalizeInvitePhoneE164(rawPhone)
-	if err != nil {
-		return identityclient.ActorRoleView{}, err
-	}
-	page, err := c.inner.SearchRolesAnyStatus(ctx, "client", phone)
-	if err != nil {
-		return identityclient.ActorRoleView{}, err
-	}
-	for _, role := range page.Items {
-		if role.PhoneE164 == phone && role.Role == "client" && role.ActorID != "" && role.SecurityEnabled {
-			return role, nil
-		}
-	}
-	return identityclient.ActorRoleView{}, ErrInviteActorMissing
-}
-
-func normalizeInvitePhoneE164(raw string) (string, error) {
+func NormalizeInvitePhone(raw string) (string, error) {
 	phone := phoneformat.NormalizeYemenE164(raw)
 	if !phoneformat.IsE164(phone) {
 		return "", ErrInvitePhoneInvalid

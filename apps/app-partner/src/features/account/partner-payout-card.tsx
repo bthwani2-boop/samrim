@@ -3,6 +3,7 @@ import { BthwaniButton, BthwaniChip, BthwaniConfirmDialog, BthwaniSurface, useAp
 import { createDshMobileClient, formatMoney, type PartnerPayoutRequestCreateRequest, type PartnerPayoutRequestView, type PartnerPayoutSummary, isDefinitiveDshMobileClientRejection, settlementIntakeStatusLabel, type SettlementIntake } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
+import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
@@ -76,7 +77,7 @@ export function PartnerPayoutCard() {
     } catch { setState(null); setSelectedSummary(null); setError("تعذر قراءة نطاق طلب الصرف المصرح به."); }
     finally { setBusy(false); }
   }, [authenticated]);
-  useEffect(() => { void load(); }, [load]);
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
   useEffect(() => {
     let active = true;
     setSelectedSummary(null);
@@ -265,7 +266,6 @@ export function PartnerPayoutCard() {
     </View> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {authenticated ? <BthwaniButton busy={busy} label="تحديث حالة الصرف" onPress={() => void load()} variant="secondary" /> : null}
     <BthwaniConfirmDialog
       busy={busy}
       confirmLabel={destinationReady ? "تأكيد طلب الصرف" : "تأكيد طلب التسوية"}

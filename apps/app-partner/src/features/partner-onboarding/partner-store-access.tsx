@@ -11,11 +11,10 @@ import { storeAccessPermissionsMutationIdentity, storeAccessPermissionsReadbackC
 import { createOwnStoreAccessInvitation, listOwnStoreAccessGrants, transitionOwnStoreAccessGrant, updateOwnStoreAccessPermissions } from "./store-readback-client";
 
 const rolePresets = [
-  { value: "STORE_MANAGER", label: "مدير متجر", permissions: ["orders", "catalog", "store_operations", "promotions", "fulfillment"] as const },
+  { value: "STORE_MANAGER", label: "مشرف تشغيل", permissions: ["orders", "catalog", "store_operations", "promotions", "fulfillment"] as const },
   { value: "ORDER_STAFF", label: "موظف طلبات", permissions: ["orders"] as const },
-  { value: "CATALOG_STAFF", label: "موظف كتالوج", permissions: ["catalog"] as const },
+  { value: "CATALOG_STAFF", label: "موظف منتجات", permissions: ["catalog"] as const },
   { value: "ACCOUNTANT", label: "محاسب", permissions: ["finance_read"] as const },
-  { value: "DELIVERY_STAFF", label: "موظف توصيل", permissions: ["fulfillment", "orders"] as const },
 ] as const;
 
 type InviteAttempt = Readonly<{
@@ -54,7 +53,7 @@ function attemptHeaders(prefix: string) {
   return { idempotencyKey: `${prefix}_${Crypto.randomUUID()}`, correlationID: `${prefix}_corr_${Crypto.randomUUID()}` };
 }
 
-export function PartnerStoreAccess({ storeID }: { storeID: string }) {
+export function PartnerStoreAccess({ storeID, showForm = true }: { storeID: string; showForm?: boolean }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const [grants, setGrants] = useState<ReadonlyArray<StoreAccessGrant>>([]);
@@ -67,6 +66,7 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [phone, setPhone] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [storeSearch, setStoreSearch] = useState("");
   const [selectedStoreIDs, setSelectedStoreIDs] = useState<ReadonlyArray<string>>([]);
   const [selectedPermissions, setSelectedPermissions] = useState<ReadonlyArray<StoreAccessPermission>>(["orders"]);
@@ -131,7 +131,8 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
       const targetStoreIDs = [...selectedStoreIDs];
       const requestedPermissions = [...selectedPermissions];
       const delegatePhone = phone.trim();
-      const identity = `${delegatePhone}|${[...targetStoreIDs].sort((left, right) => left.localeCompare(right)).join(",")}|${[...requestedPermissions].sort((left, right) => left.localeCompare(right)).join(",")}`;
+      const memberName = displayName.trim();
+      const identity = `${memberName}|${delegatePhone}|${[...targetStoreIDs].sort((left, right) => left.localeCompare(right)).join(",")}|${[...requestedPermissions].sort((left, right) => left.localeCompare(right)).join(",")}`;
       if (inviteAttempt.current?.identity !== identity) {
         inviteAttempt.current = {
           identity,
@@ -143,7 +144,7 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
       const results = await Promise.allSettled(targetStoreIDs.map(async (targetStoreID) => {
         const headers = attempt.headersByStore[targetStoreID];
         if (!headers) throw new Error("STORE_ACCESS_INVITE_ATTEMPT_MISSING");
-        const mutation = await createOwnStoreAccessInvitation(targetStoreID, { delegatePhoneE164: delegatePhone, permissions: requestedPermissions }, headers.idempotencyKey, headers.correlationID);
+        const mutation = await createOwnStoreAccessInvitation(targetStoreID, { delegatePhoneE164: delegatePhone, displayNameAr: memberName, permissions: requestedPermissions }, headers.idempotencyKey, headers.correlationID);
         const persisted = await listOwnStoreAccessGrants(targetStoreID);
         return storeInvitationReadbackConfirmed(targetStoreID, mutation.grant, requestedPermissions, persisted.items.find((item) => item.id === mutation.grant.id));
       }));
@@ -159,6 +160,7 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
       } else {
         inviteAttempt.current = null;
         setPhone("");
+        setDisplayName("");
         setSelectedPermissions(["orders"]);
         setSelectedStoreIDs([storeID]);
       }
@@ -244,7 +246,7 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
   }
 
   return <View style={styles.container}>
-    <TeamInvitationCard busy={busy} choosePreset={choosePreset} filteredOwnedStores={filteredOwnedStores} onInvite={() => void invite()} onPhoneChange={(value) => { setPhone(value); inviteAttempt.current = null; }} onPermissionToggle={togglePermission} onStoreSearchChange={setStoreSearch} onTargetStoreToggle={toggleTargetStore} phone={phone} selectedPermissions={selectedPermissions} selectedStoreIDs={selectedStoreIDs} storeSearch={storeSearch} styles={styles} />
+    {showForm ? <TeamInvitationCard busy={busy} choosePreset={choosePreset} filteredOwnedStores={filteredOwnedStores} onInvite={() => void invite()} onPhoneChange={(value) => { setPhone(value); inviteAttempt.current = null; }} onPermissionToggle={togglePermission} onStoreSearchChange={setStoreSearch} onTargetStoreToggle={toggleTargetStore} phone={phone} displayName={displayName} onDisplayNameChange={(value) => { setDisplayName(value); inviteAttempt.current = null; }} selectedPermissions={selectedPermissions} selectedStoreIDs={selectedStoreIDs} storeSearch={storeSearch} styles={styles} /> : null}
 
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
     {error && grantsForStoreID === storeID ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
@@ -252,11 +254,13 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
   </View>;
 }
 
-function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, onStoreSearchChange, filteredOwnedStores, selectedStoreIDs, onTargetStoreToggle, selectedPermissions, onPermissionToggle, choosePreset, onInvite }: Readonly<{
+function TeamInvitationCard({ styles, busy, phone, onPhoneChange, displayName, onDisplayNameChange, storeSearch, onStoreSearchChange, filteredOwnedStores, selectedStoreIDs, onTargetStoreToggle, selectedPermissions, onPermissionToggle, choosePreset, onInvite }: Readonly<{
   styles: ReturnType<typeof createPartnerSurfaceStyles>;
   busy: boolean;
   phone: string;
   onPhoneChange: (value: string) => void;
+  displayName: string;
+  onDisplayNameChange: (value: string) => void;
   storeSearch: string;
   onStoreSearchChange: (value: string) => void;
   filteredOwnedStores: ReadonlyArray<{ id: string; name: string }>;
@@ -268,29 +272,31 @@ function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, o
   onInvite: () => void;
 }>) {
   const theme = useAppearanceTheme();
-  const canInvite = !busy && phone.trim().length > 0 && selectedPermissions.length > 0 && selectedStoreIDs.length > 0;
+  const [showCustom, setShowCustom] = useState(false);
+  const canInvite = !busy && displayName.trim().length > 0 && phone.trim().length > 0 && selectedPermissions.length > 0 && selectedStoreIDs.length > 0;
   return <View style={styles.card}>
-    <Text style={styles.value}>تفويض وصول لمتجر محدد</Text>
-    <Text style={styles.muted}>تصل الدعوة إلى حساب الموظف الموثّق.</Text>
-    <TextInput accessibilityLabel="رقم هاتف الموظف" autoCapitalize="none" autoCorrect={false} editable={!busy} keyboardType="phone-pad" onChangeText={onPhoneChange} placeholder="رقم الهاتف مع مفتاح الدولة" placeholderTextColor={theme.colorMuted} style={[styles.formInput, { textAlign: "left", writingDirection: "ltr" }]} value={phone} />
-    <Text style={styles.metaLabel}>متاجر الفريق المملوكة</Text>
-    <TextInput accessibilityLabel="بحث المتاجر المملوكة" autoCapitalize="none" autoCorrect={false} editable={!busy} onChangeText={onStoreSearchChange} placeholder="ابحث باسم المتجر" placeholderTextColor={theme.colorMuted} style={styles.formInput} value={storeSearch} />
+    <Text style={styles.value}>إضافة موظف</Text>
+    <TextInput accessibilityLabel="اسم الموظف" editable={!busy} onChangeText={onDisplayNameChange} placeholder="اسم الموظف" placeholderTextColor={theme.colorMuted} style={styles.formInput} value={displayName} />
+    <TextInput accessibilityLabel="رقم هاتف الموظف" autoCapitalize="none" autoCorrect={false} editable={!busy} keyboardType="phone-pad" onChangeText={onPhoneChange} placeholder="رقم الهاتف" placeholderTextColor={theme.colorMuted} style={[styles.formInput, { textAlign: "left", writingDirection: "ltr" }]} value={phone} />
+    {filteredOwnedStores.length > 1 ? <>
+      <Text style={styles.metaLabel}>المتاجر</Text>
+      <TextInput accessibilityLabel="بحث المتاجر المملوكة" autoCapitalize="none" autoCorrect={false} editable={!busy} onChangeText={onStoreSearchChange} placeholder="بحث عن متجر" placeholderTextColor={theme.colorMuted} style={styles.formInput} value={storeSearch} />
+    </> : null}
     <View style={{ gap: 8 }}>{filteredOwnedStores.map((store) => {
       const selected = selectedStoreIDs.includes(store.id);
       return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: busy }} disabled={busy} key={store.id} onPress={() => onTargetStoreToggle(store.id)} style={[styles.choice, selected && styles.choiceSelected]}><Text style={selected ? styles.choiceTextSelected : styles.choiceText}>{selected ? "✓  " : ""}{store.name}</Text></Pressable>;
     })}</View>
-    <Text style={styles.metaLabel}>قوالب الدور</Text>
+    <Text style={styles.metaLabel}>الوظيفة</Text>
     <View style={styles.choiceRow}>{rolePresets.map((preset) => {
       const selected = preset.permissions.length === selectedPermissions.length && preset.permissions.every((permission) => selectedPermissions.includes(permission));
       return <Pressable accessibilityRole="button" accessibilityState={{ selected, disabled: busy }} disabled={busy} key={preset.value} onPress={() => choosePreset(preset)} style={[styles.choice, selected && styles.choiceSelected]}><Text style={selected ? styles.choiceTextSelected : styles.choiceText}>{selected ? "✓  " : ""}{preset.label}</Text></Pressable>;
     })}</View>
-    <Text style={styles.metaLabel}>حدد أقل صلاحيات لازمة لهذا المتجر فقط</Text>
-    <Text style={styles.muted}>التوصيل يضيف صلاحية الطلبات تلقائيًا.</Text>
-    <View style={styles.choiceRow}>{permissions.map((permission) => {
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded: showCustom }} onPress={() => setShowCustom((v) => !v)}><Text style={styles.muted}>{showCustom ? "إخفاء الصلاحيات" : "تخصيص الصلاحيات"}</Text></Pressable>
+    {showCustom ? <View style={styles.choiceRow}>{permissions.map((permission) => {
       const selected = selectedPermissions.includes(permission.value);
       return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: busy }} disabled={busy} key={permission.value} onPress={() => onPermissionToggle(permission.value)} style={[styles.choice, selected && styles.choiceSelected]}><Text style={selected ? styles.choiceTextSelected : styles.choiceText}>{selected ? "✓  " : ""}{permission.label}</Text></Pressable>;
-    })}</View>
-    <BthwaniButton busy={busy} disabled={!canInvite} label="إرسال دعوة الموظف" onPress={onInvite} />
+    })}</View> : null}
+    <BthwaniButton busy={busy} disabled={!canInvite} label="إنشاء الموظف" onPress={onInvite} />
   </View>;
 }
 
@@ -303,11 +309,17 @@ function StoreGrantsCard({ styles, busy, grants, loading, onTransition, onPermis
   onPermissions: (grant: StoreAccessGrant, permissions: ReadonlyArray<StoreAccessPermission>) => void;
 }>) {
   const theme = useAppearanceTheme();
+  const [showHistory, setShowHistory] = useState(false);
+  const archived = grants.filter((item) => item.state === "revoked" || item.state === "declined" || item.state === "expired");
+  const visible = showHistory ? grants : grants.filter((item) => !archived.includes(item));
   return <View style={styles.card}>
-    <Text style={styles.value}>الصلاحيات على هذا المتجر</Text>
+    <Text style={styles.value}>موظفو المتجر</Text>
     {loading ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة صلاحيات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الحالة المعتمدة…</Text></View> : null}
     {!loading && grants.length === 0 ? <Text style={styles.muted}>لا توجد صلاحيات مفوضة على هذا المتجر.</Text> : null}
-    {grants.map((grant) => <StoreAccessGrantCard busy={busy} grant={grant} key={[grant.id, grant.version].join(":")} onPermissions={(next) => onPermissions(grant, next)} onTransition={(next) => onTransition(grant, next)} />)}
+    {visible.map((grant) => <StoreAccessGrantCard busy={busy} grant={grant} key={[grant.id, grant.version].join(":")} onPermissions={(next) => onPermissions(grant, next)} onTransition={(next) => onTransition(grant, next)} />)}
+    {archived.length > 0 ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: showHistory }} onPress={() => setShowHistory((value) => !value)}>
+      <Text style={styles.muted}>{showHistory ? "إخفاء السجل" : "سجل العضويات السابقة (" + archived.length + ")"}</Text>
+    </Pressable> : null}
   </View>;
 }
 
@@ -315,23 +327,30 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const [editPermissions, setEditPermissions] = useState(false);
+  const [draftPermissions, setDraftPermissions] = useState<ReadonlyArray<StoreAccessPermission>>([]);
   const [pendingPermissions, setPendingPermissions] = useState<ReadonlyArray<StoreAccessPermission> | null>(null);
   const selected = permissions.filter((permission) => grant.permissions.includes(permission.value)).map((permission) => permission.value);
   const newlyGranted = pendingPermissions?.filter((permission) => !selected.includes(permission)) ?? [];
   const newlyRemoved = pendingPermissions ? selected.filter((permission) => !pendingPermissions.includes(permission)) : [];
 
   return <View style={{ borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 }}>
-    <Text style={styles.value}>{[grant.delegateBeneficiaryName?.trim() || "عضو فريق", grant.delegatePhoneMasked?.trim()].filter(Boolean).join(" · ")}</Text>
+    <Text style={styles.value}>{[grant.displayNameAr?.trim() || grant.delegateBeneficiaryName?.trim() || "عضو فريق", grant.delegatePhoneMasked?.trim()].filter(Boolean).join(" · ")}</Text>
     <Text style={styles.muted}>{grantStateLabel(grant.state)} · الصلاحيات الحالية: {permissionNames(grant.permissions)}</Text>
     {grant.state === "active" || grant.state === "suspended" || grant.state === "pending_role_admission" || grant.state === "pending_partner_activation" || grant.state === "pending_acceptance" ? <>
-      <Text style={styles.metaLabel}>الصلاحيات المفوضة</Text>
-      <Text style={styles.muted}>التوصيل مرتبط بصلاحية الطلبات.</Text>
-      <View style={styles.choiceRow}>{permissions.map((permission) => {
-        const checked = selected.includes(permission.value);
-        const next = toggleStoreAccessPermission(selected, permission.value);
-        const disabled = busy || next.length === 0;
-        return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked, disabled }} disabled={disabled} key={permission.value} onPress={() => setPendingPermissions(next)} style={[styles.choice, checked && styles.choiceSelected]}><Text style={checked ? styles.choiceTextSelected : styles.choiceText}>{checked ? "✓  " : ""}{permission.label}</Text></Pressable>;
-      })}</View>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: editPermissions }} disabled={busy} onPress={() => { setDraftPermissions(selected); setEditPermissions((value) => !value); }}>
+        <Text style={styles.muted}>{editPermissions ? "إخفاء تعديل الصلاحيات" : "تعديل الصلاحيات"}</Text>
+      </Pressable>
+      {editPermissions ? <>
+        <View style={styles.choiceRow}>{permissions.map((permission) => {
+          const checked = draftPermissions.includes(permission.value);
+          const next = toggleStoreAccessPermission(draftPermissions, permission.value);
+          return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked, disabled: busy || next.length === 0 }} disabled={busy || next.length === 0} key={permission.value} onPress={() => setDraftPermissions(next)} style={[styles.choice, checked && styles.choiceSelected]}>
+            <Text style={checked ? styles.choiceTextSelected : styles.choiceText}>{checked ? "✓ " : ""}{permission.label}</Text>
+          </Pressable>;
+        })}</View>
+        <BthwaniButton disabled={busy || draftPermissions.length === 0 || (draftPermissions.length === selected.length && draftPermissions.every((permission) => selected.includes(permission)))} label="حفظ الصلاحيات" onPress={() => { setPendingPermissions(draftPermissions); setEditPermissions(false); }} />
+      </> : null}
       {grant.state === "active" ? <BthwaniButton disabled={busy} label="إيقاف الوصول مؤقتًا" onPress={() => onTransition("suspended")} variant="secondary" /> : null}
       {grant.state === "suspended" ? <BthwaniButton disabled={busy} label="إعادة تفعيل الوصول" onPress={() => onTransition("active")} /> : null}
       {grant.state === "active" || grant.state === "suspended" ? <BthwaniButton disabled={busy} label="إلغاء الوصول نهائيًا" onPress={() => setConfirmRevoke(true)} variant="secondary" /> : null}

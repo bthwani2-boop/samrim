@@ -569,9 +569,9 @@ func ListOrdersForPartnerStores(ctx context.Context, db *sql.DB, storeIDs []stri
 }
 
 // canonicalOrderStates validates a bounded order-state filter: every entry must
-// be a canonical state and at most six states may be combined.
+// be a canonical state and at most seven states may be combined.
 func canonicalOrderStates(states []string) ([]string, error) {
-	if len(states) > 6 {
+	if len(states) > 7 {
 		return nil, ErrPartnerOrdersInvalidState
 	}
 	canonical := make([]string, 0, len(states))
@@ -676,7 +676,10 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		args = append(args, state)
 		where += " AND o.state=$" + strconv.Itoa(len(args))
 	}
-	const actionable = "(o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed'))"
+	// The operations attention queue includes stalled early fulfillment states, even
+	// when no automatic state transition is safe. Read-only review must not depend
+	// on an available dispatch action; terminal and customer-pickup states stay out.
+	const actionable = "(o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed') OR (o.state IN ('CREATED','PARTNER_ACCEPTED','PREPARING') AND o.updated_at <= statement_timestamp() - interval '30 minutes'))"
 	if actionableOnly {
 		where += " AND " + actionable
 	}
@@ -1588,6 +1591,18 @@ func transitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState st
 	if cancellationReason != "" && requestedState != "REJECTED" && requestedState != "CANCELLED" {
 		return OrderRecord{}, false, ErrPaymentStateConflict
 	}
+	// Reject malformed operator decisions before opening a transaction or
+	// changing an Order. The approved writer always supplies reason + review flag.
+	if cancellationReason == "operator_cancelled" {
+		if requestedState != "CANCELLED" || len(decisionReason) != 2 ||
+			(decisionReason[1] != "true" && decisionReason[1] != "false") {
+			return OrderRecord{}, false, ErrOrderTransitionInvalid
+		}
+		reasonLength := len([]rune(strings.TrimSpace(decisionReason[0])))
+		if reasonLength < 12 || reasonLength > 500 {
+			return OrderRecord{}, false, ErrOrderTransitionInvalid
+		}
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return OrderRecord{}, false, err
@@ -1629,7 +1644,7 @@ func transitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState st
 	}
 	pickupNoShow := cancellationReason == CancellationReasonPickupCustomerNoShow && requestedState == "CANCELLED" && isPickupNoShowCandidate(current)
 	operatorCancellation := cancellationReason == "operator_cancelled" && requestedState == "CANCELLED" && (current.State == "CREATED" || current.State == "PARTNER_ACCEPTED" || current.State == "PREPARING")
-	if operatorCancellation && (current.State == "PARTNER_ACCEPTED" || current.State == "PREPARING") && (len(decisionReason) < 2 || decisionReason[1] != "true") {
+	if operatorCancellation && (current.State == "PARTNER_ACCEPTED" || current.State == "PREPARING") && decisionReason[1] != "true" {
 		return OrderRecord{}, false, ErrOrderStateConflict
 	}
 	if !validOrderTransition(current.State, requestedState) && !pickupNoShow && !operatorCancellation {
@@ -1679,9 +1694,6 @@ func transitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState st
 			SET state='APPROVED',operator_actor_id=$2,decision_reason=$3,decided_at=clock_timestamp()
 			WHERE order_id=$1 AND state='PENDING'`, orderID, actingActorID, strings.TrimSpace(decisionReason[0])); err != nil {
 			return OrderRecord{}, false, err
-		}
-		if len(decisionReason) != 2 || len([]rune(decisionReason[0])) < 12 || len([]rune(decisionReason[0])) > 500 {
-			return OrderRecord{}, false, ErrOrderTransitionInvalid
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_audit SET decision_reason=$2
 			WHERE idempotency_key=$1 AND event_type='order_cancelled'`, idempotencyKey, strings.TrimSpace(decisionReason[0])); err != nil {

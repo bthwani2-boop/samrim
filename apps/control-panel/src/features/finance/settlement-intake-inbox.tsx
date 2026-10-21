@@ -1,8 +1,10 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { formatMoney } from "@bthwani/dsh";
 import { OfficialWalletDestinationManager } from "./official-wallet-destination-manager";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type Intake = Readonly<{
   id: string; actorType: "partner" | "captain" | "field"; actorId: string;
@@ -11,16 +13,32 @@ type Intake = Readonly<{
 }>;
 const actorLabels = { partner: "شريك", captain: "كابتن", field: "ميداني" } as const;
 
-// First-class Finance inbox: admission is not a payout and never implies a transfer.
-export function SettlementIntakeInbox() {
+export function SettlementIntakeInbox({
+  search = "", onCountChange, visible = true,
+}: Readonly<{
+  search?: string;
+  visible?: boolean;
+  onCountChange?: (count: number | null) => void;
+}>) {
   const [items, setItems] = useState<readonly Intake[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [walletReady, setWalletReady] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
-  const [destinationIntakeId, setDestinationIntakeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const originRef = useRef<HTMLButtonElement | null>(null);
+  const selected = items.find((item) => item.id === selectedId) ?? null;
+  const normalized = search.trim().toLocaleLowerCase("ar");
+  const filtered = normalized ? items.filter((item) =>
+    [item.id, item.actorId, actorLabels[item.actorType], formatMoney(item.resolvedAmountMinor, item.currency)]
+      .some((value) => value.toLocaleLowerCase("ar").includes(normalized))
+  ) : items;
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -29,70 +47,149 @@ export function SettlementIntakeInbox() {
       const body = await response.json() as { intakes?: readonly Intake[] };
       if (!Array.isArray(body.intakes)) throw new Error("استجابة المالية غير صالحة");
       setItems(body.intakes);
-      setDestinationIntakeId((selectedId) => body.intakes?.some((item) => item.id === selectedId) ? selectedId : null);
+      onCountChange?.(body.intakes.length);
+      setSelectedId((previous) => body.intakes?.some((item) => item.id === previous) ? previous : null);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر تحميل طلبات التسوية");
+      onCountChange?.(null);
     } finally { setLoading(false); }
-  }, []);
+  }, [onCountChange]);
+
   useEffect(() => { void load(); }, [load]);
+  useReadOnReturn(() => { void load(); }, !loading && busyId === null && selectedId === null);
+
+  const closeReview = useCallback(() => {
+    if (busyId !== null) return;
+    setSelectedId(null); setReviewOpen(false); setWalletReady(false); setCancelOpen(false); setCancelReason("");
+    originRef.current?.focus();
+  }, [busyId]);
+  useEffect(() => {
+    if (!selected) return;
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && busyId === null) { event.preventDefault(); closeReview(); }
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const drawer = closeRef.current?.closest('[role="dialog"]');
+      const elements = drawer?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary, a[href]');
+      if (!elements?.length) return;
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    window.addEventListener("keydown", keydown);
+    window.addEventListener("keydown", trapFocus);
+    closeRef.current?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", keydown);
+      window.removeEventListener("keydown", trapFocus);
+    };
+  }, [selected, busyId, closeReview]);
+
+  function openReview(item: Intake, trigger: HTMLButtonElement) {
+    originRef.current = trigger;
+    setSelectedId(item.id); setReviewOpen(false); setWalletReady(false); setCancelOpen(false); setCancelReason("");
+  }
+
   async function convert(id: string) {
     setBusyId(id); setError(""); setNotice("");
     try {
+      // Authorization, wallet verification, eligibility and idempotency remain
+      // enforced by the owning finance service; UI review is not authorization.
       const response = await fetch("/api/finance/settlement-intakes/" + encodeURIComponent(id) + "/convert", { method: "POST" });
       if (!response.ok) {
         const body = await response.json().catch(() => null) as { error?: { message?: string } } | null;
         throw new Error(body?.error?.message || "الطلب يحتاج اعتماد وجهة الصرف أو مراجعة المستحقات أولًا");
       }
-      setNotice("تم إنشاء طلب صرف معتمد وربطه بطلب التسوية. تابع الموافقة والتحويل والمطابقة من قائمة الدفعات.");
+      setNotice("أُحيل الطلب إلى مسار الصرف المعتمد. تابع نتيجته والمطابقة في الدفعات.");
+      setSelectedId(null); setReviewOpen(false);
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر إحالة الطلب للصرف");
     } finally { setBusyId(null); }
   }
+
   async function cancelIntake(id: string) {
-    const reason=cancelReason.trim();
+    const reason = cancelReason.trim();
     if (!reason || reason.length > 512) { setError("حدد سبب إلغاء الطلب."); return; }
     setBusyId(id); setError(""); setNotice("");
     try {
-      const response=await fetch("/api/finance/settlement-intakes/"+encodeURIComponent(id)+"/cancel", {
-        method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason})
+      const response = await fetch("/api/finance/settlement-intakes/" + encodeURIComponent(id) + "/cancel", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }),
       });
-      if (!response.ok) throw new Error("لم يتم إلغاء الطلب. حدّث حالته قبل المحاولة مجددًا.");
-      setCancelId(null);setCancelReason("");
-      setNotice("أُلغِي طلب التسوية لدى المالية دون أي خصم أو تحويل.");
+      if (!response.ok) throw new Error("لم يتم إلغاء الطلب. راجع حالته قبل المحاولة مجددًا.");
+      setSelectedId(null); setReviewOpen(false); setCancelReason("");
+      setNotice("أُلغي طلب التسوية دون خصم أو تحويل.");
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر إلغاء الطلب"); }
     finally { setBusyId(null); }
   }
-  return <section className="panel work-stack" aria-label="طلبات التسوية الواردة">
-    <div className="finance-toolbar">
-      <div><h2>طلبات التسوية الواردة</h2><p className="muted">الطلب لا يحجز رصيدًا. راجع الوجهة ثم أَحِل للصرف.</p></div>
-      <button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading || busyId !== null}>{loading ? "جارٍ التحميل" : "تحديث الطلبات"}</button>
-    </div>
-    {error ? <p role="alert" className="identity-error">{error}</p> : null}
-    {notice ? <p role="status" className="managed-status managed-status-info">{notice}</p> : null}
-    {!loading && items.length === 0 ? <p className="muted">لا توجد طلبات تسوية جديدة.</p> : null}
-    {items.length > 0 ? <div className="finance-table-wrap"><table className="finance-table">
-      <thead><tr><th>المستفيد</th><th>المبلغ</th><th>الحالة</th><th>الإجراء</th></tr></thead>
-      <tbody>{items.map((item) => <Fragment key={item.id}><tr>
-        <td>{actorLabels[item.actorType]}</td>
-        <td>{formatMoney(item.resolvedAmountMinor, item.currency)}{item.actorType === "partner" ? <small> · {item.storeAllocations.length} متجر</small> : null}</td>
-        <td>بانتظار مراجعة المالية</td>
-        <td><div className="finance-toolbar">
-          <button className="button button-secondary" type="button" aria-expanded={destinationIntakeId === item.id} disabled={busyId !== null} onClick={() => setDestinationIntakeId(destinationIntakeId === item.id ? null : item.id)}>{destinationIntakeId === item.id ? "إغلاق الوجهة" : "مراجعة وجهة الصرف"}</button>
-          <button className="button button-secondary" type="button" disabled={busyId !== null} onClick={() => void convert(item.id)}>{busyId === item.id ? "جارٍ التحقق" : "التحقق والإحالة للصرف"}</button>
-          <button className="button button-quiet" type="button" disabled={busyId !== null} onClick={() => { setCancelId(cancelId === item.id ? null : item.id);setCancelReason(""); }}>إلغاء الطلب</button>
-        </div>{cancelId === item.id ? <div className="finance-toolbar"><input className="field-control" aria-label="سبب إلغاء طلب التسوية" placeholder="سبب الإلغاء" maxLength={512} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} /><button className="button button-secondary" type="button" disabled={busyId !== null || !cancelReason.trim()} onClick={() => void cancelIntake(item.id)}>تأكيد الإلغاء</button></div> : null}</td>
-      </tr>{destinationIntakeId === item.id ? <tr key={`destination-${item.id}`}>
-        <td colSpan={4} id={`finance-intake-destination-${encodeURIComponent(item.id)}`}>
-          <div className="form-section">
-            <h3>وجهة الصرف · {actorLabels[item.actorType]} · {formatMoney(item.resolvedAmountMinor, item.currency)}</h3>
-            <OfficialWalletDestinationManager key={item.id} actorType={item.actorType} actorId={item.actorId} initiallyExpanded />
-          </div>
-        </td>
-      </tr> : null}</Fragment>)}
-    </tbody>
-    </table></div> : null}
-  </section>;
+
+  return <>
+    <section className="finance-desk-intakes" aria-label="طلبات التسوية التي تحتاج مراجعة" hidden={!visible}>
+      {notice ? <p role="status" className="managed-status managed-status-info">{notice}</p> : null}
+      {error ? <div role="alert" className="identity-error">{error} <button type="button" className="button button-secondary" disabled={loading || busyId !== null} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
+      {loading && !items.length ? <p className="collection-state" role="status">جارٍ تحميل طلبات التسوية…</p> : null}
+      {filtered.map((item) => <article className="finance-desk-item finance-desk-item-attention" key={item.id}>
+        <div className="finance-desk-item-body">
+          <strong>تسوية مستحقات · {actorLabels[item.actorType]}</strong>
+          <span className="finance-desk-item-subtitle">بانتظار مراجعة جهة الصرف</span>
+          {item.actorType === "partner" ? <small>{item.storeAllocations.length.toLocaleString("ar-YE")} متجر</small> : null}
+        </div>
+        <span className="finance-desk-status">تحتاج مراجعة</span>
+        <div className="finance-desk-money"><bdi dir="ltr">{formatMoney(item.resolvedAmountMinor, item.currency)}</bdi></div>
+        <button className="button button-primary finance-desk-review" type="button" disabled={busyId !== null}
+          onClick={(event) => openReview(item, event.currentTarget)}>مراجعة الطلب</button>
+      </article>)}
+      {!loading && !error && !filtered.length && items.length > 0 ? <p className="finance-desk-empty-inline">لا توجد طلبات تسوية مطابقة للبحث.</p> : null}
+    </section>
+    {selected && visible && typeof document !== "undefined" ? createPortal(<div className="finance-review-backdrop">
+      <button type="button" className="finance-review-backdrop-dismiss" aria-label="إغلاق المراجعة" onClick={closeReview} />
+      <aside role="dialog" aria-modal="true" aria-labelledby="finance-review-heading" className="finance-review-panel" dir="rtl">
+        <div className="finance-review-top">
+          <div><h2 id="finance-review-heading">مراجعة طلب التسوية</h2><span>تسوية مستحقات · {actorLabels[selected.actorType]}</span></div>
+          <button ref={closeRef} className="finance-review-close" aria-label="إغلاق مراجعة الطلب" type="button" disabled={busyId !== null} onClick={closeReview}>×</button>
+        </div>
+        <div className="finance-review-scroll">
+          <section className="finance-review-section" aria-label="معلومات الطلب">
+            <h3>معلومات المعاملة</h3>
+            <dl className="finance-review-facts">
+              <div><dt>المستفيد</dt><dd>{actorLabels[selected.actorType]}</dd></div>
+              <div><dt>المبلغ</dt><dd><bdi dir="ltr">{formatMoney(selected.resolvedAmountMinor, selected.currency)}</bdi></dd></div>
+              <div><dt>التاريخ</dt><dd>{new Date(selected.createdAt).toLocaleDateString("ar-YE")}</dd></div>
+              {selected.actorType === "partner" ? <div><dt>المتاجر</dt><dd>{selected.storeAllocations.length.toLocaleString("ar-YE")}</dd></div> : null}
+            </dl>
+          </section>
+          <section className="finance-review-section">
+            <h3>مراجعة وجهة الصرف</h3>
+            <p className="muted">افحص الوجهة المعتمدة وبيانات التحقق من سجلها الأصلي قبل الإحالة. لا ينفذ هذا الطلب تحويلًا مباشرًا.</p>
+            {reviewOpen ? <OfficialWalletDestinationManager key={selected.id} actorType={selected.actorType} actorId={selected.actorId} initiallyExpanded onReadinessChange={setWalletReady} /> :
+              <button type="button" className="button button-secondary finance-review-open-wallet" onClick={() => setReviewOpen(true)}>فتح مراجعة وجهة الصرف</button>}
+          </section>
+          <details className="finance-review-secondary" open={cancelOpen} onToggle={(event) => setCancelOpen(event.currentTarget.open)}>
+            <summary>إجراءات أخرى</summary>
+            <label>سبب إلغاء الطلب
+              <textarea value={cancelReason} maxLength={512} rows={2} placeholder="سبب الإلغاء" onChange={(event) => setCancelReason(event.target.value)} />
+            </label>
+            <button type="button" className="button button-secondary" disabled={busyId !== null || !cancelReason.trim()}
+              onClick={() => void cancelIntake(selected.id)}>تأكيد إلغاء الطلب</button>
+          </details>
+        </div>
+        <div className="finance-review-bottom">
+          {error ? <p role="alert" className="identity-error">{error}</p> : null}
+          {notice ? <p role="status" className="managed-status managed-status-info">{notice}</p> : null}
+          {reviewOpen && walletReady ? <button type="button" className="button button-primary" disabled={busyId !== null}
+            onClick={() => void convert(selected.id)}>{busyId === selected.id ? "جارٍ التحقق…" : "التحقق والإحالة للصرف"}</button>
+          : reviewOpen ? <p role="status" className="finance-review-not-ready">لا يمكن الإحالة بعد. اقرأ وجهة الصرف وأكمل التحقق والاعتماد المطلوبين في سجل المحفظة.</p>
+          : <button type="button" className="button button-primary" onClick={() => setReviewOpen(true)}>مراجعة جهة الصرف</button>}
+          <p>يُتحقق من الأهلية والمطابقة والصلاحية لدى المالية قبل قبول الإحالة.</p>
+        </div>
+      </aside>
+    </div>, document.body) : null}
+  </>;
 }

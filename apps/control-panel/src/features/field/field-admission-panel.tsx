@@ -10,6 +10,7 @@ import { responseMessage } from "../access/identity-error-message";
 import { RecordTabs } from "../shared/record-tabs";
 import { OfficialWalletDestinationManager } from "../finance/official-wallet-destination-manager";
 import { RecordIndicator } from "../shared/record-indicator";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { useWalletProviders, type WalletProviderOption } from "../wallet-provider/use-wallet-providers";
 
 type LatestStore = Readonly<{ storeId: string; storeName: string; joiningCaseId: string; createdAt: string }>;
@@ -443,11 +444,35 @@ function FieldAdmissionRoster(props: FieldAdmissionRosterProps) {
         <table className="data-table field-record-compact-table">
           <caption className="visually-hidden">سجل الميدانيين، افتح الملف لمراجعة بيانات الميداني وإدارتها</caption>
           <thead><tr>
-            <th scope="col">{sortButton("name", "الميداني")}</th>
-            <th scope="col">{sortButton("admission", "الأهلية")}</th>
-            <th scope="col">{sortButton("access", "الوصول")}</th>
-            <th scope="col">{sortButton("activity", "آخر فتح للتطبيق")}</th>
-            <th scope="col">{sortButton("journey", "ملفات الضم")}</th>
+            <RegistryColumnHeader label="الميداني" active={Boolean(query || sortBy === "name" && sortDirection === "desc")} scope="page">
+              <label>بحث بالهاتف<input type="search" inputMode="tel" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="رقم الهاتف" /></label>
+              {sortButton("name", "الميداني")}
+            </RegistryColumnHeader>
+            <RegistryColumnHeader label="الأهلية" active={Boolean(admissionFilter)} scope="page">
+              <label>حالة الأهلية<select value={admissionFilter} onChange={(event) => setAdmissionFilter(event.target.value)}>
+                <option value="">الكل</option><option value="none">بلا أهلية</option><option value="pending_review">بانتظار المراجعة</option><option value="pending_identity">بانتظار الهوية</option><option value="eligible">مؤهل</option><option value="suspended">موقوف</option>
+              </select></label>
+              {sortButton("admission", "الأهلية")}
+            </RegistryColumnHeader>
+            <RegistryColumnHeader label="الوصول" active={Boolean(accessFilter)}>
+              <label>دخول التطبيق<select value={accessFilter} onChange={(event) => onAccessFilterChange(event.target.value)}>
+                <option value="">كل الحسابات</option><option value="enabled">الدخول مفعّل</option><option value="disabled">الدخول موقوف</option>
+              </select></label>
+              {sortButton("access", "الوصول")}
+            </RegistryColumnHeader>
+            <RegistryColumnHeader label="آخر فتح للتطبيق" active={Boolean(activityFilter)} scope="page">
+              <label>نشاط الصفحة<select value={activityFilter} onChange={(event) => setActivityFilter(event.target.value)}>
+                <option value="">كل الأنشطة</option><option value="opened">سبق فتح التطبيق</option><option value="recent">خلال 30 يومًا</option><option value="never">لم يفتح التطبيق</option>
+              </select></label>
+              {sortButton("activity", "آخر فتح للتطبيق")}
+            </RegistryColumnHeader>
+            <RegistryColumnHeader label="ملفات الضم" active={Boolean(journeyFilter || journeyQuery)} scope="page">
+              <label>ملفات الشركاء<select value={journeyFilter} onChange={(event) => setJourneyFilter(event.target.value)}>
+                <option value="">جميع الملفات</option><option value="has">لديه ملفات ضم</option><option value="none">بلا ملفات</option><option value="needs_correction">آخر ملف يحتاج تصحيحًا</option>
+              </select></label>
+              <label>اسم آخر شريك<input type="search" value={journeyQuery} onChange={(event) => setJourneyQuery(event.target.value)} /></label>
+              {sortButton("journey", "ملفات الضم")}
+            </RegistryColumnHeader>
             <th scope="col">الملف</th>
           </tr></thead>
           <tbody>{visibleItems.map((item) => {

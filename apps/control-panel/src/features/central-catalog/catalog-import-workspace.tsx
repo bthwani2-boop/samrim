@@ -3,6 +3,7 @@
 import type { CatalogImportItem, CatalogImportPreviewResponse, CatalogImportRow, CatalogImportRunResponse } from "@bthwani/dsh";
 import * as XLSX from "xlsx";
 import { useState } from "react";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 type ImportResult = CatalogImportPreviewResponse | CatalogImportRunResponse;
 type ParsedSource = { rows: ReadonlyArray<CatalogImportRow>; errors: ReadonlyArray<string> };
@@ -199,6 +200,14 @@ export function CatalogImportWorkspace() {
   const [rows, setRows] = useState<ReadonlyArray<CatalogImportRow>>([]);
   const [parseErrors, setParseErrors] = useState<ReadonlyArray<string>>([]);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [rowQuery,setRowQuery]=useState("");
+  const [classificationQuery,setClassificationQuery]=useState("");
+  const [rowStatus,setRowStatus]=useState("all");
+  const visibleResultItems=(result?.items??[]).filter(item=>
+    (!rowQuery.trim()||String(item.rowNumber).includes(rowQuery.trim()))
+    && (!classificationQuery.trim()||classificationLabel(item).toLocaleLowerCase().includes(classificationQuery.trim().toLocaleLowerCase()))
+    && (rowStatus==="all"||(rowStatus==="error"?Boolean(item.errorMessage):rowStatus==="committed"?Boolean(item.committed):!item.committed&&!item.errorMessage))
+  );
   const [busy, setBusy] = useState<"preview" | "commit" | "" | "read">("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -316,8 +325,21 @@ export function CatalogImportWorkspace() {
           <p>المقبول: {result.run.acceptedCount} · التعارضات: {result.run.conflictCount} · العناصر المصنفة: {result.items.length}</p>
           <table>
             <caption>فئات صفوف الاستيراد</caption>
-            <thead><tr><th scope="col">السطر</th><th scope="col">الفئة</th><th scope="col">الحالة</th></tr></thead>
-            <tbody>{result.items.map((item) => <tr key={`${item.rowNumber}-${item.stableKey}`}><td>{item.rowNumber}</td><td>{classificationLabel(item)}</td><td>{item.errorMessage || (item.committed ? "تم الحفظ" : "بانتظار الاعتماد")}</td></tr>)}</tbody>
+            <thead><tr>
+              <RegistryColumnHeader label="السطر" scope="page" active={Boolean(rowQuery)}>
+                <label>رقم السطر<input type="search" inputMode="numeric" value={rowQuery} onChange={e=>setRowQuery(e.target.value)} /></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="الفئة" scope="page" active={Boolean(classificationQuery)}>
+                <label>تصنيف الاستيراد<input type="search" value={classificationQuery} onChange={e=>setClassificationQuery(e.target.value)} /></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="الحالة" scope="page" active={rowStatus!=="all"}>
+                <label>حالة السطر<select value={rowStatus} onChange={e=>setRowStatus(e.target.value)}>
+                  <option value="all">كل الحالات</option><option value="error">لديه مشكلة</option>
+                  <option value="committed">تم الحفظ</option><option value="pending">بانتظار الاعتماد</option>
+                </select></label>
+              </RegistryColumnHeader>
+            </tr></thead>
+            <tbody>{visibleResultItems.map((item) => <tr key={`${item.rowNumber}-${item.stableKey}`}><td>{item.rowNumber}</td><td>{classificationLabel(item)}</td><td>{item.errorMessage || (item.committed ? "تم الحفظ" : "بانتظار الاعتماد")}</td></tr>)}{visibleResultItems.length===0?<tr><td colSpan={3}>لا توجد صفوف مطابقة لمرشحات المعاينة.</td></tr>:null}</tbody>
           </table>
           {result.run.state === "previewed" || result.run.state === "rejected" ? <button type="button" className="button button-secondary" disabled={Boolean(busy) || result.run.acceptedCount < 1} onClick={() => void commit()}>{busy === "commit" ? "جارٍ الاعتماد…" : result.run.state === "rejected" ? "إعادة محاولة الصفوف المتعثرة" : "اعتماد الصفوف الجاهزة"}</button> : null}
           {result.run.state === "committed" ? <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void readRun(result.run.id)}>{busy === "read" ? "جارٍ إعادة القراءة…" : "إعادة قراءة النتيجة"}</button> : null}

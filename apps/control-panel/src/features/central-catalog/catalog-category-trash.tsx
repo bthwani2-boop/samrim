@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useReadOnReturn } from "../shared/use-read-on-return";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 type Category = Readonly<{ id: string; verticalId: string; nameAr: string; version: number; deletedAt?: string; deletedBy?: string; deletionReason?: string }>;
 type Page = Readonly<{ categories: ReadonlyArray<Category>; nextCursor: string }>;
@@ -16,6 +18,9 @@ export function CatalogCategoryTrash() {
   const [confirmId, setConfirmId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [listSearch,setListSearch]=useState("");
+  const [reasonSearch,setReasonSearch]=useState("");
+  const [dateOrder,setDateOrder]=useState("default");
 
   const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true); setError("");
@@ -37,6 +42,8 @@ export function CatalogCategoryTrash() {
     return () => controller.abort();
   }, [load]);
 
+  useReadOnReturn(() => { void load(new AbortController().signal); }, !loading && !busy && !confirmId);
+
   async function restore(item: Category) {
     if (busy || loading) return;
     setBusy(item.id); setError(""); setNotice("");
@@ -55,17 +62,34 @@ export function CatalogCategoryTrash() {
     finally { setBusy(""); }
   }
 
+  const visibleItems = categories.filter((item) =>
+    (!listSearch.trim() || item.nameAr.toLocaleLowerCase().includes(listSearch.trim().toLocaleLowerCase()))
+    && (!reasonSearch.trim() || (item.deletionReason??"").toLocaleLowerCase().includes(reasonSearch.trim().toLocaleLowerCase()))
+  ).sort((a,b)=>dateOrder==="default"?0:(dateOrder==="asc"?1:-1)*((a.deletedAt??"").localeCompare(b.deletedAt??"")));
   return <section className="access-card" aria-label="الفئات المحذوفة">
     <div className="access-card-heading">
       <div><h2>الفئات المحذوفة</h2><p className="muted">استعادة آمنة دون إعادة النشر تلقائيًا. يجب نقل الفئات الفرعية قبل حذف الفئة الأم.</p></div>
       <Link className="button button-secondary" href="/catalog/categories">إدارة الفئات</Link>
     </div>
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}
-    {error ? <p className="identity-error" role="alert">{error}</p> : null}
+    {error ? <div role="alert" className="identity-error">{error} <button type="button" className="button button-secondary" disabled={loading} onClick={() => void load(new AbortController().signal)}>إعادة المحاولة</button></div> : null}
     {loading ? <p className="muted">جارٍ تحميل الفئات…</p> : !error && categories.length === 0 ? <p className="muted">لا توجد فئات محذوفة في هذه الصفحة.</p> : null}
     {!loading && !error && categories.length > 0 ? <div className="partner-stores-table-wrap">
-      <table className="operations-table"><thead><tr><th scope="col">الفئة</th><th scope="col">الحذف</th><th scope="col">السبب</th><th scope="col">الإجراء</th></tr></thead>
-        <tbody>{categories.map((item) => <tr key={item.id}>
+      <table className="operations-table"><thead><tr>
+          <RegistryColumnHeader label="الفئة" scope="page" active={Boolean(listSearch)}>
+            <label>بحث بالاسم<input type="search" value={listSearch} onChange={e=>setListSearch(e.target.value)} /></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="الحذف" scope="page" active={dateOrder!=="default"}>
+            <label>ترتيب الحذف<select value={dateOrder} onChange={e=>setDateOrder(e.target.value)}>
+              <option value="default">الترتيب الأصلي</option><option value="desc">الأحدث أولًا</option><option value="asc">الأقدم أولًا</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="السبب" scope="page" active={Boolean(reasonSearch)}>
+            <label>بحث في سبب الحذف<input type="search" value={reasonSearch} onChange={e=>setReasonSearch(e.target.value)} /></label>
+          </RegistryColumnHeader>
+          <th scope="col">الإجراء</th>
+        </tr></thead>
+        <tbody>{visibleItems.map((item) => <tr key={item.id}>
           <th scope="row">{item.nameAr}
             {item.deletedBy ? <details><summary>تفاصيل التدقيق</summary><dl><dt>معرّف منفذ الحذف</dt><dd><bdi dir="ltr">{item.deletedBy}</bdi></dd></dl></details> : null}
           </th>
@@ -76,11 +100,11 @@ export function CatalogCategoryTrash() {
             <button type="button" className="button button-primary" disabled={Boolean(busy)} onClick={() => void restore(item)}>{busy === item.id ? "جارٍ الاستعادة…" : "تأكيد"}</button>
             <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => setConfirmId("")}>إلغاء</button>
           </div> : <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => setConfirmId(item.id)}>استعادة</button>}</td>
-        </tr>)}</tbody>
+        </tr>)}{visibleItems.length===0?<tr><td colSpan={4}>لا توجد سجلات مطابقة في الصفحة الحالية.</td></tr>:null}</tbody>
       </table>
     </div> : null}
     <div className="catalog-category-filters">
-      <button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load(new AbortController().signal)}>تحديث</button>
+
       <button type="button" className="button button-secondary" disabled={loading || !history.length} onClick={() => { setCursor(history[history.length - 1] ?? ""); setHistory((items) => items.slice(0, -1)); }}>السابق</button>
       <button type="button" className="button button-secondary" disabled={loading || !nextCursor} onClick={() => { setHistory((items) => [...items, cursor]); setCursor(nextCursor); }}>التالي</button>
     </div>

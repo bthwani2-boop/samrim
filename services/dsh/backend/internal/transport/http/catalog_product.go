@@ -308,7 +308,7 @@ func (s *CatalogServer) listCategories(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Category cursor or sort order is invalid")
 		return
 	}
-	if verticalID == "" || len(verticalID) > 128 {
+	if len(verticalID) > 128 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "verticalId is invalid")
 		return
 	}
@@ -320,7 +320,7 @@ func (s *CatalogServer) listCategories(w http.ResponseWriter, r *http.Request) {
 	}
 	var page postgres.CatalogCategoryPage
 	var err error
-	if status == "active" {
+	if status == "active" && verticalID != "" {
 		page, err = s.service.ListCategoryPage(r.Context(), verticalID, query, sort, limit, cursor)
 	} else {
 		if !s.auth.Authorized(r) {

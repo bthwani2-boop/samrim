@@ -1137,9 +1137,9 @@ export async function updateCatalogCategory(categoryId: string, input: UpdateCat
 }
 
 export async function listCatalogCategories(verticalId: string, query = "", status = "active", sort = "name_asc", limit = 100, cursor = "", context?: DshOperatorReadContext): Promise<CatalogCategoryListResponse> {
-	if (!verticalId.trim() || verticalId.trim().length > 128) throw new Error("DSH_CATALOG_CATEGORY_READ_INPUT_INVALID");
+	if (verticalId.trim().length > 128) throw new Error("DSH_CATALOG_CATEGORY_READ_INPUT_INVALID");
 	const normalizedStatus = status || "active";
-	const needsOperator = normalizedStatus === "all" || normalizedStatus === "inactive";
+	const needsOperator = !verticalId.trim() || normalizedStatus === "all" || normalizedStatus === "inactive";
 	if ((needsOperator && !context?.operatorActorId.trim()) || query.trim().length > 160 || !["all", "active", "inactive"].includes(normalizedStatus) || !["name_asc", "name_desc", "updated_desc"].includes(sort) || !Number.isInteger(limit) || limit < 1 || limit > 100 || cursor.length > 2048) throw new Error("DSH_CATALOG_CATEGORY_READ_INPUT_INVALID");
 	const params = new URLSearchParams({ verticalId: verticalId.trim(), status: normalizedStatus, sort, limit: String(limit) });
 	if (query.trim()) params.set("query", query.trim());

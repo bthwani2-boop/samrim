@@ -19,7 +19,7 @@ export type WorkspaceDestination = Readonly<{
 
 export const workspaceCatalogResources = [
   { key: "products", href: "/catalog/products", label: "المنتجات", description: "هوية المنتج ونسخه المركزية." },
-  { key: "categories", href: "/catalog/categories", label: "الفئات", description: "شجرة فئات المنتجات المشتركة وقوالبها." },
+  { key: "categories", href: "/catalog/categories", label: "التصنيفات", description: "شجرة فئات المنتجات المشتركة وقوالبها." },
   { key: "trash", href: "/catalog/trash", label: "سلة المحذوفات", description: "استعادة المنتجات المحذوفة دون المساس بالطلبات أو السجلات السابقة." },
   { key: "proposals", href: "/catalog/proposals", label: "المراجعة", description: "طابور مراجعة مقترحات الشركاء واعتمادها." },
   { key: "import", href: "/catalog/import", label: "الاستيراد", description: "ملف مصدر آمن، معاينة، ثم التزام." }

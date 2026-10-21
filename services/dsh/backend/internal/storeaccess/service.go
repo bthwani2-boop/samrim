@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	wltintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
@@ -45,7 +46,7 @@ func New(identity *identityintegration.Client, db *sql.DB, wlt *wltintegration.C
 	return &Service{identity: identity, db: db, wlt: wlt}, nil
 }
 
-func (s *Service) CreateForPartner(ctx context.Context, accessToken, storeID, delegatePhone string, permissions []string, idempotencyKey, correlationID string) (postgres.StoreAccessGrant, bool, error) {
+func (s *Service) CreateForPartner(ctx context.Context, accessToken, storeID, delegatePhone, displayNameAr string, permissions []string, idempotencyKey, correlationID string) (postgres.StoreAccessGrant, bool, error) {
 	actorID, err := s.partnerActor(ctx, accessToken)
 	if err != nil {
 		return postgres.StoreAccessGrant{}, false, err
@@ -53,17 +54,25 @@ func (s *Service) CreateForPartner(ctx context.Context, accessToken, storeID, de
 	if !validMutation(idempotencyKey, correlationID) {
 		return postgres.StoreAccessGrant{}, false, ErrInvalidInput
 	}
-	resolvedActor, err := s.identity.ResolvePartnerInviteByPhone(ctx, delegatePhone)
+	// Authorization and validation must precede the Identity side effect.
+	if _, err := postgres.ReadStoreOwnedByPartner(ctx, s.db, strings.TrimSpace(storeID), actorID); err != nil {
+		return postgres.StoreAccessGrant{}, false, postgres.ErrStoreAccessForbidden
+	}
+	phone, err := identityintegration.NormalizeInvitePhone(delegatePhone)
+	if err != nil || !postgres.ValidStorePermissionSet(permissions) ||
+		utf8.RuneCountInString(strings.TrimSpace(displayNameAr)) > 80 {
+		return postgres.StoreAccessGrant{}, false, ErrInvalidInput
+	}
+	// Identity provisioning cannot give Store access. The member verifies
+	// their own phone and accepts the Store grant before DSH authorizes actions.
+	resolvedActor, err := s.identity.ProvisionPartnerWithContext(ctx, identityintegration.ActorInput{PhoneE164: phone}, correlationID, actorID)
 	if err != nil {
-		if errors.Is(err, identityintegration.ErrInvitePhoneInvalid) || errors.Is(err, identityintegration.ErrInviteActorMissing) {
-			return postgres.StoreAccessGrant{}, false, ErrInvalidInput
-		}
 		return postgres.StoreAccessGrant{}, false, err
 	}
 	if !resolvedActor.SecurityEnabled {
 		return postgres.StoreAccessGrant{}, false, ErrActorSecurityDisabled
 	}
-	grant, replayed, err := postgres.CreateStoreAccessInvitation(ctx, s.db, storeID, actorID, resolvedActor.ActorID, permissions, idempotencyKey, correlationID)
+	grant, replayed, err := postgres.CreateStoreAccessInvitationNamed(ctx, s.db, storeID, actorID, resolvedActor.ActorID, displayNameAr, permissions, idempotencyKey, correlationID)
 	if err != nil {
 		return postgres.StoreAccessGrant{}, false, err
 	}

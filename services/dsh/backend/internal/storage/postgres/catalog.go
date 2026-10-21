@@ -763,7 +763,7 @@ func ListCatalogCategoryPage(ctx context.Context, db *sql.DB, verticalID, query,
 	query = strings.TrimSpace(query)
 	status = strings.TrimSpace(status)
 	sort = strings.TrimSpace(sort)
-	if verticalID == "" || len(verticalID) > 128 || len(query) > 160 || (status != "all" && status != "active" && status != "inactive") || (sort != "name_asc" && sort != "name_desc" && sort != "updated_desc") || limit < 1 || limit > 100 || len(rawCursor) > 2048 {
+	if len(verticalID) > 128 || len(query) > 160 || (status != "all" && status != "active" && status != "inactive") || (sort != "name_asc" && sort != "name_desc" && sort != "updated_desc") || limit < 1 || limit > 100 || len(rawCursor) > 2048 {
 		return CatalogCategoryPage{}, ErrCatalogCategoryInvalidCursor
 	}
 	cursor, err := decodeCatalogCategoryCursor(rawCursor, verticalID, query, status, sort)
@@ -771,10 +771,12 @@ func ListCatalogCategoryPage(ctx context.Context, db *sql.DB, verticalID, query,
 		return CatalogCategoryPage{}, err
 	}
 	var verticalExists bool
-	if err := db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM dsh.commerce_verticals WHERE id=$1)", verticalID).Scan(&verticalExists); err != nil {
-		return CatalogCategoryPage{}, err
-	} else if !verticalExists {
-		return CatalogCategoryPage{}, ErrCatalogVerticalNotFound
+	if verticalID != "" {
+		if err := db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM dsh.commerce_verticals WHERE id=$1)", verticalID).Scan(&verticalExists); err != nil {
+			return CatalogCategoryPage{}, err
+		} else if !verticalExists {
+			return CatalogCategoryPage{}, ErrCatalogVerticalNotFound
+		}
 	}
 	queryPattern := ""
 	if query != "" {
@@ -793,7 +795,7 @@ func ListCatalogCategoryPage(ctx context.Context, db *sql.DB, verticalID, query,
 		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=category.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),'') AS image_uri,
 		category.active,category.version,category.created_at,category.updated_at
 		FROM dsh.catalog_categories category
-		WHERE category.vertical_id=$1 AND category.deleted_at IS NULL AND ($2='all' OR category.active=($2='active'))
+		WHERE ($1='' OR category.vertical_id=$1) AND category.deleted_at IS NULL AND ($2='all' OR category.active=($2='active'))
 		AND ($3='' OR category.name_ar ILIKE $3 ESCAPE '!' OR category.name_en ILIKE $3 ESCAPE '!')
 		AND (NOT $7::boolean
 			OR ($8='updated_desc' AND (category.updated_at,category.id)<($4::timestamptz,$6::text))

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { ActivityIndicator, ActivityLegend } from "../shared/record-indicator";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 const arabicCityNamePattern = /^[\p{Script=Arabic}\p{White_Space}\p{Number}\p{Punctuation}]+$/u;
 
@@ -110,7 +111,17 @@ export function ServiceCityPanel() {
       </search>
       <span className="muted" role="status">{visibleCities.length} من {cities.length} مدينة{loading || error ? " · آخر قراءة" : ""}</span>
       <div className="table-wrap" aria-busy={loading}><table className="reference-table"><caption className="visually-hidden">مدن الخدمة</caption>
-        <thead><tr><th scope="col">المدينة</th><th scope="col" className="indicator-column">الحالة</th><th scope="col">الإجراء</th></tr></thead>
+        <thead><tr>
+          <RegistryColumnHeader label="المدينة" active={Boolean(query)}>
+            <label>بحث باسم المدينة<input type="search" value={query} maxLength={160} disabled={busy || loading} onChange={e=>setQuery(e.target.value)} /></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="الحالة" active={Boolean(status)}>
+            <label>الحالة<select value={status} disabled={busy || loading} onChange={e=>setStatus(e.target.value)}>
+              <option value="">جميع الحالات</option><option value="active">نشطة</option><option value="inactive">متوقفة</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <th scope="col">الإجراء</th>
+        </tr></thead>
         <tbody>{visibleCities.map((city) => <tr key={city.id}><th scope="row">{city.displayNameAr}</th><td className="indicator-column"><ActivityIndicator active={city.active} activeLabel="نشطة" inactiveLabel="متوقفة" /></td><td>{canEdit ? <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void toggle(city)}>{city.active ? "تعطيل" : "تفعيل"}</button> : null}</td></tr>)}{!visibleCities.length ? <tr><td colSpan={3} className="collection-state">لا توجد مدن مطابقة.</td></tr> : null}</tbody>
       </table></div>
       <ActivityLegend activeLabel="نشطة" inactiveLabel="متوقفة" />

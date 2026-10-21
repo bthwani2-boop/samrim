@@ -3,6 +3,7 @@ import { TextArea } from "@bthwani/design-system/web";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { HRAttendanceRecord,HRAttendanceStatus,HRAttendancePage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 const descriptions:Record<HRAttendanceStatus,string>={present:"حاضر",late:"متأخر وفق مراجعة HR",absent:"غائب (مسجل يدويًا)",leave:"إجازة موثقة يدويًا"};
 const pad=(n:number)=>String(n).padStart(2,"0");
@@ -11,6 +12,9 @@ const dateString=(date:Date)=>`${date.getFullYear()}-${pad(date.getMonth()+1)}-$
 export function EmployeeAttendance({employeeId}:{employeeId:string}){
  const [day,setDay]=useState(()=>dateString(new Date()));
  const [items,setItems]=useState<readonly HRAttendanceRecord[]>([]);
+ const [rowStatus,setRowStatus]=useState("all");
+ const [rowSort,setRowSort]=useState("default");
+ const [minimumVersion,setMinimumVersion]=useState("");
  const [status,setStatus]=useState<HRAttendanceStatus>("present");
  const [note,setNote]=useState("");
  const [checkIn,setCheckIn]=useState("");
@@ -19,6 +23,10 @@ export function EmployeeAttendance({employeeId}:{employeeId:string}){
  const [error,setError]=useState(""),[notice,setNotice]=useState("");
  const retry=useRef<{signature:string;key:string}|null>(null);
  const selected=items.find(x=>x.date===day);
+ const visibleRecords=items.filter((item)=>
+   (rowStatus==="all"||item.status===rowStatus)
+   && (!minimumVersion||item.version>=Number(minimumVersion))
+ ).sort((a,b)=>rowSort==="default"?0:(rowSort==="asc"?1:-1)*a.date.localeCompare(b.date));
  const load=useCallback(async()=>{
   if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return;
   setLoading(true);setError("");
@@ -88,17 +96,33 @@ export function EmployeeAttendance({employeeId}:{employeeId:string}){
    {selected?<p className="muted">هناك تسجيل سابق لهذا التاريخ (الإصدار {selected.version}). الحفظ التالي تصحيح موثق.</p>:<p className="muted">هذا اليوم غير مسجل؛ لا يُفترض أنه غياب.</p>}
    <div className="form-actions">
     <button className="button button-primary" disabled={busy||loading||!day||note.trim().length<8} type="submit">{busy?"جارٍ الحفظ…":selected?"حفظ تصحيح موثق":"تسجيل الحضور"}</button>
-    <button className="button button-secondary" disabled={busy||loading} type="button" onClick={()=>void load()}>تحديث</button>
+
    </div>
   </form>
   {notice?<p role="status">{notice}</p>:null}
   {error?<p role="alert">{error}</p>:null}
+  {items.length>0&&Boolean(rowStatus!=="all"||rowSort!=="default"||minimumVersion)?<p className="access-center-scope">معروض من آخر 31 يومًا: {visibleRecords.length} من {items.length} تسجيلًا.</p>:null}
   <div className="access-table-wrap">
    <table className="operations-table access-table">
     <caption>آخر 31 يومًا من التسجيلات الصريحة حتى التاريخ المحدد</caption>
-    <thead><tr><th scope="col">التاريخ</th><th scope="col">الحالة</th><th scope="col">الإصدار</th><th scope="col">الإجراء</th></tr></thead>
-    <tbody>{items.map(item=><tr key={item.date}><th scope="row">{item.date}</th><td>{descriptions[item.status]}</td><td>{item.version}</td><td><button type="button" className="button button-quiet" onClick={()=>setDay(item.date)}>عرض/تصحيح</button></td></tr>)}
-    {items.length===0&&!loading?<tr><td colSpan={4}>لا توجد تسجيلات لهذا النطاق؛ الأيام غير المسجلة مجهولة الحالة.</td></tr>:null}</tbody>
+    <thead><tr>
+      <RegistryColumnHeader label="التاريخ" scope="page" active={rowSort!=="default"}>
+        <label>ترتيب الأيام<select value={rowSort} onChange={e=>setRowSort(e.target.value)}>
+          <option value="default">الترتيب الأصلي</option><option value="desc">الأحدث أولًا</option><option value="asc">الأقدم أولًا</option>
+        </select></label>
+      </RegistryColumnHeader>
+      <RegistryColumnHeader label="الحالة" scope="page" active={rowStatus!=="all"}>
+        <label>حالة الحضور<select value={rowStatus} onChange={e=>setRowStatus(e.target.value)}>
+          <option value="all">جميع التسجيلات</option>{Object.entries(descriptions).map(([key,label])=><option key={key} value={key}>{label}</option>)}
+        </select></label>
+      </RegistryColumnHeader>
+      <RegistryColumnHeader label="الإصدار" scope="page" active={Boolean(minimumVersion)}>
+        <label>أقل إصدار<input type="number" min="1" step="1" value={minimumVersion} onChange={e=>setMinimumVersion(e.target.value)} /></label>
+      </RegistryColumnHeader>
+      <th scope="col">الإجراء</th>
+    </tr></thead>
+    <tbody>{visibleRecords.map(item=><tr key={item.date}><th scope="row">{item.date}</th><td>{descriptions[item.status]}</td><td>{item.version}</td><td><button type="button" className="button button-quiet" onClick={()=>setDay(item.date)}>عرض/تصحيح</button></td></tr>)}
+    {visibleRecords.length===0&&!loading?<tr><td colSpan={4}>{items.length===0?"لا توجد تسجيلات لهذا النطاق؛ الأيام غير المسجلة مجهولة الحالة.":"لا توجد تسجيلات مطابقة لمرشحات الصفحة."}</td></tr>:null}</tbody>
    </table>
   </div>
  </section>;

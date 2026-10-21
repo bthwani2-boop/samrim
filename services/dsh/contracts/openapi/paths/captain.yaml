@@ -32,7 +32,7 @@ paths:
   /dsh/partners/me/stores/{storeId}/captain-memberships/invitations:
     post:
       operationId: createPartnerStoreCaptainInvitation
-      summary: Create a one-time invitation for an existing Captain actor
+      summary: Create a directed phone-bound Store Captain invitation
       security:
         - userBearer: []
       parameters:
@@ -45,6 +45,12 @@ paths:
             maxLength: 128
         - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
         - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/StoreCaptainTargetedInvitationCreateRequest"
       responses:
         "201":
           description: Invitation created. The code is returned once and only its hash is retained.

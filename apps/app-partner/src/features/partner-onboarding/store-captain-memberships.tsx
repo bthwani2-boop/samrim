@@ -1,7 +1,7 @@
 import { BthwaniButton, BthwaniConfirmDialog, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { StoreCaptainMembership } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { createOwnStoreCaptainInvitation, listOwnStoreCaptainMemberships, transitionOwnStoreCaptainMembership } from "./store-readback-client";
 
@@ -25,13 +25,16 @@ function storeCaptainMembershipExpiryLabel(membership: StoreCaptainMembership): 
   }
 }
 
-export function StoreCaptainMembershipManagement({ storeID }: { storeID: string }) {
+export function StoreCaptainMembershipManagement({ storeID, showForm = true }: { storeID: string; showForm?: boolean }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const [state, setState] = useState<MembershipState>({ kind: "loading" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [invitationCode, setInvitationCode] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [notice, setNotice] = useState("");
   const [pendingRevoke, setPendingRevoke] = useState<StoreCaptainMembership | null>(null);
 
   const reload = useCallback(async () => {
@@ -52,12 +55,18 @@ export function StoreCaptainMembershipManagement({ storeID }: { storeID: string 
     if (busy) return;
     setBusy(true);
     setError("");
-    setInvitationCode("");
+    setNotice("");
     try {
-      const result = await createOwnStoreCaptainInvitation(storeID);
-      setInvitationCode(result.invitationCode ?? "");
-      await reload();
-      if (!result.invitationCode) setError("تعذر استعادة رمز الدعوة السابق. ألغِ الدعوة المعلّقة وأنشئ رمزًا جديدًا.");
+      const result = await createOwnStoreCaptainInvitation(storeID, { phoneE164: phone.trim(), displayNameAr: displayName.trim() });
+      const latest = await listOwnStoreCaptainMemberships(storeID);
+      setState({ kind: "ready", memberships: latest.memberships });
+      if (!latest.memberships.some((member) => member.id === result.membership.id && member.state === "pending")) {
+        setError("لم تتأكد الدعوة بعد. راجع قائمة الفريق قبل إعادة المحاولة.");
+      } else {
+        setDisplayName("");
+        setPhone("");
+        setNotice("تم إنشاء حساب الكابتن ودعوته. ينتظر تأكيد رقم الهاتف وقبول الارتباط.");
+      }
     } catch {
       await reload();
       setError("تعذر إنشاء الدعوة. أعد قراءة القائمة قبل المحاولة مرة أخرى.");
@@ -81,23 +90,25 @@ export function StoreCaptainMembershipManagement({ storeID }: { storeID: string 
     }
   }
 
+  const archivedCount = state.kind === "ready" ? state.memberships.filter((item) => item.state === "revoked" || item.state === "expired").length : 0;
+  const visibleMembers = state.kind === "ready" ? state.memberships.filter((item) => showHistory || (item.state !== "revoked" && item.state !== "expired")) : [];
   return (
     <View style={styles.card}>
       <Text style={styles.value}>كباتن المتجر</Text>
-      <Text style={styles.muted}>أرسل الدعوة إلى كابتن لديه حساب مُفعّل. العضوية مرتبطة بهذا المتجر فقط ولا تضيفه إلى إسناد بثواني العام. عند جاهزية طلب «توصيل المتجر»، اختر كابتنًا بعضوية فعالة ليصله عرض مستقل يقبله من تطبيق Captain.</Text>
-      <BthwaniButton busy={busy} disabled={busy} label="إنشاء رمز دعوة" onPress={() => void createInvitation()} />
-      {invitationCode ? <View style={{ borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 6, padding: 12 }}>
-        <Text style={styles.metaLabel}>رمز لمرة واحدة — أرسله للكابتن المقصود</Text>
-        <Text selectable style={{ ...styles.value, textAlign: "center", writingDirection: "ltr" }}>{invitationCode}</Text>
+      {showForm ? <View style={{ gap: 8 }}>
+        <TextInput accessibilityLabel="اسم الكابتن" placeholder="اسم الكابتن" value={displayName} onChangeText={setDisplayName} editable={!busy} placeholderTextColor={theme.colorMuted} style={styles.formInput} />
+        <TextInput accessibilityLabel="هاتف الكابتن" placeholder="رقم الهاتف" keyboardType="phone-pad" value={phone} onChangeText={setPhone} editable={!busy} placeholderTextColor={theme.colorMuted} style={[styles.formInput, { textAlign: "left", writingDirection: "ltr" }]} />
+        <BthwaniButton busy={busy} disabled={busy || !displayName.trim() || !phone.trim()} label="إنشاء الكابتن" onPress={() => void createInvitation()} />
       </View> : null}
+      {notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
       {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة العضويات…</Text></View> : null}
       {state.kind === "error" ? <BthwaniButton disabled={busy} label="إعادة قراءة العضويات" onPress={() => void reload()} variant="secondary" /> : null}
       {state.kind === "ready" && state.memberships.length === 0 ? <Text style={styles.muted}>لا توجد دعوات أو عضويات لهذا المتجر.</Text> : null}
-      {state.kind === "ready" ? state.memberships.map((membership) => {
+      {state.kind === "ready" ? visibleMembers.map((membership) => {
         const statusLabel = storeCaptainMembershipStatusLabel(membership.state);
         const expiryLabel = storeCaptainMembershipExpiryLabel(membership);
         return <View key={membership.id} style={{ borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 }}>
-          <Text style={styles.value}>{membership.captainActorId ? [membership.captainNameAr?.trim() || "كابتن المتجر", membership.captainPhoneMasked?.trim()].filter(Boolean).join(" · ") : "لم تُقبل الدعوة بعد"}</Text>
+          <Text style={styles.value}>{membership.captainActorId ? [membership.displayNameAr?.trim() || membership.captainNameAr?.trim() || "كابتن المتجر", membership.captainPhoneMasked?.trim()].filter(Boolean).join(" · ") : membership.displayNameAr?.trim() || (membership.state === "pending" ? "بانتظار قبول الكابتن" : "كابتن المتجر")}</Text>
           <Text style={styles.muted}>{statusLabel}{expiryLabel}</Text>
           {membership.state === "active" ? <>
             <BthwaniButton disabled={busy} label="إيقاف العضوية" onPress={() => void transition(membership, "suspended")} variant="secondary" />
@@ -110,14 +121,16 @@ export function StoreCaptainMembershipManagement({ storeID }: { storeID: string 
           {membership.state === "pending" || membership.state === "expired" ? <BthwaniButton disabled={busy} label="إلغاء الدعوة" onPress={() => setPendingRevoke(membership)} variant="secondary" /> : null}
         </View>;
       }) : null}
+      {archivedCount > 0 ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: showHistory }} onPress={() => setShowHistory((value) => !value)}>
+        <Text style={styles.muted}>{showHistory ? "إخفاء السجل" : "سجل العضويات السابقة (" + archivedCount + ")"}</Text>
+      </Pressable> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <BthwaniButton disabled={busy} label="تحديث القائمة" onPress={() => void reload()} variant="secondary" />
       <BthwaniConfirmDialog
         busy={busy}
         confirmLabel={pendingRevoke?.state === "pending" || pendingRevoke?.state === "expired" ? "إلغاء الدعوة" : "إلغاء العضوية"}
         description={pendingRevoke
           ? pendingRevoke.state === "pending" || pendingRevoke.state === "expired"
-            ? "ستُلغى دعوة كابتن المتجر ولن يمكن قبول هذا الرمز بعد ذلك."
+            ? "ستُلغى دعوة كابتن المتجر ولن يمكن قبولها بعد ذلك."
             : `ستُلغى عضوية ${pendingRevoke.captainNameAr?.trim() || pendingRevoke.captainPhoneMasked?.trim() || "كابتن المتجر"} نهائيًا من هذا المتجر، وسيلزم إنشاء دعوة جديدة لإعادته.`
           : ""}
         intent="danger"

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { RecordIndicator } from "../shared/record-indicator";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { operationalAge } from "./operational-age";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
@@ -97,6 +98,12 @@ export function OperationsWorkspace() {
   const [summary, setSummary] = useState<OperatorOperationsSummary | null>(null);
   const [ageClock, setAgeClock] = useState(() => Date.now());
   const [search, setSearch] = useState(searchFromUrl);
+  const [pageCaptainFilter, setPageCaptainFilter] = useState("all");
+  const [pageReviewFilter, setPageReviewFilter] = useState("all");
+  const visibleOperations = operations.filter((item) =>
+    (pageCaptainFilter === "all" || (pageCaptainFilter === "assigned" ? Boolean(item.assignment) : !item.assignment))
+    && (pageReviewFilter === "all" || (pageReviewFilter === "overdue" ? operationalAge(item.state, item.updatedAt, ageClock).needsReview : Boolean(resolveOperatorAction({ state: item.state, assignment: item.assignment }))))
+  );
   const [loading, setLoading] = useState(true);
   const [nextCursor, setNextCursor] = useState("");
   const [error, setError] = useState("");
@@ -191,6 +198,7 @@ export function OperationsWorkspace() {
     return () => clearInterval(timer);
   }, [cursorPage.ready, load, loading, view]);
 
+  const overdueOnPage = operations.filter((item) => operationalAge(item.state, item.updatedAt, ageClock).needsReview).length;
   const hasSearch = Boolean(searchFromUrl);
   const selectedFilter = preciseState || (view === "attention" ? "attention" : view === "dispatch" ? "READY_FOR_DISPATCH" : view === "delivered" ? "DELIVERED" : "");
   const selectedViewLabel = preciseState ? specificStates.find((item) => item.value === preciseState)?.label ?? preciseState
@@ -273,9 +281,12 @@ export function OperationsWorkspace() {
         </div>
       </section>
 
+      {overdueOnPage > 0 ? <p className="operations-attention-note" role="status">
+        {overdueOnPage.toLocaleString("ar-YE")} طلب متعثر أو متأخر في الصفحة الحالية. قد لا يظهر ضمن «تحتاج قرارًا»؛ افتح ملفه للتحقق من الخطوة التالية.
+      </p> : null}
       <div className="ops-list-heading">
         <div className="ops-list-name"><h2 id="operations-list-title">{selectedViewLabel}</h2>
-          <span className="muted">{operations.length} طلب في هذه الصفحة{summary ? ` · ${summary.totalCount} إجمالي النتائج` : ""}{nextCursor ? " · المزيد في الصفحة التالية" : ""}</span>
+          <span className="muted">{operations.length} طلب في هذه الصفحة{visibleOperations.length !== operations.length ? " · معروض من الصفحة " + visibleOperations.length : ""}{summary ? ` · ${summary.totalCount} إجمالي النتائج` : ""}{nextCursor ? " · المزيد في الصفحة التالية" : ""}</span>
         </div>
 
       </div>
@@ -292,13 +303,42 @@ export function OperationsWorkspace() {
           <section className="operations-table-wrap" aria-label="قائمة الطلبات؛ تمرير أفقي عند الحاجة" tabIndex={0}>
             <table className="operations-table ops-list-table">
               <caption className="visually-hidden">{selectedViewLabel}، خمسون طلبًا كحد أقصى في الصفحة</caption>
-              <thead><tr><th scope="col">المتجر</th><th scope="col">الحالة</th><th scope="col">الكابتن</th><th scope="col">آخر تحديث</th><th scope="col">المتابعة</th><th scope="col">إجراء</th></tr></thead>
+              <thead><tr>
+                <RegistryColumnHeader label="المتجر" active={hasSearch}>
+                  <form onSubmit={(event) => { event.preventDefault(); navigate({ q: search.trim().slice(0, 128), state: "", view: "all" }); }}>
+                    <label>بحث في الطلبات<input type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="رقم الطلب أو المتجر" /></label>
+                    <button type="submit">بحث</button>
+                  </form>
+                </RegistryColumnHeader>
+                <RegistryColumnHeader label="الحالة" active={Boolean(state || actionableOnly)}>
+                  <label>حالة الطلب<select value={selectedFilter} onChange={(event) => { const chosen = event.target.value; navigate({ view: chosen === "attention" ? "attention" : "all", state: chosen === "attention" ? "" : chosen }); }}>
+                    {specificStates.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
+                  </select></label>
+                </RegistryColumnHeader>
+                <RegistryColumnHeader label="الكابتن" active={pageCaptainFilter !== "all"} scope="page">
+                  <label>الإسناد<select value={pageCaptainFilter} onChange={(event) => setPageCaptainFilter(event.target.value)}>
+                    <option value="all">الكل</option><option value="assigned">مسند</option><option value="unassigned">غير مسند</option>
+                  </select></label>
+                </RegistryColumnHeader>
+                <RegistryColumnHeader label="آخر تحديث" active={sort === "updated_asc"}>
+                  <label>ترتيب الطلبات<select value={sort} onChange={(event) => navigate({ sort: event.target.value })}>
+                    <option value="updated_desc">الأحدث أولًا</option><option value="updated_asc">الأقدم أولًا</option>
+                  </select></label>
+                </RegistryColumnHeader>
+                <RegistryColumnHeader label="المتابعة" active={pageReviewFilter !== "all"} scope="page">
+                  <label>حالة المتابعة<select value={pageReviewFilter} onChange={(event) => setPageReviewFilter(event.target.value)}>
+                    <option value="all">الجميع</option><option value="overdue">متعثر أو متأخر</option><option value="action">له إجراء متاح</option>
+                  </select></label>
+                </RegistryColumnHeader>
+                <th scope="col">فتح الطلب</th>
+              </tr></thead>
               <tbody>
-                {operations.map((item) => {
+                {visibleOperations.length === 0 ? <tr><td colSpan={6} className="catalog-table-state">لا توجد مطابقة في الصفحة الحالية. أزل مرشح الإسناد أو المتابعة.</td></tr> : null}
+                {visibleOperations.map((item) => {
                   const age = operationalAge(item.state, item.updatedAt, ageClock);
                   const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
                   return <tr key={item.orderId} className={age.needsReview ? "ops-row-review" : undefined}>
-                    <th scope="row">{item.storeName}<small className="muted" dir="ltr" style={{ display: "block", overflowWrap: "anywhere" }}>{item.orderId}</small></th>
+                    <th scope="row">{item.storeName}<small className="muted ops-order-short-id" dir="ltr" title={item.orderId}>#{item.orderId.slice(-8)}</small></th>
                     <td><span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span></td>
                     <td>{item.assignment ? <span className="ops-captain-cell">
                       <span>{captainAssignmentStateLabel(item.assignment.state)}</span>
@@ -308,18 +348,18 @@ export function OperationsWorkspace() {
                       <span className={age.needsReview ? "operations-attention" : "muted"}>{age.label}</span>
                       {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
                     </div></td>
-                    <td><button type="button" className="ops-row-open" aria-label={"فتح طلب من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>فتح</button></td>
+                    <td><button type="button" className="ops-row-open" aria-label={"فتح طلب " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>فتح</button></td>
                   </tr>;
                 })}
               </tbody>
             </table>
             <ul className="ops-mobile-orders" aria-label="طلبات الصفحة">
-              {operations.map((item) => {
+              {visibleOperations.map((item) => {
                 const age = operationalAge(item.state, item.updatedAt, ageClock);
                 const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
                 return <li key={item.orderId} className={"ops-mobile-order" + (age.needsReview ? " ops-mobile-order-review" : "")}>
                   <div className="ops-mobile-order-heading">
-                    <strong>{item.storeName}</strong><small className="muted" dir="ltr">{item.orderId}</small>
+                    <strong>{item.storeName}</strong><small className="muted ops-order-short-id" dir="ltr" title={item.orderId}>#{item.orderId.slice(-8)}</small>
                   </div>
                   <div className="ops-mobile-order-status">
                     <span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span>
@@ -331,7 +371,7 @@ export function OperationsWorkspace() {
                   </div>
                   <div className="ops-mobile-order-bottom">
                     <time dateTime={item.updatedAt}>آخر تحديث: {formatOrderDate(item.updatedAt)}</time>
-                    <button type="button" className="ops-row-open" aria-label={"فتح طلب من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>فتح الطلب</button>
+                    <button type="button" className="ops-row-open" aria-label={"فتح طلب " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>فتح الطلب</button>
                   </div>
                 </li>;
               })}

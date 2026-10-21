@@ -122,11 +122,12 @@ function isResolvedProductMatch(match: CatalogIdentifierResolution): match is Re
   return match.outcome === "SHARED_PRODUCT_MATCH" || match.outcome === "STORE_LOCAL_PRODUCT_MATCH";
 }
 
-export function StoreOfferManagement({ storeId, verticalId }: { storeId: string; verticalId: string }) {
+export function StoreOfferManagement({ storeId, verticalId, toolsView = false }: { storeId: string; verticalId: string; toolsView?: boolean }) {
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OfferState>({ kind: "loading" });
-  const [panel, setPanel] = useState<"prices" | "create" | "tools" | null>(null);
+  const [panel, setPanel] = useState<"prices" | "create" | "tools" | null>(toolsView ? "tools" : null);
+  useEffect(() => { setPanel(toolsView ? "tools" : null); }, [toolsView]);
   const [expandedInventoryId, setExpandedInventoryId] = useState<string | null>(null);
   const [offerNextCursor, setOfferNextCursor] = useState("");
   const [loadingMoreOffers, setLoadingMoreOffers] = useState(false);
@@ -703,12 +704,11 @@ const theme = useAppearanceTheme();
   const canAdd = selectedVariant !== null && selectedVariant.measurementKind !== "VARIABLE_MEASURE" && Boolean(quantityPolicy && pricingBasis) && pricingBasis === expectedPricingBasis && Number.isSafeInteger(parsedPrice) && parsedPrice > 0 && [parsedMin, parsedMax, parsedStep, parsedPricingUnit, parsedInventoryOnHand].every(Number.isSafeInteger) && parsedMin >= 1 && parsedMax >= parsedMin && parsedStep >= 1 && parsedPricingUnit >= 1 && parsedInventoryOnHand >= 0 && (inventoryPolicy === "QUANTITY_ON_HAND" || parsedInventoryOnHand === 0);
   return (
     <View style={styles.container} accessibilityLabel="إدارة عروض المتجر">
-      <Text style={styles.title}>المنتجات</Text>
+      <Text style={styles.title}>{toolsView ? "أدوات الكتالوج" : "المنتجات"}</Text>
       {!catalogReady ? <Text accessibilityRole="alert" style={styles.warning}>قائمة المتجر غير جاهزة للإدارة بعد. تعذرت إضافة المنتجات أو نشر العروض حاليًا؛ تواصل مع الدعم لاستكمال التجهيز.</Text> : null}
-      {catalogReady ? <View style={styles.topActions}>
+      {catalogReady && !toolsView ? <View style={styles.topActions}>
         <BthwaniChip label="تعديل الأسعار" selected={panel === "prices"} onPress={() => setPanel(panel === "prices" ? null : "prices")} />
         <BthwaniChip label="إضافة منتج" selected={panel === "create"} onPress={() => setPanel(panel === "create" ? null : "create")} />
-        <BthwaniChip label="أدوات الكتالوج" selected={panel === "tools"} onPress={() => setPanel(panel === "tools" ? null : "tools")} />
       </View> : null}
       {catalogReady && panel === "prices" ? <MobileStoreQuickPricesWorkspace
         client={dshClient()}
@@ -757,8 +757,8 @@ const theme = useAppearanceTheme();
       </View> : null}<TextInput accessibilityLabel="اسم القسم" editable={!busy} onChangeText={setSectionName} placeholder="اسم قسم المتجر" value={sectionName} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!sectionName.trim()} label="إنشاء قسم وربطه" onPress={() => void createSectionAndAttach()} variant="secondary" /></View> : null}
       {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة عروض المتجر…</Text></View> : null}
       {state.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error || "تعذر قراءة عروض المتجر."}</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
-        {state.kind === "ready" && state.offers.length === 0 ? <Text style={styles.muted}>لا توجد عروض مرتبطة بهذا المتجر بعد.</Text> : null}
-        {state.kind === "ready" && state.offers.length > 0 ? <View style={styles.offerList}>
+        {!toolsView && panel === null && state.kind === "ready" && state.offers.length === 0 ? <Text style={styles.muted}>لا توجد عروض مرتبطة بهذا المتجر بعد.</Text> : null}
+        {!toolsView && panel === null && state.kind === "ready" && state.offers.length > 0 ? <View style={styles.offerList}>
         {state.offers.map((offer) => {
           const primaryMedia = getPrimaryMedia(offer.media);
           const inventoryDraft = inventoryDrafts[offer.offerId] ?? String(offer.inventoryOnHandBaseUnits);
@@ -791,7 +791,7 @@ const theme = useAppearanceTheme();
           </View>;
         })}
       </View> : null}
-            {offerNextCursor ? <BthwaniButton busy={loadingMoreOffers} disabled={loadingMoreOffers || busy} label={loadingMoreOffers ? "جارٍ تحميل العروض…" : "تحميل المزيد من العروض"} onPress={() => void loadMoreOffers()} variant="secondary" /> : null}
+            {!toolsView && panel === null && offerNextCursor ? <BthwaniButton busy={loadingMoreOffers} disabled={loadingMoreOffers || busy} label={loadingMoreOffers ? "جارٍ تحميل العروض…" : "تحميل المزيد من العروض"} onPress={() => void loadMoreOffers()} variant="secondary" /> : null}
       {error && state.kind !== "error" ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );

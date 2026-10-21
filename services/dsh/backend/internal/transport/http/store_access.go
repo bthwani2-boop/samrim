@@ -22,6 +22,7 @@ type StoreAccessServer struct {
 
 type storeAccessCreateRequest struct {
 	DelegatePhoneE164 string   `json:"delegatePhoneE164"`
+	DisplayNameAr     string   `json:"displayNameAr"`
 	Permissions       []string `json:"permissions"`
 }
 
@@ -113,7 +114,7 @@ func (s *StoreAccessServer) createForOwner(w http.ResponseWriter, r *http.Reques
 	if !decodeJSON(w, r, &request) {
 		return
 	}
-	grant, replayed, err := s.service.CreateForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), request.DelegatePhoneE164, request.Permissions, idempotencyKey, correlationID)
+	grant, replayed, err := s.service.CreateForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), request.DelegatePhoneE164, request.DisplayNameAr, request.Permissions, idempotencyKey, correlationID)
 	if err != nil {
 		writeStoreAccessError(w, err)
 		return

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { HRAttendancePage, HRAttendanceRecord } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 
 function localDay(date: Date) {
@@ -27,6 +28,8 @@ export function EmployeePerformance({ employeeId }: Readonly<{ employeeId: strin
   const [items, setItems] = useState<readonly HRAttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [statusFilter,setStatusFilter]=useState("all");
+  const [dateOrder,setDateOrder]=useState("desc");
   const period = last30Days();
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -45,6 +48,8 @@ export function EmployeePerformance({ employeeId }: Readonly<{ employeeId: strin
   }, [employeeId]);
   useEffect(() => { void load(); }, [load]);
 
+  const visibleRecords=items.filter((item)=>statusFilter==="all"||item.status===statusFilter)
+    .sort((a,b)=>(dateOrder==="asc"?1:-1)*a.date.localeCompare(b.date));
   const counts = {
     recorded: items.length,
     present: items.filter((item) => item.status === "present").length,
@@ -82,10 +87,22 @@ export function EmployeePerformance({ employeeId }: Readonly<{ employeeId: strin
       </section> : null}
       {items.length ? <div className={"bt-employee-performance-records"}>
         <h3>تفاصيل الأيام المسجلة</h3>
-        <table><thead><tr><th scope="col">اليوم</th><th scope="col">التسجيل</th><th scope="col">آخر توثيق</th></tr></thead>
-          <tbody>{[...items].sort((a, b) => b.date.localeCompare(a.date)).map((entry) => <tr key={entry.date}>
+        <table><thead><tr>
+          <RegistryColumnHeader label="اليوم" scope="page" active={dateOrder!=="desc"}>
+            <label>ترتيب الأيام<select value={dateOrder} onChange={e=>setDateOrder(e.target.value)}>
+              <option value="desc">الأحدث أولًا</option><option value="asc">الأقدم أولًا</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="التسجيل" scope="page" active={statusFilter!=="all"}>
+            <label>حالة التسجيل<select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+              <option value="all">الجميع</option>{Object.entries(statusLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}
+            </select></label>
+          </RegistryColumnHeader>
+          <th scope="col">آخر توثيق</th>
+        </tr></thead>
+          <tbody>{visibleRecords.map((entry) => <tr key={entry.date}>
             <td><time dateTime={entry.date}>{entry.date}</time></td><td>{statusLabels[entry.status]}</td><td>{entry.recordedAt ? new Intl.DateTimeFormat("ar-YE-u-nu-latn", { dateStyle: "medium" }).format(new Date(entry.recordedAt)) : "غير متاح"}</td>
-          </tr>)}</tbody>
+          </tr>)}{visibleRecords.length===0?<tr><td colSpan={3}>لا توجد تسجيلات مطابقة في هذه الفترة.</td></tr>:null}</tbody>
         </table>
       </div> : <p className={"bt-employee-performance-empty"}>لا توجد تسجيلات موثقة في هذه الفترة. لا يمكن استنتاج الانضباط أو الغياب.</p>}
     </> : null}

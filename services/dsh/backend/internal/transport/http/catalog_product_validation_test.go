@@ -58,6 +58,9 @@ func TestCatalogProductListsRequireTheirCanonicalSessions(t *testing.T) {
 		{name: "partner product list requires a partner session", path: "/dsh/catalog/products", status: http.StatusUnauthorized},
 		{name: "operator registry requires service authentication", path: "/dsh/catalog/product-registry", header: "Bearer wrong-token", status: http.StatusUnauthorized},
 		{name: "operator registry requires actor identity", path: "/dsh/catalog/product-registry", header: "Bearer " + strings.Repeat("s", 24), status: http.StatusBadRequest},
+		{name: "global category search requires service authentication", path: "/dsh/catalog/categories?status=all", status: http.StatusUnauthorized},
+		{name: "global category search requires actor identity", path: "/dsh/catalog/categories?status=all", header: "Bearer " + strings.Repeat("s", 24), status: http.StatusBadRequest},
+		{name: "global active category search is operator-only", path: "/dsh/catalog/categories?status=active", status: http.StatusUnauthorized},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

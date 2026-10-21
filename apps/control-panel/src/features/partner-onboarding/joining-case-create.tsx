@@ -85,6 +85,7 @@ export function JoiningCaseCreate() {
   const [longitude, setLongitude] = useState("");
   const [fulfillmentModes, setFulfillmentModes] = useState<ReadonlyArray<"BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP">>([]);
   const [workingHours, setWorkingHours] = useState<ReadonlyArray<StoreWorkingHoursInterval>>(emptyWorkingHours);
+  const [hoursExpanded, setHoursExpanded] = useState(false);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [walletProviders, setWalletProviders] = useState<ReadonlyArray<WalletProviderOption>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
@@ -199,7 +200,8 @@ export function JoiningCaseCreate() {
     const isResumedAttempt = pendingAttempt !== null && pendingAttempt.input === null;
     const attempt: PendingJoiningCaseCreate = { ...metadata, input };
     if (!isValidStoreWorkingHours(input.firstStoreWorkingHours.intervals)) {
-      setError("ساعات العمل غير صحيحة أو متداخلة؛ راجع أوقات الفترات وأيامها.");
+      setHoursExpanded(true);
+      setError("حدد ساعات العمل أو راجع الفترات غير الصحيحة؛ يمكنك اختيار جدول الأسبوع المقترح ثم تعديله.");
       return;
     }
     if (!phoneE164Pattern.test(input.contactPhoneE164) || input.ownerFullName.trim().length < 2 || Array.from(input.walletProviderKey.trim()).length > 64 || /\p{Cc}/u.test(input.walletProviderKey) || input.businessName.length < 2 || input.firstStoreName.length < 2 || input.firstStoreAddress.trim().length < 4 || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreProofNumber.length < 1 || input.firstStoreFulfillmentModes.length === 0 || !latitude.trim() || !longitude.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
@@ -315,12 +317,21 @@ export function JoiningCaseCreate() {
         <label className="field-label" htmlFor="joining-city">مدينة المتجر الأول<select id="joining-city" disabled={busy || optionsBusy || Boolean(optionsError) || pendingRequestLocked || !attemptReady} value={serviceCityId} onChange={(event) => setServiceCityId(event.target.value)}><option value="">اختر مدينة نشطة</option>{activeCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
         <label className="field-label" htmlFor="joining-vertical">المجال التجاري<select id="joining-vertical" disabled={busy || optionsBusy || Boolean(optionsError) || pendingRequestLocked || !attemptReady} value={verticalId} onChange={(event) => setVerticalId(event.target.value)}><option value="">اختر المجال التجاري</option>{activeVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label>
          <label className="field-label" htmlFor="joining-commercial-type">نوع المتجر التجاري<select id="joining-commercial-type" disabled={busy || optionsBusy || commercialTypesBusy || !verticalId || Boolean(commercialTypesError) || pendingRequestLocked || !attemptReady} value={commercialTypeId} onChange={(event) => setCommercialTypeId(event.target.value)}><option value="">{commercialTypePlaceholder}</option>{activeCommercialTypes.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}</select>{commercialTypesError ? <span className="identity-error" role="alert">{commercialTypesError}</span> : null}{hasNoActiveCommercialTypes ? <span className="muted">لا توجد أنواع نشطة لهذه الفئة. أضف النوع من سجل أنواع المتاجر قبل إنشاء الحالة.</span> : null}</label>
-        <fieldset className="field-label" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady}>
-          <legend>ساعات العمل الأسبوعية · توقيت المدينة</legend>
+        <section className="joining-hours-section" aria-label="ساعات عمل المتجر">
+          <div className="joining-hours-brief">
+            <strong>ساعات العمل</strong>
+            <span>{workingHours.length ? `${new Set(workingHours.map((item) => item.dayOfWeek)).size} أيام محددة` : "لم تُحدد بعد"}</span>
+            <button type="button" className="button button-secondary" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} onClick={() => { setWorkingHours(weekdays.map((_, index) => ({ dayOfWeek: index + 1, opensAt: "08:00", closesAt: "22:00", closesNextDay: false }))); setHoursExpanded(false); }}>كل الأيام ٨ ص–١٠ م</button>
+          </div>
+          <details className="joining-hours-picker" open={hoursExpanded} onToggle={(event) => setHoursExpanded(event.currentTarget.open)}>
+            <summary>تخصيص الأيام والأوقات</summary>
+            <fieldset className="field-label" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady}>
+              <legend>أيام وساعات العمل الأسبوعية · توقيت المدينة</legend>
+              <div className="joining-hours-days">
           {weekdays.map((label, index) => {
             const dayOfWeek = index + 1;
             const intervals = workingHours.filter((item) => item.dayOfWeek === dayOfWeek);
-            return <div key={dayOfWeek} className="field-label">
+            return <div key={dayOfWeek} className="field-label joining-hours-day">
               <label className="action-row"><input type="checkbox" checked={intervals.length > 0} onChange={(event) => setWorkingDayOpen(dayOfWeek, event.target.checked)} />{label}</label>
               {intervals.length > 0 ? <>
                 {intervals.map((interval, intervalIndex) => (
@@ -333,10 +344,13 @@ export function JoiningCaseCreate() {
                   {intervals.length > 1 ? <button type="button" className="button button-secondary" onClick={() => removeWorkingInterval(dayOfWeek, intervalIndex)}>حذف الفترة {intervalIndex + 1}</button> : null}
                 </div>))}
                 <div className="action-row"><button type="button" className="button button-secondary" onClick={() => addWorkingInterval(dayOfWeek)}>إضافة فترة ليوم {label}</button></div>
-              </> : <span className="muted">مغلق</span>}
+              </> : null}
             </div>;
           })}
-        </fieldset>
+              </div>
+            </fieldset>
+          </details>
+        </section>
         <label className="field-label" htmlFor="joining-proof-type">نوع الإثبات<select id="joining-proof-type" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={proofType} onChange={(event) => setProofType(event.target.value as JoiningCaseProofType)}>{proofTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         <label className="field-label" htmlFor="joining-proof-number">رقم الإثبات<input id="joining-proof-number" autoComplete="off" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={proofNumber} onChange={(event) => setProofNumber(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-notes">ملاحظات (اختياري)<TextArea className="resize-none" id="joining-notes" maxLength={1000} disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} /></label>

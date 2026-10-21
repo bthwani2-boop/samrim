@@ -4,6 +4,7 @@ import { TextArea } from "@bthwani/design-system/web";
 import { type CommerceVertical, isMediaProvenanceInputValid, type MediaProvenanceInput } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "./catalog-media-provenance-fields";
 
 function readError(value: unknown): string {
@@ -38,6 +39,13 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
   const [nameAr, setNameAr] = useState("");
   const [nameEn, setNameEn] = useState("");
   const [reason, setReason] = useState("");
+  const [listQuery, setListQuery] = useState("");
+  const [listStatus, setListStatus] = useState("all");
+  const [nameSort, setNameSort] = useState("default");
+  const filteredVerticals = verticals.filter((v) =>
+    (!listQuery.trim() || [v.nameAr,v.nameEn].some(name=>name.toLocaleLowerCase().includes(listQuery.trim().toLocaleLowerCase())))
+    && (listStatus==="all" || v.active === (listStatus==="active"))
+  ).sort((a,b)=>nameSort==="default"?0:(nameSort==="asc"?1:-1)*a.nameAr.localeCompare(b.nameAr,"ar"));
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -232,7 +240,21 @@ export function CatalogVerticalRegistry({ verticals, selectedVerticalId, onSelec
       {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void onSaved()}>إعادة المحاولة</button></p> : null}
       {!editorOnly ? <div className="catalog-taxonomy-inline">
         <strong>سجل الأنشطة</strong>
-        {verticals.length === 0 ? <p>لا توجد مجالات تجارية بعد. أضف مجالًا قبل إنشاء فئات المنتجات.</p> : <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr><th>المجال التجاري</th><th>الاسم الدولي</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>{verticals.map((vertical) => <tr key={vertical.id} className={selectedVerticalId === vertical.id ? "is-selected" : undefined}><td><div className="catalog-vertical-registry-identity">{vertical.imageUri ? <img src={vertical.imageUri} alt={`صورة ${vertical.nameAr}`} loading="lazy" decoding="async" /> : <span aria-hidden="true">{vertical.nameAr.slice(0, 1)}</span>}<strong>{vertical.nameAr}</strong></div></td><td><bdi dir="ltr">{vertical.nameEn}</bdi></td><td>{vertical.active ? "نشط" : "متوقف"}</td><td><div className="catalog-registry-actions"><button type="button" className="catalog-row-action" aria-pressed={selectedVerticalId === vertical.id} disabled={!vertical.active} onClick={() => onSelectVertical(vertical.id)}>{verticalSelectionActionLabel(selectedVerticalId === vertical.id)}</button><button type="button" className="catalog-row-action" disabled={busy || mediaBusy || !canEdit} onClick={() => edit(vertical)}>تعديل</button></div></td></tr>)}</tbody></table></div>}
+        {verticals.length === 0 ? <p>لا توجد مجالات تجارية بعد. أضف مجالًا قبل إنشاء فئات المنتجات.</p> : <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr>
+          <RegistryColumnHeader label="المجال التجاري" active={Boolean(listQuery || nameSort!=="default")}>
+            <label>بحث بالاسم<input type="search" value={listQuery} onChange={e=>setListQuery(e.target.value)} /></label>
+            <label>ترتيب الاسم<select value={nameSort} onChange={e=>setNameSort(e.target.value)}>
+              <option value="default">الترتيب الأصلي</option><option value="asc">أ–ي</option><option value="desc">ي–أ</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <th scope="col">الاسم الدولي</th>
+          <RegistryColumnHeader label="الحالة" active={listStatus!=="all"}>
+            <label>الحالة<select value={listStatus} onChange={e=>setListStatus(e.target.value)}>
+              <option value="all">الكل</option><option value="active">نشط</option><option value="inactive">متوقف</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <th scope="col">الإجراء</th>
+        </tr></thead><tbody>{filteredVerticals.map((vertical) => <tr key={vertical.id} className={selectedVerticalId === vertical.id ? "is-selected" : undefined}><td><div className="catalog-vertical-registry-identity">{vertical.imageUri ? <img src={vertical.imageUri} alt={`صورة ${vertical.nameAr}`} loading="lazy" decoding="async" /> : <span aria-hidden="true">{vertical.nameAr.slice(0, 1)}</span>}<strong>{vertical.nameAr}</strong></div></td><td><bdi dir="ltr">{vertical.nameEn}</bdi></td><td>{vertical.active ? "نشط" : "متوقف"}</td><td><div className="catalog-registry-actions"><button type="button" className="catalog-row-action" aria-pressed={selectedVerticalId === vertical.id} disabled={!vertical.active} onClick={() => onSelectVertical(vertical.id)}>{verticalSelectionActionLabel(selectedVerticalId === vertical.id)}</button><button type="button" className="catalog-row-action" disabled={busy || mediaBusy || !canEdit} onClick={() => edit(vertical)}>تعديل</button></div></td></tr>)}{filteredVerticals.length===0?<tr><td colSpan={4}>لا توجد مجالات مطابقة.</td></tr>:null}</tbody></table></div>}
       </div> : null}
     </section>
   );

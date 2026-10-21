@@ -5,6 +5,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { useSession } from "../../session/session-provider";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { MarketingStateIndicator } from "./marketing-state-indicator";
 import { apiMessage, clearPendingMarketingCreate, dateTimeLocalValue, emptyMediaProvenance, futureDateInput, futureEndDateInput, type PendingDiscoveryContentCreate, persistMarketingCreate, readActiveServiceCities, readDiscoveryContentById, readPendingDiscoveryContentCreate, readPromotionById, sha256File } from "./marketing-workspace";
 
@@ -510,7 +511,30 @@ export function MarketingContentWorkspace() {
           <label className="field-label" htmlFor="content-sort">الترتيب<select id="content-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="priority">أولوية العرض</option><option value="created_desc">الأحدث إنشاءً</option></select></label>
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
         </form>
-        {registry?.items.length ? <div className="table-wrap"><table className="data-table"><caption className="visually-hidden">سجل محتوى الاكتشاف</caption><thead><tr><th scope="col">المحتوى</th><th scope="col">النوع والوجهة</th><th scope="col">الحالة</th><th scope="col">الأولوية والبداية</th><th scope="col">الإجراءات</th></tr></thead><tbody>{registry.items.map((item) => <tr key={item.id}><th scope="row">{item.mediaUri ? <img className="media-preview" src={item.mediaUri} alt="" loading="lazy" /> : null}{item.titleAr}</th><td>{({ BANNER: "صورة رئيسية", CAROUSEL: "شريحة صور", SHORT_FORM: "قصة قصيرة" } as const)[item.kind]} · {({ STORE: "متجر", PRODUCT: "منتج", CATEGORY: "فئة", PROMOTION: "عرض", INFO: "معلومات عامة" } as const)[item.targetType]}</td><td><MarketingStateIndicator state={item.state} /></td><td>{item.ordinal}<br /><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className="action-row"><button className="button button-quiet" type="button" disabled={analyticsLoading} onClick={() => void readAnalytics(item.id)}>{analyticsLoading && analyticsContentId === item.id ? "جارٍ قراءة التحليلات…" : "قراءة التحليلات"}</button><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishContent(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف المحتوى" : "نشر المحتوى"}</button></div></td></tr>)}</tbody></table></div> : null}
+        {registry?.items.length ? <div className="table-wrap"><table className="data-table"><caption className="visually-hidden">سجل محتوى الاكتشاف</caption><thead><tr>
+          <RegistryColumnHeader label="المحتوى" active={Boolean(appliedSearch)}>
+            <form onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0,128)); setCursor(""); setCursorStack([]); }}>
+              <label>العنوان<input type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+              <button type="submit">بحث</button>
+            </form>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="النوع والوجهة" active={Boolean(kind)}>
+            <label>نوع المحتوى<select value={kind} onChange={(event) => { setKind(event.target.value); setCursor(""); setCursorStack([]); }}>
+              <option value="">جميع الأنواع</option><option value="BANNER">بنر</option><option value="CAROUSEL">كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="الحالة" active={Boolean(state)}>
+            <label>حالة المحتوى<select value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}>
+              <option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <RegistryColumnHeader label="الأولوية والبداية" active={sort !== "priority"}>
+            <label>الترتيب<select value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}>
+              <option value="priority">أولوية العرض</option><option value="created_desc">الأحدث إنشاءً</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <th scope="col">الإجراءات</th>
+        </tr></thead><tbody>{registry.items.map((item) => <tr key={item.id}><th scope="row">{item.mediaUri ? <img className="media-preview" src={item.mediaUri} alt="" loading="lazy" /> : null}{item.titleAr}</th><td>{({ BANNER: "صورة رئيسية", CAROUSEL: "شريحة صور", SHORT_FORM: "قصة قصيرة" } as const)[item.kind]} · {({ STORE: "متجر", PRODUCT: "منتج", CATEGORY: "فئة", PROMOTION: "عرض", INFO: "معلومات عامة" } as const)[item.targetType]}</td><td><MarketingStateIndicator state={item.state} /></td><td>{item.ordinal}<br /><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className="action-row"><button className="button button-quiet" type="button" disabled={analyticsLoading} onClick={() => void readAnalytics(item.id)}>{analyticsLoading && analyticsContentId === item.id ? "جارٍ قراءة التحليلات…" : "قراءة التحليلات"}</button><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishContent(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف المحتوى" : "نشر المحتوى"}</button></div></td></tr>)}</tbody></table></div> : null}
         {!registry?.items.length && loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة المحتوى…</p> : null}
         {registryError ? <div role="alert" className="managed-status managed-status-warning"><p>{registryError}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
         {registry && !registry.items.length && !loading && !registryError ? <p className="collection-state">لا يوجد محتوى مطابق.</p> : null}

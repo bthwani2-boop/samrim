@@ -1,10 +1,12 @@
 "use client";
 import { TextArea } from "@bthwani/design-system/web";
+import { useRouter } from "next/navigation";
 import { type BaseUnit, type CatalogAttributeRule, type CatalogAttributeValue, type CatalogAttributeValueInput, type CatalogCategoryListItem, type CatalogCategoryListResponse, type CatalogProduct, type CatalogProductRegistryResponse, type CatalogVariant, type CommerceVertical, isMediaProvenanceInputValid, type MeasurementKind, type MediaProvenanceInput } from "@bthwani/dsh";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { ActivityIndicator, ActivityLegend } from "../shared/record-indicator";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "./catalog-media-provenance-fields";
 
@@ -14,9 +16,10 @@ const emptyForm: ProductForm = { verticalId: "", scope: "SHARED", canonicalName:
 type AttributeDrafts = Readonly<Record<string, string>>;
 type CatalogLocationState = Readonly<{ query: string; verticalId: string; categoryId: string; active: string; sort: string; mode?: "create" | "edit"; productId?: string }>;
 
-function writeCatalogLocation(state: CatalogLocationState) {
+function writeCatalogLocation(state: CatalogLocationState, resetCursor = false) {
   const url = new URL(window.location.href);
   for (const key of ["q", "verticalId", "categoryId", "active", "sort", "mode", "productId"]) url.searchParams.delete(key);
+  if (resetCursor) url.searchParams.delete("productCursor");
   if (state.query) url.searchParams.set("q", state.query);
   if (state.verticalId) url.searchParams.set("verticalId", state.verticalId);
   if (state.categoryId) url.searchParams.set("categoryId", state.categoryId);
@@ -24,7 +27,9 @@ function writeCatalogLocation(state: CatalogLocationState) {
   if (state.sort !== "name_asc") url.searchParams.set("sort", state.sort);
   if (state.mode) url.searchParams.set("mode", state.mode);
   if (state.productId) url.searchParams.set("productId", state.productId);
-  window.history.pushState({ ...window.history.state, catalogRegistry: true }, "", `${url.pathname}${url.search}${url.hash}`);
+  const href = `${url.pathname}${url.search}${url.hash}`;
+  window.history.pushState({ ...window.history.state, catalogRegistry: true }, "", href);
+  return href;
 }
 
 function buildAttributeValues(rules: ReadonlyArray<CatalogAttributeRule>, drafts: AttributeDrafts, variantId?: string): ReadonlyArray<CatalogAttributeValueInput> | null {
@@ -115,6 +120,7 @@ function toForm(product: CatalogProduct): ProductForm {
 }
 
 export function CentralCatalog() {
+  const router = useRouter();
   const [products, setProducts] = useState<CatalogProductRegistryResponse["products"]>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [categories, setCategories] = useState<CatalogCategoryListResponse["categories"]>([]);
@@ -142,6 +148,19 @@ export function CentralCatalog() {
   const [catalogFiltersOpen, setCatalogFiltersOpen] = useState(false);
   const [sort, setSort] = useState("name_asc");
   const [viewMode, setViewMode] = useState<"table" | "gallery">("table");
+  const [minVariants, setMinVariants] = useState("");
+  const [minStores, setMinStores] = useState("");
+  const [pageCountSort, setPageCountSort] = useState<"default" | "variants_asc" | "variants_desc" | "stores_asc" | "stores_desc">("default");
+  const pageProducts = useMemo(() => {
+    const variantThreshold = minVariants.trim() && Number.isFinite(Number(minVariants)) ? Math.max(0, Number(minVariants)) : 0;
+    const storeThreshold = minStores.trim() && Number.isFinite(Number(minStores)) ? Math.max(0, Number(minStores)) : 0;
+    const result = products.filter((item) => item.variantCount >= variantThreshold && item.storeCount >= storeThreshold);
+    if (pageCountSort === "default") return result;
+    const factor = pageCountSort.endsWith("_asc") ? 1 : -1;
+    const field = pageCountSort.startsWith("variants") ? "variantCount" : "storeCount";
+    return result.sort((a, b) => factor * (a[field] - b[field]) || a.canonicalName.localeCompare(b.canonicalName, "ar"));
+  }, [products, minVariants, minStores, pageCountSort]);
+  const hasPageColumnFilters = Boolean(minVariants || minStores || pageCountSort !== "default");
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const orderedMedia = useMemo(() => [...(selected?.media ?? [])].sort((left, right) => left.ordinal - right.ordinal), [selected]);
   const previewMedia = previewIndex === null ? undefined : orderedMedia[previewIndex];
@@ -203,10 +222,9 @@ export function CentralCatalog() {
 
   const loadFilterCategories = useCallback(async (query: string, cursor = "", append = false) => {
     const requestSequence = ++filterCategoryRequestSequence.current;
-    if (!verticalFilter) { setFilterCategories([]); setFilterCategoryNextCursor(""); setFilterCategoryLoading(false); return; }
     setFilterCategoryLoading(true);
     try {
-      const params = new URLSearchParams({ verticalId: verticalFilter, status: "all", sort: "name_asc", limit: "25" });
+      const params = new URLSearchParams({ verticalId: verticalFilter, status: "active", sort: "name_asc", limit: "25" });
       if (query.trim()) params.set("query", query.trim());
       if (cursor) params.set("cursor", cursor);
       const response = await fetch(`/api/catalog/categories?${params.toString()}`, { cache: "no-store" });
@@ -236,11 +254,6 @@ export function CentralCatalog() {
     if (!categoryNextCursor || categoryLoading) return;
     try { await loadCategories(form.verticalId, categorySearch, categoryNextCursor, true); }
     catch (nextError) { setError(nextError instanceof Error ? nextError.message : "تعذر تحميل فئات إضافية."); }
-  }
-
-  async function searchFilterCategories() {
-    try { await loadFilterCategories(filterCategoryQuery); }
-    catch (nextError) { setError(nextError instanceof Error ? nextError.message : "تعذر البحث في الفئات."); }
   }
 
   async function loadMoreFilterCategories() {
@@ -310,10 +323,11 @@ export function CentralCatalog() {
   }, [selectedCategoryIdsKey]);
   useEffect(() => { if (cursorPage.ready) void load(); }, [load, cursorPage.ready]);
   useEffect(() => {
-    if (!verticalFilter) { filterCategoryRequestSequence.current += 1; setFilterCategories([]); setFilterCategoryNextCursor(""); setCategoryFilter(""); setFilterCategoryLoading(false); return; }
-    setFilterCategoryQuery("");
-    void loadFilterCategories("").catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئات."));
-  }, [verticalFilter, loadFilterCategories]);
+    const timer = setTimeout(() => {
+      void loadFilterCategories(filterCategoryQuery).catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئات."));
+    }, 250);
+    return () => { clearTimeout(timer); filterCategoryRequestSequence.current += 1; };
+  }, [filterCategoryQuery, loadFilterCategories]);
   useEffect(() => {
     const selectedIDs = new Set(selectedCategoryIdsKey ? selectedCategoryIdsKey.split("\u001f") : []);
     setSelectedCategoryDetails((current) => {
@@ -343,8 +357,9 @@ export function CentralCatalog() {
   }, [verticalFilter, categoryFilter, filterCategories]);
 
   function changeFilters(location: CatalogLocationState) {
-    writeCatalogLocation(location);
-    cursorPage.reset();
+    cursorPage.clearForNavigation();
+    const href = writeCatalogLocation(location, true);
+    router.replace(href, { scroll: false });
   }
 
   function closePreview() {
@@ -652,10 +667,9 @@ export function CentralCatalog() {
             <summary>تصفية وترتيب <span className="catalog-filter-count">{activeFilterCount ? `${activeFilterCount} مفعّلة` : ""}</span></summary>
             <div className="catalog-mobile-filter-fields">
               <label>المجال التجاري<select value={verticalFilter} onChange={(event) => { const verticalId = event.target.value; changeFilters({ query: appliedQuery, verticalId, categoryId: "", active: statusFilter, sort }); setVerticalFilter(verticalId); setCategoryFilter(""); }}><option value="">الكل</option>{sharedVerticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select></label>
-              <label>بحث الفئات<input disabled={!verticalFilter || filterCategoryLoading} value={filterCategoryQuery} onChange={(event) => setFilterCategoryQuery(event.target.value)} placeholder="اسم الفئة" /></label>
-              <button type="button" className="button button-quiet" disabled={!verticalFilter || filterCategoryLoading} onClick={() => void searchFilterCategories()}>{filterCategoryLoading ? "جارٍ البحث…" : "بحث الفئات"}</button>
-              <label>الفئة<select disabled={!verticalFilter} value={categoryFilter} onChange={(event) => { const categoryId = event.target.value; changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId, active: statusFilter, sort }); setCategoryFilter(categoryId); }}><option value="">كل الفئات</option>{filterCategories.map((category) => <option value={category.id} key={category.id}>{category.pathAr}</option>)}</select></label>
-              {filterCategoryNextCursor ? <button type="button" className="button button-quiet" disabled={filterCategoryLoading} onClick={() => void loadMoreFilterCategories()}>{filterCategoryLoading ? "جارٍ التحميل…" : "فئات إضافية"}</button> : null}
+              <label>بحث الفئات<input type="search" value={filterCategoryQuery} onChange={(event) => setFilterCategoryQuery(event.target.value)} placeholder="ابحث في جميع الفئات" aria-controls="catalog-filter-category" /></label>
+              <label>الفئة<select id="catalog-filter-category" value={categoryFilter} onChange={(event) => { const categoryId = event.target.value; changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId, active: statusFilter, sort }); setCategoryFilter(categoryId); }}><option value="">كل الفئات</option>{filterCategories.map((category) => <option value={category.id} key={category.id}>{!verticalFilter ? `${sharedVerticals.find((vertical) => vertical.id === category.verticalId)?.nameAr ?? category.verticalId} / ` : ""}{category.pathAr}</option>)}</select></label>
+              {filterCategoryLoading ? <span role="status" className="muted">جارٍ قراءة الفئات…</span> : filterCategoryNextCursor ? <button type="button" className="button button-quiet" onClick={() => void loadMoreFilterCategories()}>فئات إضافية</button> : null}
               <label>الحالة<select value={statusFilter} onChange={(event) => { const active = event.target.value; changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active, sort }); setStatusFilter(active); }}><option value="all">كل الحالات</option><option value="active">نشط</option><option value="inactive">معطل</option></select></label>
               <label>الترتيب<select value={sort} onChange={(event) => { const sort = event.target.value; changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); setSort(sort); }}><option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option><option value="updated_desc">الأحدث تعديلًا</option><option value="updated_asc">الأقدم تعديلًا</option></select></label>
               {hasCatalogFilters ? <button type="button" className="button button-quiet catalog-clear-filters" onClick={() => { changeFilters({ query: "", verticalId: "", categoryId: "", active: "all", sort: "name_asc" }); setQuery(""); setAppliedQuery(""); setVerticalFilter(""); setCategoryFilter(""); setStatusFilter("all"); setSort("name_asc"); setFilterCategoryQuery(""); setFilterCategories([]); setFilterCategoryNextCursor(""); }}>مسح كل المرشحات</button> : null}
@@ -667,29 +681,91 @@ export function CentralCatalog() {
             <button type="button" className="button button-quiet" aria-pressed={viewMode === "table"} onClick={() => changeView("table")}>جدول المنتجات</button>
             <button type="button" className="button button-quiet" aria-pressed={viewMode === "gallery"} onClick={() => changeView("gallery")}>معرض الصور</button>
           </fieldset>
-          {!loading && !registryError ? <div className="catalog-selection-bar" aria-live="polite"><span>إجمالي المنتجات المطابقة للفلاتر: {registrySummary ? registrySummary.totalCount.toLocaleString("ar-YE") : "غير متاح"}</span><span>سجلات هذه الصفحة: {products.length.toLocaleString("ar-YE")}</span>{registrySummary ? <small>المصدر: الكتالوج المركزي · لقطة حالية عند <time dateTime={registrySummary.measuredAt}>{new Date(registrySummary.measuredAt).toLocaleString("ar-YE", { timeZone: "UTC" })}</time> UTC</small> : null}</div> : null}
+          {!loading && !registryError ? <div className="catalog-selection-bar" aria-live="polite"><span>إجمالي المنتجات المطابقة للفلاتر: {registrySummary ? registrySummary.totalCount.toLocaleString("ar-YE") : "غير متاح"}</span><span>سجلات هذه الصفحة: {products.length.toLocaleString("ar-YE")}</span>{hasPageColumnFilters ? <span>معروض من الصفحة: {pageProducts.length.toLocaleString("ar-YE")} · لا تشمل مرشحات الأعداد الصفحات الأخرى</span> : null}{registrySummary ? <small>المصدر: الكتالوج المركزي · لقطة حالية عند <time dateTime={registrySummary.measuredAt}>{new Date(registrySummary.measuredAt).toLocaleString("ar-YE", { timeZone: "UTC" })}</time> UTC</small> : null}</div> : null}
         </div>
         {viewMode === "table" ? <div className="catalog-registry-table-wrap">
           <table className="catalog-registry-table">
-            <thead><tr><th>المنتج</th><th>المجال التجاري</th><th>فئات المنتج</th><th>النسخ</th><th>متاجر تعرضه</th><th>الحالة</th><th>آخر تحديث</th><th>الإجراء</th></tr></thead>
+            <thead><tr>
+              <RegistryColumnHeader label="المنتج" active={Boolean(appliedQuery) || sort === "name_desc"}>
+                <form onSubmit={(event) => { event.preventDefault(); const q = query.trim(); setAppliedQuery(q); changeFilters({ query: q, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); }}>
+                  <label>المنتج أو العلامة<input type="search" maxLength={128} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+                  <button type="submit" disabled={loading}>بحث</button>
+                </form>
+                <label>ترتيب الاسم<select value={sort.startsWith("name_") ? sort : "name_asc"} onChange={(event) => { const next = event.target.value; setSort(next); changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort: next }); }}>
+                  <option value="name_asc">أ–ي</option><option value="name_desc">ي–أ</option>
+                </select></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="المجال التجاري" active={Boolean(verticalFilter)}>
+                <label>المجال<select value={verticalFilter} onChange={(event) => { const next = event.target.value; setVerticalFilter(next); setCategoryFilter(""); changeFilters({ query: appliedQuery, verticalId: next, categoryId: "", active: statusFilter, sort }); }}>
+                  <option value="">جميع المجالات</option>{sharedVerticals.map((entry) => <option key={entry.id} value={entry.id}>{entry.nameAr}</option>)}
+                </select></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="فئات المنتج" active={Boolean(categoryFilter)}>
+                <label>البحث عن فئة<input type="search" value={filterCategoryQuery} onChange={(event) => setFilterCategoryQuery(event.target.value)} placeholder="كل المجالات" /></label>
+                <label>الفئة<select value={categoryFilter} onChange={(event) => { const next = event.target.value; setCategoryFilter(next); changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: next, active: statusFilter, sort }); }}>
+                  <option value="">جميع الفئات</option>{filterCategories.map((entry) => <option key={entry.id} value={entry.id}>{!verticalFilter ? `${sharedVerticals.find((vertical) => vertical.id === entry.verticalId)?.nameAr ?? entry.verticalId} / ` : ""}{entry.pathAr}</option>)}
+                </select></label>
+                {filterCategoryNextCursor ? <button type="button" disabled={filterCategoryLoading} onClick={() => void loadMoreFilterCategories()}>المزيد من الفئات</button> : null}
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="النسخ" scope="page" active={Boolean(minVariants || pageCountSort.startsWith("variants"))}>
+                <label>الحد الأدنى للنسخ<input type="number" min="0" step="1" value={minVariants} onChange={(event) => setMinVariants(event.target.value)} /></label>
+                <label>ترتيب الصفحة<select value={pageCountSort.startsWith("variants") ? pageCountSort : "default"} onChange={(event) => setPageCountSort(event.target.value as typeof pageCountSort)}>
+                  <option value="default">بدون ترتيب إضافي</option><option value="variants_asc">الأقل أولًا</option><option value="variants_desc">الأكثر أولًا</option>
+                </select></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="متاجر تعرضه" scope="page" active={Boolean(minStores || pageCountSort.startsWith("stores"))}>
+                <label>الحد الأدنى للمتاجر<input type="number" min="0" step="1" value={minStores} onChange={(event) => setMinStores(event.target.value)} /></label>
+                <label>ترتيب الصفحة<select value={pageCountSort.startsWith("stores") ? pageCountSort : "default"} onChange={(event) => setPageCountSort(event.target.value as typeof pageCountSort)}>
+                  <option value="default">بدون ترتيب إضافي</option><option value="stores_asc">الأقل أولًا</option><option value="stores_desc">الأكثر أولًا</option>
+                </select></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="الحالة" active={statusFilter !== "all"}>
+                <label>حالة المنتج<select value={statusFilter} onChange={(event) => { const next = event.target.value; setStatusFilter(next); changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: next, sort }); }}>
+                  <option value="all">جميع الحالات</option><option value="active">نشط</option><option value="inactive">معطل</option>
+                </select></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="آخر تحديث" active={sort.startsWith("updated_")}>
+                <label>ترتيب التحديث<select value={sort.startsWith("updated_") ? sort : "updated_desc"} onChange={(event) => { const next = event.target.value; setSort(next); changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort: next }); }}>
+                  <option value="updated_desc">الأحدث أولًا</option><option value="updated_asc">الأقدم أولًا</option>
+                </select></label>
+              </RegistryColumnHeader>
+            </tr></thead>
             <tbody>
-              {loading && products.length === 0 ? <tr><td colSpan={8} className="catalog-table-state">جارٍ قراءة السجل…</td></tr> : null}
-              {!loading && !registryError && products.length === 0 ? <tr><td colSpan={8} className="catalog-table-state">لا توجد منتجات مطابقة للفلاتر.</td></tr> : null}
-              {products.map((product) => <tr key={product.id} className={selected?.id === product.id ? "is-open" : ""}>
-                <td><div className="catalog-registry-product">{product.primaryImageUri ? <img className="catalog-registry-product-image" src={product.primaryImageUri} alt="" loading="lazy" /> : <span className="catalog-registry-product-placeholder" aria-hidden="true">{product.canonicalName.trim().slice(0, 1) || "•"}</span>}<span><strong>{product.canonicalName}</strong>{product.brand ? <small>{product.brand}</small> : null}</span></div></td>
+              {loading && products.length === 0 ? <tr><td colSpan={7} className="catalog-table-state">جارٍ قراءة السجل…</td></tr> : null}
+              {hasPageColumnFilters && products.length > 0 && pageProducts.length === 0 ? <tr><td colSpan={7} className="catalog-table-state">لا توجد مطابقة في الصفحة الحالية. أزل مرشح النسخ أو المتاجر.</td></tr> : null}
+              {!loading && !registryError && products.length === 0 ? <tr><td colSpan={7} className="catalog-table-state">لا توجد منتجات مطابقة للفلاتر.</td></tr> : null}
+              {pageProducts.map((product) => <tr key={product.id} className={selected?.id === product.id ? "is-open" : ""}>
+                <td><div className="catalog-registry-product">{product.primaryImageUri ? <img className="catalog-registry-product-image" src={product.primaryImageUri} alt="" loading="lazy" /> : <span className="catalog-registry-product-placeholder" aria-hidden="true">{product.canonicalName.trim().slice(0, 1) || "•"}</span>}<span><button type="button" className="catalog-product-name-action" disabled={detailLoading} onClick={() => void selectProduct(product.id)} aria-label={"إدارة منتج " + product.canonicalName}>{product.canonicalName}</button>{product.brand ? <small>{product.brand}</small> : null}</span></div></td>
                 <td>{sharedVerticals.find((vertical) => vertical.id === product.verticalId)?.nameAr ?? "غير محدد"}</td>
                 <td><span className="catalog-row-categories" title={product.categoryNamesAr?.join("، ") || "لم تصنف الفئات بعد"}>{product.categoryNamesAr?.length ? product.categoryNamesAr.slice(0, 2).join("، ") : product.categoryIds.length ? "أسماء الفئات غير متاحة" : "غير مصنف"}{(product.categoryNamesAr?.length ?? 0) > 2 ? ` +${product.categoryNamesAr!.length - 2}` : ""}</span></td><td>{product.variantCount.toLocaleString("ar-YE")}</td><td>{product.storeCount.toLocaleString("ar-YE")}</td>
                 <td className="indicator-column"><ActivityIndicator active={product.active} inactiveLabel="معطل" /></td>
                 <td><time dateTime={product.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium" }).format(new Date(product.updatedAt))}</time></td>
-                <td><button type="button" className="catalog-row-action" disabled={detailLoading} onClick={() => void selectProduct(product.id)}>إدارة المنتج</button></td>
               </tr>)}
             </tbody>
           </table>
+          <ul className="catalog-registry-mobile" aria-label="منتجات الصفحة الحالية">
+            {pageProducts.map((product) => <li key={product.id} className="catalog-registry-mobile-card">
+              <div className="catalog-registry-mobile-main">
+                <div className="catalog-registry-product">
+                  {product.primaryImageUri ? <img className="catalog-registry-product-image" src={product.primaryImageUri} alt="" loading="lazy" /> : <span className="catalog-registry-product-placeholder" aria-hidden="true">{product.canonicalName.trim().slice(0, 1) || "•"}</span>}
+                  <span><strong>{product.canonicalName}</strong>{product.brand ? <small>{product.brand}</small> : null}<small>{sharedVerticals.find((vertical) => vertical.id === product.verticalId)?.nameAr ?? "غير محدد"}</small></span>
+                </div>
+                <ActivityIndicator active={product.active} inactiveLabel="معطل" />
+              </div>
+              <div className="catalog-registry-mobile-meta">
+                <span>{product.categoryNamesAr?.slice(0, 2).join("، ") || "غير مصنف"}</span>
+                <span>{product.variantCount.toLocaleString("ar-YE")} نسخ · {product.storeCount.toLocaleString("ar-YE")} متاجر</span>
+              </div>
+              <button type="button" className="button button-secondary catalog-mobile-open" disabled={detailLoading} onClick={() => void selectProduct(product.id)} aria-label={`إدارة منتج ${product.canonicalName}`}>إدارة المنتج</button>
+            </li>)}
+            {loading && products.length === 0 ? <li role="status" className="collection-state">جارٍ قراءة المنتجات…</li> : null}
+            {!loading && !registryError && products.length === 0 ? <li className="collection-state">لا توجد منتجات مطابقة.</li> : null}
+          </ul>
         </div> : <div className="catalog-gallery-pane" aria-busy={loading}>
           {loading && products.length === 0 ? <p role="status">جارٍ قراءة السجل…</p> : null}
           {!loading && !registryError && products.length === 0 ? <p className="catalog-gallery-empty">لا توجد منتجات مطابقة للفلاتر.</p> : null}
           <ul className="catalog-product-gallery" aria-label="المنتجات في الصفحة الحالية">
-          {products.map((product) => <li className="catalog-gallery-card" key={product.id}>
+          {pageProducts.map((product) => <li className="catalog-gallery-card" key={product.id}>
             <button type="button" className="catalog-gallery-open" disabled={detailLoading} onClick={() => void selectProduct(product.id)} aria-label={`تفاصيل وصور ${product.canonicalName}`}>
               <ProductGalleryImage uri={product.primaryImageUri} name={product.canonicalName} />
               <strong>{product.canonicalName}</strong>

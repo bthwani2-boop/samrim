@@ -115,7 +115,8 @@ function CircleMap({ cells }: { cells: ReadonlyArray<HeatCell> }) {
 
 export function OpportunityZones() {
   const [value, setValue] = useState<CaptainOpportunityHeatmap | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+  const [, setLoading] = useState(true);
   const [error, setError] = useState("");
   const latestRequest = useRef(0);
 
@@ -149,7 +150,7 @@ export function OpportunityZones() {
 
   useEffect(() => {
     void load();
-    const timer = setInterval(() => void load(true), 60_000);
+    const timer = setInterval(() => { if (!document.hidden) void load(true); }, 60_000);
     const refreshOnReturn = () => { if (!document.hidden) void load(true); };
     document.addEventListener("visibilitychange", refreshOnReturn);
     return () => {
@@ -160,16 +161,18 @@ export function OpportunityZones() {
   }, [load]);
 
   const cells = value?.cells ?? [];
-  return <section className="ops-page-intro" aria-label="الخريطة الحرارية الآنية للطلبات والكباتن">
-    <h2>الخريطة الحرارية الآنية</h2>
-    <p>دوائر الطلبات والكباتن المتاحين معًا، خلال آخر 30 دقيقة. تتحدث كل دقيقة دون عرض مواقع الأفراد أو مساراتهم.</p>
-    <p><strong className="ops-activity-legend-orders">● الطلبات</strong>{" · "}
-      <strong className="ops-activity-legend-captains">● الكباتن المتاحون</strong>
-      {" · "}الدائرة الأكبر تعني نشاطًا أعلى
-    </p>
-    {loading && !value ? <p role="status">جارٍ قراءة الخريطة…</p> : null}
-    {error ? <p role="alert">{error}</p> : null}
-    {value && cells.length > 0 ? <CircleMap cells={cells} /> : null}
-    {value && !loading && cells.length === 0 ? <p role="status">لا توجد عينة كافية لعرض دوائر النشاط بأمان حاليًا؛ لا يعني ذلك عدم وجود طلبات أو كباتن.</p> : null}
-  </section>;
+  // An empty or unverified activity sample is not a map and must not displace active work.
+  if (error && !value) return <div className="ops-activity-failure" role="alert"><span>تعذرت قراءة خريطة النشاط.</span><button type="button" className="button button-secondary" onClick={() => void load()}>إعادة المحاولة</button></div>;
+  if (!value || cells.length === 0) return null;
+  return <details className="ops-activity-disclosure" onToggle={(event) => setExpanded(event.currentTarget.open)}>
+    <summary>خريطة النشاط · آخر 30 دقيقة</summary>
+    <section className="ops-page-intro" aria-label="الخريطة الحرارية الآنية للطلبات والكباتن">
+      <p>كثافة الطلبات والكباتن المتاحين دون عرض مواقع الأفراد.</p>
+      <p><strong className="ops-activity-legend-orders">● الطلبات</strong>{" · "}
+        <strong className="ops-activity-legend-captains">● الكباتن المتاحون</strong>
+        {" · "}الدائرة الأكبر تعني نشاطًا أعلى
+      </p>
+      {expanded ? <CircleMap cells={cells} /> : null}
+    </section>
+  </details>;
 }

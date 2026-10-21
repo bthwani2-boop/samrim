@@ -66,7 +66,7 @@ function expectedReadback(attempt: DestinationAttempt, destination: OfficialWall
   return destination.status === "ACTIVE_FOR_PAYOUT" && destination.verificationStatus === "VERIFIED" && destination.approvedBy === attempt.operatorActorId && Boolean(destination.approvedAt);
 }
 
-export function OfficialWalletDestinationManager({ actorType, actorId, initiallyExpanded = false }: Readonly<{ actorType: BeneficiaryActorType; actorId: string; initiallyExpanded?: boolean }>) {
+export function OfficialWalletDestinationManager({ actorType, actorId, initiallyExpanded = false, onReadinessChange }: Readonly<{ actorType: BeneficiaryActorType; actorId: string; initiallyExpanded?: boolean; onReadinessChange?: (ready: boolean) => void }>) {
   const { walletProviders } = useWalletProviders();
   const [intent, setIntent] = useState<WalletIntent | null>(null);
   const [operatorActorId, setOperatorActorId] = useState("");
@@ -115,16 +115,23 @@ export function OfficialWalletDestinationManager({ actorType, actorId, initially
       setPendingAttempt(savedAttempt);
       setNotice(savedAttempt ? "توجد محاولة محفوظة. راجع قراءة السجل المالي ثم أعد إرسال المحاولة نفسها عند الحاجة." : "قُرئت نية المزوّد والوجهة الحالية من السجلين المعتمدين.");
     }
+    // This is only wallet-destination readiness, not authorization to pay.
+    const confirmed = !savedAttempt || expectedReadback(savedAttempt, nextDestination);
+    onReadinessChange?.(Boolean(confirmed && nextDestination?.status === "ACTIVE_FOR_PAYOUT"
+      && nextDestination.verificationStatus === "VERIFIED"
+      && nextDestination.providerKey === intentPayload.intent.providerKey));
     return { intent: intentPayload.intent, operatorActorId: intentPayload.operatorActorId, destination: nextDestination };
   }
 
   async function read() {
+    onReadinessChange?.(false);
     setBusy(true);
     setError("");
     setNotice("");
     try {
       await readCanonical();
     } catch (cause) {
+      onReadinessChange?.(false);
       setError(cause instanceof Error ? cause.message : "تعذر قراءة الوجهة.");
     } finally {
       setBusy(false);
@@ -177,6 +184,7 @@ export function OfficialWalletDestinationManager({ actorType, actorId, initially
       setError("يجب أن يعتمد الوجهة موظف المالية آخر غير من نفذ التحقق.");
       return;
     }
+    onReadinessChange?.(false);
     setBusy(true);
     setError("");
     setNotice("");

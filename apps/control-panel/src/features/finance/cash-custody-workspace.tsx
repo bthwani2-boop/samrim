@@ -1,5 +1,6 @@
 "use client";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 import { type CashCustodyRegistryResponse, formatMoney } from "@bthwani/dsh";
 import { usePathname, useRouter } from "next/navigation";
@@ -60,7 +61,20 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
   const requestedCursor = useRef<string | null>(null);
   const [search, setSearch] = useState(initialQuery.search);
   const [sort, setSort] = useState<Sort>(initialQuery.sort);
+  const [captainFilter, setCaptainFilter] = useState("");
+  const [amountFilter, setAmountFilter] = useState("");
+  const [remittanceFilter, setRemittanceFilter] = useState("all");
   const [registry, setRegistry] = useState<CashCustodyDisplayRegistry | null>(null);
+  const normalizeNumber = (value: string) => value.replace(/[٠-٩۰-۹]/g, (digit) => {
+    const code = digit.charCodeAt(0);
+    return String(code >= 0x06f0 ? code - 0x06f0 : code - 0x0660);
+  });
+  const visibleItems = (registry?.items ?? []).filter((item) =>
+    (!captainFilter.trim() || (item.captainName ?? "").toLocaleLowerCase().includes(captainFilter.trim().toLocaleLowerCase()))
+    && (!amountFilter.trim() || normalizeNumber(formatMoney(item.amountMinor, item.currency)).includes(normalizeNumber(amountFilter.trim())))
+    && (remittanceFilter === "all" || (remittanceFilter === "submitted" ? item.remittanceState === "SUBMITTED" : item.remittanceState !== "SUBMITTED"))
+  );
+  const pageFilterActive = Boolean(captainFilter || amountFilter || remittanceFilter !== "all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -274,12 +288,40 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
       {loading && !registry ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة سجل النقد</strong></div> : null}
 
       {registry ? <>
-        <p className="muted" aria-live="polite">صفحة {registry.items.length.toLocaleString("ar-YE")} سجلًا من أصل {registry.totalItems.toLocaleString("ar-YE")}{loading ? " · جارٍ التحديث" : ""}</p>
+        <p className="muted" aria-live="polite">صفحة {registry.items.length.toLocaleString("ar-YE")} سجلًا من أصل {registry.totalItems.toLocaleString("ar-YE")}{pageFilterActive ? " · معروض من الصفحة " + visibleItems.length + " (مرشحات الصفحة فقط)" : ""}{loading ? " · جارٍ التحديث" : ""}</p>
         <div className="finance-table-wrap">
           <table className="finance-table">
             <caption className="visually-hidden">سجل النقد المفتوح في عهدة الكباتن</caption>
-            <thead><tr><th scope="col">مرجع التحصيل</th><th scope="col">الكابتن</th><th scope="col">المبلغ</th><th scope="col">الحالة والمرجع</th><th scope="col">وقت التحصيل</th><th scope="col">إجراء المالية</th></tr></thead>
-            <tbody>{registry.items.map((item) => <tr key={item.paymentIntentId}><th scope="row"><bdi dir="ltr">{item.externalReference}</bdi></th><td>{item.captainName || "اسم الكابتن غير متاح"}</td><td dir="ltr"><bdi>{formatMoney(item.amountMinor, item.currency)}</bdi></td><td>{item.remittanceState === "SUBMITTED" ? <><strong>بانتظار مطابقة المالية</strong>{item.remittanceReference ? <small>مرجع الكابتن: <bdi dir="ltr">{item.remittanceReference}</bdi></small> : null}</> : "بانتظار إرسال الكابتن"}</td><td><time dateTime={item.collectedAt}>{new Date(item.collectedAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td>{item.remittanceState === "SUBMITTED" ? <div className="form-section"><label className="field-label" htmlFor={`cash-receipt-${item.paymentIntentId}`}>إيصال التحويل أو الإيداع<input id={`cash-receipt-${item.paymentIntentId}`} type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => { const file = event.target.files?.[0] ?? null; if (file) { const fingerprint = `${file.name}:${file.size}:${file.lastModified}`; if (receiptFingerprints.current.get(item.paymentIntentId) !== fingerprint) resetRemittanceRecovery(item.paymentIntentId); receiptFingerprints.current.set(item.paymentIntentId, fingerprint); persistRemittanceRecovery(); } setReceiptFiles((current) => ({ ...current, [item.paymentIntentId]: file })); }} /></label>{receiptDocumentIds[item.paymentIntentId] ? <span className="muted">الإيصال محفوظ لهذه المحاولة</span> : null}<small id={`cash-reconcile-consequence-${item.paymentIntentId}`}>مطابقة الإيصال تغلق العهدة.</small><button className="button button-secondary" type="button" aria-describedby={`cash-reconcile-consequence-${item.paymentIntentId}`} onClick={() => void reconcileCashRemittance(item)} disabled={loading || Boolean(busyRemittanceId) || (!receiptDocumentIds[item.paymentIntentId] && !receiptFiles[item.paymentIntentId])}>{busyRemittanceId === item.paymentIntentId ? "جارٍ رفع الإيصال والمطابقة…" : receiptDocumentIds[item.paymentIntentId] ? "مطابقة الإيصال المحفوظ" : "رفع الإيصال ومطابقة التوريد"}</button></div> : <span className="muted">بانتظار الكابتن</span>}</td></tr>)}</tbody>
+            <thead><tr>
+              <RegistryColumnHeader label="مرجع التحصيل" active={Boolean(initialQuery.search)}>
+                <form noValidate onSubmit={applyFilters}>
+                  <label>بحث في المراجع<input type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+                  <button type="submit" disabled={loading}>بحث</button>
+                </form>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="الكابتن" scope="page" active={Boolean(captainFilter)}>
+                <label>بحث باسم الكابتن<input type="search" value={captainFilter} onChange={(event) => setCaptainFilter(event.target.value)} /></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="المبلغ" scope="page" active={Boolean(amountFilter)}>
+                <label>بحث في المبلغ المعروض<input type="search" inputMode="numeric" value={amountFilter} onChange={(event) => setAmountFilter(event.target.value)} /></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="الحالة والمرجع" scope="page" active={remittanceFilter !== "all"}>
+                <label>حالة التوريد<select value={remittanceFilter} onChange={(event) => setRemittanceFilter(event.target.value)}>
+                  <option value="all">كل الحالات</option><option value="submitted">بانتظار مطابقة المالية</option><option value="pending">بانتظار الكابتن</option>
+                </select></label>
+              </RegistryColumnHeader>
+              <RegistryColumnHeader label="وقت التحصيل" active={sort !== "collected_desc"}>
+                <label>ترتيب التحصيل<select value={sort} onChange={(event) => {
+                  const next = event.target.value as Sort;
+                  setSort(next); cursorHistory.current = []; currentCursor.current = ""; requestedCursor.current = "";
+                  navigate({ search: initialQuery.search, sort: next, cursor: "" });
+                }}>
+                  <option value="collected_desc">الأحدث أولًا</option><option value="collected_asc">الأقدم أولًا</option>
+                </select></label>
+              </RegistryColumnHeader>
+              <th scope="col">إجراء المالية</th>
+            </tr></thead>
+            <tbody>{visibleItems.map((item) => <tr key={item.paymentIntentId}><th scope="row"><bdi dir="ltr">{item.externalReference}</bdi></th><td>{item.captainName || "اسم الكابتن غير متاح"}</td><td dir="ltr"><bdi>{formatMoney(item.amountMinor, item.currency)}</bdi></td><td>{item.remittanceState === "SUBMITTED" ? <><strong>بانتظار مطابقة المالية</strong>{item.remittanceReference ? <small>مرجع الكابتن: <bdi dir="ltr">{item.remittanceReference}</bdi></small> : null}</> : "بانتظار إرسال الكابتن"}</td><td><time dateTime={item.collectedAt}>{new Date(item.collectedAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td>{item.remittanceState === "SUBMITTED" ? <div className="form-section"><label className="field-label" htmlFor={`cash-receipt-${item.paymentIntentId}`}>إيصال التحويل أو الإيداع<input id={`cash-receipt-${item.paymentIntentId}`} type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => { const file = event.target.files?.[0] ?? null; if (file) { const fingerprint = `${file.name}:${file.size}:${file.lastModified}`; if (receiptFingerprints.current.get(item.paymentIntentId) !== fingerprint) resetRemittanceRecovery(item.paymentIntentId); receiptFingerprints.current.set(item.paymentIntentId, fingerprint); persistRemittanceRecovery(); } setReceiptFiles((current) => ({ ...current, [item.paymentIntentId]: file })); }} /></label>{receiptDocumentIds[item.paymentIntentId] ? <span className="muted">الإيصال محفوظ لهذه المحاولة</span> : null}<small id={`cash-reconcile-consequence-${item.paymentIntentId}`}>مطابقة الإيصال تغلق العهدة.</small><button className="button button-secondary" type="button" aria-describedby={`cash-reconcile-consequence-${item.paymentIntentId}`} onClick={() => void reconcileCashRemittance(item)} disabled={loading || Boolean(busyRemittanceId) || (!receiptDocumentIds[item.paymentIntentId] && !receiptFiles[item.paymentIntentId])}>{busyRemittanceId === item.paymentIntentId ? "جارٍ رفع الإيصال والمطابقة…" : receiptDocumentIds[item.paymentIntentId] ? "مطابقة الإيصال المحفوظ" : "رفع الإيصال ومطابقة التوريد"}</button></div> : <span className="muted">بانتظار الكابتن</span>}</td></tr>)}{registry.items.length>0 && visibleItems.length===0 ? <tr><td colSpan={6}>لا توجد مطابقة في الصفحة الحالية؛ امسح مرشحات الأعمدة.</td></tr> : null}</tbody>
           </table>
           {registry.items.length === 0 ? <p className="collection-state"><strong>لا توجد نتائج مطابقة</strong><span>لا يوجد نقد مفتوح يطابق البحث الحالي.</span></p> : null}
         </div>

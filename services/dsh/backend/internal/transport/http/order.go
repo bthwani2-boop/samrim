@@ -574,7 +574,7 @@ func (s *OrderServer) listStore(w http.ResponseWriter, r *http.Request) {
 		writeOrderError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, contract.OrderListResponse{Orders: toOrders(page.Orders), NextCursor: page.NextCursor})
+	writeJSON(w, http.StatusOK, contract.OrderListResponse{Orders: toPartnerOrders(page.Orders), NextCursor: page.NextCursor})
 }
 
 // listPartnerOrders serves the aggregate Partner order read across the
@@ -616,7 +616,7 @@ func (s *OrderServer) listPartnerOrders(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.PartnerOrdersResponse{
-		Orders:     toOrders(page.Orders),
+		Orders:     toPartnerOrders(page.Orders),
 		NextCursor: page.NextCursor,
 		Attention: contract.PartnerOrderAttentionCounts{
 			NewOrders:        int(attention.NewOrders),
@@ -632,7 +632,7 @@ func orderStateFilter(w http.ResponseWriter, r *http.Request) (string, bool) {
 		return "", true
 	}
 	values := orderStateValues(state)
-	if len(values) == 0 || len(values) > 6 {
+	if len(values) == 0 || len(values) > 7 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "state filter is not a canonical order state list")
 		return "", false
 	}
@@ -675,7 +675,7 @@ func (s *OrderServer) readStore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "partner Store ownership is required")
 		return
 	}
-	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: toOrder(item)})
+	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: redactPartnerOrder(toOrder(item))})
 }
 
 func (s *OrderServer) transition(w http.ResponseWriter, r *http.Request) {
@@ -719,7 +719,7 @@ func (s *OrderServer) transition(w http.ResponseWriter, r *http.Request) {
 		writeOrderError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: toOrder(item), IdempotentReplay: replayed})
+	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: redactPartnerOrder(toOrder(item)), IdempotentReplay: replayed})
 }
 
 func (s *OrderServer) confirmStoreCaptainCashHandoff(w http.ResponseWriter, r *http.Request) {
@@ -743,7 +743,7 @@ func (s *OrderServer) confirmStoreCaptainCashHandoff(w http.ResponseWriter, r *h
 		writeOrderError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: toOrder(item), IdempotentReplay: replayed})
+	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: redactPartnerOrder(toOrder(item)), IdempotentReplay: replayed})
 }
 
 func orderLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
@@ -766,6 +766,31 @@ func validOperatorOrderState(state string) bool {
 	default:
 		return false
 	}
+}
+
+// The Partner surface needs order composition and payment facts, not the
+// customer's private destination for BThwani-delivered or pickup orders.
+func redactPartnerOrder(value contract.Order) contract.Order {
+	if value.FulfillmentMode != "PARTNER_CAPTAIN" {
+		value.AddressID = ""
+		value.AddressVersion = 0
+		value.AddressText = ""
+		value.AddressLatitude = 0
+		value.AddressLongitude = 0
+		value.ServiceabilityAddressVersion = 0
+	}
+	if value.FulfillmentMode == "BTHWANI_CAPTAIN" {
+		value.Recipient = contract.OrderRecipient{Mode: value.Recipient.Mode}
+	}
+	return value
+}
+
+func toPartnerOrders(items []postgres.OrderRecord) []contract.Order {
+	values := toOrders(items)
+	for index := range values {
+		values[index] = redactPartnerOrder(values[index])
+	}
+	return values
 }
 
 func toOrders(items []postgres.OrderRecord) []contract.Order {

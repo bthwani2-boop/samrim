@@ -252,7 +252,6 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
     {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
     <BthwaniButton busy={busy} disabled={busy || (pendingAttempt === null && (fulfillmentModes.length === 0 || (draft.scheduleMode === "WEEKLY" && draft.weeklySchedule.length === 0) || (draft.paused && draft.pauseReason.trim().length < 2)))} label={pendingAttempt ? "إعادة إرسال التحديث المحفوظ" : "حفظ إتاحة المتجر"} onPress={() => void save()} />
-    <BthwaniButton disabled={busy || pendingAttempt !== null} label="إعادة قراءة الحالة المعتمدة" onPress={() => void load()} variant="secondary" />
   </View>;
 }
 

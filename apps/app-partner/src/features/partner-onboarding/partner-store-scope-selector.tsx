@@ -1,29 +1,16 @@
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import type { PartnerAccessibleStore, StoreAccessPermission } from "@bthwani/dsh";
-import { useMemo } from "react";
+import type { StoreAccessPermission } from "@bthwani/dsh";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 
-function permissionLabels(store: PartnerAccessibleStore): string {
-  if (store.owned) return "مالك المتجر";
-  const labels: Record<string, string> = {
-    orders: "الطلبات",
-    catalog: "الكتالوج",
-    store_operations: "إتاحة المتجر وساعاته",
-    promotions: "العروض والتخفيضات",
-    finance_read: "قراءة المالية",
-    payout_request: "طلب صرف المستحقات",
-    fulfillment: "التوصيل والاستلام",
-  };
-  return store.permissions.map((permission) => labels[permission] ?? permission).join("، ");
-}
-
 export function PartnerStoreScopeSelector({ requiredPermissions }: Readonly<{ requiredPermissions?: ReadonlyArray<StoreAccessPermission> }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const { state, stores, selectedStore, selectStore, reload } = usePartnerStoreScope();
+  const [expanded, setExpanded] = useState(false);
   const visibleStores = requiredPermissions
     ? stores.filter((store) => store.owned || requiredPermissions.some((permission) => store.permissions.includes(permission)))
     : stores;
@@ -32,11 +19,11 @@ export function PartnerStoreScopeSelector({ requiredPermissions }: Readonly<{ re
   if (state.kind === "error") return <View style={styles.card}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة المتاجر المتاحة من المنصة.</Text><BthwaniButton label="إعادة القراءة" onPress={() => void reload()} variant="secondary" /></View>;
 
   return <View style={styles.card}>
-    <Text style={styles.value}>اختر المتجر</Text>
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded((value) => !value)} style={styles.headerRow}><Text style={styles.value}>{selectedStore?.name ?? "اختر المتجر"}</Text><Text style={styles.muted}>{expanded ? "إغلاق" : "تغيير"}</Text></Pressable>
     {visibleStores.length === 0 ? <Text style={styles.muted}>لا يوجد متجر متاح لهذه العملية حاليًا.</Text> : null}
-    {visibleStores.map((store) => <Pressable accessibilityRole="button" accessibilityState={{ selected: selectedStore?.id === store.id }} key={store.id} onPress={() => selectStore(store.id)} style={{ backgroundColor: selectedStore?.id === store.id ? theme.surfaceInset : theme.surface, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 4, padding: 12 }}>
+    {expanded ? visibleStores.map((store) => <Pressable accessibilityRole="button" accessibilityState={{ selected: selectedStore?.id === store.id }} key={store.id} onPress={() => { selectStore(store.id); setExpanded(false); }} style={{ backgroundColor: selectedStore?.id === store.id ? theme.surfaceInset : theme.surface, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 4, padding: 12 }}>
       <Text style={styles.value}>{store.name}</Text>
-      <Text style={styles.muted}>{permissionLabels(store)}</Text>
-    </Pressable>)}
+      {store.publicationState !== "published" ? <Text style={styles.muted}>غير منشور</Text> : null}
+    </Pressable>) : null}
   </View>;
 }

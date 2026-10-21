@@ -66,6 +66,14 @@ switch ($Target) {
     'status' { Compose @('ps', '-a') }
     default {
         Ensure-DatabaseRuntimePasswords
+        # A Git SHA labels the built source only when the working tree is clean.
+        $sourceRevision = (& git -C $Root rev-parse --verify HEAD).Trim()
+        if ($LASTEXITCODE -ne 0 -or $sourceRevision -notmatch '^[0-9a-f]{40}$') {
+            throw 'Cannot resolve the source revision for local runtime build'
+        }
+        $dirtyPaths = @(& git -C $Root status --porcelain=v1)
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot check working-tree provenance' }
+        $env:SAMRIM_SOURCE_REVISION = if ($dirtyPaths.Count -eq 0) { $sourceRevision } else { 'unverified' }
         # BuildKit owns build-input invalidation; Compose owns image, environment and health reconciliation.
         Compose @('up', '-d', '--build', '--wait', '--wait-timeout', '300', '--remove-orphans')
         Write-Host 'RUNTIME_UP=PASS state=compose-reconciled'

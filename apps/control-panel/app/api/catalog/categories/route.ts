@@ -21,11 +21,11 @@ export async function GET(request: Request) {
   const cursor = params.get("cursor")?.trim() ?? "";
   const limit = Number(rawLimit);
   if (params.has("includeInactive")) return errorResponse("INVALID_INPUT", "use the status filter for category state", 400);
-  if (!verticalId || verticalId.length > 128) return errorResponse("INVALID_INPUT", "verticalId is invalid", 400);
+  if (verticalId.length > 128) return errorResponse("INVALID_INPUT", "verticalId is invalid", 400);
   if (query.length > 160 || (status && !["all", "active", "inactive"].includes(status)) || !["name_asc", "name_desc", "updated_desc"].includes(sort) || !Number.isInteger(limit) || limit < 1 || limit > 100 || cursor.length > 2048) return errorResponse("INVALID_INPUT", "category search, filter, page, or sort is invalid", 400);
   try {
     const normalizedStatus = status || "active";
-    if (normalizedStatus === "active") return NextResponse.json(await listCatalogCategories(verticalId, query, normalizedStatus, sort, limit, cursor), { headers: { "Cache-Control": "no-store" } });
+    if (normalizedStatus === "active" && verticalId) return NextResponse.json(await listCatalogCategories(verticalId, query, normalizedStatus, sort, limit, cursor), { headers: { "Cache-Control": "no-store" } });
     const identity = await readOperatorSession();
     if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
     if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);

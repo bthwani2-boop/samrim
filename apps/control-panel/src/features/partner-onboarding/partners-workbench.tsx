@@ -12,6 +12,7 @@ import { PartnerDetailWorkspace } from "../partners/partner-detail-workspace";
 import { partnerErrorMessage } from "../partners/partner-error-message";
 import { RecordIndicator } from "../shared/record-indicator";
 import { RecordTabs } from "../shared/record-tabs";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { downloadRegistryCsv } from "../shared/registry-csv";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { AccountIndicator, FulfillmentIndicators, PublicationIndicator } from "../stores/store-indicators";
@@ -260,10 +261,10 @@ export function PartnersWorkbench() {
     }} onKeyDown={(event) => {
       if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); inspect("inspect", s.id); }
     }}>
-      <th scope="row"><div className="store-registry-identity"><input type="checkbox" aria-label={"تحديد متجر " + s.name} checked={selected.has(rowId(row))} onChange={(event) => { const updated = new Set(selected); if (event.target.checked) updated.add(rowId(row)); else updated.delete(rowId(row)); setSelected(updated); }} /><StoreLogo name={s.name} uri={s.storeProfileImage?.uri} /><div className="store-registry-identity-copy"><strong>{s.name}</strong>{s.partnerActorId ? <Link href={`/partners/actors/${encodeURIComponent(s.partnerActorId)}`} title="فتح ملف الشريك المالك">{s.partnerName || "ملف الشريك"}</Link> : <small>حساب الشريك غير محدد</small>}{row.partnerRole?.phoneE164 ? <a href={"tel:" + row.partnerRole.phoneE164}><bdi dir="ltr">{row.partnerRole.phoneE164}</bdi></a> : null}</div></div></th>
-      <td><div className="store-registry-cell-stack"><strong>{s.primaryVerticalName || "متجر"}</strong><small>{s.commercialStoreTypeNameAr || "نوع المتجر غير محدد"}</small><small>{s.serviceCityName || "المدينة غير محددة"}</small></div></td>
+      <th scope="row"><div className="store-registry-identity"><input type="checkbox" aria-label={"تحديد متجر " + s.name} checked={selected.has(rowId(row))} onChange={(event) => { const updated = new Set(selected); if (event.target.checked) updated.add(rowId(row)); else updated.delete(rowId(row)); setSelected(updated); }} /><StoreLogo name={s.name} uri={s.storeProfileImage?.uri} /><div className="store-registry-identity-copy"><strong>{s.name}</strong>{s.partnerActorId ? <Link href={`/partners/actors/${encodeURIComponent(s.partnerActorId)}`} title="فتح ملف الشريك المالك">{s.partnerName || "ملف الشريك"}</Link> : <small>حساب الشريك غير محدد</small>}</div></div></th>
+      <td><div className="store-registry-cell-stack"><strong>{s.primaryVerticalName || "متجر"}</strong><small>{s.serviceCityName || "المدينة غير محددة"}</small></div></td>
       <td><div className="store-registry-cell-stack"><span>{publicationStateLabel(s.publicationState)} <PublicationIndicator state={s.publicationState} /></span><span><AccountIndicator role={row.partnerRole} /></span></div></td>
-      <td><div className="store-registry-cell-stack"><span>{s.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "لا توجد أوضاع توصيل"}</span><FulfillmentIndicators modes={s.fulfillmentModes} /></div></td>
+      <td><span className="store-registry-fulfillment-summary" title={s.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "لا توجد أوضاع توصيل"}>{s.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "لا توجد أوضاع توصيل"}</span></td>
       <td><time dateTime={s.updatedAt}>{date(s.updatedAt)}</time></td>
       <td><StoreOperationalDecision store={s} role={row.partnerRole} onInspect={() => inspect("inspect", s.id)} /></td>
     </tr>;
@@ -357,15 +358,42 @@ export function PartnersWorkbench() {
       {!loading && !error && !rows.length ? <div className="collection-state"><strong>{nextCursor ? "لا توجد مطابقة في هذه الصفحة" : "لا توجد سجلات مطابقة"}</strong><p>{nextCursor ? "قد توجد نتائج أخرى في الصفحة التالية." : activeTab === "directory" ? "جرّب تغيير نوع السجل أو المرشحات." : "جرّب تغيير الحالة أو كلمات البحث."}</p></div> : null}
       {rows.length > 0 ? <div className="store-registry-table-wrap partner-unified-table-wrap"><table className="operations-table partner-registry-table partner-unified-table">
         <caption className="visually-hidden">{activeTab === "joining" ? "طلبات انضمام الشركاء" : activeTab === "access" ? "اعتمادات وصول المتاجر" : kind === "partner" ? "حسابات الشركاء دون متجر" : "دليل المتاجر والشركاء"}</caption>
-        <thead><tr><th scope="col">الشريك / المتجر والاتصال</th><th scope="col">النوع والموقع</th><th scope="col">الحالة</th><th scope="col">البيانات والخطوة المطلوبة</th><th scope="col">آخر تحديث</th><th scope="col">الإجراء</th></tr></thead>
+        <thead><tr>
+          <RegistryColumnHeader label="الشريك / المتجر" active={Boolean(appliedSearch)}>
+            <form onSubmit={(event) => { event.preventDefault(); navigate(activeTab, kind, status, city, sort, search.trim().slice(0,100)); }}>
+              <label>اسم المتجر أو الشريك<input type="search" maxLength={100} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+              <button type="submit">بحث</button>
+            </form>
+          </RegistryColumnHeader>
+          {activeTab === "directory" ? <RegistryColumnHeader label="النوع والموقع" active={Boolean(city || kind !== defaultKindByTab[activeTab])}>
+            <label>نوع السجل<select value={kind} onChange={(event) => navigate(activeTab, event.target.value as Kind, "", "", sort, appliedSearch)}>
+              {kindOptions.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
+            </select></label>
+            <label>المدينة<select value={city} onChange={(event) => navigate("directory", "store", status, event.target.value, sort, appliedSearch)}>
+              <option value="">كل المدن</option>{cities.map((entry) => <option key={entry.id} value={entry.id}>{entry.displayNameAr}</option>)}
+            </select></label>
+          </RegistryColumnHeader> : <th scope="col">النوع والموقع</th>}
+          {statusOptions.length > 1 ? <RegistryColumnHeader label="الحالة" active={Boolean(status)}>
+            <label>حالة السجل<select value={status} onChange={(event) => navigate(activeTab, kind, event.target.value, "", sort, appliedSearch)}>
+              {statusOptions.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
+            </select></label>
+          </RegistryColumnHeader> : <th scope="col">الحالة</th>}
+          <th scope="col">البيانات والخطوة المطلوبة</th>
+          <RegistryColumnHeader label="آخر تحديث" active={sort === "oldest"}>
+            <label>الترتيب<select value={sort} onChange={(event) => navigate(activeTab, kind, status, city, event.target.value, appliedSearch)}>
+              <option value="newest">الأحدث أولًا</option><option value="oldest">الأقدم أولًا</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <th scope="col">الإجراء</th>
+        </tr></thead>
         <tbody>{rows.map(renderRow)}</tbody>
       </table></div> : null}
       {rows.length > 0 ? <ul className="partner-unified-cards" aria-label="سجلات الشركاء على الهاتف">{rows.map(renderCard)}</ul> : null}
-      {activeTab === "directory" && kind === "store" && rows.length > 0 ? <aside className="record-legend partner-registry-legend" aria-label="دليل رموز الحساب والنشر والتوصيل">
+      {activeTab === "directory" && kind === "store" && rows.length > 0 ? <details className="partner-legend-details"><summary>دليل رموز الحالة</summary><aside className="record-legend partner-registry-legend" aria-label="دليل رموز الحساب والنشر والتوصيل">
         <div><strong>الحساب</strong><RecordIndicator legend icon="active" label="الحساب نشط" tone="success" /><RecordIndicator legend icon="pending" label="الحساب بانتظار التفعيل" tone="warning" /><RecordIndicator legend icon="paused" label="الحساب موقوف" tone="warning" /><RecordIndicator legend icon="unknown" label="حالة الحساب غير متاحة" /></div>
         <div><strong>النشر</strong><RecordIndicator legend icon="published" label="منشور" tone="success" /><RecordIndicator legend icon="unpublished" label="غير منشور" /><RecordIndicator legend icon="hidden" label="مخفي" /></div>
         <div><strong>التوصيل</strong><RecordIndicator legend icon="rider" label="توصيل بثواني" /><RecordIndicator legend icon="storeDelivery" label="توصيل المتجر" /><RecordIndicator legend icon="pickup" label="استلم بنفسك من المتجر" /></div>
-      </aside> : null}
+      </aside></details> : null}
       <footer className="registry-footer"><CursorPagination page={page} nextCursor={nextCursor} disabled={loading || Boolean(busyGrant)} label="صفحات السجل الموحد للشركاء" /></footer>
       </section>
     </section>

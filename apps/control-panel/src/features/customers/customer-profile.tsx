@@ -268,7 +268,7 @@ export function CustomerProfile({ actorId, embedded = false }: Readonly<{ actorI
           </div>
         </div>
         <div className="customer-profile-hero-actions">
-          <button type="button" className="button button-secondary" disabled={loading || saving} onClick={reloadAll}>تحديث البيانات</button>
+
           <button type="button" className="button button-primary" onClick={() => selectTab("account")}>{canOperations ? "إدارة الحساب" : "بيانات الحساب"}</button>
         </div>
       </header>

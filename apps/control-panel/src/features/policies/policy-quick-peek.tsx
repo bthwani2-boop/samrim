@@ -114,8 +114,8 @@ export function PolicyQuickPeek({ policy, preview, position, containerRef, onClo
     </> : <p className="muted policy-quick-peek-hint">
       لا تتوفر قراءة مجمعة موثوقة لهذا النوع حتى الآن.
     </p>}
-    <div className="policy-quick-peek-history">
-      <strong>آخر التغييرات الموثقة</strong>
+    <details className="policy-quick-peek-history">
+      <summary>آخر التغييرات الموثقة</summary>
       {historyState==="loading"?<p className="muted" role="status">جارٍ قراءة السجل…</p>
        :historyState==="restricted"?<p className="muted">سجل التغييرات يتطلب الصلاحية المناسبة.</p>
        :historyState==="error"?<p className="muted" role="status">تعذرت قراءة سجل التغييرات.</p>
@@ -133,9 +133,9 @@ export function PolicyQuickPeek({ policy, preview, position, containerRef, onClo
           {expanded?"عرض الأحدث فقط":`عرض آخر ${history.length} تغييرًا`}
         </button>:null}
        </>}
-    </div>
+    </details>
     <div className="policy-quick-peek-foot">
-      <span>{policy.owner} · {policy.scope}</span>
+      <span>{policy.scope}</span>
 
     </div>
   </div>;

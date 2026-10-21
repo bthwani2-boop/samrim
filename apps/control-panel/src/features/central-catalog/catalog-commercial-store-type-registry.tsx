@@ -4,6 +4,7 @@ import type { CommerceVertical, CommercialStoreType } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 type TypeListResponse = Readonly<{ storeTypes: ReadonlyArray<CommercialStoreType> }>;
 
@@ -61,6 +62,12 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId, edit
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [listQuery, setListQuery] = useState("");
+  const [listStatus, setListStatus] = useState("all");
+  const filteredTypes = items.filter((item) =>
+    (!listQuery.trim() || [item.nameAr,item.nameEn].some(x=>x.toLocaleLowerCase().includes(listQuery.trim().toLocaleLowerCase())))
+    && (listStatus==="all" || item.active === (listStatus==="active"))
+  );
   const vertical = verticals.find((item) => item.id === verticalId);
   const saveLabel = saveActionLabel(busy, Boolean(selected));
 
@@ -156,6 +163,17 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId, edit
       <label className="field-label" htmlFor="commercial-type-reason">سبب التغيير<TextArea className="resize-none" rows={2} id="commercial-type-reason" disabled={busy || !canEdit} minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
       <div className="catalog-registry-actions unified-taxonomy-save-actions"><button type="button" className="button button-primary" disabled={busy || !canEdit || !vertical?.active} onClick={() => void save()}>{saveLabel}</button><button type="button" className="button button-secondary" disabled={busy} onClick={() => { clearEditor(); if (editorOnly) onClose?.(); }}>إلغاء</button></div>
     </div> : null}
-    {!editorOnly && items.length > 0 ? <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr><th>النوع التجاري</th><th>الاسم الدولي</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.nameAr}</strong></td><td><bdi dir="ltr">{item.nameEn}</bdi></td><td>{item.active ? "نشط" : "متوقف"}</td><td><button type="button" className="catalog-row-action" disabled={busy || !canEdit} onClick={() => edit(item)}>تعديل</button></td></tr>)}</tbody></table></div> : null}
+    {!editorOnly && items.length > 0 ? <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr>
+          <RegistryColumnHeader label="النوع التجاري" active={Boolean(listQuery)}>
+            <label>بحث عن نوع المتجر<input type="search" value={listQuery} onChange={e=>setListQuery(e.target.value)} /></label>
+          </RegistryColumnHeader>
+          <th scope="col">الاسم الدولي</th>
+          <RegistryColumnHeader label="الحالة" active={listStatus!=="all"}>
+            <label>الحالة<select value={listStatus} onChange={e=>setListStatus(e.target.value)}>
+              <option value="all">كل الحالات</option><option value="active">نشط</option><option value="inactive">متوقف</option>
+            </select></label>
+          </RegistryColumnHeader>
+          <th scope="col">الإجراء</th>
+        </tr></thead><tbody>{filteredTypes.map((item) => <tr key={item.id}><td><strong>{item.nameAr}</strong></td><td><bdi dir="ltr">{item.nameEn}</bdi></td><td>{item.active ? "نشط" : "متوقف"}</td><td><button type="button" className="catalog-row-action" disabled={busy || !canEdit} onClick={() => edit(item)}>تعديل</button></td></tr>)}{filteredTypes.length===0?<tr><td colSpan={4}>لا توجد أنواع متجر مطابقة.</td></tr>:null}</tbody></table></div> : null}
   </section>;
 }
