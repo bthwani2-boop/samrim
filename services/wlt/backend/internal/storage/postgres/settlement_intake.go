@@ -59,13 +59,16 @@ func CreateSettlementIntake(ctx context.Context, db *sql.DB, input SettlementInt
 	input.AmountMode = strings.TrimSpace(strings.ToUpper(input.AmountMode))
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if input.ActorType == "partner" && input.AmountMode == "SPECIFIED" && input.AmountMinor == nil {
+	if input.ActorType == "partner" && input.AmountMode == "SPECIFIED" {
 		var sum int64
 		for _, entry := range input.StoreAmounts {
 			if entry.AmountMinor <= 0 || sum > 9223372036854775807-entry.AmountMinor {
 				return SettlementIntakeRecord{}, false, ErrSettlementIntakeInvalid
 			}
 			sum += entry.AmountMinor
+		}
+		if input.AmountMinor != nil && *input.AmountMinor != sum {
+			return SettlementIntakeRecord{}, false, ErrSettlementIntakeInvalid
 		}
 		input.AmountMinor = &sum
 	}
