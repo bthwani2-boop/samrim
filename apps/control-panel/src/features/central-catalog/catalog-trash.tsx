@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type TrashProduct = Readonly<{ id: string; canonicalName: string; version: number; deletedAt?: string; deletedBy?: string; deletionReason?: string }>;
 type TrashPage = Readonly<{ products: ReadonlyArray<TrashProduct>; nextCursor: string }>;
@@ -42,6 +43,8 @@ export function CatalogTrash() {
     return () => controller.abort();
   }, [load]);
 
+  useReadOnReturn(() => { void load(new AbortController().signal); }, !loading && !busy && !confirmId);
+
   async function restore(product: TrashProduct) {
     if (busy || loading) return;
     setBusy(product.id);
@@ -81,7 +84,7 @@ export function CatalogTrash() {
         <label className="field-label" htmlFor="trash-product-search">بحث في الصفحة الحالية
           <input id="trash-product-search" type="search" value={search} maxLength={160} onChange={(event) => setSearch(event.target.value)} placeholder="اسم المنتج أو معرّفه" />
         </label>
-        <button className="button button-secondary" type="button" disabled={loading || Boolean(busy)} onClick={() => void load(new AbortController().signal)}>تحديث</button>
+
       </div>
       {notice ? <p className="success-inline" role="status">{notice}</p> : null}
       {error ? <div role="alert"><p className="identity-error">{error}</p><button className="button button-secondary" type="button" disabled={loading} onClick={() => void load(new AbortController().signal)}>إعادة المحاولة</button></div> : null}

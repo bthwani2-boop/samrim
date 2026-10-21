@@ -15,8 +15,8 @@ export default function OperationsPage() {
   return (
     <section className="workspace-page" aria-labelledby="operations-page-title">
       <PageHeader id="operations-page-title" title="العمليات" />
-      <OpportunityZones />
       <OperationsWorkspace />
+      <OpportunityZones />
     </section>
   );
 }

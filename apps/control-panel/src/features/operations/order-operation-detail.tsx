@@ -11,8 +11,13 @@ import { PageHeader } from "../../shell/page-header";
 import { operationHistoryLabel } from "./operation-history";
 import { OperationLocationMap } from "./operation-location-map";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type PendingWalletCompensation = Readonly<{ adjustmentId: string; amountMinor: number }>;
+const orderUnitAr: Readonly<Record<string,string>> = {
+  COUNT: "قطعة", GRAM: "جرام", KILOGRAM: "كجم", MILLILITER: "مل", LITER: "لتر",
+};
+function localOrderUnit(unit: string) { return orderUnitAr[unit] ?? unit; }
 
 function WalletCompensationConfirmation({ amountMinor, onCancel, onConfirm }: Readonly<{
   amountMinor: number; onCancel: () => void; onConfirm: () => void;
@@ -136,6 +141,10 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
       actionSequence.current += 1;
     };
   }, [load]);
+
+  useReadOnReturn(() => {
+    if (!actionInFlight.current && !busy && !pendingCancellation && !pendingWalletCompensation) void load();
+  }, !loading && !busy && !actionNeedsReadback);
 
   const returnHref = useCallback(() => {
     const next = new URLSearchParams(queryString);
@@ -295,7 +304,6 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
 
       <div className="order-detail-toolbar">
         {action ? <button type="button" className={`button ${action === "recover" ? "button-secondary" : "button-primary"}`} onClick={() => void runAction()} disabled={busy || loading || actionNeedsReadback}>{busy ? "جارٍ تنفيذ الإجراء…" : operationActionLabel(action)}</button> : <span className="muted">لا يتطلب هذا الطلب إجراءً مباشرًا من المشغل.</span>}
-        <button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading || busy}>{loading ? "جارٍ القراءة…" : "إعادة قراءة الحالة"}</button>
         {canCancelOrder ? <button type="button" className="button button-secondary" onClick={() => setPendingCancellation(true)} disabled={loading || busy || actionNeedsReadback}>مراجعة الإلغاء</button> : null}
       </div>
 
@@ -334,7 +342,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
       {(
         <section className="order-detail-panel" aria-labelledby="order-items-title">
           <h2 id="order-items-title">عناصر الطلب</h2>
-          {order.lines.length ? <ul className="order-detail-list">{order.lines.map((line) => <li key={line.id}><div><strong>{line.productName}</strong>{line.variantTitle ? <span>{line.variantTitle}</span> : null}</div><span>{new Intl.NumberFormat("ar-YE").format(line.finalQuantityBaseUnits)} {line.baseUnit}</span><strong>{formatMoney(line.lineAmountMinor, line.currency)}</strong></li>)}</ul> : <p className="muted">لا تتوفر عناصر لهذا الطلب.</p>}
+          {order.lines.length ? <ul className="order-detail-list">{order.lines.map((line) => <li key={line.id}><div><strong>{line.productName}</strong>{line.variantTitle ? <span>{line.variantTitle}</span> : null}</div><span>{new Intl.NumberFormat("ar-YE").format(line.finalQuantityBaseUnits)} {localOrderUnit(line.baseUnit)}</span><strong>{formatMoney(line.lineAmountMinor, line.currency)}</strong></li>)}</ul> : <p className="muted">لا تتوفر عناصر لهذا الطلب.</p>}
           {order.adjustments.length ? <div className="managed-status managed-status-warning" role="status">
             <h3>تعديلات عناصر الطلب</h3>
             <ul className="order-detail-list">{order.adjustments.map((adjustment) => {
@@ -355,7 +363,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
                     {busy ? "جارٍ التحقق..." : `تعويض المحفظة: ${formatMoney(line.lineAmountMinor, line.currency)}`}
                   </button> : null}
                 </div>
-                {adjustment.actualQuantityBaseUnits ? <span>{new Intl.NumberFormat("ar-YE").format(adjustment.actualQuantityBaseUnits)} {line?.baseUnit ?? ""}</span> : null}
+                {adjustment.actualQuantityBaseUnits ? <span>{new Intl.NumberFormat("ar-YE").format(adjustment.actualQuantityBaseUnits)} {line ? localOrderUnit(line.baseUnit) : ""}</span> : null}
               </li>;
             })}</ul>
           </div> : null}

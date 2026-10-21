@@ -111,7 +111,6 @@ export function StoreCaptainMembershipManagement({ storeID }: { storeID: string 
         </View>;
       }) : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <BthwaniButton disabled={busy} label="تحديث القائمة" onPress={() => void reload()} variant="secondary" />
       <BthwaniConfirmDialog
         busy={busy}
         confirmLabel={pendingRevoke?.state === "pending" || pendingRevoke?.state === "expired" ? "إلغاء الدعوة" : "إلغاء العضوية"}

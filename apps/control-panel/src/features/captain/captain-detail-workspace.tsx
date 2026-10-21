@@ -314,8 +314,7 @@ export function CaptainDetailWorkspace({ actorId, embedded = false }: Readonly<{
                 }}>{option.label}</button>)}
             </fieldset>
           </details>
-          <button type="button" className="captain-profile-toolbarRefresh" disabled={Boolean(busy) || loading}
-            onClick={() => { setSelectedAction(null); setReason(""); void loadDetail(false); void loadFinance(); }}>تحديث</button>
+
         </div>
       </div>
         {selectedAction && selectedOption?.enabled ? <form className="captain-profile-confirm" noValidate onSubmit={(event) => {

@@ -206,6 +206,17 @@ export function CatalogTaxonomyWorkspace() {
           {!loading && !loadingScope && rows.length === 0 ? <tr><td colSpan={5} className="unified-taxonomy-empty">لا توجد نتائج مطابقة. غيّر المجال أو المرشحات.</td></tr> : null}
         </tbody>
       </table>
+      <ul className="unified-taxonomy-mobile" aria-label="التصنيفات المعروضة">
+        {rows.map((item) => <li key={`${item.kind}:${item.id}`} className="unified-taxonomy-mobile-card">
+          <div className="unified-taxonomy-mobile-heading">
+            <strong>{item.nameAr}</strong>
+            <span className={`catalog-state-pill ${item.active ? "is-active" : "is-inactive"}`}>{item.active ? "نشط" : "متوقف"}</span>
+          </div>
+          <div className="unified-taxonomy-mobile-meta"><span>{kindLabels[item.kind]}</span><span>{item.context}</span></div>
+          <button type="button" className="button button-secondary" disabled={!canEdit} onClick={() => openEditor(item.kind, item.id)} aria-label={`تعديل ${kindLabels[item.kind]} ${item.nameAr}`}>تعديل</button>
+        </li>)}
+        {!loading && !loadingScope && rows.length === 0 ? <li className="collection-state">لا توجد نتائج مطابقة.</li> : null}
+      </ul>
     </div>
     {nextCursor && verticalId && (kind === "all" || kind === "category") ?
       <button type="button" className="button button-secondary unified-taxonomy-more" disabled={loadingScope}

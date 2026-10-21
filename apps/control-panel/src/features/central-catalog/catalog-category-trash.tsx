@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type Category = Readonly<{ id: string; verticalId: string; nameAr: string; version: number; deletedAt?: string; deletedBy?: string; deletionReason?: string }>;
 type Page = Readonly<{ categories: ReadonlyArray<Category>; nextCursor: string }>;
@@ -37,6 +38,8 @@ export function CatalogCategoryTrash() {
     return () => controller.abort();
   }, [load]);
 
+  useReadOnReturn(() => { void load(new AbortController().signal); }, !loading && !busy && !confirmId);
+
   async function restore(item: Category) {
     if (busy || loading) return;
     setBusy(item.id); setError(""); setNotice("");
@@ -61,7 +64,7 @@ export function CatalogCategoryTrash() {
       <Link className="button button-secondary" href="/catalog/categories">إدارة الفئات</Link>
     </div>
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}
-    {error ? <p className="identity-error" role="alert">{error}</p> : null}
+    {error ? <div role="alert" className="identity-error">{error} <button type="button" className="button button-secondary" disabled={loading} onClick={() => void load(new AbortController().signal)}>إعادة المحاولة</button></div> : null}
     {loading ? <p className="muted">جارٍ تحميل الفئات…</p> : !error && categories.length === 0 ? <p className="muted">لا توجد فئات محذوفة في هذه الصفحة.</p> : null}
     {!loading && !error && categories.length > 0 ? <div className="partner-stores-table-wrap">
       <table className="operations-table"><thead><tr><th scope="col">الفئة</th><th scope="col">الحذف</th><th scope="col">السبب</th><th scope="col">الإجراء</th></tr></thead>
@@ -80,7 +83,7 @@ export function CatalogCategoryTrash() {
       </table>
     </div> : null}
     <div className="catalog-category-filters">
-      <button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load(new AbortController().signal)}>تحديث</button>
+
       <button type="button" className="button button-secondary" disabled={loading || !history.length} onClick={() => { setCursor(history[history.length - 1] ?? ""); setHistory((items) => items.slice(0, -1)); }}>السابق</button>
       <button type="button" className="button button-secondary" disabled={loading || !nextCursor} onClick={() => { setHistory((items) => [...items, cursor]); setCursor(nextCursor); }}>التالي</button>
     </div>

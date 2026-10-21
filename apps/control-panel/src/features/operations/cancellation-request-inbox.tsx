@@ -23,10 +23,11 @@ export function CancellationRequestInbox({onOpenOrder, refreshVersion}:Readonly<
     }catch(cause){setError(cause instanceof Error?cause.message:"تعذر عرض طلبات الإلغاء");setItems([])}
     finally {setLoading(false)}
   },[]);
+  useEffect(() => { if (refreshVersion >= 0) void load(); }, [load, refreshVersion]);
   useEffect(() => {
-    // The parent increments this version after an Operations action requiring a fresh queue.
-    if (refreshVersion >= 0) void load();
-  }, [load, refreshVersion]);
+    const timer = window.setInterval(() => { if (!document.hidden && !busy) void load(); }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [load, busy]);
   async function decline(id:string) {
     if(busy||Array.from(reason.trim()).length<12)return;
     setBusy(true);setError("");
@@ -39,13 +40,14 @@ export function CancellationRequestInbox({onOpenOrder, refreshVersion}:Readonly<
     }catch(cause){setError(cause instanceof Error?cause.message:"تعذّر تنفيذ القرار")}
     finally{setBusy(false)}
   }
+  if (!loading && !error && items.length === 0) return null;
   return <section aria-labelledby="ops-cancellation-inbox-title" className="order-detail-panel">
     <div className="action-row">
       <h2 id="ops-cancellation-inbox-title">طلبات الإلغاء من العملاء ({items.length})</h2>
-      <button type="button" className="button button-secondary" onClick={()=>void load()} disabled={loading||busy}>تحديث الطلبات</button>
+
     </div>
     <p className="muted">الطلب لا يتوقف حتى تراجعه العمليات وتتخذ قرارًا. الإلغاء لا يضيف تعويضًا تلقائيًا للمحفظة.</p>
-    {error?<p role="alert">{error}</p>:null}
+    {error?<div role="alert"><p>{error}</p><button type="button" className="button button-secondary" disabled={loading||busy} onClick={()=>void load()}>إعادة المحاولة</button></div>:null}
     {!items.length&&!loading&&!error?<p className="muted">لا توجد طلبات إلغاء بانتظار المراجعة.</p>:null}
     {items.length?<ul className="order-detail-list">{items.map(item=><li key={item.id}>
       <div><strong>طلب إلغاء</strong><p>{item.reason}</p><small>رقم الطلب: {item.orderId}</small></div>

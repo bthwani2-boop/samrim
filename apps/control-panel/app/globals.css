@@ -2816,3 +2816,85 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 .ops-activity-map-canvas { inline-size: 100%; block-size: 100%; }
 .ops-activity-legend-orders { color: var(--warning-text); }
 .ops-activity-legend-captains { color: var(--success-text); }
+
+
+/* One canonical desktop table and a concise, actionable mobile record for the same page. */
+@layer composition {
+  .catalog-registry-mobile, .unified-taxonomy-mobile { display:none; list-style:none; margin:0; padding:0; }
+  .partner-unified-table .store-registry-identity-copy a,
+  .partner-unified-table a[href^="tel:"] { display:inline-flex; align-items:center; min-block-size:24px; padding-block:0; }
+  .bt-home-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .bt-home-metrics .bt-home-metric { min-block-size:90px; padding:12px; }
+  .bt-home-priorityPanel { max-block-size:none; min-block-size:0; }
+  .bt-home-page .bt-home-intro { padding-block:4px; }
+  .finance-intake-more > summary { display:inline-flex; align-items:center; min-block-size:36px; padding:8px 10px; border:1px solid var(--border-subtle); border-radius:8px; color:var(--text-muted); list-style:none; cursor:pointer; }
+  .finance-intake-more > summary::-webkit-details-marker { display:none; }
+  .finance-intake-more[open] > button { margin-block-start:5px; }
+  .operations-attention-note { padding:9px 12px; margin-block:8px; border-inline-start:3px solid var(--warning-text,var(--interactive-text)); border-radius:6px; background:var(--surface-base); color:var(--color-primary); }
+  .ops-order-short-id { display:block; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+  @media (max-width:700px) {
+    .catalog-registry-table-wrap { overflow:visible; }
+    .catalog-registry-table-wrap > .catalog-registry-table,
+    .unified-taxonomy-table-wrap > .unified-taxonomy-table { display:none; }
+    .catalog-registry-mobile, .unified-taxonomy-mobile { display:grid; gap:8px; }
+    .catalog-registry-mobile-card, .unified-taxonomy-mobile-card { display:grid; min-inline-size:0; gap:8px; padding:10px 12px; border:1px solid var(--border-subtle); border-radius:9px; background:var(--surface-base); }
+    .catalog-registry-mobile-card { grid-template-columns:minmax(0,1fr) auto; align-items:center; }
+    .catalog-registry-mobile-main { grid-column:1/-1; }
+    .catalog-registry-mobile-meta { min-inline-size:0; }
+    .catalog-registry-mobile-meta span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-inline-size:100%; }
+    .catalog-mobile-open { grid-column:2; grid-row:2; }
+    .catalog-registry-mobile-main, .unified-taxonomy-mobile-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; min-inline-size:0; }
+    .catalog-registry-mobile-main .catalog-registry-product { min-inline-size:0; flex:1; overflow-wrap:anywhere; }
+    .catalog-registry-mobile-main .catalog-registry-product > span:last-child { min-inline-size:0; }
+    .catalog-registry-mobile-meta, .unified-taxonomy-mobile-meta { display:flex; gap:6px 10px; flex-wrap:wrap; font-size:12px; color:var(--text-muted); }
+    .catalog-mobile-open, .unified-taxonomy-mobile-card > button { justify-self:start; min-block-size:44px; }
+    .unified-taxonomy-table-wrap { overflow:visible; border:0; background:transparent; }
+    .unified-taxonomy-mobile-heading strong { min-inline-size:0; overflow-wrap:anywhere; }
+    .bt-home-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+    .bt-home-metrics .bt-home-metric,
+    .bt-home-metrics .bt-home-metric:nth-child(n+3) { grid-column:auto; min-block-size:85px; }
+    .bt-home-metrics .bt-home-metric strong { font-size:24px; }
+    .partner-unified-cards a[href^="tel:"],
+    .partner-unified-cards .store-registry-identity-copy a { display:inline-flex; align-items:center; min-block-size:44px; }
+  }
+  @media (max-width:360px) { .bt-home-metrics { grid-template-columns:minmax(0,1fr); } }
+}
+
+@layer composition {
+  .partner-legend-details { margin-block:8px; }
+  .partner-legend-details > summary { cursor:pointer; display:inline-flex; align-items:center; min-block-size:36px; padding:6px 11px; border:1px solid var(--border-subtle); border-radius:8px; color:var(--text-muted); }
+  .partner-legend-details[open] > .partner-registry-legend { margin-block-start:8px; }
+  .operator-notification-show-more { margin-block:12px; }
+  .policy-quick-peek-records li { line-height:1.6; overflow-wrap:anywhere; }
+  .policy-quick-peek-history li { line-height:1.65; }
+  .policy-quick-peek-subtitle, .policy-quick-peek-history small { font-size:12px; }
+}
+
+
+@layer composition {
+  .ops-activity-disclosure { margin-block:12px; border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-base); }
+  .ops-activity-disclosure > summary { cursor:pointer; display:flex; align-items:center; min-block-size:44px; padding:10px 14px; font-size:13px; font-weight:650; color:var(--color-primary); }
+  .ops-activity-disclosure[open] > summary { border-block-end:1px solid var(--border-subtle); }
+  .ops-activity-disclosure .ops-page-intro { padding:14px; margin:0; }
+}
+
+@layer composition {
+  .policy-quick-peek { inline-size:min(400px,calc(100vw - 24px)); }
+  .policy-quick-peek-history > summary { cursor:pointer; min-block-size:36px; padding-block:8px; font-size:12px; font-weight:650; }
+  .policy-quick-peek-history[open] > summary { margin-block-end:4px; }
+}
+
+@layer composition {
+  .customer-directory-cards { display:none; list-style:none; margin:0; padding:0; }
+  @media (max-width:700px) {
+    .customer-directory-table-wrap { display:none; }
+    .customer-directory-cards { display:grid; gap:8px; }
+    .customer-directory-card { display:grid; gap:10px; min-inline-size:0; padding:12px; border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-base); }
+    .customer-directory-card-head { display:flex; align-items:center; justify-content:space-between; gap:10px; min-inline-size:0; }
+    .customer-directory-card-name { display:grid; min-inline-size:0; gap:4px; overflow-wrap:anywhere; }
+    .customer-directory-card-name bdi { font-size:12px; color:var(--text-muted); }
+    .customer-directory-card-meta { color:var(--text-muted); font-size:12px; }
+    .customer-directory-card > button { justify-self:start; min-block-size:44px; }
+    .customer-directory-heading .customer-section-note { display:none; }
+  }
+}

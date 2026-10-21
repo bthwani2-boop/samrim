@@ -27,11 +27,11 @@ function nextState(order: Order): OrderTransitionRequest["state"] | null {
 }
 
 const queueFilters = [
-  { key: "ACTIVE", label: "قيد المتابعة", states: ["CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "READY_FOR_PICKUP", "CAPTAIN_ASSIGNED"] },
-  { key: "ALL", label: "الكل", states: undefined },
-  { key: "NEEDS_ACTION", label: "تحتاج إجراء", states: ["CREATED"] },
-  { key: "PREPARING", label: "قيد التجهيز", states: ["PARTNER_ACCEPTED", "PREPARING"] },
+  { key: "ACTIVE", label: "النشطة", states: ["CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "READY_FOR_PICKUP", "CAPTAIN_ASSIGNED"] },
+  { key: "NEEDS_ACTION", label: "جديدة", states: ["CREATED"] },
+  { key: "PREPARING", label: "التجهيز", states: ["PARTNER_ACCEPTED", "PREPARING"] },
   { key: "HANDOFF", label: "التسليم", states: ["READY_FOR_DISPATCH", "READY_FOR_PICKUP", "CAPTAIN_ASSIGNED", "IN_CUSTODY"] },
+  { key: "ALL", label: "الكل", states: undefined },
   { key: "CLOSED", label: "مغلقة", states: ["DELIVERED", "REJECTED", "CANCELLED", "PICKED_UP", "DELIVERY_FAILED"] },
 ] as const;
 
@@ -40,6 +40,7 @@ type StoreCaptainChoice = Readonly<{ actorId: string; label: string }>;
 type OrderConfirmation =
   | Readonly<{ kind: "remove_line"; order: Order; lineID: string }>
   | Readonly<{ kind: "pickup_no_show"; order: Order }>
+  | Readonly<{ kind: "reject"; order: Order }>
   | null;
 
 function storeCaptainChoiceLabel(membership: StoreCaptainMembership): string {
@@ -74,7 +75,9 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const [pickupCodes, setPickupCodes] = useState<Readonly<Record<string, string>>>({});
   const [adjustmentQuantities, setAdjustmentQuantities] = useState<Readonly<Record<string, string>>>({});
   const [confirmation, setConfirmation] = useState<OrderConfirmation>(null);
-  const normalizedSearch = searchQuery.trim();
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
+  useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(searchQuery), 350); return () => clearTimeout(timer); }, [searchQuery]);
+  const normalizedSearch = debouncedSearch.trim();
 
   const load = useCallback(async (options: { append?: boolean; cursor?: string; quiet?: boolean } = {}) => {
     const generation = options.append ? loadGeneration.current : ++loadGeneration.current;
@@ -82,11 +85,6 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
     else if (!options.quiet) {
       setLoading(true);
       setLoadingMore(false);
-      setOrders([]);
-      setAssignments({});
-      setStoreCaptainsByStore({});
-      setDispatchOffers({});
-      setAttention(null);
       setCursor("");
       setHasMore(false);
     }
@@ -301,15 +299,16 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
           <View key={order.id} style={styles.order}>
             <View style={styles.orderHeader}>
               <View style={styles.orderHeaderCopy}>
-                <Text style={styles.orderTitle}>{storeId ? `طلب · ${formatOrderDate(order.createdAt)}` : `${order.storeName} · ${formatOrderDate(order.createdAt)}`}</Text>
-                <Text style={styles.muted}>{order.lines.length} منتج · {formatMoney(order.totalAmountMinor, order.currency)}</Text>{expandedOrderIds.has(order.id) ? <><Text style={styles.payment}>{order.cashAmountMinor === 0 ? "لا يوجد نقد مطلوب؛ المبلغ مغطى من رصيد العميل" : `النقد المطلوب عند الاستلام: ${formatMoney(order.cashAmountMinor, order.currency)}`}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)} · {paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}</Text></> : null}
+                <Text style={styles.orderTitle}>{"#" + order.id.slice(-8) + " · "}{storeId ? `طلب · ${formatOrderDate(order.createdAt)}` : `${order.storeName} · ${formatOrderDate(order.createdAt)}`}</Text>
+                <Text style={styles.muted}>{order.lines.length} منتج · {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text numberOfLines={2} style={styles.muted}>{order.lines.slice(0, 2).map((line) => line.productName).join("، ")}</Text>{expandedOrderIds.has(order.id) ? <><Text style={styles.payment}>{order.cashAmountMinor === 0 ? "لا يوجد نقد مطلوب؛ المبلغ مغطى من رصيد العميل" : `النقد المطلوب عند الاستلام: ${formatMoney(order.cashAmountMinor, order.currency)}`}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)} · {paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}</Text></> : null}
               </View>
               <BthwaniStatusBadge icon={badgeIcon} label={orderStateLabel(order.state)} tone={badgeTone} />
             </View>
+            {next ? <View style={styles.actionRow}>{hasOpenAdjustments && (next === "READY_FOR_DISPATCH" || next === "READY_FOR_PICKUP") ? <Text style={styles.error}>لا يمكن تجهيز الطلب للتسليم قبل حسم التعديل والتسوية المالية.</Text> : null}<BthwaniButton busy={busy === order.id} disabled={actionDisabled || (hasOpenAdjustments && (next === "READY_FOR_DISPATCH" || next === "READY_FOR_PICKUP"))} label={nextActionLabel} onPress={() => void transition(order)} style={styles.actionButton} />{next === "PARTNER_ACCEPTED" ? <BthwaniButton disabled={actionDisabled} label="رفض الطلب" onPress={() => setConfirmation({ kind: "reject", order })} style={styles.actionButton} variant="danger" /> : null}</View> : null}
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: expandedOrderIds.has(order.id) }} accessibilityLabel={expandedOrderIds.has(order.id) ? "إخفاء تفاصيل الطلب" : "تفاصيل الطلب"} onPress={() => setExpandedOrderIds((current) => { const next = new Set(current); if (next.has(order.id)) next.delete(order.id); else next.add(order.id); return next; })} style={styles.expandButton}><Text style={styles.expandText}>{expandedOrderIds.has(order.id) ? "إخفاء التفاصيل" : "عرض التفاصيل"}</Text></Pressable>
             {expandedOrderIds.has(order.id) ? <>
-            <Text style={styles.muted}>{order.fulfillmentMode === "CUSTOMER_PICKUP" ? "طريقة الاستلام: الاستلام من المتجر" : `العنوان: ${order.addressText}`}</Text>
-            {order.fulfillmentMode !== "CUSTOMER_PICKUP" ? <View style={styles.handoff}>
+            <Text style={styles.muted}>{order.fulfillmentMode === "CUSTOMER_PICKUP" ? "طريقة الاستلام: الاستلام من المتجر" : order.fulfillmentMode === "BTHWANI_CAPTAIN" ? "التوصيل بواسطة كابتن بثواني" : `العنوان: ${order.addressText}`}</Text>
+            {order.fulfillmentMode === "PARTNER_CAPTAIN" ? <View style={styles.handoff}>
               <Text style={styles.lineTitle}>{order.recipient.mode === "OTHER" ? "مستلم الطلب" : "المستلم: صاحب الطلب"}</Text>
               {order.recipient.mode === "OTHER" ? <>
                 <Text selectable style={styles.muted}>{order.recipient.name}</Text>
@@ -345,7 +344,6 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
             {order.state === "READY_FOR_PICKUP" ? <View style={styles.pickupConfirmation}><TextInput accessibilityLabel="رمز الاستلام الذي قدمه العميل" editable={!actionDisabled} keyboardType="number-pad" maxLength={6} onChangeText={(value) => setPickupCodes((current) => ({ ...current, [order.id]: toAsciiDigits(value).replace(/[^0-9]/g, "").slice(0, 6) }))} placeholder="رمز الاستلام من العميل" placeholderTextColor={theme.colorMuted} style={styles.pickupCodeInput} textAlign="center" value={pickupCodes[order.id] ?? ""} /><BthwaniButton busy={busy === order.id} disabled={actionDisabled || toAsciiDigits(pickupCodes[order.id] ?? "").length !== 6} label="تأكيد استلام العميل" onPress={() => void confirmStorePickup(order)} />{order.fulfillmentMode === "CUSTOMER_PICKUP" && order.paymentMethod === "CASH_AT_STORE" && order.paymentState === "REQUIRES_COLLECTION" ? <BthwaniButton disabled={actionDisabled} label="العميل لم يحضر" onPress={() => markPickupNoShow(order)} variant="danger" /> : null}</View> : null}
             {canFulfillOrder(order.storeId) && order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "DELIVERED" ? <View style={styles.pickupConfirmation}><Text style={styles.lineTitle}>تسوية طلب توصيل المتجر</Text>{settlementContent}</View> : null}
             </> : null}
-            {next ? <View style={styles.actionRow}>{hasOpenAdjustments && (next === "READY_FOR_DISPATCH" || next === "READY_FOR_PICKUP") ? <Text style={styles.error}>لا يمكن تجهيز الطلب للتسليم قبل حسم التعديل والتسوية المالية.</Text> : null}<BthwaniButton busy={busy === order.id} disabled={actionDisabled || (hasOpenAdjustments && (next === "READY_FOR_DISPATCH" || next === "READY_FOR_PICKUP"))} label={nextActionLabel} onPress={() => void transition(order)} style={styles.actionButton} />{next === "PARTNER_ACCEPTED" ? <BthwaniButton disabled={actionDisabled} label="رفض الطلب" onPress={() => void transition(order, "REJECTED")} style={styles.actionButton} variant="danger" /> : null}</View> : null}
             {expandedOrderIds.has(order.id) ? <OrderConversation orderId={order.id} /> : null}
           </View>
         );
@@ -356,21 +354,23 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
 
       <BthwaniConfirmDialog
         busy={Boolean(confirmation && busy === confirmation.order.id)}
-        confirmLabel={confirmation?.kind === "pickup_no_show" ? "تأكيد عدم الحضور" : "إرسال للعميل"}
+        confirmLabel={confirmation?.kind === "pickup_no_show" ? "تأكيد عدم الحضور" : confirmation?.kind === "reject" ? "تأكيد الرفض" : "إرسال للعميل"}
         description={confirmation?.kind === "pickup_no_show"
           ? "سيُلغى الطلب غير المستلم، ويُحرر المخزون المحجوز، ويُلغى التحصيل غير المدفوع. لا تسجل ذلك إذا كان العميل قد استلم الطلب."
+          : confirmation?.kind === "reject" ? "سيُرفض الطلب ويُبلّغ العميل. تأكد من تعذر تجهيزه قبل المتابعة."
           : confirmation?.kind === "remove_line"
             ? "سيُرسل طلب إزالة الصنف إلى العميل للموافقة. لا يتغير إجمالي الطلب ولا يُنفذ استرداد تلقائي؛ سيبقى الطلب متوقفًا حتى اكتمال التسوية المالية المعتمدة."
             : ""}
-        intent={confirmation?.kind === "pickup_no_show" ? "danger" : "primary"}
+        intent={confirmation?.kind === "pickup_no_show" || confirmation?.kind === "reject" ? "danger" : "primary"}
         onCancel={() => setConfirmation(null)}
         onConfirm={() => {
           const pending = confirmation;
           setConfirmation(null);
           if (pending?.kind === "pickup_no_show") void transition(pending.order, "CANCELLED");
+          else if (pending?.kind === "reject") void transition(pending.order, "REJECTED");
           else if (pending?.kind === "remove_line") void proposeAdjustment(pending.order, pending.lineID, "REMOVE_ITEM");
         }}
-        title={confirmation?.kind === "pickup_no_show" ? "تسجيل عدم حضور العميل" : "إبلاغ العميل عن صنف غير متوفر"}
+        title={confirmation?.kind === "pickup_no_show" ? "تسجيل عدم حضور العميل" : confirmation?.kind === "reject" ? "رفض الطلب" : "إبلاغ العميل عن صنف غير متوفر"}
         visible={Boolean(confirmation)}
       />
     </View>

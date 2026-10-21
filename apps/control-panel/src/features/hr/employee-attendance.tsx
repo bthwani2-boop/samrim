@@ -88,7 +88,7 @@ export function EmployeeAttendance({employeeId}:{employeeId:string}){
    {selected?<p className="muted">هناك تسجيل سابق لهذا التاريخ (الإصدار {selected.version}). الحفظ التالي تصحيح موثق.</p>:<p className="muted">هذا اليوم غير مسجل؛ لا يُفترض أنه غياب.</p>}
    <div className="form-actions">
     <button className="button button-primary" disabled={busy||loading||!day||note.trim().length<8} type="submit">{busy?"جارٍ الحفظ…":selected?"حفظ تصحيح موثق":"تسجيل الحضور"}</button>
-    <button className="button button-secondary" disabled={busy||loading} type="button" onClick={()=>void load()}>تحديث</button>
+
    </div>
   </form>
   {notice?<p role="status">{notice}</p>:null}

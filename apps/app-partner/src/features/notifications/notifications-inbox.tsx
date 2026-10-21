@@ -38,7 +38,6 @@ export function NotificationsInbox() {
   const [items, setItems] = useState<ReadonlyArray<Notification>>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(authenticated);
-  const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const unreadItems = useMemo(() => items.filter((item) => !item.readAt), [items]);
@@ -47,7 +46,7 @@ export function NotificationsInbox() {
   const load = useCallback(async (preserveCurrent = false) => {
     if (!actorID || activeActorID() !== actorID) return;
     const sequence = ++requestID.current;
-    if (preserveCurrent) setRefreshing(true); else setLoading(true);
+    if (!preserveCurrent) setLoading(true);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
@@ -61,7 +60,7 @@ export function NotificationsInbox() {
       if (sequence === requestID.current && activeActorID() === actorID) setError("تعذر قراءة الإشعارات. أعد المحاولة.");
     } finally {
       if (sequence === requestID.current && activeActorID() === actorID) {
-        if (preserveCurrent) setRefreshing(false); else setLoading(false);
+        if (!preserveCurrent) setLoading(false);
       }
     }
   }, [actorID]);
@@ -72,7 +71,6 @@ export function NotificationsInbox() {
     setItems([]);
     setUnreadCount(0);
     setLoading(false);
-    setRefreshing(false);
     setBusy("");
     setError("");
   }), []);
@@ -168,7 +166,6 @@ export function NotificationsInbox() {
           {readItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>المقروءة</Text><Text style={styles.groupCount}>{readItems.length}</Text></View><View style={styles.list}>{readItems.map(renderItem)}</View></View> : null}
           {!items.length ? <BthwaniSurface tone="inset" style={styles.state}><View style={styles.stateIcon}><BthwaniIcon name="notifications" color={theme.colorMuted} size={sizing.iconXl} /></View><Text style={styles.cardTitle}>لا توجد إشعارات حالياً</Text><Text style={styles.muted}>ستظهر تحديثات المتجر والطلبات هنا عند توفرها.</Text></BthwaniSurface> : null}
           {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
-          <BthwaniButton busy={refreshing} disabled={Boolean(busy)} label="تحديث الإشعارات" onPress={() => void load(true)} variant="secondary" />
         </>
       )}
     </View>

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch } from "../../session/identity-fetch";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { CustomerProfile } from "./customer-profile";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 const pageSize = 20;
 const customerStatus = (customer: ActorRoleView) =>
@@ -82,6 +83,8 @@ export function CustomerDirectory() {
     return () => controller.abort();
   }, [query, state, cursor, ready, revision]);
 
+  useReadOnReturn(() => setRevision((value) => value + 1), ready && !loading && !selectedCustomer);
+
   const selectCustomer = (actorId: string) => {
     const url = new URL(window.location.href);
     url.searchParams.set("customer", actorId);
@@ -123,7 +126,7 @@ export function CustomerDirectory() {
           <option value="">جميع الحالات</option><option value="true">نشط</option><option value="false">موقوف</option>
         </select>
       </label>
-      <button type="button" className="button button-secondary" onClick={() => setRevision((v) => v + 1)} disabled={loading}>تحديث</button>
+
       {query || state ? <button type="button" className="button button-secondary" onClick={() => navigate("", "")}>مسح التصفية</button> : null}
     </div>
     <div className="customer-directory-heading"><div><h2>سجل العملاء</h2><p>البيانات المباشرة من نظام الهوية · الصفحة الحالية {items.length} عميلًا</p></div>
@@ -144,6 +147,16 @@ export function CustomerDirectory() {
           onClick={() => selectCustomer(item.actorId)}>فتح الملف ←</button></td>
       </tr>)}</tbody>
     </table></div> : null}
+    {items.length > 0 ? <ul className="customer-directory-cards" aria-label="العملاء في الصفحة الحالية">
+      {items.map((item) => <li key={item.actorId} className="customer-directory-card">
+        <div className="customer-directory-card-head">
+          <div className="customer-directory-card-name"><strong>{item.fullNameAr || "عميل بثواني"}</strong><bdi dir="ltr">{item.phoneE164}</bdi></div>
+          <span className="customer-state-pill" data-state={!item.securityEnabled || !item.enabled ? "off" : "on"}>{customerStatus(item)}</span>
+        </div>
+        <div className="customer-directory-card-meta"><span>آخر استخدام: {dateText(item.lastAppOpenedAt ?? item.lastAuthenticatedAt)}</span></div>
+        <button type="button" className="button button-secondary" aria-label={"فتح ملف " + (item.fullNameAr || item.phoneE164)} onClick={() => selectCustomer(item.actorId)}>فتح الملف</button>
+      </li>)}
+    </ul> : null}
     {items.length || history.length ? <nav className="customer-directory-paging" aria-label="صفحات العملاء">
       <button type="button" className="button button-secondary" disabled={loading || !history.length}
         onClick={() => navigate(query, state, history.at(-1) ?? "", history.slice(0, -1))}>السابق</button>

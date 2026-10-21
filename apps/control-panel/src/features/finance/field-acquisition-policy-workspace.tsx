@@ -205,7 +205,7 @@ export function FieldAcquisitionPolicyWorkspace() {
     </> : null}
     <div className="action-row">
       {canEditPolicy ? <button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || !canEdit || !Number.isInteger(Number(rewardMinor)) || Number(rewardMinor) < 50 || reason.trim().length < 5 || reason.trim().length > 500}>{saveButtonLabel(busy, Boolean(policy))}</button> : null}
-      <button className="button button-secondary" type="button" onClick={() => { if (commercialTypeId) void read(commercialTypeId); }} disabled={!commercialTypeId || busy || readState === "loading"}>تحديث</button>
+
     </div>
   </section>;
 }

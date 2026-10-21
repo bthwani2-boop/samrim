@@ -2,6 +2,7 @@
 import { captainAssignmentStateLabel, formatOrderDate, type OperatorOperationListItem, type OperatorOperationsSummary, orderStateLabel } from "@bthwani/dsh";
 import { useEffect, useState } from "react";
 import { OrderOperationDetail } from "../operations/order-operation-detail";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type View = "all" | "attention" | "dispatch" | "delivered";
 export function StoreOperationsPreview({ storeId, compact = false, onSummary }: Readonly<{
@@ -46,6 +47,8 @@ export function StoreOperationsPreview({ storeId, compact = false, onSummary }: 
     return () => abort.abort();
   }, [compact, cursor, onSummary, refresh, storeId, view]);
 
+  useReadOnReturn(() => setRefresh((value) => value + 1), !loading && !selected);
+
   const changeView = (choice: View) => { setView(choice); setCursor(""); setPrevious([]); setSelected(""); };
   return <section className="store-operations" aria-label="طلبات هذا المتجر">
     <div className="store-operations-toolbar">
@@ -54,8 +57,7 @@ export function StoreOperationsPreview({ storeId, compact = false, onSummary }: 
           .map(([key, label]) => <button type="button" key={key} aria-pressed={view === key}
             data-active={view === key} onClick={() => changeView(key)}>{label}</button>)}
       </fieldset>
-      <button className="store-operations-refresh" type="button" disabled={loading}
-        onClick={() => setRefresh((value) => value + 1)}>تحديث</button>
+
     </div>
     {summary ? <p className="store-operations-caption">{summary.totalCount} طلب مطابق · آخر قراءة <time dateTime={summary.measuredAt}>{formatOrderDate(summary.measuredAt)}</time></p> : null}
     {loading && !summary ? <p role="status" className="store-operations-empty">جارٍ قراءة طلبات المتجر…</p> : null}

@@ -2,7 +2,8 @@ import { borders, radius, type resolveTheme, spacing, typography } from "@bthwan
 import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, formatMoney, settlementPeriodLabel, type PartnerScopedFinancialSummary } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
@@ -28,9 +29,9 @@ export function PartnerFinancialSummaryCard() {
       setError("تعذر قراءة مستحقات الشريك. أعد المحاولة.");
     } finally { setLoading(false); }
   }, [authenticated]);
-  useEffect(() => { void load(); }, [load]);
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
   return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="مستحقات الشريك">
-    <View style={styles.header}><Text style={styles.muted}>الرصيد المتاح</Text><BthwaniButton label="تحديث" variant="quiet" busy={loading} onPress={() => void load()} /></View>
+    <View style={styles.header}><Text style={styles.muted}>الرصيد المتاح</Text></View>
     {loading ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المستحقات…</Text></View> : null}
     {!loading && summary ? <>
       <Text style={styles.balance}>{formatMoney(summary.eligibleAvailableMinor, summary.currency)}</Text>

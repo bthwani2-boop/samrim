@@ -3,6 +3,7 @@ import { TextArea } from "@bthwani/design-system/web";
 import { type CatalogCategoryListItem, type CatalogProductProposal, type CommerceVertical, catalogProductProposalStateLabel } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type ProposalDecision = "approved" | "needs_correction" | "rejected";
 
@@ -118,6 +119,8 @@ export function CatalogProposalReview() {
       .catch(() => setVerticals([]));
   }, []);
 
+  useReadOnReturn(() => { void loadQueue(); }, cursorPage.ready && !loading && !busy && !selectedId);
+
   async function review(decision: ProposalDecision) {
     if (!selected || busy) return;
     if (decision === "needs_correction" && reason.trim().length < 5) {
@@ -171,7 +174,7 @@ export function CatalogProposalReview() {
             ))}
           </ul>
         )}
-        <button type="button" className="button button-secondary" disabled={loading} onClick={() => void loadQueue()}>إعادة قراءة الطابور</button>
+        {error && !selected ? <button type="button" className="button button-secondary" disabled={loading} onClick={() => void loadQueue()}>إعادة المحاولة</button> : null}
     <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading || Boolean(busy)} label="صفحات مقترحات المنتجات" />
       </section>
 
