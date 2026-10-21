@@ -905,11 +905,11 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.listPartnerStoreCaptainMemberships.path.replace("{storeId}", encodeURIComponent(normalized));
       return userRequest<StoreCaptainMembershipListResponse>(accessToken, path, dshOperationPaths.listPartnerStoreCaptainMemberships.method);
     },
-    async createPartnerStoreCaptainInvitation(accessToken: string, storeID: string): Promise<StoreCaptainInvitationResponse> {
+    async createPartnerStoreCaptainInvitation(accessToken: string, storeID: string, input?: { phoneE164: string; displayNameAr: string }): Promise<StoreCaptainInvitationResponse> {
       const normalized = storeID.trim();
       if (!normalized) throw new Error("DSH_STORE_CAPTAIN_MEMBERSHIP_STORE_REQUIRED");
       const path = dshOperationPaths.createPartnerStoreCaptainInvitation.path.replace("{storeId}", encodeURIComponent(normalized));
-      return userRequest<StoreCaptainInvitationResponse>(accessToken, path, dshOperationPaths.createPartnerStoreCaptainInvitation.method, undefined, mutationHeaders());
+      return userRequest<StoreCaptainInvitationResponse>(accessToken, path, dshOperationPaths.createPartnerStoreCaptainInvitation.method, input, mutationHeaders());
     },
     async transitionPartnerStoreCaptainMembership(accessToken: string, storeID: string, membershipID: string, input: StoreCaptainMembershipTransitionRequest, expectedVersion: number): Promise<StoreCaptainMembershipResponse> {
       const normalizedStore = storeID.trim();
@@ -940,6 +940,10 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalized) throw new Error("DSH_STORE_CAPTAIN_INVITATION_CODE_REQUIRED");
       const input: AcceptStoreCaptainInvitationRequest = { invitationCode: normalized };
       return userRequest<StoreCaptainMembershipResponse>(accessToken, dshOperationPaths.acceptOwnStoreCaptainInvitation.path, dshOperationPaths.acceptOwnStoreCaptainInvitation.method, input, mutationHeaders());
+    },
+    async acceptTargetedStoreCaptainInvitation(accessToken: string, membershipID: string): Promise<StoreCaptainMembershipResponse> {
+      if (!membershipID.trim()) throw new Error("DSH_STORE_CAPTAIN_MEMBERSHIP_REQUIRED");
+      return userRequest<StoreCaptainMembershipResponse>(accessToken, dshOperationPaths.acceptOwnStoreCaptainInvitation.path, dshOperationPaths.acceptOwnStoreCaptainInvitation.method, { membershipId: membershipID.trim() }, mutationHeaders());
     },
     async readOwnCaptainAdmission(accessToken: string): Promise<CaptainAdmissionResponse> {
       return userRequest<CaptainAdmissionResponse>(accessToken, dshOperationPaths.readOwnCaptainAdmission.path, dshOperationPaths.readOwnCaptainAdmission.method);

@@ -36,6 +36,20 @@ export default function CaptainAccount() {
         const response = await captainClient().readOwnCaptainAdmission(token);
         if (current) { setProfile(response.admission); setProfileState("ready"); }
       } catch (cause) {
+        // The Store owner may create a private Captain without admitting
+        // them to the BThwani public dispatch pool.
+        try {
+          const token = await getUsableIdentityAccessToken();
+          const memberships = await captainClient().listOwnStoreCaptainMemberships(token);
+          const directed = memberships.memberships.find((item) => item.displayNameAr && (item.state === "active" || item.state === "pending"));
+          if (directed) {
+            if (current) {
+              setProfile({ fullNameAr: directed.displayNameAr ?? null, state: "store_only" });
+              setProfileState("ready");
+            }
+            return;
+          }
+        } catch { /* Keep the original error state if both readbacks fail. */ }
         console.error("DSH Captain profile readback failed", cause);
         if (current) setProfileState("error");
       }
@@ -70,8 +84,8 @@ export default function CaptainAccount() {
         </View>
         <View style={styles.profileCopy}>
           <Text style={styles.profileTitle}>{profile?.fullNameAr || "ملف الكابتن"}</Text>
-          <Text style={styles.profileDescription}>{profileState === "loading" ? "جارٍ قراءة الملف…" : profileState === "error" ? "تعذر قراءة الملف الآن؛ أعد المحاولة لاحقًا." : profile?.contactPhoneE164 || "رقم الهاتف غير متاح"}</Text>
-          {profileState === "ready" && profile ? <Text style={styles.profileDescription}>حالة الأهلية: {profile.state === "eligible" ? "مؤهل لاستقبال المهام" : "قيد المراجعة"}</Text> : null}
+          <Text style={styles.profileDescription}>{profileState === "loading" ? "جارٍ قراءة الملف…" : profileState === "error" ? "تعذر قراءة الملف الآن؛ أعد المحاولة لاحقًا." : profile?.state === "store_only" ? "حساب كابتن متجر" : profile?.contactPhoneE164 || "رقم الهاتف غير متاح"}</Text>
+          {profileState === "ready" && profile ? <Text style={styles.profileDescription}>حالة الأهلية: {profile.state === "store_only" ? "عضوية متجر — دون توزيع بثواني العام" : profile.state === "eligible" ? "مؤهل لاستقبال المهام" : "قيد المراجعة"}</Text> : null}
         </View>
       </BthwaniSurface>
 

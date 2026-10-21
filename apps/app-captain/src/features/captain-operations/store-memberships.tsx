@@ -1,7 +1,8 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { StoreCaptainMembership } from "@bthwani/dsh";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
@@ -12,78 +13,88 @@ export function StoreCaptainMemberships() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<MembershipState>({ kind: "loading" });
-  const [invitationCode, setInvitationCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [legacyOpen, setLegacyOpen] = useState(false);
+  const [legacyCode, setLegacyCode] = useState("");
 
-  const reload = useCallback(async () => {
-    setState({ kind: "loading" });
+  const reload = useCallback(async (): Promise<ReadonlyArray<StoreCaptainMembership> | null> => {
     try {
       const token = await getUsableIdentityAccessToken();
       const result = await captainClient().listOwnStoreCaptainMemberships(token);
       setState({ kind: "ready", memberships: result.memberships });
-      setError("");
+      return result.memberships;
     } catch {
       setState({ kind: "error" });
-      setError("تعذر قراءة عضويات المتاجر من المنصة.");
+      setError("تعذر قراءة المتاجر المرتبطة بحسابك.");
+      return null;
     }
   }, []);
+  useFocusEffect(useCallback(() => { void reload(); }, [reload]));
 
-  useEffect(() => { void reload(); }, [reload]);
-
-  async function acceptInvitation() {
-    const code = invitationCode.trim();
-    if (busy || !code) return;
+  async function acceptMembership(membership: StoreCaptainMembership) {
+    if (busy || membership.state !== "pending") return;
     setBusy(true);
     setError("");
     setNotice("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await captainClient().acceptOwnStoreCaptainInvitation(token, code);
-      setInvitationCode("");
-      setNotice(`تم ربط حسابك بمتجر ${result.membership.storeName}.`);
-      await reload();
+      await captainClient().acceptTargetedStoreCaptainInvitation(token, membership.id);
+      const latest = await reload();
+      if (latest?.some((item) => item.id === membership.id && item.state === "active")) {
+        setNotice("تم تفعيل عضويتك في " + membership.storeName + ".");
+      } else {
+        setError("لم يتأكد قبول العضوية. حاول إعادة فتح الصفحة.");
+      }
     } catch {
       await reload();
-      setError("تعذر قبول الدعوة. تحقق من الرمز وصلاحيته، ثم أعد قراءة العضويات.");
+      setError("تعذر تأكيد قبول العضوية. راجع الدعوة ثم حاول مجددًا.");
     } finally {
       setBusy(false);
     }
   }
 
-  return (
-    <BthwaniSurface tone="base" style={styles.card}>
-      <Text style={styles.title}>عضويات المتاجر</Text>
-      <Text style={styles.description}>تظهر هنا المتاجر التي ربطت حساب الكابتن بها. العضوية وحدها لا تكلفك بطلب؛ يرسل المتجر عرضًا لمهمة محددة، وتبدأ بعد قبولك. لا تغيّر العضوية أهليتك في إسناد بثواني.</Text>
-      <TextInput
-        accessibilityLabel="رمز دعوة المتجر"
-        autoCapitalize="none"
-        autoCorrect={false}
-        editable={!busy}
-        onChangeText={(value) => { setInvitationCode(value); setError(""); }}
-        placeholder="أدخل رمز دعوة المتجر"
-        placeholderTextColor={theme.colorMuted}
-        style={styles.input}
-        textAlign="center"
-        textContentType="oneTimeCode"
-      />
-      <BthwaniButton busy={busy} disabled={busy || invitationCode.trim().length === 0} label="قبول دعوة المتجر" onPress={() => void acceptInvitation()} />
-      {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.description}>جارٍ قراءة العضويات…</Text></View> : null}
-      {state.kind === "error" ? <BthwaniButton disabled={busy} label="إعادة قراءة العضويات" onPress={() => void reload()} variant="secondary" /> : null}
-      {state.kind === "ready" && state.memberships.length === 0 ? <Text style={styles.description}>لا توجد عضويات مرتبطة بحسابك.</Text> : null}
-      {state.kind === "ready" ? state.memberships.map((membership) => {
-        const label = membership.state === "active" ? "مفعّلة" : membership.state === "suspended" ? "موقوفة" : membership.state === "revoked" ? "ملغاة" : membership.state === "expired" ? "انتهت الدعوة" : "بانتظار القبول";
-        return <View key={membership.id} style={styles.membership}>
-          <Text style={styles.title}>{membership.storeName}</Text>
-          <Text style={styles.description}>حالة العضوية: {label}</Text>
-        </View>;
-      }) : null}
-      {notice ? <Text accessibilityLiveRegion="polite" style={styles.success}>{notice}</Text> : null}
-      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <BthwaniButton disabled={busy} label="تحديث العضويات" onPress={() => void reload()} variant="secondary" />
-    </BthwaniSurface>
-  );
+  async function acceptLegacyCode() {
+    if (busy || !legacyCode.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      await captainClient().acceptOwnStoreCaptainInvitation(token, legacyCode.trim());
+      setLegacyCode("");
+      setLegacyOpen(false);
+      setNotice("تم قبول الدعوة.");
+      await reload();
+    } catch {
+      await reload();
+      setError("تعذر قبول الرمز. تحقق من صلاحيته.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <BthwaniSurface tone="base" style={styles.card}>
+    <Text style={styles.title}>متاجر التوصيل</Text>
+    {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.interactiveText} /><Text style={styles.description}>جارٍ التحميل…</Text></View> : null}
+    {state.kind === "error" ? <BthwaniButton label="إعادة المحاولة" onPress={() => void reload()} variant="secondary" /> : null}
+    {state.kind === "ready" && state.memberships.length === 0 ? <Text style={styles.description}>لا توجد متاجر مرتبطة بحسابك.</Text> : null}
+    {state.kind === "ready" ? state.memberships.map((membership) => {
+      const stateLabel = membership.state === "active" ? "نشط" : membership.state === "pending" ? "بانتظار قبولك" : membership.state === "suspended" ? "موقوف" : membership.state === "expired" ? "منتهي" : "ملغى";
+      return <View key={membership.id} style={styles.membership}>
+        <Text style={styles.title}>{membership.storeName}</Text>
+        <Text style={styles.description}>{membership.displayNameAr ? membership.displayNameAr + " · " : ""}{stateLabel}</Text>
+        {membership.state === "pending" ? <BthwaniButton disabled={busy} busy={busy} label="قبول الانضمام" onPress={() => void acceptMembership(membership)} /> : null}
+      </View>;
+    }) : null}
+    {notice ? <Text accessibilityLiveRegion="polite" style={styles.success}>{notice}</Text> : null}
+    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    <BthwaniButton label={legacyOpen ? "إخفاء الرمز القديم" : "لدي دعوة قديمة برمز"} variant="quiet" onPress={() => setLegacyOpen((value) => !value)} disabled={busy} />
+    {legacyOpen ? <>
+      <TextInput accessibilityLabel="رمز الدعوة القديمة" editable={!busy} placeholder="رمز الدعوة" placeholderTextColor={theme.colorMuted} onChangeText={setLegacyCode} value={legacyCode} style={styles.input} />
+      <BthwaniButton label="قبول الرمز" busy={busy} disabled={busy || !legacyCode.trim()} onPress={() => void acceptLegacyCode()} />
+    </> : null}
+  </BthwaniSurface>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
@@ -92,8 +103,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     title: { ...typography.bodyStrong, color: theme.color },
     description: { ...typography.bodySm, color: theme.colorMuted },
     input: { ...typography.body, backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 52, paddingHorizontal: spacing[3] },
-    state: { alignItems: "center", gap: spacing[2], padding: spacing[3] },
-    membership: { borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
+    state: { alignItems: "center", flexDirection: "row", gap: spacing[2], padding: spacing[3] },
+    membership: { borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
     success: { ...typography.bodySm, color: theme.actionBackground },
     error: { ...typography.bodySm, color: theme.danger },
   });

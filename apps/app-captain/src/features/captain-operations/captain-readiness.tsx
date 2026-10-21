@@ -36,6 +36,7 @@ export function CaptainReadiness({ overlay = false, missionActive = false }: { o
   const actorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
   const [loadedActorID, setLoadedActorID] = useState("");
   const [admission, setAdmission] = useState<CaptainAdmission | null>(null);
+  const [storeOnly, setStoreOnly] = useState(false);
   const [hasActiveDelivery, setHasActiveDelivery] = useState(false);
   const [assignmentsUnknown, setAssignmentsUnknown] = useState(false);
   const [gpsReady, setGpsReady] = useState(false);
@@ -65,6 +66,7 @@ export function CaptainReadiness({ overlay = false, missionActive = false }: { o
     setLoading(true);
     if (!target) {
       setAdmission(null);
+      setStoreOnly(false);
       setHasActiveDelivery(false);
       setAssignmentsUnknown(false);
       setLoadedActorID("");
@@ -82,13 +84,31 @@ export function CaptainReadiness({ overlay = false, missionActive = false }: { o
       const after = currentIdentityState();
       if (sequence !== readSequence.current || after.kind !== "authenticated" || !isCurrentCaptainActor(target, after.identity.subject.trim())) return false;
       setAdmission(response.admission);
+      setStoreOnly(false);
       setHasActiveDelivery(assignments?.assignments.some((item) => item.state === "assigned" || item.state === "in_custody") ?? false);
       setAssignmentsUnknown(assignments === null);
       setLoadedActorID(target);
       return true;
     } catch {
+      // Owner-created Store Captains have no public-pool admission. They may
+      // still accept directed Store offers after activating their Identity role.
+      try {
+        const memberships = await captainClient().listOwnStoreCaptainMemberships(await getUsableIdentityAccessToken());
+        const after = currentIdentityState();
+        if (sequence === readSequence.current && after.kind === "authenticated" && isCurrentCaptainActor(target, after.identity.subject.trim()) &&
+          memberships.memberships.some((item) => item.state === "active" && Boolean(item.displayNameAr))) {
+          setAdmission(null);
+          setStoreOnly(true);
+          setLoadedActorID(target);
+          setHasActiveDelivery(false);
+          setAssignmentsUnknown(false);
+          setError("");
+          return true;
+        }
+      } catch { /* Real admission/readback errors retain the existing recovery. */ }
       const after = currentIdentityState();
       if (sequence === readSequence.current && after.kind === "authenticated" && isCurrentCaptainActor(target, after.identity.subject.trim())) {
+        setStoreOnly(false);
         setAdmission(null);
         setHasActiveDelivery(false);
         setAssignmentsUnknown(false);
@@ -113,7 +133,7 @@ export function CaptainReadiness({ overlay = false, missionActive = false }: { o
     setError("");
     void refreshGps();
     if (actorID) void load();
-    else { setAdmission(null); setHasActiveDelivery(false); setAssignmentsUnknown(false); setLoadedActorID(""); setLoading(false); }
+    else { setAdmission(null); setStoreOnly(false); setHasActiveDelivery(false); setAssignmentsUnknown(false); setLoadedActorID(""); setLoading(false); }
     return () => { readSequence.current += 1; };
   }, [load, refreshGps, actorID]));
 
@@ -220,8 +240,9 @@ export function CaptainReadiness({ overlay = false, missionActive = false }: { o
   if (overlay) return <View style={{ marginHorizontal: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 7, borderRadius: 16, backgroundColor: "rgba(15,29,40,0.73)" }} accessibilityLabel="التحكم بالجاهزية على الخريطة">
     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-around", gap: 10 }}>
       <View style={{ flex: 1, alignItems: "center", gap: 3 }}>
-        <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "700" }}>{missionActive ? "المهمة" : "التوفر"}</Text>
-        {missionActive ? <Text style={{ color: "#FFFFFF", fontSize: 12 }}>مشغول</Text> :
+        <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "700" }}>{missionActive ? "المهمة" : storeOnly ? "المتجر" : "التوفر"}</Text>
+        {missionActive ? <Text style={{ color: "#FFFFFF", fontSize: 12 }}>مشغول</Text> : storeOnly ?
+          <Text style={{ color: "#FFFFFF", fontSize: 12 }}>مرتبط</Text> :
           <Switch accessibilityLabel="مفتاح توفر الكابتن" accessibilityRole="switch"
             value={available} disabled={!eligible || busy || loading || newOffersBlockedByDelivery || newOffersBlockedByUnknownWork}
             onValueChange={(value) => void toggleAvailability(value)}
@@ -249,6 +270,7 @@ export function CaptainReadiness({ overlay = false, missionActive = false }: { o
         </>}
       </View>
     </View>
+    {storeOnly && !missionActive ? <Text style={{ color: "#FFFFFF", fontSize: 12 }}>طلبات المتجر تصل من التوصيلات، دون تفعيل توزيع بثواني العام.</Text> : null}
     {error ? <Text accessibilityRole="alert" style={{ color: "#FFE4B3", fontSize: 12 }}>{error}</Text> : null}
     {newOffersBlockedByDelivery && !missionActive ? <Text accessibilityRole="alert" style={{ color: "#FFE4B3", fontSize: 12 }}>مشغول بتوصيل جارٍ · افتح إجراءات المهمة أسفل الخريطة</Text> : null}
     {newOffersBlockedByUnknownWork ? <Text accessibilityRole="alert" style={{ color: "#FFE4B3", fontSize: 12 }}>تعذر التحقق من المهام</Text> : null}
@@ -259,6 +281,10 @@ export function CaptainReadiness({ overlay = false, missionActive = false }: { o
   return <View style={styles.container} accessibilityLabel="جاهزية الكابتن">
     <Text style={styles.readinessTitle}>الجاهزية</Text>
     {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الجاهزية…</Text></View> : null}
+    {storeOnly ? <View style={styles.readinessHero}>
+      <Text style={styles.cardTitle}>توصيل المتجر</Text>
+      <Text style={styles.muted}>عضويتك نشطة. عروض المتجر تصل عبر التوصيلات ولا تحتاج إلى تفعيل التوزيع العام.</Text>
+    </View> : null}
     {current ? <View style={styles.readinessHero}>
       <View style={styles.readinessHeroHeader}>
         <Text style={styles.readinessEyebrow}>حالة الحساب</Text>

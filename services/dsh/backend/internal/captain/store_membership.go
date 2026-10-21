@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
@@ -29,6 +30,52 @@ type StoreCaptainInvitation struct {
 	Membership     postgres.StoreCaptainMembership
 	InvitationCode string
 	Replayed       bool
+}
+
+// Owner-created Captain accounts are bound to a specific phone/canonical actor.
+// This relationship does not grant eligibility to the platform's public pool.
+func (s *Service) CreateTargetedStoreCaptainInvitation(ctx context.Context, accessToken, storeID, phone, displayName, idempotencyKey, correlationID string) (StoreCaptainInvitation, error) {
+	identity, err := s.requirePartner(ctx, accessToken)
+	if err != nil {
+		return StoreCaptainInvitation{}, err
+	}
+	if _, err := postgres.ReadStoreOwnedByPartner(ctx, s.db, strings.TrimSpace(storeID), identity.Subject); err != nil {
+		return StoreCaptainInvitation{}, ErrPartnerSessionForbidden
+	}
+	phone, err = identityintegration.NormalizeInvitePhone(phone)
+	displayName = strings.TrimSpace(displayName)
+	if err != nil || len([]rune(displayName)) == 0 || len([]rune(displayName)) > 80 || !validMutation(idempotencyKey, correlationID, identity.Subject) {
+		return StoreCaptainInvitation{}, ErrInvalidInput
+	}
+	role, err := s.identity.ProvisionCaptainWithContext(ctx, identityintegration.ActorInput{PhoneE164: phone}, correlationID, identity.Subject)
+	if err != nil {
+		return StoreCaptainInvitation{}, err
+	}
+	if !role.SecurityEnabled {
+		return StoreCaptainInvitation{}, ErrCaptainIdentityUnavailable
+	}
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		return StoreCaptainInvitation{}, err
+	}
+	code := base64.RawURLEncoding.EncodeToString(secret)
+	hash := sha256.Sum256([]byte(code))
+	membership, replayed, err := postgres.CreateTargetedStoreCaptainInvitation(ctx, s.db, storeID, identity.Subject, role.ActorID, displayName, hex.EncodeToString(hash[:]), time.Now().UTC().Add(storeCaptainInvitationLifetime), idempotencyKey, correlationID)
+	if err != nil {
+		return StoreCaptainInvitation{}, err
+	}
+	return StoreCaptainInvitation{Membership: membership, Replayed: replayed}, nil
+}
+
+func (s *Service) AcceptTargetedStoreCaptainInvitation(ctx context.Context, accessToken, membershipID, idempotencyKey, correlationID string) (postgres.StoreCaptainMembership, bool, error) {
+	identity, err := s.requireCaptain(ctx, accessToken)
+	if err != nil {
+		return postgres.StoreCaptainMembership{}, false, err
+	}
+	if !validMutation(idempotencyKey, correlationID, identity.Subject) {
+		return postgres.StoreCaptainMembership{}, false, ErrInvalidInput
+	}
+	return postgres.AcceptTargetedStoreCaptainInvitation(ctx, s.db, strings.TrimSpace(membershipID), identity.Subject, idempotencyKey, correlationID)
 }
 
 func (s *Service) CreateStoreCaptainInvitation(ctx context.Context, accessToken, storeID, idempotencyKey, correlationID string) (StoreCaptainInvitation, error) {

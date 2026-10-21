@@ -272,7 +272,7 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
       </div>
       <FinanceTask workflow={activeWorkflow} row={activeRow} query={initialQuery} />
     </div> : <>
-      <div className="finance-desk-summary" aria-label="ملخص السجلات المحمّلة">
+      <div className="finance-desk-summary">
         <div><strong>{intakeCount === null || !hasData ? "—" : (intakeCount + sourceAttentionCount).toLocaleString("ar-YE")}</strong><span>تحتاج متابعة · المعروض</span></div>
         <div><strong>{hasData ? rows.length.toLocaleString("ar-YE") : "—"}</strong><span>معاملات من المصادر المحمّلة</span></div>
         {errors.length ? <div className="finance-desk-source-warning" role="status"><strong>{errors.length.toLocaleString("ar-YE")}</strong><span>مصادر تتطلب إعادة المحاولة</span></div> : null}
@@ -285,7 +285,7 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
             placeholder="ابحث عن معاملة أو مستفيد أو مرجع · النتائج المحمّلة"
             value={search} onChange={(event) => setSearch(event.target.value)} />
         </label>
-        <div className="finance-desk-filterbar" role="group" aria-label="نوع السجلات المالية">
+        <fieldset className="finance-desk-filterbar" aria-label="نوع السجلات المالية">
           {([
             ["attention", "تحتاج مراجعة"],
             ["all", "الكل"],
@@ -300,7 +300,7 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
             {label}{value === "attention" && intakeCount !== null && hasData && intakeCount + sourceAttentionCount > 0
               ? <bdi dir="ltr" className="finance-desk-chip-count">{(intakeCount + sourceAttentionCount).toLocaleString("ar-YE")}</bdi> : null}
           </button>)}
-        </div>
+        </fieldset>
       </div>
       {errors.length > 0 ? <div className="managed-status managed-status-warning" role="alert">
         <strong>تعذر تحميل بعض المصادر المالية</strong>

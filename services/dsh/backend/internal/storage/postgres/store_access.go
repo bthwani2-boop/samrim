@@ -21,6 +21,7 @@ type StoreAccessGrant struct {
 	OwnerPartnerActorID            string     `json:"ownerPartnerActorId"`
 	DelegateActorID                string     `json:"delegateActorId"`
 	DelegatePhoneMasked            string     `json:"delegatePhoneMasked,omitempty"`
+	DisplayNameAr                  string     `json:"displayNameAr,omitempty"`
 	DelegateBeneficiaryName        string     `json:"delegateBeneficiaryName,omitempty"`
 	DelegateWalletProviderKey      string     `json:"delegateWalletProviderKey,omitempty"`
 	DelegateWalletIdentifierMasked string     `json:"delegateWalletIdentifierMasked,omitempty"`
@@ -110,16 +111,25 @@ func AuthorizePartnerStoreAction(ctx context.Context, db *sql.DB, storeID, actor
 }
 
 func CreateStoreAccessInvitation(ctx context.Context, db *sql.DB, storeID, ownerActorID, delegateActorID string, permissions []string, idempotencyKey, correlationID string) (StoreAccessGrant, bool, error) {
+	return CreateStoreAccessInvitationNamed(ctx, db, storeID, ownerActorID, delegateActorID, "", permissions, idempotencyKey, correlationID)
+}
+
+// The owner's display label is unverified and never replaces Identity's name.
+func CreateStoreAccessInvitationNamed(ctx context.Context, db *sql.DB, storeID, ownerActorID, delegateActorID, displayNameAr string, permissions []string, idempotencyKey, correlationID string) (StoreAccessGrant, bool, error) {
 	storeID, ownerActorID, delegateActorID = strings.TrimSpace(storeID), strings.TrimSpace(ownerActorID), strings.TrimSpace(delegateActorID)
 	idempotencyKey, correlationID = strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
+	displayNameAr = strings.TrimSpace(displayNameAr)
 	permissions = canonicalStorePermissions(permissions)
-	if db == nil || storeID == "" || ownerActorID == "" || delegateActorID == "" || ownerActorID == delegateActorID || len(permissions) == 0 || len(idempotencyKey) < 8 || len(correlationID) < 8 {
+	if len([]rune(displayNameAr)) > 80 || db == nil || storeID == "" || ownerActorID == "" || delegateActorID == "" || ownerActorID == delegateActorID || len(permissions) == 0 || len(idempotencyKey) < 8 || len(correlationID) < 8 {
 		return StoreAccessGrant{}, false, ErrStoreAccessConflict
 	}
 	if !validStorePermissionSet(permissions) {
 		return StoreAccessGrant{}, false, ErrStoreAccessConflict
 	}
 	requestHash := HashStoreAccessInvitationCreate(storeID, ownerActorID, delegateActorID, permissions)
+	if displayNameAr != "" {
+		requestHash = hashLocationFacts("store-access-invite-named", requestHash, displayNameAr)
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return StoreAccessGrant{}, false, fmt.Errorf("begin Store access invitation: %w", err)
@@ -162,10 +172,10 @@ func CreateStoreAccessInvitation(ctx context.Context, db *sql.DB, storeID, owner
 	}
 	expiresAt := time.Now().UTC().Add(storeAccessInvitationLifetime)
 	grant, err := readStoreAccessGrantRow(tx.QueryRowContext(ctx, `INSERT INTO dsh.store_access_grants
-		(id,store_id,owner_partner_actor_id,delegate_actor_id,permissions,state,version,expires_at)
-		VALUES($1,$2,$3,$4,$5,'pending_acceptance',1,$6)
-		RETURNING id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),owner_partner_actor_id,delegate_actor_id,permissions,state,version,expires_at,accepted_at,declined_at,revoked_at,created_at,updated_at`,
-		id, storeID, ownerActorID, delegateActorID, pq.Array(permissions), expiresAt))
+		(id,store_id,owner_partner_actor_id,delegate_actor_id,permissions,state,version,expires_at,display_name_ar)
+		VALUES($1,$2,$3,$4,$5,'pending_acceptance',1,$6,$7)
+		RETURNING id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),owner_partner_actor_id,delegate_actor_id,permissions,state,version,expires_at,accepted_at,declined_at,revoked_at,created_at,updated_at,display_name_ar`,
+		id, storeID, ownerActorID, delegateActorID, pq.Array(permissions), expiresAt, displayNameAr))
 	if err != nil {
 		return StoreAccessGrant{}, false, fmt.Errorf("create Store access invitation: %w", err)
 	}
@@ -203,7 +213,7 @@ func ReadStoreAccessGrant(ctx context.Context, db *sql.DB, grantID string) (Stor
 	}
 	grant, err := readStoreAccessGrantRow(db.QueryRowContext(ctx, `SELECT g.id,g.store_id,s.name,g.owner_partner_actor_id,g.delegate_actor_id,g.permissions,
 		CASE WHEN g.state='pending_acceptance' AND g.expires_at <= clock_timestamp() THEN 'expired' ELSE g.state END,
-		g.version,g.expires_at,g.accepted_at,g.declined_at,g.revoked_at,g.created_at,g.updated_at
+		g.version,g.expires_at,g.accepted_at,g.declined_at,g.revoked_at,g.created_at,g.updated_at,g.display_name_ar
 		FROM dsh.store_access_grants g JOIN dsh.stores s ON s.id=g.store_id WHERE g.id=$1`, grantID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return StoreAccessGrant{}, ErrStoreAccessNotFound
@@ -238,7 +248,7 @@ func ReadStoreAccessMutationReplay(ctx context.Context, db *sql.DB, idempotencyK
 	}
 	grant, err := readStoreAccessGrantRow(tx.QueryRowContext(ctx, `SELECT g.id,g.store_id,s.name,g.owner_partner_actor_id,g.delegate_actor_id,g.permissions,
 		CASE WHEN g.state='pending_acceptance' AND g.expires_at <= clock_timestamp() THEN 'expired' ELSE g.state END,
-		g.version,g.expires_at,g.accepted_at,g.declined_at,g.revoked_at,g.created_at,g.updated_at
+		g.version,g.expires_at,g.accepted_at,g.declined_at,g.revoked_at,g.created_at,g.updated_at,g.display_name_ar
 		FROM dsh.store_access_grants g JOIN dsh.stores s ON s.id=g.store_id WHERE g.id=$1`, grantID))
 	if err != nil {
 		return StoreAccessGrant{}, false, err
@@ -271,7 +281,7 @@ func ListPendingStoreAccessRoleAdmissions(ctx context.Context, db *sql.DB) ([]St
 		return nil, ErrStoreAccessConflict
 	}
 	rows, err := db.QueryContext(ctx, `SELECT g.id,g.store_id,s.name,g.owner_partner_actor_id,g.delegate_actor_id,g.permissions,g.state,
-		g.version,g.expires_at,g.accepted_at,g.declined_at,g.revoked_at,g.created_at,g.updated_at
+		g.version,g.expires_at,g.accepted_at,g.declined_at,g.revoked_at,g.created_at,g.updated_at,g.display_name_ar
 		FROM dsh.store_access_grants g JOIN dsh.stores s ON s.id=g.store_id
 		WHERE g.state='pending_role_admission' AND g.accepted_at IS NOT NULL
 		ORDER BY g.created_at,g.id`)
@@ -437,7 +447,7 @@ func DecideStoreAccessInvitation(ctx context.Context, db *sql.DB, grantID, deleg
 	}
 	updated, err := readStoreAccessGrantRow(tx.QueryRowContext(ctx, `UPDATE dsh.store_access_grants SET state=$2,version=version+1,
 		accepted_at=COALESCE($3,accepted_at),declined_at=COALESCE($4,declined_at),updated_at=clock_timestamp()
-		WHERE id=$1 AND version=$5 RETURNING id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),owner_partner_actor_id,delegate_actor_id,permissions,state,version,expires_at,accepted_at,declined_at,revoked_at,created_at,updated_at`,
+		WHERE id=$1 AND version=$5 RETURNING id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),owner_partner_actor_id,delegate_actor_id,permissions,state,version,expires_at,accepted_at,declined_at,revoked_at,created_at,updated_at,display_name_ar`,
 		grant.ID, target, acceptedAt, declinedAt, expectedVersion))
 	if err != nil {
 		return StoreAccessGrant{}, false, err
@@ -526,7 +536,7 @@ func UpdateStoreAccessGrantPermissions(ctx context.Context, db *sql.DB, storeID,
 	}
 	updated, err := readStoreAccessGrantRow(tx.QueryRowContext(ctx, `UPDATE dsh.store_access_grants SET permissions=$2,version=version+1,updated_at=clock_timestamp()
 		WHERE id=$1 AND version=$3
-		RETURNING id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),owner_partner_actor_id,delegate_actor_id,permissions,state,version,expires_at,accepted_at,declined_at,revoked_at,created_at,updated_at`, grant.ID, pq.Array(permissions), expectedVersion))
+		RETURNING id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),owner_partner_actor_id,delegate_actor_id,permissions,state,version,expires_at,accepted_at,declined_at,revoked_at,created_at,updated_at,display_name_ar`, grant.ID, pq.Array(permissions), expectedVersion))
 	if err != nil {
 		return StoreAccessGrant{}, false, err
 	}
@@ -549,7 +559,7 @@ func ListStoreAccessGrants(ctx context.Context, db *sql.DB, storeID, ownerActorI
 	}
 	rows, err := db.QueryContext(ctx, `SELECT g.id,g.store_id,s.name,g.owner_partner_actor_id,g.delegate_actor_id,g.permissions,
 		CASE WHEN g.state='pending_acceptance' AND g.expires_at <= clock_timestamp() THEN 'expired' ELSE g.state END,
-		g.version,g.expires_at,g.accepted_at,g.declined_at,g.revoked_at,g.created_at,g.updated_at
+		g.version,g.expires_at,g.accepted_at,g.declined_at,g.revoked_at,g.created_at,g.updated_at,g.display_name_ar
 		FROM dsh.store_access_grants g JOIN dsh.stores s ON s.id=g.store_id
 		WHERE g.store_id=$1 AND g.owner_partner_actor_id=$2 ORDER BY g.created_at DESC,g.id`, storeID, ownerActorID)
 	if err != nil {
@@ -566,7 +576,7 @@ func ListDelegateStoreAccessInvitations(ctx context.Context, db *sql.DB, delegat
 	}
 	rows, err := db.QueryContext(ctx, `SELECT g.id,g.store_id,s.name,g.owner_partner_actor_id,g.delegate_actor_id,g.permissions,
 		CASE WHEN g.state='pending_acceptance' AND g.expires_at <= clock_timestamp() THEN 'expired' ELSE g.state END,
-		g.version,g.expires_at,g.accepted_at,g.declined_at,g.revoked_at,g.created_at,g.updated_at
+		g.version,g.expires_at,g.accepted_at,g.declined_at,g.revoked_at,g.created_at,g.updated_at,g.display_name_ar
 		FROM dsh.store_access_grants g JOIN dsh.stores s ON s.id=g.store_id
 		WHERE g.delegate_actor_id=$1 ORDER BY g.created_at DESC,g.id`, delegateActorID)
 	if err != nil {
@@ -641,7 +651,7 @@ func transitionStoreAccessGrant(ctx context.Context, db *sql.DB, grantID, acting
 	}
 	updated, err := readStoreAccessGrantRow(tx.QueryRowContext(ctx, `UPDATE dsh.store_access_grants SET state=$2,version=version+1,
 		revoked_at=COALESCE($3,revoked_at),updated_at=clock_timestamp() WHERE id=$1 AND version=$4
-		RETURNING id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),owner_partner_actor_id,delegate_actor_id,permissions,state,version,expires_at,accepted_at,declined_at,revoked_at,created_at,updated_at`,
+		RETURNING id,store_id,(SELECT name FROM dsh.stores WHERE id=store_id),owner_partner_actor_id,delegate_actor_id,permissions,state,version,expires_at,accepted_at,declined_at,revoked_at,created_at,updated_at,display_name_ar`,
 		grant.ID, targetState, revokedAt, expectedVersion))
 	if err != nil {
 		return StoreAccessGrant{}, false, err
@@ -698,7 +708,7 @@ func readStoreAccessReplayTx(ctx context.Context, tx *sql.Tx, idempotencyKey, re
 
 func readStoreAccessGrantForUpdateTx(ctx context.Context, tx *sql.Tx, grantID string) (StoreAccessGrant, error) {
 	return readStoreAccessGrantRow(tx.QueryRowContext(ctx, `SELECT g.id,g.store_id,s.name,g.owner_partner_actor_id,g.delegate_actor_id,g.permissions,g.state,g.version,
-		g.expires_at,g.accepted_at,g.declined_at,g.revoked_at,g.created_at,g.updated_at
+		g.expires_at,g.accepted_at,g.declined_at,g.revoked_at,g.created_at,g.updated_at,g.display_name_ar
 		FROM dsh.store_access_grants g JOIN dsh.stores s ON s.id=g.store_id WHERE g.id=$1 FOR UPDATE OF g`, grantID))
 }
 
@@ -707,7 +717,7 @@ type storeAccessRowScanner interface{ Scan(...any) error }
 func readStoreAccessGrantRow(row storeAccessRowScanner) (StoreAccessGrant, error) {
 	var grant StoreAccessGrant
 	if err := row.Scan(&grant.ID, &grant.StoreID, &grant.StoreName, &grant.OwnerPartnerActorID, &grant.DelegateActorID, pq.Array(&grant.Permissions), &grant.State, &grant.Version,
-		&grant.ExpiresAt, &grant.AcceptedAt, &grant.DeclinedAt, &grant.RevokedAt, &grant.CreatedAt, &grant.UpdatedAt); err != nil {
+		&grant.ExpiresAt, &grant.AcceptedAt, &grant.DeclinedAt, &grant.RevokedAt, &grant.CreatedAt, &grant.UpdatedAt, &grant.DisplayNameAr); err != nil {
 		return StoreAccessGrant{}, err
 	}
 	grant.Permissions = canonicalStorePermissions(grant.Permissions)
@@ -777,6 +787,10 @@ func validStorePermission(permission string) bool {
 	return ok
 }
 
+// Validate the allowlist before any actor is provisioned.
+func ValidStorePermissionSet(permissions []string) bool {
+	return validStorePermissionSet(canonicalStorePermissions(permissions))
+}
 func validStorePermissionSet(permissions []string) bool {
 	if len(permissions) == 0 {
 		return false

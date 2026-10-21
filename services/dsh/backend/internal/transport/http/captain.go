@@ -299,6 +299,11 @@ func (s *CaptainServer) listStoreCaptainMemberships(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, contract.StoreCaptainMembershipListResponse{Memberships: items})
 }
 
+type targetedCaptainCreateRequest struct {
+	PhoneE164     string `json:"phoneE164"`
+	DisplayNameAr string `json:"displayNameAr"`
+}
+
 func (s *CaptainServer) createStoreCaptainInvitation(w http.ResponseWriter, r *http.Request) {
 	if bearerToken(r) == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Partner session is required")
@@ -312,7 +317,17 @@ func (s *CaptainServer) createStoreCaptainInvitation(w http.ResponseWriter, r *h
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Idempotency-Key is required")
 		return
 	}
-	invitation, err := s.service.CreateStoreCaptainInvitation(r.Context(), bearerToken(r), r.PathValue("storeId"), idempotency, correlation)
+	var invitation captain.StoreCaptainInvitation
+	var err error
+	if r.ContentLength > 0 {
+		var input targetedCaptainCreateRequest
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		invitation, err = s.service.CreateTargetedStoreCaptainInvitation(r.Context(), bearerToken(r), r.PathValue("storeId"), input.PhoneE164, input.DisplayNameAr, idempotency, correlation)
+	} else {
+		invitation, err = s.service.CreateStoreCaptainInvitation(r.Context(), bearerToken(r), r.PathValue("storeId"), idempotency, correlation)
+	}
 	if err != nil {
 		writeCaptainError(w, err)
 		return
@@ -379,7 +394,14 @@ func (s *CaptainServer) acceptStoreCaptainInvitation(w http.ResponseWriter, r *h
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	membership, replayed, err := s.service.AcceptStoreCaptainInvitation(r.Context(), bearerToken(r), input.InvitationCode, idempotency, correlation)
+	var membership postgres.StoreCaptainMembership
+	var replayed bool
+	var err error
+	if input.MembershipID != "" {
+		membership, replayed, err = s.service.AcceptTargetedStoreCaptainInvitation(r.Context(), bearerToken(r), input.MembershipID, idempotency, correlation)
+	} else {
+		membership, replayed, err = s.service.AcceptStoreCaptainInvitation(r.Context(), bearerToken(r), input.InvitationCode, idempotency, correlation)
+	}
 	if err != nil {
 		writeCaptainError(w, err)
 		return
@@ -834,7 +856,7 @@ func toStoreCaptainMembership(value postgres.StoreCaptainMembership) contract.St
 	}
 	return contract.StoreCaptainMembership{
 		ID: value.ID, StoreID: value.StoreID, StoreName: value.StoreName, PartnerActorID: value.PartnerActorID,
-		CaptainActorID: captainActorID, CaptainNameAr: value.CaptainNameAr, CaptainPhoneMasked: value.CaptainPhoneMasked, State: value.State, Version: value.Version, ExpiresAt: value.ExpiresAt,
+		CaptainActorID: captainActorID, DisplayNameAr: value.DisplayNameAr, CaptainNameAr: value.CaptainNameAr, CaptainPhoneMasked: value.CaptainPhoneMasked, State: value.State, Version: value.Version, ExpiresAt: value.ExpiresAt,
 		AcceptedAt: value.AcceptedAt, RevokedAt: value.RevokedAt, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 	}
 }

@@ -397,13 +397,13 @@ paths:
   /dsh/catalog/categories:
     get:
       operationId: listCatalogCategories
-      summary: Read a bounded page of canonical Categories for a Commerce Vertical
-      description: Active categories are public. The all and inactive status filters require service authentication and an acting operator.
+      summary: Read a bounded page of canonical Categories, optionally across Commerce Verticals
+      description: Active categories for one vertical are public. Omitting verticalId or requesting all or inactive categories requires service authentication and an acting operator.
       security:
         - {}
         - serviceBearer: []
       parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/VerticalIdRequired"
+        - { name: verticalId, in: query, required: false, schema: { type: string, maxLength: 128 } }
         - { name: X-Acting-Actor-ID, in: header, required: false, schema: { type: string, maxLength: 128 } }
         - { name: query, in: query, required: false, schema: { type: string, maxLength: 160 } }
         - { name: status, in: query, required: false, schema: { type: string, enum: [all, active, inactive] } }

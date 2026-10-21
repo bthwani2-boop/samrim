@@ -13,7 +13,7 @@ export function RegistryColumnHeader({
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; right: number } | null>(null);
   const detailsRef = useRef<HTMLDetailsElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLElement>(null);
   const popoverId = useId();
 
   const reposition = useCallback(() => {
@@ -41,19 +41,19 @@ export function RegistryColumnHeader({
       if (detailsRef.current?.contains(node) || popoverRef.current?.contains(node)) return;
       if (detailsRef.current) detailsRef.current.open = false;
     };
-    const escape = (event: KeyboardEvent) => {
+    const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (detailsRef.current) detailsRef.current.open = false;
       detailsRef.current?.querySelector("summary")?.focus();
       event.stopPropagation();
     };
     window.addEventListener("pointerdown", dismiss, true);
-    window.addEventListener("keydown", escape, true);
+    window.addEventListener("keydown", handleEscape, true);
     window.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
     return () => {
       window.removeEventListener("pointerdown", dismiss, true);
-      window.removeEventListener("keydown", escape, true);
+      window.removeEventListener("keydown", handleEscape, true);
       window.removeEventListener("scroll", reposition, true);
       window.removeEventListener("resize", reposition);
     };
@@ -76,7 +76,7 @@ export function RegistryColumnHeader({
       </summary>
     </details>
     {open && position ? createPortal(
-      <div id={popoverId} ref={popoverRef} role="group" aria-label={"تصفية " + label}
+      <section id={popoverId} ref={popoverRef} aria-label={"تصفية " + label}
         className="registry-column-popover" dir="rtl"
         style={{ top: position.top, right: position.right }}>
         <div className="registry-column-controls">
@@ -88,7 +88,7 @@ export function RegistryColumnHeader({
           <small>{scope === "page" ? "الصفحة الحالية فقط" : "كل النتائج المطابقة"}</small>
           {children}
         </div>
-      </div>,
+      </section>,
       document.body
     ) : null}
   </th>;

@@ -148,7 +148,8 @@ export function SettlementIntakeInbox({
       </article>)}
       {!loading && !error && !filtered.length && items.length > 0 ? <p className="finance-desk-empty-inline">لا توجد طلبات تسوية مطابقة للبحث.</p> : null}
     </section>
-    {selected && visible && typeof document !== "undefined" ? createPortal(<div className="finance-review-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeReview(); }}>
+    {selected && visible && typeof document !== "undefined" ? createPortal(<div className="finance-review-backdrop">
+      <button type="button" className="finance-review-backdrop-dismiss" aria-label="إغلاق المراجعة" onClick={closeReview} />
       <aside role="dialog" aria-modal="true" aria-labelledby="finance-review-heading" className="finance-review-panel" dir="rtl">
         <div className="finance-review-top">
           <div><h2 id="finance-review-heading">مراجعة طلب التسوية</h2><span>تسوية مستحقات · {actorLabels[selected.actorType]}</span></div>

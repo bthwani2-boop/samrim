@@ -9885,10 +9885,27 @@ components:
           type: integer
           minimum: 0
 
+    StoreCaptainTargetedInvitationCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [phoneE164, displayNameAr]
+      properties:
+        phoneE164:
+          type: string
+          minLength: 8
+          maxLength: 24
+        displayNameAr:
+          type: string
+          minLength: 1
+          maxLength: 80
+
     StoreCaptainMembership:
       type: object
       required: [id, storeId, storeName, partnerActorId, state, version, expiresAt, createdAt, updatedAt]
       properties:
+        displayNameAr:
+          type: string
+          maxLength: 80
         id:
           type: string
         storeId:
@@ -9976,8 +9993,11 @@ components:
 
     AcceptStoreCaptainInvitationRequest:
       type: object
-      required: [invitationCode]
+      minProperties: 1
       properties:
+        membershipId:
+          type: string
+          maxLength: 128
         invitationCode:
           type: string
           minLength: 40
@@ -10012,6 +10032,10 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        displayNameAr:
+          type: string
+          maxLength: 80
+          description: Store owner supplied workspace label, not a verified Identity name.
         delegatePhoneMasked:
           type: string
           maxLength: 24
@@ -10385,15 +10409,18 @@ components:
       additionalProperties: false
       required: [delegatePhoneE164, permissions]
       properties:
+        displayNameAr:
+          type: string
+          maxLength: 80
         delegatePhoneE164:
           type: string
           minLength: 8
           maxLength: 24
-          description: Verified Human Actor phone number; DSH resolves the canonical Actor through Identity.
+          description: Employee phone; Identity provisions a pending managed account when absent, requiring phone verification to activate.
         permissions:
           type: array
           minItems: 1
-          maxItems: 3
+          maxItems: 7
           uniqueItems: true
           items:
             $ref: "#/components/schemas/StoreAccessPermission"

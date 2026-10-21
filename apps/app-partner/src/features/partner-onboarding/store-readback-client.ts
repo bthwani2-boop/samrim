@@ -82,9 +82,9 @@ export async function listOwnStoreCaptainMemberships(storeID: string): Promise<S
   return dshClient().listPartnerStoreCaptainMemberships(token, storeID);
 }
 
-export async function createOwnStoreCaptainInvitation(storeID: string): Promise<StoreCaptainInvitationResponse> {
+export async function createOwnStoreCaptainInvitation(storeID: string, input: { phoneE164: string; displayNameAr: string }): Promise<StoreCaptainInvitationResponse> {
   const token = await accessToken();
-  return dshClient().createPartnerStoreCaptainInvitation(token, storeID);
+  return dshClient().createPartnerStoreCaptainInvitation(token, storeID, input);
 }
 
 export async function transitionOwnStoreCaptainMembership(storeID: string, membershipID: string, state: StoreCaptainMembershipTransitionRequest["state"], expectedVersion: number): Promise<StoreCaptainMembershipResponse> {

@@ -1,8 +1,8 @@
 import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type JoiningCaseResponse, type PublicationState, publicationStateLabel, type StoreAccessPermission, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { type Href, Link, Redirect, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo } from "react";
-import { Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, Text, View } from "react-native";
 import { StorePromotionsCard } from "../store-offer/store-promotions";
 import { PartnerStoreAccess } from "./partner-store-access";
 import { usePartnerStoreContext } from "./partner-store-context";
@@ -48,6 +48,24 @@ function FirstJoiningStoreFacts({ store }: { store: NonNullable<JoiningCaseRespo
   </View>;
 }
 
+function TeamManagement({ storeID }: { storeID: string }) {
+  const theme = useAppearanceTheme();
+  const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
+  const [adding, setAdding] = useState<"staff" | "captain" | null>(null);
+  return <View style={{ gap: 12 }}>
+    <View style={styles.headerRow}>
+      <Text style={styles.value}>أعضاء الفريق</Text>
+      <BthwaniButton label={adding ? "إغلاق" : "إضافة عضو"} variant="secondary" onPress={() => setAdding(adding ? null : "staff")} />
+    </View>
+    {adding ? <View style={styles.choiceRow}>
+      <Pressable accessibilityRole="button" accessibilityState={{ selected: adding === "staff" }} onPress={() => setAdding("staff")} style={[styles.choice, adding === "staff" && styles.choiceSelected]}><Text style={adding === "staff" ? styles.choiceTextSelected : styles.choiceText}>موظف</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityState={{ selected: adding === "captain" }} onPress={() => setAdding("captain")} style={[styles.choice, adding === "captain" && styles.choiceSelected]}><Text style={adding === "captain" ? styles.choiceTextSelected : styles.choiceText}>كابتن المتجر</Text></Pressable>
+    </View> : null}
+    {adding !== "captain" ? <PartnerStoreAccess storeID={storeID} showForm={adding === "staff"} /> : null}
+    {adding !== "staff" ? <StoreCaptainMembershipManagement storeID={storeID} showForm={adding === "captain"} /> : null}
+  </View>;
+}
+
 /** Each destination contains only the requested management function, with no secondary tab strip. */
 export function PartnerStore() {
   const router = useRouter();
@@ -86,10 +104,7 @@ export function PartnerStore() {
       </View>
       {section === "operations" ? <StoreOperationalAvailabilityManagement key={selectedStore.id} storeID={selectedStore.id} fulfillmentModes={selectedStore.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
       {section === "promotions" ? <StorePromotionsCard key={selectedStore.id} storeID={selectedStore.id} verticalID={selectedStore.primaryVerticalId} /> : null}
-      {section === "team" ? <>
-        <StoreCaptainMembershipManagement key={selectedStore.id + ":captains"} storeID={selectedStore.id} />
-        <PartnerStoreAccess key={selectedStore.id + ":access"} storeID={selectedStore.id} />
-      </> : null}
+      {section === "team" ? <TeamManagement key={selectedStore.id} storeID={selectedStore.id} /> : null}
       {section === "settings" ? <>
         {selectedStore.owned && selectedStore.publicationState !== "published" ? <View style={styles.card}>
           <Text style={styles.value}>تجهيز المتجر للنشر</Text>

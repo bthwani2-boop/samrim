@@ -3037,7 +3037,7 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   .finance-desk-search-icon {color:var(--text-muted);font-size:26px;line-height:1}
   .finance-desk-search input {width:100%;min-width:0;min-height:46px;background:transparent;border:0;outline:0;color:var(--color-primary);font:inherit}
   .finance-desk-search input::placeholder {color:var(--text-muted)}
-  .finance-desk-filterbar {display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+  .finance-desk-filterbar {display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:0;padding:0;border:0;min-width:0}
   .finance-desk-chip {border:1px solid var(--border-subtle);border-radius:8px;padding:9px 13px;min-block-size:42px;display:inline-flex;gap:8px;align-items:center;background:var(--surface-base);color:var(--color-primary);font-size:12px;font-weight:650;cursor:pointer}
   .finance-desk-chip[data-selected="true"] {background:var(--action-bg);border-color:var(--action-bg);color:var(--action-text, #0c1323);}
   .finance-desk-chip-count {border-radius:5px;padding:1px 6px;background:var(--surface-muted);color:var(--interactive-text);font-size:11px}
@@ -3071,7 +3071,8 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   .finance-desk-empty-inline {padding:16px;}
   .finance-desk-register-foot {border-block-start:1px solid var(--border-subtle);padding:11px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;color:var(--text-muted);font-size:11px;}
   .finance-review-backdrop {position:fixed;inset:0;z-index:1600;background:rgba(3,9,20,.6);display:flex;justify-content:flex-end;}
-  .finance-review-panel {inline-size:min(460px,100vw);block-size:100dvh;max-block-size:100dvh;display:flex;flex-direction:column;min-inline-size:0;background:var(--surface-base);box-shadow:-15px 0 50px rgba(0,0,0,.27);border-inline-start:1px solid var(--border-subtle);}
+  .finance-review-backdrop-dismiss {position:absolute;inset:0;border:0;background:transparent;cursor:default;}
+  .finance-review-panel {position:relative;z-index:1;inline-size:min(460px,100vw);block-size:100dvh;max-block-size:100dvh;display:flex;flex-direction:column;min-inline-size:0;background:var(--surface-base);box-shadow:-15px 0 50px rgba(0,0,0,.27);border-inline-start:1px solid var(--border-subtle);}
   .finance-review-top {display:flex;align-items:start;justify-content:space-between;gap:10px;padding:19px 18px;border-block-end:1px solid var(--border-subtle);}
   .finance-review-top h2 {margin:0 0 5px;font-size:17px;}
   .finance-review-top span{font-size:12px;color:var(--text-muted)}
