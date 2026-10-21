@@ -11,6 +11,7 @@ import { RecordTabs } from "../shared/record-tabs";
 import { OfficialWalletDestinationManager } from "../finance/official-wallet-destination-manager";
 import { RecordIndicator } from "../shared/record-indicator";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 import { useWalletProviders, type WalletProviderOption } from "../wallet-provider/use-wallet-providers";
 
 type LatestStore = Readonly<{ storeId: string; storeName: string; joiningCaseId: string; createdAt: string }>;
@@ -294,7 +295,6 @@ type FieldAdmissionRosterProps = Readonly<{
   onCityFilterChange: (value: string) => void;
   onAccessFilterChange: (value: string) => void;
   onResetServerFilters: () => void;
-  onRefresh: () => void;
   onNextPage: () => void;
   onPreviousPage: () => void;
   onCandidateNameChange: (admissionId: string, value: FieldProfileDraft) => void;
@@ -312,7 +312,7 @@ function FieldEmptyRoster({ query, pageScoped }: Readonly<{ query: string; pageS
 }
 
 function FieldAdmissionRoster(props: FieldAdmissionRosterProps) {
-  const { items, query, cityFilter, accessFilter, notice, error, loading, cursor, previousPageKnown, nextCursor, busy, feedbackActorId, serviceCities, walletProviders, candidateEdits, accountProfileDrafts, reasons, acquisitionCases, acquisitionCaseErrors, acquisitionCaseBusy, onQueryChange, onCityFilterChange, onAccessFilterChange, onResetServerFilters, onRefresh, onNextPage, onPreviousPage, onCandidateNameChange, onCandidateMutate, onAccountProfileDraftChange, onReasonChange, onAccountMutate, onLoadAcquisitionCases } = props;
+  const { items, query, cityFilter, accessFilter, notice, error, loading, cursor, previousPageKnown, nextCursor, busy, feedbackActorId, serviceCities, walletProviders, candidateEdits, accountProfileDrafts, reasons, acquisitionCases, acquisitionCaseErrors, acquisitionCaseBusy, onQueryChange, onCityFilterChange, onAccessFilterChange, onResetServerFilters, onNextPage, onPreviousPage, onCandidateNameChange, onCandidateMutate, onAccountProfileDraftChange, onReasonChange, onAccountMutate, onLoadAcquisitionCases } = props;
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [admissionFilter, setAdmissionFilter] = useState("");
   const [activityFilter, setActivityFilter] = useState("");
@@ -433,7 +433,7 @@ function FieldAdmissionRoster(props: FieldAdmissionRosterProps) {
         </fieldset>
       </details>
       {hasFilters ? <button type="button" className="button button-secondary" onClick={() => { onResetServerFilters(); setAdmissionFilter(""); setActivityFilter(""); setStoreFilter(""); setStoreQuery(""); setJourneyFilter(""); setJourneyQuery(""); setProviderFilter(""); }}>مسح البحث والمرشحات</button> : null}
-      <button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={onRefresh}>{loading ? "جارٍ التحديث…" : "تحديث السجل"}</button>
+
     </div>
     {notice && !feedbackActorId ? <output className="success-inline">{notice}</output> : null}{error && !feedbackActorId ? <p className="identity-error" role="alert">{error}</p> : null}
     {loading && items.length === 0 ? <output>جارٍ قراءة سجل الميدانيين…</output> : null}
@@ -445,7 +445,6 @@ function FieldAdmissionRoster(props: FieldAdmissionRosterProps) {
           <caption className="visually-hidden">سجل الميدانيين، افتح الملف لمراجعة بيانات الميداني وإدارتها</caption>
           <thead><tr>
             <RegistryColumnHeader label="الميداني" active={Boolean(query || sortBy === "name" && sortDirection === "desc")} scope="page">
-              <label>بحث بالهاتف<input type="search" inputMode="tel" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="رقم الهاتف" /></label>
               {sortButton("name", "الميداني")}
             </RegistryColumnHeader>
             <RegistryColumnHeader label="الأهلية" active={Boolean(admissionFilter)} scope="page">
@@ -609,6 +608,7 @@ export function FieldAdmissionPanel() {
     const timer = window.setTimeout(() => { void load(); }, 250);
     return () => window.clearTimeout(timer);
   }, [load, navigationVersion]);
+  useReadOnReturn(() => load(), navigationVersion > 0 && !loading && !busy && !feedbackActorId);
   useEffect(() => {
     const syncQuery = (event?: PopStateEvent) => {
       const params = new URLSearchParams(window.location.search);
@@ -803,7 +803,7 @@ export function FieldAdmissionPanel() {
     <header className="field-workbench-heading">
       <details className="field-create-disclosure"><summary className="button button-primary">إنشاء ملف ميداني</summary><div className="field-create-content"><div className="access-card-heading"><h3>ملف ميداني جديد</h3><p className="muted">ملف للمراجعة؛ إنشاء حساب الدخول بعد الاعتماد.</p></div><form className="access-form" noValidate onSubmit={(event) => { event.preventDefault(); void createProfile(); }}><label className="field-label" htmlFor="field-candidate-name">الاسم الكامل بالعربية<input id="field-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} /></label><label className="field-label" htmlFor="field-candidate-phone">رقم الجوال<input id="field-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="مثال: 777 765 432 أو +967 777 765 432" aria-invalid={Boolean(phone.trim()) && !candidatePhoneValid} aria-describedby="field-candidate-phone-help" /><span id="field-candidate-phone-help" className={phone.trim() && !candidatePhoneValid ? "identity-error" : "muted"}>{phone.trim() && !candidatePhoneValid ? "أدخل رقمًا يمنيًا صحيحًا، محليًا مثل 777 765 432 أو دوليًا مثل +967 777 765 432." : "يُستخدم هذا الرقم لإثبات الهاتف وتفعيل الدخول، ثم لتسجيل الدخول اليومي."}</span></label><label className="field-label" htmlFor="field-candidate-wallet-provider">مزوّد المحفظة الذي حدده الميداني<select id="field-candidate-wallet-provider" value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)} disabled={Boolean(busy) || walletProvidersLoading || Boolean(walletProvidersError)}><option value="">اختر محفظة رسمية</option>{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select><small>المزوّد فقط؛ لا تدخل رقم محفظة أو اسمًا قانونيًا.</small></label>{walletProvidersError ? <p className="identity-error" role="alert">{walletProvidersError}</p> : null}<label className="field-label" htmlFor="field-candidate-all-cities"><input id="field-candidate-all-cities" type="checkbox" checked={allServiceCities} onChange={(event) => setAllServiceCities(event.target.checked)} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)} /> جميع المدن النشطة، بما فيها المدن التي ستضاف لاحقًا</label>{!allServiceCities ? <label className="field-label" htmlFor="field-candidate-cities">مدن الخدمة<select id="field-candidate-cities" multiple value={serviceCityIds} onChange={(event) => setServiceCityIds(Array.from(event.currentTarget.selectedOptions, (option) => option.value))} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)}>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label> : null}{serviceCitiesError ? <p className="identity-error" role="alert">{serviceCitiesError}</p> : null}<button type="submit" className="button button-primary" disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError) || walletProvidersLoading || Boolean(walletProvidersError) || !candidateNameValid || !candidatePhoneValid || !candidateProviderValid || !candidateCityValid}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ للمراجعة"}</button></form></div></details>
     </header>
-    <FieldAdmissionRoster items={items} query={query} cityFilter={cityFilter} accessFilter={accessFilter} notice={notice} error={error} loading={loading} cursor={cursor} previousPageKnown={previousPageKnown} nextCursor={nextCursor} busy={busy} feedbackActorId={feedbackActorId} serviceCities={serviceCities} walletProviders={walletProviders} candidateEdits={candidateEdits} accountProfileDrafts={accountProfileDrafts} reasons={reasons} acquisitionCases={acquisitionCases} acquisitionCaseErrors={acquisitionCaseErrors} acquisitionCaseBusy={acquisitionCaseBusy} onQueryChange={updateQuery} onCityFilterChange={updateCityFilter} onAccessFilterChange={updateAccessFilter} onResetServerFilters={resetServerFilters} onRefresh={() => { setFeedbackActorId(""); void load(); }} onNextPage={nextPage} onPreviousPage={previousPage} onCandidateNameChange={(id, value) => setCandidateEdits((current) => ({ ...current, [id]: value }))} onCandidateMutate={mutateCandidate} onAccountProfileDraftChange={(id, version, draft) => setAccountProfileDrafts((current) => ({ ...current, [id]: { version, draft } }))} onReasonChange={(id, value) => setReasons((current) => ({ ...current, [id]: value }))} onAccountMutate={mutateAccount} onLoadAcquisitionCases={loadAcquisitionCases} />
+    <FieldAdmissionRoster items={items} query={query} cityFilter={cityFilter} accessFilter={accessFilter} notice={notice} error={error} loading={loading} cursor={cursor} previousPageKnown={previousPageKnown} nextCursor={nextCursor} busy={busy} feedbackActorId={feedbackActorId} serviceCities={serviceCities} walletProviders={walletProviders} candidateEdits={candidateEdits} accountProfileDrafts={accountProfileDrafts} reasons={reasons} acquisitionCases={acquisitionCases} acquisitionCaseErrors={acquisitionCaseErrors} acquisitionCaseBusy={acquisitionCaseBusy} onQueryChange={updateQuery} onCityFilterChange={updateCityFilter} onAccessFilterChange={updateAccessFilter} onResetServerFilters={resetServerFilters} onNextPage={nextPage} onPreviousPage={previousPage} onCandidateNameChange={(id, value) => setCandidateEdits((current) => ({ ...current, [id]: value }))} onCandidateMutate={mutateCandidate} onAccountProfileDraftChange={(id, version, draft) => setAccountProfileDrafts((current) => ({ ...current, [id]: { version, draft } }))} onReasonChange={(id, value) => setReasons((current) => ({ ...current, [id]: value }))} onAccountMutate={mutateAccount} onLoadAcquisitionCases={loadAcquisitionCases} />
   </section>;
 }
 
