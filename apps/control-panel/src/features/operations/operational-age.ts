@@ -8,11 +8,11 @@ export function operationalAge(state: string, lastChangedAt: string, now: number
   const elapsed = Math.max(0, now - timestamp);
   if (elapsed >= 24 * 60 * 60_000) {
     const days = Math.floor(elapsed / (24 * 60 * 60_000));
-    return { label: `متوقف منذ ${days.toLocaleString("ar-YE")} يوم`, needsReview: true };
+    return { label: `منذ ${days.toLocaleString("ar-YE")} يوم دون تحديث`, needsReview: true };
   }
   if (elapsed >= 60 * 60_000) {
     const hours = Math.floor(elapsed / (60 * 60_000));
-    return { label: `متوقف منذ ${hours.toLocaleString("ar-YE")} ساعة`, needsReview: true };
+    return { label: hours === 1 ? "أكثر من ساعة دون تحديث" : `منذ ${hours.toLocaleString("ar-YE")} ساعة دون تحديث`, needsReview: true };
   }
   if (elapsed >= 30 * 60_000) return { label: "أكثر من 30 دقيقة دون تحديث", needsReview: true };
   return { label: "منذ " + Math.floor(elapsed / 60_000) + " دقيقة", needsReview: false };
