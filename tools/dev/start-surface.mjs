@@ -88,6 +88,21 @@ if(surface.startsWith("app-")){
   });
   if(check.error) throw check.error;
   if(check.status!==0) process.exit(check.status??1);
+
+  // Physical Android devices reach loopback-only local APIs through ADB reverse, not Metro forwarding.
+  const reversedPorts=new Set();
+  for(const key of ["EXPO_PUBLIC_IDENTITY_API_URL","EXPO_PUBLIC_DSH_API_URL"]){
+    const raw=process.env[key]?.trim();
+    if(!raw) continue;
+    const url=new URL(raw);
+    if(url.protocol!=="http:"||!["127.0.0.1","localhost"].includes(url.hostname)||!url.port) continue;
+    if(reversedPorts.has(url.port)) continue;
+    reversedPorts.add(url.port);
+    const mapping=`tcp:${url.port}`;
+    const reverse=spawnSync("adb",["reverse",mapping,mapping],{encoding:"utf8",timeout:4000,windowsHide:true});
+    if(reverse.status===0) console.log(`MOBILE_API_REVERSE=PASS port=${url.port}`);
+    else if(reverse.error?.code!=="ENOENT") console.warn(`MOBILE_API_REVERSE=UNAVAILABLE port=${url.port} reason=${reverse.stderr?.trim()||reverse.error?.message||"device-unavailable"}`);
+  }
 }
 
 const result=spawnSync(process.execPath,args,{
