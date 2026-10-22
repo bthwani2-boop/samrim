@@ -817,7 +817,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           </View>
         </View>
         {availabilitySummary.reason ? <Text accessibilityRole="alert" style={styles.muted}>{availabilitySummary.reason}</Text> : null}
-        {fulfillmentModes.length ? <View style={styles.storeInfoModes} accessibilityLabel="طرق الطلب المتاحة">
+        {fulfillmentModes.length > 1 ? <View style={styles.storeInfoModes} accessibilityLabel="طرق الطلب المتاحة">
           {fulfillmentModes.map((mode) => {
             const orderability = effectiveOrderability.find((item) => item.fulfillmentMode === mode);
             return <Pressable key={mode} accessibilityRole="radio" accessibilityLabel={fulfillmentModeLabel(mode)} accessibilityHint={fulfillmentModeDescription(mode) + " " + orderabilityEta(orderability)} accessibilityState={{ checked: selectedFulfillmentMode === mode }} onPress={() => { setSelectedFulfillmentMode(mode); if (selectedCityID) void saveFulfillmentMode(storeId, selectedCityID, mode); setError(""); }} style={[styles.storeInfoMode, selectedFulfillmentMode === mode && styles.storeInfoModeSelected]}>

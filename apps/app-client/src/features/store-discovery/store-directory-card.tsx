@@ -29,8 +29,7 @@ export function StoreDirectoryCard({
 
   const platformDelivery = modes.includes("BTHWANI_CAPTAIN");
   const partnerDelivery = modes.includes("PARTNER_CAPTAIN");
-  const deliveryLabel = platformDelivery && partnerDelivery ? "توصيل" : platformDelivery ? "توصيل بثواني" : partnerDelivery ? "توصيل المتجر" : "";
-  const modeLabel = [deliveryLabel, modes.includes("CUSTOMER_PICKUP") ? "استلام" : ""].filter(Boolean).join(" · ");
+  const modeLabel = [platformDelivery ? "توصيل بثواني" : "", partnerDelivery ? "توصيل المتجر" : "", modes.includes("CUSTOMER_PICKUP") ? "استلم بنفسك" : ""].filter(Boolean).join(" · ");
 
   const hasRating = store.ratingCount > 0 && Number.isFinite(store.ratingAverage) && store.ratingAverage >= 1 && store.ratingAverage <= 5;
   const ratingValue = hasRating ? store.ratingAverage.toFixed(1) : "";
