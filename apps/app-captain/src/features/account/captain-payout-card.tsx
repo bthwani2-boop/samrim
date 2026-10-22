@@ -1,10 +1,10 @@
 import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { formatMoney, type BeneficiaryPayoutState, settlementIntakeStatusLabel, type SettlementIntake } from "@bthwani/dsh";
+import { formatMoney, type BeneficiaryPayoutState, type SettlementIntake } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
 
@@ -16,6 +16,7 @@ export function CaptainPayoutCard() {
   const authenticated = currentIdentityState().kind === "authenticated";
   const [state, setState] = useState<BeneficiaryPayoutState | null>(null);
   const [amount, setAmount] = useState("");
+  const [showPartial, setShowPartial] = useState(false);
   const [busy, setBusy] = useState(authenticated);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -98,37 +99,65 @@ export function CaptainPayoutCard() {
       setError("تعذّر تأكيد الطلب؛ يمكن إعادة المحاولة بالمرجع نفسه دون تكرار.");
     } finally { setBusy(false); }
   };
-  const destinationReady = state?.destination?.status === "ACTIVE_FOR_PAYOUT" && state.destination.verificationStatus === "VERIFIED";
-  const specifiedIntakeAmount = Number(toAsciiDigits(amount).replace(/[^0-9]/g, ""));
-  const specifiedIntakeReady = Number.isSafeInteger(specifiedIntakeAmount) && specifiedIntakeAmount > 0 && specifiedIntakeAmount <= (state?.eligibleAvailableMinor ?? 0);
-  let payoutControls: ReactNode = null;
-  if (pendingAttempt) {
-    payoutControls = <>
-      <Text style={styles.muted}>هناك طلب صرف سابق لم تُحسم حالته. استعد المحاولة بمعرفها الأصلي قبل إنشاء طلب جديد.</Text>
-      <BthwaniButton busy={busy} label="التحقق من طلب الصرف السابق" onPress={() => void request(pendingAttempt.mode)} />
-    </>;
-  } else if (intake?.status === "REQUESTED") {
-    payoutControls = <Text style={styles.muted}>طلب التسوية قيد مراجعة المالية؛ ستُراجع وجهة التحويل قبل الصرف.</Text>;
-  } else if (state && state.eligibleAvailableMinor > 0) {
-    if (destinationReady) {
-      payoutControls = <>
-        <BthwaniButton busy={busy} label="طلب صرف كامل المستحق" onPress={() => void request("FULL_AVAILABLE")} variant="secondary" />
-        <TextInput accessibilityLabel="مبلغ صرف جزئي بالريال اليمني" keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/[^0-9]/g, ""))} placeholder="مبلغ جزئي اختياري" placeholderTextColor={theme.colorMuted} style={styles.input} />
-        <BthwaniButton busy={busy} disabled={!specifiedIntakeReady} label="طلب مبلغ محدد" onPress={() => void request("SPECIFIED")} variant="secondary" />
-      </>;
-    } else {
-      payoutControls = <>
-        <BthwaniButton busy={busy} label="طلب تسوية من المالية" onPress={() => setConfirmIntakeMode("FULL_AVAILABLE")} variant="secondary" />
-        <TextInput accessibilityLabel="مبلغ تسوية جزئية بالريال اليمني" keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/[^0-9]/g, ""))} placeholder="مبلغ محدد اختياري" placeholderTextColor={theme.colorMuted} style={styles.input} />
-        <BthwaniButton busy={busy} disabled={!specifiedIntakeReady} label="طلب مبلغ محدد" onPress={() => setConfirmIntakeMode("SPECIFIED")} variant="secondary" />
-      </>;
-    }
-  }
-  const intakeConfirmAmount = confirmIntakeMode === "SPECIFIED" ? specifiedIntakeAmount : (state?.eligibleAvailableMinor ?? 0);
-  const intakeConfirmDescription = confirmIntakeMode && state
-    ? `سيصل طلب تسوية بمبلغ ${formatMoney(intakeConfirmAmount, state.currency)} إلى قسم المالية. لا ينشئ الطلب حجزًا أو تحويلًا ماليًا؛ يلزم التحقق من وجهة الصرف.`
-    : "";
-  return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="طلب تسوية الكابتن"><Text style={styles.eyebrow}>التسوية المالية</Text><Text style={styles.title}>تسوية مستحقات الكابتن</Text>{busy && !state ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة حالة التسوية…</Text></View> : null}{state ? <><Text style={styles.muted}>{destinationReady ? `الوجهة المعتمدة: ${state.destination?.walletIdentifierMasked}` : "لا توجد وجهة محفظة رسمية معتمدة بعد؛ تتم إدارتها من لوحة التحكم."}</Text><View style={styles.metrics}><Text style={styles.metric}>المتاح للتسوية: {formatMoney(state.eligibleAvailableMinor, state.currency)}</Text><Text style={styles.metric}>المحجوز: {formatMoney(state.heldMinor, state.currency)}</Text></View>{payoutControls}</> : null}{intake ? <Text style={styles.muted}>حالة الطلب: {settlementIntakeStatusLabel(intake)}{intake.payoutReference ? ` · المرجع: ${intake.payoutReference}` : ""}</Text> : null}{notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}{authenticated ? <BthwaniButton busy={busy} label="تحديث حالة التسوية" onPress={() => void load()} variant="secondary" /> : null}<BthwaniConfirmDialog busy={busy} visible={Boolean(confirmIntakeMode)} title="مراجعة طلب التسوية" confirmLabel="تأكيد طلب التسوية" description={intakeConfirmDescription} onCancel={() => setConfirmIntakeMode(null)} onConfirm={() => { const mode = confirmIntakeMode; setConfirmIntakeMode(null); if (mode) void requestIntake(mode); }} /></BthwaniSurface>;
+  const destinationReady = state?.destination?.status === "ACTIVE_FOR_PAYOUT" &&
+    state.destination.verificationStatus === "VERIFIED";
+  const eligible = state?.eligibleAvailableMinor ?? 0;
+  const partialAmount = Number(toAsciiDigits(amount).replace(/[^0-9]/g, ""));
+  const partialReady = Number.isSafeInteger(partialAmount) && partialAmount > 0 && partialAmount <= eligible;
+  const blocked = busy || intake?.status === "REQUESTED";
+  const initiate = (mode: "FULL_AVAILABLE" | "SPECIFIED") => {
+    if (destinationReady) void request(mode);
+    else setConfirmIntakeMode(mode);
+  };
+  return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="سحب أرباح الكابتن">
+    <View style={styles.heading}>
+      <Text style={styles.title}>سحب الأرباح</Text>
+      {busy && !state ? <ActivityIndicator color={theme.actionBackground} /> : null}
+    </View>
+    {state ? <>
+      <Text style={styles.eligible}>{formatMoney(eligible, state.currency)}</Text>
+      {intake?.status === "REQUESTED" ? <Text style={styles.muted}>الطلب قيد المراجعة</Text> :
+      pendingAttempt ? <BthwaniButton busy={busy} label="متابعة الطلب" onPress={() => void request(pendingAttempt.mode)} /> :
+      eligible > 0 ? <>
+        <BthwaniButton busy={busy} disabled={blocked} label="طلب سحب الأرباح"
+          onPress={() => initiate("FULL_AVAILABLE")} />
+        <Pressable accessibilityRole="button" accessibilityState={{expanded:showPartial}}
+          onPress={() => setShowPartial((value) => !value)} style={styles.partialToggle}>
+          <Text style={styles.muted}>{showPartial ? "إخفاء المبلغ الجزئي −" : "مبلغ جزئي +"}</Text>
+        </Pressable>
+        {showPartial ? <>
+          <TextInput accessibilityLabel="مبلغ سحب أرباح جزئي" keyboardType="number-pad"
+            value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/[^0-9]/g, ""))}
+            placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted}
+            style={styles.input} />
+          <BthwaniButton busy={busy} disabled={blocked || !partialReady}
+            label="طلب المبلغ" variant="secondary"
+            onPress={() => initiate("SPECIFIED")} />
+        </> : null}
+      </> : <Text style={styles.muted}>لا توجد أرباح قابلة للسحب</Text>}
+    </> : null}
+    {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
+    {error ? <><Text accessibilityRole="alert" style={styles.error}>{error}</Text>
+      <BthwaniButton label="إعادة المحاولة" disabled={busy} onPress={() => void load()} variant="secondary" /></> : null}
+    <BthwaniConfirmDialog busy={busy} visible={Boolean(confirmIntakeMode)}
+      title="طلب سحب الأرباح"
+      description={state ? formatMoney(confirmIntakeMode==="SPECIFIED"?partialAmount:eligible,state.currency):""}
+      confirmLabel="تأكيد الطلب"
+      onCancel={() => setConfirmIntakeMode(null)}
+      onConfirm={() => { const mode=confirmIntakeMode; setConfirmIntakeMode(null); if(mode) void requestIntake(mode); }} />
+  </BthwaniSurface>;
 }
 
-function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ card: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] }, eyebrow: { ...typography.label, color: theme.interactiveText }, title: { ...typography.titleSm, color: theme.color }, loading: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, metrics: { gap: spacing[1] }, metric: { ...typography.bodySm, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, padding: spacing[3], textAlign: "left", writingDirection: "ltr" }, notice: { ...typography.bodySm, color: theme.interactiveText }, error: { ...typography.bodySm, color: theme.warning } }); }
+function createStyles(theme: ReturnType<typeof resolveTheme>) {
+  return StyleSheet.create({
+    card: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    heading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    title: { ...typography.titleSm, color: theme.color },
+    eligible: { ...typography.titleLg, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
+    partialToggle: { minHeight: 44, justifyContent: "center" },
+    input: { ...typography.bodySm, color: theme.color, borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.md, minHeight: 48, paddingHorizontal: spacing[3] },
+    notice: { ...typography.bodySm, color: theme.interactiveText },
+    error: { ...typography.bodySm, color: theme.warning },
+  });
+}

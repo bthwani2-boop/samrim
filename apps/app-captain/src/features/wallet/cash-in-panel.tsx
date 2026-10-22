@@ -1,6 +1,6 @@
 import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { formatMoney, cashInSimulatorMutationHeaders, cashInSimulatorOptions, cashInSimulatorStateMatches, type CashInSimulatorOutcome, type BeneficiaryWalletResponse, type CashInFundingIntent } from "@bthwani/dsh";
+import { formatMoney, cashInSimulatorMutationHeaders, cashInSimulatorOptions, cashInSimulatorStateMatches, type CashInSimulatorOutcome, type BeneficiaryWalletResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -23,6 +23,8 @@ export function CaptainCashInPanel() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [simulatorOutcome, setSimulatorOutcome] = useState<CashInSimulatorOutcome>("SUCCESS");
+  const [showCharge, setShowCharge] = useState(false);
+  const [showTestOptions, setShowTestOptions] = useState(false);
   const load = useCallback(async () => {
     setBusy(true); setError("");
     try {
@@ -115,30 +117,73 @@ export function CaptainCashInPanel() {
 
   const state = wallet?.state;
   const simulatorInDevelopment = Boolean(__DEV__ && state?.simulator);
-  const latest = (wallet?.fundingIntents ?? []).filter((intent) => simulatorInDevelopment || intent.providerKey !== "DEVELOPMENT_SIMULATOR");
   const userCanAddFunds = Boolean(state?.cashInEnabled && (!state.simulator || simulatorInDevelopment));
-  const userHasPending = Boolean(pending);
-  const fundingStateLabel = (value: CashInFundingIntent["state"]) => ({ PENDING_PROVIDER: "بانتظار تأكيد الدفع", UNKNOWN: "جارٍ التحقق من الدفع", SETTLED: "تم الدفع", FAILED: "لم يكتمل الدفع" })[value];
+  const currentAmount = Number(toAsciiDigits(amount).replace(/[^0-9]/g, ""));
   return <BthwaniSurface tone="base" style={styles.panel} accessibilityLabel="شحن رصيد الكابتن">
-    <Text style={styles.title}>شحن رصيد الكابتن</Text><Text style={styles.muted}>يُستخدم الرصيد المتاح لتسوية المبالغ المعتمدة. لا ينطبق الشحن على كابتن المتجر.</Text>
-    {busy && !wallet ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الرصيد…</Text></View> : null}
-    {state ? <View style={styles.balance}><Text style={styles.label}>المتاح</Text><Text style={styles.amount}>{formatMoney(state.availableMinor, state.currency)}</Text><Text style={styles.muted}>الرصيد الدفتري {formatMoney(state.ledgerBalanceMinor, state.currency)} · المحجوز {formatMoney(state.heldMinor, state.currency)}</Text></View> : null}
-    {simulatorInDevelopment ? <View style={styles.simSection}>
-      <Text style={styles.notice}>محاكي WLT — دون دفع حقيقي</Text>
-      <View accessibilityLabel="نتيجة شحن الكابتن التجريبي" style={styles.simOptions}>
-        {cashInSimulatorOptions.map((option) => <Pressable key={option.outcome} accessibilityRole="radio"
-          accessibilityState={{ selected: simulatorOutcome === option.outcome }} onPress={() => setSimulatorOutcome(option.outcome)}
-          style={[styles.simOption, simulatorOutcome === option.outcome && styles.simOptionSelected]}>
-          <Text style={styles.label}>{option.label}</Text>
-        </Pressable>)}
-      </View>
-    </View> : null}
-    {userCanAddFunds ? <><TextInput accessibilityLabel="مبلغ شحن محفظة الكابتن" editable={!userHasPending && !busy} keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/[^0-9]/g, ""))} placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} disabled={busy} label={simulatorInDevelopment ? userHasPending ? "متابعة المحاكاة" : "شحن تجريبي" : userHasPending ? "متابعة طلب الشحن" : "شحن الرصيد"} onPress={() => void createIntent()} /></> : <Text style={styles.muted}>الشحن غير متاح حاليًا.</Text>}
-    {userHasPending ? <Text style={styles.notice}>طلب شحن بقيمة {formatMoney(pending!.amountMinor, "YER")} بانتظار التأكيد.</Text> : null}
-    {latest.length ? <View style={styles.history}><Text style={styles.label}>آخر طلبات الشحن</Text>{latest.slice(0, 5).map((intent) => <View key={intent.id} style={styles.row}><Text style={styles.muted}>{fundingStateLabel(intent.state)}</Text><Text style={styles.rowAmount}>{formatMoney(intent.amountMinor, intent.currency)}</Text></View>)}</View> : null}
-    {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    <BthwaniButton busy={busy} disabled={busy} label="تحديث بيانات المحفظة" onPress={() => void load()} variant="secondary" />
+    <Text style={styles.title}>الرصيد المتاح</Text>
+    {busy && !wallet ? <ActivityIndicator color={theme.actionBackground} /> : null}
+    {state ? <>
+      <Text style={styles.amount}>{formatMoney(state.availableMinor, state.currency)}</Text>
+      {state.heldMinor > 0 ? <Text style={styles.muted}>محجوز: {formatMoney(state.heldMinor, state.currency)}</Text> : null}
+    </> : null}
+    {userCanAddFunds ? <>
+      <Pressable accessible accessibilityRole="button"
+        accessibilityLabel={showCharge || pending ? "إغلاق نموذج الشحن" : "إضافة رصيد"}
+        disabled={busy || Boolean(pending)} onPress={() => setShowCharge((value) => !value)}
+        style={styles.toggle}>
+        <Text style={styles.label}>{showCharge || pending ? "إغلاق الشحن −" : "+ شحن الرصيد"}</Text>
+      </Pressable>
+      {showCharge || pending ? <>
+        <TextInput accessibilityLabel="مبلغ الشحن بالريال اليمني"
+          editable={!busy && !pending} keyboardType="number-pad"
+          placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted}
+          value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/[^0-9]/g, ""))}
+          style={styles.input} />
+        {!pending ? <View style={styles.presets}>{[1000,5000,10000].map((value) =>
+          <Pressable key={value} accessibilityRole="button" disabled={busy}
+            onPress={() => setAmount(String(value))}
+            style={[styles.preset,currentAmount===value && styles.presetActive]}>
+            <Text style={styles.label}>{value.toLocaleString("en-US")}</Text>
+          </Pressable>)}</View> : null}
+        {simulatorInDevelopment ? <>
+          <Pressable accessibilityRole="button" accessibilityState={{expanded:showTestOptions}}
+            onPress={() => setShowTestOptions((value) => !value)} style={styles.testToggle}>
+            <Text style={styles.muted}>خيارات الاختبار {showTestOptions?"−":"+"}</Text>
+          </Pressable>
+          {showTestOptions ? <View style={styles.options}>
+            {cashInSimulatorOptions.map((item) => <Pressable key={item.outcome}
+              accessibilityRole="radio" accessibilityState={{selected:simulatorOutcome===item.outcome}}
+              onPress={() => setSimulatorOutcome(item.outcome)} style={styles.preset}>
+              <Text style={styles.label}>{item.label}</Text>
+            </Pressable>)}
+          </View> : null}
+        </> : null}
+        <BthwaniButton busy={busy} disabled={busy || (!pending && (!Number.isSafeInteger(currentAmount) || currentAmount<=0))}
+          label={pending ? "متابعة الشحن" : simulatorInDevelopment ? "شحن تجريبي" : "تأكيد الشحن"}
+          onPress={() => void createIntent()} />
+      </> : null}
+    </> : state ? <Text style={styles.muted}>الشحن غير متاح</Text> : null}
+    {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
+    {error ? <><Text accessibilityRole="alert" style={styles.error}>{error}</Text>
+      <BthwaniButton label="إعادة المحاولة" disabled={busy} onPress={() => void load()} variant="secondary" /></> : null}
   </BthwaniSurface>;
 }
 
-function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ simSection: { gap: spacing[2] }, simOptions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] }, simOption: { alignItems: "center", justifyContent: "center", borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.md, minHeight: 44, padding: spacing[2], width: "47%" }, simOptionSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText }, panel: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] }, title: { ...typography.titleSm, color: theme.color }, label: { ...typography.label, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, balance: { borderColor: theme.borderColor, borderBottomWidth: borders.hairline, gap: spacing[1], paddingBottom: spacing[3] }, amount: { ...typography.titleLg, color: theme.color }, input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, padding: spacing[3], textAlign: "left", writingDirection: "ltr" }, loading: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, history: { gap: spacing[2] }, row: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", justifyContent: "space-between", paddingTop: spacing[2] }, rowAmount: { ...typography.bodySm, color: theme.color }, notice: { ...typography.bodySm, color: theme.interactiveText }, error: { ...typography.bodySm, color: theme.warning } }); }
+function createStyles(theme: ReturnType<typeof resolveTheme>) {
+  return StyleSheet.create({
+    panel: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    title: { ...typography.bodySm, color: theme.colorMuted },
+    amount: { ...typography.titleLg, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
+    label: { ...typography.bodyStrong, color: theme.color },
+    toggle: { backgroundColor: theme.actionSoft, borderRadius: radius.md, minHeight: 44, paddingHorizontal: spacing[3], justifyContent: "center" },
+    input: { ...typography.bodySm, color: theme.color, borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.md, minHeight: 48, paddingHorizontal: spacing[3] },
+    presets: { flexDirection: "row", gap: spacing[2] },
+    preset: { flex: 1, borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.md, padding: spacing[2], minHeight: 44, justifyContent: "center", alignItems: "center" },
+    presetActive: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
+    testToggle: { minHeight: 44, justifyContent: "center" },
+    options: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    notice: { ...typography.bodySm, color: theme.interactiveText },
+    error: { ...typography.bodySm, color: theme.warning },
+  });
+}
