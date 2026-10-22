@@ -8,7 +8,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { orderJourneyPresentation } from "./order-journey";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
-import { matchesOrderFilters, matchesOrderStatus } from "./order-list-filter";
+import { matchesOrderFilters, matchesOrderStatus, type OrderFulfillmentFilter } from "./order-list-filter";
 import { isClientActorScopeCurrent } from "./order-session-scope";
 
 type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string; nextCursor: string } | { kind: "error" } | { kind: "auth_required" };
@@ -42,7 +42,7 @@ export default function ClientOrders() {
   const [search, setSearch] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [storeIdentity, setStoreIdentity] = useState<Readonly<Record<string, PublicStoreView>>>({});
-  const [fulfillmentFilter, setFulfillmentFilter] = useState<"all" | "delivery" | "pickup">("all");
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<OrderFulfillmentFilter>("all");
   const [repeatingOrderID, setRepeatingOrderID] = useState("");
   const [repeatError, setRepeatError] = useState("");
 
@@ -230,8 +230,9 @@ export default function ClientOrders() {
     </View>
     {filtersOpen ? <View style={styles.filterRow} accessibilityLabel="طريقة استلام الطلب">
       <BthwaniChip label="كل الطرق" selected={fulfillmentFilter === "all"} onPress={() => setFulfillmentFilter("all")} />
-      <BthwaniChip label="توصيل" selected={fulfillmentFilter === "delivery"} onPress={() => setFulfillmentFilter("delivery")} />
-      <BthwaniChip label="استلام بنفسي" selected={fulfillmentFilter === "pickup"} onPress={() => setFulfillmentFilter("pickup")} />
+      <BthwaniChip label="توصيل بثواني" selected={fulfillmentFilter === "bthwani"} onPress={() => setFulfillmentFilter("bthwani")} />
+      <BthwaniChip label="توصيل المتجر" selected={fulfillmentFilter === "store"} onPress={() => setFulfillmentFilter("store")} />
+      <BthwaniChip label="استلم بنفسك" selected={fulfillmentFilter === "pickup"} onPress={() => setFulfillmentFilter("pickup")} />
     </View> : null}
     {repeatError ? <Text accessibilityRole="alert" style={styles.error}>{repeatError}</Text> : null}
     {visibleOrders.length === 0 ? <BthwaniSurface tone="raised" style={styles.emptyState}>
