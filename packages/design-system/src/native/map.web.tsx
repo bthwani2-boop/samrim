@@ -1,9 +1,9 @@
+import type { LayerGroup, Map as LeafletMap } from "leaflet";
 import { useEffect, useRef, useState } from "react";
-import type { Map as LeafletMap, LayerGroup } from "leaflet";
 import type { BthwaniMapProps } from "./map";
 import "leaflet/dist/leaflet.css";
 
-export type { BthwaniMapCoordinate, BthwaniMapMarker, BthwaniMapCircle, BthwaniMapProps } from "./map";
+export type { BthwaniMapCircle, BthwaniMapCoordinate, BthwaniMapMarker, BthwaniMapProps } from "./map";
 
 /** A selectable browser map; Android and iOS continue using react-native-maps. */
 export function BthwaniMap({
@@ -20,7 +20,10 @@ export function BthwaniMap({
   const selectRef = useRef(onSelectCoordinate);
   const [unavailable, setUnavailable] = useState(false);
   const [mapReady, setMapReady] = useState(false);
-  selectRef.current = onSelectCoordinate;
+
+  useEffect(() => {
+    selectRef.current = onSelectCoordinate;
+  }, [onSelectCoordinate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,7 +90,8 @@ export function BthwaniMap({
       } else if (coordinates.length > 1) {
         map.fitBounds(L.latLngBounds(coordinates), { padding: [24, 24], maxZoom: 14, animate: false });
       } else if (coordinates.length === 1) {
-        map.panTo(coordinates[0]!, { animate: false });
+        const onlyCoordinate = coordinates[0];
+        if (onlyCoordinate) map.panTo(onlyCoordinate, { animate: false });
       }
     });
     return () => { cancelled = true; };
