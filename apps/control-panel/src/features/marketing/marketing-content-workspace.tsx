@@ -7,6 +7,7 @@ import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adapti
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { MarketingStateIndicator } from "./marketing-state-indicator";
+import { MarketingBannerPresentation } from "./marketing-banner-presentation";
 import { apiMessage, clearPendingMarketingCreate, dateTimeLocalValue, emptyMediaProvenance, futureDateInput, futureEndDateInput, type PendingDiscoveryContentCreate, persistMarketingCreate, readActiveServiceCities, readDiscoveryContentById, readPendingDiscoveryContentCreate, readPromotionById, sha256File } from "./marketing-workspace";
 
 export function MarketingContentWorkspace() {
@@ -465,6 +466,7 @@ export function MarketingContentWorkspace() {
         {analyticsPanel}
       </AdaptiveRecordPanel> : null}>
     <div className="work-stack" data-testid="marketing-content-workspace">
+      <MarketingBannerPresentation images={(registry?.items ?? []).filter(item => item.kind === "BANNER" && item.state === "PUBLISHED" && Boolean(item.mediaUri)).slice(0, 8).map(item => ({ id: item.id, titleAr: item.titleAr, mediaUri: item.mediaUri }))} />
       {storageError ? <p className="managed-status managed-status-warning" role="alert">{storageError}</p> : null}
       {pendingCreate ? <p className="managed-status managed-status-warning" role="status">{pendingCreateStatusMessage}</p> : null}
       {editorOpen || pendingCreate ? <section className="marketing-editor-mode" aria-label="إنشاء محتوى اكتشاف">

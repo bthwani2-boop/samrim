@@ -492,6 +492,12 @@ paths:
   /dsh/public/promotions:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1promotions"
 
+  /dsh/public/banner-presentation:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1banner-presentation"
+
+  /dsh/operator/marketing/banner-presentation:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1banner-presentation"
+
   /dsh/public/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content"
 
@@ -1261,6 +1267,25 @@ components:
         pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
 
   schemas:
+    BannerPresentation:
+      type: object
+      required: [placement, mode, intervalSeconds, version]
+      properties:
+        placement:
+          type: string
+          enum: [HOME]
+        mode:
+          type: string
+          enum: [STATIC, CINEMATIC, CROSSFADE]
+        intervalSeconds:
+          type: integer
+          minimum: 3
+          maximum: 10
+        version:
+          type: integer
+          minimum: 1
+        updatedByActorId:
+          type: string
     StatusResponse:
       type: object
       required: [service, status]

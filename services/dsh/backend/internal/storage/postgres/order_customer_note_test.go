@@ -11,7 +11,7 @@ func TestOrderCustomerNoteMigrationRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != SchemaVersion || records[len(records)-1].Name != "144_order_customer_notes.sql" {
+	if len(records) != SchemaVersion || records[143].Name != "144_order_customer_notes.sql" {
 		t.Fatalf("unexpected final migration: %+v", records[len(records)-1])
 	}
 }

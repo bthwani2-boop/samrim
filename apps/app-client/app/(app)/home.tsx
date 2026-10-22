@@ -1,5 +1,5 @@
-import { type Href, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { currentIdentityState } from "../../src/bootstrap/identity";
 import StoreDiscovery from "../../src/features/store-discovery/store-discovery";
@@ -18,6 +18,8 @@ export default function ClientHomeRoute() {
   const [searchOpen, setSearchOpen] = useState(routeFocus === "search" || Boolean(routeQuery.trim()));
   const [searchQuery, setSearchQuery] = useState(routeQuery);
   const [searchScope, setSearchScope] = useState<SearchScope>(routeScope === "products" ? "products" : "stores");
+  const [screenActive, setScreenActive] = useState(false);
+  useFocusEffect(useCallback(() => { setScreenActive(true); return () => setScreenActive(false); }, []));
   const isAuthenticated = currentIdentityState().kind === "authenticated";
 
   useEffect(() => {
@@ -50,6 +52,7 @@ export default function ClientHomeRoute() {
         searchQuery={searchQuery}
       />
       <StoreDiscovery
+        isScreenActive={screenActive}
         isAuthenticated={isAuthenticated}
         onRequireAuthentication={!isAuthenticated ? () => router.replace("/?returnTo=/home" as Href) : undefined}
         onSearchOpenChange={setSearchVisibility}

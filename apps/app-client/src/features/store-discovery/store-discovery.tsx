@@ -9,7 +9,7 @@ import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-ana
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { PromotionCard } from "./promotion-card";
 import { StoreDirectoryCard } from "./store-directory-card";
-import { listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
+import { listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, searchPublicCatalog, setFavoriteStore, type BannerPresentation } from "./store-discovery-client";
 
 function activityIcon(nameAr: string, nameEn: string): ComponentProps<typeof BthwaniIcon>["name"] {
   const label = (nameAr + " " + nameEn).toLowerCase();
@@ -50,7 +50,7 @@ function uniqueNearbyAddress(addresses: ReadonlyArray<DeliveryAddress>, cityID: 
   return eligible.length === 1 ? eligible[0] ?? null : null;
 }
 
-export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, searchOpen, searchQuery, searchScope: controlledSearchScope, onSearchOpenChange, onSearchScopeChange, onSearchQueryChange }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; searchOpen?: boolean; searchQuery?: string; searchScope?: "stores" | "products"; onSearchOpenChange?: (open: boolean) => void; onSearchScopeChange?: (scope: "stores" | "products") => void; onSearchQueryChange?: (query: string) => void }) {
+export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, searchOpen, searchQuery, searchScope: controlledSearchScope, isScreenActive = true, onSearchOpenChange, onSearchScopeChange, onSearchQueryChange }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; searchOpen?: boolean; searchQuery?: string; searchScope?: "stores" | "products"; isScreenActive?: boolean; onSearchOpenChange?: (open: boolean) => void; onSearchScopeChange?: (scope: "stores" | "products") => void; onSearchQueryChange?: (query: string) => void }) {
   const router = useRouter();
   const { q: rawQuery, focus: rawFocus, scope: rawScope } = useLocalSearchParams<{ q?: string | string[]; focus?: string | string[]; scope?: string | string[] }>();
   const routeQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
@@ -84,6 +84,19 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const [loadingMoreStores, setLoadingMoreStores] = useState(false);
   const [loadMoreStoresError, setLoadMoreStoresError] = useState(false);
   const [marketing, setMarketing] = useState<{ content: ReadonlyArray<PublicDiscoveryContentView>; promotions: ReadonlyArray<PublicPromotionView>; error: boolean }>({ content: [], promotions: [], error: false });
+  const [bannerPresentation, setBannerPresentation] = useState<BannerPresentation>({ placement: "HOME", mode: "CINEMATIC", intervalSeconds: 5, version: 1 });
+  useEffect(() => {
+    if (!isScreenActive || !selectedCityID) return;
+    let mounted = true;
+    const refresh = () => {
+      void readPublicBannerPresentation().then((next) => {
+        if (mounted) setBannerPresentation(next);
+      }).catch(() => { /* Retain last validated settings while offline. */ });
+    };
+    refresh();
+    const timer = setInterval(refresh, 60_000);
+    return () => { mounted = false; clearInterval(timer); };
+  }, [isScreenActive, selectedCityID]);
   const discoveryLoadRequestID = useRef(0);
   const directoryRequestID = useRef(0);
   const directoryRequestKey = useRef("");
@@ -465,7 +478,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         <BthwaniChip label="المنتجات" selected={searchScope === "products"} onPress={() => { if (onSearchScopeChange) onSearchScopeChange("products"); else router.setParams({ scope: "products" }); }} />
       </View> : null}
 
-      {showHomeMarketing && bannerContent.length ? <DiscoveryMediaCarousel hero cardWidth={carouselCardWidth} items={bannerContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" /> : null}
+      {showHomeMarketing && bannerContent.length ? <DiscoveryMediaCarousel hero screenActive={isScreenActive} presentation={bannerPresentation} cardWidth={carouselCardWidth} items={bannerContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" /> : null}
 
       {taxonomy.verticals.length ? <View style={styles.categoryShortcutBlock} accessibilityLabel="المجالات التجارية الرئيسية">
         <ScrollView accessibilityLabel="المجالات التجارية" contentContainerStyle={styles.activityTiles} horizontal showsHorizontalScrollIndicator={false}>
@@ -843,13 +856,14 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   });
 }
 
-function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label, shortForm = false, hero = false }: { cardWidth: number; items: ReadonlyArray<PublicDiscoveryContentView>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>; onOpen: (item: PublicDiscoveryContentView) => void; label: string; shortForm?: boolean; hero?: boolean }) {
+function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label, shortForm = false, hero = false, screenActive = true, presentation = { placement: "HOME", mode: "CINEMATIC", intervalSeconds: 5, version: 1 } as BannerPresentation }: { cardWidth: number; items: ReadonlyArray<PublicDiscoveryContentView>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>; onOpen: (item: PublicDiscoveryContentView) => void; label: string; shortForm?: boolean; hero?: boolean; screenActive?: boolean; presentation?: BannerPresentation }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [failedMedia, setFailedMedia] = useState<ReadonlySet<string>>(() => new Set());
-  const [focused, setFocused] = useState(false);
   const [foreground, setForeground] = useState(AppState.currentState === "active");
   const [reducedMotion, setReducedMotion] = useState(false);
   const [interacting, setInteracting] = useState(false);
+  const [fadeFromUri, setFadeFromUri] = useState<string | null>(null);
+  const fadeOpacity = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const offset = useRef(Animated.multiply(scrollX, I18nManager.isRTL ? -1 : 1)).current;
@@ -862,7 +876,6 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
   const direction = I18nManager.isRTL ? -1 : 1;
   const activeItem = items[activeIndex];
 
-  useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
   useEffect(() => {
     if (!hero) return;
     let mounted = true;
@@ -888,10 +901,17 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
     if (items.length < 2) return;
     if (resetTimer.current) clearTimeout(resetTimer.current);
     let position = loop ? index + 1 : index;
-    if (loop && activeIndex === items.length - 1 && index === 0) position = items.length + 1;
-    if (loop && activeIndex === 0 && index === items.length - 1) position = 0;
+    const fading = hero && presentation.mode === "CROSSFADE" && !reducedMotion && activeItem && activeIndex !== index;
+    if (fading) {
+      fadeOpacity.stopAnimation();
+      fadeOpacity.setValue(1);
+      setFadeFromUri(activeItem.mediaUri);
+    }
+    if (!fading && loop && activeIndex === items.length - 1 && index === 0) position = items.length + 1;
+    if (!fading && loop && activeIndex === 0 && index === items.length - 1) position = 0;
     setActiveIndex(index);
-    move(position, !reducedMotion);
+    move(position, !reducedMotion && !fading);
+    if (fading) Animated.timing(fadeOpacity, { toValue: 0, duration: 550, useNativeDriver: true }).start(({ finished }) => { if (finished) setFadeFromUri(null); });
     if (loop && (position === 0 || position === items.length + 1)) {
       const expected = position;
       resetTimer.current = setTimeout(() => {
@@ -911,11 +931,11 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
   }
 
   useEffect(() => {
-    if (!hero || !focused || !foreground || reducedMotion || interacting || items.length < 2) return;
+    if (!hero || !screenActive || !foreground || reducedMotion || interacting || presentation.mode === "STATIC" || items.length < 2) return;
     // Autoplay is clock-driven, not dependent on a progress animation completing.
-    const timer = setTimeout(() => choose((activeIndex + 1) % items.length), 5000);
+    const timer = setTimeout(() => choose((activeIndex + 1) % items.length), presentation.intervalSeconds * 1000);
     return () => clearTimeout(timer);
-  }, [hero, activeIndex, items.length, focused, foreground, reducedMotion, interacting, step]);
+  }, [hero, screenActive, activeIndex, items.length, foreground, reducedMotion, interacting, presentation.mode, presentation.intervalSeconds, step]);
 
   return <View accessibilityLabel={activeItem ? label + "، " + activeItem.titleAr + "، " + (activeIndex + 1) + " من " + items.length : label} style={styles.mediaCarousel}>
     <Animated.ScrollView
@@ -943,7 +963,7 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
     >
       {slides.map((item, position) => {
         const inputRange = [(position - 1) * step, position * step, (position + 1) * step];
-        const imageMotion = hero && !reducedMotion ? { transform: [
+        const imageMotion = hero && !reducedMotion && presentation.mode === "CINEMATIC" ? { transform: [
           { scale: offset.interpolate({ inputRange, outputRange: [1.045, 1, 1.045], extrapolate: "clamp" }) },
           { translateX: offset.interpolate({ inputRange, outputRange: [6, 0, -6], extrapolate: "clamp" }) },
         ] } : undefined;
@@ -957,6 +977,7 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
         </Pressable>;
       })}
     </Animated.ScrollView>
+    {hero && presentation.mode === "CROSSFADE" && fadeFromUri ? <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ position: "absolute", top: 0, left: 0, width: cardWidth, height: Math.round(cardWidth / 1.75), borderRadius: radius.lg, overflow: "hidden" }}><Animated.Image source={{ uri: fadeFromUri }} resizeMode="cover" style={{ width: "100%", height: "100%", opacity: fadeOpacity }} /></View> : null}
     {!hero && items.length > 1 ? <View accessibilityLabel={"اختيار الشريحة، " + (activeIndex + 1) + " من " + items.length} style={styles.carouselDots}>
       {items.map((item, index) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={"عرض الشريحة " + (index + 1) + ": " + item.titleAr} accessibilityState={{ selected: index === activeIndex }} hitSlop={12} onPress={() => choose(index)}>
         <View style={[styles.carouselDot, index === activeIndex && styles.carouselDotActive]} />
