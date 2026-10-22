@@ -215,8 +215,8 @@ func transitionCaptainCOD(ctx context.Context, db *sql.DB, input CaptainCODReser
 	wantState := "RELEASED"
 	eventType := "CAPTAIN_COD_RELEASED"
 	if operation == "finalize" {
-		wantState = "FINALIZED"
-		eventType = "CAPTAIN_COD_FINALIZED"
+		wantState = "DEBITED"
+		eventType = "CAPTAIN_COD_DEBITED"
 	}
 	if reservation.State != "ACTIVE" {
 		if reservation.State == wantState {
@@ -228,6 +228,48 @@ func transitionCaptainCOD(ctx context.Context, db *sql.DB, input CaptainCODReser
 		return CaptainCODReservationRecord{}, false, ErrCaptainCODReservationState
 	}
 	if operation == "finalize" {
+		// Collected cash cannot be used to settle an order unless the same
+		// Captain's order earning (and cash receivable) was posted first.
+		var receivableMinor int64
+		err := tx.QueryRowContext(ctx, `SELECT a.cash_amount_minor FROM wlt.payment_intents p
+			JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=p.id AND a.order_id=$2
+			JOIN wlt.partner_order_earnings e ON e.order_id=a.order_id AND e.payment_intent_id=p.id AND e.captain_actor_id=$3
+			WHERE p.id=$1 AND p.state='COLLECTED' AND p.method=$4 AND p.collected_by_actor_id=$3
+			FOR SHARE OF p,a,e`,
+			input.PaymentIntentID, input.OrderID, input.CaptainActorID, domain.MethodCashOnDelivery).Scan(&receivableMinor)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && (receivableMinor <= 0 || receivableMinor != reservation.AmountMinor)) {
+			return CaptainCODReservationRecord{}, false, ErrCaptainCODReservationState
+		}
+		if err != nil {
+			return CaptainCODReservationRecord{}, false, err
+		}
+		// A legacy remittance must never be charged a second time.
+		var remittanceExists bool
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM wlt.cash_remittances WHERE payment_intent_id=$1)", input.PaymentIntentID).Scan(&remittanceExists); err != nil {
+			return CaptainCODReservationRecord{}, false, err
+		}
+		if remittanceExists {
+			return CaptainCODReservationRecord{}, false, ErrCaptainCODReservationState
+		}
+		transactionID, err := newID("ledger")
+		if err != nil {
+			return CaptainCODReservationRecord{}, false, err
+		}
+		// The Captain keeps collected cash. A pair of balanced ledger
+		// entries atomically reduces wallet liability and cash receivable.
+		if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_transactions
+			(id,transaction_type,source_type,source_id,currency,idempotency_key,request_hash,correlation_id)
+			VALUES($1,'CAPTAIN_COD_WALLET_DEBITED','CAPTAIN_COD_WALLET_DEBIT',$2,$3,$4,$5,$6)`,
+			transactionID, reservation.ID, reservation.Currency, "captain-cod-debit:"+hashFacts(reservation.ID), requestHash, input.CorrelationID); err != nil {
+			return CaptainCODReservationRecord{}, false, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries
+			(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency)
+			VALUES($1,1,'liability','CAPTAIN_WALLET','captain',$2,'DEBIT',$3,$4),
+				($1,2,'asset','CAPTAIN_CASH_RECEIVABLE',NULL,NULL,'CREDIT',$3,$4)`,
+			transactionID, reservation.CaptainActorID, reservation.AmountMinor, reservation.Currency); err != nil {
+			return CaptainCODReservationRecord{}, false, err
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE wlt.captain_cod_reservations SET state=$2,finalized_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND state='ACTIVE'`, reservation.ID, wantState); err != nil {
 			return CaptainCODReservationRecord{}, false, err
 		}

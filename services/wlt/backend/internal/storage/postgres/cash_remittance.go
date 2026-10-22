@@ -132,7 +132,7 @@ func validCashLiabilityRegistrySort(sort string) bool {
 }
 
 func cashLiabilityRegistryFilter(search string) (string, []any) {
-	filter := `WHERE p.state='COLLECTED' AND p.method=$1 AND (r.id IS NULL OR r.state='SUBMITTED')`
+	filter := `WHERE p.state='COLLECTED' AND p.method=$1 AND (r.id IS NULL OR r.state='SUBMITTED') AND NOT EXISTS (SELECT 1 FROM wlt.captain_cod_reservations cr WHERE cr.payment_intent_id=p.id AND cr.state='DEBITED')`
 	args := []any{domain.MethodCashOnDelivery}
 	if search != "" {
 		search = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(search)) + "%"
@@ -168,7 +168,7 @@ func cashLiabilityQuery(captainActorID string, limit int) (string, []any) {
 			SUM(p.amount_minor) OVER(), COUNT(*) OVER()
 		FROM wlt.payment_intents p
 		LEFT JOIN wlt.cash_remittances r ON r.payment_intent_id = p.id
-		WHERE p.state='COLLECTED' AND p.method=$1 AND (r.id IS NULL OR r.state='SUBMITTED')`
+		WHERE p.state='COLLECTED' AND p.method=$1 AND (r.id IS NULL OR r.state='SUBMITTED') AND NOT EXISTS (SELECT 1 FROM wlt.captain_cod_reservations cr WHERE cr.payment_intent_id=p.id AND cr.state='DEBITED')`
 	args := []any{domain.MethodCashOnDelivery}
 	if captainActorID != "" {
 		query += ` AND p.collected_by_actor_id=$2`
@@ -255,6 +255,15 @@ func RemitCash(ctx context.Context, db *sql.DB, input RemitCashInput) (CashRemit
 	}
 	if !matchesCaptainCashRemittance(payment, input) {
 		return CashRemittanceRecord{}, false, ErrRemittanceInvalidInput
+	}
+	// The new COD lifecycle settles in-wallet. No new cash remittance may
+	// be created for a payment whose collateral has already been debited.
+	var debited bool
+	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM wlt.captain_cod_reservations WHERE payment_intent_id=$1 AND state='DEBITED')", input.PaymentIntentID).Scan(&debited); err != nil {
+		return CashRemittanceRecord{}, false, err
+	}
+	if debited {
+		return CashRemittanceRecord{}, false, ErrRemittanceState
 	}
 	var remittanceID, existingCaptainID, existingState string
 	err = tx.QueryRowContext(ctx, `SELECT id,captain_actor_id,state FROM wlt.cash_remittances WHERE payment_intent_id=$1 FOR UPDATE`, input.PaymentIntentID).Scan(&remittanceID, &existingCaptainID, &existingState)

@@ -146,7 +146,10 @@ func CreatePayoutIntent(ctx context.Context, db *sql.DB, cipher *DestinationCiph
 		if err != nil {
 			return PayoutRequestRecord{}, false, err
 		}
-		eligible = state.AvailableMinor
+		eligible, err = captainEarningsEligibleForPayout(ctx, tx, input.ActorID, state.AvailableMinor)
+		if err != nil {
+			return PayoutRequestRecord{}, false, err
+		}
 	} else {
 		if input.ActorType == "partner" {
 			if err := enforcePartnerPayoutRecipientReadiness(ctx, tx, input.ActorID); err != nil {
@@ -220,7 +223,10 @@ func ReadPayoutState(ctx context.Context, db *sql.DB, actorType, actorID string)
 			return PayoutStateRecord{}, err
 		}
 		result.HeldMinor = wallet.HeldMinor
-		result.EligibleAvailableMinor = wallet.AvailableMinor
+		result.EligibleAvailableMinor, err = captainEarningsEligibleForPayout(ctx, db, actorID, wallet.AvailableMinor)
+		if err != nil {
+			return PayoutStateRecord{}, err
+		}
 	} else {
 		accountCode := walletAccountCode(actorType)
 		var gross, held int64
@@ -304,4 +310,47 @@ func formatInt64(value int64) string {
 		return "0"
 	}
 	return strings.TrimSpace(strconv.FormatInt(value, 10))
+}
+
+// captainEarningsEligibleForPayout is the single WLT authority for the
+// Captain's withdrawable delivery earnings. Funding is NOT earnings.
+// Both payout holds and completed transfers reduce this allowance. The
+// policy's minimum balance stays in the wallet for dispatch readiness.
+func captainEarningsEligibleForPayout(ctx context.Context, source interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, actorID string, walletAvailable int64) (int64, error) {
+	var minimum int64
+	err := source.QueryRowContext(ctx, "SELECT minimum_available_minor FROM wlt.captain_minimum_balance_policies WHERE state='ACTIVE'").Scan(&minimum)
+	if errors.Is(err, sql.ErrNoRows) {
+		// No configured minimum: do not open withdrawals implicitly.
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if walletAvailable <= minimum {
+		return 0, nil
+	}
+	var earned, completed, pending int64
+	err = source.QueryRowContext(ctx, `SELECT
+		COALESCE(SUM(CASE WHEN t.source_type='ORDER_DELIVERED' AND e.direction='CREDIT' THEN e.amount_minor ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN t.source_type='MANUAL_EXTERNAL_TRANSFER' AND e.direction='DEBIT' THEN e.amount_minor ELSE 0 END),0)
+		FROM wlt.ledger_entries e JOIN wlt.ledger_transactions t ON t.id=e.transaction_id
+		WHERE e.account_code='CAPTAIN_WALLET' AND e.actor_type='captain' AND e.actor_id=$1 AND e.currency='YER'`, actorID).Scan(&earned, &completed)
+	if err != nil {
+		return 0, err
+	}
+	err = source.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.payout_holds WHERE actor_type='captain' AND actor_id=$1 AND status='ACTIVE'", actorID).Scan(&pending)
+	if err != nil {
+		return 0, err
+	}
+	earningsLeft := earned - completed - pending
+	if earningsLeft <= 0 {
+		return 0, nil
+	}
+	aboveMinimum := walletAvailable - minimum
+	if earningsLeft < aboveMinimum {
+		return earningsLeft, nil
+	}
+	return aboveMinimum, nil
 }
