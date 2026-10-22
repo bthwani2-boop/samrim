@@ -1,7 +1,7 @@
 "use client";
 
 
-import { captainAssignmentStateLabel, captainHandoffStateLabel, formatMoney, formatOrderDate, fulfillmentModeLabel, type OperatorOperation, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import { captainAssignmentStateLabel, captainHandoffStateLabel, cashCollectionPartyLabel, formatMoney, formatOrderDate, fulfillmentModeLabel, type OperatorOperation, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -405,7 +405,9 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
             <div><dt>المجموع قبل الخصم</dt><dd>{formatMoney(order.subtotalAmountMinor, order.currency)}</dd></div>
             <div><dt>الخصم</dt><dd>{formatMoney(order.discountMinor, order.currency)}</dd></div>
             <div><dt>الإجمالي</dt><dd>{formatMoney(order.totalAmountMinor, order.currency)}</dd></div>
-            <div><dt>النقد المتبقي عند الاستلام</dt><dd>{formatMoney(order.cashAmountMinor, order.currency)}</dd></div>
+            <div><dt>حصة المحفظة في الطلب</dt><dd>{formatMoney(order.totalAmountMinor - order.cashAmountMinor, order.currency)}</dd></div>
+            <div><dt>النقد المحدد عند إنشاء الطلب</dt><dd>{formatMoney(order.cashAmountMinor, order.currency)}</dd></div>
+            {order.cashAmountMinor > 0 ? <div><dt>جهة التحصيل المتوقعة</dt><dd>{cashCollectionPartyLabel(order.fulfillmentMode)}</dd></div> : null}
           </dl>
         </section>
       )}

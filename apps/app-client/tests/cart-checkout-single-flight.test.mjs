@@ -4,6 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
+import { checkoutWalletAllocation } from "../../../services/dsh/clients/presentation/order-presentation.ts";
 
 // Execute the actual checkout handler with isolated dependencies; no device, API, or DB mutation.
 const source = fs.readFileSync(path.resolve(import.meta.dirname, "../src/features/cart-checkout/cart-checkout.tsx"), "utf8");
@@ -45,9 +46,8 @@ function scenario({ accessToken, persist, submit, recover } = {}) {
     mutationBusy: false,
     state: { kind: "ready", cart: { id: "cart-1", version: 3, lines: [{}] } },
     quote: { kind: "ready", quote: { cartId: "cart-1", storeId: "store-1", cartVersion: 3, addressId: "", fulfillmentMode: "CUSTOMER_PICKUP", promotionCode: "", totalAmountMinor: 200 } },
-    mixedWalletInput: "",
-    paymentChoice: "cash",
-    parseMinorAmount: () => 0,
+    useWalletBalance: false,
+    checkoutWalletAllocation,
     wallet: { kind: "ready", availableMinor: 0 },
     recipient: { mode: "SELF" },
     storeId: "store-1",
@@ -90,6 +90,46 @@ function scenario({ accessToken, persist, submit, recover } = {}) {
   const checkout = vm.runInNewContext(`${runnableQuote}\n${runnableHandler}\ncheckout`, context);
   return { checkout, counts, context };
 }
+
+test("checkout funds the remaining cash automatically from the available wallet", async () => {
+  let accepted;
+  const { checkout, context } = scenario({
+    submit: async (_token, request) => {
+      accepted = request;
+      return { order: { id: "order-wallet-mixed" } };
+    },
+  });
+  context.wallet = { kind: "ready", availableMinor: 80 };
+  context.useWalletBalance = true;
+  await checkout();
+  assert.equal(accepted.expectedTotalAmountMinor, 200);
+  assert.equal(accepted.internalBalanceAmountMinor, 80);
+});
+
+test("checkout can cover the whole amount from wallet without negative cash", async () => {
+  let accepted;
+  const { checkout, context } = scenario({
+    submit: async (_token, request) => {
+      accepted = request;
+      return { order: { id: "order-wallet-full" } };
+    },
+  });
+  context.wallet = { kind: "ready", availableMinor: 500 };
+  context.useWalletBalance = true;
+  await checkout();
+  assert.equal(accepted.internalBalanceAmountMinor, 200);
+});
+
+test("unavailable selected wallet fails before creating a payment attempt", async () => {
+  const { checkout, counts, context } = scenario();
+  context.wallet = { kind: "error" };
+  context.useWalletBalance = true;
+  await checkout();
+  assert.equal(counts.persist, 0);
+  assert.equal(counts.submit, 0);
+  assert.equal(counts.generatedIds, 0);
+  assert.equal(counts.errors.length, 1);
+});
 
 test("rapid taps before session/storage awaits create just one checkout identity", async () => {
   const { checkout, counts } = scenario();

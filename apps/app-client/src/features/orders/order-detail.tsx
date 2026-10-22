@@ -1,6 +1,6 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniMap, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, orderStateLabel, orderPaymentDisclosure } from "@bthwani/dsh";
+import { cashCollectionPartyLabel, createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, orderStateLabel, orderPaymentDisclosure } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -271,6 +271,8 @@ export default function ClientOrderDetail() {
     statusTone = "danger";
   }
   const paymentDisclosure = orderPaymentDisclosure(order);
+  const walletAllocation = order.totalAmountMinor - order.cashAmountMinor;
+  const cashDue = order.paymentState === "REQUIRES_COLLECTION" && !["CANCELLED", "REJECTED"].includes(order.state) && order.cashAmountMinor > 0;
   return (
     <View style={styles.container} accessibilityLabel="تفاصيل الطلب">
       <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى الطلبات" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>طلباتي</Text></Pressable>
@@ -287,6 +289,8 @@ export default function ClientOrderDetail() {
           <Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text>
         </View>
         <Text style={styles.payment} numberOfLines={2}>{paymentDisclosure.amount}</Text>
+        {walletAllocation > 0 ? <Text style={styles.muted}>حصة المحفظة في الطلب: {formatMoney(walletAllocation, order.currency)}</Text> : null}
+        {cashDue ? <Text style={styles.muted}>يُدفع المتبقي إلى: {cashCollectionPartyLabel(order.fulfillmentMode)}</Text> : null}
         {order.state === "CANCELLED" && order.paymentState !== "CANCELLED" ? <Text style={styles.payment}>{paymentDisclosure.status}</Text> : null}
         {order.state === "CREATED" && order.cancellationMode === "CLIENT_BEFORE_ACCEPTANCE" ?
           <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={refreshing || cancelling}
