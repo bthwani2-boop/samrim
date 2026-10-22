@@ -231,6 +231,21 @@ for (const app of apps) {
       console.error(`${app}: Metro cache root is not app-scoped: ${cacheRoot}`);
       failed = true;
     }
+    const packageInfo = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+    const dependencies = { ...packageInfo.dependencies, ...packageInfo.devDependencies };
+    const requiredWatchRoots = new Set([
+      appRoot,
+      path.join(repoRoot, "node_modules"),
+      ...Object.entries(dependencies)
+        .filter(([, version]) => version.startsWith("workspace:"))
+        .map(([name]) => path.dirname(workspacePackages.get(name))),
+    ]);
+    const missingRoots = [...requiredWatchRoots].filter((root) => !metroRuntimeConfig.watchFolders.includes(root));
+    const extraRoots = metroRuntimeConfig.watchFolders.filter((root) => !requiredWatchRoots.has(root));
+    if (missingRoots.length || extraRoots.length) {
+      console.error(`${app}: Metro watch roots must match app dependencies (missing=${missingRoots.join(",")}, extra=${extraRoots.join(",")})`);
+      failed = true;
+    }
   } catch (error) {
     console.error(`${app}: canonical Metro config failed: ${error.message}`);
     failed = true;

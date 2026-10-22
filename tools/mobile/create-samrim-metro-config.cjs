@@ -1,5 +1,6 @@
 "use strict";
 
+const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
@@ -31,6 +32,20 @@ function createSamrimMetroConfig(projectRoot) {
   );
   const { FileStore } = require(fileStorePath);
   const config = getDefaultConfig(absolute);
+  const appPackage = JSON.parse(fs.readFileSync(path.join(absolute, "package.json"), "utf8"));
+  const workspaceDependencies = Object.entries({
+    ...appPackage.dependencies,
+    ...appPackage.devDependencies,
+  })
+    .filter(([, version]) => version.startsWith("workspace:"))
+    .map(([name]) => fs.realpathSync(path.join(absolute, "node_modules", name)));
+  const requiredRoots = new Set([
+    absolute,
+    path.join(path.resolve(absolute, "../.."), "node_modules"),
+    ...workspaceDependencies,
+  ]);
+  // Expo discovers every workspace package; watch only this app and its actual dependencies.
+  config.watchFolders = config.watchFolders.filter((root) => requiredRoots.has(root));
   config.resolver.unstable_enablePackageExports = true;
   config.cacheStores = [new FileStore({ root: getSamrimMetroCacheRoot(absolute) })];
   return config;
