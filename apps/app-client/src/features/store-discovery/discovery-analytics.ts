@@ -1,5 +1,5 @@
 import * as Crypto from "expo-crypto";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "../../bootstrap/compatible-storage";
 import { recordPublicDiscoveryContentEvent } from "./store-discovery-client";
 
 const SESSION_KEY = "bthwani.discovery.analytics.session.v1";

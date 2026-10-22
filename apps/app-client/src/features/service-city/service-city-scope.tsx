@@ -1,7 +1,7 @@
 import { borders, opacity, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { ServiceCity } from "@bthwani/dsh";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "../../bootstrap/compatible-storage";
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { listActiveServiceCities } from "./service-city-client";

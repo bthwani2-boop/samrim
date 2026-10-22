@@ -38,11 +38,12 @@ export function StoreDirectoryCard({
     ? promotionCount === 1 ? "عرض متاح" : `${promotionCount} عروض` : "";
   const serviceLabel = [modeLabel, offerLabel].filter(Boolean).join(" · ");
 
-  return <Pressable
+  return <View style={styles.card}>
+    <Pressable
     accessibilityRole="button"
     accessibilityLabel={[`فتح متجر ${store.name}`, statusLabel, hasRating ? `تقييم ${ratingValue} من خمسة` : "", offerLabel].filter(Boolean).join("، ")}
     onPress={onOpen}
-    style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+    style={({ pressed }) => [styles.cardOpen, pressed && styles.pressed]}
   >
     <View style={styles.logoColumn}>
       <View style={styles.logoFrame}>
@@ -68,6 +69,7 @@ export function StoreDirectoryCard({
       {serviceLabel ? <Text style={styles.service} numberOfLines={1}>{serviceLabel}</Text> : null}
     </View>
 
+    </Pressable>
     <View style={styles.actions}>
       {statusLabel ? <View style={[styles.status, open ? styles.statusOpen : paused ? styles.statusPaused : styles.statusClosed]}>
         <View style={[styles.statusDot, open ? styles.dotOpen : paused ? styles.dotPaused : styles.dotClosed]} />
@@ -85,12 +87,13 @@ export function StoreDirectoryCard({
         <Text style={styles.favoriteGlyph}>{favorite ? "♥" : "♡"}</Text>
       </Pressable>
     </View>
-  </Pressable>;
+  </View>;
 }
 
 function makeStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    card: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: 116, paddingVertical: spacing[2], paddingHorizontal: spacing[2], ...elevation.raised },
+    card: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: 116, paddingVertical: spacing[2], paddingHorizontal: spacing[2], ...elevation.raised, overflow: "hidden" },
+    cardOpen: { alignItems: "center", flex: 1, flexDirection: "row", gap: spacing[2], minWidth: 0, minHeight: 96 },
     logoColumn: { alignItems: "center", alignSelf: "center", gap: spacing[1], width: 84 },
     logoFrame: { alignItems: "center", justifyContent: "center", height: 78, width: 82, borderRadius: radius.md, backgroundColor: theme.surfaceInset, overflow: "hidden" },
     logo: { height: 74, width: 78 },

@@ -2,6 +2,7 @@ import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { AuthenticatedMobileBoundary } from "@bthwani/identity/presentation";
 import { type Href, Tabs, usePathname, useRouter } from "expo-router";
 import { useCallback, useMemo } from "react";
+import { Platform, useWindowDimensions } from "react-native";
 import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession } from "../../src/bootstrap/identity";
 import { PartnerStoreScopeProvider, usePartnerStoreScope } from "../../src/features/partner-onboarding/partner-store-scope-context";
 import { createPartnerTabOptions } from "../../src/shell/partner-shell";
@@ -21,8 +22,10 @@ export default function PartnerAppLayout() {
 
 function PartnerTabs() {
   const theme = useAppearanceTheme();
+  const { width } = useWindowDimensions();
+  const desktopWeb = Platform.OS === "web" && width >= 1024;
   const { authority } = usePartnerStoreScope();
-  const tabOptions = useMemo(() => createPartnerTabOptions(theme, authority.canUse("orders")), [theme, authority]);
+  const tabOptions = useMemo(() => createPartnerTabOptions(theme, authority.canUse("orders"), desktopWeb), [theme, authority, desktopWeb]);
   return <Tabs initialRouteName="orders" screenOptions={tabOptions}>
     <Tabs.Screen name="orders" options={authority.canUse("orders") ? { title: "الطلبات", tabBarAccessibilityLabel: "الطلبات" } : { href: null }} />
     <Tabs.Screen name="products" options={authority.canUse("products") ? { title: "المنتجات", tabBarAccessibilityLabel: "المنتجات" } : { href: null }} />

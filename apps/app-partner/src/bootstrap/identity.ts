@@ -1,5 +1,5 @@
 import * as Crypto from "expo-crypto";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "./compatible-storage";
 import { Platform } from "react-native";
 
 import {
@@ -9,20 +9,14 @@ import {
 export const role = "partner" as const;
 export const surface = "app-partner" as const;
 const namespace = "bthwani.partner";
-const transientWebSession = new Map<string, string>();
 
 const runtime = createManagedMobileIdentityBinding({
   role,
   surface,
   namespace,
   allowDevelopmentSessionFallback: Platform.OS !== "web" && process.env.EXPO_PUBLIC_BTHWANI_AUTH_JOURNEY_PROOF !== "1",
-  // Browser compatibility proof only: keep tokens in memory, never localStorage.
-  // A production web session must be implemented with a secure server-side session.
-  secureStorage: Platform.OS === "web" ? {
-    getItem: async (key) => transientWebSession.get(key) ?? null,
-    setItem: async (key, value) => { transientWebSession.set(key, value); },
-    removeItem: async (key) => { transientWebSession.delete(key); },
-  } : {
+  // Platform storage preserves native keychain and keeps browser tokens in memory.
+  secureStorage: {
     getItem: (key) => SecureStore.getItemAsync(key),
     setItem: (key, value) => SecureStore.setItemAsync(key, value),
     removeItem: (key) => SecureStore.deleteItemAsync(key),

@@ -3,7 +3,7 @@ import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/desi
 import { createDshMobileClient, createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt, type OrderConversationMessageAttempt } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "../../bootstrap/compatible-storage";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { OrderConversationMediaMessage } from "./order-conversation-media";

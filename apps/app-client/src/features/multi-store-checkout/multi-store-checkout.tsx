@@ -3,7 +3,7 @@ import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSectionHeader, BthwaniS
 import { availableCustomerFulfillmentModes, type ClientOpenCartSummary, type CheckoutQuote, type CustomerFulfillmentMode, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type MultiStoreCheckout, type MultiStoreCheckoutRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "../../bootstrap/compatible-storage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";

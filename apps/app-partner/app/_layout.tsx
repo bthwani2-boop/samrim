@@ -1,11 +1,19 @@
 import { AppearanceProvider, useMobileAppearance } from "@bthwani/design-system/native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useEffect } from "react";
+import { Platform } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { appearance } from "../src/bootstrap/appearance";
 
 export default function RootLayout() {
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      document.documentElement.lang = "ar";
+      document.documentElement.dir = "rtl";
+    }
+  }, []);
   return (
     <SafeAreaProvider>
       <AppearanceProvider controller={appearance}>

@@ -1,4 +1,4 @@
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "./compatible-storage";
 
 import { createMobileAppearanceController } from "@bthwani/design-system/native";
 
