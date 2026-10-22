@@ -53,7 +53,8 @@ func validateCustomerPaymentAllocation(i CustomerPaymentAllocationInput) error {
 		!isStoreTypeCommissionMode(i.FulfillmentMode) || strings.TrimSpace(i.Currency) != "YER" || i.CustomerPayableMinor <= 0 {
 		return ErrCustomerPaymentAllocationInvalidInput
 	}
-	if i.FulfillmentMode != "BTHWANI_CAPTAIN" && i.DeliveryFeeMinor != 0 {
+	// Pickup never bears delivery fees. Both captain modes use the same city pricing policy.
+	if i.FulfillmentMode == "CUSTOMER_PICKUP" && i.DeliveryFeeMinor != 0 {
 		return ErrCustomerPaymentAllocationInvalidInput
 	}
 	// Every newly created discounted order needs an explicit, frozen funding

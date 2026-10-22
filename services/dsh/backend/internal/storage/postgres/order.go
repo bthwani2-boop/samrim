@@ -1434,7 +1434,8 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 			return OrderRecord{}, false, err
 		}
 	}
-	requiresDeliveryFee := input.FulfillmentMode == FulfillmentModeBthwaniCaptain
+	// Every delivery uses the shared city policy; customer pickup remains fee-free.
+	requiresDeliveryFee := input.FulfillmentMode == FulfillmentModeBthwaniCaptain || input.FulfillmentMode == FulfillmentModePartnerCaptain
 	if orderSizeBaseUnits <= 0 || (requiresDeliveryFee && input.DeliveryFeeResolver == nil) {
 		return OrderRecord{}, false, ErrDeliveryFeeUnavailable
 	}

@@ -66,19 +66,22 @@ const api = () => {
   return createDshMobileClient(url, { cryptoRandomUUID: () => Crypto.randomUUID() });
 };
 
-export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: PanelMode; onAddFunds?: () => void }) {
+export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMinor = 0, returnToCheckout = false }: {
+  mode?: PanelMode; onAddFunds?: () => void; initialAmountMinor?: number; returnToCheckout?: boolean;
+}) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [wallet, setWallet] = useState<BeneficiaryWalletResponse | null>(null);
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState(() => Number.isSafeInteger(initialAmountMinor) && initialAmountMinor > 0 ? String(initialAmountMinor) : "");
   const [lastSettledAmount,setLastSettledAmount]=useState<number|null>(null);
   const [pending, setPending] = useState<FundingAttempt | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [simulatorOutcome, setSimulatorOutcome] = useState<CashInSimulatorOutcome>("SUCCESS");
+  const [selectedProviderKey, setSelectedProviderKey] = useState("");
   const [providers, setProviders] = useState<ReadonlyArray<WalletProvider>>([]);
   const [providersStatus, setProvidersStatus] = useState<"loading" | "ready" | "error">("loading");
 
@@ -96,7 +99,6 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
   }, []);
 
   useFocusEffect(useCallback(() => {
-    if (mode !== "wallet") return;
     void loadProviders();
     // Focused wallet: refresh the tiny public index, no restart required.
     // Also refresh immediately when Android resumes from the background.
@@ -147,6 +149,10 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
   const createIntent = async () => {
     if (wallet?.state.simulator && !simulatorInDevelopment) {
       setError("المحاكي متاح للتطوير فقط.");
+      return;
+    }
+    if (!pending && (!simulatorInDevelopment || selectedProviderKey !== "DEVELOPMENT_SIMULATOR")) {
+      setError("اختر وسيلة شحن متصلة. المزودون الخارجيون غير مربوطين بعملية الشحن بعد.");
       return;
     }
     const identity = currentIdentityState();
@@ -275,7 +281,10 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
       <Text accessibilityRole="header" style={styles.pageTitle}>تمت إضافة الرصيد التجريبي</Text>
       <Text style={styles.balanceValue}>{formatMoney(lastSettledAmount,"YER")}</Text>
       <Text style={styles.muted}>تمت التسوية في بيئة التطوير دون تحويل أي أموال حقيقية.</Text>
-      <BthwaniButton label="العودة إلى المحفظة" onPress={()=>router.replace("/wallet" as Href)} />
+      <BthwaniButton label={returnToCheckout ? "العودة لتأكيد الطلب" : "العودة إلى المحفظة"} onPress={() => {
+        if (returnToCheckout && router.canGoBack()) router.back();
+        else router.replace("/wallet" as Href);
+      }} />
     </SafeAreaView>;
   }
 
@@ -307,7 +316,22 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
         {!userHasPending && userCanAddFunds ? <View style={styles.amountPresets}>
           {[1000,5000,10000,50000].map((value)=><Pressable key={value} accessibilityRole="button" accessibilityLabel={"اختيار "+value+" ريال"} onPress={()=>setAmount(String(value))} style={[styles.amountPreset,Number(amount)===value && styles.amountPresetSelected]}><Text style={styles.amountPresetText}>{value.toLocaleString("en-US")}</Text></Pressable>)}
         </View> : null}
-        <Text style={styles.methodPrompt}>{simulatorInDevelopment ? "اختبار شحن WLT" : "وسيلة الدفع"}</Text>
+        <Text style={styles.methodPrompt}>مزود الشحن</Text>
+        {providersStatus === "loading" ? <ActivityIndicator accessibilityLabel="جارٍ قراءة مزودي الشحن" color={theme.actionBackground} /> : null}
+        {providersStatus === "ready" && providers.length ? <View style={styles.providersGrid}>
+          {providers.map((provider) => <View key={provider.key} accessible accessibilityLabel={provider.displayNameAr + "، غير متصل بالشحن"} style={[styles.providerItem, styles.providerUnavailable]}>
+            {provider.logoUri ? <Image source={{ uri: providerLogoUri(provider.logoUri) }} style={styles.providerLogo} resizeMode="contain" /> : <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[5]} />}
+            <View style={styles.providerCopy}><Text style={styles.providerName} numberOfLines={1}>{provider.displayNameAr}</Text><Text style={styles.muted}>غير متصل بالشحن</Text></View>
+          </View>)}
+        </View> : null}
+        {providersStatus === "error" ? <BthwaniButton label="إعادة قراءة المزودين" variant="secondary" onPress={() => void loadProviders()} /> : null}
+        {providersStatus === "ready" && !providers.length ? <Text style={styles.muted}>لا يوجد مزود دفع متصل.</Text> : null}
+        {simulatorInDevelopment ? <Pressable accessibilityRole="radio" accessibilityState={{ selected: selectedProviderKey === "DEVELOPMENT_SIMULATOR" }}
+          onPress={() => setSelectedProviderKey("DEVELOPMENT_SIMULATOR")} style={[styles.methodRow, selectedProviderKey !== "DEVELOPMENT_SIMULATOR" && styles.providerUnavailable]}>
+          <Text style={styles.methodTitle}>محاكي WLT — اختبار فقط</Text>
+          <Text style={styles.methodTitle}>{selectedProviderKey === "DEVELOPMENT_SIMULATOR" ? "◉" : "○"}</Text>
+        </Pressable> : null}
+        <Text style={styles.methodPrompt}>{simulatorInDevelopment ? "تأكيد محاكاة الشحن" : "الشحن الإلكتروني"}</Text>
         {simulatorInDevelopment ? <View accessibilityLabel="نتيجة محاكاة الدفع" style={styles.simOptions}>
           {cashInSimulatorOptions.map((option) => <Pressable key={option.outcome} accessibilityRole="radio"
             accessibilityState={{ selected: simulatorOutcome === option.outcome }} onPress={() => setSimulatorOutcome(option.outcome)}
@@ -315,8 +339,8 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
             <Text style={styles.simOptionText}>{option.label}</Text>
           </Pressable>)}
         </View> : null}
-        {userCanAddFunds ? (
-          <View accessible accessibilityLabel="الدفع الإلكتروني محدد" accessibilityRole="radio" accessibilityState={{ selected: true }} style={styles.methodRow}>
+        {userCanAddFunds && !simulatorInDevelopment ? (
+          <View accessible accessibilityLabel="طلب تمويل خارجي — يتطلب الربط الفعلي" style={styles.methodRow}>
             <View style={styles.methodCopy}>
               <View style={styles.methodIcon}><BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} /></View>
               <View style={styles.methodText}>
@@ -337,8 +361,8 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing[3]) }]}>
         <BthwaniButton
           busy={busy}
-          disabled={busy || !userCanAddFunds}
-          label={simulatorInDevelopment ? userHasPending ? "متابعة المحاكاة" : "شحن تجريبي" : userHasPending ? "متابعة الطلب" : "موافق"}
+          disabled={busy || !userCanAddFunds || (!userHasPending && (!simulatorInDevelopment || selectedProviderKey !== "DEVELOPMENT_SIMULATOR"))}
+          label={simulatorInDevelopment ? userHasPending ? "متابعة المحاكاة" : "متابعة شحن تجريبي" : "مزود دفع غير متصل"}
           onPress={() => void createIntent()}
         />
       </View>
@@ -355,6 +379,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     providerItem: { alignItems: "center", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: 64, padding: spacing[3], width: "48%" },
     providerName: { ...typography.bodyStrong, color: theme.color, flex: 1, textAlign: "right" },
     providerLogo:{width:38,height:38,borderRadius:radius.sm,backgroundColor:theme.surface},
+    providerUnavailable: { opacity: 0.7 },
+    providerCopy: { flex: 1, gap: spacing[1] },
     amountPresets:{flexDirection:"row",flexWrap:"wrap",gap:spacing[2]},
     amountPreset:{paddingVertical:spacing[2],paddingHorizontal:spacing[3],borderRadius:radius.md,borderWidth:borders.hairline,borderColor:theme.borderColor,minHeight:44,justifyContent:"center"},
     amountPresetSelected:{backgroundColor:theme.actionSoft,borderColor:theme.interactiveText},

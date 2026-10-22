@@ -8,7 +8,8 @@ export function paymentSplit(totalMinor: number, availableMinor: number | null, 
   if (availableMinor === null || !Number.isSafeInteger(availableMinor) || availableMinor < 0) return null;
   if (choice === "WALLET") return availableMinor >= totalMinor ? { walletMinor: totalMinor, cashMinor: 0 } : null;
   if (choice !== "MIXED" || totalMinor < 2 || availableMinor < 1) return null;
-  // If sufficient for all, deliberately retain a meaningful cash share for mixed payment.
-  const walletMinor = Math.min(availableMinor, totalMinor - 1, availableMinor >= totalMinor ? Math.floor(totalMinor / 2) : totalMinor - 1);
-  return walletMinor > 0 ? { walletMinor, cashMinor: totalMinor - walletMinor } : null;
+  // Mixed is only valid when the wallet cannot cover the full amount.
+  // Apply all available wallet funds and collect the strictly positive remainder in cash.
+  if (availableMinor >= totalMinor) return null;
+  return { walletMinor: availableMinor, cashMinor: totalMinor - availableMinor };
 }

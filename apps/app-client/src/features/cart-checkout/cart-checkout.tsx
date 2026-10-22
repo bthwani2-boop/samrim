@@ -2,7 +2,7 @@ import { borders, radius, type resolveTheme, spacing, typography } from "@bthwan
 import { BthwaniButton, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type Cart, type CatalogStoreOffer, type CheckoutQuote, type CheckoutRequest, cashCollectionPartyLabel, createDshMobileClient, type DeliveryAddress, type FulfillmentMode, formatMoney, formatQuantity, type Order, orderStateLabel, orderPaymentDisclosure } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { type Href, Link, useRouter } from "expo-router";
+import { type Href, Link, useFocusEffect, useRouter } from "expo-router";
 import * as SecureStore from "../../bootstrap/compatible-storage";
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { premiumColors } from "../order-experience/premium-order-ui";
@@ -153,6 +153,11 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
       if (isCurrent()) setWallet({ kind: "error" });
     }
   }, []);
+
+  // A wallet top-up changes the available amount outside this screen.
+  useFocusEffect(useCallback(() => {
+    if (mounted.current) void refreshWallet();
+  }, [refreshWallet]));
 
   const finishCheckout = useCallback(async (orderResult: Order, _accessToken: string, storageKey: string, isCurrent: () => boolean = () => mounted.current) => {
     if (isCurrent()) {
@@ -471,7 +476,19 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
     }
   }
 
-  const allocation = verifiedQuote ? paymentSplit(verifiedQuote.totalAmountMinor, wallet.kind === "ready" ? wallet.availableMinor : null, paymentChoice) : null;
+  const quotedTotalMinor = verifiedQuote?.totalAmountMinor ?? null;
+  const availableWalletMinor = wallet.kind === "ready" ? wallet.availableMinor : null;
+  const walletShortfallMinor = quotedTotalMinor !== null && availableWalletMinor !== null ? Math.max(0, quotedTotalMinor - availableWalletMinor) : null;
+  useEffect(() => {
+    if (quotedTotalMinor === null || availableWalletMinor === null) return;
+    setPaymentChoice((choice) => {
+      if (choice === "MIXED" && availableWalletMinor >= quotedTotalMinor) return "WALLET";
+      if (choice === "MIXED" && availableWalletMinor <= 0) return "CASH";
+      if (choice === "WALLET" && availableWalletMinor < quotedTotalMinor) return "CASH";
+      return choice;
+    });
+  }, [quotedTotalMinor, availableWalletMinor]);
+  const allocation = verifiedQuote ? paymentSplit(verifiedQuote.totalAmountMinor, availableWalletMinor, paymentChoice) : null;
   const selectedBalanceMinor = allocation?.walletMinor ?? null;
   const balanceNeedsRead = paymentChoice !== "CASH" && wallet.kind !== "ready";
   const remainingCashMinor = allocation?.cashMinor ?? null;
@@ -590,22 +607,27 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
               { id: "MIXED", label: "دفع مختلط" },
             ] as const).map((option) => {
               const eligible = paymentSplit(verifiedQuote?.totalAmountMinor ?? 0, wallet.kind === "ready" ? wallet.availableMinor : null, option.id);
-              const unavailable = option.id !== "CASH" && (!verifiedQuote || !eligible);
+              const needsTopUp = option.id === "WALLET" && Boolean(verifiedQuote) && wallet.kind === "ready" && wallet.availableMinor < verifiedQuote!.totalAmountMinor;
+              const unavailable = option.id !== "CASH" && (!verifiedQuote || (!eligible && !needsTopUp));
               const selected = paymentChoice === option.id;
               return <Pressable key={option.id} accessibilityRole="radio"
                 accessibilityLabel={option.label} accessibilityState={{ checked: selected, disabled: mutationBusy || unavailable }}
-                disabled={mutationBusy || unavailable} onPress={() => setPaymentChoice(option.id)}
+                disabled={mutationBusy || unavailable} onPress={() => {
+                  if (needsTopUp) {
+                    router.push(("/wallet-cash-in?amountMinor=" + encodeURIComponent(String(walletShortfallMinor ?? 0)) + "&fromCheckout=1") as Href);
+                  } else {
+                    setPaymentChoice(option.id);
+                  }
+                }}
                 style={[styles.paymentChoice, selected && styles.paymentChoiceSelected, unavailable && styles.paymentChoiceUnavailable]}>
                 <Text style={styles.paymentChoiceTitle}>{selected ? "◉  " : "○  "}{option.label}</Text>
-                {option.id === "WALLET" && unavailable && wallet.kind === "ready" && verifiedQuote ?
-                  <Text style={styles.warning}>الرصيد لا يغطي الإجمالي.</Text> : null}
+                {needsTopUp ? <Text style={styles.toggleLabel}>شحن {formatMoney(walletShortfallMinor ?? 0, "YER")} ←</Text> : null}
               </Pressable>;
             })}
             {!verifiedQuote ? <Text style={styles.muted}>حدد عنوانًا مؤهلًا لاحتساب التوصيل وتفعيل الدفع.</Text> : null}
             {wallet.kind === "loading" ? <Text style={styles.muted}>جارٍ قراءة الرصيد…</Text> : null}
             {wallet.kind === "ready" ? <Text style={styles.muted}>الرصيد المتاح: {formatMoney(wallet.availableMinor, "YER")}</Text> : null}
             {wallet.kind === "error" ? <View><Text accessibilityRole="alert" style={styles.warning}>تعذر قراءة المحفظة؛ يمكن الدفع نقدًا.</Text><BthwaniButton label="إعادة قراءة الرصيد" onPress={() => void refreshWallet()} variant="secondary" /></View> : null}
-            {wallet.kind === "ready" && wallet.availableMinor === 0 ? <Link href={"/wallet-cash-in" as Href} asChild><BthwaniButton label="شحن المحفظة" variant="secondary" /></Link> : null}
             {selectedBalanceMinor !== null && paymentChoice !== "CASH" ? <Text style={styles.muted}>من المحفظة: {formatMoney(selectedBalanceMinor, "YER")}</Text> : null}
             {remainingCashMinor !== null && selectedBalanceMinor !== null && paymentChoice !== "CASH" ? <Text style={styles.total}>نقدًا: {formatMoney(remainingCashMinor, "YER")}</Text> : null}
             {remainingCashMinor !== null && remainingCashMinor > 0 && paymentChoice !== "CASH" ? <Text style={styles.muted}>للتحصيل: {cashCollectionPartyLabel(fulfillmentMode)}</Text> : null}

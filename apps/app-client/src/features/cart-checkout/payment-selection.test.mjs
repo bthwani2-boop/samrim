@@ -11,7 +11,9 @@ test("wallet payment requires enough canonical available balance", () => {
 });
 test("mixed payment divides payable amount without over-allocating", () => {
   assert.deepEqual(paymentSplit(9000, 3000, "MIXED"), { walletMinor: 3000, cashMinor: 6000 });
-  assert.deepEqual(paymentSplit(9000, 10000, "MIXED"), { walletMinor: 4500, cashMinor: 4500 });
+  assert.equal(paymentSplit(9000, 10000, "MIXED"), null);
+  assert.equal(paymentSplit(9000, 9000, "MIXED"), null);
+  assert.deepEqual(paymentSplit(9000, 8999, "MIXED"), { walletMinor: 8999, cashMinor: 1 });
   assert.equal(paymentSplit(9000, 0, "MIXED"), null);
   assert.equal(paymentSplit(1, 1, "MIXED"), null);
 });

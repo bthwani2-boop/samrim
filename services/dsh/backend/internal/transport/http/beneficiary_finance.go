@@ -78,6 +78,10 @@ func (s *BeneficiaryFinanceServer) readOwnWallet(w http.ResponseWriter, r *http.
 		writeWLTFinanceError(w, err)
 		return
 	}
+	if !beneficiaryFinanceActorMatches(actorType, identity.Subject, state.ActorType, state.ActorID) {
+		writeError(w, http.StatusBadGateway, "WLT_ACTOR_MISMATCH", "wallet owner verification failed")
+		return
+	}
 	intents, _, err := s.payment.ListCashInFundingIntents(r.Context(), actorType, identity.Subject, 50)
 	if err != nil {
 		writeWLTFinanceError(w, err)
@@ -187,6 +191,10 @@ func (s *BeneficiaryFinanceServer) readOwnPayoutState(w http.ResponseWriter, r *
 		writeWLTFinanceError(w, err)
 		return
 	}
+	if !beneficiaryFinanceActorMatches(identity.Role, identity.Subject, state.ActorType, state.ActorID) {
+		writeError(w, http.StatusBadGateway, "WLT_ACTOR_MISMATCH", "payout owner verification failed")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"state": state})
 }
 
@@ -219,6 +227,11 @@ func (s *BeneficiaryFinanceServer) createOwnPayoutIntent(w http.ResponseWriter, 
 	payout, replayed, err := s.payment.CreatePayoutIntent(r.Context(), identity.Role, identity.Subject, input.AmountMode, input.AmountMinor, identityFacts, idempotency, correlation)
 	if err != nil {
 		writeWLTFinanceError(w, err)
+		return
+	}
+	if !beneficiaryFinanceActorMatches(identity.Role, identity.Subject, payout.ActorType, payout.ActorID) ||
+		payout.ResolvedAmountMinor <= 0 {
+		writeError(w, http.StatusBadGateway, "WLT_PAYOUT_READBACK_INVALID", "payout ownership and amount verification failed")
 		return
 	}
 	status := http.StatusCreated
@@ -609,4 +622,11 @@ func (s *BeneficiaryFinanceServer) destinationBelongsToActor(w http.ResponseWrit
 		return false
 	}
 	return true
+}
+
+// beneficiaryFinanceActorMatches prevents cross-actor WLT responses from being
+// surfaced to a signed-in beneficiary even if an upstream integration misroutes.
+func beneficiaryFinanceActorMatches(role, actorID, responseRole, responseActorID string) bool {
+	return actorID != "" && role != "" && responseActorID == actorID &&
+		responseRole == role
 }

@@ -4,12 +4,27 @@ import { createDshMobileClient, formatMoney, formatOrderDate, fulfillmentModeLab
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { orderJourneyPresentation } from "./order-journey";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { matchesOrderFilters, matchesOrderStatus, type OrderFulfillmentFilter } from "./order-list-filter";
 import { isClientActorScopeCurrent } from "./order-session-scope";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const statusOptions = [
+  { key: "all", label: "الكل" },
+  { key: "active", label: "نشطة" },
+  { key: "completed", label: "مكتملة" },
+  { key: "cancelled", label: "ملغاة" },
+] as const;
+
+const fulfillmentOptions = [
+  { key: "all", label: "كل الطرق" },
+  { key: "bthwani", label: "توصيل بثواني" },
+  { key: "store", label: "توصيل المتجر" },
+  { key: "pickup", label: "استلم بنفسك" },
+] as const;
 
 type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string; nextCursor: string } | { kind: "error" } | { kind: "auth_required" };
 
@@ -28,6 +43,7 @@ function hasCurrentOrdersActor(actorID: string): boolean {
 
 export default function ClientOrders() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const theme = useAppearanceTheme();
   const premium = premiumColors(theme);
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -45,6 +61,14 @@ export default function ClientOrders() {
   const [fulfillmentFilter, setFulfillmentFilter] = useState<OrderFulfillmentFilter>("all");
   const [repeatingOrderID, setRepeatingOrderID] = useState("");
   const [repeatError, setRepeatError] = useState("");
+  const selectedStatusLabel = statusOptions.find((option) => option.key === statusFilter)?.label ?? "الكل";
+  const selectedFulfillmentLabel = fulfillmentOptions.find((option) => option.key === fulfillmentFilter)?.label ?? "كل الطرق";
+  const filterButtonLabel = statusFilter !== "all" ? selectedStatusLabel : fulfillmentFilter !== "all" ? selectedFulfillmentLabel : "تصفية";
+  const emptyStateTitle = search.trim() || fulfillmentFilter !== "all" ? "لا توجد طلبات مطابقة"
+    : statusFilter === "cancelled" ? "لا توجد طلبات ملغاة"
+    : statusFilter === "completed" ? "لا توجد طلبات مكتملة"
+    : statusFilter === "active" ? "لا توجد طلبات نشطة"
+    : state.kind === "ready" && state.orders.length === 0 ? "لا توجد طلبات بعد" : "لا توجد طلبات مطابقة";
 
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
@@ -211,34 +235,22 @@ export default function ClientOrders() {
 
   return <View style={styles.container} accessibilityLabel="طلباتي">
     <View style={styles.ordersHeader}><Text style={styles.screenTitle}>طلباتي</Text><Pressable accessibilityRole="button" accessibilityLabel="الرجوع" style={styles.backAction} onPress={() => router.back()}><BthwaniIcon name="back" color={premium.text} size={24} /></Pressable></View>
-    <View style={styles.tabs}>
-      {([
-        ["all", "الكل"], ["active", "نشطة"], ["completed", "مكتملة"], ["cancelled", "ملغاة"],
-      ] as const).map(([key, title]) => <Pressable key={key} accessibilityRole="tab"
-        accessibilityState={{ selected: statusFilter === key }} onPress={() => setStatusFilter(key)}
-        style={[styles.tab, statusFilter === key && styles.tabActive]}>
-        <Text style={[styles.tabLabel, statusFilter === key && styles.tabLabelActive]}>{title}</Text>
-      </Pressable>)}
-    </View>
     <View style={styles.searchRow}>
-      <Pressable style={styles.filterButton} accessibilityRole="button" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen((value) => !value)}>
-        <BthwaniIcon name="search" color={premium.orange} size={19} />
-        <Text style={styles.filterLabel}>تصفية</Text>
+      <Pressable style={[styles.filterButton, (statusFilter !== "all" || fulfillmentFilter !== "all") && styles.filterButtonActive]}
+        accessibilityRole="button" accessibilityLabel={`تصفية الطلبات: ${selectedStatusLabel}، ${selectedFulfillmentLabel}`}
+        accessibilityState={{ expanded: filtersOpen }}
+        onPress={() => { Keyboard.dismiss(); setFiltersOpen(true); }}>
+        <Text numberOfLines={1} style={styles.filterLabel}>{filterButtonLabel}</Text>
+        <View style={[styles.filterIndicator, (statusFilter !== "all" || fulfillmentFilter !== "all") && styles.filterIndicatorActive]} />
       </Pressable>
-      <TextInput accessibilityLabel="البحث في طلباتي" style={styles.searchInput} placeholder="البحث في طلباتي..." placeholderTextColor={premium.muted}
-        value={search} onChangeText={setSearch} textAlign="right" />
+      <TextInput accessibilityLabel="البحث في طلباتي" style={styles.searchInput} placeholder="ابحث في طلباتك..." placeholderTextColor={premium.muted}
+        value={search} onChangeText={setSearch} />
     </View>
-    {filtersOpen ? <View style={styles.filterRow} accessibilityLabel="طريقة استلام الطلب">
-      <BthwaniChip label="كل الطرق" selected={fulfillmentFilter === "all"} onPress={() => setFulfillmentFilter("all")} />
-      <BthwaniChip label="توصيل بثواني" selected={fulfillmentFilter === "bthwani"} onPress={() => setFulfillmentFilter("bthwani")} />
-      <BthwaniChip label="توصيل المتجر" selected={fulfillmentFilter === "store"} onPress={() => setFulfillmentFilter("store")} />
-      <BthwaniChip label="استلم بنفسك" selected={fulfillmentFilter === "pickup"} onPress={() => setFulfillmentFilter("pickup")} />
-    </View> : null}
     {repeatError ? <Text accessibilityRole="alert" style={styles.error}>{repeatError}</Text> : null}
     {visibleOrders.length === 0 ? <BthwaniSurface tone="raised" style={styles.emptyState}>
       <BthwaniIcon name="orders" color={premium.orange} size={sizing.iconXl} />
-      <Text style={styles.cardTitle}>{state.orders.length === 0 ? "لا توجد طلبات بعد" : "لا توجد طلبات مطابقة"}</Text>
-      <Text style={styles.muted}>{state.orders.length === 0 ? "ستظهر هنا طلباتك بعد تأكيدها من أي متجر." : "غيّر البحث أو التصفية لعرض طلبات أخرى."}</Text>
+      <Text style={styles.cardTitle}>{emptyStateTitle}</Text>
+      <Text style={styles.muted}>{state.orders.length === 0 && statusFilter === "all" && fulfillmentFilter === "all" && !search.trim() ? "ستظهر طلباتك هنا بعد تأكيدها." : "جرّب تغيير البحث أو التصفية."}</Text>
       <BthwaniButton label={state.orders.length === 0 ? "استكشف المتاجر" : "عرض الكل"} onPress={() => state.orders.length === 0 ? router.push("/home" as Href) : (setSearch(""), setStatusFilter("all"), setFulfillmentFilter("all"))} />
     </BthwaniSurface> : <View style={styles.list}>
       {visibleOrders.map((order) => {
@@ -276,6 +288,41 @@ export default function ClientOrders() {
       {loadMoreError ? <Text accessibilityRole="alert" style={styles.error}>{loadMoreError}</Text> : null}
       <BthwaniButton label="عرض طلبات أقدم" busy={loadingMore} disabled={loadingMore || Boolean(repeatingOrderID)} onPress={() => void loadMore()} variant="secondary" />
     </View> : null}
+    <Modal visible={filtersOpen} transparent animationType="slide" statusBarTranslucent onRequestClose={() => setFiltersOpen(false)}>
+      <View style={styles.modalBackdrop}>
+        <Pressable style={StyleSheet.absoluteFill} accessibilityRole="button" accessibilityLabel="إغلاق التصفية" onPress={() => setFiltersOpen(false)} />
+        <View style={[styles.filterSheet, { paddingBottom: Math.max(insets.bottom, spacing[4]) }]} accessibilityViewIsModal>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>تصفية الطلبات</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="إغلاق التصفية" style={styles.sheetClose} onPress={() => setFiltersOpen(false)}>
+              <BthwaniIcon name="close" size={20} color={premium.muted} />
+            </Pressable>
+          </View>
+          <Text style={styles.sheetSectionTitle}>حالة الطلب</Text>
+          <View style={styles.statusChoices}>
+            {statusOptions.map(({ key, label }) => <Pressable key={key} accessibilityRole="radio"
+              accessibilityState={{ checked: statusFilter === key }} accessibilityLabel={label}
+              style={[styles.statusChoice, statusFilter === key && styles.statusChoiceActive]}
+              onPress={() => { setStatusFilter(key); setFiltersOpen(false); }}>
+              <Text style={[styles.statusChoiceLabel, statusFilter === key && styles.statusChoiceLabelActive]}>{label}</Text>
+              <View style={[styles.statusRadio, statusFilter === key && styles.statusRadioActive]}>
+                {statusFilter === key ? <View style={styles.statusRadioDot} /> : null}
+              </View>
+            </Pressable>)}
+          </View>
+          <Text style={styles.sheetSectionTitle}>طريقة الاستلام</Text>
+          <View style={styles.fulfillmentChoices}>
+            {fulfillmentOptions.map(({ key, label }) => <BthwaniChip key={key} label={label}
+              selected={fulfillmentFilter === key} onPress={() => { setFulfillmentFilter(key); setFiltersOpen(false); }} />)}
+          </View>
+          {(statusFilter !== "all" || fulfillmentFilter !== "all") ? <Pressable accessibilityRole="button"
+            style={styles.resetButton} onPress={() => { setStatusFilter("all"); setFulfillmentFilter("all"); setFiltersOpen(false); }}>
+            <Text style={styles.resetLabel}>مسح التصفية</Text>
+          </Pressable> : null}
+        </View>
+      </View>
+    </Modal>
   </View>;
 }
 
@@ -289,16 +336,31 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     title: { ...typography.titleLg, color: theme.color },
     muted: { ...typography.bodySm, color: premium.muted, textAlign: "right" },
     state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[10], width: "100%" },
-    filterRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
-    tabs: { flexDirection: "row", backgroundColor: premium.surface, padding: 4, borderRadius: 15, borderWidth: 1, borderColor: premium.stroke },
-    tab: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 46, borderRadius: 11 },
-    tabActive: { backgroundColor: premium.soft, borderWidth: 1, borderColor: premium.coral },
-    tabLabel: { ...typography.bodySm, color: premium.muted },
-    tabLabelActive: { color: premium.text, fontWeight: "700" },
     searchRow: { flexDirection: "row", alignItems: "center", gap: spacing[2] },
-    searchInput: { backgroundColor: premium.surface, borderRadius: 13, borderColor: premium.stroke, borderWidth: 1, color: premium.text, flex: 1, paddingHorizontal: 12, minHeight: 48, fontSize: 15 },
-    filterButton: { minWidth: 90, minHeight: 48, paddingHorizontal: spacing[2], flexDirection: "row", gap: spacing[2], alignItems: "center", justifyContent: "center", borderColor: premium.coral, borderWidth: 1, borderRadius: 13 },
-    filterLabel: { ...typography.bodySm, color: premium.orange },
+    searchInput: { backgroundColor: premium.surface, borderRadius: 13, borderColor: premium.stroke, borderWidth: 1, color: premium.text, flex: 1, paddingHorizontal: 12, minHeight: 46, fontSize: 15 },
+    filterButton: { minWidth: 86, maxWidth: 134, minHeight: 46, paddingHorizontal: spacing[3], flexDirection: "row", gap: spacing[2], alignItems: "center", justifyContent: "center", borderColor: premium.stroke, borderWidth: 1, borderRadius: 13 },
+    filterButtonActive: { borderColor: premium.coral, backgroundColor: premium.soft },
+    filterLabel: { ...typography.bodySm, color: premium.orange, fontWeight: "600", flexShrink: 1 },
+    filterIndicator: { width: 8, height: 8, borderRadius: 4, borderColor: premium.muted, borderWidth: 1 },
+    filterIndicatorActive: { backgroundColor: premium.orange, borderColor: premium.orange },
+    modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0, 0, 0, 0.64)" },
+    filterSheet: { maxHeight: "90%", backgroundColor: premium.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: spacing[4], paddingTop: spacing[2], gap: spacing[2] },
+    sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: premium.stroke, alignSelf: "center", marginBottom: spacing[2] },
+    sheetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    sheetTitle: { ...typography.titleSm, color: premium.text },
+    sheetClose: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+    sheetSectionTitle: { ...typography.bodySm, fontWeight: "700", color: premium.muted, marginTop: spacing[2] },
+    statusChoices: { gap: spacing[1] },
+    statusChoice: { minHeight: 44, paddingHorizontal: spacing[3], borderRadius: 12, borderWidth: 1, borderColor: premium.stroke, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    statusChoiceActive: { borderColor: premium.coral, backgroundColor: premium.soft },
+    statusChoiceLabel: { ...typography.bodySm, color: premium.text },
+    statusChoiceLabelActive: { fontWeight: "700", color: premium.orange },
+    statusRadio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1, borderColor: premium.muted, alignItems: "center", justifyContent: "center" },
+    statusRadioActive: { borderColor: premium.orange },
+    statusRadioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: premium.orange },
+    fulfillmentChoices: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    resetButton: { minHeight: 44, alignItems: "center", justifyContent: "center" },
+    resetLabel: { ...typography.bodySm, color: premium.orange },
     error: { ...typography.bodySm, color: theme.danger },
     emptyState: { alignItems: "center", padding: spacing[5], gap: spacing[3], borderRadius: radius.xl, backgroundColor: premium.surface },
     cardTitle: { ...typography.titleSm, color: premium.text, textAlign: "center" },

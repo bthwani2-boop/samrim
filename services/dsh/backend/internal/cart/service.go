@@ -171,9 +171,6 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 		destinationLatitude, destinationLongitude = facts.AddressLatitude, facts.AddressLongitude
 		deliveryPolicyVersion = serviceability.PolicyVersion
 	}
-	if fulfillmentMode == FulfillmentModePartnerCaptain {
-		deliveryPolicyVersion = "NOT_APPLICABLE"
-	}
 
 	subtotal := new(big.Int)
 	orderSize := new(big.Int)
@@ -210,7 +207,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	}
 
 	feeQuote := postgres.DeliveryFeeQuote{FeeMinor: 0, PolicyVersion: "NOT_APPLICABLE"}
-	if fulfillmentMode == FulfillmentModeBthwaniCaptain {
+	if fulfillmentMode != FulfillmentModeCustomerPickup {
 		feeQuote, err = s.quoteDeliveryFee(ctx, postgres.DeliveryFeeQuoteInput{ServiceCityID: serviceCityID, OriginLatitude: originLatitude, OriginLongitude: originLongitude, DestinationLatitude: destinationLatitude, DestinationLongitude: destinationLongitude, OrderSizeBaseUnits: orderSize.Int64()})
 		if err != nil || feeQuote.FeeMinor < 0 || strings.TrimSpace(feeQuote.PolicyVersion) == "" {
 			return CheckoutQuote{}, postgres.ErrDeliveryFeeUnavailable
