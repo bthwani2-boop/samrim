@@ -126,7 +126,7 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
 
 /**
  * @param {string} appKey
- * @param {{ cameraMode?: "barcode", locationMode?: "foreground", maps?: boolean }} options
+ * @param {{ cameraMode?: "barcode", locationMode?: "foreground", maps?: boolean, web?: boolean }} options
  */
 function defineSamrimExpoApp(appKey, options = {}) {
   const app = readMobileConfig(appKey);
@@ -154,7 +154,7 @@ function defineSamrimExpoApp(appKey, options = {}) {
     slug: app.slug,
     entryPoint: "./index.js",
     owner: app.owner,
-    platforms: ["ios", "android"],
+    platforms: options.web ? ["ios", "android", "web"] : ["ios", "android"],
     scheme: app.scheme,
     version: app.version,
     icon: appAsset(appKey, "icon.png"),
