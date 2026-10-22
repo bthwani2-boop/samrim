@@ -817,10 +817,18 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           </View>
         </View>
         {availabilitySummary.reason ? <Text accessibilityRole="alert" style={styles.muted}>{availabilitySummary.reason}</Text> : null}
+        {fulfillmentModes.length === 1 ? <View style={styles.storeInfoModes}>
+          <BthwaniIcon name={fulfillmentModes[0] === "CUSTOMER_PICKUP" ? "account" : fulfillmentModes[0] === "PARTNER_CAPTAIN" ? "store" : "location"} color={theme.interactiveText} size={sizing.iconLg} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.storeInfoModeText}>{fulfillmentModeLabel(fulfillmentModes[0]!)}</Text>
+            <Text style={styles.muted}>الطريقة التي يدعمها المتجر · {orderabilityEta(effectiveOrderability.find((item) => item.fulfillmentMode === fulfillmentModes[0]))}</Text>
+          </View>
+        </View> : null}
         {fulfillmentModes.length > 1 ? <View style={styles.storeInfoModes} accessibilityLabel="طرق الطلب المتاحة">
           {fulfillmentModes.map((mode) => {
             const orderability = effectiveOrderability.find((item) => item.fulfillmentMode === mode);
             return <Pressable key={mode} accessibilityRole="radio" accessibilityLabel={fulfillmentModeLabel(mode)} accessibilityHint={fulfillmentModeDescription(mode) + " " + orderabilityEta(orderability)} accessibilityState={{ checked: selectedFulfillmentMode === mode }} onPress={() => { setSelectedFulfillmentMode(mode); if (selectedCityID) void saveFulfillmentMode(storeId, selectedCityID, mode); setError(""); }} style={[styles.storeInfoMode, selectedFulfillmentMode === mode && styles.storeInfoModeSelected]}>
+              <BthwaniIcon name={mode === "CUSTOMER_PICKUP" ? "account" : mode === "PARTNER_CAPTAIN" ? "store" : "location"} color={theme.interactiveText} size={sizing.iconSm} />
               <Text numberOfLines={2} style={[styles.storeInfoModeText, selectedFulfillmentMode === mode && styles.storeInfoModeTextSelected]}>{fulfillmentModeLabel(mode)}</Text>
             </Pressable>;
           })}

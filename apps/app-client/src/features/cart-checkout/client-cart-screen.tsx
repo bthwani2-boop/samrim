@@ -186,7 +186,7 @@ export default function ClientCartScreen() {
             if (mode !== "CUSTOMER_PICKUP" && addressesState.kind === "idle") void loadAddresses();
           }} />}
         </BthwaniSurface>
-        {fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <BthwaniSurface tone="raised" style={styles.section}>
+        {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} serviceCityId={selectedCityID ?? ""} addresses={addressesState.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} initialPromotionCode={requestedPromotionCode} onFooterChange={updateFooter} checkoutAction={checkoutAction} addressSection={<>{fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <BthwaniSurface tone="raised" style={styles.section}>
           <View style={styles.row}>
             <BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconLg}/>
             <View style={styles.rowCopy}><Text style={styles.sectionTitle}>عنوان التوصيل</Text><Text style={styles.muted} numberOfLines={2}>{chosenAddress ? chosenAddress.addressText : "اختر عنوانًا مؤهلًا لتوصيل الطلب"}</Text></View>
@@ -210,8 +210,7 @@ export default function ClientCartScreen() {
         </BthwaniSurface> : fulfillmentMode === "CUSTOMER_PICKUP" ? <BthwaniSurface tone="raised" style={styles.section}><View style={styles.row}>
           <BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconLg}/>
           <View style={styles.rowCopy}><Text style={styles.sectionTitle}>استلام بنفسي</Text><Text style={styles.muted}>ستظهر تعليمات الاستلام بعد تجهيز الطلب.</Text></View>
-        </View></BthwaniSurface> : <Text accessibilityRole="alert" style={styles.error}>اختر طريقة تنفيذ الطلب أولًا.</Text>}
-        {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} addresses={addressesState.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} initialPromotionCode={requestedPromotionCode} onFooterChange={updateFooter} checkoutAction={checkoutAction}/> : null}
+        </View></BthwaniSurface> : <Text accessibilityRole="alert" style={styles.error}>اختر طريقة تنفيذ الطلب أولًا.</Text>}</>}/> : null}
       </ScrollView>
       {footer ? <PremiumStickyFooter amount={footer.total} label={footer.label} disabled={footer.disabled} busy={footer.busy}
         onPress={() => checkoutAction.current()} /> : null}
