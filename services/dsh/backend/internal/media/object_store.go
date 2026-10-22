@@ -158,7 +158,7 @@ func (s *S3Store) PublicURL(objectKey string) string {
 
 func ValidateObjectKey(objectKey string) error {
 	clean := path.Clean(strings.TrimSpace(objectKey))
-	if clean != objectKey || (!strings.HasPrefix(objectKey, "catalog/products/") && !strings.HasPrefix(objectKey, "catalog/categories/") && !strings.HasPrefix(objectKey, "catalog/verticals/") && !strings.HasPrefix(objectKey, "store-profile/assets/") && !strings.HasPrefix(objectKey, "marketing/discovery-content/")) || strings.Contains(objectKey, "\\") || strings.Contains(objectKey, "..") || len(objectKey) > 512 {
+	if clean != objectKey || (!strings.HasPrefix(objectKey, "catalog/products/") && !strings.HasPrefix(objectKey, "catalog/categories/") && !strings.HasPrefix(objectKey, "catalog/verticals/") && !strings.HasPrefix(objectKey, "store-profile/assets/") && !strings.HasPrefix(objectKey, "marketing/discovery-content/") && !strings.HasPrefix(objectKey, "wallet-providers/logos/")) || strings.Contains(objectKey, "\\") || strings.Contains(objectKey, "..") || len(objectKey) > 512 {
 		return ErrInvalidObjectKey
 	}
 	for _, segment := range strings.Split(objectKey, "/") {
@@ -205,6 +205,17 @@ func KeyForCategoryUpload(categoryID, idempotencyKey, contentSHA256, contentType
 	return fmt.Sprintf("catalog/categories/%s/uploads/%s-%s.%s", categoryID, hex.EncodeToString(keyHash[:]), contentSHA256, extension), nil
 }
 
+func KeyForWalletProviderLogo(providerKey, idempotencyKey, sha, contentType string) (string, error) {
+	if !validPathSegment(providerKey) || !validPathSegment(sha) || len(sha) != 64 || !validContentType(contentType) {
+		return "", ErrInvalidObjectKey
+	}
+	d := sha256.Sum256([]byte(idempotencyKey))
+	ext := "jpg"
+	if contentType == "image/png" {
+		ext = "png"
+	}
+	return fmt.Sprintf("wallet-providers/logos/%s/%s-%s.%s", providerKey, hex.EncodeToString(d[:]), sha, ext), nil
+}
 func KeyForCommerceVerticalUpload(verticalID, idempotencyKey, contentSHA256, contentType string) (string, error) {
 	if !validPathSegment(verticalID) || !validPathSegment(contentSHA256) || len(contentSHA256) != 64 || !validContentType(contentType) {
 		return "", ErrInvalidObjectKey

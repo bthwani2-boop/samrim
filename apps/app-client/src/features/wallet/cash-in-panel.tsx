@@ -5,7 +5,7 @@ import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import * as SecureStore from "../../bootstrap/compatible-storage";
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
@@ -47,6 +47,19 @@ function walletWithFundingIntent(wallet: BeneficiaryWalletResponse, intent: Cash
 
 const attemptKey = (actorID: string) => "bthwani.client.cash-in.pending.v1." + encodeURIComponent(actorID);
 
+// Keep media under the DSH origin reachable by the actual Android device.
+function providerLogoUri(uri: string): string {
+  const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
+  if (!base || !uri) return uri;
+  try {
+    const original = new URL(uri);
+    if (!original.pathname.startsWith("/dsh/catalog/media/wallet-providers/logos/")) return uri;
+    return new URL(original.pathname, base).toString();
+  } catch {
+    return uri;
+  }
+}
+
 const api = () => {
   const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
   if (!url) throw new Error("DSH_BASE_URL_REQUIRED");
@@ -60,6 +73,7 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [wallet, setWallet] = useState<BeneficiaryWalletResponse | null>(null);
   const [amount, setAmount] = useState("");
+  const [lastSettledAmount,setLastSettledAmount]=useState<number|null>(null);
   const [pending, setPending] = useState<FundingAttempt | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
@@ -176,6 +190,14 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
         intent = result.intent;
       }
       if (isTerminalFundingIntent(intent)) {
+        if (intent.state === "SETTLED") {
+          const confirmedWallet = await client.readOwnWallet(token);
+          if (confirmedWallet.state.actorId !== actorID ||
+              !confirmedWallet.fundingIntents.some((entry) => entry.id === intent.id && entry.state === "SETTLED")) {
+            throw new Error("CASH_IN_LEDGER_READBACK_MISMATCH");
+          }
+          setLastSettledAmount(parsedAmount);
+        }
         await SecureStore.deleteItemAsync(attemptKey(actorID));
         setPending(null);
         setNotice(intent.state === "SETTLED" ? "تمت إضافة الرصيد." : "فشل الشحن؛ لم يضاف رصيد.");
@@ -206,17 +228,19 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
           <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} />
         </View>
         <View style={styles.providersSection}>
+          <Text style={styles.muted}>المحافظ الرسمية متاحة للعرض فقط. الشحن التجريبي مستقل عن التحويلات الفعلية.</Text>
           <Text style={styles.providersTitle}>المحافظ المعتمدة</Text>
           {providersStatus === "loading" ? <ActivityIndicator accessibilityLabel="جارٍ قراءة المحافظ المعتمدة" color={theme.actionBackground} /> : null}
           {providersStatus === "ready" && providers.length > 0 ? <View style={styles.providersGrid}>
             {providers.map((provider) => <View key={provider.key} style={styles.providerItem} accessibilityLabel={`مزود محفظة نشط: ${provider.displayNameAr}`}>
-              <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[5]} />
+              {provider.logoUri ? <Image source={{uri:providerLogoUri(provider.logoUri)}} accessibilityLabel={"شعار "+provider.displayNameAr} style={styles.providerLogo} resizeMode="contain" /> : <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[5]} />}
               <Text style={styles.providerName} numberOfLines={2}>{provider.displayNameAr}</Text>
             </View>)}
           </View> : null}
           {providersStatus === "ready" && providers.length === 0 ? <Text style={styles.muted}>لا توجد محافظ معتمدة حاليًا.</Text> : null}
           {providersStatus === "error" ? <BthwaniButton label="تعذر قراءة المحافظ — إعادة المحاولة" onPress={() => void loadProviders()} variant="secondary" /> : null}
         </View>
+        {wallet?.fundingIntents?.length ? <View style={styles.walletCredits}><Text style={styles.creditHeading}>آخر عمليات الشحن</Text>{wallet.fundingIntents.slice(0,5).map((intent)=><View key={intent.id} style={styles.walletCredit}><Text style={styles.creditAmount}>{formatMoney(intent.amountMinor,intent.currency)}</Text><Text style={styles.muted}>{intent.state==="SETTLED"?"تم الشحن":intent.state==="FAILED"?"تعذر الشحن":"قيد المعالجة"}</Text></View>)}</View> : null}
         {recentCompensations.length ? <View style={styles.walletCredits}>
           <Text style={styles.creditHeading}>تعويضات أُضيفت إلى محفظتك</Text>
           {recentCompensations.map((credit) => <View key={credit.id} style={styles.walletCredit}>
@@ -233,6 +257,16 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
         {!state && error ? <BthwaniButton disabled={busy} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}
       </BthwaniSurface>
     );
+  }
+
+  if(mode==="cash-in" && lastSettledAmount!==null){
+    return <SafeAreaView edges={["top"]} style={[styles.cashInScreen,styles.successPage]}>
+      <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[12]} />
+      <Text accessibilityRole="header" style={styles.pageTitle}>تمت إضافة الرصيد التجريبي</Text>
+      <Text style={styles.balanceValue}>{formatMoney(lastSettledAmount,"YER")}</Text>
+      <Text style={styles.muted}>تمت التسوية في بيئة التطوير دون تحويل أي أموال حقيقية.</Text>
+      <BthwaniButton label="العودة إلى المحفظة" onPress={()=>router.replace("/wallet" as Href)} />
+    </SafeAreaView>;
   }
 
   return (
@@ -260,6 +294,9 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
           </View>
         </View>
 
+        {!userHasPending && userCanAddFunds ? <View style={styles.amountPresets}>
+          {[1000,5000,10000,50000].map((value)=><Pressable key={value} accessibilityRole="button" accessibilityLabel={"اختيار "+value+" ريال"} onPress={()=>setAmount(String(value))} style={[styles.amountPreset,Number(amount)===value && styles.amountPresetSelected]}><Text style={styles.amountPresetText}>{value.toLocaleString("en-US")}</Text></Pressable>)}
+        </View> : null}
         <Text style={styles.methodPrompt}>{simulatorInDevelopment ? "اختبار شحن WLT" : "وسيلة الدفع"}</Text>
         {simulatorInDevelopment ? <View accessibilityLabel="نتيجة محاكاة الدفع" style={styles.simOptions}>
           {cashInSimulatorOptions.map((option) => <Pressable key={option.outcome} accessibilityRole="radio"
@@ -307,6 +344,12 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     providersGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: spacing[2] },
     providerItem: { alignItems: "center", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: 64, padding: spacing[3], width: "48%" },
     providerName: { ...typography.bodyStrong, color: theme.color, flex: 1, textAlign: "right" },
+    providerLogo:{width:38,height:38,borderRadius:radius.sm,backgroundColor:theme.surface},
+    amountPresets:{flexDirection:"row",flexWrap:"wrap",gap:spacing[2]},
+    amountPreset:{paddingVertical:spacing[2],paddingHorizontal:spacing[3],borderRadius:radius.md,borderWidth:borders.hairline,borderColor:theme.borderColor,minHeight:44,justifyContent:"center"},
+    amountPresetSelected:{backgroundColor:theme.actionSoft,borderColor:theme.interactiveText},
+    amountPresetText:{...typography.bodySm,color:theme.color},
+    successPage:{alignItems:"center",justifyContent:"center",gap:spacing[5],padding:spacing[4]},
     walletCredits: { gap: spacing[2] },
     walletCredit: { backgroundColor: theme.actionSoft, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] },
     creditHeading: { ...typography.titleSm, color: theme.color, textAlign: "right" },

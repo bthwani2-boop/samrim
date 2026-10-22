@@ -63,3 +63,40 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/wallet-providers/{providerKey}/logo/upload:
+    post:
+      operationId: uploadWalletProviderLogo
+      summary: Store an authorized logo with image provenance and optimistic versioning
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - name: providerKey
+          in: path
+          required: true
+          schema: { type: string, pattern: '^wallet_provider_[a-z0-9_]{2,60}$' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, creator, sourceDescription, rightsStatement, rightsAttested]
+              properties:
+                file: { type: string, format: binary }
+                creator: { type: string }
+                sourceDescription: { type: string }
+                sourceUri: { type: string }
+                rightsStatement: { type: string }
+                rightsUri: { type: string }
+                rightsAttested: { type: string, enum: ['true'] }
+      responses:
+        "200": { description: Logo attached and provider version incremented., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/WalletProviderResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }

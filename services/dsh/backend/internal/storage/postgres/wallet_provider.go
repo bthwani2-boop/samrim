@@ -13,6 +13,7 @@ import (
 type WalletProvider struct {
 	Key                  string
 	DisplayNameAr        string
+	LogoURI              string
 	Active               bool
 	Version              int
 	CreatedAt, UpdatedAt time.Time
@@ -33,7 +34,7 @@ func HashWalletProviderMutation(key, name string, active bool, version int) stri
 }
 
 func ListWalletProviders(ctx context.Context, db *sql.DB, activeOnly bool) ([]WalletProvider, error) {
-	query := `SELECT key,display_name_ar,active,version,created_at,updated_at FROM dsh.wallet_providers`
+	query := `SELECT key,display_name_ar,active,version,created_at,updated_at,logo_uri FROM dsh.wallet_providers`
 	if activeOnly {
 		query += ` WHERE active=true`
 	}
@@ -46,7 +47,7 @@ func ListWalletProviders(ctx context.Context, db *sql.DB, activeOnly bool) ([]Wa
 	items := make([]WalletProvider, 0)
 	for rows.Next() {
 		var p WalletProvider
-		if err := rows.Scan(&p.Key, &p.DisplayNameAr, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.Key, &p.DisplayNameAr, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.LogoURI); err != nil {
 			return nil, err
 		}
 		items = append(items, p)
@@ -115,7 +116,7 @@ func MutateWalletProvider(ctx context.Context, db *sql.DB, key, name string, act
 	fromVersion := 0
 	var fromActive any
 	if expected == 0 {
-		err = tx.QueryRowContext(ctx, `INSERT INTO dsh.wallet_providers(key,display_name_ar,active) VALUES($1,$2,$3) RETURNING key,display_name_ar,active,version,created_at,updated_at`, key, name, active).Scan(&p.Key, &p.DisplayNameAr, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt)
+		err = tx.QueryRowContext(ctx, `INSERT INTO dsh.wallet_providers(key,display_name_ar,active) VALUES($1,$2,$3) RETURNING key,display_name_ar,active,version,created_at,updated_at,logo_uri`, key, name, active).Scan(&p.Key, &p.DisplayNameAr, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.LogoURI)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 				return WalletProviderResult{}, ErrWalletProviderExists
@@ -124,7 +125,7 @@ func MutateWalletProvider(ctx context.Context, db *sql.DB, key, name string, act
 		}
 	} else {
 		event = "wallet_provider_updated"
-		err = tx.QueryRowContext(ctx, `SELECT key,display_name_ar,active,version,created_at,updated_at FROM dsh.wallet_providers WHERE key=$1 FOR UPDATE`, key).Scan(&p.Key, &p.DisplayNameAr, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt)
+		err = tx.QueryRowContext(ctx, `SELECT key,display_name_ar,active,version,created_at,updated_at,logo_uri FROM dsh.wallet_providers WHERE key=$1 FOR UPDATE`, key).Scan(&p.Key, &p.DisplayNameAr, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.LogoURI)
 		if errors.Is(err, sql.ErrNoRows) {
 			return WalletProviderResult{}, ErrWalletProviderNotFound
 		}
@@ -136,7 +137,7 @@ func MutateWalletProvider(ctx context.Context, db *sql.DB, key, name string, act
 		}
 		fromVersion = p.Version
 		fromActive = p.Active
-		err = tx.QueryRowContext(ctx, `UPDATE dsh.wallet_providers SET display_name_ar=$2,active=$3,version=version+1,updated_at=clock_timestamp() WHERE key=$1 RETURNING key,display_name_ar,active,version,created_at,updated_at`, key, name, active).Scan(&p.Key, &p.DisplayNameAr, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt)
+		err = tx.QueryRowContext(ctx, `UPDATE dsh.wallet_providers SET display_name_ar=$2,active=$3,version=version+1,updated_at=clock_timestamp() WHERE key=$1 RETURNING key,display_name_ar,active,version,created_at,updated_at,logo_uri`, key, name, active).Scan(&p.Key, &p.DisplayNameAr, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.LogoURI)
 		if err != nil {
 			return WalletProviderResult{}, err
 		}
@@ -164,7 +165,7 @@ func readWalletProvider(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, key string) (WalletProvider, error) {
 	var p WalletProvider
-	err := q.QueryRowContext(ctx, `SELECT key,display_name_ar,active,version,created_at,updated_at FROM dsh.wallet_providers WHERE key=$1`, key).Scan(&p.Key, &p.DisplayNameAr, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt)
+	err := q.QueryRowContext(ctx, `SELECT key,display_name_ar,active,version,created_at,updated_at,logo_uri FROM dsh.wallet_providers WHERE key=$1`, key).Scan(&p.Key, &p.DisplayNameAr, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.LogoURI)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrWalletProviderNotFound
 	}

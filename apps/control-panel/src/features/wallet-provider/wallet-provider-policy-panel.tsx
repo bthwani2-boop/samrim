@@ -1,7 +1,7 @@
 "use client";
 
 import type { WalletProvider, WalletProviderListResponse } from "../../server/dsh/dsh-bff";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { ActivityIndicator, ActivityLegend } from "../shared/record-indicator";
 import { useReadOnReturn } from "../shared/use-read-on-return";
@@ -28,6 +28,19 @@ export function WalletProviderPolicyPanel() {
   useEffect(() => { if (editingKey) renameInput.current?.focus(); }, [editingKey]);
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [logoKey,setLogoKey]=useState("");
+  const [logoFile,setLogoFile]=useState<File|null>(null);
+  const [logoPreview,setLogoPreview]=useState("");
+  const [logoCreator,setLogoCreator]=useState("");
+  const [logoSource,setLogoSource]=useState("");
+  const [logoRights,setLogoRights]=useState(false);
+  const logoAttempt=useRef<{key:string;name:string;version:number;idem:string}|null>(null);
+  useEffect(()=>{
+    if(!logoFile){setLogoPreview("");return;}
+    const url=URL.createObjectURL(logoFile);setLogoPreview(url);
+    return ()=>URL.revokeObjectURL(url);
+  },[logoFile]);
+
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const returnFocusKey = useRef("");
@@ -102,6 +115,29 @@ export function WalletProviderPolicyPanel() {
     finally { setBusy(false); }
   }
 
+  function closeLogo(){
+    setLogoKey("");setLogoFile(null);setLogoCreator("");setLogoSource("");setLogoRights(false);logoAttempt.current=null;
+  }
+  async function uploadLogo(provider:WalletProvider){
+    if(!canEdit||!logoFile||!logoRights||logoCreator.trim().length<2||logoSource.trim().length<3||busy)return;
+    if(!["image/png","image/jpeg"].includes(logoFile.type)||logoFile.size>10*1024*1024||logoFile.size===0){setError("اختر صورة PNG أو JPG لا تتجاوز 10 ميجابايت.");return;}
+    if(!logoAttempt.current||logoAttempt.current.key!==provider.key||logoAttempt.current.version!==provider.version||logoAttempt.current.name!==logoFile.name){
+      logoAttempt.current={key:provider.key,name:logoFile.name,version:provider.version,idem:crypto.randomUUID()};
+    }
+    setBusy(true);setError("");setNotice("");
+    try{
+      const form=new FormData();
+      form.set("file",logoFile);form.set("creator",logoCreator.trim());form.set("sourceDescription",logoSource.trim());
+      form.set("sourceUri","");form.set("rightsUri","");
+      form.set("rightsStatement","أؤكد حصولي على حق استخدام هذا الشعار وعرضه داخل تطبيقات بثواني.");
+      form.set("rightsAttested","true");
+      const response=await fetch("/api/wallet-providers/"+encodeURIComponent(provider.key)+"/logo",{method:"POST",headers:{"Idempotency-Key":logoAttempt.current.idem,"X-Expected-Version":String(provider.version)},body:form});
+      if(!response.ok)throw new Error("upload");
+      closeLogo();await load();setNotice("تم حفظ شعار المزوّد ويظهر في التطبيقات بعد تحديث بياناتها.");
+    }catch{setError("تعذّر رفع الشعار. تحقق من الصورة والحقوق والإصدار ثم أعد المحاولة.");}
+    finally{setBusy(false);}
+  }
+
   const visibleProviders = providers.filter((provider) => provider.key === editingKey || (provider.displayNameAr.includes(query.trim()) && (!status || provider.active === (status === "active"))));
 
   return <section className="work-stack" aria-label="إدارة مزودي المحافظ">
@@ -137,8 +173,8 @@ export function WalletProviderPolicyPanel() {
             </RegistryColumnHeader>
             <th scope="col">الإجراء</th>
           </tr></thead>
-          <tbody>{visibleProviders.map((provider) => <tr key={provider.key}>
-            <th scope="row">{editingKey === provider.key ? <label className="field-label record-edit-field" htmlFor={`wallet-provider-name-${provider.key}`}>اسم المزوّد<input ref={renameInput} id={`wallet-provider-name-${provider.key}`} maxLength={80} value={renamedValue} disabled={busy || loading} onChange={(event) => setRenamedValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") closeEdit(provider.key); if (event.key === "Enter" && !busy && !loading) { event.preventDefault(); void rename(provider); } }} /></label> : provider.displayNameAr}</th>
+          <tbody>{visibleProviders.map((provider) => <Fragment key={provider.key}><tr>
+            <th scope="row">{editingKey === provider.key ? <label className="field-label record-edit-field" htmlFor={`wallet-provider-name-${provider.key}`}>اسم المزوّد<input ref={renameInput} id={`wallet-provider-name-${provider.key}`} maxLength={80} value={renamedValue} disabled={busy || loading} onChange={(event) => setRenamedValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") closeEdit(provider.key); if (event.key === "Enter" && !busy && !loading) { event.preventDefault(); void rename(provider); } }} /></label> : <span style={{display:"inline-flex",alignItems:"center",gap:10}}>{provider.logoUri ? <img src={provider.logoUri} alt="" width={36} height={36} style={{objectFit:"contain",borderRadius:8}} /> : <span aria-hidden="true">▣</span>}{provider.displayNameAr}</span>}</th>
             <td className="indicator-column"><ActivityIndicator active={provider.active} activeLabel="نشطة" inactiveLabel="متوقفة" /></td>
             <td><div className="action-row">{canEdit ? editingKey === provider.key ? <>
               <button type="button" className="button button-primary" disabled={busy || loading || renamedValue.trim() === provider.displayNameAr} onClick={() => void rename(provider)}>حفظ الاسم</button>
@@ -146,8 +182,37 @@ export function WalletProviderPolicyPanel() {
             </> : <>
               <button id={`wallet-provider-edit-${provider.key}`} type="button" className="button button-secondary" disabled={busy || loading || Boolean(editingKey)} onClick={() => { setEditingKey(provider.key); setRenamedValue(provider.displayNameAr); }}>تعديل</button>
               <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void toggle(provider)}>{provider.active ? "تعطيل" : "تفعيل"}</button>
+              <button type="button" className="button button-secondary" disabled={busy || loading} onClick={()=>{
+                if(logoKey===provider.key){closeLogo();return;}
+                closeLogo();setLogoKey(provider.key);
+              }}>{logoKey===provider.key ? "إغلاق الشعار" : "إدارة الشعار"}</button>
             </> : null}</div></td>
-          </tr>)}{!visibleProviders.length ? <tr><td colSpan={3} className="collection-state">لا توجد محافظ مطابقة.</td></tr> : null}</tbody>
+          </tr>
+          {canEdit && logoKey===provider.key ? <tr><td colSpan={3}>
+            <form className="form-section compact-form" onSubmit={(event)=>{event.preventDefault();void uploadLogo(provider);}} aria-label={"شعار "+provider.displayNameAr}>
+              <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+                {(logoPreview||provider.logoUri) ? <img src={logoPreview||provider.logoUri} width={80} height={80} alt={"معاينة شعار "+provider.displayNameAr} style={{objectFit:"contain",borderRadius:12}} /> : null}
+                <label className="field-label">شعار المزوّد (PNG أو JPG)
+                  <input type="file" accept="image/png,image/jpeg" disabled={busy} required onChange={(e)=>{setLogoFile(e.target.files?.[0]??null);logoAttempt.current=null;}} />
+                </label>
+              </div>
+              <label className="field-label">مالك الشعار أو الجهة المنتجة
+                <input value={logoCreator} maxLength={200} required disabled={busy} onChange={(e)=>{setLogoCreator(e.target.value);logoAttempt.current=null;}} />
+              </label>
+              <label className="field-label">مصدر الشعار
+                <input value={logoSource} maxLength={1000} required disabled={busy} placeholder="الموقع الرسمي أو المصدر المعتمد" onChange={(e)=>{setLogoSource(e.target.value);logoAttempt.current=null;}} />
+              </label>
+              <label className="checkbox-field">
+                <input type="checkbox" checked={logoRights} disabled={busy} onChange={(e)=>{setLogoRights(e.target.checked);logoAttempt.current=null;}} />
+                أقر أن لدي حق رفع هذا الشعار وعرضه في تطبيقات بثواني
+              </label>
+              <div className="action-row">
+                <button type="submit" className="button button-primary" disabled={busy||!logoFile||!logoRights||logoCreator.trim().length<2||logoSource.trim().length<3}>{busy?"جارٍ رفع الشعار…":"حفظ الشعار"}</button>
+                <button type="button" className="button button-secondary" disabled={busy} onClick={closeLogo}>إلغاء</button>
+              </div>
+            </form>
+          </td></tr> : null}
+          </Fragment>)}{!visibleProviders.length ? <tr><td colSpan={3} className="collection-state">لا توجد محافظ مطابقة.</td></tr> : null}</tbody>
         </table>
       </div>
       <ActivityLegend activeLabel="نشطة" inactiveLabel="متوقفة" />

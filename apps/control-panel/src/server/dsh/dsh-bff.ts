@@ -64,7 +64,7 @@ export type StorePublicationMutationContext = DshVersionedMutationContext & Read
 export type DshOperatorReadContext = Readonly<{
   operatorActorId: string;
 }>;
-export type WalletProvider = Readonly<{ key: string; displayNameAr: string; active: boolean; version: number }>;
+export type WalletProvider = Readonly<{ key: string; displayNameAr: string; active: boolean; version: number; logoUri: string }>;
 export type WalletProviderListResponse = Readonly<{ walletProviders: ReadonlyArray<WalletProvider> }>;
 type WalletProviderResponse = Readonly<{ walletProvider: WalletProvider }>;
 
@@ -93,6 +93,15 @@ export async function updateOperatorWalletProvider(providerKey: string, input: R
   const key = providerKey.trim();
   if (!key || key.length > 128) throw new Error("DSH_WALLET_PROVIDER_KEY_INVALID");
   return requestDshJson<WalletProviderResponse>("PATCH", `/dsh/wallet-providers/${encodeURIComponent(key)}`, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function uploadOperatorWalletProviderLogo(providerKey: string,file: File,provenance: MediaProvenanceInput,context: JoiningCaseMutationContext & Readonly<{ expectedVersion: number }>): Promise<Readonly<{status:number;payload:WalletProviderResponse}>> {
+ if(!providerKey.trim() || file.size<1 || file.size>10*1024*1024 || !["image/jpeg","image/png"].includes(file.type) || !isMediaProvenanceInputValid(provenance)) throw new Error("WALLET_PROVIDER_LOGO_INVALID");
+ validateVersionedMutationContext(context);
+ const body=new FormData();
+ body.set("file",file,file.name || "wallet-logo");
+ appendMediaProvenance(body,provenance);
+ return requestDshMultipart<WalletProviderResponse>("POST","/dsh/wallet-providers/"+encodeURIComponent(providerKey.trim())+"/logo/upload",body,{"X-Acting-Actor-ID":context.operatorActorId.trim(),"X-Correlation-ID":context.correlationId.trim(),"X-Expected-Version":String(context.expectedVersion),"Idempotency-Key":context.idempotencyKey.trim()});
 }
 
 export type HREmployee = DshHREmployee;

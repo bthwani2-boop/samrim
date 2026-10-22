@@ -104,7 +104,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	walletProviderServer, err := transporthttp.NewWalletProvider(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	walletProviderServer, err := transporthttp.NewWalletProvider(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, mediaStore)
 	if err != nil {
 		log.Fatal(err)
 	}

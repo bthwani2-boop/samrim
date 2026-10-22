@@ -1,14 +1,21 @@
 package transporthttp
 
 import (
+	"bytes"
+	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
+
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/walletprovider"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
@@ -18,9 +25,10 @@ type WalletProviderServer struct {
 	auth    *auth.ServiceToken
 	service *walletprovider.Service
 	db      *sql.DB
+	media   media.Store
 }
 
-func NewWalletProvider(identity *identityintegration.Client, token string, db *sql.DB) (*WalletProviderServer, error) {
+func NewWalletProvider(identity *identityintegration.Client, token string, db *sql.DB, mediaStore media.Store) (*WalletProviderServer, error) {
 	a, e := auth.NewServiceToken(token)
 	if e != nil {
 		return nil, e
@@ -29,13 +37,14 @@ func NewWalletProvider(identity *identityintegration.Client, token string, db *s
 	if e != nil {
 		return nil, e
 	}
-	return &WalletProviderServer{auth: a, service: s, db: db}, nil
+	return &WalletProviderServer{auth: a, service: s, db: db, media: mediaStore}, nil
 }
 func (s *WalletProviderServer) Register(m *http.ServeMux) {
 	m.HandleFunc("GET /dsh/public/wallet-providers", s.publicList)
 	m.HandleFunc("GET /dsh/wallet-providers", s.list)
 	m.HandleFunc("POST /dsh/wallet-providers", s.create)
 	m.HandleFunc("PATCH /dsh/wallet-providers/{providerKey}", s.update)
+	m.HandleFunc("POST /dsh/wallet-providers/{providerKey}/logo/upload", s.uploadLogo)
 }
 func (s *WalletProviderServer) publicList(w http.ResponseWriter, r *http.Request) {
 	items, e := postgres.ListWalletProviders(r.Context(), s.db, true)
@@ -122,6 +131,85 @@ func (s *WalletProviderServer) update(w http.ResponseWriter, r *http.Request) {
 	}
 	writeWalletProviderResult(w, http.StatusOK, result)
 }
+func (s *WalletProviderServer) uploadLogo(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	actor, corr, idem, version, ok := requiredVersionedCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	if err := s.service.RequirePolicyOperator(r.Context(), actor); err != nil {
+		writeWalletProviderError(w, err)
+		return
+	}
+	if s.media == nil {
+		writeError(w, 503, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+		return
+	}
+	upload, ok := parseCatalogMediaUpload(w, r)
+	if !ok {
+		return
+	}
+	providerKey := strings.TrimSpace(r.PathValue("providerKey"))
+	digest := sha256.Sum256(upload.bytes)
+	sha := hex.EncodeToString(digest[:])
+	key, err := media.KeyForWalletProviderLogo(providerKey, idem, sha, upload.contentType)
+	if err != nil {
+		writeError(w, 400, "INVALID_INPUT", "invalid logo metadata")
+		return
+	}
+	uri := s.media.PublicURL(key)
+	if uri == "" {
+		writeError(w, 503, "MEDIA_STORAGE_UNAVAILABLE", "invalid media public URL")
+		return
+	}
+	input := postgres.WalletProviderLogoInput{ProviderKey: providerKey, ExpectedVersion: version, IdempotencyKey: idem, ActingActorID: actor, CorrelationID: corr, ObjectKey: key, LogoURI: uri, ContentSHA256: sha, ContentType: upload.contentType, Provenance: upload.provenance}
+	replay, match, err := postgres.ReadWalletProviderLogoReplay(r.Context(), s.db, input)
+	if err != nil {
+		writeWalletProviderError(w, err)
+		return
+	}
+	if replay {
+		if !match {
+			writeWalletProviderError(w, postgres.ErrWalletProviderIdempotency)
+			return
+		}
+		p, e := postgres.ReadWalletProvider(r.Context(), s.db, providerKey)
+		if e != nil {
+			writeWalletProviderError(w, e)
+			return
+		}
+		writeWalletProviderResult(w, 200, postgres.WalletProviderResult{Provider: p, Replayed: true})
+		return
+	}
+	current, err := postgres.ReadWalletProvider(r.Context(), s.db, providerKey)
+	if err != nil {
+		writeWalletProviderError(w, err)
+		return
+	}
+	if current.Version != version {
+		writeWalletProviderError(w, postgres.ErrWalletProviderVersion)
+		return
+	}
+	if err = s.media.Put(r.Context(), key, bytes.NewReader(upload.bytes), int64(len(upload.bytes)), upload.contentType); err != nil {
+		writeError(w, 503, "MEDIA_STORAGE_UNAVAILABLE", "image upload failed")
+		return
+	}
+	result, err := postgres.AttachWalletProviderLogo(r.Context(), s.db, input)
+	if err != nil {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+		latest, e := postgres.ReadWalletProvider(cleanup, s.db, providerKey)
+		if e == nil && latest.LogoURI != uri {
+			_ = s.media.Delete(cleanup, key)
+		}
+		cancel()
+		writeWalletProviderError(w, err)
+		return
+	}
+	writeWalletProviderResult(w, 200, result)
+}
+
 func (s *WalletProviderServer) authorize(w http.ResponseWriter, r *http.Request) bool {
 	if !s.auth.Authorized(r) {
 		writeError(w, 401, "UNAUTHENTICATED", "service authentication is required")
@@ -132,13 +220,13 @@ func (s *WalletProviderServer) authorize(w http.ResponseWriter, r *http.Request)
 func writeWalletProviderList(w http.ResponseWriter, items []postgres.WalletProvider) {
 	values := make([]map[string]any, 0, len(items))
 	for _, p := range items {
-		values = append(values, map[string]any{"key": p.Key, "displayNameAr": p.DisplayNameAr, "active": p.Active, "version": p.Version})
+		values = append(values, map[string]any{"key": p.Key, "displayNameAr": p.DisplayNameAr, "active": p.Active, "version": p.Version, "logoUri": p.LogoURI})
 	}
 	writeJSON(w, 200, map[string]any{"walletProviders": values})
 }
 func writeWalletProviderResult(w http.ResponseWriter, status int, r postgres.WalletProviderResult) {
 	p := r.Provider
-	writeJSON(w, status, map[string]any{"walletProvider": map[string]any{"key": p.Key, "displayNameAr": p.DisplayNameAr, "active": p.Active, "version": p.Version}, "idempotentReplay": r.Replayed})
+	writeJSON(w, status, map[string]any{"walletProvider": map[string]any{"key": p.Key, "displayNameAr": p.DisplayNameAr, "active": p.Active, "version": p.Version, "logoUri": p.LogoURI}, "idempotentReplay": r.Replayed})
 }
 func writeWalletProviderError(w http.ResponseWriter, e error) {
 	switch {

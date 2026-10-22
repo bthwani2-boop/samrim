@@ -590,6 +590,9 @@ paths:
   /dsh/public/wallet-providers:
     $ref: "./paths/wallet-provider.yaml#/paths/~1dsh~1public~1wallet-providers"
 
+  /dsh/wallet-providers/{providerKey}/logo/upload:
+    $ref: "./paths/wallet-provider.yaml#/paths/~1dsh~1wallet-providers~1{providerKey}~1logo~1upload"
+
   /dsh/serviceability:
     $ref: "./paths/serviceability.yaml#/paths/~1dsh~1serviceability"
 
@@ -5579,9 +5582,12 @@ components:
 
     WalletProvider:
       type: object
-      required: [key, displayNameAr, active, version]
+      required: [key, displayNameAr, active, version, logoUri]
       additionalProperties: false
       properties:
+        logoUri:
+          type: string
+          description: Validated immutable public media URI, or empty until an authorized logo is uploaded.
         key:
           type: string
           pattern: '^wallet_provider_[a-z0-9_]{2,60}$'

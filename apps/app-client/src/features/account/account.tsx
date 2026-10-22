@@ -59,7 +59,7 @@ export default function ClientAccount() {
       {!isAuthenticated ? <BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/account" as Href)} /> : null}
       <View style={styles.actions}>
         <BthwaniNavigationRow compact description="" icon="orders" title="طلباتي" onPress={() => router.push("/orders" as Href)} />
-        <BthwaniNavigationRow compact description="" icon="wallet" title="محفظتي" onPress={() => router.push("/wallet" as Href)} />
+        <BthwaniNavigationRow compact description="" icon="wallet" title="محفظتي" onPress={() => router.push((isAuthenticated ? "/wallet" : "/?returnTo=/wallet") as Href)} />
         <BthwaniNavigationRow compact description="" icon="location" title="عناوين التوصيل" onPress={() => router.push("/addresses" as Href)} />
         <BthwaniNavigationRow compact description={changingCity ? "جارٍ التغيير…" : cityName} disabled={changingCity} icon="location" title="تغيير المدينة" onPress={() => void changeCity()} />
       </View>
