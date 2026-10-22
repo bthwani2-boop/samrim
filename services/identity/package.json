@@ -9,6 +9,10 @@
       "types": "./clients/index.ts",
       "default": "./clients/index.ts"
     },
+    "./browser-storage": {
+      "types": "./clients/browser-storage.ts",
+      "default": "./clients/browser-storage.ts"
+    },
     "./presentation": {
       "types": "./clients/presentation/ManagedIdentityFlow.tsx",
       "default": "./clients/presentation/ManagedIdentityFlow.tsx"

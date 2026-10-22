@@ -34,7 +34,7 @@ export function createMobileAppearanceController({
     });
   };
   const apply = (preference: ThemePreference) => {
-    Appearance.setColorScheme(preference === "system" ? "unspecified" : preference);
+    if (typeof Appearance.setColorScheme === "function") Appearance.setColorScheme(preference === "system" ? "unspecified" : preference);
   };
   const setSnapshot = (preference: ThemePreference, ready = snapshot.ready) => {
     snapshot = createSnapshot(preference, ready);

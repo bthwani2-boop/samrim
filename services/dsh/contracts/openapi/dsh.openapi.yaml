@@ -653,6 +653,9 @@ paths:
   /dsh/orders/{orderId}/conversation/read:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1conversation~1read"
 
+  /dsh/orders/{orderId}/conversation/messages/{messageId}/media:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1conversation~1messages~1{messageId}~1media"
+
   /dsh/orders/{orderId}/delivery-proof:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1delivery-proof"
 
@@ -6830,7 +6833,7 @@ components:
 
     OrderConversationMessage:
       type: object
-      required: [id, orderId, senderRole, body, createdAt, readAt, mine]
+      required: [id, orderId, senderRole, recipientRoles, body, createdAt, readAt, mine]
       additionalProperties: false
       properties:
         id:
@@ -6843,7 +6846,15 @@ components:
           maxLength: 128
         senderRole:
           type: string
-          enum: [client, partner, captain]
+          enum: [client, partner, captain, operator]
+        recipientRoles:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum: [client, partner, captain, operator]
         body:
           type: string
           minLength: 1
@@ -6858,6 +6869,12 @@ components:
           x-go-pointer: true
         mine:
           type: boolean
+        mediaKind:
+          type: string
+          enum: [image, audio]
+        mediaContentType:
+          type: string
+          maxLength: 64
 
     OrderConversationResponse:
       type: object
@@ -6884,6 +6901,9 @@ components:
         unreadCount:
           type: integer
           minimum: 0
+        nextCursor:
+          type: string
+          maxLength: 128
 
     CreateOrderConversationMessageRequest:
       type: object
@@ -6894,6 +6914,38 @@ components:
           type: string
           minLength: 1
           maxLength: 2000
+        recipientRoles:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum: [client, partner, captain, operator]
+        mediaKind:
+          type: string
+          enum: [image, audio]
+        mediaContentType:
+          type: string
+          maxLength: 64
+        mediaBase64:
+          type: string
+          maxLength: 4194400
+
+    OrderConversationPrivateMediaResponse:
+      type: object
+      required: [mediaKind, contentType, dataBase64]
+      additionalProperties: false
+      properties:
+        mediaKind:
+          type: string
+          enum: [image, audio]
+        contentType:
+          type: string
+          maxLength: 64
+        dataBase64:
+          type: string
+          minLength: 1
 
     OrderConversationMessageResponse:
       type: object

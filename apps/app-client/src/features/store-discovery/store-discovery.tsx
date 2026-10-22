@@ -3,7 +3,7 @@ import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSect
 import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type PublicCommerceVertical, type PublicDiscoveryContentView, type PublicPromotionView, type PublicShoppingShortcut, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, I18nManager, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { FlatList, I18nManager, Image, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
@@ -65,7 +65,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const theme = useAppearanceTheme();
   const { width: viewportWidth } = useWindowDimensions();
   const [discoveryContainerWidth, setDiscoveryContainerWidth] = useState(0);
-  const carouselCardWidth = Math.max(200, Math.min((discoveryContainerWidth || viewportWidth) - spacing[4], 560));
+  const webColumns = Platform.OS === "web" ? (viewportWidth >= 1140 ? 3 : viewportWidth >= 730 ? 2 : 1) : 1;
+  const carouselCardWidth = Math.max(200, Math.min(((discoveryContainerWidth || viewportWidth) - spacing[4]) / (webColumns >= 2 ? 2 : 1), 560));
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<DiscoveryState>({ kind: "loading" });
   const [storeFilter, setStoreFilter] = useState<"all" | "newest" | "nearest" | "favorites">("all");
@@ -443,7 +444,9 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   return (
     <FlatList
-      key={directoryMode ? "store-directory" : "product-search"}
+      key={`${directoryMode ? "store-directory" : "product-search"}-${webColumns}`}
+      numColumns={webColumns}
+      columnWrapperStyle={webColumns > 1 ? styles.storeGridRow : undefined}
       accessibilityLabel={directoryMode ? "اكتشاف المتاجر" : "نتائج البحث"}
       contentContainerStyle={styles.screenContent}
       data={storeRows}
@@ -585,7 +588,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
 
       </View>}
-      renderItem={({ item: store }) => <StoreDirectoryCard
+      renderItem={({ item: store }) => <View style={[styles.storeGridCell, webColumns === 2 && styles.storeGridCellHalf, webColumns === 3 && styles.storeGridCellThird]}><StoreDirectoryCard
         store={store}
         activityLabel={state.kind === "ready" ? state.verticals.find((vertical) => vertical.id === store.primaryVerticalId)?.nameAr ?? "" : ""}
         favorite={state.kind === "ready" && state.favoriteStoreIDs.includes(store.id)}
@@ -595,7 +598,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         onOpen={() => router.push(("/store/" + encodeURIComponent(store.id)) as Href)}
         onFavorite={() => { void toggleFavorite(store.id); }}
         promotionCount={store.promotionCount}
-      />}
+      /></View>}
       ListEmptyComponent={directoryMode ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} /> : null}
       ListFooterComponent={<View style={styles.footer}>
         {directoryMode && state.kind === "ready" && state.nextCursor ? <>
@@ -747,7 +750,11 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     container: { gap: spacing[4], paddingBottom: spacing[4], width: "100%" },
     flatList: { flex: 1 },
-    screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
+    screenContent: { flexGrow: 1, alignSelf: "center", maxWidth: 1280, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
+    storeGridRow: { gap: spacing[3], marginBottom: spacing[3] },
+    storeGridCell: { flex: 1, minWidth: 0 },
+    storeGridCellHalf: { maxWidth: "49%" },
+    storeGridCellThird: { maxWidth: "32.5%" },
     footer: { gap: spacing[3], paddingBottom: spacing[4] },
     searchScopes: { flexDirection: "row", gap: spacing[2] },
     productSearchSection: { gap: spacing[3] },

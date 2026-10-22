@@ -45,10 +45,24 @@ export function fulfillmentModeLabel(mode: FulfillmentMode): string {
   return "توصيل المتجر";
 }
 
+export function cashCollectionPartyLabel(mode: FulfillmentMode): string {
+  if (mode === "BTHWANI_CAPTAIN") return "كابتن بثواني";
+  if (mode === "PARTNER_CAPTAIN") return "المتجر أو مندوبه";
+  return "المتجر";
+}
+
+// This is a checkout UI allocation, never a substitute for WLT's accepted payment.
+export function checkoutWalletAllocation(totalMinor: number, availableMinor: number | null, useWalletBalance: boolean): number | null {
+  if (!Number.isSafeInteger(totalMinor) || totalMinor < 0) return null;
+  if (!useWalletBalance || totalMinor === 0) return 0;
+  if (availableMinor === null || !Number.isSafeInteger(availableMinor) || availableMinor < 0) return null;
+  return Math.min(availableMinor, totalMinor);
+}
+
 export function paymentMethodLabel(method: PaymentMethod, fulfillmentMode?: FulfillmentMode, cashAmountMinor?: number): string {
   if (cashAmountMinor === 0) return "الدفع من رصيد المحفظة";
   if (method === "CASH_AT_STORE") {
-    if (fulfillmentMode === "PARTNER_CAPTAIN") return "الدفع نقدًا لكابتن المتجر عند التسليم";
+    if (fulfillmentMode === "PARTNER_CAPTAIN") return "الدفع نقدًا للمتجر أو مندوبه عند التسليم";
     if (fulfillmentMode === "CUSTOMER_PICKUP") return "الدفع نقدًا للمتجر عند استلام الطلب";
     return "الدفع نقدًا للمتجر أو كابتنه عند الاستلام";
   }
@@ -58,7 +72,7 @@ export function paymentMethodLabel(method: PaymentMethod, fulfillmentMode?: Fulf
 export function paymentStateLabel(state: PaymentState, method?: PaymentMethod, fulfillmentMode?: FulfillmentMode, cashAmountMinor?: number): string {
   if (state === "REQUIRES_COLLECTION") {
     if (cashAmountMinor === 0) return "رصيد العميل محجوز حتى إتمام الاستلام";
-    if (fulfillmentMode === "PARTNER_CAPTAIN") return "بانتظار التحصيل عند التسليم من كابتن المتجر";
+    if (fulfillmentMode === "PARTNER_CAPTAIN") return "بانتظار التحصيل عند التسليم من المتجر أو مندوبه";
     if (fulfillmentMode === "CUSTOMER_PICKUP") return "بانتظار دفع المبلغ نقدًا للمتجر عند الاستلام";
     if (fulfillmentMode === "BTHWANI_CAPTAIN") return "بانتظار التحصيل عند التسليم من كابتن بثواني";
     return method === "CASH_AT_STORE" ? "بانتظار دفع المبلغ نقدًا للمتجر أو كابتنه" : "بانتظار التحصيل عند التسليم";

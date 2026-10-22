@@ -750,7 +750,7 @@ paths:
   /dsh/orders/{orderId}/conversation/messages:
     post:
       operationId: sendOrderConversationMessage
-      summary: Send one bounded text message to an active Order conversation
+      summary: Send text or one private image/audio attachment to an active Order conversation
       security:
         - userBearer: []
       parameters:
@@ -794,6 +794,41 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/orders/{orderId}/conversation/messages/{messageId}/media:
+    get:
+      operationId: readOrderConversationMedia
+      summary: Read private media for one authorized Order message, never a public URL
+      security:
+        - userBearer: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Private authorized media payload; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/OrderConversationPrivateMediaResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
 
   /dsh/orders/{orderId}/conversation/read:
     post:

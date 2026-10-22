@@ -377,8 +377,8 @@ func (s *FieldFinanceServer) requireFieldSession(w http.ResponseWriter, r *http.
 		writeIdentityError(w, err)
 		return identityclient.ActorIdentity{}, false
 	}
-	if identity.Role != "field" || strings.TrimSpace(identity.Subject) == "" {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active تطبيق الميداني session is required")
+	if identity.Role != "field" || !validOwnAppFinanceSession(identity) {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-field session is required")
 		return identityclient.ActorIdentity{}, false
 	}
 	return identity, true

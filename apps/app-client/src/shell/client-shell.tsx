@@ -91,7 +91,7 @@ export function ClientScrollScreen({ children }: PropsWithChildren) {
   );
 }
 
-export function createClientTabOptions(theme: ReturnType<typeof resolveTheme>) {
+export function createClientTabOptions(theme: ReturnType<typeof resolveTheme>, desktopWeb = false) {
   const styles = createStyles(theme);
   const icons = { home: "home", orders: "orders", subscriptions: "gifts", account: "account" } as const;
   return ({ route }: { route: { name: string } }) => ({
@@ -100,15 +100,17 @@ export function createClientTabOptions(theme: ReturnType<typeof resolveTheme>) {
       const params = headerRoute.params as { focus?: string | string[]; q?: string | string[] } | undefined;
       return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><ClientHeader searchOnCurrentRoute={route.name === "home"} focus={params?.focus} searchQuery={params?.q} navigation={navigation as ClientSearchNavigation} styles={styles} /></SafeAreaView>;
     },
+    tabBarPosition: desktopWeb ? "right" as const : "bottom" as const,
+    tabBarVariant: desktopWeb ? "material" as const : "uikit" as const,
     tabBarActiveBackgroundColor: theme.actionSoft,
     tabBarActiveTintColor: theme.interactiveText,
     tabBarHideOnKeyboard: true,
     tabBarInactiveTintColor: theme.colorMuted,
     tabBarShowIcon: true,
     tabBarIcon: ({ color }: { color: ColorValue }) => { const icon = icons[route.name as keyof typeof icons]; return icon ? <BthwaniIcon name={icon} color={color} size={sizing.iconLg} /> : null; },
-    tabBarItemStyle: styles.navigationItem,
+    tabBarItemStyle: desktopWeb ? styles.desktopNavigationItem : styles.navigationItem,
     tabBarLabelStyle: styles.navigationLabel,
-    tabBarStyle: styles.navigation,
+    tabBarStyle: desktopWeb ? styles.desktopNavigation : styles.navigation,
     sceneStyle: styles.scene,
   });
 }
@@ -126,8 +128,10 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     headerSearchField: { flex: 1, minWidth: 0 },
     content: { flex: 1 },
     scene: { backgroundColor: theme.background },
-    screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
+    screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], alignSelf: "center", maxWidth: 1280, width: "100%" },
     navigation: { backgroundColor: theme.surfaceRaised, borderTopColor: theme.borderColorStrong, borderTopWidth: borders.hairline, elevation: 8, minHeight: 84, paddingHorizontal: spacing[3], paddingTop: spacing[2], zIndex: 8 },
+    desktopNavigation: { backgroundColor: theme.surface, borderLeftColor: theme.borderColorStrong, borderLeftWidth: borders.hairline, width: 208, paddingHorizontal: spacing[2], paddingVertical: spacing[4] },
+    desktopNavigationItem: { borderRadius: radius.lg, marginVertical: spacing[1], minHeight: sizing.controlLg },
     navigationItem: { borderRadius: radius.lg, flex: 1, minHeight: sizing.controlLg, paddingHorizontal: spacing[2], paddingVertical: spacing[1], transform: [{ translateY: -spacing[4] }] },
     navigationLabel: { ...typography.label, marginTop: spacing[1] },
   });

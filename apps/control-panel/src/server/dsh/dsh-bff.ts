@@ -281,9 +281,9 @@ export function dshHttpStatus(error: unknown): number {
   return error.kind === "network" ? 502 : error.kind === "config" ? 500 : error.status;
 }
 
-export async function requestDshJson<T>(method: string, path: string, body: unknown | undefined, headers: Record<string, string>): Promise<Readonly<{ status: number; payload: T }>> {
+export async function requestDshJson<T>(method: string, path: string, body: unknown | undefined, headers: Record<string, string>, actorAccessToken?: string): Promise<Readonly<{ status: number; payload: T }>> {
   const baseUrl = dshBaseUrl();
-  const token = dshToken();
+  const token = actorAccessToken ?? dshToken();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8_000);
   try {

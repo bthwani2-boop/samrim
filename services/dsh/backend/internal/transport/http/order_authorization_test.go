@@ -50,9 +50,9 @@ func TestOrderRegisteredRoutesRejectUnauthenticatedRequests(t *testing.T) {
 	server.Register(mux)
 
 	routes := orderRegisteredRoutes(t)
-	// The legacy live Captain tracking endpoint was removed; lifecycle state remains on orders.
-	if len(routes) != 27 {
-		t.Fatalf("Order route census changed: got %d, want 27; review authentication for every new or removed route", len(routes))
+	// The private conversation media endpoint is part of the authenticated Order route census.
+	if len(routes) != 28 {
+		t.Fatalf("Order route census changed: got %d, want 28; review authentication for every new or removed route", len(routes))
 	}
 	for _, route := range routes {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {

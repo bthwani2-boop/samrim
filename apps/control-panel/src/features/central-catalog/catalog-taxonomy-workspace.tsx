@@ -3,7 +3,7 @@
 import type { CatalogCategoryListResponse, CommerceVertical, CommercialStoreType, ShoppingShortcut, ShoppingShortcutListResponse } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
-import { RegistryColumnHeader } from "../shared/registry-column-header";
+import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { CatalogCategoryRegistry } from "./catalog-category-registry";
 import { CatalogCommercialStoreTypeRegistry } from "./catalog-commercial-store-type-registry";
 import { CatalogShoppingShortcutRegistry } from "./catalog-shopping-shortcut-registry";
@@ -45,6 +45,7 @@ export function CatalogTaxonomyWorkspace() {
   const [chooseKind, setChooseKind] = useState(false);
   const categoryRequest = useRef(0);
   const scopeRequest = useRef(0);
+  const scopeLoadRequest = useRef(0);
   const serial = useRef(0);
 
   const loadVerticals = useCallback(async () => {
@@ -78,7 +79,12 @@ export function CatalogTaxonomyWorkspace() {
       setCategories((old) => append ? [...old, ...body.categories] : body.categories);
       setNextCursor(body.nextCursor ?? "");
     } catch (cause) {
-      if (request === categoryRequest.current) setError(cause instanceof Error ? cause.message : "تعذّر تحميل فئات المنتجات.");
+      if (request !== categoryRequest.current) return;
+      if (!append) {
+        setCategories([]);
+        setNextCursor("");
+      }
+      setError(cause instanceof Error ? cause.message : "تعذّر تحميل فئات المنتجات.");
     }
   }, []);
 
@@ -96,7 +102,10 @@ export function CatalogTaxonomyWorkspace() {
       setTypes(typeBody.storeTypes);
       setShortcuts(shortcutBody.shortcuts);
     } catch (cause) {
-      if (request === scopeRequest.current) setError(cause instanceof Error ? cause.message : "تعذّر تحميل الأنواع والاختصارات.");
+      if (request !== scopeRequest.current) return;
+      setTypes([]);
+      setShortcuts([]);
+      setError(cause instanceof Error ? cause.message : "تعذّر تحميل الأنواع والاختصارات.");
     }
   }, []);
 
@@ -106,10 +115,13 @@ export function CatalogTaxonomyWorkspace() {
   }, [query]);
 
   useEffect(() => {
+    const request = ++scopeLoadRequest.current;
     setError("");
     setLoadingScope(true);
     void Promise.all([loadCategories(verticalId, searchedQuery, status), loadRelated(verticalId)])
-      .finally(() => setLoadingScope(false));
+      .finally(() => {
+        if (request === scopeLoadRequest.current) setLoadingScope(false);
+      });
   }, [verticalId, searchedQuery, status, loadCategories, loadRelated]);
 
   const refresh = useCallback(async () => {
@@ -120,15 +132,6 @@ export function CatalogTaxonomyWorkspace() {
       setError(cause instanceof Error ? cause.message : "تعذّر تحديث القائمة.");
     }
   }, [loadVerticals, loadCategories, loadRelated, verticalId, searchedQuery, status]);
-
-  useEffect(() => {
-    if (!editor) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setEditor(null);
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [editor]);
 
   const selectedVertical = verticals.find((v) => v.id === verticalId);
   const rows = useMemo((): CatalogRow[] => {
@@ -143,16 +146,36 @@ export function CatalogTaxonomyWorkspace() {
       && (!search || [item.nameAr, item.nameEn, item.context, kindLabels[item.kind]].some((value) => value.toLocaleLowerCase().includes(search))));
   }, [verticals, verticalId, types, categories, shortcuts, kind, status, searchedQuery, selectedVertical?.nameAr]);
 
-  const visibleRows = useMemo(() => pageSort === "default" ? rows : [...rows].sort((a,b) =>
+  const visibleRows = useMemo(() => loadingScope ? [] : pageSort === "default" ? rows : [...rows].sort((a,b) =>
     (pageSort === "name_asc" ? 1 : -1) * a.nameAr.localeCompare(b.nameAr,"ar")
-  ), [rows,pageSort]);
+  ), [rows,pageSort,loadingScope]);
   function openEditor(nextKind: Kind, id?: string) {
     setEditor({ kind: nextKind, id, sequence: ++serial.current });
     setChooseKind(false);
     if (nextKind === "category" && id) setCategoryId(id);
   }
 
-  return <section className="unified-taxonomy" aria-label="التصنيفات الموحدة">
+  return <AdaptiveRecordWorkspace preferenceKey="catalog-taxonomy" open={Boolean(editor)}
+    triggerKey={editor ? editor.kind + ":" + (editor.id ?? "new") : ""}
+    onClose={() => setEditor(null)}
+    detail={editor ? <AdaptiveRecordPanel title={(editor.id ? "تعديل" : "إضافة") + " " + kindLabels[editor.kind]}
+      subtitle={editor.id ? rows.find((item) => item.kind === editor.kind && item.id === editor.id)?.nameAr ?? "" : selectedVertical?.nameAr ?? "سجل جديد"}
+      onClose={() => setEditor(null)}>
+        <div className="unified-taxonomy-drawer-body" key={editor.sequence}>
+          {editor.kind === "vertical" ? <CatalogVerticalRegistry verticals={verticals} selectedVerticalId={verticalId}
+            onSelectVertical={setVerticalId} onSaved={refresh} editorOnly initialId={editor.id} onClose={() => setEditor(null)} /> : null}
+          {editor.kind === "type" && verticalId ? <CatalogCommercialStoreTypeRegistry verticals={verticals} verticalId={verticalId}
+            editorOnly initialId={editor.id} onSaved={refresh} onClose={() => setEditor(null)} /> : null}
+          {editor.kind === "category" && verticalId ? <CatalogCategoryRegistry verticals={verticals} verticalId={verticalId}
+            onVerticalChange={setVerticalId} categories={categories} nextCursor={nextCursor}
+            onFilter={(text, filter, _sort, cursor, append) => loadCategories(verticalId, text, filter, cursor, append)}
+            categoryId={categoryId} onCategoryChange={setCategoryId} loading={loadingScope} onSaved={refresh}
+            onManageVerticals={() => openEditor("vertical")} editorOnly initialId={editor.id} onClose={() => setEditor(null)} /> : null}
+          {editor.kind === "shortcut" && verticalId ? <CatalogShoppingShortcutRegistry verticalId={verticalId}
+            editorOnly initialId={editor.id} onSaved={refresh} onClose={() => setEditor(null)} /> : null}
+        </div>
+    </AdaptiveRecordPanel> : null}>
+  <section className="unified-taxonomy" aria-label="التصنيفات الموحدة">
     <header className="unified-taxonomy-header">
       <p className="unified-taxonomy-description">المجالات وأنواع المتاجر وفئات المنتجات واختصارات التسوق · إدارة واحدة</p>
       <div className="unified-taxonomy-create">
@@ -181,6 +204,11 @@ export function CatalogTaxonomyWorkspace() {
           {(["vertical", "type", "category", "shortcut"] as const).map((item) => <option key={item} value={item}>{kindLabels[item]}</option>)}
         </select>
       </label>
+      <label>ترتيب القائمة
+        <select value={pageSort} onChange={(event) => setPageSort(event.target.value as typeof pageSort)}>
+          <option value="default">الترتيب الأصلي</option><option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option>
+        </select>
+      </label>
       <details className="unified-taxonomy-advanced"><summary className="button button-secondary">تصفية إضافية{status !== "all" ? " · مفعّلة" : ""}</summary><div>
         <label>الحالة<select value={status} onChange={(e) => setStatus(e.target.value as Status)}>
           <option value="all">جميع الحالات</option><option value="active">نشط</option><option value="inactive">متوقف</option>
@@ -196,27 +224,10 @@ export function CatalogTaxonomyWorkspace() {
     <div className="unified-taxonomy-table-wrap">
       <table className="unified-taxonomy-table">
         <thead><tr>
-          <RegistryColumnHeader label="العنصر" scope="page" active={Boolean(query || pageSort !== "default")}>
-            <label>البحث بالاسم<input type="search" value={query} maxLength={160} onChange={(event) => setQuery(event.target.value)} /></label>
-            <label>ترتيب القائمة<select value={pageSort} onChange={(event) => setPageSort(event.target.value as typeof pageSort)}>
-              <option value="default">الترتيب الأصلي</option><option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option>
-            </select></label>
-          </RegistryColumnHeader>
-          <RegistryColumnHeader label="النوع" scope="page" active={kind !== "all"}>
-            <label>نوع العنصر<select value={kind} onChange={(event) => setKind(event.target.value as Kind | "all")}>
-              <option value="all">جميع الأنواع</option>{(["vertical","type","category","shortcut"] as const).map((value) => <option key={value} value={value}>{kindLabels[value]}</option>)}
-            </select></label>
-          </RegistryColumnHeader>
-          <RegistryColumnHeader label="المجال / العلاقة" active={Boolean(verticalId)}>
-            <label>المجال<select value={verticalId} onChange={(event) => { setVerticalId(event.target.value); setCategoryId(""); setEditor(null); }}>
-              {verticals.map((v) => <option key={v.id} value={v.id}>{v.nameAr}</option>)}
-            </select></label>
-          </RegistryColumnHeader>
-          <RegistryColumnHeader label="الحالة" active={status !== "all"}>
-            <label>حالة العنصر<select value={status} onChange={(event) => setStatus(event.target.value as Status)}>
-              <option value="all">جميع الحالات</option><option value="active">نشط</option><option value="inactive">متوقف</option>
-            </select></label>
-          </RegistryColumnHeader>
+          <th scope="col">العنصر</th>
+          <th scope="col">النوع</th>
+          <th scope="col">المجال / العلاقة</th>
+          <th scope="col">الحالة</th>
           <th scope="col">الإجراء</th>
         </tr></thead>
         <tbody>
@@ -228,7 +239,7 @@ export function CatalogTaxonomyWorkspace() {
             <td><span className={`unified-taxonomy-kind is-${item.kind}`}>{kindLabels[item.kind]}</span></td>
             <td className="unified-taxonomy-context">{item.context}</td>
             <td><span className={`catalog-state-pill ${item.active ? "is-active" : "is-inactive"}`}>{item.active ? "نشط" : "متوقف"}</span></td>
-            <td><button type="button" className="catalog-row-action" disabled={!canEdit} onClick={() => openEditor(item.kind, item.id)}
+            <td><button type="button" className="catalog-row-action" data-adaptive-record-trigger={item.kind + ":" + item.id} disabled={!canEdit} onClick={() => openEditor(item.kind, item.id)}
               aria-label={`تعديل ${kindLabels[item.kind]} ${item.nameAr}`}>تعديل</button></td>
           </tr>)}
           {!loading && !loadingScope && rows.length === 0 ? <tr><td colSpan={5} className="unified-taxonomy-empty">لا توجد نتائج مطابقة. غيّر المجال أو المرشحات.</td></tr> : null}
@@ -241,7 +252,7 @@ export function CatalogTaxonomyWorkspace() {
             <span className={`catalog-state-pill ${item.active ? "is-active" : "is-inactive"}`}>{item.active ? "نشط" : "متوقف"}</span>
           </div>
           <div className="unified-taxonomy-mobile-meta"><span>{kindLabels[item.kind]}</span><span>{item.context}</span></div>
-          <button type="button" className="button button-secondary" disabled={!canEdit} onClick={() => openEditor(item.kind, item.id)} aria-label={`تعديل ${kindLabels[item.kind]} ${item.nameAr}`}>تعديل</button>
+          <button type="button" className="button button-secondary" data-adaptive-record-trigger={item.kind + ":" + item.id} disabled={!canEdit} onClick={() => openEditor(item.kind, item.id)} aria-label={`تعديل ${kindLabels[item.kind]} ${item.nameAr}`}>تعديل</button>
         </li>)}
         {!loading && !loadingScope && rows.length === 0 ? <li className="collection-state">لا توجد نتائج مطابقة.</li> : null}
       </ul>
@@ -249,25 +260,6 @@ export function CatalogTaxonomyWorkspace() {
     {nextCursor && verticalId && (kind === "all" || kind === "category") ?
       <button type="button" className="button button-secondary unified-taxonomy-more" disabled={loadingScope}
         onClick={() => void loadCategories(verticalId, searchedQuery, status, nextCursor, true)}>تحميل المزيد من الفئات</button> : null}
-    {editor ? <div className="unified-taxonomy-overlay">
-      <aside className="unified-taxonomy-drawer" role="dialog" aria-modal="true" aria-label={`${editor.id ? "تعديل" : "إضافة"} ${kindLabels[editor.kind]}`} dir="rtl">
-        <div className="unified-taxonomy-drawer-header"><div><strong>{editor.id ? "تعديل" : "إضافة"} {kindLabels[editor.kind]}</strong><small>{editor.id ? rows.find((item) => item.kind === editor.kind && item.id === editor.id)?.nameAr ?? "" : selectedVertical?.nameAr ?? "سجل جديد"}</small></div>
-          <button type="button" className="button button-secondary" aria-label="إغلاق لوحة التحرير" onClick={() => setEditor(null)}>✕</button>
-        </div>
-        <div className="unified-taxonomy-drawer-body" key={editor.sequence}>
-          {editor.kind === "vertical" ? <CatalogVerticalRegistry verticals={verticals} selectedVerticalId={verticalId}
-            onSelectVertical={setVerticalId} onSaved={refresh} editorOnly initialId={editor.id} onClose={() => setEditor(null)} /> : null}
-          {editor.kind === "type" && verticalId ? <CatalogCommercialStoreTypeRegistry verticals={verticals} verticalId={verticalId}
-            editorOnly initialId={editor.id} onSaved={refresh} onClose={() => setEditor(null)} /> : null}
-          {editor.kind === "category" && verticalId ? <CatalogCategoryRegistry verticals={verticals} verticalId={verticalId}
-            onVerticalChange={setVerticalId} categories={categories} nextCursor={nextCursor}
-            onFilter={(text, filter, _sort, cursor, append) => loadCategories(verticalId, text, filter, cursor, append)}
-            categoryId={categoryId} onCategoryChange={setCategoryId} loading={loadingScope} onSaved={refresh}
-            onManageVerticals={() => openEditor("vertical")} editorOnly initialId={editor.id} onClose={() => setEditor(null)} /> : null}
-          {editor.kind === "shortcut" && verticalId ? <CatalogShoppingShortcutRegistry verticalId={verticalId}
-            editorOnly initialId={editor.id} onSaved={refresh} onClose={() => setEditor(null)} /> : null}
-        </div>
-      </aside>
-    </div> : null}
-  </section>;
+  </section>
+  </AdaptiveRecordWorkspace>;
 }

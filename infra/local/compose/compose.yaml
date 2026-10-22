@@ -234,6 +234,7 @@ services:
       PORT: "8080"
       BTHWANI_LISTEN_HOST: "0.0.0.0"
       BTHWANI_ENV: "development"
+      DSH_CORS_ALLOWED_ORIGINS: "${DSH_CORS_ALLOWED_ORIGINS:-}"
       DSH_IDENTITY_API_BASE_URL: "http://identity:8082"
       DSH_WLT_API_BASE_URL: "http://wlt:8083"
       DSH_DATABASE_URL: "postgres://samrim_dsh_runtime:${SAMRIM_DSH_DB_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"

@@ -2,9 +2,11 @@ import { borders, radius, type resolveTheme, spacing, typography } from "@bthwan
 import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt, type OrderConversationMessageAttempt } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import * as SecureStore from "expo-secure-store";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
+import { File, Paths } from "expo-file-system";
+import * as SecureStore from "../../bootstrap/compatible-storage";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, View } from "react-native";
+import { OrderConversationMediaMessage } from "./order-conversation-media";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 
 const conversationRole = "client" as const;
@@ -16,11 +18,17 @@ function client() {
 }
 
 function senderLabel(role: string): string {
-  return role === "client" ? "العميل" : role === "partner" ? "المتجر" : "الكابتن";
+  return role === "operator" ? "عمليات بثواني" : role === "client" ? "العميل" : role === "partner" ? "المتجر" : "الكابتن";
 }
 
 function conversationActorID(): string { const state = currentIdentityState(); return state.kind === "authenticated" ? state.identity.subject.trim() : ""; }
 function isCurrentActor(actorID: string): boolean { return Boolean(actorID) && actorID === conversationActorID(); }
+
+// Delay loading the native recorder until requested; older dev builds retain text chat.
+const AudioRecorderControls = lazy(async () => {
+  try { return await import("./order-conversation-audio-controls"); }
+  catch { return { default: () => <Text>يتطلب تسجيل الصوت إصدار Android يحتوي مكتبة الصوت.</Text> }; }
+});
 
 export function OrderConversation({ orderId }: { orderId: string }) {
   const theme = useAppearanceTheme();
@@ -29,6 +37,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [selectedRecipients, setSelectedRecipients] = useState<ReadonlyArray<"client" | "partner" | "captain" | "operator">>(["partner"]);
   const [pendingAttempt, setPendingAttempt] = useState<OrderConversationMessageAttempt | null>(null);
   const [attemptStorageReady, setAttemptStorageReady] = useState(false);
   const [identityState, setIdentityState] = useState(currentIdentityState);
@@ -36,6 +45,8 @@ export function OrderConversation({ orderId }: { orderId: string }) {
   const [loadedActorID, setLoadedActorID] = useState("");
   const [loadedOrderID, setLoadedOrderID] = useState("");
   const readSequence = useRef(0);
+  const [showAudioControls,setShowAudioControls] = useState(false);
+  const autoReadReceiptAttempt = useRef("");
   const correctOwner = Boolean(loadedActorID) && loadedActorID === activeActorID && loadedOrderID === orderId && isCurrentActor(loadedActorID);
 
   const load = useCallback(async (): Promise<boolean> => {
@@ -85,7 +96,10 @@ export function OrderConversation({ orderId }: { orderId: string }) {
   async function submitAttempt(attempt: OrderConversationMessageAttempt, token: string) {
     if (!correctOwner || !isCurrentActor(attempt.actorID)) return;
     try {
-      await client().sendOrderConversationMessage(token, attempt.orderID, { body: attempt.body }, attempt.idempotencyKey, attempt.correlationID);
+      await client().sendOrderConversationMessage(token, attempt.orderID, { body: attempt.body, ...(attempt.recipientRoles ? { recipientRoles: attempt.recipientRoles } : {}),
+        ...(attempt.mediaKind && attempt.mediaContentType && attempt.mediaFileUri ? {
+          mediaKind: attempt.mediaKind, mediaContentType: attempt.mediaContentType, mediaBase64: await new File(attempt.mediaFileUri).base64(),
+        } : {}) }, attempt.idempotencyKey, attempt.correlationID);
       if (!isCurrentActor(attempt.actorID)) return;
     } catch (cause) {
       if (!isCurrentActor(attempt.actorID)) return;
@@ -123,6 +137,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     setPendingAttempt(storageCleared ? null : attempt);
     setBody(storageCleared ? "" : attempt.body);
     const refreshed = await load();
+    if (storageCleared && attempt.mediaFileUri) {try {new File(attempt.mediaFileUri).delete();} catch {}}
     if (!isCurrentActor(attempt.actorID)) return;
     if (!storageCleared) setError("تأكد إرسال الرسالة، وبقيت المحاولة محفوظة. أعد المحاولة من الزر نفسه لتجنب تكرارها.");
     else if (!refreshed) setError("تأكد إرسال الرسالة، لكن تعذر تحديث سجل المحادثة.");
@@ -130,7 +145,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
 
   async function send() {
     const normalized = body.trim();
-    if (!correctOwner || !normalized || busy || !attemptStorageReady || pendingAttempt || state.kind !== "ready" || !state.value.canSend) return;
+    if (!correctOwner || !normalized || busy || !attemptStorageReady || pendingAttempt || !selectedRecipients.length || state.kind !== "ready" || !state.value.canSend) return;
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
@@ -138,7 +153,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
       if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("CLIENT_SESSION_REQUIRED");
       const actorID = identity.identity.subject.trim();
       if (!isCurrentActor(actorID) || actorID !== loadedActorID) return;
-      const attempt = createOrderConversationMessageAttempt(actorID, orderId, normalized, `conversation_${Crypto.randomUUID()}`, `conversation_corr_${Crypto.randomUUID()}`);
+      const attempt = createOrderConversationMessageAttempt(actorID, orderId, normalized, `conversation_${Crypto.randomUUID()}`, `conversation_corr_${Crypto.randomUUID()}`, selectedRecipients);
       await SecureStore.setItemAsync(orderConversationMessageAttemptStorageKey(conversationRole, actorID, orderId), JSON.stringify(attempt));
       if (!isCurrentActor(actorID)) return;
       setPendingAttempt(attempt);
@@ -147,6 +162,52 @@ export function OrderConversation({ orderId }: { orderId: string }) {
       console.error("DSH client order conversation attempt could not be saved", cause);
       setError("تعذر حفظ محاولة الرسالة بأمان؛ لم تُرسل.");
     } finally { setBusy(false); }
+  }
+
+  async function sendPrivateMedia(sourceUri: string, kind: "image" | "audio", contentType: string, transcript = "") {
+    if (!correctOwner || busy || !attemptStorageReady || pendingAttempt || !selectedRecipients.length || state.kind !== "ready" || !state.value.canSend) return;
+    setBusy(true);setError("");
+    try {
+      const original=new File(sourceUri);
+      const cap=kind==="image"?3145728:1572864;
+      if (!original.exists || !original.size || original.size>cap) throw new Error("MEDIA_TOO_LARGE");
+      const actorID=conversationActorID();
+      if (!actorID || actorID!==loadedActorID || !isCurrentActor(actorID)) throw new Error("ACTOR_MISMATCH");
+      const extension=kind==="image"?".jpg":Platform.OS==="ios"?".m4a":".3gp";
+      const local=new File(Paths.document, "order-attachment-"+Crypto.randomUUID()+extension);
+      original.copy(local);
+      const label=kind==="image"?"صورة مرفقة":transcript.trim();
+      if (kind === "audio" && (!label || label.length > 2000)) throw new Error("AUDIO_TRANSCRIPT_REQUIRED");
+      const attempt=createOrderConversationMessageAttempt(actorID,orderId,label,
+        "conversation_"+Crypto.randomUUID(),"conversation_corr_"+Crypto.randomUUID(),
+        selectedRecipients,{kind,contentType,fileUri:local.uri});
+      await SecureStore.setItemAsync(orderConversationMessageAttemptStorageKey(conversationRole,actorID,orderId),JSON.stringify(attempt));
+      if (!isCurrentActor(actorID)) return;
+      setPendingAttempt(attempt);
+      const token=await getUsableIdentityAccessToken();
+      await submitAttempt(attempt,token);
+    } catch (cause) {
+      console.error("Private conversation media send preparation failed",cause);
+      setError("تعذر إرسال المرفق. تحقق من نوعه وحجمه ثم أعد المحاولة.");
+    } finally {setBusy(false);}
+  }
+
+  async function pickPhoto(fromCamera: boolean) {
+    try {
+      const ImagePicker=await import("expo-image-picker");
+      if (fromCamera) {
+        const permission=await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {setError("يجب السماح باستخدام الكاميرا.");return;}
+      }
+      const result=fromCamera
+        ? await ImagePicker.launchCameraAsync({mediaTypes:["images"],quality:0.6,allowsEditing:true})
+        : await ImagePicker.launchImageLibraryAsync({mediaTypes:["images"],quality:0.6,allowsEditing:true});
+      if (result.canceled || !result.assets?.[0]) return;
+      const photo=result.assets[0];
+      const mime=photo.mimeType || "image/jpeg";
+      if (!["image/jpeg","image/png","image/webp"].includes(mime)) {setError("اختر صورة JPG أو PNG أو WebP.");return;}
+      await sendPrivateMedia(photo.uri,"image",mime);
+    } catch {setError("تعذر اختيار الصورة.");}
   }
 
   async function retryPendingAttempt() {
@@ -179,15 +240,38 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     } finally { setBusy(false); }
   }
 
+  const markReadRef = useRef(markRead);
+  markReadRef.current = markRead;
+  const captainAvailable = state.kind === "ready" && ["CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERY_FAILED"].includes(state.value.orderState);
+  const recipientOptions = [
+    { role: "partner" as const, label: "المتجر" },
+    ...(captainAvailable ? [{ role: "captain" as const, label: "الكابتن" }] : []),
+    { role: "operator" as const, label: "العمليات" },
+  ];
+  useEffect(() => {
+    if (!correctOwner || state.kind !== "ready" || !state.value.unreadCount || busy) return;
+    const last = state.value.messages.at(-1);
+    if (!last) return;
+    const key = loadedActorID + ":" + orderId + ":" + last.id;
+    if (autoReadReceiptAttempt.current === key) return;
+    autoReadReceiptAttempt.current = key;
+    void markReadRef.current();
+  }, [correctOwner, state, busy, loadedActorID, orderId]);
+
   if (!activeActorID || (loadedActorID && !correctOwner)) return <BthwaniSurface tone="base" style={styles.surface} accessibilityLabel="محادثة الطلب"><Text style={styles.muted}>{activeActorID ? "جارٍ التحقق من محادثة الحساب الحالي…" : "سجّل الدخول لقراءة محادثة الطلب."}</Text></BthwaniSurface>;
   return <BthwaniSurface tone="base" style={styles.surface} accessibilityLabel="محادثة الطلب">
     <View style={styles.header}><View><Text style={styles.title}>محادثة الطلب</Text><Text style={styles.muted}>تواصل تشغيلي مرتبط بهذا الطلب فقط.</Text></View>{state.kind === "ready" && state.value.unreadCount > 0 ? <Text style={styles.unread}>{state.value.unreadCount} غير مقروء</Text> : null}</View>
     {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المحادثة…</Text></View> : null}
     {state.kind === "error" ? <View style={styles.state}><Text style={styles.error}>تعذر قراءة المحادثة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" />{pendingAttempt ? <BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /> : null}</View> : null}
     {state.kind === "ready" ? <>
-      {!state.value.messages.length ? <Text style={styles.muted}>لا توجد رسائل بعد.</Text> : <View style={styles.messages}>{state.value.messages.map((message) => <View key={message.id} style={[styles.message, message.mine ? styles.mine : null]}><Text style={styles.sender}>{message.mine ? "أنت" : senderLabel(message.senderRole)}</Text><Text style={styles.body}>{message.body}</Text><Text style={styles.time}>{new Date(message.createdAt).toLocaleString("ar-YE")}</Text></View>)}</View>}
-      {state.value.unreadCount > 0 ? <BthwaniButton busy={busy} disabled={busy} label="تحديد الرسائل كمقروءة" onPress={() => void markRead()} variant="secondary" /> : null}
-      {pendingAttempt ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>المحاولة محفوظة لهذا الحساب والطلب. سنتحقق من نتيجتها قبل إعادة الإرسال.</Text><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /></View> : state.value.canSend ? <><TextInput accessibilityLabel="رسالة المحادثة" editable={!busy} maxLength={2000} multiline onChangeText={setBody} placeholder="اكتب رسالة تشغيلية قصيرة" placeholderTextColor={theme.colorMuted} style={styles.input} textAlign="right" value={body} /><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady || !body.trim()} label="إرسال الرسالة" onPress={() => void send()} /></> : <Text style={styles.muted}>أُغلقت المحادثة للكتابة، ويمكنك قراءة سجلها فقط.</Text>}
+      {!state.value.messages.length ? <Text style={styles.muted}>لا توجد رسائل بعد.</Text> : <View style={styles.messages}>{state.value.messages.map((message) => <View key={message.id} style={[styles.message, message.mine ? styles.mine : null]}><Text style={styles.sender}>{message.mine ? "أنت" : senderLabel(message.senderRole)}</Text><Text style={styles.body}>{message.body}</Text><OrderConversationMediaMessage orderId={orderId} messageId={message.id} mediaKind={message.mediaKind} /><Text style={styles.time}>{new Date(message.createdAt).toLocaleString("ar-YE")}</Text></View>)}</View>}
+      {pendingAttempt ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>المحاولة محفوظة لهذا الحساب والطلب. سنتحقق من نتيجتها قبل إعادة الإرسال.</Text><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /></View> : state.value.canSend ? <><View style={{ gap: spacing[2] }}><Text style={styles.muted}>إرسال إلى:</Text><View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing[2] }}>{recipientOptions.map(item => <BthwaniButton key={item.role} label={selectedRecipients.includes(item.role) ? "✓ " + item.label : item.label} disabled={busy} variant={selectedRecipients.includes(item.role) ? "primary" : "secondary"} onPress={() => setSelectedRecipients(roles => roles.includes(item.role) ? roles.filter(r => r !== item.role) : [...roles, item.role])} />)}<BthwaniButton label="الجميع" disabled={busy} variant="secondary" onPress={() => setSelectedRecipients(recipientOptions.map(item => item.role))} /></View><Text style={styles.muted}>العمليات المخولة تستطيع مراجعة الرسائل ولو لم تخترها.</Text></View><View style={{flexDirection:"row",flexWrap:"wrap",gap:spacing[2]}}>
+        <BthwaniButton label="صورة" variant="secondary" disabled={busy} onPress={()=>void pickPhoto(false)} />
+        <BthwaniButton label="الكاميرا" variant="secondary" disabled={busy} onPress={()=>void pickPhoto(true)} />
+        {showAudioControls ? <Suspense fallback={<Text>جارٍ تجهيز الصوت…</Text>}>
+          <AudioRecorderControls disabled={busy} onRecorded={(uri,mime,text)=>sendPrivateMedia(uri,"audio",mime,text)} />
+        </Suspense> : <BthwaniButton label="تسجيل صوتي" variant="secondary" disabled={busy} onPress={()=>setShowAudioControls(true)} />}
+      </View><TextInput accessibilityLabel="رسالة المحادثة" editable={!busy} maxLength={2000} multiline onChangeText={setBody} placeholder="اكتب رسالة تشغيلية قصيرة" placeholderTextColor={theme.colorMuted} style={styles.input} textAlign="right" value={body} /><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady || !body.trim() || !selectedRecipients.length} label="إرسال الرسالة" onPress={() => void send()} /></> : <Text style={styles.muted}>أُغلقت المحادثة للكتابة، ويمكنك قراءة سجلها فقط.</Text>}
     </> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
   </BthwaniSurface>;

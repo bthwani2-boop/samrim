@@ -21,7 +21,8 @@ import (
 )
 
 const (
-	methodCashOnDelivery          = "CASH_ON_DELIVERY"
+	MethodCashOnDelivery          = "CASH_ON_DELIVERY"
+	methodCashOnDelivery          = MethodCashOnDelivery
 	MethodCashAtStore             = "CASH_AT_STORE"
 	stateRequiresCollect          = "REQUIRES_COLLECTION"
 	stateCollected                = "COLLECTED"
@@ -1077,10 +1078,13 @@ func (c *Client) Collect(ctx context.Context, intentID, collectedByActorID, coll
 	return response.PaymentIntent, response.IdempotentReplay, err
 }
 
-func (c *Client) EnsureCollected(ctx context.Context, intentID, collectedByActorID, collectionReference string, amountMinor int64, idempotencyKey, correlationID string) (PaymentIntent, error) {
+func (c *Client) EnsureCollected(ctx context.Context, intentID, expectedMethod, collectedByActorID, collectionReference string, amountMinor int64, idempotencyKey, correlationID string) (PaymentIntent, error) {
 	current, err := c.Read(ctx, intentID)
 	if err != nil {
 		return PaymentIntent{}, err
+	}
+	if (expectedMethod != MethodCashOnDelivery && expectedMethod != MethodCashAtStore) || current.Method != expectedMethod {
+		return PaymentIntent{}, &Error{Status: http.StatusConflict, Code: "PAYMENT_METHOD_MISMATCH", Message: "WLT payment method does not match the DSH fulfillment handoff"}
 	}
 	if current.CustomerPaymentAllocation == nil || current.CustomerPaymentAllocation.CustomerPayableMinor != amountMinor || current.CustomerPaymentAllocation.CashAmountMinor != current.AmountMinor {
 		return PaymentIntent{}, &Error{Status: http.StatusConflict, Code: "AMOUNT_MISMATCH", Message: "WLT allocation does not match the DSH order payable and cash remainder"}
@@ -1095,7 +1099,7 @@ func (c *Client) EnsureCollected(ctx context.Context, intentID, collectedByActor
 		collectionReferenceValue = ""
 	}
 	validCollected := func(item PaymentIntent) bool {
-		if item.State != stateCollected || item.CollectedAmountMinor == nil || *item.CollectedAmountMinor != cashAmountMinor {
+		if item.Method != expectedMethod || item.State != stateCollected || item.CollectedAmountMinor == nil || *item.CollectedAmountMinor != cashAmountMinor {
 			return false
 		}
 		if cashAmountMinor == 0 {

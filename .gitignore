@@ -6,6 +6,7 @@ node_modules/
 **/next-env.d.ts
 **/expo-env.d.ts
 .next/
+.next-dev/
 dist/
 build/
 coverage/

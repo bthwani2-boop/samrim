@@ -21,7 +21,7 @@ export type BthwaniMapCircle = Readonly<{
   strokeColor: string;
 }>;
 
-type BthwaniMapProps = Readonly<{
+export type BthwaniMapProps = Readonly<{
   accessibilityLabel: string;
   markers?: ReadonlyArray<BthwaniMapMarker>;
   circles?: ReadonlyArray<BthwaniMapCircle>;

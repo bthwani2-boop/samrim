@@ -1,9 +1,9 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type Cart, type CheckoutQuote, type CheckoutRequest, createDshMobileClient, type DeliveryAddress, type FulfillmentMode, formatMoney, fulfillmentModeLabel, formatQuantity, type Order, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import { type Cart, type CheckoutQuote, type CheckoutRequest, cashCollectionPartyLabel, checkoutWalletAllocation, createDshMobileClient, type DeliveryAddress, type FulfillmentMode, formatMoney, fulfillmentModeLabel, formatQuantity, type Order, orderStateLabel, orderPaymentDisclosure, paymentMethodLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, Link } from "expo-router";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "../../bootstrap/compatible-storage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
@@ -80,14 +80,6 @@ function errorCode(error: unknown): string {
   return error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code) : "";
 }
 
-function parseMinorAmount(value: string): number | null {
-  const ascii = value.replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit))).replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)));
-  if (ascii === "") return 0;
-  if (!/^\d+$/.test(ascii)) return null;
-  const amount = Number(ascii);
-  return Number.isSafeInteger(amount) ? amount : null;
-}
-
 function cartMutationErrorMessage(error: unknown): string {
   const code = errorCode(error);
   if (code === "CHECKOUT_PAYMENT_RECONCILED") return "أُلغيت محاولة الدفع السابقة بأمان؛ حدّث السلة ثم ابدأ الإتمام من جديد.";
@@ -121,8 +113,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   const [state, setState] = useState<CartState>({ kind: "loading" });
   const [quote, setQuote] = useState<QuoteState>({ kind: "idle" });
   const [wallet, setWallet] = useState<WalletState>({ kind: "loading" });
-  const [paymentChoice, setPaymentChoice] = useState<"wallet" | "cash" | "mixed">("wallet");
-  const [mixedWalletInput, setMixedWalletInput] = useState("");
+  const [useWalletBalance, setUseWalletBalance] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState<PendingCartCheckoutAttempt | null>(null);
   const [busy, setBusy] = useState(false);
   const [busyLineId, setBusyLineId] = useState("");
@@ -342,11 +333,9 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
     if (checkoutSubmitting.current) return;
     const addressID = pickupMode ? "" : serviceableAddressId ?? "";
     if (mutationBusy || state.kind !== "ready" || !state.cart.lines.length || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || !quoteMatchesCheckout(quote.quote, state.cart, storeId, addressID, fulfillmentMode, appliedPromotionCode)) return;
-    const mixedWalletDefault = wallet.kind === "ready" ? Math.min(wallet.availableMinor, quote.quote.totalAmountMinor - 1) : 0;
-    const mixedWalletAmount = mixedWalletInput.trim() ? parseMinorAmount(mixedWalletInput) : mixedWalletDefault;
-    const internalBalanceAmountMinor = paymentChoice === "cash" ? 0 : paymentChoice === "wallet" ? quote.quote.totalAmountMinor : mixedWalletAmount;
-    if (internalBalanceAmountMinor === null || (paymentChoice !== "cash" && (wallet.kind !== "ready" || internalBalanceAmountMinor <= 0 || internalBalanceAmountMinor > wallet.availableMinor || (paymentChoice === "wallet" && wallet.availableMinor < quote.quote.totalAmountMinor) || (paymentChoice === "mixed" && internalBalanceAmountMinor >= quote.quote.totalAmountMinor)))) {
-      setError("الرصيد المتاح غير كافٍ لطريقة الدفع المختارة. اشحن المحفظة أو اختر الدفع النقدي.");
+    const internalBalanceAmountMinor = checkoutWalletAllocation(quote.quote.totalAmountMinor, wallet.kind === "ready" ? wallet.availableMinor : null, useWalletBalance);
+    if (internalBalanceAmountMinor === null) {
+      setError("تعذر تحديد مبلغ المحفظة بأمان. أعد قراءة الرصيد أو ادفع نقدًا.");
       return;
     }
     if (!pickupMode && !deliveryRecipientIsValid(recipient)) {
@@ -406,10 +395,8 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   }
 
   const selectedAddress = addresses.find((address) => address.id === serviceableAddressId);
-  const selectedBalanceMinor = verifiedQuote ? (paymentChoice === "cash" ? 0 : paymentChoice === "wallet" ? verifiedQuote.totalAmountMinor : mixedWalletInput.trim() ? parseMinorAmount(mixedWalletInput) : wallet.kind === "ready" ? Math.min(wallet.availableMinor, verifiedQuote.totalAmountMinor - 1) : 0) : null;
-  const balanceNeedsRead = paymentChoice !== "cash" && wallet.kind !== "ready";
-  const balanceExceedsAvailable = verifiedQuote !== null && wallet.kind === "ready" && ((paymentChoice === "wallet" && wallet.availableMinor < verifiedQuote.totalAmountMinor) || (paymentChoice === "mixed" && selectedBalanceMinor !== null && selectedBalanceMinor > wallet.availableMinor));
-  const balanceExceedsPayable = paymentChoice === "mixed" && (selectedBalanceMinor === null || selectedBalanceMinor <= 0 || (verifiedQuote !== null && selectedBalanceMinor >= verifiedQuote.totalAmountMinor));
+  const selectedBalanceMinor = verifiedQuote ? checkoutWalletAllocation(verifiedQuote.totalAmountMinor, wallet.kind === "ready" ? wallet.availableMinor : null, useWalletBalance) : null;
+  const balanceNeedsRead = useWalletBalance && wallet.kind !== "ready";
   const remainingCashMinor = verifiedQuote !== null && selectedBalanceMinor !== null ? verifiedQuote.totalAmountMinor - selectedBalanceMinor : null;
   if (pendingCheckout) return <View style={styles.container} accessibilityLabel="استعادة طلب السلة"><Text style={styles.title}>التحقق من نتيجة الطلب</Text><Text style={styles.warning}>المحاولة محفوظة لهذا الحساب والسلة. سنتحقق من النتيجة أولًا لتجنب إنشاء طلب مكرر.</Text><BthwaniButton busy={busy} disabled={busy} label="تحقق واستعد الطلب" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
   return (
@@ -451,23 +438,19 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
           </> : null}
           {promotionNeedsApply ? <Text accessibilityLiveRegion="polite" style={styles.warning}>اضغط «تطبيق» لتحديث الإجمالي بحسب رمز العرض الحالي.</Text> : quote.kind === "ready" && !verifiedQuote ? <Text accessibilityLiveRegion="polite" style={styles.warning}>تغيّرت تفاصيل الطلب؛ جارٍ تحديث الإجمالي والخصم قبل الإتمام.</Text> : null}
           <View accessibilityLabel="توزيع مصدر الدفع" style={styles.balanceBox}>
-            <Text style={styles.fulfillmentTitle}>اختر طريقة الدفع</Text>
-            <View style={styles.lineActions}>
-              <BthwaniButton label="المحفظة" disabled={mutationBusy} onPress={() => setPaymentChoice("wallet")} variant={paymentChoice === "wallet" ? "primary" : "secondary"} />
-              <BthwaniButton label="نقدًا عند الاستلام" disabled={mutationBusy} onPress={() => setPaymentChoice("cash")} variant={paymentChoice === "cash" ? "primary" : "secondary"} />
-              <BthwaniButton label="المحفظة + نقدًا" disabled={mutationBusy} onPress={() => setPaymentChoice("mixed")} variant={paymentChoice === "mixed" ? "primary" : "secondary"} />
-            </View>
-            {paymentChoice === "mixed" ? <TextInput accessibilityLabel="حصة المحفظة في الدفع المزدوج" editable={!mutationBusy} keyboardType="number-pad" maxLength={15} onChangeText={setMixedWalletInput} placeholder={verifiedQuote && wallet.kind === "ready" ? String(Math.min(wallet.availableMinor, verifiedQuote.totalAmountMinor - 1)) : "0"} placeholderTextColor={theme.colorMuted} style={styles.promotionInput} value={mixedWalletInput} /> : null}
+            <Text style={styles.fulfillmentTitle}>الدفع</Text>
+            <BthwaniButton accessibilityLabel={useWalletBalance ? "عدم استخدام رصيد المحفظة" : "استخدام رصيد المحفظة"} label={useWalletBalance ? "استخدام رصيد المحفظة: نعم" : "استخدام رصيد المحفظة: لا"} disabled={mutationBusy} onPress={() => setUseWalletBalance(value => !value)} variant={useWalletBalance ? "primary" : "secondary"} />
+            <Text style={styles.muted}>سيُستخدم الرصيد المتاح تلقائيًا، وتدفع المتبقي نقدًا فقط.</Text>
             {wallet.kind === "loading" ? <Text accessibilityLiveRegion="polite" style={styles.muted}>جارٍ قراءة الرصيد المتاح…</Text> : null}
             {wallet.kind === "ready" ? <Text style={styles.muted}>الرصيد المتاح بعد الحجوزات: {formatMoney(wallet.availableMinor, "YER")}</Text> : null}
             {wallet.kind === "error" ? <View style={styles.lineActions}><Text accessibilityRole="alert" style={styles.warning}>تعذر قراءة الرصيد؛ أعد المحاولة أو اختر الدفع نقدًا.</Text><BthwaniButton label="إعادة قراءة الرصيد" onPress={() => void refreshWallet()} variant="secondary" /></View> : null}
             {balanceNeedsRead && wallet.kind === "loading" ? <Text accessibilityRole="alert" style={styles.warning}>انتظر قراءة الرصيد قبل تحديد مبلغ منه.</Text> : null}
             {balanceNeedsRead && wallet.kind === "error" ? <Text accessibilityRole="alert" style={styles.error}>لا يمكن اعتماد مبلغ من الرصيد حتى تتم قراءته بنجاح.</Text> : null}
-            {balanceExceedsAvailable ? <Text accessibilityRole="alert" style={styles.error}>رصيد المحفظة لا يغطي كامل الطلب. اشحن رصيدك أو اختر الدفع المزدوج.</Text> : null}
-            {balanceExceedsPayable ? <Text accessibilityRole="alert" style={styles.error}>ليس لديك رصيد متاح للمزج. يمكنك الشحن أو الدفع نقدًا.</Text> : null}
-            {(balanceExceedsAvailable || balanceExceedsPayable) ? <Link href={"/wallet-cash-in" as Href} asChild><BthwaniButton label="شحن المحفظة" variant="secondary" /></Link> : null}
+            {useWalletBalance && wallet.kind === "ready" && wallet.availableMinor === 0 ? <Text style={styles.muted}>رصيدك المتاح صفر؛ سيبقى الإجمالي نقدًا.</Text> : null}
+            {useWalletBalance && wallet.kind === "ready" && wallet.availableMinor === 0 ? <Link href={"/wallet-cash-in" as Href} asChild><BthwaniButton label="شحن المحفظة" variant="secondary" /></Link> : null}
             {verifiedQuote && selectedBalanceMinor !== null ? <Text style={styles.muted}>من المحفظة: {formatMoney(selectedBalanceMinor, "YER")}</Text> : null}
-            {remainingCashMinor !== null ? <Text style={styles.muted}>{remainingCashMinor === 0 ? "لا يوجد مبلغ نقدي مطلوب؛ يُسوى الطلب من الرصيد المحجوز عند إتمامه." : `المتبقي نقدًا ${paymentMethodLabel(paymentMethod, fulfillmentMode)}: ${formatMoney(remainingCashMinor, "YER")}`}</Text> : null}
+            {remainingCashMinor !== null ? <Text style={styles.total}>المتبقي نقدًا: {formatMoney(remainingCashMinor, "YER")}</Text> : null}
+            {remainingCashMinor !== null && remainingCashMinor > 0 ? <Text style={styles.muted}>يُدفع إلى: {cashCollectionPartyLabel(fulfillmentMode)} عند الاستلام.</Text> : null}
           </View>
           {quote.kind === "loading" ? <Text accessibilityLiveRegion="polite" style={styles.muted}>جارٍ حساب الإجمالي النهائي…</Text> : null}
           {quote.kind === "invalid" ? <Text accessibilityRole="alert" style={styles.warning}>لن يُحتسب إجمالي الطلب حتى تزيل المنتجات التي تغير توفرها أو كميتها المسموحة أو خياراتها.</Text> : null}
@@ -481,11 +464,11 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
           <Text style={styles.muted}>{checkoutFulfillmentInstructions[fulfillmentMode]}</Text>
         </View>
         <DeliveryRecipientForm allowOther={!pickupMode} onChange={setRecipient} value={recipient} />
-        <Text style={styles.payment}>{paymentMethodLabel(paymentMethod, fulfillmentMode)}</Text>
+        <Text style={styles.payment}>{remainingCashMinor === 0 ? "الطلب مغطى من المحفظة" : remainingCashMinor !== null ? paymentMethodLabel(paymentMethod, fulfillmentMode, remainingCashMinor) : "سيظهر مبلغ الدفع بعد حساب الإجمالي"}</Text>
         {!pickupMode && serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : null}
-        <BthwaniButton accessibilityLabel={pickupMode ? "إتمام الطلب للاستلام الذاتي من المتجر" : "إتمام الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || !verifiedQuote || selectedBalanceMinor === null || balanceNeedsRead || balanceExceedsAvailable || balanceExceedsPayable} label="إتمام الطلب" onPress={() => void checkout()} />
+        <BthwaniButton accessibilityLabel={pickupMode ? "إتمام الطلب للاستلام الذاتي من المتجر" : "إتمام الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || !verifiedQuote || selectedBalanceMinor === null || balanceNeedsRead} label="إتمام الطلب" onPress={() => void checkout()} />
       </> : null}
-      {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{order.cashAmountMinor === 0 ? "مغطى بالكامل من رصيد المحفظة" : `النقد المتبقي عند الاستلام: ${formatMoney(order.cashAmountMinor, order.currency)}`} · {paymentMethodLabel(order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)} · {paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
+      {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{orderPaymentDisclosure(order).amount}</Text><Text style={styles.muted}>{orderPaymentDisclosure(order).status}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
       {orders.length ? <View style={styles.orderBox}><Text style={styles.lineTitle}>طلباتك الأخيرة</Text>{orders.map((item) => <Text key={item.id} style={styles.muted}>{orderStateLabel(item.state)} · {formatMoney(item.totalAmountMinor, item.currency)}</Text>)}</View> : null}
       {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{error}</Text> : null}
     </View>

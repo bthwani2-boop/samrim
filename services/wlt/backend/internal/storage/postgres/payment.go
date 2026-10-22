@@ -144,7 +144,7 @@ func CreatePaymentIntent(ctx context.Context, db *sql.DB, input CreatePaymentInt
 		input.CustomerPaymentAllocation.Currency = strings.TrimSpace(input.CustomerPaymentAllocation.Currency)
 		input.CustomerPaymentAllocation.PolicyVersion = strings.TrimSpace(input.CustomerPaymentAllocation.PolicyVersion)
 	}
-	if db == nil || domain.ValidateCreate(input.ExternalReference, input.PayerActorID, input.Currency, input.Method, input.AmountMinor) != nil || (input.OrderID != "" && (input.CustomerPaymentAllocation == nil || input.CustomerPaymentAllocation.OrderID != input.OrderID)) || (input.CustomerPaymentAllocation != nil && validateCustomerPaymentAllocation(*input.CustomerPaymentAllocation) != nil) || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+	if db == nil || domain.ValidateCreate(input.ExternalReference, input.PayerActorID, input.Currency, input.Method, input.AmountMinor) != nil || (input.OrderID != "" && input.CustomerPaymentAllocation == nil) || (input.CustomerPaymentAllocation != nil && (input.OrderID == "" || input.CustomerPaymentAllocation.OrderID != input.OrderID || validateCustomerPaymentAllocation(*input.CustomerPaymentAllocation) != nil)) || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
 		return PaymentIntentRecord{}, false, ErrInvalidInput
 	}
 	if input.CustomerPaymentAllocation == nil && input.AmountMinor == 0 {

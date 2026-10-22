@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,8 +27,21 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 	if os.Getenv("BTHWANI_ENV") != "test" || os.Getenv("BTHWANI_FINANCIAL_PROOF_ISOLATED") != "1" {
 		t.Fatal("refuse non-isolated cross-service financial proof")
 	}
-	if _, err := opsafety.RequireExpectedDatabaseTarget(wltURL, os.Getenv); err != nil {
+	wltTarget, err := opsafety.RequireExpectedDatabaseTarget(wltURL, os.Getenv)
+	if err != nil {
 		t.Fatal(err)
+	}
+	dshTarget, err := url.Parse(dshURL)
+	if err != nil || dshTarget.User == nil || dshTarget.Hostname() == "" || strings.Trim(dshTarget.Path, "/") == "" {
+		t.Fatal("dedicated DSH test database must be an explicit PostgreSQL URL")
+	}
+	dshPort := dshTarget.Port()
+	if dshPort == "" {
+		dshPort = "5432"
+	}
+	// Distinct database names are required even when localhost aliases or proxies differ.
+	if strings.Trim(dshTarget.Path, "/") == wltTarget.Name {
+		t.Fatal("DSH and WLT financial proof must use separate test databases")
 	}
 	db, err := postgres.Open(wltURL)
 	if err != nil {
@@ -297,10 +311,10 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 		env = append(env, line)
 	}
 	cmd.Env = append(env,
-		"BTHWANI_EXPECTED_DATABASE_HOST=127.0.0.1",
-		"BTHWANI_EXPECTED_DATABASE_PORT="+os.Getenv("BTHWANI_EXPECTED_DATABASE_PORT"),
-		"BTHWANI_EXPECTED_DATABASE_USER=postgres",
-		"BTHWANI_EXPECTED_DATABASE_NAME=dsh_a04_realfunding",
+		"BTHWANI_EXPECTED_DATABASE_HOST="+strings.ToLower(dshTarget.Hostname()),
+		"BTHWANI_EXPECTED_DATABASE_PORT="+dshPort,
+		"BTHWANI_EXPECTED_DATABASE_USER="+dshTarget.User.Username(),
+		"BTHWANI_EXPECTED_DATABASE_NAME="+strings.Trim(dshTarget.Path, "/"),
 		"WLT_FINANCIAL_HANDOFF_REAL_URL="+liveWLT.URL,
 		"WLT_FINANCIAL_PROOF_SERVICE_TOKEN="+token,
 		"WLT_FINANCIAL_PROOF_PAYMENT_ID="+payment.ID,

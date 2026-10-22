@@ -2,6 +2,7 @@ import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { AuthenticatedMobileBoundary } from "@bthwani/identity/presentation";
 import { type Href, Tabs, usePathname, useRouter } from "expo-router";
 import { useCallback, useMemo } from "react";
+import { Platform, useWindowDimensions } from "react-native";
 import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession } from "../../src/bootstrap/identity";
 import ServiceCityScope from "../../src/features/service-city/service-city-scope";
 import { createClientTabOptions } from "../../src/shell/client-shell";
@@ -12,7 +13,9 @@ export default function ClientAppLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const theme = useAppearanceTheme();
-  const tabOptions = useMemo(() => createClientTabOptions(theme), [theme]);
+  const { width } = useWindowDimensions();
+  const desktopWeb = Platform.OS === "web" && width >= 1024;
+  const tabOptions = useMemo(() => createClientTabOptions(theme, desktopWeb), [theme, desktopWeb]);
   const onUnauthenticated = useCallback(() => {
     router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href);
   }, [pathname, router]);

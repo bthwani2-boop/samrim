@@ -1,5 +1,6 @@
 import * as Crypto from "expo-crypto";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "./compatible-storage";
+import { Platform } from "react-native";
 
 import {
   createMobileIdentityRuntime,
@@ -15,7 +16,7 @@ const runtime = createMobileIdentityRuntime({
   role,
   surface,
   namespace,
-  allowDevelopmentSessionFallback: process.env.EXPO_PUBLIC_BTHWANI_AUTH_JOURNEY_PROOF !== "1",
+  allowDevelopmentSessionFallback: Platform.OS !== "web" && process.env.EXPO_PUBLIC_BTHWANI_AUTH_JOURNEY_PROOF !== "1",
   secureStorage: {
     getItem: (key) => SecureStore.getItemAsync(key),
     setItem: (key, value) => SecureStore.setItemAsync(key, value),

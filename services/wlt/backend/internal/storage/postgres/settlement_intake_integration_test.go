@@ -16,6 +16,21 @@ func TestSettlementIntakePartnerStoreScopeWithoutHold(t *testing.T) {
 		IdempotencyKey: "partner-settlement-intake-" + s.suffix,
 		CorrelationID:  "partner-intake-correlation-" + s.suffix,
 	}
+	// The exact amount requested must agree with every Store allocation.
+	// Reject mismatches before creating an intake or consuming its key.
+	for _, wrong := range []int64{2999, 3001, 9223372036854775807} {
+		mismatched := request
+		mismatched.AmountMinor = &wrong
+		if _, _, err := CreateSettlementIntake(s.ctx, s.db, mismatched); !errors.Is(err, ErrSettlementIntakeInvalid) {
+			t.Fatalf("Store allocations total 3000 but requested amount %d: %v", wrong, err)
+		}
+	}
+	var pendingBefore int
+	if err := s.db.QueryRowContext(s.ctx,
+		"SELECT COUNT(*) FROM wlt.beneficiary_settlement_intakes WHERE idempotency_key=$1",
+		request.IdempotencyKey).Scan(&pendingBefore); err != nil || pendingBefore != 0 {
+		t.Fatalf("invalid amount persisted an intake or consumed its key: count=%d err=%v", pendingBefore, err)
+	}
 	item, replay, err := CreateSettlementIntake(s.ctx, s.db, request)
 	if err != nil || replay || item.ResolvedAmountMinor != 3000 || len(item.StoreAllocations) != 2 {
 		t.Fatalf("canonical scoped intake: %+v replay=%v err=%v", item, replay, err)
@@ -31,6 +46,15 @@ func TestSettlementIntakePartnerStoreScopeWithoutHold(t *testing.T) {
 	again, replayed, err := CreateSettlementIntake(s.ctx, s.db, request)
 	if err != nil || !replayed || again.ID != item.ID {
 		t.Fatalf("partner replay: %+v replay=%v err=%v", again, replayed, err)
+	}
+	// Explicit and derived totals are the same financial request.
+	matchingTotal := int64(3000)
+	matching := request
+	matching.AmountMinor = &matchingTotal
+	matchingRecord, replayed, err := CreateSettlementIntake(s.ctx, s.db, matching)
+	if err != nil || !replayed || matchingRecord.ID != item.ID ||
+		matchingRecord.RequestedAmountMinor == nil || *matchingRecord.RequestedAmountMinor != matchingTotal {
+		t.Fatalf("explicit matching amount must replay canonical intake: %+v replay=%v err=%v", matchingRecord, replayed, err)
 	}
 	var count int
 	err = s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.payout_holds WHERE actor_type='partner' AND actor_id=$1", owner).Scan(&count)

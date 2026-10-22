@@ -72,7 +72,12 @@ vertical. A shared Product may have multiple category assignments
 when each assignment is explicitly valid for its vertical. Parent links must
 remain in the same vertical and cycles are rejected. Store-local items are
 organized by their Store's menu/grouping data; they do not need an invented
-assignment to the shared taxonomy.
+assignment to the shared taxonomy. When the Store owner or authorized Operator
+explicitly assigns a compatible active CatalogCategory to a Store-scoped Product,
+DSH validates the shared category and its required typed attribute rules, and
+customer category discovery includes the matching published offer. Leaving a
+Store-scoped Product uncategorized remains valid and must never hide its eligible
+offer. Category assignment does not transfer Product ownership to the shared catalog.
 
 Category rules are owned by the category through typed
 `CategoryAttributeRule` records. A rule may be required, filterable or a

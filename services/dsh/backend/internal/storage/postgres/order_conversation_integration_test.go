@@ -60,6 +60,109 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 			t.Fatalf("order readback lost the delivery-recipient snapshot: %+v err=%v", order.Recipient, err)
 		}
 
+		// Delegated Orders staff must share the owner conversation authority,
+		// but an inactive grant or a catalog-only grant must never expose it.
+		const staffID = "conversation-history-staff"
+		if _, err := postgres.ReadOrderConversation(ctx, db, orderID, staffID, "partner", 10); !errors.Is(err, postgres.ErrOrderConversationForbidden) {
+			t.Fatalf("ungranted Partner staff read Order conversation: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.store_access_grants
+			(id,store_id,owner_partner_actor_id,delegate_actor_id,permissions,state,version,expires_at,accepted_at)
+			VALUES('conversation-history-staff-grant',$1,'conversation-history-partner',$2,ARRAY['catalog'],'active',1,clock_timestamp()+interval '7 days',clock_timestamp())`, storeID, staffID); err != nil {
+			t.Fatalf("create delegated staff fixture: %v", err)
+		}
+		if _, err := postgres.ReadOrderConversation(ctx, db, orderID, staffID, "partner", 10); !errors.Is(err, postgres.ErrOrderConversationForbidden) {
+			t.Fatalf("catalog-only staff read Order conversation: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.store_access_grants SET permissions=ARRAY['orders']
+			WHERE id='conversation-history-staff-grant'`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := postgres.ReadOrderConversation(ctx, db, orderID, staffID, "partner", 10); err != nil {
+			t.Fatalf("Orders-authorized staff cannot read conversation: %v", err)
+		}
+		staffBody := "رسالة اختبار صلاحية الطلب"
+		staffMessage, staffReplay, err := postgres.SendOrderConversationMessage(ctx, db, orderID, staffID, "partner", staffBody,
+			"conversation-staff-message-key", postgres.HashOrderConversationMessageRequest(orderID, staffBody), "conversation-staff-correlation")
+		if err != nil || staffReplay {
+			t.Fatalf("Orders-authorized staff cannot send conversation message: replay=%t err=%v", staffReplay, err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.store_access_grants SET state='suspended'
+			WHERE id='conversation-history-staff-grant'`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := postgres.ReadOrderConversation(ctx, db, orderID, staffID, "partner", 10); !errors.Is(err, postgres.ErrOrderConversationForbidden) {
+			t.Fatalf("suspended staff can still read conversation: %v", err)
+		}
+		if _, _, err := postgres.SendOrderConversationMessage(ctx, db, orderID, staffID, "partner", staffBody,
+			"conversation-staff-suspended-key", postgres.HashOrderConversationMessageRequest(orderID, staffBody), "conversation-staff-suspended-correlation"); !errors.Is(err, postgres.ErrOrderConversationForbidden) {
+			t.Fatalf("suspended staff can still send conversation messages: %v", err)
+		}
+		if _, err := postgres.ReadOrderConversation(ctx, db, orderID, "ungranted-other-staff", "partner", 10); !errors.Is(err, postgres.ErrOrderConversationForbidden) {
+			t.Fatalf("foreign staff gained access through another person's grant: %v", err)
+		}
+		// Leave the existing bounded-history fixture untouched.
+		if _, err := db.ExecContext(ctx, "DELETE FROM dsh.commerce_order_conversation_messages WHERE id=$1", staffMessage.ID); err != nil {
+			t.Fatalf("remove temporary staff message from history fixture: %v", err)
+		}
+
+		// Directed messages are visible only to the chosen recipients, original sender,
+		// and operations. Non-recipients cannot forge read acknowledgments.
+		privateBody := "رسالة خاصة بالعمليات"
+		privateMessage, privateReplay, err := postgres.SendOrderConversationMessage(ctx, db, orderID, clientID, "client", privateBody,
+			"conversation-private-operator-key", postgres.HashOrderConversationMessageRequest(orderID, privateBody, "operator"), "conversation-private-operator-correlation", "operator")
+		if err != nil || privateReplay {
+			t.Fatalf("directed operator message: replay=%t err=%v", privateReplay, err)
+		}
+		if visible, err := postgres.ReadOrderConversation(ctx, db, orderID, "conversation-history-partner", "partner", 10); err != nil || len(visible.Messages) != 0 || visible.UnreadCount != 0 {
+			t.Fatalf("private operator message leaked to store: %+v %v", visible, err)
+		}
+		if _, err := postgres.MarkOrderConversationRead(ctx, db, orderID, "conversation-history-partner", "partner", privateMessage.ID); !errors.Is(err, postgres.ErrOrderConversationMessageNotFound) {
+			t.Fatalf("store acknowledged invisible private message: %v", err)
+		}
+		if visible, err := postgres.ReadOrderConversation(ctx, db, orderID, "conversation-test-operator", "operator", 10); err != nil || len(visible.Messages) != 1 || visible.Messages[0].ID != privateMessage.ID {
+			t.Fatalf("operator cannot supervise targeted conversation: %+v %v", visible, err)
+		}
+		if visible, err := postgres.ReadOrderConversation(ctx, db, orderID, clientID, "client", 10); err != nil || len(visible.Messages) != 1 {
+			t.Fatalf("sender cannot read own targeted message: %+v %v", visible, err)
+		}
+		if _, err := postgres.MarkOrderConversationRead(ctx, db, orderID, "conversation-test-operator", "operator", privateMessage.ID); err != nil {
+			t.Fatalf("operator cannot acknowledge visible message: %v", err)
+		}
+		if _, _, err := postgres.SendOrderConversationMessage(ctx, db, orderID, clientID, "client", privateBody,
+			"conversation-private-operator-key", postgres.HashOrderConversationMessageRequest(orderID, privateBody, "partner"), "conversation-private-changed-correlation", "partner"); !errors.Is(err, postgres.ErrOrderConversationIdempotency) {
+			t.Fatalf("same key with changed recipient leaked or bypassed idempotency: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, "DELETE FROM dsh.commerce_order_conversation_messages WHERE id=$1", privateMessage.ID); err != nil {
+			t.Fatal(err)
+		}
+
+		// Private image bytes are never exposed as a public media URL.
+		image := postgres.OrderConversationMedia{Kind: "image", ContentType: "image/png", Bytes: []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01}}
+		imageBody := "صورة خاصة"
+		imageHash := postgres.HashOrderConversationMediaRequest(orderID, imageBody, []string{"operator"}, image)
+		imageMessage, replayed, err := postgres.SendOrderConversationMedia(ctx, db, orderID, clientID, "client", imageBody,
+			"conversation-private-image-key", imageHash, "conversation-private-image-correlation", []string{"operator"}, image)
+		if err != nil || replayed || imageMessage.MediaKind != "image" {
+			t.Fatalf("private image send: %+v replay=%t err=%v", imageMessage, replayed, err)
+		}
+		if _, err := postgres.ReadOrderConversationMedia(ctx, db, orderID, "conversation-history-partner", "partner", imageMessage.ID); !errors.Is(err, postgres.ErrOrderConversationMessageNotFound) {
+			t.Fatalf("private media leaked to partner: %v", err)
+		}
+		if found, err := postgres.ReadOrderConversationMedia(ctx, db, orderID, "conversation-test-operator", "operator", imageMessage.ID); err != nil || string(found.Bytes) != string(image.Bytes) || found.ContentType != "image/png" {
+			t.Fatalf("operator private read: %+v %v", found, err)
+		}
+		if _, err := postgres.ReadOrderConversationMedia(ctx, db, "other-order", clientID, "client", imageMessage.ID); err == nil {
+			t.Fatal("foreign order media exposed")
+		}
+		if prior, replay, err := postgres.SendOrderConversationMedia(ctx, db, orderID, clientID, "client", imageBody,
+			"conversation-private-image-key", imageHash, "conversation-image-retry-correlation", []string{"operator"}, image); err != nil || !replay || prior.ID != imageMessage.ID {
+			t.Fatalf("media retry duplicate: %+v %t %v", prior, replay, err)
+		}
+		if _, err := db.ExecContext(ctx, "DELETE FROM dsh.commerce_order_conversation_messages WHERE id=$1", imageMessage.ID); err != nil {
+			t.Fatal(err)
+		}
+
 		const messageCount = 105
 		firstMessageID := ""
 		firstIdempotencyKey := ""
@@ -89,6 +192,16 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 			t.Fatalf("bounded conversation returned %d messages (%q through %q), want latest 10 in ascending order", len(history.Messages), history.Messages[0].Body, history.Messages[len(history.Messages)-1].Body)
 		}
 
+		if history.NextCursor == "" {
+			t.Fatal("bounded history must expose an older-page cursor")
+		}
+		older, err := postgres.ReadOrderConversation(ctx, db, orderID, clientID, "client", 10, history.NextCursor)
+		if err != nil || len(older.Messages) != 10 || older.Messages[0].Body != "رسالة 085" || older.Messages[9].Body != "رسالة 094" || older.NextCursor == "" {
+			t.Fatalf("cursor page failed: %+v %v", older, err)
+		}
+		if empty, err := postgres.ReadOrderConversation(ctx, db, orderID, "conversation-history-partner", "partner", 10, privateMessage.ID); err != nil || len(empty.Messages) != 0 {
+			t.Fatalf("invisible cursor leaked history: %+v %v", empty, err)
+		}
 		replay, replayed, err := postgres.SendOrderConversationMessage(ctx, db, orderID, clientID, "client", "رسالة 000", firstIdempotencyKey, postgres.HashOrderConversationMessageRequest(orderID, "رسالة 000"), "conversation-message-replay-correlation")
 		if err != nil || !replayed || replay.ID != firstMessageID {
 			t.Fatalf("same-key message replay = %+v replayed=%t err=%v", replay, replayed, err)
@@ -99,6 +212,19 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 		var storedCount int
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.commerce_order_conversation_messages WHERE order_id=$1", orderID).Scan(&storedCount); err != nil || storedCount != messageCount {
 			t.Fatalf("canonical conversation contains %d messages, %v; want %d", storedCount, err, messageCount)
+		}
+
+		firstReadAt, err := postgres.MarkOrderConversationRead(ctx, db, orderID, "conversation-history-partner", "partner", firstMessageID)
+		if err != nil {
+			t.Fatalf("mark first message read: %v", err)
+		}
+		retryReadAt, err := postgres.MarkOrderConversationRead(ctx, db, orderID, "conversation-history-partner", "partner", firstMessageID)
+		if err != nil || !firstReadAt.Equal(retryReadAt) {
+			t.Fatalf("retry replaced the original read receipt: first=%v retry=%v err=%v", firstReadAt, retryReadAt, err)
+		}
+		partnerHistory, err := postgres.ReadOrderConversation(ctx, db, orderID, "conversation-history-partner", "partner", 10)
+		if err != nil || partnerHistory.UnreadCount != messageCount-1 {
+			t.Fatalf("read receipt changed the unread boundary: count=%d err=%v", partnerHistory.UnreadCount, err)
 		}
 
 		pickupAt := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Microsecond)
@@ -113,7 +239,7 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 			t.Fatalf("simulate later financial handoff update: %v", err)
 		}
 		closed, err := postgres.ReadOrderConversation(ctx, db, orderID, clientID, "client", 10)
-		if err != nil || closed.CanSend || closed.ReadOnlyAt == nil || !closed.ReadOnlyAt.Equal(pickupAt.Add(time.Hour)) {
+		if err != nil || closed.CanSend || closed.ReadOnlyAt == nil || !closed.ReadOnlyAt.Equal(pickupAt) {
 			t.Fatalf("completed pickup conversation = %+v err=%v, want expiry anchored to the pickup event", closed, err)
 		}
 		lateBody := "رسالة بعد الإغلاق"

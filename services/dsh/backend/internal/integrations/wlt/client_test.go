@@ -159,7 +159,7 @@ func TestEnsureCollectedCollectsExactAmount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent, err := client.EnsureCollected(t.Context(), "pi-1", "captain-1", "cash-1", 1500, "collect-key", "corr-1")
+	intent, err := client.EnsureCollected(t.Context(), "pi-1", MethodCashOnDelivery, "captain-1", "cash-1", 1500, "collect-key", "corr-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestEnsureCollectedSettlesFullBalanceWithoutCashActor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent, err := client.EnsureCollected(t.Context(), "pi-2", "partner-1", "cash-reference", 900, "balance-settle-key", "balance-settle-corr")
+	intent, err := client.EnsureCollected(t.Context(), "pi-2", MethodCashAtStore, "partner-1", "cash-reference", 900, "balance-settle-key", "balance-settle-corr")
 	if err != nil {
 		t.Fatal(err)
 	}

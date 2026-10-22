@@ -1066,7 +1066,7 @@ func validateCatalogProductFactsTx(ctx context.Context, tx *sql.Tx, input Catalo
 	} else if err != nil {
 		return err
 	}
-	if (input.Scope == "SHARED" && len(input.CategoryIDs) == 0) || (input.Scope == "STORE_SCOPED" && (len(input.CategoryIDs) > 0 || len(input.AttributeValues) > 0 || len(input.VariantAttributeValues) > 0)) {
+	if input.Scope == "SHARED" && len(input.CategoryIDs) == 0 {
 		return ErrCatalogProductScopeMismatch
 	}
 	if input.Scope == "STORE_SCOPED" {
@@ -1254,7 +1254,7 @@ func UpdateCatalogProduct(ctx context.Context, db *sql.DB, productID string, inp
 			return CatalogProductResult{}, ErrCatalogProductOwnership
 		}
 	}
-	if input.Scope == "SHARED" && len(input.CategoryIDs) == 0 || input.Scope == "STORE_SCOPED" && (len(input.CategoryIDs) > 0 || len(input.AttributeValues) > 0 || len(input.VariantAttributeValues) > 0) {
+	if input.Scope == "SHARED" && len(input.CategoryIDs) == 0 {
 		return CatalogProductResult{}, ErrCatalogProductScopeMismatch
 	}
 	if input.CategoryIDs == nil {
@@ -1266,7 +1266,7 @@ func UpdateCatalogProduct(ctx context.Context, db *sql.DB, productID string, inp
 			return CatalogProductResult{}, ErrCatalogCategoryNotFound
 		}
 	} else {
-		if input.Scope != "SHARED" || len(input.CategoryIDs) == 0 || input.AttributeValues == nil || input.VariantAttributeValues == nil || len(input.VariantAttributeValues) != len(current.Variants) {
+		if (input.Scope == "SHARED" && (len(input.CategoryIDs) == 0 || input.AttributeValues == nil || input.VariantAttributeValues == nil || len(input.VariantAttributeValues) != len(current.Variants))) || (input.Scope == "STORE_SCOPED" && len(input.VariantAttributeValues) > 0 && len(input.VariantAttributeValues) != len(current.Variants)) {
 			return CatalogProductResult{}, ErrCatalogCategoryNotFound
 		}
 		rows, queryErr := tx.QueryContext(ctx, "SELECT id FROM dsh.catalog_categories WHERE id=ANY($1) AND vertical_id=$2 AND active=true FOR SHARE", pq.Array(input.CategoryIDs), input.VerticalID)
@@ -1300,9 +1300,11 @@ func UpdateCatalogProduct(ctx context.Context, db *sql.DB, productID string, inp
 			}
 			variantValuesByID[set.VariantID] = set.Values
 		}
-		for _, variant := range current.Variants {
-			if _, exists := variantValuesByID[variant.ID]; !exists {
-				return CatalogProductResult{}, ErrCatalogCategoryNotFound
+		if input.Scope == "SHARED" || len(input.VariantAttributeValues) > 0 {
+			for _, variant := range current.Variants {
+				if _, exists := variantValuesByID[variant.ID]; !exists {
+					return CatalogProductResult{}, ErrCatalogCategoryNotFound
+				}
 			}
 		}
 	}

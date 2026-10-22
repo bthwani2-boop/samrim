@@ -2,7 +2,7 @@
 
 import {
   type CatalogProductProposal, catalogProductProposalStateLabel,
-  type JoiningCaseSummary, joiningCaseStateLabel,
+  type JoiningCaseSummary, joiningCaseStateLabel, type Notification, type OperatorHomeAnalytics,
   type OperatorOperationListItem, type OperatorOperationsSummary, orderStateLabel,
 } from "@bthwani/dsh";
 import Link from "next/link";
@@ -12,10 +12,14 @@ import { PageHeader } from "../../shell/page-header";
 import { OperationalIcon, type OperationalIconName } from "../../shell/workspace-icon";
 import { responseMessage } from "../access/identity-error-message";
 import { operationResponseMessage } from "../operations/operator-actions";
+import { operationNotificationHref } from "../notifications/notification-operation-link";
+import { notificationHref, notificationTitle } from "../notifications/notification-presentation";
+import { parseOperatorNotificationList } from "../notifications/notification-readback";
+import { isOperatorHomeAnalytics, OperatorHomeCharts } from "./operator-home-analytics";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 
 
-type QueueKey = "operations" | "operationsLive" | "joiningCases" | "joiningAdmissions" | "proposals";
+type QueueKey = "operations" | "operationsLive" | "joiningCases" | "joiningAdmissions" | "proposals" | "analytics" | "notifications";
 type QueueRequest = Readonly<{ key: QueueKey; url: string }>;
 
 function validSummary(value: unknown): value is OperatorOperationsSummary {
@@ -41,6 +45,9 @@ export function OperatorHome() {
   const canReadCatalog = permissions.includes("catalog");
   const [operations, setOperations] = useState<ReadonlyArray<OperatorOperationListItem>>([]);
   const [summary, setSummary] = useState<OperatorOperationsSummary | null>(null);
+  const [analytics, setAnalytics] = useState<OperatorHomeAnalytics | null>(null);
+  const [recentNotifications, setRecentNotifications] = useState<ReadonlyArray<Notification>>([]);
+  const [unreadCount, setUnreadCount] = useState<number | null>(null);
   const [joiningCases, setJoiningCases] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
   const [joiningAdmissions, setJoiningAdmissions] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
   const [proposals, setProposals] = useState<ReadonlyArray<CatalogProductProposal>>([]);
@@ -64,6 +71,9 @@ export function OperatorHome() {
       hasLoaded.current = false;
       setOperations([]);
       setSummary(null);
+      setAnalytics(null);
+      setRecentNotifications([]);
+      setUnreadCount(null);
       setJoiningCases([]);
       setJoiningAdmissions([]);
       setProposals([]);
@@ -77,7 +87,9 @@ export function OperatorHome() {
       ...(canReadOperations ? [
         { key: "operations" as const, url: "/api/operations?limit=8&actionableOnly=true" },
         { key: "operationsLive" as const, url: "/api/operations?limit=1" },
+        { key: "analytics" as const, url: "/api/operations/home-analytics" },
       ] : []),
+      { key: "notifications" as const, url: "/api/notifications?limit=25" },
       ...(canReadPartners ? [
         { key: "joiningAdmissions" as const, url: "/api/partners/joining-cases?state=admission_requested&limit=4" },
         { key: "joiningCases" as const, url: "/api/partners/joining-cases?state=submitted&limit=4" },
@@ -90,9 +102,20 @@ export function OperatorHome() {
       let failure: string | null = null;
       try {
         const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
-        if (!response.ok) throw new Error(await (key === "operations" || key === "operationsLive" ? operationResponseMessage(response) : responseMessage(response)));
+        if (!response.ok) throw new Error(await (key === "operations" || key === "operationsLive" || key === "analytics" ? operationResponseMessage(response) : responseMessage(response)));
         const body = await response.json().catch(() => null) as unknown;
         if (sequence !== requestSequence.current) return;
+        if (key === "notifications") {
+          const parsed = parseOperatorNotificationList(body);
+          setRecentNotifications(parsed.notifications.filter((item) => !item.readAt).slice(0, 3));
+          setUnreadCount(parsed.unreadCount);
+          return;
+        }
+        if (key === "analytics") {
+          if (!isOperatorHomeAnalytics(body)) throw new Error("استجابة تحليل الطلبات غير صالحة.");
+          setAnalytics(body);
+          return;
+        }
         const collectionKey = key === "operations" || key === "operationsLive" ? "operations"
           : key === "proposals" ? "proposals" : "cases";
         const data = body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : null;
@@ -112,6 +135,8 @@ export function OperatorHome() {
       } catch (cause) {
         if (sequence !== requestSequence.current) return;
         if (key === "operationsLive") setSummary(null);
+        if (key === "analytics") setAnalytics(null);
+        if (key === "notifications") { setRecentNotifications([]); setUnreadCount(null); }
         failure = queueFailureMessage(cause);
       } finally {
         if (sequence === requestSequence.current) {
@@ -175,6 +200,13 @@ export function OperatorHome() {
           <Metric label="بانتظار كابتن" value={summary?.awaitingDispatchCount ?? null} href="/operations?view=dispatch" tone="warning" pending={loadingQueues.has("operationsLive")} />
           <Metric label="قيد التنفيذ" value={summary?.activeCount ?? null} href="/operations" tone="info" pending={loadingQueues.has("operationsLive")} />
         </section> : null}
+        {canReadOperations ? <details className="bt-home-extraMetrics">
+          <summary>المزيد من مؤشرات الطلبات</summary>
+          <div className="bt-home-metrics">
+            <Metric label="إجمالي الطلبات" value={summary?.totalCount ?? null} href="/operations" pending={loadingQueues.has("operationsLive")} />
+            <Metric label="تم تسليمها" value={summary?.deliveredCount ?? null} href="/operations?view=delivered" pending={loadingQueues.has("operationsLive")} />
+          </div>
+        </details> : null}
         {canReadOperations && (errors.operationsLive || !loadingQueues.has("operationsLive") && !summary) ? <p className="bt-home-metricsNote" role="status">
           {errors.operationsLive ? "تعذرت قراءة مؤشرات التشغيل." : "إجماليات التشغيل غير متاحة حاليًا."}
         </p> : null}
@@ -202,6 +234,31 @@ export function OperatorHome() {
               </HomeQueue> : null}
             </div> : null}
           </section>
+          <section className="bt-home-notifications" aria-labelledby="home-notifications-title">
+            <div className="bt-home-panelHeading">
+              <h2 id="home-notifications-title">أحدث الإشعارات</h2>
+              <Link href="/notifications">مركز الإشعارات</Link>
+            </div>
+            {errors.notifications ? <p className="home-queue-error" role="alert">تعذرت قراءة الإشعارات.</p>
+              : loadingQueues.has("notifications") && unreadCount === null ? <p className="empty-inline" role="status">جارٍ قراءة الإشعارات…</p>
+              : unreadCount === null ? <p className="empty-inline">الإشعارات غير متاحة.</p>
+              : <><p className="bt-home-unreadCount">غير مقروءة: <strong>{unreadCount.toLocaleString("ar-YE")}</strong></p>
+                {recentNotifications.length === 0 ? <p className="empty-inline">لا توجد إشعارات جديدة في المعاينة.</p>
+                  : <ul className="home-list">{recentNotifications.map((item) => {
+                      const linked = item.joiningCaseId?.trim() || item.storeId?.trim()
+                        ? (canReadPartners ? notificationHref(item) : null)
+                        : (canReadOperations ? operationNotificationHref(item.orderId) : null);
+                      return <li key={item.id}><Link className="home-record-link" href={linked ?? "/notifications"}>
+                        <span className="home-record-copy"><strong>{notificationTitle(item)}</strong></span>
+                        <span className="home-record-meta"><time dateTime={item.createdAt}>{formatHomeDate(item.createdAt)}</time></span>
+                      </Link></li>;
+                    })}</ul>}
+              </>}
+          </section>
+          {canReadOperations ? <details className="bt-home-analytics-disclosure">
+            <summary>حركة الطلبات خلال 7 أيام</summary>
+            <OperatorHomeCharts report={analytics} error={errors.analytics} loading={loadingQueues.has("analytics")} />
+          </details> : null}
       </div>}
     </section>
   );
