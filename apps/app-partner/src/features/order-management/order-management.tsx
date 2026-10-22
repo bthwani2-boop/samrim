@@ -326,6 +326,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: expandedOrderIds.has(order.id) }} accessibilityLabel={expandedOrderIds.has(order.id) ? "إخفاء تفاصيل الطلب" : "تفاصيل الطلب"} onPress={() => setExpandedOrderIds((current) => { const next = new Set(current); if (next.has(order.id)) next.delete(order.id); else next.add(order.id); return next; })} style={styles.expandButton}><Text style={styles.expandText}>{expandedOrderIds.has(order.id) ? "إخفاء التفاصيل" : "عرض التفاصيل"}</Text></Pressable>
             {expandedOrderIds.has(order.id) ? <>
             <Text style={styles.muted}>{order.fulfillmentMode === "CUSTOMER_PICKUP" ? "طريقة الاستلام: الاستلام من المتجر" : order.fulfillmentMode === "BTHWANI_CAPTAIN" ? "التوصيل بواسطة كابتن بثواني" : `العنوان: ${order.addressText}`}</Text>
+            {order.customerNote ? <View style={styles.handoff}><Text style={styles.lineTitle}>ملاحظات العميل للمتجر</Text><Text selectable style={styles.muted}>{order.customerNote}</Text></View> : null}
             {order.fulfillmentMode === "PARTNER_CAPTAIN" ? <View style={styles.handoff}>
               <Text style={styles.lineTitle}>{order.recipient.mode === "OTHER" ? "مستلم الطلب" : "المستلم: صاحب الطلب"}</Text>
               {order.recipient.mode === "OTHER" ? <>

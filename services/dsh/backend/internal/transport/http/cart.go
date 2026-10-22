@@ -175,7 +175,7 @@ func (s *CartServer) checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	recipient := postgres.DeliveryRecipientInput{Mode: input.Recipient.Mode, Name: input.Recipient.Name, PhoneE164: input.Recipient.PhoneE164, Instructions: input.Recipient.Instructions}
-	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), input.PromotionCode, int64(input.ExpectedTotalAmountMinor), recipient, int64(input.InternalBalanceAmountMinor), expected, idempotency, correlation)
+	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), input.PromotionCode, int64(input.ExpectedTotalAmountMinor), recipient, input.CustomerNote, int64(input.InternalBalanceAmountMinor), expected, idempotency, correlation)
 	if err != nil {
 		writeCartError(w, err)
 		return
@@ -274,6 +274,8 @@ func writeCartErrorWithCorrelation(w http.ResponseWriter, err error, correlation
 		writeError(w, http.StatusConflict, "CHECKOUT_PAYMENT_RECONCILED", "the previous payment was safely cancelled; refresh the cart and start a new checkout")
 	case errors.Is(err, postgres.ErrCheckoutRecipientInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_RECIPIENT", "delivery recipient details are invalid for the selected fulfillment mode")
+	case errors.Is(err, postgres.ErrCheckoutCustomerNoteInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_CUSTOMER_NOTE", "customer note must be 500 characters or fewer and contain no unsupported control characters")
 	case errors.Is(err, cart.ErrInsufficientCustomerBalance):
 		writeError(w, http.StatusConflict, "INSUFFICIENT_CUSTOMER_BALANCE", "available customer balance does not cover the requested contribution; no order was created")
 	case errors.Is(err, cart.ErrCheckoutBalanceContribution):

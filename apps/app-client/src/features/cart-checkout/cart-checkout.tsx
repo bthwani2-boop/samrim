@@ -5,7 +5,7 @@ import * as Crypto from "expo-crypto";
 import { type Href, Link, useRouter } from "expo-router";
 import * as SecureStore from "../../bootstrap/compatible-storage";
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
-import { premium } from "../order-experience/premium-order-ui";
+import { premiumColors } from "../order-experience/premium-order-ui";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { recordPendingDiscoveryConversion } from "../store-discovery/discovery-analytics";
@@ -127,6 +127,8 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   const [error, setError] = useState("");
   const [order, setOrder] = useState<Order | null>(null);
   const [showPromotion, setShowPromotion] = useState(Boolean(initialPromotionCode));
+  const [showCustomerNote, setShowCustomerNote] = useState(false);
+  const [customerNote, setCustomerNote] = useState("");
   const [showItems, setShowItems] = useState(false);
   const [promotionCode, setPromotionCode] = useState(initialPromotionCode.trim().toUpperCase());
   const [appliedPromotionCode, setAppliedPromotionCode] = useState("");
@@ -367,7 +369,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
         setError("تعذر التحقق من جلسة العميل؛ لم يُرسل الطلب.");
         return;
       }
-      const request: CheckoutRequest = { cartId: state.cart.id, storeId, addressId: addressID, fulfillmentMode, expectedTotalAmountMinor: quote.quote.totalAmountMinor, internalBalanceAmountMinor, recipient: checkoutRecipient(recipient, !pickupMode), ...(appliedPromotionCode ? { promotionCode: appliedPromotionCode } : {}) };
+      const request: CheckoutRequest = { cartId: state.cart.id, storeId, addressId: addressID, fulfillmentMode, expectedTotalAmountMinor: quote.quote.totalAmountMinor, internalBalanceAmountMinor, recipient: checkoutRecipient(recipient, !pickupMode), ...(customerNote.trim() ? { customerNote: customerNote.trim() } : {}), ...(appliedPromotionCode ? { promotionCode: appliedPromotionCode } : {}) };
       const storageKey = pendingCartCheckoutKey(actorID, storeId);
       const attempt: PendingCartCheckoutAttempt = {
         version: 1, actorID, storeID: storeId, cartID: state.cart.id, expectedCartVersion: state.cart.version,
@@ -453,6 +455,17 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
             {initialPromotionCode ? <Text style={styles.muted}>رمز العرض جاهز من المتجر. اضغط «تطبيق» ليتحقق النظام من الأهلية.</Text> : null}
             {showPromotion ? <View style={styles.promotionRow}><TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" editable={!mutationBusy} onChangeText={setPromotionCode} placeholder="رمز القسيمة" placeholderTextColor={theme.colorMuted} style={styles.promotionInput} value={promotionCode} /><BthwaniButton disabled={mutationBusy || (!pickupMode && !serviceableAddressId)} label="تطبيق" onPress={() => { if (promotionNeedsApply) setAppliedPromotionCode(promotionCode.trim().toUpperCase()); else if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /></View> : null}
           </View>
+          <View style={styles.promotionBox}>
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: showCustomerNote }}
+              onPress={() => setShowCustomerNote((value) => !value)}>
+              <Text style={styles.fulfillmentTitle}>{customerNote.trim() ? "ملاحظات الطلب · تعديل" : "ملاحظات الطلب · إضافة +"}</Text>
+            </Pressable>
+            {showCustomerNote ? <TextInput accessibilityLabel="ملاحظات الطلب للمتجر" multiline
+              maxLength={500} editable={!mutationBusy} value={customerNote} onChangeText={setCustomerNote}
+              placeholder="مثال: بدون بصل" placeholderTextColor={theme.colorMuted}
+              style={styles.customerNoteInput} /> :
+              customerNote.trim() ? <Text style={styles.muted}>{customerNote.trim()}</Text> : null}
+          </View>
           {verifiedQuote ? <>
             {verifiedQuote.discountMinor > 0 ? <Text style={styles.success}>الخصم: -{formatMoney(verifiedQuote.discountMinor, verifiedQuote.currency)}{verifiedQuote.promotionCode ? ` · ${verifiedQuote.promotionCode}` : ""}</Text> : null}
             {!pickupMode ? <Text style={styles.muted}>رسوم التوصيل: {formatMoney(verifiedQuote.deliveryFeeMinor, verifiedQuote.currency)}</Text> : <Text style={styles.muted}>رسوم التوصيل: لا توجد — الاستلام من المتجر</Text>}
@@ -497,6 +510,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
+  const premium = premiumColors(theme);
   return StyleSheet.create({
     container: { backgroundColor: premium.background, gap: spacing[3], marginTop: spacing[1], paddingBottom: spacing[3] },
     title: { ...typography.titleSm, color: premium.text },
@@ -526,6 +540,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     error: { ...typography.bodySm, color: theme.danger },
     promotionBox: { borderColor: premium.stroke, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[2] },
     promotionRow: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
+    customerNoteInput: { ...typography.bodySm, borderWidth: borders.hairline, borderColor: premium.stroke, backgroundColor: premium.raised, color: premium.text, borderRadius: radius.md, padding: spacing[3], minHeight: 72, textAlignVertical: "top" },
     promotionInput: { ...typography.bodySm, backgroundColor: premium.raised, borderColor: premium.stroke, borderRadius: radius.sm, borderWidth: borders.hairline, color: premium.text, flex: 1, minHeight: 42, paddingHorizontal: spacing[2] },
   });
 }

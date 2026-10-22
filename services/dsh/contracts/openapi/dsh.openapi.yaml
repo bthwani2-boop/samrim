@@ -5913,6 +5913,10 @@ components:
       required: [cartId, storeId, fulfillmentMode]
       additionalProperties: false
       properties:
+        customerNote:
+          type: string
+          maxLength: 500
+          description: Optional order note for the store, distinct from alternate recipient instructions.
         cartId:
           type: string
           minLength: 1
@@ -8731,6 +8735,10 @@ components:
         pickupLocation:
           $ref: "#/components/schemas/OrderPickupLocation"
           nullable: true
+        customerNote:
+          type: string
+          maxLength: 500
+          description: Customer order note saved at checkout, distinct from recipient instructions.
         cartId:
           type: string
         fulfillmentMode:

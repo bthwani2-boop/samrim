@@ -9,7 +9,7 @@ import { useServiceCityScope } from "../service-city/service-city-scope";
 import { evaluateStoreServiceability, listOwnDeliveryAddresses, readPublishedStore } from "../store-discovery/store-discovery-client";
 import { CartCheckout, type CheckoutFooterState } from "./cart-checkout";
 import { readSavedFulfillmentMode, resolveFulfillmentChoice, saveFulfillmentMode } from "./fulfillment-choice";
-import { PremiumFulfillmentSelector, PremiumStickyFooter, PremiumStoreIdentity, premium } from "../order-experience/premium-order-ui";
+import { PremiumFulfillmentSelector, PremiumStickyFooter, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 
 const fulfillmentDetails: Readonly<Record<CustomerFulfillmentMode, string>> = {
   BTHWANI_CAPTAIN: "كابتن من بثواني",
@@ -226,6 +226,7 @@ function serviceabilityMessage(status: ServiceabilityResponse["status"]): string
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
+  const premium = premiumColors(theme);
   return StyleSheet.create({
     page: { flex: 1, backgroundColor: premium.background },
     scroll: { paddingHorizontal: spacing[3], paddingVertical: spacing[3], gap: spacing[3], paddingBottom: spacing[8] },

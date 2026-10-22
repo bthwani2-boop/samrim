@@ -5,7 +5,7 @@ import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { PremiumOrderProgress, PremiumStoreIdentity, premium } from "../order-experience/premium-order-ui";
+import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { orderJourneyPresentation } from "./order-journey";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { matchesOrderFilters, matchesOrderStatus } from "./order-list-filter";
@@ -29,6 +29,7 @@ function hasCurrentOrdersActor(actorID: string): boolean {
 export default function ClientOrders() {
   const router = useRouter();
   const theme = useAppearanceTheme();
+  const premium = premiumColors(theme);
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OrdersState>({ kind: "loading" });
   const [identityState, setIdentityState] = useState(currentIdentityState);
@@ -278,6 +279,7 @@ export default function ClientOrders() {
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
+  const premium = premiumColors(theme);
   return StyleSheet.create({
     container: { backgroundColor: premium.background, flexGrow: 1, gap: spacing[3], paddingHorizontal: spacing[2], paddingBottom: spacing[8], width: "100%" },
     ordersHeader: { flexDirection: "row", alignItems: "center", minHeight: 56 },

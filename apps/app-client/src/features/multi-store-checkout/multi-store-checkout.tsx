@@ -8,7 +8,7 @@ import * as SecureStore from "../../bootstrap/compatible-storage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { PremiumFulfillmentSelector, PremiumOutlineAction, PremiumStickyFooter, PremiumStoreIdentity, premium } from "../order-experience/premium-order-ui";
+import { PremiumFulfillmentSelector, PremiumOutlineAction, PremiumStickyFooter, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { isClientActorScopeCurrent } from "../orders/order-session-scope";
 import { useServiceCityScope } from "../service-city/service-city-scope";
@@ -200,6 +200,7 @@ export default function MultiStoreCheckoutScreen() {
   const router = useRouter();
   const { selectedCityID } = useServiceCityScope();
   const theme = useAppearanceTheme();
+  const premium = premiumColors(theme);
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<ScreenState>({ kind: "loading" });
   const [pendingAttempt, setPendingAttempt] = useState<PendingMultiStoreAttempt | null>(null);
@@ -602,6 +603,7 @@ function checkoutChildStateLabel(state: MultiStoreCheckout["children"][number]["
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
+  const premium = premiumColors(theme);
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: premium.background },
     container: { gap: spacing[3], paddingHorizontal: spacing[3], paddingBottom: spacing[8], width: "100%" },

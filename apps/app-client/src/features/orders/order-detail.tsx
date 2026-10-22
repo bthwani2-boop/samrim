@@ -5,7 +5,7 @@ import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { PremiumOrderProgress, PremiumStoreIdentity, premium } from "../order-experience/premium-order-ui";
+import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
 import { isClientOrderScopeCurrent } from "./order-session-scope";
@@ -307,6 +307,11 @@ export default function ClientOrderDetail() {
           <Text accessibilityLiveRegion="polite" style={styles.heroTitle}>{journey.title}</Text>
         </View>
         <Text style={styles.muted}>{journey.description}</Text>
+        <Text style={styles.muted}>آخر تحديث للطلب: {formatOrderDate(order.updatedAt)}</Text>
+        {order.customerNote ? <View style={styles.modeTag}>
+          <Text style={styles.sectionTitle}>ملاحظات الطلب</Text>
+          <Text style={styles.muted}>{order.customerNote}</Text>
+        </View> : null}
         <View style={styles.modeTag}><Text style={styles.modeTagText}>طريقة التنفيذ: {journey.fulfillmentLabel}</Text></View>
       </BthwaniSurface>
       <BthwaniSurface tone="raised" style={styles.journey}>
@@ -453,6 +458,7 @@ export default function ClientOrderDetail() {
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
+  const premium = premiumColors(theme);
   return StyleSheet.create({
     container: { backgroundColor: premium.background, gap: spacing[3], paddingBottom: spacing[8], width: "100%" },
     headerBar: { flexDirection: "row-reverse", alignItems: "center", minHeight: sizing.controlLg, gap: spacing[2] },
