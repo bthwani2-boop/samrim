@@ -13,12 +13,13 @@ func TestStoreScopedCategoryVisibilityMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != SchemaVersion || records[len(records)-1].Version != SchemaVersion ||
-		records[len(records)-1].Name != "140_store_scoped_catalog_categories.sql" {
-		t.Fatalf("unexpected last catalog migration: %+v", records[len(records)-1])
+	const catalogMigrationVersion = 140
+	if len(records) != SchemaVersion || records[catalogMigrationVersion-1].Version != catalogMigrationVersion ||
+		records[catalogMigrationVersion-1].Name != "140_store_scoped_catalog_categories.sql" {
+		t.Fatalf("unexpected catalog migration: %+v", records[catalogMigrationVersion-1])
 	}
 
-	statement := statements[len(statements)-1]
+	statement := statements[catalogMigrationVersion-1]
 	requires := []string{
 		"CREATE OR REPLACE VIEW dsh.catalog_publishable_offers AS",
 		"p.scope='SHARED' AND EXISTS",

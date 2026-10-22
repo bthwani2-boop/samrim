@@ -295,6 +295,11 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
   try { return await result; } finally { refreshInFlight.delete(refreshKey); }
 }
 
+// The BFF forwards only an already validated operator session to DSH; never expose this token to the browser.
+export async function currentOperatorAccessTokenForDsh(): Promise<string | null> {
+  return (await cookies()).get(accessCookie)?.value ?? null;
+}
+
 export async function readOperatorProfile(): Promise<Readonly<{ phoneE164: string }> | null> {
   const identity = await readOperatorSession();
   if (!identity) return null;

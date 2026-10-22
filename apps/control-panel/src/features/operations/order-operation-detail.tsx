@@ -9,6 +9,7 @@ import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
 import { operationHistoryLabel } from "./operation-history";
+import { OperatorOrderConversation } from "./operator-order-conversation";
 import { operationalAge } from "./operational-age";
 import { OperationLocationMap } from "./operation-location-map";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
@@ -412,6 +413,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
         </section>
       )}
 
+      <OperatorOrderConversation orderId={order.id} />
       {(
         <section className="order-detail-panel" aria-labelledby="order-assignment-title">
           <h2 id="order-assignment-title">إسناد الكابتن</h2>

@@ -6830,7 +6830,7 @@ components:
 
     OrderConversationMessage:
       type: object
-      required: [id, orderId, senderRole, body, createdAt, readAt, mine]
+      required: [id, orderId, senderRole, recipientRoles, body, createdAt, readAt, mine]
       additionalProperties: false
       properties:
         id:
@@ -6843,7 +6843,15 @@ components:
           maxLength: 128
         senderRole:
           type: string
-          enum: [client, partner, captain]
+          enum: [client, partner, captain, operator]
+        recipientRoles:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum: [client, partner, captain, operator]
         body:
           type: string
           minLength: 1
@@ -6884,6 +6892,9 @@ components:
         unreadCount:
           type: integer
           minimum: 0
+        nextCursor:
+          type: string
+          maxLength: 128
 
     CreateOrderConversationMessageRequest:
       type: object
@@ -6894,6 +6905,14 @@ components:
           type: string
           minLength: 1
           maxLength: 2000
+        recipientRoles:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum: [client, partner, captain, operator]
 
     OrderConversationMessageResponse:
       type: object

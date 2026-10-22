@@ -90,12 +90,12 @@ func (s *Service) CreateClientOrderRating(ctx context.Context, accessToken, orde
 	return postgres.CreateClientOrderRating(ctx, s.db, orderID, identity, rating, review, expectedVersion, idempotencyKey, requestHash, correlationID)
 }
 
-func (s *Service) ReadOrderConversation(ctx context.Context, accessToken, orderID string, limit int) (postgres.OrderConversationRecord, error) {
+func (s *Service) ReadOrderConversation(ctx context.Context, accessToken, orderID string, limit int, before ...string) (postgres.OrderConversationRecord, error) {
 	actorID, role, err := s.requireConversationSession(ctx, accessToken)
 	if err != nil {
 		return postgres.OrderConversationRecord{}, err
 	}
-	conversation, err := postgres.ReadOrderConversation(ctx, s.db, orderID, actorID, role, limit)
+	conversation, err := postgres.ReadOrderConversation(ctx, s.db, orderID, actorID, role, limit, before...)
 	if err != nil {
 		return postgres.OrderConversationRecord{}, err
 	}
@@ -103,13 +103,13 @@ func (s *Service) ReadOrderConversation(ctx context.Context, accessToken, orderI
 	return conversation, nil
 }
 
-func (s *Service) SendOrderConversationMessage(ctx context.Context, accessToken, orderID, body, idempotencyKey, correlationID string) (postgres.OrderConversationMessageRecord, bool, error) {
+func (s *Service) SendOrderConversationMessage(ctx context.Context, accessToken, orderID, body, idempotencyKey, correlationID string, recipientRoles ...string) (postgres.OrderConversationMessageRecord, bool, error) {
 	actorID, role, err := s.requireConversationSession(ctx, accessToken)
 	if err != nil {
 		return postgres.OrderConversationMessageRecord{}, false, err
 	}
-	requestHash := postgres.HashOrderConversationMessageRequest(orderID, body)
-	return postgres.SendOrderConversationMessage(ctx, s.db, orderID, actorID, role, body, idempotencyKey, requestHash, correlationID)
+	requestHash := postgres.HashOrderConversationMessageRequest(orderID, body, recipientRoles...)
+	return postgres.SendOrderConversationMessage(ctx, s.db, orderID, actorID, role, body, idempotencyKey, requestHash, correlationID, recipientRoles...)
 }
 
 func (s *Service) MarkOrderConversationRead(ctx context.Context, accessToken, orderID, messageID string) (time.Time, error) {
@@ -395,7 +395,16 @@ func (s *Service) requireConversationSession(ctx context.Context, accessToken st
 	}
 	role := string(identity.Role)
 	surface := identity.Surface
-	if strings.TrimSpace(identity.Subject) == "" || (role != "client" && role != "partner" && role != "captain") || surface != "app-"+role {
+	if strings.TrimSpace(identity.Subject) == "" {
+		return "", "", ErrConversationSessionForbidden
+	}
+	if role == "operator" && surface == "control-panel" {
+		if err := s.requireOperatorPermission(ctx, identity.Subject, "operations"); err != nil {
+			return "", "", err
+		}
+		return strings.TrimSpace(identity.Subject), role, nil
+	}
+	if (role != "client" && role != "partner" && role != "captain") || surface != "app-"+role {
 		return "", "", ErrConversationSessionForbidden
 	}
 	return strings.TrimSpace(identity.Subject), role, nil

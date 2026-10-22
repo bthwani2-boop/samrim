@@ -106,6 +106,37 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 			t.Fatalf("remove temporary staff message from history fixture: %v", err)
 		}
 
+		// Directed messages are visible only to the chosen recipients, original sender,
+		// and operations. Non-recipients cannot forge read acknowledgments.
+		privateBody := "رسالة خاصة بالعمليات"
+		privateMessage, privateReplay, err := postgres.SendOrderConversationMessage(ctx, db, orderID, clientID, "client", privateBody,
+			"conversation-private-operator-key", postgres.HashOrderConversationMessageRequest(orderID, privateBody, "operator"), "conversation-private-operator-correlation", "operator")
+		if err != nil || privateReplay {
+			t.Fatalf("directed operator message: replay=%t err=%v", privateReplay, err)
+		}
+		if visible, err := postgres.ReadOrderConversation(ctx, db, orderID, "conversation-history-partner", "partner", 10); err != nil || len(visible.Messages) != 0 || visible.UnreadCount != 0 {
+			t.Fatalf("private operator message leaked to store: %+v %v", visible, err)
+		}
+		if _, err := postgres.MarkOrderConversationRead(ctx, db, orderID, "conversation-history-partner", "partner", privateMessage.ID); !errors.Is(err, postgres.ErrOrderConversationMessageNotFound) {
+			t.Fatalf("store acknowledged invisible private message: %v", err)
+		}
+		if visible, err := postgres.ReadOrderConversation(ctx, db, orderID, "conversation-test-operator", "operator", 10); err != nil || len(visible.Messages) != 1 || visible.Messages[0].ID != privateMessage.ID {
+			t.Fatalf("operator cannot supervise targeted conversation: %+v %v", visible, err)
+		}
+		if visible, err := postgres.ReadOrderConversation(ctx, db, orderID, clientID, "client", 10); err != nil || len(visible.Messages) != 1 {
+			t.Fatalf("sender cannot read own targeted message: %+v %v", visible, err)
+		}
+		if _, err := postgres.MarkOrderConversationRead(ctx, db, orderID, "conversation-test-operator", "operator", privateMessage.ID); err != nil {
+			t.Fatalf("operator cannot acknowledge visible message: %v", err)
+		}
+		if _, _, err := postgres.SendOrderConversationMessage(ctx, db, orderID, clientID, "client", privateBody,
+			"conversation-private-operator-key", postgres.HashOrderConversationMessageRequest(orderID, privateBody, "partner"), "conversation-private-changed-correlation", "partner"); !errors.Is(err, postgres.ErrOrderConversationIdempotency) {
+			t.Fatalf("same key with changed recipient leaked or bypassed idempotency: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, "DELETE FROM dsh.commerce_order_conversation_messages WHERE id=$1", privateMessage.ID); err != nil {
+			t.Fatal(err)
+		}
+
 		const messageCount = 105
 		firstMessageID := ""
 		firstIdempotencyKey := ""
@@ -135,6 +166,16 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 			t.Fatalf("bounded conversation returned %d messages (%q through %q), want latest 10 in ascending order", len(history.Messages), history.Messages[0].Body, history.Messages[len(history.Messages)-1].Body)
 		}
 
+		if history.NextCursor == "" {
+			t.Fatal("bounded history must expose an older-page cursor")
+		}
+		older, err := postgres.ReadOrderConversation(ctx, db, orderID, clientID, "client", 10, history.NextCursor)
+		if err != nil || len(older.Messages) != 10 || older.Messages[0].Body != "رسالة 085" || older.Messages[9].Body != "رسالة 094" || older.NextCursor == "" {
+			t.Fatalf("cursor page failed: %+v %v", older, err)
+		}
+		if empty, err := postgres.ReadOrderConversation(ctx, db, orderID, "conversation-history-partner", "partner", 10, privateMessage.ID); err != nil || len(empty.Messages) != 0 {
+			t.Fatalf("invisible cursor leaked history: %+v %v", empty, err)
+		}
 		replay, replayed, err := postgres.SendOrderConversationMessage(ctx, db, orderID, clientID, "client", "رسالة 000", firstIdempotencyKey, postgres.HashOrderConversationMessageRequest(orderID, "رسالة 000"), "conversation-message-replay-correlation")
 		if err != nil || !replayed || replay.ID != firstMessageID {
 			t.Fatalf("same-key message replay = %+v replayed=%t err=%v", replay, replayed, err)
@@ -172,7 +213,7 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 			t.Fatalf("simulate later financial handoff update: %v", err)
 		}
 		closed, err := postgres.ReadOrderConversation(ctx, db, orderID, clientID, "client", 10)
-		if err != nil || closed.CanSend || closed.ReadOnlyAt == nil || !closed.ReadOnlyAt.Equal(pickupAt.Add(time.Hour)) {
+		if err != nil || closed.CanSend || closed.ReadOnlyAt == nil || !closed.ReadOnlyAt.Equal(pickupAt) {
 			t.Fatalf("completed pickup conversation = %+v err=%v, want expiry anchored to the pickup event", closed, err)
 		}
 		lateBody := "رسالة بعد الإغلاق"

@@ -5,6 +5,7 @@ export type OrderConversationMessageAttempt = Readonly<{
   actorID: string;
   orderID: string;
   body: string;
+  recipientRoles?: ReadonlyArray<"client" | "partner" | "captain" | "operator">;
   idempotencyKey: string;
   correlationID: string;
 }>;
@@ -24,12 +25,15 @@ export function createOrderConversationMessageAttempt(
   body: string,
   idempotencyKey: string,
   correlationID: string,
+  recipientRoles?: ReadonlyArray<"client" | "partner" | "captain" | "operator">,
 ): OrderConversationMessageAttempt {
   const normalizedActor = actorID.trim();
   const normalizedOrder = orderID.trim();
   const normalizedBody = body.trim();
   const normalizedKey = idempotencyKey.trim();
   const normalizedCorrelation = correlationID.trim();
+  if (recipientRoles && (!recipientRoles.length || recipientRoles.length > 4 || new Set(recipientRoles).size !== recipientRoles.length || recipientRoles.some(role => !["client", "partner", "captain", "operator"].includes(role)))) throw new Error("DSH_ORDER_CONVERSATION_RECIPIENTS_INVALID");
+  if (recipientRoles && (!recipientRoles.length || recipientRoles.length > 4 || new Set(recipientRoles).size !== recipientRoles.length || recipientRoles.some(role => !["client","partner","captain","operator"].includes(role)))) throw new Error("DSH_ORDER_CONVERSATION_RECIPIENTS_INVALID");
   if (
     !normalizedActor || normalizedActor.length > 128 ||
     !normalizedOrder || normalizedOrder.length > 128 ||
@@ -44,6 +48,7 @@ export function createOrderConversationMessageAttempt(
     actorID: normalizedActor,
     orderID: normalizedOrder,
     body: normalizedBody,
+    ...(recipientRoles ? { recipientRoles: [...recipientRoles].sort() } : {}),
     idempotencyKey: normalizedKey,
     correlationID: normalizedCorrelation,
   };
@@ -74,5 +79,6 @@ export function parseOrderConversationMessageAttempt(
     typeof attempt.body === "string" ? attempt.body : "",
     typeof attempt.idempotencyKey === "string" ? attempt.idempotencyKey : "",
     typeof attempt.correlationID === "string" ? attempt.correlationID : "",
+    Array.isArray(attempt.recipientRoles) ? attempt.recipientRoles : undefined,
   );
 }

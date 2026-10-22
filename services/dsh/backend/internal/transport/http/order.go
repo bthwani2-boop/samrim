@@ -331,7 +331,7 @@ func (s *OrderServer) readConversation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	conversation, err := s.service.ReadOrderConversation(r.Context(), token, r.PathValue("orderId"), limit)
+	conversation, err := s.service.ReadOrderConversation(r.Context(), token, r.PathValue("orderId"), limit, r.URL.Query().Get("before"))
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -340,7 +340,7 @@ func (s *OrderServer) readConversation(w http.ResponseWriter, r *http.Request) {
 	for _, message := range conversation.Messages {
 		messages = append(messages, toOrderConversationMessage(message))
 	}
-	writeJSON(w, http.StatusOK, contract.OrderConversationResponse{OrderID: conversation.OrderID, OrderState: contract.OrderState(conversation.OrderState), ReadOnlyAt: conversation.ReadOnlyAt, CanSend: conversation.CanSend, Messages: messages, UnreadCount: conversation.UnreadCount})
+	writeJSON(w, http.StatusOK, contract.OrderConversationResponse{OrderID: conversation.OrderID, OrderState: contract.OrderState(conversation.OrderState), ReadOnlyAt: conversation.ReadOnlyAt, CanSend: conversation.CanSend, Messages: messages, UnreadCount: conversation.UnreadCount, NextCursor: conversation.NextCursor})
 }
 
 func (s *OrderServer) sendConversationMessage(w http.ResponseWriter, r *http.Request) {
@@ -367,7 +367,7 @@ func (s *OrderServer) sendConversationMessage(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "conversation body must contain between 1 and 2000 characters")
 		return
 	}
-	message, replayed, err := s.service.SendOrderConversationMessage(r.Context(), token, r.PathValue("orderId"), input.Body, idempotency, correlation)
+	message, replayed, err := s.service.SendOrderConversationMessage(r.Context(), token, r.PathValue("orderId"), input.Body, idempotency, correlation, input.RecipientRoles...)
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -852,7 +852,7 @@ func toOrderRating(item postgres.OrderRatingRecord) contract.OrderRating {
 }
 
 func toOrderConversationMessage(item postgres.OrderConversationMessageRecord) contract.OrderConversationMessage {
-	return contract.OrderConversationMessage{ID: item.ID, OrderID: item.OrderID, SenderRole: item.SenderRole, Body: item.Body, CreatedAt: item.CreatedAt, ReadAt: item.ReadAt, Mine: item.Mine}
+	return contract.OrderConversationMessage{ID: item.ID, OrderID: item.OrderID, SenderRole: item.SenderRole, RecipientRoles: item.RecipientRoles, Body: item.Body, CreatedAt: item.CreatedAt, ReadAt: item.ReadAt, Mine: item.Mine}
 }
 
 func snapshotStringValue(value *string) string {

@@ -767,7 +767,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalized || Array.from(body).length < 1 || Array.from(body).length > 2000) throw new Error("DSH_ORDER_CONVERSATION_BODY_INVALID");
       if (idempotencyKey.trim().length < 8 || idempotencyKey.trim().length > 128 || correlationID.trim().length < 8 || correlationID.trim().length > 128) throw new Error("DSH_ORDER_CONVERSATION_ATTEMPT_REQUIRED");
       const path = dshOperationPaths.sendOrderConversationMessage.path.replace("{orderId}", encodeURIComponent(normalized));
-      return userRequest<OrderConversationMessageResponse>(accessToken, path, dshOperationPaths.sendOrderConversationMessage.method, { body }, mutationHeaders(idempotencyKey, correlationID));
+      return userRequest<OrderConversationMessageResponse>(accessToken, path, dshOperationPaths.sendOrderConversationMessage.method, { body, ...(input.recipientRoles ? { recipientRoles: input.recipientRoles } : {}) }, mutationHeaders(idempotencyKey, correlationID));
     },
     async markOrderConversationRead(accessToken: string, orderID: string, input: MarkOrderConversationReadRequest): Promise<OrderConversationReadResponse> {
       const normalized = orderID.trim();

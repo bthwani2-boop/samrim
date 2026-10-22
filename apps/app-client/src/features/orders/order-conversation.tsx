@@ -16,7 +16,7 @@ function client() {
 }
 
 function senderLabel(role: string): string {
-  return role === "client" ? "العميل" : role === "partner" ? "المتجر" : "الكابتن";
+  return role === "operator" ? "عمليات بثواني" : role === "client" ? "العميل" : role === "partner" ? "المتجر" : "الكابتن";
 }
 
 function conversationActorID(): string { const state = currentIdentityState(); return state.kind === "authenticated" ? state.identity.subject.trim() : ""; }
@@ -29,6 +29,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [selectedRecipients, setSelectedRecipients] = useState<ReadonlyArray<"client" | "partner" | "captain" | "operator">>(["partner"]);
   const [pendingAttempt, setPendingAttempt] = useState<OrderConversationMessageAttempt | null>(null);
   const [attemptStorageReady, setAttemptStorageReady] = useState(false);
   const [identityState, setIdentityState] = useState(currentIdentityState);
@@ -36,6 +37,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
   const [loadedActorID, setLoadedActorID] = useState("");
   const [loadedOrderID, setLoadedOrderID] = useState("");
   const readSequence = useRef(0);
+  const autoReadReceiptAttempt = useRef("");
   const correctOwner = Boolean(loadedActorID) && loadedActorID === activeActorID && loadedOrderID === orderId && isCurrentActor(loadedActorID);
 
   const load = useCallback(async (): Promise<boolean> => {
@@ -85,7 +87,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
   async function submitAttempt(attempt: OrderConversationMessageAttempt, token: string) {
     if (!correctOwner || !isCurrentActor(attempt.actorID)) return;
     try {
-      await client().sendOrderConversationMessage(token, attempt.orderID, { body: attempt.body }, attempt.idempotencyKey, attempt.correlationID);
+      await client().sendOrderConversationMessage(token, attempt.orderID, { body: attempt.body, ...(attempt.recipientRoles ? { recipientRoles: attempt.recipientRoles } : {}) }, attempt.idempotencyKey, attempt.correlationID);
       if (!isCurrentActor(attempt.actorID)) return;
     } catch (cause) {
       if (!isCurrentActor(attempt.actorID)) return;
@@ -130,7 +132,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
 
   async function send() {
     const normalized = body.trim();
-    if (!correctOwner || !normalized || busy || !attemptStorageReady || pendingAttempt || state.kind !== "ready" || !state.value.canSend) return;
+    if (!correctOwner || !normalized || busy || !attemptStorageReady || pendingAttempt || !selectedRecipients.length || state.kind !== "ready" || !state.value.canSend) return;
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
@@ -138,7 +140,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
       if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("CLIENT_SESSION_REQUIRED");
       const actorID = identity.identity.subject.trim();
       if (!isCurrentActor(actorID) || actorID !== loadedActorID) return;
-      const attempt = createOrderConversationMessageAttempt(actorID, orderId, normalized, `conversation_${Crypto.randomUUID()}`, `conversation_corr_${Crypto.randomUUID()}`);
+      const attempt = createOrderConversationMessageAttempt(actorID, orderId, normalized, `conversation_${Crypto.randomUUID()}`, `conversation_corr_${Crypto.randomUUID()}`, selectedRecipients);
       await SecureStore.setItemAsync(orderConversationMessageAttemptStorageKey(conversationRole, actorID, orderId), JSON.stringify(attempt));
       if (!isCurrentActor(actorID)) return;
       setPendingAttempt(attempt);
@@ -179,6 +181,22 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     } finally { setBusy(false); }
   }
 
+  const captainAvailable = state.kind === "ready" && ["CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERY_FAILED"].includes(state.value.orderState);
+  const recipientOptions = [
+    { role: "partner" as const, label: "المتجر" },
+    ...(captainAvailable ? [{ role: "captain" as const, label: "الكابتن" }] : []),
+    { role: "operator" as const, label: "العمليات" },
+  ];
+  useEffect(() => {
+    if (!correctOwner || state.kind !== "ready" || !state.value.unreadCount || busy) return;
+    const last = state.value.messages.at(-1);
+    if (!last) return;
+    const key = loadedActorID + ":" + orderId + ":" + last.id;
+    if (autoReadReceiptAttempt.current === key) return;
+    autoReadReceiptAttempt.current = key;
+    void markRead();
+  }, [correctOwner, state, busy, loadedActorID, orderId]);
+
   if (!activeActorID || (loadedActorID && !correctOwner)) return <BthwaniSurface tone="base" style={styles.surface} accessibilityLabel="محادثة الطلب"><Text style={styles.muted}>{activeActorID ? "جارٍ التحقق من محادثة الحساب الحالي…" : "سجّل الدخول لقراءة محادثة الطلب."}</Text></BthwaniSurface>;
   return <BthwaniSurface tone="base" style={styles.surface} accessibilityLabel="محادثة الطلب">
     <View style={styles.header}><View><Text style={styles.title}>محادثة الطلب</Text><Text style={styles.muted}>تواصل تشغيلي مرتبط بهذا الطلب فقط.</Text></View>{state.kind === "ready" && state.value.unreadCount > 0 ? <Text style={styles.unread}>{state.value.unreadCount} غير مقروء</Text> : null}</View>
@@ -186,8 +204,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     {state.kind === "error" ? <View style={styles.state}><Text style={styles.error}>تعذر قراءة المحادثة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" />{pendingAttempt ? <BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /> : null}</View> : null}
     {state.kind === "ready" ? <>
       {!state.value.messages.length ? <Text style={styles.muted}>لا توجد رسائل بعد.</Text> : <View style={styles.messages}>{state.value.messages.map((message) => <View key={message.id} style={[styles.message, message.mine ? styles.mine : null]}><Text style={styles.sender}>{message.mine ? "أنت" : senderLabel(message.senderRole)}</Text><Text style={styles.body}>{message.body}</Text><Text style={styles.time}>{new Date(message.createdAt).toLocaleString("ar-YE")}</Text></View>)}</View>}
-      {state.value.unreadCount > 0 ? <BthwaniButton busy={busy} disabled={busy} label="تحديد الرسائل كمقروءة" onPress={() => void markRead()} variant="secondary" /> : null}
-      {pendingAttempt ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>المحاولة محفوظة لهذا الحساب والطلب. سنتحقق من نتيجتها قبل إعادة الإرسال.</Text><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /></View> : state.value.canSend ? <><TextInput accessibilityLabel="رسالة المحادثة" editable={!busy} maxLength={2000} multiline onChangeText={setBody} placeholder="اكتب رسالة تشغيلية قصيرة" placeholderTextColor={theme.colorMuted} style={styles.input} textAlign="right" value={body} /><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady || !body.trim()} label="إرسال الرسالة" onPress={() => void send()} /></> : <Text style={styles.muted}>أُغلقت المحادثة للكتابة، ويمكنك قراءة سجلها فقط.</Text>}
+      {pendingAttempt ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>المحاولة محفوظة لهذا الحساب والطلب. سنتحقق من نتيجتها قبل إعادة الإرسال.</Text><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /></View> : state.value.canSend ? <><View style={{ gap: spacing[2] }}><Text style={styles.muted}>إرسال إلى:</Text><View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing[2] }}>{recipientOptions.map(item => <BthwaniButton key={item.role} label={selectedRecipients.includes(item.role) ? "✓ " + item.label : item.label} disabled={busy} variant={selectedRecipients.includes(item.role) ? "primary" : "secondary"} onPress={() => setSelectedRecipients(roles => roles.includes(item.role) ? roles.filter(r => r !== item.role) : [...roles, item.role])} />)}<BthwaniButton label="الجميع" disabled={busy} variant="secondary" onPress={() => setSelectedRecipients(recipientOptions.map(item => item.role))} /></View><Text style={styles.muted}>العمليات المخولة تستطيع مراجعة الرسائل ولو لم تخترها.</Text></View><TextInput accessibilityLabel="رسالة المحادثة" editable={!busy} maxLength={2000} multiline onChangeText={setBody} placeholder="اكتب رسالة تشغيلية قصيرة" placeholderTextColor={theme.colorMuted} style={styles.input} textAlign="right" value={body} /><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady || !body.trim() || !selectedRecipients.length} label="إرسال الرسالة" onPress={() => void send()} /></> : <Text style={styles.muted}>أُغلقت المحادثة للكتابة، ويمكنك قراءة سجلها فقط.</Text>}
     </> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
   </BthwaniSurface>;
