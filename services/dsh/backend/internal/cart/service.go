@@ -21,6 +21,7 @@ var (
 	ErrClientSessionForbidden      = errors.New("an active app-client session is required")
 	ErrCheckoutNotServiceable      = errors.New("address is not serviceable for this Store")
 	ErrFulfillmentModeUnavailable  = errors.New("the requested fulfillment mode is not available")
+	ErrStoreNotAcceptingOrders    = errors.New("store is not accepting orders for the selected fulfillment mode")
 	ErrInsufficientCustomerBalance = errors.New("customer internal balance does not cover the requested contribution")
 	ErrCheckoutBalanceContribution = errors.New("checkout internal balance contribution is invalid")
 )
@@ -149,7 +150,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 		return CheckoutQuote{}, err
 	}
 	if orderability.State != postgres.StoreOrderabilityOpenForOrders {
-		return CheckoutQuote{}, ErrFulfillmentModeUnavailable
+		return CheckoutQuote{}, ErrStoreNotAcceptingOrders
 	}
 	serviceCityID := store.ServiceCityID
 	var originLatitude, originLongitude, destinationLatitude, destinationLongitude float64
@@ -307,7 +308,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		return postgres.OrderRecord{}, false, err
 	}
 	if orderability.State != postgres.StoreOrderabilityOpenForOrders {
-		return postgres.OrderRecord{}, false, ErrFulfillmentModeUnavailable
+		return postgres.OrderRecord{}, false, ErrStoreNotAcceptingOrders
 	}
 	var evidence postgres.CheckoutEvidence
 	if fulfillmentMode == FulfillmentModeCustomerPickup {

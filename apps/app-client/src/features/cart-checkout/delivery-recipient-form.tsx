@@ -1,5 +1,5 @@
 import { borders, normalizeYemenPhoneE164, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniChip, BthwaniSectionHeader, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useMemo } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 
@@ -41,7 +41,7 @@ export function DeliveryRecipientForm({ value, allowOther, onChange }: {
 
   return (
     <View style={styles.container} accessibilityLabel="بيانات مستلم الطلب">
-      <BthwaniSectionHeader title="مستلم الطلب" subtitle={allowOther ? "بيانات المستلم تُحفظ لهذا الطلب فقط." : "الاستلام من المتجر لصاحب الطلب."} />
+      <Text style={styles.label}>مستلم الطلب</Text>
       <View style={styles.choices}>
         <BthwaniChip disabled={!allowOther} label="أنا المستلم" onPress={() => onChange({ mode: "SELF" })} selected={mode === "SELF"} />
         <BthwaniChip disabled={!allowOther} label="شخص آخر" onPress={() => onChange({ ...value, mode: "OTHER" })} selected={mode === "OTHER"} />
@@ -58,7 +58,8 @@ export function DeliveryRecipientForm({ value, allowOther, onChange }: {
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    container: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    container: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
+    label: { ...typography.bodyStrong, color: theme.color },
     choices: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
     fields: { gap: spacing[2] },
     input: { ...typography.bodySm, backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, minHeight: 42, paddingHorizontal: spacing[2] },

@@ -91,8 +91,9 @@ export default function ClientCartScreen() {
       const enabledModes = availableCustomerFulfillmentModes(store.fulfillmentModes);
       const saved = await readSavedFulfillmentMode(storeId, selectedCityID, enabledModes);
       if (!isCurrent()) return;
-      setFulfillmentMode(resolveFulfillmentChoice(enabledModes, requestedFulfillmentMode, saved));
-      setExpandedFulfillment(false);
+      const resolvedMode = resolveFulfillmentChoice(enabledModes, requestedFulfillmentMode, saved);
+      setFulfillmentMode(resolvedMode);
+      setExpandedFulfillment(enabledModes.length > 1 && resolvedMode === null);
     } catch {
       if (isCurrent()) setState({ kind: "error" });
     }
@@ -101,7 +102,7 @@ export default function ClientCartScreen() {
   useFocusEffect(useCallback(() => {
     if (state.kind === "ready" && fulfillmentModeRef.current !== null && fulfillmentModeRef.current !== "CUSTOMER_PICKUP") void loadAddresses();
     return () => { addressRequestID.current += 1; };
-  }, [loadAddresses, state.kind]));
+  }, [loadAddresses, state.kind, fulfillmentMode]));
 
   useEffect(() => {
     void load();
@@ -149,6 +150,10 @@ export default function ClientCartScreen() {
   if (availableFulfillmentModes.length === 0) return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>لا تتوفر طريقة استلام مدعومة لهذا المتجر</Text><Text style={styles.muted}>اختر متجرًا آخر؛ خيارات هذا المتجر لا تسمح حاليًا بإتمام طلب العميل.</Text><BthwaniButton label="العودة إلى المتجر" onPress={() => router.push(`/store/${encodeURIComponent(state.store.id)}` as Href)} variant="secondary" /></View>;
   const serviceableAddressId = fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" && serviceability.kind === "ready" && serviceability.result.status === "SERVICEABLE" ? serviceability.addressId : undefined;
   const chosenAddress = serviceability.kind === "ready" ? addressesState.addresses.find((address) => address.id === serviceability.addressId) : undefined;
+  const selectedOrderability = state.store.orderabilityByMode.find((item) => item.fulfillmentMode === fulfillmentMode);
+  const orderabilityHint = selectedOrderability?.state === "CLOSED_BY_SCHEDULE" ? "المتجر مغلق الآن"
+    : selectedOrderability?.state === "PAUSED" ? "استقبال الطلبات متوقف مؤقتًا"
+    : selectedOrderability?.state === "OPERATIONALLY_UNAVAILABLE" ? "التنفيذ غير متاح حاليًا" : "";
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.page}>
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
@@ -159,7 +164,7 @@ export default function ClientCartScreen() {
           </Pressable>
         </View>
         <BthwaniSurface tone="raised" style={styles.storeCard}>
-          <PremiumStoreIdentity title={state.store.name}
+          <PremiumStoreIdentity compact title={state.store.name}
             subtitle={state.store.addressLine || "متجر منشور في بثواني"}
             imageUri={state.store.storeCoverImage?.uri ?? state.store.storeProfileImage?.uri}
             rating={state.store.ratingCount > 0 ? state.store.ratingAverage.toFixed(1) + " (" + state.store.ratingCount + ")" : undefined}
@@ -170,7 +175,7 @@ export default function ClientCartScreen() {
           {fulfillmentMode && !expandedFulfillment ? <View style={styles.row}>
             <View style={styles.rowCopy}>
               <Text style={styles.sectionTitle}>{fulfillmentModeLabel(fulfillmentMode)}</Text>
-              <Text style={styles.muted}>{availableFulfillmentModes.length === 1 ? "هذه طريقة التنفيذ المتاحة لهذا المتجر." : "اختيارك محفوظ ويمكن تغييره."}</Text>
+
             </View>
             {availableFulfillmentModes.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="تغيير طريقة التنفيذ" onPress={() => setExpandedFulfillment(true)} style={styles.change}>
               <Text style={styles.changeLabel}>تغيير</Text>
@@ -185,8 +190,10 @@ export default function ClientCartScreen() {
             if (selectedCityID) void saveFulfillmentMode(storeId, selectedCityID, mode);
             if (mode !== "CUSTOMER_PICKUP" && addressesState.kind === "idle") void loadAddresses();
           }} />}
+          {orderabilityHint ? <Text accessibilityRole="alert" style={styles.error}>{orderabilityHint}</Text> : null}
         </BthwaniSurface>
-        {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} serviceCityId={selectedCityID ?? ""} addresses={addressesState.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} initialPromotionCode={requestedPromotionCode} onFooterChange={updateFooter} checkoutAction={checkoutAction} addressSection={<>{fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <BthwaniSurface tone="raised" style={styles.section}>
+        {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} serviceCityId={selectedCityID ?? ""} addresses={addressesState.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} initialPromotionCode={requestedPromotionCode} onFooterChange={updateFooter} checkoutAction={checkoutAction}
+          onRequiredAddress={() => setExpandedAddresses(true)} addressSection={<>{fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <BthwaniSurface tone="raised" style={styles.section}>
           <View style={styles.row}>
             <BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconLg}/>
             <View style={styles.rowCopy}><Text style={styles.sectionTitle}>عنوان التوصيل</Text><Text style={styles.muted} numberOfLines={2}>{chosenAddress ? chosenAddress.addressText : "اختر عنوانًا مؤهلًا لتوصيل الطلب"}</Text></View>
@@ -228,18 +235,18 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const premium = premiumColors(theme);
   return StyleSheet.create({
     page: { flex: 1, backgroundColor: premium.background },
-    scroll: { paddingHorizontal: spacing[3], paddingVertical: spacing[3], gap: spacing[3], paddingBottom: spacing[8] },
+    scroll: { paddingHorizontal: spacing[3], paddingVertical: spacing[2], gap: spacing[2], paddingBottom: spacing[5] },
     state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[8] },
     header: { flexDirection: "row", alignItems: "center", minHeight: sizing.controlLg },
     title: { ...typography.titleLg, color: premium.text, textAlign: "center", flex: 1 },
     headerBack: { minWidth: sizing.controlLg, minHeight: sizing.controlLg, justifyContent: "center", alignItems: "center" },
-    storeCard: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[3], borderRadius: radius.xl },
+    storeCard: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[2], borderRadius: radius.lg },
     storeIcon: { backgroundColor: theme.actionBackground, padding: spacing[3], borderRadius: radius.lg },
     storeCopy: { flex: 1, gap: spacing[1] },
     subheading: { ...typography.caption, color: theme.interactiveText, textAlign: "right" },
     storeName: { ...typography.titleMd, color: theme.color, textAlign: "right" },
     muted: { ...typography.bodySm, color: premium.muted, textAlign: "right" },
-    section: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[3], borderRadius: radius.xl, gap: spacing[2] },
+    section: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[2], borderRadius: radius.lg, gap: spacing[1] },
     sectionTitle: { ...typography.bodyStrong, color: premium.text, textAlign: "right" },
     modes: { flexDirection: "row", gap: spacing[2], marginTop: spacing[2] },
     mode: { flex: 1, minWidth: 0, minHeight: 128, paddingHorizontal: spacing[1], paddingVertical: spacing[3], gap: spacing[2], alignItems: "center", justifyContent: "center", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline },
@@ -249,7 +256,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     modeDescription: { ...typography.caption, color: theme.colorMuted, fontSize: 10, textAlign: "center" },
     modeCheck: { ...typography.bodySm, color: theme.colorMuted },
     modeCheckSelected: { color: theme.interactiveText },
-    row: { flexDirection: "row", gap: spacing[3], minHeight: 52, alignItems: "center" },
+    row: { flexDirection: "row", gap: spacing[2], minHeight: 44, alignItems: "center" },
     rowCopy: { flex: 1, gap: spacing[1] },
     change: { minWidth: 56, minHeight: 44, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing[2], borderWidth: borders.hairline, borderColor: theme.borderColorStrong, borderRadius: radius.md },
     changeLabel: { ...typography.bodyStrong, color: theme.interactiveText },

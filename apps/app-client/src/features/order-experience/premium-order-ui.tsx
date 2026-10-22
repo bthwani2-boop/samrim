@@ -52,9 +52,9 @@ export function PremiumFulfillmentSelector({ available, selected, disabled, onSe
         accessibilityLabel={fulfillmentModeLabel(mode)} onPress={() => onSelect(mode)}
         style={[styles.modeCard, checked && styles.modeSelected]}>
         <Text style={[styles.dot, checked && styles.dotSelected]}>{checked ? "✓" : "○"}</Text>
-        <BthwaniIcon name={mode === "CUSTOMER_PICKUP" ? "account" : mode === "PARTNER_CAPTAIN" ? "store" : "location"} color={premium.orange} size={25}/>
+        <BthwaniIcon name={mode === "CUSTOMER_PICKUP" ? "account" : mode === "PARTNER_CAPTAIN" ? "store" : "location"} color={premium.orange} size={20}/>
         <Text numberOfLines={2} style={styles.modeLabel}>{fulfillmentModeLabel(mode)}</Text>
-        <Text numberOfLines={2} style={styles.modeHint}>{description[mode]}</Text>
+
       </Pressable>;
     })}
   </View>;
@@ -119,16 +119,16 @@ function createStyles(theme: ThemeColors) {
   actionText: { color: theme.onAction, fontWeight: "700", fontSize: 15, textAlign: "center" },
   outlineAction: { minHeight: 48, borderRadius: 13, borderColor: premium.coral, borderWidth: 1, backgroundColor: premium.background, alignItems: "center", justifyContent: "center", padding: 8 },
   outlineText: { color: premium.orange, fontSize: 14, fontWeight: "700", textAlign: "center" },
-  storeRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  storeRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   image: { width: 118, height: 88, borderRadius: 14, backgroundColor: premium.raised },
-  imageCompact: { width: 90, height: 75, borderRadius: 12 },
+  imageCompact: { width: 78, height: 60, borderRadius: 10 },
   imageFallback: { width: 118, height: 88, backgroundColor: premium.soft, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   storeCopy: { flex: 1, gap: 5 },
   storeTitle: { color: premium.text, fontSize: 18, fontWeight: "700" },
   storeSubtitle: { color: premium.muted, fontSize: 13 },
   rating: { color: premium.orange, fontSize: 13 },
   modeRow: { flexDirection: "row", gap: 8 },
-  modeCard: { flex: 1, position: "relative", minWidth: 0, minHeight: 114, borderRadius: 16, borderWidth: 1, borderColor: premium.stroke, backgroundColor: premium.background, justifyContent: "center", alignItems: "center", paddingVertical: 10, paddingHorizontal: 3, gap: 5 },
+  modeCard: { flex: 1, position: "relative", minWidth: 0, minHeight: 70, borderRadius: 12, borderWidth: 1, borderColor: premium.stroke, backgroundColor: premium.background, justifyContent: "center", alignItems: "center", paddingVertical: 5, paddingHorizontal: 3, gap: 2 },
   modeSelected: { borderColor: premium.coral, borderWidth: 2, backgroundColor: premium.soft },
   dot: { position: "absolute", left: 7, top: 7, color: premium.muted, fontSize: 16, fontWeight: "700" },
   dotSelected: { color: premium.coral },

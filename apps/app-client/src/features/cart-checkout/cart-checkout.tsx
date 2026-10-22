@@ -89,6 +89,7 @@ function quoteFailureMessage(error: unknown, appliedCode: string): string {
   if (code === "PROMOTION_UNAVAILABLE") return "هذا العرض غير متاح لهذا المتجر أو لم تعد شروطه مستوفاة. امسح الرمز واضغط «تطبيق» لإعادة حساب الإجمالي دون خصم، أو اختر عرضًا آخر.";
   if (code === "INVALID_INPUT" && appliedCode) return "رمز العرض غير صالح. صححه أو امسحه ثم اضغط «تطبيق» لإعادة حساب الإجمالي.";
   if (code === "UNSERVICEABLE") return "العنوان المختار خارج نطاق توصيل المتجر. اختر عنوانًا مؤهلًا ثم أعد حساب الإجمالي.";
+  if (code === "STORE_NOT_ACCEPTING_ORDERS") return "المتجر مغلق أو متوقف عن استقبال الطلبات الآن.";
   if (code === "FULFILLMENT_MODE_UNAVAILABLE") return "طريقة الاستلام المختارة لم تعد متاحة؛ اختر طريقة أخرى ثم أعد حساب الإجمالي.";
   if (code === "WLT_DELIVERY_FEE_UNAVAILABLE") return "تعذر الحصول على رسوم التوصيل حاليًا؛ أعد المحاولة قبل تأكيد الطلب.";
   return "تعذر حساب الإجمالي. حدّث السلة أو أعد المحاولة قبل الإتمام.";
@@ -101,10 +102,10 @@ function isQuantityAllowed(line: Cart["lines"][number], quantity: number): boole
 type EditingLineOptions = Readonly<{ lineId: string; offer: CatalogStoreOffer; selectedIds: ReadonlyArray<string> }>;
 
 export type CheckoutFooterState = Readonly<{ label: string; total: string; totalReady: boolean; disabled: boolean; busy: boolean }>;
-export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAddressId, addressSection, fulfillmentMode, initialPromotionCode = "", onFooterChange, checkoutAction }: {
+export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAddressId, addressSection, fulfillmentMode, initialPromotionCode = "", onFooterChange, checkoutAction, onRequiredAddress }: {
   storeId: string; serviceCityId: string; addresses: ReadonlyArray<DeliveryAddress>; serviceableAddressId?: string | undefined; addressSection?: ReactNode;
   fulfillmentMode: FulfillmentMode; initialPromotionCode?: string;
-  onFooterChange?: (state: CheckoutFooterState | null) => void; checkoutAction?: MutableRefObject<() => void>;
+  onFooterChange?: (state: CheckoutFooterState | null) => void; checkoutAction?: MutableRefObject<() => void>; onRequiredAddress?: () => void;
 }) {
   const theme = useAppearanceTheme();
   const router = useRouter();
@@ -121,6 +122,7 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
   const [error, setError] = useState("");
   const [order, setOrder] = useState<Order | null>(null);
   const [showPromotion, setShowPromotion] = useState(Boolean(initialPromotionCode));
+  const [showAllItems, setShowAllItems] = useState(false);
   const [showCustomerNote, setShowCustomerNote] = useState(false);
   const [customerNote, setCustomerNote] = useState("");
   const [promotionCode, setPromotionCode] = useState(initialPromotionCode.trim().toUpperCase());
@@ -469,48 +471,63 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
   const balanceNeedsRead = paymentChoice !== "CASH" && wallet.kind !== "ready";
   const remainingCashMinor = allocation?.cashMinor ?? null;
   const canConfirm = Boolean(!mutationBusy && (pickupMode || serviceableAddressId) && verifiedQuote && selectedBalanceMinor !== null && !balanceNeedsRead && !promotionNeedsApply);
-  if (checkoutAction) checkoutAction.current = () => { void checkout(); };
+  const canRetryQuote = state.kind === "ready" && quote.kind === "error" && !mutationBusy && (pickupMode || Boolean(serviceableAddressId));
+  const needsAddress = !pickupMode && !serviceableAddressId;
+  if (checkoutAction) checkoutAction.current = () => {
+    if (canConfirm) void checkout();
+    else if (canRetryQuote && readyCart) void refreshQuote(readyCart);
+    else if (needsAddress) onRequiredAddress?.();
+  };
   const footerAmount = verifiedQuote ? formatMoney(verifiedQuote.totalAmountMinor, verifiedQuote.currency)
     : cartNeedsReview ? "راجع المنتجات"
     : !pickupMode && !serviceableAddressId ? "العنوان مطلوب"
-    : quote.kind === "error" ? "تعذر حساب الإجمالي"
+    : quote.kind === "error" ? "راجع الرسوم"
     : quote.kind === "invalid" ? "راجع المنتجات"
     : quote.kind === "loading" ? "جارٍ الحساب…" : "لم يُعتمد الإجمالي بعد";
   useEffect(() => {
     onFooterChange?.(state.kind === "ready" && !pendingCheckout ? {
-      label: "تأكيد الطلب", total: footerAmount, totalReady: Boolean(verifiedQuote),
-      busy, disabled: !canConfirm,
+      label: canConfirm ? "تأكيد الطلب" : canRetryQuote ? "إعادة الحساب" : needsAddress ? "اختر العنوان" : "تأكيد الطلب",
+      total: footerAmount, totalReady: Boolean(verifiedQuote),
+      busy, disabled: !canConfirm && !canRetryQuote && !(needsAddress && Boolean(onRequiredAddress)),
     } : null);
-  }, [onFooterChange, state.kind, pendingCheckout, footerAmount, busy, canConfirm]);
+  }, [onFooterChange, state.kind, pendingCheckout, footerAmount, busy, canConfirm, canRetryQuote, needsAddress, onRequiredAddress]);
   useEffect(() => () => onFooterChange?.(null), [onFooterChange]);
   if (pendingCheckout) return <View style={styles.container} accessibilityLabel="استعادة طلب السلة"><Text style={styles.title}>التحقق من نتيجة الطلب</Text><Text style={styles.warning}>المحاولة محفوظة لهذا الحساب والسلة. سنتحقق من النتيجة أولًا لتجنب إنشاء طلب مكرر.</Text><BthwaniButton busy={busy} disabled={busy} label="تحقق واستعد الطلب" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
   return (
     <View style={styles.container} accessibilityLabel="السلة وإتمام الطلب">
-      <Text style={styles.title}>ملخص طلبك</Text>
-      <Text style={styles.muted}>تُراجع الأسعار والتوفر والعنوان قبل تثبيت الطلب.</Text>
+
       {state.kind === "loading" ? <View style={styles.state} accessibilityLabel="جارٍ قراءة السلة"><BthwaniSkeleton height={72} /><BthwaniSkeleton height={72} /></View> : null}
       {state.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>تعذر قراءة السلة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
       {state.kind === "empty" ? <BthwaniSurface tone="inset" style={styles.emptyState}><Text style={styles.lineTitle}>{order ? "تم إنشاء الطلب والسلة الآن فارغة." : "السلة فارغة."}</Text><Text style={styles.muted}>{order ? "يمكنك متابعة التسوق من كتالوج المتجر." : "اختر منتجات من كتالوج المتجر ثم عد إلى السلة لإتمام الطلب."}</Text><Link href={`/store/${encodeURIComponent(storeId)}` as Href} asChild><BthwaniButton label="العودة إلى كتالوج المتجر" variant="secondary" /></Link></BthwaniSurface> : null}
       {state.kind === "ready" ? <>
-        <Text style={styles.lineTitle}>تفاصيل طلبك ({state.cart.lines.length})</Text>
-        <View style={styles.lineList}>{state.cart.lines.map((line) => {
+        <View style={styles.lineHeader}>
+          <Text style={styles.lineTitle}>المنتجات ({state.cart.lines.length})</Text>
+          {state.cart.lines.length > 2 ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: showAllItems }} onPress={() => setShowAllItems((current) => !current)}>
+            <Text style={styles.toggleLabel}>{showAllItems ? "أقل" : "عرض الكل"}</Text>
+          </Pressable> : null}
+        </View>
+        <View style={styles.lineList}>{state.cart.lines.slice(0, showAllItems ? undefined : 2).map((line) => {
           const lineBusy = busyLineId === line.id;
           const canDecrease = isQuantityAllowed(line, line.quantityBaseUnits - line.quantityStepBaseUnits);
           const canIncrease = isQuantityAllowed(line, line.quantityBaseUnits + line.quantityStepBaseUnits);
           return <View key={line.id} style={styles.line}>
-            <Text style={styles.lineTitle}>{line.productName}</Text>
-            {line.variantTitle ? <Text style={styles.muted}>{line.variantTitle}</Text> : null}
-            {line.selectedModifiers.length ? <Text style={styles.modifiers}>{line.selectedModifiers.map((modifier) => modifier.optionNameAr).join("، ")}</Text> : null}
-            {line.requiresReview ? <Text accessibilityRole="alert" style={styles.warning}>تغيّر توفر هذا المنتج أو الكمية المسموحة أو خياراته. احذفه من السلة واختر منتجًا متاحًا من المتجر؛ لن نعرض سعرًا غير مؤكد.</Text> : null}
-            <Text style={styles.muted}>{line.requiresReview ? `الكمية ${formatQuantity(line.baseUnit, line.quantityBaseUnits)} · السعر يحتاج تحديثًا` : `${formatMoney(line.lineAmountMinor, line.currency)} · الكمية ${formatQuantity(line.baseUnit, line.quantityBaseUnits)}`}</Text>
+            <View style={styles.lineTop}>
+              <View style={styles.lineCopy}>
+                <Text style={styles.lineTitle} numberOfLines={1}>{line.productName}</Text>
+                {line.variantTitle || line.selectedModifiers.length ? <Text style={styles.muted} numberOfLines={1}>{[line.variantTitle, ...line.selectedModifiers.map((modifier) => modifier.optionNameAr)].filter(Boolean).join(" · ")}</Text> : null}
+              </View>
+              <Text style={styles.linePrice}>{line.requiresReview ? "مراجعة السعر" : formatMoney(line.lineAmountMinor, line.currency)}</Text>
+            </View>
+            {line.requiresReview ? <Text accessibilityRole="alert" style={styles.warning}>يحتاج المنتج مراجعة قبل التأكيد.</Text> : null}
             <View style={styles.lineActions}>
-              <BthwaniButton accessibilityLabel={`إنقاص كمية ${line.productName}`} disabled={mutationBusy || line.requiresReview || !canDecrease} label="−" onPress={() => void updateLine(line, -1)} variant="secondary" />
-              <BthwaniButton accessibilityLabel={`زيادة كمية ${line.productName}`} disabled={mutationBusy || line.requiresReview || !canIncrease} label="+" onPress={() => void updateLine(line, 1)} variant="secondary" />
-              <BthwaniButton accessibilityLabel={`إزالة ${line.productName} من السلة`} busy={lineBusy} disabled={mutationBusy} label="إزالة" onPress={() => void removeLine(line)} variant="danger" />
-              <BthwaniButton label="تعديل الخيارات" disabled={mutationBusy} busy={lineBusy} onPress={() => {
+              <Pressable accessibilityRole="button" accessibilityLabel={`إنقاص كمية ${line.productName}`} disabled={mutationBusy || line.requiresReview || !canDecrease} style={styles.quantityAction} onPress={() => void updateLine(line, -1)}><Text style={styles.quantityLabel}>−</Text></Pressable>
+              <Text style={styles.quantityValue}>{formatQuantity(line.baseUnit, line.quantityBaseUnits)}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={`زيادة كمية ${line.productName}`} disabled={mutationBusy || line.requiresReview || !canIncrease} style={styles.quantityAction} onPress={() => void updateLine(line, 1)}><Text style={styles.quantityLabel}>+</Text></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={`تعديل خيارات ${line.productName}`} disabled={mutationBusy} onPress={() => {
                 if (editingOptions?.lineId === line.id) setEditingOptions(null);
                 else void openLineOptions(line);
-              }} variant="secondary" />
+              }} style={styles.lineTextAction}><Text style={styles.toggleLabel}>خيارات</Text></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={`إزالة ${line.productName}`} disabled={mutationBusy} onPress={() => void removeLine(line)} style={styles.lineTextAction}><Text style={styles.removeLabel}>{lineBusy ? "…" : "حذف"}</Text></Pressable>
             </View>
             {editingOptions?.lineId === line.id ? <View style={styles.optionsEditor}>
               <Text style={styles.lineTitle}>خيارات {line.productName}</Text>
@@ -536,19 +553,19 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
             </View> : null}
           </View>;
         })}</View>
-        <Link href={("/store/" + encodeURIComponent(storeId)) as Href} asChild><BthwaniButton label="إضافة منتجات أو تغيير الحجم من المتجر" variant="secondary" /></Link>
+        <Link href={("/store/" + encodeURIComponent(storeId)) as Href} asChild><BthwaniButton label="+ إضافة منتجات" variant="secondary" /></Link>
         {addressSection}
         <DeliveryRecipientForm allowOther={!pickupMode} onChange={setRecipient} value={recipient} />
         <View accessibilityLabel="ملخص الدفع" style={styles.totals}>
           <View style={styles.promotionBox}>
-            <Pressable accessibilityRole="button" accessibilityState={{ expanded: showPromotion }} onPress={() => setShowPromotion((value) => !value)}><Text style={styles.fulfillmentTitle}>{showPromotion ? "قسيمة التخفيض −" : "هل لديك قسيمة تخفيض؟  إضافة +"}</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: showPromotion }} onPress={() => setShowPromotion((value) => !value)}><Text style={styles.fulfillmentTitle}>{showPromotion ? "قسيمة −" : "قسيمة · إضافة +"}</Text></Pressable>
             {initialPromotionCode ? <Text style={styles.muted}>رمز العرض جاهز من المتجر. اضغط «تطبيق» ليتحقق النظام من الأهلية.</Text> : null}
             {showPromotion ? <View style={styles.promotionRow}><TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" editable={!mutationBusy} onChangeText={setPromotionCode} placeholder="رمز القسيمة" placeholderTextColor={theme.colorMuted} style={styles.promotionInput} value={promotionCode} /><BthwaniButton disabled={mutationBusy || (!pickupMode && !serviceableAddressId)} label="تطبيق" onPress={() => { if (promotionNeedsApply) setAppliedPromotionCode(promotionCode.trim().toUpperCase()); else if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /></View> : null}
           </View>
           <View style={styles.promotionBox}>
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: showCustomerNote }}
               onPress={() => setShowCustomerNote((value) => !value)}>
-              <Text style={styles.fulfillmentTitle}>{customerNote.trim() ? "ملاحظات الطلب · تعديل" : "ملاحظات الطلب · إضافة +"}</Text>
+              <Text style={styles.fulfillmentTitle}>{customerNote.trim() ? "ملاحظات · تعديل" : "ملاحظات · إضافة +"}</Text>
             </Pressable>
             {showCustomerNote ? <TextInput accessibilityLabel="ملاحظات الطلب للمتجر" multiline
               maxLength={500} editable={!mutationBusy} value={customerNote} onChangeText={setCustomerNote}
@@ -556,13 +573,13 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
               style={styles.customerNoteInput} /> :
               customerNote.trim() ? <Text style={styles.muted}>{customerNote.trim()}</Text> : null}
           </View>
-          <Text style={styles.muted}>وقت الطلب: الآن</Text>
+          <Text style={styles.muted}>تنفيذ الطلب · الآن</Text>
           <View accessibilityLabel="توزيع مصدر الدفع" style={styles.balanceBox}>
             <Text style={styles.fulfillmentTitle}>طريقة الدفع</Text>
             {([
-              { id: "CASH", label: "نقدًا عند الاستلام", hint: "تدفع نقدًا للجهة المسؤولة عن التسليم." },
-              { id: "WALLET", label: "محفظة بثواني", hint: "تغطية كامل الطلب من الرصيد الداخلي." },
-              { id: "MIXED", label: "دفع مختلط", hint: "جزء من المحفظة والباقي نقدًا عند الاستلام." },
+              { id: "CASH", label: "نقدًا عند الاستلام" },
+              { id: "WALLET", label: "محفظة بثواني" },
+              { id: "MIXED", label: "دفع مختلط" },
             ] as const).map((option) => {
               const eligible = paymentSplit(verifiedQuote?.totalAmountMinor ?? 0, wallet.kind === "ready" ? wallet.availableMinor : null, option.id);
               const unavailable = option.id !== "CASH" && (!verifiedQuote || !eligible);
@@ -572,29 +589,32 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
                 disabled={mutationBusy || unavailable} onPress={() => setPaymentChoice(option.id)}
                 style={[styles.paymentChoice, selected && styles.paymentChoiceSelected, unavailable && styles.paymentChoiceUnavailable]}>
                 <Text style={styles.paymentChoiceTitle}>{selected ? "◉  " : "○  "}{option.label}</Text>
-                <Text style={styles.muted}>{option.hint}</Text>
                 {option.id === "WALLET" && unavailable && wallet.kind === "ready" && verifiedQuote ?
                   <Text style={styles.warning}>الرصيد لا يغطي الإجمالي.</Text> : null}
               </Pressable>;
             })}
-            {!verifiedQuote ? <Text style={styles.muted}>تظهر المحفظة والمختلط بعد تحديد العنوان واحتساب الإجمالي.</Text> : null}
+            {!verifiedQuote ? <Text style={styles.muted}>حدد عنوانًا مؤهلًا لاحتساب التوصيل وتفعيل الدفع.</Text> : null}
             {wallet.kind === "loading" ? <Text style={styles.muted}>جارٍ قراءة الرصيد…</Text> : null}
             {wallet.kind === "ready" ? <Text style={styles.muted}>الرصيد المتاح: {formatMoney(wallet.availableMinor, "YER")}</Text> : null}
             {wallet.kind === "error" ? <View><Text accessibilityRole="alert" style={styles.warning}>تعذر قراءة المحفظة؛ يمكن الدفع نقدًا.</Text><BthwaniButton label="إعادة قراءة الرصيد" onPress={() => void refreshWallet()} variant="secondary" /></View> : null}
             {wallet.kind === "ready" && wallet.availableMinor === 0 ? <Link href={"/wallet-cash-in" as Href} asChild><BthwaniButton label="شحن المحفظة" variant="secondary" /></Link> : null}
-            {selectedBalanceMinor !== null ? <Text style={styles.muted}>من المحفظة: {formatMoney(selectedBalanceMinor, "YER")}</Text> : null}
-            {remainingCashMinor !== null ? <Text style={styles.total}>نقدًا: {formatMoney(remainingCashMinor, "YER")}</Text> : null}
-            {remainingCashMinor !== null && remainingCashMinor > 0 ? <Text style={styles.muted}>يُدفع إلى: {cashCollectionPartyLabel(fulfillmentMode)} عند الاستلام.</Text> : null}
+            {selectedBalanceMinor !== null && paymentChoice !== "CASH" ? <Text style={styles.muted}>من المحفظة: {formatMoney(selectedBalanceMinor, "YER")}</Text> : null}
+            {remainingCashMinor !== null && selectedBalanceMinor !== null && paymentChoice !== "CASH" ? <Text style={styles.total}>نقدًا: {formatMoney(remainingCashMinor, "YER")}</Text> : null}
+            {remainingCashMinor !== null && remainingCashMinor > 0 && paymentChoice !== "CASH" ? <Text style={styles.muted}>للتحصيل: {cashCollectionPartyLabel(fulfillmentMode)}</Text> : null}
             {verifiedQuote && !allocation ? <Text accessibilityRole="alert" style={styles.warning}>الطريقة المختارة لم تعد متاحة؛ اختر طريقة أخرى.</Text> : null}
           </View>
           <View accessibilityLabel="الفاتورة" style={styles.invoiceBox}>
           <Text style={styles.fulfillmentTitle}>الفاتورة</Text>
           {verifiedQuote ? <>
-            <Text style={styles.muted}>المنتجات: {formatMoney(verifiedQuote.subtotalMinor, verifiedQuote.currency)}</Text>
-            {verifiedQuote.discountMinor > 0 ? <Text style={styles.success}>الخصم: -{formatMoney(verifiedQuote.discountMinor, verifiedQuote.currency)}{verifiedQuote.promotionCode ? ` · ${verifiedQuote.promotionCode}` : ""}</Text> : null}
-            {!pickupMode ? <Text style={styles.muted}>رسوم التوصيل: {formatMoney(verifiedQuote.deliveryFeeMinor, verifiedQuote.currency)}</Text> : <Text style={styles.muted}>رسوم التوصيل: لا توجد — الاستلام من المتجر</Text>}
-            <Text style={styles.total}>الإجمالي المتوقع عند الإتمام: {formatMoney(verifiedQuote.totalAmountMinor, verifiedQuote.currency)}</Text>
-          </> : <Text style={styles.muted}>{cartNeedsReview ? "راجع المنتجات قبل احتساب السعر." : "مجموع المنتجات المبدئي: " + formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}</Text>}
+            <View style={styles.invoiceRow}><Text style={styles.muted}>المنتجات</Text><Text style={styles.linePrice}>{formatMoney(verifiedQuote.subtotalMinor, verifiedQuote.currency)}</Text></View>
+            <View style={styles.invoiceRow}><Text style={styles.muted}>رسوم التوصيل</Text><Text style={styles.linePrice}>{pickupMode ? "0" : formatMoney(verifiedQuote.deliveryFeeMinor, verifiedQuote.currency)}</Text></View>
+            <View style={styles.invoiceRow}><Text style={styles.muted}>الخصم</Text><Text style={styles.linePrice}>{formatMoney(verifiedQuote.discountMinor, verifiedQuote.currency)}</Text></View>
+            <View style={styles.invoiceRow}><Text style={styles.fulfillmentTitle}>الإجمالي</Text><Text style={styles.total}>{formatMoney(verifiedQuote.totalAmountMinor, verifiedQuote.currency)}</Text></View>
+          </> : <>
+            <View style={styles.invoiceRow}><Text style={styles.muted}>المنتجات مبدئيًا</Text><Text style={styles.linePrice}>{formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}</Text></View>
+            <View style={styles.invoiceRow}><Text style={styles.muted}>رسوم التوصيل</Text><Text style={styles.warning}>{pickupMode ? "0" : "بانتظار العنوان"}</Text></View>
+            {cartNeedsReview ? <Text style={styles.warning}>راجع المنتجات</Text> : null}
+          </>}
           </View>
           {promotionNeedsApply ? <Text accessibilityLiveRegion="polite" style={styles.warning}>اضغط «تطبيق» لتحديث الإجمالي بحسب رمز العرض الحالي.</Text> : quote.kind === "ready" && !verifiedQuote ? <Text accessibilityLiveRegion="polite" style={styles.warning}>تغيّرت تفاصيل الطلب؛ جارٍ تحديث الإجمالي والخصم قبل الإتمام.</Text> : null}
           {quote.kind === "loading" ? <Text accessibilityLiveRegion="polite" style={styles.muted}>جارٍ حساب الإجمالي النهائي…</Text> : null}
@@ -613,28 +633,38 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const premium = premiumColors(theme);
   return StyleSheet.create({
-    container: { backgroundColor: premium.background, gap: spacing[3], marginTop: spacing[1], paddingBottom: spacing[3] },
+    container: { backgroundColor: premium.background, gap: spacing[2], paddingBottom: spacing[2] },
     title: { ...typography.titleSm, color: premium.text },
     muted: { ...typography.bodySm, color: premium.muted, lineHeight: 19 },
     state: { alignItems: "center", gap: spacing[2], paddingVertical: spacing[2] },
     emptyState: { alignItems: "stretch", backgroundColor: premium.surface, borderRadius: radius.sm, gap: spacing[2], padding: spacing[3] },
-    lineList: { gap: spacing[2] },
+    lineList: { gap: spacing[1] },
+    lineHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    lineTop: { gap: spacing[1], alignItems: "center", justifyContent: "space-between", flexDirection: "row" },
+    lineCopy: { flex: 1, gap: spacing[1] },
+    linePrice: { ...typography.bodyStrong, color: premium.text },
+    invoiceRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", minHeight: 27 },
+    quantityAction: { minWidth: 36, minHeight: 36, borderRadius: radius.md, borderColor: premium.stroke, borderWidth: borders.hairline, alignItems: "center", justifyContent: "center" },
+    quantityLabel: { ...typography.titleSm, color: premium.orange },
+    quantityValue: { ...typography.bodyStrong, color: premium.text },
+    lineTextAction: { minHeight: 36, paddingHorizontal: spacing[2], justifyContent: "center" },
+    removeLabel: { ...typography.bodySm, color: theme.danger },
     itemsToggle: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: borders.hairline, borderRadius: radius.lg, padding: spacing[3], minHeight: 54, flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between" },
     toggleLabel: { ...typography.bodySm, color: premium.orange },
-    line: { borderColor: premium.stroke, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
+    line: { borderColor: premium.stroke, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
     lineTitle: { ...typography.bodyStrong, color: premium.text },
     modifiers: { ...typography.bodySm, color: premium.orange },
-    lineActions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2], marginTop: spacing[2] },
+    lineActions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing[1] },
     fulfillmentCard: { backgroundColor: premium.soft, borderColor: premium.orange, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
     fulfillmentTitle: { ...typography.label, color: premium.orange },
     fulfillmentChoice: { ...typography.bodyStrong, color: premium.text },
     total: { ...typography.bodyStrong, color: premium.text },
-    totals: { backgroundColor: premium.surface, borderColor: premium.stroke, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    balanceBox: { backgroundColor: premium.surface, borderColor: premium.stroke, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    paymentChoice: { backgroundColor: premium.raised, borderColor: premium.stroke, borderRadius: radius.md, borderWidth: borders.hairline, padding: spacing[3], minHeight: 64, gap: spacing[1] },
+    totals: { backgroundColor: premium.surface, borderColor: premium.stroke, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[2] },
+    balanceBox: { gap: spacing[1], padding: spacing[1] },
+    paymentChoice: { backgroundColor: premium.raised, borderColor: premium.stroke, borderRadius: radius.md, borderWidth: borders.hairline, paddingHorizontal: spacing[3], minHeight: 43, justifyContent: "center" },
     paymentChoiceSelected: { borderColor: premium.orange, backgroundColor: premium.soft },
     paymentChoiceUnavailable: { opacity: 0.52 },
-    invoiceBox: { backgroundColor: premium.raised, borderRadius: radius.md, borderWidth: borders.hairline, borderColor: premium.stroke, padding: spacing[3], gap: spacing[2] },
+    invoiceBox: { backgroundColor: premium.raised, borderRadius: radius.md, borderWidth: borders.hairline, borderColor: premium.stroke, padding: spacing[2], gap: spacing[1] },
     optionsEditor: { padding: spacing[3], gap: spacing[3], borderWidth: borders.hairline, borderColor: premium.orange, borderRadius: radius.md, backgroundColor: premium.raised },
     optionGroup: { gap: spacing[2] },
     optionChip: { borderWidth: borders.hairline, borderColor: premium.stroke, backgroundColor: premium.surface, minHeight: 42, padding: spacing[2], borderRadius: radius.sm, gap: spacing[1] },
@@ -644,7 +674,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     success: { ...typography.bodyStrong, color: theme.success },
     warning: { ...typography.bodyStrong, color: theme.warning },
     error: { ...typography.bodySm, color: theme.danger },
-    promotionBox: { borderColor: premium.stroke, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[2] },
+    promotionBox: { borderColor: premium.stroke, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
     promotionRow: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
     customerNoteInput: { ...typography.bodySm, borderWidth: borders.hairline, borderColor: premium.stroke, backgroundColor: premium.raised, color: premium.text, borderRadius: radius.md, padding: spacing[3], minHeight: 72, textAlignVertical: "top" },
     promotionInput: { ...typography.bodySm, backgroundColor: premium.raised, borderColor: premium.stroke, borderRadius: radius.sm, borderWidth: borders.hairline, color: premium.text, flex: 1, minHeight: 42, paddingHorizontal: spacing[2] },

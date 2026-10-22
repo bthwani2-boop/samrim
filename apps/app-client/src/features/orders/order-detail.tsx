@@ -257,7 +257,7 @@ export default function ClientOrderDetail() {
       !["DELIVERED", "DELIVERY_FAILED", "CANCELLED", "PICKED_UP", "REJECTED"].includes(latestOrderState.current);
     const timer = setInterval(() => {
       if (AppState.currentState === "active" && isActive()) void load(true);
-    }, 60_000);
+    }, 30_000);
     const resume = AppState.addEventListener("change", next => {
       if (next === "active" && isActive()) void load(true);
     });
@@ -298,7 +298,7 @@ export default function ClientOrderDetail() {
         <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى الطلبات" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconLg} /></Pressable>
       </View>
       <BthwaniSurface tone="raised" style={styles.hero}>
-        <PremiumStoreIdentity title={order.storeName}
+        <PremiumStoreIdentity compact title={order.storeName}
           subtitle={storeIdentity?.addressLine ?? formatOrderDate(order.createdAt)}
           imageUri={storeIdentity?.storeCoverImage?.uri ?? storeIdentity?.storeProfileImage?.uri}
           rating={storeIdentity && storeIdentity.ratingCount > 0 ? storeIdentity.ratingAverage.toFixed(1) + " (" + storeIdentity.ratingCount + ")" : undefined} />
@@ -306,16 +306,14 @@ export default function ClientOrderDetail() {
           <BthwaniIcon name={isStorePickup ? "cart" : "orders"} color={theme.interactiveText} size={sizing.iconXl} />
           <Text accessibilityLiveRegion="polite" style={styles.heroTitle}>{journey.title}</Text>
         </View>
-        <Text style={styles.muted}>{journey.description}</Text>
-        <Text style={styles.muted}>آخر تحديث للطلب: {formatOrderDate(order.updatedAt)}</Text>
+        <Text style={styles.muted} numberOfLines={1}>{journey.description}</Text>
         {order.customerNote ? <View style={styles.modeTag}>
           <Text style={styles.sectionTitle}>ملاحظات الطلب</Text>
-          <Text style={styles.muted}>{order.customerNote}</Text>
+          <Text style={styles.muted} numberOfLines={2}>{order.customerNote}</Text>
         </View> : null}
         <View style={styles.modeTag}><Text style={styles.modeTagText}>طريقة التنفيذ: {journey.fulfillmentLabel}</Text></View>
       </BthwaniSurface>
       <BthwaniSurface tone="raised" style={styles.journey}>
-        <Text style={styles.sectionTitle}>مراحل الطلب</Text>
         {!journey.exception ? <PremiumOrderProgress steps={journey.steps} index={journey.currentStep} /> : null}
       </BthwaniSurface>
       {!isStorePickup ? <BthwaniSurface tone="raised" style={styles.deliveryOverview}>
@@ -323,14 +321,14 @@ export default function ClientOrderDetail() {
           <BthwaniIcon name="orders" color={theme.interactiveText} size={sizing.iconLg} />
           <View style={styles.heroCopy}>
             <Text style={styles.sectionTitle}>{order.fulfillmentMode === "PARTNER_CAPTAIN" ? "توصيل المتجر" : "كابتن بثواني"}</Text>
-            <Text style={styles.muted}>{order.state === "IN_CUSTODY" ? "تم استلام الطلب وبدأ التوصيل" : order.state === "CAPTAIN_ASSIGNED" ? "تم إسناد كابتن للطلب" : "بانتظار استلام الطلب للتوصيل"}</Text>
+            <Text style={styles.muted}>{order.state === "IN_CUSTODY" ? "خرج الطلب للتوصيل" : order.state === "CAPTAIN_ASSIGNED" ? "الكابتن مُسند" : "بانتظار بدء التوصيل"}</Text>
           </View>
         </View>
         {order.pickupLocation ? <BthwaniMap accessibilityLabel="موقع المتجر ووجهة الطلب دون تتبع مباشر للكابتن" markers={[
           { id: "store", title: order.storeName, coordinate: order.pickupLocation },
           { id: "destination", title: "عنوان التوصيل", coordinate: { latitude: order.addressLatitude, longitude: order.addressLongitude } },
         ]} /> : null}
-        <Text style={styles.muted}>الخريطة تعرض نقاط المتجر والتوصيل المتوفرة؛ موقع الكابتن ووقت وصوله لا يظهران دون تحديث موثوق.</Text>
+        {order.state === "IN_CUSTODY" ? <Text style={styles.muted}>موقع المتجر ووجهتك · لا يوجد تتبع مباشر</Text> : null}
       </BthwaniSurface> : null}
       {((isStorePickup && ["READY_FOR_PICKUP", "PICKED_UP"].includes(order.state)) ||
         (!isStorePickup && ["IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED"].includes(order.state)) ||
@@ -368,14 +366,12 @@ export default function ClientOrderDetail() {
       {showConversation ? <OrderConversation orderId={order.id} /> : null}
       <View style={styles.status}>
         <Text style={styles.sectionTitle}>ملخص الدفع</Text>
-        <BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} />
+        {journey.exception ? <BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} /> : null}
         <View style={styles.amountRow}>
-          <Text style={styles.muted}>الإجمالي</Text>
-          <Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text>
+          <View style={styles.paymentColumn}><Text style={styles.muted}>الإجمالي</Text><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text></View>
+          <View style={styles.paymentColumn}><Text style={styles.muted}>{cashDue ? "المتبقي نقدًا" : "حالة الدفع"}</Text><Text style={styles.statusTotal}>{cashDue ? formatMoney(order.cashAmountMinor, order.currency) : walletAllocation > 0 && order.cashAmountMinor === 0 ? "محفظة بثواني" : paymentDisclosure.amount}</Text></View>
         </View>
-        <Text style={styles.payment} numberOfLines={2}>{paymentDisclosure.amount}</Text>
-        {walletAllocation > 0 ? <Text style={styles.muted}>حصة المحفظة في الطلب: {formatMoney(walletAllocation, order.currency)}</Text> : null}
-        {cashDue ? <Text style={styles.muted}>يُدفع المتبقي إلى: {cashCollectionPartyLabel(order.fulfillmentMode)}</Text> : null}
+        {cashDue ? <Text style={styles.muted}>التحصيل: {cashCollectionPartyLabel(order.fulfillmentMode)}</Text> : null}
         {order.state === "CANCELLED" && order.paymentState !== "CANCELLED" ? <Text style={styles.payment}>{paymentDisclosure.status}</Text> : null}
         {order.state === "CREATED" && order.cancellationMode === "CLIENT_BEFORE_ACCEPTANCE" ?
           <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={refreshing || cancelling}
@@ -383,7 +379,7 @@ export default function ClientOrderDetail() {
             onPress={() => Alert.alert("إلغاء الطلب", "هل تريد إلغاء طلبك قبل قبول المتجر؟",
               [{ text: "رجوع", style: "cancel" }, { text: "إلغاء الطلب", style: "destructive", onPress: () => void cancelOrder() }])} /> : null}
       </View>
-      <BthwaniSectionHeader title={`المنتجات (${order.lines.length})`} />
+      <Text style={styles.sectionTitle}>المنتجات ({order.lines.length})</Text>
       {order.lines.length > 2 ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: showAllItems }} onPress={() => setShowAllItems((value) => !value)} style={styles.itemsShowAll}><Text style={styles.itemsAction}>{showAllItems ? "إظهار عنصرين" : "عرض كل المنتجات"}</Text></Pressable> : null}
       <View style={styles.lines}>{order.lines.slice(0, showAllItems ? undefined : 2).map((line) => <BthwaniSurface key={line.id} tone="base" style={styles.line}><View style={styles.lineTop}><Text style={styles.lineTitle} numberOfLines={2}>{line.productName}</Text><Text style={styles.linePrice}>{formatMoney(line.lineAmountMinor, line.currency)}</Text></View><Text style={styles.muted}>{formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}{line.modifierSnapshots.length ? ` · ${line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}` : ""}</Text></BthwaniSurface>)}</View>      {!["CANCELLED", "DELIVERED", "PICKED_UP", "REJECTED"].includes(order.state) &&
         (order.state !== "CREATED" || order.cancellationMode !== "CLIENT_BEFORE_ACCEPTANCE") ? (
@@ -460,10 +456,10 @@ export default function ClientOrderDetail() {
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const premium = premiumColors(theme);
   return StyleSheet.create({
-    container: { backgroundColor: premium.background, gap: spacing[3], paddingBottom: spacing[8], width: "100%" },
+    container: { backgroundColor: premium.background, gap: spacing[2], paddingBottom: spacing[5], width: "100%" },
     headerBar: { flexDirection: "row-reverse", alignItems: "center", minHeight: sizing.controlLg, gap: spacing[2] },
     pageTitle: { ...typography.titleLg, color: theme.color, textAlign: "center", flex: 1 },
-    hero: { borderRadius: radius.xl, backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[3], gap: spacing[3] },
+    hero: { borderRadius: radius.lg, backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[2], gap: spacing[2] },
     heroStore: { flexDirection: "row-reverse", alignItems: "center", gap: spacing[3] },
     heroImage: { height: 100, width: 100, borderRadius: radius.lg, backgroundColor: theme.surfaceRaised },
     heroImageFallback: { height: 100, width: 100, borderRadius: radius.lg, backgroundColor: theme.actionSoft, alignItems: "center", justifyContent: "center" },
@@ -471,11 +467,11 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     heroStoreTitle: { ...typography.titleMd, color: theme.color, textAlign: "right" },
     ratingText: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "right" },
     heroStatus: { flexDirection: "row-reverse", alignItems: "center", gap: spacing[3], justifyContent: "flex-start" },
-    heroTitle: { ...typography.titleLg, color: premium.orange, flex: 1, textAlign: "right" },
-    modeTag: { padding: spacing[3], borderRadius: radius.md, backgroundColor: premium.soft, borderColor: premium.coral, borderWidth: borders.hairline },
+    heroTitle: { ...typography.titleMd, color: premium.orange, flex: 1 },
+    modeTag: { padding: spacing[2], borderRadius: radius.md, backgroundColor: premium.soft, borderColor: premium.coral, borderWidth: borders.hairline },
     modeTagText: { ...typography.bodyStrong, color: premium.orange, textAlign: "right" },
     sectionTitle: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
-    deliveryOverview: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[3], gap: spacing[3], borderRadius: radius.xl },
+    deliveryOverview: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[2], gap: spacing[2], borderRadius: radius.lg },
     courierHeading: { flexDirection: "row-reverse", alignItems: "center", gap: spacing[3] },
     actions: { flexDirection: "row-reverse", gap: spacing[2] },
     action: { flex: 1 },
@@ -491,8 +487,9 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     eyebrow: { ...typography.label, color: theme.interactiveText },
     title: { ...typography.titleMd, color: theme.color },
     muted: { ...typography.bodySm, color: theme.colorMuted },
-    status: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, borderRadius: radius.xl, gap: spacing[2], padding: spacing[4] },
-    journey: { gap: spacing[3], padding: spacing[2], borderRadius: radius.xl, backgroundColor: premium.surface },
+    status: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, borderRadius: radius.lg, gap: spacing[2], padding: spacing[2] },
+    paymentColumn: { flex: 1, gap: spacing[1] },
+    journey: { gap: spacing[1], padding: spacing[2], borderRadius: radius.lg, backgroundColor: premium.surface },
     journeyHeading: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", gap: spacing[2] },
     journeyTitle: { ...typography.titleMd, color: theme.interactiveText, flex: 1, textAlign: "right" },
     journeyFulfillment: { ...typography.bodyStrong, color: theme.color, backgroundColor: theme.actionSoft, borderRadius: radius.md, padding: spacing[2], textAlign: "right" },
@@ -511,7 +508,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     statusTotal: { ...typography.bodyStrong, color: theme.color },
     payment: { ...typography.bodySm, color: theme.interactiveText },
     actionStack: { gap: spacing[2] },
-    address: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], padding: spacing[4] },
+    address: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], padding: spacing[2] },
     pickupLocationSurface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
     pickupLocationTitle: { ...typography.bodyStrong, color: theme.color },
     lines: { gap: spacing[2] },
@@ -520,7 +517,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     adjustments: { gap: spacing[3] },
     adjustment: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
     adjustmentActions: { gap: spacing[2] },
-    line: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
+    line: { borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
     lineTop: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
     lineTitle: { ...typography.bodyStrong, color: theme.color, flex: 1 },
     linePrice: { ...typography.bodyStrong, color: theme.interactiveText },
