@@ -653,6 +653,9 @@ paths:
   /dsh/orders/{orderId}/conversation/read:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1conversation~1read"
 
+  /dsh/orders/{orderId}/conversation/messages/{messageId}/media:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1conversation~1messages~1{messageId}~1media"
+
   /dsh/orders/{orderId}/delivery-proof:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1delivery-proof"
 
@@ -6866,6 +6869,12 @@ components:
           x-go-pointer: true
         mine:
           type: boolean
+        mediaKind:
+          type: string
+          enum: [image, audio]
+        mediaContentType:
+          type: string
+          maxLength: 64
 
     OrderConversationResponse:
       type: object
@@ -6913,6 +6922,30 @@ components:
           items:
             type: string
             enum: [client, partner, captain, operator]
+        mediaKind:
+          type: string
+          enum: [image, audio]
+        mediaContentType:
+          type: string
+          maxLength: 64
+        mediaBase64:
+          type: string
+          maxLength: 4194400
+
+    OrderConversationPrivateMediaResponse:
+      type: object
+      required: [mediaKind, contentType, dataBase64]
+      additionalProperties: false
+      properties:
+        mediaKind:
+          type: string
+          enum: [image, audio]
+        contentType:
+          type: string
+          maxLength: 64
+        dataBase64:
+          type: string
+          minLength: 1
 
     OrderConversationMessageResponse:
       type: object

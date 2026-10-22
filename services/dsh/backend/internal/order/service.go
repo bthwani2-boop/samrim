@@ -112,6 +112,25 @@ func (s *Service) SendOrderConversationMessage(ctx context.Context, accessToken,
 	return postgres.SendOrderConversationMessage(ctx, s.db, orderID, actorID, role, body, idempotencyKey, requestHash, correlationID, recipientRoles...)
 }
 
+func (s *Service) SendOrderConversationMedia(ctx context.Context, accessToken, orderID, body, idempotencyKey, correlationID string, recipientRoles []string, media postgres.OrderConversationMedia) (postgres.OrderConversationMessageRecord, bool, error) {
+	actorID, role, err := s.requireConversationSession(ctx, accessToken)
+	if err != nil {
+		return postgres.OrderConversationMessageRecord{}, false, err
+	}
+	if err := postgres.ValidateOrderConversationMedia(media); err != nil {
+		return postgres.OrderConversationMessageRecord{}, false, err
+	}
+	hash := postgres.HashOrderConversationMediaRequest(orderID, body, recipientRoles, media)
+	return postgres.SendOrderConversationMedia(ctx, s.db, orderID, actorID, role, body, idempotencyKey, hash, correlationID, recipientRoles, media)
+}
+func (s *Service) ReadOrderConversationMedia(ctx context.Context, accessToken, orderID, messageID string) (postgres.OrderConversationMedia, error) {
+	actorID, role, err := s.requireConversationSession(ctx, accessToken)
+	if err != nil {
+		return postgres.OrderConversationMedia{}, err
+	}
+	return postgres.ReadOrderConversationMedia(ctx, s.db, orderID, actorID, role, messageID)
+}
+
 func (s *Service) MarkOrderConversationRead(ctx context.Context, accessToken, orderID, messageID string) (time.Time, error) {
 	actorID, role, err := s.requireConversationSession(ctx, accessToken)
 	if err != nil {

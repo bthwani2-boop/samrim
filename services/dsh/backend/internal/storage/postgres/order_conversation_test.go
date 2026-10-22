@@ -53,3 +53,30 @@ func TestOrderConversationAudienceHashAndValidation(t *testing.T) {
 		t.Fatalf("targeted audience invalid: %v %v", roles, err)
 	}
 }
+
+func TestOrderConversationMediaValidationAndBoundedIdempotency(t *testing.T) {
+	png := OrderConversationMedia{Kind: "image", ContentType: "image/png", Bytes: []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01}}
+	if err := ValidateOrderConversationMedia(png); err != nil {
+		t.Fatal(err)
+	}
+	fake := png
+	fake.ContentType = "image/jpeg"
+	if err := ValidateOrderConversationMedia(fake); !errors.Is(err, ErrOrderConversationInvalid) {
+		t.Fatalf("spoof accepted: %v", err)
+	}
+	tooLarge := png
+	tooLarge.Bytes = make([]byte, 3*1024*1024+1)
+	if err := ValidateOrderConversationMedia(tooLarge); !errors.Is(err, ErrOrderConversationInvalid) {
+		t.Fatalf("oversized media accepted: %v", err)
+	}
+	aac := OrderConversationMedia{Kind: "audio", ContentType: "audio/aac", Bytes: []byte{0xff, 0xf1, 0x50, 0x80, 0x10, 0x00, 0x00, 0, 0, 0, 0, 0}}
+	if err := ValidateOrderConversationMedia(aac); err != nil {
+		t.Fatalf("AAC rejected: %v", err)
+	}
+	if HashOrderConversationMediaRequest("order", "صورة", []string{"partner"}, png) == HashOrderConversationMediaRequest("order", "صورة", []string{"operator"}, png) {
+		t.Fatal("audience not bound to media hash")
+	}
+	if HashOrderConversationMediaRequest("order", "صورة", []string{"partner"}, png) == HashOrderConversationMessageRequest("order", "صورة", "partner") {
+		t.Fatal("media and text requests use same hash")
+	}
+}

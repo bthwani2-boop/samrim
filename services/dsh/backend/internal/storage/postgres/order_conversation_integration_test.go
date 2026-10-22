@@ -137,6 +137,32 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 			t.Fatal(err)
 		}
 
+		// Private image bytes are never exposed as a public media URL.
+		image := postgres.OrderConversationMedia{Kind: "image", ContentType: "image/png", Bytes: []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01}}
+		imageBody := "صورة خاصة"
+		imageHash := postgres.HashOrderConversationMediaRequest(orderID, imageBody, []string{"operator"}, image)
+		imageMessage, replayed, err := postgres.SendOrderConversationMedia(ctx, db, orderID, clientID, "client", imageBody,
+			"conversation-private-image-key", imageHash, "conversation-private-image-correlation", []string{"operator"}, image)
+		if err != nil || replayed || imageMessage.MediaKind != "image" {
+			t.Fatalf("private image send: %+v replay=%t err=%v", imageMessage, replayed, err)
+		}
+		if _, err := postgres.ReadOrderConversationMedia(ctx, db, orderID, "conversation-history-partner", "partner", imageMessage.ID); !errors.Is(err, postgres.ErrOrderConversationMessageNotFound) {
+			t.Fatalf("private media leaked to partner: %v", err)
+		}
+		if found, err := postgres.ReadOrderConversationMedia(ctx, db, orderID, "conversation-test-operator", "operator", imageMessage.ID); err != nil || string(found.Bytes) != string(image.Bytes) || found.ContentType != "image/png" {
+			t.Fatalf("operator private read: %+v %v", found, err)
+		}
+		if _, err := postgres.ReadOrderConversationMedia(ctx, db, "other-order", clientID, "client", imageMessage.ID); err == nil {
+			t.Fatal("foreign order media exposed")
+		}
+		if prior, replay, err := postgres.SendOrderConversationMedia(ctx, db, orderID, clientID, "client", imageBody,
+			"conversation-private-image-key", imageHash, "conversation-image-retry-correlation", []string{"operator"}, image); err != nil || !replay || prior.ID != imageMessage.ID {
+			t.Fatalf("media retry duplicate: %+v %t %v", prior, replay, err)
+		}
+		if _, err := db.ExecContext(ctx, "DELETE FROM dsh.commerce_order_conversation_messages WHERE id=$1", imageMessage.ID); err != nil {
+			t.Fatal(err)
+		}
+
 		const messageCount = 105
 		firstMessageID := ""
 		firstIdempotencyKey := ""

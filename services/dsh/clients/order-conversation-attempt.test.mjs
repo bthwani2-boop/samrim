@@ -21,3 +21,18 @@ test("pending attempts from prior app versions preserve original audience semant
   assert.equal(restored?.recipientRoles, undefined);
   assert.equal(orderConversationMessageAttemptStorageKey("client","client-1","order-1"),"bthwani.dsh.order-conversation.v1.client.client-1.order-1");
 });
+
+test("private media retry keeps the same file and audience without persisting media bytes", () => {
+  const value=createOrderConversationMessageAttempt("client-1","order-1","صورة مرفقة","conversation-media-123","correlation-media-123",["operator"],
+    {kind:"image",contentType:"image/jpeg",fileUri:"file:///sandbox/orders/photo.jpg"});
+  const restored=parseOrderConversationMessageAttempt(JSON.stringify(value),"client-1","order-1");
+  assert.equal(restored?.mediaKind,"image");
+  assert.equal(restored?.mediaContentType,"image/jpeg");
+  assert.equal(restored?.mediaFileUri,"file:///sandbox/orders/photo.jpg");
+  assert.deepEqual(restored?.recipientRoles,["operator"]);
+  assert.equal(restored?.idempotencyKey,value.idempotencyKey);
+  assert.equal(JSON.stringify(value).includes("dataBase64"),false);
+  assert.throws(()=>parseOrderConversationMessageAttempt(JSON.stringify({...value,mediaFileUri:undefined}),"client-1","order-1"),/MEDIA_INVALID/);
+  assert.throws(()=>createOrderConversationMessageAttempt("client-1","order-1","صورة","conversation-media-123","correlation-media-123",["operator"],
+    {kind:"image",contentType:"text/html",fileUri:"file:///sandbox/photo"}),/MEDIA_INVALID/);
+});

@@ -2,6 +2,7 @@ package transporthttp
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strconv"
@@ -43,6 +44,7 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/orders/{orderId}/adjustments/{adjustmentId}/decision", s.decideClientOrderAdjustment)
 	mux.HandleFunc("GET /dsh/orders/{orderId}/conversation", s.readConversation)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/conversation/messages", s.sendConversationMessage)
+	mux.HandleFunc("GET /dsh/orders/{orderId}/conversation/messages/{messageId}/media", s.readConversationMedia)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/conversation/read", s.markConversationRead)
 	mux.HandleFunc("GET /dsh/orders/{orderId}/delivery-proof", s.readDeliveryProof)
 	mux.HandleFunc("GET /dsh/orders/{orderId}/rating", s.readRating)
@@ -359,6 +361,7 @@ func (s *OrderServer) sendConversationMessage(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "conversation ownership comes from the canonical session")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 5*1024*1024)
 	var input contract.CreateOrderConversationMessageRequest
 	if !decodeJSON(w, r, &input) {
 		return
@@ -367,7 +370,24 @@ func (s *OrderServer) sendConversationMessage(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "conversation body must contain between 1 and 2000 characters")
 		return
 	}
-	message, replayed, err := s.service.SendOrderConversationMessage(r.Context(), token, r.PathValue("orderId"), input.Body, idempotency, correlation, input.RecipientRoles...)
+	var message postgres.OrderConversationMessageRecord
+	var replayed bool
+	var err error
+	if input.MediaKind != "" || input.MediaContentType != "" || input.MediaBase64 != "" {
+		if input.MediaKind == "" || input.MediaContentType == "" || len(input.MediaBase64) > 4*1024*1024+64 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid private media input")
+			return
+		}
+		payload, decodeErr := base64.StdEncoding.DecodeString(input.MediaBase64)
+		if decodeErr != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid media encoding")
+			return
+		}
+		media := postgres.OrderConversationMedia{Kind: input.MediaKind, ContentType: input.MediaContentType, Bytes: payload}
+		message, replayed, err = s.service.SendOrderConversationMedia(r.Context(), token, r.PathValue("orderId"), input.Body, idempotency, correlation, input.RecipientRoles, media)
+	} else {
+		message, replayed, err = s.service.SendOrderConversationMessage(r.Context(), token, r.PathValue("orderId"), input.Body, idempotency, correlation, input.RecipientRoles...)
+	}
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -377,6 +397,26 @@ func (s *OrderServer) sendConversationMessage(w http.ResponseWriter, r *http.Req
 		status = http.StatusOK
 	}
 	writeJSON(w, status, contract.OrderConversationMessageResponse{Message: toOrderConversationMessage(message), IdempotentReplay: replayed})
+}
+
+func (s *OrderServer) readConversationMedia(w http.ResponseWriter, r *http.Request) {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "order session required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "conversation identity belongs to session")
+		return
+	}
+	media, err := s.service.ReadOrderConversationMedia(r.Context(), token, r.PathValue("orderId"), r.PathValue("messageId"))
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	writeJSON(w, http.StatusOK, map[string]string{"mediaKind": media.Kind, "contentType": media.ContentType, "dataBase64": base64.StdEncoding.EncodeToString(media.Bytes)})
 }
 
 func (s *OrderServer) markConversationRead(w http.ResponseWriter, r *http.Request) {
@@ -852,7 +892,7 @@ func toOrderRating(item postgres.OrderRatingRecord) contract.OrderRating {
 }
 
 func toOrderConversationMessage(item postgres.OrderConversationMessageRecord) contract.OrderConversationMessage {
-	return contract.OrderConversationMessage{ID: item.ID, OrderID: item.OrderID, SenderRole: item.SenderRole, RecipientRoles: item.RecipientRoles, Body: item.Body, CreatedAt: item.CreatedAt, ReadAt: item.ReadAt, Mine: item.Mine}
+	return contract.OrderConversationMessage{ID: item.ID, OrderID: item.OrderID, SenderRole: item.SenderRole, RecipientRoles: item.RecipientRoles, MediaKind: item.MediaKind, MediaContentType: item.MediaContentType, Body: item.Body, CreatedAt: item.CreatedAt, ReadAt: item.ReadAt, Mine: item.Mine}
 }
 
 func snapshotStringValue(value *string) string {

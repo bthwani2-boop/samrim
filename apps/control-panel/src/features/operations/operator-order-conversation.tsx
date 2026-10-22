@@ -3,6 +3,7 @@
 import type { OrderConversationResponse } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch } from "../../session/identity-fetch";
+import { OperatorOrderMedia } from "./operator-order-media";
 
 const roles = [
   { key: "client", label: "العميل" },
@@ -104,7 +105,7 @@ export function OperatorOrderConversation({ orderId }: Readonly<{ orderId: strin
       {!conversation.messages.length ? <p className="muted">لا توجد رسائل.</p> : <div style={{ display: "grid", gap: 8 }}>
         {conversation.messages.map(message => <div key={message.id} style={{ border: "1px solid var(--border, #ddd)", borderRadius: 8, padding: 10 }}>
           <strong>{who(message.senderRole)}</strong>
-          <p style={{ margin: "6px 0" }}>{message.body}</p>
+          <p style={{ margin: "6px 0" }}>{message.body}</p><OperatorOrderMedia orderId={orderId} messageId={message.id} kind={message.mediaKind} />
           <small className="muted">إلى: {message.recipientRoles.map(who).join("، ")} · {new Date(message.createdAt).toLocaleString("ar-YE")}</small>
         </div>)}
       </div>}

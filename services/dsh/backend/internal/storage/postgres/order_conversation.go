@@ -1,11 +1,13 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -22,15 +24,17 @@ var (
 )
 
 type OrderConversationMessageRecord struct {
-	ID             string
-	OrderID        string
-	SenderActorID  string
-	SenderRole     string
-	RecipientRoles []string
-	Body           string
-	CreatedAt      time.Time
-	ReadAt         *time.Time
-	Mine           bool
+	ID               string
+	OrderID          string
+	SenderActorID    string
+	SenderRole       string
+	MediaKind        string
+	MediaContentType string
+	RecipientRoles   []string
+	Body             string
+	CreatedAt        time.Time
+	ReadAt           *time.Time
+	Mine             bool
 }
 
 type OrderConversationRecord struct {
@@ -53,6 +57,44 @@ type orderConversationOrder struct {
 	CaptainJoinedAt    time.Time
 }
 
+type OrderConversationMedia struct {
+	Kind        string
+	ContentType string
+	Bytes       []byte
+}
+
+func ValidateOrderConversationMedia(media OrderConversationMedia) error {
+	n := len(media.Bytes)
+	if media.Kind == "image" {
+		if n < 1 || n > 3*1024*1024 {
+			return ErrOrderConversationInvalid
+		}
+		detected := http.DetectContentType(media.Bytes)
+		if media.ContentType == "image/jpeg" && detected == "image/jpeg" ||
+			media.ContentType == "image/png" && detected == "image/png" ||
+			media.ContentType == "image/webp" && detected == "image/webp" {
+			return nil
+		}
+	}
+	if media.Kind == "audio" {
+		if n < 12 || n > 1536*1024 {
+			return ErrOrderConversationInvalid
+		}
+		mp4 := n >= 12 && string(media.Bytes[4:8]) == "ftyp"
+		webm := bytes.HasPrefix(media.Bytes, []byte{0x1a, 0x45, 0xdf, 0xa3})
+		aac := n >= 2 && media.Bytes[0] == 0xff && media.Bytes[1]&0xf0 == 0xf0
+		if (media.ContentType == "audio/mp4" || media.ContentType == "audio/m4a" || media.ContentType == "audio/3gpp") && mp4 ||
+			media.ContentType == "audio/webm" && webm || media.ContentType == "audio/aac" && aac {
+			return nil
+		}
+	}
+	return ErrOrderConversationInvalid
+}
+func HashOrderConversationMediaRequest(orderID, body string, recipients []string, media OrderConversationMedia) string {
+	digest := sha256.Sum256(media.Bytes)
+	facts := append(append([]string(nil), recipients...), "media:"+media.Kind+":"+media.ContentType+":"+hex.EncodeToString(digest[:]))
+	return HashOrderConversationMessageRequest(orderID, body, facts...)
+}
 func HashOrderConversationMessageRequest(orderID, body string, recipients ...string) string {
 	facts := []string{strings.TrimSpace(orderID), strings.TrimSpace(body)}
 	if len(recipients) > 0 {
@@ -116,10 +158,10 @@ func ReadOrderConversation(ctx context.Context, db *sql.DB, orderID, actorID, ro
 	if role == "captain" {
 		joinedAt = order.CaptainJoinedAt
 	}
-	rows, err := db.QueryContext(ctx, `SELECT m.id,m.order_id,m.sender_actor_id,m.sender_role,m.body,m.created_at,array_to_string(m.recipient_roles,','),
+	rows, err := db.QueryContext(ctx, `SELECT m.id,m.order_id,m.sender_actor_id,m.sender_role,m.body,m.created_at,array_to_string(m.recipient_roles,','),m.media_kind,m.media_content_type,
 		COALESCE(read_state.read_at, CASE WHEN m.sender_actor_id=$2 THEN m.created_at END) AS read_at
 		FROM (
-			SELECT id,order_id,sender_actor_id,sender_role,body,created_at,recipient_roles
+			SELECT id,order_id,sender_actor_id,sender_role,body,created_at,recipient_roles,media_kind,media_content_type
 			FROM dsh.commerce_order_conversation_messages
 			WHERE order_id=$1 AND (sender_actor_id=$2 OR $4='operator' OR $4=ANY(recipient_roles))
 			AND ($4<>'captain' OR created_at >= $5)
@@ -142,10 +184,13 @@ func ReadOrderConversation(ctx context.Context, db *sql.DB, orderID, actorID, ro
 		var item OrderConversationMessageRecord
 		var readAt sql.NullTime
 		var audience string
-		if err := rows.Scan(&item.ID, &item.OrderID, &item.SenderActorID, &item.SenderRole, &item.Body, &item.CreatedAt, &audience, &readAt); err != nil {
+		var kind, mime sql.NullString
+		if err := rows.Scan(&item.ID, &item.OrderID, &item.SenderActorID, &item.SenderRole, &item.Body, &item.CreatedAt, &audience, &kind, &mime, &readAt); err != nil {
 			return OrderConversationRecord{}, err
 		}
 		item.RecipientRoles = strings.Split(audience, ",")
+		item.MediaKind = kind.String
+		item.MediaContentType = mime.String
 		item.Mine = item.SenderActorID == actorID
 		if readAt.Valid {
 			item.ReadAt = &readAt.Time
@@ -171,7 +216,16 @@ func ReadOrderConversation(ctx context.Context, db *sql.DB, orderID, actorID, ro
 	return result, nil
 }
 
-func SendOrderConversationMessage(ctx context.Context, db *sql.DB, orderID, actorID, role, body, idempotencyKey, requestHash, correlationID string, recipientRoles ...string) (result OrderConversationMessageRecord, replayed bool, returnErr error) {
+func SendOrderConversationMessage(ctx context.Context, db *sql.DB, orderID, actorID, role, body, idempotencyKey, requestHash, correlationID string, recipientRoles ...string) (OrderConversationMessageRecord, bool, error) {
+	return sendOrderConversationCore(ctx, db, orderID, actorID, role, body, idempotencyKey, requestHash, correlationID, recipientRoles, nil)
+}
+func SendOrderConversationMedia(ctx context.Context, db *sql.DB, orderID, actorID, role, body, idempotencyKey, requestHash, correlationID string, recipientRoles []string, attachment OrderConversationMedia) (OrderConversationMessageRecord, bool, error) {
+	if err := ValidateOrderConversationMedia(attachment); err != nil {
+		return OrderConversationMessageRecord{}, false, err
+	}
+	return sendOrderConversationCore(ctx, db, orderID, actorID, role, body, idempotencyKey, requestHash, correlationID, recipientRoles, &attachment)
+}
+func sendOrderConversationCore(ctx context.Context, db *sql.DB, orderID, actorID, role, body, idempotencyKey, requestHash, correlationID string, recipientRoles []string, attachment *OrderConversationMedia) (result OrderConversationMessageRecord, replayed bool, returnErr error) {
 	orderID = strings.TrimSpace(orderID)
 	actorID = strings.TrimSpace(actorID)
 	role = strings.TrimSpace(role)
@@ -238,15 +292,53 @@ func SendOrderConversationMessage(ctx context.Context, db *sql.DB, orderID, acto
 	if err != nil {
 		return OrderConversationMessageRecord{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_conversation_messages(id,order_id,sender_actor_id,sender_role,body,idempotency_key,request_hash,correlation_id,recipient_roles)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::text[])`, messageID, orderID, actorID, role, body, idempotencyKey, requestHash, correlationID, "{"+strings.Join(recipients, ",")+"}"); err != nil {
+	var kind, contentType any
+	var data []byte
+	if attachment != nil {
+		kind = attachment.Kind
+		contentType = attachment.ContentType
+		data = attachment.Bytes
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_conversation_messages(id,order_id,sender_actor_id,sender_role,body,idempotency_key,request_hash,correlation_id,recipient_roles,media_kind,media_content_type,media_data)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10,$11,$12)`, messageID, orderID, actorID, role, body, idempotencyKey, requestHash, correlationID, "{"+strings.Join(recipients, ",")+"}", kind, contentType, data); err != nil {
 		return OrderConversationMessageRecord{}, false, err
 	}
 	result = OrderConversationMessageRecord{ID: messageID, OrderID: orderID, SenderActorID: actorID, SenderRole: role, Body: body, CreatedAt: now, Mine: true, ReadAt: &now, RecipientRoles: recipients}
+	if attachment != nil {
+		result.MediaKind = attachment.Kind
+		result.MediaContentType = attachment.ContentType
+	}
 	if err := tx.Commit(); err != nil {
 		return OrderConversationMessageRecord{}, false, err
 	}
 	return result, false, nil
+}
+
+func ReadOrderConversationMedia(ctx context.Context, db *sql.DB, orderID, actorID, role, messageID string) (OrderConversationMedia, error) {
+	if db == nil || orderID == "" || actorID == "" || messageID == "" || !validConversationRole(role) {
+		return OrderConversationMedia{}, ErrOrderConversationInvalid
+	}
+	order, err := readOrderConversationOrder(ctx, db, orderID, actorID, role, false)
+	if err != nil {
+		return OrderConversationMedia{}, err
+	}
+	var joinedAt any
+	if role == "captain" {
+		joinedAt = order.CaptainJoinedAt
+	}
+	var media OrderConversationMedia
+	err = db.QueryRowContext(ctx, `SELECT media_kind,media_content_type,media_data FROM dsh.commerce_order_conversation_messages
+  WHERE id=$1 AND order_id=$2 AND media_kind IS NOT NULL
+  AND (sender_actor_id=$3 OR $4='operator' OR $4=ANY(recipient_roles))
+  AND ($4<>'captain' OR created_at >= $5)`, messageID, orderID, actorID, role, joinedAt).
+		Scan(&media.Kind, &media.ContentType, &media.Bytes)
+	if errors.Is(err, sql.ErrNoRows) {
+		return OrderConversationMedia{}, ErrOrderConversationMessageNotFound
+	}
+	if err != nil {
+		return OrderConversationMedia{}, err
+	}
+	return media, nil
 }
 
 func MarkOrderConversationRead(ctx context.Context, db *sql.DB, orderID, actorID, role, messageID string) (time.Time, error) {
@@ -305,7 +397,10 @@ func readOrderConversationMessage(ctx context.Context, source rowQueryer, where 
 	var item OrderConversationMessageRecord
 	var readAt sql.NullTime
 	var audience string
-	err := source.QueryRowContext(ctx, "SELECT id,order_id,sender_actor_id,sender_role,body,created_at,NULL::timestamptz,array_to_string(recipient_roles,',') FROM dsh.commerce_order_conversation_messages WHERE "+where, args...).Scan(&item.ID, &item.OrderID, &item.SenderActorID, &item.SenderRole, &item.Body, &item.CreatedAt, &readAt, &audience)
+	var kind, mime sql.NullString
+	err := source.QueryRowContext(ctx, "SELECT id,order_id,sender_actor_id,sender_role,body,created_at,NULL::timestamptz,array_to_string(recipient_roles,','),media_kind,media_content_type FROM dsh.commerce_order_conversation_messages WHERE "+where, args...).Scan(&item.ID, &item.OrderID, &item.SenderActorID, &item.SenderRole, &item.Body, &item.CreatedAt, &readAt, &audience, &kind, &mime)
+	item.MediaKind = kind.String
+	item.MediaContentType = mime.String
 	item.RecipientRoles = strings.Split(audience, ",")
 	if errors.Is(err, sql.ErrNoRows) {
 		return OrderConversationMessageRecord{}, ErrOrderConversationMessageNotFound
