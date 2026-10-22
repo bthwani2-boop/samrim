@@ -31,9 +31,6 @@ export function WalletProviderPolicyPanel() {
   const [name, setName] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
-  const [creator, setCreator] = useState("");
-  const [source, setSource] = useState("");
-  const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const createAttempt = useRef<{ name: string; active: boolean; id: string } | null>(null);
   const uploadAttempt = useRef<{ fingerprint: string; id: string } | null>(null);
   const restoreFocus = useRef("");
@@ -73,9 +70,6 @@ export function WalletProviderPolicyPanel() {
 
   function resetLogo() {
     setLogoFile(null);
-    setCreator("");
-    setSource("");
-    setRightsConfirmed(false);
     uploadAttempt.current = null;
   }
 
@@ -134,39 +128,46 @@ export function WalletProviderPolicyPanel() {
     finally { setBusy(false); }
   }
 
-  async function uploadLogo(provider: WalletProvider) {
-    if (!canEdit || busy || !logoFile || !rightsConfirmed) return;
-    if (!["image/jpeg", "image/png"].includes(logoFile.type) || logoFile.size < 1 || logoFile.size > 10 * 1024 * 1024) {
-      setError("اختر شعارًا بصيغة JPG أو PNG بحجم لا يتجاوز 10 ميجابايت."); return;
+  async function uploadLogo(provider: WalletProvider, file: File) {
+    if (!canEdit || busy) return;
+    if (!["image/jpeg", "image/png"].includes(file.type) || file.size < 1 || file.size > 10 * 1024 * 1024) {
+      setError("اختر شعارًا بصيغة JPG أو PNG بحجم لا يتجاوز 10 ميجابايت.");
+      return;
     }
-    if (creator.trim().length < 2 || source.trim().length < 3) {
-      setError("أدخل مالك الشعار ومصدره وأكّد حق استخدامه."); return;
-    }
-    const fingerprint = [provider.key, provider.version, logoFile.name, logoFile.size, logoFile.lastModified, creator.trim(), source.trim()].join(":");
+    // The key is held stable for an idempotent retry of the same file/version.
+    const fingerprint = [provider.key, provider.version, file.name, file.size, file.lastModified].join(":");
     if (uploadAttempt.current?.fingerprint !== fingerprint) {
       uploadAttempt.current = { fingerprint, id: crypto.randomUUID() };
     }
-    setBusy(true); setError(""); setNotice("");
+    setLogoFile(file); // Immediate local preview while saving remotely.
+    setBusy(true);
+    setError("");
+    setNotice("");
     try {
       const body = new FormData();
-      body.set("file", logoFile);
-      body.set("creator", creator.trim());
-      body.set("sourceDescription", source.trim());
-      body.set("sourceUri", "");
-      body.set("rightsUri", "");
-      body.set("rightsStatement", "أؤكد امتلاكي حق استخدام هذا الشعار وعرضه في تطبيقات بثواني.");
-      body.set("rightsAttested", "true");
+      body.set("file", file);
       const response = await fetch("/api/wallet-providers/" + encodeURIComponent(provider.key) + "/logo", {
         method: "POST",
         headers: { "Idempotency-Key": uploadAttempt.current.id, "X-Expected-Version": String(provider.version) },
         body,
+        cache: "no-store",
       });
       if (!response.ok) throw new Error("upload");
+      const payload = await response.json() as { walletProvider?: WalletProvider };
+      const saved = payload.walletProvider;
+      if (!saved || saved.key !== provider.key || !saved.logoUri || saved.version <= provider.version) {
+        throw new Error("upload response invalid");
+      }
+      // Publish the new immutable image immediately without collapsing the editor.
+      setProviders((previous) => previous.map((item) => item.key === saved.key ? saved : item));
       resetLogo();
-      await load();
-      setNotice("تم حفظ الشعار وسيظهر في التطبيق عند تحديث البيانات.");
-    } catch { setError("تعذّر رفع الشعار. تحقّق من الصورة وصلاحياتك، ثم أعد المحاولة."); }
-    finally { setBusy(false); }
+      setNotice("تم تحديث الشعار.");
+    } catch {
+      setLogoFile(null); // Restore the previous server-confirmed image on failure.
+      setError("تعذّر حفظ الصورة. أعد اختيارها للمحاولة مرة أخرى.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const results = providers.filter((provider) =>
@@ -245,32 +246,25 @@ export function WalletProviderPolicyPanel() {
                 <button className="button button-secondary" type="button" disabled={busy} onClick={() => void updateProvider(provider, provider.displayNameAr, !provider.active)}>{provider.active ? "إيقاف المزوّد" : "تفعيل المزوّد"}</button>
               </div>
             </form>
-            <form className="wallet-policy-form wallet-provider-logo-form" onSubmit={(event) => { event.preventDefault(); void uploadLogo(provider); }}>
+            <div className="wallet-policy-form wallet-provider-logo-form">
               <strong>الشعار الرسمي</strong>
               <label className="wallet-provider-logo-picker">
                 <span className="wallet-provider-logo-preview" aria-hidden="true">
                   {preview || provider.logoUri ? <img src={preview || provider.logoUri} alt="" /> : <span>◈</span>}
                 </span>
-                <span className="wallet-provider-file-copy"><strong>{logoFile ? logoFile.name : "اختر صورة الشعار"}</strong><small>JPG أو PNG · بحد أقصى 10 ميجابايت</small></span>
-                <input type="file" aria-label="اختيار صورة شعار المزوّد" accept="image/png,image/jpeg" required disabled={busy} onChange={(event) => { setLogoFile(event.target.files?.[0] ?? null); uploadAttempt.current = null; }} />
+                <span className="wallet-provider-file-copy">
+                  <strong>{busy ? "جارٍ حفظ الصورة..." : "تغيير صورة الشعار"}</strong>
+                  <small>JPG أو PNG · يحفظ تلقائيًا</small>
+                  <small>باختيار الصورة تؤكد السماح بعرضها في بثواني.</small>
+                </span>
+                <input type="file" aria-label="اختيار صورة شعار المزوّد وحفظها مباشرة" accept="image/png,image/jpeg"
+                  disabled={busy} onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    if (file) void uploadLogo(provider, file);
+                  }} />
               </label>
-              <div className="wallet-provider-logo-fields">
-                <label>مالك الشعار
-                  <input value={creator} maxLength={200} required disabled={busy} placeholder="الجهة المالكة" onChange={(event) => { setCreator(event.target.value); uploadAttempt.current = null; }} />
-                </label>
-                <label>مصدر الشعار
-                  <input value={source} maxLength={1000} required disabled={busy} placeholder="الموقع الرسمي أو المصدر المعتمد" onChange={(event) => { setSource(event.target.value); uploadAttempt.current = null; }} />
-                </label>
-              </div>
-              <label className="wallet-policy-check">
-                <input type="checkbox" checked={rightsConfirmed} required disabled={busy} onChange={(event) => setRightsConfirmed(event.target.checked)} />
-                أؤكد امتلاكي حق استخدام الشعار
-              </label>
-              <div className="wallet-policy-form-actions">
-                <button className="button button-primary" type="submit" disabled={busy || !logoFile || !rightsConfirmed || creator.trim().length < 2 || source.trim().length < 3}>{busy ? "جارٍ الحفظ..." : "حفظ الشعار"}</button>
-                <button className="button button-secondary" type="button" onClick={closeEditor} disabled={busy}>إلغاء</button>
-              </div>
-            </form>
+            </div>
           </div> : null}
         </article>;
       })}

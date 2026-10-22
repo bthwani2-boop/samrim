@@ -1160,7 +1160,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     },
     async listWalletProviders(accessToken: string): Promise<WalletProviderListResponse> {
       if (!accessToken.trim()) throw new Error("DSH_ACCESS_TOKEN_REQUIRED");
-      return publicRequest<WalletProviderListResponse>(dshOperationPaths.listActiveWalletProviders.path);
+      return publicRequest<WalletProviderListResponse>(dshOperationPaths.listActiveWalletProviders.path + "?_refresh=" + Date.now());
     },
     async listClientFavoriteStores(accessToken: string): Promise<FavoriteStoreListResponse> {
       return userRequest<FavoriteStoreListResponse>(accessToken, dshOperationPaths.listClientFavoriteStores.path, dshOperationPaths.listClientFavoriteStores.method);

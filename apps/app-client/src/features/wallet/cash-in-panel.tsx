@@ -5,7 +5,7 @@ import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import * as SecureStore from "../../bootstrap/compatible-storage";
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, AppState, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
@@ -83,20 +83,30 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
   const [providersStatus, setProvidersStatus] = useState<"loading" | "ready" | "error">("loading");
 
   const loadProviders = useCallback(async () => {
-    setProvidersStatus("loading");
+    setProvidersStatus((previous) => previous === "ready" ? "ready" : "loading");
     try {
       const token = await getUsableIdentityAccessToken();
       const response = await api().listWalletProviders(token);
       setProviders(response.walletProviders.filter((provider) => provider.active));
       setProvidersStatus("ready");
     } catch {
-      setProviders([]);
-      setProvidersStatus("error");
+      // A transient network error must not erase already displayed logos.
+      setProvidersStatus((previous) => previous === "ready" ? "ready" : "error");
     }
   }, []);
 
   useFocusEffect(useCallback(() => {
-    if (mode === "wallet") void loadProviders();
+    if (mode !== "wallet") return;
+    void loadProviders();
+    // Focused wallet: refresh the tiny public index, no restart required.
+    // Also refresh immediately when Android resumes from the background.
+    const listener = AppState.addEventListener("change", (next) => {
+      if (next === "active") void loadProviders();
+    });
+    const refresh = setInterval(() => {
+      if (AppState.currentState === "active") void loadProviders();
+    }, 5000);
+    return () => { clearInterval(refresh); listener.remove(); };
   }, [mode, loadProviders]));
 
   const load = useCallback(async () => {
@@ -233,7 +243,7 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
           {providersStatus === "loading" ? <ActivityIndicator accessibilityLabel="جارٍ قراءة المحافظ المعتمدة" color={theme.actionBackground} /> : null}
           {providersStatus === "ready" && providers.length > 0 ? <View style={styles.providersGrid}>
             {providers.map((provider) => <View key={provider.key} style={styles.providerItem} accessibilityLabel={`مزود محفظة نشط: ${provider.displayNameAr}`}>
-              {provider.logoUri ? <Image source={{uri:providerLogoUri(provider.logoUri)}} accessibilityLabel={"شعار "+provider.displayNameAr} style={styles.providerLogo} resizeMode="contain" /> : <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[5]} />}
+              {provider.logoUri ? <Image key={provider.logoUri} source={{uri:providerLogoUri(provider.logoUri)}} accessibilityLabel={"شعار "+provider.displayNameAr} style={styles.providerLogo} resizeMode="contain" /> : <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[5]} />}
               <Text style={styles.providerName} numberOfLines={2}>{provider.displayNameAr}</Text>
             </View>)}
           </View> : null}

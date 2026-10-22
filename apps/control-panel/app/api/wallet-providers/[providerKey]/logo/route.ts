@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { dshErrorPayload,dshHttpStatus,isDshClientError,readMediaProvenanceInput,uploadOperatorWalletProviderLogo } from "../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload,dshHttpStatus,isDshClientError,uploadOperatorWalletProviderLogo } from "../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../../src/server/security/csrf";
 
@@ -15,8 +15,16 @@ export async function POST(request:Request,context:{params:Promise<{providerKey:
  if(idem.length<8||idem.length>128||!Number.isSafeInteger(version)||version<1)return fail("INVALID_INPUT","version and idempotency key required",400);
  const form=await request.formData().catch(()=>null);
  const file=form?.get("file");
- const provenance=form?readMediaProvenanceInput(form):null;
- if(!(file instanceof File)||file.size<1||file.size>10*1024*1024||!["image/jpeg","image/png"].includes(file.type)||!provenance)return fail("INVALID_INPUT","valid JPEG/PNG and rights provenance required",400);
+ if(!(file instanceof File)||file.size<1||file.size>10*1024*1024||!["image/jpeg","image/png"].includes(file.type))return fail("INVALID_INPUT","valid JPEG/PNG is required",400);
+ // Selection explicitly confirms display permission in the picker UI. The
+ // authenticated operator is recorded by DSH audit; owner/source fields are
+ // no longer user-facing or blindly trusted from multipart fields.
+ const provenance = {
+   creator: "مصدر الشعار: رفع إداري",
+   sourceDescription: "شعار مزوّد محفظة أُرسل من لوحة سياسات بثواني بواسطة مشغل مخوّل",
+   rightsStatement: "أكد المشغل عند اختيار الصورة صلاحية عرضها في تطبيقات بثواني.",
+   rightsAttested: true,
+ } as const;
  try {
   const {providerKey}=await context.params;
   const response=await uploadOperatorWalletProviderLogo(providerKey,file,provenance,{operatorActorId:identity.subject,correlationId:request.headers.get("X-Correlation-ID")?.trim()||randomUUID(),idempotencyKey:idem,expectedVersion:version});

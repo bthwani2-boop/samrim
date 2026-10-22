@@ -3287,14 +3287,12 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 .wallet-provider-file-copy { display: grid; gap: 5px; min-inline-size: 0; flex: 1; overflow-wrap: anywhere; }
 .wallet-provider-file-copy strong { font-size: 12px; }
 .wallet-provider-file-copy small { color: var(--text-muted); font-size: 11px; }
-.wallet-provider-logo-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .wallet-policy-check { display: flex; align-items: flex-start; gap: 9px; line-height: 1.6; font-size: 12px; font-weight: 500; }
 .wallet-policy-check input { margin: 3px 0 0; flex: 0 0 auto; inline-size: 16px; block-size: 16px; accent-color: var(--action-bg); }
 .wallet-policy-empty { margin: 0; padding: 18px; text-align: center; color: var(--text-muted); border: 1px dashed var(--border-subtle); border-radius: 10px; }
 @media (max-width: 560px) {
   .policy-rich-drawer[open]:has([data-policy-editor=wallet-providers]:not([hidden])) { inset: 44px 0 0; inline-size: 100vw; }
   .wallet-policy-intro { align-items: flex-start; }
-  .wallet-provider-logo-fields { grid-template-columns: minmax(0,1fr); }
 }
 @media (max-width: 390px) {
   .wallet-policy-toolbar { grid-template-columns: minmax(0,1fr); }
