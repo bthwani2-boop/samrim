@@ -230,7 +230,7 @@ export default function IdentityGate() {
     return (
       <View style={styles.container}>
         <Text style={styles.title}>{copy.brand}</Text>
-        <Text style={styles.status}>{conflict ? copy.refreshingSession : copy.serviceUnavailable}</Text>
+        <Text style={styles.status}>{conflict ? copy.refreshingSession : state.reason === "storage_read" || state.reason === "storage_write" ? "تعذر الوصول إلى تخزين المتصفح" : copy.serviceUnavailable}</Text>
         {conflict ? <Text style={styles.muted}>{copy.refreshConflict}</Text> : null}
         <BthwaniButton
           accessibilityLabel={conflict ? copy.syncSession : copy.retryVerification}
