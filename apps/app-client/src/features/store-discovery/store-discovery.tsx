@@ -3,7 +3,7 @@ import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSect
 import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type PublicCommerceVertical, type PublicDiscoveryContentView, type PublicPromotionView, type PublicShoppingShortcut, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, I18nManager, Image, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { AccessibilityInfo, Animated, AppState, Easing, FlatList, I18nManager, Image, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
@@ -465,7 +465,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         <BthwaniChip label="المنتجات" selected={searchScope === "products"} onPress={() => { if (onSearchScopeChange) onSearchScopeChange("products"); else router.setParams({ scope: "products" }); }} />
       </View> : null}
 
-      {showHomeMarketing && bannerContent.length ? <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={bannerContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" /> : null}
+      {showHomeMarketing && bannerContent.length ? <DiscoveryMediaCarousel hero cardWidth={carouselCardWidth} items={bannerContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" /> : null}
 
       {taxonomy.verticals.length ? <View style={styles.categoryShortcutBlock} accessibilityLabel="المجالات التجارية الرئيسية">
         <ScrollView accessibilityLabel="المجالات التجارية" contentContainerStyle={styles.activityTiles} horizontal showsHorizontalScrollIndicator={false}>
@@ -532,7 +532,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       ) : null}
 
       {searchScope === "stores" || !searchIsActive ? <>
-      <BthwaniSectionHeader title={searchIsActive ? "نتائج المتاجر" : "المتاجر المتاحة"} subtitle={`${filteredStores.length} متجر معروض`} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="تصفية المتاجر والفئات" contentContainerStyle={styles.filterRow}>
         <BthwaniChip label="كل المتاجر" selected={storeFilter === "all"} onPress={() => setStoreFilter("all")} />
         <BthwaniChip label="الأحدث" selected={storeFilter === "newest"} onPress={() => setStoreFilter("newest")} />
@@ -826,6 +825,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     mediaScroll: { marginHorizontal: -spacing[1] },
     mediaScrollContent: { gap: spacing[2] },
     mediaCard: { backgroundColor: theme.surface, borderRadius: radius.lg, height: 144, overflow: "hidden", ...elevation.raised },
+    heroMediaCard: { borderRadius: radius.lg },
     shortFormCard: { height: 210 },
     mediaImage: { height: "100%", width: "100%" },
     mediaCaption: { backgroundColor: theme.actionBackground, bottom: 0, gap: spacing[1], left: 0, paddingHorizontal: spacing[3], paddingVertical: spacing[1], position: "absolute", right: 0 },
@@ -836,6 +836,9 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     carouselDots: { alignItems: "center", flexDirection: "row", gap: spacing[1], justifyContent: "center" },
     carouselDot: { backgroundColor: theme.borderColorStrong, borderRadius: radius.round, height: 6, width: 6 },
     carouselDotActive: { backgroundColor: theme.actionBackground, height: 8, width: 18 },
+    heroProgressTrack: { backgroundColor: theme.borderColorStrong, borderRadius: radius.round, height: 4, overflow: "hidden", width: 28 },
+    heroProgressFill: { backgroundColor: theme.actionBackground, borderRadius: radius.round, height: 4, width: 28 },
+    heroPauseIcon: { ...typography.caption, color: theme.colorMuted, minWidth: 24, textAlign: "center" },
     multiStoreCta: { alignItems: "center", backgroundColor: theme.surfaceInset, borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], minHeight: 72, padding: spacing[3] },
     multiStoreCopy: { flex: 1, gap: spacing[1] },
     multiStoreTitle: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
@@ -843,61 +846,132 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   });
 }
 
-function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label, shortForm = false }: { cardWidth: number; items: ReadonlyArray<PublicDiscoveryContentView>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>; onOpen: (item: PublicDiscoveryContentView) => void; label: string; shortForm?: boolean }) {
+function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label, shortForm = false, hero = false }: { cardWidth: number; items: ReadonlyArray<PublicDiscoveryContentView>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>; onOpen: (item: PublicDiscoveryContentView) => void; label: string; shortForm?: boolean; hero?: boolean }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [failedMedia, setFailedMedia] = useState<ReadonlySet<string>>(() => new Set());
+  const [focused, setFocused] = useState(false);
+  const [foreground, setForeground] = useState(AppState.currentState === "active");
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const [interacting, setInteracting] = useState(false);
+  const [paused, setPaused] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
-  const impressionedContentIDs = useRef<Set<string>>(new Set());
-  const snapInterval = cardWidth + spacing[2];
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const offset = useRef(Animated.multiply(scrollX, I18nManager.isRTL ? -1 : 1)).current;
+  const progress = useRef(new Animated.Value(0)).current;
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const physicalIndex = useRef(hero && items.length > 1 ? 1 : 0);
+  const impressions = useRef<Set<string>>(new Set());
+  const step = cardWidth + spacing[2];
+  const loop = hero && items.length > 1;
+  const slides = loop ? [items[items.length - 1]!, ...items, items[0]!] : items;
+  const direction = I18nManager.isRTL ? -1 : 1;
   const activeItem = items[activeIndex];
 
+  useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
   useEffect(() => {
-    if (!activeItem || impressionedContentIDs.current.has(activeItem.id)) return;
-    impressionedContentIDs.current.add(activeItem.id);
+    if (!hero) return;
+    let mounted = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (mounted) setReducedMotion(value); }).catch(() => {});
+    const motion = AccessibilityInfo.addEventListener("reduceMotionChanged", setReducedMotion);
+    const app = AppState.addEventListener("change", (value) => setForeground(value === "active"));
+    return () => { mounted = false; motion.remove(); app.remove(); };
+  }, [hero]);
+
+  useEffect(() => {
+    if (!activeItem || impressions.current.has(activeItem.id)) return;
+    impressions.current.add(activeItem.id);
     void recordDiscoveryImpression(activeItem.id);
   }, [activeItem]);
+  useEffect(() => { setActiveIndex((value) => Math.min(value, Math.max(0, items.length - 1))); }, [items.length]);
+  useEffect(() => () => { if (resetTimer.current) clearTimeout(resetTimer.current); }, []);
 
-  useEffect(() => {
-    setActiveIndex((current) => Math.min(current, Math.max(0, items.length - 1)));
-  }, [items.length]);
-
-  function selectSlide(index: number) {
-    const direction = I18nManager.isRTL ? -1 : 1;
-    scrollRef.current?.scrollTo({ x: direction * snapInterval * index, animated: true });
+  function move(position: number, animate: boolean) {
+    physicalIndex.current = position;
+    scrollRef.current?.scrollTo({ x: direction * step * position, animated: animate });
+  }
+  function choose(index: number) {
+    if (items.length < 2) return;
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+    let position = loop ? index + 1 : index;
+    if (loop && activeIndex === items.length - 1 && index === 0) position = items.length + 1;
+    if (loop && activeIndex === 0 && index === items.length - 1) position = 0;
+    setActiveIndex(index);
+    move(position, !reducedMotion);
+    if (loop && (position === 0 || position === items.length + 1)) {
+      const expected = position;
+      resetTimer.current = setTimeout(() => {
+        if (physicalIndex.current === expected) move(position === 0 ? items.length : 1, false);
+      }, 700);
+    }
+  }
+  function settle(x: number) {
+    if (!items.length) return;
+    const position = Math.min(slides.length - 1, Math.max(0, Math.round(Math.abs(x) / step)));
+    physicalIndex.current = position;
+    setActiveIndex(loop ? (position + items.length - 1) % items.length : position);
+    if (loop && (position === 0 || position === items.length + 1)) {
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+      resetTimer.current = setTimeout(() => move(position === 0 ? items.length : 1, false), 0);
+    }
   }
 
-  return (
-    <View accessibilityLabel={activeItem ? `${label}، ${activeItem.titleAr}، ${activeIndex + 1} من ${items.length}` : label} style={styles.mediaCarousel}>
-      <ScrollView
-        ref={scrollRef}
-        accessibilityLabel={label}
-        contentContainerStyle={styles.mediaScrollContent}
-        horizontal
-        onMomentumScrollEnd={(event) => {
-          setActiveIndex(Math.min(items.length - 1, Math.max(0, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / snapInterval))));
-        }}
-        decelerationRate="fast"
-        showsHorizontalScrollIndicator={false}
-        snapToAlignment="start"
-        snapToInterval={snapInterval}
-        style={styles.mediaScroll}
-      >
-        {items.map((item) => {
-          const card = (
-            <View key={item.id} style={[styles.mediaCard, shortForm && styles.shortFormCard, { width: cardWidth }]}>
-              {failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text style={styles.muted}>{item.bodyAr}</Text> : null}<Text style={styles.mediaFallbackHint}>تعذر تحميل الصورة. اضغط لعرض التفاصيل.</Text></View> : <>
-                <Image accessibilityLabel={`صورة ${item.titleAr}`} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={styles.mediaImage} resizeMode="cover" />
-                <View pointerEvents="none" style={styles.mediaCaption}>
-                  <Text numberOfLines={1} style={styles.mediaCaptionTitle}>{item.titleAr}</Text>
-                  {item.bodyAr ? <Text numberOfLines={1} style={styles.mediaCaptionBody}>{item.bodyAr}</Text> : null}
-                </View>
-              </>}
-            </View>
-          );
-          return <Pressable accessibilityHint="يفتح تفاصيل المحتوى أو وجهته المرتبطة" accessibilityLabel={`عرض ${item.titleAr}`} accessibilityRole="button" key={item.id} onPress={() => onOpen(item)}>{card}</Pressable>;
-        })}
-      </ScrollView>
-      {items.length > 1 ? <View accessibilityLabel={`اختيار شريحة العرض، ${activeIndex + 1} من ${items.length}`} style={styles.carouselDots}>{items.map((item, index) => <Pressable accessibilityLabel={`عرض الشريحة ${index + 1}: ${item.titleAr}`} accessibilityRole="button" accessibilityState={{ selected: index === activeIndex }} hitSlop={8} key={item.id} onPress={() => selectSlide(index)}><View style={[styles.carouselDot, index === activeIndex && styles.carouselDotActive]} /></Pressable>)}</View> : null}
-    </View>
-  );
+  useEffect(() => {
+    progress.stopAnimation();
+    progress.setValue(0);
+    if (!hero || !focused || !foreground || reducedMotion || interacting || paused || items.length < 2) return;
+    const animation = Animated.timing(progress, { toValue: 1, duration: 5000, easing: Easing.linear, useNativeDriver: true });
+    animation.start(({ finished }) => { if (finished) choose((activeIndex + 1) % items.length); });
+    return () => animation.stop();
+  }, [hero, activeIndex, items.length, focused, foreground, reducedMotion, interacting, paused, progress, step]);
+
+  return <View accessibilityLabel={activeItem ? label + "، " + activeItem.titleAr + "، " + (activeIndex + 1) + " من " + items.length : label} style={styles.mediaCarousel}>
+    <Animated.ScrollView
+      ref={scrollRef}
+      accessibilityLabel={label}
+      contentContainerStyle={styles.mediaScrollContent}
+      contentOffset={{ x: loop ? direction * step : 0, y: 0 }}
+      onContentSizeChange={() => { if (loop) move(activeIndex + 1, false); }}
+      horizontal
+      onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: Platform.OS !== "web" })}
+      scrollEventThrottle={16}
+      onScrollBeginDrag={() => setInteracting(true)}
+      onScrollEndDrag={(event) => {
+        if (Math.abs(event.nativeEvent.velocity?.x ?? 0) < 0.1) settle(event.nativeEvent.contentOffset.x);
+        setInteracting(false);
+      }}
+      onMomentumScrollEnd={(event) => { settle(event.nativeEvent.contentOffset.x); setInteracting(false); }}
+      onTouchStart={() => setInteracting(true)}
+      onTouchEnd={() => setInteracting(false)}
+      decelerationRate="fast"
+      showsHorizontalScrollIndicator={false}
+      snapToAlignment="start"
+      snapToInterval={step}
+      style={styles.mediaScroll}
+    >
+      {slides.map((item, position) => {
+        const inputRange = [(position - 1) * step, position * step, (position + 1) * step];
+        const imageMotion = hero && !reducedMotion ? { transform: [
+          { scale: offset.interpolate({ inputRange, outputRange: [1.045, 1, 1.045], extrapolate: "clamp" }) },
+          { translateX: offset.interpolate({ inputRange, outputRange: [6, 0, -6], extrapolate: "clamp" }) },
+        ] } : undefined;
+        return <Pressable accessibilityRole="button" accessibilityLabel={"عرض " + item.titleAr} accessibilityHint="يفتح وجهة صورة العرض" key={item.id + ":" + position} onPress={() => onOpen(item)}>
+          <View style={[styles.mediaCard, hero && styles.heroMediaCard, shortForm && styles.shortFormCard, { width: cardWidth }, hero && { height: Math.round(cardWidth / 2.5) }]}>
+            {failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text><Text style={styles.mediaFallbackHint}>تعذر تحميل الصورة. اضغط لعرض التفاصيل.</Text></View> : <>
+              <Animated.Image accessibilityLabel={"صورة " + item.titleAr} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={[styles.mediaImage, imageMotion]} resizeMode="cover" />
+              {!hero ? <View pointerEvents="none" style={styles.mediaCaption}><Text numberOfLines={1} style={styles.mediaCaptionTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text numberOfLines={1} style={styles.mediaCaptionBody}>{item.bodyAr}</Text> : null}</View> : null}
+            </>}
+          </View>
+        </Pressable>;
+      })}
+    </Animated.ScrollView>
+    {items.length > 1 ? <View accessibilityLabel={"اختيار الشريحة، " + (activeIndex + 1) + " من " + items.length} style={styles.carouselDots}>
+      {items.map((item, index) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={"عرض الشريحة " + (index + 1) + ": " + item.titleAr} accessibilityState={{ selected: index === activeIndex }} hitSlop={12} onPress={() => choose(index)}>
+        {hero ? <View style={styles.heroProgressTrack}>{index === activeIndex ? reducedMotion || paused ? <View style={styles.heroProgressFill} /> : <Animated.View style={[styles.heroProgressFill, { transform: [
+          { translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [direction === -1 ? 14 : -14, 0] }) },
+          { scaleX: progress },
+        ] }]} /> : null}</View> : <View style={[styles.carouselDot, index === activeIndex && styles.carouselDotActive]} />}
+      </Pressable>)}
+      {hero && !reducedMotion ? <Pressable accessibilityRole="button" accessibilityLabel={paused ? "استئناف الحركة التلقائية" : "إيقاف الحركة التلقائية"} hitSlop={12} onPress={() => setPaused((value) => !value)}><Text style={styles.heroPauseIcon}>{paused ? "▶" : "Ⅱ"}</Text></Pressable> : null}
+    </View> : null}
+  </View>;
 }
