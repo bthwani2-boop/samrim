@@ -39,7 +39,8 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 	if dshPort == "" {
 		dshPort = "5432"
 	}
-	if strings.EqualFold(dshTarget.Hostname(), wltTarget.Host) && dshPort == wltTarget.Port && strings.Trim(dshTarget.Path, "/") == wltTarget.Name {
+	// Distinct database names are required even when localhost aliases or proxies differ.
+	if strings.Trim(dshTarget.Path, "/") == wltTarget.Name {
 		t.Fatal("DSH and WLT financial proof must use separate test databases")
 	}
 	db, err := postgres.Open(wltURL)
