@@ -17,7 +17,7 @@ function harness(failClick = false) {
   let serial = 0;
   const modules = {
     "expo-crypto": { randomUUID: () => "event-" + ++serial },
-    "expo-secure-store": {
+    "../../bootstrap/compatible-storage": {
       getItemAsync: async (key) => saved.get(key) ?? null,
       setItemAsync: async (key, value) => { saved.set(key, value); },
       deleteItemAsync: async (key) => { saved.delete(key); },
