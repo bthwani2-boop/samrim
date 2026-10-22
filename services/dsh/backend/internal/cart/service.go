@@ -154,10 +154,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	}
 	serviceCityID := store.ServiceCityID
 	var originLatitude, originLongitude, destinationLatitude, destinationLongitude float64
-	var deliveryPolicyVersion string
-	if fulfillmentMode == FulfillmentModeCustomerPickup {
-		deliveryPolicyVersion = "NOT_APPLICABLE"
-	} else {
+	if fulfillmentMode != FulfillmentModeCustomerPickup {
 		serviceabilityResult, serviceabilityErr := s.serviceability.Evaluate(ctx, accessToken, storeID, addressID)
 		if serviceabilityErr != nil {
 			return CheckoutQuote{}, serviceabilityErr
@@ -169,7 +166,6 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 		serviceCityID = facts.StoreServiceCityID
 		originLatitude, originLongitude = facts.StoreOriginLatitude, facts.StoreOriginLongitude
 		destinationLatitude, destinationLongitude = facts.AddressLatitude, facts.AddressLongitude
-		deliveryPolicyVersion = serviceability.PolicyVersion
 	}
 
 	subtotal := new(big.Int)
@@ -231,7 +227,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 		DeliveryFeeMinor:      feeQuote.FeeMinor,
 		TotalAmountMinor:      total.Int64(),
 		Currency:              currency,
-		DeliveryPolicyVersion: deliveryPolicyVersion,
+		DeliveryPolicyVersion: feeQuote.PolicyVersion,
 		ServiceCityID:         serviceCityID,
 		QuotedAt:              time.Now().UTC(),
 	}, nil
@@ -339,7 +335,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		if fulfillmentMode == FulfillmentModeCustomerPickup {
 			allocationPolicy = "cash-at-store-v1"
 		} else if fulfillmentMode == FulfillmentModePartnerCaptain {
-			allocationPolicy = "store-captain-cash-v1"
+			allocationPolicy = fmt.Sprintf("store-captain-cash-v2;delivery=%s", deliveryPolicyVersion)
 		}
 		cashAmountMinor := amountMinor - internalBalanceAmountMinor
 		allocation := wlt.CustomerPaymentAllocationInput{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, CommercialStoreTypeID: store.CommercialStoreTypeID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, InternalBalanceAmountMinor: internalBalanceAmountMinor, CashAmountMinor: cashAmountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
