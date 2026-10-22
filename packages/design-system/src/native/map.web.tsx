@@ -106,5 +106,5 @@ export function BthwaniMap({
       position: "absolute", zIndex: 1000, inset: 0, display: "grid",
       placeItems: "center", color: "#0A2F5C", background: "#F1F3F5", padding: 16,
     }}>تعذر تحميل الخريطة. تحقق من الاتصال ثم أعد المحاولة.</div> : null}
-  </div>;
+  </section>;
 }
