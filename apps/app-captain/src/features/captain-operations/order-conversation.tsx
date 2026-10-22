@@ -169,6 +169,8 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     finally { setBusy(false); }
   }
   async function markRead() { if (!correctOwner || busy || state.kind !== "ready" || state.value.unreadCount < 1) return; const last = state.value.messages.at(-1); if (!last) return; setBusy(true); setError(""); try { const token = await getUsableIdentityAccessToken(); if (!isCurrentActor(loadedActorID)) return; await client().markOrderConversationRead(token, orderId, { messageId: last.id }); await load(); } catch (cause) { console.error("DSH captain order conversation read-state write failed", cause); setError("تعذر تحديث حالة القراءة."); } finally { setBusy(false); } }
+  const markReadRef = useRef(markRead);
+  markReadRef.current = markRead;
   const recipientOptions = [
     { role: "client" as const, label: "العميل" },
     { role: "partner" as const, label: "المتجر" },
@@ -181,7 +183,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     const key = loadedActorID + ":" + orderId + ":" + last.id;
     if (autoReadReceiptAttempt.current === key) return;
     autoReadReceiptAttempt.current = key;
-    void markRead();
+    void markReadRef.current();
   }, [correctOwner, state, busy, loadedActorID, orderId]);
 
   if (!activeActorID || (loadedActorID && !correctOwner)) return <BthwaniSurface tone="base" style={styles.surface} accessibilityLabel="محادثة الطلب"><Text style={styles.muted}>{activeActorID ? "جارٍ التحقق من محادثة الحساب الحالي…" : "سجّل الدخول لقراءة محادثة الطلب."}</Text></BthwaniSurface>;

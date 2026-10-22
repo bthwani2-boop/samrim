@@ -239,6 +239,8 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     } finally { setBusy(false); }
   }
 
+  const markReadRef = useRef(markRead);
+  markReadRef.current = markRead;
   const captainAvailable = state.kind === "ready" && ["CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERY_FAILED"].includes(state.value.orderState);
   const recipientOptions = [
     { role: "partner" as const, label: "المتجر" },
@@ -252,7 +254,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     const key = loadedActorID + ":" + orderId + ":" + last.id;
     if (autoReadReceiptAttempt.current === key) return;
     autoReadReceiptAttempt.current = key;
-    void markRead();
+    void markReadRef.current();
   }, [correctOwner, state, busy, loadedActorID, orderId]);
 
   if (!activeActorID || (loadedActorID && !correctOwner)) return <BthwaniSurface tone="base" style={styles.surface} accessibilityLabel="محادثة الطلب"><Text style={styles.muted}>{activeActorID ? "جارٍ التحقق من محادثة الحساب الحالي…" : "سجّل الدخول لقراءة محادثة الطلب."}</Text></BthwaniSurface>;

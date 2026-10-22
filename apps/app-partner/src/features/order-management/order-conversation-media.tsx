@@ -16,7 +16,7 @@ export function OrderConversationMediaMessage({ orderId, messageId, mediaKind }:
   useEffect(() => () => {
     try {local.current?.delete();} catch {}
     try {player.current?.release();} catch {}
-  },[player]);
+  },[]);
   if (!mediaKind) return null;
 
   async function open() {
