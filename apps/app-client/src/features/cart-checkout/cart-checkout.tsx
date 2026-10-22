@@ -4,7 +4,7 @@ import { type Cart, type CheckoutQuote, type CheckoutRequest, cashCollectionPart
 import * as Crypto from "expo-crypto";
 import { type Href, Link, useRouter } from "expo-router";
 import * as SecureStore from "../../bootstrap/compatible-storage";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { recordPendingDiscoveryConversion } from "../store-discovery/discovery-analytics";
@@ -107,7 +107,12 @@ function isQuantityAllowed(line: Cart["lines"][number], quantity: number): boole
   return quantity >= line.quantityMinBaseUnits && quantity <= line.quantityMaxBaseUnits && (quantity - line.quantityMinBaseUnits) % line.quantityStepBaseUnits === 0;
 }
 
-export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfillmentMode, initialPromotionCode = "" }: { storeId: string; addresses: ReadonlyArray<DeliveryAddress>; serviceableAddressId?: string | undefined; fulfillmentMode: FulfillmentMode; initialPromotionCode?: string }) {
+export type CheckoutFooterState = Readonly<{ label: string; total: string; disabled: boolean; busy: boolean }>;
+export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfillmentMode, initialPromotionCode = "", onFooterChange, checkoutAction }: {
+  storeId: string; addresses: ReadonlyArray<DeliveryAddress>; serviceableAddressId?: string | undefined;
+  fulfillmentMode: FulfillmentMode; initialPromotionCode?: string;
+  onFooterChange?: (state: CheckoutFooterState | null) => void; checkoutAction?: MutableRefObject<() => void>;
+}) {
   const theme = useAppearanceTheme();
   const router = useRouter();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -121,6 +126,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   const [error, setError] = useState("");
   const [order, setOrder] = useState<Order | null>(null);
   const [showPromotion, setShowPromotion] = useState(Boolean(initialPromotionCode));
+  const [showItems, setShowItems] = useState(false);
   const [promotionCode, setPromotionCode] = useState(initialPromotionCode.trim().toUpperCase());
   const [appliedPromotionCode, setAppliedPromotionCode] = useState("");
   useEffect(() => {
@@ -400,6 +406,15 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   const selectedBalanceMinor = verifiedQuote ? checkoutWalletAllocation(verifiedQuote.totalAmountMinor, wallet.kind === "ready" ? wallet.availableMinor : null, useWalletBalance) : null;
   const balanceNeedsRead = useWalletBalance && wallet.kind !== "ready";
   const remainingCashMinor = verifiedQuote !== null && selectedBalanceMinor !== null ? verifiedQuote.totalAmountMinor - selectedBalanceMinor : null;
+  const canConfirm = Boolean(!mutationBusy && (pickupMode || serviceableAddressId) && verifiedQuote && selectedBalanceMinor !== null && !balanceNeedsRead && !promotionNeedsApply);
+  if (checkoutAction) checkoutAction.current = () => { void checkout(); };
+  useEffect(() => {
+    onFooterChange?.(state.kind === "ready" && !pendingCheckout ? {
+      label: "تأكيد الطلب", total: verifiedQuote ? formatMoney(verifiedQuote.totalAmountMinor, verifiedQuote.currency) : "جارٍ الحساب…",
+      busy, disabled: !canConfirm,
+    } : null);
+  }, [onFooterChange, state.kind, pendingCheckout, verifiedQuote, busy, canConfirm]);
+  useEffect(() => () => onFooterChange?.(null), [onFooterChange]);
   if (pendingCheckout) return <View style={styles.container} accessibilityLabel="استعادة طلب السلة"><Text style={styles.title}>التحقق من نتيجة الطلب</Text><Text style={styles.warning}>المحاولة محفوظة لهذا الحساب والسلة. سنتحقق من النتيجة أولًا لتجنب إنشاء طلب مكرر.</Text><BthwaniButton busy={busy} disabled={busy} label="تحقق واستعد الطلب" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
   return (
     <View style={styles.container} accessibilityLabel="السلة وإتمام الطلب">
@@ -409,7 +424,11 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
       {state.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>تعذر قراءة السلة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
       {state.kind === "empty" ? <BthwaniSurface tone="inset" style={styles.emptyState}><Text style={styles.lineTitle}>{order ? "تم إنشاء الطلب والسلة الآن فارغة." : "السلة فارغة."}</Text><Text style={styles.muted}>{order ? "يمكنك متابعة التسوق من كتالوج المتجر." : "اختر منتجات من كتالوج المتجر ثم عد إلى السلة لإتمام الطلب."}</Text><Link href={`/store/${encodeURIComponent(storeId)}` as Href} asChild><BthwaniButton label="العودة إلى كتالوج المتجر" variant="secondary" /></Link></BthwaniSurface> : null}
       {state.kind === "ready" ? <>
-        <View style={styles.lineList}>{state.cart.lines.map((line) => {
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: showItems }} style={styles.itemsToggle} onPress={() => setShowItems((value) => !value)}>
+          <Text style={styles.lineTitle}>محتويات الطلب ({state.cart.lines.length})</Text>
+          <Text style={styles.toggleLabel}>{showItems ? "إخفاء −" : "عرض وتعديل +"}</Text>
+        </Pressable>
+        {showItems ? <View style={styles.lineList}>{state.cart.lines.map((line) => {
           const lineBusy = busyLineId === line.id;
           const canDecrease = isQuantityAllowed(line, line.quantityBaseUnits - line.quantityStepBaseUnits);
           const canIncrease = isQuantityAllowed(line, line.quantityBaseUnits + line.quantityStepBaseUnits);
@@ -425,7 +444,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
               <BthwaniButton accessibilityLabel={`إزالة ${line.productName} من السلة`} busy={lineBusy} disabled={mutationBusy} label="إزالة" onPress={() => void removeLine(line)} variant="danger" />
             </View>
           </View>;
-        })}</View>
+        })}</View> : null}
         <View accessibilityLabel="ملخص الدفع" style={styles.totals}>
           <Text style={styles.muted}>{cartNeedsReview ? "مجموع المنتجات غير متاح حتى إزالة المنتجات التي تحتاج مراجعة." : `مجموع المنتجات: ${formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}`}</Text>
           <View style={styles.promotionBox}>
@@ -468,7 +487,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
         <DeliveryRecipientForm allowOther={!pickupMode} onChange={setRecipient} value={recipient} />
         <Text style={styles.payment}>{remainingCashMinor === 0 ? "الطلب مغطى من المحفظة" : remainingCashMinor !== null ? paymentMethodLabel(paymentMethod, fulfillmentMode, remainingCashMinor) : "سيظهر مبلغ الدفع بعد حساب الإجمالي"}</Text>
         {!pickupMode && serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : null}
-        <BthwaniButton accessibilityLabel={pickupMode ? "تأكيد طلب الاستلام الذاتي من المتجر" : "تأكيد الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || !verifiedQuote || selectedBalanceMinor === null || balanceNeedsRead || promotionNeedsApply} label={verifiedQuote ? `تأكيد الطلب · ${formatMoney(verifiedQuote.totalAmountMinor, verifiedQuote.currency)}` : "تأكيد الطلب"} onPress={() => void checkout()} />
+        {!onFooterChange ? <BthwaniButton accessibilityLabel={pickupMode ? "تأكيد طلب الاستلام الذاتي من المتجر" : "تأكيد الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || !verifiedQuote || selectedBalanceMinor === null || balanceNeedsRead || promotionNeedsApply} label={verifiedQuote ? `تأكيد الطلب · ${formatMoney(verifiedQuote.totalAmountMinor, verifiedQuote.currency)}` : "تأكيد الطلب"} onPress={() => void checkout()} /> : null}
       </> : null}
       {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{orderPaymentDisclosure(order).amount}</Text><Text style={styles.muted}>{orderPaymentDisclosure(order).status}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
       {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{error}</Text> : null}
@@ -478,12 +497,14 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[3], marginTop: spacing[4], padding: spacing[4] },
+    container: { backgroundColor: theme.background, gap: spacing[3], marginTop: spacing[1], paddingBottom: spacing[3] },
     title: { ...typography.titleSm, color: theme.color },
     muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 19 },
     state: { alignItems: "center", gap: spacing[2], paddingVertical: spacing[2] },
     emptyState: { alignItems: "stretch", backgroundColor: theme.surfaceRaised, borderRadius: radius.sm, gap: spacing[2], padding: spacing[3] },
     lineList: { gap: spacing[2] },
+    itemsToggle: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.lg, padding: spacing[3], minHeight: 54, flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between" },
+    toggleLabel: { ...typography.bodySm, color: theme.interactiveText },
     line: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
     lineTitle: { ...typography.bodyStrong, color: theme.color },
     modifiers: { ...typography.bodySm, color: theme.interactiveText },
@@ -492,7 +513,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     fulfillmentTitle: { ...typography.label, color: theme.interactiveText },
     fulfillmentChoice: { ...typography.bodyStrong, color: theme.color },
     total: { ...typography.bodyStrong, color: theme.color },
-    totals: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
+    totals: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
     balanceBox: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
     paymentChoice: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, padding: spacing[3], minHeight: 64, gap: spacing[1] },
     paymentChoiceSelected: { borderColor: theme.interactiveText, backgroundColor: theme.actionSoft },

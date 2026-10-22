@@ -28,9 +28,9 @@ export default function ClientAppLayout() {
       <Tabs.Screen name="wallet-cash-in" options={{ href: null, headerShown: false, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "الحساب" }} />
       <Tabs.Screen name="addresses" options={{ href: null }} />
-      <Tabs.Screen name="cart/[storeId]" options={{ href: null }} />
+      <Tabs.Screen name="cart/[storeId]" options={{ href: null, headerShown: false, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="multi-store-checkout" options={{ href: null }} />
-      <Tabs.Screen name="orders/[orderId]" options={{ href: null }} />
+      <Tabs.Screen name="orders/[orderId]" options={{ href: null, headerShown: false, tabBarStyle: { display: "none" } }} />
     </Tabs>
   );
   const requiresAuthentication = pathname === "/orders" || pathname.startsWith("/orders/") || pathname.startsWith("/cart/") || pathname === "/multi-store-checkout" || pathname === "/wallet" || pathname === "/wallet-cash-in" || pathname === "/addresses";
