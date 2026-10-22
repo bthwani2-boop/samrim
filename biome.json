@@ -24,6 +24,7 @@
       "tools/**/*.tsx",
       "!!**/node_modules/**",
       "!!**/.next/**",
+      "!!**/.next-dev/**",
       "!!**/dist/**",
       "!!**/build/**",
       "!!**/generated/**"
