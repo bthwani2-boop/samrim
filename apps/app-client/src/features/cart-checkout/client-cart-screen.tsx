@@ -212,7 +212,7 @@ export default function ClientCartScreen() {
           <View style={styles.rowCopy}><Text style={styles.sectionTitle}>استلام بنفسي</Text><Text style={styles.muted}>ستظهر تعليمات الاستلام بعد تجهيز الطلب.</Text></View>
         </View></BthwaniSurface> : <Text accessibilityRole="alert" style={styles.error}>اختر طريقة تنفيذ الطلب أولًا.</Text>}</>}/> : null}
       </ScrollView>
-      {footer ? <PremiumStickyFooter amount={footer.total} label={footer.label} disabled={footer.disabled} busy={footer.busy}
+      {footer ? <PremiumStickyFooter amount={footer.total} label={footer.label} disabled={footer.disabled} busy={footer.busy} caption={footer.totalReady ? "الإجمالي الكلي" : "قبل التأكيد"}
         onPress={() => checkoutAction.current()} /> : null}
     </SafeAreaView>
   );

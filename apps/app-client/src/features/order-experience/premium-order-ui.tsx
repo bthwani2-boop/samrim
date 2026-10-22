@@ -75,14 +75,14 @@ export function PremiumOrderProgress({ steps, index }: { steps: readonly string[
     })}
   </View>;
 }
-export function PremiumStickyFooter({ amount, label, disabled, busy, detail, onPress }: {
-  amount: string; label: string; disabled?: boolean; busy?: boolean; detail?: string; onPress: () => void;
+export function PremiumStickyFooter({ amount, label, disabled, busy, detail, caption = "الإجمالي الكلي", onPress }: {
+  amount: string; label: string; disabled?: boolean; busy?: boolean; detail?: string; caption?: string; onPress: () => void;
 }) {
   const theme = useAppearanceTheme();
   const premium = premiumColors(theme);
   const styles = useMemo(() => createStyles(theme), [theme]);
   return <View style={styles.sticky}>
-    <View style={styles.amountCopy}><Text style={styles.amountLabel}>الإجمالي الكلي</Text>
+    <View style={styles.amountCopy}><Text style={styles.amountLabel}>{caption}</Text>
       <Text numberOfLines={2} style={styles.amount}>{amount}</Text>
       {detail ? <Text style={styles.amountDetail}>{detail}</Text> : null}
     </View>
