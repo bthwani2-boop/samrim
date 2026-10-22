@@ -1,9 +1,10 @@
 import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { formatMoney, cashInSimulatorMutationHeaders, cashInSimulatorOptions, cashInSimulatorStateMatches, type CashInSimulatorOutcome, type BeneficiaryWalletResponse } from "@bthwani/dsh";
+import { formatMoney, cashInSimulatorMutationHeaders, cashInSimulatorOptions, cashInSimulatorStateMatches, type CashInSimulatorOutcome, type BeneficiaryWalletResponse, type CashInFundingIntent } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
@@ -23,8 +24,8 @@ export function CaptainCashInPanel() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [simulatorOutcome, setSimulatorOutcome] = useState<CashInSimulatorOutcome>("SUCCESS");
-  const [showCharge, setShowCharge] = useState(false);
   const [showTestOptions, setShowTestOptions] = useState(false);
+  const [showChargeForm, setShowChargeForm] = useState(false);
   const load = useCallback(async () => {
     setBusy(true); setError("");
     try {
@@ -63,7 +64,7 @@ export function CaptainCashInPanel() {
       setError("تعذرت قراءة المحفظة أو استعادة طلب الشحن من الخادم.");
     } finally { setBusy(false); }
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   const createIntent = async () => {
     const identity = currentIdentityState();
@@ -116,73 +117,108 @@ export function CaptainCashInPanel() {
   };
 
   const state = wallet?.state;
-  const simulatorInDevelopment = Boolean(__DEV__ && state?.simulator);
+  const simulatorInDevelopment = Boolean(__DEV__ && state?.simulator && state.cashInEnabled);
+  const latest = (wallet?.fundingIntents ?? []).filter((intent) =>
+    simulatorInDevelopment || intent.providerKey !== "DEVELOPMENT_SIMULATOR");
   const userCanAddFunds = Boolean(state?.cashInEnabled && (!state.simulator || simulatorInDevelopment));
-  const currentAmount = Number(toAsciiDigits(amount).replace(/[^0-9]/g, ""));
+  const userHasPending = Boolean(pending);
+  const fundingStateLabel = (value: CashInFundingIntent["state"]) =>
+    ({ PENDING_PROVIDER: "قيد التأكيد", UNKNOWN: "قيد التحقق", SETTLED: "تم", FAILED: "فشل" })[value];
+
   return <BthwaniSurface tone="base" style={styles.panel} accessibilityLabel="شحن رصيد الكابتن">
-    <Text style={styles.title}>الرصيد المتاح</Text>
+    <View style={styles.heading}>
+      <Text accessibilityRole="header" style={styles.title}>شحن الرصيد</Text>
+      {simulatorInDevelopment ? <Text style={styles.demo}>تجريبي</Text> : null}
+    </View>
     {busy && !wallet ? <ActivityIndicator color={theme.actionBackground} /> : null}
-    {state ? <>
+    {state ? <View style={styles.balance}>
       <Text style={styles.amount}>{formatMoney(state.availableMinor, state.currency)}</Text>
       {state.heldMinor > 0 ? <Text style={styles.muted}>محجوز: {formatMoney(state.heldMinor, state.currency)}</Text> : null}
-    </> : null}
+    </View> : null}
+
     {userCanAddFunds ? <>
-      <Pressable accessible accessibilityRole="button"
-        accessibilityLabel={showCharge || pending ? "إغلاق نموذج الشحن" : "إضافة رصيد"}
-        disabled={busy || Boolean(pending)} onPress={() => setShowCharge((value) => !value)}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={showChargeForm ? "إغلاق الشحن" : "إضافة رصيد"}
+        accessibilityState={{ expanded: showChargeForm || userHasPending }}
+        disabled={busy || userHasPending}
+        onPress={() => setShowChargeForm((previous) => !previous)}
         style={styles.toggle}>
-        <Text style={styles.label}>{showCharge || pending ? "إغلاق الشحن −" : "+ شحن الرصيد"}</Text>
+        <Text style={styles.toggleLabel}>{showChargeForm || userHasPending ? "إغلاق الشحن −" : "إضافة رصيد +"}</Text>
       </Pressable>
-      {showCharge || pending ? <>
-        <TextInput accessibilityLabel="مبلغ الشحن بالريال اليمني"
-          editable={!busy && !pending} keyboardType="number-pad"
-          placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted}
-          value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/[^0-9]/g, ""))}
-          style={styles.input} />
-        {!pending ? <View style={styles.presets}>{[1000,5000,10000].map((value) =>
-          <Pressable key={value} accessibilityRole="button" disabled={busy}
-            onPress={() => setAmount(String(value))}
-            style={[styles.preset,currentAmount===value && styles.presetActive]}>
-            <Text style={styles.label}>{value.toLocaleString("en-US")}</Text>
-          </Pressable>)}</View> : null}
-        {simulatorInDevelopment ? <>
-          <Pressable accessibilityRole="button" accessibilityState={{expanded:showTestOptions}}
-            onPress={() => setShowTestOptions((value) => !value)} style={styles.testToggle}>
-            <Text style={styles.muted}>خيارات الاختبار {showTestOptions?"−":"+"}</Text>
-          </Pressable>
-          {showTestOptions ? <View style={styles.options}>
-            {cashInSimulatorOptions.map((item) => <Pressable key={item.outcome}
-              accessibilityRole="radio" accessibilityState={{selected:simulatorOutcome===item.outcome}}
-              onPress={() => setSimulatorOutcome(item.outcome)} style={styles.preset}>
-              <Text style={styles.label}>{item.label}</Text>
+      {showChargeForm || userHasPending ? <>
+      <TextInput accessibilityLabel="مبلغ شحن محفظة الكابتن"
+        editable={!userHasPending && !busy} keyboardType="number-pad"
+        value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/[^0-9]/g, ""))}
+        placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} />
+      {!userHasPending ? <View style={styles.presets}>
+        {[1000, 5000, 10000].map((value) =>
+          <Pressable key={value} accessibilityRole="button" accessibilityLabel={"اختيار " + value + " ريال"}
+            disabled={busy} onPress={() => setAmount(String(value))}
+            style={[styles.preset, Number(amount) === value && styles.presetActive]}>
+            <Text style={styles.presetText}>{value.toLocaleString("en-US")}</Text>
+          </Pressable>)}
+      </View> : null}
+      {simulatorInDevelopment ? <>
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: showTestOptions }}
+          onPress={() => setShowTestOptions((value) => !value)}
+          style={styles.testToggle}>
+          <Text style={styles.muted}>خيارات الاختبار {showTestOptions ? "−" : "+"}</Text>
+        </Pressable>
+        {showTestOptions ? <View style={styles.simOptions} accessibilityLabel="نتيجة شحن الكابتن التجريبي">
+          {cashInSimulatorOptions.map((option) =>
+            <Pressable key={option.outcome} accessibilityRole="radio"
+              accessibilityState={{ selected: simulatorOutcome === option.outcome }}
+              onPress={() => setSimulatorOutcome(option.outcome)}
+              style={[styles.simOption, simulatorOutcome === option.outcome && styles.simOptionSelected]}>
+              <Text style={styles.label}>{option.label}</Text>
             </Pressable>)}
-          </View> : null}
-        </> : null}
-        <BthwaniButton busy={busy} disabled={busy || (!pending && (!Number.isSafeInteger(currentAmount) || currentAmount<=0))}
-          label={pending ? "متابعة الشحن" : simulatorInDevelopment ? "شحن تجريبي" : "تأكيد الشحن"}
-          onPress={() => void createIntent()} />
+        </View> : null}
       </> : null}
-    </> : state ? <Text style={styles.muted}>الشحن غير متاح</Text> : null}
+      <BthwaniButton busy={busy} disabled={busy || (!userHasPending && !amount.trim())}
+        label={userHasPending ? "متابعة الشحن" : simulatorInDevelopment ? "شحن تجريبي" : "شحن"}
+        onPress={() => void createIntent()} />
+      </> : null}
+    </> : state ? <Text style={styles.muted}>الشحن غير متاح.</Text> : null}
+
+    {userHasPending ? <Text style={styles.muted}>طلب قيد التأكيد: {formatMoney(pending!.amountMinor, "YER")}</Text> : null}
+    {latest.length > 0 && (showChargeForm || userHasPending) ? <View style={styles.history}>
+      <Text style={styles.muted}>آخر شحن</Text>
+      {latest.slice(0, 1).map((intent) =>
+        <View key={intent.id} style={styles.row}>
+          <Text style={styles.muted}>{fundingStateLabel(intent.state)}</Text>
+          <Text style={styles.label}>{formatMoney(intent.amountMinor, intent.currency)}</Text>
+        </View>)}
+    </View> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
-    {error ? <><Text accessibilityRole="alert" style={styles.error}>{error}</Text>
-      <BthwaniButton label="إعادة المحاولة" disabled={busy} onPress={() => void load()} variant="secondary" /></> : null}
+    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    {error ? <BthwaniButton disabled={busy} busy={busy} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}
   </BthwaniSurface>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     panel: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    title: { ...typography.bodySm, color: theme.colorMuted },
-    amount: { ...typography.titleLg, color: theme.color },
-    muted: { ...typography.bodySm, color: theme.colorMuted },
+    heading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    title: { ...typography.titleSm, color: theme.color },
+    demo: { ...typography.caption, color: theme.interactiveText },
     label: { ...typography.bodyStrong, color: theme.color },
-    toggle: { backgroundColor: theme.actionSoft, borderRadius: radius.md, minHeight: 44, paddingHorizontal: spacing[3], justifyContent: "center" },
-    input: { ...typography.bodySm, color: theme.color, borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.md, minHeight: 48, paddingHorizontal: spacing[3] },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
+    balance: { gap: spacing[1], paddingVertical: spacing[1] },
+    amount: { ...typography.titleLg, color: theme.color },
+    input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 48, paddingHorizontal: spacing[3] },
     presets: { flexDirection: "row", gap: spacing[2] },
-    preset: { flex: 1, borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.md, padding: spacing[2], minHeight: 44, justifyContent: "center", alignItems: "center" },
+    preset: { flex: 1, borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.md, alignItems: "center", justifyContent: "center", minHeight: 44 },
     presetActive: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
-    testToggle: { minHeight: 44, justifyContent: "center" },
-    options: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    presetText: { ...typography.bodySm, color: theme.color },
+    testToggle: { paddingVertical: spacing[2] },
+    simOptions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    simOption: { width: "47%", alignItems: "center", justifyContent: "center", borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.md, minHeight: 44, padding: spacing[2] },
+    simOptionSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
+    history: { gap: spacing[2] },
+    row: { flexDirection: "row", justifyContent: "space-between", borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingTop: spacing[2] },
+    toggle: { backgroundColor: theme.actionSoft, borderRadius: radius.md, minHeight: 44, justifyContent: "center", paddingHorizontal: spacing[3] },
+    toggleLabel: { ...typography.bodyStrong, color: theme.color },
     notice: { ...typography.bodySm, color: theme.interactiveText },
     error: { ...typography.bodySm, color: theme.warning },
   });
