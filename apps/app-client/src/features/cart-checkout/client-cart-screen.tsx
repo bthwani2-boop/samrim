@@ -51,7 +51,18 @@ export default function ClientCartScreen() {
   const [expandedFulfillment, setExpandedFulfillment] = useState(false);
   const [footer, setFooter] = useState<CheckoutFooterState | null>(null);
   const checkoutAction = useRef<() => void>(() => undefined);
-  const updateFooter = useCallback((next: CheckoutFooterState | null) => setFooter(next), []);
+  const updateFooter = useCallback((next: CheckoutFooterState | null) => {
+    setFooter((previous) => {
+      if (previous === next || (previous && next &&
+        previous.label === next.label &&
+        previous.total === next.total &&
+        previous.totalReady === next.totalReady &&
+        previous.disabled === next.disabled &&
+        previous.busy === next.busy)) return previous;
+      return next;
+    });
+  }, []);
+  const openRequiredAddress = useCallback(() => setExpandedAddresses(true), []);
   const loadRequestID = useRef(0);
   const addressRequestID = useRef(0);
   const serviceabilityRequestID = useRef(0);
@@ -193,7 +204,7 @@ export default function ClientCartScreen() {
           {orderabilityHint ? <Text accessibilityRole="alert" style={styles.error}>{orderabilityHint}</Text> : null}
         </BthwaniSurface>
         {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} serviceCityId={selectedCityID ?? ""} addresses={addressesState.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} initialPromotionCode={requestedPromotionCode} onFooterChange={updateFooter} checkoutAction={checkoutAction}
-          onRequiredAddress={() => setExpandedAddresses(true)} addressSection={<>{fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <BthwaniSurface tone="raised" style={styles.section}>
+          onRequiredAddress={openRequiredAddress} storeAcceptingOrders={!selectedOrderability || selectedOrderability.state === "OPEN_FOR_ORDERS"} onRefreshStore={load} addressSection={<>{fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <BthwaniSurface tone="raised" style={styles.section}>
           <View style={styles.row}>
             <BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconLg}/>
             <View style={styles.rowCopy}><Text style={styles.sectionTitle}>عنوان التوصيل</Text><Text style={styles.muted} numberOfLines={2}>{chosenAddress ? chosenAddress.addressText : "اختر عنوانًا مؤهلًا لتوصيل الطلب"}</Text></View>

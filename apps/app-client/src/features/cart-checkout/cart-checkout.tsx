@@ -14,7 +14,7 @@ import { recordPendingDiscoveryConversion } from "../store-discovery/discovery-a
 import { checkoutRecipient, DeliveryRecipientForm, deliveryRecipientIsValid, type DeliveryRecipientInput } from "./delivery-recipient-form";
 
 type CartState = { kind: "loading" } | { kind: "empty" } | { kind: "ready"; cart: Cart } | { kind: "error" };
-type QuoteState = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; quote: CheckoutQuote } | { kind: "invalid" } | { kind: "error"; message: string };
+type QuoteState = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; quote: CheckoutQuote } | { kind: "invalid" } | { kind: "error"; message: string; code: string };
 type WalletState = { kind: "loading" } | { kind: "ready"; availableMinor: number } | { kind: "error" };
 type PendingCartCheckoutAttempt = Readonly<{ version: 1; actorID: string; storeID: string; cartID: string; idempotencyKey: string; correlationID: string; request: CheckoutRequest; expectedCartVersion: number }>;
 
@@ -102,10 +102,10 @@ function isQuantityAllowed(line: Cart["lines"][number], quantity: number): boole
 type EditingLineOptions = Readonly<{ lineId: string; offer: CatalogStoreOffer; selectedIds: ReadonlyArray<string> }>;
 
 export type CheckoutFooterState = Readonly<{ label: string; total: string; totalReady: boolean; disabled: boolean; busy: boolean }>;
-export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAddressId, addressSection, fulfillmentMode, initialPromotionCode = "", onFooterChange, checkoutAction, onRequiredAddress }: {
+export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAddressId, addressSection, fulfillmentMode, initialPromotionCode = "", onFooterChange, checkoutAction, onRequiredAddress, storeAcceptingOrders = true, onRefreshStore }: {
   storeId: string; serviceCityId: string; addresses: ReadonlyArray<DeliveryAddress>; serviceableAddressId?: string | undefined; addressSection?: ReactNode;
   fulfillmentMode: FulfillmentMode; initialPromotionCode?: string;
-  onFooterChange?: (state: CheckoutFooterState | null) => void; checkoutAction?: MutableRefObject<() => void>; onRequiredAddress?: () => void;
+  onFooterChange?: (state: CheckoutFooterState | null) => void; checkoutAction?: MutableRefObject<() => void>; onRequiredAddress?: () => void; storeAcceptingOrders?: boolean; onRefreshStore?: () => void;
 }) {
   const theme = useAppearanceTheme();
   const router = useRouter();
@@ -261,6 +261,11 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
   }, [load]);
 
   const refreshQuote = useCallback(async (cart: Cart) => {
+    if (!storeAcceptingOrders) {
+      quoteRequestID.current += 1;
+      setQuote({ kind: "idle" });
+      return;
+    }
     if (cart.lines.some((line) => line.requiresReview)) {
       quoteRequestID.current += 1;
       setQuote({ kind: "invalid" });
@@ -279,14 +284,14 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
       if (requestID === quoteRequestID.current) setQuote({ kind: "ready", quote: result.quote });
     } catch (cause) {
       console.error("DSH checkout quote failed", cause);
-      if (requestID === quoteRequestID.current) setQuote({ kind: "error", message: quoteFailureMessage(cause, appliedPromotionCode) });
+      if (requestID === quoteRequestID.current) setQuote({ kind: "error", message: quoteFailureMessage(cause, appliedPromotionCode), code: errorCode(cause) });
     }
-  }, [appliedPromotionCode, fulfillmentMode, pickupMode, quoteAddressID, serviceableAddressId, storeId]);
+  }, [appliedPromotionCode, fulfillmentMode, pickupMode, quoteAddressID, serviceableAddressId, storeId, storeAcceptingOrders]);
 
   const readyCart = state.kind === "ready" ? state.cart : null;
   const cartNeedsReview = readyCart?.lines.some((line) => line.requiresReview) ?? false;
   const promotionNeedsApply = promotionCode.trim().toUpperCase() !== appliedPromotionCode;
-  const verifiedQuote = readyCart && quote.kind === "ready" && quoteMatchesCheckout(quote.quote, readyCart, storeId, pickupMode ? "" : serviceableAddressId ?? "", fulfillmentMode, appliedPromotionCode) ? quote.quote : null;
+  const verifiedQuote = storeAcceptingOrders && readyCart && quote.kind === "ready" && quoteMatchesCheckout(quote.quote, readyCart, storeId, pickupMode ? "" : serviceableAddressId ?? "", fulfillmentMode, appliedPromotionCode) ? quote.quote : null;
   useEffect(() => {
     if (readyCart) void refreshQuote(readyCart);
     else {
@@ -471,14 +476,17 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
   const balanceNeedsRead = paymentChoice !== "CASH" && wallet.kind !== "ready";
   const remainingCashMinor = allocation?.cashMinor ?? null;
   const canConfirm = Boolean(!mutationBusy && (pickupMode || serviceableAddressId) && verifiedQuote && selectedBalanceMinor !== null && !balanceNeedsRead && !promotionNeedsApply);
-  const canRetryQuote = state.kind === "ready" && quote.kind === "error" && !mutationBusy && (pickupMode || Boolean(serviceableAddressId));
+  const blockedByStore = !storeAcceptingOrders || (quote.kind === "error" && (quote.code === "STORE_NOT_ACCEPTING_ORDERS" || quote.code === "FULFILLMENT_MODE_UNAVAILABLE"));
+  const canRefreshStore = blockedByStore && !mutationBusy && Boolean(onRefreshStore);
+  const canRetryQuote = !blockedByStore && state.kind === "ready" && quote.kind === "error" && !mutationBusy && (pickupMode || Boolean(serviceableAddressId));
   const needsAddress = !pickupMode && !serviceableAddressId;
   if (checkoutAction) checkoutAction.current = () => {
-    if (canConfirm) void checkout();
+    if (canRefreshStore) onRefreshStore?.();
+    else if (canConfirm) void checkout();
     else if (canRetryQuote && readyCart) void refreshQuote(readyCart);
     else if (needsAddress) onRequiredAddress?.();
   };
-  const footerAmount = verifiedQuote ? formatMoney(verifiedQuote.totalAmountMinor, verifiedQuote.currency)
+  const footerAmount = blockedByStore ? "المتجر مغلق الآن" : verifiedQuote ? formatMoney(verifiedQuote.totalAmountMinor, verifiedQuote.currency)
     : cartNeedsReview ? "راجع المنتجات"
     : !pickupMode && !serviceableAddressId ? "العنوان مطلوب"
     : quote.kind === "error" ? "راجع الرسوم"
@@ -486,11 +494,11 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
     : quote.kind === "loading" ? "جارٍ الحساب…" : "لم يُعتمد الإجمالي بعد";
   useEffect(() => {
     onFooterChange?.(state.kind === "ready" && !pendingCheckout ? {
-      label: canConfirm ? "تأكيد الطلب" : canRetryQuote ? "إعادة الحساب" : needsAddress ? "اختر العنوان" : "تأكيد الطلب",
+      label: blockedByStore ? "تحديث المتجر" : canConfirm ? "تأكيد الطلب" : canRetryQuote ? "إعادة الحساب" : needsAddress ? "اختر العنوان" : "تأكيد الطلب",
       total: footerAmount, totalReady: Boolean(verifiedQuote),
-      busy, disabled: !canConfirm && !canRetryQuote && !(needsAddress && Boolean(onRequiredAddress)),
+      busy, disabled: !canRefreshStore && !canConfirm && !canRetryQuote && !(needsAddress && Boolean(onRequiredAddress)),
     } : null);
-  }, [onFooterChange, state.kind, pendingCheckout, footerAmount, busy, canConfirm, canRetryQuote, needsAddress, onRequiredAddress]);
+  }, [onFooterChange, state.kind, pendingCheckout, footerAmount, busy, canConfirm, canRetryQuote, canRefreshStore, blockedByStore, needsAddress, onRequiredAddress]);
   useEffect(() => () => onFooterChange?.(null), [onFooterChange]);
   if (pendingCheckout) return <View style={styles.container} accessibilityLabel="استعادة طلب السلة"><Text style={styles.title}>التحقق من نتيجة الطلب</Text><Text style={styles.warning}>المحاولة محفوظة لهذا الحساب والسلة. سنتحقق من النتيجة أولًا لتجنب إنشاء طلب مكرر.</Text><BthwaniButton busy={busy} disabled={busy} label="تحقق واستعد الطلب" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
   return (
