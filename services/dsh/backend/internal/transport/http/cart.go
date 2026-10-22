@@ -286,6 +286,8 @@ func writeCartErrorWithCorrelation(w http.ResponseWriter, err error, correlation
 		writeError(w, http.StatusBadGateway, "WLT_DELIVERY_FEE_UNAVAILABLE", "the delivery fee service is temporarily unavailable; no checkout quote was created")
 	case errors.Is(err, cart.ErrCheckoutNotServiceable):
 		writeError(w, http.StatusConflict, "UNSERVICEABLE", "the selected address is not serviceable for this Store")
+	case errors.Is(err, cart.ErrStoreNotAcceptingOrders):
+		writeError(w, http.StatusConflict, "STORE_NOT_ACCEPTING_ORDERS", "the store is not currently accepting orders for this fulfillment mode")
 	case errors.Is(err, cart.ErrFulfillmentModeUnavailable):
 		writeError(w, http.StatusConflict, "FULFILLMENT_MODE_UNAVAILABLE", "the requested fulfillment mode is not available for checkout")
 	default:
