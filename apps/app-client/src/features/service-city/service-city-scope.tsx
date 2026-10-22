@@ -2,9 +2,10 @@ import { borders, opacity, radius, type resolveTheme, spacing, typography } from
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { ServiceCity } from "@bthwani/dsh";
 import * as SecureStore from "expo-secure-store";
-import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { listActiveServiceCities } from "./service-city-client";
+import { persistCitySelection, readCitySelection } from "./service-city-preference";
 
 const PREFERENCE_KEY = "samrim.app-client.service-city";
 
@@ -34,6 +35,7 @@ export default function ServiceCityScope({ children }: PropsWithChildren) {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [selectedCityID, setSelectedCityID] = useState<string | null>(null);
+  const selectedCityRef = useRef<string | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
 
   const refreshCities = useCallback(async () => {
@@ -41,10 +43,11 @@ export default function ServiceCityScope({ children }: PropsWithChildren) {
     try {
       const nextCities = await listActiveServiceCities();
       const activeIDs = new Set(nextCities.map((city) => city.id));
-      const saved = (await SecureStore.getItemAsync(PREFERENCE_KEY))?.trim() || null;
+      // A device preference is optional and cannot turn a valid DSH response into an outage.
+      const nextSelection = await readCitySelection(SecureStore, PREFERENCE_KEY, activeIDs, selectedCityRef.current);
+      selectedCityRef.current = nextSelection;
       setCities(nextCities);
-      setSelectedCityID(saved && activeIDs.has(saved) ? saved : null);
-      if (saved && !activeIDs.has(saved)) await SecureStore.deleteItemAsync(PREFERENCE_KEY);
+      setSelectedCityID(nextSelection);
       setState("ready");
     } catch {
       setState("error");
@@ -56,12 +59,14 @@ export default function ServiceCityScope({ children }: PropsWithChildren) {
   const selectCity = useCallback(async (cityID: string) => {
     const normalized = cityID.trim();
     if (!cities.some((city) => city.id === normalized && city.active)) throw new Error("SERVICE_CITY_INVALID");
-    await SecureStore.setItemAsync(PREFERENCE_KEY, normalized);
+    await persistCitySelection(SecureStore, PREFERENCE_KEY, normalized);
+    selectedCityRef.current = normalized;
     setSelectedCityID(normalized);
   }, [cities]);
 
   const clearSelectedCity = useCallback(async () => {
-    await SecureStore.deleteItemAsync(PREFERENCE_KEY);
+    await persistCitySelection(SecureStore, PREFERENCE_KEY, null);
+    selectedCityRef.current = null;
     setSelectedCityID(null);
   }, []);
 
