@@ -8,6 +8,7 @@ import { Alert, AppState, Linking, Pressable, StyleSheet, Text, TextInput, View 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
 import { isClientOrderScopeCurrent } from "./order-session-scope";
+import { orderJourneyPresentation } from "./order-journey";
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -256,6 +257,7 @@ export default function ClientOrderDetail() {
   if (state.kind === "error") return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة تفاصيل الطلب</Text><Text style={styles.muted}>قد تكون الجلسة أو الطلب غير متاحين الآن.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى الطلبات" onPress={() => router.back()} variant="secondary" /></View>;
 
   const { order } = state;
+  const journey = orderJourneyPresentation(order);
   const isStorePickup = order.fulfillmentMode === "CUSTOMER_PICKUP";
   const proofLabel = isStorePickup ? "رمز الاستلام" : "تأكيد التسليم";
   const proofAvailableMessage = "أظهر الرمز لموظف المتجر بعد تجهيز طلبك." ;
@@ -282,6 +284,19 @@ export default function ClientOrderDetail() {
           <Text style={styles.muted}>{formatOrderDate(order.createdAt)}</Text>
         </View>
       </BthwaniSurface>
+      <BthwaniSurface tone="raised" style={styles.journey}>
+        <View style={styles.journeyHeading}><Text style={styles.journeyTitle}>{journey.title}</Text><BthwaniIcon name={isStorePickup ? "cart" : "orders"} color={theme.interactiveText} size={sizing.iconLg} /></View>
+        <Text style={styles.muted}>{journey.description}</Text>
+        <Text style={styles.journeyFulfillment}>طريقة التنفيذ: {journey.fulfillmentLabel}</Text>
+        {!journey.exception ? <View style={styles.journeySteps} accessibilityLabel={`حالة الطلب: ${journey.title}`}>
+          {journey.steps.map((label, index) => <View key={`${index}-${label}`} style={styles.journeyStep}>
+            <View style={[styles.journeyMarker, index <= journey.currentStep && styles.journeyMarkerDone, index === journey.currentStep && styles.journeyMarkerActive]}><Text style={[styles.journeyMarkerText, index <= journey.currentStep && styles.journeyMarkerTextDone]}>{index < journey.currentStep ? "✓" : String(index + 1)}</Text></View>
+            <Text style={[styles.journeyStepLabel, index === journey.currentStep && styles.journeyStepActive]}>{label}</Text>
+          </View>)}
+        </View> : null}
+      </BthwaniSurface>
+      <BthwaniButton label={showConversation ? "إغلاق مراسلة الطلب" : "مراسلة الطلب"} variant="secondary" onPress={() => setShowConversation(value => !value)} />
+      {showConversation ? <OrderConversation orderId={order.id} /> : null}
       <View style={styles.status}>
         <BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} />
         <View style={styles.amountRow}>
@@ -395,9 +410,6 @@ export default function ClientOrderDetail() {
       </BthwaniSurface></> : null}
       <BthwaniSectionHeader title={`المنتجات (${order.lines.length})`} />
       <View style={styles.lines}>{order.lines.map((line) => <BthwaniSurface key={line.id} tone="base" style={styles.line}><View style={styles.lineTop}><Text style={styles.lineTitle} numberOfLines={2}>{line.productName}</Text><Text style={styles.linePrice}>{formatMoney(line.lineAmountMinor, line.currency)}</Text></View><Text style={styles.muted}>{formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}{line.modifierSnapshots.length ? ` · ${line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}` : ""}</Text></BthwaniSurface>)}</View>
-      <BthwaniButton label={showConversation ? "إغلاق المحادثة" : "محادثة الطلب"}
-        variant="secondary" onPress={() => setShowConversation(value => !value)} />
-      {showConversation ? <OrderConversation orderId={order.id} /> : null}
 
     </View>
   );
@@ -419,6 +431,19 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     title: { ...typography.titleMd, color: theme.color },
     muted: { ...typography.bodySm, color: theme.colorMuted },
     status: { backgroundColor: theme.actionSoft, borderRadius: radius.lg, gap: spacing[1], padding: spacing[4] },
+    journey: { gap: spacing[3], padding: spacing[4], borderRadius: radius.xl },
+    journeyHeading: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", gap: spacing[2] },
+    journeyTitle: { ...typography.titleMd, color: theme.interactiveText, flex: 1, textAlign: "right" },
+    journeyFulfillment: { ...typography.bodyStrong, color: theme.color, backgroundColor: theme.actionSoft, borderRadius: radius.md, padding: spacing[2], textAlign: "right" },
+    journeySteps: { flexDirection: "row-reverse", justifyContent: "space-between", gap: spacing[1], paddingTop: spacing[2] },
+    journeyStep: { flex: 1, alignItems: "center", gap: spacing[2] },
+    journeyMarker: { width: 35, height: 35, borderRadius: 18, borderWidth: borders.hairline, borderColor: theme.borderColorStrong, backgroundColor: theme.surfaceRaised, alignItems: "center", justifyContent: "center" },
+    journeyMarkerDone: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
+    journeyMarkerActive: { backgroundColor: theme.actionBackground },
+    journeyMarkerText: { ...typography.bodyStrong, color: theme.colorMuted },
+    journeyMarkerTextDone: { color: theme.color },
+    journeyStepLabel: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
+    journeyStepActive: { color: theme.interactiveText },
     statusCopy: { flex: 1, gap: spacing[1] },
     statusTitle: { ...typography.caption, color: theme.colorMuted },
     statusValue: { ...typography.titleSm, color: theme.interactiveText },

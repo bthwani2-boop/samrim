@@ -1,5 +1,5 @@
 import { borders, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, type CustomerFulfillmentMode, type DeliveryAddress, fulfillmentModeLabel, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
 import { type Href, Link, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -7,6 +7,12 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { evaluateStoreServiceability, listOwnDeliveryAddresses, readPublishedStore } from "../store-discovery/store-discovery-client";
 import { CartCheckout } from "./cart-checkout";
+
+const fulfillmentDetails: Readonly<Record<CustomerFulfillmentMode, string>> = {
+  BTHWANI_CAPTAIN: "كابتن من بثواني",
+  PARTNER_CAPTAIN: "كابتن تابع للمتجر",
+  CUSTOMER_PICKUP: "تستلم من المتجر",
+};
 
 type CartScreenState =
   | { kind: "loading" }
@@ -75,7 +81,7 @@ export default function ClientCartScreen() {
       if (!isCurrent()) return;
       setState({ kind: "ready", store });
       const enabledModes = availableCustomerFulfillmentModes(store.fulfillmentModes);
-      setFulfillmentMode(enabledModes.includes(requestedFulfillmentMode as CustomerFulfillmentMode) ? requestedFulfillmentMode as CustomerFulfillmentMode : null);
+      setFulfillmentMode(enabledModes.includes(requestedFulfillmentMode as CustomerFulfillmentMode) ? requestedFulfillmentMode as CustomerFulfillmentMode : enabledModes.length === 1 ? enabledModes[0] ?? null : null);
     } catch {
       if (isCurrent()) setState({ kind: "error" });
     }
@@ -125,15 +131,28 @@ export default function ClientCartScreen() {
   if (availableFulfillmentModes.length === 0) return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>لا تتوفر طريقة استلام مدعومة لهذا المتجر</Text><Text style={styles.muted}>اختر متجرًا آخر؛ خيارات هذا المتجر لا تسمح حاليًا بإتمام طلب العميل.</Text><BthwaniButton label="العودة إلى المتجر" onPress={() => router.push(`/store/${encodeURIComponent(state.store.id)}` as Href)} variant="secondary" /></View>;
   const serviceableAddressId = fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" && serviceability.kind === "ready" && serviceability.result.status === "SERVICEABLE" ? serviceability.addressId : undefined;
   return (
-    <View style={styles.container} accessibilityLabel={`السلة وإتمام الطلب من ${state.store.name}`}>
-      <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتجر" onPress={() => router.push(`/store/${encodeURIComponent(state.store.id)}` as Href)} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>العودة إلى الكتالوج</Text></Pressable>
+    <View style={styles.container} accessibilityLabel={`تأكيد الطلب من ${state.store.name}`}>
+      <View style={styles.headingRow}><Text style={styles.title}>تأكيد الطلب</Text><Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتجر" onPress={() => router.push(`/store/${encodeURIComponent(state.store.id)}` as Href)} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>تعديل السلة</Text></Pressable></View>
       <BthwaniSurface tone="raised" style={styles.storeContext}>
         <View style={styles.storeIcon}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconXl} /></View>
         <View style={styles.storeCopy}><Text style={styles.eyebrow}>سلة الطلب</Text><Text style={styles.title}>{state.store.name}</Text><Text style={styles.muted}>{fulfillmentMode === "BTHWANI_CAPTAIN" ? "المنصة تتولى التوصيل؛ اختر عنوانًا مؤهلًا." : fulfillmentMode === "PARTNER_CAPTAIN" ? "المتجر يختار كابتنه لتوصيل الطلب؛ اختر عنوانًا مؤهلًا." : fulfillmentMode === "CUSTOMER_PICKUP" ? "اذهب إلى المتجر لاستلام طلبك بنفسك." : "اختر وضع الطلب قبل الإتمام."}</Text></View>
       </BthwaniSurface>
-      <BthwaniSectionHeader title="طريقة الاستلام" subtitle="اختر من الخيارات التي يدعمها هذا المتجر." />
-      <View style={styles.addressCard} accessibilityLabel="خيارات استلام الطلب">
-        {availableFulfillmentModes.map((mode) => <BthwaniChip key={mode} label={fulfillmentModeLabel(mode)} onPress={() => { serviceabilityRequestID.current += 1; setFulfillmentMode(mode); setServiceability({ kind: "idle" }); if (mode !== "CUSTOMER_PICKUP" && addressesState.kind === "idle") void loadAddresses(); }} selected={fulfillmentMode === mode} />)}
+      <BthwaniSectionHeader title="طريقة تنفيذ الطلب" subtitle="اختر طريقة واحدة من الخيارات التي يوفرها المتجر." />
+      <View style={styles.fulfillmentChoices} accessibilityLabel="اختيار طريقة التوصيل أو الاستلام">
+        {availableFulfillmentModes.map((mode) => {
+          const selected = fulfillmentMode === mode;
+          return <Pressable key={mode} accessibilityRole="radio" accessibilityLabel={fulfillmentModeLabel(mode)} accessibilityState={{ checked: selected }} onPress={() => {
+            if (selected) return;
+            serviceabilityRequestID.current += 1;
+            setFulfillmentMode(mode);
+            setServiceability({ kind: "idle" });
+            if (mode !== "CUSTOMER_PICKUP" && addressesState.kind === "idle") void loadAddresses();
+          }} style={[styles.fulfillmentOption, selected && styles.fulfillmentOptionSelected]}>
+            <View style={styles.fulfillmentOptionHeading}><BthwaniIcon name={mode === "CUSTOMER_PICKUP" ? "cart" : "location"} color={selected ? theme.interactiveText : theme.colorMuted} size={sizing.iconMd} /><Text style={[styles.modeIndicator, selected && styles.modeIndicatorSelected]}>{selected ? "●" : "○"}</Text></View>
+            <Text style={[styles.fulfillmentLabel, selected && styles.fulfillmentLabelSelected]}>{fulfillmentModeLabel(mode)}</Text>
+            <Text style={styles.fulfillmentDescription}>{fulfillmentDetails[mode]}</Text>
+          </Pressable>;
+        })}
       </View>
       {fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <>
         <BthwaniSectionHeader title="عنوان التوصيل" subtitle="يعيد الخادم التحقق من الأهلية عند الإتمام." />
@@ -162,7 +181,17 @@ function serviceabilityMessage(status: ServiceabilityResponse["status"]): string
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    container: { gap: spacing[4], paddingBottom: spacing[4], width: "100%" },
+    container: { gap: spacing[3], paddingBottom: spacing[4], width: "100%" },
+    headingRow: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", gap: spacing[2] },
+    fulfillmentChoices: { flexDirection: "row-reverse", flexWrap: "wrap", gap: spacing[2] },
+    fulfillmentOption: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.lg, flexBasis: "29%", flexGrow: 1, alignItems: "center", justifyContent: "center", minHeight: 112, paddingHorizontal: spacing[1], paddingVertical: spacing[3], gap: spacing[1] },
+    fulfillmentOptionSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText, borderWidth: 2 },
+    fulfillmentOptionHeading: { flexDirection: "row", alignItems: "center", gap: spacing[2] },
+    modeIndicator: { ...typography.bodyStrong, color: theme.colorMuted },
+    modeIndicatorSelected: { color: theme.interactiveText },
+    fulfillmentLabel: { ...typography.bodyStrong, color: theme.color, textAlign: "center" },
+    fulfillmentLabelSelected: { color: theme.interactiveText },
+    fulfillmentDescription: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
     state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
     eyebrow: { ...typography.label, color: theme.interactiveText },
     title: { ...typography.titleMd, color: theme.color },

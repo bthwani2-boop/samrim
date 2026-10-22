@@ -2,10 +2,10 @@ import { borders, radius, type resolveTheme, spacing, typography } from "@bthwan
 import { BthwaniButton, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type Cart, type CheckoutQuote, type CheckoutRequest, cashCollectionPartyLabel, checkoutWalletAllocation, createDshMobileClient, type DeliveryAddress, type FulfillmentMode, formatMoney, fulfillmentModeLabel, formatQuantity, type Order, orderStateLabel, orderPaymentDisclosure, paymentMethodLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { type Href, Link } from "expo-router";
+import { type Href, Link, useRouter } from "expo-router";
 import * as SecureStore from "../../bootstrap/compatible-storage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { recordPendingDiscoveryConversion } from "../store-discovery/discovery-analytics";
 import { checkoutRecipient, DeliveryRecipientForm, deliveryRecipientIsValid, type DeliveryRecipientInput } from "./delivery-recipient-form";
@@ -109,6 +109,7 @@ function isQuantityAllowed(line: Cart["lines"][number], quantity: number): boole
 
 export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfillmentMode, initialPromotionCode = "" }: { storeId: string; addresses: ReadonlyArray<DeliveryAddress>; serviceableAddressId?: string | undefined; fulfillmentMode: FulfillmentMode; initialPromotionCode?: string }) {
   const theme = useAppearanceTheme();
+  const router = useRouter();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<CartState>({ kind: "loading" });
   const [quote, setQuote] = useState<QuoteState>({ kind: "idle" });
@@ -119,7 +120,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   const [busyLineId, setBusyLineId] = useState("");
   const [error, setError] = useState("");
   const [order, setOrder] = useState<Order | null>(null);
-  const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
+  const [showPromotion, setShowPromotion] = useState(Boolean(initialPromotionCode));
   const [promotionCode, setPromotionCode] = useState(initialPromotionCode.trim().toUpperCase());
   const [appliedPromotionCode, setAppliedPromotionCode] = useState("");
   useEffect(() => {
@@ -150,7 +151,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
     }
   }, []);
 
-  const finishCheckout = useCallback(async (orderResult: Order, accessToken: string, storageKey: string, isCurrent: () => boolean = () => mounted.current) => {
+  const finishCheckout = useCallback(async (orderResult: Order, _accessToken: string, storageKey: string, isCurrent: () => boolean = () => mounted.current) => {
     if (isCurrent()) {
       setOrder(orderResult);
       setState({ kind: "empty" });
@@ -158,11 +159,12 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
       void recordPendingDiscoveryConversion(orderResult.id);
     }
     try { await SecureStore.deleteItemAsync(storageKey); } catch { /* Canonical order readback makes the retained attempt safe to reconcile again. */ }
-    try {
-      const recentOrders = (await client().listClientOrders(accessToken, 20)).orders;
-      if (isCurrent()) setOrders(recentOrders);
-    } catch { /* The order response is already canonical; recent-order rendering is secondary. */ }
   }, []);
+
+  useEffect(() => {
+    // Navigate only after canonical checkout readback, including recovered attempts.
+    if (order) router.replace(`/orders/${encodeURIComponent(order.id)}` as Href);
+  }, [order, router]);
 
   const readOrderForCart = useCallback(async (accessToken: string, cartID: string): Promise<Order | null> => {
     const response = await client().listClientOrders(accessToken, 1, cartID);
@@ -401,8 +403,8 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   if (pendingCheckout) return <View style={styles.container} accessibilityLabel="استعادة طلب السلة"><Text style={styles.title}>التحقق من نتيجة الطلب</Text><Text style={styles.warning}>المحاولة محفوظة لهذا الحساب والسلة. سنتحقق من النتيجة أولًا لتجنب إنشاء طلب مكرر.</Text><BthwaniButton busy={busy} disabled={busy} label="تحقق واستعد الطلب" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
   return (
     <View style={styles.container} accessibilityLabel="السلة وإتمام الطلب">
-      <Text style={styles.title}>السلة وإتمام الطلب</Text>
-      <Text style={styles.muted}>تُعاد قراءة السعر والأهلية عند فتح السلة وعند الإتمام.</Text>
+      <Text style={styles.title}>ملخص طلبك</Text>
+      <Text style={styles.muted}>تُراجع الأسعار والتوفر والعنوان قبل تثبيت الطلب.</Text>
       {state.kind === "loading" ? <View style={styles.state} accessibilityLabel="جارٍ قراءة السلة"><BthwaniSkeleton height={72} /><BthwaniSkeleton height={72} /></View> : null}
       {state.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>تعذر قراءة السلة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
       {state.kind === "empty" ? <BthwaniSurface tone="inset" style={styles.emptyState}><Text style={styles.lineTitle}>{order ? "تم إنشاء الطلب والسلة الآن فارغة." : "السلة فارغة."}</Text><Text style={styles.muted}>{order ? "يمكنك متابعة التسوق من كتالوج المتجر." : "اختر منتجات من كتالوج المتجر ثم عد إلى السلة لإتمام الطلب."}</Text><Link href={`/store/${encodeURIComponent(storeId)}` as Href} asChild><BthwaniButton label="العودة إلى كتالوج المتجر" variant="secondary" /></Link></BthwaniSurface> : null}
@@ -427,9 +429,9 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
         <View accessibilityLabel="ملخص الدفع" style={styles.totals}>
           <Text style={styles.muted}>{cartNeedsReview ? "مجموع المنتجات غير متاح حتى إزالة المنتجات التي تحتاج مراجعة." : `مجموع المنتجات: ${formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}`}</Text>
           <View style={styles.promotionBox}>
-            <Text style={styles.fulfillmentTitle}>رمز العرض</Text>
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: showPromotion }} onPress={() => setShowPromotion((value) => !value)}><Text style={styles.fulfillmentTitle}>{showPromotion ? "قسيمة التخفيض −" : "هل لديك قسيمة تخفيض؟  إضافة +"}</Text></Pressable>
             {initialPromotionCode ? <Text style={styles.muted}>رمز العرض جاهز من المتجر. اضغط «تطبيق» ليتحقق النظام من الأهلية.</Text> : null}
-            <View style={styles.promotionRow}><TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" editable={!mutationBusy} onChangeText={setPromotionCode} placeholder="مثال: WELCOME10" placeholderTextColor={theme.colorMuted} style={styles.promotionInput} value={promotionCode} /><BthwaniButton disabled={mutationBusy || (!pickupMode && !serviceableAddressId)} label="تطبيق" onPress={() => { if (promotionNeedsApply) setAppliedPromotionCode(promotionCode.trim().toUpperCase()); else if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /></View>
+            {showPromotion ? <View style={styles.promotionRow}><TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" editable={!mutationBusy} onChangeText={setPromotionCode} placeholder="رمز القسيمة" placeholderTextColor={theme.colorMuted} style={styles.promotionInput} value={promotionCode} /><BthwaniButton disabled={mutationBusy || (!pickupMode && !serviceableAddressId)} label="تطبيق" onPress={() => { if (promotionNeedsApply) setAppliedPromotionCode(promotionCode.trim().toUpperCase()); else if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /></View> : null}
           </View>
           {verifiedQuote ? <>
             {verifiedQuote.discountMinor > 0 ? <Text style={styles.success}>الخصم: -{formatMoney(verifiedQuote.discountMinor, verifiedQuote.currency)}{verifiedQuote.promotionCode ? ` · ${verifiedQuote.promotionCode}` : ""}</Text> : null}
@@ -438,16 +440,16 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
           </> : null}
           {promotionNeedsApply ? <Text accessibilityLiveRegion="polite" style={styles.warning}>اضغط «تطبيق» لتحديث الإجمالي بحسب رمز العرض الحالي.</Text> : quote.kind === "ready" && !verifiedQuote ? <Text accessibilityLiveRegion="polite" style={styles.warning}>تغيّرت تفاصيل الطلب؛ جارٍ تحديث الإجمالي والخصم قبل الإتمام.</Text> : null}
           <View accessibilityLabel="توزيع مصدر الدفع" style={styles.balanceBox}>
-            <Text style={styles.fulfillmentTitle}>الدفع</Text>
-            <BthwaniButton accessibilityLabel={useWalletBalance ? "عدم استخدام رصيد المحفظة" : "استخدام رصيد المحفظة"} label={useWalletBalance ? "استخدام رصيد المحفظة: نعم" : "استخدام رصيد المحفظة: لا"} disabled={mutationBusy} onPress={() => setUseWalletBalance(value => !value)} variant={useWalletBalance ? "primary" : "secondary"} />
-            <Text style={styles.muted}>سيُستخدم الرصيد المتاح تلقائيًا، وتدفع المتبقي نقدًا فقط.</Text>
+            <Text style={styles.fulfillmentTitle}>طريقة الدفع</Text>
+            <Pressable accessibilityRole="radio" accessibilityState={{ checked: !useWalletBalance }} disabled={mutationBusy} onPress={() => setUseWalletBalance(false)} style={[styles.paymentChoice, !useWalletBalance && styles.paymentChoiceSelected]}><Text style={styles.paymentChoiceTitle}>{!useWalletBalance ? "◉" : "○"}  {pickupMode ? "الدفع نقدًا في المتجر" : "الدفع نقدًا عند الاستلام"}</Text><Text style={styles.muted}>المبلغ المستحق نقدًا عند الاستلام</Text></Pressable>
+            <Pressable accessibilityRole="radio" accessibilityState={{ checked: useWalletBalance, disabled: wallet.kind !== "ready" || wallet.availableMinor <= 0 || mutationBusy }} disabled={mutationBusy || wallet.kind !== "ready" || wallet.availableMinor <= 0} onPress={() => setUseWalletBalance(true)} style={[styles.paymentChoice, useWalletBalance && styles.paymentChoiceSelected]}><Text style={styles.paymentChoiceTitle}>{useWalletBalance ? "◉" : "○"}  الدفع من رصيد بثواني</Text><Text style={styles.muted}>{wallet.kind === "ready" && wallet.availableMinor > 0 ? "يُستخدم الرصيد المتاح؛ ويُدفع الباقي نقدًا إن وجد." : "يُتاح الاختيار عند وجود رصيد كافٍ أو جزئي."}</Text></Pressable>
             {wallet.kind === "loading" ? <Text accessibilityLiveRegion="polite" style={styles.muted}>جارٍ قراءة الرصيد المتاح…</Text> : null}
             {wallet.kind === "ready" ? <Text style={styles.muted}>الرصيد المتاح بعد الحجوزات: {formatMoney(wallet.availableMinor, "YER")}</Text> : null}
             {wallet.kind === "error" ? <View style={styles.lineActions}><Text accessibilityRole="alert" style={styles.warning}>تعذر قراءة الرصيد؛ أعد المحاولة أو اختر الدفع نقدًا.</Text><BthwaniButton label="إعادة قراءة الرصيد" onPress={() => void refreshWallet()} variant="secondary" /></View> : null}
             {balanceNeedsRead && wallet.kind === "loading" ? <Text accessibilityRole="alert" style={styles.warning}>انتظر قراءة الرصيد قبل تحديد مبلغ منه.</Text> : null}
             {balanceNeedsRead && wallet.kind === "error" ? <Text accessibilityRole="alert" style={styles.error}>لا يمكن اعتماد مبلغ من الرصيد حتى تتم قراءته بنجاح.</Text> : null}
             {useWalletBalance && wallet.kind === "ready" && wallet.availableMinor === 0 ? <Text style={styles.muted}>رصيدك المتاح صفر؛ سيبقى الإجمالي نقدًا.</Text> : null}
-            {useWalletBalance && wallet.kind === "ready" && wallet.availableMinor === 0 ? <Link href={"/wallet-cash-in" as Href} asChild><BthwaniButton label="شحن المحفظة" variant="secondary" /></Link> : null}
+            {wallet.kind === "ready" && wallet.availableMinor === 0 ? <Link href={"/wallet-cash-in" as Href} asChild><BthwaniButton label="شحن المحفظة" variant="secondary" /></Link> : null}
             {verifiedQuote && selectedBalanceMinor !== null ? <Text style={styles.muted}>من المحفظة: {formatMoney(selectedBalanceMinor, "YER")}</Text> : null}
             {remainingCashMinor !== null ? <Text style={styles.total}>المتبقي نقدًا: {formatMoney(remainingCashMinor, "YER")}</Text> : null}
             {remainingCashMinor !== null && remainingCashMinor > 0 ? <Text style={styles.muted}>يُدفع إلى: {cashCollectionPartyLabel(fulfillmentMode)} عند الاستلام.</Text> : null}
@@ -459,17 +461,16 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
           {quote.kind === "error" ? <BthwaniButton label="إعادة حساب الإجمالي" onPress={() => { if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /> : null}
         </View>
         <View accessibilityLabel={pickupMode ? "الاستلام الذاتي من المتجر" : "طريقة التوصيل"} style={styles.fulfillmentCard}>
-          <Text style={styles.fulfillmentTitle}>طريقة الاستلام</Text>
+          <Text style={styles.fulfillmentTitle}>تنفيذ الطلب · الآن</Text>
           <Text style={styles.fulfillmentChoice}>{fulfillmentModeLabel(fulfillmentMode)}</Text>
           <Text style={styles.muted}>{checkoutFulfillmentInstructions[fulfillmentMode]}</Text>
         </View>
         <DeliveryRecipientForm allowOther={!pickupMode} onChange={setRecipient} value={recipient} />
         <Text style={styles.payment}>{remainingCashMinor === 0 ? "الطلب مغطى من المحفظة" : remainingCashMinor !== null ? paymentMethodLabel(paymentMethod, fulfillmentMode, remainingCashMinor) : "سيظهر مبلغ الدفع بعد حساب الإجمالي"}</Text>
         {!pickupMode && serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : null}
-        <BthwaniButton accessibilityLabel={pickupMode ? "إتمام الطلب للاستلام الذاتي من المتجر" : "إتمام الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || !verifiedQuote || selectedBalanceMinor === null || balanceNeedsRead} label="إتمام الطلب" onPress={() => void checkout()} />
+        <BthwaniButton accessibilityLabel={pickupMode ? "تأكيد طلب الاستلام الذاتي من المتجر" : "تأكيد الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || !verifiedQuote || selectedBalanceMinor === null || balanceNeedsRead || promotionNeedsApply} label={verifiedQuote ? `تأكيد الطلب · ${formatMoney(verifiedQuote.totalAmountMinor, verifiedQuote.currency)}` : "تأكيد الطلب"} onPress={() => void checkout()} />
       </> : null}
       {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{orderPaymentDisclosure(order).amount}</Text><Text style={styles.muted}>{orderPaymentDisclosure(order).status}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
-      {orders.length ? <View style={styles.orderBox}><Text style={styles.lineTitle}>طلباتك الأخيرة</Text>{orders.map((item) => <Text key={item.id} style={styles.muted}>{orderStateLabel(item.state)} · {formatMoney(item.totalAmountMinor, item.currency)}</Text>)}</View> : null}
       {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{error}</Text> : null}
     </View>
   );
@@ -493,6 +494,9 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     total: { ...typography.bodyStrong, color: theme.color },
     totals: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
     balanceBox: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    paymentChoice: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, padding: spacing[3], minHeight: 64, gap: spacing[1] },
+    paymentChoiceSelected: { borderColor: theme.interactiveText, backgroundColor: theme.actionSoft },
+    paymentChoiceTitle: { ...typography.bodyStrong, color: theme.color },
     payment: { ...typography.bodySm, color: theme.interactiveText, lineHeight: 19 },
     orderBox: { backgroundColor: theme.actionSoft, borderRadius: radius.sm, gap: spacing[1], padding: spacing[3] },
     success: { ...typography.bodyStrong, color: theme.success },
