@@ -7,6 +7,7 @@ import { AccessibilityInfo, Animated, AppState, FlatList, I18nManager, Image, Pl
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
+import { LoopingHeroBanner } from "./looping-hero-banner";
 import { PromotionCard } from "./promotion-card";
 import { StoreDirectoryCard } from "./store-directory-card";
 import { listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, searchPublicCatalog, setFavoriteStore, type BannerPresentation } from "./store-discovery-client";
@@ -478,7 +479,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         <BthwaniChip label="المنتجات" selected={searchScope === "products"} onPress={() => { if (onSearchScopeChange) onSearchScopeChange("products"); else router.setParams({ scope: "products" }); }} />
       </View> : null}
 
-      {showHomeMarketing && bannerContent.length ? <DiscoveryMediaCarousel hero screenActive={isScreenActive} presentation={bannerPresentation} cardWidth={carouselCardWidth} items={bannerContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" /> : null}
+      {showHomeMarketing && bannerContent.length ? <LoopingHeroBanner screenActive={isScreenActive} presentation={bannerPresentation} cardWidth={carouselCardWidth} items={bannerContent} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" /> : null}
 
       {taxonomy.verticals.length ? <View style={styles.categoryShortcutBlock} accessibilityLabel="المجالات التجارية الرئيسية">
         <ScrollView accessibilityLabel="المجالات التجارية" contentContainerStyle={styles.activityTiles} horizontal showsHorizontalScrollIndicator={false}>

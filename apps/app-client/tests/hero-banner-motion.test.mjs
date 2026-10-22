@@ -3,51 +3,58 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import ts from "typescript";
+import { wrapBannerIndex } from "../src/features/store-discovery/banner-loop.ts";
 
-const source = readFileSync(path.resolve(import.meta.dirname, "../src/features/store-discovery/store-discovery.tsx"), "utf8");
-const syntax = ts.createSourceFile("store-discovery.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const discovery = readFileSync(path.resolve(import.meta.dirname, "../src/features/store-discovery/store-discovery.tsx"), "utf8");
+const hero = readFileSync(path.resolve(import.meta.dirname, "../src/features/store-discovery/looping-hero-banner.tsx"), "utf8");
+for (const [name, source] of [["store-discovery.tsx", discovery], ["looping-hero-banner.tsx", hero]]) {
+  const syntax = ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  test(name + " parses without syntax errors", () => assert.equal(syntax.parseDiagnostics.length, 0));
+}
 
-test("discovery keeps store filters while removing the redundant heading and count", () => {
-  assert.equal(syntax.parseDiagnostics.length, 0);
-  assert.doesNotMatch(source, /title=\{searchIsActive \? "نتائج المتاجر" : "المتاجر المتاحة"/);
-  assert.doesNotMatch(source, /\$\{filteredStores\.length\} متجر معروض/);
-  assert.match(source, /accessibilityLabel="تصفية المتاجر والفئات"/);
-  assert.match(source, /<StoreDirectoryCard/);
+test("home uses the independent banner instead of the RTL ScrollView carousel", () => {
+  assert.match(discovery, /<LoopingHeroBanner screenActive=\{isScreenActive\} presentation=\{bannerPresentation\} cardWidth=\{carouselCardWidth\} items=\{bannerContent\}/);
+  assert.match(discovery, /<StoreDirectoryCard/);
+  assert.doesNotMatch(hero, /<Animated\.ScrollView|onContentSizeChange|snapToInterval|physicalIndex/);
+  assert.doesNotMatch(hero, /carouselDots|heroProgressTrack|heroPauseIcon/);
+  assert.match(hero, /onPress=\{\(\) => openRef\.current\(\)\}/);
 });
 
-test("main marketing banner is full image while secondary carousels retain captions", () => {
-  assert.match(source, /<DiscoveryMediaCarousel hero screenActive=\{isScreenActive\} presentation=\{bannerPresentation\} cardWidth=\{carouselCardWidth\} items=\{bannerContent\}/);
-  assert.match(source, /hero && \{ height: Math\.round\(cardWidth \/ 1\.75\) \}/);
-  assert.match(source, /!hero \? <View pointerEvents="none" style=\{styles\.mediaCaption\}/);
-  assert.match(source, /source=\{\{ uri: item\.mediaUri \}\}/);
-  assert.match(source, /onPress=\{\(\) => onOpen\(item\)\}/);
+test("continuous autoplay keeps one stable interval regardless of the active index", () => {
+  assert.match(hero, /setInterval\(\(\) => navigateRef\.current\(1\), presentation\.intervalSeconds \* 1000\)/);
+  assert.match(hero, /return \(\) => clearInterval\(timer\)/);
+  assert.match(hero, /!screenActive \|\| !foreground \|\| interacting \|\| reducedMotion \|\| presentation\.mode === "STATIC"/);
+  assert.match(hero, /AccessibilityInfo\.isReduceMotionEnabled/);
+  assert.match(hero, /AppState\.addEventListener/);
+  assert.match(hero, /Animated\.timing\(animated/);
+  assert.match(hero, /useNativeDriver: true/);
 });
 
-test("main hero uses independent autoplay, manual swipe and reduced-motion safety without noisy controls", () => {
-  assert.match(source, /const loop = hero && items\.length > 1;/);
-  assert.match(source, /\[items\[items\.length - 1\]!, \.\.\.items, items\[0\]!\]/);
-  assert.match(source, /onMomentumScrollEnd=\{\(event\) => \{ settle/);
-  assert.match(source, /onScrollBeginDrag=\{\(\) => setInteracting\(true\)\}/);
-  assert.match(source, /const timer = setTimeout\(\(\) => choose\(\(activeIndex \+ 1\) % items\.length\), presentation\.intervalSeconds \* 1000\);/);
-  assert.match(source, /return \(\) => clearTimeout\(timer\);/);
-  assert.match(source, /!hero && items\.length > 1 \? <View/);
-  assert.doesNotMatch(source, /heroProgressTrack|heroPauseIcon|Animated\.timing\(progress/);
-  assert.match(source, /AccessibilityInfo\.isReduceMotionEnabled/);
-  assert.match(source, /AppState\.addEventListener/);
-  assert.match(source, /!foreground \|\| reducedMotion \|\| interacting \|\| presentation\.mode === "STATIC"/);
+test("wraps from last to first indefinitely, including more than two banners", () => {
+  for (const count of [2, 3, 5]) {
+    let current = 0;
+    const seen = [];
+    for (let tick = 0; tick < count * 4; tick += 1) {
+      seen.push(current);
+      current = wrapBannerIndex(current, 1, count);
+    }
+    assert.deepEqual(seen, Array.from({ length: count * 4 }, (_, i) => i % count));
+    assert.equal(current, 0);
+    assert.equal(wrapBannerIndex(0, -1, count), count - 1);
+  }
+  assert.equal(wrapBannerIndex(0, 1, 0), 0);
 });
 
-test("marketing controls the banner and route focus stops autoplay", () => {
-  assert.match(source, /readPublicBannerPresentation\(\)/);
-  assert.match(source, /setInterval\(refresh, 60_000\)/);
-  assert.match(source, /!hero \|\| !screenActive \|\| !foreground/);
-  assert.match(source, /presentation\.mode === "STATIC"/);
-  assert.match(source, /presentation\.intervalSeconds \* 1000/);
+test("manual gestures can advance and reverse, while marketing modes remain respected", () => {
+  assert.match(hero, /PanResponder\.create/);
+  assert.match(hero, /gesture\.dx < 0 \? 1 : -1/);
+  assert.match(hero, /presentation\.mode === "CROSSFADE"/);
+  assert.match(hero, /presentation\.mode === "STATIC"/);
+  assert.match(hero, /recordDiscoveryImpression\(activeItem\.id\)/);
+  assert.match(hero, /onOpen\(item\)/);
 });
 
-test("crossfade uses a native opacity transition and leaves manual swiping enabled", () => {
-  assert.match(source, /presentation\.mode === "CROSSFADE"/);
-  assert.match(source, /Animated\.timing\(fadeOpacity, \{ toValue: 0, duration: 550, useNativeDriver: true \}\)/);
-  assert.match(source, /pointerEvents="none"/);
-  assert.match(source, /onScrollBeginDrag=\{\(\) => setInteracting\(true\)\}/);
+test("marketing settings remain server-authoritative", () => {
+  assert.match(discovery, /readPublicBannerPresentation\(\)/);
+  assert.match(discovery, /setInterval\(refresh, 60_000\)/);
 });
