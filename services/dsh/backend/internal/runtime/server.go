@@ -68,7 +68,7 @@ func RunWithRoutesAndReadinessAndWorker(service, prefix, defaultPort string, reg
 
 	server := &http.Server{
 		Addr:              net.JoinHostPort(listenHost, port),
-		Handler:           mux,
+		Handler:           browserCORS(mux, os.Getenv("DSH_CORS_ALLOWED_ORIGINS")),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
