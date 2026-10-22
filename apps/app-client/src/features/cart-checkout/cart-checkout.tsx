@@ -5,6 +5,7 @@ import * as Crypto from "expo-crypto";
 import { type Href, Link, useRouter } from "expo-router";
 import * as SecureStore from "../../bootstrap/compatible-storage";
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { premium } from "../order-experience/premium-order-ui";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { recordPendingDiscoveryConversion } from "../store-discovery/discovery-analytics";
@@ -497,34 +498,34 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    container: { backgroundColor: theme.background, gap: spacing[3], marginTop: spacing[1], paddingBottom: spacing[3] },
-    title: { ...typography.titleSm, color: theme.color },
-    muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 19 },
+    container: { backgroundColor: premium.background, gap: spacing[3], marginTop: spacing[1], paddingBottom: spacing[3] },
+    title: { ...typography.titleSm, color: premium.text },
+    muted: { ...typography.bodySm, color: premium.muted, lineHeight: 19 },
     state: { alignItems: "center", gap: spacing[2], paddingVertical: spacing[2] },
-    emptyState: { alignItems: "stretch", backgroundColor: theme.surfaceRaised, borderRadius: radius.sm, gap: spacing[2], padding: spacing[3] },
+    emptyState: { alignItems: "stretch", backgroundColor: premium.surface, borderRadius: radius.sm, gap: spacing[2], padding: spacing[3] },
     lineList: { gap: spacing[2] },
-    itemsToggle: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.lg, padding: spacing[3], minHeight: 54, flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between" },
-    toggleLabel: { ...typography.bodySm, color: theme.interactiveText },
-    line: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
-    lineTitle: { ...typography.bodyStrong, color: theme.color },
-    modifiers: { ...typography.bodySm, color: theme.interactiveText },
+    itemsToggle: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: borders.hairline, borderRadius: radius.lg, padding: spacing[3], minHeight: 54, flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between" },
+    toggleLabel: { ...typography.bodySm, color: premium.orange },
+    line: { borderColor: premium.stroke, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
+    lineTitle: { ...typography.bodyStrong, color: premium.text },
+    modifiers: { ...typography.bodySm, color: premium.orange },
     lineActions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2], marginTop: spacing[2] },
-    fulfillmentCard: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
-    fulfillmentTitle: { ...typography.label, color: theme.interactiveText },
-    fulfillmentChoice: { ...typography.bodyStrong, color: theme.color },
-    total: { ...typography.bodyStrong, color: theme.color },
-    totals: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    balanceBox: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    paymentChoice: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, padding: spacing[3], minHeight: 64, gap: spacing[1] },
-    paymentChoiceSelected: { borderColor: theme.interactiveText, backgroundColor: theme.actionSoft },
-    paymentChoiceTitle: { ...typography.bodyStrong, color: theme.color },
-    payment: { ...typography.bodySm, color: theme.interactiveText, lineHeight: 19 },
-    orderBox: { backgroundColor: theme.actionSoft, borderRadius: radius.sm, gap: spacing[1], padding: spacing[3] },
+    fulfillmentCard: { backgroundColor: premium.soft, borderColor: premium.orange, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
+    fulfillmentTitle: { ...typography.label, color: premium.orange },
+    fulfillmentChoice: { ...typography.bodyStrong, color: premium.text },
+    total: { ...typography.bodyStrong, color: premium.text },
+    totals: { backgroundColor: premium.surface, borderColor: premium.stroke, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    balanceBox: { backgroundColor: premium.surface, borderColor: premium.stroke, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    paymentChoice: { backgroundColor: premium.raised, borderColor: premium.stroke, borderRadius: radius.md, borderWidth: borders.hairline, padding: spacing[3], minHeight: 64, gap: spacing[1] },
+    paymentChoiceSelected: { borderColor: premium.orange, backgroundColor: premium.soft },
+    paymentChoiceTitle: { ...typography.bodyStrong, color: premium.text },
+    payment: { ...typography.bodySm, color: premium.orange, lineHeight: 19 },
+    orderBox: { backgroundColor: premium.soft, borderRadius: radius.sm, gap: spacing[1], padding: spacing[3] },
     success: { ...typography.bodyStrong, color: theme.success },
     warning: { ...typography.bodyStrong, color: theme.warning },
     error: { ...typography.bodySm, color: theme.danger },
-    promotionBox: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[2] },
+    promotionBox: { borderColor: premium.stroke, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[2] },
     promotionRow: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
-    promotionInput: { ...typography.bodySm, backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, flex: 1, minHeight: 42, paddingHorizontal: spacing[2] },
+    promotionInput: { ...typography.bodySm, backgroundColor: premium.raised, borderColor: premium.stroke, borderRadius: radius.sm, borderWidth: borders.hairline, color: premium.text, flex: 1, minHeight: 42, paddingHorizontal: spacing[2] },
   });
 }

@@ -8,6 +8,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { evaluateStoreServiceability, listOwnDeliveryAddresses, readPublishedStore } from "../store-discovery/store-discovery-client";
 import { CartCheckout, type CheckoutFooterState } from "./cart-checkout";
+import { readSavedFulfillmentMode, resolveFulfillmentChoice, saveFulfillmentMode } from "./fulfillment-choice";
+import { PremiumFulfillmentSelector, PremiumStickyFooter, PremiumStoreIdentity, premium } from "../order-experience/premium-order-ui";
 
 const fulfillmentDetails: Readonly<Record<CustomerFulfillmentMode, string>> = {
   BTHWANI_CAPTAIN: "كابتن من بثواني",
@@ -46,6 +48,7 @@ export default function ClientCartScreen() {
   const [serviceability, setServiceability] = useState<ServiceabilityState>({ kind: "idle" });
   const [fulfillmentMode, setFulfillmentMode] = useState<CustomerFulfillmentMode | null>(null);
   const [expandedAddresses, setExpandedAddresses] = useState(false);
+  const [expandedFulfillment, setExpandedFulfillment] = useState(false);
   const [footer, setFooter] = useState<CheckoutFooterState | null>(null);
   const checkoutAction = useRef<() => void>(() => undefined);
   const updateFooter = useCallback((next: CheckoutFooterState | null) => setFooter(next), []);
@@ -86,7 +89,10 @@ export default function ClientCartScreen() {
       if (!isCurrent()) return;
       setState({ kind: "ready", store });
       const enabledModes = availableCustomerFulfillmentModes(store.fulfillmentModes);
-      setFulfillmentMode(enabledModes.includes(requestedFulfillmentMode as CustomerFulfillmentMode) ? requestedFulfillmentMode as CustomerFulfillmentMode : enabledModes.length === 1 ? enabledModes[0] ?? null : null);
+      const saved = await readSavedFulfillmentMode(storeId, selectedCityID, enabledModes);
+      if (!isCurrent()) return;
+      setFulfillmentMode(resolveFulfillmentChoice(enabledModes, requestedFulfillmentMode, saved));
+      setExpandedFulfillment(false);
     } catch {
       if (isCurrent()) setState({ kind: "error" });
     }
@@ -108,7 +114,7 @@ export default function ClientCartScreen() {
 
   useEffect(() => {
     if (state.kind !== "ready" || !fulfillmentMode || fulfillmentMode === "CUSTOMER_PICKUP"
-        || addressesState.kind !== "ready" || addressesState.addresses.length !== 1
+        || addressesState.kind !== "ready" || addressesState.addresses.length === 0
         || serviceability.kind !== "idle") return;
     void evaluateAddress(addressesState.addresses[0]!.id);
   }, [state.kind, fulfillmentMode, addressesState, serviceability.kind]);
@@ -153,30 +159,32 @@ export default function ClientCartScreen() {
           </Pressable>
         </View>
         <BthwaniSurface tone="raised" style={styles.storeCard}>
-          <View style={styles.storeIcon}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconXl} /></View>
-          <View style={styles.storeCopy}><Text style={styles.subheading}>تأكيد الطلب من</Text><Text style={styles.storeName}>{state.store.name}</Text><Text style={styles.muted}>راجع اختياراتك وفاتورتك قبل إتمام الطلب.</Text></View>
+          <PremiumStoreIdentity title={state.store.name}
+            subtitle={state.store.addressLine || "متجر منشور في بثواني"}
+            imageUri={state.store.storeCoverImage?.uri ?? state.store.storeProfileImage?.uri}
+            rating={state.store.ratingCount > 0 ? state.store.ratingAverage.toFixed(1) + " (" + state.store.ratingCount + ")" : undefined}
+          />
         </BthwaniSurface>
         <BthwaniSurface tone="raised" style={styles.section}>
           <Text style={styles.sectionTitle}>طريقة التنفيذ</Text>
-          <Text style={styles.muted}>اختر الطريقة المناسبة لك.</Text>
-          <View style={styles.modes}>
-            {availableFulfillmentModes.map((mode) => {
-              const selected = fulfillmentMode === mode;
-              return <Pressable key={mode} accessibilityRole="radio" accessibilityState={{ checked: selected }} accessibilityLabel={fulfillmentModeLabel(mode)} onPress={() => {
-                if (selected) return;
-                serviceabilityRequestID.current += 1;
-                setFulfillmentMode(mode);
-                setServiceability({ kind: "idle" });
-                setExpandedAddresses(false);
-                if (mode !== "CUSTOMER_PICKUP" && addressesState.kind === "idle") void loadAddresses();
-              }} style={[styles.mode, selected && styles.modeSelected]}>
-                <BthwaniIcon name={mode === "CUSTOMER_PICKUP" ? "account" : mode === "PARTNER_CAPTAIN" ? "cart" : "location"} color={selected ? theme.interactiveText : theme.colorMuted} size={sizing.iconXl} />
-                <Text numberOfLines={2} style={[styles.modeTitle, selected && styles.modeTitleSelected]}>{fulfillmentModeLabel(mode)}</Text>
-                <Text style={styles.modeDescription}>{fulfillmentDetails[mode]}</Text>
-                <Text style={[styles.modeCheck, selected && styles.modeCheckSelected]}>{selected ? "●" : "○"}</Text>
-              </Pressable>;
-            })}
-          </View>
+          {fulfillmentMode && !expandedFulfillment ? <View style={styles.row}>
+            <View style={styles.rowCopy}>
+              <Text style={styles.sectionTitle}>{fulfillmentModeLabel(fulfillmentMode)}</Text>
+              <Text style={styles.muted}>{availableFulfillmentModes.length === 1 ? "هذه طريقة التنفيذ المتاحة لهذا المتجر." : "اختيارك محفوظ ويمكن تغييره."}</Text>
+            </View>
+            {availableFulfillmentModes.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="تغيير طريقة التنفيذ" onPress={() => setExpandedFulfillment(true)} style={styles.change}>
+              <Text style={styles.changeLabel}>تغيير</Text>
+            </Pressable> : null}
+          </View> : <PremiumFulfillmentSelector available={availableFulfillmentModes} selected={fulfillmentMode} onSelect={(mode) => {
+            if (mode === fulfillmentMode) { setExpandedFulfillment(false); return; }
+            serviceabilityRequestID.current += 1;
+            setFulfillmentMode(mode);
+            setExpandedFulfillment(false);
+            setServiceability({ kind: "idle" });
+            setExpandedAddresses(false);
+            if (selectedCityID) void saveFulfillmentMode(storeId, selectedCityID, mode);
+            if (mode !== "CUSTOMER_PICKUP" && addressesState.kind === "idle") void loadAddresses();
+          }} />}
         </BthwaniSurface>
         {fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <BthwaniSurface tone="raised" style={styles.section}>
           <View style={styles.row}>
@@ -205,10 +213,8 @@ export default function ClientCartScreen() {
         </View></BthwaniSurface> : <Text accessibilityRole="alert" style={styles.error}>اختر طريقة تنفيذ الطلب أولًا.</Text>}
         {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} addresses={addressesState.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} initialPromotionCode={requestedPromotionCode} onFooterChange={updateFooter} checkoutAction={checkoutAction}/> : null}
       </ScrollView>
-      {footer ? <View style={styles.footer}>
-        <View style={styles.footerAmount}><Text style={styles.footerCaption}>الإجمالي الكلي</Text><Text style={styles.footerNumber}>{footer.total}</Text></View>
-        <View style={styles.footerCTA}><BthwaniButton label={footer.label} disabled={footer.disabled} busy={footer.busy} onPress={() => checkoutAction.current()}/></View>
-      </View> : null}
+      {footer ? <PremiumStickyFooter amount={footer.total} label={footer.label} disabled={footer.disabled} busy={footer.busy}
+        onPress={() => checkoutAction.current()} /> : null}
     </SafeAreaView>
   );
 }
@@ -221,20 +227,20 @@ function serviceabilityMessage(status: ServiceabilityResponse["status"]): string
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    page: { flex: 1, backgroundColor: theme.background },
+    page: { flex: 1, backgroundColor: premium.background },
     scroll: { paddingHorizontal: spacing[3], paddingVertical: spacing[3], gap: spacing[3], paddingBottom: spacing[8] },
     state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[8] },
     header: { flexDirection: "row", alignItems: "center", minHeight: sizing.controlLg },
-    title: { ...typography.titleLg, color: theme.color, textAlign: "center", flex: 1 },
+    title: { ...typography.titleLg, color: premium.text, textAlign: "center", flex: 1 },
     headerBack: { minWidth: sizing.controlLg, minHeight: sizing.controlLg, justifyContent: "center", alignItems: "center" },
-    storeCard: { flexDirection: "row-reverse", alignItems: "center", gap: spacing[3], padding: spacing[3], borderRadius: radius.xl },
+    storeCard: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[3], borderRadius: radius.xl },
     storeIcon: { backgroundColor: theme.actionBackground, padding: spacing[3], borderRadius: radius.lg },
     storeCopy: { flex: 1, gap: spacing[1] },
     subheading: { ...typography.caption, color: theme.interactiveText, textAlign: "right" },
     storeName: { ...typography.titleMd, color: theme.color, textAlign: "right" },
-    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: "right" },
-    section: { padding: spacing[3], borderRadius: radius.xl, gap: spacing[2] },
-    sectionTitle: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
+    muted: { ...typography.bodySm, color: premium.muted, textAlign: "right" },
+    section: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[3], borderRadius: radius.xl, gap: spacing[2] },
+    sectionTitle: { ...typography.bodyStrong, color: premium.text, textAlign: "right" },
     modes: { flexDirection: "row", gap: spacing[2], marginTop: spacing[2] },
     mode: { flex: 1, minWidth: 0, minHeight: 128, paddingHorizontal: spacing[1], paddingVertical: spacing[3], gap: spacing[2], alignItems: "center", justifyContent: "center", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline },
     modeSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText, borderWidth: 2 },
@@ -250,7 +256,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     addresses: { gap: spacing[2] },
     address: { borderColor: theme.borderColor, borderWidth: borders.hairline, backgroundColor: theme.surfaceRaised, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] },
     addressSelected: { borderColor: theme.interactiveText, backgroundColor: theme.actionSoft },
-    addressText: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
+    addressText: { ...typography.bodyStrong, color: premium.text, textAlign: "right" },
     error: { ...typography.bodySm, color: theme.danger, textAlign: "right" },
     footer: { flexDirection: "row", alignItems: "center", gap: spacing[2], padding: spacing[3], backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline },
     footerAmount: { flexShrink: 1, alignItems: "flex-end", gap: spacing[1] },

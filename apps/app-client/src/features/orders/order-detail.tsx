@@ -4,7 +4,8 @@ import { cashCollectionPartyLabel, createDshMobileClient, type DeliveryProofResp
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, AppState, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { PremiumOrderProgress, PremiumStoreIdentity, premium } from "../order-experience/premium-order-ui";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
 import { isClientOrderScopeCurrent } from "./order-session-scope";
@@ -297,15 +298,10 @@ export default function ClientOrderDetail() {
         <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى الطلبات" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconLg} /></Pressable>
       </View>
       <BthwaniSurface tone="raised" style={styles.hero}>
-        <View style={styles.heroStore}>
-          {storeIdentity?.storeCoverImage?.uri ? <Image source={{ uri: storeIdentity.storeCoverImage.uri }} accessibilityLabel={"صورة " + order.storeName} style={styles.heroImage} resizeMode="cover" /> :
-            <View style={styles.heroImageFallback}><BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconXl}/></View>}
-          <View style={styles.heroCopy}>
-            <Text style={styles.heroStoreTitle}>{order.storeName}</Text>
-            <Text style={styles.muted}>{formatOrderDate(order.createdAt)}</Text>
-            {storeIdentity && storeIdentity.ratingCount > 0 ? <Text style={styles.ratingText}>★ {storeIdentity.ratingAverage.toFixed(1)}</Text> : null}
-          </View>
-        </View>
+        <PremiumStoreIdentity title={order.storeName}
+          subtitle={storeIdentity?.addressLine ?? formatOrderDate(order.createdAt)}
+          imageUri={storeIdentity?.storeCoverImage?.uri ?? storeIdentity?.storeProfileImage?.uri}
+          rating={storeIdentity && storeIdentity.ratingCount > 0 ? storeIdentity.ratingAverage.toFixed(1) + " (" + storeIdentity.ratingCount + ")" : undefined} />
         <View style={styles.heroStatus}>
           <BthwaniIcon name={isStorePickup ? "cart" : "orders"} color={theme.interactiveText} size={sizing.iconXl} />
           <Text accessibilityLiveRegion="polite" style={styles.heroTitle}>{journey.title}</Text>
@@ -315,12 +311,7 @@ export default function ClientOrderDetail() {
       </BthwaniSurface>
       <BthwaniSurface tone="raised" style={styles.journey}>
         <Text style={styles.sectionTitle}>مراحل الطلب</Text>
-        {!journey.exception ? <View style={styles.journeySteps} accessibilityLabel={`حالة الطلب: ${journey.title}`}>
-          {journey.steps.map((label, index) => <View key={`${index}-${label}`} style={styles.journeyStep}>
-            <View style={[styles.journeyMarker, index <= journey.currentStep && styles.journeyMarkerDone, index === journey.currentStep && styles.journeyMarkerActive]}><Text style={[styles.journeyMarkerText, index <= journey.currentStep && styles.journeyMarkerTextDone]}>{index < journey.currentStep ? "✓" : String(index + 1)}</Text></View>
-            <Text style={[styles.journeyStepLabel, index === journey.currentStep && styles.journeyStepActive]}>{label}</Text>
-          </View>)}
-        </View> : null}
+        {!journey.exception ? <PremiumOrderProgress steps={journey.steps} index={journey.currentStep} /> : null}
       </BthwaniSurface>
       {!isStorePickup ? <BthwaniSurface tone="raised" style={styles.deliveryOverview}>
         <View style={styles.courierHeading}>
@@ -463,10 +454,10 @@ export default function ClientOrderDetail() {
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    container: { backgroundColor: theme.background, gap: spacing[3], paddingBottom: spacing[8], width: "100%" },
+    container: { backgroundColor: premium.background, gap: spacing[3], paddingBottom: spacing[8], width: "100%" },
     headerBar: { flexDirection: "row-reverse", alignItems: "center", minHeight: sizing.controlLg, gap: spacing[2] },
     pageTitle: { ...typography.titleLg, color: theme.color, textAlign: "center", flex: 1 },
-    hero: { borderRadius: radius.xl, padding: spacing[4], gap: spacing[3] },
+    hero: { borderRadius: radius.xl, backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[3], gap: spacing[3] },
     heroStore: { flexDirection: "row-reverse", alignItems: "center", gap: spacing[3] },
     heroImage: { height: 100, width: 100, borderRadius: radius.lg, backgroundColor: theme.surfaceRaised },
     heroImageFallback: { height: 100, width: 100, borderRadius: radius.lg, backgroundColor: theme.actionSoft, alignItems: "center", justifyContent: "center" },
@@ -474,11 +465,11 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     heroStoreTitle: { ...typography.titleMd, color: theme.color, textAlign: "right" },
     ratingText: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "right" },
     heroStatus: { flexDirection: "row-reverse", alignItems: "center", gap: spacing[3], justifyContent: "flex-start" },
-    heroTitle: { ...typography.titleLg, color: theme.interactiveText, flex: 1, textAlign: "right" },
-    modeTag: { padding: spacing[3], borderRadius: radius.md, backgroundColor: theme.actionSoft, borderColor: theme.borderColorStrong, borderWidth: borders.hairline },
-    modeTagText: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "right" },
+    heroTitle: { ...typography.titleLg, color: premium.orange, flex: 1, textAlign: "right" },
+    modeTag: { padding: spacing[3], borderRadius: radius.md, backgroundColor: premium.soft, borderColor: premium.coral, borderWidth: borders.hairline },
+    modeTagText: { ...typography.bodyStrong, color: premium.orange, textAlign: "right" },
     sectionTitle: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
-    deliveryOverview: { padding: spacing[3], gap: spacing[3], borderRadius: radius.xl },
+    deliveryOverview: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[3], gap: spacing[3], borderRadius: radius.xl },
     courierHeading: { flexDirection: "row-reverse", alignItems: "center", gap: spacing[3] },
     actions: { flexDirection: "row-reverse", gap: spacing[2] },
     action: { flex: 1 },
@@ -494,8 +485,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     eyebrow: { ...typography.label, color: theme.interactiveText },
     title: { ...typography.titleMd, color: theme.color },
     muted: { ...typography.bodySm, color: theme.colorMuted },
-    status: { backgroundColor: theme.surfaceRaised, borderRadius: radius.xl, gap: spacing[2], padding: spacing[4] },
-    journey: { gap: spacing[3], padding: spacing[4], borderRadius: radius.xl },
+    status: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, borderRadius: radius.xl, gap: spacing[2], padding: spacing[4] },
+    journey: { gap: spacing[3], padding: spacing[2], borderRadius: radius.xl, backgroundColor: premium.surface },
     journeyHeading: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", gap: spacing[2] },
     journeyTitle: { ...typography.titleMd, color: theme.interactiveText, flex: 1, textAlign: "right" },
     journeyFulfillment: { ...typography.bodyStrong, color: theme.color, backgroundColor: theme.actionSoft, borderRadius: radius.md, padding: spacing[2], textAlign: "right" },
@@ -530,7 +521,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     refreshError: { ...typography.bodySm, color: theme.danger },
     trackingSurface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
     trackingTitle: { ...typography.bodyStrong, color: theme.interactiveText },
-    proofSurface: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] },
+    proofSurface: { backgroundColor: premium.soft, borderColor: premium.coral, borderRadius: radius.xl, borderWidth: 1, gap: spacing[3], padding: spacing[4] },
     proofTitle: { ...typography.bodyStrong, color: theme.color },
     proofCode: { ...typography.titleLg, color: theme.interactiveText, letterSpacing: 6, textAlign: "center" },
     ratingSurface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] },

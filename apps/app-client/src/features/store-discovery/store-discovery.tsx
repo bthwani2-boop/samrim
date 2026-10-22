@@ -605,7 +605,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           {loadMoreStoresError ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل المزيد من المتاجر.</Text> : null}
           <BthwaniButton disabled={loadingMoreStores || directoryLoading} label={loadingMoreStores ? "جارٍ تحميل المزيد" : "تحميل المزيد من المتاجر"} onPress={() => void loadMoreStores()} variant="secondary" />
         </> : null}
-        {!searchIsActive && isAuthenticated ? <Pressable accessibilityRole="button" accessibilityLabel="فتح الطلب المتعدد" onPress={() => router.push("/multi-store-checkout" as Href)} style={styles.multiStoreCta}><BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconLg} /><View style={styles.multiStoreCopy}><Text style={styles.multiStoreTitle}>اطلب من عدة متاجر</Text><Text numberOfLines={1} style={styles.multiStoreHint}>سلة موحّدة وطلبات مستقلة لكل متجر</Text></View><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></Pressable> : null}
+
       </View>}
       style={styles.flatList}
     />

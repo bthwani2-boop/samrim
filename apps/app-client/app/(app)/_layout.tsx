@@ -22,14 +22,14 @@ export default function ClientAppLayout() {
   const tabs = (
     <Tabs screenOptions={tabOptions}>
       <Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarAccessibilityLabel: "الرئيسية" }} />
-      <Tabs.Screen name="orders" options={{ title: "الطلبات", tabBarAccessibilityLabel: "الطلبات" }} />
+      <Tabs.Screen name="orders" options={{ headerShown: false, tabBarStyle: { display: "none" }, title: "الطلبات", tabBarAccessibilityLabel: "الطلبات" }} />
       <Tabs.Screen name="subscriptions" options={{ title: "الاشتراكات", tabBarAccessibilityLabel: "الاشتراكات" }} />
       <Tabs.Screen name="wallet" options={{ href: null }} />
       <Tabs.Screen name="wallet-cash-in" options={{ href: null, headerShown: false, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "الحساب" }} />
       <Tabs.Screen name="addresses" options={{ href: null }} />
       <Tabs.Screen name="cart/[storeId]" options={{ href: null, headerShown: false, tabBarStyle: { display: "none" } }} />
-      <Tabs.Screen name="multi-store-checkout" options={{ href: null }} />
+      <Tabs.Screen name="multi-store-checkout" options={{ href: null, headerShown: false, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="orders/[orderId]" options={{ href: null, headerShown: false, tabBarStyle: { display: "none" } }} />
     </Tabs>
   );

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { matchesOrderFilters } from "./order-list-filter.ts";
+import { matchesOrderFilters, matchesOrderStatus } from "./order-list-filter.ts";
 
 const makeOrder = (state, fulfillmentMode) => ({ state, fulfillmentMode });
 
@@ -22,6 +22,18 @@ test("store pickup shows only pickup orders, including cancelled and completed",
   assert.equal(matchesOrderFilters(makeOrder("PICKED_UP", "CUSTOMER_PICKUP"), "pickup"), true);
   assert.equal(matchesOrderFilters(makeOrder("CANCELLED", "CUSTOMER_PICKUP"), "pickup"), true);
   assert.equal(matchesOrderFilters(makeOrder("CREATED", "BTHWANI_CAPTAIN"), "pickup"), false);
+});
+
+test("active, completed and cancelled order tabs partition order states without losing history", () => {
+  const active = ["CREATED", "ACCEPTED", "PREPARING", "READY_FOR_PICKUP", "IN_CUSTODY", "CAPTAIN_ASSIGNED"];
+  const completed = ["DELIVERED", "PICKED_UP"];
+  const cancelled = ["CANCELLED", "REJECTED", "DELIVERY_FAILED"];
+  for (const state of [...active, ...completed, ...cancelled]) {
+    assert.equal(matchesOrderStatus(state, "all"), true, state);
+    const matches = ["active", "completed", "cancelled"].filter((filter) => matchesOrderStatus(state, filter));
+    assert.equal(matches.length, 1, state);
+    assert.equal(matches[0], completed.includes(state) ? "completed" : cancelled.includes(state) ? "cancelled" : "active");
+  }
 });
 
 test("removing the status tabs never silently hides a terminal status", () => {
