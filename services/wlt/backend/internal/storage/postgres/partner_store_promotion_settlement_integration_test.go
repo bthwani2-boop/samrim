@@ -35,7 +35,11 @@ func TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce(t *testing.T) 
 					t.Fatal(err)
 				}
 				customer := "promo-customer-" + order
-				cashMinor := 4000 - source.internalMinor
+				deliveryFeeMinor := int64(0)
+				if mode == "PARTNER_CAPTAIN" {
+					deliveryFeeMinor = 250
+				}
+				cashMinor := 4000 + deliveryFeeMinor - source.internalMinor
 				fundingSource := source.name
 				if source.fundingSource != "" {
 					fundingSource = source.fundingSource
@@ -86,8 +90,8 @@ func TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce(t *testing.T) 
 					CustomerPaymentAllocation: &CustomerPaymentAllocationInput{
 						OrderID: order, StoreID: store, PartnerActorID: owner,
 						CommercialStoreTypeID: "promo-type", FulfillmentMode: mode, Currency: "YER",
-						SubtotalMinor: 5000, DiscountMinor: 1000, CashAmountMinor: cashMinor,
-						InternalBalanceAmountMinor: source.internalMinor, CustomerPayableMinor: 4000, PolicyVersion: "promo-proof-v1",
+						SubtotalMinor: 5000, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: 1000, CashAmountMinor: cashMinor,
+						InternalBalanceAmountMinor: source.internalMinor, CustomerPayableMinor: 4000 + deliveryFeeMinor, PolicyVersion: "promo-proof-v1",
 						PromotionFunding: &PromotionFundingInput{
 							PromotionID: promotionID, PromotionVersion: 1, PromotionCode: "SAVE",
 							StoreID: store, FundingSource: fundingSource, PartnerSharePercent: source.share, DiscountMinor: 1000,
