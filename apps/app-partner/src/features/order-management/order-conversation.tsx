@@ -111,7 +111,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     finally { setBusy(false); }
   }
 
-  async function sendPrivateMedia(sourceUri: string, kind: "image" | "audio", contentType: string) {
+  async function sendPrivateMedia(sourceUri: string, kind: "image" | "audio", contentType: string, transcript = "") {
     if (!correctOwner || busy || !attemptStorageReady || pendingAttempt || !selectedRecipients.length || state.kind !== "ready" || !state.value.canSend) return;
     setBusy(true);setError("");
     try {
@@ -123,7 +123,8 @@ export function OrderConversation({ orderId }: { orderId: string }) {
       const extension=kind==="image"?".jpg":Platform.OS==="ios"?".m4a":".3gp";
       const local=new File(Paths.document, "order-attachment-"+Crypto.randomUUID()+extension);
       original.copy(local);
-      const label=kind==="image"?"صورة مرفقة":"رسالة صوتية";
+      const label=kind==="image"?"صورة مرفقة":transcript.trim();
+      if (kind === "audio" && (!label || label.length > 2000)) throw new Error("AUDIO_TRANSCRIPT_REQUIRED");
       const attempt=createOrderConversationMessageAttempt(actorID,orderId,label,
         "conversation_"+Crypto.randomUUID(),"conversation_corr_"+Crypto.randomUUID(),
         selectedRecipients,{kind,contentType,fileUri:local.uri});
@@ -198,7 +199,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
         <BthwaniButton label="صورة" variant="secondary" disabled={busy} onPress={()=>void pickPhoto(false)} />
         <BthwaniButton label="الكاميرا" variant="secondary" disabled={busy} onPress={()=>void pickPhoto(true)} />
         {showAudioControls ? <Suspense fallback={<Text>جارٍ تجهيز الصوت…</Text>}>
-          <AudioRecorderControls disabled={busy} onRecorded={(uri,mime)=>sendPrivateMedia(uri,"audio",mime)} />
+          <AudioRecorderControls disabled={busy} onRecorded={(uri,mime,text)=>sendPrivateMedia(uri,"audio",mime,text)} />
         </Suspense> : <BthwaniButton label="تسجيل صوتي" variant="secondary" disabled={busy} onPress={()=>setShowAudioControls(true)} />}
       </View><TextInput accessibilityLabel="رسالة المحادثة" editable={!busy} maxLength={2000} multiline onChangeText={setBody} placeholder="اكتب رسالة تشغيلية قصيرة" placeholderTextColor={theme.colorMuted} style={styles.input} textAlign="right" value={body} /><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady || !body.trim() || !selectedRecipients.length} label="إرسال الرسالة" onPress={() => void send()} /></> : <Text style={styles.muted}>أُغلقت المحادثة للكتابة، ويمكنك قراءة سجلها فقط.</Text>}
     </> : null}
