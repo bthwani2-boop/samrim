@@ -17,6 +17,8 @@ if (!process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_API_KEY && fs.existsSync(mapsEn
 }
 
 const nextConfig = {
+  // Never let a production verification build overwrite the live dev server's manifests.
+  distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
   transpilePackages: ["@bthwani/identity", "@bthwani/design-system"],
   poweredByHeader: false,
   // The development overlay injects inline styles that violate the application CSP.
