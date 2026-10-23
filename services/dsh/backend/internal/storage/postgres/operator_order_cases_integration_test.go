@@ -142,6 +142,42 @@ func TestOperatorOrderCaseWorkflowAndIdempotency(t *testing.T) {
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.operator_order_cases WHERE order_id='ops_case_order' AND reason='OTHER' AND state<>'RESOLVED'").Scan(&activeCount); err != nil || activeCount != 1 {
 			t.Fatalf("concurrent operations created duplicate: count=%d err=%v", activeCount, err)
 		}
+		urgent, _, err := postgres.OpenOpsCase(ctx, db, "ops_case_order", "ops_one", "CUSTOMER_CONTACT", "URGENT",
+			"Call customer and confirm delivery outcome", "ops-inbox-urgent-open", "ops-inbox-urgent-corr")
+		if err != nil {
+			t.Fatalf("inbox urgent fixture: %v", err)
+		}
+		owned, _, err := postgres.UpdateOpsCase(ctx, db, "ops_case_order", urgent.ID, "ops_one", "CLAIM", "",
+			"ops-inbox-urgent-claim", "ops-inbox-urgent-claim-corr", 1)
+		if err != nil || owned.OwnerActorID == nil || *owned.OwnerActorID != "ops_one" {
+			t.Fatalf("inbox owner fixture: %+v err=%v", owned, err)
+		}
+		inbox, err := postgres.ListOpenOpsCases(ctx, db, "ops_one", "all", 1, "")
+		if err != nil || len(inbox.Items) != 1 || inbox.Items[0].ID != urgent.ID || inbox.NextCursor == "" {
+			t.Fatalf("urgency-first inbox incorrect: %+v err=%v", inbox, err)
+		}
+		later, err := postgres.ListOpenOpsCases(ctx, db, "ops_one", "all", 1, inbox.NextCursor)
+		if err != nil || len(later.Items) != 1 || later.Items[0].Priority != "NORMAL" || later.Items[0].ID == urgent.ID {
+			t.Fatalf("second priority page incorrect: %+v err=%v", later, err)
+		}
+		mine, err := postgres.ListOpenOpsCases(ctx, db, "ops_one", "mine", 30, "")
+		if err != nil || len(mine.Items) != 1 || mine.Items[0].ID != urgent.ID {
+			t.Fatalf("mine scope leaked/unassigned cases: %+v err=%v", mine, err)
+		}
+		notMine, err := postgres.ListOpenOpsCases(ctx, db, "ops_two", "mine", 30, "")
+		if err != nil || len(notMine.Items) != 0 {
+			t.Fatalf("other actor sees another's case: %+v err=%v", notMine, err)
+		}
+		unassigned, err := postgres.ListOpenOpsCases(ctx, db, "ops_one", "unassigned", 30, "")
+		if err != nil || len(unassigned.Items) != 2 {
+			t.Fatalf("unassigned inbox should include two active cases: %+v err=%v", unassigned, err)
+		}
+		if _, err := postgres.ListOpenOpsCases(ctx, db, "ops_one", "all", 10, "not-a-cursor"); !errors.Is(err, postgres.ErrOpsCaseInvalid) {
+			t.Fatalf("invalid priority cursor allowed: %v", err)
+		}
+		if _, err := postgres.ListOpenOpsCases(ctx, db, "ops_one", "someone-else", 10, ""); !errors.Is(err, postgres.ErrOpsCaseInvalid) {
+			t.Fatalf("invalid scope accepted: %v", err)
+		}
 		var count int
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.operator_order_case_events WHERE case_id=$1", current.ID).Scan(&count); err != nil || count != 4 {
 			t.Fatalf("audit count=%d err=%v", count, err)

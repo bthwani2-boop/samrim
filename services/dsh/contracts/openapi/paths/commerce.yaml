@@ -1428,6 +1428,37 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/operator/operational-cases:
+    get:
+      operationId: listOpenOperatorCases
+      summary: Read all open Operations exceptions with urgency-first keyset paging and ownership scopes.
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [all, mine, unassigned], default: all }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 30, default: 15 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: Active cases, urgency-first, oldest first within each priority.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/OperatorOrderCasePage"
+        "400": { description: Invalid cursor, scope or limit. }
+        "401": { description: Authentication required. }
+        "403": { description: Operations authorization required. }
+
   /dsh/operator/customer-contact-queue:
     get:
       operationId: listPendingOperatorCustomerContacts

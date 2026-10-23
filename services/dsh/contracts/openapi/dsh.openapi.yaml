@@ -696,6 +696,8 @@ paths:
   /dsh/operator/operations/{orderId}/contact-review:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1contact-review"
 
+  /dsh/operator/operational-cases:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operational-cases"
   /dsh/operator/customer-contact-queue:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1customer-contact-queue"
 

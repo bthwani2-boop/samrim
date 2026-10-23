@@ -14,6 +14,7 @@ import { operationActionLabel, operationResponseMessage, resolveOperatorAction }
 import { OrderOperationDetail } from "./order-operation-detail";
 import { CancellationRequestInbox } from "./cancellation-request-inbox";
 import { CustomerContactQueue } from "./customer-contact-queue";
+import { OperatorCaseInbox } from "./operator-case-inbox";
 
 function operationNeedsReview(item: OperatorOperationListItem, now: number): boolean {
   const stage = operationalStageAttention(item.state, item.stageStartedAt, now, item.preparationMinutes);
@@ -236,6 +237,7 @@ export function OperationsWorkspace() {
         <OrderOperationDetail orderId={selectedOrderId} embedded onClose={closeSelected} onUpdated={() => {setCancellationInboxVersion(v => v+1); void load(true)}} />
       </AdaptiveRecordPanel> : null}>
     <section className="operations-workspace ops-center" aria-label="مركز متابعة الطلبات">
+      {(view === "all" || view === "attention") ? <OperatorCaseInbox onOpenOrder={setSelectedOrderId} refreshVersion={cancellationInboxVersion} /> : null}
       {(view === "all" || view === "attention") ? <CustomerContactQueue onOpenOrder={setSelectedOrderId} refreshVersion={cancellationInboxVersion} /> : null}
       <CancellationRequestInbox onOpenOrder={setSelectedOrderId} refreshVersion={cancellationInboxVersion} />
       <div className="ops-tools">

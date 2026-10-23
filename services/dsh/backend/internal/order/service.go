@@ -277,6 +277,13 @@ func (s *Service) ListForAuthorizedPartnerStores(ctx context.Context, accessToke
 	return page, counts, nil
 }
 
+func (s *Service) ListOpenCasesForOperator(ctx context.Context, actorID, scope string, limit int, cursor string) (postgres.OpsCasePage, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.OpsCasePage{}, err
+	}
+	return postgres.ListOpenOpsCases(ctx, s.db, actorID, scope, limit, cursor)
+}
+
 func (s *Service) ListOrderCasesForOperator(ctx context.Context, orderID, actorID string, limit int, cursor string) (postgres.OpsCasePage, error) {
 	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
 		return postgres.OpsCasePage{}, err
