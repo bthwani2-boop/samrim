@@ -191,8 +191,10 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/wallets/{actorType}/{actorId}/state", s.readWalletState)
 	mux.HandleFunc("GET /wlt/v1/wallets/{actorType}/{actorId}/funding-intents", s.listCashInFundingIntents)
 	mux.HandleFunc("GET /wlt/v1/funding-intents/{fundingIntentId}", s.readCashInFundingIntent)
-	if s.cashInSimulatorEnabled {
+	if _, ok := s.cashInRail.(cashInSimulator); ok && s.cashInSimulatorEnabled {
 		mux.HandleFunc("POST /wlt/v1/development/funding-intents/{fundingIntentId}/simulate", s.simulateCashInFundingIntent)
+	}
+	if isProviderMock(s.cashInRail) && s.cashInSimulatorEnabled {
 		mux.HandleFunc("POST /wlt/v1/development/funding-intents/{fundingIntentId}/reconcile", s.reconcileDevelopmentFundingIntent)
 	}
 }

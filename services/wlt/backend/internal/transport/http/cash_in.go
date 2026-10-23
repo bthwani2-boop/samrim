@@ -251,8 +251,8 @@ func (s *Server) simulateCashInFundingIntent(w http.ResponseWriter, r *http.Requ
 	if !s.authorize(w, r) {
 		return
 	}
-	if !s.cashInSimulatorEnabled {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "development simulator route is not available")
+	if !s.cashInSimulatorEnabled || isProviderMock(s.cashInRail) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "manual simulated outcomes are not available for provider-backed Cash-In")
 		return
 	}
 	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))

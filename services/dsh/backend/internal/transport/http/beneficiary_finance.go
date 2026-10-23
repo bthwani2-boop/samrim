@@ -192,8 +192,8 @@ func (s *BeneficiaryFinanceServer) simulateOwnFundingIntent(w http.ResponseWrite
 		writeWLTFinanceError(w, err)
 		return
 	}
-	if !state.Simulator {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "development simulator is not available")
+	if !state.Simulator || state.ProviderMock {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "manual outcome selection is unavailable for provider-backed Cash-In")
 		return
 	}
 	intentID := strings.TrimSpace(r.PathValue("fundingIntentId"))

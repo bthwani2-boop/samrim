@@ -50,6 +50,11 @@ func TestRegisteredRoutesRequireServiceAuthorization(t *testing.T) {
 	server.Register(mux)
 
 	for _, route := range registeredRoutes(t) {
+		// Reconcile is only registered in provider-mock mode; the separate
+		// rail boundary test verifies that route requires authorization.
+		if strings.HasPrefix(route.path, "/wlt/v1/development/funding-intents/") && strings.HasSuffix(route.path, "/reconcile") {
+			continue
+		}
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
 			request := httptest.NewRequest(route.method, concreteRoutePath(route.path), nil)
 			response := httptest.NewRecorder()

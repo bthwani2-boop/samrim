@@ -2154,7 +2154,7 @@ paths:
   /wlt/v1/development/funding-intents/{fundingIntentId}/simulate:
     post:
       operationId: simulateCashInFundingOutcome
-      description: Development-only test route; registered only when BTHWANI_ENV=development and WLT_CASH_IN_MODE is simulator or wiremock. In wiremock mode the outcome must match the HTTP mock provider inquiry; the caller cannot dictate it.
+      description: Legacy manual-outcome route, registered only in development with WLT_CASH_IN_MODE=simulator. The HTTP provider mock uses provider inquiry, never caller-selected outcomes.
       security: [{ serviceToken: [] }]
       parameters:
         - { name: fundingIntentId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }

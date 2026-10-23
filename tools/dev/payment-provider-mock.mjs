@@ -85,6 +85,19 @@ async function check(){
    await switchTo("timeout",alpha);
    let timedOut=false;try{await inquiry(alpha,a,null,{timeout:700});}catch(e){timedOut=e?.name==="TimeoutError";}
    assert.equal(timedOut,true,"timeout scenario did not delay provider");
+   // None of the real wallet providers supports API Cash-Out. The mock must
+   // fail closed rather than teach callers a fictional payout interface.
+   for (const key of [alpha, beta]) {
+     for (const unsupported of ["payouts", "cash-out", "withdrawals"]) {
+       const response=await fetch(base+"/v1/providers/"+key+"/"+unsupported,{
+         method:"POST", headers:{"Content-Type":"application/json"},
+         body:JSON.stringify({amountMinor:100,recipient:"not-a-real-account"}),
+         signal:AbortSignal.timeout(4000)
+       });
+       assert.equal(response.status,404, "mock accidentally exposes "+unsupported+" for "+key);
+     }
+   }
+   console.log("PASS Cash-In only; no synthetic API payout/withdrawal");
    console.log("PASS isolated provider failure, invalid response, timeout");
    console.log("PAYMENT_PROVIDER_MOCK_CONTRACT=PASS");
  }finally{await switchTo("reset",alpha);await switchTo("reset",beta);}
