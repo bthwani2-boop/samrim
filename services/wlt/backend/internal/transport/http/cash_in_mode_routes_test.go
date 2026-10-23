@@ -38,6 +38,9 @@ func TestCashInRailRoutesEnforceProviderBoundary(t *testing.T) {
 				{"POST", "/wlt/v1/development/funding-intents/funding_test/reconcile", test.reconcileStatus},
 				{"POST", "/wlt/v1/providers/wallet_provider_test_alpha/payouts", http.StatusNotFound},
 				{"POST", "/wlt/v1/providers/wallet_provider_test_alpha/cash-out", http.StatusNotFound},
+				{"POST", "/wlt/v1/operator/settlement-batches/batch_test/transfers", http.StatusUnauthorized},
+				{"POST", "/wlt/v1/operator/transfers/transfer_test/verify", http.StatusUnauthorized},
+				{"POST", "/wlt/v1/operator/transfers/transfer_test/reconcile", http.StatusUnauthorized},
 			} {
 				recorder := httptest.NewRecorder()
 				mux.ServeHTTP(recorder, httptest.NewRequest(check.method, check.path, nil))

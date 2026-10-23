@@ -40,6 +40,10 @@ test("dispatch presence stays periodic and separate from the active mission publ
   assert.equal(mission.includes('Location.getForegroundPermissionsAsync()'), true);
   assert.equal(mission.includes('task.task.fulfillmentMode !== "BTHWANI_CAPTAIN"'), true);
   assert.equal(mission.includes('/assignments/${encodeURIComponent(targetAssignment)}/mission-location'), true);
+  assert.equal(mission.includes("subscribeIdentitySession((identity) =>"), true);
+  assert.equal(mission.includes("pendingRequest?.abort()"), true);
+  assert.equal(mission.includes("activeAssignment !== targetAssignment"), true);
+  assert.equal(mission.includes("currentSession.identity.subject !== sourceActor"), true);
   assert.equal(mission.includes("startLocationUpdatesAsync"), false,
     "Background location is not implemented and must not be claimed to work");
 });
