@@ -54,6 +54,18 @@ services:
         -f /etc/samrim/runtime-roles.sql
         && exec /bin/sh /etc/samrim/verify-runtime-access.sh
 
+  payment-mock:
+    profiles: ["payment-mock"]
+    image: wiremock/wiremock:3.13.2-2
+    restart: "no"
+    environment:
+      JAVA_OPTS: "-Xms64m -Xmx160m"
+    command: ["--global-response-templating"]
+    ports:
+      - "127.0.0.1:${SAMRIM_PAYMENT_MOCK_PORT:-18090}:8080"
+    volumes:
+      - ../payment-provider-mock:/home/wiremock:ro
+
   mailpit:
     image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
     restart: unless-stopped
@@ -318,6 +330,7 @@ services:
       WLT_DESTINATION_ENCRYPTION_KEY: "${WLT_DESTINATION_ENCRYPTION_KEY:-}"
       WLT_FINANCE_EVIDENCE_ENCRYPTION_KEY: "${WLT_FINANCE_EVIDENCE_ENCRYPTION_KEY:-}"
       WLT_CASH_IN_MODE: "${WLT_CASH_IN_MODE:-simulator}"
+      WLT_PAYMENT_MOCK_BASE_URL: "http://payment-mock:8080"
     ports:
       - "127.0.0.1:${SAMRIM_WLT_PORT:-18083}:8083"
     healthcheck:

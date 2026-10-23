@@ -1,0 +1,14 @@
+{
+  "id": "00000000-0000-4000-8000-000000000901",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/v1/payments/WM-.+"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\"providerReference\":\"{{request.pathSegments.[2]}}\",\"outcome\":\"UNKNOWN\",\"providerTransactionReference\":\"\",\"providerFeeMinor\":0}"
+  }
+}

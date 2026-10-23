@@ -1,0 +1,27 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/payments",
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.intentId"
+      },
+      {
+        "matchesJsonPath": "$.externalReference"
+      },
+      {
+        "matchesJsonPath": "$.amountMinor"
+      },
+      {
+        "matchesJsonPath": "$.currency"
+      }
+    ]
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\"providerReference\":\"WM-{{jsonPath request.body '$.externalReference'}}\",\"state\":\"PENDING_PROVIDER\"}"
+  }
+}

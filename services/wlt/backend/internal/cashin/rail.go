@@ -27,6 +27,7 @@ type PaymentInquiryRequest struct {
 type PaymentInquiryResult struct {
 	Outcome                      string
 	ProviderTransactionReference string
+	ProviderFeeMinor             int64
 }
 
 type CashInRail interface {

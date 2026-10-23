@@ -2143,7 +2143,7 @@ paths:
   /wlt/v1/development/funding-intents/{fundingIntentId}/simulate:
     post:
       operationId: simulateCashInFundingOutcome
-      description: Development-only simulator route; not registered unless BTHWANI_ENV=development and WLT_CASH_IN_MODE=simulator.
+      description: Development-only test route; registered only when BTHWANI_ENV=development and WLT_CASH_IN_MODE is simulator or wiremock. In wiremock mode the outcome must match the HTTP mock provider inquiry; the caller cannot dictate it.
       security: [{ serviceToken: [] }]
       parameters:
         - { name: fundingIntentId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }

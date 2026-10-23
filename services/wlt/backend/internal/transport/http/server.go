@@ -47,8 +47,8 @@ func New(db *sql.DB, serviceToken, destinationEncryptionKey string, financeEvide
 	return &Server{db: db, serviceToken: strings.TrimSpace(serviceToken), destinationEncryptionKey: cipher, financeEvidenceCipher: evidenceCipher}, nil
 }
 
-func NewWithCashInConfig(db *sql.DB, serviceToken, destinationEncryptionKey, financeEvidenceEncryptionKey, cashInMode, environment string) (*Server, error) {
-	rail, simulatorEnabled, err := cashInRailForConfig(cashInMode, environment)
+func NewWithCashInConfig(db *sql.DB, serviceToken, destinationEncryptionKey, financeEvidenceEncryptionKey, cashInMode, environment string, mockURL ...string) (*Server, error) {
+	rail, simulatorEnabled, err := cashInRailForConfig(cashInMode, environment, mockURL...)
 	if err != nil {
 		return nil, err
 	}
@@ -61,16 +61,23 @@ func NewWithCashInConfig(db *sql.DB, serviceToken, destinationEncryptionKey, fin
 	return server, nil
 }
 
-func cashInRailForConfig(cashInMode, environment string) (cashin.CashInRail, bool, error) {
+func cashInRailForConfig(cashInMode, environment string, mockURL ...string) (cashin.CashInRail, bool, error) {
 	mode := strings.ToLower(strings.TrimSpace(cashInMode))
 	environment = strings.ToLower(strings.TrimSpace(environment))
 	if mode == "" || mode == "disabled" {
 		return nil, false, nil
 	}
-	if mode != "simulator" || environment != "development" {
-		return nil, false, errors.New("WLT Cash-In simulator is permitted only in development; production requires an approved real rail")
+	if environment != "development" {
+		return nil, false, errors.New("WLT Cash-In testing rails are permitted only in development; production requires an approved real rail")
 	}
-	return cashin.DevelopmentSimulator{}, true, nil
+	if mode == "simulator" {
+		return cashin.DevelopmentSimulator{}, true, nil
+	}
+	if mode == "wiremock" && len(mockURL) == 1 {
+		rail, err := cashin.NewWireMockRail(mockURL[0])
+		return rail, err == nil, err
+	}
+	return nil, false, errors.New("unsupported WLT Cash-In rail configuration")
 }
 
 func (s *Server) Register(mux *http.ServeMux) {

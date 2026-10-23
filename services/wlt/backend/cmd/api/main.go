@@ -43,7 +43,7 @@ func main() {
 		digest := sha256.Sum256([]byte("wlt-finance-evidence:" + os.Getenv("WLT_DSH_SERVICE_TOKEN")))
 		evidenceKey = hex.EncodeToString(digest[:])
 	}
-	server, err := transporthttp.NewWithCashInConfig(database, os.Getenv("WLT_DSH_SERVICE_TOKEN"), destinationKey, evidenceKey, os.Getenv("WLT_CASH_IN_MODE"), os.Getenv("BTHWANI_ENV"))
+	server, err := transporthttp.NewWithCashInConfig(database, os.Getenv("WLT_DSH_SERVICE_TOKEN"), destinationKey, evidenceKey, os.Getenv("WLT_CASH_IN_MODE"), os.Getenv("BTHWANI_ENV"), os.Getenv("WLT_PAYMENT_MOCK_BASE_URL"))
 	if err != nil {
 		log.Fatal(err)
 	}

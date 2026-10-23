@@ -204,17 +204,40 @@ func (s *Server) simulateCashInFundingIntent(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "only development-simulator funding intents can receive simulated outcomes")
 		return
 	}
-	simulator, ok := s.cashInRail.(cashInSimulator)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "CONFIGURATION_ERROR", "development simulator is not configured")
-		return
+	var result cashin.PaymentInquiryResult
+	var providerFee int64
+	if _, isWireMock := s.cashInRail.(*cashin.WireMockRail); isWireMock {
+		if current.ProviderReference == nil {
+			writeError(w, http.StatusAccepted, "CASH_IN_RESULT_UNKNOWN", "Provider reference is not confirmed; reconcile before proceeding")
+			return
+		}
+		// The external mock, never the mobile client's selected outcome, owns the result.
+		result, err = s.cashInRail.InquirePayment(r.Context(), cashin.PaymentInquiryRequest{
+			IntentID: intentID, ProviderReference: *current.ProviderReference,
+		})
+		if err != nil {
+			writeError(w, http.StatusAccepted, "CASH_IN_RESULT_UNKNOWN", "Provider inquiry failed; this funding intent remains unresolved")
+			return
+		}
+		providerFee = result.ProviderFeeMinor
+		if strings.ToUpper(strings.TrimSpace(input.Outcome)) != result.Outcome {
+			writeError(w, http.StatusConflict, "PROVIDER_OUTCOME_MISMATCH", "The selected test result differs from the mock provider's verified response")
+			return
+		}
+	} else {
+		simulator, ok := s.cashInRail.(cashInSimulator)
+		if !ok {
+			writeError(w, http.StatusInternalServerError, "CONFIGURATION_ERROR", "development simulator is not configured")
+			return
+		}
+		result, err = simulator.Simulate(input.Outcome, intentID)
+		if err != nil {
+			writeCashInError(w, err)
+			return
+		}
+		providerFee = developmentSimulatorCashInProviderFeeMinor(result.Outcome, current.RequestedAmountMinor)
 	}
-	result, err := simulator.Simulate(input.Outcome, intentID)
-	if err != nil {
-		writeCashInError(w, err)
-		return
-	}
-	item, replayed, err := postgres.ApplyCashInFundingResult(r.Context(), s.db, postgres.ApplyCashInFundingResultInput{FundingIntentID: intentID, Outcome: result.Outcome, ProviderTransactionReference: result.ProviderTransactionReference, ProviderFeeMinor: developmentSimulatorCashInProviderFeeMinor(result.Outcome, current.RequestedAmountMinor), ActorID: actingActorID, IdempotencyKey: idempotency, CorrelationID: correlation})
+	item, replayed, err := postgres.ApplyCashInFundingResult(r.Context(), s.db, postgres.ApplyCashInFundingResultInput{FundingIntentID: intentID, Outcome: result.Outcome, ProviderTransactionReference: result.ProviderTransactionReference, ProviderFeeMinor: providerFee, ActorID: actingActorID, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeCashInError(w, err)
 		return
