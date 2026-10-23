@@ -58,6 +58,7 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/public/discovery-content/{contentId}/target", s.resolvePublicDiscoveryContentTarget)
 	mux.HandleFunc("GET /dsh/operator/marketing/summary", s.readOperatorMarketingSummary)
 	mux.HandleFunc("GET /dsh/operator/promotions", s.listOperatorPromotions)
+	mux.HandleFunc("GET /dsh/operator/promotions/{promotionId}/partner-decisions", s.listOperatorPartnerDecisions)
 	mux.HandleFunc("POST /dsh/operator/promotions", s.createOperatorPromotion)
 	mux.HandleFunc("POST /dsh/operator/promotions/{promotionId}/publication", s.setOperatorPromotionPublication)
 	mux.HandleFunc("GET /dsh/operator/discovery-content", s.listOperatorDiscoveryContent)

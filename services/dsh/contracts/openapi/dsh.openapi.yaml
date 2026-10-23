@@ -507,6 +507,9 @@ paths:
   /dsh/public/discovery-content/{contentId}/target:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content~1{contentId}~1target"
 
+  /dsh/operator/promotions/{promotionId}/partner-decisions:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1partner-decisions"
+
   /dsh/operator/promotions/{promotionId}/settlement-summary:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1settlement-summary"
 
@@ -9736,6 +9739,37 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    OperatorPartnerDecision:
+      type: object
+      additionalProperties: false
+      required: [storeId, storeName, decision, version]
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        storeName:
+          type: string
+        decision:
+          type: string
+          description: Empty until the Store has explicitly accepted or declined.
+        version:
+          type: integer
+          minimum: 0
+
+    OperatorPartnerDecisionPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperatorPartnerDecision"
+        nextCursor:
+          type: string
+          maxLength: 128
 
     OperatorMarketingSummary:
       type: object

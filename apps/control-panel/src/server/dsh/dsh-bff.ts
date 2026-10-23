@@ -1946,3 +1946,27 @@ export async function readOperatorOpportunities(context: DshOperatorReadContext)
   });
   return response.payload;
 }
+
+
+import type { OperatorPartnerDecisionPage } from "@bthwani/dsh";
+
+export async function listMarketingPartnerDecisions(
+  promotionId: string,
+  cursor: string,
+  decision: "" | "PENDING" | "OPTED_IN" | "DECLINED",
+  context: DshOperatorReadContext,
+): Promise<OperatorPartnerDecisionPage> {
+  if (!context.operatorActorId.trim() || !promotionId.trim() || promotionId.length > 128 || cursor.length > 128)
+    throw new Error("DSH_PARTNER_DECISIONS_READ_INPUT_INVALID");
+  const route = dshOperationPaths.listOperatorPartnerDecisions;
+  const path = route.path.replace("{promotionId}", encodeURIComponent(promotionId.trim()));
+  const search = new URLSearchParams({ limit: "25" });
+  if (cursor) search.set("cursor", cursor);
+  if (decision) search.set("decision", decision);
+  return (await requestDshJson<OperatorPartnerDecisionPage>(
+    route.method,
+    path + "?" + search.toString(),
+    undefined,
+    { "X-Acting-Actor-ID": context.operatorActorId.trim() },
+  )).payload;
+}

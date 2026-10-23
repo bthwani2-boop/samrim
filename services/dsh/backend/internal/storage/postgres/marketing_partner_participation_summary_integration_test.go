@@ -79,5 +79,60 @@ func TestMarketingPartnerParticipationSummaryDoesNotTruncateAfter100Campaigns(t 
 		if summary.ActivePromotions != 106 {
 			t.Fatalf("state count should include persisted uncapped row %+v", summary)
 		}
+		// The operator inbox must traverse more than 100 eligible Stores without
+		// relying on the first promotion registry page or leaking customers.
+		for i := 0; i < 101; i++ {
+			storeID := fmt.Sprintf("summary-store-extra-%03d", i)
+			_, err := db.ExecContext(ctx, `INSERT INTO dsh.stores(
+				id,partner_actor_id,name,service_city_id,primary_vertical_id,commercial_store_type_id,publication_state)
+				SELECT $1,$2,$3,service_city_id,primary_vertical_id,commercial_store_type_id,'published'
+				FROM dsh.stores WHERE id='summary-store-a'`,
+				storeID, "partner-"+storeID, "Extra Store "+storeID)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		seen := make(map[string]bool)
+		cursor := ""
+		for {
+			page, err := postgres.ListOperatorPartnerDecisions(ctx, db, "summary-promo-000", cursor, "", 25)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(page.Items) > 25 {
+				t.Fatalf("page too big: %d", len(page.Items))
+			}
+			for _, item := range page.Items {
+				if seen[item.StoreID] {
+					t.Fatalf("duplicate Store across pages: %s", item.StoreID)
+				}
+				seen[item.StoreID] = true
+			}
+			if page.NextCursor == "" {
+				break
+			}
+			if page.NextCursor == cursor {
+				t.Fatal("cursor did not advance")
+			}
+			cursor = page.NextCursor
+		}
+		if len(seen) != 103 {
+			t.Fatalf("expected 103 Store decisions across pages, got %d", len(seen))
+		}
+		approved, err := postgres.ListOperatorPartnerDecisions(ctx, db, "summary-promo-000", "", "OPTED_IN", 25)
+		if err != nil || len(approved.Items) != 1 || approved.Items[0].StoreID != "summary-store-a" {
+			t.Fatalf("approved filter: %+v err=%v", approved, err)
+		}
+		declined, err := postgres.ListOperatorPartnerDecisions(ctx, db, "summary-promo-001", "", "DECLINED", 25)
+		if err != nil || len(declined.Items) != 1 || declined.Items[0].StoreID != "summary-store-b" {
+			t.Fatalf("declined filter: %+v err=%v", declined, err)
+		}
+		pending, err := postgres.ListOperatorPartnerDecisions(ctx, db, "summary-promo-000", "", "PENDING", 25)
+		if err != nil || len(pending.Items) != 25 || pending.NextCursor == "" {
+			t.Fatalf("pending filter: %+v err=%v", pending, err)
+		}
+		if _, err := postgres.ListOperatorPartnerDecisions(ctx, db, "unknown-campaign", "", "", 25); err == nil {
+			t.Fatal("unknown campaign should be rejected")
+		}
 	})
 }
