@@ -22,13 +22,15 @@ export async function GET(request: Request) {
   const query = new URL(request.url).searchParams;
   const search = query.get("search")?.trim() ?? "";
   const state = query.get("state") ?? "";
+  const discountKind = query.get("discountKind") ?? "";
+  const fundingSource = query.get("fundingSource") ?? "";
   const sort = query.get("sort") ?? "starts_desc";
   const cursor = query.get("cursor") ?? "";
   const rawLimit = query.get("limit") ?? "25";
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
-  if (search.length > 128 || (state && !states.includes(state as typeof states[number])) || !sorts.includes(sort as typeof sorts[number]) || cursor.length > 2048 || !Number.isInteger(limit) || limit < 1 || limit > 100) return errorResponse("INVALID_INPUT", "invalid promotion registry filters", 400);
+  if (search.length > 128 || (state && !states.includes(state as typeof states[number])) || (discountKind && !["PERCENTAGE", "FIXED"].includes(discountKind)) || (fundingSource && !["BTHWANI", "PARTNER", "SHARED"].includes(fundingSource)) || !sorts.includes(sort as typeof sorts[number]) || cursor.length > 2048 || !Number.isInteger(limit) || limit < 1 || limit > 100) return errorResponse("INVALID_INPUT", "invalid promotion registry filters", 400);
   try {
-    const result = await listMarketingPromotions({ search, state, sort: sort as typeof sorts[number], cursor, limit }, { operatorActorId: identity.subject });
+    const result = await listMarketingPromotions({ search, state, discountKind, fundingSource, sort: sort as typeof sorts[number], cursor, limit }, { operatorActorId: identity.subject });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "promotion lookup failed", 500);

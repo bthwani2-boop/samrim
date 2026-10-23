@@ -11,6 +11,8 @@ import (
 type OperatorPromotionRegistryQuery struct {
 	Search        string
 	State         string
+	DiscountKind  string
+	FundingSource string
 	ServiceCityID string
 	Sort          string
 	AfterStartsAt *time.Time
@@ -43,12 +45,16 @@ type OperatorDiscoveryContentRegistryPage struct {
 func ListOperatorPromotionRegistry(ctx context.Context, db *sql.DB, query OperatorPromotionRegistryQuery) (OperatorPromotionRegistryPage, error) {
 	query.Search = strings.TrimSpace(query.Search)
 	query.State = strings.ToUpper(strings.TrimSpace(query.State))
+	query.DiscountKind = strings.ToUpper(strings.TrimSpace(query.DiscountKind))
+	query.FundingSource = strings.ToUpper(strings.TrimSpace(query.FundingSource))
 	query.ServiceCityID = strings.TrimSpace(query.ServiceCityID)
 	query.Sort = strings.ToLower(strings.TrimSpace(query.Sort))
 	query.AfterID = strings.TrimSpace(query.AfterID)
 	validState := query.State == "" || query.State == "DRAFT" || query.State == "PUBLISHED" || query.State == "PAUSED" || query.State == "ENDED"
 	validSort := query.Sort == "starts_desc" || query.Sort == "starts_asc"
-	if db == nil || len(query.Search) > 512 || len(query.ServiceCityID) > 128 || !validState || !validSort || query.Limit < 1 || query.Limit > 100 || (query.AfterStartsAt == nil) != (query.AfterID == "") || len(query.AfterID) > 128 {
+	validKind := query.DiscountKind == "" || query.DiscountKind == "PERCENTAGE" || query.DiscountKind == "FIXED"
+	validFunding := query.FundingSource == "" || query.FundingSource == "BTHWANI" || query.FundingSource == "PARTNER" || query.FundingSource == "SHARED"
+	if db == nil || len(query.Search) > 512 || len(query.ServiceCityID) > 128 || !validState || !validSort || !validKind || !validFunding || query.Limit < 1 || query.Limit > 100 || (query.AfterStartsAt == nil) != (query.AfterID == "") || len(query.AfterID) > 128 {
 		return OperatorPromotionRegistryPage{}, ErrPromotionInvalid
 	}
 
@@ -58,11 +64,19 @@ func ListOperatorPromotionRegistry(ctx context.Context, db *sql.DB, query Operat
 		orderBy = "starts_at ASC, id ASC"
 		operator = ">"
 	}
-	args := make([]any, 0, 5)
-	filters := make([]string, 0, 3)
+	args := make([]any, 0, 7)
+	filters := make([]string, 0, 5)
 	if query.State != "" {
 		args = append(args, query.State)
 		filters = append(filters, "state=$"+strconv.Itoa(len(args)))
+	}
+	if query.DiscountKind != "" {
+		args = append(args, query.DiscountKind)
+		filters = append(filters, "kind=$"+strconv.Itoa(len(args)))
+	}
+	if query.FundingSource != "" {
+		args = append(args, query.FundingSource)
+		filters = append(filters, "funding_source=$"+strconv.Itoa(len(args)))
 	}
 	if query.Search != "" {
 		args = append(args, strings.ToLower(escapeRegistryPrefix(query.Search))+"%")

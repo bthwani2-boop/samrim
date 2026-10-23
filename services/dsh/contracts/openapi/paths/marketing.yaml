@@ -158,6 +158,14 @@ paths:
           in: query
           required: false
           schema: { type: string, enum: [DRAFT, PUBLISHED, PAUSED] }
+        - name: discountKind
+          in: query
+          required: false
+          schema: { type: string, enum: [PERCENTAGE, FIXED] }
+        - name: fundingSource
+          in: query
+          required: false
+          schema: { type: string, enum: [BTHWANI, PARTNER, SHARED] }
         - name: sort
           in: query
           required: false

@@ -1755,15 +1755,20 @@ export async function recoverCaptainDelivery(assignmentId: string, context: DshV
   return requestDshJson<CaptainAssignmentResponse>(dshOperationPaths.recoverCaptainDelivery.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim(), "X-Expected-Version": String(context.expectedVersion) });
 }
 
-export type OperatorPromotionRegistryQuery = Readonly<{ search: string; state: string; serviceCityId?: string; sort: "starts_desc" | "starts_asc"; cursor: string; limit: number }>;
+export type OperatorPromotionRegistryQuery = Readonly<{ search: string; state: string; discountKind?: string; fundingSource?: string; serviceCityId?: string; sort: "starts_desc" | "starts_asc"; cursor: string; limit: number }>;
 export type OperatorDiscoveryContentRegistryQuery = Readonly<{ search: string; state: string; kind: string; sort: "priority" | "created_desc"; cursor: string; limit: number }>;
 
 export async function listMarketingPromotions(query: OperatorPromotionRegistryQuery, context: DshOperatorReadContext): Promise<OperatorPromotionRegistryResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_MARKETING_READ_INPUT_INVALID");
   const serviceCityId = query.serviceCityId?.trim() ?? "";
+  const discountKind = query.discountKind ?? "";
+  const fundingSource = query.fundingSource ?? "";
+  if ((discountKind && !["PERCENTAGE", "FIXED"].includes(discountKind)) || (fundingSource && !["BTHWANI", "PARTNER", "SHARED"].includes(fundingSource))) throw new Error("DSH_MARKETING_PROMOTION_FILTER_INVALID");
   if (query.search.trim().length > 128 || serviceCityId.length > 128 || query.cursor.length > 2048 || !["starts_desc", "starts_asc"].includes(query.sort) || !Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100) throw new Error("DSH_MARKETING_PROMOTION_REGISTRY_INPUT_INVALID");
   const params = new URLSearchParams({ search: query.search.trim(), sort: query.sort, limit: String(query.limit) });
   if (query.state) params.set("state", query.state);
+  if (discountKind) params.set("discountKind", discountKind);
+  if (fundingSource) params.set("fundingSource", fundingSource);
   if (serviceCityId) params.set("serviceCityId", serviceCityId);
   if (query.cursor) params.set("cursor", query.cursor);
   const path = `${dshOperationPaths.listOperatorPromotions.path}?${params.toString()}`;
