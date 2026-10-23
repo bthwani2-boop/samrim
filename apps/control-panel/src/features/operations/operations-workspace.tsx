@@ -9,11 +9,16 @@ import { RecordIndicator } from "../shared/record-indicator";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { operationalAge } from "./operational-age";
-import { operationalStageElapsed } from "./operational-stage-elapsed";
+import { operationalStageElapsed, operationalStageAttention } from "./operational-stage-elapsed";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 import { OrderOperationDetail } from "./order-operation-detail";
 import { CancellationRequestInbox } from "./cancellation-request-inbox";
 import { CustomerContactQueue } from "./customer-contact-queue";
+
+function operationNeedsReview(item: OperatorOperationListItem, now: number): boolean {
+  const stage = operationalStageAttention(item.state, item.stageStartedAt, now);
+  return stage ? stage.needsReview : operationalAge(item.state, item.updatedAt, now).needsReview;
+}
 
 type View = "all" | "attention" | "dispatch" | "delivered";
 type Change = Readonly<{ view?: View; state?: string; q?: string; sort?: string }>;
@@ -105,7 +110,7 @@ export function OperationsWorkspace() {
   const [pageReviewFilter, setPageReviewFilter] = useState("all");
   const visibleOperations = operations.filter((item) =>
     (pageCaptainFilter === "all" || (pageCaptainFilter === "assigned" ? Boolean(item.assignment) : !item.assignment))
-    && (pageReviewFilter === "all" || (pageReviewFilter === "overdue" ? operationalAge(item.state, item.updatedAt, ageClock || Date.parse(item.updatedAt)).needsReview : Boolean(resolveOperatorAction({ state: item.state, assignment: item.assignment }))))
+    && (pageReviewFilter === "all" || (pageReviewFilter === "overdue" ? operationNeedsReview(item, ageClock || Date.now()) : Boolean(resolveOperatorAction({ state: item.state, assignment: item.assignment }))))
   );
   const [loading, setLoading] = useState(true);
   const [nextCursor, setNextCursor] = useState("");
@@ -202,7 +207,7 @@ export function OperationsWorkspace() {
     return () => clearInterval(timer);
   }, [cursorPage.ready, load, loading, view]);
 
-  const overdueOnPage = operations.filter((item) => operationalAge(item.state, item.updatedAt, ageClock || Date.parse(item.updatedAt)).needsReview).length;
+  const overdueOnPage = operations.filter((item) => operationNeedsReview(item, ageClock || Date.now())).length;
   const hasSearch = Boolean(searchFromUrl);
   const selectedFilter = preciseState || (view === "attention" ? "attention" : view === "dispatch" ? "READY_FOR_DISPATCH" : view === "delivered" ? "DELIVERED" : "");
   const selectedViewLabel = preciseState ? specificStates.find((item) => item.value === preciseState)?.label ?? preciseState
@@ -345,9 +350,11 @@ export function OperationsWorkspace() {
               <tbody>
                 {visibleOperations.length === 0 ? <tr><td colSpan={6} className="catalog-table-state">لا توجد مطابقة في الصفحة الحالية. أزل مرشح الإسناد أو المتابعة.</td></tr> : null}
                 {visibleOperations.map((item) => {
-                  const age = operationalAge(item.state, item.updatedAt, ageClock || Date.parse(item.updatedAt));
+                  const age = operationalAge(item.state, item.updatedAt, ageClock || Date.now());
+                  const stageAttention = operationalStageAttention(item.state, item.stageStartedAt, ageClock || Date.now());
+                  const needsReview = stageAttention ? stageAttention.needsReview : age.needsReview;
                   const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
-                  return <tr key={item.orderId} className={age.needsReview ? "ops-row-review" : undefined}>
+                  return <tr key={item.orderId} className={needsReview ? "ops-row-review" : undefined}>
                     <th scope="row">{item.storeName}<small className="muted ops-order-short-id" dir="ltr" title={item.orderId}>#{item.orderId.slice(-8)}</small></th>
                     <td><span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span></td>
                     <td>{item.assignment ? <span className="ops-captain-cell">
@@ -355,20 +362,22 @@ export function OperationsWorkspace() {
                     </span> : <span className="muted">غير مسند</span>}</td>
                     <td><time dateTime={item.updatedAt}>{formatOrderDate(item.updatedAt)}</time></td>
                     <td><div className="ops-row-followup">
-                      <span className={age.needsReview ? "operations-attention" : "muted"}>{age.label}</span>
+                      <span className={needsReview ? "operations-attention" : "muted"}>{stageAttention?.needsReview ? stageAttention.label : age.label}</span>
                       {operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt)) ? <span className="muted">{operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt))}</span> : null}
                       {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
                     </div></td>
-                    <td><button type="button" className="ops-row-open" aria-label={(nextAction || age.needsReview ? "مراجعة" : "تفاصيل") + " طلب " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>{nextAction || age.needsReview ? "مراجعة" : "تفاصيل"}</button></td>
+                    <td><button type="button" className="ops-row-open" aria-label={(nextAction || needsReview ? "مراجعة" : "تفاصيل") + " طلب " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>{nextAction || needsReview ? "مراجعة" : "تفاصيل"}</button></td>
                   </tr>;
                 })}
               </tbody>
             </table>
             <ul className="ops-mobile-orders" aria-label="طلبات الصفحة">
               {visibleOperations.map((item) => {
-                const age = operationalAge(item.state, item.updatedAt, ageClock || Date.parse(item.updatedAt));
+                const age = operationalAge(item.state, item.updatedAt, ageClock || Date.now());
+                const stageAttention = operationalStageAttention(item.state, item.stageStartedAt, ageClock || Date.now());
+                const needsReview = stageAttention ? stageAttention.needsReview : age.needsReview;
                 const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
-                return <li key={item.orderId} className={"ops-mobile-order" + (age.needsReview ? " ops-mobile-order-review" : "")}>
+                return <li key={item.orderId} className={"ops-mobile-order" + (needsReview ? " ops-mobile-order-review" : "")}>
                   <div className="ops-mobile-order-heading">
                     <strong>{item.storeName}</strong><small className="muted ops-order-short-id" dir="ltr" title={item.orderId}>#{item.orderId.slice(-8)}</small>
                   </div>
@@ -377,13 +386,13 @@ export function OperationsWorkspace() {
                     <span className="ops-mobile-order-captain">{item.assignment ? captainAssignmentStateLabel(item.assignment.state) : "غير مسند"}</span>
                   </div>
                   <div className="ops-mobile-order-followup">
-                    <span className={age.needsReview ? "operations-attention" : "muted"}>{age.label}</span>
+                    <span className={needsReview ? "operations-attention" : "muted"}>{stageAttention?.needsReview ? stageAttention.label : age.label}</span>
                       {operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt)) ? <span className="muted">{operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt))}</span> : null}
                     {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
                   </div>
                   <div className="ops-mobile-order-bottom">
                     <time dateTime={item.updatedAt}>آخر تحديث: {formatOrderDate(item.updatedAt)}</time>
-                    <button type="button" className="ops-row-open" aria-label={(nextAction || age.needsReview ? "مراجعة الطلب" : "تفاصيل الطلب") + " رقم " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>{nextAction || age.needsReview ? "مراجعة الطلب" : "تفاصيل الطلب"}</button>
+                    <button type="button" className="ops-row-open" aria-label={(nextAction || needsReview ? "مراجعة الطلب" : "تفاصيل الطلب") + " رقم " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>{nextAction || needsReview ? "مراجعة الطلب" : "تفاصيل الطلب"}</button>
                   </div>
                 </li>;
               })}
