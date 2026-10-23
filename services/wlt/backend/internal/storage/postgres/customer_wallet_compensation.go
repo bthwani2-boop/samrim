@@ -89,9 +89,6 @@ func CreditReviewedCustomerCompensation(ctx context.Context, db *sql.DB, input C
 	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:compensation:"+orderID); err != nil {
 		return CustomerWalletCompensationRecord{}, false, err
 	}
-	if caseState != "RECONCILIATION_REQUIRED" {
-		return CustomerWalletCompensationRecord{}, false, ErrCustomerWalletCompensationConflict
-	}
 	if previous, storedHash, readErr := readCustomerWalletCompensation(ctx, tx, input.CaseID); readErr == nil {
 		if fingerprint != storedHash {
 			return CustomerWalletCompensationRecord{}, false, ErrCustomerWalletCompensationConflict
@@ -102,6 +99,9 @@ func CreditReviewedCustomerCompensation(ctx context.Context, db *sql.DB, input C
 		return previous, true, nil
 	} else if !errors.Is(readErr, sql.ErrNoRows) {
 		return CustomerWalletCompensationRecord{}, false, readErr
+	}
+	if caseState != "RECONCILIATION_REQUIRED" {
+		return CustomerWalletCompensationRecord{}, false, ErrCustomerWalletCompensationConflict
 	}
 	var reusedCase string
 	if err = tx.QueryRowContext(ctx, `SELECT case_id FROM wlt.customer_wallet_compensations WHERE idempotency_key=$1`, input.IdempotencyKey).Scan(&reusedCase); err == nil {
@@ -165,6 +165,16 @@ func CreditReviewedCustomerCompensation(ctx context.Context, db *sql.DB, input C
 		input.CaseID, orderID, customerID, input.AmountMinor, input.ApprovedByActorID, input.EvidenceReference,
 		ledgerID, input.IdempotencyKey, fingerprint); err != nil {
 		return CustomerWalletCompensationRecord{}, false, err
+	}
+	// The wallet credit and review closure are one atomic financial result.
+	closed, err := tx.ExecContext(ctx, `UPDATE wlt.order_adjustment_reconciliation_cases
+  SET state='COMPENSATED' WHERE id=$1 AND state='RECONCILIATION_REQUIRED'`, input.CaseID)
+	if err != nil {
+		return CustomerWalletCompensationRecord{}, false, err
+	}
+	closedCount, err := closed.RowsAffected()
+	if err != nil || closedCount != 1 {
+		return CustomerWalletCompensationRecord{}, false, ErrCustomerWalletCompensationConflict
 	}
 	confirmed, storedHash, err := readCustomerWalletCompensation(ctx, tx, input.CaseID)
 	if err != nil || storedHash != fingerprint {

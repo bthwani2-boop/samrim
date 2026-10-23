@@ -36,6 +36,24 @@ func main() {
 
 	checks := []invariant{
 		{
+			name: "customer-compensation-closes-financial-case",
+			query: `SELECT COUNT(*) FROM wlt.order_adjustment_reconciliation_cases c
+				LEFT JOIN wlt.customer_wallet_compensations compensation ON compensation.case_id=c.id
+				WHERE (c.state='COMPENSATED') IS DISTINCT FROM (compensation.case_id IS NOT NULL)
+					OR (compensation.case_id IS NOT NULL AND (
+						compensation.order_id<>c.order_id
+						OR compensation.customer_actor_id<>c.customer_actor_id
+						OR COALESCE((SELECT SUM(e.amount_minor) FROM wlt.ledger_entries e
+							WHERE e.transaction_id=compensation.ledger_transaction_id
+							AND e.account_code='CUSTOMER_COMPENSATION_EXPENSE'
+							AND e.direction='DEBIT' AND e.actor_id IS NULL),0) <> compensation.amount_minor
+						OR COALESCE((SELECT SUM(e.amount_minor) FROM wlt.ledger_entries e
+							WHERE e.transaction_id=compensation.ledger_transaction_id
+							AND e.account_code='CUSTOMER_WALLET' AND e.direction='CREDIT'
+							AND e.actor_type='customer' AND e.actor_id=c.customer_actor_id),0) <> compensation.amount_minor
+					))`,
+		},
+		{
 			name: "delivery-margin-and-captain-earning-conservation",
 			query: `SELECT COUNT(*) FROM wlt.partner_order_earnings earning
 				JOIN wlt.customer_payment_allocations allocation ON allocation.payment_intent_id=earning.payment_intent_id
