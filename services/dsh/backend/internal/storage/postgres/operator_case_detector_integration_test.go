@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -58,6 +59,8 @@ func TestOperatorExceptionDetectionAuditedStagesAndReplay(t *testing.T) {
 			{"auto_ops_accepted_fresh", "PARTNER_ACCEPTED", &fresh},
 			{"auto_ops_accepted_missing", "PARTNER_ACCEPTED", nil},
 			{"auto_ops_created_late", "CREATED", &old},
+			{"auto_ops_contact_unanswered", "CREATED", &recent},
+			{"auto_ops_contact_single", "CREATED", &recent},
 			{"auto_ops_created_fresh", "CREATED", &fresh},
 			{"auto_ops_created_missing", "CREATED", nil},
 			{"auto_ops_fresh", "PREPARING", &fresh},
@@ -121,6 +124,27 @@ func TestOperatorExceptionDetectionAuditedStagesAndReplay(t *testing.T) {
 					"auto-created-idem-"+item.id, "auto-created-corr-"+item.id, item.id, *item.event); err != nil {
 					t.Fatal(err)
 				}
+				if item.id == "auto_ops_contact_unanswered" || item.id == "auto_ops_contact_single" {
+					attempts := 1
+					if item.id == "auto_ops_contact_unanswered" {
+						attempts = 2
+					}
+					if _, err := db.ExecContext(ctx, `INSERT INTO dsh.customer_order_contact_reviews
+                       (order_id,client_actor_id,state,attempt_count,version,last_actor_id)
+                       VALUES($1,'auto_ops_client','NO_ANSWER',$2,$2,'auto_ops_operator')`,
+						item.id, attempts); err != nil {
+						t.Fatal(err)
+					}
+					for attempt := 1; attempt <= attempts; attempt++ {
+						if _, err := db.ExecContext(ctx, `INSERT INTO dsh.customer_order_contact_events
+                           (order_id,client_actor_id,decision,operator_actor_id,idempotency_key,request_hash,correlation_id)
+                           VALUES($1,'auto_ops_client','NO_ANSWER','auto_ops_operator',$2,'contact-fixture',$3)`,
+							item.id, fmt.Sprintf("auto-contact-%s-%d", item.id, attempt),
+							fmt.Sprintf("auto-contact-corr-%s-%d", item.id, attempt)); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
 			} else {
 				if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_audit
       (event_type,idempotency_key,correlation_id,acting_actor_id,order_id,to_state,
@@ -148,7 +172,7 @@ func TestOperatorExceptionDetectionAuditedStagesAndReplay(t *testing.T) {
 			}()
 		}
 		a, b := <-result, <-result
-		if a.err != nil || b.err != nil || a.count+b.count != 5 {
+		if a.err != nil || b.err != nil || a.count+b.count != 6 {
 			t.Fatalf("concurrent scan opened duplicates: a=%+v b=%+v", a, b)
 		}
 		again, err := postgres.DetectOperatorOrderExceptions(ctx, db, 25)
@@ -156,16 +180,23 @@ func TestOperatorExceptionDetectionAuditedStagesAndReplay(t *testing.T) {
 			t.Fatalf("same stage opened twice: count=%d err=%v", again, err)
 		}
 		cases, err := postgres.ListOpenOpsCases(ctx, db, "auto_ops_operator", "all", 20, "")
-		if err != nil || len(cases.Items) != 5 {
+		if err != nil || len(cases.Items) != 6 {
 			t.Fatalf("case inbox expected 2: %+v err=%v", cases, err)
 		}
 		var delay postgres.OpsCase
 		createdDetected := false
 		acceptedDetected := false
 		dispatchDetected := false
+		contactDetected := false
 		for _, c := range cases.Items {
 			if c.OwnerActorID != nil || c.State != "OPEN" || c.Priority != "URGENT" {
 				t.Fatalf("automatic case ownership or urgency wrong: %+v", c)
+			}
+			if c.OrderID == "auto_ops_contact_unanswered" {
+				contactDetected = true
+				if c.Reason != "CUSTOMER_CONTACT" || !strings.Contains(c.NextAction, "الاتصال") {
+					t.Fatalf("unanswered contact did not create the correct exception: %+v", c)
+				}
 			}
 			if c.OrderID == "auto_ops_dispatch_late" {
 				dispatchDetected = true
@@ -195,6 +226,9 @@ func TestOperatorExceptionDetectionAuditedStagesAndReplay(t *testing.T) {
 				t.Fatalf("delivery failure reason: %+v", c)
 			}
 		}
+		if !contactDetected {
+			t.Fatalf("two unanswered customer contacts were not escalated")
+		}
 		if !dispatchDetected {
 			t.Fatalf("audited READY_FOR_DISPATCH delay was missed")
 		}
@@ -221,10 +255,10 @@ func TestOperatorExceptionDetectionAuditedStagesAndReplay(t *testing.T) {
 			t.Fatalf("resolved occurrence automatically reopened: count=%d err=%v", again, err)
 		}
 		var total, auditCount int
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.operator_order_cases WHERE opened_by_actor_id='dsh:operations-detector'").Scan(&total); err != nil || total != 5 {
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.operator_order_cases WHERE opened_by_actor_id='dsh:operations-detector'").Scan(&total); err != nil || total != 6 {
 			t.Fatalf("detector case count=%d err=%v", total, err)
 		}
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.operator_order_case_events WHERE actor_id='dsh:operations-detector' AND action='OPEN'").Scan(&auditCount); err != nil || auditCount != 5 {
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.operator_order_case_events WHERE actor_id='dsh:operations-detector' AND action='OPEN'").Scan(&auditCount); err != nil || auditCount != 6 {
 			t.Fatalf("detector events missing/duplicate: %d err=%v", auditCount, err)
 		}
 		for _, item := range []struct{ id, state string }{{"auto_ops_late", "PREPARING"}, {"auto_ops_created_late", "CREATED"}, {"auto_ops_accepted_late", "PARTNER_ACCEPTED"}, {"auto_ops_dispatch_late", "READY_FOR_DISPATCH"}, {"auto_ops_failed", "DELIVERY_FAILED"}} {
