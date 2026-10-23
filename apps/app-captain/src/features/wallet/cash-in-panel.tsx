@@ -127,13 +127,14 @@ export function CaptainCashInPanel() {
 
   return <BthwaniSurface tone="base" style={styles.panel} accessibilityLabel="شحن رصيد الكابتن">
     <View style={styles.heading}>
-      <Text accessibilityRole="header" style={styles.title}>شحن الرصيد</Text>
+      <Text accessibilityRole="header" style={styles.title}>رصيد تغطية النقد</Text>
       {simulatorInDevelopment ? <Text style={styles.demo}>تجريبي</Text> : null}
     </View>
     {busy && !wallet ? <ActivityIndicator color={theme.actionBackground} /> : null}
     {state ? <View style={styles.balance}>
+      <Text style={styles.muted}>المتاح لتغطية الطلبات النقدية</Text>
       <Text style={styles.amount}>{formatMoney(state.availableMinor, state.currency)}</Text>
-      {state.heldMinor > 0 ? <Text style={styles.muted}>محجوز: {formatMoney(state.heldMinor, state.currency)}</Text> : null}
+      {state.heldMinor > 0 ? <Text style={styles.muted}>محجوز لطلبات نقدية جارية: {formatMoney(state.heldMinor, state.currency)}</Text> : null}
     </View> : null}
 
     {userCanAddFunds ? <>
