@@ -9,9 +9,11 @@ import (
 )
 
 type StoreCommercialAgreementRate struct {
-	FulfillmentMode     string `json:"fulfillmentMode"`
-	CommissionRateBps   int    `json:"commissionRateBps"`
-	DeliveryMarkupMinor int64  `json:"deliveryMarkupMinor"`
+	FulfillmentMode       string `json:"fulfillmentMode"`
+	CommissionRateBps     int    `json:"commissionRateBps"`
+	DeliveryMarkupMinor   int64  `json:"deliveryMarkupMinor"`
+	DeliveryPricingMode   string `json:"deliveryPricingMode"`
+	DeliveryFixedFeeMinor int64  `json:"deliveryFixedFeeMinor"`
 }
 
 type StoreCommercialAgreement struct {

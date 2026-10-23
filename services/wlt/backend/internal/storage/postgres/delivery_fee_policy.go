@@ -211,11 +211,13 @@ func ResolveDeliveryFeeQuote(ctx context.Context, db *sql.DB, input DeliveryFeeQ
 	if input.StoreID != "" {
 		var agreementID string
 		var agreementVersion int
-		err := db.QueryRowContext(ctx, `SELECT a.agreement_id,a.agreement_version,r.delivery_markup_minor
+		var pricingMode string
+		var fixedFeeMinor int64
+		err := db.QueryRowContext(ctx, `SELECT a.agreement_id,a.agreement_version,r.delivery_markup_minor,r.delivery_pricing_mode,r.delivery_fixed_fee_minor
 			FROM wlt.store_commercial_agreements a JOIN wlt.store_commercial_agreement_rates r
 			ON r.agreement_id=a.agreement_id AND r.fulfillment_mode=$2
 			WHERE a.store_id=$1 AND a.status='ACTIVE'`, input.StoreID, input.FulfillmentMode).
-			Scan(&agreementID, &agreementVersion, &marginMinor)
+			Scan(&agreementID, &agreementVersion, &marginMinor, &pricingMode, &fixedFeeMinor)
 		if errors.Is(err, sql.ErrNoRows) {
 			return DeliveryFeeQuoteRecord{}, ErrStoreCommercialAgreementUnavailable
 		}
@@ -224,6 +226,26 @@ func ResolveDeliveryFeeQuote(ctx context.Context, db *sql.DB, input DeliveryFeeQ
 		}
 		if marginMinor < 0 || marginMinor > 10000 || marginMinor > math.MaxInt64-amountMinor {
 			return DeliveryFeeQuoteRecord{}, ErrDeliveryFeeQuoteInvalidInput
+		}
+		if input.FulfillmentMode == "PARTNER_CAPTAIN" {
+			switch pricingMode {
+			case "FREE":
+				if fixedFeeMinor != 0 {
+					return DeliveryFeeQuoteRecord{}, ErrDeliveryFeeQuoteInvalidInput
+				}
+				amountMinor = 0
+			case "FIXED":
+				if fixedFeeMinor <= 0 || fixedFeeMinor > 20000 {
+					return DeliveryFeeQuoteRecord{}, ErrDeliveryFeeQuoteInvalidInput
+				}
+				amountMinor = fixedFeeMinor
+			case "DISTANCE":
+				if fixedFeeMinor != 0 {
+					return DeliveryFeeQuoteRecord{}, ErrDeliveryFeeQuoteInvalidInput
+				}
+			default:
+				return DeliveryFeeQuoteRecord{}, ErrDeliveryFeeQuoteInvalidInput
+			}
 		}
 		policyVersion = fmt.Sprintf("%s;agreement=%s:v%d", policyVersion, agreementID, agreementVersion)
 	}

@@ -11,6 +11,7 @@ import { parsePercentToBps, percentTextFromBps, sameAgreementRates } from "./fie
 
 type AgreementAttempt = Readonly<{ input: StoreCommercialAgreementProposalRequest; idempotencyKey: string; correlationID: string }>;
 type RateDraft = Partial<Record<StoreFulfillmentMode, string>>;
+type PartnerDeliveryPricingMode = "DISTANCE" | "FREE" | "FIXED";
 const DEFAULT_PROPOSAL_REASON = "مقترح عمولة للمتجر بانتظار مراجعة وقبول المالك";
 
 const modeLabels: Readonly<Record<StoreFulfillmentMode, string>> = {
@@ -55,6 +56,8 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
   const [agreementHistoryReady, setAgreementHistoryReady] = useState(false);
   const [rates, setRates] = useState<RateDraft>({});
   const [deliveryMarkupInput, setDeliveryMarkupInput] = useState("0");
+  const [partnerPricingMode, setPartnerPricingMode] = useState<PartnerDeliveryPricingMode>("DISTANCE");
+  const [partnerFixedFeeInput, setPartnerFixedFeeInput] = useState("0");
   const [reason, setReason] = useState("");
   const [defaultsUnavailable, setDefaultsUnavailable] = useState(false);
   const [attempt, setAttempt] = useState<AgreementAttempt | null>(null);
@@ -113,12 +116,14 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
       const normalizedReason = reason.trim() || DEFAULT_PROPOSAL_REASON;
       const markup = Number(toAsciiDigits(deliveryMarkupInput));
       const validMarkup = /^(0|[1-9][0-9]{0,4})$/.test(toAsciiDigits(deliveryMarkupInput)) && markup <= 10000;
+      const fixedDeliveryFee = Number(toAsciiDigits(partnerFixedFeeInput));
+      const validPartnerFee = partnerPricingMode !== "FIXED" || (/^[1-9][0-9]{0,4}$/.test(toAsciiDigits(partnerFixedFeeInput)) && fixedDeliveryFee <= 20000);
       const proposalRates = modes.map((fulfillmentMode) => ({ fulfillmentMode, commissionRateBps: parsePercentToBps(rates[fulfillmentMode] ?? ""), deliveryMarkupMinor: fulfillmentMode === "BTHWANI_CAPTAIN" && parsePercentToBps(rates[fulfillmentMode] ?? "") === 0 ? markup : 0 }));
-      if (normalizedReason.length < 8 || normalizedReason.length > 500 || proposalRates.some((item) => item.commissionRateBps === null) || !validMarkup) {
+      if (normalizedReason.length < 8 || normalizedReason.length > 500 || proposalRates.some((item) => item.commissionRateBps === null) || !validMarkup || !validPartnerFee) {
         setError("راجع نسب العمولة لكل طريقة تشغيل (0% إلى 100% بمنزلتين عشريتين)، وأدخل سببًا صالحًا فقط إذا اخترت كتابة سبب خاص بالتفاوض.");
         return;
       }
-      const canonicalRates = proposalRates.map((item) => ({ fulfillmentMode: item.fulfillmentMode, commissionRateBps: item.commissionRateBps as number, deliveryMarkupMinor: item.deliveryMarkupMinor }));
+      const canonicalRates = proposalRates.map((item) => ({ fulfillmentMode: item.fulfillmentMode, commissionRateBps: item.commissionRateBps as number, deliveryMarkupMinor: item.deliveryMarkupMinor, deliveryPricingMode: item.fulfillmentMode === "PARTNER_CAPTAIN" ? partnerPricingMode : "DISTANCE", deliveryFixedFeeMinor: item.fulfillmentMode === "PARTNER_CAPTAIN" && partnerPricingMode === "FIXED" ? fixedDeliveryFee : 0 }));
       currentAttempt = {
         input: { rates: canonicalRates, expectedCurrentVersion: currentVersion, reason: normalizedReason },
         idempotencyKey: `field_store_agreement_${Crypto.randomUUID()}`,
@@ -157,14 +162,16 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
   if (loading) return <View style={styles.card}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الاتفاقية التجارية…</Text></View>;
   const previewRates = modes.map((fulfillmentMode) => ({ fulfillmentMode, commissionRateBps: parsePercentToBps(rates[fulfillmentMode] ?? "") }));
   const markupValid = /^(0|[1-9][0-9]{0,4})$/.test(toAsciiDigits(deliveryMarkupInput)) && Number(toAsciiDigits(deliveryMarkupInput)) <= 10000;
-  const proposalReady = (!reason.trim() || (reason.trim().length >= 8 && reason.trim().length <= 500)) && previewRates.every((item) => item.commissionRateBps !== null) && markupValid;
-  const proposalSummary = previewRates.map((item) => `${modeLabels[item.fulfillmentMode]}: ${item.commissionRateBps === null ? "غير صالح" : percentTextFromBps(item.commissionRateBps)}%${item.fulfillmentMode === "BTHWANI_CAPTAIN" && item.commissionRateBps === 0 && Number(deliveryMarkupInput) > 0 ? ` · زيادة توصيل ${Number(deliveryMarkupInput)} ريال لبثواني` : ""}`).join("، ");
+  const partnerFixedFee = Number(toAsciiDigits(partnerFixedFeeInput));
+  const partnerFeeValid = partnerPricingMode !== "FIXED" || (/^[1-9][0-9]{0,4}$/.test(toAsciiDigits(partnerFixedFeeInput)) && partnerFixedFee <= 20000);
+  const proposalReady = (!reason.trim() || (reason.trim().length >= 8 && reason.trim().length <= 500)) && previewRates.every((item) => item.commissionRateBps !== null) && markupValid && partnerFeeValid;
+  const proposalSummary = previewRates.map((item) => `${modeLabels[item.fulfillmentMode]}: ${item.commissionRateBps === null ? "غير صالح" : percentTextFromBps(item.commissionRateBps)}%${item.fulfillmentMode === "BTHWANI_CAPTAIN" && item.commissionRateBps === 0 && Number(deliveryMarkupInput) > 0 ? ` · زيادة توصيل ${Number(deliveryMarkupInput)} ريال لبثواني` : ""}${item.fulfillmentMode === "PARTNER_CAPTAIN" ? ` · رسوم توصيل المتجر: ${partnerPricingMode === "FREE" ? "مجاني" : partnerPricingMode === "FIXED" ? `${partnerFixedFee} ريال` : "حسب المسافة"}` : ""}`).join("، ");
   return <View style={styles.card}>
     <Text style={styles.heading}>اتفاقية عمولة المتجر</Text>
     <Text style={styles.muted}>المتجر: {storeName || "—"}. تُسجَّل الشروط المالية النهائية بعد قبول الشريك واعتماد المالية؛ اقتراح الميدان لا يعني القبول أو الاعتماد.</Text>
     {agreements.map((agreement) => <View key={agreement.agreementId} style={styles.row}>
       <Text style={styles.body}>{statusLabels[agreement.status]}</Text>
-      <Text style={styles.muted}>{agreement.rates.map((rate) => `${modeLabels[rate.fulfillmentMode]}: ${percentTextFromBps(rate.commissionRateBps)}%${rate.deliveryMarkupMinor ? ` · زيادة التوصيل ${rate.deliveryMarkupMinor} ريال لبثواني` : ""}`).join(" · ")}</Text>
+      <Text style={styles.muted}>{agreement.rates.map((rate) => `${modeLabels[rate.fulfillmentMode]}: ${percentTextFromBps(rate.commissionRateBps)}%${rate.deliveryMarkupMinor ? ` · زيادة التوصيل ${rate.deliveryMarkupMinor} ريال لبثواني` : ""}${rate.fulfillmentMode === "PARTNER_CAPTAIN" ? ` · رسوم العميل: ${rate.deliveryPricingMode === "FREE" ? "مجاني" : rate.deliveryPricingMode === "FIXED" ? `${rate.deliveryFixedFeeMinor} ريال` : "حسب المسافة"}` : ""}`).join(" · ")}</Text>
       <Text style={styles.muted}>السبب: {agreement.reason}</Text>
     </View>)}
     {pending ? <Text style={styles.muted}>اكتمل الإرسال؛ الخطوة التالية للشريك قبول الأسعار نفسها، ثم قرار المالية.</Text> : null}
@@ -179,6 +186,16 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
         <Text style={styles.body}>{modeLabels[mode]}</Text>
         <TextInput accessibilityLabel={`نسبة عمولة ${modeLabels[mode]} بالمئة`} editable={!busy && !attempt} keyboardType="decimal-pad" maxLength={6} onChangeText={(value) => setRates((current) => ({ ...current, [mode]: toAsciiDigits(value).replace(",", ".").replace(/[^0-9.]/g, "").slice(0, 6) }))} placeholder="النسبة من 0% إلى 100%" value={rates[mode] ?? ""} style={styles.input} />
       </View>)}
+      {modes.includes("PARTNER_CAPTAIN") ? <View style={styles.row}>
+        <Text style={styles.body}>رسوم توصيل مندوب المتجر</Text>
+        <Text style={styles.muted}>المتجر يختار الطريقة، وهو المسؤول عن أجر مندوبه. لن تذهب الرسوم إلى محفظة كابتن بثواني.</Text>
+        {([
+          ["DISTANCE", "حسب سياسة المسافة"],
+          ["FREE", "توصيل مجاني"],
+          ["FIXED", "رسم ثابت"],
+        ] as const).map(([value, label]) => <BthwaniButton key={value} label={partnerPricingMode === value ? `✓ ${label}` : label} disabled={busy || Boolean(attempt)} variant={partnerPricingMode === value ? "primary" : "secondary"} onPress={() => setPartnerPricingMode(value)} />)}
+        {partnerPricingMode === "FIXED" ? <TextInput accessibilityLabel="رسوم توصيل المتجر الثابتة بالريال" editable={!busy && !attempt} keyboardType="number-pad" maxLength={5} onChangeText={(value) => setPartnerFixedFeeInput(toAsciiDigits(value).replace(/[^0-9]/g, "").slice(0, 5))} placeholder="1 إلى 20000 ريال" value={partnerFixedFeeInput} style={styles.input} /> : null}
+      </View> : null}
       {modes.includes("BTHWANI_CAPTAIN") && parsePercentToBps(rates.BTHWANI_CAPTAIN ?? "") === 0 ? <View style={styles.row}>
         <Text style={styles.body}>زيادة رسوم التوصيل لصالح بثواني (ريال)</Text>
         <Text style={styles.muted}>تضاف إلى السعر الذي يراه العميل في متاجر العمولة الصفرية. يحتفظ الكابتن بأجرة المسافة الأساسية كاملة. القيمة 0 تعني عدم وجود زيادة.</Text>

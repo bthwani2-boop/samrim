@@ -21,6 +21,7 @@ type cashInFundingIntentJSON struct {
 	ProviderReference            *string `json:"providerReference,omitempty"`
 	ProviderTransactionReference *string `json:"providerTransactionReference,omitempty"`
 	AmountMinor                  int64   `json:"amountMinor"`
+	ProviderFeeMinor             int64   `json:"providerFeeMinor"`
 	Currency                     string  `json:"currency"`
 	State                        string  `json:"state"`
 	Version                      int     `json:"version"`
@@ -236,7 +237,7 @@ func walletActorPath(w http.ResponseWriter, r *http.Request) (string, string, bo
 }
 
 func toCashInFundingIntent(item postgres.CashInFundingIntentRecord) cashInFundingIntentJSON {
-	return cashInFundingIntentJSON{ID: item.ID, ActorType: item.ActorType, ActorID: item.ActorID, FundingPurpose: item.FundingPurpose, ProviderKey: item.ProviderKey, ExternalReference: item.ExternalReference, ProviderReference: item.ProviderReference, ProviderTransactionReference: item.ProviderTransactionReference, AmountMinor: item.RequestedAmountMinor, Currency: item.Currency, State: item.State, Version: item.Version, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: item.UpdatedAt.UTC().Format(time.RFC3339Nano)}
+	return cashInFundingIntentJSON{ID: item.ID, ActorType: item.ActorType, ActorID: item.ActorID, FundingPurpose: item.FundingPurpose, ProviderKey: item.ProviderKey, ExternalReference: item.ExternalReference, ProviderReference: item.ProviderReference, ProviderTransactionReference: item.ProviderTransactionReference, AmountMinor: item.RequestedAmountMinor, ProviderFeeMinor: item.ProviderFeeMinor, Currency: item.Currency, State: item.State, Version: item.Version, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: item.UpdatedAt.UTC().Format(time.RFC3339Nano)}
 }
 
 func writeCashInError(w http.ResponseWriter, err error) {

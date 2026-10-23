@@ -3488,6 +3488,15 @@ components:
           minimum: 0
           maximum: 10000
           description: Optional approved additional customer delivery charge paid to the platform for zero-commission BThwani Captain delivery; the Captain keeps the base tariff.
+        deliveryPricingMode:
+          type: string
+          enum: [DISTANCE, FIXED, FREE]
+          description: Store Captain delivery fee rule. Defaults to DISTANCE for older agreements; other modes only apply to PARTNER_CAPTAIN.
+        deliveryFixedFeeMinor:
+          type: integer
+          minimum: 0
+          maximum: 20000
+          description: Only positive for PARTNER_CAPTAIN with deliveryPricingMode FIXED.
 
     StoreCommercialAgreement:
       type: object

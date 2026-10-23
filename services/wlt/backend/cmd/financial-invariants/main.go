@@ -99,7 +99,7 @@ func main() {
 					AND e.account_code='EXTERNAL_SETTLEMENT_CASH'
 					AND e.actor_type IS NULL AND e.actor_id IS NULL
 					AND e.direction='DEBIT'
-					AND e.amount_minor=f.requested_amount_minor
+					AND e.amount_minor=f.requested_amount_minor-f.provider_fee_minor
 					AND e.currency=f.currency) <> 1
 				OR (SELECT COUNT(*) FROM wlt.ledger_entries e
 					WHERE e.transaction_id=f.ledger_transaction_id
@@ -110,7 +110,13 @@ func main() {
 					AND e.direction='CREDIT'
 					AND e.amount_minor=f.requested_amount_minor
 					AND e.currency=f.currency) <> 1
-				OR (SELECT COUNT(*) FROM wlt.ledger_entries e WHERE e.transaction_id=f.ledger_transaction_id) <> 2
+				OR (SELECT COUNT(*) FROM wlt.ledger_entries e WHERE e.transaction_id=f.ledger_transaction_id) <> 2 + CASE WHEN f.provider_fee_minor>0 THEN 1 ELSE 0 END
+				OR (SELECT COUNT(*) FROM wlt.ledger_entries e
+					WHERE e.transaction_id=f.ledger_transaction_id
+					AND e.account_class='expense' AND e.account_code='PLATFORM_CASH_IN_PROVIDER_FEE_EXPENSE'
+					AND e.actor_type IS NULL AND e.actor_id IS NULL
+					AND e.direction='DEBIT' AND e.amount_minor=f.provider_fee_minor
+					AND e.currency=f.currency) <> CASE WHEN f.provider_fee_minor>0 THEN 1 ELSE 0 END
 			)`,
 		},
 		{

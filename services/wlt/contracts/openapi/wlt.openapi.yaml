@@ -2250,7 +2250,7 @@ components:
     CashInFundingIntent:
       type: object
       additionalProperties: false
-      required: [id, actorType, actorId, fundingPurpose, providerKey, externalReference, amountMinor, currency, state, version, createdAt, updatedAt]
+      required: [id, actorType, actorId, fundingPurpose, providerKey, externalReference, amountMinor, providerFeeMinor, currency, state, version, createdAt, updatedAt]
       properties:
         id: { type: string }
         actorType: { type: string, enum: [customer, captain] }
@@ -2261,6 +2261,7 @@ components:
         providerReference: { type: string }
         providerTransactionReference: { type: string }
         amountMinor: { type: integer, minimum: 1 }
+        providerFeeMinor: { type: integer, minimum: 0, description: 'Verified provider settlement charge borne by the platform; beneficiary receives the full amountMinor.' }
         currency: { type: string, const: YER }
         state: { type: string, enum: [PENDING_PROVIDER, UNKNOWN, FAILED, SETTLED] }
         version: { type: integer, minimum: 1 }
@@ -3279,6 +3280,8 @@ components:
         fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
         commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
         deliveryMarkupMinor: { type: integer, minimum: 0, maximum: 10000, description: "Additional customer fee for a BTHWANI_CAPTAIN Store agreement with zero commission; 100% credited to platform margin, not subtracted from Captain base earning." }
+        deliveryPricingMode: { type: string, enum: [DISTANCE, FIXED, FREE], description: "Store Captain pricing; older agreements default to DISTANCE." }
+        deliveryFixedFeeMinor: { type: integer, minimum: 0, maximum: 20000, description: "Positive only for PARTNER_CAPTAIN FIXED pricing." }
     StoreCommercialAgreement:
       type: object
       additionalProperties: false

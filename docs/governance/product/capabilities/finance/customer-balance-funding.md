@@ -21,7 +21,7 @@ WLT owns FundingIntent, internal balance credit, fee effect and reconciliation. 
 - provider success is accepted only with evidence sufficient for the active provider contract;
 - timeout/unknown remains unresolved until provider query/reconciliation;
 - internal balance credit occurs exactly once;
-- provider fee bearer is versioned policy, not an eternal architectural constant;
+- under the current approved provider agreements BThwani bears Cash-In charges: the Customer is credited 100% of confirmed gross funding; the trusted provider settlement result freezes the actual non-negative fee (not a universal hard-coded 2%); the ledger separately debits the provider's net cash and `PLATFORM_CASH_IN_PROVIDER_FEE_EXPENSE` to conserve the Customer liability without collecting an extra fee from the Customer. A changed provider fee for the same idempotent result is rejected, and no non-success outcome may post a fee;
 - secrets/provider credentials never enter client authority.
 
 ## Failure and recovery
