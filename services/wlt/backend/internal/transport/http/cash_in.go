@@ -214,7 +214,7 @@ func (s *Server) simulateCashInFundingIntent(w http.ResponseWriter, r *http.Requ
 		writeCashInError(w, err)
 		return
 	}
-	item, replayed, err := postgres.ApplyCashInFundingResult(r.Context(), s.db, postgres.ApplyCashInFundingResultInput{FundingIntentID: intentID, Outcome: result.Outcome, ProviderTransactionReference: result.ProviderTransactionReference, ActorID: actingActorID, IdempotencyKey: idempotency, CorrelationID: correlation})
+	item, replayed, err := postgres.ApplyCashInFundingResult(r.Context(), s.db, postgres.ApplyCashInFundingResultInput{FundingIntentID: intentID, Outcome: result.Outcome, ProviderTransactionReference: result.ProviderTransactionReference, ProviderFeeMinor: developmentSimulatorCashInProviderFeeMinor(result.Outcome, current.RequestedAmountMinor), ActorID: actingActorID, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeCashInError(w, err)
 		return
@@ -259,4 +259,13 @@ func writeCashInError(w http.ResponseWriter, err error) {
 	default:
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Cash-In operation failed")
 	}
+}
+
+// The development simulator uses a clearly synthetic 2% provider fee. Real
+// providers must report their verified actual fee; no production rate is set here.
+func developmentSimulatorCashInProviderFeeMinor(outcome string, gross int64) int64 {
+	if strings.ToUpper(strings.TrimSpace(outcome)) != "SUCCESS" || gross <= 0 {
+		return 0
+	}
+	return gross / 50
 }
