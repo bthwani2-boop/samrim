@@ -363,11 +363,31 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 		t.Fatalf("courier COD/WLT collection was not persisted: %+v err=%v", courierFinal, err)
 	}
 	verifyCollectedCourierReviewedCompensation(t, ctx, db, courierOrder, courierPayment.ID, courierCustomer)
-	var finalizedCOD, courierEarnings, financialOutliers int
+	var debitedCOD, courierEarnings, financialOutliers int
 	if err := db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM wlt.captain_cod_reservations WHERE order_id=$1 AND captain_actor_id=$2 AND state='FINALIZED'",
-		courierOrder, courierCaptain).Scan(&finalizedCOD); err != nil || finalizedCOD != 1 {
-		t.Fatalf("courier COD hold finalization count=%d err=%v", finalizedCOD, err)
+		"SELECT COUNT(*) FROM wlt.captain_cod_reservations WHERE order_id=$1 AND captain_actor_id=$2 AND state='DEBITED'",
+		courierOrder, courierCaptain).Scan(&debitedCOD); err != nil || debitedCOD != 1 {
+		t.Fatalf("courier COD wallet debit state count=%d err=%v", debitedCOD, err)
+	}
+	// Delivery is complete only if WLT debited exactly the cash held (not
+	// the full mixed customer payment) and cleared the same receivable once.
+	var debitPostings int
+	var debitAmount, clearedReceivable int64
+	err = db.QueryRowContext(ctx, `SELECT
+		COUNT(DISTINCT e.transaction_id),
+		COALESCE(SUM(e.amount_minor) FILTER (WHERE e.account_code='CAPTAIN_WALLET'
+			AND e.direction='DEBIT' AND e.actor_type='captain' AND e.actor_id=$2),0),
+		COALESCE(SUM(e.amount_minor) FILTER (WHERE e.account_code='CAPTAIN_CASH_RECEIVABLE'
+			AND e.direction='CREDIT'),0)
+		FROM wlt.ledger_transactions t
+		JOIN wlt.ledger_entries e ON e.transaction_id=t.id
+		JOIN wlt.captain_cod_reservations r ON r.id=t.source_id
+		WHERE t.source_type='CAPTAIN_COD_WALLET_DEBIT' AND r.order_id=$1
+			AND r.captain_actor_id=$2`, courierOrder, courierCaptain).
+		Scan(&debitPostings, &debitAmount, &clearedReceivable)
+	if err != nil || debitPostings != 1 || debitAmount != 300 || clearedReceivable != 300 {
+		t.Fatalf("COD debit must be once and exact: postings=%d debit=%d clearing=%d err=%v",
+			debitPostings, debitAmount, clearedReceivable, err)
 	}
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM wlt.partner_order_earnings WHERE order_id=$1",
 		courierOrder).Scan(&courierEarnings); err != nil || courierEarnings != 1 {
