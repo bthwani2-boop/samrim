@@ -1052,6 +1052,9 @@ func ListPartnerEligibleCampaigns(ctx context.Context, db *sql.DB, storeID strin
                 FROM dsh.commerce_promotions p
                 WHERE p.state='PUBLISHED' AND p.store_id IS NULL AND p.starts_at <= clock_timestamp() AND (p.ends_at IS NULL OR p.ends_at > clock_timestamp())
                 AND (p.service_city_id IS NULL OR p.service_city_id=$2)
+                AND (p.redemption_limit IS NULL OR p.redeemed_count < p.redemption_limit)
+                AND (p.discount_budget_limit_minor IS NULL OR p.discount_spent_minor < p.discount_budget_limit_minor)
+                AND (p.funding_source='BTHWANI' OR p.discount_budget_limit_minor IS NOT NULL)
                 ORDER BY p.starts_at DESC, p.id DESC`, storeID, storeCityID)
 	if err != nil {
 		return nil, err
@@ -1139,6 +1142,8 @@ func SetPartnerCampaignOptIn(ctx context.Context, db *sql.DB, promotionID, store
 			JOIN dsh.stores s ON s.id=$2
 			WHERE p.id=$1 AND p.store_id IS NULL AND p.requires_partner_opt_in
 			  AND (p.funding_source='BTHWANI' OR p.discount_budget_limit_minor IS NOT NULL)
+			  AND (p.redemption_limit IS NULL OR p.redeemed_count < p.redemption_limit)
+			  AND (p.discount_budget_limit_minor IS NULL OR p.discount_spent_minor < p.discount_budget_limit_minor)
 			  AND p.state='PUBLISHED' AND p.starts_at<=clock_timestamp()
 			  AND (p.ends_at IS NULL OR p.ends_at>clock_timestamp())
 			  AND (p.service_city_id IS NULL OR p.service_city_id=s.service_city_id)

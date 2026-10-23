@@ -68,6 +68,27 @@ func TestPartnerCampaignConsentGatesStoreVisibilityAndRejectsCrossCity(t *testin
 		if err != nil || len(listA) != 1 || listA[0].StoreOptInState != "" {
 			t.Fatalf("campaign invitation not visible: %+v %v", listA, err)
 		}
+		// Partner invitations must follow the same budget and redemption gates
+		// as public Store promotions; an exhausted offer cannot request consent.
+		for _, change := range []struct{ set, reset string }{
+			{"discount_spent_minor=discount_budget_limit_minor", "discount_spent_minor=0"},
+			{"redemption_limit=1,redeemed_count=1", "redeemed_count=0,redemption_limit=NULL"},
+		} {
+			if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET "+change.set+" WHERE id=$1", promotion.ID); err != nil {
+				t.Fatal(err)
+			}
+			exhausted, err := postgres.ListPartnerEligibleCampaigns(ctx, db, "consent-store-a")
+			if err != nil || len(exhausted) != 0 {
+				t.Fatalf("exhausted campaign remained visible to Partner: %+v err=%v", exhausted, err)
+			}
+			_, _, err = postgres.SetPartnerCampaignOptIn(ctx, db, promotion.ID, "consent-store-a", "partner-a", "OPTED_IN", 1, "exhausted-"+change.set, "exhausted-correlation")
+			if !errors.Is(err, postgres.ErrPromotionNotFound) {
+				t.Fatalf("exhausted offer accepted Partner consent: %v", err)
+			}
+			if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET "+change.reset+" WHERE id=$1", promotion.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
 		listOutside, err := postgres.ListPartnerEligibleCampaigns(ctx, db, "consent-store-outside")
 		if err != nil || len(listOutside) != 0 {
 			t.Fatalf("foreign city invitation leaked: %+v %v", listOutside, err)
