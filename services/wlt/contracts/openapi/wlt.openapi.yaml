@@ -2426,6 +2426,7 @@ components:
         partnerActorId: { type: string, minLength: 1, maxLength: 128 }
         currency: { type: string, const: YER }
         outstandingCommissionReceivableMinor: { type: integer, minimum: 1 }
+        oldestUnpaidAt: { type: string, format: date-time, nullable: true, description: 'Oldest still-outstanding debit after FIFO allocation of confirmed receipts and offsets.' }
         profileState: { type: string }
     PartnerCommissionReceivableRegistryResponse:
       type: object

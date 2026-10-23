@@ -345,10 +345,11 @@ type PartnerFinancialSummary struct {
 }
 
 type PartnerCommissionReceivable struct {
-	PartnerActorID                       string `json:"partnerActorId"`
-	Currency                             string `json:"currency"`
-	OutstandingCommissionReceivableMinor int64  `json:"outstandingCommissionReceivableMinor"`
-	ProfileState                         string `json:"profileState"`
+	PartnerActorID                       string  `json:"partnerActorId"`
+	Currency                             string  `json:"currency"`
+	OutstandingCommissionReceivableMinor int64   `json:"outstandingCommissionReceivableMinor"`
+	OldestUnpaidAt                       *string `json:"oldestUnpaidAt"`
+	ProfileState                         string  `json:"profileState"`
 }
 
 type PartnerCommissionReceivableRegistry struct {

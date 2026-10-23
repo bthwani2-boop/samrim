@@ -7530,6 +7530,11 @@ components:
         outstandingCommissionReceivableMinor:
           type: integer
           minimum: 1
+        oldestUnpaidAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Oldest open commission after FIFO allocation of collected settlements.
         profileState:
           type: string
           maxLength: 32

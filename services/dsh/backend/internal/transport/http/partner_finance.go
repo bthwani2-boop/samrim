@@ -173,6 +173,7 @@ func (s *PartnerFinanceServer) listOperatorCommissionReceivables(w http.Response
 			"currency":                             item.Currency,
 			"outstandingCommissionReceivableMinor": item.OutstandingCommissionReceivableMinor,
 			"profileState":                         item.ProfileState,
+			"oldestUnpaidAt":                       item.OldestUnpaidAt,
 		})
 	}
 	response := map[string]any{"items": items, "limit": result.Limit}
