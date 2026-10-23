@@ -9,6 +9,7 @@ import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { PageHeader } from "../../shell/page-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { StoreLogo } from "../stores/store-logo";
+import { ActorWalletStatement } from "../finance/actor-wallet-statement";
 import { ActorLegalNameWorkspace } from "./actor-legal-name-workspace";
 import { partnerErrorMessage } from "./partner-error-message";
 
@@ -292,6 +293,7 @@ export function PartnerDetailWorkspace({ actorId, embedded = false }: Readonly<{
         {!canChangeStatus ? <p className="muted">يتاح التحكم بعد اعتماد الانضمام وتسجيل الهوية وبقاء الهوية الأمنية نشطة.</p> : null}
       </section>
       <ActorLegalNameWorkspace actorId={actorId} />
+      <ActorWalletStatement actorType="partner" actorId={actorId} />
     </div> : null}
 
     {detail && activeTab === "stores" ? <section className="partner-detail-section" aria-labelledby="partner-stores-title">

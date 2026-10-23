@@ -9,6 +9,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { identityFetch } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
 import { RecordTabs } from "../shared/record-tabs";
+import { ActorWalletStatement } from "../finance/actor-wallet-statement";
 
 type CustomerOrder = OperatorCustomerOrder;
 type DayActivity = OperatorCustomerDailyActivity;
@@ -292,6 +293,7 @@ export function CustomerProfile({ actorId, embedded = false }: Readonly<{ actorI
             <button type="button" className="customer-panel-link" onClick={() => selectTab("orders")}>عرض جميع الطلبات ←</button>
           </Panel>
           <div className="customer-overview-side">
+            {canFinance && shownTab === "overview" ? <ActorWalletStatement actorType="customer" actorId={actorId} /> : null}
             <Panel title="ملخص الأداء" description="مقاييس مستقلة عن حجم الصفحة الحالية.">
               <dl className="customer-profile-fields">
                 <Fact label="معدل التسليم من الطلبات المنتهية">{successRate}</Fact>
@@ -430,7 +432,7 @@ export function CustomerProfile({ actorId, embedded = false }: Readonly<{ actorI
         hidden={shownTab !== "finance"} className="customer-tab-panel bt-record-tabs-panel">
         <div className="customer-performance-grid">
           <Panel title="المحفظة والحركات المالية" description="الحقائق المالية لا تُشتق من مبلغ الطلب.">
-            <p className="customer-account-help">لا توجد حتى الآن قراءة مالية مُصرّح بها لهذا الملف من مالك دفتر المحفظة WLT، لذلك لا يظهر رصيد أو كشف حساب تقديري. تبقى الأموال والتعويضات في سجلاتها المحاسبية الأصلية.</p>
+            {shownTab === "finance" ? <ActorWalletStatement actorType="customer" actorId={actorId} /> : null}
           </Panel>
           <Panel title="عمليات السحب الاستثنائية" description="إجراءات مالية منفصلة خاضعة للصلاحية.">
             <Link className="button button-secondary customer-finance-link" href="/finance/customer-withdrawals">فتح سجل السحوبات الاستثنائية ←</Link>

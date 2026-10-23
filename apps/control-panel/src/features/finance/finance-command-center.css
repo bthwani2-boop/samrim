@@ -118,3 +118,11 @@
 @media(max-width:1250px) { .fc-kpis { grid-template-columns:repeat(3,minmax(0,1fr)); } .fc-dashboard-grid { grid-template-columns:minmax(0,1fr); } .fc-case-panel { order:-1; } .fc-wallets-layout[data-detail="true"] { grid-template-columns:minmax(0,1fr); } }
 @media(max-width:720px) { .fc-shell { gap:11px; } .fc-main-tabs { justify-content:flex-start; } .fc-main-tabs button { flex:0 0 auto;min-inline-size:106px; } .fc-kpis { grid-template-columns:repeat(2,minmax(0,1fr));gap:8px; } .fc-kpi { min-block-size:112px;padding:12px; } .fc-kpi>strong { font-size:24px; } .fc-kpi-top { font-size:11px; } .fc-section-heading { padding:13px; } .fc-toolbar { padding:0 12px 11px; } .fc-table { min-inline-size:680px; } .fc-case-panel { padding:13px; } .fc-actor-types { gap:6px; } .fc-actor-types button { flex:1 1 40%; } .fc-wallets-layout { padding:0 10px; } }
 @media(prefers-reduced-motion:reduce) { .fc-main-tabs button { transition:none; } }
+
+/* Reused source-owned wallet preview in customer, partner and captain records. */
+.fc-profile-wallet { display:grid;gap:12px;min-inline-size:0;padding:16px;border:1px solid var(--border-subtle);border-radius:12px;background:var(--surface-base); }
+.fc-profile-wallet-head { display:flex;justify-content:space-between;align-items:center;gap:10px; }
+.fc-profile-wallet-head h3 { margin:0;font-size:14px;color:var(--color-primary); }
+.fc-profile-wallet-head>div { display:grid;gap:4px; }
+.fc-profile-wallet-head small { color:var(--text-muted);font-size:11px; }
+.fc-profile-wallet-head>span { color:var(--interactive-text);font-size:26px; }
