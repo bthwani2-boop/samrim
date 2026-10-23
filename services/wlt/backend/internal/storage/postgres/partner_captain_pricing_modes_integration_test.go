@@ -1,6 +1,9 @@
 package postgres
 
-import "testing"
+import (
+	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/domain"
+	"testing"
+)
 
 // Partner Captains are employed by their Stores. Their customer's delivery
 // charge may be free, fixed or city-distance-priced; BThwani never records
@@ -68,6 +71,54 @@ func TestPartnerCaptainApprovedFreeFixedAndDistanceDelivery(t *testing.T) {
 				history[0].Rates[0].DeliveryFixedFeeMinor != tc.fixed {
 				t.Fatalf("frozen mode readback %+v err=%v", history, err)
 			}
+			// The Store collects its own COD sale and delivery fee; WLT records
+			// product commission only, never BThwani Captain COD exposure.
+			order := store + "-order"
+			customer := store + "-customer"
+			total := int64(5000) + quote.FeeMinor
+			payment, replay, err := CreatePaymentIntent(s.ctx, s.db, CreatePaymentIntentInput{
+				ExternalReference: order + "-ref", PayerActorID: customer, OrderID: order,
+				AmountMinor: total, Currency: "YER", Method: domain.MethodCashAtStore,
+				CustomerPaymentAllocation: &CustomerPaymentAllocationInput{
+					OrderID: order, StoreID: store, PartnerActorID: owner,
+					CommercialStoreTypeID: "finance-type", FulfillmentMode: "PARTNER_CAPTAIN", Currency: "YER",
+					SubtotalMinor: 5000, DeliveryFeeMinor: quote.FeeMinor, CashAmountMinor: total,
+					CustomerPayableMinor: total, PolicyVersion: quote.PolicyVersion,
+				},
+				IdempotencyKey: order + "-create", CorrelationID: order + "-create-correlation",
+			})
+			if err != nil || replay {
+				t.Fatalf("payment %+v replay=%t err=%v", payment, replay, err)
+			}
+			payment, replay, err = CollectPaymentIntent(s.ctx, s.db, CollectPaymentIntentInput{
+				IntentID: payment.ID, CollectedAmountMinor: total, CollectedByActorID: owner,
+				CollectionReference: order + "-cash", ExpectedVersion: payment.Version,
+				IdempotencyKey: order + "-collect", CorrelationID: order + "-collect-correlation",
+			})
+			if err != nil || replay || payment.State != "COLLECTED" {
+				t.Fatalf("cash collected by Store %+v replay=%t err=%v", payment, replay, err)
+			}
+			commissionInput := PartnerStoreCashCommissionInput{OrderID: order,
+				PaymentIntentID: payment.ID, PartnerActorID: owner, FulfillmentMode: "PARTNER_CAPTAIN",
+				IdempotencyKey: order + "-commission", CorrelationID: order + "-commission-correlation"}
+			commission, replay, err := RecordPartnerStoreCashCommission(s.ctx, s.db, commissionInput)
+			if err != nil || replay || commission.CommissionMinor != 250 {
+				t.Fatalf("commission must charge products only: %+v replay=%t err=%v", commission, replay, err)
+			}
+			if _, replay, err = RecordPartnerStoreCashCommission(s.ctx, s.db, commissionInput); err != nil || !replay {
+				t.Fatalf("commission replay=%t err=%v", replay, err)
+			}
+			var captainHolds, captainEarnings int
+			if err := s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.captain_cod_reservations WHERE order_id=$1", order).Scan(&captainHolds); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.partner_order_earnings WHERE order_id=$1", order).Scan(&captainEarnings); err != nil {
+				t.Fatal(err)
+			}
+			if captainHolds != 0 || captainEarnings != 0 {
+				t.Fatalf("Store courier must have no BThwani Captain custody or earning: holds=%d earnings=%d", captainHolds, captainEarnings)
+			}
+
 		})
 	}
 }
