@@ -691,6 +691,8 @@ paths:
 
   /dsh/operator/operations/{orderId}/cases:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cases"
+  /dsh/operator/operations/{orderId}/cases/{caseId}/events:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cases~1{caseId}~1events"
   /dsh/operator/operations/{orderId}/cases/{caseId}/transition:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cases~1{caseId}~1transition"
   /dsh/operator/operations/{orderId}/contact-review:
@@ -1288,6 +1290,38 @@ components:
         pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
 
   schemas:
+    OperatorOrderCaseEvent:
+      type: object
+      additionalProperties: false
+      required: [id, caseId, action, actorId, detail, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        caseId:
+          type: integer
+          format: int64
+        action:
+          type: string
+          enum: [OPEN, CLAIM, ACTION_REQUIRED, NEXT_ACTION, RESOLVE]
+        actorId:
+          type: string
+        detail:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    OperatorOrderCaseEventPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperatorOrderCaseEvent"
+        nextCursor:
+          type: string
     OperatorOrderCase:
       type: object
       required: [id, orderId, reason, state, priority, nextAction, version, openedAt, updatedAt]

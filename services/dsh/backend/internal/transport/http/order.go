@@ -66,6 +66,7 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/operations/{orderId}/cases", s.listOperatorOrderCases)
 	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/cases", s.openOperatorOrderCase)
 	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/cases/{caseId}/transition", s.transitionOperatorOrderCase)
+	mux.HandleFunc("GET /dsh/operator/operations/{orderId}/cases/{caseId}/events", s.listOperatorCaseEvents)
 	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/contact-review", s.recordOperatorContactReview)
 	mux.HandleFunc("GET /dsh/operator/cash-custody", s.listOperatorCashCustody)
 	mux.HandleFunc("POST /dsh/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileOperatorCashRemittance)

@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -177,6 +178,34 @@ func TestOperatorOrderCaseWorkflowAndIdempotency(t *testing.T) {
 		}
 		if _, err := postgres.ListOpenOpsCases(ctx, db, "ops_one", "someone-else", 10, ""); !errors.Is(err, postgres.ErrOpsCaseInvalid) {
 			t.Fatalf("invalid scope accepted: %v", err)
+		}
+		events, err := postgres.ListOrderOpsCaseEvents(ctx, db, "ops_case_order", current.ID, 2, "")
+		if err != nil || len(events.Items) != 2 || events.NextCursor == "" || events.Items[0].Action != "RESOLVE" ||
+			events.Items[0].ActorID != "ops_one" || events.Items[0].Detail == "" {
+			t.Fatalf("case audit first page: %+v err=%v", events, err)
+		}
+		secondEvents, err := postgres.ListOrderOpsCaseEvents(ctx, db, "ops_case_order", current.ID, 2, events.NextCursor)
+		if err != nil || len(secondEvents.Items) != 2 || secondEvents.NextCursor != "" ||
+			secondEvents.Items[1].Action != "OPEN" {
+			t.Fatalf("case audit second page: %+v err=%v", secondEvents, err)
+		}
+		if _, err := postgres.ListOrderOpsCaseEvents(ctx, db, "another_order", current.ID, 20, ""); !errors.Is(err, postgres.ErrOpsCaseNotFound) {
+			t.Fatalf("cross-order case audit disclosed: %v", err)
+		}
+		if _, err := postgres.ListOrderOpsCaseEvents(ctx, db, "ops_case_order", current.ID, 20, "invalid"); !errors.Is(err, postgres.ErrOpsCaseInvalid) {
+			t.Fatalf("invalid case audit cursor accepted: %v", err)
+		}
+		if _, err := postgres.ListOrderOpsCaseEvents(ctx, db, "ops_case_order", current.ID, 31, ""); !errors.Is(err, postgres.ErrOpsCaseInvalid) {
+			t.Fatalf("unbounded case event paging accepted: %v", err)
+		}
+		encoded, err := json.Marshal(events)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, secret := range []string{"idempotencyKey", "requestHash", "correlationId"} {
+			if strings.Contains(string(encoded), secret) {
+				t.Fatalf("case audit response exposed %s", secret)
+			}
 		}
 		var count int
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.operator_order_case_events WHERE case_id=$1", current.ID).Scan(&count); err != nil || count != 4 {

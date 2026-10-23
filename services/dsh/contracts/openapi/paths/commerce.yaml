@@ -1581,6 +1581,50 @@ paths:
         "403": { description: Operations permission required. }
         "404": { description: Order not found. }
         "409": { description: Duplicate active reason or idempotency key conflict. }
+  /dsh/operator/operations/{orderId}/cases/{caseId}/events:
+    get:
+      operationId: listOperatorOrderCaseEvents
+      summary: Read bounded case audit events, scoped to the exact order and case.
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: caseId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 30
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Read-only actor and action history without internal idempotency secrets.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/OperatorOrderCaseEventPage"
+        "400":
+          description: Invalid query.
+        "403":
+          description: Operations permission required.
+        "404":
+          description: Case is not part of this order.
   /dsh/operator/operations/{orderId}/cases/{caseId}/transition:
     post:
       operationId: transitionOperatorOrderCase

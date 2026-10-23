@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback,useEffect,useRef,useState } from "react";
+import { formatOperatorCaseAge } from "./operator-case-age";
 
 type Case = Readonly<{
  id:number;orderId:string;reason:string;state:string;priority:string;
@@ -23,7 +24,13 @@ export function OperatorCaseInbox({onOpenOrder,refreshVersion}:Readonly<{
  const [busy,setBusy]=useState(false);
  const [loading,setLoading]=useState(true);
  const [error,setError]=useState("");
+ const [clock,setClock]=useState<number|null>(null);
  const generation=useRef(0);
+ useEffect(()=>{
+   setClock(Date.now());
+   const handle=window.setInterval(()=>setClock(Date.now()),60_000);
+   return ()=>window.clearInterval(handle);
+ },[]);
  const read=useCallback(async(next=""):Promise<Page>=>{
    const params=new URLSearchParams({limit:"15",scope});
    if(next)params.set("cursor",next);
@@ -97,7 +104,7 @@ export function OperatorCaseInbox({onOpenOrder,refreshVersion}:Readonly<{
        <div>
          <strong>{item.priority==="URGENT"?"عاجل · ":""}{labels[item.reason]??"تعثر"} · {item.state==="ACTION_REQUIRED"?"يتطلب إجراءً":item.state==="IN_PROGRESS"?"قيد المعالجة":"ينتظر الاستلام"}</strong>
          <p>{item.nextAction}</p>
-         <p className="muted">طلب <span dir="ltr">{item.orderId.slice(-8)}</span> · {item.ownerActorId?"المسؤول: "+item.ownerActorId:"دون مسؤول"}</p>
+         <p className="muted">طلب <span dir="ltr">{item.orderId.slice(-8)}</span> · {item.ownerActorId?"المسؤول: "+item.ownerActorId:"دون مسؤول"}{clock!==null?" · "+formatOperatorCaseAge(item.openedAt,clock):""}</p>
        </div>
        <button type="button" className="button button-secondary" onClick={()=>onOpenOrder(item.orderId)}>فتح الحالة</button>
      </li>)}

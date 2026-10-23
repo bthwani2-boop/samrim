@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { OperatorCaseAudit } from "./operator-case-audit";
+import { formatOperatorCaseAge } from "./operator-case-age";
 
 type OpsCase = Readonly<{
  id:number;orderId:string;reason:string;state:string;priority:string;
@@ -35,7 +37,13 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
  const [selected,setSelected]=useState<OpsCase|null>(null);
  const [action,setAction]=useState("NEXT_ACTION");
  const [note,setNote]=useState("");
+ const [clock,setClock]=useState<number|null>(null);
  const sequence=useRef(0);
+ useEffect(()=>{
+   setClock(Date.now());
+   const handle=window.setInterval(()=>setClock(Date.now()),60_000);
+   return ()=>window.clearInterval(handle);
+ },[]);
  const inFlight=useRef(false);
  const attempt=useRef("");
  const read=useCallback(async(cursor=""):Promise<Page>=>{
@@ -136,7 +144,7 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
      <strong>{reasons.find(r=>r.value===item.reason)?.label??"حالة تشغيلية"} · {labels[item.state]??item.state}</strong>
      {item.priority==="URGENT"?<span className="operations-attention"> · عاجل</span>:null}
      <p>{item.nextAction}</p>
-     <p className="muted">{item.ownerActorId?"المسؤول: "+item.ownerActorId:"لم يُستلم بعد"} · نسخة {item.version}</p>
+     <p className="muted">{item.ownerActorId?"المسؤول: "+item.ownerActorId:"لم يُستلم بعد"} · نسخة {item.version}{clock!==null?" · "+formatOperatorCaseAge(item.openedAt,clock):""}</p>
      {item.state==="RESOLVED"&&item.resolutionNote?<p className="muted">النتيجة: {item.resolutionNote}</p>:null}
      {item.state!=="RESOLVED"?<div className="action-row">
         {!item.ownerActorId?<button type="button" className="button button-secondary" disabled={busy} onClick={()=>choose(item,"CLAIM")}>استلام الحالة</button>:null}
@@ -144,6 +152,7 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
         {item.ownerActorId?<button type="button" className="button button-secondary" disabled={busy} onClick={()=>choose(item,"ACTION_REQUIRED")}>يتطلب إجراءً</button>:null}
         {item.ownerActorId?<button type="button" className="button button-secondary" disabled={busy} onClick={()=>choose(item,"RESOLVE")}>توثيق الحل</button>:null}
        </div>:null}
+     <OperatorCaseAudit orderId={orderId} caseId={item.id} openedAt={item.openedAt} updatedAt={item.updatedAt}/>
    </div>)}
    {nextCursor?<button type="button" className="button button-secondary" disabled={busy||loading} onClick={()=>void more()}>المزيد من الحالات</button>:null}
    {selected?<div className="order-detail-panel">
