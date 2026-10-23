@@ -690,7 +690,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	// The operations attention queue includes stalled early fulfillment states, even
 	// when no automatic state transition is safe. Read-only review must not depend
 	// on an available dispatch action; terminal and customer-pickup states stay out.
-	const actionable = "(o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed') OR (o.state IN ('CREATED','PARTNER_ACCEPTED','PREPARING') AND o.updated_at <= statement_timestamp() - interval '30 minutes'))"
+	const actionable = "(o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed') OR (o.state IN ('CREATED','PARTNER_ACCEPTED','PREPARING') AND (stage.stage_started_at IS NULL OR stage.stage_started_at <= statement_timestamp() - interval '30 minutes')))"
 	if actionableOnly {
 		where += " AND " + actionable
 	}
@@ -721,6 +721,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	rows, err := db.QueryContext(ctx, `WITH filtered AS MATERIALIZED (
 		SELECT o.id,s.name,o.state,o.updated_at,o.total_amount_minor AS order_value_minor,
 		a.id AS assignment_id,a.order_id,a.captain_actor_id,a.state AS assignment_state,a.version,COALESCE(h.state,'') AS handoff_state,
+        stage.stage_started_at,
 		`+actionable+` AS actionable
 		FROM dsh.commerce_orders o
 		JOIN dsh.stores s ON s.id=o.store_id
@@ -731,6 +732,27 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 			ORDER BY created_at DESC LIMIT 1
 		) a ON TRUE
 		LEFT JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
+        LEFT JOIN LATERAL (
+        SELECT max(e.entered_at) FROM (
+                SELECT a.created_at AS entered_at
+                  FROM dsh.commerce_order_audit a
+                 WHERE a.order_id=o.id AND a.to_state=o.state
+                   AND a.event_type IN (
+                      'order_created','order_partner_accepted','order_preparing',
+                      'order_ready_for_dispatch','order_ready_for_pickup',
+                      'order_picked_up','order_rejected','order_cancelled'
+                   )
+                UNION ALL
+                SELECT c.created_at AS entered_at
+                  FROM dsh.captain_audit c WHERE c.order_id=o.id
+                   AND (
+                      (o.state='CAPTAIN_ASSIGNED' AND c.event_type='dispatch_offer_accepted')
+                      OR (o.state='IN_CUSTODY' AND c.event_type IN ('captain_pickup_completed','delivery_recovered'))
+                      OR (o.state='DELIVERED' AND c.event_type='delivery_completed')
+                      OR (o.state='DELIVERY_FAILED' AND c.event_type='delivery_failed')
+                   )
+            ) e
+        ) AS stage(stage_started_at) ON TRUE
 		WHERE `+where+`
 	), summary AS (
 		SELECT count(*) AS total_count,
@@ -742,27 +764,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		COALESCE(sum(order_value_minor) FILTER (WHERE assignment_state='in_custody'),0)::bigint AS in_custody_order_value_minor,
 		statement_timestamp() AS measured_at FROM filtered
 	), page AS (
-		SELECT filtered.*, (
-            SELECT max(e.entered_at) FROM (
-                SELECT a.created_at AS entered_at
-                  FROM dsh.commerce_order_audit a
-                 WHERE a.order_id=filtered.id AND a.to_state=filtered.state
-                   AND a.event_type IN (
-                      'order_created','order_partner_accepted','order_preparing',
-                      'order_ready_for_dispatch','order_ready_for_pickup',
-                      'order_picked_up','order_rejected','order_cancelled'
-                   )
-                UNION ALL
-                SELECT c.created_at AS entered_at
-                  FROM dsh.captain_audit c WHERE c.order_id=filtered.id
-                   AND (
-                      (filtered.state='CAPTAIN_ASSIGNED' AND c.event_type='dispatch_offer_accepted')
-                      OR (filtered.state='IN_CUSTODY' AND c.event_type IN ('captain_pickup_completed','delivery_recovered'))
-                      OR (filtered.state='DELIVERED' AND c.event_type='delivery_completed')
-                      OR (filtered.state='DELIVERY_FAILED' AND c.event_type='delivery_failed')
-                   )
-            ) e
-        ) AS stage_started_at FROM filtered WHERE `+pageWhere+" ORDER BY updated_at "+order+",id "+order+" LIMIT $"+strconv.Itoa(len(args))+`
+        SELECT * FROM filtered WHERE `+pageWhere+" ORDER BY updated_at "+order+",id "+order+" LIMIT $"+strconv.Itoa(len(args))+`
 	)
 	SELECT summary.*,page.id,page.name,page.state,page.updated_at,page.assignment_id,page.order_id,page.captain_actor_id,page.assignment_state,page.version,page.handoff_state,page.stage_started_at
 	FROM summary LEFT JOIN page ON TRUE ORDER BY page.updated_at `+order+",page.id "+order, args...)
