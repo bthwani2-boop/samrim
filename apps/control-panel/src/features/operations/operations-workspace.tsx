@@ -16,7 +16,7 @@ import { CancellationRequestInbox } from "./cancellation-request-inbox";
 import { CustomerContactQueue } from "./customer-contact-queue";
 
 function operationNeedsReview(item: OperatorOperationListItem, now: number): boolean {
-  const stage = operationalStageAttention(item.state, item.stageStartedAt, now);
+  const stage = operationalStageAttention(item.state, item.stageStartedAt, now, item.preparationMinutes);
   return stage ? stage.needsReview : operationalAge(item.state, item.updatedAt, now).needsReview;
 }
 
@@ -351,7 +351,7 @@ export function OperationsWorkspace() {
                 {visibleOperations.length === 0 ? <tr><td colSpan={6} className="catalog-table-state">لا توجد مطابقة في الصفحة الحالية. أزل مرشح الإسناد أو المتابعة.</td></tr> : null}
                 {visibleOperations.map((item) => {
                   const age = operationalAge(item.state, item.updatedAt, ageClock || Date.now());
-                  const stageAttention = operationalStageAttention(item.state, item.stageStartedAt, ageClock || Date.now());
+                  const stageAttention = operationalStageAttention(item.state, item.stageStartedAt, ageClock || Date.now(), item.preparationMinutes);
                   const needsReview = stageAttention ? stageAttention.needsReview : age.needsReview;
                   const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
                   return <tr key={item.orderId} className={needsReview ? "ops-row-review" : undefined}>
@@ -374,7 +374,7 @@ export function OperationsWorkspace() {
             <ul className="ops-mobile-orders" aria-label="طلبات الصفحة">
               {visibleOperations.map((item) => {
                 const age = operationalAge(item.state, item.updatedAt, ageClock || Date.now());
-                const stageAttention = operationalStageAttention(item.state, item.stageStartedAt, ageClock || Date.now());
+                const stageAttention = operationalStageAttention(item.state, item.stageStartedAt, ageClock || Date.now(), item.preparationMinutes);
                 const needsReview = stageAttention ? stageAttention.needsReview : age.needsReview;
                 const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
                 return <li key={item.orderId} className={"ops-mobile-order" + (needsReview ? " ops-mobile-order-review" : "")}>

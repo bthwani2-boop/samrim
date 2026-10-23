@@ -315,12 +315,13 @@ type OperatorOperationRecord struct {
 }
 
 type OperatorOperationListRecord struct {
-	StageStartedAt *time.Time
-	OrderID        string
-	StoreName      string
-	State          string
-	UpdatedAt      time.Time
-	Assignment     *OperatorAssignmentListRecord
+	StageStartedAt     *time.Time
+	PreparationMinutes *int
+	OrderID            string
+	StoreName          string
+	State              string
+	UpdatedAt          time.Time
+	Assignment         *OperatorAssignmentListRecord
 }
 
 type OperatorAssignmentListRecord struct {
@@ -690,7 +691,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	// The operations attention queue includes stalled early fulfillment states, even
 	// when no automatic state transition is safe. Read-only review must not depend
 	// on an available dispatch action; terminal and customer-pickup states stay out.
-	const actionable = "(o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed') OR (o.state IN ('CREATED','PARTNER_ACCEPTED','PREPARING') AND (stage.stage_started_at IS NULL OR stage.stage_started_at <= statement_timestamp() - interval '30 minutes')))"
+	const actionable = "(o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed') OR (o.state IN ('CREATED','PARTNER_ACCEPTED','PREPARING') AND (stage.stage_started_at IS NULL OR stage.stage_started_at <= statement_timestamp() - make_interval(mins => CASE WHEN o.state='PREPARING' THEN COALESCE(soa.preparation_minutes,30) ELSE 30 END))))"
 	if actionableOnly {
 		where += " AND " + actionable
 	}
@@ -721,7 +722,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	rows, err := db.QueryContext(ctx, `WITH filtered AS MATERIALIZED (
 		SELECT o.id,s.name,o.state,o.updated_at,o.total_amount_minor AS order_value_minor,
 		a.id AS assignment_id,a.order_id,a.captain_actor_id,a.state AS assignment_state,a.version,COALESCE(h.state,'') AS handoff_state,
-        stage.stage_started_at,
+        stage.stage_started_at, CASE WHEN o.state='PREPARING' THEN soa.preparation_minutes ELSE NULL END AS preparation_minutes,
 		`+actionable+` AS actionable
 		FROM dsh.commerce_orders o
 		JOIN dsh.stores s ON s.id=o.store_id
@@ -732,6 +733,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 			ORDER BY created_at DESC LIMIT 1
 		) a ON TRUE
 		LEFT JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
+        LEFT JOIN dsh.store_operational_availability soa ON soa.store_id=o.store_id
         LEFT JOIN LATERAL (
         SELECT max(e.entered_at) FROM (
                 SELECT a.created_at AS entered_at
@@ -766,7 +768,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	), page AS (
         SELECT * FROM filtered WHERE `+pageWhere+" ORDER BY updated_at "+order+",id "+order+" LIMIT $"+strconv.Itoa(len(args))+`
 	)
-	SELECT summary.*,page.id,page.name,page.state,page.updated_at,page.assignment_id,page.order_id,page.captain_actor_id,page.assignment_state,page.version,page.handoff_state,page.stage_started_at
+	SELECT summary.*,page.id,page.name,page.state,page.updated_at,page.assignment_id,page.order_id,page.captain_actor_id,page.assignment_state,page.version,page.handoff_state,page.stage_started_at,page.preparation_minutes
 	FROM summary LEFT JOIN page ON TRUE ORDER BY page.updated_at `+order+",page.id "+order, args...)
 	if err != nil {
 		return OperatorOperationsResult{}, err
@@ -781,9 +783,10 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		var assignmentID, assignmentOrderID, captainActorID, assignmentState, handoffState sql.NullString
 		var assignmentVersion sql.NullInt64
 		var stageStartedAt sql.NullTime
+		var preparationMinutes sql.NullInt64
 		if err := rows.Scan(&summary.TotalCount, &summary.ActionableCount, &summary.AwaitingDispatchCount, &summary.ActiveCount, &summary.DeliveredCount, &summary.InCustodyOrderCount, &summary.InCustodyOrderValueMinor, &summary.MeasuredAt,
 			&id, &storeName, &state, &updatedAt,
-			&assignmentID, &assignmentOrderID, &captainActorID, &assignmentState, &assignmentVersion, &handoffState, &stageStartedAt); err != nil {
+			&assignmentID, &assignmentOrderID, &captainActorID, &assignmentState, &assignmentVersion, &handoffState, &stageStartedAt, &preparationMinutes); err != nil {
 			return OperatorOperationsResult{}, err
 		}
 		if !id.Valid {
@@ -793,6 +796,10 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		if stageStartedAt.Valid {
 			timeValue := stageStartedAt.Time
 			item.StageStartedAt = &timeValue
+		}
+		if preparationMinutes.Valid {
+			v := int(preparationMinutes.Int64)
+			item.PreparationMinutes = &v
 		}
 		if assignmentID.Valid {
 			item.Assignment = &OperatorAssignmentListRecord{ID: assignmentID.String, OrderID: assignmentOrderID.String, CaptainActorID: captainActorID.String, State: assignmentState.String, Version: int(assignmentVersion.Int64), HandoffState: handoffState.String}

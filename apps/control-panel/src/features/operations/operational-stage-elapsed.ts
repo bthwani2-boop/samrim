@@ -11,14 +11,18 @@ export function operationalStageElapsed(stageStartedAt: string | null | undefine
   return `في المرحلة منذ ${Math.floor(hours / 24).toLocaleString("ar-YE")} يوم`;
 }
 
-export function operationalStageAttention(state: string, stageStartedAt: string | null | undefined, now: number): { needsReview: boolean; label: string } | null {
+export function operationalStageAttention(state: string, stageStartedAt: string | null | undefined, now: number, preparationMinutes?: number | null): { needsReview: boolean; label: string } | null {
   if (!["CREATED", "PARTNER_ACCEPTED", "PREPARING"].includes(state)) return null;
   if (!stageStartedAt || !Number.isFinite(now)) return { needsReview: true, label: "بداية المرحلة غير موثقة؛ تحتاج مراجعة" };
   const startedAt = Date.parse(stageStartedAt);
   if (!Number.isFinite(startedAt) || startedAt > now + 60_000) return { needsReview: true, label: "تعذر التحقق من وقت المرحلة" };
-  const needsReview = now - startedAt >= 30 * 60_000;
+  const configuredPreparation = state === "PREPARING" && Number.isInteger(preparationMinutes)
+    && typeof preparationMinutes === "number" && preparationMinutes >= 1 && preparationMinutes <= 1440;
+  // 30 minutes is an operational attention fallback, not a contractual SLA.
+  const targetMinutes = configuredPreparation ? preparationMinutes : 30;
+  const needsReview = now - startedAt >= targetMinutes * 60_000;
   return {
     needsReview,
-    label: needsReview ? "المرحلة مستمرة منذ 30 دقيقة أو أكثر" : "",
+    label: needsReview ? (configuredPreparation ? `تجاوز مدة التحضير المحددة (${targetMinutes} دقيقة)` : "المرحلة مستمرة منذ 30 دقيقة أو أكثر") : "",
   };
 }

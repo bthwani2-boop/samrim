@@ -89,6 +89,42 @@ func TestOperatorStageAttentionIgnoresUnrelatedUpdatedAt(t *testing.T) {
 		if err != nil || len(all.Operations) != 3 || all.Summary.TotalCount != 3 || all.Summary.ActionableCount != 2 {
 			t.Fatalf("full registry or summary mismatched stage-based attention: %+v err=%v", all, err)
 		}
+		// A Store's configured preparation estimate is the policy for
+		// PREPARING attention; a fresh updatedAt never resets the stage clock.
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.store_operational_availability
+            (store_id,preparation_minutes,updated_by_actor_id)
+            VALUES('stage_ops_store',120,'stage_ops_partner')
+            ON CONFLICT(store_id) DO UPDATE SET preparation_minutes=EXCLUDED.preparation_minutes`); err != nil {
+			t.Fatal(err)
+		}
+		longTarget, err := postgres.ListOrdersForOperator(ctx, db, "PREPARING", "", "updated_desc", true, 10, "")
+		if err != nil || len(longTarget.Operations) != 1 || longTarget.Operations[0].OrderID != "stage_ops_unknown" || longTarget.Summary.ActionableCount != 1 {
+			t.Fatalf("120-minute preparation target should not alert a 90-minute stage: %+v err=%v", longTarget, err)
+		}
+		everyOrder, err := postgres.ListOrdersForOperator(ctx, db, "PREPARING", "", "updated_desc", false, 10, "")
+		if err != nil || len(everyOrder.Operations) != 3 {
+			t.Fatalf("configured preparation readback: %+v err=%v", everyOrder, err)
+		}
+		for _, item := range everyOrder.Operations {
+			if item.PreparationMinutes == nil || *item.PreparationMinutes != 120 {
+				t.Fatalf("store preparation target not read from DSH source: %+v", item)
+			}
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.store_operational_availability SET preparation_minutes=10 WHERE store_id='stage_ops_store'"); err != nil {
+			t.Fatal(err)
+		}
+		shortTarget, err := postgres.ListOrdersForOperator(ctx, db, "PREPARING", "", "updated_desc", true, 10, "")
+		if err != nil || len(shortTarget.Operations) != 2 || shortTarget.Summary.ActionableCount != 2 {
+			t.Fatalf("10-minute preparation target should alert old stage and unknown start: %+v err=%v", shortTarget, err)
+		}
+		for _, item := range shortTarget.Operations {
+			if item.PreparationMinutes == nil || *item.PreparationMinutes != 10 {
+				t.Fatalf("short current target not reflected: %+v", item)
+			}
+			if item.OrderID == "stage_ops_fresh" {
+				t.Fatalf("5-minute fresh stage alerted against 10-minute target: %+v", item)
+			}
+		}
 		seenFresh := false
 		for _, item := range all.Operations {
 			if item.OrderID == "stage_ops_fresh" && item.StageStartedAt != nil && item.StageStartedAt.Equal(freshStage) {

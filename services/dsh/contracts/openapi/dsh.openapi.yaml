@@ -9182,6 +9182,12 @@ components:
           format: date-time
           nullable: true
           description: Most recent matching canonical DSH Order transition event. Null when unavailable; not an SLA deadline.
+        preparationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          nullable: true
+          description: Current Store-specified preparation target for PREPARING; null if unspecified. Not a historical contractual snapshot.
         assignment:
           $ref: "#/components/schemas/OperatorAssignmentSummary"
           nullable: true

@@ -20,3 +20,11 @@ test("early-stage follow-up uses stage transition rather than order updatedAt", 
   assert.equal(operationalStageAttention("CAPTAIN_ASSIGNED", null, now), null);
   assert.equal(operationalStageAttention("DELIVERED", null, now), null);
 });
+
+test("Store preparation target controls attention only while preparing", () => {
+  assert.equal(operationalStageAttention("PREPARING", "2026-10-23T11:25:00Z", now, 45)?.needsReview, false);
+  assert.equal(operationalStageAttention("PREPARING", "2026-10-23T11:25:00Z", now, 10)?.needsReview, true);
+  assert.match(operationalStageAttention("PREPARING", "2026-10-23T11:25:00Z", now, 10)?.label ?? "", /10/);
+  assert.equal(operationalStageAttention("CREATED", "2026-10-23T11:25:00Z", now, 180)?.needsReview, true);
+  assert.equal(operationalStageAttention("PREPARING", "2026-10-23T11:25:00Z", now, null)?.needsReview, true);
+});

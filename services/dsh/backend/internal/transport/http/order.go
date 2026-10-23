@@ -283,12 +283,20 @@ func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.Op
 	return contract.OperatorOperation{Order: toOrder(operation.Order), StoreName: operation.StoreName, Assignment: assignment, CustomerSuccessfulOrdersCount: operation.CustomerSuccessfulOrdersCount, SuccessfulOrderOrdinal: operation.SuccessfulOrderOrdinal, History: history, HistoryHasMore: operation.HistoryHasMore}
 }
 
+// The generated field is optional; 0 is omitted for stores without a target.
+func optionalPreparationMinutes(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
 func toOperatorOperationListItem(operation postgres.OperatorOperationListRecord) contract.OperatorOperationListItem {
 	var assignment *contract.OperatorAssignmentSummary
 	if operation.Assignment != nil {
 		assignment = &contract.OperatorAssignmentSummary{ID: operation.Assignment.ID, OrderID: operation.Assignment.OrderID, CaptainActorID: operation.Assignment.CaptainActorID, State: operation.Assignment.State, Version: operation.Assignment.Version, HandoffState: operation.Assignment.HandoffState}
 	}
-	return contract.OperatorOperationListItem{OrderID: operation.OrderID, StoreName: operation.StoreName, State: contract.OrderState(operation.State), UpdatedAt: operation.UpdatedAt, StageStartedAt: operation.StageStartedAt, Assignment: assignment}
+	return contract.OperatorOperationListItem{OrderID: operation.OrderID, StoreName: operation.StoreName, State: contract.OrderState(operation.State), UpdatedAt: operation.UpdatedAt, StageStartedAt: operation.StageStartedAt, PreparationMinutes: optionalPreparationMinutes(operation.PreparationMinutes), Assignment: assignment}
 }
 
 func (s *OrderServer) listClient(w http.ResponseWriter, r *http.Request) {
