@@ -86,6 +86,20 @@ func TestPartnerCampaignConsentGatesStoreVisibilityAndRejectsCrossCity(t *testin
 		}
 		checkVisible("consent-store-a", 1)
 		checkVisible("consent-store-b", 0)
+		// A previously approved Partner campaign must immediately disappear
+		// if its funding cap is absent (legacy/inconsistent persisted record).
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET discount_budget_limit_minor=NULL WHERE id=$1", promotion.ID); err != nil {
+			t.Fatal(err)
+		}
+		checkVisible("consent-store-a", 0)
+		countByStore, err := postgres.CountPublicPromotionsForStores(ctx, db, cityA, []string{"consent-store-a", "consent-store-b"})
+		if err != nil || countByStore["consent-store-a"] != 0 || countByStore["consent-store-b"] != 0 {
+			t.Fatalf("uncapped Partner campaign leaked into Store badges: %+v error=%v", countByStore, err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET discount_budget_limit_minor=$2 WHERE id=$1", promotion.ID, budget); err != nil {
+			t.Fatal(err)
+		}
+		checkVisible("consent-store-a", 1)
 		repeated, replayed, err := postgres.SetPartnerCampaignOptIn(ctx, db, promotion.ID, "consent-store-a", "partner-a", "OPTED_IN", 1, "accept-a", "accept-a-correlation")
 		if err != nil || !replayed || repeated.StoreOptInVersion != agreed.StoreOptInVersion {
 			t.Fatalf("consent replay invalid: %+v replay=%v error=%v", repeated, replayed, err)

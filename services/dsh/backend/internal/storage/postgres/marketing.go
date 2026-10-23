@@ -300,7 +300,8 @@ const listPublicPromotionsQuery = `SELECT id,code,name_ar,description_ar,kind,va
         FROM dsh.commerce_promotions
         WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())
           AND (redemption_limit IS NULL OR redeemed_count < redemption_limit)
-          AND (discount_budget_limit_minor IS NULL OR discount_spent_minor < discount_budget_limit_minor)))
+          AND (discount_budget_limit_minor IS NULL OR discount_spent_minor < discount_budget_limit_minor)
+          AND (store_id IS NOT NULL OR funding_source='BTHWANI' OR discount_budget_limit_minor IS NOT NULL)))
         AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2)
         AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3))
         AND (NOT $1 OR store_id IS NOT NULL OR (funding_source='BTHWANI' AND requires_partner_opt_in=false) OR EXISTS (SELECT 1 FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=dsh.commerce_promotions.id AND o.store_id=$3 AND o.state='OPTED_IN'))
@@ -397,6 +398,7 @@ func CountPublicPromotionsForStores(ctx context.Context, db *sql.DB, cityID stri
 			AND (p.ends_at IS NULL OR p.ends_at > clock_timestamp())
 			AND (p.redemption_limit IS NULL OR p.redeemed_count < p.redemption_limit)
 			AND (p.discount_budget_limit_minor IS NULL OR p.discount_spent_minor < p.discount_budget_limit_minor)
+			AND (p.store_id IS NOT NULL OR p.funding_source='BTHWANI' OR p.discount_budget_limit_minor IS NOT NULL)
 			AND (p.service_city_id IS NULL OR p.service_city_id=$1)
 			AND (p.store_id IS NULL OR p.store_id=s.id)
 			AND (p.store_id IS NOT NULL OR (p.funding_source='BTHWANI' AND p.requires_partner_opt_in=false)
@@ -603,6 +605,11 @@ func EvaluatePromotion(ctx context.Context, source rowQueryer, code, storeID, st
 	}
 	now := time.Now().UTC()
 	if item.State != "PUBLISHED" || now.Before(item.StartsAt) || item.EndsAt != nil && !now.Before(*item.EndsAt) || item.StoreID != "" && item.StoreID != storeID || item.ServiceCityID != "" && item.ServiceCityID != storeServiceCityID {
+		return PromotionRecord{}, 0, ErrPromotionUnavailable
+	}
+	// Never apply an uncapped historical platform campaign funded by Stores,
+	// even if an earlier version recorded a consent row.
+	if item.StoreID == "" && item.FundingSource != "BTHWANI" && item.DiscountBudgetLimitMinor == nil {
 		return PromotionRecord{}, 0, ErrPromotionUnavailable
 	}
 	// A platform campaign applies to a Store only when the Store opted in where
