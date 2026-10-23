@@ -3483,6 +3483,11 @@ components:
           type: integer
           minimum: 0
           maximum: 10000
+        deliveryMarkupMinor:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          description: Optional approved additional customer delivery charge paid to the platform for zero-commission BThwani Captain delivery; the Captain keeps the base tariff.
 
     StoreCommercialAgreement:
       type: object

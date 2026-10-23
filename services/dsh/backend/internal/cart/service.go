@@ -21,7 +21,7 @@ var (
 	ErrClientSessionForbidden      = errors.New("an active app-client session is required")
 	ErrCheckoutNotServiceable      = errors.New("address is not serviceable for this Store")
 	ErrFulfillmentModeUnavailable  = errors.New("the requested fulfillment mode is not available")
-	ErrStoreNotAcceptingOrders    = errors.New("store is not accepting orders for the selected fulfillment mode")
+	ErrStoreNotAcceptingOrders     = errors.New("store is not accepting orders for the selected fulfillment mode")
 	ErrInsufficientCustomerBalance = errors.New("customer internal balance does not cover the requested contribution")
 	ErrCheckoutBalanceContribution = errors.New("checkout internal balance contribution is invalid")
 )
@@ -204,7 +204,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 
 	feeQuote := postgres.DeliveryFeeQuote{FeeMinor: 0, PolicyVersion: "NOT_APPLICABLE"}
 	if fulfillmentMode != FulfillmentModeCustomerPickup {
-		feeQuote, err = s.quoteDeliveryFee(ctx, postgres.DeliveryFeeQuoteInput{ServiceCityID: serviceCityID, OriginLatitude: originLatitude, OriginLongitude: originLongitude, DestinationLatitude: destinationLatitude, DestinationLongitude: destinationLongitude, OrderSizeBaseUnits: orderSize.Int64()})
+		feeQuote, err = s.quoteDeliveryFee(ctx, postgres.DeliveryFeeQuoteInput{StoreID: storeID, FulfillmentMode: fulfillmentMode, ServiceCityID: serviceCityID, OriginLatitude: originLatitude, OriginLongitude: originLongitude, DestinationLatitude: destinationLatitude, DestinationLongitude: destinationLongitude, OrderSizeBaseUnits: orderSize.Int64()})
 		if err != nil || feeQuote.FeeMinor < 0 || strings.TrimSpace(feeQuote.PolicyVersion) == "" {
 			return CheckoutQuote{}, postgres.ErrDeliveryFeeUnavailable
 		}
@@ -327,7 +327,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		PaymentCancellationKey:   paymentCancellationKey,
 	}
 	input.DeliveryFeeResolver = s.quoteDeliveryFee
-	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, promotion postgres.PromotionFunding, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
+	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor, deliveryMarginMinor int64, deliveryPolicyVersion string, amountMinor int64, promotion postgres.PromotionFunding, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
 		if internalBalanceAmountMinor > amountMinor {
 			return postgres.ProvisionedPayment{}, ErrCheckoutBalanceContribution
 		}
@@ -338,7 +338,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 			allocationPolicy = fmt.Sprintf("store-captain-cash-v2;delivery=%s", deliveryPolicyVersion)
 		}
 		cashAmountMinor := amountMinor - internalBalanceAmountMinor
-		allocation := wlt.CustomerPaymentAllocationInput{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, CommercialStoreTypeID: store.CommercialStoreTypeID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, InternalBalanceAmountMinor: internalBalanceAmountMinor, CashAmountMinor: cashAmountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
+		allocation := wlt.CustomerPaymentAllocationInput{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, CommercialStoreTypeID: store.CommercialStoreTypeID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DeliveryMarginMinor: deliveryMarginMinor, DiscountMinor: discountMinor, InternalBalanceAmountMinor: internalBalanceAmountMinor, CashAmountMinor: cashAmountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
 		if promotion.PromotionID != "" {
 			allocation.PromotionFunding = &wlt.PromotionFundingRequest{PromotionID: promotion.PromotionID, PromotionVersion: promotion.PromotionVersion, PromotionCode: promotion.PromotionCode, FundingSource: promotion.FundingSource, PartnerSharePercent: promotion.PartnerSharePercent}
 		}
@@ -423,11 +423,11 @@ func externalMutationOutcome(err error) error {
 }
 
 func (s *Service) quoteDeliveryFee(ctx context.Context, input postgres.DeliveryFeeQuoteInput) (postgres.DeliveryFeeQuote, error) {
-	quote, err := s.payment.QuoteDeliveryFee(ctx, wlt.DeliveryFeeQuoteInput{ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.DestinationLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
+	quote, err := s.payment.QuoteDeliveryFee(ctx, wlt.DeliveryFeeQuoteInput{StoreID: input.StoreID, FulfillmentMode: input.FulfillmentMode, ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.DestinationLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
 	if err != nil {
 		return postgres.DeliveryFeeQuote{}, fmt.Errorf("%w: %w", postgres.ErrDeliveryFeeUnavailable, err)
 	}
-	return postgres.DeliveryFeeQuote{FeeMinor: quote.FeeMinor, PolicyVersion: quote.PolicyVersion}, nil
+	return postgres.DeliveryFeeQuote{FeeMinor: quote.FeeMinor, PlatformMarginMinor: quote.PlatformMarginMinor, PolicyVersion: quote.PolicyVersion}, nil
 }
 
 func (s *Service) requireClient(ctx context.Context, accessToken string) (string, error) {

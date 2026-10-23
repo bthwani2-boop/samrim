@@ -128,6 +128,7 @@ type CustomerPaymentAllocationInput struct {
 	Currency                   string                   `json:"currency"`
 	SubtotalMinor              int64                    `json:"subtotalMinor"`
 	DeliveryFeeMinor           int64                    `json:"deliveryFeeMinor"`
+	DeliveryMarginMinor        int64                    `json:"deliveryMarginMinor"`
 	DiscountMinor              int64                    `json:"discountMinor"`
 	InternalBalanceAmountMinor int64                    `json:"internalBalanceAmountMinor"`
 	CashAmountMinor            int64                    `json:"cashAmountMinor"`
@@ -831,17 +832,21 @@ type PartnerFinancialTermsPolicy struct {
 }
 
 type DeliveryFeeQuote struct {
-	FeeMinor           int64  `json:"feeMinor"`
-	PolicyVersion      string `json:"policyVersion"`
-	ServiceCityID      string `json:"serviceCityId"`
-	DistanceMeters     int64  `json:"distanceMeters"`
-	DistanceUnits      int64  `json:"distanceUnits"`
-	OrderSizeBaseUnits int64  `json:"orderSizeBaseUnits"`
-	OrderSizeUnits     int64  `json:"orderSizeUnits"`
-	RoundingUnitMinor  int64  `json:"roundingUnitMinor"`
+	CaptainEarningMinor int64  `json:"captainEarningMinor"`
+	PlatformMarginMinor int64  `json:"platformMarginMinor"`
+	FeeMinor            int64  `json:"feeMinor"`
+	PolicyVersion       string `json:"policyVersion"`
+	ServiceCityID       string `json:"serviceCityId"`
+	DistanceMeters      int64  `json:"distanceMeters"`
+	DistanceUnits       int64  `json:"distanceUnits"`
+	OrderSizeBaseUnits  int64  `json:"orderSizeBaseUnits"`
+	OrderSizeUnits      int64  `json:"orderSizeUnits"`
+	RoundingUnitMinor   int64  `json:"roundingUnitMinor"`
 }
 
 type DeliveryFeeQuoteInput struct {
+	StoreID              string  `json:"storeId"`
+	FulfillmentMode      string  `json:"fulfillmentMode"`
 	ServiceCityID        string  `json:"serviceCityId"`
 	OriginLatitude       float64 `json:"originLatitude"`
 	OriginLongitude      float64 `json:"originLongitude"`

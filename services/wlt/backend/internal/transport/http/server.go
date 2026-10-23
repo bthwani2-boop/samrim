@@ -208,6 +208,7 @@ type customerPaymentAllocationRequest struct {
 	Currency                   string                   `json:"currency"`
 	SubtotalMinor              int64                    `json:"subtotalMinor"`
 	DeliveryFeeMinor           int64                    `json:"deliveryFeeMinor"`
+	DeliveryMarginMinor        int64                    `json:"deliveryMarginMinor"`
 	DiscountMinor              int64                    `json:"discountMinor"`
 	InternalBalanceAmountMinor int64                    `json:"internalBalanceAmountMinor"`
 	CashAmountMinor            int64                    `json:"cashAmountMinor"`
@@ -576,6 +577,8 @@ type partnerFinancialSummaryJSON struct {
 }
 
 type deliveryFeeQuoteRequest struct {
+	StoreID              string  `json:"storeId,omitempty"`
+	FulfillmentMode      string  `json:"fulfillmentMode,omitempty"`
 	ServiceCityID        string  `json:"serviceCityId"`
 	OriginLatitude       float64 `json:"originLatitude"`
 	OriginLongitude      float64 `json:"originLongitude"`
@@ -632,6 +635,7 @@ type customerPaymentAllocationJSON struct {
 	Currency                   string                              `json:"currency"`
 	SubtotalMinor              int64                               `json:"subtotalMinor"`
 	DeliveryFeeMinor           int64                               `json:"deliveryFeeMinor"`
+	DeliveryMarginMinor        int64                               `json:"deliveryMarginMinor"`
 	DiscountMinor              int64                               `json:"discountMinor"`
 	InternalBalanceAmountMinor int64                               `json:"internalBalanceAmountMinor"`
 	CashAmountMinor            int64                               `json:"cashAmountMinor"`
@@ -773,14 +777,16 @@ type deliveryFeeQuoteResponse struct {
 }
 
 type deliveryFeeQuoteJSON struct {
-	FeeMinor           int64  `json:"feeMinor"`
-	PolicyVersion      string `json:"policyVersion"`
-	ServiceCityID      string `json:"serviceCityId"`
-	DistanceMeters     int64  `json:"distanceMeters"`
-	DistanceUnits      int64  `json:"distanceUnits"`
-	OrderSizeBaseUnits int64  `json:"orderSizeBaseUnits"`
-	OrderSizeUnits     int64  `json:"orderSizeUnits"`
-	RoundingUnitMinor  int64  `json:"roundingUnitMinor"`
+	CaptainEarningMinor int64  `json:"captainEarningMinor"`
+	PlatformMarginMinor int64  `json:"platformMarginMinor"`
+	FeeMinor            int64  `json:"feeMinor"`
+	PolicyVersion       string `json:"policyVersion"`
+	ServiceCityID       string `json:"serviceCityId"`
+	DistanceMeters      int64  `json:"distanceMeters"`
+	DistanceUnits       int64  `json:"distanceUnits"`
+	OrderSizeBaseUnits  int64  `json:"orderSizeBaseUnits"`
+	OrderSizeUnits      int64  `json:"orderSizeUnits"`
+	RoundingUnitMinor   int64  `json:"roundingUnitMinor"`
 }
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {
@@ -797,7 +803,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	}
 	var allocation *postgres.CustomerPaymentAllocationInput
 	if input.CustomerPaymentAllocation != nil {
-		value := postgres.CustomerPaymentAllocationInput{OrderID: input.CustomerPaymentAllocation.OrderID, StoreID: input.CustomerPaymentAllocation.StoreID, PartnerActorID: input.CustomerPaymentAllocation.PartnerActorID, CommercialStoreTypeID: input.CustomerPaymentAllocation.CommercialStoreTypeID, FulfillmentMode: input.CustomerPaymentAllocation.FulfillmentMode, Currency: input.CustomerPaymentAllocation.Currency, SubtotalMinor: input.CustomerPaymentAllocation.SubtotalMinor, DeliveryFeeMinor: input.CustomerPaymentAllocation.DeliveryFeeMinor, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor, InternalBalanceAmountMinor: input.CustomerPaymentAllocation.InternalBalanceAmountMinor, CashAmountMinor: input.CustomerPaymentAllocation.CashAmountMinor, CustomerPayableMinor: input.CustomerPaymentAllocation.CustomerPayableMinor, PolicyVersion: input.CustomerPaymentAllocation.PolicyVersion}
+		value := postgres.CustomerPaymentAllocationInput{OrderID: input.CustomerPaymentAllocation.OrderID, StoreID: input.CustomerPaymentAllocation.StoreID, PartnerActorID: input.CustomerPaymentAllocation.PartnerActorID, CommercialStoreTypeID: input.CustomerPaymentAllocation.CommercialStoreTypeID, FulfillmentMode: input.CustomerPaymentAllocation.FulfillmentMode, Currency: input.CustomerPaymentAllocation.Currency, SubtotalMinor: input.CustomerPaymentAllocation.SubtotalMinor, DeliveryFeeMinor: input.CustomerPaymentAllocation.DeliveryFeeMinor, DeliveryMarginMinor: input.CustomerPaymentAllocation.DeliveryMarginMinor, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor, InternalBalanceAmountMinor: input.CustomerPaymentAllocation.InternalBalanceAmountMinor, CashAmountMinor: input.CustomerPaymentAllocation.CashAmountMinor, CustomerPayableMinor: input.CustomerPaymentAllocation.CustomerPayableMinor, PolicyVersion: input.CustomerPaymentAllocation.PolicyVersion}
 		if input.CustomerPaymentAllocation.PromotionFunding != nil && input.CustomerPaymentAllocation.PromotionFunding.PromotionID != "" {
 			funding := input.CustomerPaymentAllocation.PromotionFunding
 			value.PromotionFunding = &postgres.PromotionFundingInput{PromotionID: funding.PromotionID, PromotionVersion: funding.PromotionVersion, PromotionCode: funding.PromotionCode, StoreID: input.CustomerPaymentAllocation.StoreID, FundingSource: funding.FundingSource, PartnerSharePercent: funding.PartnerSharePercent, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor}
@@ -943,7 +949,7 @@ func (s *Server) deliveryQuote(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	quote, err := postgres.ResolveDeliveryFeeQuote(r.Context(), s.db, postgres.DeliveryFeeQuoteInput{ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.DestinationLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
+	quote, err := postgres.ResolveDeliveryFeeQuote(r.Context(), s.db, postgres.DeliveryFeeQuoteInput{StoreID: input.StoreID, FulfillmentMode: input.FulfillmentMode, ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.DestinationLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
 	if err != nil {
 		writeDeliveryFeeError(w, err)
 		return
@@ -1692,7 +1698,7 @@ func toPaymentIntent(item postgres.PaymentIntentRecord) paymentIntentJSON {
 	}
 	if item.CustomerPaymentAllocation != nil {
 		allocation := item.CustomerPaymentAllocation
-		jsonAllocation := &customerPaymentAllocationJSON{ID: allocation.ID, OrderID: allocation.OrderID, PaymentIntentID: allocation.PaymentIntentID, StoreID: allocation.StoreID, PartnerActorID: allocation.PartnerActorID, CommercialStoreTypeID: allocation.CommercialStoreTypeID, FulfillmentMode: allocation.FulfillmentMode, Currency: allocation.Currency, SubtotalMinor: allocation.SubtotalMinor, DeliveryFeeMinor: allocation.DeliveryFeeMinor, DiscountMinor: allocation.DiscountMinor, InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor, CashAmountMinor: allocation.CashAmountMinor, CustomerPayableMinor: allocation.CustomerPayableMinor, PolicyVersion: allocation.PolicyVersion, CreatedAt: allocation.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+		jsonAllocation := &customerPaymentAllocationJSON{ID: allocation.ID, OrderID: allocation.OrderID, PaymentIntentID: allocation.PaymentIntentID, StoreID: allocation.StoreID, PartnerActorID: allocation.PartnerActorID, CommercialStoreTypeID: allocation.CommercialStoreTypeID, FulfillmentMode: allocation.FulfillmentMode, Currency: allocation.Currency, SubtotalMinor: allocation.SubtotalMinor, DeliveryFeeMinor: allocation.DeliveryFeeMinor, DeliveryMarginMinor: allocation.DeliveryMarginMinor, DiscountMinor: allocation.DiscountMinor, InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor, CashAmountMinor: allocation.CashAmountMinor, CustomerPayableMinor: allocation.CustomerPayableMinor, PolicyVersion: allocation.PolicyVersion, CreatedAt: allocation.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
 		if allocation.CommissionSnapshot != nil {
 			snapshot := allocation.CommissionSnapshot
 			jsonAllocation.CommissionSnapshot = &partnerStoreCommissionSnapshotJSON{CommercialStoreTypeID: snapshot.CommercialStoreTypeID, RateBps: snapshot.RateBps, PolicyVersion: snapshot.PolicyVersion, ProfileID: snapshot.ProfileID, ProfileVersion: snapshot.ProfileVersion, RoundingUnitMinor: snapshot.RoundingUnitMinor, SettlementPeriod: snapshot.SettlementPeriod}
@@ -1721,7 +1727,7 @@ func toDeliveryFeePolicy(item postgres.DeliveryFeePolicyRecord) deliveryFeePolic
 }
 
 func toDeliveryFeeQuote(item postgres.DeliveryFeeQuoteRecord) deliveryFeeQuoteJSON {
-	return deliveryFeeQuoteJSON{FeeMinor: item.FeeMinor, PolicyVersion: item.PolicyVersion, ServiceCityID: item.ServiceCityID, DistanceMeters: item.DistanceMeters, DistanceUnits: item.DistanceUnits, OrderSizeBaseUnits: item.OrderSizeBaseUnits, OrderSizeUnits: item.OrderSizeUnits, RoundingUnitMinor: item.RoundingUnitMinor}
+	return deliveryFeeQuoteJSON{CaptainEarningMinor: item.CaptainEarningMinor, PlatformMarginMinor: item.PlatformMarginMinor, FeeMinor: item.FeeMinor, PolicyVersion: item.PolicyVersion, ServiceCityID: item.ServiceCityID, DistanceMeters: item.DistanceMeters, DistanceUnits: item.DistanceUnits, OrderSizeBaseUnits: item.OrderSizeBaseUnits, OrderSizeUnits: item.OrderSizeUnits, RoundingUnitMinor: item.RoundingUnitMinor}
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

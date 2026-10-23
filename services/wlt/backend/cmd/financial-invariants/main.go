@@ -36,6 +36,23 @@ func main() {
 
 	checks := []invariant{
 		{
+			name: "delivery-margin-and-captain-earning-conservation",
+			query: `SELECT COUNT(*) FROM wlt.partner_order_earnings earning
+				JOIN wlt.customer_payment_allocations allocation ON allocation.payment_intent_id=earning.payment_intent_id
+				WHERE earning.delivery_fee_minor + earning.delivery_margin_minor <> allocation.delivery_fee_minor
+					OR earning.delivery_margin_minor <> allocation.delivery_margin_minor
+					OR COALESCE((SELECT SUM(entry.amount_minor) FROM wlt.ledger_entries entry
+						WHERE entry.transaction_id=earning.ledger_transaction_id
+							AND entry.account_code='CAPTAIN_WALLET' AND entry.account_class='liability'
+							AND entry.actor_type='captain' AND entry.actor_id=earning.captain_actor_id
+							AND entry.direction='CREDIT'),0) <> earning.delivery_fee_minor
+					OR COALESCE((SELECT SUM(entry.amount_minor) FROM wlt.ledger_entries entry
+						WHERE entry.transaction_id=earning.ledger_transaction_id
+							AND entry.account_code='PLATFORM_DELIVERY_MARGIN_INCOME'
+							AND entry.account_class='income' AND entry.actor_type IS NULL AND entry.actor_id IS NULL
+							AND entry.direction='CREDIT'),0) <> earning.delivery_margin_minor`,
+		},
+		{
 			name: "ledger-balanced",
 			query: `SELECT COUNT(*) FROM (
 				SELECT t.id

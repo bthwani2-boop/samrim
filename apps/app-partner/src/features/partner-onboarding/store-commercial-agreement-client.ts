@@ -5,6 +5,7 @@ import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 type StoreCommercialAgreementRate = Readonly<{
   fulfillmentMode: string;
   commissionRateBps: number;
+  deliveryMarkupMinor?: number;
 }>;
 
 export type StoreCommercialAgreement = Readonly<{

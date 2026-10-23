@@ -353,7 +353,7 @@ export function StoreCommercialAgreementWorkspace() {
       <h4>النسب الدقيقة في الاتفاق</h4>
       <ul>{selected.fulfillmentModes.map((mode) => {
         const rate = selected.rates.find((item) => item.fulfillmentMode === mode);
-        return <li key={mode}>{modeLabel(mode)}: {rate ? formatPercent(rate.commissionRateBps) : "لا توجد نسبة لهذا النمط"}</li>;
+        return <li key={mode}>{modeLabel(mode)}: {rate ? `${formatPercent(rate.commissionRateBps)}${rate.deliveryMarkupMinor ? ` · زيادة توصيل العميل ${rate.deliveryMarkupMinor.toLocaleString("ar-YE-u-nu-latn")} ريال (دخل بثواني، وأجرة الكابتن الأساسية لا تتغير)` : ""}` : "لا توجد نسبة لهذا النمط"}</li>;
       })}</ul>
       {selected.reason ? <p className="muted">سبب اقتراح الميدان: {selected.reason}</p> : null}
 

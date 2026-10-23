@@ -3176,6 +3176,7 @@ components:
         currency: { type: string, const: YER }
         subtotalMinor: { type: integer, minimum: 0 }
         deliveryFeeMinor: { type: integer, minimum: 0 }
+        deliveryMarginMinor: { type: integer, minimum: 0, description: "Frozen platform delivery margin. Only BTHWANI_CAPTAIN; never deducted from the approved Captain base fee." }
         discountMinor: { type: integer, minimum: 0 }
         internalBalanceAmountMinor: { type: integer, minimum: 0 }
         cashAmountMinor: { type: integer, minimum: 0 }
@@ -3199,7 +3200,7 @@ components:
     CustomerPaymentAllocation:
       type: object
       additionalProperties: false
-      required: [id, orderId, paymentIntentId, currency, subtotalMinor, deliveryFeeMinor, discountMinor, internalBalanceAmountMinor, cashAmountMinor, customerPayableMinor, policyVersion, createdAt]
+      required: [id, orderId, paymentIntentId, currency, subtotalMinor, deliveryFeeMinor, deliveryMarginMinor, discountMinor, internalBalanceAmountMinor, cashAmountMinor, customerPayableMinor, policyVersion, createdAt]
       properties:
         commercialStoreTypeId: { type: string, minLength: 1, maxLength: 128, nullable: true }
         id: { type: string }
@@ -3211,6 +3212,7 @@ components:
         currency: { type: string, const: YER }
         subtotalMinor: { type: integer, minimum: 0 }
         deliveryFeeMinor: { type: integer, minimum: 0 }
+        deliveryMarginMinor: { type: integer, minimum: 0, description: "Frozen platform delivery margin. Only BTHWANI_CAPTAIN; never deducted from the approved Captain base fee." }
         discountMinor: { type: integer, minimum: 0 }
         internalBalanceAmountMinor: { type: integer, minimum: 0 }
         cashAmountMinor: { type: integer, minimum: 0 }
@@ -3276,6 +3278,7 @@ components:
       properties:
         fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
         commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
+        deliveryMarkupMinor: { type: integer, minimum: 0, maximum: 10000, description: "Additional customer fee for a BTHWANI_CAPTAIN Store agreement with zero commission; 100% credited to platform margin, not subtracted from Captain base earning." }
     StoreCommercialAgreement:
       type: object
       additionalProperties: false
@@ -3582,6 +3585,8 @@ components:
       additionalProperties: false
       required: [serviceCityId, originLatitude, originLongitude, destinationLatitude, destinationLongitude, orderSizeBaseUnits]
       properties:
+        storeId: { type: string, maxLength: 128, description: "BThwani checkout Store; resolves the active approved agreement and delivery markup." }
+        fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN] }
         serviceCityId: { type: string, maxLength: 128 }
         originLatitude: { type: number, minimum: -90, maximum: 90 }
         originLongitude: { type: number, minimum: -180, maximum: 180 }
@@ -3591,9 +3596,11 @@ components:
     DeliveryFeeQuote:
       type: object
       additionalProperties: false
-      required: [feeMinor, policyVersion, serviceCityId, distanceMeters, distanceUnits, orderSizeBaseUnits, orderSizeUnits, roundingUnitMinor]
+      required: [feeMinor, captainEarningMinor, platformMarginMinor, policyVersion, serviceCityId, distanceMeters, distanceUnits, orderSizeBaseUnits, orderSizeUnits, roundingUnitMinor]
       properties:
         feeMinor: { type: integer, minimum: 0 }
+        captainEarningMinor: { type: integer, minimum: 0 }
+        platformMarginMinor: { type: integer, minimum: 0 }
         policyVersion: { type: string }
         serviceCityId: { type: string }
         distanceMeters: { type: integer, minimum: 0 }

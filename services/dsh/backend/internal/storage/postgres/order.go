@@ -63,6 +63,8 @@ type ProvisionedPayment struct {
 }
 
 type DeliveryFeeQuoteInput struct {
+	StoreID              string
+	FulfillmentMode      string
 	ServiceCityID        string
 	OriginLatitude       float64
 	OriginLongitude      float64
@@ -72,8 +74,9 @@ type DeliveryFeeQuoteInput struct {
 }
 
 type DeliveryFeeQuote struct {
-	FeeMinor      int64
-	PolicyVersion string
+	PlatformMarginMinor int64
+	FeeMinor            int64
+	PolicyVersion       string
 }
 
 type DeliveryFeeResolver func(ctx context.Context, input DeliveryFeeQuoteInput) (DeliveryFeeQuote, error)
@@ -88,7 +91,7 @@ type PromotionFunding struct {
 	PartnerSharePercent *int
 }
 
-type PaymentIntentProvisioner func(ctx context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, promotion PromotionFunding, idempotencyKey, correlationID string) (ProvisionedPayment, error)
+type PaymentIntentProvisioner func(ctx context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor, deliveryMarginMinor int64, deliveryPolicyVersion string, amountMinor int64, promotion PromotionFunding, idempotencyKey, correlationID string) (ProvisionedPayment, error)
 
 type PaymentIntentCanceller func(ctx context.Context, intentID, reason, idempotencyKey, correlationID string) error
 
@@ -1441,7 +1444,7 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 	}
 	feeQuote := DeliveryFeeQuote{FeeMinor: 0, PolicyVersion: "NOT_APPLICABLE"}
 	if requiresDeliveryFee {
-		feeQuote, err = input.DeliveryFeeResolver(ctx, DeliveryFeeQuoteInput{ServiceCityID: input.Evidence.ServiceCityID, OriginLatitude: input.Evidence.StoreOriginLatitude, OriginLongitude: input.Evidence.StoreOriginLongitude, DestinationLatitude: input.Evidence.AddressLatitude, DestinationLongitude: input.Evidence.AddressLongitude, OrderSizeBaseUnits: orderSizeBaseUnits})
+		feeQuote, err = input.DeliveryFeeResolver(ctx, DeliveryFeeQuoteInput{StoreID: input.StoreID, FulfillmentMode: input.FulfillmentMode, ServiceCityID: input.Evidence.ServiceCityID, OriginLatitude: input.Evidence.StoreOriginLatitude, OriginLongitude: input.Evidence.StoreOriginLongitude, DestinationLatitude: input.Evidence.AddressLatitude, DestinationLongitude: input.Evidence.AddressLongitude, OrderSizeBaseUnits: orderSizeBaseUnits})
 		if err != nil || feeQuote.FeeMinor < 0 || strings.TrimSpace(feeQuote.PolicyVersion) == "" {
 			return OrderRecord{}, false, ErrDeliveryFeeUnavailable
 		}
@@ -1482,7 +1485,7 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 	if promotion.ID != "" {
 		promotionFunding = PromotionFunding{PromotionID: promotion.ID, PromotionVersion: promotion.Version, PromotionCode: promotion.Code, FundingSource: promotion.FundingSource, PartnerSharePercent: promotion.FundingSharePartnerPercent}
 	}
-	payment, err := input.PaymentProvisioner(ctx, newOrderID, input.PaymentExternalReference, input.ClientActorID, total, discountMinor, feeQuote.FeeMinor, feeQuote.PolicyVersion, totalWithDelivery, promotionFunding, input.PaymentIdempotencyKey, input.CorrelationID)
+	payment, err := input.PaymentProvisioner(ctx, newOrderID, input.PaymentExternalReference, input.ClientActorID, total, discountMinor, feeQuote.FeeMinor, feeQuote.PlatformMarginMinor, feeQuote.PolicyVersion, totalWithDelivery, promotionFunding, input.PaymentIdempotencyKey, input.CorrelationID)
 	if err != nil {
 		return OrderRecord{}, false, fmt.Errorf("%w: %w", ErrPaymentProvisioning, err)
 	}
