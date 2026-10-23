@@ -67,8 +67,9 @@ function isRenderableOperation(value: unknown): value is OperatorOperationListIt
 function isRenderableSummary(value: unknown): value is OperatorOperationsSummary {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
-  const fields = ["totalCount", "actionableCount", "awaitingDispatchCount", "activeCount", "deliveredCount"];
+  const fields = ["totalCount", "actionableCount", "awaitingDispatchCount", "activeCount", "deliveredCount", "inCustodyOrderCount"];
   return fields.every((field) => Number.isSafeInteger(item[field]) && Number(item[field]) >= 0 && Number(item[field]) <= Number(item.totalCount))
+    && Number.isSafeInteger(item.inCustodyOrderValueMinor) && Number(item.inCustodyOrderValueMinor) >= 0
     && typeof item.measuredAt === "string" && Number.isFinite(Date.parse(item.measuredAt));
 }
 
@@ -294,6 +295,7 @@ export function OperationsWorkspace() {
           </button>
         </div>
         {summary ? <p className="ops-summary-caption">إجماليات من الخدمة للبحث والمرشحات الحالية · <time dateTime={summary.measuredAt}>{formatOrderDate(summary.measuredAt)}</time></p> : null}
+        {summary && summary.inCustodyOrderCount > 0 ? <p className="ops-summary-caption" role="status">عهدة الكباتن الجارية: {summary.inCustodyOrderCount.toLocaleString("ar-YE")} طلب · إجمالي قيم الطلبات: {summary.inCustodyOrderValueMinor.toLocaleString("ar-YE")} ريال — مؤشر متابعة، وليس ضمانًا ماليًا.</p> : null}
       </section>
 
       {overdueOnPage > 0 ? <div className="operations-attention-note" role="status">

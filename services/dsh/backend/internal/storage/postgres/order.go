@@ -338,12 +338,14 @@ type OperatorOperationsResult struct {
 }
 
 type OperatorOperationsSummary struct {
-	TotalCount            int
-	ActionableCount       int
-	AwaitingDispatchCount int
-	ActiveCount           int
-	DeliveredCount        int
-	MeasuredAt            time.Time
+	TotalCount               int
+	ActionableCount          int
+	AwaitingDispatchCount    int
+	ActiveCount              int
+	InCustodyOrderCount      int
+	InCustodyOrderValueMinor int64
+	DeliveredCount           int
+	MeasuredAt               time.Time
 }
 
 // Legacy multi-store children omit a displayed total. Direct client checkout
@@ -716,7 +718,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	// The filtered registry, totals and bounded page share a single statement snapshot.
 	// Cursor predicates apply only to the page, never to the result-set summary.
 	rows, err := db.QueryContext(ctx, `WITH filtered AS MATERIALIZED (
-		SELECT o.id,s.name,o.state,o.updated_at,
+		SELECT o.id,s.name,o.state,o.updated_at,o.total_amount_minor AS order_value_minor,
 		a.id AS assignment_id,a.order_id,a.captain_actor_id,a.state AS assignment_state,a.version,COALESCE(h.state,'') AS handoff_state,
 		`+actionable+` AS actionable
 		FROM dsh.commerce_orders o
@@ -735,6 +737,8 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		count(*) FILTER (WHERE state='READY_FOR_DISPATCH') AS awaiting_dispatch_count,
 		count(*) FILTER (WHERE state NOT IN ('READY_FOR_DISPATCH','DELIVERY_FAILED','DELIVERED','REJECTED','CANCELLED')) AS active_count,
 		count(*) FILTER (WHERE state='DELIVERED') AS delivered_count,
+		count(*) FILTER (WHERE assignment_state='in_custody') AS in_custody_order_count,
+		COALESCE(sum(order_value_minor) FILTER (WHERE assignment_state='in_custody'),0)::bigint AS in_custody_order_value_minor,
 		statement_timestamp() AS measured_at FROM filtered
 	), page AS (
 		SELECT * FROM filtered WHERE `+pageWhere+" ORDER BY updated_at "+order+",id "+order+" LIMIT $"+strconv.Itoa(len(args))+`
@@ -753,7 +757,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		var updatedAt sql.NullTime
 		var assignmentID, assignmentOrderID, captainActorID, assignmentState, handoffState sql.NullString
 		var assignmentVersion sql.NullInt64
-		if err := rows.Scan(&summary.TotalCount, &summary.ActionableCount, &summary.AwaitingDispatchCount, &summary.ActiveCount, &summary.DeliveredCount, &summary.MeasuredAt,
+		if err := rows.Scan(&summary.TotalCount, &summary.ActionableCount, &summary.AwaitingDispatchCount, &summary.ActiveCount, &summary.DeliveredCount, &summary.InCustodyOrderCount, &summary.InCustodyOrderValueMinor, &summary.MeasuredAt,
 			&id, &storeName, &state, &updatedAt,
 			&assignmentID, &assignmentOrderID, &captainActorID, &assignmentState, &assignmentVersion, &handoffState); err != nil {
 			return OperatorOperationsResult{}, err

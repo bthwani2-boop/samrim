@@ -134,7 +134,8 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 	summary := operations.Summary
 	writeJSON(w, http.StatusOK, contract.OperatorOperationsResponse{Operations: items, NextCursor: operations.NextCursor,
 		Summary: contract.OperatorOperationsSummary{TotalCount: summary.TotalCount, ActionableCount: summary.ActionableCount,
-			AwaitingDispatchCount: summary.AwaitingDispatchCount, ActiveCount: summary.ActiveCount, DeliveredCount: summary.DeliveredCount, MeasuredAt: summary.MeasuredAt}})
+			AwaitingDispatchCount: summary.AwaitingDispatchCount, ActiveCount: summary.ActiveCount, DeliveredCount: summary.DeliveredCount,
+			InCustodyOrderCount: summary.InCustodyOrderCount, InCustodyOrderValueMinor: int(summary.InCustodyOrderValueMinor), MeasuredAt: summary.MeasuredAt}})
 }
 
 func (s *OrderServer) readOperatorOperation(w http.ResponseWriter, r *http.Request) {

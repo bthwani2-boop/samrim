@@ -294,5 +294,55 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil || len(allReview.Operations) != 3 || allReview.Summary.ActionableCount != 1 {
 			t.Fatalf("review counts must use the same eligibility predicate: %+v err=%v", allReview, err)
 		}
+		// Independent Captain goods custody has a single current operational
+		// readback even when the operator requests a one-row page.
+		const riskOrder = "operator_custody_risk"
+		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.captain_admissions(id,actor_id,full_name_ar,state,availability_state,requires_profile_review,version) VALUES('operator-risk-admission','operator-risk-captain','كابتن اختبار','eligible','unavailable',false,1)"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES('operator-risk-cart','client_operator_ops','store_operator_ops','checked_out',1)"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(
+			id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,
+			address_latitude,address_longitude,service_city_id,serviceability_policy_version,
+			serviceability_status,serviceability_store_version,serviceability_address_version,
+			state,total_amount_minor,payment_cash_amount_minor,currency,version,
+			payment_intent_id,payment_method,payment_state,fulfillment_mode)
+			VALUES($1,'client_operator_ops','store_operator_ops','operator-risk-cart',
+			'operator-risk-address',1,'عنوان اختبار العهدة',15.3694457,44.1910064,
+			'sanaa_operator_ops','CITY_SCOPE_V1','SERVICEABLE',1,1,
+			'IN_CUSTODY',6400,6400,'YER',1,'operator-risk-payment',
+			'CASH_ON_DELIVERY','REQUIRES_COLLECTION','BTHWANI_CAPTAIN')`, riskOrder); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_dispatch_offers(
+			id,order_id,captain_actor_id,state,expires_at,version,idempotency_key,request_hash)
+			VALUES('operator-risk-offer',$1,'operator-risk-captain','accepted',
+			clock_timestamp()+interval '1 hour',2,'operator-risk-offer-key','operator-risk-offer-hash')`, riskOrder); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_assignments(
+			id,order_id,captain_actor_id,accepted_offer_id,state,version,custody_started_at)
+			VALUES('operator-risk-assignment',$1,'operator-risk-captain',
+			'operator-risk-offer','in_custody',1,clock_timestamp())`, riskOrder); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_handoffs(
+			assignment_id,order_id,store_id,state,version,store_confirmed_at,captain_picked_up_at)
+			VALUES('operator-risk-assignment',$1,'store_operator_ops','completed',
+			3,clock_timestamp(),clock_timestamp())`, riskOrder); err != nil {
+			t.Fatal(err)
+		}
+		custody, err := postgres.ListOrdersForOperator(ctx, db, "IN_CUSTODY", "", "updated_desc", false, 1, "")
+		if err != nil || custody.Summary.InCustodyOrderCount != 1 ||
+			custody.Summary.InCustodyOrderValueMinor != 6400 || custody.Summary.TotalCount != 1 {
+			t.Fatalf("custody value readback failed: %+v err=%v", custody.Summary, err)
+		}
+		nonCustody, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", "", "updated_desc", false, 1, "")
+		if err != nil || nonCustody.Summary.InCustodyOrderCount != 0 ||
+			nonCustody.Summary.InCustodyOrderValueMinor != 0 {
+			t.Fatalf("custody leaked across state filter: %+v err=%v", nonCustody.Summary, err)
+		}
 	})
 }

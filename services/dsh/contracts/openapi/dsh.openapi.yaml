@@ -9169,7 +9169,7 @@ components:
     OperatorOperationsSummary:
       type: object
       description: Counts over the complete authorized filtered result set before cursor paging, measured with the returned page in one database statement snapshot. Each subsequent request refreshes that snapshot.
-      required: [totalCount, actionableCount, awaitingDispatchCount, activeCount, deliveredCount, measuredAt]
+      required: [totalCount, actionableCount, awaitingDispatchCount, activeCount, deliveredCount, inCustodyOrderCount, inCustodyOrderValueMinor, measuredAt]
       additionalProperties: false
       properties:
         totalCount:
@@ -9194,6 +9194,16 @@ components:
           type: integer
           format: int64
           minimum: 0
+        inCustodyOrderCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Current BThwani Captain custody assignments among filtered orders.
+        inCustodyOrderValueMinor:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Sum of customer-order payable amounts in captain custody; a risk-monitoring proxy, not insured goods replacement value or held collateral.
         measuredAt:
           type: string
           format: date-time
