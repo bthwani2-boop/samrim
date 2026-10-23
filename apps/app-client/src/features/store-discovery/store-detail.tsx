@@ -33,8 +33,7 @@ type StoreCatalogRow =
 
 type StoreBannerItem =
   | { kind: "content"; key: string; content: PublicDiscoveryContentView }
-  | { kind: "offer"; key: string; offer: PublicCatalogResponse["offers"][number] }
-  | { kind: "promotion"; key: string; promotion: PublicPromotionView };
+  | { kind: "offer"; key: string; offer: PublicCatalogResponse["offers"][number] };
 
 type CatalogSnapshot = { catalog: PublicCatalogResponse; categoryID: string | null; sectionID: string | null; query: string; productID: string };
 
@@ -146,7 +145,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   );
   const bannerItems: StoreBannerItem[] = [
     ...storeMarketingContents.map((content) => ({ kind: "content" as const, key: "content:" + content.id, content })),
-    ...promotions.map((promotion) => ({ kind: "promotion" as const, key: `promotion:${promotion.id}`, promotion })),
     ...bannerCatalogOffers.slice(0, 5).map((offer) => ({ kind: "offer" as const, key: `offer:${offer.offerId}`, offer })),
   ].slice(0, 5);
   // Expose neighboring slides; centering padding is part of the scroll content, not each item.
@@ -840,25 +838,26 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
               {bannerItems.map((item) => item.kind === "content" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={"تفاصيل " + item.content.titleAr} onPress={() => { void recordDiscoveryClick(item.content.id); router.push(("/discovery-content/" + encodeURIComponent(item.content.id)) as Href); }} style={[styles.bannerCard, { width: bannerWidth }]}>
                 {item.content.mediaUri ? <Image source={{ uri: item.content.mediaUri }} accessibilityLabel={"صورة " + item.content.titleAr} style={styles.bannerImage} resizeMode="cover" /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>جديد المتجر</Text><Text numberOfLines={2} style={styles.bannerProduct}>{item.content.titleAr}</Text><Text numberOfLines={2} style={styles.bannerPrice}>{item.content.bodyAr}</Text></View>
-              </Pressable> : item.kind === "offer" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`${bannerOffers.length ? "عرض المنتج الرائج" : "عرض المنتج"} ${item.offer.productName}`} onPress={() => openOfferDetails(item.offer.offerId)} style={[styles.bannerCard, { width: bannerWidth }]}>
+              </Pressable> : <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`${bannerOffers.length ? "عرض المنتج الرائج" : "عرض المنتج"} ${item.offer.productName}`} onPress={() => openOfferDetails(item.offer.offerId)} style={[styles.bannerCard, { width: bannerWidth }]}>
                 {item.offer.media[0]?.uri ? <Image source={{ uri: item.offer.media[0].uri }} accessibilityLabel={`صورة ${item.offer.productName}`} resizeMode="cover" style={styles.bannerImage} /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="trending" color={theme.interactiveText} size={sizing.iconMd} /></View>}
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>{bannerOffers.length ? "الأكثر طلبًا" : "من منتجات المتجر"}</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.offer.productName}</Text><Text style={styles.bannerPrice}>{storeMoney(item.offer.priceMinor, item.offer.currency)}</Text></View>
-              </Pressable> : <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`عرض ${item.promotion.nameAr}: ${promotionBenefit(item.promotion)}`} onPress={() => openStorePromotion(item.promotion.code)} style={[styles.bannerCard, { width: bannerWidth }]}>
-                <View style={styles.bannerPromotionMark}><Text style={styles.bannerPromotionMarkText}>عرض</Text></View>
-                <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>من عروض المتجر</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.promotion.nameAr}</Text><Text numberOfLines={1} style={styles.bannerPrice}>{promotionBenefit(item.promotion)} · الرمز {item.promotion.code}</Text></View>
               </Pressable>)}
             </ScrollView>
           </View> : null}
           {bannerError && bannerItems.length === 0 ? <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل المنتجات الرائجة" onPress={() => void loadBanner()} style={styles.inlineRecovery}><Text style={styles.bannerPause}>تعذر تحميل المنتجات الرائجة · إعادة المحاولة</Text></Pressable> : null}
 
-        </View>}
-        ListFooterComponent={(state.catalog.nextCursor || promotionError || (!promotionLoading && promotions.length > 0) || error || favoriteLoadError) ? <View style={styles.listFooter}>
-          {state.catalog.nextCursor ? <BthwaniButton busy={loadingMore} disabled={catalogRefreshing} label="تحميل المزيد" onPress={() => void loadMore()} style={styles.loadMoreButton} variant="secondary" /> : null}
           {promotionError ? <View style={styles.promotionNotice}><Text accessibilityRole="alert" style={styles.validationError}>تعذر قراءة عروض هذا المتجر؛ يمكنك متابعة الطلب من دونها.</Text><BthwaniButton label="إعادة قراءة العروض" onPress={() => void retryPromotions()} variant="secondary" /></View> : null}
           {!promotionLoading && !promotionError && promotions.length > 0 ? <>
-            <BthwaniSectionHeader title="عروض هذا المتجر" subtitle="تُطبّق الأكواد على الطلبات المؤهلة من هذا المتجر." />
-            <View style={styles.promotionList}>{promotions.map((promotion) => <PromotionCard key={promotion.id} promotion={promotion} onUse={() => openStorePromotion(promotion.code)} />)}</View>
+            <BthwaniSectionHeader title="عروض هذا المتجر"  />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing[3], gap: spacing[2] }}>
+            {promotions.map((promotion) => <View key={promotion.id} style={{ width: Math.min(320, Math.max(245, windowWidth - spacing[3] * 3)) }}>
+              <PromotionCard promotion={promotion} onUse={() => openStorePromotion(promotion.code)} />
+            </View>)}
+          </ScrollView>
           </> : null}
+        </View>}
+        ListFooterComponent={(state.catalog.nextCursor || error || favoriteLoadError) ? <View style={styles.listFooter}>
+          {state.catalog.nextCursor ? <BthwaniButton busy={loadingMore} disabled={catalogRefreshing} label="تحميل المزيد" onPress={() => void loadMore()} style={styles.loadMoreButton} variant="secondary" /> : null}
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           {favoriteLoadError ? <BthwaniSurface tone="inset" style={styles.favoriteNotice}><Text style={styles.muted}>تعذر تحديث حالة المفضلة من الخادم.</Text><BthwaniButton busy={favoriteLoading} label="إعادة المحاولة" onPress={() => void reloadFavorites()} variant="secondary" /></BthwaniSurface> : null}
         </View> : null}
@@ -942,8 +941,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     bannerCard: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.lg, flexDirection: "row", gap: spacing[1], minHeight: 80, padding: spacing[1] },
     bannerImage: { borderRadius: radius.md, height: 72, width: 74 },
     bannerImageFallback: { alignItems: "center", backgroundColor: theme.surface, borderRadius: radius.md, height: 72, justifyContent: "center", width: 74 },
-    bannerPromotionMark: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.md, height: 72, justifyContent: "center", width: 74 },
-    bannerPromotionMarkText: { ...typography.bodyStrong, color: theme.onAction },
     bannerCopy: { alignItems: "flex-end", flex: 1, gap: 1, minWidth: 0 },
     bannerItemEyebrow: { ...typography.caption, color: theme.colorMuted },
     bannerProduct: { ...typography.bodyStrong, color: theme.color },
@@ -981,7 +978,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     orderStatusBadge: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, justifyContent: "center", minHeight: sizing.controlMd, minWidth: sizing.controlMd, paddingHorizontal: spacing[3] },
     orderStatusBadgeText: { ...typography.bodyStrong, color: theme.interactiveText },
     inlineRecovery: { alignItems: "flex-end", paddingVertical: spacing[1] },
-    promotionList: { gap: spacing[2] },
     promotionNotice: { alignItems: "flex-start", gap: spacing[2] },
     categoryRail: { alignItems: "center", flexDirection: "row", gap: spacing[1], paddingVertical: spacing[1], paddingHorizontal: spacing[1] },
     catalogToolbar: { alignItems: "center", flexDirection: "row", gap: spacing[1], minHeight: sizing.controlLg },
@@ -1073,10 +1069,6 @@ function formatQuantity(baseUnit: string, quantity: number): string {
   if (baseUnit === "GRAM") return quantity >= 1000 ? `${localized(quantity / 1000)} كجم` : `${localized(quantity)} غ`;
   if (baseUnit === "MILLILITER") return quantity >= 1000 ? `${localized(quantity / 1000)} لتر` : `${localized(quantity)} مل`;
   return `${localized(quantity)} حبة`;
-}
-
-function promotionBenefit(promotion: PublicPromotionView): string {
-  return promotion.kind === "PERCENTAGE" ? `خصم ${promotion.valueMinor}%` : `خصم ${storeMoney(promotion.valueMinor, "YER")}`;
 }
 
 function isQuantityAllowed(offer: PublicCatalogResponse["offers"][number], quantity: number): boolean {
