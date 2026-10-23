@@ -11,7 +11,8 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
-import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
+import { FinanceWalletRegistry } from "./finance-wallet-registry";
+import "./finance-command-center.css";
 import { PageHeader } from "../../shell/page-header";
 import { SettlementIntakeInbox } from "./settlement-intake-inbox";
 import { useReadOnReturn } from "../shared/use-read-on-return";
@@ -43,19 +44,19 @@ type QueueDefinition = Readonly<{ source: Source; label: string; endpoint: strin
 type InitialQuery = Record<string, string | string[] | undefined>;
 
 const sources: readonly QueueDefinition[] = [
-  { source: "custody", label: "العهد النقدية", endpoint: "/api/finance/cash-custody?limit=25&sort=collected_asc" },
+  { source: "custody", label: "التحصيل النقدي", endpoint: "/api/finance/cash-custody?limit=25&sort=collected_asc" },
   { source: "commissions", label: "ذمم عمولة المنصة", endpoint: "/api/finance/partner-commission-receivables?limit=25&sort=actor_asc" },
   { source: "batches", label: "دفعات تنتظر الاعتماد", endpoint: "/api/finance/settlement-batches?limit=25&status=PREPARED" },
   { source: "withdrawals", label: "سحوبات العملاء", endpoint: "/api/finance/customer-withdrawal-intakes?limit=25&status=REQUESTED&sort=requested_asc" },
 ];
 const sourceLabels: Record<Source, string> = {
-  custody: "العهد النقدية",
+  custody: "التحصيل النقدي",
   commissions: "ذمم عمولة المنصة",
   batches: "دفعات التحويل",
   withdrawals: "سحوبات العملاء",
 };
 const workflowLabels: Record<Workflow, string> = {
-  custody: "العهد النقدية والتوريدات",
+  custody: "التحصيل النقدي والتوريدات",
   commissions: "ذمم عمولة المنصة والتحصيل",
   batches: "دفعات التحويل والمطابقة",
   withdrawals: "سحوبات العملاء الاستثنائية",
@@ -92,7 +93,7 @@ function financialRows(source: Source, body: unknown): readonly FinancialRow[] {
       return {
         source, key: source + ":" + item.paymentIntentId, id: item.paymentIntentId,
         subject: safeText((item as typeof item & { captainName?: string }).captainName, "كابتن بثواني"),
-        reference: item.externalReference, category: "عهدة نقدية",
+        reference: item.externalReference, category: "تحصيل نقدي",
         state: pending ? "توريد بانتظار المطابقة" : "بانتظار توريد الكابتن",
         nextStep: pending ? "مراجعة الإيصال ومطابقة التوريد" : "متابعة توريد الكابتن",
         amount: formatMoney(item.amountMinor, item.currency), priority: pending ? 1 : 4,
@@ -167,12 +168,14 @@ function FinanceTask({
 export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initialQuery?: InitialQuery }>) {
   const router = useRouter();
   const { state } = useSession();
-  const actor = state.kind === "authenticated" && state.identity.role === "operator"
-    && state.identity.permissions?.includes("finance") ? state.identity.subject : null;
+  const actor = state.kind === "authenticated" && state.identity.role === "operator" && state.identity.permissions?.includes("finance")
+    ? state.identity.subject : null;
   const [snapshot, setSnapshot] = useState<{ actor: string; results: Partial<Record<Source, ReadResult>> } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [deskMode, setDeskMode] = useState<"work" | "balances" | "records">("work");
+  const [tab, setTab] = useState<"command" | "wallets" | "activity" | "collection" | "settlements" | "reconcile">("command");
   const [search, setSearch] = useState("");
+  const [priorityOnly, setPriorityOnly] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState<Source | "all">("all");
   const [intakeCount, setIntakeCount] = useState<number | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [activeWorkflow, setActiveWorkflow] = useState<Workflow | null>(() => parseWorkflow(queryValue(initialQuery, "workflow")));
@@ -203,160 +206,115 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
     return () => { sequence.current += 1; };
   }, [refresh]);
   useReadOnReturn(refresh, Boolean(actor) && !loading && !activeWorkflow);
-  useEffect(() => {
-    if (!focusedKey) return;
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setFocusedKey(null); };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [focusedKey]);
-
   const rows = useMemo(() => sources.flatMap((source) => visible?.[source.source]?.items ?? [])
     .sort((a, b) => a.priority - b.priority || (a.date ?? "").localeCompare(b.date ?? "") || a.key.localeCompare(b.key)), [visible]);
-  const displayedRows = rows.filter((row) =>
-    (deskMode === "work" ? row.priority <= 2 : deskMode === "balances" ? (row.source === "custody" || row.source === "commissions") : (row.source === "batches" || row.source === "withdrawals")) &&
-    [row.subject, row.reference, row.category, row.state, row.nextStep, row.amount]
-      .some((value) => value.toLocaleLowerCase("ar").includes(search.toLocaleLowerCase("ar").trim())),
-  );
-  const showIntakes = deskMode === "work";
-  const sourceAttentionCount = rows.filter((row) => row.priority <= 2).length;
-  const shownIntakes = showIntakes && (intakeCount ?? 0) > 0;
-
-  const selected = rows.find((row) => row.key === focusedKey) ?? null;
   const errors = sources.filter((source) => Boolean(visible?.[source.source]?.error));
   const more = sources.filter((source) => visible?.[source.source]?.hasMore);
+  const matched = rows.filter((row) =>
+    (sourceFilter === "all" || row.source === sourceFilter) &&
+    (!priorityOnly || row.priority <= 2) &&
+    [row.subject, row.reference, row.category, row.state, row.nextStep, row.amount].some((value) => value.toLocaleLowerCase("ar").includes(search.trim().toLocaleLowerCase("ar"))));
+  const displayedRows = tab === "command" ? matched.filter((row) => row.priority <= 2) : matched;
+  const selected = displayedRows.find((row) => row.key === focusedKey) ?? displayedRows[0] ?? null;
   const hasData = Boolean(visible);
-
-  const openTask = (workflow: Workflow, row: FinancialRow | null = null) => {
-    setFocusedKey(null);
-    setActiveRow(row);
-    setActiveWorkflow(workflow);
-  };
+  const counts = { custody: visible?.custody?.items.length ?? 0, commissions: visible?.commissions?.items.length ?? 0, batches: visible?.batches?.items.length ?? 0, withdrawals: visible?.withdrawals?.items.length ?? 0 };
+  const attentionCount = rows.filter((row) => row.priority <= 2).length + (intakeCount ?? 0);
+  const tabs = [
+    { id: "command", label: "القيادة", icon: "⌁" },
+    { id: "wallets", label: "المحافظ", icon: "▣" },
+    { id: "activity", label: "الحركات", icon: "⇄" },
+    { id: "collection", label: "التحصيل", icon: "↓" },
+    { id: "settlements", label: "التسويات", icon: "✓" },
+    { id: "reconcile", label: "المطابقة", icon: "≋" },
+  ] as const;
+  const openTask = (workflow: Workflow, row: FinancialRow | null = null) => { setActiveRow(row); setActiveWorkflow(workflow); };
   const closeTask = () => {
     if (Object.keys(initialQuery).length) router.replace("/finance", { scroll: false });
-    setActiveWorkflow(null);
-    setActiveRow(null);
-    setFocusedKey(null);
-    void refresh();
+    setActiveWorkflow(null); setActiveRow(null); void refresh();
   };
-
+  const changeTab = (next: typeof tab) => { setTab(next); setFocusedKey(null); setSearch(""); setSourceFilter("all"); setPriorityOnly(false); };
   if (state.kind !== "authenticated") return null;
-  if (!actor) return <section className="state-content workspace-restricted" role="alert">
-    <h1>صلاحية المالية غير متاحة</h1><p>تحتاج إلى صلاحية المالية للاطلاع على المعاملات.</p>
-  </section>;
+  if (!actor) return <section className="state-content workspace-restricted" role="alert"><h1>صلاحية المالية غير متاحة</h1><p>يتطلب عرض الأرصدة والكشوف إذن المالية.</p></section>;
 
-  return <AdaptiveRecordWorkspace
-    open={!activeWorkflow && Boolean(selected)}
-    preferenceKey="finance"
-    onClose={() => setFocusedKey(null)}
-    detail={selected && !activeWorkflow ? <AdaptiveRecordPanel title="معاينة المعاملة المالية" subtitle={selected.category} onClose={() => setFocusedKey(null)}>
-      <div className="finance-center-inspector-content">
-        <h3>{selected.subject}</h3>
-        <dl><dt>نوع العملية</dt><dd>{selected.category}</dd><dt>المرجع</dt><dd dir="auto">{selected.reference}</dd>
-          <dt>المبلغ</dt><dd>{selected.amount}</dd><dt>الحالة</dt><dd>{selected.state}</dd>
-          <dt>الإجراء التالي</dt><dd>{selected.nextStep}</dd></dl>
-        <p className="muted">تُقرأ المستندات والأرصدة والتفاصيل المحاسبية من سجلها المختص قبل التنفيذ.</p>
-        <button type="button" className="button button-primary" onClick={() => openTask(workflowFor(selected), selected)}>فتح المعالجة داخل الصفحة</button>
-      </div>
-    </AdaptiveRecordPanel> : null}>
-    <section className="workspace-page finance-center" aria-labelledby="finance-center-title">
-    <PageHeader id="finance-center-title" title="المالية"
-      actions={activeWorkflow
-        ? <button type="button" className="button button-secondary" onClick={closeTask}>العودة إلى المركز المالي</button>
-        : errors.length > 0 ? <button type="button" className="button button-secondary" onClick={() => void refresh()} disabled={loading}>إعادة المحاولة</button> : undefined} />
+  return <section className="workspace-page finance-center fc-shell" aria-labelledby="finance-center-title">
+    <PageHeader id="finance-center-title" title="المركز المالي" actions={activeWorkflow
+      ? <button type="button" className="button button-secondary" onClick={closeTask}>العودة إلى المركز المالي</button>
+      : errors.length ? <button type="button" className="button button-secondary" disabled={loading} onClick={() => void refresh()}>إعادة قراءة المصادر</button> : undefined} />
     {activeWorkflow ? <div className="finance-center-active">
-      <div className="finance-center-active-header">
-        <div><h2>{workflowLabels[activeWorkflow]}</h2><p className="muted">الإجراءات والصلاحيات المالية تُنفذ في سجلها المختص.</p></div>
-        <button type="button" className="button button-quiet" onClick={closeTask}>إغلاق التفاصيل</button>
-      </div>
+      <div className="finance-center-active-header"><div><h2>{workflowLabels[activeWorkflow]}</h2><p className="muted">التفاصيل والتفويض والإجراءات من سجلاتها الأصلية.</p></div>
+        <button className="fc-btn" type="button" onClick={closeTask}>إغلاق التفاصيل ×</button></div>
       <FinanceTask workflow={activeWorkflow} row={activeRow} query={initialQuery} />
     </div> : <>
-      <nav className="finance-desk-modes" aria-label="مساحات العمل المالية">
-        {([
-          ["work", "العمل اليوم", "القرارات التي تحتاج تدخلًا"],
-          ["balances", "الأرصدة والمتابعة", "ذمم وعهد ومبالغ قيد المتابعة"],
-          ["records", "السجل والمطابقة", "المعاملات وأدلة التحويل"],
-        ] as const).map(([mode, name, help]) => <button key={mode} type="button"
-          className="finance-desk-mode" aria-current={deskMode === mode ? "page" : undefined}
-          onClick={() => { setDeskMode(mode); setFocusedKey(null); setSearch(""); }}>
-          <strong>{name}</strong><span>{help}</span>
+      <div className="fc-topline"><span>قيادة العمليات المالية · المحافظ والحركات والتحصيل والتسويات</span><span className="fc-live"><i /> من المصادر المعتمدة</span></div>
+      <nav className="fc-main-tabs" aria-label="أقسام المركز المالي">
+        {tabs.map((item) => <button type="button" key={item.id} aria-current={tab === item.id ? "page" : undefined} onClick={() => changeTab(item.id)}>
+          <span aria-hidden="true">{item.icon}</span>{item.label}
         </button>)}
       </nav>
-      <div className="finance-desk-overview" aria-label="مؤشرات القائمة المحملة">
-        <div><span>تحتاج انتباهك</span><strong>{intakeCount === null || !hasData ? "—" : (intakeCount + sourceAttentionCount).toLocaleString("ar-YE")}</strong><small>ضمن السجلات المعروضة فقط</small></div>
-        <div><span>سجلات قيد المتابعة</span><strong>{hasData ? rows.length.toLocaleString("ar-YE") : "—"}</strong><small>معاينة من المصادر المتاحة</small></div>
-        <div><span>اتصال المصادر</span><strong>{!hasData ? "—" : errors.length ? "تحتاج تحققًا" : "متاحة"}</strong><small>{errors.length ? errors.length.toLocaleString("ar-YE") + " مصدر تعذر تحميله" : "لا تعني مطابقة الأموال"}</small></div>
-      </div>
-      <div className="finance-desk-controls">
-        <label htmlFor="finance-desk-search" className="finance-desk-search">
-          <span className="finance-desk-search-icon" aria-hidden="true">⌕</span>
-          <input id="finance-desk-search" type="search" autoComplete="off" maxLength={128}
-            aria-label="البحث في المعاملات المالية المحملة"
-            placeholder="ابحث عن مستفيد أو مرجع في السجلات المعروضة"
-            value={search} onChange={(event) => setSearch(event.target.value)} />
-        </label>
-        <p className="finance-desk-context">{deskMode === "work"
-          ? "مرتبة بحسب الحاجة إلى التدخل. يُعرض سبب الحالة قبل أي قرار."
-          : deskMode === "balances"
-          ? "قيم الذمم والعهد مؤشرات متابعة؛ راجع السجل الأصلي قبل التسوية."
-          : "هذه معاينة محدودة، وليست دفتر الأستاذ أو كشف المزود الكامل."}</p>
-      </div>
-      {errors.length > 0 ? <div className="managed-status managed-status-warning" role="alert">
-        <strong>تعذر تحميل بعض المصادر المالية</strong>
-        <p>{errors.map((source) => source.label + ": " + (visible?.[source.source]?.error ?? "")).join("؛ ")}</p>
-        <button type="button" className="button button-secondary" onClick={() => void refresh()} disabled={loading}>إعادة المحاولة</button>
-      </div> : null}
-      <section className="finance-desk-register" aria-label="المعاملات المالية">
-        <div className="finance-desk-register-head">
-          <div><h2>{deskMode === "work" ? "تحتاج قرارك" : deskMode === "balances" ? "الأرصدة والعهد" : "المعاملات والمطابقة"}</h2>
-            <p>{deskMode === "work" ? "ابدأ بالأعلى أولوية؛ كل إجراء يعود إلى سجله المعتمد." : "المعاينة محدودة؛ افتح السجل الأصلي للتفاصيل والإجراءات."}</p></div>
-          <details className="finance-desk-specialized">
-            <summary>السجلات المتخصصة</summary>
-            <div className="finance-desk-specialized-menu">
-              {(Object.keys(workflowLabels) as Workflow[]).map((key) =>
-                <button type="button" key={key} onClick={() => openTask(key)}>{workflowLabels[key]}</button>)}
-            </div>
-          </details>
+      {tab === "wallets" ? <FinanceWalletRegistry /> : <>
+        <div className="fc-kpis" aria-label="مؤشرات المعاينة المالية">
+          {[
+            { label: "قرارات تحتاج انتباهًا", value: intakeCount === null || !hasData ? "—" : attentionCount.toLocaleString("ar-YE"), note: "ضمن السجلات المحمّلة", kind: "critical", icon: "!" },
+            { label: "دفعات تنتظر الاعتماد", value: hasData ? counts.batches.toLocaleString("ar-YE") : "—", note: "من معاينة دفعات التحويل", kind: "warning", icon: "◷" },
+            { label: "ذمم عمولات للمتابعة", value: hasData ? counts.commissions.toLocaleString("ar-YE") : "—", note: "سجل ذمم الشركاء", kind: "neutral", icon: "⇄" },
+            { label: "تحصيلات نقدية", value: hasData ? counts.custody.toLocaleString("ar-YE") : "—", note: "من سجل التحصيل المحمّل", kind: "success", icon: "▣" },
+            { label: "طلبات سحب استثنائية", value: hasData ? counts.withdrawals.toLocaleString("ar-YE") : "—", note: "ضمن طلبات السحب الجديدة", kind: "neutral", icon: "↗" },
+          ].map((metric) => <div className="fc-kpi" data-kind={metric.kind} key={metric.label}>
+            <div className="fc-kpi-top"><span>{metric.label}</span><span className="fc-kpi-icon" aria-hidden="true">{metric.icon}</span></div>
+            <strong>{metric.value}</strong><small>{metric.note}</small>
+          </div>)}
         </div>
-        <SettlementIntakeInbox search={search} visible={showIntakes} onCountChange={setIntakeCount} />
-        {loading && !hasData ? <p role="status" className="collection-state">جارٍ قراءة السجلات المالية…</p> : null}
-        {hasData ? <div className="finance-desk-table-area">
-          {displayedRows.length > 0 ? <>
-            <div className="finance-desk-table-caption">سجلات المصادر الأخرى <span>معاينة محدودة · 25 سجلًا كحد أقصى لكل مصدر</span></div>
-            <div className="finance-center-table-scroll">
-              <table className="finance-center-table finance-desk-table">
-                <thead><tr><th scope="col">المستفيد / المرجع</th><th scope="col">النوع</th>
-                  <th scope="col">الحالة</th><th scope="col">المبلغ</th><th scope="col">الإجراء</th></tr></thead>
-                <tbody>{displayedRows.map((row) => <tr key={row.key} data-priority={row.priority <= 2 ? "attention" : "normal"}>
-                  <th scope="row"><button className="finance-center-record-name" type="button" onClick={() => setFocusedKey(row.key)}>{row.subject}</button>
-                    <small dir="auto">{row.reference}</small></th>
-                  <td>{row.category}</td>
-                  <td><span className={row.priority <= 2 ? "finance-desk-status" : "finance-desk-state"}>{row.state}</span></td>
-                  <td><bdi dir="ltr">{row.amount}</bdi></td>
-                  <td><button type="button" className="button button-secondary finance-center-row-action"
-                    onClick={() => setFocusedKey(row.key)}>{row.priority <= 2 ? "مراجعة الطلب" : "التفاصيل"}</button></td>
-                </tr>)}</tbody>
-              </table>
-              <ul className="finance-center-mobile" aria-label="معاملات المصادر المالية">
-                {displayedRows.map((row) => <li key={row.key} data-priority={row.priority <= 2 ? "attention" : "normal"}>
-                  <div className="finance-center-mobile-heading"><strong>{row.subject}</strong><span>{row.category}</span></div>
-                  <div className="finance-center-mobile-state"><span>{row.state}</span><small dir="auto">{row.reference}</small></div>
-                  <div className="finance-center-mobile-actions"><bdi dir="ltr">{row.amount}</bdi>
-                    <button type="button" className="button button-secondary" onClick={() => setFocusedKey(row.key)}>مراجعة الطلب</button></div>
-                </li>)}
-              </ul>
-            </div>
-          </> : null}
+        {errors.length ? <div className="fc-warning" role="alert">تعذر تحميل {errors.length.toLocaleString("ar-YE")} من المصادر: {errors.map((item) => item.label).join("، ")}. البيانات المعروضة جزئية.</div> : null}
+        {tab !== "command" ? <div className="fc-workflow-links" aria-label="السجلات التشغيلية المتاحة">
+          {(tab === "collection" ? (["custody", "commissions"] as Workflow[])
+            : tab === "settlements" ? (["settlement-partner", "settlement-captain", "settlement-field", "withdrawals", "batches"] as Workflow[])
+            : tab === "reconcile" ? (["batches", "custody", "commissions"] as Workflow[])
+            : (["custody", "commissions", "withdrawals", "batches"] as Workflow[])).map((key) =>
+              <button type="button" key={key} onClick={() => openTask(key)}>{workflowLabels[key]} <span aria-hidden="true">←</span></button>)}
         </div> : null}
-        {hasData && !loading && !shownIntakes && displayedRows.length === 0 && intakeCount !== null && !errors.length
-          ? <div className="finance-desk-empty"><strong>{deskMode === "work" ? "لا توجد حالات أخرى تتطلب قرارك" : deskMode === "balances" ? "لا توجد ذمم أو عهد ضمن السجلات المحمّلة" : "لا توجد حركات ضمن المعاينة الحالية"}</strong>
-              <p>يمكنك البحث في المعاينة أو فتح السجل المتخصص لقراءة جميع الصفحات.</p></div> : null}
-        <div className="finance-desk-register-foot">
-          <span>{more.length ? "بعض المصادر تحتوي صفحات إضافية؛ افتح سجلها المتخصص للبحث الكامل." :
-            "هذه قائمة عمل مجمّعة من سجلات محدودة، وليست إجمالي دفتر الأستاذ."}</span>
-          {search ? <button type="button" className="button button-quiet" onClick={() => setSearch("")}>مسح البحث</button> : null}
+        <div className="fc-dashboard-grid">
+          <section className="fc-register" aria-label="حالات المالية">
+            <div className="fc-section-heading"><div><h2>{tab === "command" ? "قائمة القرارات المالية" : tab === "activity" ? "المعاملات في المصادر المحمّلة" : tab === "collection" ? "سجلات التحصيل والمتابعة" : tab === "settlements" ? "السحوبات والدفعات قيد المعالجة" : "معاملات تحتاج المطابقة"}</h2>
+              <p>{tab === "command" ? "القرارات الأهم بحسب الأولوية، والمراجعة في السجل المعتمد" : "افتح السجل المتخصص للوصول إلى جميع الصفحات وتنفيذ الإجراءات"}</p></div>
+              <span className="fc-count">{displayedRows.length.toLocaleString("ar-YE")} سجل محمّل</span></div>
+            <div className="fc-toolbar">
+              <label className="fc-search"><span aria-hidden="true">⌕</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث في المستفيد أو المرجع..." aria-label="البحث في المعاملات المحمّلة" /></label>
+              <select aria-label="تصفية نوع المصدر" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as typeof sourceFilter)}>
+                <option value="all">جميع المصادر</option>{sources.map((source) => <option key={source.source} value={source.source}>{sourceLabels[source.source]}</option>)}
+              </select>
+              <label className="fc-priority"><input type="checkbox" checked={priorityOnly} onChange={(event) => setPriorityOnly(event.target.checked)} />الأعلى أولوية</label>
+            </div>
+            {tab === "command" ? <SettlementIntakeInbox search={search} visible onCountChange={setIntakeCount} /> : null}
+            {loading && !hasData ? <p className="fc-placeholder" role="status">جارٍ قراءة المعاملات...</p> : null}
+            {displayedRows.length > 0 ? <div className="fc-table-scroll"><table className="fc-table"><thead><tr>
+              <th>الأولوية</th><th>المستفيد / المرجع</th><th>النوع</th><th>الحالة</th><th>المبلغ</th><th>الإجراء التالي</th><th>الملف</th>
+            </tr></thead><tbody>{displayedRows.map((row) => <tr key={row.key} aria-selected={selected?.key === row.key} >
+              <td><span className={"fc-priority-label " + (row.priority <= 1 ? "urgent" : row.priority <= 2 ? "high" : "normal")}>{row.priority === 1 ? "عاجلة" : row.priority === 2 ? "عالية" : "متابعة"}</span></td>
+              <td><button className="fc-person" type="button" onClick={() => setFocusedKey(row.key)}><strong>{row.subject}</strong><small dir="auto">{row.reference}</small></button></td>
+              <td>{row.category}</td><td><span className="fc-status">{row.state}</span></td><td dir="ltr">{row.amount}</td>
+              <td className="fc-next-action">{row.nextStep}</td><td><button type="button" className="fc-inline-action" onClick={() => setFocusedKey(row.key)}>التفاصيل ←</button></td>
+            </tr>)}</tbody></table></div> : null}
+            {hasData && displayedRows.length === 0 && !loading ? <p className="fc-placeholder">لا توجد نتائج في المعاينة الحالية. يمكنك فتح السجلات الكاملة من المسارات الظاهرة.</p> : null}
+            <div className="fc-register-footer"><span>{more.length ? "توجد صفحات أخرى في مصادر متعددة؛ المعروض ليس الإجمالي الكامل." : "معاينة من مصادر محدودة، وليست دفتر الأستاذ الكامل."}</span>
+              <button type="button" className="fc-btn" onClick={() => changeTab("wallets")}>سجل المحافظ الكامل ←</button>
+            </div>
+          </section>
+          <aside className="fc-case-panel" aria-label="تفاصيل الحالة المحددة">
+            <div className="fc-case-title"><h2>تفاصيل الحالة المالية</h2><span aria-hidden="true">◈</span></div>
+            {selected ? <>
+              <div className="fc-case-person"><span className="fc-avatar" aria-hidden="true">◉</span><div><strong>{selected.subject}</strong><small dir="auto">{selected.reference}</small></div></div>
+              <div className="fc-balance-hero"><small>قيمة الحركة محل المراجعة</small><strong dir="ltr">{selected.amount}</strong></div>
+              <div className="fc-mini-metrics"><div><small>نوع الحركة</small><strong>{selected.category}</strong></div><div><small>الحالة</small><strong>{selected.state}</strong></div></div>
+              <div className="fc-case-decision"><strong>الإجراء التالي</strong><p>{selected.nextStep}</p></div>
+              <button type="button" className="fc-primary" onClick={() => openTask(workflowFor(selected), selected)}>فتح السجل للتحقق واتخاذ القرار ←</button>
+              <p className="fc-note">لا يُستنتج رصيد المحفظة من مبلغ هذه الحركة. افتح سجل المحافظ لقراءة الرصيد الدفتري الحقيقي.</p>
+            </> : <div className="fc-empty-side"><span aria-hidden="true">▤</span><h3>لا توجد حالة محددة</h3><p>اختر سجلًا من القائمة لعرض مرجعه والإجراء المناسب.</p></div>}
+          </aside>
         </div>
-      </section>
+        <div className="fc-actors-footer"><div><h2>المحافظ وأصحابها</h2><p>افتح أرصدة العميل والشريك والكابتن والميداني من دفتر المحفظة.</p></div>
+          {["العملاء", "الشركاء", "الكباتن", "الميدانيون"].map((label, index) => <button type="button" key={label} onClick={() => changeTab("wallets")}><span aria-hidden="true">{["◉", "▣", "◈", "✧"][index]}</span><strong>{label}</strong><small>كشف المحفظة ←</small></button>)}
+        </div>
+      </>}
     </>}
-    </section>
-  </AdaptiveRecordWorkspace>;
+  </section>;
 }
