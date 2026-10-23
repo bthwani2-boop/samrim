@@ -55,7 +55,8 @@ export function CaptainMissionLocationPublisher() {
         const subscription = await Location.watchPositionAsync({
           accuracy: Location.Accuracy.Balanced,
           timeInterval: 20_000,
-          distanceInterval: 20,
+          // A stationary Captain still needs periodic location updates.
+          distanceInterval: 0,
         }, (position) => {
           const session = currentIdentityState();
           if (disposed || posting || AppState.currentState !== "active" ||
@@ -84,6 +85,13 @@ export function CaptainMissionLocationPublisher() {
           })().catch(() => {
             // Operator displays LOST when fixes cannot be submitted. No synthetic position.
           }).finally(() => { posting = false; });
+        }, () => {
+          // Android can invalidate a watcher when GPS or permission changes.
+          // Let the existing foreground discovery loop safely re-register it.
+          if (targetAssignment === activeAssignment) {
+            watcher?.remove();
+            watcher = null;
+          }
         });
         if (disposed || AppState.currentState !== "active" || activeAssignment !== targetAssignment) {
           subscription.remove();
