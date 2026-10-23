@@ -14,6 +14,8 @@ import { operationActionLabel, operationResponseMessage, resolveOperatorAction }
 import { OrderOperationDetail } from "./order-operation-detail";
 import { CancellationRequestInbox } from "./cancellation-request-inbox";
 import { CustomerContactQueue } from "./customer-contact-queue";
+import { CommandFrame, CommandSectionTabs } from "../shared/command-surface";
+import { OperationsCommandView } from "./operations-command-view";
 import { OperatorCaseInbox } from "./operator-case-inbox";
 
 function operationNeedsReview(item: OperatorOperationListItem, now: number): boolean {
@@ -21,10 +23,11 @@ function operationNeedsReview(item: OperatorOperationListItem, now: number): boo
   return stage ? stage.needsReview : operationalAge(item.state, item.updatedAt, now).needsReview;
 }
 
-type View = "all" | "attention" | "dispatch" | "delivered";
+type View = "command" | "all" | "attention" | "dispatch" | "delivered";
 type Change = Readonly<{ view?: View; state?: string; q?: string; sort?: string }>;
 
 const views: ReadonlyArray<Readonly<{ id: View; label: string }>> = [
+  { id: "command", label: "القيادة" },
   { id: "all", label: "جميع الطلبات" },
   { id: "attention", label: "تحتاج قرارًا" },
   { id: "dispatch", label: "بانتظار كابتن" },
@@ -94,7 +97,7 @@ export function OperationsWorkspace() {
   const view: View = views.some((item) => item.id === rawView) ? rawView as View
     : oldLane === "attention" ? "attention"
     : oldLane === "dispatch" ? "dispatch"
-    : oldState === "DELIVERED" ? "delivered" : "all";
+    : oldState === "DELIVERED" ? "delivered" : (!oldLane && !oldState && !params.has("state") && !params.has("q") ? "command" : "all");
   const preciseState = params.get("state") ?? (view === "all" ? oldState : "");
   const state = preciseState || (view === "dispatch" ? "READY_FOR_DISPATCH" : view === "delivered" ? "DELIVERED" : "");
   const actionableOnly = view === "attention" && !preciseState;
@@ -135,7 +138,7 @@ export function OperationsWorkspace() {
     next.delete("lane");
     next.delete("sub");
     const nextView = changes.view ?? view;
-    if (nextView === "all") next.delete("view");
+    if (nextView === "command") next.delete("view");
     else next.set("view", nextView);
     const nextState = changes.state ?? preciseState;
     if (nextState) next.set("state", nextState);
@@ -237,9 +240,14 @@ export function OperationsWorkspace() {
         <OrderOperationDetail orderId={selectedOrderId} embedded onClose={closeSelected} onUpdated={() => {setCancellationInboxVersion(v => v+1); void load(true)}} />
       </AdaptiveRecordPanel> : null}>
     <section className="operations-workspace ops-center" aria-label="مركز متابعة الطلبات">
+      <CommandFrame title="مركز العمليات" subtitle="قرارات الطلبات والتغطية التشغيلية من البيانات المعتمدة">
+        <CommandSectionTabs label="أقسام العمليات" active={view} tabs={views} onSelect={next => navigate({view:next,state:""})}/>
+        {view === "command" ? <OperationsCommandView summary={summary} operations={operations}
+          isAttention={item => operationNeedsReview(item, ageClock || Date.now())}
+          onOpen={setSelectedOrderId} onView={next => navigate({view:next,state:""})} loading={loading} /> : <>
       {(view === "all" || view === "attention") ? <OperatorCaseInbox onOpenOrder={setSelectedOrderId} refreshVersion={cancellationInboxVersion} /> : null}
       {(view === "all" || view === "attention") ? <CustomerContactQueue onOpenOrder={setSelectedOrderId} refreshVersion={cancellationInboxVersion} /> : null}
-      <CancellationRequestInbox onOpenOrder={setSelectedOrderId} refreshVersion={cancellationInboxVersion} />
+      {view === "attention" || view === "all" ? <CancellationRequestInbox onOpenOrder={setSelectedOrderId} refreshVersion={cancellationInboxVersion} /> : null}
       <div className="ops-tools">
         <search className="ops-search" aria-label="البحث في الطلبات">
           <form noValidate onSubmit={(event) => {
@@ -404,6 +412,8 @@ export function OperationsWorkspace() {
       </div>
 
       <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading} label="صفحات الطلبات" />
+        </>}
+      </CommandFrame>
     </section>
     </AdaptiveRecordWorkspace>
   );
