@@ -20,22 +20,34 @@ func DetectOperatorOrderExceptions(ctx context.Context, db *sql.DB, max int) (in
 	const query = `
 WITH candidates AS MATERIALIZED (
  SELECT o.id AS order_id,
-   CASE WHEN o.state='PREPARING' THEN 'PARTNER_DELAY'
+   CASE WHEN o.state='CREATED' THEN 'OTHER'
+        WHEN o.state='PREPARING' THEN 'PARTNER_DELAY'
         ELSE 'DELIVERY_BLOCKED' END AS reason,
-   CASE WHEN o.state='PREPARING' THEN 'PREPARING:'||pa.id::text
+   CASE WHEN o.state='CREATED' THEN 'CREATED:'||cr.id::text
+        WHEN o.state='PREPARING' THEN 'PREPARING:'||pa.id::text
         ELSE 'DELIVERY_FAILED:'||ca.id::text END AS signal_key,
-   CASE WHEN o.state='PREPARING' THEN pa.created_at
+   CASE WHEN o.state='CREATED' THEN cr.created_at
+        WHEN o.state='PREPARING' THEN pa.created_at
         ELSE ca.created_at END AS stage_at,
-   CASE WHEN o.state='PREPARING'
+   CASE WHEN o.state='CREATED'
+       THEN CASE WHEN statement_timestamp()-cr.created_at >= interval '60 minutes' THEN 'URGENT' ELSE 'NORMAL' END
+       WHEN o.state='PREPARING'
        THEN CASE WHEN statement_timestamp()-pa.created_at >= 2*make_interval(mins => COALESCE(soa.preparation_minutes,30))
            THEN 'URGENT' ELSE 'NORMAL' END
        ELSE 'URGENT' END AS priority,
-   CASE WHEN o.state='PREPARING'
+   CASE WHEN o.state='CREATED'
+       THEN 'تحقق من سبب بقاء الطلب جديدًا، وحالة الدفع والتواصل دون تعطيل الطلب أو اتهام المتجر.'
+       WHEN o.state='PREPARING'
        THEN 'راجع تأخر تجهيز الطلب مع المتجر وحدد الإجراء التالي.'
        ELSE 'راجع فشل التسليم وعهدة الكابتن قبل أي قرار بشأن إعادة الإسناد أو التسوية.'
    END AS next_action
  FROM dsh.commerce_orders o
  LEFT JOIN dsh.store_operational_availability soa ON soa.store_id=o.store_id
+ LEFT JOIN LATERAL (
+     SELECT a.id,a.created_at FROM dsh.commerce_order_audit a
+     WHERE a.order_id=o.id AND a.to_state='CREATED' AND a.event_type='order_created'
+     ORDER BY a.created_at DESC,a.id DESC LIMIT 1
+ ) cr ON o.state='CREATED'
  LEFT JOIN LATERAL (
      SELECT a.id,a.created_at FROM dsh.commerce_order_audit a
      WHERE a.order_id=o.id AND a.to_state='PREPARING' AND a.event_type='order_preparing'
@@ -46,23 +58,29 @@ WITH candidates AS MATERIALIZED (
      WHERE a.order_id=o.id AND a.event_type='delivery_failed'
      ORDER BY a.created_at DESC,a.id DESC LIMIT 1
  ) ca ON o.state='DELIVERY_FAILED'
- WHERE (o.state='PREPARING' AND pa.id IS NOT NULL
+ WHERE (o.state='CREATED' AND cr.id IS NOT NULL
+          AND cr.created_at <= statement_timestamp()-interval '30 minutes'
+       OR o.state='PREPARING' AND pa.id IS NOT NULL
           AND pa.created_at <= statement_timestamp()-make_interval(mins => COALESCE(soa.preparation_minutes,30))
        OR o.state='DELIVERY_FAILED' AND ca.id IS NOT NULL)
    AND NOT EXISTS (
        SELECT 1 FROM dsh.operator_order_cases existing
        WHERE existing.order_id=o.id
-         AND existing.reason=CASE WHEN o.state='PREPARING' THEN 'PARTNER_DELAY' ELSE 'DELIVERY_BLOCKED' END
+         AND existing.reason=CASE WHEN o.state='CREATED' THEN 'OTHER'
+                                  WHEN o.state='PREPARING' THEN 'PARTNER_DELAY' ELSE 'DELIVERY_BLOCKED' END
          AND (existing.state <> 'RESOLVED'
-             OR existing.opened_at >= CASE WHEN o.state='PREPARING' THEN pa.created_at ELSE ca.created_at END)
+             OR existing.opened_at >= CASE WHEN o.state='CREATED' THEN cr.created_at
+                                            WHEN o.state='PREPARING' THEN pa.created_at ELSE ca.created_at END)
    )
    AND NOT EXISTS (
        SELECT 1 FROM dsh.operator_order_case_events e
        WHERE e.idempotency_key='ops-auto-'||md5(
-           CASE WHEN o.state='PREPARING' THEN 'PREPARING:'||pa.id::text
+           CASE WHEN o.state='CREATED' THEN 'CREATED:'||cr.id::text
+                WHEN o.state='PREPARING' THEN 'PREPARING:'||pa.id::text
                 ELSE 'DELIVERY_FAILED:'||ca.id::text END)
    )
- ORDER BY CASE WHEN o.state='PREPARING' THEN pa.created_at ELSE ca.created_at END,o.id
+ ORDER BY CASE WHEN o.state='CREATED' THEN cr.created_at
+                 WHEN o.state='PREPARING' THEN pa.created_at ELSE ca.created_at END,o.id
  LIMIT $1
  FOR UPDATE OF o SKIP LOCKED
 ), inserted AS (
