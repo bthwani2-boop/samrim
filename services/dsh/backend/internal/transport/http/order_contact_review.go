@@ -2,6 +2,7 @@ package transporthttp
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -59,4 +60,31 @@ func (s *OrderServer) recordOperatorContactReview(w http.ResponseWriter, r *http
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"review": review, "idempotentReplay": replay})
+}
+
+func (s *OrderServer) listOperatorCustomerContactQueue(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.contactOperatorActor(w, r)
+	if !ok {
+		return
+	}
+	limit := 10
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 50 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be 1..50")
+			return
+		}
+		limit = parsed
+	}
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 512 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor too long")
+		return
+	}
+	page, err := s.service.ListPendingCustomerContactsForOperator(r.Context(), actor, limit, cursor)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
 }

@@ -22,7 +22,7 @@ const decisions: ReadonlyArray<Readonly<{ value: Decision; label: string }>> = [
   { value: "WRONG_NUMBER", label: "رقم التواصل غير صحيح" },
 ];
 
-export function CustomerContactReviewPanel({ orderId }: Readonly<{ orderId: string }>) {
+export function CustomerContactReviewPanel({ orderId, onUpdated }: Readonly<{ orderId: string; onUpdated?: (() => void) | undefined }>) {
   const [review, setReview] = useState<Review | null>(null);
   const [decision, setDecision] = useState<Decision>("CONFIRMED");
   const [loading, setLoading] = useState(true);
@@ -87,6 +87,7 @@ export function CustomerContactReviewPanel({ orderId }: Readonly<{ orderId: stri
       setReview(body.review);
       attemptKey.current = "";
       setNotice(decision === "CONFIRMED" ? "سُجّل تأكيد العميل. لا تُحتسب خطوة الثقة إلا بعد اكتمال الطلب." : "سُجلت نتيجة محاولة التواصل.");
+      onUpdated?.();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "نتيجة الاتصال غير مؤكدة؛ أعد القراءة.");
       await reload();

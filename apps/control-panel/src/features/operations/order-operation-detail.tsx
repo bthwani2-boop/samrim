@@ -345,7 +345,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
         </section>
       )}
 
-      <CustomerContactReviewPanel key={order.id} orderId={order.id} />
+      <CustomerContactReviewPanel key={order.id} orderId={order.id} onUpdated={onUpdated} />
 
       {(
         <section className="order-detail-panel" aria-labelledby="order-items-title">

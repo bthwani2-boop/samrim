@@ -290,6 +290,13 @@ func (s *Service) RecordCustomerContactForOperator(ctx context.Context, orderID,
 	return postgres.RecordCustomerOrderContactDecision(ctx, s.db, orderID, actingActorID, decision, idempotencyKey, correlationID, expectedVersion)
 }
 
+func (s *Service) ListPendingCustomerContactsForOperator(ctx context.Context, actorID string, limit int, cursor string) (postgres.PendingCustomerContactsPage, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.PendingCustomerContactsPage{}, err
+	}
+	return postgres.ListPendingCustomerContacts(ctx, s.db, limit, cursor)
+}
+
 func (s *Service) ListForOperator(ctx context.Context, state, query, sort, actingActorID string, actionableOnly bool, limit int, cursor string) (postgres.OperatorOperationsResult, error) {
 	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
 		return postgres.OperatorOperationsResult{}, err

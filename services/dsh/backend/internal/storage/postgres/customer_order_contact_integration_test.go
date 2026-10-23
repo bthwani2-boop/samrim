@@ -39,7 +39,7 @@ func TestOperatorContactReviewThreeVerifiedSuccessesAndReplay(t *testing.T) {
 			t.Fatal(err)
 		}
 		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: "contact_store", PartnerActorID: "contact_partner", Name: "متجر الاتصال"})
-		for i := 1; i <= 3; i++ {
+		for i := 1; i <= 4; i++ {
 			orderID := fmt.Sprintf("contact_order_%d", i)
 			cartID := "cart_" + orderID
 			if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES($1,'contact_customer','contact_store','checked_out',1)", cartID); err != nil {
@@ -49,6 +49,17 @@ func TestOperatorContactReviewThreeVerifiedSuccessesAndReplay(t *testing.T) {
               VALUES($1,'contact_customer','contact_store',$2,$3,1,'عنوان العميل',15.369445,44.191006,'contact_sanaa','CITY_SCOPE_V1','SERVICEABLE',1,1,'READY_FOR_DISPATCH',1800,1800,'YER',1)`, orderID, cartID, "address_"+orderID); err != nil {
 				t.Fatal(err)
 			}
+		}
+		pendingFirst, err := postgres.ListPendingCustomerContacts(ctx, db, 2, "")
+		if err != nil || len(pendingFirst.Items) != 2 || pendingFirst.NextCursor == "" {
+			t.Fatalf("first contact queue page: %+v err=%v", pendingFirst, err)
+		}
+		pendingNext, err := postgres.ListPendingCustomerContacts(ctx, db, 2, pendingFirst.NextCursor)
+		if err != nil || len(pendingNext.Items) != 2 || pendingNext.NextCursor != "" {
+			t.Fatalf("second contact queue page: %+v err=%v", pendingNext, err)
+		}
+		if _, err := postgres.ListPendingCustomerContacts(ctx, db, 10, "invalid-cursor"); !errors.Is(err, postgres.ErrCustomerContactInvalid) {
+			t.Fatalf("malformed cursor accepted: %v", err)
 		}
 		initial, err := postgres.ReadCustomerOrderContactReview(ctx, db, "contact_order_1")
 		if err != nil || initial.State != "PENDING" || !initial.NeedsContact || initial.Trusted || initial.VerifiedSuccessfulOrders != 0 {
@@ -91,6 +102,14 @@ func TestOperatorContactReviewThreeVerifiedSuccessesAndReplay(t *testing.T) {
 			if err != nil || done.VerifiedSuccessfulOrders != i || done.Trusted != (i == 3) {
 				t.Fatalf("verified completion %d: %+v err=%v", i, done, err)
 			}
+		}
+		finishedQueue, err := postgres.ListPendingCustomerContacts(ctx, db, 10, "")
+		if err != nil || len(finishedQueue.Items) != 0 {
+			t.Fatalf("trusted and completed orders still require contact: %+v err=%v", finishedQueue, err)
+		}
+		fourth, err := postgres.ReadCustomerOrderContactReview(ctx, db, "contact_order_4")
+		if err != nil || !fourth.Trusted || fourth.NeedsContact || fourth.State != "PENDING" {
+			t.Fatalf("fourth active order must automatically waive routine contact: %+v err=%v", fourth, err)
 		}
 		trusted, err := postgres.ReadCustomerOrderContactReview(ctx, db, "contact_order_1")
 		if err != nil || !trusted.Trusted || trusted.LegacyExempt {

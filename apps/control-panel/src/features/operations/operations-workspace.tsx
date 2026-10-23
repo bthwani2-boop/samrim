@@ -12,6 +12,7 @@ import { operationalAge } from "./operational-age";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 import { OrderOperationDetail } from "./order-operation-detail";
 import { CancellationRequestInbox } from "./cancellation-request-inbox";
+import { CustomerContactQueue } from "./customer-contact-queue";
 
 type View = "all" | "attention" | "dispatch" | "delivered";
 type Change = Readonly<{ view?: View; state?: string; q?: string; sort?: string }>;
@@ -229,6 +230,7 @@ export function OperationsWorkspace() {
         <OrderOperationDetail orderId={selectedOrderId} embedded onClose={closeSelected} onUpdated={() => {setCancellationInboxVersion(v => v+1); void load(true)}} />
       </AdaptiveRecordPanel> : null}>
     <section className="operations-workspace ops-center" aria-label="مركز متابعة الطلبات">
+      {(view === "all" || view === "attention") ? <CustomerContactQueue onOpenOrder={setSelectedOrderId} refreshVersion={cancellationInboxVersion} /> : null}
       <CancellationRequestInbox onOpenOrder={setSelectedOrderId} refreshVersion={cancellationInboxVersion} />
       <div className="ops-tools">
         <search className="ops-search" aria-label="البحث في الطلبات">
