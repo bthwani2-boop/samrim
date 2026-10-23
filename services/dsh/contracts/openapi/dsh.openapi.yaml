@@ -686,6 +686,9 @@ paths:
   /dsh/operator/operations/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}"
 
+  /dsh/operator/operations/{orderId}/contact-review:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1contact-review"
+
   /dsh/orders/{orderId}/cancel:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1cancel"
 
@@ -1267,6 +1270,39 @@ components:
         pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
 
   schemas:
+    CustomerOrderContactReview:
+      type: object
+      additionalProperties: false
+      required: [orderId, state, attemptCount, version, lastActorId, verifiedSuccessfulOrders, legacyExempt, trusted, needsContact]
+      properties:
+        orderId:
+          type: string
+        state:
+          type: string
+          enum: [PENDING, NO_ANSWER, CONFIRMED, DENIED, WRONG_NUMBER]
+        attemptCount:
+          type: integer
+          minimum: 0
+        version:
+          type: integer
+          minimum: 0
+        lastActorId:
+          type: string
+        lastAttemptAt:
+          type: string
+          format: date-time
+        confirmedAt:
+          type: string
+          format: date-time
+        verifiedSuccessfulOrders:
+          type: integer
+          minimum: 0
+        legacyExempt:
+          type: boolean
+        trusted:
+          type: boolean
+        needsContact:
+          type: boolean
     BannerPresentation:
       type: object
       required: [placement, mode, intervalSeconds, version]

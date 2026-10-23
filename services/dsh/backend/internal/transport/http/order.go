@@ -59,6 +59,8 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/home-analytics", s.readOperatorHomeAnalytics)
 	mux.HandleFunc("GET /dsh/operator/customers/{actorId}/orders", s.listOperatorCustomerOrders)
 	mux.HandleFunc("GET /dsh/operator/operations/{orderId}", s.readOperatorOperation)
+	mux.HandleFunc("GET /dsh/operator/operations/{orderId}/contact-review", s.readOperatorContactReview)
+	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/contact-review", s.recordOperatorContactReview)
 	mux.HandleFunc("GET /dsh/operator/cash-custody", s.listOperatorCashCustody)
 	mux.HandleFunc("POST /dsh/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileOperatorCashRemittance)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
@@ -933,6 +935,12 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "order conversation was not found")
 	case errors.Is(err, postgres.ErrOrderRatingNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "order rating was not found")
+	case errors.Is(err, postgres.ErrCustomerContactInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "customer contact review input is invalid")
+	case errors.Is(err, postgres.ErrCustomerContactConflict):
+		writeError(w, http.StatusConflict, "CONTACT_REVIEW_STALE", "customer contact review changed or order is already complete")
+	case errors.Is(err, postgres.ErrCustomerContactIdempotency):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "contact Idempotency-Key was reused with different facts")
 	case errors.Is(err, postgres.ErrOrderRatingInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "order rating input is invalid")
 	case errors.Is(err, orderdomain.ErrCashRemittanceInputInvalid):

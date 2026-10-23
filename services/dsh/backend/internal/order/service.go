@@ -277,6 +277,19 @@ func (s *Service) ListForAuthorizedPartnerStores(ctx context.Context, accessToke
 	return page, counts, nil
 }
 
+func (s *Service) ReadCustomerContactForOperator(ctx context.Context, orderID, actingActorID string) (postgres.CustomerOrderContactReview, error) {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
+		return postgres.CustomerOrderContactReview{}, err
+	}
+	return postgres.ReadCustomerOrderContactReview(ctx, s.db, orderID)
+}
+func (s *Service) RecordCustomerContactForOperator(ctx context.Context, orderID, actingActorID, decision, idempotencyKey, correlationID string, expectedVersion int) (postgres.CustomerOrderContactReview, bool, error) {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
+		return postgres.CustomerOrderContactReview{}, false, err
+	}
+	return postgres.RecordCustomerOrderContactDecision(ctx, s.db, orderID, actingActorID, decision, idempotencyKey, correlationID, expectedVersion)
+}
+
 func (s *Service) ListForOperator(ctx context.Context, state, query, sort, actingActorID string, actionableOnly bool, limit int, cursor string) (postgres.OperatorOperationsResult, error) {
 	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
 		return postgres.OperatorOperationsResult{}, err

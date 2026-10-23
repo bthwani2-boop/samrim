@@ -371,6 +371,24 @@ Duplicate message retry, media upload failure, membership change, stale read rec
 
 No generic customer-support ticket platform. Messages do not prove delivery, payment or refund approval.
 
+## FIRST_THREE_ORDER_CONTACT — bounded Operations confirmation
+
+JOURNEY_ID: FIRST_THREE_ORDER_CONTACT
+OUTCOME: An authorized Operations employee records the outcome of an actual customer phone contact on each of a customer's first three verified successful Store Orders. After three distinct contact-confirmed and canonically completed orders, that customer no longer requires routine early-order contact. A legacy customer with at least three proven deliveries or customer pickups completed before policy adoption is exempt from retrospective calling.
+SURFACES: OPERATOR, CLIENT, PARTNER (order visibility unchanged in the initial non-gating phase)
+OWNER: DSH
+ENTRY: A Store Order exists and a currently operations-authorized employee opens its contact verification.
+EXIT: Each distinct order has one CONFIRMED contact outcome plus canonical delivery/customer-pickup proof, or the order is explicitly unresolved/cancelled.
+READBACK: DSH-owned contact review, idempotent attempt event, and derived count of confirmed canonical completions.
+
+### Decisions and limits
+
+A phone call is not proof that goods were delivered. No-answer, customer denial and invalid phone are recorded as actual human observations, not automated fraud verdicts or permanent account bans. An employee must not record CONFIRMED without having spoken to the customer, and no client/partner/captain endpoint can forge the result. A contact attempt and a completed order must both exist before the count advances. The computed trust status waives only these routine early-order calls; it cannot override payment, custody, cancellation, Identity authorization or risk controls.
+
+The first implementation records contact and derives trust *without holding Store preparation*. Whether a new customer's order must wait for a confirmed call before preparation incurs cost is a separate Product decision, explicitly not presumed by contact-verification authority. If later approved, admission must be enforced at DSH/Partner transition boundaries and reconciled with all Wallet/COD/Mixed payment reservation and expiration states, never by hiding a Partner button alone.
+
+Keep this Order-scoped, not a generic CRM, loyalty or support product. Record actor, version, timestamp and idempotency, but do not record call audio or duplicate sensitive customer profile data. The client sees only the ordinary order status, not a negative trust label.
+
 ## ORDER_ADJUSTMENT_EXCEPTION_REFUND — legal order change or exception to reconciled result
 
 JOURNEY_ID: ORDER_ADJUSTMENT_EXCEPTION_REFUND

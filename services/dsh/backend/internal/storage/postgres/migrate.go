@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 146
+const SchemaVersion = 147
 
 type MigrationRecord struct {
 	Version int
@@ -26,6 +26,8 @@ type MigrationRecord struct {
 }
 
 var requiredTables = []schemaRelationExpectation{
+	{name: "dsh.customer_order_contact_reviews", columns: []string{"order_id", "client_actor_id", "state", "attempt_count", "version", "last_actor_id", "last_attempt_at", "confirmed_at", "updated_at"}, constraints: []string{"customer_order_contact_reviews_pkey", "customer_order_contact_reviews_order_id_fkey", "customer_contact_confirmation_chk"}, indexes: []string{"customer_order_contact_client_idx"}},
+	{name: "dsh.customer_order_contact_events", columns: []string{"id", "order_id", "client_actor_id", "decision", "operator_actor_id", "idempotency_key", "request_hash", "correlation_id", "created_at"}, constraints: []string{"customer_order_contact_events_pkey", "customer_order_contact_events_order_id_fkey", "customer_order_contact_events_idempotency_key_key"}, indexes: []string{"customer_order_contact_events_order_idx"}},
 	{name: "dsh.captain_goods_custody_policies", columns: []string{"id", "single_order_cap_minor", "concurrent_cap_minor", "state", "version", "updated_by_actor_id", "updated_at"}, constraints: []string{"captain_goods_custody_policies_pkey"}},
 	{name: "dsh.catalog_shopping_shortcuts", columns: []string{"id", "vertical_id", "title_ar", "ordinal", "active", "version", "created_at", "updated_at"}, constraints: []string{"catalog_shopping_shortcuts_pkey", "catalog_shopping_shortcuts_id_vertical_uq", "catalog_shopping_shortcuts_id_chk", "catalog_shopping_shortcuts_title_chk"}, indexes: []string{"catalog_shopping_shortcuts_vertical_title_uq", "catalog_shopping_shortcuts_order_idx"}},
 	{name: "dsh.catalog_shopping_shortcut_targets", columns: []string{"shortcut_id", "vertical_id", "store_type_id", "category_id"}, constraints: []string{"catalog_shopping_shortcut_target_shortcut_fk", "catalog_shopping_shortcut_target_type_fk", "catalog_shopping_shortcut_target_category_fk", "catalog_shopping_shortcut_target_one_chk"}, indexes: []string{"catalog_shopping_shortcut_type_uq", "catalog_shopping_shortcut_category_uq"}},
