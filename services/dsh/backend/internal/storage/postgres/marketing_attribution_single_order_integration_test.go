@@ -98,13 +98,39 @@ func TestDiscoveryConversionCreditsOnlyLatestClickAndOneContentPerOrder(t *testi
 		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.discovery_content_events WHERE event_type='CONVERSION' AND order_id=$1", order).Scan(&before); err != nil || before != 0 {
 			t.Fatalf("superseded click must not create conversion: %d, %v", before, err)
 		}
+		// A forged actor ID or a nonexistent click may not claim another
+		// customer's order, even when the caller knows its identifier.
+		if err := postgres.RecordCheckoutDiscoveryConversionTx(ctx, tx, order, "forged-actor", "click-last"); err != nil {
+			t.Fatalf("forged actor must be ignored without blocking checkout: %v", err)
+		}
+		if err := postgres.RecordCheckoutDiscoveryConversionTx(ctx, tx, order, actor, "unknown-click"); err != nil {
+			t.Fatalf("unknown click must be ignored without blocking checkout: %v", err)
+		}
+		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.discovery_content_events WHERE event_type='CONVERSION' AND order_id=$1", order).Scan(&before); err != nil || before != 0 {
+			t.Fatalf("unauthorized click created a conversion: %d, %v", before, err)
+		}
 		if err := postgres.RecordCheckoutDiscoveryConversionTx(ctx, tx, order, actor, "click-last"); err != nil {
 			t.Fatalf("latest click at checkout: %v", err)
 		}
-		if err := postgres.RecordCheckoutDiscoveryConversionTx(ctx, tx, order, actor, "click-last"); err != nil {
+		// An aborted Checkout transaction must not leave an attribution
+		// behind. Retry on a new transaction commits the event exactly once.
+		if err := tx.Rollback(); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.discovery_content_events WHERE event_type='CONVERSION' AND order_id=$1", order).Scan(&before); err != nil || before != 0 {
+			t.Fatalf("rolled back checkout left a conversion: %d, %v", before, err)
+		}
+		committedTx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := postgres.RecordCheckoutDiscoveryConversionTx(ctx, committedTx, order, actor, "click-last"); err != nil {
+			t.Fatalf("latest click at checkout retry: %v", err)
+		}
+		if err := postgres.RecordCheckoutDiscoveryConversionTx(ctx, committedTx, order, actor, "click-last"); err != nil {
 			t.Fatalf("checkout retry must not duplicate conversion: %v", err)
 		}
-		if err := tx.Commit(); err != nil {
+		if err := committedTx.Commit(); err != nil {
 			t.Fatal(err)
 		}
 		if err := postgres.RecordDiscoveryContentEvent(ctx, db, conversion("last-banner", "conversion-duplicate")); !errors.Is(err, postgres.ErrDiscoveryContentEventConflict) {
