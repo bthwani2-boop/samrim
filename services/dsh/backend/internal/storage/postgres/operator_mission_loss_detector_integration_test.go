@@ -45,6 +45,7 @@ func TestOperatorMissionLossOpensOnceAndRequiresRecovery(t *testing.T) {
 			hasFix bool
 		}{
 			{"lost_gps_missing", true, false},
+			{"lost_gps_auto", true, false},
 			{"lost_gps_grace", false, false},
 			{"lost_gps_present", true, true},
 		} {
@@ -76,14 +77,25 @@ func TestOperatorMissionLossOpensOnceAndRequiresRecovery(t *testing.T) {
 			}
 		}
 		n, err := postgres.DetectOperatorOrderExceptions(ctx, db, 25)
-		if err != nil || n != 1 {
-			t.Fatalf("expected only expired missing GPS, count=%d err=%v", n, err)
+		if err != nil || n != 2 {
+			t.Fatalf("expected two expired missing GPS alerts, count=%d err=%v", n, err)
 		}
 		cases, err := postgres.ListOpenOpsCases(ctx, db, "lost_gps_operator", "all", 20, "")
-		if err != nil || len(cases.Items) != 1 {
-			t.Fatalf("missing GPS case not actionable: %+v err=%v", cases, err)
+		if err != nil || len(cases.Items) != 2 {
+			t.Fatalf("missing GPS cases not actionable: %+v err=%v", cases, err)
 		}
-		c := cases.Items[0]
+		var c, automatic postgres.OpsCase
+		for _, item := range cases.Items {
+			if item.OrderID == "lost_gps_missing" {
+				c = item
+			}
+			if item.OrderID == "lost_gps_auto" {
+				automatic = item
+			}
+		}
+		if automatic.ID <= 0 {
+			t.Fatal("unclaimed recovery fixture missing")
+		}
 		if c.OrderID != "lost_gps_missing" || c.Reason != "CAPTAIN_LOCATION_LOST" || c.Priority != "URGENT" {
 			t.Fatalf("wrong signal: %+v", c)
 		}
@@ -94,6 +106,21 @@ func TestOperatorMissionLossOpensOnceAndRequiresRecovery(t *testing.T) {
 		claimed, _, err := postgres.UpdateOpsCase(ctx, db, c.OrderID, c.ID, "lost_gps_operator", "CLAIM", "", "gps-claim-idem-001", "gps-claim-corr-001", c.Version)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if err := postgres.UpdateCaptainMissionLocation(ctx, db, "assignment_lost_gps_auto", "captain_lost_gps_auto", 15.38, 44.2, 11, time.Now().UTC(), 1); err != nil {
+			t.Fatal(err)
+		}
+		n, err = postgres.DetectOperatorOrderExceptions(ctx, db, 25)
+		if err != nil || n != 0 {
+			t.Fatalf("auto recovery detector failed: count=%d err=%v", n, err)
+		}
+		var autoState string
+		if err := db.QueryRowContext(ctx, "SELECT state FROM dsh.operator_order_cases WHERE id=$1", automatic.ID).Scan(&autoState); err != nil || autoState != "RESOLVED" {
+			t.Fatalf("unclaimed recovered alert still open: %s %v", autoState, err)
+		}
+		var audits int
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.operator_order_case_events WHERE case_id=$1 AND action='RESOLVE'", automatic.ID).Scan(&audits); err != nil || audits != 1 {
+			t.Fatalf("auto recovery lost audit: count=%d err=%v", audits, err)
 		}
 		_, _, err = postgres.UpdateOpsCase(ctx, db, c.OrderID, c.ID, "lost_gps_operator", "RESOLVE", "Captain's location is confirmed restored", "gps-resolve-idem-001", "gps-resolve-corr-001", claimed.Version)
 		if !errors.Is(err, postgres.ErrOpsCaseUnverified) {

@@ -14,6 +14,45 @@ func DetectOperatorOrderExceptions(ctx context.Context, db *sql.DB, max int) (in
 	if db == nil || max < 1 || max > 50 {
 		return 0, ErrOpsCaseInvalid
 	}
+	// Automatically resolve only unclaimed location alerts when canonical DSH
+	// readback proves recovery. A claimed investigation remains operator-owned.
+	// This statement updates the case and appends its one audit event atomically.
+	const recoverLocations = `WITH recovered AS MATERIALIZED (
+ SELECT c.id FROM dsh.operator_order_cases c
+ WHERE c.reason='CAPTAIN_LOCATION_LOST' AND c.state='OPEN' AND c.owner_actor_id IS NULL
+ AND (EXISTS(
+   SELECT 1 FROM dsh.captain_assignments a
+   JOIN dsh.commerce_orders o ON o.id=a.order_id
+   JOIN dsh.captain_mission_latest ml ON ml.assignment_id=a.id
+   WHERE a.order_id=c.order_id AND a.state IN ('assigned','in_custody')
+   AND o.state IN ('CAPTAIN_ASSIGNED','IN_CUSTODY')
+   AND ml.received_at>=statement_timestamp()-interval '90 seconds'
+   AND ml.recorded_at>=statement_timestamp()-interval '90 seconds'
+ ) OR EXISTS(
+   SELECT 1 FROM dsh.commerce_orders o
+   JOIN dsh.commerce_order_delivery_proofs p ON p.order_id=o.id
+   WHERE o.id=c.order_id AND o.state='DELIVERED' AND p.state='VERIFIED'
+ ))
+ ORDER BY c.id LIMIT $1 FOR UPDATE OF c SKIP LOCKED
+), updated AS (
+ UPDATE dsh.operator_order_cases c
+ SET state='RESOLVED', resolution_note='عاد موقع المهمة وتأكدت حالة الكابتن من المصدر الموثوق.',
+     resolved_at=clock_timestamp(), updated_at=clock_timestamp(),
+     updated_by_actor_id='dsh:operations-detector',version=version+1
+ FROM recovered r WHERE c.id=r.id
+ RETURNING c.id
+)
+INSERT INTO dsh.operator_order_case_events
+(case_id,action,actor_id,idempotency_key,request_hash,correlation_id,detail)
+SELECT u.id,'RESOLVE','dsh:operations-detector',
+  'ops-gps-recovered-'||u.id::text,
+  md5('MISSION_GPS_RECOVERED:'||u.id::text),
+  'ops-gps-recovered-'||u.id::text,
+  'Mission location recovered from DSH readback'
+FROM updated u`
+	if _, err := db.ExecContext(ctx, recoverLocations, max); err != nil {
+		return 0, err
+	}
 	// One statement owns both the case and its event.  Every candidate Order
 	// is locked before writing so a concurrent Order transition cannot race.
 	// SKIP LOCKED keeps concurrent detectors non-blocking.
