@@ -328,7 +328,13 @@ func (s *Service) ReadCustomerContactForOperator(ctx context.Context, orderID, a
 	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
 		return postgres.CustomerOrderContactReview{}, err
 	}
-	return postgres.ReadCustomerOrderContactReview(ctx, s.db, orderID)
+	return postgres.ReadCustomerOrderContactReview(ctx, s.db, orderID, actingActorID)
+}
+func (s *Service) UpdateCustomerContactClaimForOperator(ctx context.Context, orderID, actorID string, release bool, expectedVersion int) (postgres.CustomerOrderContactReview, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.CustomerOrderContactReview{}, err
+	}
+	return postgres.UpdateCustomerContactClaim(ctx, s.db, orderID, actorID, release, expectedVersion)
 }
 func (s *Service) RecordCustomerContactForOperator(ctx context.Context, orderID, actingActorID, decision, idempotencyKey, correlationID string, expectedVersion int) (postgres.CustomerOrderContactReview, bool, error) {
 	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {

@@ -29,6 +29,9 @@ type CustomerOrderContactReview struct {
 	LegacyExempt             bool       `json:"legacyExempt"`
 	Trusted                  bool       `json:"trusted"`
 	NeedsContact             bool       `json:"needsContact"`
+	ClaimedByMe              bool       `json:"claimedByMe"`
+	ClaimedByOther           bool       `json:"claimedByOther"`
+	ClaimExpiresAt           *time.Time `json:"claimExpiresAt,omitempty"`
 }
 
 func validCustomerContactDecision(decision string) bool {
@@ -41,7 +44,7 @@ func validCustomerContactDecision(decision string) bool {
 
 // Contact confirmation is not an order transition. Trust is derived only from
 // a CONFIRMED contact on an order with the canonical completion audit event.
-func ReadCustomerOrderContactReview(ctx context.Context, db *sql.DB, orderID string) (CustomerOrderContactReview, error) {
+func ReadCustomerOrderContactReview(ctx context.Context, db *sql.DB, orderID string, operatorActors ...string) (CustomerOrderContactReview, error) {
 	var record CustomerOrderContactReview
 	var clientActorID, orderState string
 	if err := db.QueryRowContext(ctx, "SELECT client_actor_id,state FROM dsh.commerce_orders WHERE id=$1", orderID).Scan(&clientActorID, &orderState); err != nil {
@@ -51,13 +54,27 @@ func ReadCustomerOrderContactReview(ctx context.Context, db *sql.DB, orderID str
 		return record, err
 	}
 	record.OrderID = orderID
-	var lastAt, confirmedAt sql.NullTime
-	err := db.QueryRowContext(ctx, `SELECT state,attempt_count,version,last_actor_id,last_attempt_at,confirmed_at
-        FROM dsh.customer_order_contact_reviews WHERE order_id=$1`, orderID).Scan(&record.State, &record.AttemptCount, &record.Version, &record.LastActorID, &lastAt, &confirmedAt)
+	var lastAt, confirmedAt, claimUntil sql.NullTime
+	var claimActor sql.NullString
+	err := db.QueryRowContext(ctx, `SELECT state,attempt_count,version,last_actor_id,last_attempt_at,confirmed_at,claim_actor_id,claim_expires_at
+        FROM dsh.customer_order_contact_reviews WHERE order_id=$1`, orderID).Scan(&record.State, &record.AttemptCount, &record.Version, &record.LastActorID, &lastAt, &confirmedAt, &claimActor, &claimUntil)
 	if errors.Is(err, sql.ErrNoRows) {
 		record.State = "PENDING"
 	} else if err != nil {
 		return record, err
+	}
+	if record.AttemptCount == 0 {
+		record.State = "PENDING"
+	}
+	if claimActor.Valid && claimUntil.Valid && claimUntil.Time.After(time.Now().UTC()) {
+		t := claimUntil.Time
+		record.ClaimExpiresAt = &t
+		actor := ""
+		if len(operatorActors) > 0 {
+			actor = strings.TrimSpace(operatorActors[0])
+		}
+		record.ClaimedByMe = actor != "" && claimActor.String == actor
+		record.ClaimedByOther = !record.ClaimedByMe
 	}
 	if lastAt.Valid {
 		t := lastAt.Time
@@ -133,7 +150,7 @@ func RecordCustomerOrderContactDecision(ctx context.Context, db *sql.DB, orderID
 		if err = tx.Commit(); err != nil {
 			return CustomerOrderContactReview{}, false, err
 		}
-		record, readErr := ReadCustomerOrderContactReview(ctx, db, orderID)
+		record, readErr := ReadCustomerOrderContactReview(ctx, db, orderID, actorID)
 		return record, true, readErr
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return CustomerOrderContactReview{}, false, err
@@ -150,7 +167,9 @@ func RecordCustomerOrderContactDecision(ctx context.Context, db *sql.DB, orderID
 	}
 	var currentVersion int
 	var currentState string
-	if err = tx.QueryRowContext(ctx, `SELECT state,version FROM dsh.customer_order_contact_reviews WHERE order_id=$1 FOR UPDATE`, orderID).Scan(&currentState, &currentVersion); err != nil {
+	var claimedBy sql.NullString
+	var claimExpires sql.NullTime
+	if err = tx.QueryRowContext(ctx, `SELECT state,version,claim_actor_id,claim_expires_at FROM dsh.customer_order_contact_reviews WHERE order_id=$1 FOR UPDATE`, orderID).Scan(&currentState, &currentVersion, &claimedBy, &claimExpires); err != nil {
 		return CustomerOrderContactReview{}, false, err
 	}
 	err = tx.QueryRowContext(ctx, "SELECT order_id,request_hash FROM dsh.customer_order_contact_events WHERE idempotency_key=$1", idempotencyKey).Scan(&previousOrder, &previousHash)
@@ -161,18 +180,20 @@ func RecordCustomerOrderContactDecision(ctx context.Context, db *sql.DB, orderID
 		if err = tx.Commit(); err != nil {
 			return CustomerOrderContactReview{}, false, err
 		}
-		record, readErr := ReadCustomerOrderContactReview(ctx, db, orderID)
+		record, readErr := ReadCustomerOrderContactReview(ctx, db, orderID, actorID)
 		return record, true, readErr
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return CustomerOrderContactReview{}, false, err
 	}
-	if currentVersion != expectedVersion || currentState == "CONFIRMED" {
+	if currentVersion != expectedVersion || currentState == "CONFIRMED" ||
+		!claimedBy.Valid || claimedBy.String != actorID || !claimExpires.Valid ||
+		!claimExpires.Time.After(time.Now().UTC()) {
 		return CustomerOrderContactReview{}, false, ErrCustomerContactConflict
 	}
 	result, err := tx.ExecContext(ctx, `UPDATE dsh.customer_order_contact_reviews
       SET state=$2,attempt_count=attempt_count+1,version=version+1,last_actor_id=$3,
           last_attempt_at=clock_timestamp(),confirmed_at=CASE WHEN $2='CONFIRMED' THEN clock_timestamp() ELSE NULL END,
-          updated_at=clock_timestamp()
+          updated_at=clock_timestamp(),claim_actor_id=NULL,claim_expires_at=NULL
       WHERE order_id=$1 AND version=$4 AND attempt_count<100`, orderID, decision, actorID, currentVersion)
 	if err != nil {
 		return CustomerOrderContactReview{}, false, err
@@ -192,6 +213,80 @@ func RecordCustomerOrderContactDecision(ctx context.Context, db *sql.DB, orderID
 	if err = tx.Commit(); err != nil {
 		return CustomerOrderContactReview{}, false, err
 	}
-	record, readErr := ReadCustomerOrderContactReview(ctx, db, orderID)
+	record, readErr := ReadCustomerOrderContactReview(ctx, db, orderID, actorID)
 	return record, false, readErr
+}
+
+// UpdateCustomerContactClaim acquires/releases one expiring operator lease.
+// Decision version remains unchanged; renewals cannot invalidate form state.
+func UpdateCustomerContactClaim(ctx context.Context, db *sql.DB, orderID, actorID string, release bool, expectedVersion int) (CustomerOrderContactReview, error) {
+	orderID, actorID = strings.TrimSpace(orderID), strings.TrimSpace(actorID)
+	if db == nil || orderID == "" || len(orderID) > 128 || actorID == "" || len(actorID) > 128 || expectedVersion < 0 {
+		return CustomerOrderContactReview{}, ErrCustomerContactInvalid
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CustomerOrderContactReview{}, err
+	}
+	defer tx.Rollback()
+	var clientID, orderState string
+	err = tx.QueryRowContext(ctx, "SELECT client_actor_id,state FROM dsh.commerce_orders WHERE id=$1 FOR SHARE", orderID).Scan(&clientID, &orderState)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CustomerOrderContactReview{}, ErrOrderNotFound
+	}
+	if err != nil {
+		return CustomerOrderContactReview{}, err
+	}
+	if orderState == "DELIVERED" || orderState == "PICKED_UP" || orderState == "REJECTED" || orderState == "CANCELLED" {
+		return CustomerOrderContactReview{}, ErrCustomerContactConflict
+	}
+	if !release {
+		_, err = tx.ExecContext(ctx, `INSERT INTO dsh.customer_order_contact_reviews
+          (order_id,client_actor_id,state,attempt_count,version,last_actor_id)
+          VALUES($1,$2,'NO_ANSWER',0,0,$3) ON CONFLICT(order_id) DO NOTHING`, orderID, clientID, actorID)
+		if err != nil {
+			return CustomerOrderContactReview{}, err
+		}
+	}
+	var version int
+	var state string
+	var owner sql.NullString
+	var expires sql.NullTime
+	err = tx.QueryRowContext(ctx, `SELECT version,state,claim_actor_id,claim_expires_at
+        FROM dsh.customer_order_contact_reviews WHERE order_id=$1 FOR UPDATE`, orderID).Scan(&version, &state, &owner, &expires)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CustomerOrderContactReview{}, ErrCustomerContactConflict
+	}
+	if err != nil {
+		return CustomerOrderContactReview{}, err
+	}
+	if version != expectedVersion || state == "CONFIRMED" {
+		return CustomerOrderContactReview{}, ErrCustomerContactConflict
+	}
+	if release {
+		if !owner.Valid || owner.String != actorID {
+			return CustomerOrderContactReview{}, ErrCustomerContactConflict
+		}
+		_, err = tx.ExecContext(ctx, "UPDATE dsh.customer_order_contact_reviews SET claim_actor_id=NULL,claim_expires_at=NULL,updated_at=clock_timestamp() WHERE order_id=$1", orderID)
+	} else {
+		if owner.Valid && expires.Valid && expires.Time.After(time.Now().UTC()) && owner.String != actorID {
+			return CustomerOrderContactReview{}, ErrCustomerContactConflict
+		}
+		_, err = tx.ExecContext(ctx, "UPDATE dsh.customer_order_contact_reviews SET claim_actor_id=$2,claim_expires_at=clock_timestamp()+interval '10 minutes',updated_at=clock_timestamp() WHERE order_id=$1", orderID, actorID)
+	}
+	if err != nil {
+		return CustomerOrderContactReview{}, err
+	}
+	action := "CLAIM"
+	if release {
+		action = "RELEASE"
+	}
+	_, err = tx.ExecContext(ctx, "INSERT INTO dsh.customer_order_contact_claim_events(order_id,operator_actor_id,action) VALUES($1,$2,$3)", orderID, actorID, action)
+	if err != nil {
+		return CustomerOrderContactReview{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return CustomerOrderContactReview{}, err
+	}
+	return ReadCustomerOrderContactReview(ctx, db, orderID, actorID)
 }

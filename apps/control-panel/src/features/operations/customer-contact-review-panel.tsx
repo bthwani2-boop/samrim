@@ -14,6 +14,9 @@ type Review = Readonly<{
   legacyExempt: boolean;
   trusted: boolean;
   needsContact: boolean;
+  claimedByMe: boolean;
+  claimedByOther: boolean;
+  claimExpiresAt?: string;
 }>;
 const decisions: ReadonlyArray<Readonly<{ value: Decision; label: string }>> = [
   { value: "CONFIRMED", label: "تواصلت مع العميل وأكد الطلب" },
@@ -61,8 +64,34 @@ export function CustomerContactReviewPanel({ orderId, onUpdated }: Readonly<{ or
     return () => { sequence.current += 1; };
   }, [reload]);
 
+  async function updateClaim(release: boolean) {
+    if (!review?.needsContact || busy || loading || inFlight.current) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/operations/" + encodeURIComponent(orderId) + "/contact-review/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ release, expectedVersion: review.version }),
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!response.ok) throw new Error(response.status === 409 ? "المهمة محجوزة لدى موظف آخر أو تغيّرت بيانات الطلب." : "تعذر تحديث حجز الاتصال.");
+      const data = await response.json() as { review?: Review };
+      if (!data.review || data.review.orderId !== orderId) throw new Error("الاستجابة غير صالحة.");
+      setReview(data.review);
+      setNotice(release ? "تم ترك مهمة الاتصال." : "تم حجز الاتصال لك لمدة 10 دقائق.");
+      onUpdated?.();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "تعذر حجز الاتصال.");
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function recordContact() {
-    if (!review?.needsContact || busy || inFlight.current || loading) return;
+    if (!review?.needsContact || !review.claimedByMe || busy || inFlight.current || loading) return;
     inFlight.current = true;
     setBusy(true);
     setNotice("");
@@ -106,11 +135,18 @@ export function CustomerContactReviewPanel({ orderId, onUpdated }: Readonly<{ or
         : `طلبات ناجحة مع اتصال مؤكد: ${review.verifiedSuccessfulOrders} من 3. لا تحتسب المكالمة وحدها نجاحًا.`}</p>
       {!review.trusted && review.state === "CONFIRMED" ? <p role="status">جرى تأكيد هذا الطلب. تُحتسب خطوة الثقة عند اكتماله رسميًا.</p> : null}
       {review.needsContact ? <div className="order-detail-state-actions">
+        {review.claimedByOther ? <p role="status">يجري موظف آخر التحقق من هذا الطلب. سيصبح متاحًا بعد انتهاء الحجز.</p> : null}
+        {!review.claimedByMe && !review.claimedByOther ? <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void updateClaim(false)}>استلام مهمة الاتصال</button> : null}
+        {review.claimedByMe ? <div className="action-row">
+          <span role="status">مهمة الاتصال محجوزة لك.</span>
+          <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void updateClaim(false)}>تمديد الحجز</button>
+          <button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => void updateClaim(true)}>ترك المهمة</button>
+        </div> : null}
         <label htmlFor="ops-contact-decision">نتيجة الاتصال الفعلي</label>
-        <select id="ops-contact-decision" value={decision} onChange={(event) => { setDecision(event.target.value as Decision); attemptKey.current = ""; }} disabled={busy}>
+        <select id="ops-contact-decision" value={decision} onChange={(event) => { setDecision(event.target.value as Decision); attemptKey.current = ""; }} disabled={busy || !review.claimedByMe}>
           {decisions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
-        <button type="button" className="button button-secondary" onClick={() => void recordContact()} disabled={busy || loading}>
+        <button type="button" className="button button-secondary" onClick={() => void recordContact()} disabled={busy || loading || !review.claimedByMe}>
           {busy ? "جارٍ توثيق الاتصال…" : "حفظ نتيجة التواصل"}
         </button>
       </div> : null}

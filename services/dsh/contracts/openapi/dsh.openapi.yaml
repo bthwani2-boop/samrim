@@ -699,6 +699,8 @@ paths:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cases~1{caseId}~1transition"
   /dsh/operator/operations/{orderId}/contact-review:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1contact-review"
+  /dsh/operator/operations/{orderId}/contact-review/claim:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1contact-review~1claim"
 
   /dsh/operator/operational-cases:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operational-cases"
@@ -1431,7 +1433,7 @@ components:
     CustomerOrderContactReview:
       type: object
       additionalProperties: false
-      required: [orderId, state, attemptCount, version, lastActorId, verifiedSuccessfulOrders, legacyExempt, trusted, needsContact]
+      required: [orderId, state, attemptCount, version, lastActorId, verifiedSuccessfulOrders, legacyExempt, trusted, needsContact, claimedByMe, claimedByOther]
       properties:
         orderId:
           type: string
@@ -1461,6 +1463,9 @@ components:
           type: boolean
         needsContact:
           type: boolean
+        claimedByMe: { type: boolean }
+        claimedByOther: { type: boolean }
+        claimExpiresAt: { type: string, format: date-time }
     BannerPresentation:
       type: object
       required: [placement, mode, intervalSeconds, version]

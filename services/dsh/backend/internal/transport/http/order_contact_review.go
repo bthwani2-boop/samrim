@@ -88,3 +88,24 @@ func (s *OrderServer) listOperatorCustomerContactQueue(w http.ResponseWriter, r 
 	}
 	writeJSON(w, http.StatusOK, page)
 }
+
+func (s *OrderServer) updateOperatorContactClaim(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.contactOperatorActor(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Release         bool `json:"release"`
+		ExpectedVersion int  `json:"expectedVersion"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	orderID := strings.TrimSpace(r.PathValue("orderId"))
+	review, err := s.service.UpdateCustomerContactClaimForOperator(r.Context(), orderID, actor, body.Release, body.ExpectedVersion)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"review": review})
+}

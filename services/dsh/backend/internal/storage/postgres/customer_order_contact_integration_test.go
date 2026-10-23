@@ -65,6 +65,22 @@ func TestOperatorContactReviewThreeVerifiedSuccessesAndReplay(t *testing.T) {
 		if err != nil || initial.State != "PENDING" || !initial.NeedsContact || initial.Trusted || initial.VerifiedSuccessfulOrders != 0 {
 			t.Fatalf("initial contact: %+v err=%v", initial, err)
 		}
+		_, _, err = postgres.RecordCustomerOrderContactDecision(ctx, db, "contact_order_1", "ops_a", "NO_ANSWER", "contact-unclaimed-1", "contact-corr-1", 0)
+		if !errors.Is(err, postgres.ErrCustomerContactConflict) {
+			t.Fatalf("decision without claim was accepted: %v", err)
+		}
+		claim, err := postgres.UpdateCustomerContactClaim(ctx, db, "contact_order_1", "ops_a", false, 0)
+		if err != nil || !claim.ClaimedByMe || claim.State != "PENDING" {
+			t.Fatalf("claim not owned: %+v err=%v", claim, err)
+		}
+		blocked, err := postgres.ReadCustomerOrderContactReview(ctx, db, "contact_order_1", "ops_b")
+		if err != nil || !blocked.ClaimedByOther {
+			t.Fatalf("other operator claim hidden: %+v err=%v", blocked, err)
+		}
+		_, err = postgres.UpdateCustomerContactClaim(ctx, db, "contact_order_1", "ops_b", false, 0)
+		if !errors.Is(err, postgres.ErrCustomerContactConflict) {
+			t.Fatalf("double claim accepted: %v", err)
+		}
 		first, replay, err := postgres.RecordCustomerOrderContactDecision(ctx, db, "contact_order_1", "ops_a", "NO_ANSWER", "contact-no-answer-1", "contact-corr-1", 0)
 		if err != nil || replay || first.AttemptCount != 1 || first.Version != 1 {
 			t.Fatalf("no answer: %+v replay=%v err=%v", first, replay, err)
@@ -81,11 +97,52 @@ func TestOperatorContactReviewThreeVerifiedSuccessesAndReplay(t *testing.T) {
 		if !errors.Is(err, postgres.ErrCustomerContactConflict) {
 			t.Fatalf("stale write accepted: %v", err)
 		}
+		// Concurrent callers compete for one claim, and an abandoned lease expires.
+		results := make(chan error, 2)
+		for _, actor := range []string{"ops_a", "ops_b"} {
+			go func(owner string) {
+				_, err := postgres.UpdateCustomerContactClaim(ctx, db, "contact_order_4", owner, false, 0)
+				results <- err
+			}(actor)
+		}
+		one, two := <-results, <-results
+		if (one == nil) == (two == nil) {
+			t.Fatalf("two concurrent claimants both won or both lost: %v %v", one, two)
+		}
+		var winner string
+		var claimedBy sql.NullString
+		if err := db.QueryRowContext(ctx, "SELECT claim_actor_id FROM dsh.customer_order_contact_reviews WHERE order_id='contact_order_4'").Scan(&claimedBy); err != nil {
+			t.Fatal(err)
+		}
+		winner = claimedBy.String
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.customer_order_contact_reviews SET claim_expires_at=clock_timestamp()-interval '1 minute' WHERE order_id='contact_order_4'"); err != nil {
+			t.Fatal(err)
+		}
+		other := "ops_a"
+		if winner == "ops_a" {
+			other = "ops_b"
+		}
+		taken, err := postgres.UpdateCustomerContactClaim(ctx, db, "contact_order_4", other, false, 0)
+		if err != nil || !taken.ClaimedByMe {
+			t.Fatalf("expired lease cannot be taken: %+v %v", taken, err)
+		}
+		_, err = postgres.UpdateCustomerContactClaim(ctx, db, "contact_order_4", winner, true, 0)
+		if !errors.Is(err, postgres.ErrCustomerContactConflict) {
+			t.Fatalf("former owner released new owner: %v", err)
+		}
+		released, err := postgres.UpdateCustomerContactClaim(ctx, db, "contact_order_4", other, true, 0)
+		if err != nil || released.ClaimedByMe || released.ClaimedByOther {
+			t.Fatalf("release did not clear claim: %+v err=%v", released, err)
+		}
 		for i := 1; i <= 3; i++ {
 			orderID := fmt.Sprintf("contact_order_%d", i)
 			version := 0
 			if i == 1 {
 				version = 1
+			}
+			claimed, claimErr := postgres.UpdateCustomerContactClaim(ctx, db, orderID, "ops_a", false, version)
+			if claimErr != nil || !claimed.ClaimedByMe {
+				t.Fatalf("operator could not claim next contact: %+v err=%v", claimed, claimErr)
 			}
 			reviewed, replay, err := postgres.RecordCustomerOrderContactDecision(ctx, db, orderID, "ops_a", "CONFIRMED", fmt.Sprintf("contact-confirm-%d", i), fmt.Sprintf("contact-correlation-%d", i), version)
 			if err != nil || replay || reviewed.State != "CONFIRMED" || reviewed.VerifiedSuccessfulOrders != i-1 {

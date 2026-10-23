@@ -379,7 +379,7 @@ SURFACES: OPERATOR, CLIENT, PARTNER (order visibility unchanged in the initial n
 OWNER: DSH
 ENTRY: A Store Order exists and a currently operations-authorized employee opens its contact verification.
 EXIT: Each distinct order has one CONFIRMED contact outcome plus canonical delivery/customer-pickup proof, or the order is explicitly unresolved/cancelled.
-READBACK: DSH-owned contact review, idempotent attempt event, and derived count of confirmed canonical completions.
+READBACK: DSH-owned contact review, idempotent attempt event, and derived count of confirmed canonical completions. Before recording any telephone outcome, the operator acquires an expiring 10-minute contact claim on that Order; other operators cannot simultaneously claim or record it. An owner may renew/release the claim, and an expired claim is reclaimable without changing Order lifecycle or decision version.
 
 ### Decisions and limits
 

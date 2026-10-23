@@ -58,7 +58,7 @@ func ListPendingCustomerContacts(ctx context.Context, db *sql.DB, limit int, cur
 		}
 	}
 	rows, err := db.QueryContext(ctx, `
-    SELECT o.id,s.name,o.state,o.created_at,COALESCE(v.state,'PENDING')
+    SELECT o.id,s.name,o.state,o.created_at,CASE WHEN v.attempt_count>0 THEN v.state ELSE 'PENDING' END
     FROM dsh.commerce_orders o
     JOIN dsh.stores s ON s.id=o.store_id
     LEFT JOIN dsh.customer_order_contact_reviews v ON v.order_id=o.id

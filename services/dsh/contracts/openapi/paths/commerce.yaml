@@ -1774,6 +1774,45 @@ paths:
           description: Conflicting version, completed Order, or idempotency key replay with different facts.
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/operator/operations/{orderId}/contact-review/claim:
+    post:
+      operationId: updateOperatorCustomerContactClaim
+      summary: Acquire, renew, or release the expiring operator contact task without changing order status
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [release, expectedVersion]
+              properties:
+                release: { type: boolean }
+                expectedVersion: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Claimed task with the current owner-facing contact state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [review]
+                properties:
+                  review: { $ref: "../dsh.openapi.yaml#/components/schemas/CustomerOrderContactReview" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { description: Another operator owns the active claim, or stale/terminal order. }
+
   /dsh/operator/cash-custody:
     get:
       operationId: listOperatorCashCustody
