@@ -184,6 +184,9 @@ func insertCustomerPaymentAllocationTx(ctx context.Context, tx *sql.Tx, i Custom
 	if err != nil {
 		return CustomerPaymentAllocationRecord{}, err
 	}
+	if err := checkPartnerCommissionCreditTx(ctx, tx, i, snapshot); err != nil {
+		return CustomerPaymentAllocationRecord{}, err
+	}
 	id, err := newID("customer-payment-allocation")
 	if err != nil {
 		return CustomerPaymentAllocationRecord{}, err

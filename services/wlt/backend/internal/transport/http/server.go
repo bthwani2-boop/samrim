@@ -1856,6 +1856,8 @@ func writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_PAYMENT_ALLOCATION", "payment allocation is invalid")
 	case errors.Is(err, postgres.ErrInsufficientCustomerBalance):
 		writeError(w, http.StatusConflict, "INSUFFICIENT_CUSTOMER_BALANCE", "available customer balance does not cover the requested contribution")
+	case errors.Is(err, postgres.ErrPartnerCommissionCreditExceeded):
+		writeError(w, http.StatusConflict, "PARTNER_CREDIT_LIMIT", "new merchant cash commission exceeds the approved credit policy")
 	case errors.Is(err, postgres.ErrStoreCommercialAgreementUnavailable):
 		writeError(w, http.StatusConflict, "STORE_COMMERCIAL_AGREEMENT_REQUIRED", "an active Store-specific agreement is required for this fulfillment mode")
 	default:
@@ -1917,6 +1919,8 @@ func writeFinancialProfileError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "financial profile state does not allow this operation")
 	case errors.Is(err, postgres.ErrFinancialProfileInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "financial profile input is invalid")
+	case errors.Is(err, postgres.ErrPartnerCommissionCreditExceeded):
+		writeError(w, http.StatusConflict, "PARTNER_CREDIT_LIMIT", "new merchant cash commission exceeds the approved credit policy")
 	case errors.Is(err, postgres.ErrStoreCommercialAgreementUnavailable):
 		writeError(w, http.StatusConflict, "STORE_COMMERCIAL_AGREEMENT_REQUIRED", "an active Store-specific agreement is required for this fulfillment mode")
 	default:
