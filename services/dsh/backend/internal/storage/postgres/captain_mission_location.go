@@ -98,7 +98,7 @@ func ReadOperatorMissionLocation(ctx context.Context, db *sql.DB, orderID string
         SELECT id FROM dsh.captain_assignments
         WHERE order_id=o.id AND state IN ('assigned','in_custody')
         ORDER BY created_at DESC LIMIT 1
-      ) a ON o.fulfillment_mode='BTHWANI_CAPTAIN'
+      ) a ON o.fulfillment_mode='BTHWANI_CAPTAIN' AND o.state IN ('CAPTAIN_ASSIGNED','IN_CUSTODY')
       LEFT JOIN dsh.captain_mission_latest ml ON ml.assignment_id=a.id
       WHERE o.id=$1`, orderID).Scan(&assignmentID, &latitude, &longitude, &accuracy, &recordedAt, &receivedAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -115,8 +115,13 @@ func ReadOperatorMissionLocation(ctx context.Context, db *sql.DB, orderID string
 	if !receivedAt.Valid || !recordedAt.Valid || !latitude.Valid || !longitude.Valid || !accuracy.Valid {
 		return result, nil
 	}
-	age := time.Since(receivedAt.Time)
-	if age < 0 || age > 3*time.Minute {
+	// The source fix may have been delayed before reaching DSH. Freshness
+	// requires BOTH a recent device fix and a recent server receipt.
+	now := time.Now().UTC()
+	receivedAge := now.Sub(receivedAt.Time)
+	fixAge := now.Sub(recordedAt.Time)
+	if receivedAge < -time.Minute || receivedAge > 3*time.Minute ||
+		fixAge < -time.Minute || fixAge > 3*time.Minute {
 		result.State = "LOST"
 		return result, nil
 	}
@@ -125,7 +130,7 @@ func ReadOperatorMissionLocation(ctx context.Context, db *sql.DB, orderID string
 	result.Latitude = &latitude.Float64
 	result.Longitude = &longitude.Float64
 	result.AccuracyMeters = &accuracy.Float64
-	if age > 90*time.Second {
+	if receivedAge > 90*time.Second || fixAge > 90*time.Second {
 		result.State = "STALE"
 	} else {
 		result.State = "FRESH"

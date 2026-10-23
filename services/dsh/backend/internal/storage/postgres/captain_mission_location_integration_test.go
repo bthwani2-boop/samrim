@@ -77,6 +77,45 @@ func TestCaptainMissionLocationOwnerLatestAndTerminalPurge(t *testing.T) {
 		if err != nil || current.State != "FRESH" || current.Latitude == nil || *current.Latitude != 15.38 {
 			t.Fatalf("last fix not visible to operator projection: %+v err=%v", current, err)
 		}
+		// A delayed device fix must never be called LIVE merely because it
+		// reached the server recently.
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.captain_mission_latest
+            SET recorded_at=clock_timestamp()-interval '2 minutes',
+                received_at=clock_timestamp()
+            WHERE assignment_id='mission_assignment'`); err != nil {
+			t.Fatal(err)
+		}
+		delayed, err := postgres.ReadOperatorMissionLocation(ctx, db, "mission_order")
+		if err != nil || delayed.State != "STALE" {
+			t.Fatalf("delayed GPS fix misrepresented as fresh: %+v err=%v", delayed, err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.captain_mission_latest
+            SET recorded_at=clock_timestamp()-interval '4 minutes',
+                received_at=clock_timestamp()
+            WHERE assignment_id='mission_assignment'`); err != nil {
+			t.Fatal(err)
+		}
+		lost, err := postgres.ReadOperatorMissionLocation(ctx, db, "mission_order")
+		if err != nil || lost.State != "LOST" || lost.Latitude != nil || lost.Longitude != nil {
+			t.Fatalf("lost device GPS must not expose coordinates: %+v err=%v", lost, err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.captain_mission_latest
+            SET recorded_at=clock_timestamp(),received_at=clock_timestamp()
+            WHERE assignment_id='mission_assignment'`); err != nil {
+			t.Fatal(err)
+		}
+		// Terminal Order immediately revokes map access even if an assignment
+		// synchronizer has not yet advanced the assignment row.
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state='DELIVERED' WHERE id='mission_order'"); err != nil {
+			t.Fatal(err)
+		}
+		terminal, err := postgres.ReadOperatorMissionLocation(ctx, db, "mission_order")
+		if err != nil || terminal.State != "NO_ACTIVE" || terminal.Latitude != nil || terminal.Longitude != nil {
+			t.Fatalf("terminal order disclosed live mission GPS: %+v err=%v", terminal, err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state='CAPTAIN_ASSIGNED' WHERE id='mission_order'"); err != nil {
+			t.Fatal(err)
+		}
 		var count int
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.captain_mission_latest WHERE assignment_id='mission_assignment'").Scan(&count); err != nil || count != 1 {
 			t.Fatalf("expected a single latest row: count=%d err=%v", count, err)
