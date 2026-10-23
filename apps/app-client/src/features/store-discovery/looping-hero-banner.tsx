@@ -29,7 +29,7 @@ export function LoopingHeroBanner({
   const [foreground, setForeground] = useState(AppState.currentState === "active");
   const [reducedMotion, setReducedMotion] = useState(false);
   const [failedMedia, setFailedMedia] = useState<ReadonlySet<string>>(() => new Set());
-  const impressions = useRef(new Set<string>());
+  const [loadedMedia, setLoadedMedia] = useState<ReadonlySet<string>>(() => new Set());
   const navigateRef = useRef<(direction: Direction) => void>(() => {});
   const openRef = useRef<() => void>(() => {});
   const height = Math.round(cardWidth / 1.75);
@@ -56,11 +56,16 @@ export function LoopingHeroBanner({
   }, [items.length]);
 
   const activeItem = items[index];
+  const activeMediaKey = activeItem ? activeItem.id + ":" + activeItem.mediaUri : "";
+  // Count a view only after the image is loaded and remains visible in the
+  // foreground for one second. Each completed carousel exposure may count.
   useEffect(() => {
-    if (!activeItem || impressions.current.has(activeItem.id)) return;
-    impressions.current.add(activeItem.id);
-    void recordDiscoveryImpression(activeItem.id);
-  }, [activeItem]);
+    if (!activeItem || !screenActive || !foreground || interacting || transition
+      || failedMedia.has(activeMediaKey) || !loadedMedia.has(activeMediaKey)) return;
+    const contentID = activeItem.id;
+    const timer = setTimeout(() => { void recordDiscoveryImpression(contentID); }, 1000);
+    return () => clearTimeout(timer);
+  }, [activeItem?.id, activeMediaKey, screenActive, foreground, interacting, transition, failedMedia, loadedMedia]);
 
   const navigate = useCallback((direction: Direction) => {
     if (items.length < 2 || inTransition.current) return;
@@ -118,9 +123,15 @@ export function LoopingHeroBanner({
 
   const slide = (item: PublicDiscoveryContentView, style: object, key: string) => (
     <Animated.View key={key} pointerEvents="none" style={[{ position: "absolute", top: 0, left: 0, width: cardWidth, height }, style]}>
-      {failedMedia.has(item.id)
+      {failedMedia.has(item.id + ":" + item.mediaUri)
         ? <View style={{ flex: 1, justifyContent: "center", backgroundColor: "#192335", padding: spacing[3] }}><Text style={{ color: "#FFFFFF", textAlign: "center" }}>{item.titleAr}</Text></View>
-        : <Image source={{ uri: item.mediaUri }} resizeMode="cover" onError={() => setFailedMedia((current) => new Set(current).add(item.id))} style={{ width: "100%", height: "100%" }} />}
+        : <Image source={{ uri: item.mediaUri }} resizeMode="cover"
+          onLoad={() => setLoadedMedia((current) => {
+            const key = item.id + ":" + item.mediaUri;
+            return current.has(key) ? current : new Set(current).add(key);
+          })}
+          onError={() => setFailedMedia((current) => new Set(current).add(item.id + ":" + item.mediaUri))}
+          style={{ width: "100%", height: "100%" }} />}
     </Animated.View>
   );
 

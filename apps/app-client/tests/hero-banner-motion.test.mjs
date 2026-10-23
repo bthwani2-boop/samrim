@@ -50,8 +50,18 @@ test("manual gestures can advance and reverse, while marketing modes remain resp
   assert.match(hero, /gesture\.dx < 0 \? 1 : -1/);
   assert.match(hero, /presentation\.mode === "CROSSFADE"/);
   assert.match(hero, /presentation\.mode === "STATIC"/);
-  assert.match(hero, /recordDiscoveryImpression\(activeItem\.id\)/);
+  assert.match(hero, /recordDiscoveryImpression\(contentID\)/);
   assert.match(hero, /onOpen\(item\)/);
+});
+
+test("impressions require an actual foreground image exposure, not a component mount", () => {
+  assert.doesNotMatch(hero, /impressions\.current\.add/);
+  assert.match(hero, /!screenActive \|\| !foreground \|\| interacting \|\| transition/);
+  assert.match(hero, /!loadedMedia\.has\(activeMediaKey\)/);
+  assert.match(hero, /failedMedia\.has\(activeMediaKey\)/);
+  assert.match(hero, /setTimeout\(\(\) => \{ void recordDiscoveryImpression\(contentID\); \}, 1000\)/);
+  assert.match(hero, /return \(\) => clearTimeout\(timer\)/);
+  assert.match(hero, /onLoad=\{\(\) => setLoadedMedia/);
 });
 
 test("marketing settings remain server-authoritative", () => {
