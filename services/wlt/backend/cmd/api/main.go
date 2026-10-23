@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	serviceruntime "github.com/bthwani2-boop/samrim/services/wlt/backend/internal/runtime"
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/storage/postgres"
@@ -24,6 +25,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Never serve financial mutations against a schema that disagrees with
+	// this binary. Readiness alone does not prevent HTTP handlers from writing.
+	verifyContext, cancelVerify := context.WithTimeout(context.Background(), 15*time.Second)
+	if err := postgres.VerifySchema(verifyContext, database, records); err != nil {
+		cancelVerify()
+		log.Fatalf("WLT schema is not ready for financial operations: %v", err)
+	}
+	cancelVerify()
 	destinationKey := strings.TrimSpace(os.Getenv("WLT_DESTINATION_ENCRYPTION_KEY"))
 	evidenceKey := strings.TrimSpace(os.Getenv("WLT_FINANCE_EVIDENCE_ENCRYPTION_KEY"))
 	if destinationKey == "" && strings.EqualFold(strings.TrimSpace(os.Getenv("BTHWANI_ENV")), "development") {
