@@ -1118,6 +1118,23 @@ func SetPartnerCampaignOptIn(ctx context.Context, db *sql.DB, promotionID, store
 		return PartnerCampaignRecord{}, false, ErrPromotionIdempotencyConflict
 	}
 	if !replayed {
+		// An opt-in is a commercial agreement, not simply a matching UUID.
+		// Revalidate the exact Store and currently eligible published campaign
+		// inside the same transaction before recording any financial consent.
+		var eligible bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM dsh.commerce_promotions p
+			JOIN dsh.stores s ON s.id=$2
+			WHERE p.id=$1 AND p.store_id IS NULL AND p.requires_partner_opt_in
+			  AND p.state='PUBLISHED' AND p.starts_at<=clock_timestamp()
+			  AND (p.ends_at IS NULL OR p.ends_at>clock_timestamp())
+			  AND (p.service_city_id IS NULL OR p.service_city_id=s.service_city_id)
+		)`, promotionID, storeID).Scan(&eligible); err != nil {
+			return PartnerCampaignRecord{}, false, err
+		}
+		if !eligible {
+			return PartnerCampaignRecord{}, false, ErrPromotionNotFound
+		}
 		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:marketing:optin:"+promotionID+":"+storeID); err != nil {
 			return PartnerCampaignRecord{}, false, err
 		}
