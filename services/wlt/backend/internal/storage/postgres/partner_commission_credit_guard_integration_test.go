@@ -12,8 +12,11 @@ func TestPartnerCommissionCreditGuardBlocksDebtAndCountsPendingCashOrders(t *tes
 	owner, _, _, _, _, _, _, _, earn := setupPartnerFinanceProof(t, s, false)
 	store := "credit-limited-store-" + s.suffix
 	earn(store, "CUSTOMER_PICKUP", 1000) // Ledger commission receivable: 100 YER
-	if _, err := s.db.ExecContext(s.ctx, `UPDATE wlt.partner_commission_credit_policies
- SET maximum_receivable_minor=150,maximum_age_days=7 WHERE partner_actor_id='platform-default'`); err != nil {
+	// Never mutate the platform-wide default: integration cases share this
+	// isolated database, and other payment journeys must retain the default.
+	if _, err := s.db.ExecContext(s.ctx, `INSERT INTO wlt.partner_commission_credit_policies
+ (partner_actor_id,maximum_receivable_minor,maximum_age_days,state,version,updated_by_actor_id)
+ VALUES($1,150,7,'ACTIVE',1,'finance-credit-isolated-test')`, owner); err != nil {
 		t.Fatal(err)
 	}
 	request := func(label string) (PaymentIntentRecord, bool, error) {
@@ -35,7 +38,7 @@ func TestPartnerCommissionCreditGuardBlocksDebtAndCountsPendingCashOrders(t *tes
 		t.Fatalf("new cash order exceeds 150YER cap against 100YER outstanding: %v", err)
 	}
 	if _, err := s.db.ExecContext(s.ctx, `UPDATE wlt.partner_commission_credit_policies
- SET maximum_receivable_minor=200 WHERE partner_actor_id='platform-default'`); err != nil {
+ SET maximum_receivable_minor=200 WHERE partner_actor_id=$1`, owner); err != nil {
 		t.Fatal(err)
 	}
 	first, replay, err := request("first")
