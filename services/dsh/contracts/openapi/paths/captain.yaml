@@ -727,7 +727,8 @@ paths:
   /dsh/captains/me/cash-liability/{paymentIntentId}/remit:
     post:
       operationId: remitOwnCaptainCash
-      summary: Record remittance of one collected COD payment by the authenticated Captain
+      deprecated: true
+      summary: Retired: Captain cash is settled directly from WLT wallet, not remitted to BThwani
       security:
         - userBearer: []
       parameters:
@@ -738,32 +739,11 @@ paths:
             type: string
             minLength: 1
             maxLength: 128
-        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "../dsh.openapi.yaml#/components/schemas/CaptainCashRemittanceRequest"
       responses:
-        "200":
-          description: Cash remittance recorded or idempotently replayed.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainCashRemittanceResponse"
-        "400":
-          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
         "401":
           $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
-        "403":
-          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
-        "409":
-          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
-        "502":
-          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+        "410":
+          description: CAPTAIN_CASH_REMITTANCE_DISABLED. BThwani does not accept Captain physical cash remittance.
 
   /dsh/captains/me/assignments/{assignmentId}/delivery-task:
     get:

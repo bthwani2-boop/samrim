@@ -905,24 +905,14 @@ func writeCashLiability(w http.ResponseWriter, result postgres.CashLiabilityList
 	writeJSON(w, http.StatusOK, cashLiabilityResponse{Items: items, TotalAmountMinor: result.TotalAmountMinor, TotalItems: result.TotalItems, HasMore: result.HasMore})
 }
 
+// New COD is settled from the Captain's reserved WLT balance. The legacy
+// remittance route remains explicitly closed so neither a new collection nor
+// a historically settled COD can produce a second cash obligation.
 func (s *Server) remitCash(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
-	correlation, idempotency, expected, ok := versionedMutationHeaders(w, r)
-	if !ok {
-		return
-	}
-	var input remitCashRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	result, replayed, err := postgres.RemitCash(r.Context(), s.db, postgres.RemitCashInput{PaymentIntentID: r.PathValue("intentId"), CaptainActorID: input.CaptainActorID, AmountMinor: input.AmountMinor, RemittanceReference: input.RemittanceReference, ExpectedPaymentVersion: expected, IdempotencyKey: idempotency, CorrelationID: correlation})
-	if err != nil {
-		writePaymentError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, cashRemittanceResponse{CashRemittance: toCashRemittance(result), IdempotentReplay: replayed})
+	writeError(w, http.StatusGone, "CAPTAIN_CASH_REMITTANCE_DISABLED", "BThwani no longer accepts Captain cash remittances; COD is settled from the reserved wallet once")
 }
 
 func (s *Server) reconcileCashRemittance(w http.ResponseWriter, r *http.Request) {

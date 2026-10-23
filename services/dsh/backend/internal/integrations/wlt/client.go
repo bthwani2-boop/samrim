@@ -1184,17 +1184,6 @@ func (c *Client) ListOperatorCashLiability(ctx context.Context, search, sort, cu
 	return response, err
 }
 
-func (c *Client) RemitCash(ctx context.Context, intentID, captainActorID string, amountMinor int64, remittanceReference string, expectedPaymentVersion int, idempotencyKey, correlationID string) (CashRemittance, bool, error) {
-	body := map[string]any{
-		"captainActorId":      strings.TrimSpace(captainActorID),
-		"amountMinor":         amountMinor,
-		"remittanceReference": strings.TrimSpace(remittanceReference),
-	}
-	var response cashRemittanceResponse
-	err := c.request(ctx, http.MethodPost, "/wlt/v1/payment-intents/"+url.PathEscape(strings.TrimSpace(intentID))+"/remit", body, idempotencyKey, correlationID, expectedPaymentVersion, &response)
-	return response.CashRemittance, response.IdempotentReplay, err
-}
-
 func (c *Client) ReconcileCashRemittance(ctx context.Context, remittanceID, evidenceDocumentID, actorID, idempotencyKey, correlationID string) (CashRemittance, bool, error) {
 	body := map[string]any{"evidenceDocumentId": strings.TrimSpace(evidenceDocumentID)}
 	var response cashRemittanceResponse

@@ -440,20 +440,14 @@ paths:
   /wlt/v1/payment-intents/{intentId}/remit:
     post:
       operationId: remitCashForPaymentIntent
+      deprecated: true
+      description: Retired. New Captain COD cash is settled by WLT wallet debit exactly once; no new remittance is accepted.
       security: [{ serviceToken: [] }]
       parameters:
         - { $ref: '#/components/parameters/IntentId' }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/RemitCashRequest' }
       responses:
-        '200':
-          description: Cash remittance recorded or idempotently replayed
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/CashRemittanceResponse' }
+        '410':
+          description: CAPTAIN_CASH_REMITTANCE_DISABLED. Historical remittances remain accessible for governed reconciliation only.
   /wlt/v1/delivery-quotes:
     post:
       operationId: quoteDeliveryFee
