@@ -31,9 +31,10 @@ type MultiStoreCheckoutChildInput struct {
 }
 
 type MultiStoreCheckoutInput struct {
-	ID            string
-	ClientActorID string
-	Children      []MultiStoreCheckoutChildInput
+	ID                    string
+	ClientActorID         string
+	DiscoveryClickEventID string
+	Children              []MultiStoreCheckoutChildInput
 }
 
 type MultiStoreCheckoutChildRecord struct {
@@ -87,10 +88,11 @@ func HashMultiStoreCheckoutRequest(input MultiStoreCheckoutInput) string {
 		}
 	}
 	payload := struct {
-		ID            string          `json:"id"`
-		ClientActorID string          `json:"clientActorId"`
-		Children      []childIdentity `json:"children"`
-	}{ID: strings.TrimSpace(input.ID), ClientActorID: strings.TrimSpace(input.ClientActorID), Children: children}
+		ID                    string          `json:"id"`
+		ClientActorID         string          `json:"clientActorId"`
+		Children              []childIdentity `json:"children"`
+		DiscoveryClickEventID string          `json:"discoveryClickEventId,omitempty"`
+	}{ID: strings.TrimSpace(input.ID), ClientActorID: strings.TrimSpace(input.ClientActorID), Children: children, DiscoveryClickEventID: strings.TrimSpace(input.DiscoveryClickEventID)}
 	raw, _ := json.Marshal(payload)
 	return HashMarketingFacts(append([]string{string(raw)}, otherRecipients...)...)
 }

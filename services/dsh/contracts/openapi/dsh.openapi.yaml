@@ -6300,6 +6300,10 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        discoveryClickEventId:
+          type: string
+          maxLength: 128
+          description: Optional acknowledged discovery click; assigned to no more than one eligible child store.
         children:
           type: array
           minItems: 2

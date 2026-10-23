@@ -179,6 +179,7 @@ func RecordCheckoutDiscoveryConversionTx(ctx context.Context, tx *sql.Tx, orderI
 	FROM dsh.commerce_orders orders
 	JOIN dsh.discovery_content_events click ON click.client_event_id=$3 AND click.event_type='CLICK'
 	WHERE orders.id=$4 AND orders.client_actor_id=$2
+	  AND (click.client_actor_id IS NULL OR click.client_actor_id=$2)
 	  AND click.occurred_at<=orders.created_at
 	  AND click.occurred_at>=orders.created_at-interval '24 hours'
 	  AND click.id=(

@@ -15,6 +15,7 @@ import { useServiceCityScope } from "../service-city/service-city-scope";
 import { createMultiStoreCheckout, listOwnDeliveryAddresses, listOwnOpenCarts, quoteMultiStoreChildCheckout, readOwnMultiStoreCheckout, readPublishedStore } from "../store-discovery/store-discovery-client";
 import { checkoutRecipient, DeliveryRecipientForm, deliveryRecipientIsValid, type DeliveryRecipientInput } from "../cart-checkout/delivery-recipient-form";
 import { readSavedFulfillmentMode, resolveFulfillmentChoice, saveFulfillmentMode } from "../cart-checkout/fulfillment-choice";
+import { acknowledgedDiscoveryClickForCheckout } from "../store-discovery/discovery-analytics";
 
 async function readCartForPreview(token: string, storeID: string) {
   const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -23,10 +24,10 @@ async function readCartForPreview(token: string, storeID: string) {
 }
 type StoreCart = Readonly<{ store: ClientOpenCartSummary; cart: Readonly<{ id: string; version: number; lineCount: number }>; identity: PublicStoreView | null; subtotalMinor: number | null }>;
 type PendingMultiStoreAttempt =
-  | Readonly<{ version: 3; kind: "CREATE"; actorID: string; idempotencyKey: string; correlationID: string; request: MultiStoreCheckoutRequest }>
+  | Readonly<{ version: 3 | 4; kind: "CREATE"; actorID: string; idempotencyKey: string; correlationID: string; request: MultiStoreCheckoutRequest }>
   | Readonly<{ version: 2; kind: "LEGACY_CREATE"; actorID: string; idempotencyKey: string; correlationID: string; checkoutID: string }>;
 type CompactCheckoutChild = readonly [cartID: string, storeID: string, addressID: string, cartVersion: number, fulfillmentMode: CustomerFulfillmentMode, expectedTotalAmountMinor: number, recipient: DeliveryRecipientInput];
-type CompactCheckoutRequest = readonly [id: string, children: ReadonlyArray<CompactCheckoutChild>];
+type CompactCheckoutRequest = readonly [id: string, children: ReadonlyArray<CompactCheckoutChild>, discoveryClickEventId?: string];
 type ScreenState =
   | { kind: "loading" }
   | { kind: "ready"; storeCarts: ReadonlyArray<StoreCart>; otherCityCartCount: number; selectedStoreIDs: ReadonlyArray<string>; addresses: ReadonlyArray<DeliveryAddress>; selectedAddressID: string; fulfillmentModes: Readonly<Record<string, CustomerFulfillmentMode | null>>; checkout?: MultiStoreCheckout }
@@ -100,7 +101,7 @@ function parseDeliveryRecipient(value: unknown): DeliveryRecipientInput | null {
 function parseCheckoutRequest(value: unknown, compact: boolean): MultiStoreCheckoutRequest | null {
   let id: unknown;
   let rawChildren: unknown;
-  if (compact && Array.isArray(value) && value.length === 2) {
+  if (compact && Array.isArray(value) && (value.length === 2 || value.length === 3)) {
     [id, rawChildren] = value;
   } else if (!compact && value && typeof value === "object" && !Array.isArray(value)) {
     const request = value as Record<string, unknown>;
@@ -112,7 +113,9 @@ function parseCheckoutRequest(value: unknown, compact: boolean): MultiStoreCheck
   if (typeof id !== "string" || id.length === 0 || id.length > 128 || !Array.isArray(rawChildren) || rawChildren.length < 2 || rawChildren.length > 10) return null;
   const children = rawChildren.map((child) => parseCheckoutChild(child, compact));
   if (children.some((child) => child === null)) return null;
-  return { id, children: children as MultiStoreCheckoutRequest["children"] };
+  const discoveryClickEventId = compact ? (value as unknown[])[2] : (value as Record<string, unknown>).discoveryClickEventId;
+  if (discoveryClickEventId !== undefined && (typeof discoveryClickEventId !== "string" || discoveryClickEventId.length > 128)) return null;
+  return { id, children: children as MultiStoreCheckoutRequest["children"], ...(discoveryClickEventId ? { discoveryClickEventId } : {}) };
 }
 
 function parsePendingMultiStoreAttempt(raw: string | null, actorID: string): PendingMultiStoreAttempt | null {
@@ -120,10 +123,10 @@ function parsePendingMultiStoreAttempt(raw: string | null, actorID: string): Pen
   try {
     const value = JSON.parse(raw) as Record<string, unknown>;
     const version = value.version;
-    if ((version !== 1 && version !== 2 && version !== 3) || value.actorID !== actorID || typeof value.idempotencyKey !== "string" || value.idempotencyKey.length < 8 || value.idempotencyKey.length > 128 || typeof value.correlationID !== "string" || value.correlationID.length < 8 || value.correlationID.length > 128) return null;
-    const common = { version: 3 as const, actorID, idempotencyKey: value.idempotencyKey, correlationID: value.correlationID };
+    if ((version !== 1 && version !== 2 && version !== 3 && version !== 4) || value.actorID !== actorID || typeof value.idempotencyKey !== "string" || value.idempotencyKey.length < 8 || value.idempotencyKey.length > 128 || typeof value.correlationID !== "string" || value.correlationID.length < 8 || value.correlationID.length > 128) return null;
+    const common = { version: (version === 3 ? 3 : 4) as 3 | 4, actorID, idempotencyKey: value.idempotencyKey, correlationID: value.correlationID };
     if (value.kind === "CREATE") {
-      if (version !== 3) {
+      if (version !== 3 && version !== 4) {
         // Historical v1/v2 CREATE attempts lack consented child amounts.
         // Read their canonical parent by ID, but NEVER submit them again.
         const raw = value.request;
@@ -147,10 +150,11 @@ function parsePendingMultiStoreAttempt(raw: string | null, actorID: string): Pen
 
 function serializePendingMultiStoreAttempt(attempt: PendingMultiStoreAttempt): string {
   if (attempt.kind === "LEGACY_CREATE") return JSON.stringify(attempt);
-  const request: CompactCheckoutRequest = [
-    attempt.request.id,
-    attempt.request.children.map((child) => [child.cartId, child.storeId, child.addressId, child.cartVersion, child.fulfillmentMode, child.expectedTotalAmountMinor, child.recipient ?? { mode: "SELF" }]),
-  ];
+  const children: ReadonlyArray<CompactCheckoutChild> = attempt.request.children.map((child): CompactCheckoutChild =>
+    [child.cartId, child.storeId, child.addressId, child.cartVersion, child.fulfillmentMode, child.expectedTotalAmountMinor, child.recipient ?? { mode: "SELF" }]);
+  const request: CompactCheckoutRequest = attempt.request.discoveryClickEventId
+    ? [attempt.request.id, children, attempt.request.discoveryClickEventId]
+    : [attempt.request.id, children];
   return JSON.stringify({ ...attempt, request });
 }
 
@@ -363,7 +367,9 @@ export default function MultiStoreCheckoutScreen() {
         setQuotePreview({ fingerprint, children: quotes, totalAmountMinor });
         return;
       }
+      const discoveryClickEventId = await acknowledgedDiscoveryClickForCheckout();
       const request: MultiStoreCheckoutRequest = {
+        ...(discoveryClickEventId ? { discoveryClickEventId } : {}),
         id: `multi_${Crypto.randomUUID()}`,
         children: selectedStoreCarts.map(({ store, cart, fulfillmentMode }, index) => {
           const accepted = quotePreview.children[index]?.quote;
@@ -376,7 +382,7 @@ export default function MultiStoreCheckoutScreen() {
       };
       setQuotePreview(null);
       const attempt: PendingMultiStoreAttempt = {
-        version: 3, kind: "CREATE", actorID, idempotencyKey: `multi_idem_${Crypto.randomUUID()}`, correlationID: `multi_corr_${Crypto.randomUUID()}`,
+        version: 4, kind: "CREATE", actorID, idempotencyKey: `multi_idem_${Crypto.randomUUID()}`, correlationID: `multi_corr_${Crypto.randomUUID()}`,
         request,
       };
       if (!hasCurrentMultiStoreActor(actorID)) return;

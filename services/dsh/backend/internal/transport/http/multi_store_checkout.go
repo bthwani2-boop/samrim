@@ -49,7 +49,7 @@ func (s *MultiStoreCheckoutServer) create(w http.ResponseWriter, r *http.Request
 	for _, child := range input.Children {
 		children = append(children, postgres.MultiStoreCheckoutChildInput{CartID: strings.TrimSpace(child.CartID), StoreID: strings.TrimSpace(child.StoreID), AddressID: strings.TrimSpace(child.AddressID), CartVersion: child.CartVersion, ExpectedTotalAmountMinor: int64(child.ExpectedTotalAmountMinor), FulfillmentMode: string(child.FulfillmentMode), PromotionCode: strings.TrimSpace(child.PromotionCode), Recipient: postgres.DeliveryRecipientInput{Mode: child.Recipient.Mode, Name: child.Recipient.Name, PhoneE164: child.Recipient.PhoneE164, Instructions: child.Recipient.Instructions}})
 	}
-	item, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), postgres.MultiStoreCheckoutInput{ID: strings.TrimSpace(input.ID), Children: children}, idempotency, correlation)
+	item, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), postgres.MultiStoreCheckoutInput{ID: strings.TrimSpace(input.ID), DiscoveryClickEventID: strings.TrimSpace(input.DiscoveryClickEventID), Children: children}, idempotency, correlation)
 	if err != nil {
 		writeMultiStoreCheckoutError(w, err)
 		return
