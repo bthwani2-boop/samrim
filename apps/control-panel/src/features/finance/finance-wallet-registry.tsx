@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { financeAmount } from "./finance-amount";
 
 type ActorType = "customer" | "partner" | "captain" | "field";
 type WalletRow = Readonly<{
@@ -25,7 +26,7 @@ const actors: ReadonlyArray<Readonly<{ key: ActorType; label: string; icon: stri
 ];
 
 export function money(minor: number): string {
-  return new Intl.NumberFormat("ar-YE", { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(minor / 100) + " ر.ي";
+  return financeAmount(minor);
 }
 function periodDate(date: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Aden", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FinanceWalletRegistry } from "./finance-wallet-registry";
+import { financeAmount } from "./finance-amount";
 import { SettlementIntakeInbox } from "./settlement-intake-inbox";
 import type { FinanceReferenceRow, FinanceReferenceTab, FinanceReferenceWorkflow } from "./finance-reference-dashboard";
 import "./finance-specialized-tabs.css";
@@ -15,7 +16,7 @@ type ViewProps = Readonly<{ rows:readonly FinanceReferenceRow[]; intakes:readonl
 const actors:ReadonlyArray<{key:ActorType;label:string}> = [{key:"customer",label:"العملاء"},{key:"partner",label:"الشركاء"},{key:"captain",label:"الكباتن"},{key:"field",label:"الميدانيون"}];
 const cashSources = [{key:"custody",label:"تحصيل COD"},{key:"commissions",label:"ذمم العمولات"}] as const;
 const num=(v:number)=>new Intl.NumberFormat("ar-YE",{maximumFractionDigits:0}).format(v);
-const money=(minor:number)=>num(Math.round(minor/100))+" ر.ي";
+const money=(amount:number)=>financeAmount(amount);
 const shortDate=(date?:string)=>date && !Number.isNaN(Date.parse(date))?new Intl.DateTimeFormat("ar-YE",{dateStyle:"medium",timeZone:"Asia/Aden"}).format(new Date(date)):"—";
 const daysOld=(date?:string)=>date && !Number.isNaN(Date.parse(date))?Math.max(0,Math.floor((Date.now()-Date.parse(date))/86400000)):null;
 const isoYemen=(date:Date)=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Aden",year:"numeric",month:"2-digit",day:"2-digit"}).format(date);

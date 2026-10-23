@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FinanceSpecializedTab } from "./finance-specialized-tabs";
+import { financeAmount } from "./finance-amount";
 import { SettlementIntakeInbox } from "./settlement-intake-inbox";
 import "./finance-reference-dashboard.css";
 
@@ -36,8 +37,8 @@ const workflowLabels: Record<FinanceReferenceWorkflow, string> = {
 };
 const emptyGroups: readonly WalletGroup[] = groupDefinitions.map((group) => ({ type: group.type, name: group.name, amount: 0, count: 0, loaded: false, complete: false }));
 const number = (value: number) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
-const riyals = (minor: number) => number(Math.round(minor / 100));
-const displayMoney = (minor: number) => riyals(minor) + " ر.ي";
+const riyals = (amount: number) => number(Math.round(amount));
+const displayMoney = (amount: number) => financeAmount(amount);
 function dateInYemen(d: Date) { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Aden", day: "2-digit", month: "2-digit", year: "numeric" }).format(d); }
 function financeDates() { const now = new Date(); const start = new Date(now); start.setUTCDate(now.getUTCDate() - 29); return { from: dateInYemen(start), to: dateInYemen(now) }; }
 const range = financeDates();
@@ -87,7 +88,7 @@ function MovementGraph({ rows }: { rows: readonly FinanceReferenceRow[] }) {
     const d = new Date(); d.setUTCDate(d.getUTCDate() - 6 + i);
     const key = dateInYemen(d);
     const matches = rows.filter((row) => row.source === "custody" && row.date?.startsWith(key));
-    return { day: new Intl.DateTimeFormat("ar-YE", { day: "numeric", month: "short", timeZone: "Asia/Aden" }).format(d), amount: matches.reduce((sum, row) => sum + (row.amountMinor ?? 0), 0) / 100 };
+    return { day: new Intl.DateTimeFormat("ar-YE", { day: "numeric", month: "short", timeZone: "Asia/Aden" }).format(d), amount: matches.reduce((sum, row) => sum + (row.amountMinor ?? 0), 0) };
   }), [rows]);
   const max = Math.max(...days.map((day) => day.amount), 1);
   if (days.every(day => day.amount === 0)) return <div className="fr-graph-empty">لا توجد تحصيلات يومية مؤرخة ضمن السجلات المحمّلة. افتح سجل التحصيل للتحقق من كامل البيانات.</div>;
