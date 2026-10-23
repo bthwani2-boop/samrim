@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -155,6 +156,25 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 				t.Fatal(err)
 			}
 			actors[id] = actor
+		}
+		// A prepaid delivery must not bypass merchandise custody risk limits.
+		// A rejected attempt must leave the offer available for a later valid
+		// acceptance without recording a winner or changing the order.
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.captain_goods_custody_policies SET single_order_cap_minor=1000,concurrent_cap_minor=1000,version=version+1 WHERE id='platform'"); err != nil {
+			t.Fatal(err)
+		}
+		blockedID := offers[0]
+		blockedKey := "accept-goods-limit"
+		_, err = postgres.RespondToCaptainOffer(ctx, db, blockedID, actors[blockedID], "accept", 1, blockedKey, postgres.HashCaptainOfferResponse(blockedID, "accept", 1), blockedKey)
+		if !errors.Is(err, postgres.ErrCaptainGoodsCustodyLimit) {
+			t.Fatalf("goods over limit must fail closed: %v", err)
+		}
+		var stillOffered int
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.captain_dispatch_offers WHERE id=$1 AND state='offered'", blockedID).Scan(&stillOffered); err != nil || stillOffered != 1 {
+			t.Fatalf("rejected exposure mutated the offer: %d %v", stillOffered, err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.captain_goods_custody_policies SET single_order_cap_minor=50000,concurrent_cap_minor=50000,version=version+1 WHERE id='platform'"); err != nil {
+			t.Fatal(err)
 		}
 		var wg sync.WaitGroup
 		for i, id := range offers {

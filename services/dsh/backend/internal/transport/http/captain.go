@@ -873,6 +873,8 @@ func writeCaptainError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, captain.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Captain input is invalid")
+	case errors.Is(err, postgres.ErrCaptainGoodsCustodyLimit):
+		writeError(w, http.StatusConflict, "GOODS_CUSTODY_LIMIT", "Goods custody risk limit exceeded")
 	case errors.Is(err, postgres.ErrCaptainAdmissionRegistry):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Captain admission search, cursor, filters, or sort order are invalid")
 	case errors.Is(err, postgres.ErrStoreCaptainMembershipNotFound):
