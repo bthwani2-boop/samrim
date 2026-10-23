@@ -44,11 +44,16 @@ func TestOperatorExceptionDetectionAuditedStagesAndReplay(t *testing.T) {
 		}
 		old := time.Now().UTC().Add(-90 * time.Minute)
 		fresh := time.Now().UTC().Add(-5 * time.Minute)
+		recent := time.Now().UTC().Add(-time.Minute)
 		for _, item := range []struct {
 			id, state string
 			event     *time.Time
 		}{
 			{"auto_ops_late", "PREPARING", &old},
+			{"auto_ops_dispatch_late", "READY_FOR_DISPATCH", &old},
+			{"auto_ops_dispatch_offered", "READY_FOR_DISPATCH", &old},
+			{"auto_ops_dispatch_fresh", "READY_FOR_DISPATCH", &recent},
+			{"auto_ops_dispatch_missing", "READY_FOR_DISPATCH", nil},
 			{"auto_ops_accepted_late", "PARTNER_ACCEPTED", &old},
 			{"auto_ops_accepted_fresh", "PARTNER_ACCEPTED", &fresh},
 			{"auto_ops_accepted_missing", "PARTNER_ACCEPTED", nil},
@@ -83,6 +88,22 @@ func TestOperatorExceptionDetectionAuditedStagesAndReplay(t *testing.T) {
       VALUES('order_preparing',$1,$2,'auto_ops_partner',$3,'PARTNER_ACCEPTED','PREPARING',1,2,'audit',$4)`,
 					"auto-prep-idem-"+item.id, "auto-prep-corr-"+item.id, item.id, *item.event); err != nil {
 					t.Fatal(err)
+				}
+			} else if item.state == "READY_FOR_DISPATCH" {
+				if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_audit
+      (event_type,idempotency_key,correlation_id,acting_actor_id,order_id,from_state,to_state,
+       from_version,result_version,request_hash,created_at)
+      VALUES('order_ready_for_dispatch',$1,$2,'auto_ops_partner',$3,'PREPARING','READY_FOR_DISPATCH',1,2,'audit',$4)`,
+					"auto-dispatch-idem-"+item.id, "auto-dispatch-corr-"+item.id, item.id, *item.event); err != nil {
+					t.Fatal(err)
+				}
+				if item.id == "auto_ops_dispatch_offered" {
+					if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_dispatch_offers
+                      (id,order_id,captain_actor_id,state,expires_at,idempotency_key,request_hash)
+                      VALUES('auto_dispatch_active_offer',$1,'auto_ops_offer_captain','offered',
+                             clock_timestamp()+interval '15 minutes','auto_dispatch_offer_key','audit')`, item.id); err != nil {
+						t.Fatal(err)
+					}
 				}
 			} else if item.state == "PARTNER_ACCEPTED" {
 				if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_audit
@@ -127,7 +148,7 @@ func TestOperatorExceptionDetectionAuditedStagesAndReplay(t *testing.T) {
 			}()
 		}
 		a, b := <-result, <-result
-		if a.err != nil || b.err != nil || a.count+b.count != 4 {
+		if a.err != nil || b.err != nil || a.count+b.count != 5 {
 			t.Fatalf("concurrent scan opened duplicates: a=%+v b=%+v", a, b)
 		}
 		again, err := postgres.DetectOperatorOrderExceptions(ctx, db, 25)
@@ -135,15 +156,22 @@ func TestOperatorExceptionDetectionAuditedStagesAndReplay(t *testing.T) {
 			t.Fatalf("same stage opened twice: count=%d err=%v", again, err)
 		}
 		cases, err := postgres.ListOpenOpsCases(ctx, db, "auto_ops_operator", "all", 20, "")
-		if err != nil || len(cases.Items) != 4 {
+		if err != nil || len(cases.Items) != 5 {
 			t.Fatalf("case inbox expected 2: %+v err=%v", cases, err)
 		}
 		var delay postgres.OpsCase
 		createdDetected := false
 		acceptedDetected := false
+		dispatchDetected := false
 		for _, c := range cases.Items {
 			if c.OwnerActorID != nil || c.State != "OPEN" || c.Priority != "URGENT" {
 				t.Fatalf("automatic case ownership or urgency wrong: %+v", c)
+			}
+			if c.OrderID == "auto_ops_dispatch_late" {
+				dispatchDetected = true
+				if c.Reason != "DISPATCH_UNAVAILABLE" || c.State != "OPEN" {
+					t.Fatalf("dispatch delay produced the wrong case: %+v", c)
+				}
 			}
 			if c.OrderID == "auto_ops_accepted_late" {
 				acceptedDetected = true
@@ -166,6 +194,9 @@ func TestOperatorExceptionDetectionAuditedStagesAndReplay(t *testing.T) {
 			if c.OrderID == "auto_ops_failed" && c.Reason != "DELIVERY_BLOCKED" {
 				t.Fatalf("delivery failure reason: %+v", c)
 			}
+		}
+		if !dispatchDetected {
+			t.Fatalf("audited READY_FOR_DISPATCH delay was missed")
 		}
 		if !acceptedDetected {
 			t.Fatalf("audited PARTNER_ACCEPTED delay not detected")
@@ -190,13 +221,13 @@ func TestOperatorExceptionDetectionAuditedStagesAndReplay(t *testing.T) {
 			t.Fatalf("resolved occurrence automatically reopened: count=%d err=%v", again, err)
 		}
 		var total, auditCount int
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.operator_order_cases WHERE opened_by_actor_id='dsh:operations-detector'").Scan(&total); err != nil || total != 4 {
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.operator_order_cases WHERE opened_by_actor_id='dsh:operations-detector'").Scan(&total); err != nil || total != 5 {
 			t.Fatalf("detector case count=%d err=%v", total, err)
 		}
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.operator_order_case_events WHERE actor_id='dsh:operations-detector' AND action='OPEN'").Scan(&auditCount); err != nil || auditCount != 4 {
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.operator_order_case_events WHERE actor_id='dsh:operations-detector' AND action='OPEN'").Scan(&auditCount); err != nil || auditCount != 5 {
 			t.Fatalf("detector events missing/duplicate: %d err=%v", auditCount, err)
 		}
-		for _, item := range []struct{ id, state string }{{"auto_ops_late", "PREPARING"}, {"auto_ops_created_late", "CREATED"}, {"auto_ops_accepted_late", "PARTNER_ACCEPTED"}, {"auto_ops_failed", "DELIVERY_FAILED"}} {
+		for _, item := range []struct{ id, state string }{{"auto_ops_late", "PREPARING"}, {"auto_ops_created_late", "CREATED"}, {"auto_ops_accepted_late", "PARTNER_ACCEPTED"}, {"auto_ops_dispatch_late", "READY_FOR_DISPATCH"}, {"auto_ops_failed", "DELIVERY_FAILED"}} {
 			var state string
 			if err := db.QueryRowContext(ctx, "SELECT state FROM dsh.commerce_orders WHERE id=$1", item.id).Scan(&state); err != nil || state != item.state {
 				t.Fatalf("detector changed canonical order state: %s %s err=%v", item.id, state, err)
