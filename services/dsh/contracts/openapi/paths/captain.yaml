@@ -777,6 +777,38 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/captains/me/assignments/{assignmentId}/mission-location:
+    post:
+      operationId: publishCaptainMissionLocation
+      summary: Publish one latest fix during a BThwani Captain mission, never a route trail.
+      security:
+        - userBearer: []
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [latitude, longitude, accuracyMeters, recordedAt, sequence]
+              properties:
+                latitude: { type: number }
+                longitude: { type: number }
+                accuracyMeters: { type: number }
+                recordedAt: { type: string, format: date-time }
+                sequence: { type: integer, minimum: 1 }
+      responses:
+        "204": { description: Latest mission fix accepted without a coordinate history. }
+        "400": { description: Invalid location fix or timestamp. }
+        "401": { description: Captain session required. }
+        "403": { description: Assignment is not active or belongs to another Captain. }
+        "409": { description: Location sequence already superseded. }
+
   /dsh/captains/me/assignments/{assignmentId}/pickup:
     post:
       operationId: completeCaptainPickup

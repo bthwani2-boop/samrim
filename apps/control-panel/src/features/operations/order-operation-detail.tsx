@@ -13,6 +13,7 @@ import { operationHistoryLabel } from "./operation-history";
 import { OperatorOrderConversation } from "./operator-order-conversation";
 import { operationalAge } from "./operational-age";
 import { OperationLocationMap } from "./operation-location-map";
+import { OperatorMissionLocation } from "./operator-mission-location";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 
@@ -346,6 +347,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
       )}
 
       <CustomerContactReviewPanel key={order.id} orderId={order.id} onUpdated={onUpdated} />
+      <OperatorMissionLocation key={order.id} orderId={order.id} />
 
       {(
         <section className="order-detail-panel" aria-labelledby="order-items-title">

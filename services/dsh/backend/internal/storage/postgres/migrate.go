@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 147
+const SchemaVersion = 148
 
 type MigrationRecord struct {
 	Version int
@@ -26,6 +26,7 @@ type MigrationRecord struct {
 }
 
 var requiredTables = []schemaRelationExpectation{
+	{name: "dsh.captain_mission_latest", columns: []string{"assignment_id", "captain_actor_id", "latitude", "longitude", "accuracy_meters", "recorded_at", "received_at", "sequence"}, constraints: []string{"captain_mission_latest_pkey", "captain_mission_latest_assignment_id_fkey"}, indexes: []string{"captain_mission_latest_received_idx"}},
 	{name: "dsh.customer_order_contact_reviews", columns: []string{"order_id", "client_actor_id", "state", "attempt_count", "version", "last_actor_id", "last_attempt_at", "confirmed_at", "updated_at"}, constraints: []string{"customer_order_contact_reviews_pkey", "customer_order_contact_reviews_order_id_fkey", "customer_contact_confirmation_chk"}, indexes: []string{"customer_order_contact_client_idx"}},
 	{name: "dsh.customer_order_contact_events", columns: []string{"id", "order_id", "client_actor_id", "decision", "operator_actor_id", "idempotency_key", "request_hash", "correlation_id", "created_at"}, constraints: []string{"customer_order_contact_events_pkey", "customer_order_contact_events_order_id_fkey", "customer_order_contact_events_idempotency_key_key"}, indexes: []string{"customer_order_contact_events_order_idx"}},
 	{name: "dsh.captain_goods_custody_policies", columns: []string{"id", "single_order_cap_minor", "concurrent_cap_minor", "state", "version", "updated_by_actor_id", "updated_at"}, constraints: []string{"captain_goods_custody_policies_pkey"}},

@@ -384,6 +384,15 @@ func (s *Service) ReadDeliveryTask(ctx context.Context, accessToken, assignmentI
 	return task, nil
 }
 
+// PublishMissionLocation is tied to the bearer identity and the live assignment.
+func (s *Service) PublishMissionLocation(ctx context.Context, token, assignmentID string, latitude, longitude, accuracy float64, recordedAt time.Time, sequence int64) error {
+	identity, err := s.requireCaptain(ctx, token)
+	if err != nil {
+		return err
+	}
+	return postgres.UpdateCaptainMissionLocation(ctx, s.db, assignmentID, identity.Subject, latitude, longitude, accuracy, recordedAt, sequence)
+}
+
 // UpdatePresence only accepts authenticated captains and only persists their latest position.
 func (s *Service) UpdatePresence(ctx context.Context, accessToken string, latitude, longitude float64) (time.Time, error) {
 	identity, err := s.requireCaptain(ctx, accessToken)

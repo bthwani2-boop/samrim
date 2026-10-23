@@ -1456,6 +1456,33 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/operator/operations/{orderId}/mission-location:
+    get:
+      operationId: readOperatorMissionLocation
+      summary: Read the latest active mission location exclusively as an authorized Operations employee.
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Active assignment location and freshness; no coordinates when lost or inactive.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mission]
+                properties:
+                  mission:
+                    $ref: "../dsh.openapi.yaml#/components/schemas/CaptainMissionLocation"
+        "401": { description: Service authentication required. }
+        "403": { description: Operations permission required. }
+        "404": { description: Order not found. }
+
   /dsh/operator/operations/{orderId}/contact-review:
     get:
       operationId: readOperatorCustomerContactReview

@@ -296,6 +296,7 @@ export function CaptainDeliveries() {
       {completionStorageIssue ? <Text accessibilityRole="alert" style={styles.error}>تعذر قراءة المحاولة الآمنة السابقة. لا تؤكد تسليمًا جديدًا حتى يتم التحقق تلقائيًا أو يراجع المشغل المحاولة.</Text> : null}
       {!completionStorageReady && !completionStorageIssue && !loading ? <Text accessibilityRole="alert" style={styles.warning}>تعذر التحقق من المحاولات المحفوظة؛ لن نرسل تأكيدًا حتى تنجح إعادة القراءة.</Text> : null}
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
+      {!loading && assignments.some((assignment) => assignment.state === "assigned" || assignment.state === "in_custody") ? <Text style={styles.muted}>يُشارك موقع المهمة مع العمليات عند فتح تطبيق الكابتن والسماح بالموقع. إذا تعذر الاتصال أو أُغلق التطبيق فقد تنقطع الإشارة.</Text> : null}
       {!loading && assignments.length > 0 ? <Text style={styles.sectionTitle}>التكليفات ({assignments.length})</Text> : null}
       {!loading && !assignments.length ? <View style={styles.card}>
         <Text style={styles.muted}>لا توجد توصيلات حالية.</Text>

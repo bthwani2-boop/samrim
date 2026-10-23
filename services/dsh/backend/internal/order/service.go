@@ -277,6 +277,13 @@ func (s *Service) ListForAuthorizedPartnerStores(ctx context.Context, accessToke
 	return page, counts, nil
 }
 
+func (s *Service) ReadMissionLocationForOperator(ctx context.Context, orderID, actorID string) (postgres.CaptainMissionLocation, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.CaptainMissionLocation{}, err
+	}
+	return postgres.ReadOperatorMissionLocation(ctx, s.db, orderID)
+}
+
 func (s *Service) ReadCustomerContactForOperator(ctx context.Context, orderID, actingActorID string) (postgres.CustomerOrderContactReview, error) {
 	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
 		return postgres.CustomerOrderContactReview{}, err

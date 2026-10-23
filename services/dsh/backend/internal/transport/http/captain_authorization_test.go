@@ -51,8 +51,8 @@ func TestCaptainRegisteredRoutesRejectUnauthenticatedRequests(t *testing.T) {
 
 	routes := captainRegisteredRoutes(t)
 	// The assignment GPS route is gone; both authorized opportunity projections have been added.
-	if len(routes) != 38 {
-		t.Fatalf("Captain route census changed: got %d, want 38; review authentication for every new or removed route", len(routes))
+	if len(routes) != 39 {
+		t.Fatalf("Captain route census changed: got %d, want 39; review authentication for every new or removed route", len(routes))
 	}
 	for _, route := range routes {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
