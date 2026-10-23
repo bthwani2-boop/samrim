@@ -11,7 +11,7 @@ type Page = Readonly<{items:ReadonlyArray<Case>;nextCursor:string}>;
 type Scope = "all"|"mine"|"unassigned";
 const labels:Readonly<Record<string,string>>={
  PARTNER_DELAY:"تأخر الشريك",DISPATCH_UNAVAILABLE:"تعذر توزيع الطلب",
- DELIVERY_BLOCKED:"تعثر التسليم",CUSTOMER_CONTACT:"متابعة العميل",
+ DELIVERY_BLOCKED:"تعثر التسليم",CAPTAIN_LOCATION_LOST:"موقع المهمة مفقود",CUSTOMER_CONTACT:"متابعة العميل",
  PAYMENT_EXCEPTION:"استثناء مالي",OTHER:"متابعة تشغيلية"
 };
 

@@ -15,6 +15,7 @@ const reasons:ReadonlyArray<Readonly<{value:string;label:string}>> = [
  {value:"PARTNER_DELAY",label:"تأخر الشريك"},
  {value:"DISPATCH_UNAVAILABLE",label:"تعذر تعيين كابتن"},
  {value:"DELIVERY_BLOCKED",label:"تعثر التسليم أو العهدة"},
+ {value:"CAPTAIN_LOCATION_LOST",label:"فقدان موقع مهمة الكابتن"},
  {value:"CUSTOMER_CONTACT",label:"التواصل مع العميل"},
  {value:"PAYMENT_EXCEPTION",label:"استثناء مالي يحتاج مراجعة"},
  {value:"OTHER",label:"سبب تشغيلي آخر"},

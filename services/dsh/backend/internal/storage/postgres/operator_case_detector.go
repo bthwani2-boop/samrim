@@ -7,7 +7,7 @@ import (
 )
 
 // DetectOperatorOrderExceptions opens a bounded, actionable case for
-// an audited stalled stage, missing dispatch offer, or failed delivery.  Every signal is tied
+// an audited stalled stage, missing dispatch offer, lost active mission GPS, or failed delivery.  Every signal is tied
 // to the current stage event; a resolved incident never reopens while
 // the Order remains in the same occurrence of that stage.
 func DetectOperatorOrderExceptions(ctx context.Context, db *sql.DB, max int) (int64, error) {
@@ -21,23 +21,27 @@ func DetectOperatorOrderExceptions(ctx context.Context, db *sql.DB, max int) (in
 WITH candidates AS MATERIALIZED (
  SELECT o.id AS order_id,
    CASE WHEN ce.id IS NOT NULL THEN 'CUSTOMER_CONTACT'
+        WHEN gps.assignment_id IS NOT NULL THEN 'CAPTAIN_LOCATION_LOST'
         WHEN o.state='CREATED' THEN 'OTHER'
         WHEN o.state IN ('PARTNER_ACCEPTED','PREPARING') THEN 'PARTNER_DELAY'
         WHEN o.state='READY_FOR_DISPATCH' THEN 'DISPATCH_UNAVAILABLE'
         ELSE 'DELIVERY_BLOCKED' END AS reason,
    CASE WHEN ce.id IS NOT NULL THEN 'CUSTOMER_NO_ANSWER:'||ce.id::text
+        WHEN gps.assignment_id IS NOT NULL THEN 'MISSION_LOST:'||gps.assignment_id||':'||gps.alert_at::text
         WHEN o.state='CREATED' THEN 'CREATED:'||cr.id::text
         WHEN o.state='PARTNER_ACCEPTED' THEN 'PARTNER_ACCEPTED:'||aa.id::text
                 WHEN o.state='PREPARING' THEN 'PREPARING:'||pa.id::text
         WHEN o.state='READY_FOR_DISPATCH' THEN 'READY_FOR_DISPATCH:'||rd.id::text
         ELSE 'DELIVERY_FAILED:'||ca.id::text END AS signal_key,
    CASE WHEN ce.id IS NOT NULL THEN ce.created_at
+        WHEN gps.assignment_id IS NOT NULL THEN gps.alert_at
         WHEN o.state='CREATED' THEN cr.created_at
         WHEN o.state='PARTNER_ACCEPTED' THEN aa.created_at
                                             WHEN o.state='PREPARING' THEN pa.created_at
         WHEN o.state='READY_FOR_DISPATCH' THEN rd.created_at
         ELSE ca.created_at END AS stage_at,
    CASE WHEN ce.id IS NOT NULL THEN 'URGENT'
+       WHEN gps.assignment_id IS NOT NULL THEN 'URGENT'
        WHEN o.state='CREATED'
        THEN CASE WHEN statement_timestamp()-cr.created_at >= interval '60 minutes' THEN 'URGENT' ELSE 'NORMAL' END
        WHEN o.state='PARTNER_ACCEPTED'
@@ -50,6 +54,8 @@ WITH candidates AS MATERIALIZED (
        ELSE 'URGENT' END AS priority,
    CASE WHEN ce.id IS NOT NULL
        THEN 'راجع تعذر الاتصال بالعميل بعد محاولتين. لا تلغِ الطلب تلقائيًا.'
+       WHEN gps.assignment_id IS NOT NULL
+       THEN 'انقطع تحديث موقع مهمة الكابتن. تحقق من الاتصال والمهمة دون افتراض وصول أو تسليم.'
        WHEN o.state='CREATED'
        THEN 'تحقق من سبب بقاء الطلب جديدًا، وحالة الدفع والتواصل دون تعطيل الطلب أو اتهام المتجر.'
        WHEN o.state='PARTNER_ACCEPTED'
@@ -61,6 +67,22 @@ WITH candidates AS MATERIALIZED (
        ELSE 'راجع فشل التسليم وعهدة الكابتن قبل أي قرار بشأن إعادة الإسناد أو التسوية.'
    END AS next_action
  FROM dsh.commerce_orders o
+ LEFT JOIN LATERAL (
+   SELECT a.id,a.created_at FROM dsh.captain_assignments a
+   WHERE a.order_id=o.id AND a.state IN ('assigned','in_custody')
+   ORDER BY a.created_at DESC LIMIT 1
+ ) mission ON o.fulfillment_mode='BTHWANI_CAPTAIN'
+          AND o.state IN ('CAPTAIN_ASSIGNED','IN_CUSTODY')
+ LEFT JOIN dsh.captain_mission_latest ml ON ml.assignment_id=mission.id
+ LEFT JOIN LATERAL (
+   SELECT mission.id AS assignment_id,
+          COALESCE(ml.received_at,mission.created_at) AS alert_at
+   WHERE mission.id IS NOT NULL
+     AND mission.created_at<=statement_timestamp()-interval '3 minutes'
+     AND (ml.assignment_id IS NULL
+       OR ml.received_at<statement_timestamp()-interval '3 minutes'
+       OR ml.recorded_at<statement_timestamp()-interval '3 minutes')
+ ) gps ON true
  LEFT JOIN dsh.store_operational_availability soa ON soa.store_id=o.store_id
  LEFT JOIN dsh.customer_order_contact_reviews verification
    ON verification.order_id=o.id AND verification.state='NO_ANSWER'
@@ -95,7 +117,7 @@ WITH candidates AS MATERIALIZED (
      WHERE a.order_id=o.id AND a.event_type='delivery_failed'
      ORDER BY a.created_at DESC,a.id DESC LIMIT 1
  ) ca ON o.state='DELIVERY_FAILED'
- WHERE (ce.id IS NOT NULL
+ WHERE (ce.id IS NOT NULL OR gps.assignment_id IS NOT NULL
        OR o.state='CREATED' AND cr.id IS NOT NULL
           AND cr.created_at <= statement_timestamp()-interval '30 minutes'
        OR o.state='PARTNER_ACCEPTED' AND aa.id IS NOT NULL
@@ -117,11 +139,13 @@ WITH candidates AS MATERIALIZED (
        SELECT 1 FROM dsh.operator_order_cases existing
        WHERE existing.order_id=o.id
          AND existing.reason=CASE WHEN ce.id IS NOT NULL THEN 'CUSTOMER_CONTACT'
+        WHEN gps.assignment_id IS NOT NULL THEN 'CAPTAIN_LOCATION_LOST'
         WHEN o.state='CREATED' THEN 'OTHER'
                                   WHEN o.state IN ('PARTNER_ACCEPTED','PREPARING') THEN 'PARTNER_DELAY'
         WHEN o.state='READY_FOR_DISPATCH' THEN 'DISPATCH_UNAVAILABLE' ELSE 'DELIVERY_BLOCKED' END
          AND (existing.state <> 'RESOLVED'
              OR existing.opened_at >= CASE WHEN ce.id IS NOT NULL THEN ce.created_at
+        WHEN gps.assignment_id IS NOT NULL THEN gps.alert_at
         WHEN o.state='CREATED' THEN cr.created_at
                                             WHEN o.state='PARTNER_ACCEPTED' THEN aa.created_at
                                             WHEN o.state='PREPARING' THEN pa.created_at
@@ -131,6 +155,7 @@ WITH candidates AS MATERIALIZED (
        SELECT 1 FROM dsh.operator_order_case_events e
        WHERE e.idempotency_key='ops-auto-'||md5(
            CASE WHEN ce.id IS NOT NULL THEN 'CUSTOMER_NO_ANSWER:'||ce.id::text
+        WHEN gps.assignment_id IS NOT NULL THEN 'MISSION_LOST:'||gps.assignment_id||':'||gps.alert_at::text
         WHEN o.state='CREATED' THEN 'CREATED:'||cr.id::text
                 WHEN o.state='PARTNER_ACCEPTED' THEN 'PARTNER_ACCEPTED:'||aa.id::text
                 WHEN o.state='PREPARING' THEN 'PREPARING:'||pa.id::text
@@ -138,6 +163,7 @@ WITH candidates AS MATERIALIZED (
                 ELSE 'DELIVERY_FAILED:'||ca.id::text END)
    )
  ORDER BY CASE WHEN ce.id IS NOT NULL THEN ce.created_at
+        WHEN gps.assignment_id IS NOT NULL THEN gps.alert_at
         WHEN o.state='CREATED' THEN cr.created_at
                  WHEN o.state='PARTNER_ACCEPTED' THEN aa.created_at
                                             WHEN o.state='PREPARING' THEN pa.created_at

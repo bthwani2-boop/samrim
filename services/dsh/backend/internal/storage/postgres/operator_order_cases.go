@@ -43,7 +43,7 @@ type OpsCasePage struct {
 
 func validCaseReason(s string) bool {
 	switch s {
-	case "PARTNER_DELAY", "DISPATCH_UNAVAILABLE", "DELIVERY_BLOCKED", "CUSTOMER_CONTACT", "PAYMENT_EXCEPTION", "OTHER":
+	case "PARTNER_DELAY", "DISPATCH_UNAVAILABLE", "DELIVERY_BLOCKED", "CAPTAIN_LOCATION_LOST", "CUSTOMER_CONTACT", "PAYMENT_EXCEPTION", "OTHER":
 		return true
 	}
 	return false
@@ -307,6 +307,17 @@ func UpdateOpsCase(ctx context.Context, db *sql.DB, orderID string, id int64, ac
 			_, err = tx.ExecContext(ctx, `UPDATE dsh.operator_order_cases SET state='IN_PROGRESS',
    next_action=$2,updated_by_actor_id=$3,updated_at=clock_timestamp(),version=version+1 WHERE id=$1`, id, note, actor)
 		case "RESOLVE":
+			// A recovered fix or verified terminal delivery resolves missing GPS.
+			if reason == "CAPTAIN_LOCATION_LOST" {
+				var recovered bool
+				err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM dsh.captain_assignments a JOIN dsh.commerce_orders o ON o.id=a.order_id JOIN dsh.captain_mission_latest ml ON ml.assignment_id=a.id WHERE a.order_id=$1 AND a.state IN ('assigned','in_custody') AND o.state IN ('CAPTAIN_ASSIGNED','IN_CUSTODY') AND ml.received_at>=clock_timestamp()-interval '90 seconds' AND ml.recorded_at>=clock_timestamp()-interval '90 seconds') OR EXISTS(SELECT 1 FROM dsh.commerce_orders o JOIN dsh.commerce_order_delivery_proofs p ON p.order_id=o.id WHERE o.id=$1 AND o.state='DELIVERED' AND p.state='VERIFIED')", orderID).Scan(&recovered)
+				if err != nil {
+					return OpsCase{}, false, err
+				}
+				if !recovered {
+					return OpsCase{}, false, ErrOpsCaseUnverified
+				}
+			}
 			if reason == "PAYMENT_EXCEPTION" || reason == "DELIVERY_BLOCKED" {
 				if err = verifyOperatorCaseResolutionProof(ctx, tx, orderID, reason, evidenceRef); err != nil {
 					return OpsCase{}, false, err
