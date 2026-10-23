@@ -19,7 +19,7 @@ func TestCaptainCODCashDebitIsExactlyOnce(t *testing.T) {
 	}{
 		{"cash", 5500, 0, 20000, 500},
 		{"mixed", 2500, 3000, 20000, 500},
-		{"below-minimum", 5500, 0, 10000, 0},
+		{"below-initial-activation-threshold", 5500, 0, 10000, 500},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newFieldAcquisitionScenario(t)
@@ -132,7 +132,8 @@ func TestCaptainCODCashDebitIsExactlyOnce(t *testing.T) {
 					debitCount, debitTotal, creditTotal, err)
 			}
 			// A large Captain top-up is not automatically earned delivery income.
-			// With the minimum configured, only the 500 delivery fee is payable.
+			// Only actual delivery earnings are withdrawable; the initial activation
+			// threshold is not an ongoing payout floor.
 			if _, err := ReadCaptainMinimumBalancePolicy(s.ctx, s.db); errors.Is(err, ErrCaptainMinimumBalancePolicyNotFound) {
 				_, _, err = CreateCaptainMinimumBalancePolicy(s.ctx, s.db, CreateCaptainMinimumBalancePolicyInput{
 					MinimumAvailableMinor: 10000, ExpectedVersion: 0,
