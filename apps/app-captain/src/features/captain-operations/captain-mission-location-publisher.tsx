@@ -4,9 +4,10 @@ import { AppState } from "react-native";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
+import { backgroundMissionRunning, reconcileBackgroundMissionLocation, stopBackgroundMissionLocation } from "./captain-mission-location-background";
 
-// Foreground-only mission fixes until a native Android background build has
-// passed permission/crash testing. This is distinct from dispatch presence.
+// The foreground watcher is the fallback when explicit native background
+// consent is absent. These mission fixes remain separate from dispatch presence.
 export function CaptainMissionLocationPublisher() {
   useEffect(() => {
     let disposed = false;
@@ -17,7 +18,7 @@ export function CaptainMissionLocationPublisher() {
     let discovering = false;
     let owner = "";
     let pendingRequest: AbortController | null = null;
-    async function stop() {
+    async function stop(endMission = true) {
       activeAssignment = "";
       owner = "";
       watcher?.remove();
@@ -25,32 +26,41 @@ export function CaptainMissionLocationPublisher() {
       pendingRequest?.abort();
       pendingRequest = null;
       posting = false;
+      if (endMission) await stopBackgroundMissionLocation(false);
     }
     async function update() {
       if (disposed || discovering) return;
       const identity = currentIdentityState();
-      if (AppState.currentState !== "active" || identity.kind !== "authenticated") {
-        await stop(); return;
-      }
+      if (AppState.currentState !== "active") { await stop(false); return; }
+      if (identity.kind !== "authenticated") { await stop(); return; }
       discovering = true;
       try {
         const actor = identity.identity.subject;
         const token = await getUsableIdentityAccessToken();
         const result = await captainClient().listOwnCaptainAssignments(token);
-        if (disposed || AppState.currentState !== "active" || currentIdentityState().kind !== "authenticated") {
-          await stop(); return;
-        }
+        if (disposed || AppState.currentState !== "active") { await stop(false); return; }
+        if (currentIdentityState().kind !== "authenticated") { await stop(); return; }
         const candidate = result.assignments.find((a) => a.state === "assigned" || a.state === "in_custody");
         if (!candidate) { await stop();return; }
         const task = await captainClient().readOwnCaptainDeliveryTask(token, candidate.id);
         const currentSession = currentIdentityState();
+        if (disposed || AppState.currentState !== "active") { await stop(false); return; }
         if (task.task.fulfillmentMode !== "BTHWANI_CAPTAIN" ||
-            disposed || AppState.currentState !== "active" ||
             currentSession.kind !== "authenticated" || currentSession.identity.subject !== actor) {
           await stop(); return;
         }
-        if (candidate.id === activeAssignment && owner === actor && watcher) return;
-        await stop();
+        if (candidate.id === activeAssignment && owner === actor && watcher) {
+          if (await reconcileBackgroundMissionLocation(actor, candidate.id)) {
+            watcher.remove(); watcher = null;
+          }
+          return;
+        }
+        await stop(false);
+        if (await reconcileBackgroundMissionLocation(actor, candidate.id)) {
+          activeAssignment = candidate.id;
+          owner = actor;
+          return;
+        }
         const permission = await Location.getForegroundPermissionsAsync();
         if (!permission.granted || disposed || AppState.currentState !== "active") return;
         owner = actor;
@@ -122,14 +132,14 @@ export function CaptainMissionLocationPublisher() {
         }
         watcher = subscription;
       } catch {
-        await stop();
+        await stop(false);
       } finally {
         discovering = false;
       }
     }
     void update();
     const appListener = AppState.addEventListener("change", (state) => {
-      if (state !== "active") { void stop(); return; }
+      if (state !== "active") { void stop(false); return; }
       void update();
     });
     const unsubscribeIdentity = subscribeIdentitySession((identity) => {
@@ -145,7 +155,8 @@ export function CaptainMissionLocationPublisher() {
       unsubscribeIdentity();
       appListener.remove();
       clearInterval(interval);
-      void stop();
+      // Unmounting the tab layout is not a signed-out or completed mission.
+      void stop(false);
     };
   }, []);
   return null;

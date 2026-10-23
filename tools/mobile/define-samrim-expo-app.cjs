@@ -7,6 +7,8 @@ const repositoryRoot = path.resolve(__dirname, "../..");
 
 const PERMISSION_TEXT = {
   locationWhenInUse: "نحتاج الوصول إلى موقعك عند طلب التقاط موقع العنوان أو أصل المتجر.",
+  captainForeground: "يستخدم بثواني موقعك أثناء مهمة توصيل نشطة فقط لإتاحته لفريق العمليات.",
+  captainBackground: "يستخدم بثواني موقعك أثناء مهمة التوصيل النشطة في الخلفية فقط بموافقتك مع إشعار دائم.",
 };
 
 const MAP_KEY_NAMES = {
@@ -95,9 +97,14 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
       : "expo-splash-screen",
   );
 
-  if (locationMode === "foreground") {
+  if (locationMode === "foreground" || locationMode === "background") {
     const locationOptions = {
-      locationWhenInUsePermission: PERMISSION_TEXT.locationWhenInUse,
+      locationWhenInUsePermission: locationMode === "background" ? PERMISSION_TEXT.captainForeground : PERMISSION_TEXT.locationWhenInUse,
+      ...(locationMode === "background" ? {
+        locationAlwaysAndWhenInUsePermission: PERMISSION_TEXT.captainBackground,
+        isAndroidBackgroundLocationEnabled: true,
+        isAndroidForegroundServiceEnabled: true,
+      } : {}),
     };
     plugins.push(["expo-location", locationOptions]);
   }
@@ -126,13 +133,13 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
 
 /**
  * @param {string} appKey
- * @param {{ cameraMode?: "barcode", locationMode?: "foreground", maps?: boolean, web?: boolean }} options
+ * @param {{ cameraMode?: "barcode", locationMode?: "foreground" | "background", maps?: boolean, web?: boolean }} options
  */
 function defineSamrimExpoApp(appKey, options = {}) {
   const app = readMobileConfig(appKey);
   const locationMode = options.locationMode;
   const cameraMode = options.cameraMode;
-  if (locationMode !== undefined && locationMode !== "foreground") {
+  if (locationMode !== undefined && locationMode !== "foreground" && locationMode !== "background") {
     throw new Error("Invalid locationMode for " + appKey + ": " + locationMode);
   }
   if (cameraMode !== undefined && cameraMode !== "barcode") {
