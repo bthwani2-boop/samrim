@@ -16,10 +16,10 @@ export default function PartnerWallet() {
   const premium = useMemo(() => StyleSheet.create({
     title: { ...typography.titleLg, fontSize: 28, fontWeight: "800", color: theme.color },
     subtitle: { ...typography.bodySm, color: theme.colorMuted },
-    actionRow: { flexDirection: "row", gap: 10, alignItems: "stretch" },
-    action: { flex: 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8, minHeight: 53, borderRadius: 14, padding: 8, borderWidth: 1, borderColor: theme.borderColor },
+    actionRow: { flexDirection: "row", gap: 8, alignItems: "stretch" },
+    action: { flex: 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8, minHeight: 44, borderRadius: 11, padding: 6, borderWidth: 1, borderColor: theme.borderColor },
     actionLabel: { ...typography.bodyStrong, fontSize: 14, textAlign: "center" },
-    panel: { backgroundColor: theme.surface, borderRadius: 15, borderColor: theme.borderColor, borderWidth: 1, padding: 10 },
+    panel: { backgroundColor: theme.surface, borderRadius: 12, borderColor: theme.borderColor, borderWidth: 1, padding: 8 },
   }), [theme]);
   const [openAction, setOpenAction] = useState<WalletAction | null>(null);
   const storeScope = usePartnerStoreScope();
@@ -45,9 +45,7 @@ export default function PartnerWallet() {
   </View> : null;
   const workflow = openAction === "payout" && canRequestPayout ? <View style={premium.panel}><PartnerPayoutCard key={"payout:" + payoutScopeKey} /></View>
     : openAction === "recipients" && ownsAnyStore ? <View style={premium.panel}><StorePayoutRecipientsCard key={"recipients:" + ownerScopeKey} /></View> : null;
-  return <View style={[styles.container, { gap: spacing[3], paddingTop: spacing[4] }]} accessibilityLabel="محفظة الشريك">
-    <Text accessibilityRole="header" style={premium.title}>المحفظة</Text>
-    <Text style={premium.subtitle}>إدارة مستحقاتك وعمليات الصرف</Text>
+  return <View style={[styles.container, { gap: 9, paddingTop: 10 }]} accessibilityLabel="محفظة الشريك">
     {canReadFinance ? <PartnerFinancialSummaryCard key={`finance:${financeScopeKey}`} actions={actionRow} workflow={workflow} /> : <>{actionRow}{workflow}</>}
     {!canReadFinance && !canRequestPayout && !ownsAnyStore ? <Text style={styles.muted}>لا توجد صلاحية مالية لهذا الحساب.</Text> : null}
   </View>;

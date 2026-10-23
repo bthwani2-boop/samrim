@@ -53,44 +53,43 @@ export function PartnerFinancialSummaryCard({ actions, workflow }: { actions?: R
     {workflow}
     {summary ? <>
       {!summary.attributionComplete ? <Text style={styles.error}>بعض التحويلات القديمة غير مكتملة النسبة للمتاجر؛ الصرف الجديد يتطلب اكتمال المطابقة.</Text> : null}
-      <View style={styles.infoCard}><Text style={styles.infoTitle}>المتاح للصرف اليوم</Text><Text style={styles.muted}>المبلغ المؤهل للصرف هو {formatMoney(summary.eligibleAvailableMinor, summary.currency)}، ولا يشمل المبالغ المحجوزة أو غير المؤهلة حسب سياسة التسوية.</Text></View>
       {summary.stores.length > 0 ? <View style={styles.stores}>
         <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>تفاصيل المتاجر</Text><BthwaniIcon name="store" size={24} color={theme.brandAction} /></View>
-        {summary.stores.slice(0, showDetails ? undefined : 2).map((store) => <View key={store.storeId} style={styles.store}>
+        {showDetails ? summary.stores.map((store) => <View key={store.storeId} style={styles.store}>
           <View style={styles.storeTop}><Text style={styles.storeAmount}>{formatMoney(store.eligibleAvailableMinor, store.currency)}</Text><Text style={styles.storeName} numberOfLines={1}>{store.storeName}</Text></View>
           <Text style={styles.muted}>المحجوز: {formatMoney(store.heldMinor, store.currency)} · {settlementPeriodLabel(store.settlementPeriod)}</Text>
           {showDetails ? <Text style={styles.muted}>المكتسب: {formatMoney(store.earnedMinor, store.currency)} · العمولة: {formatMoney(store.commissionMinor, store.currency)} · المصروف: {formatMoney(store.settledMinor, store.currency)} · {store.orderCount.toLocaleString("ar-YE")} طلب</Text> : null}
-        </View>)}
-        <Pressable accessibilityRole="button" accessibilityLabel={showDetails ? "إخفاء تفاصيل المتاجر" : "تفاصيل المتاجر"} onPress={() => setShowDetails((value) => !value)} style={styles.detailsButton}><Text style={styles.detailsLabel}>{showDetails ? "تفاصيل أقل" : "عرض تفاصيل المستحقات"}</Text></Pressable>
+        </View>) : null}
+        <Pressable accessibilityRole="button" accessibilityLabel={showDetails ? "إخفاء تفاصيل المتاجر" : "تفاصيل المتاجر"} onPress={() => setShowDetails((value) => !value)} style={styles.detailsButton}><Text style={styles.detailsLabel}>{showDetails ? "إخفاء التفاصيل" : "عرض التفاصيل"}</Text></Pressable>
       </View> : null}
     </> : null}
     {error ? <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.infoCard}><Text accessibilityRole="alert" style={styles.error}>{error} · إعادة المحاولة</Text></Pressable> : null}
   </View>;
 }
 function createStyles(p: ReturnType<typeof resolveTheme>) { return StyleSheet.create({
-  container: { gap: spacing[3] },
-  balanceCard: { flexDirection: "row", alignItems: "center", minHeight: 154, borderRadius: 20, padding: 17, gap: 16, backgroundColor: p.actionSoft, borderWidth: 1, borderColor: p.brandAction },
-  moneyIcon: { width: 57, height: 57, borderRadius: 16, backgroundColor: p.actionSoft, alignItems: "center", justifyContent: "center" },
-  balanceCopy: { flex: 1, alignItems: "flex-start", gap: 6 },
+  container: { gap: 9 },
+  balanceCard: { flexDirection: "row", alignItems: "center", minHeight: 107, borderRadius: 15, padding: 13, gap: 10, backgroundColor: p.actionSoft, borderWidth: 1, borderColor: p.brandAction },
+  moneyIcon: { width: 39, height: 39, borderRadius: 10, backgroundColor: p.actionSoft, alignItems: "center", justifyContent: "center" },
+  balanceCopy: { flex: 1, alignItems: "flex-start", gap: 3 },
   availableTitle: { flexDirection: "row", gap: 8, alignItems: "center" },
   dot: { height: 10, width: 10, borderRadius: 5 },
   balanceLabel: { ...typography.bodyStrong, color: p.color },
-  balance: { color: p.color, fontSize: 29, fontWeight: "800", writingDirection: "rtl" },
-  metrics: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  metric: { flexGrow: 1, flexBasis: 95, gap: 5, backgroundColor: p.surface, borderColor: p.borderColor, borderWidth: 1, borderRadius: 14, padding: 11, alignItems: "flex-end" },
+  balance: { color: p.color, fontSize: 24, fontWeight: "800", writingDirection: "rtl" },
+  metrics: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  metric: { flexGrow: 1, flexBasis: 90, gap: 2, backgroundColor: p.surface, borderColor: p.borderColor, borderWidth: 1, borderRadius: 11, padding: 8, minHeight: 70, alignItems: "flex-end" },
   metricLabel: { ...typography.caption, color: p.colorMuted },
   metricValue: { ...typography.bodyStrong, color: p.color },
   infoCard: { backgroundColor: p.surfaceRaised, borderColor: p.borderColor, borderWidth: 1, borderRadius: 16, padding: 14, gap: 6 },
   infoTitle: { ...typography.bodyStrong, color: p.color },
   muted: { ...typography.caption, color: p.colorMuted },
   error: { ...typography.bodySm, color: p.warning },
-  stores: { backgroundColor: p.surface, borderColor: p.borderColor, borderWidth: 1, borderRadius: 16, padding: 12, gap: 10 },
+  stores: { backgroundColor: p.surface, borderColor: p.borderColor, borderWidth: 1, borderRadius: 12, padding: 10, gap: 7 },
   sectionHeader: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 9 },
   sectionTitle: { ...typography.titleSm, color: p.color },
   store: { backgroundColor: p.surfaceRaised, borderRadius: 12, padding: 12, gap: 5 },
   storeTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   storeName: { ...typography.bodyStrong, color: p.color },
   storeAmount: { ...typography.bodyStrong, color: p.success },
-  detailsButton: { minHeight: 38, justifyContent: "center", alignItems: "center", borderRadius: 11, borderColor: p.borderColor, borderWidth: 1 },
+  detailsButton: { minHeight: 40, justifyContent: "center", alignItems: "center", borderRadius: 10, borderColor: p.borderColor, borderWidth: 1 },
   detailsLabel: { ...typography.label, color: p.color },
 }); }

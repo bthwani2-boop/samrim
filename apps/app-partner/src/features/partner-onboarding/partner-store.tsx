@@ -15,13 +15,6 @@ import { StoreOperationalAvailabilityManagement } from "./store-operational-avai
 import { StoreProfileImageEditor } from "./store-profile-image-editor";
 
 type StoreSection = "operations" | "promotions" | "team" | "settings";
-const SECTION_TITLES: Readonly<Record<StoreSection, string>> = {
-  operations: "التشغيل وساعات العمل",
-  promotions: "العروض والتخفيضات",
-  team: "الفريق والصلاحيات",
-  settings: "الصور والاتفاقيات",
-};
-
 function isStoreSection(value: string | undefined): value is StoreSection {
   return value === "operations" || value === "promotions" || value === "team" || value === "settings";
 }
@@ -92,7 +85,7 @@ export function PartnerStore() {
 
   return <View style={styles.container}>
     <View style={styles.headerRow}>
-      <Text style={styles.value}>{SECTION_TITLES[section]}</Text>
+
       <BthwaniButton label="رجوع" variant="quiet" onPress={() => router.canGoBack() ? router.back() : router.replace("/more" as Href)} />
     </View>
     {stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={requiredPermissions(section)} /> : null}

@@ -1,12 +1,14 @@
 import { radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { AppearancePicker, BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useMemo, useState } from "react";
+import { type Href, useRouter } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 import { logoutIdentity } from "../../bootstrap/identity";
 import { PartnerAccessInvitationsCard } from "../partner-onboarding/partner-access-invitations";
 
 export default function PartnerAccount() {
   const theme = useAppearanceTheme();
+  const router = useRouter();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -25,11 +27,11 @@ export default function PartnerAccount() {
   }
 
   return <View style={styles.container} accessibilityLabel="حساب الشريك">
-    <Text style={styles.title}>الحساب والإعدادات</Text>
     <PartnerAccessInvitationsCard />
     <BthwaniSurface tone="raised" style={styles.appearancePanel}>
       <AppearancePicker title="المظهر" helper="" />
     </BthwaniSurface>
+    <BthwaniButton label="الإشعارات" onPress={() => router.push("/notifications" as Href)} variant="quiet" />
     <BthwaniButton busy={busy} disabled={busy} label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} onPress={() => void logout()} variant="secondary" />
     {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}
   </View>;

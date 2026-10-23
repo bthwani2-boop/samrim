@@ -717,14 +717,13 @@ const theme = useAppearanceTheme();
   const canAdd = selectedVariant !== null && selectedVariant.measurementKind !== "VARIABLE_MEASURE" && Boolean(quantityPolicy && pricingBasis) && pricingBasis === expectedPricingBasis && Number.isSafeInteger(parsedPrice) && parsedPrice > 0 && [parsedMin, parsedMax, parsedStep, parsedPricingUnit, parsedInventoryOnHand].every(Number.isSafeInteger) && parsedMin >= 1 && parsedMax >= parsedMin && parsedStep >= 1 && parsedPricingUnit >= 1 && parsedInventoryOnHand >= 0 && (inventoryPolicy === "QUANTITY_ON_HAND" || parsedInventoryOnHand === 0);
   return (
     <View style={styles.container} accessibilityLabel="إدارة عروض المتجر">
-      <Text accessibilityRole="header" style={styles.title}>{toolsView ? "أدوات الكتالوج" : "المنتجات"}</Text>
+      {toolsView ? <Text accessibilityRole="header" style={styles.title}>أدوات الكتالوج</Text> : null}
       {!catalogReady ? <Text accessibilityRole="alert" style={styles.warning}>قائمة المتجر غير جاهزة للإدارة بعد. تعذرت إضافة المنتجات أو نشر العروض حاليًا؛ تواصل مع الدعم لاستكمال التجهيز.</Text> : null}
       {catalogReady && !toolsView ? <View style={styles.topActions}>
         <Pressable accessibilityRole="button" accessibilityLabel="تعديل الأسعار" onPress={() => setPanel(panel === "prices" ? null : "prices")} style={[styles.headerButton, panel === "prices" && styles.headerButtonSelected]}><BthwaniIcon name="offers" size={19} color={theme.color} /><Text style={styles.headerButtonText}>تعديل الأسعار</Text></Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="إضافة منتج" onPress={() => setPanel(panel === "create" ? null : "create")} style={[styles.headerButton, styles.createButton]}><BthwaniIcon name="cart" size={19} color={theme.onAction} /><Text style={styles.createButtonText}>{panel === "create" ? "إغلاق الإضافة" : "إضافة منتج"}</Text></Pressable>
       </View> : null}
       {!toolsView && panel === null && state.kind === "ready" ? <>
-        <View style={styles.summaryBar}><View style={styles.summarySlot}><Text style={styles.summaryValue}>{state.offers.length}{offerNextCursor ? "+" : ""}</Text><Text style={styles.summaryCaption}>المنتجات المحملة</Text></View><View style={styles.summarySlot}><Text style={styles.summaryValue}>{state.offers.filter((offer) => offer.publicationState === "published").length}</Text><Text style={styles.summaryCaption}>المنشور</Text></View><View style={styles.summarySlot}><Text style={[styles.summaryValue, { color: theme.warning }]}>{state.offers.filter((offer) => !offer.availability).length}</Text><Text style={styles.summaryCaption}>غير متاح</Text></View></View>
         <TextInput accessibilityLabel="البحث في منتجات المتجر" placeholder="ابحث باسم المنتج" placeholderTextColor={theme.colorMuted} value={listQuery} onChangeText={setListQuery} style={styles.listSearch} />
         <View style={styles.filterRow}>{([{ key: "all", label: "الكل" },{ key: "published", label: "منشور" },{ key: "unavailable", label: "غير متاح" },{ key: "hidden", label: "مخفي" }] as const).map((item) => <Pressable key={item.key} accessibilityRole="button" accessibilityState={{ selected: listFilter === item.key }} onPress={() => setListFilter(item.key)} style={[styles.filterChip, listFilter === item.key && styles.filterChipActive]}><Text style={[styles.filterText, listFilter === item.key && styles.filterTextActive]}>{item.label}</Text></Pressable>)}</View>
       </> : null}
@@ -820,20 +819,16 @@ const theme = useAppearanceTheme();
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    container: { gap: 13, paddingTop: 17, width: "100%" },
-    topActions: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-    headerButton: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1, borderRadius: 13, flex: 1, minHeight: 49, paddingHorizontal: 9, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
+    container: { gap: 9, paddingTop: 10, width: "100%" },
+    topActions: { flexDirection: "row", gap: 8 },
+    headerButton: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1, borderRadius: 13, flex: 1, minHeight: 43, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
     headerButtonSelected: { borderColor: theme.brandAction },
     headerButtonText: { ...typography.bodyStrong, color: theme.color, textAlign: "center" },
     createButton: { backgroundColor: theme.brandAction, borderColor: theme.brandAction },
     createButtonText: { ...typography.bodyStrong, color: theme.onAction, textAlign: "center" },
-    summaryBar: { flexDirection: "row", gap: 4, padding: 12, backgroundColor: theme.actionSoft, borderWidth: 1, borderColor: theme.brandAction, borderRadius: 18 },
-    summarySlot: { flex: 1, gap: 3, alignItems: "center" },
-    summaryValue: { ...typography.titleMd, color: theme.color, fontWeight: "800" },
-    summaryCaption: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
-    listSearch: { borderWidth: 1, borderColor: theme.borderColor, backgroundColor: theme.surface, borderRadius: 13, minHeight: 49, paddingHorizontal: 16, color: theme.color, textAlign: "right" },
-    filterRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-    filterChip: { borderWidth: 1, borderColor: theme.borderColor, borderRadius: 12, backgroundColor: theme.surface, paddingHorizontal: 13, minHeight: 39, justifyContent: "center" },
+    listSearch: { borderWidth: 1, borderColor: theme.borderColor, backgroundColor: theme.surface, borderRadius: 11, minHeight: 43, paddingHorizontal: 12, color: theme.color, textAlign: "right" },
+    filterRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+    filterChip: { borderWidth: 1, borderColor: theme.borderColor, borderRadius: 12, backgroundColor: theme.surface, paddingHorizontal: 13, minHeight: 34, justifyContent: "center" },
     filterChipActive: { borderColor: theme.brandAction, backgroundColor: theme.actionSoft },
     filterText: { ...typography.caption, color: theme.colorMuted },
     filterTextActive: { color: theme.brandAction, fontWeight: "800" },
@@ -869,14 +864,14 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     productCopy: { flex: 1, gap: spacing[1] },
     productImage: { backgroundColor: theme.surface, borderRadius: radius.sm, height: 52, width: 52 },
     productImagePlaceholder: { alignItems: "center", backgroundColor: theme.surface, borderRadius: radius.sm, height: 52, justifyContent: "center", width: 52 },
-    offerImage: { backgroundColor: theme.surfaceRaised, borderRadius: 12, height: 83, width: 83 },
-    offerImagePlaceholder: { alignItems: "center", backgroundColor: theme.surfaceRaised, borderRadius: 12, height: 83, justifyContent: "center", width: 83 },
+    offerImage: { backgroundColor: theme.surfaceRaised, borderRadius: 10, height: 64, width: 64 },
+    offerImagePlaceholder: { alignItems: "center", backgroundColor: theme.surfaceRaised, borderRadius: 10, height: 64, justifyContent: "center", width: 64 },
     imagePlaceholderText: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
-    offerList: { gap: 11 },
+    offerList: { gap: 8 },
     inventoryBlock: { gap: spacing[1] },
-    item: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1, borderRadius: 16, gap: 11, padding: 13 },
-    offerIdentity: { alignItems: "center", flexDirection: "row", gap: spacing[3] },
-    offerActionRow: { alignItems: "center", flexDirection: "row", gap: spacing[2], minHeight: 44 },
+    item: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1, borderRadius: 13, gap: 7, padding: 10 },
+    offerIdentity: { alignItems: "center", flexDirection: "row", gap: 9 },
+    offerActionRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 5, minHeight: 39 },
     itemText: { flex: 1, gap: spacing[1] },
     itemTitle: { ...typography.bodyStrong, color: theme.color },
     disabledInput: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground, color: theme.disabledText },

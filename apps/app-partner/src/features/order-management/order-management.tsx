@@ -232,7 +232,6 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   return (
     <View style={styles.container} accessibilityLabel="إدارة طلبات المتجر">
       <View style={styles.toolbar}>
-        <Text style={styles.title}>{filter === "CLOSED" ? "سجل الطلبات" : "الطلبات"}</Text>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={filter === "CLOSED" ? "العودة إلى الطلبات النشطة" : "عرض سجل الطلبات"}
@@ -427,9 +426,9 @@ function attributeSnapshotValue(attribute: Order["lines"][number]["attributeSnap
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    container: { gap: 13, paddingTop: 16, width: "100%" },
-    toolbar: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-    archiveButton: { minHeight: 44, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing[2] },
+    container: { gap: 9, paddingTop: 10, width: "100%" },
+    toolbar: { alignItems: "center", flexDirection: "row", justifyContent: "flex-end", minHeight: 30 },
+    archiveButton: { minHeight: 30, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing[2] },
     archiveText: { ...typography.label, color: theme.brandAction },
     expandButton: { alignSelf: "flex-start", minHeight: 40, justifyContent: "center", paddingHorizontal: spacing[2] },
     expandText: { ...typography.label, color: theme.interactiveText },
@@ -437,11 +436,11 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     muted: { ...typography.bodySm, color: theme.colorMuted },
     state: { alignItems: "center", gap: spacing[2], paddingVertical: spacing[2] },
     summaryRow: { flexDirection: "row", gap: spacing[2] },
-    summaryCard: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 15, borderWidth: 1, flex: 1, gap: 5, paddingVertical: 11, paddingHorizontal: 5 },
+    summaryCard: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, flex: 1, gap: 3, paddingVertical: 7, paddingHorizontal: 4 },
     summaryValue: { ...typography.titleSm, color: theme.color, fontWeight: "800" },
     summaryLabel: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
     filterRow: { flexDirection: "row", alignItems: "center", gap: spacing[2], paddingBottom: spacing[1] },
-    order: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 19, borderWidth: 1, gap: 10, padding: 15 },
+    order: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 13, borderWidth: 1, gap: 8, padding: 11 },
     payment: { ...typography.bodySm, color: theme.interactiveText },
     lines: { gap: spacing[2], marginTop: spacing[1] },
     line: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[1], paddingTop: spacing[2] },
@@ -459,12 +458,12 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     primaryActionLabel: { ...typography.bodyStrong, color: theme.onAction },
     rejectButton: { flex: 1, borderColor: theme.borderColor, borderWidth: 1, borderRadius: 12, alignItems: "center", justifyContent: "center", minHeight: 47 },
     rejectLabel: { ...typography.bodyStrong, color: theme.color },
-    filterChip: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1, minHeight: 42, borderRadius: 14, paddingHorizontal: 13, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 5 },
+    filterChip: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1, minHeight: 36, borderRadius: 11, paddingHorizontal: 11, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 5 },
     filterSelected: { backgroundColor: theme.actionSoft, borderColor: theme.brandAction },
     filterLabel: { ...typography.bodySm, color: theme.colorMuted },
     filterLabelSelected: { color: theme.brandAction, fontWeight: "700" },
     filterCount: { ...typography.caption, color: theme.brandAction, fontWeight: "800" },
-    orderMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: theme.surfaceRaised, borderRadius: 10, padding: 9 },
+    orderMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: theme.surfaceRaised, borderRadius: 9, padding: 6 },
     orderPriceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     orderMoney: { ...typography.titleSm, color: theme.color, fontWeight: "800" },
     orderTitle: { ...typography.titleSm, color: theme.color, fontWeight: "800" },
