@@ -175,7 +175,7 @@ func (s *CartServer) checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	recipient := postgres.DeliveryRecipientInput{Mode: input.Recipient.Mode, Name: input.Recipient.Name, PhoneE164: input.Recipient.PhoneE164, Instructions: input.Recipient.Instructions}
-	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), input.PromotionCode, int64(input.ExpectedTotalAmountMinor), recipient, input.CustomerNote, int64(input.InternalBalanceAmountMinor), expected, idempotency, correlation)
+	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), input.PromotionCode, input.DiscoveryClickEventID, int64(input.ExpectedTotalAmountMinor), recipient, input.CustomerNote, int64(input.InternalBalanceAmountMinor), expected, idempotency, correlation)
 	if err != nil {
 		writeCartError(w, err)
 		return

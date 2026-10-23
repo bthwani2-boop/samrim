@@ -6122,6 +6122,10 @@ components:
         promotionCode:
           type: string
           maxLength: 64
+        discoveryClickEventId:
+          type: string
+          maxLength: 128
+          description: Optional DSH-acknowledged discovery click event ID used for server-owned order attribution.
         recipient:
           $ref: "#/components/schemas/CheckoutRecipient"
 

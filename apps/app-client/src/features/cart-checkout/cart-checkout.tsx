@@ -10,7 +10,7 @@ import { paymentSplit, type CheckoutPaymentChoice } from "./payment-selection";
 import { readPublicStoreCatalog } from "../store-discovery/store-discovery-client";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { recordPendingDiscoveryConversion } from "../store-discovery/discovery-analytics";
+import { acknowledgedDiscoveryClickForCheckout } from "../store-discovery/discovery-analytics";
 import { checkoutRecipient, DeliveryRecipientForm, deliveryRecipientIsValid, type DeliveryRecipientInput } from "./delivery-recipient-form";
 
 type CartState = { kind: "loading" } | { kind: "empty" } | { kind: "ready"; cart: Cart } | { kind: "error" };
@@ -164,7 +164,6 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
       setOrder(orderResult);
       setState({ kind: "empty" });
       setPendingCheckout(null);
-      void recordPendingDiscoveryConversion(orderResult.id);
     }
     try { await SecureStore.deleteItemAsync(storageKey); } catch { /* Canonical order readback makes the retained attempt safe to reconcile again. */ }
   }, []);
@@ -440,7 +439,8 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
         setError("تعذر التحقق من جلسة العميل؛ لم يُرسل الطلب.");
         return;
       }
-      const request: CheckoutRequest = { cartId: state.cart.id, storeId, addressId: addressID, fulfillmentMode, expectedTotalAmountMinor: quote.quote.totalAmountMinor, internalBalanceAmountMinor, recipient: checkoutRecipient(recipient, !pickupMode), ...(customerNote.trim() ? { customerNote: customerNote.trim() } : {}), ...(appliedPromotionCode ? { promotionCode: appliedPromotionCode } : {}) };
+      const discoveryClickEventId = await acknowledgedDiscoveryClickForCheckout();
+      const request: CheckoutRequest = { ...(discoveryClickEventId ? { discoveryClickEventId } : {}), cartId: state.cart.id, storeId, addressId: addressID, fulfillmentMode, expectedTotalAmountMinor: quote.quote.totalAmountMinor, internalBalanceAmountMinor, recipient: checkoutRecipient(recipient, !pickupMode), ...(customerNote.trim() ? { customerNote: customerNote.trim() } : {}), ...(appliedPromotionCode ? { promotionCode: appliedPromotionCode } : {}) };
       const storageKey = pendingCartCheckoutKey(actorID, storeId);
       const attempt: PendingCartCheckoutAttempt = {
         version: 1, actorID, storeID: storeId, cartID: state.cart.id, expectedCartVersion: state.cart.version,

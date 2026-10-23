@@ -233,7 +233,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	}, nil
 }
 
-func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode string, expectedTotalAmountMinor int64, recipient postgres.DeliveryRecipientInput, customerNote string, internalBalanceAmountMinor int64, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode, discoveryClickEventID string, expectedTotalAmountMinor int64, recipient postgres.DeliveryRecipientInput, customerNote string, internalBalanceAmountMinor int64, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	actorID, err := s.requireClient(ctx, accessToken)
 	if err != nil {
 		return postgres.OrderRecord{}, false, err
@@ -276,7 +276,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		IdempotencyKey: idempotencyKey, CorrelationID: correlationID,
 		Recipient: recipient, CustomerNote: customerNote,
 		PaymentExternalReference: paymentExternalReference, PaymentCancellationKey: paymentCancellationKey,
-		PaymentMethod: paymentMethod, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)),
+		PaymentMethod: paymentMethod, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), DiscoveryClickEventID: strings.TrimSpace(discoveryClickEventID),
 		PaymentIntentRecoveryReader: paymentRecoveryReader, PaymentCanceller: paymentCanceller,
 	}
 	resolvedOrder, replayed, resolveErr := postgres.ResolveCheckoutAttempt(ctx, s.db, attemptInput)
@@ -318,7 +318,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		evidence = postgres.CheckoutEvidence{ServiceCityID: facts.StoreServiceCityID, PolicyVersion: serviceability.PolicyVersion, Status: serviceabilityResult.Status, StoreVersion: facts.StoreVersion, AddressVersion: facts.AddressVersion, StoreOriginLatitude: facts.StoreOriginLatitude, StoreOriginLongitude: facts.StoreOriginLongitude, AddressLatitude: facts.AddressLatitude, AddressLongitude: facts.AddressLongitude}
 	}
 	input := postgres.CheckoutInput{
-		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID, FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedTotalAmountMinor: confirmedTotal, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), PaymentMethod: paymentMethod, DeliveryProofKeyring: s.proofKeys,
+		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID, FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedTotalAmountMinor: confirmedTotal, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), DiscoveryClickEventID: strings.TrimSpace(discoveryClickEventID), PaymentMethod: paymentMethod, DeliveryProofKeyring: s.proofKeys,
 		Evidence:       evidence,
 		IdempotencyKey: idempotencyKey, ActingActorID: actorID, CorrelationID: correlationID,
 		Recipient: recipient, CustomerNote: customerNote,

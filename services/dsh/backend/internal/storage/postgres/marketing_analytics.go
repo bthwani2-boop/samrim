@@ -164,6 +164,34 @@ func RecordDiscoveryContentEvent(ctx context.Context, db *sql.DB, input Discover
 	return nil
 }
 
+// RecordCheckoutDiscoveryConversionTx attributes a committed Order using a
+// previously acknowledged click event ID. No mobile CONVERSION event is needed.
+func RecordCheckoutDiscoveryConversionTx(ctx context.Context, tx *sql.Tx, orderID, actorID, clickEventID string) error {
+	clickEventID = strings.TrimSpace(clickEventID)
+	if clickEventID == "" || len(clickEventID) > 128 {
+		return nil
+	}
+	eventID := "checkout-conversion-" + hashFacts(orderID)[:32]
+	_, err := tx.ExecContext(ctx, `INSERT INTO dsh.discovery_content_events (
+		id,client_event_id,content_id,event_type,client_session_id,client_actor_id,order_id
+	)
+	SELECT $1,$1,click.content_id,'CONVERSION',click.client_session_id,$2,orders.id
+	FROM dsh.commerce_orders orders
+	JOIN dsh.discovery_content_events click ON click.client_event_id=$3 AND click.event_type='CLICK'
+	WHERE orders.id=$4 AND orders.client_actor_id=$2
+	  AND click.occurred_at<=orders.created_at
+	  AND click.occurred_at>=orders.created_at-interval '24 hours'
+	  AND click.id=(
+		SELECT latest.id FROM dsh.discovery_content_events latest
+		WHERE latest.event_type='CLICK' AND latest.client_session_id=click.client_session_id
+		  AND latest.occurred_at<=orders.created_at
+		  AND latest.occurred_at>=orders.created_at-interval '24 hours'
+		ORDER BY latest.occurred_at DESC,latest.id DESC LIMIT 1
+	  )
+	ON CONFLICT DO NOTHING`, eventID, actorID, clickEventID, orderID)
+	return err
+}
+
 func ListDiscoveryContentAnalytics(ctx context.Context, db *sql.DB, contentID string) ([]DiscoveryContentAnalyticsRecord, error) {
 	contentID = strings.TrimSpace(contentID)
 	if db == nil || contentID == "" || len(contentID) > 128 {

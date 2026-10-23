@@ -139,6 +139,7 @@ type CheckoutInput struct {
 	PaymentCancellationKey      string
 	PaymentMethod               string
 	PromotionCode               string
+	DiscoveryClickEventID       string
 	CustomerNote                string
 	Recipient                   DeliveryRecipientInput
 	DeliveryProofKeyring        *DeliveryProofKeyring
@@ -370,6 +371,9 @@ func HashCheckoutRequest(input CheckoutInput) string {
 	}
 	if input.ExpectedTotalAmountMinor != nil {
 		facts = append(facts, "confirmed-total", strconv.FormatInt(*input.ExpectedTotalAmountMinor, 10))
+	}
+	if clickID := strings.TrimSpace(input.DiscoveryClickEventID); clickID != "" {
+		facts = append(facts, "discovery-click", clickID)
 	}
 	facts = append(facts, strconv.Itoa(input.ExpectedCartVersion), input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, strconv.Itoa(input.Evidence.StoreVersion), strconv.Itoa(input.Evidence.AddressVersion), strings.TrimSpace(input.PromotionCode))
 	return hashFacts(facts...)
@@ -1539,6 +1543,11 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 		return OrderRecord{}, false, ErrPaymentProvisioning
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,fulfillment_mode,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,subtotal_amount_minor,discount_minor,promotion_id,promotion_code,promotion_version,promotion_funding_source,promotion_funding_share_partner_percent,total_amount_minor,payment_cash_amount_minor,payment_intent_id,payment_method,payment_state,recipient_mode,recipient_name,recipient_phone_e164,recipient_instructions,cancellation_mode,cancellation_policy_version,customer_note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'CREATED',$16,$17,NULLIF($18,''),NULLIF($19,''),NULLIF($20,0),NULLIF($21,''),$22,$23,$24,$25,$26,$27,$28,NULLIF($29,''),NULLIF($30,''),NULLIF($31,''),COALESCE((SELECT type.cancellation_mode FROM dsh.stores store JOIN dsh.commercial_store_types type ON type.id=store.commercial_store_type_id WHERE store.id=$3),'OPERATIONS_ONLY'),COALESCE((SELECT type.version FROM dsh.stores store JOIN dsh.commercial_store_types type ON type.id=store.commercial_store_type_id WHERE store.id=$3),0),$32)`, newOrderID, input.ClientActorID, input.StoreID, input.CartID, input.FulfillmentMode, orderAddressID, orderAddressVersion, orderAddressText, orderAddressLatitude, orderAddressLongitude, input.Evidence.ServiceCityID, serviceabilityPolicy, serviceabilityStatus, storeVersion, serviceabilityAddressVersion, total, discountMinor, promotion.ID, promotion.Code, promotion.Version, promotion.FundingSource, promotion.FundingSharePartnerPercent, totalWithDelivery, payment.CashAmountMinor, payment.IntentID, input.PaymentMethod, payment.State, input.Recipient.Mode, input.Recipient.Name, input.Recipient.PhoneE164, input.Recipient.Instructions, input.CustomerNote); err != nil {
+		return OrderRecord{}, false, err
+	}
+	// Bind a server-acknowledged click to the Order before its transaction commits.
+	// Invalid, stale or superseded clicks leave checkout valid and unattributed.
+	if err := RecordCheckoutDiscoveryConversionTx(ctx, tx, newOrderID, input.ClientActorID, input.DiscoveryClickEventID); err != nil {
 		return OrderRecord{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_store_orderability_snapshots(order_id,availability_version,orderability_state,evaluated_at) VALUES($1,$2,$3,$4)`, newOrderID, orderability.Version, orderability.State, orderability.EvaluatedAt); err != nil {

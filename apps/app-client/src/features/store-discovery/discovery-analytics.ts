@@ -41,11 +41,12 @@ export async function recordDiscoveryClick(contentID: string): Promise<void> {
   if (!contentID.trim()) return;
   try {
     const sessionID = await clientSessionID();
-    await recordPublicDiscoveryContentEvent({ clientEventId: analyticsID(), contentId: contentID, eventType: "CLICK", clientSessionId: sessionID });
+    const clickEventID = analyticsID();
+    await recordPublicDiscoveryContentEvent({ clientEventId: clickEventID, contentId: contentID, eventType: "CLICK", clientSessionId: sessionID });
     // Conversion attribution requires a click already acknowledged by DSH.
     // Never save an unrecorded click as the last-click source of truth.
     try {
-      await SecureStore.setItemAsync(LAST_CLICK_KEY, JSON.stringify({ contentId: contentID, clickedAt: Date.now() }));
+      await SecureStore.setItemAsync(LAST_CLICK_KEY, JSON.stringify({ contentId: contentID, clickEventId: clickEventID, clickedAt: Date.now() }));
     } catch {
       // The click was recorded, but this device cannot persist attribution.
     }
@@ -54,16 +55,17 @@ export async function recordDiscoveryClick(contentID: string): Promise<void> {
   }
 }
 
-export async function recordPendingDiscoveryConversion(orderID: string): Promise<void> {
-  if (!orderID.trim()) return;
+// Only the previously acknowledged DSH click ID may accompany checkout.
+export async function acknowledgedDiscoveryClickForCheckout(): Promise<string | undefined> {
   try {
     const raw = await SecureStore.getItemAsync(LAST_CLICK_KEY);
-    if (!raw) return;
-    const pending = JSON.parse(raw) as { contentId?: unknown; clickedAt?: unknown };
-    if (typeof pending.contentId !== "string" || typeof pending.clickedAt !== "number" || Date.now() - pending.clickedAt > 24 * 60 * 60 * 1000) return;
-    await recordPublicDiscoveryContentEvent({ clientEventId: analyticsID(), contentId: pending.contentId, eventType: "CONVERSION", clientSessionId: await clientSessionID(), orderId: orderID });
-    await SecureStore.deleteItemAsync(LAST_CLICK_KEY);
-  } catch (error) {
-    console.warn("Discovery conversion was not recorded", error);
+    if (!raw) return undefined;
+    const pending = JSON.parse(raw) as { clickEventId?: unknown; clickedAt?: unknown };
+    if (typeof pending.clickEventId !== "string" || pending.clickEventId.length > 128 ||
+      typeof pending.clickedAt !== "number" || pending.clickedAt > Date.now() ||
+      Date.now() - pending.clickedAt > 24 * 60 * 60 * 1000) return undefined;
+    return pending.clickEventId;
+  } catch {
+    return undefined;
   }
 }
