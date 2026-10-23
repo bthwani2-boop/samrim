@@ -284,6 +284,13 @@ func (s *Service) ListOpenCasesForOperator(ctx context.Context, actorID, scope s
 	return postgres.ListOpenOpsCases(ctx, s.db, actorID, scope, limit, cursor)
 }
 
+func (s *Service) ListOrderCaseResolutionEvidenceForOperator(ctx context.Context, orderID string, caseID int64, actorID string) ([]postgres.OpsCaseResolutionEvidence, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return nil, err
+	}
+	return postgres.ListOrderCaseResolutionEvidence(ctx, s.db, orderID, caseID)
+}
+
 func (s *Service) ListOrderCaseEventsForOperator(ctx context.Context, orderID string, caseID int64, actorID string, limit int, cursor string) (postgres.OpsCaseEventPage, error) {
 	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
 		return postgres.OpsCaseEventPage{}, err

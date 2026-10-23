@@ -10,6 +10,7 @@ type OpsCase = Readonly<{
  resolutionNote?:string;resolutionEvidenceRef?:string;openedAt:string;updatedAt:string;
 }>;
 type Page = Readonly<{items:ReadonlyArray<OpsCase>;nextCursor:string}>;
+type ProofOption = Readonly<{reference:string;kind:string;confirmedAt:string}>;
 const reasons:ReadonlyArray<Readonly<{value:string;label:string}>> = [
  {value:"PARTNER_DELAY",label:"تأخر الشريك"},
  {value:"DISPATCH_UNAVAILABLE",label:"تعذر تعيين كابتن"},
@@ -38,8 +39,40 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
  const [action,setAction]=useState("NEXT_ACTION");
  const [note,setNote]=useState("");
  const [evidenceRef,setEvidenceRef]=useState("");
+ const [proofChoices,setProofChoices]=useState<ReadonlyArray<ProofOption>>([]);
+ const [proofLoading,setProofLoading]=useState(false);
+ const [proofError,setProofError]=useState("");
  const [clock,setClock]=useState<number|null>(null);
  const sequence=useRef(0);
+ useEffect(()=>{
+   if(!selected || action!=="RESOLVE" ||
+     (selected.reason!=="PAYMENT_EXCEPTION"&&selected.reason!=="DELIVERY_BLOCKED")){
+     setProofChoices([]);setProofLoading(false);setProofError("");return;
+   }
+   const controller=new AbortController();
+   let live=true;
+   setProofChoices([]);setProofLoading(true);setProofError("");
+   void (async()=>{
+     try{
+       const result=await fetch(
+         urlFor(orderId)+"/"+selected.id+"/resolution-evidence",
+         {cache:"no-store",signal:controller.signal});
+       if(!result.ok)throw new Error("PROOF_READ_UNAVAILABLE");
+       const body=await result.json() as {items?:unknown};
+       if(!Array.isArray(body.items) ||
+         !body.items.every((candidate:unknown)=>{
+           if(!candidate||typeof candidate!=="object")return false;
+           const item=candidate as Partial<ProofOption>;
+           return typeof item.reference==="string"&&item.reference.length>0&&item.reference.length<=128&&
+             typeof item.kind==="string"&&typeof item.confirmedAt==="string";
+         }))throw new Error("PROOF_READ_INVALID");
+       if(live)setProofChoices(body.items as ProofOption[]);
+     }catch{
+       if(live){setProofChoices([]);setProofError("تعذّر التحقق من مراجع الإغلاق الحالية.");}
+     }finally{if(live)setProofLoading(false);}
+   })();
+   return ()=>{live=false;controller.abort();};
+ },[selected?.id,selected?.reason,action,orderId]);
  useEffect(()=>{
    setClock(Date.now());
    const handle=window.setInterval(()=>setClock(Date.now()),60_000);
@@ -81,7 +114,8 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
    const pendingNote=kind==="OPEN"?nextAction.trim():note.trim();
    const sensitive=kind==="TRANSITION" && pendingAction==="RESOLVE" &&
       (row?.reason==="PAYMENT_EXCEPTION"||row?.reason==="DELIVERY_BLOCKED");
-   if(sensitive&&!evidenceRef.trim()){
+   if(sensitive&&(!evidenceRef.trim()||proofLoading||
+     !proofChoices.some(item=>item.reference===evidenceRef.trim()))){
      setError("لا يمكن إغلاق العهدة أو المال دون مرجع دليل مثبت من الخدمة.");
      return;
    }
@@ -177,11 +211,18 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
      {action==="RESOLVE"&&(selected.reason==="PAYMENT_EXCEPTION"||selected.reason==="DELIVERY_BLOCKED")?
        <label className="order-detail-field">
          مرجع الإثبات من النظام
-         <input className="input" value={evidenceRef} maxLength={128}
-           onChange={event=>{setEvidenceRef(event.target.value);attempt.current="";}}
-           placeholder={selected.reason==="PAYMENT_EXCEPTION"?
-             "financial_handoff:معرّف التسوية":"delivery_completed:معرّف إثبات التسليم"}/>
-         <span className="muted">يتم فحص هذا المرجع في DSH؛ لا تكفي الملاحظة وحدها.</span>
+         <select className="input" value={evidenceRef} disabled={busy||proofLoading||proofChoices.length===0}
+           onChange={event=>{setEvidenceRef(event.target.value);attempt.current="";}}>
+           <option value="">اختر إثباتًا مؤكدًا من الخدمة</option>
+           {proofChoices.map(option=><option key={option.reference} value={option.reference}>
+             {option.kind} · {new Date(option.confirmedAt).toLocaleString("ar-YE")}
+           </option>)}
+         </select>
+         {proofLoading?<span className="muted" role="status">جارٍ التحقق من مراجع الإغلاق…</span>:null}
+         {!proofLoading&&proofError?<span role="alert">{proofError}</span>:null}
+         {!proofLoading&&!proofError&&proofChoices.length===0?
+           <span className="muted">لا يوجد إثبات مؤكد حاليًا. أبقِ الحالة مفتوحة وراجع مالك المال أو العهدة.</span>:null}
+         <span className="muted">يعيد DSH التحقق من المرجع عند الحفظ؛ لا تكفي الملاحظة وحدها.</span>
        </label>:null}
      <div className="action-row">
        <button type="button" className="button button-primary" disabled={busy} onClick={()=>void submit("TRANSITION",selected)}>حفظ</button>

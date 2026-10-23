@@ -691,6 +691,8 @@ paths:
 
   /dsh/operator/operations/{orderId}/cases:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cases"
+  /dsh/operator/operations/{orderId}/cases/{caseId}/resolution-evidence:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cases~1{caseId}~1resolution-evidence"
   /dsh/operator/operations/{orderId}/cases/{caseId}/events:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cases~1{caseId}~1events"
   /dsh/operator/operations/{orderId}/cases/{caseId}/transition:
@@ -1322,6 +1324,19 @@ components:
             $ref: "#/components/schemas/OperatorOrderCaseEvent"
         nextCursor:
           type: string
+    OperatorCaseResolutionEvidence:
+      type: object
+      additionalProperties: false
+      required: [reference, kind, confirmedAt]
+      properties:
+        reference:
+          type: string
+          maxLength: 128
+        kind:
+          type: string
+        confirmedAt:
+          type: string
+          format: date-time
     OperatorOrderCase:
       type: object
       required: [id, orderId, reason, state, priority, nextAction, version, openedAt, updatedAt]

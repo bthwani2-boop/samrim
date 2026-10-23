@@ -86,6 +86,10 @@ func TestOperatorCaseSensitiveResolutionRequiresOwnerProof(t *testing.T) {
       'evidence-payment-intent',1100,'operator cancellation','case-evidence-wlt-key','case-evidence-wlt-corr','PENDING','ops_evidence_operator')`); err != nil {
 			t.Fatal(err)
 		}
+		pendingChoices, err := postgres.ListOrderCaseResolutionEvidence(ctx, db, "ops_evidence_order", payment.ID)
+		if err != nil || len(pendingChoices) != 0 {
+			t.Fatalf("pending proof leaked into picker: %+v %v", pendingChoices, err)
+		}
 		if err := closeCase("case-evidence-pending-proof", "financial_handoff:case-evidence-handoff"); !errors.Is(err, postgres.ErrOpsCaseUnverified) {
 			t.Fatalf("pending WLT claim accepted: %v", err)
 		}
@@ -93,12 +97,24 @@ func TestOperatorCaseSensitiveResolutionRequiresOwnerProof(t *testing.T) {
     SET state='POSTED' WHERE id='case-evidence-handoff'`); err != nil {
 			t.Fatal(err)
 		}
+		choices, err := postgres.ListOrderCaseResolutionEvidence(ctx, db, "ops_evidence_order", payment.ID)
+		if err != nil || len(choices) != 1 || choices[0].Reference != "financial_handoff:case-evidence-handoff" ||
+			choices[0].Kind != "PAYMENT_CANCEL" {
+			t.Fatalf("posted financial reference not discoverable: %+v %v", choices, err)
+		}
+		if _, err := postgres.ListOrderCaseResolutionEvidence(ctx, db, "other-order", payment.ID); !errors.Is(err, postgres.ErrOpsCaseNotFound) {
+			t.Fatalf("cross-order proof discovery exposed: %v", err)
+		}
 		finished, replay, err := postgres.UpdateOpsCase(ctx, db, payment.OrderID, payment.ID, "ops_evidence_operator",
 			"RESOLVE", "Reviewed the actual provider acknowledgement", "case-evidence-posted-proof",
 			"case-evidence-close-corr", 2, "financial_handoff:case-evidence-handoff")
 		if err != nil || replay || finished.State != "RESOLVED" || finished.ResolutionEvidenceRef == nil ||
 			*finished.ResolutionEvidenceRef != "financial_handoff:case-evidence-handoff" {
 			t.Fatalf("posted proof not durably recorded: %+v replay=%v err=%v", finished, replay, err)
+		}
+		afterClosure, err := postgres.ListOrderCaseResolutionEvidence(ctx, db, "ops_evidence_order", payment.ID)
+		if err != nil || len(afterClosure) != 0 {
+			t.Fatalf("resolved proof still offered for action: %+v %v", afterClosure, err)
 		}
 		again, replay, err := postgres.UpdateOpsCase(ctx, db, payment.OrderID, payment.ID, "ops_evidence_operator",
 			"RESOLVE", "Reviewed the actual provider acknowledgement", "case-evidence-posted-proof",
@@ -122,6 +138,10 @@ func TestOperatorCaseSensitiveResolutionRequiresOwnerProof(t *testing.T) {
 			"case-evidence-fake-delivery-corr", 2, "delivery_completed:123")
 		if !errors.Is(err, postgres.ErrOpsCaseUnverified) {
 			t.Fatalf("unverified goods custody falsely closed: %v", err)
+		}
+		goodsChoices, err := postgres.ListOrderCaseResolutionEvidence(ctx, db, "ops_evidence_order", goods.ID)
+		if err != nil || len(goodsChoices) != 0 {
+			t.Fatalf("unverified goods proof was suggested: %+v %v", goodsChoices, err)
 		}
 		actual, err := postgres.ReadOpsCase(ctx, db, goods.ID)
 		if err != nil || actual.State == "RESOLVED" {
