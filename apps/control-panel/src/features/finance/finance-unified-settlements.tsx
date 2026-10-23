@@ -69,7 +69,7 @@ export function FinanceUnifiedSettlements({rows,intakes,onChanged}:Readonly<{row
     let alive=true;
     const seq=++generation.current;
     setLoading(true);setError("");setRoster([]);setCursors({});setLoaded([]);
-    void Promise.all(actorTypes.map(async type=>{
+    void Promise.allSettled(actorTypes.map(async type=>{
       const response=await fetch("/api/finance/beneficiaries?"+new URLSearchParams({actorType:type,limit:"50",sort:"available_desc"}),{cache:"no-store"});
       if(!response.ok)throw Error("تعذرت قراءة مستحقات "+actorNames[type]+" ("+response.status+")");
       const body=await response.json() as {beneficiaries?:BeneficiaryPayoutState[];nextCursor?:string};
@@ -77,9 +77,11 @@ export function FinanceUnifiedSettlements({rows,intakes,onChanged}:Readonly<{row
       return {type,items:body.beneficiaries,next:body.nextCursor??""};
     })).then(results=>{
       if(!alive||seq!==generation.current)return;
-      setRoster(results.flatMap(r=>r.items));setLoaded(results.map(r=>r.type));setCursors(Object.fromEntries(results.map(r=>[r.type,r.next])));
-    }).catch(cause=>{if(alive&&seq===generation.current)setError(cause instanceof Error?cause.message:"تعذرت قراءة المستحقات");})
-      .finally(()=>{if(alive&&seq===generation.current)setLoading(false);});
+      const success=results.filter((r):r is PromiseFulfilledResult<{type:Actor;items:BeneficiaryPayoutState[];next:string}>=>r.status==="fulfilled").map(r=>r.value);
+      setRoster(success.flatMap(r=>r.items));setLoaded(success.map(r=>r.type));setCursors(Object.fromEntries(success.map(r=>[r.type,r.next])));
+      const failed=results.filter(r=>r.status==="rejected");
+      if(failed.length)setError("تعذرت قراءة "+failed.length+" من مصادر المستحقات؛ القائمة جزئية ويمكن متابعة المصادر المتاحة.");
+    }).finally(()=>{if(alive&&seq===generation.current)setLoading(false);});
     return()=>{alive=false;generation.current++;};
   },[actorTypes,kind]);
 
@@ -135,10 +137,15 @@ export function FinanceUnifiedSettlements({rows,intakes,onChanged}:Readonly<{row
         <dl className="fu-facts"><dt>المستفيد</dt><dd>{active.name}</dd><dt>المرجع</dt><dd dir="auto">{active.reference}</dd><dt>الحالة</dt><dd>{financeStatus(active)}</dd>{active.held!==undefined?<><dt>المحجوز</dt><dd>{financeAmount(active.held)}</dd></>:null}<dt>الإجراء التالي</dt><dd>{active.reason}</dd></dl>
         {active.beneficiary?<div className="fu-destination"><strong>جهة الاستلام</strong><p>{active.beneficiary.destination?"توجد جهة استلام مسجلة؛ تحقق من صلاحيتها قبل الصرف.":"لا توجد جهة استلام معتمدة في هذا السجل."}</p></div>:null}
         <button type="button" className="fu-advanced-toggle" aria-expanded={advanced} onClick={()=>setAdvanced(v=>!v)}>{advanced?"إخفاء إجراءات السجل":"فتح إجراءات السجل المعتمدة"} <span aria-hidden="true">{advanced?"−":"+"}</span></button>
-        {advanced?<div className="fu-advanced-actions">
-          {active.kind==="intake"?<SettlementIntakeInbox search={active.actorId??active.reference} visible/>:active.kind==="withdrawal"?<CustomerWithdrawalQueue initialQuery={{status:"REQUESTED",search:"",sort:"requested_desc",cursor:"",intakeId:active.reference}}/>:<BeneficiarySettlementWorkspace actorType={active.actorType??"partner"} initialQuery={paramsFor(active)}/>}
-        </div>:null}
       </aside>:null}
     </div>
+    {advanced&&active?<section className="fu-operations-sheet" aria-label="إجراءات السجل المالي المعتمدة">
+      <div className="fu-operations-header"><div><h3>إجراءات {kindNames[active.kind]}</h3><p>{active.name} · <span dir="auto">{active.reference}</span></p></div>
+        <button type="button" className="fs-secondary" onClick={()=>setAdvanced(false)}>العودة إلى التفاصيل ←</button>
+      </div>
+      <div className="fu-advanced-actions">
+        {active.kind==="intake"?<SettlementIntakeInbox search={active.reference} visible/>:active.kind==="withdrawal"?<CustomerWithdrawalQueue initialQuery={{status:"REQUESTED",search:"",sort:"requested_desc",cursor:"",intakeId:active.reference}}/>:<BeneficiarySettlementWorkspace actorType={active.actorType??"partner"} initialQuery={paramsFor(active)}/>}
+      </div>
+    </section>:null}
   </section>;
 }
