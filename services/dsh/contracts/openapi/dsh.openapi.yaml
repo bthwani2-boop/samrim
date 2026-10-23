@@ -689,6 +689,10 @@ paths:
   /dsh/operator/operations/{orderId}/mission-location:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1mission-location"
 
+  /dsh/operator/operations/{orderId}/cases:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cases"
+  /dsh/operator/operations/{orderId}/cases/{caseId}/transition:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cases~1{caseId}~1transition"
   /dsh/operator/operations/{orderId}/contact-review:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1contact-review"
 
@@ -1282,6 +1286,52 @@ components:
         pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
 
   schemas:
+    OperatorOrderCase:
+      type: object
+      required: [id, orderId, reason, state, priority, nextAction, version, openedAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        orderId:
+          type: string
+        reason:
+          type: string
+          enum: [PARTNER_DELAY, DISPATCH_UNAVAILABLE, DELIVERY_BLOCKED, CUSTOMER_CONTACT, PAYMENT_EXCEPTION, OTHER]
+        state:
+          type: string
+          enum: [OPEN, IN_PROGRESS, ACTION_REQUIRED, RESOLVED]
+        priority:
+          type: string
+          enum: [NORMAL, URGENT]
+        ownerActorId:
+          type: string
+        nextAction:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        resolutionNote:
+          type: string
+        openedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+    OperatorOrderCasePage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperatorOrderCase"
+        nextCursor:
+          type: string
     CaptainMissionLocation:
       type: object
       additionalProperties: false

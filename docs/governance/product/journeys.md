@@ -389,6 +389,16 @@ The first implementation records contact and derives trust *without holding Stor
 
 Keep this Order-scoped, not a generic CRM, loyalty or support product. Record actor, version, timestamp and idempotency, but do not record call audio or duplicate sensitive customer profile data. The client sees only the ordinary order status, not a negative trust label.
 
+## ORDER_SCOPED_OPERATIONS_EXCEPTION — bounded investigation and ownership
+
+JOURNEY_ID: ORDER_SCOPED_OPERATIONS_EXCEPTION
+OWNER: DSH
+SURFACE: Existing Operations Order detail side panel.
+OUTCOME: An authorized operator records one active exception per Order and reason, an urgency, a concrete next action and immutable actor/idempotency events; a case is assigned to an owner before it may be resolved, and a new occurrence is permitted after the earlier one is resolved.
+LIMITS: Case state does **not** mutate the Order, custody, cancellations, financial balances, WLT ledger or customer status. Resolving an Operations note is **not** financial clearance or custody reconciliation. WLT remains the monetary authority, with explicit proof needed for relevant obligations.
+RELIABILITY: Server-side Operations permission, transaction serialization, duplicate prevention, expected-version conflict detection, idempotent replay and explicit resolution note. No general helpdesk, duplicate CRM, route trail or second finance workflow.
+FOLLOW_UP: Unified team-wide priority inbox, stage-based SLA deadlines, automatic exception creation/escalation, and fully verified multiactor Android/CP journeys remain separate P0 acceptance items; a bounded order case does not certify those flows.
+
 ## ORDER_ADJUSTMENT_EXCEPTION_REFUND — legal order change or exception to reconciled result
 
 JOURNEY_ID: ORDER_ADJUSTMENT_EXCEPTION_REFUND

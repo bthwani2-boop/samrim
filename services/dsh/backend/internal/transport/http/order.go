@@ -62,6 +62,9 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/operations/{orderId}", s.readOperatorOperation)
 	mux.HandleFunc("GET /dsh/operator/operations/{orderId}/contact-review", s.readOperatorContactReview)
 	mux.HandleFunc("GET /dsh/operator/operations/{orderId}/mission-location", s.readOperatorMissionLocation)
+	mux.HandleFunc("GET /dsh/operator/operations/{orderId}/cases", s.listOperatorOrderCases)
+	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/cases", s.openOperatorOrderCase)
+	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/cases/{caseId}/transition", s.transitionOperatorOrderCase)
 	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/contact-review", s.recordOperatorContactReview)
 	mux.HandleFunc("GET /dsh/operator/cash-custody", s.listOperatorCashCustody)
 	mux.HandleFunc("POST /dsh/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileOperatorCashRemittance)
@@ -945,6 +948,16 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "order conversation was not found")
 	case errors.Is(err, postgres.ErrOrderRatingNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "order rating was not found")
+	case errors.Is(err, postgres.ErrOpsCaseInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "case input is invalid")
+	case errors.Is(err, postgres.ErrOpsCaseConflict):
+		writeError(w, http.StatusConflict, "CASE_CONFLICT", "case exists, changed or already resolved")
+	case errors.Is(err, postgres.ErrOpsCaseIdempotency):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "case key reused with different facts")
+	case errors.Is(err, postgres.ErrOpsCaseForbidden):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only the assigned case owner may advance the case")
+	case errors.Is(err, postgres.ErrOpsCaseNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "case not found")
 	case errors.Is(err, postgres.ErrCustomerContactInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "customer contact review input is invalid")
 	case errors.Is(err, postgres.ErrCustomerContactConflict):

@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 148
+const SchemaVersion = 149
 
 type MigrationRecord struct {
 	Version int
@@ -26,6 +26,8 @@ type MigrationRecord struct {
 }
 
 var requiredTables = []schemaRelationExpectation{
+	{name: "dsh.operator_order_cases", columns: []string{"id", "order_id", "reason", "state", "priority", "owner_actor_id", "next_action", "opened_by_actor_id", "updated_by_actor_id", "version", "resolution_note", "opened_at", "updated_at", "resolved_at"}, constraints: []string{"operator_order_cases_pkey", "operator_order_cases_order_id_fkey", "ops_case_reason_chk", "ops_case_state_chk", "ops_case_priority_chk", "ops_case_next_action_chk", "ops_case_version_chk", "ops_case_resolution_chk"}, indexes: []string{"ops_case_one_active_reason_uq", "ops_case_order_recent_idx", "ops_case_work_queue_idx"}},
+	{name: "dsh.operator_order_case_events", columns: []string{"id", "case_id", "action", "actor_id", "idempotency_key", "request_hash", "correlation_id", "detail", "created_at"}, constraints: []string{"operator_order_case_events_pkey", "operator_order_case_events_case_id_fkey", "ops_case_event_action_chk", "ops_case_event_idempotency_uq"}, indexes: []string{"ops_case_event_case_idx"}},
 	{name: "dsh.captain_mission_latest", columns: []string{"assignment_id", "captain_actor_id", "latitude", "longitude", "accuracy_meters", "recorded_at", "received_at", "sequence"}, constraints: []string{"captain_mission_latest_pkey", "captain_mission_latest_assignment_id_fkey"}, indexes: []string{"captain_mission_latest_received_idx"}},
 	{name: "dsh.customer_order_contact_reviews", columns: []string{"order_id", "client_actor_id", "state", "attempt_count", "version", "last_actor_id", "last_attempt_at", "confirmed_at", "updated_at"}, constraints: []string{"customer_order_contact_reviews_pkey", "customer_order_contact_reviews_order_id_fkey", "customer_contact_confirmation_chk"}, indexes: []string{"customer_order_contact_client_idx"}},
 	{name: "dsh.customer_order_contact_events", columns: []string{"id", "order_id", "client_actor_id", "decision", "operator_actor_id", "idempotency_key", "request_hash", "correlation_id", "created_at"}, constraints: []string{"customer_order_contact_events_pkey", "customer_order_contact_events_order_id_fkey", "customer_order_contact_events_idempotency_key_key"}, indexes: []string{"customer_order_contact_events_order_idx"}},

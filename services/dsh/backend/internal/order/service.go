@@ -277,6 +277,25 @@ func (s *Service) ListForAuthorizedPartnerStores(ctx context.Context, accessToke
 	return page, counts, nil
 }
 
+func (s *Service) ListOrderCasesForOperator(ctx context.Context, orderID, actorID string, limit int, cursor string) (postgres.OpsCasePage, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.OpsCasePage{}, err
+	}
+	return postgres.ListOrderOpsCases(ctx, s.db, orderID, limit, cursor)
+}
+func (s *Service) OpenOrderCaseForOperator(ctx context.Context, orderID, actorID, reason, priority, nextAction, key, correlationID string) (postgres.OpsCase, bool, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.OpsCase{}, false, err
+	}
+	return postgres.OpenOpsCase(ctx, s.db, orderID, actorID, reason, priority, nextAction, key, correlationID)
+}
+func (s *Service) UpdateOrderCaseForOperator(ctx context.Context, orderID string, id int64, actorID, action, note, key, correlationID string, expectedVersion int) (postgres.OpsCase, bool, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.OpsCase{}, false, err
+	}
+	return postgres.UpdateOpsCase(ctx, s.db, orderID, id, actorID, action, note, key, correlationID, expectedVersion)
+}
+
 func (s *Service) ReadMissionLocationForOperator(ctx context.Context, orderID, actorID string) (postgres.CaptainMissionLocation, error) {
 	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
 		return postgres.CaptainMissionLocation{}, err

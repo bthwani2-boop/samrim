@@ -51,8 +51,8 @@ func TestOrderRegisteredRoutesRejectUnauthenticatedRequests(t *testing.T) {
 
 	routes := orderRegisteredRoutes(t)
 	// The private conversation media endpoint is part of the authenticated Order route census.
-	if len(routes) != 32 {
-		t.Fatalf("Order route census changed: got %d, want 32; review authentication for every new or removed route", len(routes))
+	if len(routes) != 35 {
+		t.Fatalf("Order route census changed: got %d, want 35; review authentication for every new or removed route", len(routes))
 	}
 	for _, route := range routes {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
