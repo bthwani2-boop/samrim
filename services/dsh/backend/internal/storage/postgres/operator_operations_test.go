@@ -54,9 +54,22 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 			}
 		}
 
+		// The current stage clock is an owner transition event, not a
+		// refreshed order updated_at value. The synthetic source is 1 min earlier.
+		stageAt := updatedAt.Add(-time.Minute)
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_audit
+            (event_type,idempotency_key,correlation_id,acting_actor_id,order_id,from_state,to_state,from_version,result_version,request_hash,created_at)
+            VALUES('order_ready_for_dispatch','ops-stage-event-03','ops-stage-corr-03','partner_operator_ops',
+                   'operator_order_03','PREPARING','READY_FOR_DISPATCH',1,2,'stage-verified',$1)`, stageAt); err != nil {
+			t.Fatalf("insert canonical dispatch stage transition: %v", err)
+		}
 		first, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", "", "updated_desc", true, 2, "")
 		if err != nil || len(first.Operations) != 2 || first.Operations[0].OrderID != "operator_order_03" || first.Operations[1].OrderID != "operator_order_02" || first.NextCursor == "" {
 			t.Fatalf("first operator operations page is not stable: %+v err=%v", first, err)
+		}
+		if first.Operations[0].StageStartedAt == nil || !first.Operations[0].StageStartedAt.Equal(stageAt) ||
+			first.Operations[1].StageStartedAt != nil {
+			t.Fatalf("stage elapsed must use owner transition; unavailable source stays null: %+v", first.Operations)
 		}
 		if first.Summary.TotalCount != 3 || first.Summary.ActionableCount != 3 || first.Summary.AwaitingDispatchCount != 3 || first.Summary.ActiveCount != 0 || first.Summary.DeliveredCount != 0 || first.Summary.MeasuredAt.IsZero() {
 			t.Fatalf("first-page summary must cover all filtered results, not the two loaded rows: %+v", first.Summary)
@@ -220,6 +233,11 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 			VALUES('order_picked_up','ops-pickup-1','ops-pickup-corr','partner_operator_ops','operator_order_02','READY_FOR_PICKUP','PICKED_UP',2,3,'pickup-proof',timestamp '2026-09-18 06:02:00+00')`); err != nil {
 			t.Fatalf("insert canonical pickup completion audit: %v", err)
 		}
+		pickupStage, err := postgres.ListOrdersForOperator(ctx, db, "PICKED_UP", "", "updated_desc", false, 10, "")
+		if err != nil || len(pickupStage.Operations) != 1 || pickupStage.Operations[0].StageStartedAt == nil ||
+			!pickupStage.Operations[0].StageStartedAt.Equal(time.Date(2026, 9, 18, 6, 2, 0, 0, time.UTC)) {
+			t.Fatalf("customer pickup stage missing canonical audit timestamp: %+v err=%v", pickupStage, err)
+		}
 		afterPickup, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_02")
 		if err != nil || afterPickup.CustomerSuccessfulOrdersCount != 1 || afterPickup.SuccessfulOrderOrdinal != 1 {
 			t.Fatalf("customer pickup must be first confirmed success: %+v err=%v", afterPickup, err)
@@ -241,6 +259,11 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,to_state,result_version,request_hash,created_at)
 			VALUES('delivery_completed','ops-delivery-1','ops-delivery-corr','captain_operator_ops','operator_order_01','delivered',2,'delivery-proof',timestamp '2026-09-18 06:03:00+00')`); err != nil {
 			t.Fatalf("insert canonical Captain delivery completion audit: %v", err)
+		}
+		deliveryStage, err := postgres.ListOrdersForOperator(ctx, db, "DELIVERED", "", "updated_desc", false, 10, "")
+		if err != nil || len(deliveryStage.Operations) != 1 || deliveryStage.Operations[0].StageStartedAt == nil ||
+			!deliveryStage.Operations[0].StageStartedAt.Equal(time.Date(2026, 9, 18, 6, 3, 0, 0, time.UTC)) {
+			t.Fatalf("Captain delivery stage missing its canonical event timestamp: %+v err=%v", deliveryStage, err)
 		}
 		afterDelivery, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_01")
 		if err != nil || afterDelivery.CustomerSuccessfulOrdersCount != 2 || afterDelivery.SuccessfulOrderOrdinal != 2 {

@@ -9,6 +9,7 @@ import { RecordIndicator } from "../shared/record-indicator";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { operationalAge } from "./operational-age";
+import { operationalStageElapsed } from "./operational-stage-elapsed";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 import { OrderOperationDetail } from "./order-operation-detail";
 import { CancellationRequestInbox } from "./cancellation-request-inbox";
@@ -355,6 +356,7 @@ export function OperationsWorkspace() {
                     <td><time dateTime={item.updatedAt}>{formatOrderDate(item.updatedAt)}</time></td>
                     <td><div className="ops-row-followup">
                       <span className={age.needsReview ? "operations-attention" : "muted"}>{age.label}</span>
+                      {operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt)) ? <span className="muted">{operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt))}</span> : null}
                       {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
                     </div></td>
                     <td><button type="button" className="ops-row-open" aria-label={(nextAction || age.needsReview ? "مراجعة" : "تفاصيل") + " طلب " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>{nextAction || age.needsReview ? "مراجعة" : "تفاصيل"}</button></td>
@@ -376,6 +378,7 @@ export function OperationsWorkspace() {
                   </div>
                   <div className="ops-mobile-order-followup">
                     <span className={age.needsReview ? "operations-attention" : "muted"}>{age.label}</span>
+                      {operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt)) ? <span className="muted">{operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt))}</span> : null}
                     {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
                   </div>
                   <div className="ops-mobile-order-bottom">

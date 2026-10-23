@@ -315,11 +315,12 @@ type OperatorOperationRecord struct {
 }
 
 type OperatorOperationListRecord struct {
-	OrderID    string
-	StoreName  string
-	State      string
-	UpdatedAt  time.Time
-	Assignment *OperatorAssignmentListRecord
+	StageStartedAt *time.Time
+	OrderID        string
+	StoreName      string
+	State          string
+	UpdatedAt      time.Time
+	Assignment     *OperatorAssignmentListRecord
 }
 
 type OperatorAssignmentListRecord struct {
@@ -741,9 +742,29 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		COALESCE(sum(order_value_minor) FILTER (WHERE assignment_state='in_custody'),0)::bigint AS in_custody_order_value_minor,
 		statement_timestamp() AS measured_at FROM filtered
 	), page AS (
-		SELECT * FROM filtered WHERE `+pageWhere+" ORDER BY updated_at "+order+",id "+order+" LIMIT $"+strconv.Itoa(len(args))+`
+		SELECT filtered.*, (
+            SELECT max(e.entered_at) FROM (
+                SELECT a.created_at AS entered_at
+                  FROM dsh.commerce_order_audit a
+                 WHERE a.order_id=filtered.id AND a.to_state=filtered.state
+                   AND a.event_type IN (
+                      'order_created','order_partner_accepted','order_preparing',
+                      'order_ready_for_dispatch','order_ready_for_pickup',
+                      'order_picked_up','order_rejected','order_cancelled'
+                   )
+                UNION ALL
+                SELECT c.created_at AS entered_at
+                  FROM dsh.captain_audit c WHERE c.order_id=filtered.id
+                   AND (
+                      (filtered.state='CAPTAIN_ASSIGNED' AND c.event_type='dispatch_offer_accepted')
+                      OR (filtered.state='IN_CUSTODY' AND c.event_type IN ('captain_pickup_completed','delivery_recovered'))
+                      OR (filtered.state='DELIVERED' AND c.event_type='delivery_completed')
+                      OR (filtered.state='DELIVERY_FAILED' AND c.event_type='delivery_failed')
+                   )
+            ) e
+        ) AS stage_started_at FROM filtered WHERE `+pageWhere+" ORDER BY updated_at "+order+",id "+order+" LIMIT $"+strconv.Itoa(len(args))+`
 	)
-	SELECT summary.*,page.id,page.name,page.state,page.updated_at,page.assignment_id,page.order_id,page.captain_actor_id,page.assignment_state,page.version,page.handoff_state
+	SELECT summary.*,page.id,page.name,page.state,page.updated_at,page.assignment_id,page.order_id,page.captain_actor_id,page.assignment_state,page.version,page.handoff_state,page.stage_started_at
 	FROM summary LEFT JOIN page ON TRUE ORDER BY page.updated_at `+order+",page.id "+order, args...)
 	if err != nil {
 		return OperatorOperationsResult{}, err
@@ -757,15 +778,20 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		var updatedAt sql.NullTime
 		var assignmentID, assignmentOrderID, captainActorID, assignmentState, handoffState sql.NullString
 		var assignmentVersion sql.NullInt64
+		var stageStartedAt sql.NullTime
 		if err := rows.Scan(&summary.TotalCount, &summary.ActionableCount, &summary.AwaitingDispatchCount, &summary.ActiveCount, &summary.DeliveredCount, &summary.InCustodyOrderCount, &summary.InCustodyOrderValueMinor, &summary.MeasuredAt,
 			&id, &storeName, &state, &updatedAt,
-			&assignmentID, &assignmentOrderID, &captainActorID, &assignmentState, &assignmentVersion, &handoffState); err != nil {
+			&assignmentID, &assignmentOrderID, &captainActorID, &assignmentState, &assignmentVersion, &handoffState, &stageStartedAt); err != nil {
 			return OperatorOperationsResult{}, err
 		}
 		if !id.Valid {
 			continue // The summary still exists for empty results or an exhausted cursor.
 		}
 		item.OrderID, item.StoreName, item.State, item.UpdatedAt = id.String, storeName.String, state.String, updatedAt.Time
+		if stageStartedAt.Valid {
+			timeValue := stageStartedAt.Time
+			item.StageStartedAt = &timeValue
+		}
 		if assignmentID.Valid {
 			item.Assignment = &OperatorAssignmentListRecord{ID: assignmentID.String, OrderID: assignmentOrderID.String, CaptainActorID: captainActorID.String, State: assignmentState.String, Version: int(assignmentVersion.Int64), HandoffState: handoffState.String}
 		}

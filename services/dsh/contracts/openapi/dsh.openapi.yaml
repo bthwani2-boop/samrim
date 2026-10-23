@@ -9177,6 +9177,11 @@ components:
         updatedAt:
           type: string
           format: date-time
+        stageStartedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Most recent matching canonical DSH Order transition event. Null when unavailable; not an SLA deadline.
         assignment:
           $ref: "#/components/schemas/OperatorAssignmentSummary"
           nullable: true
