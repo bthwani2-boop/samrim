@@ -496,7 +496,7 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
       <div className="workspace-layout" data-nav-compact={navigationCompact ? "true" : "false"} data-table-density={tableDense ? "compact" : "comfortable"}>
         {navigationOpen ? <button type="button" className="workspace-nav-backdrop" aria-label="إغلاق مسارات العمل" onClick={closeNavigation} /> : null}
         <WorkspaceNavigation firstLinkRef={navFirstLinkRef} navRef={navRef} onClose={closeNavigation} open={navigationOpen} pathname={pathname} compact={navigationCompact} onToggleCompact={toggleNavigationCompact} dense={tableDense} onToggleDensity={toggleTableDensity} />
-        <main ref={mainRef} id="workspace-main" className="workspace-main" tabIndex={-1}>
+        <main ref={mainRef} id="workspace-main" className="workspace-main" data-workspace-section={pathname?.split("/")[1] || "workspace"} tabIndex={-1}>
           {destinationAccessGranted ? children : <section className="collection-state" role="status"><strong>الوصول إلى هذه المساحة غير مفعّل</strong><p>تحتاج إلى صلاحية النطاق المناسبة من إدارة صلاحيات المشغّلين.</p><Link className="button button-secondary" href="/workspace">العودة إلى الرئيسية</Link></section>}
         </main>
       </div>
