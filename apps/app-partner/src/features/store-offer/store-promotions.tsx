@@ -292,9 +292,10 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
         <Text style={styles.promoName}>{campaign.promotion.nameAr}</Text><Text style={styles.muted}>{benefitLabel(campaign.promotion)} · {fundingLabel(campaign.promotion)}</Text>
         <Text style={styles.muted}>{promotionScopeLabel(campaign.promotion)}</Text>
         {threshold ? <Text style={styles.muted}>حد الطلب: {formatMoney(threshold, "YER")}</Text> : null}
+        {campaign.promotion.fundingSource !== "BTHWANI" && !campaign.promotion.discountBudgetLimitMinor ? <Text style={styles.error}>موافقة التمويل غير متاحة: لا يوجد سقف معلن للخصومات.</Text> : null}
         <Text style={campaign.storeOptInState === "OPTED_IN" ? styles.notice : styles.muted}>{campaignDecisionLabel(campaign)}</Text>
       </View>{requiresPartnerOptIn(campaign.promotion) ? <View style={styles.actions}>
-        <BthwaniButton busy={busy} disabled={campaign.storeOptInState === "OPTED_IN"} label="مشاركة" onPress={() => setConsentingCampaign(campaign)} variant="secondary" />
+        <BthwaniButton busy={busy} disabled={campaign.storeOptInState === "OPTED_IN" || (campaign.promotion.fundingSource !== "BTHWANI" && !campaign.promotion.discountBudgetLimitMinor)} label="مشاركة" onPress={() => setConsentingCampaign(campaign)} variant="secondary" />
         <BthwaniButton busy={busy} disabled={campaign.storeOptInState === "DECLINED"} label="رفض" onPress={() => void decideCampaign(campaign, "DECLINED")} variant="secondary" />
       </View> : null}</View>; })}
     </View>
@@ -308,13 +309,14 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
         promotionScopeLabel(consentingCampaign.promotion),
         `من ${new Date(consentingCampaign.promotion.startsAt).toLocaleString("ar-YE")}${consentingCampaign.promotion.endsAt ? " إلى " + new Date(consentingCampaign.promotion.endsAt).toLocaleString("ar-YE") : ""}`,
         consentingCampaign.promotion.redemptionLimit ? `حد الاستخدام: ${consentingCampaign.promotion.redemptionLimit}` : "",
-        consentingCampaign.promotion.discountBudgetLimitMinor ? `الحد الأقصى لقيمة الخصومات: ${formatMoney(consentingCampaign.promotion.discountBudgetLimitMinor, "YER")}` : "",
+        consentingCampaign.promotion.discountBudgetLimitMinor ? `الحد الأقصى لقيمة الخصومات: ${formatMoney(consentingCampaign.promotion.discountBudgetLimitMinor, "YER")}` : "لم تحدد الحملة سقفًا إجماليًا للخصومات.",
         "تؤكد المشاركة في هذه الشروط فقط، ولا تمنح موافقة على تغييرات مالية لاحقة.",
       ].filter(Boolean).join("\n") : ""}
       onCancel={() => setConsentingCampaign(null)}
       onConfirm={() => {
         const campaign = consentingCampaign;
         setConsentingCampaign(null);
+        if (campaign && campaign.promotion.fundingSource !== "BTHWANI" && !campaign.promotion.discountBudgetLimitMinor) { setError("لا يمكن الموافقة على تمويل خصومات دون سقف مالي معتمد."); return; }
         if (campaign) void decideCampaign(campaign, "OPTED_IN");
       }}
       title="مراجعة شروط مشاركة المتجر"

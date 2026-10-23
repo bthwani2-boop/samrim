@@ -8,10 +8,11 @@ import (
 
 func TestPlatformPartnerFundedPromotionRequiresExplicitStoreConsent(t *testing.T) {
 	share := 50
+	budget := int64(50000)
 	base := PromotionInput{
 		ID: "promotion-test", Code: "CONSENT10", NameAr: "عرض تجريبي",
 		Kind: "PERCENTAGE", ValueMinor: 10,
-		FundingSource: "BTHWANI", StartsAt: time.Now().UTC(),
+		FundingSource: "BTHWANI", StartsAt: time.Now().UTC(), DiscountBudgetLimitMinor: &budget,
 	}
 	tests := []struct {
 		name     string
@@ -28,6 +29,19 @@ func TestPlatformPartnerFundedPromotionRequiresExplicitStoreConsent(t *testing.T
 		{"shared funding with consent", "SHARED", "", true, &share, false},
 		{"partner-owned scoped store offer", "PARTNER", "store-owned", false, nil, false},
 		{"store-scoped campaign cannot opt in to platform participation", "PARTNER", "store-owned", true, nil, true},
+	}
+	// A published platform-funded Partner liability must never be unbounded.
+	for _, funding := range []string{"PARTNER", "SHARED"} {
+		input := base
+		input.FundingSource = funding
+		input.RequiresPartnerOptIn = true
+		input.DiscountBudgetLimitMinor = nil
+		if funding == "SHARED" {
+			input.FundingSharePartnerPercent = &share
+		}
+		if err := validatePromotionInput(input); !errors.Is(err, ErrPromotionInvalid) {
+			t.Fatalf("uncapped %s funding must be rejected: %v", funding, err)
+		}
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

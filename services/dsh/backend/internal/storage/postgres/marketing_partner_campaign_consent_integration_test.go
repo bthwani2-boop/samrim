@@ -39,11 +39,13 @@ func TestPartnerCampaignConsentGatesStoreVisibilityAndRejectsCrossCity(t *testin
 		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: "consent-store-b", PartnerActorID: "partner-b", Name: "Partner B Store", ServiceCityID: cityA, PublicationState: "published"})
 		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: "consent-store-outside", PartnerActorID: "partner-c", Name: "Partner C Store", ServiceCityID: cityB, PublicationState: "published"})
 		share := 40
+		budget := int64(25000)
 		promotion := postgres.PromotionInput{
 			ID: "consent-campaign", Code: "CONSENT40", NameAr: "حملة مشاركة متجرية",
 			Kind: "PERCENTAGE", ValueMinor: 20, FundingSource: "SHARED",
 			FundingSharePartnerPercent: &share, ServiceCityID: cityA,
-			RequiresPartnerOptIn: true, StartsAt: time.Now().UTC().Add(-time.Hour),
+			DiscountBudgetLimitMinor: &budget,
+			RequiresPartnerOptIn:     true, StartsAt: time.Now().UTC().Add(-time.Hour),
 			CreatedByActorID: "operator-marketing",
 		}
 		saved, replayed, err := postgres.CreatePromotion(ctx, db, promotion, "consent-create", "consent-create-hash")
@@ -96,6 +98,16 @@ func TestPartnerCampaignConsentGatesStoreVisibilityAndRejectsCrossCity(t *testin
 		if !errors.Is(err, postgres.ErrPromotionVersionConflict) {
 			t.Fatalf("old version unexpectedly restored consent: %v", err)
 		}
+		// Legacy uncapped partner-funded campaigns must not be reaccepted:
+		// earlier opt-ins do not authorize unlimited future liability.
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET discount_budget_limit_minor=NULL WHERE id=$1", promotion.ID); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err = postgres.SetPartnerCampaignOptIn(ctx, db, promotion.ID, "consent-store-a", "partner-a", "OPTED_IN", 2, "uncapped-accept", "uncapped-correlation")
+		if !errors.Is(err, postgres.ErrPromotionNotFound) {
+			t.Fatalf("legacy unlimited partner liability must not be accepted: %v", err)
+		}
+		checkVisible("consent-store-a", 0)
 		var foreignChoices int
 		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.commerce_promotion_store_opt_ins WHERE store_id='consent-store-outside'").Scan(&foreignChoices); err != nil || foreignChoices != 0 {
 			t.Fatalf("foreign store decision persisted: %d err=%v", foreignChoices, err)

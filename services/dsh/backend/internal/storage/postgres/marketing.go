@@ -212,6 +212,11 @@ func validatePromotionInput(input PromotionInput) error {
 	if input.StoreID == "" && input.FundingSource != "BTHWANI" && !input.RequiresPartnerOptIn {
 		return ErrPromotionInvalid
 	}
+	// Partner liabilities in platform campaigns must have a finite, server-
+	// enforced discount budget before any Store is invited to fund them.
+	if input.StoreID == "" && input.FundingSource != "BTHWANI" && input.DiscountBudgetLimitMinor == nil {
+		return ErrPromotionInvalid
+	}
 	if len(input.Targets) > 0 {
 		seenTargets := map[string]struct{}{}
 		for _, target := range input.Targets {
@@ -1126,6 +1131,7 @@ func SetPartnerCampaignOptIn(ctx context.Context, db *sql.DB, promotionID, store
 			SELECT 1 FROM dsh.commerce_promotions p
 			JOIN dsh.stores s ON s.id=$2
 			WHERE p.id=$1 AND p.store_id IS NULL AND p.requires_partner_opt_in
+			  AND (p.funding_source='BTHWANI' OR p.discount_budget_limit_minor IS NOT NULL)
 			  AND p.state='PUBLISHED' AND p.starts_at<=clock_timestamp()
 			  AND (p.ends_at IS NULL OR p.ends_at>clock_timestamp())
 			  AND (p.service_city_id IS NULL OR p.service_city_id=s.service_city_id)
