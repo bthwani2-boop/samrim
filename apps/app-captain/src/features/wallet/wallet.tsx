@@ -27,7 +27,8 @@ export default function CaptainWallet() {
       showsVerticalScrollIndicator={false}
       nestedScrollEnabled
     >
-      <Text accessibilityRole="header" style={styles.title}>المحفظة</Text>
+      <Text accessibilityRole="header" style={styles.title}>محفظة الكابتن</Text>
+      <Text style={{ ...typography.caption, color: theme.colorMuted }}>الرصيد التشغيلي مستقل عن الأرباح المؤهلة للسحب.</Text>
       <CaptainCashInPanel />
       <CaptainPayoutCard />
     </ScrollView>

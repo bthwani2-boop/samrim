@@ -127,14 +127,14 @@ export function CaptainCashInPanel() {
 
   return <BthwaniSurface tone="base" style={styles.panel} accessibilityLabel="شحن رصيد الكابتن">
     <View style={styles.heading}>
-      <Text accessibilityRole="header" style={styles.title}>رصيد تغطية النقد</Text>
+      <Text accessibilityRole="header" style={styles.title}>الرصيد التشغيلي</Text>
       {simulatorInDevelopment ? <Text style={styles.demo}>تجريبي</Text> : null}
     </View>
     {busy && !wallet ? <ActivityIndicator color={theme.actionBackground} /> : null}
     {state ? <View style={styles.balance}>
-      <Text style={styles.muted}>المتاح لتغطية الطلبات النقدية</Text>
+      <Text style={styles.muted}>المتاح للاستخدام التشغيلي</Text>
       <Text style={styles.amount}>{formatMoney(state.availableMinor, state.currency)}</Text>
-      {state.heldMinor > 0 ? <Text style={styles.muted}>محجوز لطلبات نقدية جارية: {formatMoney(state.heldMinor, state.currency)}</Text> : null}
+      <View style={styles.holdRow}><Text style={styles.muted}>الرصيد الدفتري: {formatMoney(state.ledgerBalanceMinor, state.currency)}</Text><Text style={styles.muted}>المحجوز: {formatMoney(state.heldMinor, state.currency)}</Text></View>
     </View> : null}
 
     {userCanAddFunds ? <>
@@ -183,9 +183,9 @@ export function CaptainCashInPanel() {
     </> : state ? <Text style={styles.muted}>الشحن غير متاح.</Text> : null}
 
     {userHasPending ? <Text style={styles.muted}>طلب قيد التأكيد: {formatMoney(pending!.amountMinor, "YER")}</Text> : null}
-    {latest.length > 0 && (showChargeForm || userHasPending) ? <View style={styles.history}>
+    {latest.length > 0 ? <View style={styles.history}>
       <Text style={styles.muted}>آخر شحن</Text>
-      {latest.slice(0, 1).map((intent) =>
+      {latest.slice(0, 3).map((intent) =>
         <View key={intent.id} style={styles.row}>
           <Text style={styles.muted}>{fundingStateLabel(intent.state)}</Text>
           <Text style={styles.label}>{formatMoney(intent.amountMinor, intent.currency)}</Text>
@@ -206,7 +206,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     label: { ...typography.bodyStrong, color: theme.color },
     muted: { ...typography.bodySm, color: theme.colorMuted },
     balance: { gap: spacing[1], paddingVertical: spacing[1] },
-    amount: { ...typography.titleLg, color: theme.color },
+    amount: { ...typography.hero, color: theme.color },
+    holdRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: spacing[2], paddingTop: spacing[2], borderTopColor: theme.borderColor, borderTopWidth: borders.hairline },
     input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 48, paddingHorizontal: spacing[3] },
     presets: { flexDirection: "row", gap: spacing[2] },
     preset: { flex: 1, borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.md, alignItems: "center", justifyContent: "center", minHeight: 44 },

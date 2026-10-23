@@ -84,6 +84,7 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMi
   const [selectedProviderKey, setSelectedProviderKey] = useState("");
   const [providers, setProviders] = useState<ReadonlyArray<WalletProvider>>([]);
   const [providersStatus, setProvidersStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [showProviders, setShowProviders] = useState(false);
 
   const loadProviders = useCallback(async () => {
     setProvidersStatus((previous) => previous === "ready" ? "ready" : "loading");
@@ -235,43 +236,58 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMi
 
   if (mode === "wallet") {
     return (
-      <BthwaniSurface accessibilityLabel="رصيد المحفظة" style={styles.walletPanel}>
-        <View style={styles.balanceCard}>
-          <View style={styles.balanceCopy}>
-            <Text style={styles.balanceLabel}>الرصيد المتاح</Text>
-            {state ? <Text accessibilityLabel={"الرصيد " + formatMoney(state.availableMinor, state.currency)} style={styles.balanceValue}>{formatMoney(state.availableMinor, state.currency)}</Text> : <Text style={styles.balanceValue}>{busy ? "…" : "—"}</Text>}
+      <View style={styles.walletDashboard}>
+        <Text accessibilityRole="header" style={styles.walletPageTitle}>محفظتي</Text>
+        <BthwaniSurface tone="base" style={styles.walletPanel} accessibilityLabel="محفظة بثواني">
+          <View style={styles.balanceCard}>
+            <View style={styles.balanceCopy}>
+              <Text style={styles.balanceLabel}>رصيد محفظة بثواني المتاح</Text>
+              <Text accessibilityLabel={state ? "الرصيد " + formatMoney(state.availableMinor, state.currency) : "الرصيد غير متاح"} style={styles.walletHeroAmount}>
+                {state ? formatMoney(state.availableMinor, state.currency) : busy ? "…" : "—"}
+              </Text>
+              <Text style={styles.walletHeroNote}>للشراء من خدمات بثواني</Text>
+            </View>
+            <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[8]} />
           </View>
-          <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} />
-        </View>
-        <View style={styles.providersSection}>
-          <Text style={styles.muted}>المحافظ الرسمية متاحة للعرض فقط. الشحن التجريبي مستقل عن التحويلات الفعلية.</Text>
-          <Text style={styles.providersTitle}>المحافظ المعتمدة</Text>
-          {providersStatus === "loading" ? <ActivityIndicator accessibilityLabel="جارٍ قراءة المحافظ المعتمدة" color={theme.actionBackground} /> : null}
-          {providersStatus === "ready" && providers.length > 0 ? <View style={styles.providersGrid}>
-            {providers.map((provider) => <View key={provider.key} style={styles.providerItem} accessibilityLabel={`مزود محفظة نشط: ${provider.displayNameAr}`}>
-              {provider.logoUri ? <Image key={provider.logoUri} source={{uri:providerLogoUri(provider.logoUri)}} accessibilityLabel={"شعار "+provider.displayNameAr} style={styles.providerLogo} resizeMode="contain" /> : <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[5]} />}
-              <Text style={styles.providerName} numberOfLines={2}>{provider.displayNameAr}</Text>
-            </View>)}
-          </View> : null}
-          {providersStatus === "ready" && providers.length === 0 ? <Text style={styles.muted}>لا توجد محافظ معتمدة حاليًا.</Text> : null}
-          {providersStatus === "error" ? <BthwaniButton label="تعذر قراءة المحافظ — إعادة المحاولة" onPress={() => void loadProviders()} variant="secondary" /> : null}
-        </View>
-        {wallet?.fundingIntents?.length ? <View style={styles.walletCredits}><Text style={styles.creditHeading}>آخر عمليات الشحن</Text>{wallet.fundingIntents.slice(0,5).map((intent)=><View key={intent.id} style={styles.walletCredit}><Text style={styles.creditAmount}>{formatMoney(intent.amountMinor,intent.currency)}</Text><Text style={styles.muted}>{intent.state==="SETTLED"?"تم الشحن":intent.state==="FAILED"?"تعذر الشحن":"قيد المعالجة"}</Text></View>)}</View> : null}
-        {recentCompensations.length ? <View style={styles.walletCredits}>
-          <Text style={styles.creditHeading}>تعويضات أُضيفت إلى محفظتك</Text>
-          {recentCompensations.map((credit) => <View key={credit.id} style={styles.walletCredit}>
-            <Text style={styles.creditAmount}>+ {formatMoney(credit.amountMinor, credit.currency)}</Text>
-            <Text style={styles.muted}>تعويض عن الطلب {credit.orderId}</Text>
+          {userCanAddFunds ? <BthwaniButton busy={busy} disabled={busy} label="＋ إضافة رصيد" onPress={onAddFunds ?? (() => router.push("/wallet-cash-in" as Href))} /> : null}
+          {userHasPending ? <View style={styles.walletNotice}><Text style={styles.walletHint}>شحن قيد التأكيد: {formatMoney(pending!.amountMinor, "YER")}. سيُضاف الرصيد عند اعتماد الدفع.</Text></View> : null}
+          {state?.simulator && simulatorInDevelopment ? <Text style={styles.walletHint}>وضع التطوير: الشحن تجريبي، ولا يمثل تحويل أموال حقيقية.</Text> : null}
+          {!userCanAddFunds && state ? <Text style={styles.walletHint}>إضافة الرصيد غير متاحة حاليًا.</Text> : null}
+          {busy && !wallet ? <ActivityIndicator color={theme.actionBackground} /> : null}
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+          {!state && error ? <BthwaniButton disabled={busy} label="إعادة المحاولة" variant="secondary" onPress={() => void load()} /> : null}
+        </BthwaniSurface>
+        <BthwaniSurface tone="base" style={styles.walletHistoryCard}>
+          <View style={styles.walletSectionTitle}><Text style={styles.creditHeading}>آخر عمليات المحفظة</Text><Text style={styles.walletHint}>الشحن والتعويضات المثبتة</Text></View>
+          {wallet?.fundingIntents.slice(0, 5).map((intent) => <View key={intent.id} style={styles.walletMovement}>
+            <View style={styles.walletMovementCopy}><Text style={styles.walletMovementTitle}>شحن المحفظة</Text>
+              <Text style={styles.walletHint}>{intent.state === "SETTLED" ? "مكتمل" : intent.state === "FAILED" ? "تعذر الشحن" : "قيد التأكيد"}</Text>
+            </View>
+            <Text style={intent.state === "SETTLED" ? styles.walletPositive : styles.walletNeutral}>{intent.state === "SETTLED" ? "+ " : ""}{formatMoney(intent.amountMinor, intent.currency)}</Text>
           </View>)}
-        </View> : null}
-        {userHasPending ? <Text style={styles.pendingCopy}>طلب شحن قيد التأكيد: {formatMoney(pending!.amountMinor, "YER")}.</Text> : null}
-        {busy && !wallet ? <ActivityIndicator accessibilityLabel="جارٍ قراءة الرصيد" color={theme.actionBackground} /> : null}
-        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-        {userCanAddFunds ? <BthwaniButton disabled={busy} label="＋ إضافة رصيد" onPress={onAddFunds ?? (() => router.push("/wallet-cash-in" as Href))} /> : null}
-        {simulatorInDevelopment ? <Text style={styles.muted}>شحن تجريبي — لا توجد أموال حقيقية.</Text> : null}
-        {!userCanAddFunds && state ? <Text style={styles.muted}>شحن الرصيد غير متاح حاليًا.</Text> : null}
-        {!state && error ? <BthwaniButton disabled={busy} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}
-      </BthwaniSurface>
+          {recentCompensations.slice(0, 5).map((credit) => <View key={credit.id} style={styles.walletMovement}>
+            <View style={styles.walletMovementCopy}><Text style={styles.walletMovementTitle}>تعويض عن طلب</Text><Text style={styles.walletHint} numberOfLines={1}>{credit.orderId}</Text></View>
+            <Text style={styles.walletPositive}>+ {formatMoney(credit.amountMinor, credit.currency)}</Text>
+          </View>)}
+          {!wallet?.fundingIntents.length && !recentCompensations.length ? <Text style={styles.walletHint}>لا توجد عمليات شحن أو تعويضات حديثة.</Text> : null}
+          <Text style={styles.walletHint}>هذا ملخص العمليات المتاحة حاليًا، وليس كشف جميع مشتريات المحفظة.</Text>
+        </BthwaniSurface>
+        <BthwaniSurface tone="base" style={styles.walletHistoryCard}>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: showProviders }} onPress={() => setShowProviders((value) => !value)} style={styles.walletProviderToggle}>
+            <Text style={styles.walletMovementTitle}>مزودو الدفع المعتمدون</Text>
+            <Text style={styles.walletHint}>{showProviders ? "إخفاء −" : "عرض + "}</Text>
+          </Pressable>
+          {showProviders ? <>
+            {providersStatus === "loading" ? <ActivityIndicator color={theme.actionBackground} /> : null}
+            {providersStatus === "ready" && providers.length ? <View style={styles.providersGrid}>{providers.map((provider) => <View key={provider.key} style={styles.providerItem}>
+              {provider.logoUri ? <Image source={{ uri: providerLogoUri(provider.logoUri) }} accessibilityLabel={"شعار " + provider.displayNameAr} style={styles.providerLogo} resizeMode="contain" /> : <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[5]} />}
+              <Text style={styles.providerName} numberOfLines={2}>{provider.displayNameAr}</Text>
+            </View>)}</View> : null}
+            {providersStatus === "ready" && !providers.length ? <Text style={styles.walletHint}>لا يوجد مزود دفع متصل.</Text> : null}
+            {providersStatus === "error" ? <BthwaniButton label="إعادة قراءة المزودين" variant="secondary" onPress={() => void loadProviders()} /> : null}
+          </> : null}
+        </BthwaniSurface>
+      </View>
     );
   }
 
@@ -372,7 +388,23 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMi
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    walletPanel: { borderRadius: radius.xl, gap: spacing[4], marginTop: spacing[3], padding: spacing[3] },
+
+    walletDashboard: { gap: spacing[3], paddingBottom: spacing[5] },
+    walletPageTitle: { ...typography.titleLg, color: theme.color, textAlign: "right" },
+    walletPanel: { borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] },
+    walletHeroAmount: { ...typography.hero, color: theme.color, textAlign: "right" },
+    walletHeroNote: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
+    walletNotice: { padding: spacing[3], backgroundColor: theme.actionSoft, borderRadius: radius.md },
+    walletHint: { ...typography.caption, color: theme.colorMuted, lineHeight: 19 },
+    walletHistoryCard: { gap: spacing[2], borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, padding: spacing[4] },
+    walletSectionTitle: { gap: spacing[1], paddingBottom: spacing[2] },
+    walletMovement: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing[3], paddingVertical: spacing[3], borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline },
+    walletMovementCopy: { flex: 1, minWidth: 0, gap: spacing[1] },
+    walletMovementTitle: { ...typography.bodyStrong, color: theme.color },
+    walletPositive: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "left" },
+    walletNeutral: { ...typography.bodySm, color: theme.colorMuted, textAlign: "left" },
+    walletProviderToggle: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 44 },
+
     providersSection: { gap: spacing[3] },
     providersTitle: { ...typography.titleSm, color: theme.color, textAlign: "right" },
     providersGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: spacing[2] },

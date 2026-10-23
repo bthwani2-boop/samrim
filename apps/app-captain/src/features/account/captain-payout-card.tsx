@@ -120,9 +120,10 @@ export function CaptainPayoutCard() {
   const specifiedReady = Number.isSafeInteger(specifiedIntakeAmount) &&
     specifiedIntakeAmount > 0 && specifiedIntakeAmount <= eligible;
 
-  const metrics = state ? <Text style={styles.available}>
-    المتاح للسحب: {formatMoney(state.eligibleAvailableMinor, state.currency)}
-  </Text> : null;
+  const metrics = state ? <View style={styles.availableBox}>
+    <Text style={styles.muted}>المبلغ المؤهل للسحب</Text>
+    <Text style={styles.availableAmount}>{formatMoney(state.eligibleAvailableMinor, state.currency)}</Text>
+  </View> : null;
 
   const intakeConfirmAmount = confirmIntakeMode === "SPECIFIED" ? specifiedIntakeAmount : eligible;
   const intakeConfirmDescription = confirmIntakeMode && state
@@ -186,7 +187,9 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     card: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
     title: { ...typography.titleSm, color: theme.color },
-    available: { ...typography.bodyStrong, color: theme.color },    muted: { ...typography.bodySm, color: theme.colorMuted },
+    available: { ...typography.bodyStrong, color: theme.color },
+    availableBox: { gap: spacing[2], padding: spacing[3], borderRadius: radius.md, backgroundColor: theme.surfaceRaised },
+    availableAmount: { ...typography.titleLg, color: theme.color },    muted: { ...typography.bodySm, color: theme.colorMuted },
     input: { ...typography.bodySm, backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 48, paddingHorizontal: spacing[3] },
     partialToggle: { minHeight: 44, justifyContent: "center", paddingHorizontal: spacing[2] },
     notice: { ...typography.bodySm, color: theme.interactiveText },

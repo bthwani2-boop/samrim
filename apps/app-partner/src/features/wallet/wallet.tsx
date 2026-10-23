@@ -1,7 +1,7 @@
 import { spacing, typography } from "@bthwani/design-system";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useMemo, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { PartnerFinancialSummaryCard } from "../account/partner-financial-summary";
 import { PartnerPayoutCard } from "../account/partner-payout-card";
 import { StorePayoutRecipientsCard } from "./store-payout-recipients-card";
@@ -22,25 +22,20 @@ export default function PartnerWallet() {
   const canRequestPayout = storeScope.stores.some((store) => store.owned || store.permissions.includes("payout_request"));
   const ownsAnyStore = storeScope.stores.some((store) => store.owned);
 
+
   const actionButton = (action: WalletAction, label: string) => {
     const expanded = openAction === action;
-    return <Pressable key={action} accessibilityRole="button"
-      accessibilityLabel={expanded ? `إغلاق ${label}` : `فتح ${label}`}
-      accessibilityState={{ expanded }}
-      onPress={() => setOpenAction((current) => current === action ? null : action)}
-      style={[styles.choice, expanded && styles.choiceSelected]}>
-      <Text style={expanded ? styles.choiceTextSelected : styles.choiceText}>
-        {expanded ? `إغلاق ${label} −` : `${label} +`}
-      </Text>
-    </Pressable>;
+    return <BthwaniButton key={action} label={expanded ? "إغلاق " + label : label}
+      variant={action === "recipients" ? "secondary" : "primary"}
+      onPress={() => setOpenAction((current) => current === action ? null : action)} />;
   };
 
   return <View style={[styles.container, { gap: spacing[3], paddingTop: spacing[3] }]} accessibilityLabel="محفظة الشريك">
-    <Text accessibilityRole="header" style={{ ...typography.titleMd, color: theme.color }}>المحفظة</Text>
+    <Text accessibilityRole="header" style={{ ...typography.titleMd, color: theme.color }}>محفظة الشريك</Text>
     {canReadFinance ? <PartnerFinancialSummaryCard key={`finance:${financeScopeKey}`} /> : null}
     {canRequestPayout || ownsAnyStore ? <View style={styles.choiceRow}>
-      {canRequestPayout ? actionButton("payout", "طلب صرف") : null}
-      {ownsAnyStore ? actionButton("recipients", "حسابات الاستلام") : null}
+      {canRequestPayout ? actionButton("payout", "طلب صرف المستحقات") : null}
+      {ownsAnyStore ? actionButton("recipients", "جهات الصرف") : null}
     </View> : null}
     {openAction === "payout" && canRequestPayout ? <PartnerPayoutCard key={`payout:${payoutScopeKey}`} /> : null}
     {openAction === "recipients" && ownsAnyStore ? <StorePayoutRecipientsCard key={`recipients:${ownerScopeKey}`} /> : null}
