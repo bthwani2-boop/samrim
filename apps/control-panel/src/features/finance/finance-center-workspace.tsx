@@ -15,7 +15,6 @@ import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adapti
 import { PageHeader } from "../../shell/page-header";
 import { SettlementIntakeInbox } from "./settlement-intake-inbox";
 import { useReadOnReturn } from "../shared/use-read-on-return";
-import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 const CashCustodyWorkspace = dynamic(() => import("./cash-custody-workspace").then((module) => module.CashCustodyWorkspace));
 const PartnerEarningsWorkspace = dynamic(() => import("./partner-earnings-workspace").then((module) => module.PartnerEarningsWorkspace));
@@ -26,7 +25,6 @@ const StoreTypeCommissionDefaultWorkspace = dynamic(() => import("./store-type-c
 
 type Source = "custody" | "commissions" | "batches" | "withdrawals";
 type Workflow = "custody" | "commissions" | "batches" | "withdrawals" | "settlement-partner" | "settlement-captain" | "settlement-field" | "agreements";
-type Filter = "attention" | "all" | "settlements" | Source;
 type FinancialRow = Readonly<{
   key: string;
   source: Source;
@@ -173,7 +171,7 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
     && state.identity.permissions?.includes("finance") ? state.identity.subject : null;
   const [snapshot, setSnapshot] = useState<{ actor: string; results: Partial<Record<Source, ReadResult>> } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState<Filter>("attention");
+  const [deskMode, setDeskMode] = useState<"work" | "balances" | "records">("work");
   const [search, setSearch] = useState("");
   const [intakeCount, setIntakeCount] = useState<number | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
@@ -215,11 +213,11 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
   const rows = useMemo(() => sources.flatMap((source) => visible?.[source.source]?.items ?? [])
     .sort((a, b) => a.priority - b.priority || (a.date ?? "").localeCompare(b.date ?? "") || a.key.localeCompare(b.key)), [visible]);
   const displayedRows = rows.filter((row) =>
-    (filter === "all" || (filter === "attention" && row.priority <= 2) || row.source === filter) &&
+    (deskMode === "work" ? row.priority <= 2 : deskMode === "balances" ? (row.source === "custody" || row.source === "commissions") : (row.source === "batches" || row.source === "withdrawals")) &&
     [row.subject, row.reference, row.category, row.state, row.nextStep, row.amount]
       .some((value) => value.toLocaleLowerCase("ar").includes(search.toLocaleLowerCase("ar").trim())),
   );
-  const showIntakes = filter === "all" || filter === "attention" || filter === "settlements";
+  const showIntakes = deskMode === "work";
   const sourceAttentionCount = rows.filter((row) => row.priority <= 2).length;
   const shownIntakes = showIntakes && (intakeCount ?? 0) > 0;
 
@@ -272,35 +270,35 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
       </div>
       <FinanceTask workflow={activeWorkflow} row={activeRow} query={initialQuery} />
     </div> : <>
-      <div className="finance-desk-summary">
-        <div><strong>{intakeCount === null || !hasData ? "—" : (intakeCount + sourceAttentionCount).toLocaleString("ar-YE")}</strong><span>تحتاج متابعة · المعروض</span></div>
-        <div><strong>{hasData ? rows.length.toLocaleString("ar-YE") : "—"}</strong><span>معاملات من المصادر المحمّلة</span></div>
-        {errors.length ? <div className="finance-desk-source-warning" role="status"><strong>{errors.length.toLocaleString("ar-YE")}</strong><span>مصادر تتطلب إعادة المحاولة</span></div> : null}
+      <nav className="finance-desk-modes" aria-label="مساحات العمل المالية">
+        {([
+          ["work", "العمل اليوم", "القرارات التي تحتاج تدخلًا"],
+          ["balances", "الأرصدة والمتابعة", "ذمم وعهد ومبالغ قيد المتابعة"],
+          ["records", "السجل والمطابقة", "المعاملات وأدلة التحويل"],
+        ] as const).map(([mode, name, help]) => <button key={mode} type="button"
+          className="finance-desk-mode" aria-current={deskMode === mode ? "page" : undefined}
+          onClick={() => { setDeskMode(mode); setFocusedKey(null); setSearch(""); }}>
+          <strong>{name}</strong><span>{help}</span>
+        </button>)}
+      </nav>
+      <div className="finance-desk-overview" aria-label="مؤشرات القائمة المحملة">
+        <div><span>تحتاج انتباهك</span><strong>{intakeCount === null || !hasData ? "—" : (intakeCount + sourceAttentionCount).toLocaleString("ar-YE")}</strong><small>ضمن السجلات المعروضة فقط</small></div>
+        <div><span>سجلات قيد المتابعة</span><strong>{hasData ? rows.length.toLocaleString("ar-YE") : "—"}</strong><small>معاينة من المصادر المتاحة</small></div>
+        <div><span>اتصال المصادر</span><strong>{!hasData ? "—" : errors.length ? "تحتاج تحققًا" : "متاحة"}</strong><small>{errors.length ? errors.length.toLocaleString("ar-YE") + " مصدر تعذر تحميله" : "لا تعني مطابقة الأموال"}</small></div>
       </div>
       <div className="finance-desk-controls">
         <label htmlFor="finance-desk-search" className="finance-desk-search">
           <span className="finance-desk-search-icon" aria-hidden="true">⌕</span>
           <input id="finance-desk-search" type="search" autoComplete="off" maxLength={128}
-            aria-label="البحث في المعاملات المالية المحمّلة"
-            placeholder="ابحث عن معاملة أو مستفيد أو مرجع · النتائج المحمّلة"
+            aria-label="البحث في المعاملات المالية المحملة"
+            placeholder="ابحث عن مستفيد أو مرجع في السجلات المعروضة"
             value={search} onChange={(event) => setSearch(event.target.value)} />
         </label>
-        <fieldset className="finance-desk-filterbar" aria-label="نوع السجلات المالية">
-          {([
-            ["attention", "تحتاج مراجعة"],
-            ["all", "الكل"],
-            ["settlements", "طلبات التسوية"],
-            ["custody", "العهد النقدية"],
-            ["commissions", "العمولات"],
-            ["batches", "دفعات التحويل"],
-            ["withdrawals", "السحوبات"],
-          ] as const).map(([value, label]) => <button type="button" key={value}
-            aria-pressed={filter === value} data-selected={filter === value ? "true" : undefined}
-            className="finance-desk-chip" onClick={() => setFilter(value)}>
-            {label}{value === "attention" && intakeCount !== null && hasData && intakeCount + sourceAttentionCount > 0
-              ? <bdi dir="ltr" className="finance-desk-chip-count">{(intakeCount + sourceAttentionCount).toLocaleString("ar-YE")}</bdi> : null}
-          </button>)}
-        </fieldset>
+        <p className="finance-desk-context">{deskMode === "work"
+          ? "مرتبة بحسب الحاجة إلى التدخل. يُعرض سبب الحالة قبل أي قرار."
+          : deskMode === "balances"
+          ? "قيم الذمم والعهد مؤشرات متابعة؛ راجع السجل الأصلي قبل التسوية."
+          : "هذه معاينة محدودة، وليست دفتر الأستاذ أو كشف المزود الكامل."}</p>
       </div>
       {errors.length > 0 ? <div className="managed-status managed-status-warning" role="alert">
         <strong>تعذر تحميل بعض المصادر المالية</strong>
@@ -309,8 +307,8 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
       </div> : null}
       <section className="finance-desk-register" aria-label="المعاملات المالية">
         <div className="finance-desk-register-head">
-          <div><h2>{filter === "attention" ? "تحتاج مراجعتك" : "المعاملات المالية"}</h2>
-            <p>النتائج مرتبة حسب الأولوية · كل إجراء يُنفذ من مصدره المعتمد</p></div>
+          <div><h2>{deskMode === "work" ? "تحتاج قرارك" : deskMode === "balances" ? "الأرصدة والعهد" : "المعاملات والمطابقة"}</h2>
+            <p>{deskMode === "work" ? "ابدأ بالأعلى أولوية؛ كل إجراء يعود إلى سجله المعتمد." : "المعاينة محدودة؛ افتح السجل الأصلي للتفاصيل والإجراءات."}</p></div>
           <details className="finance-desk-specialized">
             <summary>السجلات المتخصصة</summary>
             <div className="finance-desk-specialized-menu">
@@ -321,7 +319,7 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
         </div>
         <SettlementIntakeInbox search={search} visible={showIntakes} onCountChange={setIntakeCount} />
         {loading && !hasData ? <p role="status" className="collection-state">جارٍ قراءة السجلات المالية…</p> : null}
-        {hasData && filter !== "settlements" ? <div className="finance-desk-table-area">
+        {hasData ? <div className="finance-desk-table-area">
           {displayedRows.length > 0 ? <>
             <div className="finance-desk-table-caption">سجلات المصادر الأخرى <span>معاينة محدودة · 25 سجلًا كحد أقصى لكل مصدر</span></div>
             <div className="finance-center-table-scroll">
@@ -350,12 +348,12 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
           </> : null}
         </div> : null}
         {hasData && !loading && !shownIntakes && displayedRows.length === 0 && intakeCount !== null && !errors.length
-          ? <div className="finance-desk-empty"><strong>لا توجد معاملات تحتاج تدخلًا هنا</strong>
-              <p>جرّب «الكل» أو استخدم البحث أو افتح السجلات المتخصصة.</p></div> : null}
+          ? <div className="finance-desk-empty"><strong>{deskMode === "work" ? "لا توجد حالات أخرى تتطلب قرارك" : deskMode === "balances" ? "لا توجد ذمم أو عهد ضمن السجلات المحمّلة" : "لا توجد حركات ضمن المعاينة الحالية"}</strong>
+              <p>يمكنك البحث في المعاينة أو فتح السجل المتخصص لقراءة جميع الصفحات.</p></div> : null}
         <div className="finance-desk-register-foot">
           <span>{more.length ? "بعض المصادر تحتوي صفحات إضافية؛ افتح سجلها المتخصص للبحث الكامل." :
             "هذه قائمة عمل مجمّعة من سجلات محدودة، وليست إجمالي دفتر الأستاذ."}</span>
-          {(search || filter !== "attention") ? <button type="button" className="button button-quiet" onClick={() => { setFilter("attention"); setSearch(""); }}>إعادة العرض الافتراضي</button> : null}
+          {search ? <button type="button" className="button button-quiet" onClick={() => setSearch("")}>مسح البحث</button> : null}
         </div>
       </section>
     </>}

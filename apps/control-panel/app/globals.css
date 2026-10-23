@@ -3300,3 +3300,21 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   .wallet-provider-avatar { inline-size: 42px; block-size: 42px; }
   .wallet-provider-settings { padding: 12px; }
 }
+
+/* Finance decision desk: three distinct tasks, one calm work surface. */
+@layer composition {
+  .finance-desk-modes { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; border-block-end:1px solid var(--border-subtle); padding-block-end:12px; }
+  .finance-desk-mode { display:grid; gap:3px; min-inline-size:0; min-block-size:68px; padding:12px 15px; border:1px solid var(--border-subtle); border-radius:9px; background:var(--surface-base); color:var(--color-primary); text-align:start; }
+  .finance-desk-mode strong { font-size:14px; font-weight:750; }
+  .finance-desk-mode span { color:var(--text-muted); font-size:12px; }
+  .finance-desk-mode:hover { border-color:var(--border-strong); background:var(--surface-muted); }
+  .finance-desk-mode[aria-current="page"] { border-color:var(--interactive-text); box-shadow:inset -3px 0 var(--interactive-text); }
+  .finance-desk-overview { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-base); overflow:hidden; }
+  .finance-desk-overview > div { display:grid; align-content:center; min-inline-size:0; gap:2px; min-block-size:88px; padding:12px 17px; border-inline-end:1px solid var(--border-subtle); }
+  .finance-desk-overview > div:last-child { border:0; }
+  .finance-desk-overview span,.finance-desk-overview small { color:var(--text-muted); font-size:12px; }
+  .finance-desk-overview strong { font-size:23px; font-weight:750; line-height:1.4; font-variant-numeric:tabular-nums; }
+  .finance-desk-overview > div:last-child strong { font-size:15px; }
+  .finance-desk-context { color:var(--text-muted); font-size:12px; margin:0; }
+  @media(max-width:720px){ .finance-desk-modes { grid-template-columns:1fr; gap:6px; } .finance-desk-mode { min-block-size:52px; padding:8px 12px; } .finance-desk-mode span { display:none; } .finance-desk-overview > div { padding:9px; min-block-size:76px; } .finance-desk-overview strong { font-size:19px; } .finance-desk-overview small { font-size:11px; } }
+}
