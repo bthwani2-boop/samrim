@@ -7,6 +7,7 @@ import (
 )
 
 type CreatePaymentRequest struct {
+	ProviderKey       string
 	IntentID          string
 	ExternalReference string
 	AmountMinor       int64
@@ -20,6 +21,7 @@ type CreatePaymentResult struct {
 }
 
 type PaymentInquiryRequest struct {
+	ProviderKey       string
 	IntentID          string
 	ProviderReference string
 }

@@ -1,7 +1,7 @@
 {
   "request": {
     "method": "POST",
-    "urlPath": "/v1/payments",
+    "urlPathPattern": "/v1/providers/wallet_provider_[a-z0-9_]{2,60}/payments",
     "bodyPatterns": [
       {
         "matchesJsonPath": "$.intentId"
@@ -22,6 +22,6 @@
     "headers": {
       "Content-Type": "application/json"
     },
-    "body": "{\"providerReference\":\"WM-{{jsonPath request.body '$.externalReference'}}\",\"state\":\"PENDING_PROVIDER\"}"
+    "body": "{\"providerKey\":\"{{request.pathSegments.[2]}}\",\"providerReference\":\"WM-{{request.pathSegments.[2]}}-{{jsonPath request.body '$.externalReference'}}\",\"state\":\"PENDING_PROVIDER\"}"
   }
 }

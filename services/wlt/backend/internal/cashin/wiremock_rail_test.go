@@ -13,21 +13,22 @@ import (
 
 func TestWireMockRailContract(t *testing.T) {
 	var createCount int
+	const providerKey = "wallet_provider_test_alpha"
 	var inquiryOutcome = "UNKNOWN"
 	var inquiryFee int64
 	var mismatch bool
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/payments":
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/providers/"+providerKey+"/payments":
 			createCount++
 			if r.Header.Get("Idempotency-Key") != "ext-123" {
 				http.Error(w, "missing idempotency", http.StatusBadRequest)
 				return
 			}
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"providerReference":"WM-ext-123","state":"PENDING_PROVIDER"}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/payments/WM-ext-123":
+			_, _ = w.Write([]byte(`{"providerKey":"wallet_provider_test_alpha","providerReference":"WM-wallet_provider_test_alpha-ext-123","state":"PENDING_PROVIDER"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/providers/"+providerKey+"/payments/WM-"+providerKey+"-ext-123":
 			if inquiryOutcome == "HTTP_500" {
 				http.Error(w, "provider error", http.StatusInternalServerError)
 				return
@@ -36,15 +37,15 @@ func TestWireMockRailContract(t *testing.T) {
 				time.Sleep(150 * time.Millisecond)
 				return
 			}
-			reference := "WM-ext-123"
+			reference := "WM-" + providerKey + "-ext-123"
 			if mismatch {
 				reference = "WM-other"
 			}
 			transaction := ""
 			if inquiryOutcome == "SUCCESS" {
-				transaction = "WM-TXN-ext-123"
+				transaction = "WM-TXN-" + providerKey + "-ext-123"
 			}
-			_, _ = fmt.Fprintf(w, `{"providerReference":%q,"outcome":%q,"providerTransactionReference":%q,"providerFeeMinor":%d}`, reference, inquiryOutcome, transaction, inquiryFee)
+			_, _ = fmt.Fprintf(w, `{"providerKey":%q,"providerReference":%q,"outcome":%q,"providerTransactionReference":%q,"providerFeeMinor":%d}`, providerKey, reference, inquiryOutcome, transaction, inquiryFee)
 		default:
 			http.NotFound(w, r)
 		}
@@ -54,17 +55,17 @@ func TestWireMockRailContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := CreatePaymentRequest{IntentID: "funding-123", ExternalReference: "ext-123", AmountMinor: 10000, Currency: "YER"}
+	input := CreatePaymentRequest{ProviderKey: providerKey, IntentID: "funding-123", ExternalReference: "ext-123", AmountMinor: 10000, Currency: "YER"}
 	for i := 0; i < 2; i++ {
 		got, err := rail.CreatePayment(context.Background(), input)
-		if err != nil || got.ProviderReference != "WM-ext-123" || got.State != "PENDING_PROVIDER" {
+		if err != nil || got.ProviderReference != "WM-"+providerKey+"-ext-123" || got.State != "PENDING_PROVIDER" {
 			t.Fatalf("create attempt %d: %+v err=%v", i, got, err)
 		}
 	}
 	if createCount != 2 {
 		t.Fatalf("retry request count = %d", createCount)
 	}
-	inquiry := PaymentInquiryRequest{IntentID: input.IntentID, ProviderReference: "WM-ext-123"}
+	inquiry := PaymentInquiryRequest{ProviderKey: providerKey, IntentID: input.IntentID, ProviderReference: "WM-" + providerKey + "-ext-123"}
 	for _, test := range []struct {
 		outcome string
 		fee     int64
@@ -76,7 +77,7 @@ func TestWireMockRailContract(t *testing.T) {
 		if err != nil || got.Outcome != test.outcome || got.ProviderFeeMinor != test.fee {
 			t.Fatalf("inquiry %s: %+v err=%v", test.outcome, got, err)
 		}
-		if test.outcome == "SUCCESS" && got.ProviderTransactionReference != "WM-TXN-ext-123" {
+		if test.outcome == "SUCCESS" && got.ProviderTransactionReference != "WM-TXN-"+providerKey+"-ext-123" {
 			t.Fatalf("settled provider transaction reference = %q", got.ProviderTransactionReference)
 		}
 	}
@@ -118,13 +119,13 @@ func TestWireMockRailConfigurationFailsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = rail.CreatePayment(context.Background(), CreatePaymentRequest{
-		IntentID: "i", ExternalReference: "e", AmountMinor: 0, Currency: "YER",
+		ProviderKey: "wallet_provider_test_alpha", IntentID: "i", ExternalReference: "e", AmountMinor: 0, Currency: "YER",
 	})
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("invalid amount error = %v", err)
 	}
 	_, err = rail.InquirePayment(context.Background(), PaymentInquiryRequest{
-		IntentID: "i", ProviderReference: "WM-../escape",
+		ProviderKey: "wallet_provider_test_alpha", IntentID: "i", ProviderReference: "WM-../escape",
 	})
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("path escape error = %v", err)
