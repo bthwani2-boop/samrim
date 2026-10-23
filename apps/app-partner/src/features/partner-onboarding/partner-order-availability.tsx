@@ -1,12 +1,11 @@
-import { radius, spacing } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
+import { radius, spacing, typography } from "@bthwani/design-system";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { type PartnerStoreOperationalAvailabilityResponse, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { AppState, Pressable, Text, View } from "react-native";
+import { AppState, Pressable, StyleSheet, Text, View } from "react-native";
 import { readOwnStoreOperationalAvailability, updateOwnStoreOperationalAvailability } from "./store-readback-client";
-import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 
 type UpdateAttempt = Readonly<{ input: StoreOperationalAvailabilityRequest; idempotencyKey: string; correlationID: string }>;
 type AvailabilityRead = "loading" | "error" | PartnerStoreOperationalAvailabilityResponse;
@@ -22,7 +21,7 @@ function httpStatus(error: unknown): number | null {
 export function PartnerOrderAvailability({ storeID }: { storeID: string }) {
   const theme = useAppearanceTheme();
   const router = useRouter();
-  const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
+  const styles = useMemo(() => StyleSheet.create({ pill: { minHeight: 30, maxWidth: 156, borderRadius: radius.lg, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingHorizontal: 9 }, label: { ...typography.caption, fontWeight: "800" } }), []);
   const [status, setStatus] = useState<AvailabilityRead>("loading");
   const [readError, setReadError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -65,8 +64,6 @@ export function PartnerOrderAvailability({ storeID }: { storeID: string }) {
   const paused = ready && status.availability.paused &&
     (!status.availability.pauseUntil || Date.parse(status.availability.pauseUntil) > Date.now());
   const accepting = ready && status.orderabilityByMode.some((item) => item.state === "OPEN_FOR_ORDERS");
-  const scheduledClosed = ready && status.orderabilityByMode.some((item) => item.state === "CLOSED_BY_SCHEDULE");
-  const operationallyUnavailable = ready && status.orderabilityByMode.some((item) => item.state === "OPERATIONALLY_UNAVAILABLE");
 
   async function resumeOrders() {
     if (!ready || !paused || busyRef.current) return;
@@ -126,41 +123,22 @@ export function PartnerOrderAvailability({ storeID }: { storeID: string }) {
     }
   }
 
-  if (status === "loading") return null;
-  if (status === "error") return <View style={{ gap: spacing[1] }}>
-    <Text accessibilityRole="alert" style={styles.error}>تعذر التحقق من استقبال الطلبات.</Text>
-    <BthwaniButton variant="secondary" label="إعادة المحاولة" onPress={() => void readAvailability()} />
-  </View>;
-
-  if (!paused && !readError) return <Pressable accessibilityRole="button" accessibilityLabel="حالة استقبال الطلبات، إدارة التشغيل" onPress={() => router.push({ pathname: "/store", params: { section: "operations" } } as Href)} style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 13, borderRadius: 17, backgroundColor: accepting ? theme.actionSoft : theme.warningSoft, borderWidth: 1, borderColor: accepting ? theme.brandAction : theme.warning }}>
-    <View style={{ backgroundColor: theme.surface, borderRadius: 11, padding: 11 }}><BthwaniIcon name="store" color={accepting ? theme.brandAction : theme.warning} size={22} /></View>
-    <View style={{ flex: 1, alignItems: "flex-start", gap: 3 }}><Text style={[styles.value, { color: theme.color }]}>{accepting ? "● المتجر مفتوح" : scheduledClosed ? "المتجر مغلق" : "استقبال الطلبات غير متاح"}</Text><Text numberOfLines={2} style={styles.muted}>{accepting ? "جاهز لاستقبال الطلبات الآن" : scheduledClosed ? "مغلق حسب ساعات العمل" : operationallyUnavailable ? "راجع جاهزية المتجر" : "لا يستقبل طلبات جديدة"}</Text></View>
-    <View style={{ paddingVertical: 10, paddingHorizontal: 9, borderRadius: 10, backgroundColor: theme.surface }}><Text style={{ color: theme.interactiveText, fontWeight: "700", fontSize: 12 }}>إدارة التشغيل</Text></View>
+  const stable = status !== "loading" && status !== "error";
+  const label = error ? "تعذر الاستئناف" : status === "loading" ? "جارٍ التحقق" : status === "error" || readError ? "حالة غير مؤكدة" : paused ? "متوقف" : accepting ? "مفتوح" : "مغلق";
+  const tone = status === "loading" || status === "error" || readError ? theme.warning : accepting && !paused ? theme.success : theme.warning;
+  return <Pressable
+    accessibilityRole="button"
+    accessibilityLabel={paused ? "استئناف استقبال الطلبات" : stable && !readError ? "المتجر " + label + "، إدارة التشغيل" : "إعادة قراءة حالة المتجر"}
+    accessibilityState={{ disabled: busy }}
+    disabled={busy}
+    onPress={() => {
+      if (paused) void resumeOrders();
+      else if (status === "error" || readError || status === "loading") void readAvailability();
+      else router.push({ pathname: "/store", params: { section: "operations" } } as Href);
+    }}
+    style={[styles.pill, { borderColor: tone, backgroundColor: theme.surface }]}
+  >
+    <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: tone }} />
+    <Text numberOfLines={1} style={[styles.label, { color: tone }]}>{busy ? "جارٍ التحديث" : label}</Text>
   </Pressable>;
-
-  return <View accessibilityLabel="حالة استقبال الطلبات" style={{
-    backgroundColor: theme.surfaceInset, borderRadius: radius.md,
-    padding: spacing[3], gap: spacing[2],
-  }}>
-    {paused ? <View style={[styles.headerRow, { alignItems: "center" }]}>
-      <View style={[styles.headerCopy, { flex: 1 }]}>
-        <Text style={styles.value}>المتجر متوقف مؤقتًا</Text>
-        <Text style={styles.muted}>لن تصل طلبات جديدة حتى الاستئناف</Text>
-      </View>
-      <BthwaniButton
-        label={pending ? "التحقق من الاستئناف" : "استئناف الطلبات"}
-        disabled={busy}
-        busy={busy}
-        variant="secondary"
-        onPress={() => void resumeOrders()}
-      />
-    </View> : <Text style={styles.muted}>
-      {accepting ? "تعذر تحديث حالة الاستقبال؛ آخر حالة مؤكدة: يستقبل الطلبات." :
-        scheduledClosed ? "المتجر مغلق حسب ساعات العمل" :
-        operationallyUnavailable ? "استقبال الطلبات غير متاح حاليًا" :
-          "لا يستقبل المتجر طلبات جديدة حاليًا"}
-    </Text>}
-    {readError ? <BthwaniButton label="إعادة المحاولة" variant="quiet" onPress={() => void readAvailability()} /> : null}
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-  </View>;
 }

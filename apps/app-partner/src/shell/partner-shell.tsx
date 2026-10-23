@@ -1,5 +1,7 @@
 import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniIcon, BthwaniIconButton, BthwaniSearchField, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type Href, useRouter } from "expo-router";
+import { PartnerOrderAvailability } from "../features/partner-onboarding/partner-order-availability";
 
 import { type PropsWithChildren, useEffect, useMemo, useRef, useState } from "react";
 import { type ColorValue, Modal, Pressable, ScrollView, StyleSheet, Text, type TextInput, View } from "react-native";
@@ -24,7 +26,7 @@ export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>, 
     headerShown: true,
     header: ({ route: headerRoute, navigation }: { route: { name: string; params?: unknown }; navigation: unknown }) => {
       const params = headerRoute.params as { focus?: string | string[]; q?: string | string[] } | undefined;
-      return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><PartnerHeader title={headerRoute.name === "orders" ? "الطلبات" : headerRoute.name === "products" ? "المنتجات" : headerRoute.name === "wallet" ? "المحفظة" : headerRoute.name === "account" ? "الحساب" : headerRoute.name === "onboarding" ? "الانضمام" : headerRoute.name === "store" ? ((headerRoute.params as { section?: string } | undefined)?.section === "promotions" ? "العروض" : (headerRoute.params as { section?: string } | undefined)?.section === "team" ? "الفريق" : (headerRoute.params as { section?: string } | undefined)?.section === "settings" ? "الصور" : "التشغيل") : "المزيد"} canSearchOrders={canSearchOrders && headerRoute.name === "orders"} focus={params?.focus} searchQuery={params?.q} navigation={navigation as PartnerSearchNavigation} styles={styles} /></SafeAreaView>;
+      return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><PartnerHeader title={headerRoute.name === "orders" ? "الطلبات" : headerRoute.name === "products" ? ((headerRoute.params as { panel?: string } | undefined)?.panel === "tools" ? "الكتالوج" : "المنتجات") : headerRoute.name === "wallet" ? "المحفظة" : headerRoute.name === "account" ? "الحساب" : headerRoute.name === "onboarding" ? "الانضمام" : headerRoute.name === "store" ? ((headerRoute.params as { section?: string } | undefined)?.section === "promotions" ? "العروض" : (headerRoute.params as { section?: string } | undefined)?.section === "team" ? "الفريق" : (headerRoute.params as { section?: string } | undefined)?.section === "settings" ? "الصور" : "التشغيل") : "المزيد"} isOrders={headerRoute.name === "orders"} isSubpage={["store", "account", "onboarding"].includes(headerRoute.name)} canSearchOrders={canSearchOrders && headerRoute.name === "orders"} focus={params?.focus} searchQuery={params?.q} navigation={navigation as PartnerSearchNavigation} styles={styles} /></SafeAreaView>;
     },
     tabBarPosition: desktopWeb ? "right" as const : "bottom" as const,
     tabBarVariant: desktopWeb ? "material" as const : "uikit" as const,
@@ -41,8 +43,9 @@ export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>, 
   });
 }
 
-function PartnerHeader({ title, canSearchOrders, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { title: string; canSearchOrders: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation: PartnerSearchNavigation; styles: ReturnType<typeof createStyles> }) {
+function PartnerHeader({ title, isOrders, isSubpage, canSearchOrders, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { title: string; isOrders: boolean; isSubpage: boolean; canSearchOrders: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation: PartnerSearchNavigation; styles: ReturnType<typeof createStyles> }) {
   const theme = useAppearanceTheme();
+  const router = useRouter();
   const { stores, selectedStore, selectStore } = usePartnerStoreScope();
   const [pickerOpen, setPickerOpen] = useState(false);
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
@@ -62,8 +65,9 @@ function PartnerHeader({ title, canSearchOrders, focus: rawFocus, searchQuery: r
         <BthwaniSearchField accessibilityLabel="البحث في الطلبات" autoCapitalize="none" autoCorrect={false} containerStyle={styles.headerSearchField} inputRef={searchInputRef} onChangeText={(value) => navigation.setParams({ q: value })} onClear={() => navigation.setParams({ q: "" })} placeholder="ابحث في الطلبات" returnKeyType="search" value={searchQuery} />
         <BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => navigation.setParams({ focus: "", q: "" })} size={sizing.controlMd} tone="soft" />
       </View> : <>
-        <Text accessibilityRole="header" style={styles.headerTitle}>{title}</Text>
+        <View style={styles.headerMain}><Text accessibilityRole="header" numberOfLines={1} style={styles.headerTitle}>{title}</Text>{isOrders && selectedStore && (selectedStore.owned || selectedStore.permissions.includes("store_operations")) ? <PartnerOrderAvailability key={selectedStore.id} storeID={selectedStore.id} /> : null}</View>
         <View style={styles.headerActions}>
+          {isSubpage ? <BthwaniIconButton icon="back" label="رجوع" onPress={() => router.replace("/more" as Href)} size={sizing.controlSm} tone="soft" /> : null}
           {canSearchOrders ? <BthwaniIconButton icon="search" label="البحث في الطلبات" onPress={() => navigation.navigate("orders", { focus: "search" })} size={sizing.controlMd} tone="soft" /> : null}
           {stores.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="تبديل المتجر" onPress={() => setPickerOpen(true)} style={styles.storePickerButton}><BthwaniIcon name="store" size={20} color={theme.brandAction} /><Text style={styles.pickerArrow}>⌄</Text></Pressable> : null}
         </View>
@@ -84,8 +88,9 @@ function PartnerHeader({ title, canSearchOrders, focus: rawFocus, searchQuery: r
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     headerSafeArea: { backgroundColor: theme.surface },
-    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, flexDirection: "row", gap: spacing[2], justifyContent: "space-between", minHeight: 48, paddingHorizontal: spacing[4], paddingVertical: 5 },
-    headerTitle: { ...typography.titleLg, fontSize: 23, fontWeight: "800", color: theme.color, flex: 1 },
+    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, flexDirection: "row", gap: spacing[2], justifyContent: "space-between", height: 50, paddingHorizontal: spacing[4] },
+    headerMain: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 9 },
+    headerTitle: { ...typography.titleSm, fontSize: 20, fontWeight: "800", color: theme.color, flexShrink: 1 },
     storePickerButton: { flexDirection: "row", alignItems: "center", gap: 3, minHeight: 38, paddingHorizontal: 9, borderRadius: radius.sm, backgroundColor: theme.actionSoft },
     pickerArrow: { ...typography.titleMd, color: theme.colorMuted },
     pickerBackdrop: { backgroundColor: "rgba(0,0,0,0.38)", flex: 1, justifyContent: "center", padding: spacing[5] },

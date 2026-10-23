@@ -2,7 +2,6 @@ import { BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { OrderManagement } from "../order-management/order-management";
-import { PartnerOrderAvailability } from "./partner-order-availability";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
@@ -31,8 +30,6 @@ export function PartnerOrders() {
     </View> : null}
     {!aggregateMode && (permittedStores.length > 1 || !canManageOrders) ? <PartnerStoreScopeSelector requiredPermissions={["orders"]} /> : null}
     {!aggregateMode && selectedStore && canManageOrders ? <>
-      {(selectedStore.owned || selectedStore.permissions.includes("store_operations"))
-        ? <PartnerOrderAvailability key={"availability:" + selectedStore.id} storeID={selectedStore.id} /> : null}
       <OrderManagement key={"orders:" + selectedStore.id} storeId={selectedStore.id} />
     </> : null}
     {aggregateMode ? <OrderManagement key="all-authorized" /> : null}
