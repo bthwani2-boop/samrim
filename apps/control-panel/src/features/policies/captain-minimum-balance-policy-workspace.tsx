@@ -52,16 +52,16 @@ export function CaptainMinimumBalancePolicyWorkspace() {
    const body=await response.json() as {error?:{message?:string}};
    if(!response.ok)throw new Error(body.error?.message||"تعذر حفظ حد الرصيد");
    await read();setReason("");
-   setNotice("تم اعتماد الحد الأدنى وقراءة نتيجته من WLT.");
+   setNotice("تم اعتماد شرط الشحن عند التفعيل الأول والتحقق من إصداره في WLT.");
    window.dispatchEvent(new CustomEvent("policy:changed",{detail:{key:"captain-minimum-balance"}}));
    if(showHistory)await readHistory();
   }catch(e){setError(e instanceof Error?e.message:"تعذر حفظ السياسة");}
   finally{setBusy(false);}
  }
- return <section className="form-section" aria-label="الحد الأدنى لرصيد كابتن بثواني">
-  <p className="muted">يسري على كابتن بثواني عند تلقي وقبول جميع طلبات التوصيل: كاش، محفظة، ومختلط. يعتمد على الرصيد المتاح في WLT بعد الحجوزات. وتظل تغطية مبلغ الكاش شرطًا مستقلًا.</p>
+ return <section className="form-section" aria-label="رصيد الشحن الأول لتفعيل كابتن بثواني">
+  <p className="muted">هذا الحد مطلوب مرة واحدة قبل إتاحة كابتن بثواني للعمل أول مرة. لا يُجدَّد يوميًا، ولا يمنع الطلبات المدفوعة مسبقًا بعد التفعيل. كل طلب نقدي يحتاج تغطية كاملة لمبلغه المتبقي من المحفظة قبل القبول.</p>
   {state==="loading"?<p role="status">جارٍ قراءة الحد المعتمد…</p>:null}
-  {state==="missing"?<p role="status">لم تُعتمد سياسة الحد الأدنى بعد. يستمر شرط أهلية الكاش السابق حتى اعتماد أول قيمة.</p>:null}
+  {state==="missing"?<p role="status">لم يُحدد مبلغ التفعيل الأول. تظل تغطية قيمة الطلب النقدي كاملة إلزامية دائمًا.</p>:null}
   {state==="ready"&&policy?<div className="policy-version-facts">
    <strong>الحد المعتمد: {policy.minimumAvailableMinor.toLocaleString("ar-YE")} ريال</strong>
    <p>نشط · الإصدار {policy.version} · {new Date(policy.createdAt).toLocaleString("ar-YE")}</p>
@@ -69,7 +69,7 @@ export function CaptainMinimumBalancePolicyWorkspace() {
   </div>:null}
   {state==="error"?<p role="alert">{error||"تعذرت القراءة، التعديل معطل."}</p>:null}
   {(state==="ready"||state==="missing")?<div className="form-grid">
-   <label className="field-label" htmlFor="captain-min-balance">الحد الأدنى للرصيد المتاح (ريال)
+   <label className="field-label" htmlFor="captain-min-balance">مبلغ الشحن اللازم للتفعيل الأول (ريال)
     <input id="captain-min-balance" type="number" min="1" step="1" value={amount} onChange={e=>setAmount(e.target.value)} disabled={!canEdit||busy} />
    </label>
    <label className="field-label" htmlFor="captain-min-reason">سبب الاعتماد أو التعديل

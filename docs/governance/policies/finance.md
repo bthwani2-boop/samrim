@@ -67,25 +67,31 @@ Provider timeout or missing confirmation is not automatic failure or success. Un
 
 External provider Cash-In is currently admitted only for Customers and BThwani Captains. Customer funding and Captain funding are separately governed capabilities even when they share a CashInRail implementation. Partner, Field and Store-affiliated Partner Captain funding are not enabled by this admission. The provider rail never chooses the WLT wallet/accounting destination; the server-owned funding purpose does.
 
-## COD exposure, collateral and remittance
+## Captain COD coverage and wallet settlement
 
-Captain COD coverage is a risk hold, not ordinary settlement consumption.
+A BThwani Captain is an independent service provider who retains cash collected from the Customer. BThwani does not accept physical cash from Captains, Partners or Field actors, and does not disburse cash to them. Cash deposited by a Captain at an external exchanger becomes their *external* official-wallet balance, not WLT funding until a separately verified Cash-In completes.
 
 ```text
-available_exposure
-= governed collateral / eligible balance capacity
+available_cod_coverage
+= posted Captain WLT balance
 - active COD holds
-- other governed exposure
+- active payout holds
+- other governed locks
+
+new_cash_reservation <= available_cod_coverage
 ```
 
-- accepting a covered COD obligation creates/reserves a hold against available exposure;
-- ordinary successful COD delivery/collection does not consume the Captain's collateral;
-- the hold remains until the associated cash remittance/reconciliation closes the exposure;
-- cash remittance closes the corresponding WLT cash receivable in the ledger and releases the governed hold;
-- collateral/balance is debited only for an explicit governed shortage/default/loss or another independently authorized financial effect;
-- Store-affiliated Partner Captain or Store-collected cash must not be silently treated as BThwani Captain cash custody.
+- one initial Captain activation funding threshold may be configured (10,000 YER in the current local policy); it is checked only before the Captain first becomes available, never reset or topped up automatically at midnight;
+- previously activated Captains may receive prepaid Orders regardless of their later COD balance, subject to distinct identity/operational and goods-in-custody risk checks;
+- a Captain accepting an Order with positive cash collection must atomically reserve 100% of the actual cash portion in WLT; multiple Orders cannot spend the same available cover;
+- when that Captain successfully collects and delivers the Order, WLT posts the relevant delivery entitlement and atomically debits the reserved cash amount from the Captain Wallet against the posted cash receivable once, in terminal state DEBITED; the Captain keeps the collected physical cash;
+- cancellation before collection releases the hold without a wallet debit; mixed Orders cover only the cash portion, not the Customer's prepaid internal-wallet portion;
+- a completed WLT debit must never be followed by a second request to remit the same cash to BThwani; physical Captain cash-remittance routes are obsolete for new Orders;
+- historical FINALIZED or REMITTED reservations are not automatically DEBITED; they require evidence-bound reconciliation and must never be charged again if already settled through a previous rail;
+- personal Cash-In funding is not delivery earnings and is not eligible for earnings withdrawal; eligible earnings remain capped by real posted unheld balance;
+- Store-affiliated Partner Captains and Store-collected cash are owned by the Store relationship, not BThwani Captain custody.
 
-Risk policy may require full collateral at one stage and a different exposure limit later; the architecture governs exposure capacity, not an eternal fixed percentage.
+The COD prepayment cover limits exposure to cash retained after successful collection; it does not independently guarantee merchandise already in a Captain's physical custody. Goods-loss risk requires separate bounded controls and evidence.
 
 ## Fees, discounts and commissions
 

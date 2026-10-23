@@ -314,25 +314,17 @@ func formatInt64(value int64) string {
 
 // captainEarningsEligibleForPayout is the single WLT authority for the
 // Captain's withdrawable delivery earnings. Funding is NOT earnings.
-// Both payout holds and completed transfers reduce this allowance. The
-// policy's minimum balance stays in the wallet for dispatch readiness.
+// Both payout holds and completed transfers reduce this allowance. COD
+// holds are already excluded from walletAvailable; no daily balance floor
+// may prevent withdrawal of otherwise eligible earned funds.
 func captainEarningsEligibleForPayout(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, actorID string, walletAvailable int64) (int64, error) {
-	var minimum int64
-	err := source.QueryRowContext(ctx, "SELECT minimum_available_minor FROM wlt.captain_minimum_balance_policies WHERE state='ACTIVE'").Scan(&minimum)
-	if errors.Is(err, sql.ErrNoRows) {
-		// No configured minimum: do not open withdrawals implicitly.
-		return 0, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	if walletAvailable <= minimum {
+	if walletAvailable <= 0 {
 		return 0, nil
 	}
 	var earned, completed, pending int64
-	err = source.QueryRowContext(ctx, `SELECT
+	err := source.QueryRowContext(ctx, `SELECT
 		COALESCE(SUM(CASE WHEN t.source_type='ORDER_DELIVERED' AND e.direction='CREDIT' THEN e.amount_minor ELSE 0 END),0),
 		COALESCE(SUM(CASE WHEN t.source_type='MANUAL_EXTERNAL_TRANSFER' AND e.direction='DEBIT' THEN e.amount_minor ELSE 0 END),0)
 		FROM wlt.ledger_entries e JOIN wlt.ledger_transactions t ON t.id=e.transaction_id
@@ -344,13 +336,22 @@ func captainEarningsEligibleForPayout(ctx context.Context, source interface {
 	if err != nil {
 		return 0, err
 	}
-	earningsLeft := earned - completed - pending
-	if earningsLeft <= 0 {
-		return 0, nil
+	return captainEarnedWithdrawalAllowance(walletAvailable, earned, completed, pending), nil
+}
+
+// The active COD/payout holds are already deducted from available. Do not
+// treat a Captain's personal Cash-In funding as withdrawable delivery earnings.
+func captainEarnedWithdrawalAllowance(available, earned, completed, pending int64) int64 {
+	if available <= 0 || earned <= completed {
+		return 0
 	}
-	aboveMinimum := walletAvailable - minimum
-	if earningsLeft < aboveMinimum {
-		return earningsLeft, nil
+	remaining := earned - completed
+	if remaining <= pending {
+		return 0
 	}
-	return aboveMinimum, nil
+	remaining -= pending
+	if remaining < available {
+		return remaining
+	}
+	return available
 }

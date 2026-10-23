@@ -213,6 +213,11 @@ func (s *Service) SetAvailability(ctx context.Context, accessToken string, avail
 	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, identity.Subject) {
 		return postgres.CaptainAdmission{}, false, ErrInvalidInput
 	}
+	if available {
+		if err := s.requireInitialCaptainFunding(ctx, identity.Subject); err != nil {
+			return postgres.CaptainAdmission{}, false, err
+		}
+	}
 	return postgres.SetCaptainAvailability(ctx, s.db, identity.Subject, available, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainAvailabilityRequest(identity.Subject, available, expectedVersion), identity.Subject, strings.TrimSpace(correlationID), "")
 }
 
@@ -232,6 +237,11 @@ func (s *Service) SetAvailabilityForOperator(ctx context.Context, actorID, opera
 	}
 	if role.Role != "captain" || !role.Enabled || !role.SecurityEnabled || role.ActivatedAt == nil {
 		return postgres.CaptainAdmission{}, false, ErrManagedRoleNotEligible
+	}
+	if available {
+		if err := s.requireInitialCaptainFunding(ctx, actorID); err != nil {
+			return postgres.CaptainAdmission{}, false, err
+		}
 	}
 	requestHash := postgres.HashCaptainOperatorAvailabilityRequest(actorID, available, expectedVersion, reason)
 	return postgres.SetCaptainAvailability(ctx, s.db, actorID, available, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, operatorActorID, strings.TrimSpace(correlationID), reason)
@@ -277,11 +287,8 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 	if err != nil {
 		return postgres.CaptainOfferResult{}, err
 	}
-	if order.FulfillmentMode == "BTHWANI_CAPTAIN" {
-		if err := s.requireCaptainMinimumBalance(ctx, identity.Subject); err != nil {
-			return postgres.CaptainOfferResult{}, err
-		}
-	}
+	// Each cash offer is secured atomically by WLT below; prepaid offers
+	// must not be blocked by a recurring minimum wallet balance.
 	reserved := false
 	if order.FulfillmentMode == "BTHWANI_CAPTAIN" && order.PaymentCashAmountMinor > 0 && order.PaymentIntentID != nil && strings.TrimSpace(*order.PaymentIntentID) != "" {
 		_, _, reserveErr := s.payment.ReserveCaptainCOD(ctx, order.ID, *order.PaymentIntentID, identity.Subject, wlt.DerivedIdempotencyKey("captain-cod-reserve", offer.ID), correlationID)
@@ -508,11 +515,7 @@ func (s *Service) dispatchCandidates(ctx context.Context, orderID string) ([]str
 	if err != nil {
 		return nil, err
 	}
-	minimum, err := s.captainMinimumBalance(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return selectFundedNearbyCaptains(ctx, candidates, cashMinor, minimum, s.payment.ReadCaptainWalletState)
+	return selectFundedNearbyCaptains(ctx, candidates, cashMinor, s.payment.ReadCaptainWalletState)
 }
 
 func (s *Service) Dispatch(ctx context.Context, orderID, actingActorID, idempotencyKey, correlationID string) (postgres.CaptainOffer, bool, error) {

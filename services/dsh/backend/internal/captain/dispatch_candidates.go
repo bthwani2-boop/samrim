@@ -10,15 +10,15 @@ import (
 
 // Preserve source-ranked nearest order while rejecting financially ineligible
 // captains before inserting offers. A missing wallet read fails closed.
-func selectFundedNearbyCaptains(ctx context.Context, candidates []postgres.NearbyCaptainCandidate, cashMinor int64, minimumMinor int64, readWallet func(context.Context, string) (wlt.CaptainWalletState, error)) ([]string, error) {
+func selectFundedNearbyCaptains(ctx context.Context, candidates []postgres.NearbyCaptainCandidate, cashMinor int64, readWallet func(context.Context, string) (wlt.CaptainWalletState, error)) ([]string, error) {
 	approved := make([]string, 0, 3)
 	for _, candidate := range candidates {
-		if cashMinor > 0 || minimumMinor > 0 {
+		if cashMinor > 0 {
 			wallet, err := readWallet(ctx, candidate.ActorID)
 			if err != nil {
 				return nil, fmt.Errorf("%w: captain wallet preflight failed: %v", ErrPaymentUnavailable, err)
 			}
-			if wallet.Currency != "YER" || wallet.AvailableMinor < cashMinor || wallet.AvailableMinor < minimumMinor {
+			if wallet.Currency != "YER" || wallet.AvailableMinor < cashMinor {
 				continue
 			}
 		}

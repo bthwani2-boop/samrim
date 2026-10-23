@@ -58,9 +58,9 @@ export async function readFinancialPolicyPreviews(signal:AbortSignal,canReadTerm
   }else if(captain.value.status===200){
    const p=(captain.value.body as CaptainMinimumBalanceResponse).policy;
    result["captain-minimum-balance"]=p&&p.state==="ACTIVE"&&p.currency==="YER"&&p.minimumAvailableMinor>0?
-    {kind:"ready",value:{active:1,inactive:null,headline:`الحد الأدنى ${money(p.minimumAvailableMinor)} · v${p.version}`,
-     records:[{id:p.id,name:"كابتن بثواني · جميع طرق الدفع",active:true,detail:money(p.minimumAvailableMinor),version:p.version,createdAt:p.createdAt,createdBy:p.createdBy}],
-     note:"يُفحص الرصيد المتاح عند الترشيح والقبول. لا يُستبدل به شرط تغطية الكاش."}}:failure;
+    {kind:"ready",value:{active:1,inactive:null,headline:`شحن التفعيل الأول ${money(p.minimumAvailableMinor)} · v${p.version}`,
+     records:[{id:p.id,name:"كابتن بثواني · شحن التفعيل الأول",active:true,detail:money(p.minimumAvailableMinor),version:p.version,createdAt:p.createdAt,createdBy:p.createdBy}],
+     note:"يُفحص مرة واحدة عند أول إتاحة للعمل، ثم تحمي WLT كل طلب نقدي بحجز قيمته كاملة، دون حد يومي."}}:failure;
   }else result["captain-minimum-balance"]=failure;
  }else result["captain-minimum-balance"]=failure;
  return result;
