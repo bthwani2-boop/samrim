@@ -44,32 +44,32 @@ const range = financeDates();
 
 function Glyph({ name, size = 18 }: Readonly<{ name: string; size?: number }>) {
   const shared = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true as const };
-  if (name === "wallet") return <svg {...shared}><rect x="3" y="6" width="18" height="15" rx="2"/><path d="M3 10h18M5 6V4a2 2 0 0 1 2-2h11"/><rect x="15" y="12" width="6" height="5" rx="1"/></svg>;
-  if (name === "dashboard") return <svg {...shared}><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>;
-  if (name === "users") return <svg {...shared}><circle cx="9" cy="8" r="3"/><path d="M3 21v-2a6 6 0 0 1 12 0v2M17 4a3 3 0 0 1 0 6m1 5a5 5 0 0 1 3 5"/></svg>;
-  if (name === "store") return <svg {...shared}><path d="M3 10l2-7h14l2 7M3 10v11h18V10M3 10c0 3 4 3 4 0 0 3 4 3 4 0 0 3 4 3 4 0 0 3 4 3 4 0M9 21v-7h6v7"/></svg>;
-  if (name === "truck") return <svg {...shared}><path d="M3 7h11v10H3zM14 10h4l3 4v3h-7M5 20a2 2 0 1 0 4 0 2 2 0 1 0-4 0M16 20a2 2 0 1 0 4 0 2 2 0 1 0-4 0"/></svg>;
-  if (name === "user") return <svg {...shared}><circle cx="12" cy="7" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg>;
-  if (name === "scale") return <svg {...shared}><path d="M12 3v18M4 7h16M7 7l-4 8h8L7 7Zm10 0-4 8h8l-4-8ZM7 21h10"/></svg>;
-  if (name === "chart") return <svg {...shared}><path d="M3 18l5-6 4 2 7-9M3 3v18h18"/></svg>;
-  if (name === "activity") return <svg {...shared}><path d="M2 12h5l3-7 4 14 3-7h5"/></svg>;
-  if (name === "inbox") return <svg {...shared}><path d="M4 4h16v16H4zM4 13h5l2 3h2l2-3h5"/></svg>;
-  if (name === "transfer") return <svg {...shared}><path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"/></svg>;
-  if (name === "clock") return <svg {...shared}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>;
-  if (name === "search") return <svg {...shared}><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>;
-  if (name === "filter") return <svg {...shared}><path d="M3 4h18l-7 8v7l-4 2v-9L3 4Z"/></svg>;
-  if (name === "check") return <svg {...shared}><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 3v2h6V3m-7 10 2 2 5-5"/></svg>;
-  if (name === "layers") return <svg {...shared}><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></svg>;
-  if (name === "calendar") return <svg {...shared}><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v5m10-5v5M3 10h18"/></svg>;
-  if (name === "download") return <svg {...shared}><path d="M12 3v13m-5-5 5 5 5-5M4 18v3h16v-3"/></svg>;
-  if (name === "chevron") return <svg {...shared}><path d="m9 6 6 6-6 6"/></svg>;
-  return <svg {...shared}><circle cx="12" cy="12" r="9"/><path d="M12 7v5"/></svg>;
+  if (name === "wallet") return <svg {...shared} role="presentation"><rect x="3" y="6" width="18" height="15" rx="2"/><path d="M3 10h18M5 6V4a2 2 0 0 1 2-2h11"/><rect x="15" y="12" width="6" height="5" rx="1"/></svg>;
+  if (name === "dashboard") return <svg {...shared} role="presentation"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>;
+  if (name === "users") return <svg {...shared} role="presentation"><circle cx="9" cy="8" r="3"/><path d="M3 21v-2a6 6 0 0 1 12 0v2M17 4a3 3 0 0 1 0 6m1 5a5 5 0 0 1 3 5"/></svg>;
+  if (name === "store") return <svg {...shared} role="presentation"><path d="M3 10l2-7h14l2 7M3 10v11h18V10M3 10c0 3 4 3 4 0 0 3 4 3 4 0 0 3 4 3 4 0 0 3 4 3 4 0M9 21v-7h6v7"/></svg>;
+  if (name === "truck") return <svg {...shared} role="presentation"><path d="M3 7h11v10H3zM14 10h4l3 4v3h-7M5 20a2 2 0 1 0 4 0 2 2 0 1 0-4 0M16 20a2 2 0 1 0 4 0 2 2 0 1 0-4 0"/></svg>;
+  if (name === "user") return <svg {...shared} role="presentation"><circle cx="12" cy="7" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg>;
+  if (name === "scale") return <svg {...shared} role="presentation"><path d="M12 3v18M4 7h16M7 7l-4 8h8L7 7Zm10 0-4 8h8l-4-8ZM7 21h10"/></svg>;
+  if (name === "chart") return <svg {...shared} role="presentation"><path d="M3 18l5-6 4 2 7-9M3 3v18h18"/></svg>;
+  if (name === "activity") return <svg {...shared} role="presentation"><path d="M2 12h5l3-7 4 14 3-7h5"/></svg>;
+  if (name === "inbox") return <svg {...shared} role="presentation"><path d="M4 4h16v16H4zM4 13h5l2 3h2l2-3h5"/></svg>;
+  if (name === "transfer") return <svg {...shared} role="presentation"><path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"/></svg>;
+  if (name === "clock") return <svg {...shared} role="presentation"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>;
+  if (name === "search") return <svg {...shared} role="presentation"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>;
+  if (name === "filter") return <svg {...shared} role="presentation"><path d="M3 4h18l-7 8v7l-4 2v-9L3 4Z"/></svg>;
+  if (name === "check") return <svg {...shared} role="presentation"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 3v2h6V3m-7 10 2 2 5-5"/></svg>;
+  if (name === "layers") return <svg {...shared} role="presentation"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></svg>;
+  if (name === "calendar") return <svg {...shared} role="presentation"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v5m10-5v5M3 10h18"/></svg>;
+  if (name === "download") return <svg {...shared} role="presentation"><path d="M12 3v13m-5-5 5 5 5-5M4 18v3h16v-3"/></svg>;
+  if (name === "chevron") return <svg {...shared} role="presentation"><path d="m9 6 6 6-6 6"/></svg>;
+  return <svg {...shared} role="presentation"><circle cx="12" cy="12" r="9"/><path d="M12 7v5"/></svg>;
 }
 function TinySparkline({ color, values }: { color: string; values: readonly number[] }) {
-  if (values.every(value => value === 0)) return <span className="fr-spark-empty" aria-label="لا توجد سلسلة زمنية">—</span>;
+  if (values.every(value => value === 0)) return <span className="fr-spark-empty" role="img" aria-label="لا توجد سلسلة زمنية">—</span>;
   const min = Math.min(...values, 0), max = Math.max(...values, 1);
   const points = values.map((v, i) => String(i * 15) + "," + String(34 - 27 * (v - min) / (max - min))).join(" ");
-  return <svg className="fr-spark" viewBox="0 0 105 40" aria-hidden="true"><polyline points={points} stroke={color} strokeWidth="1.7" fill="none"/><path d={"M" + points.replaceAll(" ", " L") + " L105 40 L0 40Z"} fill={color} opacity=".07"/></svg>;
+  return <svg className="fr-spark" viewBox="0 0 105 40" role="presentation" aria-hidden="true"><polyline points={points} stroke={color} strokeWidth="1.7" fill="none"/><path d={"M" + points.replaceAll(" ", " L") + " L105 40 L0 40Z"} fill={color} opacity=".07"/></svg>;
 }
 function WalletDonut({ groups, total }: { groups: readonly WalletGroup[]; total: number }) {
   let offset = 0;
@@ -97,7 +97,7 @@ function MovementGraph({ rows }: { rows: readonly FinanceReferenceRow[] }) {
       <div className="fr-yaxis">{[4,3,2,1,0].map((n) => <span key={n}>{number(Math.round(max * n / 4))}</span>)}</div>
       <div className="fr-plot">
         <div className="fr-grid-lines">{[0,1,2,3,4].map(n => <span key={n}/>)}</div>
-        <div className="fr-plot-bars">{days.map((day,i) => <div className="fr-plot-day" key={i} title={day.day + ": " + number(day.amount) + " ر.ي"}>
+        <div className="fr-plot-bars">{days.map((day,i) => <div className="fr-plot-day" key={day.day} title={day.day + ": " + number(day.amount) + " ر.ي"}>
           <span className="fr-plot-bar" style={{ height: (day.amount ? Math.max(day.amount / max * 100, 4) : 1) + "%" }}/>
           <small>{day.day}</small>
         </div>)}</div>
@@ -216,7 +216,7 @@ export function FinanceReferenceDashboard({ rows, errors, hasData, hasMore, onOp
           {showIntakes ? <div className="fr-intake-layer"><div className="fr-intake-head"><h3>طلبات التسوية ومراجعة الصرف</h3><button type="button" onClick={()=>{setShowIntakes(false);void loadIntakes()}}>إغلاق</button></div><SettlementIntakeInbox visible /></div> : null}
           <div className="fr-table-scroll"><table><thead><tr><th>الأولوية</th><th>نوع الحالة</th><th>المبلغ</th><th>المستفيد</th><th>السبب</th><th>المدة</th><th>المرجع</th><th>الإجراء</th></tr></thead><tbody>{shown.map(row=><tr key={row.key}><td><span className={"fr-priority p"+row.priority}>{row.priority===1?"حرجة":row.priority===2?"عالية":"عادية"}</span></td><td>{row.category}</td><td dir="ltr">{row.amount}</td><td className="fr-subject">{row.subject}</td><td className="fr-reason">{row.nextStep}</td><td>{row.date?new Intl.DateTimeFormat("ar-YE",{day:"numeric",month:"short",timeZone:"Asia/Aden"}).format(new Date(row.date)):"—"}</td><td className="fr-reference" dir="auto">{row.reference}</td><td><button type="button" className="fr-row-action" onClick={()=>{if(row.key.startsWith("intake:")){setShowIntakes(true)}else onOpenWorkflow(row.source==="batches"?"batches":row.source,row)}}>إجراء</button></td></tr>)}</tbody></table>
             {shown.length===0?<div className="fr-empty">{hasData?"لا توجد حركات مطابقة ضمن البيانات المحمّلة.":"جارٍ جلب السجلات المالية…"}</div>:null}
-          </div><div className="fr-table-foot"><span>{filtered.length?number((Math.min(page,pageCount)-1)*6+1)+"–"+number(Math.min(page*6,filtered.length))+" من "+number(filtered.length):"لا توجد سجلات"} {hasMore?"· بعض المصادر بها صفحات أخرى":""}</span><div className="fr-pages"><button type="button" disabled={page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}><Glyph name="chevron" size={13}/></button>{Array.from({length:Math.min(pageCount,5)},(_,i)=><button key={i} type="button" aria-current={page===i+1?"page":undefined} onClick={()=>setPage(i+1)}>{i+1}</button>)}<button type="button" disabled={page>=pageCount} onClick={()=>setPage(p=>p+1)}><Glyph name="chevron" size={13}/></button></div></div>
+          </div><div className="fr-table-foot"><span>{filtered.length?number((Math.min(page,pageCount)-1)*6+1)+"–"+number(Math.min(page*6,filtered.length))+" من "+number(filtered.length):"لا توجد سجلات"} {hasMore?"· بعض المصادر بها صفحات أخرى":""}</span><div className="fr-pages"><button type="button" disabled={page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}><Glyph name="chevron" size={13}/></button>{Array.from({length:Math.min(pageCount,5)},(_,i)=>i+1).map(n=><button key={n} type="button" aria-current={page===n?"page":undefined} onClick={()=>setPage(n)}>{n}</button>)}<button type="button" disabled={page>=pageCount} onClick={()=>setPage(p=>p+1)}><Glyph name="chevron" size={13}/></button></div></div>
         </section>
       </div>
       {tab!=="command" ? <div className="fr-context-links">{(tab==="settlements"?["settlement-partner","settlement-captain","settlement-field","batches","withdrawals"]:tab==="collection"?["custody","commissions"]:tab==="reconcile"?["batches","custody","commissions"]:["custody","commissions","batches","withdrawals"]).map(w=><button key={w} type="button" onClick={()=>onOpenWorkflow(w as FinanceReferenceWorkflow,null)}>{workflowLabels[w as FinanceReferenceWorkflow]} ←</button>)}</div>:null}
@@ -224,5 +224,3 @@ export function FinanceReferenceDashboard({ rows, errors, hasData, hasMore, onOp
     </> : <FinanceSpecializedTab key={tab} tab={tab} rows={rows} intakes={intakes} hasMore={hasMore} onOpenWorkflow={onOpenWorkflow} onReloadIntakes={()=>void loadIntakes()}/>}
   </div>;
 }
-// Leave the numeric formatting localized to the dashboard; the screenshot's values are not hardcoded.
-function riyalsFallback(value: number) { return riyals(value); }

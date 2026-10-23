@@ -22,7 +22,6 @@ const isoYemen=(date:Date)=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Aden
 const dateRange=()=>{const to=new Date(),from=new Date(to);from.setUTCDate(from.getUTCDate()-29);return {from:isoYemen(from),to:isoYemen(to)};};
 const names:Record<FinanceReferenceTab,string>={command:"القيادة",wallets:"المحافظ",activity:"الحركات",collection:"التحصيل",pending:"المعلقة",settlements:"الصرف والتسويات",reconcile:"المطابقة",reports:"التقارير"};
 const descriptions:Record<FinanceReferenceTab,string>={command:"الصورة المالية الشاملة",wallets:"أرصدة وملفات جميع أصحاب المصلحة",activity:"كشوف الحركات المالية ومراجعها",collection:"التحصيل النقدي وذمم العمولات",pending:"حالات التعثر والقرارات المطلوبة",settlements:"مستحقات الأطراف ودفعات الصرف",reconcile:"مراجعة الفروقات والأدلة المحاسبية",reports:"إعداد كشوف قابلة للتدقيق والتصدير"};
-const workflowLabels:Partial<Record<FinanceReferenceWorkflow,string>>={custody:"سجل تحصيل COD",commissions:"ذمم عمولات الشركاء",batches:"دفعات التسوية",withdrawals:"سحوبات العملاء", "settlement-partner":"مستحقات الشركاء","settlement-captain":"مستحقات الكباتن","settlement-field":"مستحقات الميدانيين"};
 
 function Header({tab,detail}:Readonly<{tab:FinanceReferenceTab;detail?:string}>){
  return <div className="fs-head"><div><h2>{names[tab]}</h2><p>{detail??descriptions[tab]}</p></div><span className="fs-period">جميع الأرقام المالية من السجلات المتاحة فقط</span></div>;
@@ -54,7 +53,7 @@ function Registry({rows,onOpen,empty="لا توجد سجلات في هذه ال�
 function WalletsView(){
  return <section className="fs-page"><Header tab="wallets"/><div className="fs-wallet-view"><FinanceWalletRegistry/></div></section>;
 }
-function ActivityView({rows,onOpenWorkflow}:ViewProps){
+function ActivityView({onOpenWorkflow}:ViewProps){
  const [actor,setActor]=useState<ActorType>("customer"),[wallets,setWallets]=useState<readonly WalletSummary[]>([]),[cursor,setCursor]=useState(""),[selected,setSelected]=useState<string>(""),[statement,setStatement]=useState<Statement|null>(null),[entries,setEntries]=useState<readonly LedgerEntry[]>([]),[next,setNext]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");
  const [from,setFrom]=useState(()=>dateRange().from),[to,setTo]=useState(()=>dateRange().to);
  const loadWallets=useCallback(async (after="")=>{
@@ -69,11 +68,11 @@ function ActivityView({rows,onOpenWorkflow}:ViewProps){
   try{const p=new URLSearchParams({from,to});if(after)p.set("cursor",after);const res=await fetch("/api/finance/beneficiaries/"+encodeURIComponent(actor)+"/"+encodeURIComponent(actorId)+"/financial-statement?"+p,{cache:"no-store"});if(!res.ok)throw Error("تعذرت قراءة كشف المحفظة");const data=await res.json() as {statement?:Statement};if(!data.statement||!Array.isArray(data.statement.entries))throw Error("كشف الحساب غير صالح");setStatement(data.statement);setEntries(old=>after?[...old,...data.statement!.entries]:data.statement!.entries);setNext(data.statement.nextCursor??"");
   }catch(e){setError(e instanceof Error?e.message:"تعذرت قراءة الكشف");}finally{setBusy(false);}
  },[actor,from,to]);
- useEffect(()=>{setSelected("");setStatement(null);setEntries([]);setNext("");},[actor,from,to]);
+ const resetSelection=()=>{setWallets([]);setCursor("");setSelected("");setStatement(null);setEntries([]);setNext("");};
  const wallet=wallets.find(w=>w.actorId===selected);
  return <section className="fs-page">
   <Header tab="activity" detail="اختر صاحب المحفظة لقراءة كشف WLT التفصيلي، ثم افتح الحركة ومرجعها."/>
-  <div className="fs-inline-filters"><select aria-label="نوع المستفيد" value={actor} onChange={e=>setActor(e.target.value as ActorType)}>{actors.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select><label>من <input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>إلى <input type="date" value={to} onChange={e=>setTo(e.target.value)}/></label><Action label="الحركات التشغيلية" onClick={()=>onOpenWorkflow("custody",null)}/></div>
+  <div className="fs-inline-filters"><select aria-label="نوع المستفيد" value={actor} onChange={e=>{resetSelection();setActor(e.target.value as ActorType)}}>{actors.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select><label>من <input type="date" value={from} onChange={e=>{resetSelection();setFrom(e.target.value)}}/></label><label>إلى <input type="date" value={to} onChange={e=>{resetSelection();setTo(e.target.value)}}/></label><Action label="الحركات التشغيلية" onClick={()=>onOpenWorkflow("custody",null)}/></div>
   {error?<div role="alert" className="fs-error">{error}</div>:null}
   <div className="fs-activity-grid"><div className="fs-panel"><div className="fs-panel-heading"><h3>الحسابات المالية</h3><small>حدد محفظة لعرض كشفها</small></div><div className="fs-accounts">{wallets.map(w=><button type="button" key={w.actorId} aria-pressed={selected===w.actorId} onClick={()=>{setSelected(w.actorId);setStatement(null);setEntries([]);void loadStatement(w.actorId)}}><span dir="auto">{w.displayName??w.beneficiaryName??w.actorId}</span><strong dir="ltr">{money(w.currentBalanceMinor)}</strong></button>)}</div>{!wallets.length&&!busy?<p className="fs-empty">لا توجد محافظ لهذه الفئة في الفترة المحددة.</p>:null}{cursor?<button type="button" className="fs-secondary" disabled={busy} onClick={()=>void loadWallets(cursor)}>المزيد من الحسابات</button>:null}</div>
   <div className="fs-panel"><div className="fs-panel-heading"><h3>كشف الحركات المالية</h3><span>{wallet?"الرصيد الحالي: "+money(wallet.currentBalanceMinor):"اختر حسابًا"}</span></div>
