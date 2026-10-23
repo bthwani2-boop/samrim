@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FinanceWalletRegistry } from "./finance-wallet-registry";
 import { financeAmount } from "./finance-amount";
+import { FinanceUnifiedSettlements } from "./finance-unified-settlements";
 import { SettlementIntakeInbox } from "./settlement-intake-inbox";
 import type { FinanceReferenceRow, FinanceReferenceTab, FinanceReferenceWorkflow } from "./finance-reference-dashboard";
 import "./finance-specialized-tabs.css";
@@ -104,17 +105,6 @@ function PendingView({rows,intakes,onOpenWorkflow,onReloadIntakes}:ViewProps){
  {selected ? <aside className="fs-panel fs-pending-inspector"><div className="fs-panel-heading"><h3>ملف القرار</h3><small>تفاصيل عند الاختيار فقط</small></div>{selected?<><h4>{selected.category} · {selected.subject}</h4><strong className="fs-inspector-money">{selected.amount}</strong><dl><dt>المرجع</dt><dd dir="auto">{selected.reference}</dd><dt>السبب</dt><dd>{selected.nextStep}</dd><dt>العمر</dt><dd>{daysOld(selected.date)===null?"غير مسجل":num(daysOld(selected.date)!)+" يوم"}</dd></dl><Action label="فتح مصدر الحالة" onClick={()=>selected.key.startsWith("intake:")?setOpen(true):onOpenWorkflow(selected.source,selected)}/></>:<p className="fs-empty">حدد حالة لعرض سبب التعثر وأدلتها وإجراء المراجعة.</p>}</aside> : null}</div>
  {open?<div className="fs-panel"><div className="fs-panel-heading"><h3>مراجعة طلبات التسوية الواردة</h3><button type="button" className="fs-secondary" onClick={()=>{setOpen(false);onReloadIntakes()}}>إغلاق</button></div><SettlementIntakeInbox visible/></div>:null}</section>;
 }
-function SettlementsView({rows,intakes,onOpenWorkflow}:ViewProps){
- const [kind,setKind]=useState<"intakes"|"batches"|"withdrawals">("intakes");
- const intakeRows:FinanceReferenceRow[]=intakes.map(i=>({source:"batches",key:"intake:"+i.id,id:i.id,subject:(i.actorType==="partner"?"شريك":i.actorType==="captain"?"كابتن":"ميداني")+" · "+i.actorId,reference:i.id,category:"طلب تسوية",state:"مراجعة جهة الصرف",amount:money(i.resolvedAmountMinor),amountMinor:i.resolvedAmountMinor,priority:1,nextStep:"التحقق من جهة الصرف",date:i.createdAt}));
- const relevant=kind==="intakes"?intakeRows:rows.filter(r=>r.source===(kind==="batches"?"batches":"withdrawals"));
- const [showReview,setShowReview]=useState(false);
- return <section className="fs-page"><Header tab="settlements"/><div className="fs-metrics"><Card name="طلبات تسوية واردة" value={num(intakes.length)} note="تحتاج مراجعة جهة الصرف" tone="orange"/><Card name="دفعات تحويل محمّلة" value={num(rows.filter(r=>r.source==="batches").length)} note="دفعات في حالة التحضير" tone="blue"/><Card name="مبالغ دفعات ظاهرة" value={money(rows.filter(r=>r.source==="batches").reduce((v,r)=>v+(r.amountMinor??0),0))} note="لا تشمل جميع المستحقات" tone="green"/></div>
- <div className="fs-toolbar fs-collection-controls"><button type="button" className={kind==="intakes"?"fs-selected":""} onClick={()=>setKind("intakes")}>طلبات التسوية</button><button type="button" className={kind==="batches"?"fs-selected":""} onClick={()=>setKind("batches")}>دفعات التحويل</button><button type="button" className={kind==="withdrawals"?"fs-selected":""} onClick={()=>setKind("withdrawals")}>السحوبات الاستثنائية</button></div>
- <div className="fs-panel"><div className="fs-panel-heading"><h3>سجل {kind==="intakes"?"التسويات الواردة":kind==="batches"?"دفعات الصرف":"السحوبات"}</h3>{kind==="intakes"?<button type="button" className="fs-secondary" onClick={()=>setShowReview(v=>!v)}>مراجعة الطلبات</button>:<Action label="السجل الأصلي" onClick={()=>onOpenWorkflow(kind==="batches"?"batches":"withdrawals",null)}/>}</div><Registry rows={relevant} onOpen={r=>r.key.startsWith("intake:")?setShowReview(true):onOpenWorkflow(r.source,r)}/></div>
- {showReview?<div className="fs-panel"><div className="fs-panel-heading"><h3>إجراءات تسوية المستفيدين</h3><button type="button" className="fs-secondary" onClick={()=>setShowReview(false)}>إغلاق</button></div><SettlementIntakeInbox visible/></div>:null}
- <div className="fs-workflow-links">{(["settlement-partner","settlement-captain","settlement-field","batches"] as const).map(w=><Action key={w} label={{"settlement-partner":"مستحقات الشركاء","settlement-captain":"مستحقات الكباتن","settlement-field":"مستحقات الميدانيين",batches:"دفعات التحويل"}[w]} onClick={()=>onOpenWorkflow(w,null)}/>)}</div></section>;
-}
 function ReconcileView({rows,onOpenWorkflow}:ViewProps){
  const [selected,setSelected]=useState<"custody"|"batches"|"commissions">("custody");
  const options=[{id:"custody" as const,label:"توريدات COD",description:"المقارنة بين التحصيل والإيصالات"},{id:"batches" as const,label:"دفعات التسويات",description:"مطابقة التحويلات والأدلة"},{id:"commissions" as const,label:"ذمم العمولات",description:"التحقق من القيود المحصلة"}];
@@ -143,7 +133,7 @@ export function FinanceSpecializedTab({tab,...props}:ViewProps & Readonly<{tab:F
  if(tab==="activity")return <ActivityView {...props}/>;
  if(tab==="collection")return <CollectionView {...props}/>;
  if(tab==="pending")return <PendingView {...props}/>;
- if(tab==="settlements")return <SettlementsView {...props}/>;
+ if(tab==="settlements")return <FinanceUnifiedSettlements rows={props.rows} intakes={props.intakes} onChanged={props.onReloadIntakes}/>;
  if(tab==="reconcile")return <ReconcileView {...props}/>;
  return <ReportsView {...props}/>;
 }
