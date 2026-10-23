@@ -154,7 +154,7 @@ func TestPartnerStoreFinanceAndRecipientSettlementLifecycle(t *testing.T) {
 		t.Fatalf("historical frozen staff payout released new transfer export after recipient change: %v", err)
 	}
 
-	receipt, err := SaveFinanceEvidenceDocument(s.ctx, s.db, cipher, FinanceEvidenceDocumentInput{Purpose: "TRANSFER_RECEIPT", Filename: "staff-transfer.pdf", ContentType: "application/pdf", Content: []byte("isolated transfer evidence " + s.suffix), ActorID: "finance-executor", IdempotencyKey: "receipt-" + s.suffix, CorrelationID: "receipt-corr-" + s.suffix})
+	receipt, err := SaveFinanceEvidenceDocument(s.ctx, s.db, cipher, FinanceEvidenceDocumentInput{Purpose: "TRANSFER_RECEIPT", Filename: "staff-transfer.pdf", ContentType: "application/pdf", Content: []byte("%PDF-1.4\nisolated transfer evidence " + s.suffix), ActorID: "finance-executor", IdempotencyKey: "receipt-" + s.suffix, CorrelationID: "receipt-corr-" + s.suffix})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestPartnerStoreFinanceAndRecipientSettlementLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	statementEvidence, err := SaveFinanceEvidenceDocument(s.ctx, s.db, cipher, FinanceEvidenceDocumentInput{Purpose: "SETTLEMENT_STATEMENT", Filename: "staff-statement.pdf", ContentType: "application/pdf", Content: []byte("isolated statement evidence " + s.suffix), ActorID: "finance-statement-uploader", IdempotencyKey: "statement-evidence-" + s.suffix, CorrelationID: "statement-evidence-corr-" + s.suffix})
+	statementEvidence, err := SaveFinanceEvidenceDocument(s.ctx, s.db, cipher, FinanceEvidenceDocumentInput{Purpose: "SETTLEMENT_STATEMENT", Filename: "staff-statement.pdf", ContentType: "application/pdf", Content: []byte("%PDF-1.4\nisolated statement evidence " + s.suffix), ActorID: "finance-statement-uploader", IdempotencyKey: "statement-evidence-" + s.suffix, CorrelationID: "statement-evidence-corr-" + s.suffix})
 	if err != nil {
 		t.Fatal(err)
 	}
