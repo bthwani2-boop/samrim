@@ -5,16 +5,17 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
+import { CustomerDirectory } from "../customers/customer-directory";
 import { MarketingContentWorkspace } from "./marketing-content-workspace";
 import { MarketingOverviewSummary } from "./marketing-overview-summary";
 import { MarketingPromotionsWorkspace } from "./marketing-promotions-workspace";
 
-type Section = "overview" | "campaigns" | "content" | "partners" | "analytics";
+type Section = "overview" | "campaigns" | "content" | "customers" | "analytics";
 const sections: ReadonlyArray<Readonly<{ id: Section; label: string; description: string }>> = [
   { id: "overview", label: "نظرة عامة", description: "حالات العروض والمحتوى والتنبيهات" },
   { id: "campaigns", label: "الحملات والعروض", description: "الخصومات والقسائم والتمويل والنشر" },
   { id: "content", label: "المحتوى والظهور", description: "البنرات والصور والوجهات والمعاينات" },
-  { id: "partners", label: "مشاركة الشركاء", description: "الموافقة والتمويل وحدود الصلاحية" },
+  { id: "customers", label: "العملاء والجمهور", description: "سجل العلاقة التسويقية والشرائح المستهدفة" },
   { id: "analytics", label: "الأداء والتحليلات", description: "الظهور والنقر والطلبات المنشأة المنسوبة" },
 ];
 
@@ -25,21 +26,19 @@ type RegistrySnapshot = Readonly<{
   contentPartial: boolean;
 }>;
 
-async function readMarketingRegistry(signal: AbortSignal): Promise<RegistrySnapshot> {
-  const [promotionResponse, contentResponse] = await Promise.all([
-    fetch("/api/marketing/promotions?limit=100&sort=starts_desc", { signal, cache: "no-store" }),
-    fetch("/api/marketing/content?limit=100&sort=priority", { signal, cache: "no-store" }),
-  ]);
-  if (!promotionResponse.ok || !contentResponse.ok) throw new Error("تعذر قراءة سجلات التسويق. لا يمكن اعتماد الأرقام قبل إعادة المحاولة.");
-  const promotions = await promotionResponse.json() as OperatorPromotionRegistryResponse;
-  const content = await contentResponse.json() as OperatorDiscoveryContentRegistryResponse;
-  if (!Array.isArray(promotions.promotions) || !Array.isArray(content.items)) throw new Error("استجابة سجلات التسويق غير صالحة.");
-  return {
-    promotions: promotions.promotions,
-    content: content.items,
-    promotionsPartial: Boolean(promotions.nextCursor),
-    contentPartial: Boolean(content.nextCursor),
-  };
+async function readMarketingRegistry(signal: AbortSignal, section: "campaigns" | "analytics"): Promise<RegistrySnapshot> {
+  if (section === "campaigns") {
+    const response = await fetch("/api/marketing/promotions?limit=100&sort=starts_desc", { signal, cache: "no-store" });
+    if (!response.ok) throw new Error("تعذرت قراءة حملات الشركاء.");
+    const promotions = await response.json() as OperatorPromotionRegistryResponse;
+    if (!Array.isArray(promotions.promotions)) throw new Error("استجابة سجل العروض غير صالحة.");
+    return { promotions: promotions.promotions, promotionsPartial: Boolean(promotions.nextCursor), content: [], contentPartial: false };
+  }
+  const response = await fetch("/api/marketing/content?limit=100&sort=priority", { signal, cache: "no-store" });
+  if (!response.ok) throw new Error("تعذرت قراءة المحتوى التسويقي.");
+  const content = await response.json() as OperatorDiscoveryContentRegistryResponse;
+  if (!Array.isArray(content.items)) throw new Error("استجابة سجل المحتوى غير صالحة.");
+  return { promotions: [], promotionsPartial: false, content: content.items, contentPartial: Boolean(content.nextCursor) };
 }
 
 function PartnerCampaignSummary({ snapshot }: Readonly<{ snapshot: RegistrySnapshot }>) {
@@ -102,29 +101,47 @@ function ContentAnalyticsSummary({ snapshot }: Readonly<{ snapshot: RegistrySnap
 
 function MarketingAuthorizedCenter() {
   const [active, setActive] = useState<Section>("overview");
+  const [partnerDetailsOpen, setPartnerDetailsOpen] = useState(false);
+  // One URL-addressable workspace. Keep old customer links working through a
+  // redirect rather than maintaining a second copy of the customer registry.
+  useEffect(() => {
+    const syncSection = () => {
+      const requested = new URLSearchParams(window.location.search).get("section");
+      const next = sections.find(({ id }) => id === requested)?.id ?? "overview";
+      setActive(next);
+      setVisited((previous) => previous.includes(next) ? previous : [...previous, next]);
+    };
+    syncSection();
+    window.addEventListener("popstate", syncSection);
+    return () => window.removeEventListener("popstate", syncSection);
+  }, []);
   const [visited, setVisited] = useState<ReadonlyArray<Section>>(["overview"]);
   const [snapshot, setSnapshot] = useState<RegistrySnapshot | null>(null);
   const [loadError, setLoadError] = useState("");
   const [readVersion, setReadVersion] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   useEffect(() => {
-    if (!["partners", "analytics"].includes(active)) return;
+    if (active !== "analytics" && !(active === "campaigns" && partnerDetailsOpen)) return;
     const controller = new AbortController();
     if (readVersion > 0) setSnapshot(null);
     setIsLoading(true);
     setLoadError("");
-    void readMarketingRegistry(controller.signal)
+    void readMarketingRegistry(controller.signal, active)
       .then((value) => { if (!controller.signal.aborted) setSnapshot(value); })
       .catch(() => { if (!controller.signal.aborted) { setSnapshot(null); setLoadError("تعذرت قراءة البيانات الحالية. أعد المحاولة."); } })
       .finally(() => { if (!controller.signal.aborted) setIsLoading(false); });
     return () => controller.abort();
-  }, [active, readVersion]);
+  }, [active, readVersion, partnerDetailsOpen]);
 
   return <section className="workspace-page marketing-center" aria-labelledby="marketing-center-title">
-    <PageHeader id="marketing-center-title" title="التسويق والمحتوى" actions={<Link href="/marketing/customers" className="button button-primary">إدارة العملاء</Link>} />
+    <PageHeader id="marketing-center-title" title="التسويق والمحتوى" />
     <nav aria-label="أقسام التسويق" className="action-row">
       {sections.map((section) => <button key={section.id} type="button" className={active === section.id ? "button button-primary" : "button button-secondary"}
         aria-current={active === section.id ? "page" : undefined} onClick={() => {
+          const url = new URL(window.location.href);
+          if (section.id === "overview") url.searchParams.delete("section");
+          else url.searchParams.set("section", section.id);
+          window.history.pushState(window.history.state, "", url.pathname + url.search);
           setActive(section.id);
           setVisited((previous) => previous.includes(section.id) ? previous : [...previous, section.id]);
         }}>{section.label}</button>)}
@@ -132,7 +149,15 @@ function MarketingAuthorizedCenter() {
     {sections.map((section) => <section key={section.id} hidden={active !== section.id} aria-label={section.label} className="work-stack">
       {visited.includes(section.id) ? <>
         {section.id !== "overview" ? <p className="visually-hidden">{section.description}</p> : null}
-        {section.id === "campaigns" ? <MarketingPromotionsWorkspace /> : section.id === "content" ? <MarketingContentWorkspace /> : null}
+        {section.id === "campaigns" ? <>
+          <details className="marketing-registry-extra-filters" onToggle={(event) => setPartnerDetailsOpen(event.currentTarget.open)}>
+            <summary>مشاركة الشركاء في الحملات</summary>
+            {active === section.id ? isLoading ? <p role="status">جارٍ قراءة العروض...</p> : loadError ?
+              <p role="alert">{loadError}</p> : snapshot ? <PartnerCampaignSummary snapshot={snapshot} /> : null : null}
+          </details>
+          <MarketingPromotionsWorkspace />
+        </> : section.id === "content" ? <MarketingContentWorkspace /> :
+          section.id === "customers" ? <CustomerDirectory /> : null}
         {section.id === "overview" && active === section.id ? <>
           <div className="marketing-entry-choices">
             <Link className="marketing-entry-choice" href="/marketing/content"><strong>إعلان دون خصم</strong><span>اختر المحتوى والصورة والوجهة المناسبة.</span></Link>
@@ -140,8 +165,8 @@ function MarketingAuthorizedCenter() {
           </div>
           <MarketingOverviewSummary />
         </> : null}
-        {["partners", "analytics"].includes(section.id) && active === section.id ? <>
-          {isLoading ? <p role="status">جارٍ تحديث سجلات التسويق...</p> : loadError ? <div role="alert" className="access-card"><p>{loadError}</p><button className="button button-secondary" type="button" onClick={() => setReadVersion((version) => version + 1)}>إعادة المحاولة</button></div> : snapshot ? section.id === "partners" ? <PartnerCampaignSummary snapshot={snapshot} /> : <ContentAnalyticsSummary snapshot={snapshot} /> : null}
+        {section.id === "analytics" && active === section.id ? <>
+          {isLoading ? <p role="status">جارٍ تحديث سجلات التسويق...</p> : loadError ? <div role="alert" className="access-card"><p>{loadError}</p><button className="button button-secondary" type="button" onClick={() => setReadVersion((version) => version + 1)}>إعادة المحاولة</button></div> : snapshot ? <ContentAnalyticsSummary snapshot={snapshot} /> : null}
         </> : null}
       </> : null}
     </section>)}
