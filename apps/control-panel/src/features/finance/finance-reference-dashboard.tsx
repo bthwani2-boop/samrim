@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { FinanceSpecializedTab } from "./finance-specialized-tabs";
 import { financeAmount } from "./finance-amount";
 import { SettlementIntakeInbox } from "./settlement-intake-inbox";
 import "./finance-reference-dashboard.css";
+import "./finance-detail-unified.css";
 
 export type FinanceReferenceRow = Readonly<{
   key: string; source: "custody" | "commissions" | "batches" | "withdrawals";
@@ -113,11 +114,15 @@ function downloadCSV(rows: readonly FinanceReferenceRow[]) {
   const url = URL.createObjectURL(blob), link = document.createElement("a");
   link.href = url; link.download = "bthwani-finance-loaded-rows.csv"; link.click(); URL.revokeObjectURL(url);
 }
-export function FinanceReferenceDashboard({ rows, errors, hasData, hasMore, onOpenWorkflow }: Readonly<{
+export function FinanceReferenceDashboard({ rows, errors, hasData, hasMore, onOpenWorkflow, initialTab = "command", detailPanel, detailTitle, onCloseDetail }: Readonly<{
   rows: readonly FinanceReferenceRow[]; errors: readonly string[]; hasData: boolean; hasMore: boolean;
   onOpenWorkflow: (workflow: FinanceReferenceWorkflow, row: FinanceReferenceRow | null) => void;
+  initialTab?: FinanceReferenceTab;
+  detailPanel?: ReactNode;
+  detailTitle?: string | undefined;
+  onCloseDetail?: () => void;
 }>) {
-  const [tab, setTab] = useState<FinanceReferenceTab>("command");
+  const [tab, setTab] = useState<FinanceReferenceTab>(initialTab);
   const [walletGroups, setWalletGroups] = useState<readonly WalletGroup[]>(emptyGroups);
   const [intakes, setIntakes] = useState<readonly Intake[]>([]);
   const [intakeError, setIntakeError] = useState(false);
@@ -132,23 +137,15 @@ export function FinanceReferenceDashboard({ rows, errors, hasData, hasMore, onOp
   const [walletLoading, setWalletLoading] = useState(true);
 
   useEffect(() => {
-    let active = true; const controller = new AbortController();
+    const controller = new AbortController();
     setWalletLoading(true);
-    const run = async () => {
-      const requests = groupDefinitions.map(async (group): Promise<WalletGroup> => {
-        try {
-          const query = new URLSearchParams({ actorType: group.type, from: dateRange.from, to: dateRange.to });
-          const response = await fetch("/api/finance/financial-statements?" + query, { cache: "no-store", signal: controller.signal });
-          if (!response.ok) throw new Error("HTTP " + response.status);
-          const body: WalletRegistry = await response.json();
-          if (!Array.isArray(body.summaries)) throw new Error("INVALID_RESPONSE");
-          return { type: group.type, name: group.name, amount: body.summaries.reduce((sum,w)=>sum+w.currentBalanceMinor,0), count: body.summaries.length, loaded: true, complete: !body.nextCursor };
-        } catch (cause) { return { type: group.type, name: group.name, amount: 0, count: 0, loaded: false, complete: false, error: cause instanceof Error ? cause.message : "ERROR" }; }
-      });
-      const result = await Promise.all(requests);
-      if (active) { setWalletGroups(result); setWalletLoading(false); }
-    };
-    void run(); return () => { active = false; controller.abort(); };
+    const query = new URLSearchParams({ from:dateRange.from, to:dateRange.to });
+    void fetch("/api/finance/wallet-overview?" + query, { cache:"no-store", signal:controller.signal })
+      .then(async response=>{ if(!response.ok)throw new Error("HTTP "+response.status); return await response.json() as {groups:readonly {type:ActorType;count:number;amount:number;complete:boolean;error?:string}[]}; })
+      .then(data=>{ if(controller.signal.aborted)return; setWalletGroups(groupDefinitions.map(group=>{const item=data.groups.find(record=>record.type===group.type); return item ? {type:group.type,name:group.name,amount:item.amount,count:item.count,loaded:!item.error,complete:item.complete,...(item.error ? {error:item.error} : {})} : {type:group.type,name:group.name,amount:0,count:0,loaded:false,complete:false,error:"MISSING_SOURCE"};}));})
+      .catch(()=>{if(!controller.signal.aborted)setWalletGroups(emptyGroups);})
+      .finally(()=>{if(!controller.signal.aborted)setWalletLoading(false);});
+    return () => controller.abort();
   }, [dateRange]);
   const loadIntakes = useCallback(async () => {
     try {
@@ -182,7 +179,11 @@ export function FinanceReferenceDashboard({ rows, errors, hasData, hasMore, onOp
   }, [tab, intakes, rows, search, type, priority]);
   const pageCount = Math.max(1,Math.ceil(filtered.length/6));
   const shown = filtered.slice((Math.min(page,pageCount)-1)*6,Math.min(page,pageCount)*6);
-  const navTo = (next: FinanceReferenceTab) => { setTab(next); setPage(1); setSearch(""); setPriority("all"); setType("all"); };
+  const navTo = (next: FinanceReferenceTab) => {
+    if (detailPanel && onCloseDetail) onCloseDetail();
+    setTab(next); setPage(1); setSearch(""); setPriority("all"); setType("all");
+    if (typeof window !== "undefined") { const url = new URL(window.location.href); url.search = ""; url.searchParams.set("tab", next); window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash); }
+  };
   const kpis = [
     { label:"إجمالي أرصدة المحافظ", value:walletLoading?"…":walletGroups.some(x=>x.loaded)?displayMoney(walletTotal):"—", sub:walletComplete?"الرصيد الدفتري الحالي":"من المحافظ المحمّلة فقط", icon:"layers",color:"#06d5a0" },
     { label:"قرارات تحتاج إجراء", value: hasData && !intakeError ? number(rows.filter(r=>r.priority<=2).length+intakes.length) : "—", sub:"من السجلات المتاحة", icon:"check",color:"#ef6667" },
@@ -194,12 +195,15 @@ export function FinanceReferenceDashboard({ rows, errors, hasData, hasMore, onOp
     <div className="fr-masthead">
       <div className="fr-mast-title"><span className="fr-mark" aria-hidden="true"><b/><b/><b/></span><div><h1>المركز المالي</h1><p>الصورة المالية الكاملة لمنصة بثواني</p></div></div>
       <div className="fr-mast-tools">
-        <label className="fr-period"><Glyph name="calendar" size={17}/><span>الفترة</span><select aria-label="الفترة الزمنية" value={walletDays} onChange={e=>{setWalletDays(e.target.value);const to=new Date();const from=new Date(to);from.setUTCDate(to.getUTCDate()-Number(e.target.value)+1);setDateRange({from:dateInYemen(from),to:dateInYemen(to)});}}><option value="7">آخر 7 أيام</option><option value="30">آخر 30 يومًا</option></select></label>
+        {tab==="command" ? <label className="fr-period"><Glyph name="calendar" size={17}/><span>الفترة</span><select aria-label="الفترة الزمنية" value={walletDays} onChange={e=>{setWalletDays(e.target.value);const to=new Date();const from=new Date(to);from.setUTCDate(to.getUTCDate()-Number(e.target.value)+1);setDateRange({from:dateInYemen(from),to:dateInYemen(to)});}}><option value="7">آخر 7 أيام</option><option value="30">آخر 30 يومًا</option></select></label> : null}
         <div className="fr-data-status" title="الأرصدة من سجلات WLT المحمّلة"><i/><div><strong>{walletLoading?"جارٍ التحديث":walletGroups.every(x=>x.loaded)?"البيانات محدثة":"بعض المصادر غير متاحة"}</strong><small>من المصدر المالي</small></div></div>
       </div>
     </div>
     <nav className="fr-tabs" aria-label="أقسام المركز المالي">{tabs.map(t=><button type="button" key={t.key} aria-current={tab===t.key?"page":undefined} onClick={()=>navTo(t.key)}><Glyph name={t.icon} size={16}/>{t.label}</button>)}</nav>
-    {tab==="command" ? <>
+    {detailPanel ? <section className="fr-detail-surface" aria-label={detailTitle || "التفاصيل المالية"}>
+      <div className="fr-detail-header"><div><small>المركز المالي / {tabs.find(x => x.key === tab)?.label}</small><h2>{detailTitle ?? "التفاصيل المالية"}</h2></div><button type="button" onClick={onCloseDetail} className="fr-detail-back">العودة إلى {tabs.find(x => x.key === tab)?.label} ←</button></div>
+      <div className="fr-detail-content">{detailPanel}</div>
+    </section> : tab==="command" ? <>
       <div className="fr-kpis">{kpis.map(k=><div className="fr-kpi" key={k.label}><div className="fr-kpi-heading"><span>{k.label}</span><span className="fr-kpi-glyph" style={{color:k.color,background:k.color+"16"}}><Glyph name={k.icon} size={23}/></span></div><strong dir="ltr">{k.value}</strong><div className="fr-kpi-end"><small>{k.sub}</small><TinySparkline color={k.color} values={[0,0,0,0,0,0,0,0]}/></div></div>)}</div>
       <div className="fr-analysis">
         <section className="fr-analysis-card fr-sector-card">

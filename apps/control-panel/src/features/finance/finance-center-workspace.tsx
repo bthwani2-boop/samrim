@@ -8,12 +8,10 @@ import {
   type SettlementBatch,
 } from "@bthwani/dsh";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
-import { FinanceReferenceDashboard, type FinanceReferenceRow, type FinanceReferenceWorkflow } from "./finance-reference-dashboard";
+import { FinanceReferenceDashboard, type FinanceReferenceRow, type FinanceReferenceWorkflow, type FinanceReferenceTab } from "./finance-reference-dashboard";
 
-import { PageHeader } from "../../shell/page-header";
 
 import { useReadOnReturn } from "../shared/use-read-on-return";
 
@@ -167,7 +165,6 @@ function FinanceTask({
 
 
 export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initialQuery?: InitialQuery }>) {
-  const router = useRouter();
   const { state } = useSession();
   const actor = state.kind === "authenticated" && state.identity.role === "operator" &&
     state.identity.permissions?.includes("finance") ? state.identity.subject : null;
@@ -175,6 +172,11 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
   const [loading, setLoading] = useState(false);
   const [activeWorkflow, setActiveWorkflow] = useState<Workflow | null>(() => parseWorkflow(queryValue(initialQuery, "workflow")));
   const [activeRow, setActiveRow] = useState<FinancialRow | null>(null);
+  const workflowParam = queryValue(initialQuery, "workflow");
+  useEffect(() => { const workflow = parseWorkflow(workflowParam); if (workflow) { setActiveWorkflow(workflow); setActiveRow(null); } }, [workflowParam]);
+  const validTabs: readonly FinanceReferenceTab[] = ["command", "wallets", "activity", "collection", "pending", "settlements", "reconcile", "reports"];
+  const queryTab = queryValue(initialQuery, "tab");
+  const initialTab: FinanceReferenceTab = validTabs.includes(queryTab as FinanceReferenceTab) ? queryTab as FinanceReferenceTab : "command";
   const sequence = useRef(0);
   const visible = actor && snapshot?.actor === actor ? snapshot.results : null;
   const refresh = useCallback(async () => {
@@ -201,21 +203,23 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
     .sort((a,b) => a.priority - b.priority || (a.date ?? "").localeCompare(b.date ?? "") || a.key.localeCompare(b.key)), [visible]);
   const errors = sources.filter(source => Boolean(visible?.[source.source]?.error)).map(source => source.label);
   const hasMore = sources.some(source => visible?.[source.source]?.hasMore);
-  const openTask = (workflow: FinanceReferenceWorkflow, row: FinanceReferenceRow | null) => { setActiveRow(row); setActiveWorkflow(workflow); };
+  const openTask = (workflow: FinanceReferenceWorkflow, row: FinanceReferenceRow | null) => {
+    setActiveRow(row); setActiveWorkflow(workflow);
+    const url = new URL(window.location.href); url.searchParams.set("workflow", workflow);
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  };
   const closeTask = () => {
-    if (Object.keys(initialQuery).length) router.replace("/finance", { scroll: false });
     setActiveWorkflow(null); setActiveRow(null); void refresh();
+    const url = new URL(window.location.href); const restoredTab = url.searchParams.get("tab"); url.search = ""; if (restoredTab) url.searchParams.set("tab", restoredTab);
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
   };
   if (state.kind !== "authenticated") return null;
   if (!actor) return <section className="state-content workspace-restricted" role="alert">
     <h1>صلاحية المالية غير متاحة</h1><p>يتطلب عرض الأرصدة والكشوف إذن المالية.</p>
   </section>;
-  if (activeWorkflow) return <section className="workspace-page finance-center" aria-labelledby="finance-center-title">
-    <PageHeader id="finance-center-title" title={workflowLabels[activeWorkflow]} actions={<button
-      type="button" className="button button-secondary" onClick={closeTask}>العودة إلى المركز المالي</button>} />
-    <div className="finance-center-active"><FinanceTask workflow={activeWorkflow} row={activeRow} query={initialQuery} /></div>
-  </section>;
   return <section className="workspace-page fc-reference-page" aria-label="المركز المالي">
-    <FinanceReferenceDashboard rows={rows} errors={errors} hasData={Boolean(visible)} hasMore={hasMore} onOpenWorkflow={openTask}/>
+    <FinanceReferenceDashboard initialTab={initialTab} rows={rows} errors={errors} hasData={Boolean(visible)} hasMore={hasMore} onOpenWorkflow={openTask}
+      detailTitle={activeWorkflow ? workflowLabels[activeWorkflow] : undefined} onCloseDetail={closeTask}
+      detailPanel={activeWorkflow ? <FinanceTask workflow={activeWorkflow} row={activeRow} query={initialQuery} /> : undefined} />
   </section>;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FinanceWalletRegistry } from "./finance-wallet-registry";
 import { financeAmount } from "./finance-amount";
 import { SettlementIntakeInbox } from "./settlement-intake-inbox";
@@ -57,19 +57,20 @@ function WalletsView(){
 function ActivityView({onOpenWorkflow}:ViewProps){
  const [actor,setActor]=useState<ActorType>("customer"),[wallets,setWallets]=useState<readonly WalletSummary[]>([]),[cursor,setCursor]=useState(""),[selected,setSelected]=useState<string>(""),[statement,setStatement]=useState<Statement|null>(null),[entries,setEntries]=useState<readonly LedgerEntry[]>([]),[next,setNext]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");
  const [from,setFrom]=useState(()=>dateRange().from),[to,setTo]=useState(()=>dateRange().to);
+ const walletsRequest = useRef(0), statementRequest = useRef(0);
  const loadWallets=useCallback(async (after="")=>{
   if(!from||!to||from>to){setError("حدد نطاقًا زمنيًا صحيحًا.");return;}
-  setBusy(true);setError("");
-  try{const p=new URLSearchParams({actorType:actor,from,to});if(after)p.set("cursor",after);const res=await fetch("/api/finance/financial-statements?"+p,{cache:"no-store"});if(!res.ok)throw Error("تعذرت قراءة قائمة المحافظ");const body=await res.json() as {summaries?:WalletSummary[];nextCursor?:string};if(!Array.isArray(body.summaries))throw Error("بيانات المحافظ غير صالحة");setWallets(old=>after?[...old,...body.summaries!]:body.summaries!);setCursor(body.nextCursor??"");
-  }catch(e){setError(e instanceof Error?e.message:"تعذرت قراءة المحافظ");}finally{setBusy(false);}
+  const request=++walletsRequest.current;setBusy(true);setError("");
+  try{const p=new URLSearchParams({actorType:actor,from,to});if(after)p.set("cursor",after);const res=await fetch("/api/finance/financial-statements?"+p,{cache:"no-store"});if(!res.ok)throw Error("تعذرت قراءة قائمة المحافظ");const body=await res.json() as {summaries?:WalletSummary[];nextCursor?:string};if(!Array.isArray(body.summaries))throw Error("بيانات المحافظ غير صالحة");if(request!==walletsRequest.current)return;setWallets(old=>after?[...old,...body.summaries!]:body.summaries!);setCursor(body.nextCursor??"");
+  }catch(e){if(request===walletsRequest.current)setError(e instanceof Error?e.message:"تعذرت قراءة المحافظ");}finally{if(request===walletsRequest.current)setBusy(false);}
  },[actor,from,to]);
  useEffect(()=>{let alive=true;const f=async()=>{if(alive)await loadWallets()};void f();return()=>{alive=false}},[loadWallets]);
  const loadStatement=useCallback(async (actorId:string,after="")=>{
-  if(!actorId)return;setBusy(true);setError("");
-  try{const p=new URLSearchParams({from,to});if(after)p.set("cursor",after);const res=await fetch("/api/finance/beneficiaries/"+encodeURIComponent(actor)+"/"+encodeURIComponent(actorId)+"/financial-statement?"+p,{cache:"no-store"});if(!res.ok)throw Error("تعذرت قراءة كشف المحفظة");const data=await res.json() as {statement?:Statement};if(!data.statement||!Array.isArray(data.statement.entries))throw Error("كشف الحساب غير صالح");setStatement(data.statement);setEntries(old=>after?[...old,...data.statement!.entries]:data.statement!.entries);setNext(data.statement.nextCursor??"");
-  }catch(e){setError(e instanceof Error?e.message:"تعذرت قراءة الكشف");}finally{setBusy(false);}
+  if(!actorId)return;const request=++statementRequest.current;setBusy(true);setError("");
+  try{const p=new URLSearchParams({from,to});if(after)p.set("cursor",after);const res=await fetch("/api/finance/beneficiaries/"+encodeURIComponent(actor)+"/"+encodeURIComponent(actorId)+"/financial-statement?"+p,{cache:"no-store"});if(!res.ok)throw Error("تعذرت قراءة كشف المحفظة");const data=await res.json() as {statement?:Statement};if(!data.statement||!Array.isArray(data.statement.entries))throw Error("كشف الحساب غير صالح");if(request!==statementRequest.current)return;setStatement(data.statement);setEntries(old=>after?[...old,...data.statement!.entries]:data.statement!.entries);setNext(data.statement.nextCursor??"");
+  }catch(e){if(request===statementRequest.current)setError(e instanceof Error?e.message:"تعذرت قراءة الكشف");}finally{if(request===statementRequest.current)setBusy(false);}
  },[actor,from,to]);
- const resetSelection=()=>{setWallets([]);setCursor("");setSelected("");setStatement(null);setEntries([]);setNext("");};
+ const resetSelection=()=>{walletsRequest.current++;statementRequest.current++;setWallets([]);setCursor("");setSelected("");setStatement(null);setEntries([]);setNext("");};
  const wallet=wallets.find(w=>w.actorId===selected);
  return <section className="fs-page">
   <Header tab="activity" detail="اختر صاحب المحفظة لقراءة كشف WLT التفصيلي، ثم افتح الحركة ومرجعها."/>
@@ -127,11 +128,13 @@ function ReconcileView({rows,onOpenWorkflow}:ViewProps){
 function ReportsView({rows,onOpenWorkflow}:ViewProps){
  const [kind,setKind]=useState<"all"|"custody"|"commissions"|"batches"|"withdrawals">("all"),[from,setFrom]=useState(()=>dateRange().from),[to,setTo]=useState(()=>dateRange().to);
  const allowed=from<=to&&Boolean(from)&&Boolean(to);
- const report=rows.filter(r=>(kind==="all"||r.source===kind)&&(!r.date||!allowed||(r.date.slice(0,10)>=from&&r.date.slice(0,10)<=to)));
+ const scoped=rows.filter(r=>kind==="all"||r.source===kind);
+ const excludedNoDate=scoped.filter(r=>!r.date).length;
+ const report=scoped.filter(r=>Boolean(r.date)&&allowed&&r.date!.slice(0,10)>=from&&r.date!.slice(0,10)<=to);
  const reports=[{key:"all",label:"ملخص المالية",note:"من المعاملات المحمّلة"},{key:"custody",label:"تحصيل COD",note:"التحصيلات النقدية"},{key:"commissions",label:"ذمم العمولات",note:"المبالغ المستحقة"},{key:"batches",label:"دفعات التسوية",note:"الدفعات المعروضة"},{key:"withdrawals",label:"سحوبات العملاء",note:"طلبات السحب الاستثنائية"}] as const;
  return <section className="fs-page"><Header tab="reports" detail="إنشاء التقارير من السجلات المتاحة فقط، مع إظهار حدود التغطية والمرجعية."/>
  <div className="fs-report-tiles">{reports.map(r=><button type="button" key={r.key} aria-pressed={kind===r.key} onClick={()=>setKind(r.key)}><strong>{r.label}</strong><small>{r.note}</small></button>)}</div>
- <div className="fs-panel"><div className="fs-panel-heading"><h3>تكوين التقرير</h3><small>تصدير CSV مع دعم العربية</small></div><div className="fs-inline-filters"><label>من <input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>إلى <input type="date" value={to} onChange={e=>setTo(e.target.value)}/></label><select aria-label="نوع التقرير" value={kind} onChange={e=>setKind(e.target.value as typeof kind)}>{reports.map(r=><option key={r.key} value={r.key}>{r.label}</option>)}</select><Download rows={allowed?report:[]} file={"bthwani-"+kind+"-report"}/></div>{!allowed?<p role="alert" className="fs-error">تاريخ البداية لا يمكن أن يتجاوز تاريخ النهاية.</p>:null}<p className="fs-note">التصدير يشمل السجلات المحمّلة فقط، وليس تقريرًا محاسبيًا شاملاً؛ بعض أنواع السجلات لا تتضمن تاريخًا في هذه المعاينة.</p></div>
+ <div className="fs-panel"><div className="fs-panel-heading"><h3>تكوين التقرير</h3><small>تصدير CSV مع دعم العربية</small></div><div className="fs-inline-filters"><label>من <input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>إلى <input type="date" value={to} onChange={e=>setTo(e.target.value)}/></label><select aria-label="نوع التقرير" value={kind} onChange={e=>setKind(e.target.value as typeof kind)}>{reports.map(r=><option key={r.key} value={r.key}>{r.label}</option>)}</select><Download rows={allowed?report:[]} file={"bthwani-"+kind+"-report"}/></div>{!allowed?<p role="alert" className="fs-error">تاريخ البداية لا يمكن أن يتجاوز تاريخ النهاية.</p>:null}<p className="fs-note">التصدير يشمل السجلات المؤرخة المحمّلة فقط، وليس تقريرًا محاسبيًا شاملاً. استُبعد {num(excludedNoDate)} سجلًا دون تاريخ مثبت في هذه المعاينة.</p></div>
  <div className="fs-metrics"><Card name="السجلات في العرض" value={num(report.length)} note="ضمن المصادر المحمّلة"/><Card name="القيمة المعروفة" value={money(report.reduce((v,r)=>v+(r.amountMinor??0),0))} note="لا يشمل القيم غير المتاحة" tone="green"/><Card name="الحالات العالية الأولوية" value={num(report.filter(r=>r.priority<=2).length)} note="في التقرير المحدد" tone="orange"/></div>
  <div className="fs-panel"><div className="fs-panel-heading"><h3>معاينة التقرير</h3><span>{reports.find(r=>r.key===kind)?.label}</span></div><Registry rows={report} onOpen={r=>onOpenWorkflow(r.source,r)}/></div></section>;
 }

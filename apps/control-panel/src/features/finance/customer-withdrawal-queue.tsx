@@ -1,4 +1,5 @@
 "use client";
+import { preserveFinanceRouteContext } from "./finance-route-context";
 
 import { formatMoney, officialWalletDestinationStatusLabel, officialWalletVerificationStatusLabel, payoutStatusLabel, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type CustomerWithdrawalIntakeSummary, type PayoutRequest } from "@bthwani/dsh";
 import { usePathname, useRouter } from "next/navigation";
@@ -38,6 +39,7 @@ function queryString(query: CustomerWithdrawalQueueQuery) {
   if (query.search) params.set("search", query.search);
   if (query.cursor) params.set("cursor", query.cursor);
   if (query.intakeId) params.set("intakeId", query.intakeId);
+  preserveFinanceRouteContext(params);
   return params.toString();
 }
 
@@ -262,7 +264,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
         "تعذر إنشاء دفعة الصرف اليدوي",
       );
       completeMutation(scope);
-      router.push(`/finance/beneficiary-settlement/partners?view=batches&batchId=${encodeURIComponent(result.batch.id)}`);
+      router.push(`/finance?tab=settlements&workflow=batches&view=batches&batchId=${encodeURIComponent(result.batch.id)}`);
     } catch (value) {
       setDetailError(value instanceof Error ? value.message : "تعذر إنشاء دفعة الصرف اليدوي");
     } finally {

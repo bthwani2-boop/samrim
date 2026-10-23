@@ -1,4 +1,5 @@
 "use client";
+import { preserveFinanceRouteContext } from "./finance-route-context";
 
 import {
   financialProfileStateLabel,
@@ -35,6 +36,7 @@ function buildHref(pathname: string, query: PartnerEarningsInitialQuery) {
   const params = new URLSearchParams();
   if (query.cursor) params.set("cursor", query.cursor);
   if (query.partnerActorId) params.set("partnerActorId", query.partnerActorId);
+  preserveFinanceRouteContext(params, pathname);
   const suffix = params.toString();
   return suffix ? `${pathname}?${suffix}` : pathname;
 }

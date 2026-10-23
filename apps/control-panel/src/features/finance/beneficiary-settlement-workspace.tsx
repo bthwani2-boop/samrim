@@ -1,4 +1,5 @@
 "use client";
+import { preserveFinanceRouteContext } from "./finance-route-context";
 
 import { type BeneficiaryPayoutState, formatMoney, fulfillmentModeLabel, officialWalletDestinationStatusLabel, orderStateLabel, publicationStateLabel, type PayoutRequest, payoutStatusLabel } from "@bthwani/dsh";
 import Link from "next/link";
@@ -109,6 +110,7 @@ function settlementRouteHref(pathname: string, query: BeneficiarySettlementIniti
   if (next.batchId) params.set("batchId", next.batchId);
   if (next.batchStatus) params.set("batchStatus", next.batchStatus);
   if (next.batchCursor) params.set("batchCursor", next.batchCursor);
+  preserveFinanceRouteContext(params, pathname);
   const serialized = params.toString();
   return pathname + (serialized ? `?${serialized}` : "");
 }

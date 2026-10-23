@@ -1,4 +1,5 @@
 "use client";
+import { preserveFinanceRouteContext } from "./finance-route-context";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
 
@@ -50,6 +51,7 @@ function buildHref(pathname: string, query: CashCustodyInitialQuery) {
   const params = new URLSearchParams({ sort: query.sort });
   if (query.search) params.set("search", query.search);
   if (query.cursor) params.set("cursor", query.cursor);
+  preserveFinanceRouteContext(params, pathname);
   return `${pathname}?${params.toString()}`;
 }
 
