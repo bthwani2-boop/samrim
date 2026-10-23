@@ -1866,6 +1866,8 @@ func writeDeliveryFeeError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different delivery fee policy facts")
 	case errors.Is(err, postgres.ErrVersionConflict):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "the active delivery fee policy changed after it was read")
+	case errors.Is(err, postgres.ErrDeliveryOutsideCoverage):
+		writeError(w, http.StatusUnprocessableEntity, "DELIVERY_OUTSIDE_SERVICE_AREA", "delivery distance exceeds the active service radius")
 	case errors.Is(err, postgres.ErrDeliveryFeePolicyInvalidInput), errors.Is(err, postgres.ErrDeliveryFeeQuoteInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_DELIVERY_FEE", "delivery fee policy or quote is invalid")
 	default:

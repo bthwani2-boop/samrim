@@ -13,10 +13,15 @@ import (
 	"time"
 )
 
+// The initial operating radius is conservative until city-specific geographic
+// boundaries are configured; DSH serviceability enforces the same 30km limit.
+const maximumDeliveryDistanceMeters int64 = 30_000
+
 var (
 	ErrDeliveryFeePolicyInvalidInput = errors.New("delivery fee policy input is invalid")
 	ErrDeliveryFeePolicyNotFound     = errors.New("delivery fee policy was not found")
 	ErrDeliveryFeeQuoteInvalidInput  = errors.New("delivery fee quote input is invalid")
+	ErrDeliveryOutsideCoverage       = errors.New("delivery distance exceeds supported service radius")
 )
 
 type DeliveryFeePolicyRecord struct {
@@ -183,6 +188,11 @@ func ResolveDeliveryFeeQuote(ctx context.Context, db *sql.DB, input DeliveryFeeQ
 		return DeliveryFeeQuoteRecord{}, err
 	}
 	distanceMeters := haversineMeters(input.OriginLatitude, input.OriginLongitude, input.DestinationLatitude, input.DestinationLongitude)
+	// A shared city identifier is insufficient proof that an address is
+	// deliverable. Never quote a 140km order as an ordinary local trip.
+	if !deliveryDistanceWithinCoverage(distanceMeters) {
+		return DeliveryFeeQuoteRecord{}, ErrDeliveryOutsideCoverage
+	}
 	if !validDeliveryDistanceBands(policy.DistanceBands) {
 		return DeliveryFeeQuoteRecord{}, ErrDeliveryFeePolicyNotFound
 	}
@@ -250,4 +260,8 @@ func haversineMeters(latitudeA, longitudeA, latitudeB, longitudeB float64) int64
 		a = 1
 	}
 	return int64(math.Round(earthRadiusMeters * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))))
+}
+
+func deliveryDistanceWithinCoverage(distanceMeters int64) bool {
+	return distanceMeters >= 0 && distanceMeters <= maximumDeliveryDistanceMeters
 }
