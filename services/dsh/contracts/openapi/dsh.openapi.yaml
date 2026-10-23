@@ -9740,7 +9740,7 @@ components:
     OperatorMarketingSummary:
       type: object
       additionalProperties: false
-      required: [activePromotions, scheduledPromotions, endedPromotions, draftPromotions, pausedPromotions, activeContent, asOf]
+      required: [activePromotions, scheduledPromotions, endedPromotions, draftPromotions, pausedPromotions, activeContent, partnerInvitations, partnerApproved, partnerDeclined, partnerPending, asOf]
       properties:
         activePromotions:
           type: integer
@@ -9758,6 +9758,18 @@ components:
           type: integer
           minimum: 0
         activeContent:
+          type: integer
+          minimum: 0
+        partnerInvitations:
+          type: integer
+          minimum: 0
+        partnerApproved:
+          type: integer
+          minimum: 0
+        partnerDeclined:
+          type: integer
+          minimum: 0
+        partnerPending:
           type: integer
           minimum: 0
         asOf:

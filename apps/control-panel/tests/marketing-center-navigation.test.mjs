@@ -36,7 +36,7 @@ test("direct links and browser history preserve the customer context", () => {
 
 test("campaign partner read and analytics read fail independently", () => {
   assert.match(center, /if \(section === "campaigns"\)/);
-  assert.match(center, /return \{ promotions: promotions\.promotions/);
-  assert.match(center, /return \{ promotions: \[\], promotionsPartial: false, content: content\.items/);
+  assert.match(center, /return \{ participation, content: \[\], contentPartial: false \}/);
+  assert.match(center, /return \{ participation: null, content: content\.items/);
   assert.doesNotMatch(center, /Promise\.all\(\[/);
 });

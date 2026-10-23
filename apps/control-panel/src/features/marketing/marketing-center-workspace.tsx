@@ -1,6 +1,6 @@
 "use client";
 
-import type { DiscoveryContentAnalytics, DiscoveryContentView, OperatorDiscoveryContentRegistryResponse, OperatorPromotionRegistryResponse, PromotionView } from "@bthwani/dsh";
+import type { DiscoveryContentAnalytics, DiscoveryContentView, OperatorDiscoveryContentRegistryResponse, OperatorMarketingSummary } from "@bthwani/dsh";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
@@ -20,37 +20,46 @@ const sections: ReadonlyArray<Readonly<{ id: Section; label: string; description
 ];
 
 type RegistrySnapshot = Readonly<{
-  promotions: ReadonlyArray<PromotionView>;
+  participation: OperatorMarketingSummary | null;
   content: ReadonlyArray<DiscoveryContentView>;
-  promotionsPartial: boolean;
   contentPartial: boolean;
 }>;
 
 async function readMarketingRegistry(signal: AbortSignal, section: "campaigns" | "analytics"): Promise<RegistrySnapshot> {
   if (section === "campaigns") {
-    const response = await fetch("/api/marketing/promotions?limit=100&sort=starts_desc", { signal, cache: "no-store" });
-    if (!response.ok) throw new Error("تعذرت قراءة حملات الشركاء.");
-    const promotions = await response.json() as OperatorPromotionRegistryResponse;
-    if (!Array.isArray(promotions.promotions)) throw new Error("استجابة سجل العروض غير صالحة.");
-    return { promotions: promotions.promotions, promotionsPartial: Boolean(promotions.nextCursor), content: [], contentPartial: false };
+    const response = await fetch("/api/marketing/summary", { signal, cache: "no-store" });
+    if (!response.ok) throw new Error("تعذر قراءة مشاركة الشركاء من DSH.");
+    const participation = await response.json() as OperatorMarketingSummary;
+    const counts = [participation.partnerInvitations, participation.partnerApproved, participation.partnerDeclined, participation.partnerPending];
+    if (!counts.every((count) => Number.isSafeInteger(count) && count >= 0)
+      || participation.partnerInvitations !== participation.partnerApproved + participation.partnerDeclined + participation.partnerPending) {
+      throw new Error("تعذر التحقق من إحصاءات مشاركة الشركاء.");
+    }
+    return { participation, content: [], contentPartial: false };
   }
   const response = await fetch("/api/marketing/content?limit=100&sort=priority", { signal, cache: "no-store" });
   if (!response.ok) throw new Error("تعذرت قراءة المحتوى التسويقي.");
   const content = await response.json() as OperatorDiscoveryContentRegistryResponse;
   if (!Array.isArray(content.items)) throw new Error("استجابة سجل المحتوى غير صالحة.");
-  return { promotions: [], promotionsPartial: false, content: content.items, contentPartial: Boolean(content.nextCursor) };
+  return { participation: null, content: content.items, contentPartial: Boolean(content.nextCursor) };
 }
 
 function PartnerCampaignSummary({ snapshot }: Readonly<{ snapshot: RegistrySnapshot }>) {
-  const offers = snapshot.promotions.filter((item) => item.requiresPartnerOptIn);
-  return <div className="work-stack">
-    <p className="muted">الموافقة تُسجّل من تطبيق الشريك للمتجر المخوّل. لا يستطيع المشغّل قبول مشاركة نيابة عن الشريك أو تحميل متجر تكلفةً بمجرد نشر حملة.</p>
-    <div className="access-card">
-      <h2>حملات تتطلب موافقة الشركاء</h2>
-      {offers.length ? <ul>{offers.map((item) => <li key={item.id}>{item.nameAr} — {item.fundingSource === "SHARED" ? "تمويل مشترك" : item.fundingSource === "PARTNER" ? "تمويل الشريك" : "تمويل بثواني"} — {item.state}</li>)}</ul> : <p className="muted">لا تظهر حملات تتطلب الموافقة في السجلات المقروءة.</p>}
-      {snapshot.promotionsPartial ? <p className="muted">القائمة جزئية؛ توجد سجلات أخرى لم تُقرأ.</p> : null}
-      <p className="muted">حالة كل قبول أو رفض وعدد المتاجر المنتظرة: غير متاحين في قراءة المشغّل الحالية. يمكن للشريك مراجعتها داخل تطبيق الشريك.</p>
-    </div>
+  const summary = snapshot.participation;
+  if (!summary) return null;
+  const counts = [
+    { label: "دعوات مشاركة", count: summary.partnerInvitations },
+    { label: "موافق عليها", count: summary.partnerApproved },
+    { label: "مرفوضة", count: summary.partnerDeclined },
+    { label: "بانتظار قرار", count: summary.partnerPending },
+  ];
+  return <div className="access-card">
+    <h2>مشاركة الشركاء في الحملات النشطة</h2>
+    <dl className="marketing-analytics-breakdown">
+      {counts.map(({ label, count }) => <div key={label}><dt>{label}</dt><dd><strong>{count.toLocaleString("ar-YE")}</strong></dd></div>)}
+    </dl>
+    <p className="muted">الأرقام من DSH لجميع الحملات المنشورة السارية والمتاجر المؤهلة، دون اقتطاع أول 100 عرض. الدعوة تعني حملة واحدة لمتجر واحد، ولا تعني خصمًا مُنفذًا.</p>
+    <p className="muted">آخر احتساب: {new Date(summary.asOf).toLocaleString("ar-YE")}. قرارات التمويل موثقة داخل DSH، ومبالغ التسوية تُقرأ من WLT منفصلًا.</p>
   </div>;
 }
 
