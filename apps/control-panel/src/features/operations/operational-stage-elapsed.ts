@@ -20,9 +20,16 @@ export function operationalStageAttention(state: string, stageStartedAt: string 
     && typeof preparationMinutes === "number" && preparationMinutes >= 1 && preparationMinutes <= 1440;
   // 30 minutes is an operational attention fallback, not a contractual SLA.
   const targetMinutes = configuredPreparation ? preparationMinutes : 30;
-  const needsReview = now - startedAt >= targetMinutes * 60_000;
+  const elapsed = now - startedAt;
+  const target = targetMinutes * 60_000;
+  const needsReview = elapsed >= target;
+  const remaining = Math.max(1, Math.ceil((target - elapsed) / 60_000));
+  const overdue = Math.floor((elapsed - target) / 60_000);
+  const source = configuredPreparation ? "مدة التجهيز المحددة" : "حد المتابعة التشغيلي التقريبي";
   return {
     needsReview,
-    label: needsReview ? (configuredPreparation ? `تجاوز مدة التحضير المحددة (${targetMinutes} دقيقة)` : "المرحلة مستمرة منذ 30 دقيقة أو أكثر") : "",
+    label: needsReview
+      ? `تجاوز ${source} (${targetMinutes} د) بـ ${overdue.toLocaleString("ar-YE")} د`
+      : `بقي ${remaining.toLocaleString("ar-YE")} د حتى ${source}`,
   };
 }

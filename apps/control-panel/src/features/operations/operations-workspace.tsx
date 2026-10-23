@@ -364,8 +364,8 @@ export function OperationsWorkspace() {
                     </span> : <span className="muted">غير مسند</span>}</td>
                     <td><time dateTime={item.updatedAt}>{formatOrderDate(item.updatedAt)}</time></td>
                     <td><div className="ops-row-followup">
-                      <span className={needsReview ? "operations-attention" : "muted"}>{stageAttention?.needsReview ? stageAttention.label : age.label}</span>
-                      {operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt)) ? <span className="muted">{operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt))}</span> : null}
+                      <span className={needsReview ? "operations-attention" : "muted"}>{stageAttention ? stageAttention.label : age.label}</span>
+                      {!stageAttention && operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt)) ? <span className="muted">{operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt))}</span> : null}
                       {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
                     </div></td>
                     <td><button type="button" className="ops-row-open" aria-label={(nextAction || needsReview ? "مراجعة" : "تفاصيل") + " طلب " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>{nextAction || needsReview ? "مراجعة" : "تفاصيل"}</button></td>
@@ -388,8 +388,8 @@ export function OperationsWorkspace() {
                     <span className="ops-mobile-order-captain">{item.assignment ? captainAssignmentStateLabel(item.assignment.state) : "غير مسند"}</span>
                   </div>
                   <div className="ops-mobile-order-followup">
-                    <span className={needsReview ? "operations-attention" : "muted"}>{stageAttention?.needsReview ? stageAttention.label : age.label}</span>
-                      {operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt)) ? <span className="muted">{operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt))}</span> : null}
+                    <span className={needsReview ? "operations-attention" : "muted"}>{stageAttention ? stageAttention.label : age.label}</span>
+                      {!stageAttention && operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt)) ? <span className="muted">{operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt))}</span> : null}
                     {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
                   </div>
                   <div className="ops-mobile-order-bottom">

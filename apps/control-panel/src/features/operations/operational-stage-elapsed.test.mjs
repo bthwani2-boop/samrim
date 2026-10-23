@@ -28,3 +28,22 @@ test("Store preparation target controls attention only while preparing", () => {
   assert.equal(operationalStageAttention("CREATED", "2026-10-23T11:25:00Z", now, 180)?.needsReview, true);
   assert.equal(operationalStageAttention("PREPARING", "2026-10-23T11:25:00Z", now, null)?.needsReview, true);
 });
+
+test("upcoming checkpoint is visible without claiming a contractual SLA", () => {
+  const preparing = operationalStageAttention("PREPARING", "2026-10-23T11:25:00Z", now, 45);
+  assert.equal(preparing?.needsReview, false);
+  assert.match(preparing?.label ?? "", /10|١٠|۱۰/);
+  assert.match(preparing?.label ?? "", /التجهيز/);
+  const created = operationalStageAttention("CREATED", "2026-10-23T11:50:00Z", now);
+  assert.equal(created?.needsReview, false);
+  assert.match(created?.label ?? "", /20|٢٠|۲۰/);
+  assert.match(created?.label ?? "", /التشغيلي/);
+  assert.doesNotMatch(created?.label ?? "", /SLA|عقد|مخالفة/);
+});
+test("overdue attention uses audited stage entry and configured store preparation time", () => {
+  const overdue = operationalStageAttention("PREPARING", "2026-10-23T11:25:00Z", now, 10);
+  assert.equal(overdue?.needsReview, true);
+  assert.match(overdue?.label ?? "", /25|٢٥|۲۵/);
+  assert.equal(operationalStageAttention("PREPARING", "bad", now, 10)?.needsReview, true);
+  assert.equal(operationalStageAttention("CAPTAIN_ASSIGNED", "2026-10-23T10:00:00Z", now, 10), null);
+});
