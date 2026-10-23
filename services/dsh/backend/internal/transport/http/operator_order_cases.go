@@ -65,13 +65,14 @@ func (s *OrderServer) transitionOperatorOrderCase(w http.ResponseWriter, r *http
 		Action          string `json:"action"`
 		Note            string `json:"note"`
 		ExpectedVersion int    `json:"expectedVersion"`
+		EvidenceRef     string `json:"evidenceRef"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
 	}
 	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	corr := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
-	item, replay, err := s.service.UpdateOrderCaseForOperator(r.Context(), r.PathValue("orderId"), id, actor, body.Action, body.Note, key, corr, body.ExpectedVersion)
+	item, replay, err := s.service.UpdateOrderCaseForOperator(r.Context(), r.PathValue("orderId"), id, actor, body.Action, body.Note, key, corr, body.ExpectedVersion, body.EvidenceRef)
 	if err != nil {
 		writeOrderError(w, err)
 		return

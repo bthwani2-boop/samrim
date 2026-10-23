@@ -1349,6 +1349,9 @@ components:
           minimum: 1
         resolutionNote:
           type: string
+        resolutionEvidenceRef:
+          type: string
+          maxLength: 128
         openedAt:
           type: string
           format: date-time

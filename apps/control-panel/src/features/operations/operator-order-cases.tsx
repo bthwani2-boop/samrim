@@ -7,7 +7,7 @@ import { formatOperatorCaseAge } from "./operator-case-age";
 type OpsCase = Readonly<{
  id:number;orderId:string;reason:string;state:string;priority:string;
  ownerActorId?:string;nextAction:string;version:number;
- resolutionNote?:string;openedAt:string;updatedAt:string;
+ resolutionNote?:string;resolutionEvidenceRef?:string;openedAt:string;updatedAt:string;
 }>;
 type Page = Readonly<{items:ReadonlyArray<OpsCase>;nextCursor:string}>;
 const reasons:ReadonlyArray<Readonly<{value:string;label:string}>> = [
@@ -37,6 +37,7 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
  const [selected,setSelected]=useState<OpsCase|null>(null);
  const [action,setAction]=useState("NEXT_ACTION");
  const [note,setNote]=useState("");
+ const [evidenceRef,setEvidenceRef]=useState("");
  const [clock,setClock]=useState<number|null>(null);
  const sequence=useRef(0);
  useEffect(()=>{
@@ -78,6 +79,12 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
    if(inFlight.current||loading||busy)return;
    const pendingAction=kind==="OPEN"?"OPEN":action;
    const pendingNote=kind==="OPEN"?nextAction.trim():note.trim();
+   const sensitive=kind==="TRANSITION" && pendingAction==="RESOLVE" &&
+      (row?.reason==="PAYMENT_EXCEPTION"||row?.reason==="DELIVERY_BLOCKED");
+   if(sensitive&&!evidenceRef.trim()){
+     setError("لا يمكن إغلاق العهدة أو المال دون مرجع دليل مثبت من الخدمة.");
+     return;
+   }
    if((kind==="OPEN"||pendingAction!=="CLAIM")&&pendingNote.length<12){
      setError("اكتب إجراءً أو نتيجة مراجعة واضحة، لا تقل عن 12 حرفًا.");return;
    }
@@ -90,10 +97,14 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
        method:"POST",signal:AbortSignal.timeout(12_000),
        headers:{"Content-Type":"application/json","Idempotency-Key":attempt.current},
        body:JSON.stringify(kind==="OPEN"?{reason,priority,nextAction:pendingNote}:
-         {action:pendingAction,note:pendingNote,expectedVersion:row!.version}),
+         {action:pendingAction,note:pendingNote,expectedVersion:row!.version,evidenceRef:sensitive?evidenceRef.trim():""}),
      });
      if(!response.ok){
+       const payload=await response.json().catch(()=>null) as {error?:{code?:string}}|null;
        if(response.status===409||response.status===403)attempt.current="";
+       if(payload?.error?.code==="CASE_CLOSURE_UNVERIFIED"){
+         throw new Error("لا يمكن إغلاق التعثر: دليل التسوية أو استلام البضاعة غير مثبت للطلب.");
+       }
        throw new Error(response.status===409?"عُدلت الحالة بواسطة موظف آخر؛ راجع الحالة الحالية.":
         response.status===403?"هذه الحالة مملوكة لموظف آخر أو الصلاحية غير متاحة.":
         "نتيجة الحفظ غير مؤكدة؛ راجع الحالة الحالية قبل إجراء جديد.");
@@ -101,7 +112,7 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
      const body=await response.json() as {item?:OpsCase};
      if(!body.item||body.item.orderId!==orderId)throw new Error("النتيجة غير مؤكدة.");
      attempt.current="";
-     setSelected(null);setExpand(false);setNote("");setNextAction("");
+     setSelected(null);setExpand(false);setNote("");setNextAction("");setEvidenceRef("");
      setNotice("حُفظت الحالة بعد تأكيد الخدمة.");
      onUpdated?.();
    }catch(cause){
@@ -129,7 +140,7 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
    finally{setBusy(false);}
  }
  function choose(row:OpsCase,selectedAction:string){
-   setSelected(row);setAction(selectedAction);setNote("");setError("");setNotice("");attempt.current="";
+   setSelected(row);setAction(selectedAction);setNote("");setEvidenceRef("");setError("");setNotice("");attempt.current="";
  }
  return <section className="order-detail-panel" aria-labelledby="ops-cases-title">
    <div className="action-row">
@@ -145,6 +156,9 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
      {item.priority==="URGENT"?<span className="operations-attention"> · عاجل</span>:null}
      <p>{item.nextAction}</p>
      <p className="muted">{item.ownerActorId?"المسؤول: "+item.ownerActorId:"لم يُستلم بعد"} · نسخة {item.version}{clock!==null?" · "+formatOperatorCaseAge(item.openedAt,clock):""}</p>
+     {item.state==="RESOLVED"&&["PAYMENT_EXCEPTION","DELIVERY_BLOCKED"].includes(item.reason)&&!item.resolutionEvidenceRef?
+       <p role="alert">إغلاق تاريخي غير مؤيد بإثبات؛ يلزم تدقيق يدوي قبل اعتباره تسوية نهائية.</p>:null}
+     {item.state==="RESOLVED"&&item.resolutionEvidenceRef?<p className="muted">الإثبات: {item.resolutionEvidenceRef}</p>:null}
      {item.state==="RESOLVED"&&item.resolutionNote?<p className="muted">النتيجة: {item.resolutionNote}</p>:null}
      {item.state!=="RESOLVED"?<div className="action-row">
         {!item.ownerActorId?<button type="button" className="button button-secondary" disabled={busy} onClick={()=>choose(item,"CLAIM")}>استلام الحالة</button>:null}
@@ -160,6 +174,15 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
      {action!=="CLAIM"?<textarea className="input" rows={2} maxLength={action==="RESOLVE"?1000:500} value={note}
        onChange={event=>{setNote(event.target.value);attempt.current="";}}
        placeholder="ما الذي اتُّخذ أو يجب اتخاذه؟"/>:null}
+     {action==="RESOLVE"&&(selected.reason==="PAYMENT_EXCEPTION"||selected.reason==="DELIVERY_BLOCKED")?
+       <label className="order-detail-field">
+         مرجع الإثبات من النظام
+         <input className="input" value={evidenceRef} maxLength={128}
+           onChange={event=>{setEvidenceRef(event.target.value);attempt.current="";}}
+           placeholder={selected.reason==="PAYMENT_EXCEPTION"?
+             "financial_handoff:معرّف التسوية":"delivery_completed:معرّف إثبات التسليم"}/>
+         <span className="muted">يتم فحص هذا المرجع في DSH؛ لا تكفي الملاحظة وحدها.</span>
+       </label>:null}
      <div className="action-row">
        <button type="button" className="button button-primary" disabled={busy} onClick={()=>void submit("TRANSITION",selected)}>حفظ</button>
        <button type="button" className="button button-secondary" disabled={busy} onClick={()=>setSelected(null)}>رجوع</button>

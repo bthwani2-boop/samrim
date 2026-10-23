@@ -303,11 +303,11 @@ func (s *Service) OpenOrderCaseForOperator(ctx context.Context, orderID, actorID
 	}
 	return postgres.OpenOpsCase(ctx, s.db, orderID, actorID, reason, priority, nextAction, key, correlationID)
 }
-func (s *Service) UpdateOrderCaseForOperator(ctx context.Context, orderID string, id int64, actorID, action, note, key, correlationID string, expectedVersion int) (postgres.OpsCase, bool, error) {
+func (s *Service) UpdateOrderCaseForOperator(ctx context.Context, orderID string, id int64, actorID, action, note, key, correlationID string, expectedVersion int, evidenceRefs ...string) (postgres.OpsCase, bool, error) {
 	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
 		return postgres.OpsCase{}, false, err
 	}
-	return postgres.UpdateOpsCase(ctx, s.db, orderID, id, actorID, action, note, key, correlationID, expectedVersion)
+	return postgres.UpdateOpsCase(ctx, s.db, orderID, id, actorID, action, note, key, correlationID, expectedVersion, evidenceRefs...)
 }
 
 func (s *Service) ReadMissionLocationForOperator(ctx context.Context, orderID, actorID string) (postgres.CaptainMissionLocation, error) {

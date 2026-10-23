@@ -1654,6 +1654,7 @@ paths:
                 action: { type: string, enum: [CLAIM, ACTION_REQUIRED, NEXT_ACTION, RESOLVE] }
                 note: { type: string, maxLength: 1000 }
                 expectedVersion: { type: integer, minimum: 1 }
+                evidenceRef: { type: string, maxLength: 128, description: Canonical settlement or delivery proof reference required for sensitive resolution. }
       responses:
         "200":
           description: Case event confirmed and current case state.

@@ -18,21 +18,23 @@ var (
 	ErrOpsCaseForbidden   = errors.New("only the owning operator can advance this case")
 	ErrOpsCaseIdempotency = errors.New("case idempotency mismatch")
 	ErrOpsCaseNotFound    = errors.New("operations case not found")
+	ErrOpsCaseUnverified  = errors.New("canonical money or goods closure proof is required")
 )
 
 type OpsCase struct {
-	ID             int64      `json:"id"`
-	OrderID        string     `json:"orderId"`
-	Reason         string     `json:"reason"`
-	State          string     `json:"state"`
-	Priority       string     `json:"priority"`
-	OwnerActorID   *string    `json:"ownerActorId,omitempty"`
-	NextAction     string     `json:"nextAction"`
-	Version        int        `json:"version"`
-	ResolutionNote *string    `json:"resolutionNote,omitempty"`
-	OpenedAt       time.Time  `json:"openedAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
-	ResolvedAt     *time.Time `json:"resolvedAt,omitempty"`
+	ID                    int64      `json:"id"`
+	OrderID               string     `json:"orderId"`
+	Reason                string     `json:"reason"`
+	State                 string     `json:"state"`
+	Priority              string     `json:"priority"`
+	OwnerActorID          *string    `json:"ownerActorId,omitempty"`
+	NextAction            string     `json:"nextAction"`
+	Version               int        `json:"version"`
+	ResolutionNote        *string    `json:"resolutionNote,omitempty"`
+	ResolutionEvidenceRef *string    `json:"resolutionEvidenceRef,omitempty"`
+	OpenedAt              time.Time  `json:"openedAt"`
+	UpdatedAt             time.Time  `json:"updatedAt"`
+	ResolvedAt            *time.Time `json:"resolvedAt,omitempty"`
 }
 type OpsCasePage struct {
 	Items      []OpsCase `json:"items"`
@@ -59,14 +61,14 @@ func validCaseNote(s string, max int) bool {
 	return n >= 12 && n <= max
 }
 
-const caseColumns = "id,order_id,reason,state,priority,owner_actor_id,next_action,version,resolution_note,opened_at,updated_at,resolved_at"
+const caseColumns = "id,order_id,reason,state,priority,owner_actor_id,next_action,version,resolution_note,resolution_evidence_ref,opened_at,updated_at,resolved_at"
 
 func readCaseScan(row interface{ Scan(...any) error }) (OpsCase, error) {
 	var result OpsCase
-	var owner, note sql.NullString
+	var owner, note, evidence sql.NullString
 	var resolved sql.NullTime
 	err := row.Scan(&result.ID, &result.OrderID, &result.Reason, &result.State, &result.Priority, &owner,
-		&result.NextAction, &result.Version, &note, &result.OpenedAt, &result.UpdatedAt, &resolved)
+		&result.NextAction, &result.Version, &note, &evidence, &result.OpenedAt, &result.UpdatedAt, &resolved)
 	if err != nil {
 		return OpsCase{}, err
 	}
@@ -77,6 +79,10 @@ func readCaseScan(row interface{ Scan(...any) error }) (OpsCase, error) {
 	if note.Valid {
 		v := note.String
 		result.ResolutionNote = &v
+	}
+	if evidence.Valid {
+		v := evidence.String
+		result.ResolutionEvidenceRef = &v
 	}
 	if resolved.Valid {
 		v := resolved.Time
@@ -215,11 +221,21 @@ func OpenOpsCase(ctx context.Context, db *sql.DB, orderID, actor, reason, priori
 	item, err := ReadOpsCase(ctx, db, id)
 	return item, false, err
 }
-func UpdateOpsCase(ctx context.Context, db *sql.DB, orderID string, id int64, actor, action, note, key, corr string, expectedVersion int) (OpsCase, bool, error) {
+func UpdateOpsCase(ctx context.Context, db *sql.DB, orderID string, id int64, actor, action, note, key, corr string, expectedVersion int, evidenceRefs ...string) (OpsCase, bool, error) {
 	actor = strings.TrimSpace(actor)
 	key = strings.TrimSpace(key)
 	corr = strings.TrimSpace(corr)
 	note = strings.TrimSpace(note)
+	evidenceRef := ""
+	if len(evidenceRefs) > 1 {
+		return OpsCase{}, false, ErrOpsCaseInvalid
+	}
+	if len(evidenceRefs) == 1 {
+		evidenceRef = strings.TrimSpace(evidenceRefs[0])
+	}
+	if len(evidenceRef) > 128 || (action != "RESOLVE" && evidenceRef != "") {
+		return OpsCase{}, false, ErrOpsCaseInvalid
+	}
 	if db == nil || orderID == "" || len(orderID) > 128 || id <= 0 || !caseWriteValid(actor, key, corr) || !validCaseAction(action) || expectedVersion < 1 {
 		return OpsCase{}, false, ErrOpsCaseInvalid
 	}
@@ -229,7 +245,7 @@ func UpdateOpsCase(ctx context.Context, db *sql.DB, orderID string, id int64, ac
 	if (action == "ACTION_REQUIRED" || action == "NEXT_ACTION") && !validCaseNote(note, 500) {
 		return OpsCase{}, false, ErrOpsCaseInvalid
 	}
-	hash := opsCaseHash(action, orderID, strconv.FormatInt(id, 10), actor, strconv.Itoa(expectedVersion), note)
+	hash := opsCaseHash(action, orderID, strconv.FormatInt(id, 10), actor, strconv.Itoa(expectedVersion), note, evidenceRef)
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return OpsCase{}, false, err
@@ -256,11 +272,11 @@ func UpdateOpsCase(ctx context.Context, db *sql.DB, orderID string, id int64, ac
 		item, err := ReadOpsCase(ctx, db, id)
 		return item, true, err
 	}
-	var state string
+	var state, reason string
 	var currentVersion int
 	var owner sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT state,version,owner_actor_id FROM dsh.operator_order_cases
- WHERE id=$1 AND order_id=$2 FOR UPDATE`, id, orderID).Scan(&state, &currentVersion, &owner)
+	err = tx.QueryRowContext(ctx, `SELECT state,reason,version,owner_actor_id FROM dsh.operator_order_cases
+ WHERE id=$1 AND order_id=$2 FOR UPDATE`, id, orderID).Scan(&state, &reason, &currentVersion, &owner)
 	if errors.Is(err, sql.ErrNoRows) {
 		return OpsCase{}, false, ErrOpsCaseNotFound
 	}
@@ -291,8 +307,15 @@ func UpdateOpsCase(ctx context.Context, db *sql.DB, orderID string, id int64, ac
 			_, err = tx.ExecContext(ctx, `UPDATE dsh.operator_order_cases SET state='IN_PROGRESS',
    next_action=$2,updated_by_actor_id=$3,updated_at=clock_timestamp(),version=version+1 WHERE id=$1`, id, note, actor)
 		case "RESOLVE":
+			if reason == "PAYMENT_EXCEPTION" || reason == "DELIVERY_BLOCKED" {
+				if err = verifyOperatorCaseResolutionProof(ctx, tx, orderID, reason, evidenceRef); err != nil {
+					return OpsCase{}, false, err
+				}
+			} else if evidenceRef != "" {
+				return OpsCase{}, false, ErrOpsCaseInvalid
+			}
 			_, err = tx.ExecContext(ctx, `UPDATE dsh.operator_order_cases SET state='RESOLVED',
-   resolution_note=$2,resolved_at=clock_timestamp(),updated_by_actor_id=$3,updated_at=clock_timestamp(),version=version+1 WHERE id=$1`, id, note, actor)
+   resolution_note=$2,resolution_evidence_ref=NULLIF($4,''),resolved_at=clock_timestamp(),updated_by_actor_id=$3,updated_at=clock_timestamp(),version=version+1 WHERE id=$1`, id, note, actor, evidenceRef)
 		}
 		if err != nil {
 			return OpsCase{}, false, err
@@ -300,7 +323,7 @@ func UpdateOpsCase(ctx context.Context, db *sql.DB, orderID string, id int64, ac
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO dsh.operator_order_case_events
  (case_id,action,actor_id,idempotency_key,request_hash,correlation_id,detail)
- VALUES($1,$2,$3,$4,$5,$6,$7)`, id, action, actor, key, hash, corr, fmt.Sprintf("v%d %s", expectedVersion, note)); err != nil {
+ VALUES($1,$2,$3,$4,$5,$6,$7)`, id, action, actor, key, hash, corr, fmt.Sprintf("v%d %s evidence=%s", expectedVersion, note, evidenceRef)); err != nil {
 		return OpsCase{}, false, err
 	}
 	if err = tx.Commit(); err != nil {

@@ -958,6 +958,8 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "case key reused with different facts")
 	case errors.Is(err, postgres.ErrOpsCaseForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "only the assigned case owner may advance the case")
+	case errors.Is(err, postgres.ErrOpsCaseUnverified):
+		writeError(w, http.StatusConflict, "CASE_CLOSURE_UNVERIFIED", "the canonical settlement or goods proof is not confirmed")
 	case errors.Is(err, postgres.ErrOpsCaseNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "case not found")
 	case errors.Is(err, postgres.ErrCustomerContactInvalid):

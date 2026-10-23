@@ -14,18 +14,19 @@ export async function POST(request:Request,context:Readonly<{params:Promise<{ord
  const denied=operatorWorkspacePermissionDenied(identity,"operations");
  if(denied)return denied;
  const {orderId,caseId}=await context.params;
- const body=await request.json().catch(()=>null) as {action?:unknown;note?:unknown;expectedVersion?:unknown}|null;
+ const body=await request.json().catch(()=>null) as {action?:unknown;note?:unknown;expectedVersion?:unknown;evidenceRef?:unknown}|null;
  const key=request.headers.get("Idempotency-Key")?.trim()||randomUUID();
  if(!orderId?.trim()||orderId.length>128||!caseId||!/^[1-9]\d{0,18}$/.test(caseId)||
    !body||typeof body.action!=="string"||!["CLAIM","ACTION_REQUIRED","NEXT_ACTION","RESOLVE"].includes(body.action)||
    typeof body.expectedVersion!=="number"||!Number.isSafeInteger(body.expectedVersion)||body.expectedVersion<1||
    (typeof body.note!=="undefined"&&typeof body.note!=="string")||
-   (typeof body.note==="string"&&body.note.length>1000)||key.length<8||key.length>128) {
+   (typeof body.note==="string"&&body.note.length>1000)||
+   (typeof body.evidenceRef!=="undefined"&&(typeof body.evidenceRef!=="string"||body.evidenceRef.length>128))||key.length<8||key.length>128) {
     return failure("INVALID_INPUT","invalid case transition",400);
  }
  try{
    const result=await requestDshJson("POST",`/dsh/operator/operations/${encodeURIComponent(orderId)}/cases/${caseId}/transition`,
-    {action:body.action,note:typeof body.note==="string"?body.note.trim():"",expectedVersion:body.expectedVersion},
+    {action:body.action,note:typeof body.note==="string"?body.note.trim():"",expectedVersion:body.expectedVersion,evidenceRef:typeof body.evidenceRef==="string"?body.evidenceRef.trim():""},
     {"X-Acting-Actor-ID":identity.subject,"Idempotency-Key":key,
      "X-Correlation-ID":request.headers.get("X-Correlation-ID")?.trim()||randomUUID()});
    return NextResponse.json(result.payload,{status:result.status,headers});
