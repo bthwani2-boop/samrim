@@ -300,7 +300,9 @@ const listPublicPromotionsQuery = `SELECT id,code,name_ar,description_ar,kind,va
         AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3))
         AND (NOT $1 OR store_id IS NOT NULL OR (funding_source='BTHWANI' AND requires_partner_opt_in=false) OR EXISTS (SELECT 1 FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=dsh.commerce_promotions.id AND o.store_id=$3 AND o.state='OPTED_IN'))
         ORDER BY starts_at DESC,id DESC
-        LIMIT CASE WHEN $1 THEN 4 ELSE NULL END`
+        -- The global discovery feed is intentionally compact; a selected
+        -- store must receive its complete eligible promotion list instead.
+        LIMIT CASE WHEN $1 AND $3='' THEN 4 ELSE NULL END`
 
 // ListStorePromotions returns every promotion scoped to one Store across its whole
 // lifecycle (draft, published, paused, ended) for the owner's workspace views.
