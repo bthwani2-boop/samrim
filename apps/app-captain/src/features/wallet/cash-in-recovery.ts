@@ -7,6 +7,7 @@ export type CaptainFundingAttempt = Readonly<{
   idempotencyKey: string;
   correlationID: string;
   fundingIntentID?: string;
+  providerKey?: string;
 }>;
 
 export function parseCaptainFundingAttempt(raw: string | null, actorID: string): CaptainFundingAttempt | null {
@@ -26,7 +27,7 @@ export function parseCaptainFundingAttempt(raw: string | null, actorID: string):
     typeof parsed.correlationID !== "string" ||
     parsed.correlationID.length < 8 ||
     parsed.correlationID.length > 128 ||
-    !validFundingIntentID
+    !validFundingIntentID || (parsed.providerKey !== undefined && (typeof parsed.providerKey !== "string" || parsed.providerKey.length > 64))
   ) throw new Error("CASH_IN_RETRY_STATE_INVALID");
   return parsed as CaptainFundingAttempt;
 }
@@ -40,5 +41,5 @@ export function matchesCaptainFundingRequest(intent: CashInFundingIntent, actorI
 }
 
 export function matchesCaptainFundingAttempt(intent: CashInFundingIntent, attempt: CaptainFundingAttempt): boolean {
-  return intent.id === attempt.fundingIntentID && matchesCaptainFundingRequest(intent, attempt.actorID, attempt.amountMinor);
+  return intent.id === attempt.fundingIntentID && matchesCaptainFundingRequest(intent, attempt.actorID, attempt.amountMinor) && (!attempt.providerKey || intent.providerKey === attempt.providerKey.toUpperCase());
 }

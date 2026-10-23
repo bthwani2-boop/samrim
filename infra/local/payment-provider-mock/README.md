@@ -1,28 +1,37 @@
-# Payment-provider HTTP simulator (development only)
+# BThwani local payment-provider simulator
 
-This is a **provider-neutral mock contract**, not an undocumented API specification for any Yemeni wallet provider.
+One optional payment-provider test service serves every active wallet provider configured through DSH. The provider key selects the isolated route, reference namespace, and fault scenario. Adding a provider to DSH does not create another container. **This is not a verified real-provider API.**
 
-From the repository root, start only this optional service without restarting the platform:
+## Start in local development
+
+From the repository root:
 
 ```powershell
-docker compose -f infra/local/compose/compose.yaml --profile payment-mock up -d payment-mock
+docker compose --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d payment-mock
 node tools/dev/payment-provider-mock.mjs check
 ```
 
-Default WLT remains `WLT_CASH_IN_MODE=simulator`. To opt into the HTTP boundary in local development, set `WLT_CASH_IN_MODE=wiremock` and `WLT_PAYMENT_MOCK_BASE_URL=http://payment-mock:8080` for WLT, then apply the configuration deliberately; do not restart an active wallet service just to run mock-only tests.
+Local Compose defaults `WLT_CASH_IN_MODE=wiremock`, unless the private local env explicitly overrides it. When the rebuilt WLT service uses WireMock, it calls `http://payment-mock:8080` internally. The mobile customer and captain select an **active** provider from DSH. DSH validates its configured key and WLT sends requests to the corresponding mock provider endpoint. The mock responds with a simulated terminal outcome; only WLT applies wallet ledger entries and fees.
 
-Switch the mock provider's answer without changing wallet data:
+The default contract returns SUCCESS for payments created with that provider. Each provider can have an independent override:
 
 ```powershell
-node tools/dev/payment-provider-mock.mjs success
-node tools/dev/payment-provider-mock.mjs failure
-node tools/dev/payment-provider-mock.mjs unknown
-node tools/dev/payment-provider-mock.mjs delayed
-node tools/dev/payment-provider-mock.mjs http500
-node tools/dev/payment-provider-mock.mjs timeout
-node tools/dev/payment-provider-mock.mjs reset
+node tools/dev/payment-provider-mock.mjs failure wallet_provider_yourkey
+node tools/dev/payment-provider-mock.mjs delayed wallet_provider_yourkey
+node tools/dev/payment-provider-mock.mjs http500 wallet_provider_yourkey
+node tools/dev/payment-provider-mock.mjs reset wallet_provider_yourkey
 ```
 
-`check` runs HTTP contract smoke tests against the mock only; it does not create WLT ledger entries. Go `internal/cashin` tests exercise the same shape using in-memory HTTP tests. Once a provider supplies official API documentation, implement its actual contract and run against the provider's sandbox; after approval, reconcile controlled real transactions.
+Available outcomes: `success`, `failure`, `unknown`, `delayed`, `http500`, `timeout`, `invalid`, `reset`, `check`. `check` exercises two test-provider identities, independent outcomes, retries and failure modes; the suite resets its overrides afterward.
 
-**Safety:** Admin API binds to loopback, synthetic references only, and WLT refuses `wiremock` outside `BTHWANI_ENV=development`. Never copy production credentials or real customer data into the mock.
+The mock is **stateless**: the HTTP wire contract is simulated with deterministic references, but it does not maintain external provider bank accounts or independently reconcile real transfers. Funding intents and canonical ledger transactions live solely in WLT, and an unverified or timed-out provider reply must never credit the wallet.
+
+## Safety and limits
+
+- The mock and its administrative control bind to loopback only; `wiremock` is rejected by WLT outside `BTHWANI_ENV=development`.
+- Provider keys are selected by an authenticated DSH actor and validated against active DSH wallet providers; no mobile client may call WLT directly.
+- WLT verifies the returned provider identity, reference and transaction format before posting a terminal result. Retries use the same WLT funding intent and idempotent ledger path.
+- The legacy `WLT_CASH_IN_MODE=simulator` can still be chosen explicitly for manual development tests.
+- Official contracts and sandbox credentials are required **per real provider** before claiming integration with that provider. Production readiness additionally needs real callbacks, signatures, settlement statements and controlled verified test transfers.
+
+No secrets or production data belong in this folder. Do not expose the WireMock Admin API on a public interface.

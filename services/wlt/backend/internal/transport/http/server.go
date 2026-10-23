@@ -193,6 +193,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/funding-intents/{fundingIntentId}", s.readCashInFundingIntent)
 	if s.cashInSimulatorEnabled {
 		mux.HandleFunc("POST /wlt/v1/development/funding-intents/{fundingIntentId}/simulate", s.simulateCashInFundingIntent)
+		mux.HandleFunc("POST /wlt/v1/development/funding-intents/{fundingIntentId}/reconcile", s.reconcileDevelopmentFundingIntent)
 	}
 }
 

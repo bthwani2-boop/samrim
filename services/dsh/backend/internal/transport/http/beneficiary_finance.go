@@ -47,6 +47,7 @@ func (s *BeneficiaryFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/me/funding-intents", s.createOwnFundingIntent)
 	mux.HandleFunc("GET /dsh/me/funding-intents/{fundingIntentId}", s.readOwnFundingIntent)
 	mux.HandleFunc("POST /dsh/me/funding-intents/{fundingIntentId}/simulate", s.simulateOwnFundingIntent)
+	mux.HandleFunc("POST /dsh/me/funding-intents/{fundingIntentId}/reconcile", s.reconcileOwnFundingIntent)
 	mux.HandleFunc("GET /dsh/me/payout-state", s.readOwnPayoutState)
 	mux.HandleFunc("GET /dsh/partners/me/payout-summary", s.readPartnerPayoutSummary)
 	mux.HandleFunc("POST /dsh/me/payout-intents", s.createOwnPayoutIntent)
@@ -100,12 +101,24 @@ func (s *BeneficiaryFinanceServer) createOwnFundingIntent(w http.ResponseWriter,
 		return
 	}
 	var input struct {
-		AmountMinor int64 `json:"amountMinor"`
+		AmountMinor int64  `json:"amountMinor"`
+		ProviderKey string `json:"providerKey"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	intent, simulator, replayed, err := s.payment.CreateCashInFundingIntent(r.Context(), actorType, identity.Subject, input.AmountMinor, idempotency, correlation)
+	if input.ProviderKey != "" {
+		active, err := postgres.IsActiveWalletProvider(r.Context(), s.db, input.ProviderKey)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "PROVIDER_DIRECTORY_UNAVAILABLE", "Wallet providers could not be verified")
+			return
+		}
+		if !active {
+			writeError(w, http.StatusBadRequest, "INVALID_PROVIDER", "The selected payment provider is not active")
+			return
+		}
+	}
+	intent, simulator, replayed, err := s.payment.CreateCashInFundingIntent(r.Context(), actorType, identity.Subject, input.AmountMinor, idempotency, correlation, input.ProviderKey)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -132,6 +145,37 @@ func (s *BeneficiaryFinanceServer) readOwnFundingIntent(w http.ResponseWriter, r
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"intent": intent})
+}
+
+func (s *BeneficiaryFinanceServer) reconcileOwnFundingIntent(w http.ResponseWriter, r *http.Request) {
+	identity, actorType, ok := s.requireFundingSession(w, r)
+	if !ok {
+		return
+	}
+	correlation, idempotency, ok := requiredBeneficiaryFinanceMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	intentID := strings.TrimSpace(r.PathValue("fundingIntentId"))
+	item, err := s.payment.ReadCashInFundingIntent(r.Context(), intentID)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	if item.ActorType != actorType || item.ActorID != identity.Subject {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "Funding intent not found")
+		return
+	}
+	if !strings.HasPrefix(item.ProviderKey, "WALLET_PROVIDER_") {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "Provider recovery unavailable")
+		return
+	}
+	updated, err := s.payment.ReconcileMockCashInFundingIntent(r.Context(), intentID, identity.Subject, idempotency, correlation)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"intent": updated, "simulator": true})
 }
 
 func (s *BeneficiaryFinanceServer) simulateOwnFundingIntent(w http.ResponseWriter, r *http.Request) {

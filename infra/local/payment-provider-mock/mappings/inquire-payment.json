@@ -10,6 +10,6 @@
     "headers": {
       "Content-Type": "application/json"
     },
-    "body": "{\"providerKey\":\"{{request.pathSegments.[2]}}\",\"providerReference\":\"{{request.pathSegments.[4]}}\",\"outcome\":\"SUCCESS\",\"providerTransactionReference\":\"WM-TXN-{{request.pathSegments.[2]}}-{{request.pathSegments.[4]}}\",\"providerFeeMinor\":37}"
+    "body": "{\"providerKey\":\"{{request.pathSegments.[2]}}\",\"providerReference\":\"{{request.pathSegments.[4]}}\",\"outcome\":\"SUCCESS\",\"providerTransactionReference\":\"WM-TXN-{{request.pathSegments.[4]}}\",\"providerFeeMinor\":37}"
   }
 }

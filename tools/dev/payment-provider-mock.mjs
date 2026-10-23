@@ -27,7 +27,7 @@ function scenarioMapping(name,key) {
     name==="invalid" ? {status:200,body:"not-json"} : {
       status:200,body:JSON.stringify({
         providerKey:key,providerReference:reference,outcome:name.toUpperCase(),
-        providerTransactionReference:name==="success"?"WM-TXN-"+key+"-"+reference:"",
+        providerTransactionReference:name==="success"?"WM-TXN-"+reference:"",
         providerFeeMinor:name==="success"?37:0
       })
     };
@@ -61,7 +61,7 @@ async function inquiry(key,reference,expected,{status=200,timeout=4000}={}) {
  assert.equal(result.providerReference,reference);
  assert.equal(result.outcome,expected);
  assert.equal(result.providerFeeMinor,expected==="SUCCESS"?37:0);
- assert.equal(result.providerTransactionReference,expected==="SUCCESS"?"WM-TXN-"+key+"-"+reference:"");
+ assert.equal(result.providerTransactionReference,expected==="SUCCESS"?"WM-TXN-"+reference:"");
 }
 async function check(){
  const id="check-"+Date.now();

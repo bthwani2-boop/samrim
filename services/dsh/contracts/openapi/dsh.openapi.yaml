@@ -766,6 +766,9 @@ paths:
   /dsh/me/funding-intents/{fundingIntentId}:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1funding-intents~1{fundingIntentId}"
 
+  /dsh/me/funding-intents/{fundingIntentId}/reconcile:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1funding-intents~1{fundingIntentId}~1reconcile"
+
   /dsh/me/funding-intents/{fundingIntentId}/simulate:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1funding-intents~1{fundingIntentId}~1simulate"
 
@@ -8670,6 +8673,8 @@ components:
         cashInEnabled:
           type: boolean
         simulator:
+          type: boolean
+        providerMock:
           type: boolean
         recentCompensations:
           type: array

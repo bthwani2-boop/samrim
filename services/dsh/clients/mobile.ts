@@ -407,15 +407,20 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     async readOwnWallet(accessToken: string): Promise<BeneficiaryWalletResponse> {
       return userRequest<BeneficiaryWalletResponse>(accessToken, dshOperationPaths.readOwnWallet.path, dshOperationPaths.readOwnWallet.method);
     },
-    async createOwnFundingIntent(accessToken: string, amountMinor: number, idempotencyKey?: string, correlationID?: string): Promise<BeneficiaryFundingIntentResponse> {
+    async createOwnFundingIntent(accessToken: string, amountMinor: number, idempotencyKey?: string, correlationID?: string, providerKey?: string): Promise<BeneficiaryFundingIntentResponse> {
       if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) throw new Error("DSH_CASH_IN_AMOUNT_INVALID");
-      return userRequest<BeneficiaryFundingIntentResponse>(accessToken, dshOperationPaths.createOwnFundingIntent.path, dshOperationPaths.createOwnFundingIntent.method, { amountMinor }, mutationHeaders(idempotencyKey, correlationID));
+      return userRequest<BeneficiaryFundingIntentResponse>(accessToken, dshOperationPaths.createOwnFundingIntent.path, dshOperationPaths.createOwnFundingIntent.method, { amountMinor, ...(providerKey ? { providerKey } : {}) }, mutationHeaders(idempotencyKey, correlationID));
     },
     async readOwnFundingIntent(accessToken: string, fundingIntentID: string): Promise<Readonly<{ intent: CashInFundingIntent }>> {
       const normalized = fundingIntentID.trim();
       if (!normalized) throw new Error("DSH_FUNDING_INTENT_ID_REQUIRED");
       const path = dshOperationPaths.readOwnFundingIntent.path.replace("{fundingIntentId}", encodeURIComponent(normalized));
       return userRequest<Readonly<{ intent: CashInFundingIntent }>>(accessToken, path, dshOperationPaths.readOwnFundingIntent.method);
+    },
+    async reconcileOwnFundingIntent(accessToken: string, fundingIntentID: string, idempotencyKey?: string, correlationID?: string): Promise<BeneficiaryFundingIntentResponse> {
+      const normalized = fundingIntentID.trim();
+      if (!normalized) throw new Error("DSH_FUNDING_INTENT_ID_REQUIRED");
+      return userRequest<BeneficiaryFundingIntentResponse>(accessToken, "/dsh/me/funding-intents/" + encodeURIComponent(normalized) + "/reconcile", "POST", {}, mutationHeaders(idempotencyKey, correlationID));
     },
     async simulateOwnFundingIntent(accessToken: string, fundingIntentID: string, outcome: "SUCCESS" | "FAILURE" | "UNKNOWN" | "DELAYED", idempotencyKey?: string, correlationID?: string): Promise<BeneficiaryFundingIntentResponse> {
       const normalized = fundingIntentID.trim();

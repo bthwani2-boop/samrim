@@ -330,6 +330,7 @@ export const dshOperationPaths = {
   readOwnWallet: { method: "GET", path: "/dsh/me/wallet" },
   createOwnFundingIntent: { method: "POST", path: "/dsh/me/funding-intents" },
   readOwnFundingIntent: { method: "GET", path: "/dsh/me/funding-intents/{fundingIntentId}" },
+  reconcileOwnFundingIntent: { method: "POST", path: "/dsh/me/funding-intents/{fundingIntentId}/reconcile" },
   simulateOwnFundingIntent: { method: "POST", path: "/dsh/me/funding-intents/{fundingIntentId}/simulate" },
   readOwnPayoutState: { method: "GET", path: "/dsh/me/payout-state" },
   createOwnPayoutIntent: { method: "POST", path: "/dsh/me/payout-intents" },

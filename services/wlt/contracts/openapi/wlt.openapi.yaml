@@ -2140,6 +2140,17 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CashInFundingIntentReadResponse' }
+  /wlt/v1/development/funding-intents/{fundingIntentId}/reconcile:
+    post:
+      operationId: reconcileDevelopmentCashInProvider
+      description: Development-only authenticated mock provider inquiry and financial reconciliation.
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: fundingIntentId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      responses:
+        '200': { description: Canonical provider-verified funding result or still-pending intent. }
   /wlt/v1/development/funding-intents/{fundingIntentId}/simulate:
     post:
       operationId: simulateCashInFundingOutcome
@@ -2222,6 +2233,7 @@ components:
         availableMinor: { type: integer }
         cashInEnabled: { type: boolean }
         simulator: { type: boolean }
+        providerMock: { type: boolean }
         recentCompensations:
           type: array
           items: { $ref: '#/components/schemas/CustomerWalletCompensationSummary' }
@@ -2247,6 +2259,7 @@ components:
       required: [amountMinor]
       properties:
         amountMinor: { type: integer, minimum: 1 }
+        providerKey: { type: string, description: "Configured wallet provider key for development HTTP emulation." }
     CashInFundingIntent:
       type: object
       additionalProperties: false

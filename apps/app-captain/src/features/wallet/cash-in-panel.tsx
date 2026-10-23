@@ -1,6 +1,6 @@
 import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { formatMoney, cashInSimulatorMutationHeaders, cashInSimulatorOptions, cashInSimulatorStateMatches, type CashInSimulatorOutcome, type BeneficiaryWalletResponse, type CashInFundingIntent } from "@bthwani/dsh";
+import { formatMoney, cashInSimulatorMutationHeaders, cashInSimulatorOptions, cashInSimulatorStateMatches, type CashInSimulatorOutcome, type WalletProvider, type BeneficiaryWalletResponse, type CashInFundingIntent } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useMemo, useState } from "react";
@@ -24,6 +24,8 @@ export function CaptainCashInPanel() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [simulatorOutcome, setSimulatorOutcome] = useState<CashInSimulatorOutcome>("SUCCESS");
+  const [providers, setProviders] = useState<ReadonlyArray<WalletProvider>>([]);
+  const [selectedProviderKey, setSelectedProviderKey] = useState("");
   const [showTestOptions, setShowTestOptions] = useState(false);
   const [showChargeForm, setShowChargeForm] = useState(false);
   const load = useCallback(async () => {
@@ -40,11 +42,25 @@ export function CaptainCashInPanel() {
       const currentIdentity = currentIdentityState();
       if (currentIdentity.kind !== "authenticated" || currentIdentity.identity.subject.trim() !== actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
       setWallet(walletResponse);
+      if (walletResponse.state.providerMock) {
+        try {
+          const result = await client.listWalletProviders(token);
+          const activeProviders = result.walletProviders.filter((provider) => provider.active);
+          setProviders(activeProviders);
+          setSelectedProviderKey((previous) => activeProviders.some((provider) => provider.key === previous) ? previous : activeProviders[0]?.key ?? "");
+        } catch {
+          setProviders([]);
+          setSelectedProviderKey("");
+        }
+      }
       if (!attempt?.fundingIntentID) {
         return;
       }
 
-      const intent = (await client.readOwnFundingIntent(token, attempt.fundingIntentID)).intent;
+      let intent = (await client.readOwnFundingIntent(token, attempt.fundingIntentID)).intent;
+      if (walletResponse.state.providerMock && !["SETTLED", "FAILED"].includes(intent.state) && intent.providerKey !== "DEVELOPMENT_SIMULATOR") {
+        intent = (await client.reconcileOwnFundingIntent(token, intent.id, attempt.idempotencyKey + "_recover", attempt.correlationID)).intent;
+      }
       if (!matchesCaptainFundingAttempt(intent, attempt)) throw new Error("CASH_IN_RETRY_STATE_CONFLICT");
       const currentIdentityAfterIntentRead = currentIdentityState();
       if (currentIdentityAfterIntentRead.kind !== "authenticated" || currentIdentityAfterIntentRead.identity.subject.trim() !== actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
@@ -72,7 +88,8 @@ export function CaptainCashInPanel() {
     const actorID = identity.identity.subject.trim();
     const parsedAmount = pending?.actorID === actorID ? pending.amountMinor : Number(toAsciiDigits(amount.trim()).replace(/[^0-9]/g, ""));
     if (!Number.isSafeInteger(parsedAmount) || parsedAmount <= 0) { setError("أدخل مبلغ شحن صحيحًا أكبر من صفر."); return; }
-    const attempt: FundingAttempt = pending?.actorID === actorID ? pending : { version: 1, actorID, amountMinor: parsedAmount, idempotencyKey: `captain_cashin_${Crypto.randomUUID()}`, correlationID: `captain_cashin_corr_${Crypto.randomUUID()}` };
+    if (!pending && wallet?.state.providerMock && !providers.some((provider) => provider.key === selectedProviderKey)) {setError("اختر مزود الدفع أولًا.");return;}
+    const attempt: FundingAttempt = pending?.actorID === actorID ? pending : { version: 1, actorID, amountMinor: parsedAmount, ...(wallet?.state.providerMock ? { providerKey: selectedProviderKey } : {}), idempotencyKey: `captain_cashin_${Crypto.randomUUID()}`, correlationID: `captain_cashin_corr_${Crypto.randomUUID()}` };
     setBusy(true); setError(""); setNotice("");
     try {
       await SecureStore.setItemAsync(attemptKey(actorID), JSON.stringify(attempt));
@@ -81,7 +98,7 @@ export function CaptainCashInPanel() {
       const client = captainClient();
       const response = pending?.fundingIntentID
         ? { intent: (await client.readOwnFundingIntent(token, pending.fundingIntentID)).intent, simulator: Boolean(__DEV__ && wallet?.state.simulator) }
-        : await client.createOwnFundingIntent(token, parsedAmount, attempt.idempotencyKey, attempt.correlationID);
+        : await client.createOwnFundingIntent(token, parsedAmount, attempt.idempotencyKey, attempt.correlationID, attempt.providerKey);
       if (!matchesCaptainFundingRequest(response.intent, actorID, parsedAmount) ||
           !response.intent.id.trim() || response.intent.id.length > 128 ||
           (pending?.fundingIntentID && response.intent.id !== pending.fundingIntentID)) throw new Error("CASH_IN_RESPONSE_MISMATCH");
@@ -90,7 +107,7 @@ export function CaptainCashInPanel() {
       setPending(confirmed);
       setAmount("");
       let finalIntent = response.intent;
-      if (__DEV__ && response.simulator && !["SETTLED", "FAILED"].includes(finalIntent.state)) {
+      if (__DEV__ && response.simulator && finalIntent.providerKey === "DEVELOPMENT_SIMULATOR" && !["SETTLED", "FAILED"].includes(finalIntent.state)) {
         const headers = cashInSimulatorMutationHeaders(attempt, simulatorOutcome);
         const result = await client.simulateOwnFundingIntent(
           token, finalIntent.id, simulatorOutcome,
@@ -101,6 +118,9 @@ export function CaptainCashInPanel() {
         if (!matchesCaptainFundingRequest(result.intent, actorID, parsedAmount) || result.intent.id !== finalIntent.id ||
             !cashInSimulatorStateMatches(simulatorOutcome, result.intent.state)) throw new Error("CASH_IN_SIMULATOR_READBACK_MISMATCH");
         finalIntent = result.intent;
+      }
+      if (wallet?.state.providerMock && !["SETTLED", "FAILED"].includes(finalIntent.state)) {
+        finalIntent = (await client.reconcileOwnFundingIntent(token, finalIntent.id, attempt.idempotencyKey + "_recover", attempt.correlationID)).intent;
       }
       if (["SETTLED", "FAILED"].includes(finalIntent.state)) {
         await SecureStore.deleteItemAsync(attemptKey(actorID));
@@ -118,6 +138,7 @@ export function CaptainCashInPanel() {
 
   const state = wallet?.state;
   const simulatorInDevelopment = Boolean(__DEV__ && state?.simulator && state.cashInEnabled);
+  const providerMockInDevelopment = Boolean(simulatorInDevelopment && state?.providerMock);
   const latest = (wallet?.fundingIntents ?? []).filter((intent) =>
     simulatorInDevelopment || intent.providerKey !== "DEVELOPMENT_SIMULATOR");
   const userCanAddFunds = Boolean(state?.cashInEnabled && (!state.simulator || simulatorInDevelopment));
@@ -160,7 +181,15 @@ export function CaptainCashInPanel() {
             <Text style={styles.presetText}>{value.toLocaleString("en-US")}</Text>
           </Pressable>)}
       </View> : null}
-      {simulatorInDevelopment ? <>
+      {providerMockInDevelopment ? <View style={styles.simOptions}>
+        {providers.map((provider) => <Pressable key={provider.key} accessibilityRole="radio" accessibilityLabel={provider.displayNameAr}
+          accessibilityState={{ selected: selectedProviderKey === provider.key }} onPress={() => setSelectedProviderKey(provider.key)}
+          style={[styles.simOption, selectedProviderKey === provider.key && styles.simOptionSelected]}>
+          <Text style={styles.label}>{provider.displayNameAr}</Text>
+        </Pressable>)}
+        {!providers.length ? <Text style={styles.muted}>لا يوجد مزود دفع نشط للاختبار.</Text> : null}
+      </View> : null}
+      {simulatorInDevelopment && !providerMockInDevelopment ? <>
         <Pressable accessibilityRole="button" accessibilityState={{ expanded: showTestOptions }}
           onPress={() => setShowTestOptions((value) => !value)}
           style={styles.testToggle}>
@@ -176,7 +205,7 @@ export function CaptainCashInPanel() {
             </Pressable>)}
         </View> : null}
       </> : null}
-      <BthwaniButton busy={busy} disabled={busy || (!userHasPending && !amount.trim())}
+      <BthwaniButton busy={busy} disabled={busy || (!userHasPending && (!amount.trim() || (providerMockInDevelopment && !selectedProviderKey)))}
         label={userHasPending ? "متابعة الشحن" : simulatorInDevelopment ? "شحن تجريبي" : "شحن"}
         onPress={() => void createIntent()} />
       </> : null}

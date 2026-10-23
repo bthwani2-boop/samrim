@@ -209,6 +209,7 @@ type WalletState struct {
 	AvailableMinor     int64  `json:"availableMinor"`
 	CashInEnabled      bool   `json:"cashInEnabled"`
 	Simulator          bool   `json:"simulator"`
+	ProviderMock       bool   `json:"providerMock"`
 }
 
 type CashInFundingIntent struct {
@@ -1215,8 +1216,11 @@ func (c *Client) ReadWalletState(ctx context.Context, actorType, actorID string)
 	return response.State, err
 }
 
-func (c *Client) CreateCashInFundingIntent(ctx context.Context, actorType, actorID string, amountMinor int64, idempotencyKey, correlationID string) (CashInFundingIntent, bool, bool, error) {
+func (c *Client) CreateCashInFundingIntent(ctx context.Context, actorType, actorID string, amountMinor int64, idempotencyKey, correlationID string, providerKey ...string) (CashInFundingIntent, bool, bool, error) {
 	body := map[string]any{"amountMinor": amountMinor}
+	if len(providerKey) > 0 && strings.TrimSpace(providerKey[0]) != "" {
+		body["providerKey"] = strings.TrimSpace(providerKey[0])
+	}
 	var response struct {
 		Intent           CashInFundingIntent `json:"intent"`
 		Simulator        bool                `json:"simulator"`
@@ -1242,6 +1246,15 @@ func (c *Client) ReadCashInFundingIntent(ctx context.Context, fundingIntentID st
 		Intent CashInFundingIntent `json:"intent"`
 	}
 	err := c.request(ctx, http.MethodGet, "/wlt/v1/funding-intents/"+url.PathEscape(strings.TrimSpace(fundingIntentID)), nil, "", "", 0, &response)
+	return response.Intent, err
+}
+
+func (c *Client) ReconcileMockCashInFundingIntent(ctx context.Context, fundingIntentID, actorID, idempotencyKey, correlationID string) (CashInFundingIntent, error) {
+	var response struct {
+		Intent CashInFundingIntent `json:"intent"`
+	}
+	path := "/wlt/v1/development/funding-intents/" + url.PathEscape(strings.TrimSpace(fundingIntentID)) + "/reconcile"
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: path, body: map[string]any{}, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actorID, target: &response})
 	return response.Intent, err
 }
 

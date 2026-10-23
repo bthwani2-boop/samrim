@@ -43,7 +43,7 @@ func TestWireMockRailContract(t *testing.T) {
 			}
 			transaction := ""
 			if inquiryOutcome == "SUCCESS" {
-				transaction = "WM-TXN-" + providerKey + "-ext-123"
+				transaction = "WM-TXN-WM-" + providerKey + "-ext-123"
 			}
 			_, _ = fmt.Fprintf(w, `{"providerKey":%q,"providerReference":%q,"outcome":%q,"providerTransactionReference":%q,"providerFeeMinor":%d}`, providerKey, reference, inquiryOutcome, transaction, inquiryFee)
 		default:
@@ -77,7 +77,7 @@ func TestWireMockRailContract(t *testing.T) {
 		if err != nil || got.Outcome != test.outcome || got.ProviderFeeMinor != test.fee {
 			t.Fatalf("inquiry %s: %+v err=%v", test.outcome, got, err)
 		}
-		if test.outcome == "SUCCESS" && got.ProviderTransactionReference != "WM-TXN-"+providerKey+"-ext-123" {
+		if test.outcome == "SUCCESS" && got.ProviderTransactionReference != "WM-TXN-WM-"+providerKey+"-ext-123" {
 			t.Fatalf("settled provider transaction reference = %q", got.ProviderTransactionReference)
 		}
 	}

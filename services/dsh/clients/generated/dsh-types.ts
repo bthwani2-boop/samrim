@@ -2814,6 +2814,7 @@ export type BeneficiaryWalletState = {
   readonly availableMinor: number;
   readonly cashInEnabled: boolean;
   readonly simulator: boolean;
+  readonly providerMock?: boolean;
   readonly recentCompensations?: ReadonlyArray<CustomerWalletCompensationSummary>;
 };
 

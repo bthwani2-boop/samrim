@@ -114,7 +114,7 @@ func (r *WireMockRail) InquirePayment(ctx context.Context, input PaymentInquiryR
 	switch body.Outcome {
 	case "SUCCESS":
 		if strings.TrimSpace(body.ProviderTransactionReference) == "" || len(body.ProviderTransactionReference) > 160 ||
-			!strings.HasPrefix(body.ProviderTransactionReference, "WM-TXN-"+provider+"-") || body.ProviderFeeMinor < 0 {
+			!strings.HasPrefix(body.ProviderTransactionReference, "WM-TXN-WM-"+provider+"-") || body.ProviderFeeMinor < 0 {
 			return PaymentInquiryResult{}, ErrProviderUnavailable
 		}
 	case "FAILURE", "UNKNOWN", "DELAYED":

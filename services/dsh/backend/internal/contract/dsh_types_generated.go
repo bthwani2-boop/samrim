@@ -2814,6 +2814,7 @@ type BeneficiaryWalletState struct {
 	AvailableMinor      int                                 `json:"availableMinor"`
 	CashInEnabled       bool                                `json:"cashInEnabled"`
 	Simulator           bool                                `json:"simulator"`
+	ProviderMock        bool                                `json:"providerMock,omitempty"`
 	RecentCompensations []CustomerWalletCompensationSummary `json:"recentCompensations,omitempty"`
 }
 
