@@ -8,7 +8,7 @@ func validDeliveryReadback() deliveryHandoffReadback {
 		OrderFound: true, OrderPaymentIntentID: "payment-1", OrderCashAmountMinor: 800,
 		PaymentFound: true, PaymentState: "COLLECTED", PaymentAmountMinor: 800, CollectedByActorID: "captain-1",
 		EarningFound: true, EarningPaymentIntentID: "payment-1", EarningPartnerActorID: "partner-1", EarningCaptainActorID: "captain-1",
-		CODReservationFound: true, CODPaymentIntentID: "payment-1", CODCaptainActorID: "captain-1", CODAmountMinor: 800, CODState: "FINALIZED",
+		CODReservationFound: true, CODPaymentIntentID: "payment-1", CODCaptainActorID: "captain-1", CODAmountMinor: 800, CODState: "DEBITED", CODDebitLedgerValid: true,
 	}
 }
 
@@ -18,8 +18,10 @@ func TestDeliveryHandoffReadback(t *testing.T) {
 		change func(*deliveryHandoffReadback)
 		valid  bool
 	}{
-		{name: "positive cash finalized", valid: true},
-		{name: "positive cash remitted", change: func(r *deliveryHandoffReadback) { r.CODState = "REMITTED" }, valid: true},
+		{name: "positive cash debited", valid: true},
+		{name: "positive cash remitted under legacy reconciliation", change: func(r *deliveryHandoffReadback) { r.CODState = "REMITTED" }, valid: true},
+		{name: "legacy finalized without settlement", change: func(r *deliveryHandoffReadback) { r.CODState = "FINALIZED" }, valid: false},
+		{name: "new debit missing ledger proof", change: func(r *deliveryHandoffReadback) { r.CODDebitLedgerValid = false }, valid: false},
 		{name: "zero cash without COD reservation", change: func(r *deliveryHandoffReadback) {
 			r.CashAmountMinor = 0
 			r.OrderCashAmountMinor = 0
