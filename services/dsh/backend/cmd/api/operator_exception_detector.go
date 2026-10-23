@@ -19,7 +19,7 @@ func runOperatorExceptionDetectorLoop(ctx context.Context, interval time.Duratio
 		if err != nil && ctx.Err() == nil {
 			log.Printf("operations exception detection deferred: %v", err)
 		} else if opened > 0 {
-			log.Printf("operations exception detector opened %d audited cases", opened)
+			log.Printf("operations exception detector recorded %d case updates", opened)
 		}
 	}
 	run()
