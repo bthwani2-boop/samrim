@@ -1,5 +1,5 @@
 import { spacing } from "@bthwani/design-system";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useEffect, useMemo, useState } from "react";
 import { AppState, View } from "react-native";
 import { useIsFocused } from "expo-router";
@@ -13,6 +13,7 @@ export default function FieldWallet() {
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const isFocused = useIsFocused();
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     if (!isFocused) return;
@@ -23,5 +24,5 @@ export default function FieldWallet() {
   }, [isFocused]);
 
   const refresh = () => setRefreshVersion((version) => version + 1);
-  return <View style={[styles.container, { gap: spacing[4] }]} accessibilityLabel="محفظة الميدان"><FieldFinancialSummaryCard refreshVersion={refreshVersion} /><FieldPayoutCard onWalletRefresh={refresh} refreshVersion={refreshVersion} /><FieldWalletHistory refreshVersion={refreshVersion} /></View>;
+  return <View style={[styles.container, { gap: spacing[4] }]} accessibilityLabel="محفظة الميدان"><FieldFinancialSummaryCard refreshVersion={refreshVersion} /><FieldPayoutCard onWalletRefresh={refresh} refreshVersion={refreshVersion} /><BthwaniButton variant="secondary" label={showHistory ? "إخفاء سجل العمليات" : "سجل العمليات"} onPress={() => setShowHistory((visible) => !visible)} />{showHistory ? <FieldWalletHistory refreshVersion={refreshVersion} /> : null}</View>;
 }
