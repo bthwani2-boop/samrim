@@ -1,12 +1,19 @@
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
+import { requireOptionalNativeModule } from "expo-modules-core";
 
 import { Platform } from "react-native";
 
 const installationStorageKey = "bthwani.order-alert.installation-v1";
 let lastRegistered = { actor: "", expires: 0, tone: "", pushActive: false };
 let registrationInFlight: { actor: string; task: Promise<boolean> } | null = null;
+
+export function hasNativeNotificationModules(): boolean {
+  if (Platform.OS === "web") return false;
+  try { return requireOptionalNativeModule("ExpoPushTokenManager") !== null; }
+  catch { return false; }
+}
 
 function endpoint(): string {
   const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -52,6 +59,7 @@ export function registerOwnPushDevice(accessToken: string, actor: string, tone: 
     try {
       if (!stillCurrent()) return false;
       if (lastRegistered.actor === actor && lastRegistered.tone === tone && lastRegistered.expires > Date.now()) return lastRegistered.pushActive;
+      if (!hasNativeNotificationModules()) return false;
       const Notifications = await import("expo-notifications");
       const permission = await Notifications.getPermissionsAsync();
       if (!permission.granted) return false;

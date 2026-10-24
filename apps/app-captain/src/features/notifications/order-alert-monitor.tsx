@@ -6,7 +6,7 @@ import { type Href, useRouter } from "expo-router";
 import { AppState, Platform } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { currentAlertTone } from "./order-alert-preferences";
-import { registerOwnPushDevice } from "./push-device";
+import { hasNativeNotificationModules, registerOwnPushDevice } from "./push-device";
 
 const role = "captain" as const;
 const alerts = new OrderAlertCursor();
@@ -116,7 +116,7 @@ export function OrderAlertMonitor() {
     };
     // Older development builds may not include the native push module.
     // Keep the DSH inbox polling alive even when this import fails.
-    void import("expo-notifications").then(module => {
+    if (hasNativeNotificationModules()) void import("expo-notifications").then(module => {
       if (cancelled) return;
       Notifications = module;
       module.setNotificationHandler({

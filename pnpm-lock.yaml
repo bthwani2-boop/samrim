@@ -90,6 +90,9 @@ importers:
       expo-location:
         specifier: 57.0.20
         version: 57.0.20(@typescript/typescript6@6.0.2)(expo@57.0.27)
+      expo-modules-core:
+        specifier: 57.0.21
+        version: 57.0.21(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3)(react-native@0.86.3(@react-native/metro-config@0.86.3)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@react-native/metro-config@0.86.3)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
       expo-notifications:
         specifier: 57.0.18
         version: 57.0.18(@typescript/typescript6@6.0.2)(expo@57.0.27)(react-native@0.86.3(@react-native/metro-config@0.86.3)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
@@ -199,6 +202,9 @@ importers:
       expo-location:
         specifier: 57.0.20
         version: 57.0.20(@typescript/typescript6@6.0.2)(expo@57.0.27)
+      expo-modules-core:
+        specifier: 57.0.21
+        version: 57.0.21(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3)(react-native@0.86.3(@react-native/metro-config@0.86.3)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@react-native/metro-config@0.86.3)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
       expo-notifications:
         specifier: 57.0.18
         version: 57.0.18(@typescript/typescript6@6.0.2)(expo@57.0.27)(react-native@0.86.3(@react-native/metro-config@0.86.3)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
@@ -408,6 +414,9 @@ importers:
       expo-localization:
         specifier: 57.0.2
         version: 57.0.2(expo@57.0.27)(react@19.2.3)
+      expo-modules-core:
+        specifier: 57.0.21
+        version: 57.0.21(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3)(react-native@0.86.3(@react-native/metro-config@0.86.3)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@react-native/metro-config@0.86.3)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
       expo-notifications:
         specifier: 57.0.18
         version: 57.0.18(@typescript/typescript6@6.0.2)(expo@57.0.27)(react-native@0.86.3(@react-native/metro-config@0.86.3)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
