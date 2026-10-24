@@ -47,3 +47,10 @@
 .ops-center .ops-captains-panel .access-card{min-width:0}
 [data-theme="light"] .ops-center .ops-captain-reveal{background:#fff;border-color:#cfdae8}
 [data-theme="light"] .ops-center .ops-captain-reveal>span{color:#243b59}
+
+.ops-center .ops-captains-panel[hidden],#ops-captain-candidates[hidden]{display:none!important}
+
+/* Consistent readable captain panels in light mode. */
+[data-theme="light"] .ops-center .ops-captains-panel :is(.access-card,.panel,.captain-roster){background:#fff;border-color:#d2dfeb;color:#213b59}
+[data-theme="light"] .ops-center .ops-captains-panel :is(.access-toolbar,.registry-toolbar,.workspace-toolbar){background:#f5f8fc;border-color:#d2dfeb;color:#243c59}
+[data-theme="light"] .ops-center .ops-captains-panel :is(.access-card-heading h2,.access-card-heading p){color:#27415f}

@@ -116,8 +116,18 @@ export function OperationsWorkspace() {
   const [summary, setSummary] = useState<OperatorOperationsSummary | null>(null);
   const [ageClock, setAgeClock] = useState(0);
   const [search, setSearch] = useState(searchFromUrl);
-  const [pageCaptainFilter, setPageCaptainFilter] = useState("all");
-  const [pageReviewFilter, setPageReviewFilter] = useState("all");
+  const pageCaptainFilter = ["assigned", "unassigned"].includes(params.get("captainFilter") ?? "")
+    ? params.get("captainFilter") ?? "all" : "all";
+  const pageReviewFilter = ["overdue", "action"].includes(params.get("reviewFilter") ?? "")
+    ? params.get("reviewFilter") ?? "all" : "all";
+  const changePageFilter = (key: "captainFilter" | "reviewFilter", value: string) => {
+    const next = new URLSearchParams(queryString);
+    if (value === "all") next.delete(key);
+    else next.set(key, value);
+    router.push(pathname + "?" + next.toString(), { scroll: false });
+  };
+  const setPageCaptainFilter = (value: string) => changePageFilter("captainFilter", value);
+  const setPageReviewFilter = (value: string) => changePageFilter("reviewFilter", value);
   const visibleOperations = operations.filter((item) =>
     (pageCaptainFilter === "all" || (pageCaptainFilter === "assigned" ? Boolean(item.assignment) : !item.assignment))
     && (pageReviewFilter === "all" || (pageReviewFilter === "overdue" ? operationNeedsReview(item, ageClock || Date.now()) : Boolean(resolveOperatorAction({ state: item.state, assignment: item.assignment }))))
@@ -128,6 +138,15 @@ export function OperationsWorkspace() {
   const [errorStatus, setErrorStatus] = useState(0);
   const [selectedOrderId, setSelectedOrderId] = useState((params.get("order") ?? "").slice(0,160));
   const [secondaryInbox, setSecondaryInbox] = useState<"contacts" | "cancellations" | null>(null);
+  const [visitedCaptains, setVisitedCaptains] = useState(view === "captains");
+  const tabScroll = useRef<Partial<Record<View, number>>>({});
+  useEffect(() => { if (view === "captains") setVisitedCaptains(true); }, [view]);
+  useEffect(() => {
+    const y = tabScroll.current[view];
+    if (y === undefined) return;
+    const frame = requestAnimationFrame(() => window.scrollTo({ top: y, behavior: "instant" }));
+    return () => cancelAnimationFrame(frame);
+  }, [view]);
   const [cancellationInboxVersion, setCancellationInboxVersion] = useState(0);
   const loadSequence = useRef(0);
 
@@ -141,10 +160,13 @@ export function OperationsWorkspace() {
 
   const navigate = useCallback((changes: Change) => {
     cursorPage.clearForNavigation();
+    if (changes.view && changes.view !== view) tabScroll.current[view] = window.scrollY;
     setSelectedOrderId("");
     const next = new URLSearchParams(queryString);
     next.delete("lane");
     next.delete("sub");
+    next.delete("captain");
+    next.delete("order");
     const nextView = changes.view ?? view;
     if (nextView === "command") next.delete("view");
     else next.set("view", nextView);
@@ -260,7 +282,7 @@ export function OperationsWorkspace() {
         {view === "command" ? <OperationsCommandView summary={summary} operations={operations}
           isAttention={item => operationNeedsReview(item, ageClock || Date.now())}
           onOpen={openOrder} onView={next => navigate({view: next === "delivered" ? "all" : next, state:next === "delivered" ? "DELIVERED" : ""})} loading={loading} />
-        : view === "captains" ? <div className="ops-captains-panel" data-testid="operations-captains"><CaptainAdmissionPanel /></div>
+        : view === "captains" ? null
         : view === "coverage" ? <div className="ops-coverage-panel"><OpportunityZones variant="full" /></div>
         : view === "reports" ? <OperationsPerformance summary={summary} operations={operations} loading={loading} />
         : <>
@@ -414,6 +436,8 @@ export function OperationsWorkspace() {
 
       <CursorPagination page={cursorPage} nextCursor={nextCursor} disabled={loading} label="صفحات الطلبات" />
         </>}
+        {visitedCaptains ? <div className="ops-captains-panel" data-testid="operations-captains"
+          hidden={view !== "captains"}><CaptainAdmissionPanel active={view === "captains"}/></div> : null}
       </CommandFrame>
     </section>
     </AdaptiveRecordWorkspace>

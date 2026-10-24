@@ -16,9 +16,10 @@ type CaptainPage = Readonly<{ items: ReadonlyArray<CaptainRecord>; nextCursor?: 
 
 const admissionLabel = (admission: CaptainAdmission | null) => admission ? captainAdmissionStateLabel(admission.state) : "لا توجد أهلية تشغيل ";
 
-export function CaptainAdmissionPanel() {
+export function CaptainAdmissionPanel({ active = true }: Readonly<{ active?: boolean }> = {}) {
   const [query, setQuery] = useState("");
   const [showCandidateForms, setShowCandidateForms] = useState(false);
+  const [candidateFormsVisited, setCandidateFormsVisited] = useState(false);
   const [enabledFilter, setEnabledFilter] = useState("");
   const [sort, setSort] = useState<"phone_asc" | "phone_desc">("phone_asc");
   const [identityFilter, setIdentityFilter] = useState("all");
@@ -101,8 +102,8 @@ export function CaptainAdmissionPanel() {
     }
   }, [enabledFilter, query, sort, cursorPage.cursor]);
 
-  useEffect(() => { if (cursorPage.ready) void load(); }, [load, cursorPage.ready]);
-  useReadOnReturn(() => load(), cursorPage.ready && !loading && !busy && !Object.values(reasons).some((value) => value.trim()));
+  useEffect(() => { if (cursorPage.ready && active) void load(); }, [active, load, cursorPage.ready]);
+  useReadOnReturn(() => load(), active && cursorPage.ready && !loading && !busy && !Object.values(reasons).some((value) => value.trim()));
 
   async function changeStatus(captain: CaptainRecord) {
     const reason = reasons[captain.actorId]?.trim() ?? "";
@@ -273,14 +274,16 @@ export function CaptainAdmissionPanel() {
   }
 
   return (
-    <AdaptiveRecordWorkspace preferenceKey="captains" open={Boolean(selectedCaptain)} onClose={closeCaptain}
+    <AdaptiveRecordWorkspace preferenceKey="captains" open={Boolean(selectedCaptain) && active} onClose={closeCaptain}
       detail={<AdaptiveRecordPanel title="ملف الكابتن"
         onClose={closeCaptain} onPrevious={selectedIndex > 0 ? () => moveSelection(-1) : undefined}
         onNext={selectedIndex >= 0 && selectedIndex < items.length - 1 ? () => moveSelection(1) : undefined}>
         {selectedCaptain ? <CaptainDetailWorkspace key={selectedCaptain} actorId={selectedCaptain} embedded /> : null}
       </AdaptiveRecordPanel>}>
-      <div className="ops-captain-reveal"><span>إدارة الكباتن</span><button type="button" className="button button-secondary" aria-expanded={showCandidateForms} aria-controls="ops-captain-candidates" onClick={() => setShowCandidateForms(current => !current)}>{showCandidateForms ? "إخفاء ملفات الانضمام" : "طلبات الانضمام وملف كابتن جديد"} ←</button></div>
-      {showCandidateForms ? <div id="ops-captain-candidates"><CaptainCandidatePanel /></div> : null}
+      <div className="ops-captain-reveal"><span>إدارة الكباتن</span><button type="button" className="button button-secondary" aria-expanded={showCandidateForms} aria-controls="ops-captain-candidates" onClick={() => {setCandidateFormsVisited(true);setShowCandidateForms(current => !current);}}>{showCandidateForms ? "إخفاء ملفات الانضمام" : "طلبات الانضمام وملف كابتن جديد"} ←</button></div>
+      {candidateFormsVisited ? <div id="ops-captain-candidates" hidden={!showCandidateForms}>
+        <CaptainCandidatePanel />
+      </div> : null}
       <section className="access-card" aria-labelledby="captain-roster-title">
         <div className="access-card-heading"><h2 id="captain-roster-title">قائمة الكباتن وأهليتهم وتوفرهم</h2><p className="muted">إيقاف التشغيل يوقف الأهلية فقط؛ الهوية تبقى محفوظة.</p></div>
         <div className="workspace-toolbar">
