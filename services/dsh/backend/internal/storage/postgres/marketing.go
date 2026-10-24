@@ -212,9 +212,10 @@ func validatePromotionInput(input PromotionInput) error {
 	if input.StoreID == "" && input.FundingSource != "BTHWANI" && !input.RequiresPartnerOptIn {
 		return ErrPromotionInvalid
 	}
-	// Partner liabilities in platform campaigns must have a finite, server-
-	// enforced discount budget before any Store is invited to fund them.
-	if input.StoreID == "" && input.FundingSource != "BTHWANI" && input.DiscountBudgetLimitMinor == nil {
+	// Any platform-wide campaign, including one funded by BTHWANI alone,
+	// must have an enforceable aggregate discount cap. An uncapped exception
+	// requires a distinct audited authorization path that does not exist yet.
+	if input.StoreID == "" && input.DiscountBudgetLimitMinor == nil {
 		return ErrPromotionInvalid
 	}
 	if len(input.Targets) > 0 {
@@ -301,7 +302,7 @@ const listPublicPromotionsQuery = `SELECT id,code,name_ar,description_ar,kind,va
         WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())
           AND (redemption_limit IS NULL OR redeemed_count < redemption_limit)
           AND (discount_budget_limit_minor IS NULL OR discount_spent_minor < discount_budget_limit_minor)
-          AND (store_id IS NOT NULL OR funding_source='BTHWANI' OR discount_budget_limit_minor IS NOT NULL)))
+          AND (store_id IS NOT NULL OR discount_budget_limit_minor IS NOT NULL)))
         AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2)
         AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3))
         AND (NOT $1 OR store_id IS NOT NULL OR (funding_source='BTHWANI' AND requires_partner_opt_in=false) OR EXISTS (SELECT 1 FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=dsh.commerce_promotions.id AND o.store_id=$3 AND o.state='OPTED_IN'))
@@ -398,7 +399,7 @@ func CountPublicPromotionsForStores(ctx context.Context, db *sql.DB, cityID stri
 			AND (p.ends_at IS NULL OR p.ends_at > clock_timestamp())
 			AND (p.redemption_limit IS NULL OR p.redeemed_count < p.redemption_limit)
 			AND (p.discount_budget_limit_minor IS NULL OR p.discount_spent_minor < p.discount_budget_limit_minor)
-			AND (p.store_id IS NOT NULL OR p.funding_source='BTHWANI' OR p.discount_budget_limit_minor IS NOT NULL)
+			AND (p.store_id IS NOT NULL OR p.discount_budget_limit_minor IS NOT NULL)
 			AND (p.service_city_id IS NULL OR p.service_city_id=$1)
 			AND (p.store_id IS NULL OR p.store_id=s.id)
 			AND (p.store_id IS NOT NULL OR (p.funding_source='BTHWANI' AND p.requires_partner_opt_in=false)
@@ -607,9 +608,9 @@ func EvaluatePromotion(ctx context.Context, source rowQueryer, code, storeID, st
 	if item.State != "PUBLISHED" || now.Before(item.StartsAt) || item.EndsAt != nil && !now.Before(*item.EndsAt) || item.StoreID != "" && item.StoreID != storeID || item.ServiceCityID != "" && item.ServiceCityID != storeServiceCityID {
 		return PromotionRecord{}, 0, ErrPromotionUnavailable
 	}
-	// Never apply an uncapped historical platform campaign funded by Stores,
-	// even if an earlier version recorded a consent row.
-	if item.StoreID == "" && item.FundingSource != "BTHWANI" && item.DiscountBudgetLimitMinor == nil {
+	// Historical uncapped platform campaigns are not eligible, regardless
+	// of their original sponsor or previously recorded Store consents.
+	if item.StoreID == "" && item.DiscountBudgetLimitMinor == nil {
 		return PromotionRecord{}, 0, ErrPromotionUnavailable
 	}
 	// A platform campaign applies to a Store only when the Store opted in where
@@ -1054,7 +1055,7 @@ func ListPartnerEligibleCampaigns(ctx context.Context, db *sql.DB, storeID strin
                 AND (p.service_city_id IS NULL OR p.service_city_id=$2)
                 AND (p.redemption_limit IS NULL OR p.redeemed_count < p.redemption_limit)
                 AND (p.discount_budget_limit_minor IS NULL OR p.discount_spent_minor < p.discount_budget_limit_minor)
-                AND (p.funding_source='BTHWANI' OR p.discount_budget_limit_minor IS NOT NULL)
+                AND p.discount_budget_limit_minor IS NOT NULL
                 ORDER BY p.starts_at DESC, p.id DESC`, storeID, storeCityID)
 	if err != nil {
 		return nil, err
@@ -1141,7 +1142,7 @@ func SetPartnerCampaignOptIn(ctx context.Context, db *sql.DB, promotionID, store
 			SELECT 1 FROM dsh.commerce_promotions p
 			JOIN dsh.stores s ON s.id=$2
 			WHERE p.id=$1 AND p.store_id IS NULL AND p.requires_partner_opt_in
-			  AND (p.funding_source='BTHWANI' OR p.discount_budget_limit_minor IS NOT NULL)
+			  AND p.discount_budget_limit_minor IS NOT NULL
 			  AND (p.redemption_limit IS NULL OR p.redeemed_count < p.redemption_limit)
 			  AND (p.discount_budget_limit_minor IS NULL OR p.discount_spent_minor < p.discount_budget_limit_minor)
 			  AND p.state='PUBLISHED' AND p.starts_at<=clock_timestamp()

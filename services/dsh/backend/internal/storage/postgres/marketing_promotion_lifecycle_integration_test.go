@@ -28,10 +28,11 @@ func TestPromotionDraftPublishAppearsAndPauseRemovesFromStore(t *testing.T) {
 		if err := postgres.Migrate(ctx, db, records, sqls, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatal(err)
 		}
+		budget := int64(30000)
 		input := postgres.PromotionInput{
 			ID: "isolated-approved-promotion", Code: "LOCAL10", NameAr: "عرض محلي",
 			Kind: "PERCENTAGE", ValueMinor: 10, FundingSource: "BTHWANI",
-			StartsAt: time.Now().Add(-time.Hour), CreatedByActorID: "operator-test",
+			StartsAt: time.Now().Add(-time.Hour), CreatedByActorID: "operator-test", DiscountBudgetLimitMinor: &budget,
 		}
 		saved, replayed, err := postgres.CreatePromotion(ctx, db, input, "local-create-key", "local-create-hash")
 		if err != nil || replayed || saved.State != "DRAFT" {
@@ -64,6 +65,14 @@ func TestPromotionDraftPublishAppearsAndPauseRemovesFromStore(t *testing.T) {
 		hidden, err := postgres.ListPromotions(ctx, db, true, "city-any", "store-any")
 		if err != nil || len(hidden) != 0 {
 			t.Fatalf("paused promotion must disappear: count=%d err=%v", len(hidden), err)
+		}
+		// Previously published uncapped platform offers must not remain public.
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET discount_budget_limit_minor=NULL,state='PUBLISHED' WHERE id=$1", input.ID); err != nil {
+			t.Fatal(err)
+		}
+		unsafe, err := postgres.ListPromotions(ctx, db, true, "city-any", "store-any")
+		if err != nil || len(unsafe) != 0 {
+			t.Fatalf("historical uncapped platform offer became visible: %+v err=%v", unsafe, err)
 		}
 	})
 }

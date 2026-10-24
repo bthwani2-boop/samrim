@@ -31,7 +31,7 @@ func TestPlatformPartnerFundedPromotionRequiresExplicitStoreConsent(t *testing.T
 		{"store-scoped campaign cannot opt in to platform participation", "PARTNER", "store-owned", true, nil, true},
 	}
 	// A published platform-funded Partner liability must never be unbounded.
-	for _, funding := range []string{"PARTNER", "SHARED"} {
+	for _, funding := range []string{"BTHWANI", "PARTNER", "SHARED"} {
 		input := base
 		input.FundingSource = funding
 		input.RequiresPartnerOptIn = true

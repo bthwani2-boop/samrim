@@ -18,9 +18,10 @@ test("partner cannot opt in to unbounded partner funding", () => {
   assert.match(partner, /لا يمكن الموافقة على تمويل خصومات دون سقف مالي معتمد/);
   assert.match(partner, /الحد الأقصى لقيمة الخصومات/);
 });
-test("operator must set budget before inviting partners to fund a campaign", () => {
-  assert.match(operator, /promotionForm\.fundingSource !== "BTHWANI" && budgetLimit === null/);
-  assert.match(operator, /حدد سقفًا إجماليًا للخصومات قبل دعوة الشركاء/);
-  assert.match(operator, /promotionForm\.fundingSource !== "BTHWANI" && !promotionForm\.discountBudgetLimitMinor\.trim\(\)/);
-  assert.match(operator, /سقف مجموع الخصومات \(إلزامي لتمويل الشركاء/);
+test("operator must set budget for all platform campaigns including BTHWANI funding", () => {
+  assert.match(operator, /!promotionForm\.storeId && budgetLimit === null/);
+  assert.match(operator, /حدد سقفًا إجماليًا لخصومات حملة المنصة قبل المتابعة/);
+  assert.match(operator, /!promotionForm\.storeId && !promotionForm\.discountBudgetLimitMinor\.trim\(\)/);
+  assert.match(operator, /سقف خصومات حملة المنصة \(إلزامي/);
+  assert.match(operator, /required=\{!promotionForm\.storeId\}/);
 });

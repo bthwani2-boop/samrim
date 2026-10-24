@@ -55,7 +55,7 @@ partner_participation AS (
      ON opt.promotion_id=p.id AND opt.store_id=s.id
  WHERE p.store_id IS NULL AND p.requires_partner_opt_in
    AND p.state='PUBLISHED' AND p.starts_at<=at AND (p.ends_at IS NULL OR p.ends_at>at)
-   AND (p.funding_source='BTHWANI' OR p.discount_budget_limit_minor IS NOT NULL)
+   AND p.discount_budget_limit_minor IS NOT NULL
 )
 SELECT promotions.active, promotions.scheduled, promotions.ended, promotions.drafts,
  promotions.paused, content.active, partner_participation.invited,
