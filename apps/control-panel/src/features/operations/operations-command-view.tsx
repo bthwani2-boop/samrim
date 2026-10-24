@@ -27,6 +27,13 @@ export function OperationsCommandView({ summary, operations, isAttention, onView
     .sort((a, b) => b.value - a.value).slice(0, 6);
   return <div className="bt-command-coverage" data-testid="operations-command">
     <CommandMetricStrip metrics={metrics} />
+    <div className="bt-command-grid ops-command-map-and-queue">
+      <OpportunityZones />
+    <CommandDecisionList title="الأولويات التشغيلية" items={attention.map(item => ({
+      id: item.orderId, title: item.storeName, description: orderStateLabel(item.state) + " · " + formatOrderDate(item.updatedAt),
+      tone: "danger" as const, action: () => onOpen(item.orderId),
+    }))} footer={<button type="button" onClick={() => onView("attention")}>عرض جميع الحالات التي تحتاج تدخلاً ←</button>} />
+    </div>
     <div className="bt-command-grid">
       <CommandBarPanel title="حالات الطلبات المعروضة" subtitle="توزيع السجلات المحمّلة، وليس كامل المنصة"
         measures={breakdown} total={operations.length}/>
@@ -38,13 +45,8 @@ export function OperationsCommandView({ summary, operations, isAttention, onView
           { id: "delivered", label: "مسلّمة", value: summary.deliveredCount },
         ] : []} total={summary?.totalCount ?? null}/>
     </div>
-    <CommandDecisionList title="الأولويات التشغيلية" items={attention.map(item => ({
-      id: item.orderId, title: item.storeName, description: orderStateLabel(item.state) + " · " + formatOrderDate(item.updatedAt),
-      tone: "danger" as const, action: () => onOpen(item.orderId),
-    }))} footer={<button type="button" onClick={() => onView("attention")}>عرض جميع الحالات التي تحتاج تدخلاً ←</button>} />
     <p className="bt-command-footnote" role="status">{loading ? "جارٍ التحقق من أحدث البيانات..." :
       summary ? "آخر قياس تشغيلي: " + formatOrderDate(summary.measuredAt) + " · القوائم التحليلية تعرض السجلات المحمّلة فقط." :
       "ملخص العمليات غير متاح حاليًا. لا تُعرض أرقام افتراضية."}</p>
-    <OpportunityZones />
   </div>;
 }

@@ -1,0 +1,49 @@
+/* Operations command: contextual navigation and progressive disclosure. */
+.ops-center .bt-command-nav{position:relative;z-index:1;overflow-x:auto;scrollbar-width:thin}
+.ops-center .bt-command-nav button{min-width:max-content}
+.ops-center .ops-intervention-priority{display:grid;gap:11px;min-width:0}
+.ops-center .ops-intervention-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ops-center .ops-intervention-tools button{min-height:40px;padding:8px 14px;color:#b9d0e8;background:#10253b;border:1px solid #2b425c;border-radius:8px;font:inherit;font-weight:700;font-size:12px;cursor:pointer}
+.ops-center .ops-intervention-tools button:is(:hover,.is-current){border-color:#ff7838;color:#ff9b6c;background:rgba(255,120,56,.09)}
+.ops-center .ops-intervention-tools button:focus-visible{outline:2px solid #ff9b6c;outline-offset:2px}
+.ops-center .ops-captains-panel,.ops-center .ops-coverage-panel{min-width:0;display:grid;gap:13px}
+.ops-center .ops-captains-panel>.work-stack{min-width:0}
+.ops-center .ops-captains-panel :is(.access-card,.panel,.captain-roster){background:#0d1c30;border-color:#2a405b;border-radius:10px}
+.ops-center .ops-captains-panel :is(.access-toolbar,.registry-toolbar){background:#11243b;border-color:#2a405b;border-radius:9px}
+.ops-center .ops-context-heading{display:grid;gap:4px;padding:4px 2px}
+.ops-center .ops-context-heading h2{font-size:16px;font-weight:780;margin:0}
+.ops-center .ops-context-heading p{color:#a5b9d0;font-size:11px;margin:0}
+.ops-activity-surface{display:grid;gap:11px;align-content:start;background:#0e2035;border:1px solid #29435c;border-radius:11px;padding:15px;min-width:0}
+.ops-activity-surface-heading{display:flex;align-items:start;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.ops-activity-surface-heading h2{font-size:14px;font-weight:800;color:#edf6ff;margin:0}
+.ops-activity-surface-heading p{font-size:11px;color:#9eb4cf;margin:4px 0 0}
+.ops-activity-sample{font-size:10px;color:#9eb4cf;line-height:1.5}
+.ops-activity-legend{display:flex;align-items:center;gap:13px;flex-wrap:wrap;color:#d9e8f9;font-size:11px}
+.ops-activity-legend small{color:#9eb4cf}
+.ops-activity-surface .ops-activity-map{min-width:0;display:grid;min-height:260px}
+.ops-activity-surface .ops-activity-map-canvas{width:100%;height:clamp(235px,30vw,380px);border:1px solid #314c69;border-radius:9px;background:#182c40}
+.ops-activity-full .ops-activity-map-canvas{height:clamp(350px,55vh,650px)}
+.ops-coverage-unavailable{display:grid;justify-items:center;align-content:center;gap:8px;text-align:center;min-height:210px;padding:28px;border:1px dashed #36506b;border-radius:9px;background:#12253a;color:#d7e8fc}
+.ops-activity-full .ops-coverage-unavailable{min-height:390px}
+.ops-coverage-placeholder{display:grid;place-items:center;width:56px;height:56px;border-radius:50%;background:rgba(255,120,56,.09);color:#ff9b6e;font-size:30px}
+.ops-coverage-unavailable strong{font-size:13px}
+.ops-coverage-unavailable p{max-width:410px;font-size:11px;color:#a5b9d0;line-height:1.8;margin:0}
+.ops-center .ops-list-heading{margin-top:5px}
+.ops-center .ops-tools{margin-top:0}
+.ops-center .ops-results{min-width:0}
+[data-theme="light"] .ops-activity-surface{background:#fff;border-color:#d6e1ec}
+[data-theme="light"] .ops-activity-surface-heading h2{color:#213955}
+[data-theme="light"] .ops-activity-surface-heading p,[data-theme="light"] .ops-activity-sample{color:#5a728d}
+[data-theme="light"] .ops-coverage-unavailable{background:#f4f7fb;color:#253d59;border-color:#c9d7e7}
+[data-theme="light"] .ops-coverage-unavailable p{color:#526b88}
+[data-theme="light"] .ops-center .ops-intervention-tools button{background:#fff;border-color:#ccd9e7;color:#334d6a}
+[data-theme="light"] .ops-center .ops-intervention-tools button.is-current{color:#b65626;border-color:#b65626}
+@media(max-width:760px){.ops-activity-surface-heading{display:grid}.ops-activity-full .ops-activity-map-canvas{height:370px}.ops-center .bt-command-nav button{min-height:44px}}
+
+/* Primary roster first; advanced admission flows expand only when requested. */
+.ops-center .ops-captain-reveal{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding:11px 14px;background:#11253c;border:1px solid #29445e;border-radius:9px}
+.ops-center .ops-captain-reveal>span{font-size:12px;font-weight:750;color:#e5f2ff}
+.ops-center .ops-captain-reveal button{min-height:39px;border-color:#35516f;font-weight:750}
+.ops-center .ops-captains-panel .access-card{min-width:0}
+[data-theme="light"] .ops-center .ops-captain-reveal{background:#fff;border-color:#cfdae8}
+[data-theme="light"] .ops-center .ops-captain-reveal>span{color:#243b59}

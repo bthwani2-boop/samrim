@@ -17,21 +17,27 @@ import { CustomerContactQueue } from "./customer-contact-queue";
 import { CommandFrame, CommandSectionTabs } from "../shared/command-surface";
 import { OperationsCommandView } from "./operations-command-view";
 import { OperatorCaseInbox } from "./operator-case-inbox";
+import { CaptainAdmissionPanel } from "../captain/captain-admission-panel";
+import { OpportunityZones } from "./opportunity-zones";
+import { OperationsPerformance } from "./operations-performance";
+import "./operations-unified.css";
 
 function operationNeedsReview(item: OperatorOperationListItem, now: number): boolean {
   const stage = operationalStageAttention(item.state, item.stageStartedAt, now, item.preparationMinutes);
   return stage ? stage.needsReview : operationalAge(item.state, item.updatedAt, now).needsReview;
 }
 
-type View = "command" | "all" | "attention" | "dispatch" | "delivered";
+type View = "command" | "all" | "attention" | "dispatch" | "captains" | "coverage" | "reports";
 type Change = Readonly<{ view?: View; state?: string; q?: string; sort?: string }>;
 
 const views: ReadonlyArray<Readonly<{ id: View; label: string }>> = [
   { id: "command", label: "القيادة" },
-  { id: "all", label: "جميع الطلبات" },
-  { id: "attention", label: "تحتاج قرارًا" },
-  { id: "dispatch", label: "بانتظار كابتن" },
-  { id: "delivered", label: "تم التسليم" },
+  { id: "all", label: "الطلبات" },
+  { id: "attention", label: "التدخلات" },
+  { id: "dispatch", label: "الإسناد والتوصيل" },
+  { id: "captains", label: "الكباتن" },
+  { id: "coverage", label: "التغطية والخريطة" },
+  { id: "reports", label: "الأداء والتقارير" },
 ];
 
 const specificStates = [
@@ -97,9 +103,9 @@ export function OperationsWorkspace() {
   const view: View = views.some((item) => item.id === rawView) ? rawView as View
     : oldLane === "attention" ? "attention"
     : oldLane === "dispatch" ? "dispatch"
-    : oldState === "DELIVERED" ? "delivered" : (!oldLane && !oldState && !params.has("state") && !params.has("q") ? "command" : "all");
-  const preciseState = params.get("state") ?? (view === "all" ? oldState : "");
-  const state = preciseState || (view === "dispatch" ? "READY_FOR_DISPATCH" : view === "delivered" ? "DELIVERED" : "");
+    : oldState === "DELIVERED" || rawView === "delivered" ? "all" : (!oldLane && !oldState && !params.has("state") && !params.has("q") ? "command" : "all");
+  const preciseState = params.get("state") ?? (oldState || (rawView === "delivered" ? "DELIVERED" : ""));
+  const state = preciseState || (view === "dispatch" ? "READY_FOR_DISPATCH" : "");
   const actionableOnly = view === "attention" && !preciseState;
   const searchFromUrl = (params.get("q") ?? "").trim().slice(0, 128);
   const sort = params.get("sort") === "updated_asc" ? "updated_asc" : "updated_desc";
@@ -120,11 +126,13 @@ export function OperationsWorkspace() {
   const [nextCursor, setNextCursor] = useState("");
   const [error, setError] = useState("");
   const [errorStatus, setErrorStatus] = useState(0);
-  const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [selectedOrderId, setSelectedOrderId] = useState((params.get("order") ?? "").slice(0,160));
+  const [secondaryInbox, setSecondaryInbox] = useState<"contacts" | "cancellations" | null>(null);
   const [cancellationInboxVersion, setCancellationInboxVersion] = useState(0);
   const loadSequence = useRef(0);
 
   useEffect(() => setSearch(searchFromUrl), [searchFromUrl]);
+  useEffect(() => setSelectedOrderId((new URLSearchParams(queryString).get("order") ?? "").slice(0,160)), [queryString]);
   useEffect(() => {
     setAgeClock(Date.now());
     const timer = setInterval(() => setAgeClock(Date.now()), 60_000);
@@ -204,7 +212,7 @@ export function OperationsWorkspace() {
   }, [load, cursorPage.ready]);
   useReadOnReturn(() => load(true), cursorPage.ready && !loading);
   useEffect(() => {
-    if (!cursorPage.ready || loading || view === "delivered") return;
+    if (!cursorPage.ready || loading || view === "reports") return;
     const timer = setInterval(() => {
       if (!document.hidden) void load(true);
     }, 60_000);
@@ -213,12 +221,19 @@ export function OperationsWorkspace() {
 
   const overdueOnPage = operations.filter((item) => operationNeedsReview(item, ageClock || Date.now())).length;
   const hasSearch = Boolean(searchFromUrl);
-  const selectedFilter = preciseState || (view === "attention" ? "attention" : view === "dispatch" ? "READY_FOR_DISPATCH" : view === "delivered" ? "DELIVERED" : "");
+  const selectedFilter = preciseState || (view === "attention" ? "attention" : view === "dispatch" ? "READY_FOR_DISPATCH" : "");
   const selectedViewLabel = preciseState ? specificStates.find((item) => item.value === preciseState)?.label ?? preciseState
     : views.find((item) => item.id === view)?.label ?? "جميع الطلبات";
 
   const selectedIndex = operations.findIndex((item) => item.orderId === selectedOrderId);
-  const closeSelected = () => setSelectedOrderId("");
+  const openOrder = useCallback((orderId: string) => {
+    setSelectedOrderId(orderId);
+    const next = new URLSearchParams(queryString);
+    if (orderId) next.set("order", orderId);
+    else next.delete("order");
+    router.push(pathname + "?" + next.toString(), {scroll:false});
+  },[pathname,queryString,router]);
+  const closeSelected = () => openOrder("");
 
   return (
     <AdaptiveRecordWorkspace
@@ -230,11 +245,11 @@ export function OperationsWorkspace() {
         onClose={closeSelected}
         onPrevious={selectedIndex > 0 ? () => {
           const previous = operations[selectedIndex - 1];
-          if (previous) setSelectedOrderId(previous.orderId);
+          if (previous) openOrder(previous.orderId);
         } : undefined}
         onNext={selectedIndex >= 0 && selectedIndex < operations.length - 1 ? () => {
           const next = operations[selectedIndex + 1];
-          if (next) setSelectedOrderId(next.orderId);
+          if (next) openOrder(next.orderId);
         } : undefined}
       >
         <OrderOperationDetail orderId={selectedOrderId} embedded onClose={closeSelected} onUpdated={() => {setCancellationInboxVersion(v => v+1); void load(true)}} />
@@ -244,15 +259,25 @@ export function OperationsWorkspace() {
         <CommandSectionTabs label="أقسام العمليات" active={view} tabs={views} onSelect={next => navigate({view:next,state:""})}/>
         {view === "command" ? <OperationsCommandView summary={summary} operations={operations}
           isAttention={item => operationNeedsReview(item, ageClock || Date.now())}
-          onOpen={setSelectedOrderId} onView={next => navigate({view:next,state:""})} loading={loading} /> : <>
-      {(view === "all" || view === "attention") ? <OperatorCaseInbox onOpenOrder={setSelectedOrderId} refreshVersion={cancellationInboxVersion} /> : null}
-      {(view === "all" || view === "attention") ? <CustomerContactQueue onOpenOrder={setSelectedOrderId} refreshVersion={cancellationInboxVersion} /> : null}
-      {view === "attention" || view === "all" ? <CancellationRequestInbox onOpenOrder={setSelectedOrderId} refreshVersion={cancellationInboxVersion} /> : null}
+          onOpen={openOrder} onView={next => navigate({view: next === "delivered" ? "all" : next, state:next === "delivered" ? "DELIVERED" : ""})} loading={loading} />
+        : view === "captains" ? <div className="ops-captains-panel" data-testid="operations-captains"><CaptainAdmissionPanel /></div>
+        : view === "coverage" ? <div className="ops-coverage-panel"><OpportunityZones variant="full" /></div>
+        : view === "reports" ? <OperationsPerformance summary={summary} operations={operations} loading={loading} />
+        : <>
+      {view === "attention" ? <section className="ops-intervention-priority" data-testid="operations-interventions">
+        <OperatorCaseInbox onOpenOrder={openOrder} refreshVersion={cancellationInboxVersion} />
+        <div className="ops-intervention-tools">
+          <button type="button" className={secondaryInbox==="contacts"?"is-current":""} aria-expanded={secondaryInbox==="contacts"} onClick={()=>setSecondaryInbox(current=>current==="contacts"?null:"contacts")}>التحقق من العملاء</button>
+          <button type="button" className={secondaryInbox==="cancellations"?"is-current":""} aria-expanded={secondaryInbox==="cancellations"} onClick={()=>setSecondaryInbox(current=>current==="cancellations"?null:"cancellations")}>طلبات الإلغاء</button>
+        </div>
+        {secondaryInbox === "contacts" ? <CustomerContactQueue onOpenOrder={openOrder} refreshVersion={cancellationInboxVersion} /> : null}
+        {secondaryInbox === "cancellations" ? <CancellationRequestInbox onOpenOrder={openOrder} refreshVersion={cancellationInboxVersion} /> : null}
+      </section> : null}
       <div className="ops-tools">
         <search className="ops-search" aria-label="البحث في الطلبات">
           <form noValidate onSubmit={(event) => {
             event.preventDefault();
-            navigate({ view: "all", state: "", q: search.trim().slice(0, 128) });
+            navigate({ view, state: "", q: search.trim().slice(0, 128) });
           }}>
             <label className="visually-hidden" htmlFor="ops-search-input">رقم الطلب أو اسم المتجر</label>
             <input id="ops-search-input" type="search" value={search} maxLength={128}
@@ -266,7 +291,7 @@ export function OperationsWorkspace() {
             <label className="ops-select-label">حالة الطلب
               <select aria-label="تصفية حسب حالة الطلب" value={selectedFilter} onChange={(event) => {
                 const chosen = event.target.value;
-                navigate({ view: chosen === "attention" ? "attention" : "all", state: chosen === "attention" ? "" : chosen });
+                navigate({ view: chosen === "attention" ? "attention" : view, state: chosen === "attention" ? "" : chosen });
               }}>
                 {specificStates.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                 {preciseState && !specificStates.some((item) => item.value === preciseState) ? <option value={preciseState}>{preciseState}</option> : null}
@@ -291,30 +316,6 @@ export function OperationsWorkspace() {
         <strong>{errorStatus === 403 ? "لا تملك صلاحية قراءة الطلبات" : "تعذر قراءة الطلبات"}</strong>
         <p>{error}</p><button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>إعادة المحاولة</button>
       </div> : null}
-
-      <section className="ops-status-summary" aria-label="أولوية متابعة الطلبات">
-        <div className="ops-summary-grid">
-          {([
-            { key: "attention", label: "تحتاج قرارًا", count: summary?.actionableCount, className: "ops-summary-review" },
-            { key: "dispatch", label: "بانتظار كابتن", count: summary?.awaitingDispatchCount, className: "ops-summary-dispatch" },
-            { key: "all", label: "قيد التنفيذ", count: summary?.activeCount, className: "ops-summary-active" },
-          ] as const).filter((item) => item.count === undefined || item.count > 0).map((item) =>
-            <button key={item.key} type="button" className={"ops-summary " + item.className}
-              aria-pressed={view === item.key && !preciseState}
-              onClick={() => navigate({ view: item.key, state: "" })}>
-              <span>{item.label}</span>
-              <strong>{item.count === undefined ? "—" : item.count.toLocaleString("ar-YE")}</strong>
-            </button>
-          )}
-          <button type="button" className="ops-summary ops-summary-all"
-            aria-pressed={view === "all" && !preciseState}
-            onClick={() => navigate({ view: "all", state: "" })}>
-            <span>كل الطلبات</span><strong>{summary ? summary.totalCount.toLocaleString("ar-YE") : "—"}</strong>
-          </button>
-        </div>
-        {summary ? <p className="ops-summary-caption">إجماليات من الخدمة للبحث والمرشحات الحالية · <time dateTime={summary.measuredAt}>{formatOrderDate(summary.measuredAt)}</time></p> : null}
-        {summary && summary.inCustodyOrderCount > 0 ? <p className="ops-summary-caption" role="status">عهدة الكباتن الجارية: {summary.inCustodyOrderCount.toLocaleString("ar-YE")} طلب · إجمالي قيم الطلبات: {summary.inCustodyOrderValueMinor.toLocaleString("ar-YE")} ريال — مؤشر متابعة، وليس ضمانًا ماليًا.</p> : null}
-      </section>
 
       {overdueOnPage > 0 ? <div className="operations-attention-note" role="status">
         <span>{overdueOnPage.toLocaleString("ar-YE")} طلب متأخر أو متعثر في الصفحة الحالية.</span>
@@ -376,7 +377,7 @@ export function OperationsWorkspace() {
                       {!stageAttention && operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt)) ? <span className="muted">{operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt))}</span> : null}
                       {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
                     </div></td>
-                    <td><button type="button" className="ops-row-open" aria-label={(nextAction || needsReview ? "مراجعة" : "تفاصيل") + " طلب " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>{nextAction || needsReview ? "مراجعة" : "تفاصيل"}</button></td>
+                    <td><button type="button" className="ops-row-open" aria-label={(nextAction || needsReview ? "مراجعة" : "تفاصيل") + " طلب " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => openOrder(item.orderId)}>{nextAction || needsReview ? "مراجعة" : "تفاصيل"}</button></td>
                   </tr>;
                 })}
               </tbody>
@@ -402,7 +403,7 @@ export function OperationsWorkspace() {
                   </div>
                   <div className="ops-mobile-order-bottom">
                     <time dateTime={item.updatedAt}>آخر تحديث: {formatOrderDate(item.updatedAt)}</time>
-                    <button type="button" className="ops-row-open" aria-label={(nextAction || needsReview ? "مراجعة الطلب" : "تفاصيل الطلب") + " رقم " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => setSelectedOrderId(item.orderId)}>{nextAction || needsReview ? "مراجعة الطلب" : "تفاصيل الطلب"}</button>
+                    <button type="button" className="ops-row-open" aria-label={(nextAction || needsReview ? "مراجعة الطلب" : "تفاصيل الطلب") + " رقم " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => openOrder(item.orderId)}>{nextAction || needsReview ? "مراجعة الطلب" : "تفاصيل الطلب"}</button>
                   </div>
                 </li>;
               })}
