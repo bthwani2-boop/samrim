@@ -896,6 +896,7 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
   const step = cardWidth + spacing[2];
   const loop = hero && items.length > 1;
   const slides = loop ? [items[items.length - 1]!, ...items, items[0]!] : items;
+  const slideEntries = slides.map((item, position) => ({ item, instanceKey: loop && position === 0 ? "tail:" + item.id : loop && position === slides.length - 1 ? "head:" + item.id : "item:" + item.id }));
   const direction = I18nManager.isRTL ? -1 : 1;
   const activeItem = items[activeIndex];
 
@@ -942,6 +943,9 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
       }, 700);
     }
   }
+  const chooseRef = useRef(choose);
+  chooseRef.current = choose;
+
   function settle(x: number) {
     if (!items.length) return;
     const position = Math.min(slides.length - 1, Math.max(0, Math.round(Math.abs(x) / step)));
@@ -955,8 +959,9 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
 
   useEffect(() => {
     if (!hero || !screenActive || !foreground || reducedMotion || interacting || presentation.mode === "STATIC" || items.length < 2) return;
-    // Autoplay is clock-driven, not dependent on a progress animation completing.
-    const timer = setTimeout(() => choose((activeIndex + 1) % items.length), presentation.intervalSeconds * 1000);
+    // Autoplay uses the newest carousel state without resetting on each render.
+    void step; // A card-width change requires a new timer.
+    const timer = setTimeout(() => chooseRef.current((activeIndex + 1) % items.length), presentation.intervalSeconds * 1000);
     return () => clearTimeout(timer);
   }, [hero, screenActive, activeIndex, items.length, foreground, reducedMotion, interacting, presentation.mode, presentation.intervalSeconds, step]);
 
@@ -984,13 +989,13 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
       snapToInterval={step}
       style={styles.mediaScroll}
     >
-      {slides.map((item, position) => {
+      {slideEntries.map(({ item, instanceKey }, position) => {
         const inputRange = [(position - 1) * step, position * step, (position + 1) * step];
         const imageMotion = hero && !reducedMotion && presentation.mode === "CINEMATIC" ? { transform: [
           { scale: offset.interpolate({ inputRange, outputRange: [1.045, 1, 1.045], extrapolate: "clamp" }) },
           { translateX: offset.interpolate({ inputRange, outputRange: [6, 0, -6], extrapolate: "clamp" }) },
         ] } : undefined;
-        return <Pressable accessibilityRole="button" accessibilityLabel={"عرض " + item.titleAr} accessibilityHint={item.mediaKind === "video" ? "تشغيل الريل" : "يفتح وجهة المحتوى"} key={item.id + ":" + position} onPress={() => onOpen(item)}>
+        return <Pressable accessibilityRole="button" accessibilityLabel={"عرض " + item.titleAr} accessibilityHint={item.mediaKind === "video" ? "تشغيل الريل" : "يفتح وجهة المحتوى"} key={instanceKey} onPress={() => onOpen(item)}>
           <View style={[styles.mediaCard, hero && styles.heroMediaCard, shortForm && styles.shortFormCard, { width: cardWidth }, hero && { height: Math.round(cardWidth / 1.75) }]}>
             {item.mediaKind === "video" ? <View style={[styles.mediaFallback, { backgroundColor: "#171821", justifyContent: "center" }]}><Text style={{ fontSize: 32, color: "#fff" }}>▶</Text><Text style={{ color: "#fff", textAlign: "center", padding: 8 }} numberOfLines={2}>{item.titleAr}</Text></View> : failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text><Text style={styles.mediaFallbackHint}>تعذر تحميل الصورة. اضغط لعرض التفاصيل.</Text></View> : <>
               <Animated.Image accessibilityLabel={"صورة " + item.titleAr} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={[styles.mediaImage, imageMotion]} resizeMode="cover" />

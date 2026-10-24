@@ -19,13 +19,14 @@ export function PartnerOrders() {
   const permittedStores = stores.filter((store) => store.owned || store.permissions.includes("orders"));
   const canManageOrders = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("orders")));
   const aggregateMode = scope === "ALL_AUTHORIZED" && permittedStores.length > 1;
+  const targetStorePermitted = permittedStores.some(store => store.id === targetStoreId);
 
   // Never change the store implicitly. Only a contextual order deep link can
   // select the explicitly named store, after confirming order permission.
   useEffect(() => {
     if (state.kind !== "ready" || !targetStoreId || selectedStore?.id === targetStoreId) return;
-    if (permittedStores.some(store => store.id === targetStoreId)) selectStore(targetStoreId);
-  }, [state.kind, targetStoreId, selectedStore?.id, stores, selectStore]);
+    if (targetStorePermitted) selectStore(targetStoreId);
+  }, [state.kind, targetStoreId, selectedStore?.id, targetStorePermitted, selectStore]);
 
   return <View style={styles.container}>
     {permittedStores.length > 1 ? <View style={styles.choiceRow} accessibilityLabel="نطاق الطلبات">

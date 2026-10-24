@@ -65,7 +65,7 @@ export function LoopingHeroBanner({
     const contentID = activeItem.id;
     const timer = setTimeout(() => { void recordDiscoveryImpression(contentID); }, 1000);
     return () => clearTimeout(timer);
-  }, [activeItem?.id, activeMediaKey, screenActive, foreground, interacting, transition, failedMedia, loadedMedia]);
+  }, [activeItem, activeMediaKey, screenActive, foreground, interacting, transition, failedMedia, loadedMedia]);
 
   const navigate = useCallback((direction: Direction) => {
     if (items.length < 2 || inTransition.current) return;

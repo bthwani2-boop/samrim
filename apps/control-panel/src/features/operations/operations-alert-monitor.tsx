@@ -25,6 +25,7 @@ export function OperationsAlertMonitor() {
   const toneRef = useRef<"classic" | "soft" | "urgent">("classic");
 
   useEffect(() => {
+    void actorID; // Reset once when operator identity changes.
     seenCases.current.clear();
     casesPrimed.current = false;
     setCaseAlert(null);
@@ -151,7 +152,7 @@ export function OperationsAlertMonitor() {
 
   const orderHref = caseAlert ? operationNotificationHref(caseAlert.orderId) : null;
   return (
-    <div className="ops-alert-monitor" aria-label="تنبيهات العمليات" style={{ display:"flex", flexWrap:"wrap", alignItems:"center", gap:12, marginBlock: "0 12px" }}>
+    <section className="ops-alert-monitor" aria-label="تنبيهات العمليات" style={{ display:"flex", flexWrap:"wrap", alignItems:"center", gap:12, marginBlock: "0 12px" }}>
       <button className="button button-secondary" type="button" aria-pressed={enabled} onClick={() => void toggleSound()}>
         {enabled ? "كتم صوت العمليات" : "تفعيل صوت العمليات"}
       </button>
@@ -173,6 +174,6 @@ export function OperationsAlertMonitor() {
         {orderHref ? <Link href={orderHref} className="button button-secondary">فتح الطلب</Link> : null}
         <button className="button button-secondary" type="button" onClick={() => { setCaseAlert(null); }}>إخفاء</button>
       </div> : <span className="muted">الأحداث العادية صامتة</span>}
-    </div>
+    </section>
   );
 }

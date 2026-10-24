@@ -31,7 +31,7 @@ export function OperatorOrderChatDialog({orderId,reference,status,summary,total}
  },[open]);
  return <>
   <button type="button" className="button button-secondary" aria-label={"محادثة الطلب "+reference}
-    onClick={()=>setOpen(true)}>💬 محادثة الطلب {unreadCount>0?<span aria-label={unreadCount+" رسائل غير مقروءة"} style={{borderRadius:12,padding:"2px 6px",background:"var(--action,#e96831)",color:"#fff",fontSize:11}}>{unreadCount>99?"99+":unreadCount}</span>:null}</button>
+    onClick={()=>setOpen(true)}>💬 محادثة الطلب {unreadCount>0?<span role="status" aria-label={unreadCount+" رسائل غير مقروءة"} style={{borderRadius:12,padding:"2px 6px",background:"var(--action,#e96831)",color:"#fff",fontSize:11}}>{unreadCount>99?"99+":unreadCount}</span>:null}</button>
   {open?<dialog ref={ref} aria-label={"محادثة الطلب "+reference} onClose={()=>setOpen(false)}
     onCancel={event=>{event.preventDefault();setOpen(false);}}
     style={{border:"1px solid var(--border-subtle)",borderRadius:18,padding:0,width:"min(620px, 96vw)",

@@ -61,7 +61,7 @@ export function PartnerOrderAvailability({ storeID, published }: { storeID: stri
       subscription.remove();
       generation.current += 1;
     };
-  }, [readAvailability]));
+  }, [readAvailability, storeID]));
 
   const ready = typeof status === "object";
   const paused = ready && status.availability.paused &&

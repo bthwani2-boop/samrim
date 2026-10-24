@@ -81,9 +81,11 @@ export function PartnerMore() {
     };
     void resolve();
     return ()=>{active=false;};
-  },[actor,selectedStore?.id,selectedStore?.owned,selectedStore?.permissions.join(",")]));
+  },[actor,selectedStore]));
 
   useFocusEffect(useCallback(()=>{
+    // Recheck when the invitation panel expands, without stale invitation counts.
+    void invitesExpanded;
     let active=true;
     setPendingInvites(null);
     if(actor) void listOwnStoreAccessInvitations().then(page=>{

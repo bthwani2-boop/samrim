@@ -26,6 +26,7 @@ export function OperatorCaseAudit({orderId,caseId,openedAt,updatedAt}:Readonly<{
  const [error,setError]=useState("");
  const [reloadToken,setReloadToken]=useState(0);
  useEffect(()=>{
+  void reloadToken; // Manual audit refresh signal.
   if(!visible)return;
   const controller=new AbortController();
   let live=true;

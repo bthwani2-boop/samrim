@@ -111,6 +111,8 @@ export default function ClientCartScreen() {
   }, [requestedFulfillmentMode, selectedCityID, storeId]);
 
   useFocusEffect(useCallback(() => {
+    // A delivery-mode change should re-evaluate focus-sensitive address loading.
+    void fulfillmentMode;
     if (state.kind === "ready" && fulfillmentModeRef.current !== null && fulfillmentModeRef.current !== "CUSTOMER_PICKUP") void loadAddresses();
     return () => { addressRequestID.current += 1; };
   }, [loadAddresses, state.kind, fulfillmentMode]));
@@ -124,14 +126,7 @@ export default function ClientCartScreen() {
     };
   }, [load]);
 
-  useEffect(() => {
-    if (state.kind !== "ready" || !fulfillmentMode || fulfillmentMode === "CUSTOMER_PICKUP"
-        || addressesState.kind !== "ready" || addressesState.addresses.length === 0
-        || serviceability.kind !== "idle") return;
-    void evaluateAddress(addressesState.addresses[0]!.id);
-  }, [state.kind, fulfillmentMode, addressesState, serviceability.kind]);
-
-  async function evaluateAddress(addressId: string) {
+  const evaluateAddress = useCallback(async (addressId: string) => {
     if (state.kind !== "ready") return;
     const requestID = ++serviceabilityRequestID.current;
     const targetStoreID = state.store.id;
@@ -144,7 +139,14 @@ export default function ClientCartScreen() {
     } catch {
       if (isCurrent()) setServiceability({ kind: "error", addressId });
     }
-  }
+  }, [state, selectedCityID]);
+
+  useEffect(() => {
+    if (state.kind !== "ready" || !fulfillmentMode || fulfillmentMode === "CUSTOMER_PICKUP"
+        || addressesState.kind !== "ready" || addressesState.addresses.length === 0
+        || serviceability.kind !== "idle") return;
+    void evaluateAddress(addressesState.addresses[0]!.id);
+  }, [state.kind, fulfillmentMode, addressesState, serviceability.kind, evaluateAddress]);
 
   if (state.kind === "ready" && (state.store.id !== storeId || state.store.serviceCity.id !== selectedCityID)) {
     return <View style={styles.state} accessibilityLabel="جارٍ تحديث المتجر"><BthwaniSkeleton width="35%" height={28} /><BthwaniSkeleton height={88} /><BthwaniSkeleton height={152} /></View>;

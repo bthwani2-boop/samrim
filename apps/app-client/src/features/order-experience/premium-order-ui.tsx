@@ -66,7 +66,7 @@ export function PremiumOrderProgress({ steps, index }: { steps: readonly string[
   return <View accessibilityLabel={index < 0 ? "الطلب غير نشط" : "حالة الطلب: " + steps[index]} style={styles.progressRow}>
     {steps.map((title, i) => {
       const passed = index >= 0 && i < index; const current = index >= 0 && i === index;
-      return <View style={styles.progressItem} key={title + i}>
+      return <View style={styles.progressItem} key={title}>
         <View style={[styles.progressCircle, (passed || current) && styles.progressDone, current && styles.progressCurrent]}>
           <Text style={[styles.progressSymbol, (passed || current) && styles.progressSymbolActive]}>{passed ? "✓" : i + 1}</Text>
         </View>

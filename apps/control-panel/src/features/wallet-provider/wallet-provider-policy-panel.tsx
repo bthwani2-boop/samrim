@@ -189,7 +189,7 @@ export function WalletProviderPolicyPanel() {
     {creating && canEdit ? <form className="wallet-policy-editor" onSubmit={(event) => { event.preventDefault(); void createProvider(); }}>
       <strong>مزوّد جديد</strong>
       <label>اسم المزوّد بالعربية
-        <input id="wallet-provider-name" maxLength={80} autoFocus required disabled={busy} value={newName} onChange={(event) => setNewName(event.target.value)} />
+        <input id="wallet-provider-name" maxLength={80} required disabled={busy} value={newName} onChange={(event) => setNewName(event.target.value)} />
       </label>
       <label className="wallet-policy-check">
         <input type="checkbox" checked={newActive} disabled={busy} onChange={(event) => setNewActive(event.target.checked)} />

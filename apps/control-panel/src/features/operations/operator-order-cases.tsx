@@ -73,7 +73,7 @@ export function OperatorOrderCases({orderId,onUpdated}:Readonly<{orderId:string;
      }finally{if(live)setProofLoading(false);}
    })();
    return ()=>{live=false;controller.abort();};
- },[selected?.id,selected?.reason,action,orderId]);
+ },[selected,action,orderId]);
  useEffect(()=>{
    setClock(Date.now());
    const handle=window.setInterval(()=>setClock(Date.now()),60_000);

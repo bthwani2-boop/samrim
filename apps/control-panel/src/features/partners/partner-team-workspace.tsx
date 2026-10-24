@@ -48,6 +48,7 @@ export function PartnerTeamWorkspace({ownerId,storeId="",compact=false}:Props){
  const [revision,setRevision]=useState(0);
  const reload=useCallback(()=>setRevision(v=>v+1),[]);
  useEffect(()=>{
+  void revision; // Explicit team-roster invalidation trigger.
   let active=true;
   setItems([]);setCounts(emptyCounts);setCursor("");setError("");setLoading(true);
   const query=new URLSearchParams({limit:compact?"3":"25"});
@@ -79,7 +80,7 @@ export function PartnerTeamWorkspace({ownerId,storeId="",compact=false}:Props){
  const visible=history?items:items.filter(m=>!["revoked","declined","expired"].includes(m.state));
  const groups=new Map<string,StoreAccessGrant[]>();
  for(const grant of visible){const id=grant.delegateActorId?.trim()||grant.id;const existing=groups.get(id)||[];groups.set(id,[...existing,grant]);}
- return <div className={compact?"partner-team-workspace partner-team-compact":"partner-team-workspace"} aria-label={storeId?"فريق المتجر":"فريق الشريك"}>
+ return <section className={compact?"partner-team-workspace partner-team-compact":"partner-team-workspace"} aria-label={storeId?"فريق المتجر":"فريق الشريك"}>
   {compact?null:<div className="partner-team-heading">
    <div><h2>فريق الشريك</h2><p>العضويات والدعوات والصلاحيات المرتبطة بالمتاجر.</p></div>
    {storeId?<Link className="button button-secondary" href={base+"?view=team"}>جميع متاجر الشريك</Link>:null}
@@ -117,5 +118,5 @@ export function PartnerTeamWorkspace({ownerId,storeId="",compact=false}:Props){
    {!storeId?<p className="muted">قد توجد متاجر أخرى للعضو نفسه إذا كانت هناك صفحات إضافية؛ استخدم «عرض المزيد» للاطلاع على بقية العضويات.</p>:null}
    {cursor?<button type="button" className="button button-secondary" disabled={loadingMore} onClick={()=>void loadMore()}>{loadingMore?"جارٍ التحميل…":"عرض المزيد"}</button>:null}
   </>}
- </div>;
+ </section>;
 }

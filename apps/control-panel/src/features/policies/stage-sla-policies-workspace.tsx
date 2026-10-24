@@ -38,6 +38,7 @@ export function StageSLAPoliciesWorkspace(){
   return ()=>controller.abort();
  },[authorized]);
  useEffect(()=>{
+  void mode; void stage; // Reset editor when policy selection changes.
   setTarget(selected?String(selected.targetMinutes):"");
   setWarning(selected?String(selected.warningMinutes):"");
   setError("");setNotice("");

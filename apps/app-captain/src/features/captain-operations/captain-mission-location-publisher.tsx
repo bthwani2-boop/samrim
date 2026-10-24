@@ -79,7 +79,8 @@ export function CaptainMissionLocationPublisher() {
               session.identity.subject !== sourceActor) return;
           const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
           if (!url) return;
-          const fixSequence = sequence = Math.max(sequence + 1, Date.now());
+          sequence = Math.max(sequence + 1, Date.now());
+          const fixSequence = sequence;
           posting = true;
           const requestController = new AbortController();
           pendingRequest = requestController;

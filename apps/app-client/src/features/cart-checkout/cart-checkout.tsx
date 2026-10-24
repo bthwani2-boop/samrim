@@ -515,7 +515,7 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
       total: footerAmount, totalReady: Boolean(verifiedQuote),
       busy, disabled: !canRefreshStore && !canConfirm && !canRetryQuote && !(needsAddress && Boolean(onRequiredAddress)),
     } : null);
-  }, [onFooterChange, state.kind, pendingCheckout, footerAmount, busy, canConfirm, canRetryQuote, canRefreshStore, blockedByStore, needsAddress, onRequiredAddress]);
+  }, [onFooterChange, state.kind, pendingCheckout, footerAmount, busy, canConfirm, canRetryQuote, canRefreshStore, blockedByStore, needsAddress, onRequiredAddress, verifiedQuote]);
   useEffect(() => () => onFooterChange?.(null), [onFooterChange]);
   if (pendingCheckout) return <View style={styles.container} accessibilityLabel="استعادة طلب السلة"><Text style={styles.title}>التحقق من نتيجة الطلب</Text><Text style={styles.warning}>المحاولة محفوظة لهذا الحساب والسلة. سنتحقق من النتيجة أولًا لتجنب إنشاء طلب مكرر.</Text><BthwaniButton busy={busy} disabled={busy} label="تحقق واستعد الطلب" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
   return (

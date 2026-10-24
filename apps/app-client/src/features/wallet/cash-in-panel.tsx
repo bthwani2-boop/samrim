@@ -100,6 +100,7 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMi
   }, []);
 
   useFocusEffect(useCallback(() => {
+    void mode; // Requery providers when the cash-in mode changes.
     void loadProviders();
     // Focused wallet: refresh the tiny public index, no restart required.
     // Also refresh immediately when Android resumes from the background.

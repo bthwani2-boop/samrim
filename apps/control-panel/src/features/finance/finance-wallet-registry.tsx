@@ -117,11 +117,11 @@ export function FinanceWalletRegistry({ initialActorType = "customer", onClose }
       <div><h2>المحافظ وأصحابها</h2><p>أرصدة فعلية من دفتر WLT · آخر 30 يومًا للحركات · لا تشمل أرصدة مزودي الدفع الخارجيين</p></div>
       {onClose ? <button type="button" className="fc-btn" onClick={onClose}>العودة إلى القيادة</button> : null}
     </div>
-    <div className="fc-actor-types" role="group" aria-label="صاحب المحفظة">
+    <fieldset className="fc-actor-types" style={{ border: 0, padding: 0, margin: 0 }} aria-label="صاحب المحفظة">
       {actors.map((actor) => <button type="button" key={actor.key} aria-pressed={actorType === actor.key} onClick={() => { setSelected(null); setSearch(""); setActorType(actor.key); }}>
         <span aria-hidden="true">{actor.icon}</span>{actor.label}
       </button>)}
-    </div>
+    </fieldset>
     <div className="fc-wallets-layout" data-detail={Boolean(selected)}>
       <div className="fc-register">
         <div className="fc-toolbar"><label className="fc-search"><span aria-hidden="true">⌕</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث في المحافظ المحمّلة بالاسم أو الرقم" aria-label="البحث في المحافظ المحمّلة" /></label><span className="fc-count">{items.length.toLocaleString("ar-YE")} سجل محمّل{cursor ? " · توجد صفحات أخرى" : ""}</span></div>
