@@ -2,7 +2,7 @@
 
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
-import { PageHeader } from "../../shell/page-header";
+import { CommandFrame, CommandMetricStrip, CommandSectionTabs } from "../shared/command-surface";
 import { OperationalIcon } from "../../shell/workspace-icon";
 import { PoliciesWorkspace } from "./policies-workspace";
 import { canManagePolicy, isPolicyKey, type PolicyResourceKey, policyCapabilities as policies, policyCapability } from "./policy-capabilities";
@@ -11,6 +11,17 @@ import { readFinancialPolicyPreviews } from "./policy-financial-preview";
 import { type PolicyPreviewState, PolicyQuickPeek } from "./policy-quick-peek";
 
 type DrawerMode = "manage" | "add" | "choose";
+type PolicyGroup = "all" | "delivery" | "wallets" | "scope";
+const policyGroups:ReadonlyArray<{id:PolicyGroup;label:string}> = [
+  {id:"all",label:"السياسات العامة"},{id:"delivery",label:"التوصيل والرسوم"},
+  {id:"wallets",label:"المحافظ والمستحقات"},{id:"scope",label:"نطاق الخدمة"},
+];
+function matchesPolicyGroup(key: PolicyResourceKey, group:PolicyGroup) {
+  if(group==="all")return true;
+  if(group==="delivery")return ["delivery-fees","store-type-cancellation","field-acquisition"].includes(key);
+  if(group==="wallets")return ["wallet-providers","captain-minimum-balance","partner-financial-terms"].includes(key);
+  return key==="service-cities";
+}
 
 function describePreview(preview: PolicyPreviewState | undefined): string {
   if (!preview || preview.kind === "loading") return "جارٍ قراءة السجلات…";
@@ -26,6 +37,7 @@ function describePreview(preview: PolicyPreviewState | undefined): string {
 export function PoliciesCenterWorkspace() {
   const { state } = useSession();
   const [query, setQuery] = useState("");
+  const [group, setGroup] = useState<PolicyGroup>("all");
   const [selected, setSelected] = useState<PolicyResourceKey | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>("choose");
@@ -47,7 +59,10 @@ export function PoliciesCenterWorkspace() {
 
   useEffect(() => {
     if (!canRead) return;
-    const fromUrl = new URLSearchParams(window.location.search).get("policy");
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get("policy");
+    const requestedGroup = params.get("group");
+    if(policyGroups.some(tab=>tab.id===requestedGroup))setGroup(requestedGroup as PolicyGroup);
     if (isPolicyKey(fromUrl)) {
       const canModify = canManagePolicy(fromUrl, identity?.permissions);
       setSelected(canModify ? fromUrl : null);
@@ -182,6 +197,7 @@ export function PoliciesCenterWorkspace() {
 
   const canEdit = (key: PolicyResourceKey) => canManagePolicy(key, identity.permissions);
   const visible = policies.filter((item) => {
+    if(!matchesPolicyGroup(item.key,group))return false;
     const searchText = `${item.label} ${item.description} ${item.context} ${item.summary} ${item.scope}`;
     return searchText.toLocaleLowerCase("ar").includes(query.trim().toLocaleLowerCase("ar"));
   });
@@ -244,8 +260,20 @@ export function PoliciesCenterWorkspace() {
     setDrawerMode(action);
   }
 
-  return <section className="workspace-page policy-studio" aria-labelledby="policy-studio-title" data-testid="policy-studio">
-    <PageHeader id="policy-studio-title" title="سياسات المنصة" />
+  return <section className="workspace-page policy-studio" aria-label="سياسات المنصة" data-testid="policy-studio">
+    <CommandFrame title="السياسات" subtitle="ضبط السياسات التشغيلية والمالية ونطاق الخدمة من مصدرها المعتمد">
+      <CommandSectionTabs label="مجموعات السياسات" active={group} tabs={policyGroups} onSelect={next=>{
+        setGroup(next);setPeekKey(null);setQuery("");
+        const url=new URL(window.location.href);
+        if(next==="all")url.searchParams.delete("group");else url.searchParams.set("group",next);
+        window.history.replaceState(window.history.state,"",url.pathname+url.search+url.hash);
+      }}/>
+      {group==="all"?<CommandMetricStrip metrics={[
+        {id:"supported",label:"أنواع السياسات المدعومة",value:policies.length,description:"عدد أنواع الإعدادات، لا عدد القواعد النشطة"},
+        {id:"modifiable",label:"متاحة للتعديل",value:policies.filter(item=>canEdit(item.key)).length,description:"وفق صلاحيات المشغّل",tone:"success"},
+        {id:"readonly",label:"قراءة فقط",value:policies.filter(item=>!canEdit(item.key)).length,description:"صلاحية تعديل غير ممنوحة",tone:"warning"},
+        {id:"financial",label:"قيود مالية إضافية",value:policies.filter(item=>item.additionalPermission==="finance").length,description:"أنواع تتطلب صلاحية المالية"},
+      ]}/> : null}
     <div className="policy-rich-toolbar">
       <p className="muted">السياسات المعتمدة وأهم معلوماتها. اختر الصف للمراجعة أو التنفيذ.</p>
       {policies.length > 8 ? <label className="policy-rich-search">
@@ -337,5 +365,6 @@ export function PoliciesCenterWorkspace() {
         </div>
       </div> : null}
     </dialog>
+    </CommandFrame>
   </section>;
 }
