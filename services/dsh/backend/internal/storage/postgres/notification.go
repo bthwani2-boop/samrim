@@ -162,7 +162,7 @@ func MarkNotificationRead(ctx context.Context, db *sql.DB, actorID, role, notifi
 
 func validNotificationID(notificationID string) bool {
 	parts := strings.SplitN(notificationID, ":", 2)
-	if len(parts) != 2 || (parts[0] != "order" && parts[0] != "captain" && parts[0] != "field" && parts[0] != "store") {
+	if len(parts) != 2 || (parts[0] != "order" && parts[0] != "captain" && parts[0] != "field" && parts[0] != "store" && parts[0] != "availability") {
 		return false
 	}
 	value, err := strconv.ParseInt(parts[1], 10, 64)
@@ -210,7 +210,12 @@ func visibleNotificationEvents(role string) string {
 		       audit.case_id::text AS joining_case_id, COALESCE(cases.store_id, '')::text AS store_id, audit.to_state, audit.created_at
 		FROM dsh.joining_case_audit audit
 		JOIN dsh.joining_cases cases ON cases.id = audit.case_id
-		WHERE audit.case_id IS NOT NULL`
+		WHERE audit.case_id IS NOT NULL
+		UNION ALL
+		SELECT 'availability:' || audit.id::text AS notification_id, audit.event_type, ''::text AS order_id,
+		       ''::text AS joining_case_id, audit.store_id, 'changed'::text AS to_state, audit.created_at
+		FROM dsh.store_operational_availability_audit audit
+		WHERE audit.authority_source IN ('STORE_OWNER', 'STORE_GRANT')`
 	const storeGoLive = `
 		SELECT 'store:' || notification.id::text AS notification_id, notification.event_type, ''::text AS order_id,
 		       COALESCE(cases.id, '')::text AS joining_case_id, notification.store_id, 'published'::text AS to_state, notification.created_at

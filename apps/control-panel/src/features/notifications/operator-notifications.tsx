@@ -79,6 +79,14 @@ export function OperatorNotifications() {
   useReadOnReturn(() => load(cursor, true), routeStateReady && !loading && !refreshing && !pendingId);
 
   useEffect(() => {
+    if (!routeStateReady) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible" && !pendingId && !readMutationInFlight.current) void load(cursor, true);
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [cursor, load, pendingId, routeStateReady]);
+
+  useEffect(() => {
     if (routeStateReady) void load(cursor);
   }, [cursor, load, routeStateReady]);
 

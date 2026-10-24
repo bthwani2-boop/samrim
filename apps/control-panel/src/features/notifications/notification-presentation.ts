@@ -1,12 +1,14 @@
 import type { Notification, NotificationKind } from "@bthwani/dsh";
 
 export function notificationKindLabel(kind: NotificationKind) {
+  if (kind === "STORE_AVAILABILITY_CHANGED") return "تشغيل";
   if (kind.startsWith("FIELD_")) return "شريك";
   if (kind.startsWith("CAPTAIN_") || ["HANDOFF_CONFIRMED", "PICKED_UP", "DELIVERED", "DELIVERY_FAILED", "DELIVERY_RECOVERED", "REASSIGNED"].includes(kind)) return "توصيل";
   return "طلب";
 }
 
 export function notificationKindTone(kind: NotificationKind) {
+  if (kind === "STORE_AVAILABILITY_CHANGED") return "partner";
   if (kind.startsWith("FIELD_")) return "partner";
   if (kind.startsWith("CAPTAIN_") || ["HANDOFF_CONFIRMED", "PICKED_UP", "DELIVERED", "DELIVERY_FAILED", "DELIVERY_RECOVERED", "REASSIGNED"].includes(kind)) return "delivery";
   return "order";
