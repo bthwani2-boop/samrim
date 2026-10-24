@@ -52,3 +52,12 @@ test("superseded offers and resolved failures never wake a user", () => {
     assert.deepEqual(cursor.receive(role, role, [newer, previous], now), []);
   }
 });
+
+test("unrelated newer event does not suppress an unresolved operator failure", () => {
+  const cursor = new OrderAlertCursor();
+  const now = Date.parse("2026-10-24T06:00:00Z");
+  cursor.receive("operator", "operator-x", [], now);
+  const failure = event("failure", "DELIVERY_FAILED", "تعذر", new Date(now - 8000).toISOString());
+  const unrelated = event("other", "ORDER_STATUS", "تحديث", new Date(now - 4000).toISOString());
+  assert.deepEqual(cursor.receive("operator", "operator-x", [unrelated, failure], now).map(i => i.id), ["failure"]);
+});

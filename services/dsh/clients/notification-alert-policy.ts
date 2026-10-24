@@ -1,4 +1,4 @@
-import type { Notification, NotificationKind } from "./generated/dsh-types";
+import type { Notification } from "./generated/dsh-types";
 
 export type AlertRole = "client" | "partner" | "captain" | "operator";
 export type OrderAlertLevel = "action" | "silent";
@@ -36,8 +36,16 @@ export class OrderAlertCursor {
       if (this.seen.has(item.id)) continue;
       this.seen.add(item.id);
       const age = now - Date.parse(item.createdAt);
+      const resolvedBy = role === "captain" && item.kind === "CAPTAIN_OFFER"
+        ? new Set(["CAPTAIN_OFFER", "CAPTAIN_ASSIGNED", "REASSIGNED", "PICKED_UP", "DELIVERED"])
+        : role === "partner" && item.kind === "ORDER_CREATED"
+          ? new Set(["ORDER_ACCEPTED", "ORDER_PREPARING", "ORDER_READY", "ORDER_REJECTED", "DELIVERED", "ORDER_STATUS"])
+          : role === "operator" && item.kind === "DELIVERY_FAILED"
+            ? new Set(["DELIVERY_RECOVERED", "DELIVERED"])
+            : new Set<string>();
       const superseded = Boolean(item.orderId) && items.some(
         next => next.id !== item.id && next.orderId === item.orderId
+          && resolvedBy.has(next.kind)
           && Date.parse(next.createdAt) > Date.parse(item.createdAt),
       );
       if (this.primed && !item.readAt && !superseded
