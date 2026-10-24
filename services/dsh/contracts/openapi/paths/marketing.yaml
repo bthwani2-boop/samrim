@@ -565,6 +565,42 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/partner/stores/{storeId}/discovery-content:
+    get:
+      operationId: listPartnerStoreReels
+      summary: List governed reel drafts for the authenticated Partner's Store
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      responses:
+        "200":
+          description: Store-scoped video submissions and publication status.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/OperatorDiscoveryContentRegistryResponse" } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+    post:
+      operationId: createPartnerStoreReel
+      summary: Upload a Store-targeted SHORT_FORM draft for Operator review
+      description: Requires an authenticated app-partner session and the scoped promotions grant. The Store path and targetId must match; Partners cannot publish content or impersonate other Stores.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content: { multipart/form-data: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateDiscoveryContentUploadRequest" } } }
+      responses:
+        "201":
+          description: New draft pending platform approval.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentResponse" } } }
+        "200":
+          description: Idempotent replay.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
   /dsh/partner/stores/{storeId}/promotions:
     get:
       operationId: listPartnerStorePromotions

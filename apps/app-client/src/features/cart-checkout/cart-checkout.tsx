@@ -1,17 +1,18 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type Cart, type CatalogStoreOffer, type CheckoutQuote, type CheckoutRequest, cashCollectionPartyLabel, createDshMobileClient, type DeliveryAddress, type FulfillmentMode, formatMoney, formatQuantity, type Order, orderStateLabel, orderPaymentDisclosure } from "@bthwani/dsh";
+import { type Cart, type CatalogStoreOffer, type CheckoutQuote, type CheckoutRequest, cashCollectionPartyLabel, createDshMobileClient, type DeliveryAddress, type FulfillmentMode, formatMoney, formatQuantity, type Order, orderPaymentDisclosure, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
+import { useNetworkState } from "expo-network";
 import { type Href, Link, useFocusEffect, useRouter } from "expo-router";
-import * as SecureStore from "../../bootstrap/compatible-storage";
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
-import { premiumColors } from "../order-experience/premium-order-ui";
-import { paymentSplit, type CheckoutPaymentChoice } from "./payment-selection";
-import { readPublicStoreCatalog } from "../store-discovery/store-discovery-client";
+import { type MutableRefObject, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import * as SecureStore from "../../bootstrap/compatible-storage";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { premiumColors } from "../order-experience/premium-order-ui";
 import { acknowledgedDiscoveryClickForCheckout } from "../store-discovery/discovery-analytics";
-import { checkoutRecipient, DeliveryRecipientForm, deliveryRecipientIsValid, type DeliveryRecipientInput } from "./delivery-recipient-form";
+import { readPublicStoreCatalog } from "../store-discovery/store-discovery-client";
+import { checkoutRecipient, DeliveryRecipientForm, type DeliveryRecipientInput, deliveryRecipientIsValid } from "./delivery-recipient-form";
+import { type CheckoutPaymentChoice, paymentSplit } from "./payment-selection";
 
 type CartState = { kind: "loading" } | { kind: "empty" } | { kind: "ready"; cart: Cart } | { kind: "error" };
 type QuoteState = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; quote: CheckoutQuote } | { kind: "invalid" } | { kind: "error"; message: string; code: string };
@@ -109,6 +110,8 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
 }) {
   const theme = useAppearanceTheme();
   const router = useRouter();
+  const { isConnected, isInternetReachable } = useNetworkState();
+  const isOffline = isConnected === false || isInternetReachable === false;
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<CartState>({ kind: "loading" });
   const [quote, setQuote] = useState<QuoteState>({ kind: "idle" });
@@ -411,6 +414,10 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
 
   async function checkout() {
     if (checkoutSubmitting.current) return;
+    if (isOffline) {
+      setError("لا يوجد اتصال بالإنترنت. لم يُرسل الطلب؛ أعد التأكيد بعد عودة الاتصال.");
+      return;
+    }
     const addressID = pickupMode ? "" : serviceableAddressId ?? "";
     if (mutationBusy || state.kind !== "ready" || !state.cart.lines.length || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || !quoteMatchesCheckout(quote.quote, state.cart, storeId, addressID, fulfillmentMode, appliedPromotionCode)) return;
     const allocation = paymentSplit(quote.quote.totalAmountMinor, wallet.kind === "ready" ? wallet.availableMinor : null, paymentChoice);
@@ -492,12 +499,13 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
   const selectedBalanceMinor = allocation?.walletMinor ?? null;
   const balanceNeedsRead = paymentChoice !== "CASH" && wallet.kind !== "ready";
   const remainingCashMinor = allocation?.cashMinor ?? null;
-  const canConfirm = Boolean(!mutationBusy && (pickupMode || serviceableAddressId) && verifiedQuote && selectedBalanceMinor !== null && !balanceNeedsRead && !promotionNeedsApply);
+  const canConfirm = Boolean(!isOffline && !mutationBusy && (pickupMode || serviceableAddressId) && verifiedQuote && selectedBalanceMinor !== null && !balanceNeedsRead && !promotionNeedsApply);
   const blockedByStore = !storeAcceptingOrders || (quote.kind === "error" && (quote.code === "STORE_NOT_ACCEPTING_ORDERS" || quote.code === "FULFILLMENT_MODE_UNAVAILABLE"));
   const canRefreshStore = blockedByStore && !mutationBusy && Boolean(onRefreshStore);
-  const canRetryQuote = !blockedByStore && state.kind === "ready" && quote.kind === "error" && !mutationBusy && (pickupMode || Boolean(serviceableAddressId));
+  const canRetryQuote = !isOffline && !blockedByStore && state.kind === "ready" && quote.kind === "error" && !mutationBusy && (pickupMode || Boolean(serviceableAddressId));
   const needsAddress = !pickupMode && !serviceableAddressId;
   if (checkoutAction) checkoutAction.current = () => {
+    if (isOffline) return;
     if (canRefreshStore) onRefreshStore?.();
     else if (canConfirm) void checkout();
     else if (canRetryQuote && readyCart) void refreshQuote(readyCart);
@@ -511,13 +519,13 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
     : quote.kind === "loading" ? "جارٍ الحساب…" : "لم يُعتمد الإجمالي بعد";
   useEffect(() => {
     onFooterChange?.(state.kind === "ready" && !pendingCheckout ? {
-      label: blockedByStore ? "تحديث المتجر" : canConfirm ? "تأكيد الطلب" : canRetryQuote ? "إعادة الحساب" : needsAddress ? "اختر العنوان" : "تأكيد الطلب",
+      label: isOffline ? "بانتظار الاتصال" : blockedByStore ? "تحديث المتجر" : canConfirm ? "تأكيد الطلب" : canRetryQuote ? "إعادة الحساب" : needsAddress ? "اختر العنوان" : "تأكيد الطلب",
       total: footerAmount, totalReady: Boolean(verifiedQuote),
-      busy, disabled: !canRefreshStore && !canConfirm && !canRetryQuote && !(needsAddress && Boolean(onRequiredAddress)),
+      busy, disabled: isOffline || (!canRefreshStore && !canConfirm && !canRetryQuote && !(needsAddress && Boolean(onRequiredAddress))),
     } : null);
-  }, [onFooterChange, state.kind, pendingCheckout, footerAmount, busy, canConfirm, canRetryQuote, canRefreshStore, blockedByStore, needsAddress, onRequiredAddress, verifiedQuote]);
+  }, [onFooterChange, state.kind, pendingCheckout, footerAmount, busy, canConfirm, canRetryQuote, canRefreshStore, blockedByStore, needsAddress, onRequiredAddress, verifiedQuote, isOffline]);
   useEffect(() => () => onFooterChange?.(null), [onFooterChange]);
-  if (pendingCheckout) return <View style={styles.container} accessibilityLabel="استعادة طلب السلة"><Text style={styles.title}>التحقق من نتيجة الطلب</Text><Text style={styles.warning}>المحاولة محفوظة لهذا الحساب والسلة. سنتحقق من النتيجة أولًا لتجنب إنشاء طلب مكرر.</Text><BthwaniButton busy={busy} disabled={busy} label="تحقق واستعد الطلب" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
+  if (pendingCheckout) return <View style={styles.container} accessibilityLabel="استعادة طلب السلة"><Text style={styles.title}>التحقق من نتيجة الطلب</Text><Text style={styles.warning}>المحاولة محفوظة لهذا الحساب والسلة. سنتحقق من النتيجة أولًا لتجنب إنشاء طلب مكرر.</Text><BthwaniButton busy={busy} disabled={busy || isOffline} label="تحقق واستعد الطلب" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
   return (
     <View style={styles.container} accessibilityLabel="السلة وإتمام الطلب">
 
@@ -652,7 +660,7 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
           {quote.kind === "error" ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{quote.message}</Text> : null}
           {quote.kind === "error" ? <BthwaniButton label="إعادة حساب الإجمالي" onPress={() => { if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /> : null}
         </View>
-        {!onFooterChange ? <BthwaniButton accessibilityLabel={pickupMode ? "تأكيد طلب الاستلام الذاتي من المتجر" : "تأكيد الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || !verifiedQuote || selectedBalanceMinor === null || balanceNeedsRead || promotionNeedsApply} label={verifiedQuote ? `تأكيد الطلب · ${formatMoney(verifiedQuote.totalAmountMinor, verifiedQuote.currency)}` : "تأكيد الطلب"} onPress={() => void checkout()} /> : null}
+        {!onFooterChange ? <BthwaniButton accessibilityLabel={pickupMode ? "تأكيد طلب الاستلام الذاتي من المتجر" : "تأكيد الطلب"} busy={busy} disabled={isOffline || mutationBusy || (!pickupMode && !serviceableAddressId) || !verifiedQuote || selectedBalanceMinor === null || balanceNeedsRead || promotionNeedsApply} label={verifiedQuote ? `تأكيد الطلب · ${formatMoney(verifiedQuote.totalAmountMinor, verifiedQuote.currency)}` : "تأكيد الطلب"} onPress={() => void checkout()} /> : null}
       </> : null}
       {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{orderPaymentDisclosure(order).amount}</Text><Text style={styles.muted}>{orderPaymentDisclosure(order).status}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
       {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{error}</Text> : null}

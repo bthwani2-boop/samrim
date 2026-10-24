@@ -67,6 +67,7 @@ type DiscoveryContentRecord struct {
 	BodyAr           string
 	MediaURI         string
 	MediaKind        string
+	PosterURI        string
 	TargetType       string
 	TargetID         string
 	ServiceCityID    string
@@ -821,7 +822,7 @@ func scanDiscoveryContent(row rowScanner) (DiscoveryContentRecord, error) {
 	var item DiscoveryContentRecord
 	var targetID, cityID sql.NullString
 	var endsAt sql.NullTime
-	err := row.Scan(&item.ID, &item.Kind, &item.TitleAr, &item.BodyAr, &item.MediaURI, &item.MediaKind, &item.TargetType, &targetID, &cityID, &item.State, &item.StartsAt, &endsAt, &item.Ordinal, &item.Version, &item.CreatedByActorID, &item.CreatedAt, &item.UpdatedAt)
+	err := row.Scan(&item.ID, &item.Kind, &item.TitleAr, &item.BodyAr, &item.MediaURI, &item.MediaKind, &item.PosterURI, &item.TargetType, &targetID, &cityID, &item.State, &item.StartsAt, &endsAt, &item.Ordinal, &item.Version, &item.CreatedByActorID, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return DiscoveryContentRecord{}, err
 	}
@@ -838,7 +839,7 @@ func scanDiscoveryContent(row rowScanner) (DiscoveryContentRecord, error) {
 	return item, nil
 }
 
-const discoveryContentSelect = `content.id,content.kind,content.title_ar,content.body_ar,COALESCE((SELECT asset.uri FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' THEN 'video' ELSE 'image' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id),'image'),content.target_type,content.target_id,content.service_city_id,content.state,content.starts_at,content.ends_at,content.ordinal,content.version,content.created_by_actor_id,content.created_at,content.updated_at`
+const discoveryContentSelect = `content.id,content.kind,content.title_ar,content.body_ar,COALESCE((SELECT asset.uri FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' THEN 'video' ELSE 'image' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id),'image'),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' AND right(asset.uri,4)='.mp4' THEN left(asset.uri,length(asset.uri)-4)||'.poster.jpg' ELSE '' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),content.target_type,content.target_id,content.service_city_id,content.state,content.starts_at,content.ends_at,content.ordinal,content.version,content.created_by_actor_id,content.created_at,content.updated_at`
 
 func CreateDiscoveryContent(ctx context.Context, db *sql.DB, input DiscoveryContentInput, idempotencyKey, requestHash string) (DiscoveryContentRecord, bool, error) {
 	input.ID = strings.TrimSpace(input.ID)
@@ -977,6 +978,30 @@ func ListDiscoveryContent(ctx context.Context, db *sql.DB, public bool, serviceC
 	}
 	return items, nil
 }
+
+// ListPartnerStoreReels reads only drafts and published short-form content
+// attached to the already-authorized Store. Caller authenticates the grant.
+func ListPartnerStoreReels(ctx context.Context, db *sql.DB, storeID string) ([]DiscoveryContentRecord, error) {
+	storeID = strings.TrimSpace(storeID)
+	if storeID == "" {
+		return nil, ErrDiscoveryContentInvalid
+	}
+	rows, err := db.QueryContext(ctx, "SELECT "+discoveryContentSelect+" FROM dsh.discovery_content content WHERE content.kind='SHORT_FORM' AND content.target_type='STORE' AND content.target_id=$1 ORDER BY content.created_at DESC LIMIT 40", storeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]DiscoveryContentRecord, 0)
+	for rows.Next() {
+		item, err := scanDiscoveryContent(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func SetDiscoveryContentState(ctx context.Context, db *sql.DB, id, state, idempotencyKey, requestHash string, expectedVersion int) (DiscoveryContentRecord, bool, error) {
 	state = strings.ToUpper(strings.TrimSpace(state))
 	if (state != "PUBLISHED" && state != "PAUSED") || strings.TrimSpace(id) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" {

@@ -1,24 +1,25 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, type CartResponse, type CustomerFulfillmentMode, formatMoney, fulfillmentModeLabel, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicPromotionView, type PublicStoreView, type StoreOrderability } from "@bthwani/dsh";
+import { Image as ExpoImage } from "expo-image";
 import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { AccessibilityInfo, Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { currentIdentityState } from "../../bootstrap/identity";
-import { useServiceCityScope } from "../service-city/service-city-scope";
 import { readSavedFulfillmentMode, saveFulfillmentMode } from "../cart-checkout/fulfillment-choice";
+import { useServiceCityScope } from "../service-city/service-city-scope";
+import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
-import { summarizeStoreAvailability } from "./store-availability-summary";
 import { PromotionCard } from "./promotion-card";
+import { summarizeStoreAvailability } from "./store-availability-summary";
 import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicDiscoveryContent, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 import type { GallerySourceRect } from "./store-product-gallery";
 import { StoreProductSheet } from "./store-product-sheet";
-import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
 
 type DetailState =
   | { kind: "loading" }
@@ -481,7 +482,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       style={[styles.categoryChip, isChild ? styles.subcategoryChip : styles.mainCategoryChip, isDeep && styles.deepCategoryChip, selected && styles.categoryChipSelected]}
     >
       {category.imageUri && !failedCategoryImageIDs.has(category.id)
-        ? <Image accessibilityLabel={`صورة ${category.nameAr}`} onError={() => setFailedCategoryImageIDs((current) => new Set(current).add(category.id))} source={{ uri: category.imageUri }} resizeMode="cover" style={[styles.categoryThumbnail, isChild && styles.subcategoryThumbnail, isDeep && styles.deepCategoryThumbnail]} />
+        ? <ExpoImage cachePolicy="disk" accessibilityLabel={`صورة ${category.nameAr}`} onError={() => setFailedCategoryImageIDs((current) => new Set(current).add(category.id))} source={{ uri: category.imageUri }} contentFit="cover" style={[styles.categoryThumbnail, isChild && styles.subcategoryThumbnail, isDeep && styles.deepCategoryThumbnail]} />
         : <View style={[styles.categoryThumbnailPlaceholder, isChild && styles.subcategoryThumbnail, isDeep && styles.deepCategoryThumbnail, selected && styles.categoryThumbnailSelected]}><BthwaniIcon name="store" color={selected ? theme.onAction : theme.colorMuted} size={sizing.iconSm} /></View>}
       <Text numberOfLines={1} style={[styles.categoryChipLabel, isChild && styles.subcategoryChipLabel, isDeep && styles.deepCategoryChipLabel, selected && styles.categoryChipLabelSelected]}>{category.nameAr}</Text>
     </Pressable>;
@@ -669,7 +670,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     if (asGrid) return <BthwaniSurface key={offer.offerId} tone="base" style={[styles.item, styles.gridItem]}>
       <View style={styles.gridImageFrame}>
         <Pressable ref={(node) => { if (node) imageRefs.current.set(offer.offerId, node); else imageRefs.current.delete(offer.offerId); }} accessibilityRole="button" accessibilityLabel={"تكبير صورة " + offer.productName} onPress={() => openGalleryFromImage(offer.offerId)}>
-          {primaryMedia && !failedProductImageIDs.has(offer.offerId) ? <Image accessibilityLabel={"صورة " + offer.productName} source={{ uri: primaryMedia.uri }} onError={() => setFailedProductImageIDs((current) => new Set(current).add(offer.offerId))} resizeMode="cover" style={styles.gridImage} /> : <View style={[styles.productImagePlaceholder, styles.gridImage]}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
+          {primaryMedia && !failedProductImageIDs.has(offer.offerId) ? <ExpoImage cachePolicy="disk" accessibilityLabel={"صورة " + offer.productName} source={{ uri: primaryMedia.uri }} onError={() => setFailedProductImageIDs((current) => new Set(current).add(offer.offerId))} contentFit="cover" style={styles.gridImage} /> : <View style={[styles.productImagePlaceholder, styles.gridImage]}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
         </Pressable>
         <BthwaniIconButton disabled={Boolean(favoriteOfferBusyID)} icon="favorite" label={favoriteOfferIDs.has(offer.offerId) ? "إزالة المنتج من المفضلة" : "إضافة المنتج للمفضلة"} onPress={() => void toggleOfferFavorite(offer.offerId)} size={sizing.controlMd} style={styles.productFavorite} tone={favoriteOfferIDs.has(offer.offerId) ? "primary" : "soft"} />
       </View>
@@ -689,7 +690,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
               style={styles.productImagePressable}
             >
               {primaryMedia && !failedProductImageIDs.has(offer.offerId)
-                ? <Image accessibilityLabel={`صورة ${offer.productName}`} onError={() => setFailedProductImageIDs((current) => new Set(current).add(offer.offerId))} source={{ uri: primaryMedia.uri }} resizeMode="cover" style={styles.productImage} />
+                ? <ExpoImage cachePolicy="disk" accessibilityLabel={`صورة ${offer.productName}`} onError={() => setFailedProductImageIDs((current) => new Set(current).add(offer.offerId))} source={{ uri: primaryMedia.uri }} contentFit="cover" style={styles.productImage} />
                 : <View accessibilityLabel={`لا توجد صورة متاحة لـ ${offer.productName}`} style={styles.productImagePlaceholder}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
             </Pressable>
           </View>
@@ -774,7 +775,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         ListHeaderComponent={<View style={styles.listHeader}>
       <View style={[styles.storeHero, { height: 244 + insets.top }]}>
           {heroImageURI
-            ? <View pointerEvents="none" style={styles.storeHeroMedia}><Image accessibilityLabel={"غلاف متجر " + state.store.name} onError={() => setFailedStoreCover(true)} source={{ uri: heroImageURI }} resizeMode="cover" style={styles.storeCover} /></View>
+            ? <View pointerEvents="none" style={styles.storeHeroMedia}><ExpoImage cachePolicy="disk" accessibilityLabel={"غلاف متجر " + state.store.name} onError={() => setFailedStoreCover(true)} source={{ uri: heroImageURI }} contentFit="cover" style={styles.storeCover} /></View>
             : <View accessibilityLabel={"غلاف متجر " + state.store.name + " غير متوفر"} pointerEvents="none" style={styles.storeCoverFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
         <View pointerEvents="none" style={styles.storeHeroShade} />
         <View style={[styles.storeHeroToolbar, { paddingTop: insets.top + spacing[2] }]}>
@@ -800,7 +801,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       <BthwaniSurface tone="raised" style={styles.storeInfoCard} accessibilityLabel={"معلومات متجر " + state.store.name}>
         <View style={styles.storeInfoIdentityRow}>
           {state.store.storeProfileImage?.uri && !failedStoreImage
-            ? <Image accessibilityLabel={"شعار متجر " + state.store.name} onError={() => setFailedStoreImage(true)} source={{ uri: state.store.storeProfileImage.uri }} resizeMode="contain" style={styles.storeInfoLogo} />
+            ? <ExpoImage cachePolicy="disk" accessibilityLabel={"شعار متجر " + state.store.name} onError={() => setFailedStoreImage(true)} source={{ uri: state.store.storeProfileImage.uri }} contentFit="contain" style={styles.storeInfoLogo} />
             : <View style={styles.storeInfoLogoFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
           <View style={styles.storeInfoIdentityCopy}>
             <Text numberOfLines={2} style={styles.storeInfoName}>{state.store.name}</Text>
@@ -847,10 +848,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           {bannerItems.length ? <View style={styles.bannerBlock}>
             <ScrollView ref={bannerRef} horizontal snapToInterval={bannerStep} decelerationRate="fast" contentContainerStyle={{ paddingHorizontal: bannerSidePadding, gap: spacing[1] }} onTouchStart={() => setBannerPaused(true)} onTouchEnd={() => setBannerPaused(false)} onMomentumScrollEnd={(event) => { setBannerIndex(Math.max(0, Math.min(bannerItems.length - 1, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / bannerStep)))); setBannerPaused(false); }} showsHorizontalScrollIndicator={false}>
               {bannerItems.map((item) => item.kind === "content" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={"تفاصيل " + item.content.titleAr} onPress={() => { void recordDiscoveryClick(item.content.id); router.push(("/discovery-content/" + encodeURIComponent(item.content.id)) as Href); }} style={[styles.bannerCard, { width: bannerWidth }]}>
-                {item.content.mediaUri ? <Image source={{ uri: item.content.mediaUri }} accessibilityLabel={"صورة " + item.content.titleAr} style={styles.bannerImage} resizeMode="cover" /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
+                {item.content.mediaUri ? <ExpoImage cachePolicy="disk" source={{ uri: item.content.mediaUri }} accessibilityLabel={"صورة " + item.content.titleAr} style={styles.bannerImage} contentFit="cover" /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>جديد المتجر</Text><Text numberOfLines={2} style={styles.bannerProduct}>{item.content.titleAr}</Text><Text numberOfLines={2} style={styles.bannerPrice}>{item.content.bodyAr}</Text></View>
               </Pressable> : <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`${bannerOffers.length ? "عرض المنتج الرائج" : "عرض المنتج"} ${item.offer.productName}`} onPress={() => openOfferDetails(item.offer.offerId)} style={[styles.bannerCard, { width: bannerWidth }]}>
-                {item.offer.media[0]?.uri ? <Image source={{ uri: item.offer.media[0].uri }} accessibilityLabel={`صورة ${item.offer.productName}`} resizeMode="cover" style={styles.bannerImage} /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="trending" color={theme.interactiveText} size={sizing.iconMd} /></View>}
+                {item.offer.media[0]?.uri ? <ExpoImage cachePolicy="disk" source={{ uri: item.offer.media[0].uri }} accessibilityLabel={`صورة ${item.offer.productName}`} contentFit="cover" style={styles.bannerImage} /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="trending" color={theme.interactiveText} size={sizing.iconMd} /></View>}
                 <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>{bannerOffers.length ? "الأكثر طلبًا" : "من منتجات المتجر"}</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.offer.productName}</Text><Text style={styles.bannerPrice}>{storeMoney(item.offer.priceMinor, item.offer.currency)}</Text></View>
               </Pressable>)}
             </ScrollView>

@@ -1,10 +1,10 @@
 import { createDshMobileClient, OrderAlertCursor } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-
-import { useEffect } from "react";
 import { type Href, useRouter } from "expo-router";
+import { useEffect } from "react";
 import { AppState, Platform } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { clientPushDestination } from "./notification-tap-destination";
 import { currentAlertTone } from "./order-alert-preferences";
 import { hasNativeNotificationModules, registerOwnPushDevice } from "./push-device";
 
@@ -46,19 +46,18 @@ export function OrderAlertMonitor() {
     const openedResponses = new Set<string>();
     const handleResponse = (result: import("expo-notifications").NotificationResponse) => {
       const data = result.notification.request.content.data;
-      const orderId = data?.orderId;
       const session = currentIdentityState();
       if (session.kind !== "authenticated") return;
-      if (session.identity.subject.trim() !== data?.actorId) {
+      const target = clientPushDestination(session.identity.subject.trim(), data);
+      if (!target) {
         void Notifications?.clearLastNotificationResponseAsync().catch(() => undefined);
         return;
       }
-      if (typeof orderId !== "string" || !/^[A-Za-z0-9._~-]{1,160}$/.test(orderId)) return;
       const responseId = result.notification.request.identifier;
       if (openedResponses.has(responseId)) return;
       openedResponses.add(responseId);
       void Notifications?.clearLastNotificationResponseAsync().catch(() => undefined);
-      router.push(`/orders/${encodeURIComponent(orderId)}` as Href);
+      router.push(target as Href);
     };
     const tick = async () => {
       if (busy || cancelled || AppState.currentState !== "active") return;
@@ -99,7 +98,8 @@ export function OrderAlertMonitor() {
         const alertPermission = await Notifications.getPermissionsAsync();
         if (!alertPermission.granted) return;
         // At most one audible notification per poll; no overlapping alarms.
-        const item = newlyUrgent.at(-1)!;
+        const item = newlyUrgent.at(-1);
+        if (!item) return;
         const selected = await currentAlertTone();
         const channel = channels.find(([tone]) => tone === selected) ?? channels[0];
         const latestSession = currentIdentityState();
