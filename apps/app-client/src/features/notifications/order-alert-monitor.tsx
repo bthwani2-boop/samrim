@@ -59,13 +59,16 @@ export function OrderAlertMonitor() {
         const token = await getUsableIdentityAccessToken();
         // Registration is best effort. Foreground polling remains functional
         // without Firebase credentials before the first EAS development build.
-        void currentAlertTone().then(tone => registerOwnPushDevice(token, actor, tone));
+        const chosenTone = await currentAlertTone();
+        const remotePushActive = await registerOwnPushDevice(token, actor, chosenTone);
         const data = await createDshMobileClient(url, { cryptoRandomUUID: () => Crypto.randomUUID() }).listNotifications(token, 35);
         if (cancelled || AppState.currentState !== "active") return;
         const current = currentIdentityState();
         if (current.kind !== "authenticated" || current.identity.subject.trim() !== actor) return;
         const newlyUrgent = alerts.receive(role, actor, data.notifications);
-        if (!newlyUrgent.length) return;
+        // When remote Push owns delivery, suppress the foreground polling bell.
+        // Otherwise the same server event can audibly ring twice.
+        if (!newlyUrgent.length || remotePushActive) return;
         const alertPermission = await Notifications.getPermissionsAsync();
         if (!alertPermission.granted) return;
         // At most one audible notification per poll; no overlapping alarms.

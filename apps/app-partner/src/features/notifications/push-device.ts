@@ -5,7 +5,7 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
 const installationStorageKey = "bthwani.order-alert.installation-v1";
-let lastRegistered = { actor: "", expires: 0, tone: "" };
+let lastRegistered = { actor: "", expires: 0, tone: "", pushActive: false };
 let registrationInFlight: Promise<boolean> | null = null;
 
 function endpoint(): string {
@@ -37,7 +37,7 @@ export async function unregisterOwnPushDevice(accessToken: string): Promise<void
     // Logout must not be blocked by transport issues. The next actor's
     // registration replaces the old binding for this installation.
   } finally {
-    lastRegistered = { actor: "", expires: 0, tone: "" };
+    lastRegistered = { actor: "", expires: 0, tone: "", pushActive: false };
   }
 }
 
@@ -46,7 +46,7 @@ export function registerOwnPushDevice(accessToken: string, actor: string, tone: 
   if (registrationInFlight) return registrationInFlight;
   registrationInFlight = (async () => {
     try {
-      if (lastRegistered.actor === actor && lastRegistered.tone === tone && lastRegistered.expires > Date.now()) return true;
+      if (lastRegistered.actor === actor && lastRegistered.tone === tone && lastRegistered.expires > Date.now()) return lastRegistered.pushActive;
       const permission = await Notifications.getPermissionsAsync();
       if (!permission.granted) return false;
       const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
@@ -60,8 +60,11 @@ export function registerOwnPushDevice(accessToken: string, actor: string, tone: 
         signal: AbortSignal.timeout(10000),
       });
       if (!result.ok) return false;
-      lastRegistered = { actor, tone, expires: Date.now() + 15 * 60_000 };
-      return true;
+      const body = await result.json() as { registered?: boolean; pushEnabled?: boolean };
+      if (body.registered !== true) return false;
+      const pushActive = body.pushEnabled === true;
+      lastRegistered = { actor, tone, expires: Date.now() + 15 * 60_000, pushActive };
+      return pushActive;
     } catch {
       return false;
     }

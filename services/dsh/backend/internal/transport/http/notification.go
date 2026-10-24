@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -66,7 +67,10 @@ func (s *NotificationServer) registerDevice(w http.ResponseWriter, r *http.Reque
 		writeNotificationError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"registered": true})
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"registered":  true,
+		"pushEnabled": os.Getenv("DSH_EXPO_PUSH_ENABLED") == "true",
+	})
 }
 func (s *NotificationServer) unregisterDevice(w http.ResponseWriter, r *http.Request) {
 	token := bearerToken(r)
