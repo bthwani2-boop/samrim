@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { enableWindowsNativeMetroWatcher } = require("./enable-windows-metro-watcher.cjs");
 
 const APP_ROOT_PATTERN = /^app-(client|partner|captain|field)$/;
 
@@ -25,6 +26,7 @@ function createSamrimMetroConfig(projectRoot) {
   const expoMetroConfigPath = require.resolve("expo/metro-config", {
     paths: [absolute],
   });
+  enableWindowsNativeMetroWatcher(expoMetroConfigPath);
   const { getDefaultConfig } = require(expoMetroConfigPath);
   const fileStorePath = require.resolve(
     "@expo/metro-config/build/binary-file-store.js",
