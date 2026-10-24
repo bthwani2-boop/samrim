@@ -87,7 +87,8 @@ export function PartnerMore() {
     let active=true;
     setPendingInvites(null);
     if(actor) void listOwnStoreAccessInvitations().then(page=>{
-      if(active && currentIdentityState().kind==="authenticated"){
+      const latest=currentIdentityState();
+      if(active && latest.kind==="authenticated" && latest.identity.subject===actor){
         setPendingInvites(page.items.filter(item => item.state==="pending_acceptance" || item.state==="pending_partner_activation").length);
       }
     }).catch(()=>{if(active)setPendingInvites(null);});
