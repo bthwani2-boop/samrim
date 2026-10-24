@@ -10,7 +10,6 @@ import { serviceCityDisplayName, useServiceCityScope } from "../service-city/ser
 import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { DiscoveryReelsViewer } from "./discovery-reels-viewer";
-import { DiscoveryReelShop } from "./discovery-reel-shop";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { LoopingHeroBanner } from "./looping-hero-banner";
 import { PromotionCard } from "./promotion-card";
@@ -355,7 +354,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const shortFormContent = useMemo(() => marketing.content.filter((item) => item.kind === "SHORT_FORM" && Boolean(item.mediaUri)), [marketing.content]);
   const videoShorts = useMemo(() => shortFormContent.filter((item) => item.mediaKind === "video"), [shortFormContent]);
   const [selectedReelIndex, setSelectedReelIndex] = useState<number | null>(null);
-  const [reelProduct, setReelProduct] = useState<PublicDiscoveryContentView | null>(null);
+  // Preserve the reel and its playhead while navigating to the canonical destination.
+  const [reelResume, setReelResume] = useState<{ id: string; seconds: number } | null>(null);
   const [shareTarget, setShareTarget] = useState<ClientShareTarget | null>(null);
   const openShort = (item: PublicDiscoveryContentView) => {
     const index = videoShorts.findIndex((video) => video.id === item.id);
@@ -641,36 +641,15 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       items={videoShorts}
       initialIndex={selectedReelIndex ?? 0}
       visible={selectedReelIndex !== null && isScreenActive}
-      paused={reelProduct !== null}
-      onClose={() => { setSelectedReelIndex(null); setReelProduct(null); }}
-      onOpen={(item) => {
-        if (item.targetType === "PRODUCT") {
-          void recordDiscoveryClick(item.id);
-          setReelProduct(item);
-          return;
-        }
-        setSelectedReelIndex(null);
+      resume={reelResume}
+      onIndexChange={setSelectedReelIndex}
+      onClose={() => { setSelectedReelIndex(null); setReelResume(null); }}
+      onOpen={(item, seconds) => {
+        setReelResume({ id: item.id, seconds });
+        // Never duplicate Store/Product/Promotion commerce inside video.
         openDiscoveryContent(item.id);
       }}
       onShare={(item) => { setSelectedReelIndex(null); setShareTarget({kind:"CONTENT",id:item.id,title:item.titleAr,link:ExpoLinking.createURL(`discovery-content/${encodeURIComponent(item.id)}`)}); }}
-    />
-    <DiscoveryReelShop
-      content={reelProduct}
-      cityId={selectedCityID ?? ""}
-      onClose={() => setReelProduct(null)}
-      onOpenStore={(storeId, productId) => {
-        setReelProduct(null); setSelectedReelIndex(null);
-        router.push((`/store/${encodeURIComponent(storeId)}?productId=${encodeURIComponent(productId)}`) as Href);
-      }}
-      onGoToCart={(storeId) => {
-        setReelProduct(null); setSelectedReelIndex(null);
-        router.push((`/cart/${encodeURIComponent(storeId)}`) as Href);
-      }}
-      onRequireLogin={(storeId, productId) => {
-        setReelProduct(null); setSelectedReelIndex(null);
-        const destination = `/store/${encodeURIComponent(storeId)}?productId=${encodeURIComponent(productId)}`;
-        router.push((`/?returnTo=${encodeURIComponent(destination)}`) as Href);
-      }}
     />
     <ClientShareSheet target={shareTarget} onClose={() => setShareTarget(null)} />
     </>
