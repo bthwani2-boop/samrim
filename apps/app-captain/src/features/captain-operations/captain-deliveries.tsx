@@ -5,6 +5,7 @@ import * as SecureStore from "expo-secure-store";
 import { useIsFocused } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, AppState, Image, Linking, Pressable, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
@@ -65,6 +66,7 @@ function hasCurrentDeliveryActor(actorID: string): boolean {
 
 export function CaptainDeliveries() {
   const theme = useAppearanceTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
   const isFocused = useIsFocused();
   const [assignments, setAssignments] = useState<ReadonlyArray<CaptainAssignment>>([]);
@@ -426,7 +428,7 @@ export function CaptainDeliveries() {
               </View>
             ) : null}
             {assignment.state === "delivery_failed" ? <View style={styles.warningBox}><Text style={styles.warning}>يبقى الطلب في عهدتك حتى يعالج المشغل التعذر؛ لن تُفتح لك مهمة جديدة قبل الاسترداد.</Text></View> : null}
-            <BthwaniOrderChatSheet visible={chatOrderId===assignment.orderId} onClose={()=>setChatOrderId("")}
+            <BthwaniOrderChatSheet visible={chatOrderId===assignment.orderId} bottomInset={insets.bottom} onClose={()=>setChatOrderId("")}
               orderReference={task?.orderReference ?? assignment.orderId.slice(-8)} status={assignmentLabel}
               summary={task?.storeName ?? "طلب توصيل"}>
               {chatOrderId===assignment.orderId?<OrderConversation orderId={assignment.orderId}/>:null}

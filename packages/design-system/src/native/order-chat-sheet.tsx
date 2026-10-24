@@ -1,6 +1,7 @@
 import type { PropsWithChildren } from "react";
 import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { typography } from "../index";
+
 import { useAppearanceTheme } from "./appearance";
 
 type Props = PropsWithChildren<Readonly<{
@@ -10,16 +11,18 @@ type Props = PropsWithChildren<Readonly<{
   status: string;
   summary: string;
   total?: string;
+  bottomInset?: number;
   onDetails?: () => void;
 }>>;
 
 /** A single order-scoped chat surface. Message permissions and contents remain owned by DSH. */
-export function BthwaniOrderChatSheet({ visible, onClose, orderReference, status, summary, total, onDetails, children }: Props) {
+export function BthwaniOrderChatSheet({ visible, onClose, orderReference, status, summary, total, bottomInset = 20, onDetails, children }: Props) {
   const theme = useAppearanceTheme();
+
   return <Modal transparent statusBarTranslucent animationType="slide" visible={visible} onRequestClose={onClose}>
-    <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <Pressable accessibilityRole="button" accessibilityLabel="إغلاق المحادثة" style={StyleSheet.absoluteFill} onPress={onClose}/>
-      <View accessibilityViewIsModal style={[styles.sheet, { backgroundColor: theme.background }]}>
+      <View accessibilityViewIsModal style={[styles.sheet, { backgroundColor: theme.background, paddingBottom: Math.max(bottomInset, 12) }]}>
         <View style={[styles.grabber, { backgroundColor: theme.borderColor }]}/>
         <View style={[styles.titleRow, { borderBottomColor: theme.borderColor }]}>
           <View style={styles.titleText}>

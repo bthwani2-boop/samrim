@@ -425,7 +425,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
                 </View>
               </View>
             </Modal>
-            <BthwaniOrderChatSheet visible={chatOrderId===order.id} onClose={()=>setChatOrderId("")}
+            <BthwaniOrderChatSheet visible={chatOrderId===order.id} bottomInset={insets.bottom} onClose={()=>setChatOrderId("")}
               orderReference={order.id.slice(-8)} status={orderStateLabel(order.state)}
               summary={order.storeName+" · "+order.lines.length+" أصناف · "+(order.fulfillmentMode==="CUSTOMER_PICKUP"?"استلام من المتجر":order.fulfillmentMode==="PARTNER_CAPTAIN"?"توصيل المتجر":"توصيل بثواني")}
               total={formatMoney(order.totalAmountMinor,order.currency)}

@@ -5,6 +5,7 @@ import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
@@ -29,6 +30,7 @@ export default function ClientOrderDetail() {
   const orderId = Array.isArray(rawOrderId) ? rawOrderId[0] ?? "" : rawOrderId ?? "";
   const router = useRouter();
   const theme = useAppearanceTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; order: Order; actorID: string } | { kind: "error" } | { kind: "auth_required" }>({ kind: "loading" });
   const [identityState, setIdentityState] = useState(currentIdentityState);
@@ -364,7 +366,7 @@ export default function ClientOrderDetail() {
         <View style={styles.action}><BthwaniButton label={showConversation ? "إغلاق المحادثة" : "محادثة الطلب"} variant="primary" onPress={() => setShowConversation((value) => !value)}/></View>
         <View style={styles.action}><BthwaniButton label="المساعدة" variant="secondary" onPress={() => Alert.alert("مساعدة الطلب", "يمكنك متابعة المشكلة عبر محادثة الطلب أو طلب مراجعة الإلغاء حين يكون متاحًا.", [{ text: "إغلاق", style: "cancel" }, { text: "مراسلة الطلب", onPress: () => setShowConversation(true) }, ...(order.state !== "CREATED" && !completedState && !["CANCELLED", "REJECTED"].includes(order.state) ? [{ text: "مراجعة الإلغاء", onPress: () => setShowCancellationForm(true) }] : []) ])}/></View>
       </View>
-      <BthwaniOrderChatSheet visible={showConversation} onClose={()=>setShowConversation(false)}
+      <BthwaniOrderChatSheet visible={showConversation} bottomInset={insets.bottom} onClose={()=>setShowConversation(false)}
         orderReference={order.id.slice(-8)} status={orderStateLabel(order.state)}
         summary={order.storeName+" · "+order.lines.length+" أصناف · "+(order.fulfillmentMode==="CUSTOMER_PICKUP"?"استلام من المتجر":order.fulfillmentMode==="PARTNER_CAPTAIN"?"توصيل المتجر":"توصيل بثواني")}
         total={formatMoney(order.totalAmountMinor,order.currency)} onDetails={()=>setShowConversation(false)}>
