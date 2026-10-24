@@ -26,12 +26,18 @@ export async function GET(request: Request) {
   const search = new URL(request.url).searchParams;
   const q = search.get("q")?.trim() ?? "";
   const cursor = search.get("cursor") ?? "";
+  const department = search.get("department")?.trim() ?? "";
+  const jobTitle = search.get("jobTitle")?.trim() ?? "";
+  const status = search.get("status") ?? "";
+  const linked = search.get("linked") ?? "";
   const requestedLimit = search.get("limit") ?? "25";
   const limit = Number(requestedLimit);
-  if (q.length > 80 || cursor.length > 1024 || !/^[1-9][0-9]?$/.test(requestedLimit) || !Number.isSafeInteger(limit) || limit > 50)
+  if (q.length > 80 || department.length > 80 || jobTitle.length > 80 || cursor.length > 1024 ||
+    !["", "active", "inactive"].includes(status) || !["", "linked", "unlinked"].includes(linked) ||
+    !/^[1-9][0-9]?$/.test(requestedLimit) || !Number.isSafeInteger(limit) || limit > 50)
     return denied(400, "INVALID_INPUT", "invalid HR directory query");
   try {
-    const result = await listHREmployees(q, cursor, { operatorActorId: access.identity.subject }, limit);
+    const result = await listHREmployees(q, cursor, { operatorActorId: access.identity.subject }, limit, { department, jobTitle, status, linked });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return fail(error); }
 }

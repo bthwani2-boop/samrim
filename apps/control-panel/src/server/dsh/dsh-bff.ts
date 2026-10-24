@@ -117,8 +117,13 @@ export type HRSummary = Readonly<{
 export function readHRSummary(context: DshOperatorReadContext): Promise<HRSummary> {
   return requestDshJson<HRSummary>("GET", "/dsh/hr/summary", undefined, { "X-Acting-Actor-ID": context.operatorActorId }).then((response) => response.payload);
 }
-export function listHREmployees(q: string, cursor: string, context: DshOperatorReadContext, limit = 25): Promise<HREmployeePage> {
+export type HRListFilters = Readonly<{ department?: string; jobTitle?: string; status?: string; linked?: string }>;
+export function listHREmployees(q: string, cursor: string, context: DshOperatorReadContext, limit = 25, filters: HRListFilters = {}): Promise<HREmployeePage> {
   const search = new URLSearchParams({ q, cursor, limit: String(limit) });
+  if (filters.department) search.set("department", filters.department);
+  if (filters.jobTitle) search.set("jobTitle", filters.jobTitle);
+  if (filters.status) search.set("status", filters.status);
+  if (filters.linked) search.set("linked", filters.linked);
   return requestDshJson<HREmployeePage>("GET", `/dsh/hr/employees?${search}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId }).then((response) => response.payload);
 }
 export function readHREmployee(id: string, context: DshOperatorReadContext): Promise<Readonly<{ employee: HREmployee }>> {

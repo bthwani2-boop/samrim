@@ -147,7 +147,11 @@ func (s *HRServer) listEmployees(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = num
 	}
-	page, err := hr.List(r.Context(), s.db, r.URL.Query().Get("q"), r.URL.Query().Get("cursor"), limit)
+	page, err := hr.List(r.Context(), s.db, hr.ListFilters{
+		Query: r.URL.Query().Get("q"), Cursor: r.URL.Query().Get("cursor"),
+		Department: r.URL.Query().Get("department"), JobTitle: r.URL.Query().Get("jobTitle"),
+		Status: r.URL.Query().Get("status"), Linked: r.URL.Query().Get("linked"), Limit: limit,
+	})
 	if err != nil {
 		writeHRError(w, err)
 		return
