@@ -19,13 +19,13 @@ test("marketing types have distinct eligible home placements without client-auth
   const banner = source.indexOf('items={bannerContent}');
   const categories = source.indexOf('accessibilityLabel="المجالات التجارية الرئيسية"');
   const carousel = source.indexOf('items={carouselContent}');
-  const stories = source.indexOf('first={videoShorts[0]!}');
+  const stories = source.indexOf('style={styles.storeFilterRow}');
   assert.ok(banner > 0 && categories > banner && carousel > categories && stories > carousel);
   assert.match(source, /showHomeMarketing && bannerContent.length/);
   assert.match(source, /showHomeMarketing && hasMarketingItems/);
   assert.match(source, /item\.mediaUri/);
   assert.match(source, /onOpen=\{\(item\) => openDiscoveryContent\(item.id\)\}/);
-  assert.match(source, /<HomeReelsEntry[\s\S]*?count=\{videoShorts\.length\}/);
+  assert.match(source, /accessibilityLabel="ريلز"/);
   assert.doesNotMatch(source, /shortFormCard|items=\{shortFormContent\}|shortForm\s*\/\>/);
 
 });

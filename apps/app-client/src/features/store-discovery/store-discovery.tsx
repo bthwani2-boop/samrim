@@ -10,7 +10,6 @@ import { serviceCityDisplayName, useServiceCityScope } from "../service-city/ser
 import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { DiscoveryReelsViewer } from "./discovery-reels-viewer";
-import { HomeReelsEntry } from "./home-reels-entry";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { LoopingHeroBanner } from "./looping-hero-banner";
 import { PromotionCard } from "./promotion-card";
@@ -306,7 +305,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     if (nearbyAddressState.loadingMore) nearbyAddressLoadMoreLabel = "جارٍ تحميل العناوين";
   }
 
-  const hasMarketingItems = marketing.content.some((item) => !item.mediaUri || (item.kind === "CAROUSEL" && Boolean(item.mediaUri)) || (item.kind === "SHORT_FORM" && item.mediaKind === "video" && Boolean(item.mediaUri))) || marketing.promotions.length > 0;
+  const hasMarketingItems = marketing.content.some((item) => !item.mediaUri || (item.kind === "CAROUSEL" && Boolean(item.mediaUri))) || marketing.promotions.length > 0;
 
   const taxonomy = useMemo(() => {
     if (state.kind !== "ready") return { verticals: [], categories: [], trail: [], children: [] };
@@ -509,14 +508,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           <BthwaniSectionHeader title="مختارات وعروض" />
           <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={carouselContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="شرائح العروض" />
         </> : null}
-        {videoShorts.length ? <>
-          <BthwaniSectionHeader title="شاهد واطلب" />
-          <HomeReelsEntry
-            first={videoShorts[0]!}
-            count={videoShorts.length}
-            onOpen={() => { setReelResume(null); setSelectedReelIndex(0); }}
-          />
-        </> : null}
         {textContent.length ? <>
           <BthwaniSectionHeader title="مختارات لك" subtitle="محتوى منشور من بثواني" />
           <View style={styles.marketingList}>{textContent.map((item) => {
@@ -560,8 +551,20 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       ) : null}
 
       {searchScope === "stores" || !searchIsActive ? <>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="تصفية المتاجر والفئات" contentContainerStyle={styles.filterRow}>
-        <BthwaniChip label="كل المتاجر" selected={storeFilter === "all"} onPress={() => setStoreFilter("all")} />
+      <View style={styles.storeFilterRow}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="ريلز"
+          accessibilityHint={videoShorts.length ? "افتح الفيديوهات واسحب للأعلى والأسفل للتنقل" : "لا توجد فيديوهات متاحة الآن"}
+          disabled={videoShorts.length === 0}
+          style={[styles.reelsFilterButton, videoShorts.length === 0 && styles.reelsFilterDisabled]}
+          onPress={() => { setReelResume(null); setSelectedReelIndex(0); }}
+        >
+          <Text style={styles.reelsFilterPlay}>▶</Text>
+          <Text style={styles.reelsFilterText}>ريلز</Text>
+        </Pressable>
+        <ScrollView style={styles.storeFilterScroll} horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="تصفية المتاجر والفئات" contentContainerStyle={styles.filterRow}>
+        <BthwaniChip label="الكل" selected={storeFilter === "all"} onPress={() => setStoreFilter("all")} />
         <BthwaniChip label="الأحدث" selected={storeFilter === "newest"} onPress={() => setStoreFilter("newest")} />
         <BthwaniChip
           icon="location"
@@ -589,7 +592,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           }}
         />
         {categoryTabs}
-      </ScrollView>
+        </ScrollView>
+      </View>
       {selectedVertical && taxonomy.children.length === 0 ? <Text style={styles.categoryTreeEmpty}>{selectedCategoryID ? "وصلت إلى أدق فئة متاحة؛ المتاجر والمنتجات المطابقة معروضة أدناه." : "لا توجد فئات منتجات متاحة لهذا المجال الآن؛ يمكنك فتح المتجر وعرض منتجاته وأقسامه."}</Text> : null}
       {favoriteError ? <Text accessibilityRole="alert" style={styles.error}>{favoriteError}</Text> : null}
       {storeFilter === "nearest" && nearestAddress ? <Text style={styles.nearestAddressSummary}>الأقرب إلى: {nearestAddress.addressText}</Text> : null}
@@ -812,6 +816,12 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     productPrice: { ...typography.label, color: theme.interactiveText },
     eyebrow: { ...typography.label, color: theme.interactiveText },
     list: { gap: spacing[3] },
+    storeFilterRow: { flexDirection: "row", alignItems: "center", gap: spacing[2] },
+    storeFilterScroll: { flex: 1, minWidth: 0 },
+    reelsFilterButton: { alignItems: "center", justifyContent: "center", flexDirection: "row", gap: spacing[1], paddingHorizontal: spacing[3], minHeight: 40, borderRadius: radius.round, backgroundColor: theme.actionBackground },
+    reelsFilterDisabled: { opacity: 0.55 },
+    reelsFilterPlay: { color: theme.onAction, fontSize: 12 },
+    reelsFilterText: { color: theme.onAction, fontSize: 13, fontWeight: "700" },
     filterRow: { alignItems: "center", flexDirection: "row", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
     nearestAddressChooser: { gap: spacing[2], padding: spacing[3] },
     nearestAddressHeading: { alignItems: "flex-start", flexDirection: "row", gap: spacing[2], justifyContent: "space-between" },
