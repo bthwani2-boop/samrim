@@ -316,6 +316,7 @@ type OperatorOperationRecord struct {
 }
 
 type OperatorOperationListRecord struct {
+	StageSLA           OperatorStageSLA
 	StageStartedAt     *time.Time
 	PreparationMinutes *int
 	OrderID            string
@@ -695,7 +696,10 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	// The operations attention queue includes stalled early fulfillment states, even
 	// when no automatic state transition is safe. Read-only review must not depend
 	// on an available dispatch action; terminal and customer-pickup states stay out.
-	const actionable = "(o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed') OR (o.state IN ('CREATED','PARTNER_ACCEPTED','PREPARING') AND (stage.stage_started_at IS NULL OR stage.stage_started_at <= statement_timestamp() - make_interval(mins => CASE WHEN o.state='PREPARING' THEN COALESCE(soa.preparation_minutes,30) ELSE 30 END))))"
+	// A configured, stage-effective SLA overrides approximate early-stage attention.
+	// Missing canonical stage events always require review; unconfigured stages
+	// retain a clearly non-contractual operational attention fallback.
+	const actionable = "(o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed') OR (o.state IN ('CREATED','PARTNER_ACCEPTED','PREPARING') AND (stage.stage_started_at IS NULL OR (sla.target_minutes IS NOT NULL AND stage.stage_started_at <= statement_timestamp() - make_interval(mins => sla.target_minutes - sla.warning_minutes)) OR (sla.target_minutes IS NULL AND stage.stage_started_at <= statement_timestamp() - make_interval(mins => CASE WHEN o.state='PREPARING' THEN COALESCE(soa.preparation_minutes,30) ELSE 30 END)))) OR (o.state IN ('IN_CUSTODY','READY_FOR_PICKUP') AND sla.target_minutes IS NOT NULL AND stage.stage_started_at IS NOT NULL AND stage.stage_started_at <= statement_timestamp() - make_interval(mins => sla.target_minutes - sla.warning_minutes)))"
 	if actionableOnly {
 		where += " AND " + actionable
 	}
@@ -727,6 +731,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		SELECT o.id,s.name,o.state,o.updated_at,o.total_amount_minor AS order_value_minor,
 		a.id AS assignment_id,a.order_id,a.captain_actor_id,a.state AS assignment_state,a.version,COALESCE(h.state,'') AS handoff_state,
         stage.stage_started_at, CASE WHEN o.state='PREPARING' THEN soa.preparation_minutes ELSE NULL END AS preparation_minutes,
+        sla.target_minutes AS sla_target_minutes,sla.warning_minutes AS sla_warning_minutes,sla.policy_version AS sla_policy_version,
 		`+actionable+` AS actionable
 		FROM dsh.commerce_orders o
 		JOIN dsh.stores s ON s.id=o.store_id
@@ -759,6 +764,13 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
                    )
             ) e
         ) AS stage(stage_started_at) ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT p.target_minutes,p.warning_minutes,p.policy_version
+            FROM dsh.operator_stage_sla_policies p
+            WHERE p.fulfillment_mode=o.fulfillment_mode AND p.stage=o.state
+              AND stage.stage_started_at IS NOT NULL AND p.effective_at<=stage.stage_started_at
+            ORDER BY p.effective_at DESC,p.policy_version DESC LIMIT 1
+        ) sla ON TRUE
 		WHERE `+where+`
 	), summary AS (
 		SELECT count(*) AS total_count,
@@ -772,7 +784,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	), page AS (
         SELECT * FROM filtered WHERE `+pageWhere+" ORDER BY updated_at "+order+",id "+order+" LIMIT $"+strconv.Itoa(len(args))+`
 	)
-	SELECT summary.*,page.id,page.name,page.state,page.updated_at,page.assignment_id,page.order_id,page.captain_actor_id,page.assignment_state,page.version,page.handoff_state,page.stage_started_at,page.preparation_minutes
+	SELECT summary.*,page.id,page.name,page.state,page.updated_at,page.assignment_id,page.order_id,page.captain_actor_id,page.assignment_state,page.version,page.handoff_state,page.stage_started_at,page.preparation_minutes,page.sla_target_minutes,page.sla_warning_minutes,page.sla_policy_version
 	FROM summary LEFT JOIN page ON TRUE ORDER BY page.updated_at `+order+",page.id "+order, args...)
 	if err != nil {
 		return OperatorOperationsResult{}, err
@@ -788,9 +800,10 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		var assignmentVersion sql.NullInt64
 		var stageStartedAt sql.NullTime
 		var preparationMinutes sql.NullInt64
+		var slaTarget, slaWarning, slaVersion sql.NullInt64
 		if err := rows.Scan(&summary.TotalCount, &summary.ActionableCount, &summary.AwaitingDispatchCount, &summary.ActiveCount, &summary.DeliveredCount, &summary.InCustodyOrderCount, &summary.InCustodyOrderValueMinor, &summary.MeasuredAt,
 			&id, &storeName, &state, &updatedAt,
-			&assignmentID, &assignmentOrderID, &captainActorID, &assignmentState, &assignmentVersion, &handoffState, &stageStartedAt, &preparationMinutes); err != nil {
+			&assignmentID, &assignmentOrderID, &captainActorID, &assignmentState, &assignmentVersion, &handoffState, &stageStartedAt, &preparationMinutes, &slaTarget, &slaWarning, &slaVersion); err != nil {
 			return OperatorOperationsResult{}, err
 		}
 		if !id.Valid {
@@ -805,6 +818,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 			v := int(preparationMinutes.Int64)
 			item.PreparationMinutes = &v
 		}
+		item.StageSLA = EvaluateOperatorStageSLA(summary.MeasuredAt, item.State, item.StageStartedAt, int(slaTarget.Int64), int(slaWarning.Int64), int(slaVersion.Int64))
 		if assignmentID.Valid {
 			item.Assignment = &OperatorAssignmentListRecord{ID: assignmentID.String, OrderID: assignmentOrderID.String, CaptainActorID: captainActorID.String, State: assignmentState.String, Version: int(assignmentVersion.Int64), HandoffState: handoffState.String}
 		}

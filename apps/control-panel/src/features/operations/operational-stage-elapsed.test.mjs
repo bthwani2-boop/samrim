@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { operationalStageElapsed, operationalStageAttention } from "./operational-stage-elapsed.ts";
+import { operationalStageElapsed, operationalStageAttention, operationalSlaAttention } from "./operational-stage-elapsed.ts";
 
 const now = Date.parse("2026-10-23T12:00:00Z");
 test("elapsed stage age reads only a proven transition timestamp", () => {
@@ -46,4 +46,20 @@ test("overdue attention uses audited stage entry and configured store preparatio
   assert.match(overdue?.label ?? "", /25|٢٥|۲۵/);
   assert.equal(operationalStageAttention("PREPARING", "bad", now, 10)?.needsReview, true);
   assert.equal(operationalStageAttention("CAPTAIN_ASSIGNED", "2026-10-23T10:00:00Z", now, 10), null);
+});
+
+
+test("approved SLA takes precedence without hiding missing evidence or inventing default", () => {
+  const at = "2026-10-23T12:10:00Z";
+  const overdue = operationalSlaAttention({ slaStatus: "ON_TRACK", slaDeadlineAt: "2026-10-23T11:50:00Z", slaPolicyVersion: 1 }, now);
+  assert.equal(overdue?.needsReview, true);
+  assert.match(overdue?.label ?? "", /SLA متأخر/);
+  const tracked = operationalSlaAttention({ slaStatus: "ON_TRACK", slaDeadlineAt: at, slaPolicyVersion: 2 }, now);
+  assert.equal(tracked?.needsReview, false);
+  assert.match(tracked?.label ?? "", /ضمن المهلة/);
+  assert.equal(operationalSlaAttention({ slaStatus: "UNCONFIGURED" }, now), null);
+  assert.equal(operationalSlaAttention({ slaStatus: "NOT_APPLICABLE" }, now), null);
+  assert.equal(operationalSlaAttention({ slaStatus: "MISSING_EVENT" }, now)?.needsReview, true);
+  assert.equal(operationalSlaAttention({ slaStatus: "AT_RISK", slaDeadlineAt: at, slaPolicyVersion: 2 }, now)?.needsReview, true);
+  assert.equal(operationalSlaAttention({ slaStatus: "OVERDUE", slaDeadlineAt: null, slaPolicyVersion: 1 }, now)?.needsReview, true);
 });

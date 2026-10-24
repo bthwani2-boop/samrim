@@ -67,7 +67,7 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/cases", s.openOperatorOrderCase)
 	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/cases/{caseId}/transition", s.transitionOperatorOrderCase)
 	mux.HandleFunc("GET /dsh/operator/operations/{orderId}/cases/{caseId}/events", s.listOperatorCaseEvents)
-    mux.HandleFunc("GET /dsh/operator/operations/{orderId}/cases/{caseId}/resolution-evidence", s.listOperatorCaseResolutionEvidence)
+	mux.HandleFunc("GET /dsh/operator/operations/{orderId}/cases/{caseId}/resolution-evidence", s.listOperatorCaseResolutionEvidence)
 	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/contact-review", s.recordOperatorContactReview)
 	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/contact-review/claim", s.updateOperatorContactClaim)
 	mux.HandleFunc("GET /dsh/operator/cash-custody", s.listOperatorCashCustody)
@@ -304,7 +304,7 @@ func toOperatorOperationListItem(operation postgres.OperatorOperationListRecord)
 	if operation.Assignment != nil {
 		assignment = &contract.OperatorAssignmentSummary{ID: operation.Assignment.ID, OrderID: operation.Assignment.OrderID, CaptainActorID: operation.Assignment.CaptainActorID, State: operation.Assignment.State, Version: operation.Assignment.Version, HandoffState: operation.Assignment.HandoffState}
 	}
-	return contract.OperatorOperationListItem{OrderID: operation.OrderID, StoreName: operation.StoreName, State: contract.OrderState(operation.State), UpdatedAt: operation.UpdatedAt, StageStartedAt: operation.StageStartedAt, PreparationMinutes: optionalPreparationMinutes(operation.PreparationMinutes), Assignment: assignment}
+	return contract.OperatorOperationListItem{OrderID: operation.OrderID, StoreName: operation.StoreName, State: contract.OrderState(operation.State), UpdatedAt: operation.UpdatedAt, StageStartedAt: operation.StageStartedAt, PreparationMinutes: optionalPreparationMinutes(operation.PreparationMinutes), SlaStatus: operation.StageSLA.Status, SlaReason: operation.StageSLA.Reason, SlaDeadlineAt: operation.StageSLA.DeadlineAt, SlaPolicyVersion: operation.StageSLA.PolicyVersion, SlaTargetMinutes: operation.StageSLA.TargetMinutes, Assignment: assignment}
 }
 
 func (s *OrderServer) listClient(w http.ResponseWriter, r *http.Request) {

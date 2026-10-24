@@ -9,7 +9,7 @@ import { RecordIndicator } from "../shared/record-indicator";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { operationalAge } from "./operational-age";
-import { operationalStageElapsed, operationalStageAttention } from "./operational-stage-elapsed";
+import { operationalStageElapsed, operationalStageAttention, operationalSlaAttention } from "./operational-stage-elapsed";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 import { OrderOperationDetail } from "./order-operation-detail";
 import { CommandFrame, CommandSectionTabs } from "../shared/command-surface";
@@ -22,7 +22,7 @@ import { OperationsPerformance } from "./operations-performance";
 import "./operations-unified.css";
 
 function operationNeedsReview(item: OperatorOperationListItem, now: number): boolean {
-  const stage = operationalStageAttention(item.state, item.stageStartedAt, now, item.preparationMinutes);
+  const stage = operationalSlaAttention(item, now) ?? operationalStageAttention(item.state, item.stageStartedAt, now, item.preparationMinutes);
   return stage ? stage.needsReview : operationalAge(item.state, item.updatedAt, now).needsReview;
 }
 
@@ -378,7 +378,7 @@ export function OperationsWorkspace() {
                 {visibleOperations.length === 0 ? <tr><td colSpan={6} className="catalog-table-state">لا توجد مطابقة في الصفحة الحالية. أزل مرشح الإسناد أو المتابعة.</td></tr> : null}
                 {visibleOperations.map((item) => {
                   const age = operationalAge(item.state, item.updatedAt, ageClock || Date.now());
-                  const stageAttention = operationalStageAttention(item.state, item.stageStartedAt, ageClock || Date.now(), item.preparationMinutes);
+                  const stageAttention = operationalSlaAttention(item, ageClock || Date.now()) ?? operationalStageAttention(item.state, item.stageStartedAt, ageClock || Date.now(), item.preparationMinutes);
                   const needsReview = stageAttention ? stageAttention.needsReview : age.needsReview;
                   const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
                   return <tr key={item.orderId} className={needsReview ? "ops-row-review" : undefined}>
@@ -401,7 +401,7 @@ export function OperationsWorkspace() {
             <ul className="ops-mobile-orders" aria-label="طلبات الصفحة">
               {visibleOperations.map((item) => {
                 const age = operationalAge(item.state, item.updatedAt, ageClock || Date.now());
-                const stageAttention = operationalStageAttention(item.state, item.stageStartedAt, ageClock || Date.now(), item.preparationMinutes);
+                const stageAttention = operationalSlaAttention(item, ageClock || Date.now()) ?? operationalStageAttention(item.state, item.stageStartedAt, ageClock || Date.now(), item.preparationMinutes);
                 const needsReview = stageAttention ? stageAttention.needsReview : age.needsReview;
                 const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
                 return <li key={item.orderId} className={"ops-mobile-order" + (needsReview ? " ops-mobile-order-review" : "")}>

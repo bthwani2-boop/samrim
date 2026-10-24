@@ -9338,6 +9338,25 @@ components:
           maximum: 1440
           nullable: true
           description: Current Store-specified preparation target for PREPARING; null if unspecified. Not a historical contractual snapshot.
+        slaStatus:
+          type: string
+          description: Evaluated by DSH from canonical stage entry and explicitly approved effective policy. UNCONFIGURED is not on-time.
+        slaReason:
+          type: string
+          description: Source of evaluation or explanation for unavailable SLA.
+        slaDeadlineAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Deadline only from approved, stage-effective policy and canonical stage entry; never inferred from updatedAt.
+        slaPolicyVersion:
+          type: integer
+          minimum: 1
+          description: Immutable policy version effective when current stage began; absent when not configured.
+        slaTargetMinutes:
+          type: integer
+          minimum: 1
+          description: Approved duration of the current stage; absent when not configured.
         assignment:
           $ref: "#/components/schemas/OperatorAssignmentSummary"
           nullable: true
