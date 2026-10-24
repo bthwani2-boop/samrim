@@ -11123,7 +11123,7 @@ components:
         storeName: { type: string }
         status: { type: string }
         paymentMethod: { type: string }
-        direction: { type: string, enum: [CREDIT, DEBIT, HOLD, RECEIVABLE] }
+        direction: { type: string, enum: [CREDIT, DEBIT, HOLD, RECEIVABLE, NONE] }
         grossMinor: { type: integer }
         commissionMinor: { type: integer }
         offsetMinor: { type: integer }

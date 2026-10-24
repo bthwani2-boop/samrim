@@ -20,11 +20,11 @@ function periodRange(period: string) {
   return { from: to.slice(0, 7) + "-01", to };
 }
 function activityType(item: PartnerFinancialActivity) {
-  return item.kind === "ORDER" ? "مستحقات طلب" : item.kind === "PAYOUT" ? "صرف مستحقات" : "ذمة عمولة نقدية";
+  return item.kind === "ORDER" ? "مستحقات طلب" : item.kind === "PAYOUT" ? "صرف مستحقات" : "تسوية طلب نقدي";
 }
 function stateLabel(item: PartnerFinancialActivity) {
   if (item.kind === "ORDER") return "مثبت";
-  if (item.kind === "CASH_COMMISSION") return "مستحق للمنصة";
+  if (item.kind === "CASH_COMMISSION") return item.direction === "CREDIT" ? "رصيد وذمة" : item.direction === "NONE" ? "دون حركة" : "ذمة عمولة";
   return ({ COMPLETED: "مكتمل", CANCELLED: "ملغى", EXCEPTION: "تحتاج مراجعة", HELD: "قيد الصرف", PREPARED: "قيد الصرف", APPROVED: "قيد الصرف", FROZEN: "قيد الصرف", EXECUTED: "قيد الصرف" } as Record<string, string>)[item.status] ?? item.status;
 }
 function currency(item: PartnerFinancialActivity) {
@@ -113,6 +113,6 @@ function FragmentRow({ item, open, toggle }: { item: PartnerFinancialActivity; o
       <td>{item.kind === "PAYOUT" ? "—" : formatMoney(item.grossMinor, item.currency)}</td><td>{item.kind === "PAYOUT" ? "—" : formatMoney(item.commissionMinor, item.currency)}</td>
       <td className="pfr-money"><strong>{currency(item)}</strong></td><td><span className="pfr-state">{stateLabel(item)}</span></td>
     </tr>
-    {open ? <tr><td colSpan={7}><div className="pfr-detail"><div><strong>مرجع العملية</strong><span dir="auto">{item.id}</span></div><div><strong>المتجر</strong><span>{item.storeName}</span></div><div><strong>نوع القيد</strong><span>{item.direction === "RECEIVABLE" ? "ذمة عمولة، ليست خصمًا من رصيد المتجر" : item.direction === "HOLD" ? "حجز مستحق، لم يُصرف بعد" : item.direction === "DEBIT" ? "صرف مكتمل" : "إضافة مثبتة لرصيد المستحقات"}</span></div>{item.offsetMinor ? <div><strong>مقاصة عمولة</strong><span>{formatMoney(item.offsetMinor, item.currency)}</span></div> : null}{item.ledgerTransactionId ? <div><strong>مرجع القيد المحاسبي</strong><span dir="auto">{item.ledgerTransactionId}</span></div> : null}</div></td></tr> : null}
+    {open ? <tr><td colSpan={7}><div className="pfr-detail"><div><strong>مرجع العملية</strong><span dir="auto">{item.id}</span></div><div><strong>المتجر</strong><span>{item.storeName}</span></div><div><strong>نوع القيد</strong><span>{item.direction === "RECEIVABLE" ? "ذمة عمولة، ليست خصمًا من رصيد المتجر" : item.direction === "HOLD" ? "حجز مستحق، لم يُصرف بعد" : item.direction === "DEBIT" ? "صرف مكتمل" : item.direction === "NONE" ? "لا أثر مباشر على المحفظة" : "إضافة مثبتة لرصيد المستحقات"}</span></div>{item.offsetMinor ? <div><strong>مقاصة عمولة</strong><span>{formatMoney(item.offsetMinor, item.currency)}</span></div> : null}{item.ledgerTransactionId ? <div><strong>مرجع القيد المحاسبي</strong><span dir="auto">{item.ledgerTransactionId}</span></div> : null}</div></td></tr> : null}
   </>;
 }

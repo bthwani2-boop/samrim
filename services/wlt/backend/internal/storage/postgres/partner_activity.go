@@ -74,25 +74,41 @@ func ListPartnerActivity(ctx context.Context, db *sql.DB, owner string, q Partne
 		return PartnerActivityPage{}, ErrPartnerActivityInput
 	}
 	// Each source is unique by (kind,id); payout lines are keyed by payout+store.
-	// Pending payouts are holds, not debits, and cash commissions are receivables,
-	// not deductions from the merchant's available wallet balance.
+	// Pending payouts are holds, not debits. A cash-collected order can
+	// credit the merchant wallet and separately incur commission receivable.
 	const sqlText = `WITH movements AS (
         SELECT e.order_id id,'ORDER' kind,e.store_id,e.created_at,'POSTED' status,
-            COALESCE(p.method,'') payment_method,'CREDIT' direction,
+            CASE WHEN a.internal_balance_amount_minor>0 AND a.cash_amount_minor>0 THEN 'MIXED'
+                 WHEN a.internal_balance_amount_minor>0 THEN 'WALLET'
+                 ELSE COALESCE(p.method,'') END payment_method,'CREDIT' direction,
             e.gross_product_minor gross_minor,e.commission_minor commission_minor,
             e.commission_receivable_offset_minor offset_minor,
             e.partner_net_minor-e.commission_receivable_offset_minor amount_minor,
             e.currency, e.ledger_transaction_id ledger_transaction_id
         FROM wlt.partner_order_earnings e
+        JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=e.payment_intent_id
         LEFT JOIN wlt.payment_intents p ON p.id=e.payment_intent_id
         WHERE e.partner_actor_id=$1 AND e.store_id=ANY($2)
         UNION ALL
         SELECT c.order_id,'CASH_COMMISSION',a.store_id,c.created_at,'POSTED',
-            COALESCE(p.method,''),'RECEIVABLE',c.gross_product_minor,c.commission_minor,0,
-            c.commission_minor,c.currency,COALESCE(c.ledger_transaction_id,'')
+            CASE WHEN a.internal_balance_amount_minor>0 AND a.cash_amount_minor>0 THEN 'MIXED'
+                 WHEN a.internal_balance_amount_minor>0 THEN 'WALLET'
+                 ELSE COALESCE(p.method,'') END,
+            CASE WHEN credited.wallet_credit>0 THEN 'CREDIT'
+                 WHEN c.commission_minor>0 THEN 'RECEIVABLE' ELSE 'NONE' END,
+            c.gross_product_minor,c.commission_minor,0,
+            CASE WHEN credited.wallet_credit>0 THEN credited.wallet_credit ELSE c.commission_minor END,
+            c.currency,COALESCE(c.ledger_transaction_id,'')
         FROM wlt.partner_store_cash_commissions c
         JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=c.payment_intent_id
         LEFT JOIN wlt.payment_intents p ON p.id=c.payment_intent_id
+        LEFT JOIN LATERAL (
+            SELECT COALESCE(SUM(le.amount_minor),0) wallet_credit
+            FROM wlt.ledger_entries le
+            WHERE le.transaction_id=c.ledger_transaction_id
+              AND le.account_code='PARTNER_WALLET' AND le.actor_type='partner'
+              AND le.actor_id=c.partner_actor_id AND le.direction='CREDIT'
+        ) credited ON true
         WHERE c.partner_actor_id=$1 AND a.store_id=ANY($2)
         UNION ALL
         SELECT p.id || ':' || a.store_id,'PAYOUT',a.store_id,p.created_at,

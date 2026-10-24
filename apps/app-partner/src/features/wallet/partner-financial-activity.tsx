@@ -28,7 +28,7 @@ function range(period: Period): Pick<PartnerFinancialActivityFilters, "from" | "
   return { from: adenDate(new Date(now.getTime() - 6 * 86_400_000)), to: today };
 }
 function stateLabel(item: PartnerFinancialActivity): string {
-  if (item.kind === "CASH_COMMISSION") return "ذمة عمولة";
+  if (item.kind === "CASH_COMMISSION") return item.direction === "CREDIT" ? "رصيد وذمة عمولة" : item.direction === "NONE" ? "بدون حركة رصيد" : "ذمة عمولة";
   if (item.kind === "ORDER") return "مستحق مثبت";
   if (item.status === "COMPLETED") return "تم الصرف";
   if (item.status === "CANCELLED") return "ملغى";
@@ -36,7 +36,7 @@ function stateLabel(item: PartnerFinancialActivity): string {
   return "قيد الصرف";
 }
 function itemTitle(item: PartnerFinancialActivity): string {
-  return item.kind === "PAYOUT" ? "صرف مستحقات" : item.kind === "CASH_COMMISSION" ? "عمولة طلب نقدي" : "مستحقات طلب";
+  return item.kind === "PAYOUT" ? "صرف مستحقات" : item.kind === "CASH_COMMISSION" ? "تسوية طلب نقدي" : "مستحقات طلب";
 }
 function reference(item: PartnerFinancialActivity): string {
   return item.kind === "PAYOUT" ? (item.id.split(":")[0] ?? item.id) : item.id;
@@ -192,7 +192,7 @@ export function PartnerFinancialActivity({ stores }: { stores: PartnerScopedFina
               ["الحالة", stateLabel(detail)],
               ...(detail.kind !== "PAYOUT" ? [["إجمالي المنتجات", money(detail.grossMinor)], ["عمولة المنصة", money(detail.commissionMinor)]] : []),
               ...(detail.offsetMinor ? [["مقاصة عمولة سابقة", money(detail.offsetMinor)]] : []),
-              ["الأثر المالي", detail.direction === "RECEIVABLE" ? "ذمة للمنصة، وليست خصمًا من الرصيد" : detail.direction === "HOLD" ? "حجز مؤقت، وليس صرفًا مكتملًا" : detail.direction === "DEBIT" ? "صرف مكتمل" : "إضافة مثبتة للرصيد"],
+              ["الأثر المالي", detail.direction === "RECEIVABLE" ? "ذمة للمنصة، وليست خصمًا من الرصيد" : detail.direction === "HOLD" ? "حجز مؤقت، وليس صرفًا مكتملًا" : detail.direction === "DEBIT" ? "صرف مكتمل" : detail.direction === "NONE" ? "لا حركة مباشرة على رصيد المحفظة" : "إضافة مثبتة للرصيد"],
               ...(detail.ledgerTransactionId ? [["مرجع القيد", detail.ledgerTransactionId]] : []),
             ].map(([label, value]) => <View key={label} style={styles.detailLine}><Text style={styles.secondary}>{label}</Text><Text selectable style={styles.detailValue}>{value}</Text></View>)}
           </ScrollView> : null}

@@ -11,7 +11,7 @@ export type PartnerFinancialActivity = Readonly<{
   storeName: string;
   status: string;
   paymentMethod: string;
-  direction: "CREDIT" | "DEBIT" | "HOLD" | "RECEIVABLE";
+  direction: "CREDIT" | "DEBIT" | "HOLD" | "RECEIVABLE" | "NONE";
   grossMinor: number;
   commissionMinor: number;
   offsetMinor: number;
