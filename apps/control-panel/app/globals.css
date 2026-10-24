@@ -3787,3 +3787,31 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 @container (max-width: 650px) {
   .store-profile-content.store-sheet-dashboard { grid-template-columns: minmax(0, 1fr); }
 }
+
+
+/* Unified partner team on owner/store views; tokens follow CP theme. */
+.partner-team-workspace { display:grid; gap:12px; min-inline-size:0; }
+.partner-team-heading { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; }
+.partner-team-heading h2 { font-size:16px; font-weight:800; margin:0; }
+.partner-team-heading p { color:var(--text-muted); font-size:12px; margin:4px 0 0; }
+.partner-team-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.partner-team-metrics > div { display:grid; gap:3px; padding:10px; border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-muted); }
+.partner-team-metrics strong { font-size:18px; font-weight:800; }
+.partner-team-metrics span { font-size:11px; color:var(--text-muted); }
+.partner-team-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; align-items:start; }
+.partner-team-member { border:1px solid var(--border-subtle); border-radius:10px; min-inline-size:0; display:grid; gap:7px; padding:12px; }
+.partner-team-member-main { display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
+.partner-team-member-main strong { font-size:13px; font-weight:750; }
+.partner-team-member > a { font-size:12px; color:var(--interactive-text); }
+.partner-team-member p { color:var(--text-muted); font-size:12px; margin:0; }
+.partner-team-member details { font-size:12px; }
+.partner-team-member details summary { cursor:pointer; }
+.partner-team-member details dl { display:grid; gap:5px; margin:8px 0 0; }
+.partner-team-member details dl > div { display:flex; justify-content:space-between; gap:8px; }
+.partner-team-member details dt { color:var(--text-muted); }
+.partner-team-state { color:var(--text-muted); border:1px solid var(--border-subtle); border-radius:999px; font-size:11px; padding:4px 8px; }
+.partner-team-state[data-state="active"] { color:var(--success-text); background:var(--success-soft); }
+.partner-team-compact .partner-team-list { grid-template-columns:minmax(0,1fr); }
+.partner-team-compact .partner-team-member { padding:8px; }
+.partner-team-compact .partner-team-metrics > div { padding:7px; }
+@media(max-width:700px) { .partner-team-list { grid-template-columns:minmax(0,1fr); } }

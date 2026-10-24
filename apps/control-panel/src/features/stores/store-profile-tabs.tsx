@@ -14,6 +14,7 @@ import { StoreOperationsPreview } from "./store-operations-preview";
 
 const intakeWeekdays = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"] as const;
 import { StoreProfileLegacyTabs } from "./store-profile-legacy-tabs";
+import { PartnerTeamWorkspace } from "../partners/partner-team-workspace";
 
 type Store = StorePublicationResponse["store"];
 type Props = Readonly<{
@@ -119,6 +120,9 @@ export function StoreProfileTabs({
           </details>
           <button type="button" className="button button-secondary" onClick={openManagement}>تعديل بيانات الخدمة</button>
         </Card> : null}
+        <Card title="فريق المتجر">
+          <PartnerTeamWorkspace ownerId={store.partnerActorId} storeId={store.id} compact />
+        </Card>
         <Card title="المتاجر المرتبطة">
           <StoreBranchesPreview actorId={store.partnerActorId} currentStoreId={store.id} />
         </Card>
@@ -132,6 +136,7 @@ export function StoreProfileTabs({
       {canViewOperations ? <button type="button" onClick={() => onSelectTab("orders")}>الطلبات <span aria-hidden="true">←</span></button> : null}
       <button type="button" onClick={() => onSelectTab("products")}>الكتالوج والمنتجات <span aria-hidden="true">←</span></button>
       <button type="button" onClick={() => onSelectTab("promotions")}>العروض <span aria-hidden="true">←</span></button>
+      <Link href={"/partners/actors/"+encodeURIComponent(store.partnerActorId)+"?view=team&storeId="+encodeURIComponent(store.id)}>فريق المتجر <span aria-hidden="true">←</span></Link>
       {canViewFinance ? <button type="button" onClick={() => onSelectTab("finance")}>المالية <span aria-hidden="true">←</span></button> : null}
     </nav> : null}
     {(["catalog", "quality", "documents", ...(canViewFinance ? ["finance"] : [])] as const).map((group) =>

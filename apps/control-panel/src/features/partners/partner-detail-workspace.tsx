@@ -12,10 +12,11 @@ import { StoreLogo } from "../stores/store-logo";
 import { ActorWalletStatement } from "../finance/actor-wallet-statement";
 import { ActorLegalNameWorkspace } from "./actor-legal-name-workspace";
 import { partnerErrorMessage } from "./partner-error-message";
+import { PartnerTeamWorkspace } from "./partner-team-workspace";
 
 type PartnerDetail = Readonly<{ partner: ActorRoleView; joiningCase: JoiningCaseView | null }>;
 type PartnerStoresPage = Readonly<{ stores: ReadonlyArray<PartnerManagedStore>; nextCursor?: string }>;
-type PartnerDetailTab = "profile" | "stores";
+type PartnerDetailTab = "profile" | "stores" | "team";
 
 function partnerRequestError(cause: unknown, fallback: string): string {
   if (isRequestFailure(cause)) return cause.message;
@@ -72,7 +73,7 @@ export function PartnerDetailWorkspace({ actorId, embedded = false }: Readonly<{
 
   useEffect(() => {
     void loadDetail();
-    const syncTab = () => setActiveTab(!embedded && new URLSearchParams(window.location.search).get("view") === "stores" ? "stores" : "profile");
+    const syncTab = () => { const view = !embedded ? new URLSearchParams(window.location.search).get("view") : null; setActiveTab(view === "stores" || view === "team" ? view : "profile"); };
     syncTab();
     window.addEventListener("popstate", syncTab);
     return () => window.removeEventListener("popstate", syncTab);
@@ -96,6 +97,7 @@ export function PartnerDetailWorkspace({ actorId, embedded = false }: Readonly<{
       const params = new URLSearchParams(window.location.search);
       if (tab === "stores") params.set("view", tab); else params.delete("view");
       params.delete("cursor");
+      if (tab !== "team") params.delete("storeId");
       window.history.pushState({}, "", window.location.pathname + (params.size ? `?${params.toString()}` : ""));
     }
     setActiveTab(tab);
@@ -268,6 +270,7 @@ export function PartnerDetailWorkspace({ actorId, embedded = false }: Readonly<{
     <nav className="partner-detail-tabs" aria-label="أقسام ملف الشريك">
       <button type="button" aria-current={activeTab === "profile" ? "page" : undefined} onClick={() => navigateTab("profile")}>الحساب والانضمام</button>
       <button type="button" aria-current={activeTab === "stores" ? "page" : undefined} onClick={() => navigateTab("stores")}>المتاجر</button>
+      <button type="button" aria-current={activeTab === "team" ? "page" : undefined} onClick={() => navigateTab("team")}>الفريق</button>
     </nav>
 
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}
@@ -295,6 +298,10 @@ export function PartnerDetailWorkspace({ actorId, embedded = false }: Readonly<{
       <ActorLegalNameWorkspace actorId={actorId} />
       <ActorWalletStatement actorType="partner" actorId={actorId} />
     </div> : null}
+
+    {detail && activeTab === "team" ? <section className="partner-detail-section" aria-label="فريق الشريك">
+      <PartnerTeamWorkspace ownerId={actorId} storeId={embedded ? "" : new URLSearchParams(window.location.search).get("storeId") ?? ""} />
+    </section> : null}
 
     {detail && activeTab === "stores" ? <section className="partner-detail-section" aria-labelledby="partner-stores-title">
       <div className="partner-detail-section-heading"><div><h2 id="partner-stores-title">متاجر الشريك</h2></div></div>

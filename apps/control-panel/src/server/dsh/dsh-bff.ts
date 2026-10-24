@@ -997,6 +997,17 @@ export async function listJoiningCases(state: string, query: string, sort: "crea
   return (await requestDshJson<JoiningCaseListResponse>(dshOperationPaths.listJoiningCases.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
+export type OperatorPartnerTeamPage = Readonly<{
+ items: ReadonlyArray<import("@bthwani/dsh").StoreAccessGrant>;
+ nextCursor?: string;
+ counts: Readonly<{total:number;active:number;pending:number;suspended:number}>;
+}>;
+export async function listOperatorPartnerTeam(ownerId:string,storeId:string,limit:number,cursor:string,context:DshOperatorReadContext):Promise<OperatorPartnerTeamPage>{
+ if(!ownerId.trim()||ownerId.length>128||storeId.length>128||cursor.length>512||!Number.isInteger(limit)||limit<1||limit>50||!context.operatorActorId.trim())throw Error("INVALID_PARTNER_TEAM_READ");
+ const query=new URLSearchParams({limit:String(limit)});
+ if(storeId)query.set("storeId",storeId);if(cursor)query.set("cursor",cursor);
+ return (await requestDshJson<OperatorPartnerTeamPage>("GET","/dsh/operations/partners/"+encodeURIComponent(ownerId.trim())+"/team?"+query,undefined,{"X-Acting-Actor-ID":context.operatorActorId.trim()})).payload;
+}
 export async function listStoreAccessRoleAdmissionsForOperator(context: DshOperatorReadContext, limit = 25, cursor = ""): Promise<StoreAccessGrantListResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_STORE_ACCESS_OPERATOR_REQUIRED");
   if (!Number.isInteger(limit) || limit < 1 || limit > 50 || cursor.length > 512) throw new Error("DSH_STORE_ACCESS_PAGE_INVALID");
