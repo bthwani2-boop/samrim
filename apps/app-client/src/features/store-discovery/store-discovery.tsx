@@ -305,7 +305,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     if (nearbyAddressState.loadingMore) nearbyAddressLoadMoreLabel = "جارٍ تحميل العناوين";
   }
 
-  const hasMarketingItems = marketing.content.some((item) => item.kind !== "BANNER" || !item.mediaUri) || marketing.promotions.length > 0;
+  const hasMarketingItems = marketing.content.some((item) => !item.mediaUri || (item.kind === "CAROUSEL" && Boolean(item.mediaUri))) || marketing.promotions.length > 0;
 
   const taxonomy = useMemo(() => {
     if (state.kind !== "ready") return { verticals: [], categories: [], trail: [], children: [] };
@@ -351,17 +351,11 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   const bannerContent = useMemo(() => marketing.content.filter((item) => item.kind === "BANNER" && Boolean(item.mediaUri)), [marketing.content]);
   const carouselContent = useMemo(() => marketing.content.filter((item) => item.kind === "CAROUSEL" && Boolean(item.mediaUri)), [marketing.content]);
-  const shortFormContent = useMemo(() => marketing.content.filter((item) => item.kind === "SHORT_FORM" && Boolean(item.mediaUri)), [marketing.content]);
-  const videoShorts = useMemo(() => shortFormContent.filter((item) => item.mediaKind === "video"), [shortFormContent]);
+  const videoShorts = useMemo(() => marketing.content.filter((item) => item.kind === "SHORT_FORM" && item.mediaKind === "video" && Boolean(item.mediaUri)), [marketing.content]);
   const [selectedReelIndex, setSelectedReelIndex] = useState<number | null>(null);
   // Preserve the reel and its playhead while navigating to the canonical destination.
   const [reelResume, setReelResume] = useState<{ id: string; seconds: number } | null>(null);
   const [shareTarget, setShareTarget] = useState<ClientShareTarget | null>(null);
-  const openShort = (item: PublicDiscoveryContentView) => {
-    const index = videoShorts.findIndex((video) => video.id === item.id);
-    if (index >= 0) { setSelectedReelIndex(index); return; }
-    openDiscoveryContent(item.id);
-  };
   const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri), [marketing.content]);
   const showHomeMarketing = !searchIsActive && !selectedVerticalID && !selectedCategoryID && !selectedShortcutID;
 
@@ -514,10 +508,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           <BthwaniSectionHeader title="مختارات وعروض" />
           <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={carouselContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="شرائح العروض" />
         </> : null}
-        {shortFormContent.length ? <>
-          <BthwaniSectionHeader title="شاهد واطلب" />
-          <DiscoveryMediaCarousel cardWidth={Math.min(180, carouselCardWidth)} items={shortFormContent} styles={styles} theme={theme} onOpen={openShort} label="شاهد واطلب" shortForm />
-        </> : null}
         {textContent.length ? <>
           <BthwaniSectionHeader title="مختارات لك" subtitle="محتوى منشور من بثواني" />
           <View style={styles.marketingList}>{textContent.map((item) => {
@@ -561,8 +551,20 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       ) : null}
 
       {searchScope === "stores" || !searchIsActive ? <>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="تصفية المتاجر والفئات" contentContainerStyle={styles.filterRow}>
-        <BthwaniChip label="كل المتاجر" selected={storeFilter === "all"} onPress={() => setStoreFilter("all")} />
+      <View style={styles.storeFilterRow}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="ريلز"
+          accessibilityHint={videoShorts.length ? "افتح الفيديوهات واسحب للأعلى والأسفل للتنقل" : "لا توجد فيديوهات متاحة الآن"}
+          disabled={videoShorts.length === 0}
+          style={[styles.reelsFilterButton, videoShorts.length === 0 && styles.reelsFilterDisabled]}
+          onPress={() => { setReelResume(null); setSelectedReelIndex(0); }}
+        >
+          <Text style={styles.reelsFilterPlay}>▶</Text>
+          <Text style={styles.reelsFilterText}>ريلز</Text>
+        </Pressable>
+        <ScrollView style={styles.storeFilterScroll} horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="تصفية المتاجر والفئات" contentContainerStyle={styles.filterRow}>
+        <BthwaniChip label="الكل" selected={storeFilter === "all"} onPress={() => setStoreFilter("all")} />
         <BthwaniChip label="الأحدث" selected={storeFilter === "newest"} onPress={() => setStoreFilter("newest")} />
         <BthwaniChip
           icon="location"
@@ -590,7 +592,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           }}
         />
         {categoryTabs}
-      </ScrollView>
+        </ScrollView>
+      </View>
       {selectedVertical && taxonomy.children.length === 0 ? <Text style={styles.categoryTreeEmpty}>{selectedCategoryID ? "وصلت إلى أدق فئة متاحة؛ المتاجر والمنتجات المطابقة معروضة أدناه." : "لا توجد فئات منتجات متاحة لهذا المجال الآن؛ يمكنك فتح المتجر وعرض منتجاته وأقسامه."}</Text> : null}
       {favoriteError ? <Text accessibilityRole="alert" style={styles.error}>{favoriteError}</Text> : null}
       {storeFilter === "nearest" && nearestAddress ? <Text style={styles.nearestAddressSummary}>الأقرب إلى: {nearestAddress.addressText}</Text> : null}
@@ -813,6 +816,12 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     productPrice: { ...typography.label, color: theme.interactiveText },
     eyebrow: { ...typography.label, color: theme.interactiveText },
     list: { gap: spacing[3] },
+    storeFilterRow: { flexDirection: "row", alignItems: "center", gap: spacing[2] },
+    storeFilterScroll: { flex: 1, minWidth: 0 },
+    reelsFilterButton: { alignItems: "center", justifyContent: "center", flexDirection: "row", gap: spacing[1], paddingHorizontal: spacing[3], minHeight: 40, borderRadius: radius.round, backgroundColor: theme.actionBackground },
+    reelsFilterDisabled: { opacity: 0.55 },
+    reelsFilterPlay: { color: theme.onAction, fontSize: 12 },
+    reelsFilterText: { color: theme.onAction, fontSize: 13, fontWeight: "700" },
     filterRow: { alignItems: "center", flexDirection: "row", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
     nearestAddressChooser: { gap: spacing[2], padding: spacing[3] },
     nearestAddressHeading: { alignItems: "flex-start", flexDirection: "row", gap: spacing[2], justifyContent: "space-between" },
@@ -871,7 +880,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     mediaScrollContent: { gap: spacing[2] },
     mediaCard: { backgroundColor: theme.surface, borderRadius: radius.lg, height: 144, overflow: "hidden", ...elevation.raised },
     heroMediaCard: { borderRadius: radius.lg },
-    shortFormCard: { height: 210 },
     mediaImage: { height: "100%", width: "100%" },
     mediaCaption: { backgroundColor: theme.actionBackground, bottom: 0, gap: spacing[1], left: 0, paddingHorizontal: spacing[3], paddingVertical: spacing[1], position: "absolute", right: 0 },
     mediaCaptionTitle: { ...typography.titleSm, color: theme.onAction, textAlign: "right" },
@@ -888,7 +896,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   });
 }
 
-function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label, shortForm = false, hero = false, screenActive = true, presentation = { placement: "HOME", mode: "CINEMATIC", intervalSeconds: 5, version: 1 } as BannerPresentation }: { cardWidth: number; items: ReadonlyArray<PublicDiscoveryContentView>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>; onOpen: (item: PublicDiscoveryContentView) => void; label: string; shortForm?: boolean; hero?: boolean; screenActive?: boolean; presentation?: BannerPresentation }) {
+function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label, hero = false, screenActive = true, presentation = { placement: "HOME", mode: "CINEMATIC", intervalSeconds: 5, version: 1 } as BannerPresentation }: { cardWidth: number; items: ReadonlyArray<PublicDiscoveryContentView>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>; onOpen: (item: PublicDiscoveryContentView) => void; label: string; hero?: boolean; screenActive?: boolean; presentation?: BannerPresentation }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [failedMedia, setFailedMedia] = useState<ReadonlySet<string>>(() => new Set());
   const [foreground, setForeground] = useState(AppState.currentState === "active");
@@ -1005,7 +1013,7 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
           { translateX: offset.interpolate({ inputRange, outputRange: [6, 0, -6], extrapolate: "clamp" }) },
         ] } : undefined;
         return <Pressable accessibilityRole="button" accessibilityLabel={"عرض " + item.titleAr} accessibilityHint={item.mediaKind === "video" ? "تشغيل الريل" : "يفتح وجهة المحتوى"} key={instanceKey} onPress={() => onOpen(item)}>
-          <View style={[styles.mediaCard, hero && styles.heroMediaCard, shortForm && styles.shortFormCard, { width: cardWidth }, hero && { height: Math.round(cardWidth / 1.75) }]}>
+          <View style={[styles.mediaCard, hero && styles.heroMediaCard, { width: cardWidth }, hero && { height: Math.round(cardWidth / 1.75) }]}>
             {item.mediaKind === "video" ? <View style={[styles.mediaFallback, { backgroundColor: "#171821", justifyContent: "center" }]}>{item.posterUri ? <ExpoImage source={{ uri: item.posterUri }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" /> : null}<View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center", backgroundColor: "#0004" }]}><Text style={{ fontSize: 32, color: "#fff" }}>▶</Text><Text style={{ color: "#fff", textAlign: "center", padding: 8 }} numberOfLines={2}>{item.titleAr}</Text></View></View> : failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text><Text style={styles.mediaFallbackHint}>تعذر تحميل الصورة. اضغط لعرض التفاصيل.</Text></View> : <>
               <Animated.Image accessibilityLabel={"صورة " + item.titleAr} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={[styles.mediaImage, imageMotion]} resizeMode="cover" />
               {!hero ? <View pointerEvents="none" style={styles.mediaCaption}><Text numberOfLines={1} style={styles.mediaCaptionTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text numberOfLines={1} style={styles.mediaCaptionBody}>{item.bodyAr}</Text> : null}</View> : null}
