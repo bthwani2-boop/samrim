@@ -149,3 +149,15 @@
 [data-theme="light"] .ops-center .ops-report-metrics strong,[data-theme="light"] .ops-center .ops-report-chart h3,[data-theme="light"] .ops-center .ops-report-limits h3,[data-theme="light"] .ops-center .ops-report-day strong{color:#1c3858}
 [data-theme="light"] .ops-center .ops-report-actions select,[data-theme="light"] .ops-center .ops-report-actions button{background:#f5f8fd;color:#233d5b;border-color:#cbd8e8}
 @media(max-width:800px){.ops-center .ops-report-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.ops-center .ops-report-day{grid-template-columns:90px minmax(0,1fr) 32px;gap:6px}}
+
+.ops-center .ops-command-shortcuts{display:grid;align-content:start;gap:10px}
+.ops-center .ops-command-shortcuts h2{font-size:14px;margin:0}
+.ops-center .ops-command-shortcuts>p{font-size:11px;color:#b3c7df;margin:0}
+.ops-center .ops-command-link-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.ops-center .ops-command-link-grid button{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;text-align:start;border:1px solid #2f506c;border-radius:9px;background:#162c43;color:#e8f4ff;font:inherit;font-size:12px;font-weight:730;min-height:56px;padding:11px;cursor:pointer}
+.ops-center .ops-command-link-grid button span{font-size:10px;color:#ffab78}
+.ops-center .ops-command-link-grid button:hover{border-color:#ff974f}
+[data-theme="light"] .ops-center .ops-command-shortcuts>p{color:#607995}
+[data-theme="light"] .ops-center .ops-command-link-grid button{background:#f4f8ff;color:#203959;border-color:#cbdbea}
+[data-theme="light"] .ops-center .ops-command-link-grid button span{color:#9d4b23}
+@media(max-width:600px){.ops-center .ops-command-link-grid{grid-template-columns:1fr}}

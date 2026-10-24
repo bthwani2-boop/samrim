@@ -173,8 +173,8 @@ export function OpportunityZones({ variant = "compact" }: Readonly<{ variant?: "
       <p className="ops-activity-sample">هذه خريطة نشاط مجمّع؛ لا تمثل موقع أي عميل أو كابتن بصورة آنية.</p>
     </> : <div className="ops-coverage-unavailable" role={error ? "alert" : "status"}>
       <span className="ops-coverage-placeholder" aria-hidden="true">◉</span>
-      <strong>{error ? "تعذر تحميل بيانات التغطية" : loading ? "جارٍ التحقق من النشاط" : "لا توجد عينة نشاط حديثة للعرض"}</strong>
-      <p>{error || (loading ? "يُقرأ نشاط الطلبات والكباتن من المصدر التشغيلي." : "لا يمكن رسم خريطة موثوقة دون نقاط نشاط حديثة. لا يُفترض أن عدم وجود نقاط يعني عدم وجود طلبات.")}</p>
+      <strong>{error ? "تعذر تحميل بيانات التغطية" : loading ? "جارٍ التحقق من النشاط" : value?.sampleStatus === "INSUFFICIENT_DATA" || (value && !cells.length) ? "العينة الحديثة لا تحتوي نقاطًا كافية" : "لا توجد عينة نشاط حديثة للعرض"}</strong>
+      <p>{error || (loading ? "يُقرأ نشاط الطلبات والكباتن من المصدر التشغيلي." : value ? `الفترة المقاسة: ${new Date(value.windowStart).toLocaleString("ar-YE")} — ${new Date(value.windowEnd).toLocaleString("ar-YE")}. لا يمكن رسم خريطة موثوقة من ${cells.length} نقطة نشاط؛ وغياب النقاط لا يعني غياب الطلبات.` : "لا توجد بيانات جغرافية حديثة معتمدة؛ لا يُفترض غياب الطلبات.")}</p>
       {error ? <button type="button" className="button button-secondary" onClick={() => void load()}>إعادة القراءة</button> : null}
     </div>}
   </section>;

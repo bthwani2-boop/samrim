@@ -9,7 +9,7 @@ export function OperationsCommandView({ summary, operations, isAttention, onView
   summary: OperatorOperationsSummary | null;
   operations: readonly OperatorOperationListItem[];
   isAttention: (item: OperatorOperationListItem) => boolean;
-  onView: (view: "all" | "attention" | "dispatch" | "delivered") => void;
+  onView: (view: "all" | "attention" | "dispatch" | "delivered" | "captains" | "coverage" | "reports") => void;
   onOpen: (orderId: string) => void;
   loading: boolean;
 }>) {
@@ -37,13 +37,16 @@ export function OperationsCommandView({ summary, operations, isAttention, onView
     <div className="bt-command-grid">
       <CommandBarPanel title="حالات الطلبات المعروضة" subtitle="توزيع السجلات المحمّلة، وليس كامل المنصة"
         measures={breakdown} total={operations.length}/>
-      <CommandBarPanel title="مؤشرات سير الطلب" subtitle="مؤشرات غير حصرية من ملخص DSH"
-        measures={summary ? [
-          { id: "review", label: "تحتاج تدخلاً", value: summary.actionableCount, tone: "danger" },
-          { id: "dispatch", label: "بانتظار الإسناد", value: summary.awaitingDispatchCount, tone: "warning" },
-          { id: "active", label: "نشطة", value: summary.activeCount, tone: "success" },
-          { id: "delivered", label: "مسلّمة", value: summary.deliveredCount },
-        ] : []} total={summary?.totalCount ?? null}/>
+      <section className="bt-command-panel ops-command-shortcuts" aria-labelledby="ops-command-action-title">
+        <h2 id="ops-command-action-title">المسارات التشغيلية</h2>
+        <p>افتح مجال العمل المناسب من دون تكرار مؤشرات القيادة داخل كل تبويب.</p>
+        <div className="ops-command-link-grid">
+          <button type="button" onClick={() => onView("dispatch")}>الإسناد والتوصيل <span>الطلبات والمراحل ←</span></button>
+          <button type="button" onClick={() => onView("captains")}>الكباتن <span>الأهلية والتوفر ←</span></button>
+          <button type="button" onClick={() => onView("coverage")}>التغطية <span>النشاط الجغرافي ←</span></button>
+          <button type="button" onClick={() => onView("reports")}>الأداء والتقارير <span>التاريخ اليومي ←</span></button>
+        </div>
+      </section>
     </div>
     <p className="bt-command-footnote" role="status">{loading ? "جارٍ التحقق من أحدث البيانات..." :
       summary ? "آخر قياس تشغيلي: " + formatOrderDate(summary.measuredAt) + " · القوائم التحليلية تعرض السجلات المحمّلة فقط." :
