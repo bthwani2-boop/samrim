@@ -10,6 +10,7 @@ import { serviceCityDisplayName, useServiceCityScope } from "../service-city/ser
 import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { DiscoveryReelsViewer } from "./discovery-reels-viewer";
+import { HomeReelsEntry } from "./home-reels-entry";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { LoopingHeroBanner } from "./looping-hero-banner";
 import { PromotionCard } from "./promotion-card";
@@ -305,7 +306,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     if (nearbyAddressState.loadingMore) nearbyAddressLoadMoreLabel = "جارٍ تحميل العناوين";
   }
 
-  const hasMarketingItems = marketing.content.some((item) => item.kind !== "BANNER" || !item.mediaUri) || marketing.promotions.length > 0;
+  const hasMarketingItems = marketing.content.some((item) => !item.mediaUri || (item.kind === "CAROUSEL" && Boolean(item.mediaUri)) || (item.kind === "SHORT_FORM" && item.mediaKind === "video" && Boolean(item.mediaUri))) || marketing.promotions.length > 0;
 
   const taxonomy = useMemo(() => {
     if (state.kind !== "ready") return { verticals: [], categories: [], trail: [], children: [] };
@@ -351,17 +352,11 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   const bannerContent = useMemo(() => marketing.content.filter((item) => item.kind === "BANNER" && Boolean(item.mediaUri)), [marketing.content]);
   const carouselContent = useMemo(() => marketing.content.filter((item) => item.kind === "CAROUSEL" && Boolean(item.mediaUri)), [marketing.content]);
-  const shortFormContent = useMemo(() => marketing.content.filter((item) => item.kind === "SHORT_FORM" && Boolean(item.mediaUri)), [marketing.content]);
-  const videoShorts = useMemo(() => shortFormContent.filter((item) => item.mediaKind === "video"), [shortFormContent]);
+  const videoShorts = useMemo(() => marketing.content.filter((item) => item.kind === "SHORT_FORM" && item.mediaKind === "video" && Boolean(item.mediaUri)), [marketing.content]);
   const [selectedReelIndex, setSelectedReelIndex] = useState<number | null>(null);
   // Preserve the reel and its playhead while navigating to the canonical destination.
   const [reelResume, setReelResume] = useState<{ id: string; seconds: number } | null>(null);
   const [shareTarget, setShareTarget] = useState<ClientShareTarget | null>(null);
-  const openShort = (item: PublicDiscoveryContentView) => {
-    const index = videoShorts.findIndex((video) => video.id === item.id);
-    if (index >= 0) { setSelectedReelIndex(index); return; }
-    openDiscoveryContent(item.id);
-  };
   const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri), [marketing.content]);
   const showHomeMarketing = !searchIsActive && !selectedVerticalID && !selectedCategoryID && !selectedShortcutID;
 
@@ -514,9 +509,13 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           <BthwaniSectionHeader title="مختارات وعروض" />
           <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={carouselContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="شرائح العروض" />
         </> : null}
-        {shortFormContent.length ? <>
+        {videoShorts.length ? <>
           <BthwaniSectionHeader title="شاهد واطلب" />
-          <DiscoveryMediaCarousel cardWidth={Math.min(180, carouselCardWidth)} items={shortFormContent} styles={styles} theme={theme} onOpen={openShort} label="شاهد واطلب" shortForm />
+          <HomeReelsEntry
+            first={videoShorts[0]!}
+            count={videoShorts.length}
+            onOpen={() => { setReelResume(null); setSelectedReelIndex(0); }}
+          />
         </> : null}
         {textContent.length ? <>
           <BthwaniSectionHeader title="مختارات لك" subtitle="محتوى منشور من بثواني" />
@@ -871,7 +870,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     mediaScrollContent: { gap: spacing[2] },
     mediaCard: { backgroundColor: theme.surface, borderRadius: radius.lg, height: 144, overflow: "hidden", ...elevation.raised },
     heroMediaCard: { borderRadius: radius.lg },
-    shortFormCard: { height: 210 },
     mediaImage: { height: "100%", width: "100%" },
     mediaCaption: { backgroundColor: theme.actionBackground, bottom: 0, gap: spacing[1], left: 0, paddingHorizontal: spacing[3], paddingVertical: spacing[1], position: "absolute", right: 0 },
     mediaCaptionTitle: { ...typography.titleSm, color: theme.onAction, textAlign: "right" },
@@ -888,7 +886,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   });
 }
 
-function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label, shortForm = false, hero = false, screenActive = true, presentation = { placement: "HOME", mode: "CINEMATIC", intervalSeconds: 5, version: 1 } as BannerPresentation }: { cardWidth: number; items: ReadonlyArray<PublicDiscoveryContentView>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>; onOpen: (item: PublicDiscoveryContentView) => void; label: string; shortForm?: boolean; hero?: boolean; screenActive?: boolean; presentation?: BannerPresentation }) {
+function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label, hero = false, screenActive = true, presentation = { placement: "HOME", mode: "CINEMATIC", intervalSeconds: 5, version: 1 } as BannerPresentation }: { cardWidth: number; items: ReadonlyArray<PublicDiscoveryContentView>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>; onOpen: (item: PublicDiscoveryContentView) => void; label: string; hero?: boolean; screenActive?: boolean; presentation?: BannerPresentation }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [failedMedia, setFailedMedia] = useState<ReadonlySet<string>>(() => new Set());
   const [foreground, setForeground] = useState(AppState.currentState === "active");
@@ -1005,7 +1003,7 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
           { translateX: offset.interpolate({ inputRange, outputRange: [6, 0, -6], extrapolate: "clamp" }) },
         ] } : undefined;
         return <Pressable accessibilityRole="button" accessibilityLabel={"عرض " + item.titleAr} accessibilityHint={item.mediaKind === "video" ? "تشغيل الريل" : "يفتح وجهة المحتوى"} key={instanceKey} onPress={() => onOpen(item)}>
-          <View style={[styles.mediaCard, hero && styles.heroMediaCard, shortForm && styles.shortFormCard, { width: cardWidth }, hero && { height: Math.round(cardWidth / 1.75) }]}>
+          <View style={[styles.mediaCard, hero && styles.heroMediaCard, { width: cardWidth }, hero && { height: Math.round(cardWidth / 1.75) }]}>
             {item.mediaKind === "video" ? <View style={[styles.mediaFallback, { backgroundColor: "#171821", justifyContent: "center" }]}>{item.posterUri ? <ExpoImage source={{ uri: item.posterUri }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" /> : null}<View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center", backgroundColor: "#0004" }]}><Text style={{ fontSize: 32, color: "#fff" }}>▶</Text><Text style={{ color: "#fff", textAlign: "center", padding: 8 }} numberOfLines={2}>{item.titleAr}</Text></View></View> : failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text><Text style={styles.mediaFallbackHint}>تعذر تحميل الصورة. اضغط لعرض التفاصيل.</Text></View> : <>
               <Animated.Image accessibilityLabel={"صورة " + item.titleAr} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={[styles.mediaImage, imageMotion]} resizeMode="cover" />
               {!hero ? <View pointerEvents="none" style={styles.mediaCaption}><Text numberOfLines={1} style={styles.mediaCaptionTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text numberOfLines={1} style={styles.mediaCaptionBody}>{item.bodyAr}</Text> : null}</View> : null}
