@@ -156,6 +156,69 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/operator/marketing/campaigns/{campaignId}:
+    get:
+      operationId: readOperatorMarketingCampaign
+      summary: Read one marketing campaign, including its aggregate assigned caps
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Campaign readback
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingCampaignResponse" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
+  /dsh/operator/marketing/campaigns/{campaignId}/state:
+    post:
+      operationId: setOperatorMarketingCampaignState
+      summary: Versioned, audited, replay-safe campaign state change with readiness checks
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [state]
+              properties:
+                state: { type: string, enum: [PUBLISHED, PAUSED, ENDED, ARCHIVED] }
+      responses:
+        "200":
+          description: Changed or replayed campaign state
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingCampaignResponse" }
+        "201":
+          description: Accepted state change
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingCampaignResponse" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
   /dsh/operator/marketing/summary:
     get:
       operationId: readOperatorMarketingSummary

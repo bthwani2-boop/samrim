@@ -513,6 +513,10 @@ paths:
   /dsh/operator/promotions/{promotionId}/settlement-summary:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1settlement-summary"
 
+  /dsh/operator/marketing/campaigns/{campaignId}:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1campaigns~1{campaignId}"
+  /dsh/operator/marketing/campaigns/{campaignId}/state:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1campaigns~1{campaignId}~1state"
   /dsh/operator/marketing/summary:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1summary"
 
@@ -9772,6 +9776,53 @@ components:
         nextCursor:
           type: string
           maxLength: 128
+
+    MarketingCampaign:
+      type: object
+      additionalProperties: false
+      required: [id, nameAr, objective, state, budgetLimitMinor, assignedPromotionBudgetMinor, promotionCount, contentCount, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        nameAr:
+          type: string
+        objective:
+          type: string
+          enum: [ACQUISITION, REACTIVATION, CONVERSION, RETENTION]
+        state:
+          type: string
+          enum: [DRAFT, PUBLISHED, PAUSED, ENDED, ARCHIVED]
+        budgetLimitMinor:
+          type: integer
+          minimum: 1
+        assignedPromotionBudgetMinor:
+          type: integer
+          minimum: 0
+        promotionCount:
+          type: integer
+          minimum: 0
+        contentCount:
+          type: integer
+          minimum: 0
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    MarketingCampaignResponse:
+      type: object
+      additionalProperties: false
+      required: [campaign]
+      properties:
+        campaign:
+          $ref: "#/components/schemas/MarketingCampaign"
+        idempotentReplay:
+          type: boolean
 
     OperatorMarketingSummary:
       type: object

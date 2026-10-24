@@ -24,17 +24,17 @@ type MarketingCampaignInput struct {
 }
 
 type MarketingCampaignRecord struct {
-	ID                           string
-	NameAr                       string
-	Objective                    string
-	State                        string
-	BudgetLimitMinor             int64
-	AssignedPromotionBudgetMinor int64
-	PromotionCount               int64
-	ContentCount                 int64
-	Version                      int
-	CreatedAt                    time.Time
-	UpdatedAt                    time.Time
+	ID                           string `json:"id"`
+	NameAr                       string `json:"nameAr"`
+	Objective                    string `json:"objective"`
+	State                        string `json:"state"`
+	BudgetLimitMinor             int64 `json:"budgetLimitMinor"`
+	AssignedPromotionBudgetMinor int64 `json:"assignedPromotionBudgetMinor"`
+	PromotionCount               int64 `json:"promotionCount"`
+	ContentCount                 int64 `json:"contentCount"`
+	Version                      int `json:"version"`
+	CreatedAt                    time.Time `json:"createdAt"`
+	UpdatedAt                    time.Time `json:"updatedAt"`
 }
 
 // Campaign creation records the parent budget authority, never a payment

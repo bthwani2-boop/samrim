@@ -57,6 +57,8 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/public/discovery-content/events", s.recordPublicDiscoveryContentEvent)
 	mux.HandleFunc("GET /dsh/public/discovery-content/{contentId}/target", s.resolvePublicDiscoveryContentTarget)
 	mux.HandleFunc("GET /dsh/operator/marketing/summary", s.readOperatorMarketingSummary)
+	mux.HandleFunc("GET /dsh/operator/marketing/campaigns/{campaignId}", s.readOperatorMarketingCampaign)
+	mux.HandleFunc("POST /dsh/operator/marketing/campaigns/{campaignId}/state", s.setOperatorMarketingCampaignState)
 	mux.HandleFunc("GET /dsh/operator/promotions", s.listOperatorPromotions)
 	mux.HandleFunc("GET /dsh/operator/promotions/{promotionId}/partner-decisions", s.listOperatorPartnerDecisions)
 	mux.HandleFunc("POST /dsh/operator/promotions", s.createOperatorPromotion)
@@ -769,9 +771,9 @@ func writeMarketingError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an active Partner session is required")
 	case errors.Is(err, errPartnerPromotionStoreAuthority):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "promotions access to this Store is denied")
-	case errors.Is(err, postgres.ErrPromotionInvalid), errors.Is(err, postgres.ErrDiscoveryContentInvalid), errors.Is(err, postgres.ErrDiscoveryContentEventInvalid):
+	case errors.Is(err, postgres.ErrMarketingCampaignInvalid), errors.Is(err, postgres.ErrPromotionInvalid), errors.Is(err, postgres.ErrDiscoveryContentInvalid), errors.Is(err, postgres.ErrDiscoveryContentEventInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing input is invalid")
-	case errors.Is(err, postgres.ErrPromotionNotFound), errors.Is(err, postgres.ErrDiscoveryContentNotFound), errors.Is(err, postgres.ErrDiscoveryContentEventNotFound):
+	case errors.Is(err, postgres.ErrMarketingCampaignNotFound), errors.Is(err, postgres.ErrPromotionNotFound), errors.Is(err, postgres.ErrDiscoveryContentNotFound), errors.Is(err, postgres.ErrDiscoveryContentEventNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "marketing record was not found")
 	case errors.Is(err, postgres.ErrBannerPresentationInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid banner presentation")
@@ -781,10 +783,14 @@ func writeMarketingError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "PROMOTION_CODE_EXISTS", "promotion code already exists")
 	case errors.Is(err, postgres.ErrPromotionIdempotencyConflict), errors.Is(err, postgres.ErrDiscoveryContentIdempotency), errors.Is(err, postgres.ErrDiscoveryContentEventConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "marketing mutation idempotency key conflicts with a prior request")
-	case errors.Is(err, postgres.ErrPromotionVersionConflict), errors.Is(err, postgres.ErrDiscoveryContentVersion):
+	case errors.Is(err, postgres.ErrMarketingCampaignVersionConflict), errors.Is(err, postgres.ErrPromotionVersionConflict), errors.Is(err, postgres.ErrDiscoveryContentVersion):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "marketing record version is stale")
 	case errors.Is(err, postgres.ErrDiscoveryContentTargetInvalid):
 		writeError(w, http.StatusConflict, "TARGET_UNAVAILABLE", "discovery content target is not canonical and available")
+	case errors.Is(err, postgres.ErrMarketingCampaignNotReady):
+		writeError(w, http.StatusConflict, "CAMPAIGN_NOT_READY", "campaign requires eligible published content or a funded promotion")
+	case errors.Is(err, postgres.ErrMarketingCampaignBudgetExceeded):
+		writeError(w, http.StatusConflict, "CAMPAIGN_BUDGET_EXCEEDED", "campaign aggregate budget is exceeded")
 	case errors.Is(err, postgres.ErrPromotionUnavailable), errors.Is(err, postgres.ErrPromotionAlreadyRedeemed), errors.Is(err, postgres.ErrPromotionLimitReached):
 		writeError(w, http.StatusConflict, "PROMOTION_UNAVAILABLE", "promotion is not currently eligible")
 	default:
