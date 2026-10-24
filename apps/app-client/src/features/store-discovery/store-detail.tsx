@@ -2,7 +2,7 @@ import { borders, elevation, radius, type resolveTheme, sizing, spacing, typogra
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, type CartResponse, type CustomerFulfillmentMode, formatMoney, fulfillmentModeLabel, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicPromotionView, type PublicStoreView, type StoreOrderability } from "@bthwani/dsh";
 import * as ExpoLinking from "expo-linking";
-import { type Href, useRouter } from "expo-router";
+import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Alert, FlatList, Image, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from "react-native";
@@ -133,6 +133,20 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const activeTab = favoritesView ? 1 : popularView ? 2 : 0;
   const [selectedFulfillmentMode, setSelectedFulfillmentMode] = useState<CustomerFulfillmentMode | null>(null);
   const [orderabilityByMode, setOrderabilityByMode] = useState<ReadonlyArray<StoreOrderability> | null>(null);
+  // Revalidate the canonical DSH orderability while the customer is viewing this store.
+  // Never claim that a store reopened based on a partner-side optimistic choice.
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    if (!storeId || !selectedCityID) return () => { active = false; };
+    const refresh = () => {
+      void readPublicStoreOrderability(storeId, selectedCityID).then((response) => {
+        if (active) setOrderabilityByMode(response.orderabilityByMode);
+      }).catch(() => { /* Preserve the last confirmed state until DSH is reachable. */ });
+    };
+    refresh();
+    const interval = setInterval(refresh, 15000);
+    return () => { active = false; clearInterval(interval); };
+  }, [storeId, selectedCityID]));
   const [openCart, setOpenCart] = useState<CartResponse["cart"] | null>(null);
   const [cartReadError, setCartReadError] = useState(false);
   const fulfillmentModes = useMemo(() => state.kind === "ready" ? availableCustomerFulfillmentModes(state.store.fulfillmentModes) : [], [state]);
