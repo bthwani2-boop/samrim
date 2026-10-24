@@ -1,10 +1,10 @@
 package media
 
 import (
-	"encoding/binary"
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -265,34 +265,53 @@ func validContentType(value string) bool {
 
 // Video media is bounded by the existing marketing-media 10 MiB upload limit.
 // Catalog and profile uploads retain image-only validation in their owners.
-func validMarketingContentType(value string) bool { return validContentType(value) || value == "video/mp4" }
+func validMarketingContentType(value string) bool {
+	return validContentType(value) || value == "video/mp4"
+}
 
 // ValidateMarketingMP4Bytes checks bounded outer ISO BMFF boxes only.
 // It does not transcode or verify particular codecs.
 func ValidateMarketingMP4Bytes(data []byte) error {
- if len(data) < 32 || int64(len(data)) > MaxUploadBytes { return ErrInvalidObjectKey }
- var brand, movie, payload bool
- for offset := 0; offset < len(data); {
-  if len(data)-offset < 8 { return ErrInvalidObjectKey }
-  size := uint64(binary.BigEndian.Uint32(data[offset:offset+4]))
-  kind := string(data[offset+4:offset+8])
-  header := uint64(8)
-  if size == 1 {
-   if len(data)-offset < 16 { return ErrInvalidObjectKey }
-   size = binary.BigEndian.Uint64(data[offset+8:offset+16])
-   header = 16
-  } else if size == 0 { size = uint64(len(data)-offset) }
-  if size < header || size > uint64(len(data)-offset) { return ErrInvalidObjectKey }
-  if offset == 0 && (kind != "ftyp" || size < header+8) { return ErrInvalidObjectKey }
-  switch kind {
-   case "ftyp": brand = true
-   case "moov": movie = true
-   case "mdat": payload = size > header
-  }
-  offset += int(size)
- }
- if !brand || !movie || !payload { return ErrInvalidObjectKey }
- return nil
+	if len(data) < 32 || int64(len(data)) > MaxUploadBytes {
+		return ErrInvalidObjectKey
+	}
+	var brand, movie, payload bool
+	for offset := 0; offset < len(data); {
+		if len(data)-offset < 8 {
+			return ErrInvalidObjectKey
+		}
+		size := uint64(binary.BigEndian.Uint32(data[offset : offset+4]))
+		kind := string(data[offset+4 : offset+8])
+		header := uint64(8)
+		if size == 1 {
+			if len(data)-offset < 16 {
+				return ErrInvalidObjectKey
+			}
+			size = binary.BigEndian.Uint64(data[offset+8 : offset+16])
+			header = 16
+		} else if size == 0 {
+			size = uint64(len(data) - offset)
+		}
+		if size < header || size > uint64(len(data)-offset) {
+			return ErrInvalidObjectKey
+		}
+		if offset == 0 && (kind != "ftyp" || size < header+8) {
+			return ErrInvalidObjectKey
+		}
+		switch kind {
+		case "ftyp":
+			brand = true
+		case "moov":
+			movie = true
+		case "mdat":
+			payload = size > header
+		}
+		offset += int(size)
+	}
+	if !brand || !movie || !payload {
+		return ErrInvalidObjectKey
+	}
+	return nil
 }
 
 func ValidateImageBytes(data []byte) (string, int, int, error) {

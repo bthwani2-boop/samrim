@@ -3357,7 +3357,7 @@ type DiscoveryContentView struct {
 	TitleAr          string                     `json:"titleAr"`
 	BodyAr           string                     `json:"bodyAr"`
 	MediaUri         string                     `json:"mediaUri"`
-	MediaKind string `json:"mediaKind"`
+	MediaKind        string                     `json:"mediaKind"`
 	TargetType       DiscoveryContentTargetType `json:"targetType"`
 	TargetID         string                     `json:"targetId,omitempty"`
 	ServiceCityID    string                     `json:"serviceCityId,omitempty"`
@@ -3381,7 +3381,7 @@ type PublicDiscoveryContentView struct {
 	TitleAr    string                     `json:"titleAr"`
 	BodyAr     string                     `json:"bodyAr"`
 	MediaUri   string                     `json:"mediaUri"`
-	MediaKind string `json:"mediaKind"`
+	MediaKind  string                     `json:"mediaKind"`
 	TargetType DiscoveryContentTargetType `json:"targetType"`
 	TargetID   string                     `json:"targetId,omitempty"`
 }
