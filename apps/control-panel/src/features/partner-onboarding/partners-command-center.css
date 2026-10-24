@@ -1,0 +1,16 @@
+/* Partners retains one information hierarchy; operational registries stay intact. */
+.bt-partners-command .bt-command-frame{gap:12px}
+.bt-partners-register .partners-unified-workbench{padding:0;background:transparent}
+.bt-partners-register .partners-unified-workbench>.page-header{border:0;background:transparent;margin:0;padding:0;min-height:0;justify-content:flex-start}
+.bt-partners-register .partners-unified-workbench>.page-header .page-header-title{display:none}
+.bt-partners-register .partners-unified-workbench>.page-header .action-row{margin:0}
+.bt-partners-register .partner-unified-section-tabs{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
+.bt-partners-register .partner-unified-tab-panel{display:grid;gap:12px;min-width:0}
+.bt-partners-register .partner-unified-toolbar{border-color:var(--btc-border);background:#0e2035;border-radius:9px;gap:8px}
+.bt-partners-register .partner-unified-table-wrap{border:1px solid var(--btc-border);border-radius:10px;overflow:auto;min-width:0}
+.bt-partners-register :is(.partner-unified-table,.operations-table){color:var(--btc-text)}
+.bt-partners-register :is(.partner-unified-table,.operations-table) thead th{background:#172b42;color:var(--btc-muted)}
+.bt-partners-register .partner-unified-cards>*{border-color:var(--btc-border)}
+[data-theme="light"] .bt-partners-register .partner-unified-toolbar{background:#fff}
+[data-theme="light"] .bt-partners-register :is(.partner-unified-table,.operations-table){color:#253952}
+[data-theme="light"] .bt-partners-register :is(.partner-unified-table,.operations-table) thead th{background:#edf2f9;color:#3b516d}
