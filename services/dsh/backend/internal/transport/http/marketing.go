@@ -567,6 +567,16 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "a Partner reel must target its authorized Store")
 		return
 	}
+	var posterBytes []byte
+	if parsed.contentType == "video/mp4" {
+		normalized, poster, err := media.NormalizeMarketingVideo(r.Context(), parsed.bytes)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "VIDEO_PROCESSING_UNAVAILABLE", "video could not be prepared; use a compatible MP4 up to 30 seconds")
+			return
+		}
+		parsed.bytes = normalized
+		posterBytes = poster
+	}
 	digest := sha256Bytes(parsed.bytes)
 	objectKey, keyErr := media.KeyForMarketingUpload(input.ID, idempotency, digest, parsed.contentType)
 	if keyErr != nil {
@@ -605,6 +615,21 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 		_ = s.ReconcileMediaStorage(r.Context())
 		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "marketing media upload failed")
 		return
+	}
+	if len(posterBytes) > 0 {
+		posterKey, keyErr := media.MarketingPosterObjectKey(objectKey)
+		if keyErr != nil {
+			_ = postgres.MarkDiscoveryContentMediaAssetFailed(r.Context(), s.db, asset.ID, keyErr.Error())
+			_ = s.ReconcileMediaStorage(r.Context())
+			writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "marketing poster key is invalid")
+			return
+		}
+		if err := s.media.Put(r.Context(), posterKey, bytes.NewReader(posterBytes), int64(len(posterBytes)), "image/jpeg"); err != nil {
+			_ = postgres.MarkDiscoveryContentMediaAssetFailed(r.Context(), s.db, asset.ID, err.Error())
+			_ = s.ReconcileMediaStorage(r.Context())
+			writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "marketing poster upload failed")
+			return
+		}
 	}
 	item, replayed, err := postgres.CreateDiscoveryContent(r.Context(), s.db, postgres.DiscoveryContentInput{
 		ID: input.ID, Kind: string(input.Kind), TitleAr: input.TitleAr, BodyAr: input.BodyAr, MediaAssetID: asset.ID, TargetType: string(input.TargetType), TargetID: input.TargetID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, Ordinal: input.Ordinal, CreatedByActorID: acting,
@@ -768,6 +793,23 @@ func (s *MarketingServer) ReconcileMediaStorage(ctx context.Context) error {
 	}
 	var firstErr error
 	for _, asset := range assets {
+		if asset.ContentType == "video/mp4" {
+			posterKey, keyErr := media.MarketingPosterObjectKey(asset.ObjectKey)
+			if keyErr != nil {
+				_ = postgres.MarkDiscoveryContentMediaAssetCleanupFailure(ctx, s.db, asset.ID, keyErr.Error())
+				if firstErr == nil {
+					firstErr = keyErr
+				}
+				continue
+			}
+			if err := s.media.Delete(ctx, posterKey); err != nil {
+				_ = postgres.MarkDiscoveryContentMediaAssetCleanupFailure(ctx, s.db, asset.ID, err.Error())
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+		}
 		if err := s.media.Delete(ctx, asset.ObjectKey); err != nil {
 			_ = postgres.MarkDiscoveryContentMediaAssetCleanupFailure(ctx, s.db, asset.ID, err.Error())
 			if firstErr == nil {
@@ -795,11 +837,11 @@ func toPublicPromotionView(item postgres.PromotionRecord) contract.PublicPromoti
 }
 
 func toDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.DiscoveryContentView {
-	return contract.DiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, MediaKind: item.MediaKind, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, Ordinal: item.Ordinal, Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.DiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, MediaKind: item.MediaKind, PosterUri: item.PosterURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, Ordinal: item.Ordinal, Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toPublicDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.PublicDiscoveryContentView {
-	return contract.PublicDiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, MediaKind: item.MediaKind, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID}
+	return contract.PublicDiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, MediaKind: item.MediaKind, PosterUri: item.PosterURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID}
 }
 
 func intValue(value *int64) int {

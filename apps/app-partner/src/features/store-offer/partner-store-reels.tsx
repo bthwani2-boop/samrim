@@ -1,7 +1,7 @@
 import type { DiscoveryContentView, OperatorDiscoveryContentRegistryResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
@@ -24,6 +24,8 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  // Preserve one server idempotency key across retries of the same draft.
+  const attempt = useRef<{ fingerprint: string; contentId: string; idempotencyKey: string; correlationId: string; startsAt: string } | null>(null);
 
   const read = useCallback(async () => {
     try {
@@ -61,6 +63,7 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
         return;
       }
       setFile(value);
+      attempt.current = null;
       setMessage("");
     } catch {
       setMessage("تعذر اختيار الوسيط.");
@@ -78,13 +81,23 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
     try {
       const token = await getUsableIdentityAccessToken();
       const mime = file.mimeType ?? "video/mp4";
+      const fingerprint = [storeId, file.uri, file.size, caption.trim()].join(":");
+      if (!attempt.current || attempt.current.fingerprint !== fingerprint) {
+        attempt.current = {
+          fingerprint,
+          contentId: `content-${Crypto.randomUUID()}`,
+          idempotencyKey: Crypto.randomUUID(),
+          correlationId: Crypto.randomUUID(),
+          startsAt: new Date().toISOString(),
+        };
+      }
       const input = new FormData();
-      input.append("id", `content-${Crypto.randomUUID()}`);
+      input.append("id", attempt.current.contentId);
       input.append("kind", "SHORT_FORM");
       input.append("titleAr", caption.trim());
       input.append("targetType", "STORE");
       input.append("targetId", storeId);
-      input.append("startsAt", new Date().toISOString());
+      input.append("startsAt", attempt.current.startsAt);
       input.append("ordinal", "0");
       input.append("creator", storeName);
       input.append("sourceDescription", "محتوى أصلي مقدم من المتجر");
@@ -95,12 +108,13 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
-          "Idempotency-Key": Crypto.randomUUID(),
-          "X-Correlation-ID": Crypto.randomUUID(),
+          "Idempotency-Key": attempt.current.idempotencyKey,
+          "X-Correlation-ID": attempt.current.correlationId,
         },
         body: input,
       });
       if (!response.ok) throw new Error("REELS_UPLOAD_FAILED");
+      attempt.current = null;
       setFile(null);
       setCaption("");
       setRights(false);
