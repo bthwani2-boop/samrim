@@ -173,11 +173,11 @@ func ReadOrderConversation(ctx context.Context, db *sql.DB, orderID, actorID, ro
 		FROM (
 			SELECT id,order_id,sender_actor_id,sender_role,body,created_at,recipient_roles,media_kind,media_content_type
 			FROM dsh.commerce_order_conversation_messages
-			WHERE order_id=$1 AND (sender_actor_id=$2 OR $4='operator' OR $4=ANY(recipient_roles))
+			WHERE order_id=$1 AND (sender_actor_id=$2 OR $4=ANY(recipient_roles))
 			AND ($4<>'captain' OR created_at >= $5)
 			AND ($6='' OR (created_at,id) < (SELECT marker.created_at,marker.id FROM dsh.commerce_order_conversation_messages marker
 				WHERE marker.id=$6 AND marker.order_id=$1
-				AND (marker.sender_actor_id=$2 OR $4='operator' OR $4=ANY(marker.recipient_roles))
+				AND (marker.sender_actor_id=$2 OR $4=ANY(marker.recipient_roles))
 				AND ($4<>'captain' OR marker.created_at >= $5)))
 			ORDER BY created_at DESC,id DESC
 			LIMIT $3 + 1
@@ -219,7 +219,7 @@ func ReadOrderConversation(ctx context.Context, db *sql.DB, orderID, actorID, ro
 		LEFT JOIN dsh.commerce_order_conversation_read_state read_state
 		  ON read_state.actor_id=$2 AND read_state.message_id=m.id
 		WHERE m.order_id=$1 AND m.sender_actor_id<>$2 AND read_state.message_id IS NULL
-		AND ($3='operator' OR $3=ANY(m.recipient_roles))
+		AND ($3=ANY(m.recipient_roles))
 		AND ($3<>'captain' OR m.created_at >= $4)`, orderID, actorID, role, joinedAt).Scan(&result.UnreadCount); err != nil {
 		return OrderConversationRecord{}, err
 	}
@@ -339,7 +339,7 @@ func ReadOrderConversationMedia(ctx context.Context, db *sql.DB, orderID, actorI
 	var media OrderConversationMedia
 	err = db.QueryRowContext(ctx, `SELECT media_kind,media_content_type,media_data FROM dsh.commerce_order_conversation_messages
   WHERE id=$1 AND order_id=$2 AND media_kind IS NOT NULL
-  AND (sender_actor_id=$3 OR $4='operator' OR $4=ANY(recipient_roles))
+  AND (sender_actor_id=$3 OR $4=ANY(recipient_roles))
   AND ($4<>'captain' OR created_at >= $5)`, messageID, orderID, actorID, role, joinedAt).
 		Scan(&media.Kind, &media.ContentType, &media.Bytes)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -374,7 +374,7 @@ func MarkOrderConversationRead(ctx context.Context, db *sql.DB, orderID, actorID
 	}
 	var targetCreatedAt time.Time
 	if err := tx.QueryRowContext(ctx, `SELECT created_at FROM dsh.commerce_order_conversation_messages WHERE id=$1 AND order_id=$2
-		AND (sender_actor_id=$3 OR $4='operator' OR $4=ANY(recipient_roles))
+		AND (sender_actor_id=$3 OR $4=ANY(recipient_roles))
 		AND ($4<>'captain' OR created_at >= $5)`, messageID, orderID, actorID, role, joinedAt).Scan(&targetCreatedAt); errors.Is(err, sql.ErrNoRows) {
 		return time.Time{}, ErrOrderConversationMessageNotFound
 	} else if err != nil {
@@ -387,7 +387,7 @@ func MarkOrderConversationRead(ctx context.Context, db *sql.DB, orderID, actorID
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_conversation_read_state(actor_id,message_id,read_at)
 		SELECT $1,m.id,$3 FROM dsh.commerce_order_conversation_messages m
 		WHERE m.order_id=$2 AND (m.created_at,m.id) <= ($4,$5)
-		AND (m.sender_actor_id=$1 OR $6='operator' OR $6=ANY(m.recipient_roles))
+		AND (m.sender_actor_id=$1 OR $6=ANY(m.recipient_roles))
 		AND ($6<>'captain' OR m.created_at >= $7)
 		ON CONFLICT (actor_id,message_id) DO NOTHING`, actorID, orderID, readAt, targetCreatedAt, messageID, role, joinedAt); err != nil {
 		return time.Time{}, err
