@@ -55,7 +55,7 @@
   .workspace-breadcrumbs li { display: flex; gap: 8px; align-items: center; }
   .workspace-header-tools { display: flex; align-items: center; gap: 8px; }
   .workspace-header-tools svg, .workspace-icon { inline-size: 20px; block-size: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-  .workspace-notifications-link, .workspace-trash-link, .workspace-search-trigger, .account-menu > summary, .workspace-nav-toggle, .workspace-search-close, .workspace-nav-close { display: inline-flex; align-items: center; justify-content: center; inline-size: 40px; block-size: 40px; padding: 8px; border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--color-primary); background: var(--surface-base); }
+  .workspace-notifications-link, .workspace-trash-link, .workspace-search-trigger, .workspace-account-trigger, .workspace-nav-toggle, .workspace-search-close, .workspace-nav-close { display: inline-flex; align-items: center; justify-content: center; inline-size: 40px; block-size: 40px; padding: 8px; border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--color-primary); background: var(--surface-base); }
   .workspace-trash-link svg { inline-size: 22px; block-size: 22px; }
   .workspace-trash-restore-arrow { stroke: var(--success-text); stroke-width: 2.5; }
   .workspace-trash-link[aria-current="page"] { background: var(--surface-muted); }
@@ -72,10 +72,10 @@
   .workspace-nav-child-link { font-size: 13px; font-weight: 450; min-block-size: 36px; margin-inline-start: 6px; }
   .workspace-nav-child-link[aria-current="page"] { background: var(--surface-base); color: var(--interactive-text); font-weight: 700; }
   .workspace-main { min-inline-size: 0; padding: 24px; }
-  .workspace-search-control, .account-menu { position: relative; }
-  .account-menu > summary { list-style: none; }
-  .account-menu > summary::-webkit-details-marker { display: none; }
-  .account-menu-panel, .workspace-search-panel { position: absolute; inset-block-start: calc(100% + 8px); inset-inline-end: 0; inline-size: min(380px, calc(100vw - 24px)); max-block-size: calc(100dvh - 90px); overflow: auto; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-base); box-shadow: var(--shadow-card); z-index: 45; }
+  .workspace-search-control { position: relative; }
+  .workspace-account-trigger { list-style: none; }
+  .workspace-account-trigger::-webkit-details-marker { display: none; }
+  .workspace-search-panel { position: absolute; inset-block-start: calc(100% + 8px); inset-inline-end: 0; inline-size: min(380px, calc(100vw - 24px)); max-block-size: calc(100dvh - 90px); overflow: auto; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-base); box-shadow: var(--shadow-card); z-index: 45; }
   .workspace-search-panel { inset-inline-end: 72px; }
   .workspace-search-form { display: flex; gap: 6px; }
   .workspace-search-form input { inline-size: min(240px, 35vw); }
@@ -3391,7 +3391,7 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   .workspace-app-shell .brand-name { font-size: 21px; font-weight: 850; }
   .workspace-app-shell .brand-rail { background: var(--bt-workspace-accent); }
   .workspace-app-shell .workspace-header-tools { gap: 7px; }
-  .workspace-app-shell :is(.workspace-notifications-link,.workspace-trash-link,.workspace-search-trigger,.account-menu>summary,.workspace-nav-toggle) {
+  .workspace-app-shell :is(.workspace-notifications-link,.workspace-trash-link,.workspace-search-trigger,.workspace-account-trigger,.workspace-nav-toggle) {
     min-inline-size: 35px;
     inline-size: 35px;
     block-size: 35px;
@@ -3673,7 +3673,7 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
       background: var(--bt-workspace-navigation);
     }
     .workspace-app-shell :is(.workspace-nav-link,.workspace-nav-child-link) { min-block-size: 44px; }
-    .workspace-app-shell :is(.workspace-notifications-link,.workspace-trash-link,.workspace-search-trigger,.account-menu>summary,.workspace-nav-toggle) {
+    .workspace-app-shell :is(.workspace-notifications-link,.workspace-trash-link,.workspace-search-trigger,.workspace-account-trigger,.workspace-nav-toggle) {
       min-inline-size: 40px;
       inline-size: 40px;
       block-size: 40px;
