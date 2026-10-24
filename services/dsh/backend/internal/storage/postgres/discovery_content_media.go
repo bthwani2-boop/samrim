@@ -23,7 +23,7 @@ type DiscoveryContentMediaAssetRecord struct {
 }
 
 func RegisterDiscoveryContentMediaAssetPending(ctx context.Context, db *sql.DB, asset DiscoveryContentMediaAssetInput) (DiscoveryContentMediaAssetRecord, bool, error) {
-	if strings.TrimSpace(asset.ID) == "" || strings.TrimSpace(asset.IdempotencyKey) == "" || len(asset.RequestHash) != 64 || strings.TrimSpace(asset.ObjectKey) == "" || strings.TrimSpace(asset.URI) == "" || len(asset.ContentSHA256) != 64 || (asset.ContentType != "image/jpeg" && asset.ContentType != "image/png") || asset.ByteSize < 1 || asset.ByteSize > 10485760 || strings.TrimSpace(asset.RightsAttestedBy) == "" {
+	if strings.TrimSpace(asset.ID) == "" || strings.TrimSpace(asset.IdempotencyKey) == "" || len(asset.RequestHash) != 64 || strings.TrimSpace(asset.ObjectKey) == "" || strings.TrimSpace(asset.URI) == "" || len(asset.ContentSHA256) != 64 || (asset.ContentType != "image/jpeg" && asset.ContentType != "image/png" && asset.ContentType != "video/mp4") || asset.ByteSize < 1 || asset.ByteSize > 10485760 || strings.TrimSpace(asset.RightsAttestedBy) == "" {
 		return DiscoveryContentMediaAssetRecord{}, false, ErrDiscoveryContentInvalid
 	}
 	tx, err := db.BeginTx(ctx, nil)

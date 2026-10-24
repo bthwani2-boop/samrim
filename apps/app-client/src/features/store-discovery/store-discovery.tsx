@@ -6,6 +6,7 @@ import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState 
 import { AccessibilityInfo, Animated, AppState, FlatList, I18nManager, Image, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
+import { DiscoveryReelsViewer } from "./discovery-reels-viewer";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { LoopingHeroBanner } from "./looping-hero-banner";
 import { PromotionCard } from "./promotion-card";
@@ -348,6 +349,13 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const bannerContent = useMemo(() => marketing.content.filter((item) => item.kind === "BANNER" && Boolean(item.mediaUri)), [marketing.content]);
   const carouselContent = useMemo(() => marketing.content.filter((item) => item.kind === "CAROUSEL" && Boolean(item.mediaUri)), [marketing.content]);
   const shortFormContent = useMemo(() => marketing.content.filter((item) => item.kind === "SHORT_FORM" && Boolean(item.mediaUri)), [marketing.content]);
+  const videoShorts = useMemo(() => shortFormContent.filter((item) => item.mediaKind === "video"), [shortFormContent]);
+  const [selectedReelIndex, setSelectedReelIndex] = useState<number | null>(null);
+  const openShort = (item: PublicDiscoveryContentView) => {
+    const index = videoShorts.findIndex((video) => video.id === item.id);
+    if (index >= 0) { setSelectedReelIndex(index); return; }
+    openDiscoveryContent(item.id);
+  };
   const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri), [marketing.content]);
   const showHomeMarketing = !searchIsActive && !selectedVerticalID && !selectedCategoryID && !selectedShortcutID;
 
@@ -457,6 +465,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const storeRows = directoryMode && !directoryLoading ? filteredStores : [];
 
   return (
+    <>
     <FlatList
       key={`${directoryMode ? "store-directory" : "product-search"}-${webColumns}`}
       numColumns={webColumns}
@@ -500,8 +509,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={carouselContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="شرائح العروض" />
         </> : null}
         {shortFormContent.length ? <>
-          <BthwaniSectionHeader title="قصص المتاجر" />
-          <DiscoveryMediaCarousel cardWidth={Math.min(180, carouselCardWidth)} items={shortFormContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="قصص المتاجر" shortForm />
+          <BthwaniSectionHeader title="شاهد واطلب" />
+          <DiscoveryMediaCarousel cardWidth={Math.min(180, carouselCardWidth)} items={shortFormContent} styles={styles} theme={theme} onOpen={openShort} label="شاهد واطلب" shortForm />
         </> : null}
         {textContent.length ? <>
           <BthwaniSectionHeader title="مختارات لك" subtitle="محتوى منشور من بثواني" />
@@ -622,6 +631,14 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       </View>}
       style={styles.flatList}
     />
+    <DiscoveryReelsViewer
+      items={videoShorts}
+      initialIndex={selectedReelIndex ?? 0}
+      visible={selectedReelIndex !== null && isScreenActive}
+      onClose={() => setSelectedReelIndex(null)}
+      onOpen={(item) => { setSelectedReelIndex(null); openDiscoveryContent(item.id); }}
+    />
+    </>
   );
 }
 
@@ -968,9 +985,9 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
           { scale: offset.interpolate({ inputRange, outputRange: [1.045, 1, 1.045], extrapolate: "clamp" }) },
           { translateX: offset.interpolate({ inputRange, outputRange: [6, 0, -6], extrapolate: "clamp" }) },
         ] } : undefined;
-        return <Pressable accessibilityRole="button" accessibilityLabel={"عرض " + item.titleAr} accessibilityHint="يفتح وجهة صورة العرض" key={item.id + ":" + position} onPress={() => onOpen(item)}>
+        return <Pressable accessibilityRole="button" accessibilityLabel={"عرض " + item.titleAr} accessibilityHint={item.mediaKind === "video" ? "تشغيل الريل" : "يفتح وجهة المحتوى"} key={item.id + ":" + position} onPress={() => onOpen(item)}>
           <View style={[styles.mediaCard, hero && styles.heroMediaCard, shortForm && styles.shortFormCard, { width: cardWidth }, hero && { height: Math.round(cardWidth / 1.75) }]}>
-            {failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text><Text style={styles.mediaFallbackHint}>تعذر تحميل الصورة. اضغط لعرض التفاصيل.</Text></View> : <>
+            {item.mediaKind === "video" ? <View style={[styles.mediaFallback, { backgroundColor: "#171821", justifyContent: "center" }]}><Text style={{ fontSize: 32, color: "#fff" }}>▶</Text><Text style={{ color: "#fff", textAlign: "center", padding: 8 }} numberOfLines={2}>{item.titleAr}</Text></View> : failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text><Text style={styles.mediaFallbackHint}>تعذر تحميل الصورة. اضغط لعرض التفاصيل.</Text></View> : <>
               <Animated.Image accessibilityLabel={"صورة " + item.titleAr} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={[styles.mediaImage, imageMotion]} resizeMode="cover" />
               {!hero ? <View pointerEvents="none" style={styles.mediaCaption}><Text numberOfLines={1} style={styles.mediaCaptionTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text numberOfLines={1} style={styles.mediaCaptionBody}>{item.bodyAr}</Text> : null}</View> : null}
             </>}

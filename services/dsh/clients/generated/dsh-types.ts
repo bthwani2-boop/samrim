@@ -3357,6 +3357,7 @@ export type DiscoveryContentView = {
   readonly titleAr: string;
   readonly bodyAr: string;
   readonly mediaUri: string;
+  readonly mediaKind?: "image" | "video";
   readonly targetType: DiscoveryContentTargetType;
   readonly targetId?: string | null;
   readonly serviceCityId?: string | null;
@@ -3380,6 +3381,7 @@ export type PublicDiscoveryContentView = {
   readonly titleAr: string;
   readonly bodyAr: string;
   readonly mediaUri: string;
+  readonly mediaKind?: "image" | "video";
   readonly targetType: DiscoveryContentTargetType;
   readonly targetId?: string | null;
 };

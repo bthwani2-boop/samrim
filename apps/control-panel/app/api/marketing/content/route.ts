@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     if (targetType !== "INFO" && !text("targetId")) return errorResponse("INVALID_INPUT", "targetId is required for this content target", 400);
     if ((kind === "BANNER" || kind === "CAROUSEL") && (!(file instanceof File) || file.size === 0)) return errorResponse("INVALID_INPUT", "an image file is required for banner and carousel content", 400);
     if (file instanceof File && file.size > 10 * 1024 * 1024) return errorResponse("INVALID_INPUT", "image files must be 10 MiB or smaller", 400);
-    if (file instanceof File && !["image/jpeg", "image/png"].includes(file.type.toLowerCase())) return errorResponse("INVALID_INPUT", "only JPEG and PNG images are supported", 400);
+    if (file instanceof File && !["image/jpeg", "image/png", ...(kind === "SHORT_FORM" ? ["video/mp4"] : [])].includes(file.type.toLowerCase())) return errorResponse("INVALID_INPUT", "only JPEG/PNG images or SHORT_FORM MP4 videos are supported", 400);
     const forward = new FormData();
     for (const name of ["id", "kind", "titleAr", "bodyAr", "targetType", "targetId", "serviceCityId", "startsAt", "endsAt", "ordinal", "creator", "sourceDescription", "sourceUri", "rightsStatement", "rightsUri", "rightsAttested"]) {
       const value = text(name);
@@ -85,5 +85,5 @@ export async function POST(request: Request) {
     }
   }
 
-  return errorResponse("INVALID_INPUT", "discovery content must include its image file through the canonical upload", 400);
+  return errorResponse("INVALID_INPUT", "discovery content must include its media file through the canonical upload", 400);
 }

@@ -55,6 +55,13 @@ export function MarketingContentWorkspace() {
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const mediaPreviewCanvasRef = useRef<HTMLCanvasElement>(null);
   const [mediaPreviewError, setMediaPreviewError] = useState("");
+  const [localVideoURL, setLocalVideoURL] = useState("");
+  useEffect(() => {
+    if (!mediaFile || mediaFile.type.toLowerCase() !== "video/mp4") { setLocalVideoURL(""); return; }
+    const url = URL.createObjectURL(mediaFile);
+    setLocalVideoURL(url);
+    return () => URL.revokeObjectURL(url);
+  }, [mediaFile]);
   const [mediaProvenance, setMediaProvenance] = useState<MediaProvenanceInput>(emptyMediaProvenance());
   const canPreviewMedia = Boolean(mediaFile && ["image/jpeg", "image/png"].includes(mediaFile.type.toLowerCase()));
   useEffect(() => {
@@ -324,10 +331,10 @@ export function MarketingContentWorkspace() {
         const starts = new Date(contentStartsAt);
         const ends = contentEndsAt ? new Date(contentEndsAt) : null;
         if (!contentForm.titleAr.trim() || Number.isNaN(starts.getTime()) || !Number.isSafeInteger(Number(contentForm.ordinal)) || Number(contentForm.ordinal) < 0) throw new Error("أكمل عنوان المحتوى وتاريخه وترتيبه.");
-        if (!mediaFile) throw new Error("اختر صورة JPEG أو PNG للمحتوى.");
+        if (!mediaFile) throw new Error("اختر صورة أو فيديو للمحتوى.");
         if (!isMediaProvenanceInputValid(mediaProvenance)) throw new Error("أكمل بيانات مصدر الصورة وبيان الحقوق وأكّد الإذن.");
-        if (mediaFile.size > 10 * 1024 * 1024) throw new Error("حجم الصورة يجب ألا يتجاوز 10 ميجابايت.");
-        if (!["image/jpeg", "image/png"].includes(mediaFile.type.toLowerCase())) throw new Error("الصورة يجب أن تكون JPEG أو PNG.");
+        if (mediaFile.size > 10 * 1024 * 1024) throw new Error("حجم الوسيط يجب ألا يتجاوز 10 ميجابايت.");
+        if (!["image/jpeg", "image/png", ...(contentForm.kind === "SHORT_FORM" ? ["video/mp4"] : [])].includes(mediaFile.type.toLowerCase())) throw new Error("اختر صورة JPEG/PNG أو فيديو MP4 للريلز فقط.");
         if (contentForm.targetType !== "INFO" && !targetOptions.some((option) => option.id === contentForm.targetId)) throw new Error("اختر وجهة من نتائج النظام الحالية قبل إنشاء المحتوى.");
         if (ends && (Number.isNaN(ends.getTime()) || ends <= starts)) throw new Error("نهاية المحتوى يجب أن تكون بعد بدايته.");
         const media = { name: mediaFile.name, size: mediaFile.size, type: mediaFile.type.toLowerCase(), lastModified: mediaFile.lastModified, sha256: await sha256File(mediaFile) };
@@ -479,9 +486,10 @@ export function MarketingContentWorkspace() {
         <div className="workspace-form-grid">
           <label className="field-label">عنوان المحتوى<input aria-label="عنوان المحتوى" placeholder="مختارات الأسبوع" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.titleAr} onChange={(event) => setContentForm((current) => ({ ...current, titleAr: event.target.value }))} /></label>
           <label className="field-label">نص المحتوى<input aria-label="نص المحتوى" placeholder="اكتشف الجديد في مدينتك" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.bodyAr} onChange={(event) => setContentForm((current) => ({ ...current, bodyAr: event.target.value }))} /></label>
-          <label className="field-label" htmlFor="marketing-content-kind">نوع المحتوى<select id="marketing-content-kind" aria-label="نوع المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.kind} onChange={(event) => setContentForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="BANNER">بنر رئيسي</option><option value="CAROUSEL">شريحة كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
-          <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required disabled={busy || !attemptReady || Boolean(pendingCreate && mediaFile)} onChange={(event) => { setMediaFile(event.target.files?.[0] ?? null); if (!pendingCreate) setMediaProvenance(emptyMediaProvenance()); }} /></label><CatalogMediaProvenanceFields idPrefix="marketing-content-media" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={mediaProvenance} onChange={setMediaProvenance} />
-          {mediaFile ? <p className="muted" data-testid="marketing-content-file">{mediaFile.name} · {(mediaFile.size / 1024).toFixed(0)} كيلوبايت</p> : <p className="muted">JPEG أو PNG، حتى 10 ميجابايت.</p>}
+          <label className="field-label" htmlFor="marketing-content-kind">نوع المحتوى<select id="marketing-content-kind" aria-label="نوع المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.kind} onChange={(event) => setContentForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="BANNER">بنر رئيسي</option><option value="CAROUSEL">شريحة كاروسيل</option><option value="SHORT_FORM">ريلز / قصة قصيرة</option></select></label>
+          <label className="field-label" htmlFor="marketing-content-media">وسائط المحتوى<input id="marketing-content-media" aria-label="ملف وسائط المحتوى" type="file" accept={contentForm.kind === "SHORT_FORM" ? "image/jpeg,image/png,video/mp4" : "image/jpeg,image/png"} required disabled={busy || !attemptReady || Boolean(pendingCreate && mediaFile)} onChange={(event) => { setMediaFile(event.target.files?.[0] ?? null); if (!pendingCreate) setMediaProvenance(emptyMediaProvenance()); }} /></label><CatalogMediaProvenanceFields idPrefix="marketing-content-media" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={mediaProvenance} onChange={setMediaProvenance} />
+          {mediaFile ? <p className="muted" data-testid="marketing-content-file">{mediaFile.name} · {(mediaFile.size / 1024).toFixed(0)} كيلوبايت</p> : <p className="muted">JPEG أو PNG، وللريلز MP4، حتى 10 ميجابايت.</p>}
+          {localVideoURL && contentForm.kind === "SHORT_FORM" ? <figure aria-label="معاينة الفيديو قبل النشر" className="marketing-local-preview is-story" data-testid="marketing-content-video-preview"><video src={localVideoURL} controls muted playsInline preload="metadata" style={{width:"100%",maxHeight:320,borderRadius:16,background:"#090909"}} /><figcaption className="muted">معاينة محلية فقط؛ لن يظهر الفيديو للعميل قبل النشر.</figcaption></figure> : null}
           {canPreviewMedia ? <figure aria-label="معاينة صورة المحتوى قبل النشر" data-testid="marketing-content-preview" className={contentForm.kind === "SHORT_FORM" ? "marketing-local-preview is-story" : "marketing-local-preview"}>
             <div className="marketing-local-preview-visual">
               <canvas ref={mediaPreviewCanvasRef} role="img" aria-label="معاينة الصورة المختارة" width={contentForm.kind === "SHORT_FORM" ? 240 : 600} height={contentForm.kind === "SHORT_FORM" ? 280 : 240} className="marketing-local-preview-canvas" />
@@ -520,7 +528,7 @@ export function MarketingContentWorkspace() {
         <form className="registry-toolbar" noValidate onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0, 128)); setCursor(""); setCursorStack([]); }}>
           <label className="field-label" htmlFor="content-search">عنوان المحتوى<input id="content-search" aria-label="البحث في سجل المحتوى" type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
           <label className="field-label" htmlFor="content-state">الحالة<select id="content-state" value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option></select></label>
-          <label className="field-label" htmlFor="content-kind-filter">النوع<select id="content-kind-filter" value={kind} onChange={(event) => { setKind(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الأنواع</option><option value="BANNER">بنر</option><option value="CAROUSEL">كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
+          <label className="field-label" htmlFor="content-kind-filter">النوع<select id="content-kind-filter" value={kind} onChange={(event) => { setKind(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الأنواع</option><option value="BANNER">بنر</option><option value="CAROUSEL">كاروسيل</option><option value="SHORT_FORM">ريلز / قصة قصيرة</option></select></label>
           <label className="field-label" htmlFor="content-sort">الترتيب<select id="content-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="priority">أولوية العرض</option><option value="created_desc">الأحدث إنشاءً</option></select></label>
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
         </form>
@@ -530,11 +538,11 @@ export function MarketingContentWorkspace() {
           <th scope="col">الحالة</th>
           <th scope="col">الأولوية والبداية</th>
           <th scope="col">الإجراءات</th>
-        </tr></thead><tbody>{registry.items.map((item) => <tr key={item.id}><th scope="row">{item.mediaUri ? <img className="media-preview" src={item.mediaUri} alt="" loading="lazy" /> : null}{item.titleAr}</th><td>{({ BANNER: "صورة رئيسية", CAROUSEL: "شريحة صور", SHORT_FORM: "قصة قصيرة" } as const)[item.kind]} · {({ STORE: "متجر", PRODUCT: "منتج", CATEGORY: "فئة", PROMOTION: "عرض", INFO: "معلومات عامة" } as const)[item.targetType]}</td><td><MarketingStateIndicator state={item.state} /></td><td>{item.ordinal}<br /><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className="action-row"><button className="button button-quiet" type="button" disabled={analyticsLoading} onClick={() => void readAnalytics(item.id)}>{analyticsLoading && analyticsContentId === item.id ? "جارٍ قراءة التحليلات…" : "قراءة التحليلات"}</button><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishContent(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف المحتوى" : "نشر المحتوى"}</button></div></td></tr>)}</tbody></table></div>
+        </tr></thead><tbody>{registry.items.map((item) => <tr key={item.id}><th scope="row">{item.mediaUri ? (item.mediaKind === "video" ? <span className="media-preview" aria-label="فيديو" role="img">▶</span> : <img className="media-preview" src={item.mediaUri} alt="" loading="lazy" />) : null}{item.titleAr}</th><td>{({ BANNER: "صورة رئيسية", CAROUSEL: "شريحة صور", SHORT_FORM: "قصة قصيرة" } as const)[item.kind]} · {({ STORE: "متجر", PRODUCT: "منتج", CATEGORY: "فئة", PROMOTION: "عرض", INFO: "معلومات عامة" } as const)[item.targetType]}</td><td><MarketingStateIndicator state={item.state} /></td><td>{item.ordinal}<br /><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className="action-row"><button className="button button-quiet" type="button" disabled={analyticsLoading} onClick={() => void readAnalytics(item.id)}>{analyticsLoading && analyticsContentId === item.id ? "جارٍ قراءة التحليلات…" : "قراءة التحليلات"}</button><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishContent(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف المحتوى" : "نشر المحتوى"}</button></div></td></tr>)}</tbody></table></div>
         <ul className="marketing-content-mobile-list" aria-label="محتوى الاكتشاف">
           {registry.items.map((item) => <li key={item.id} className="marketing-content-mobile-item">
             <div className="marketing-content-mobile-main">
-              {item.mediaUri ? <img className="media-preview" src={item.mediaUri} alt="" loading="lazy" /> : null}
+              {item.mediaUri ? (item.mediaKind === "video" ? <span className="media-preview" aria-label="فيديو" role="img">▶</span> : <img className="media-preview" src={item.mediaUri} alt="" loading="lazy" />) : null}
               <div className="marketing-content-mobile-description">
                 <strong>{item.titleAr}</strong>
                 <span>{({ BANNER: "صورة رئيسية", CAROUSEL: "شريحة صور", SHORT_FORM: "قصة قصيرة" } as const)[item.kind]}

@@ -512,7 +512,7 @@ func (s *MarketingServer) createOperatorDiscoveryContent(w http.ResponseWriter, 
 		return
 	}
 	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "discovery content requires a canonical image file upload")
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "discovery content requires a canonical media file upload")
 		return
 	}
 	if s.media == nil {
@@ -527,7 +527,7 @@ func (s *MarketingServer) createOperatorDiscoveryContent(w http.ResponseWriter, 
 	digest := sha256Bytes(parsed.bytes)
 	objectKey, keyErr := media.KeyForMarketingUpload(input.ID, idempotency, digest, parsed.contentType)
 	if keyErr != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing image upload is invalid")
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing media upload is invalid")
 		return
 	}
 	uri := s.media.PublicURL(objectKey)
@@ -611,10 +611,20 @@ func parseMarketingContentUpload(w http.ResponseWriter, r *http.Request) (market
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
 		return marketingContentUpload{}, false
 	}
-	contentType, _, _, err := media.ValidateImageBytes(bytes)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "only valid JPEG and PNG images are accepted")
-		return marketingContentUpload{}, false
+	contentType := ""
+	if strings.EqualFold(strings.TrimSpace(r.FormValue("kind")), "SHORT_FORM") && strings.EqualFold(header.Header.Get("Content-Type"), "video/mp4") {
+		if videoErr := media.ValidateMarketingMP4Bytes(bytes); videoErr != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid MP4 video")
+			return marketingContentUpload{}, false
+		}
+		contentType = "video/mp4"
+	} else {
+		imageType, _, _, imageErr := media.ValidateImageBytes(bytes)
+		if imageErr != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "only JPEG/PNG images or SHORT_FORM MP4 videos are accepted")
+			return marketingContentUpload{}, false
+		}
+		contentType = imageType
 	}
 	startsAt, err := time.Parse(time.RFC3339, strings.TrimSpace(r.FormValue("startsAt")))
 	if err != nil {
@@ -742,11 +752,11 @@ func toPublicPromotionView(item postgres.PromotionRecord) contract.PublicPromoti
 }
 
 func toDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.DiscoveryContentView {
-	return contract.DiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, Ordinal: item.Ordinal, Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.DiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, MediaKind: item.MediaKind, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, Ordinal: item.Ordinal, Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toPublicDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.PublicDiscoveryContentView {
-	return contract.PublicDiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID}
+	return contract.PublicDiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, MediaKind: item.MediaKind, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID}
 }
 
 func intValue(value *int64) int {
