@@ -8,7 +8,7 @@ import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocalSearchParams } from "expo-router";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { onPartnerProductAction } from "../../shell/partner-product-actions";
 import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
@@ -132,6 +132,7 @@ const theme = useAppearanceTheme();
   const [panel, setPanel] = useState<"prices" | "create" | "tools" | null>(toolsView ? "tools" : null);
   useEffect(() => { setPanel(toolsView ? "tools" : null); }, [toolsView]);
   const [expandedInventoryId, setExpandedInventoryId] = useState<string | null>(null);
+  const router = useRouter();
   const { q: rawListQuery } = useLocalSearchParams<{ q?: string | string[] }>();
   const listQuery = Array.isArray(rawListQuery) ? rawListQuery[0] ?? "" : rawListQuery ?? "";
   const [listFilter, setListFilter] = useState<"all" | "popular" | "offers" | "published" | "unavailable" | "hidden">("all");
@@ -752,6 +753,7 @@ const theme = useAppearanceTheme();
           </Pressable>
         </ScrollView>
         {(listFilter === "all" || listFilter === "offers") ? <PartnerStorePromotionBanner key={storeId} storeId={storeId} serviceCityId={serviceCityId} canManage={canManagePromotions} offersOnly={listFilter === "offers"} /> : null}
+        {listFilter === "popular" ? <Pressable accessibilityRole="button" accessibilityLabel="عرض تحليل أداء المنتجات" onPress={() => router.push("/insights?returnTo=products" as Href)} style={{ alignSelf: "flex-start", paddingVertical: 7 }}><Text style={styles.filterText}>عرض تحليل المنتجات ←</Text></Pressable> : null}
         {listFilter === "popular" && popularIDs === null ? <ActivityIndicator color={theme.brandAction} /> : null}
         {listFilter === "popular" && popularError ? <Text style={styles.muted}>تعذر قراءة ترتيب الطلبات لآخر 30 يومًا.</Text> : null}
       </> : null}

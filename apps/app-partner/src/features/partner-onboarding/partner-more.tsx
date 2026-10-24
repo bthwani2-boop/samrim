@@ -1,10 +1,10 @@
 import { type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, useAppearanceTheme, type MobileIconName } from "@bthwani/design-system/native";
-import type { PartnerStoreOperationalAvailabilityResponse } from "@bthwani/dsh";
+import type { PartnerStoreOperationalAvailabilityResponse, StoreImagesResponse } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { readOwnStoreOperationalAvailability } from "./store-readback-client";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { readOwnStoreOperationalAvailability, readOwnStoreImages } from "./store-readback-client";
 import { onStoreAvailabilityChanged } from "./store-availability-events";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
@@ -19,9 +19,21 @@ export function PartnerMore() {
   const { selectedStore, stores, state, reload } = usePartnerStoreScope();
   const [availability, setAvailability] = useState<PartnerStoreOperationalAvailabilityResponse | null>(null);
   const [availabilityError, setAvailabilityError] = useState(false);
+  const [storeImages, setStoreImages] = useState<StoreImagesResponse | null>(null);
+  const [coverFailed, setCoverFailed] = useState(false);
+  const [logoFailed, setLogoFailed] = useState(false);
   const can = (permission: "store_operations" | "promotions") => Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes(permission)));
   const canOperate = can("store_operations");
   const storeID = canOperate ? selectedStore?.id : undefined;
+  const selectedID = selectedStore?.id;
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setStoreImages(null);
+    setCoverFailed(false);
+    setLogoFailed(false);
+    if (selectedID) void readOwnStoreImages(selectedID).then((value) => { if (active && value.storeId === selectedID) setStoreImages(value); }).catch(() => { if (active) setStoreImages(null); });
+    return () => { active = false; };
+  }, [selectedID]));
   useFocusEffect(useCallback(() => {
     let active = true;
     setAvailability(null);
@@ -38,11 +50,11 @@ export function PartnerMore() {
   const stopped = availability?.availability.paused ?? false;
   const statusTitle = availabilityError ? "تعذر قراءة حالة المتجر" : !availability ? "جارٍ التحقق من الحالة" : stopped ? "استقبال الطلبات متوقف" : orderable ? "المتجر مفتوح" : "المتجر مغلق";
   const actions: MenuItem[] = [
+    ...(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("catalog")) ? [{ label: "أدوات الكتالوج", icon: "cart" as const, description: "إدارة الفئات والإضافات", href: "/products?panel=tools" as Href }] : []),
     ...(canOperate ? [{ label: "التشغيل", icon: "store" as const, description: "الجاهزية والجدول وطرق التسليم", destination: "operations" as const }] : []),
     ...(can("promotions") ? [{ label: "العروض", icon: "offers" as const, description: "إنشاء ومتابعة العروض", destination: "promotions" as const }] : []),
     ...(selectedStore?.owned ? [
       { label: "الفريق", icon: "account" as const, description: "الموظفون وأذونات الوصول", destination: "team" as const },
-      { label: "ملف المتجر", icon: "edit" as const, description: "صور المتجر والعقود", destination: "settings" as const },
     ] : []),
     ...(state.kind === "ready" && !stores.length ? [{ label: "حالة الانضمام", icon: "store" as const, description: "متابعة طلب الشراكة", href: "/onboarding" as Href }] : []),
     { label: "الأداء", icon: "orders", description: "مؤشرات المتجر وفرص النمو", href: "/insights" as Href },
@@ -57,16 +69,29 @@ export function PartnerMore() {
     {stores.length > 1 ? <PartnerStoreScopeSelector /> : null}
     {state.kind === "error" ? <View style={styles.warning}><Text style={styles.muted}>تعذر تحميل المتاجر</Text><BthwaniButton label="إعادة المحاولة" variant="secondary" onPress={() => void reload()} /></View> : null}
     {selectedStore && !canOperate && !can("promotions") ? <Text style={styles.muted}>لا تتوفر صلاحية إدارة هذا المتجر. اختر متجرًا آخر عند الحاجة.</Text> : null}
-    {canOperate ? <View style={styles.statusCard} accessibilityLabel="حالة المتجر">
-      <View style={styles.statusCopy}>
-        <View style={styles.statusHeading}><View style={[styles.dot, { backgroundColor: orderable && !stopped ? theme.success : theme.warning }]} /><Text style={styles.statusTitle}>{statusTitle}</Text></View>
-
+    {selectedStore ? <Pressable accessibilityRole="button" accessibilityLabel={"ملف المتجر " + selectedStore.name + "، عرض الشعار والغلاف والبيانات"}
+      onPress={() => router.push({ pathname: "/store", params: { section: "settings", returnTo: "more" } } as Href)}
+      style={styles.storeHero}>
+      <View style={styles.heroCoverArea}>
+        {storeImages?.storeCoverImage?.uri && !coverFailed ? <Image source={{ uri: storeImages.storeCoverImage.uri }} onError={() => setCoverFailed(true)} resizeMode="cover" style={styles.heroCover} /> : <View style={styles.heroFallback}><BthwaniIcon name="store" color={theme.brandAction} size={36}/></View>}
       </View>
-      <Pressable accessibilityRole="button" accessibilityLabel="تغيير ساعات العمل واستقبال الطلبات" onPress={() => navigate(operationalItem)} style={styles.statusAction}>
-        <BthwaniIcon name="store" color={theme.onAction} size={18} />
-        <Text style={styles.statusActionLabel}>إدارة التشغيل</Text>
-      </Pressable>
-    </View> : null}
+      <View style={styles.heroFooter}>
+        <View style={[styles.heroLogo, { borderColor: theme.borderColor }]}>
+          {storeImages?.storeProfileImage?.uri && !logoFailed ? <Image source={{ uri: storeImages.storeProfileImage.uri }} onError={() => setLogoFailed(true)} resizeMode="cover" style={styles.heroLogoImage} /> : <BthwaniIcon name="store" color={theme.brandAction} size={27} />}
+        </View>
+        <View style={styles.heroText}>
+          <Text numberOfLines={1} style={styles.heroName}>{selectedStore.name}</Text>
+          <View style={styles.heroStatus}>
+            {canOperate ? <View style={[styles.dot, { backgroundColor: orderable && !stopped ? theme.success : theme.warning }]} /> : null}
+            <Text numberOfLines={1} style={styles.heroSubtitle}>{canOperate ? statusTitle : "صور وبيانات المتجر"}</Text>
+          </View>
+        </View>
+        <View style={styles.heroEdit}>
+          <BthwaniIcon name="edit" size={16} color={theme.brandAction}/>
+          <Text style={styles.heroEditLabel}>ملف المتجر</Text>
+        </View>
+      </View>
+    </Pressable> : null}
     <View style={styles.grid}>
       {actions.map((item, index) => <Pressable key={item.label} accessibilityRole="button" accessibilityLabel={item.label} onPress={() => navigate(item)} style={({ pressed }) => [styles.menuCard, pressed && styles.menuPressed]}>
         <View style={styles.menuTop}><View style={[styles.menuIcon, { backgroundColor: index % 3 === 0 ? theme.actionSoft : theme.surfaceRaised }]}><BthwaniIcon name={item.icon} size={20} color={index % 3 === 0 ? theme.brandAction : theme.color} /></View><Text numberOfLines={1} style={styles.menuTitle}>{item.label}</Text></View>
@@ -76,7 +101,20 @@ export function PartnerMore() {
 }
 
 function createStyles(p: ReturnType<typeof resolveTheme>) { return StyleSheet.create({
-  screen: { paddingTop: 10, paddingBottom: 12, gap: 10 },
+  screen: { paddingTop: 5, paddingBottom: 12, gap: 10 },
+  storeHero: { overflow: "hidden", borderWidth: 1, borderColor: p.borderColor, borderRadius: 14, backgroundColor: p.surface },
+  heroCoverArea: { height: 106, overflow: "hidden", backgroundColor: p.surfaceRaised },
+  heroFallback: { flex: 1, justifyContent: "center", alignItems: "center" },
+  heroCover: { ...StyleSheet.absoluteFill, width: "100%", height: "100%" },
+  heroFooter: { flexDirection: "row", alignItems: "center", gap: 10, padding: 10, minHeight: 77 },
+  heroLogo: { width: 54, height: 54, borderRadius: 11, borderWidth: 1, backgroundColor: p.surface, justifyContent: "center", alignItems: "center", overflow: "hidden" },
+  heroLogoImage: { width: "100%", height: "100%" },
+  heroText: { flex: 1, minWidth: 0, gap: 5 },
+  heroStatus: { flexDirection: "row", alignItems: "center", gap: 6 },
+  heroName: { ...typography.titleSm, fontWeight: "800", color: p.color },
+  heroSubtitle: { ...typography.caption, color: p.colorMuted },
+  heroEdit: { padding: 7, borderRadius: 10, alignItems: "center", gap: 4 },
+  heroEditLabel: { ...typography.caption, color: p.brandAction, fontWeight: "700" },
   statusCard: { backgroundColor: p.actionSoft, borderColor: p.brandAction, borderWidth: 1, borderRadius: 15, padding: 10, flexDirection: "row", alignItems: "center", gap: 8, minHeight: 72 },
   statusCopy: { flex: 1, alignItems: "flex-start" },
   statusHeading: { flexDirection: "row", gap: 7, alignItems: "center" },
