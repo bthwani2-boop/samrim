@@ -39,6 +39,7 @@ func (s *NotificationServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /dsh/notifications/devices/{installationId}", s.unregisterDevice)
 	mux.HandleFunc("GET /dsh/notifications", s.list)
 	mux.HandleFunc("POST /dsh/notifications/{notificationId}/read", s.markRead)
+	s.registerClientShares(mux)
 }
 
 func (s *NotificationServer) DispatchPushBatch(ctx context.Context) (int, error) {

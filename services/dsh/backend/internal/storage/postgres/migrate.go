@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 160
+const SchemaVersion = 162
 
 type MigrationRecord struct {
 	Version int
@@ -26,6 +26,8 @@ type MigrationRecord struct {
 }
 
 var requiredTables = []schemaRelationExpectation{
+	{name: "dsh.client_content_shares", columns: []string{"id", "sender_actor_id", "recipient_actor_id", "content_kind", "content_id", "message_code", "idempotency_key", "request_hash", "created_at", "read_at"}, constraints: []string{"client_content_shares_pkey", "client_content_shares_sender_idempotency_uq", "client_content_shares_distinct_actors_chk"}, indexes: []string{"client_content_shares_recipient_idx", "client_content_shares_sender_rate_idx"}},
+	{name: "dsh.client_share_blocks", columns: []string{"recipient_actor_id", "sender_actor_id", "created_at"}, constraints: []string{"client_share_blocks_pkey", "client_share_blocks_distinct_chk"}},
 	{name: "dsh.captain_delivery_arrivals", columns: []string{"id", "assignment_id", "order_id", "captain_actor_id", "arrived_at"}, constraints: []string{"captain_delivery_arrivals_pkey", "captain_delivery_arrivals_assignment_id_key"}, indexes: []string{"captain_delivery_arrivals_order_idx"}},
 	{name: "dsh.notification_push_devices", columns: []string{"installation_id", "actor_id", "actor_role", "expo_push_token", "tone", "registered_at", "updated_at", "enabled"}, constraints: []string{"notification_push_devices_pkey"}, indexes: []string{"notification_push_token_uq", "notification_push_actor_idx"}},
 	{name: "dsh.notification_push_outbox", columns: []string{"id", "installation_id", "notification_id", "actor_id", "actor_role", "order_id", "kind", "next_attempt_at", "locked_until", "attempts", "state", "sent_at", "ticket_id", "next_receipt_at", "receipt_checked_at", "receipt_status"}, constraints: []string{"notification_push_outbox_pkey", "push_once_per_installation_event"}, indexes: []string{"push_outbox_due_idx", "push_receipt_due_idx"}},

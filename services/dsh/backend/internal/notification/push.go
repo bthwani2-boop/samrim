@@ -123,6 +123,8 @@ func pushCopy(kind string) (string, string) {
 		return "عرض توصيل جديد", "لديك عرض توصيل يحتاج إلى رد"
 	case "CAPTAIN_ARRIVED":
 		return "وصل الكابتن", "الكابتن عند موقع التسليم"
+	case "CLIENT_SHARE":
+		return "مشاركة من شخص تعرفه", "وصلتك مشاركة داخل بثواني. افتح الإشعارات لمشاهدتها"
 	default:
 		return "تنبيه بثواني", "يوجد تحديث يحتاج انتباهك"
 	}
@@ -158,6 +160,12 @@ func (s *Service) enqueuePush(ctx context.Context) error {
       JOIN dsh.captain_assignments assignment ON assignment.id=arrival.assignment_id
       WHERE assignment.state='in_custody'
         AND arrival.arrived_at > clock_timestamp()-interval '24 hours'
+      UNION ALL
+      SELECT 'share:' || share.id,''::text,'CLIENT_SHARE',
+        share.recipient_actor_id,'client',share.created_at
+      FROM dsh.client_content_shares share
+      WHERE share.created_at > clock_timestamp()-interval '24 hours'
+        AND NOT EXISTS (SELECT 1 FROM dsh.client_share_blocks block WHERE block.recipient_actor_id=share.recipient_actor_id AND block.sender_actor_id=share.sender_actor_id)
     ) events
     JOIN dsh.notification_push_devices devices
       ON devices.actor_id=events.actor_id AND devices.actor_role=events.role AND devices.enabled
@@ -223,6 +231,13 @@ func (s *Service) pushStillActionable(ctx context.Context, item pushItem) (bool,
             JOIN dsh.captain_assignments assignment ON assignment.id=a.assignment_id
             WHERE 'arrival:' || a.id=$1 AND orders.client_actor_id=$2
               AND assignment.state='in_custody')`,
+			item.NotificationID, item.ActorID).Scan(&active)
+		return active, err
+	case "CLIENT_SHARE":
+		err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.client_content_shares share
+            WHERE 'share:' || share.id=$1 AND share.recipient_actor_id=$2
+              AND share.read_at IS NULL AND NOT EXISTS
+                (SELECT 1 FROM dsh.client_share_blocks block WHERE block.recipient_actor_id=share.recipient_actor_id AND block.sender_actor_id=share.sender_actor_id))`,
 			item.NotificationID, item.ActorID).Scan(&active)
 		return active, err
 	}
