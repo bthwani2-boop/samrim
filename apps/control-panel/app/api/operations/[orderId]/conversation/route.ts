@@ -38,9 +38,19 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
   const auth = await authorized();
   if (!auth) return failure("FORBIDDEN", "operator operations access required", 403);
   const { orderId } = await context.params;
-  const body = await request.json().catch(() => null) as { body?: unknown; recipientRoles?: unknown } | null;
+  const body = await request.json().catch(() => null) as { body?: unknown; recipientRoles?: unknown; mediaKind?: unknown; mediaContentType?: unknown; mediaBase64?: unknown } | null;
   const message = typeof body?.body === "string" ? body.body.trim() : "";
   const recipients = body?.recipientRoles;
+  const kind=body?.mediaKind;
+  const contentType=body?.mediaContentType;
+  const mediaBase64=body?.mediaBase64;
+  const hasMedia=kind!==undefined||contentType!==undefined||mediaBase64!==undefined;
+  const mimeAllowed=kind==="image"&&["image/jpeg","image/png","image/webp"].includes(String(contentType))
+    ||kind==="audio"&&["audio/mp4","audio/m4a","audio/3gpp","audio/webm","audio/aac"].includes(String(contentType));
+  if(hasMedia&&(!mimeAllowed||typeof mediaBase64!=="string"||mediaBase64.length<16
+    ||mediaBase64.length>4*1024*1024+64||!/^[a-zA-Z0-9+/]*={0,2}$/.test(mediaBase64))){
+    return failure("INVALID_INPUT","private media kind, encoding or size invalid",400);
+  }
   const allowed = ["client", "partner", "captain", "operator"];
   if (!orderId || orderId.length > 128 || Array.from(message).length < 1 || Array.from(message).length > 2000 ||
       !Array.isArray(recipients) || recipients.length < 1 || recipients.length > 4 ||
@@ -52,7 +62,7 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
   if (key.length < 8 || key.length > 128) return failure("INVALID_INPUT", "idempotency key required", 400);
   try {
     const response = await requestDshJson("POST", `/dsh/orders/${encodeURIComponent(orderId)}/conversation/messages`,
-      { body: message, recipientRoles: recipients },
+      { body: message, recipientRoles: recipients, ...(hasMedia ? {mediaKind:kind,mediaContentType:contentType,mediaBase64} : {}) },
       { "Idempotency-Key": key, "X-Correlation-ID": request.headers.get("X-Correlation-ID")?.trim() || randomUUID() }, auth.token);
     return NextResponse.json(response.payload, { status: response.status, headers: noStore });
   } catch (error) {

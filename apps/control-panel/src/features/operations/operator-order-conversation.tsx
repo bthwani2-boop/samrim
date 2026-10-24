@@ -4,6 +4,7 @@ import type { OrderConversationResponse } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch } from "../../session/identity-fetch";
 import { OperatorOrderMedia } from "./operator-order-media";
+import { OperatorOrderChatAttachments } from "./operator-order-chat-attachments";
 
 const roles = [
   { key: "client", label: "العميل" },
@@ -126,6 +127,7 @@ export function OperatorOrderConversation({ orderId }: Readonly<{ orderId: strin
           <button type="button" className="button button-secondary" disabled={busy||Boolean(pending.current)}
             onClick={()=>setRecipients(available.map(item=>item.key))}>الجميع</button>
         </div>:null}
+        <OperatorOrderChatAttachments orderId={orderId} recipients={recipients} disabled={busy} onSent={()=>void load()}/>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <textarea className="input" aria-label="كتابة رسالة" placeholder="اكتب رسالة…" maxLength={2000}
             disabled={busy||Boolean(pending.current)} value={body} onChange={event=>setBody(event.target.value)}
