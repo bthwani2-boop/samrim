@@ -12,13 +12,12 @@ import { operationalAge } from "./operational-age";
 import { operationalStageElapsed, operationalStageAttention } from "./operational-stage-elapsed";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 import { OrderOperationDetail } from "./order-operation-detail";
-import { CancellationRequestInbox } from "./cancellation-request-inbox";
-import { CustomerContactQueue } from "./customer-contact-queue";
 import { CommandFrame, CommandSectionTabs } from "../shared/command-surface";
 import { OperationsCommandView } from "./operations-command-view";
-import { OperatorCaseInbox } from "./operator-case-inbox";
+import { OperationsInterventionCenter } from "./operations-intervention-center";
+import { OperationsDispatchOverview } from "./operations-dispatch-overview";
+import { OperationsCoverageWorkspace } from "./operations-coverage-workspace";
 import { CaptainAdmissionPanel } from "../captain/captain-admission-panel";
-import { OpportunityZones } from "./opportunity-zones";
 import { OperationsPerformance } from "./operations-performance";
 import "./operations-unified.css";
 
@@ -137,7 +136,6 @@ export function OperationsWorkspace() {
   const [error, setError] = useState("");
   const [errorStatus, setErrorStatus] = useState(0);
   const [selectedOrderId, setSelectedOrderId] = useState((params.get("order") ?? "").slice(0,160));
-  const [secondaryInbox, setSecondaryInbox] = useState<"contacts" | "cancellations" | null>(null);
   const [visitedCaptains, setVisitedCaptains] = useState(view === "captains");
   const tabScroll = useRef<Partial<Record<View, number>>>({});
   useEffect(() => { if (view === "captains") setVisitedCaptains(true); }, [view]);
@@ -283,18 +281,14 @@ export function OperationsWorkspace() {
           isAttention={item => operationNeedsReview(item, ageClock || Date.now())}
           onOpen={openOrder} onView={next => navigate({view: next === "delivered" ? "all" : next, state:next === "delivered" ? "DELIVERED" : ""})} loading={loading} />
         : view === "captains" ? null
-        : view === "coverage" ? <div className="ops-coverage-panel"><OpportunityZones variant="full" /></div>
+        : view === "coverage" ? <OperationsCoverageWorkspace summary={summary}
+          onDispatch={() => navigate({view:"dispatch",state:""})} onCaptains={() => navigate({view:"captains",state:""})} />
         : view === "reports" ? <OperationsPerformance summary={summary} operations={operations} loading={loading} />
+        : view === "attention" ? <OperationsInterventionCenter onOpenOrder={openOrder} refreshVersion={cancellationInboxVersion} />
         : <>
-      {view === "attention" ? <section className="ops-intervention-priority" data-testid="operations-interventions">
-        <OperatorCaseInbox onOpenOrder={openOrder} refreshVersion={cancellationInboxVersion} />
-        <div className="ops-intervention-tools">
-          <button type="button" className={secondaryInbox==="contacts"?"is-current":""} aria-expanded={secondaryInbox==="contacts"} onClick={()=>setSecondaryInbox(current=>current==="contacts"?null:"contacts")}>التحقق من العملاء</button>
-          <button type="button" className={secondaryInbox==="cancellations"?"is-current":""} aria-expanded={secondaryInbox==="cancellations"} onClick={()=>setSecondaryInbox(current=>current==="cancellations"?null:"cancellations")}>طلبات الإلغاء</button>
-        </div>
-        {secondaryInbox === "contacts" ? <CustomerContactQueue onOpenOrder={openOrder} refreshVersion={cancellationInboxVersion} /> : null}
-        {secondaryInbox === "cancellations" ? <CancellationRequestInbox onOpenOrder={openOrder} refreshVersion={cancellationInboxVersion} /> : null}
-      </section> : null}
+      {view === "dispatch" ? <OperationsDispatchOverview state={state} summary={summary}
+        onState={next => navigate({view:"dispatch",state:next})}
+        onView={next => navigate({view:next,state:""})} /> : null}
       <div className="ops-tools">
         <search className="ops-search" aria-label="البحث في الطلبات">
           <form noValidate onSubmit={(event) => {

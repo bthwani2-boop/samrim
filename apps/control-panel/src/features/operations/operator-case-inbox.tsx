@@ -58,6 +58,7 @@ export function OperatorCaseInbox({onOpenOrder,refreshVersion}:Readonly<{
    }finally{if(current===generation.current)setLoading(false);}
  },[read]);
  useEffect(()=>{
+   if (refreshVersion < 0) return;
    setItems([]);setCursor("");setError("");
    void reload();
    return ()=>{generation.current+=1;};
@@ -82,10 +83,9 @@ export function OperatorCaseInbox({onOpenOrder,refreshVersion}:Readonly<{
    }catch{if(current===generation.current)setError("تعذر تحميل المزيد من الحالات.");}
    finally{setBusy(false);}
  }
- if(!loading&&!error&&items.length===0&&scope==="all")return null;
- return <section className="order-detail-panel" aria-labelledby="ops-case-inbox-title">
+ return <section className="order-detail-panel ops-case-queue" aria-labelledby="ops-case-inbox-title">
    <div className="action-row">
-     <h2 id="ops-case-inbox-title">التعثر الذي يحتاج متابعة</h2>
+     <div><h2 id="ops-case-inbox-title">قائمة حالات التعثر</h2><p className="ops-case-count">{items.length} حالة ضمن السجلات المحمّلة · {items.filter(item=>!item.ownerActorId).length} دون مسؤول{cursor?" · توجد صفحة تالية":""}</p></div>
      <label>المسؤولية
        <select className="input" value={scope} disabled={busy} onChange={e=>setScope(e.target.value as Scope)}>
          <option value="all">الحالات المفتوحة</option>
@@ -100,8 +100,8 @@ export function OperatorCaseInbox({onOpenOrder,refreshVersion}:Readonly<{
    </div>:null}
    {!loading&&!error&&items.length===0?<p className="muted">لا توجد حالات بهذا التصنيف.</p>:null}
    {items.length>0?<ul className="order-detail-list">
-     {items.map(item=><li key={item.id}>
-       <div>
+     {items.map(item=><li key={item.id} className={"ops-case-row" + (item.priority==="URGENT"?" is-urgent":"")}>
+       <div className="ops-case-information">
          <strong>{item.priority==="URGENT"?"عاجل · ":""}{labels[item.reason]??"تعثر"} · {item.state==="ACTION_REQUIRED"?"يتطلب إجراءً":item.state==="IN_PROGRESS"?"قيد المعالجة":"ينتظر الاستلام"}</strong>
          <p>{item.nextAction}</p>
          <p className="muted">طلب <span dir="ltr">{item.orderId.slice(-8)}</span> · {item.ownerActorId?"المسؤول: "+item.ownerActorId:"دون مسؤول"}{clock!==null?" · "+formatOperatorCaseAge(item.openedAt,clock):""}</p>
