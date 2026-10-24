@@ -281,7 +281,7 @@ export function PoliciesCenterWorkspace() {
         <input type="search" value={query} placeholder="بحث سريع عن سياسة…" autoComplete="off"
           onChange={(event) => setQuery(event.target.value)} />
       </label> : null}
-      {identity.permissions?.includes("platform_policies") ? <button type="button" className="button button-primary" onClick={(event) => openPolicyManagement(event.currentTarget)}>إدارة سياسة</button> : null}
+      {identity.permissions?.includes("platform_policies") ? <><a href="/policies/stage-sla" className="button">مهل مراحل الطلب</a><button type="button" className="button button-primary" onClick={(event) => openPolicyManagement(event.currentTarget)}>إدارة سياسة</button></> : null}
     </div>
     <ul className="policy-rich-list" aria-label="سجل سياسات المنصة">
       {visible.map((item) => {

@@ -686,6 +686,9 @@ paths:
   /dsh/notifications/{notificationId}/read:
     $ref: "./paths/notifications.yaml#/paths/~1dsh~1notifications~1{notificationId}~1read"
 
+  /dsh/operator/stage-sla-policies:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1stage-sla-policies"
+
   /dsh/operator/operations:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations"
 

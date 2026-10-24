@@ -56,6 +56,8 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/cancellation-requests/{requestId}/decline", s.declineOperatorCancellationRequest)
 	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/cancel", s.cancelForOperator)
 	mux.HandleFunc("GET /dsh/operator/operations", s.listOperatorOperations)
+	mux.HandleFunc("GET /dsh/operator/stage-sla-policies", s.readOperatorStageSLAPolicies)
+	mux.HandleFunc("POST /dsh/operator/stage-sla-policies", s.createOperatorStageSLAPolicy)
 	mux.HandleFunc("GET /dsh/operator/customer-contact-queue", s.listOperatorCustomerContactQueue)
 	mux.HandleFunc("GET /dsh/operator/operational-cases", s.listOperatorCaseInbox)
 	mux.HandleFunc("GET /dsh/operator/home-analytics", s.readOperatorHomeAnalytics)
