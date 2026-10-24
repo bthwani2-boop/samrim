@@ -27,6 +27,7 @@ func TestMarketingCampaignOperatorEndpointsRejectUnauthenticatedRequest(t *testi
 		{"POST", "/dsh/operator/marketing/campaigns"},
 		{"GET", "/dsh/operator/marketing/campaigns/test-campaign/details"},
 		{"POST", "/dsh/operator/marketing/campaigns/test-campaign/state"},
+		{"POST", "/dsh/operator/marketing/campaigns/test-campaign/elements"},
 	} {
 		req := httptest.NewRequest(route.method, route.path, nil)
 		recorder := httptest.NewRecorder()

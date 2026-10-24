@@ -61,6 +61,7 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/marketing/campaigns", s.createOperatorMarketingCampaign)
 	mux.HandleFunc("GET /dsh/operator/marketing/campaigns/{campaignId}/details", s.readOperatorMarketingCampaign)
 	mux.HandleFunc("POST /dsh/operator/marketing/campaigns/{campaignId}/state", s.setOperatorMarketingCampaignState)
+	mux.HandleFunc("POST /dsh/operator/marketing/campaigns/{campaignId}/elements", s.linkOperatorMarketingCampaignElement)
 	mux.HandleFunc("GET /dsh/operator/promotions", s.listOperatorPromotions)
 	mux.HandleFunc("GET /dsh/operator/promotions/{promotionId}/partner-decisions", s.listOperatorPartnerDecisions)
 	mux.HandleFunc("POST /dsh/operator/promotions", s.createOperatorPromotion)

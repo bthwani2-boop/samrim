@@ -107,3 +107,41 @@ func (s *MarketingServer) createOperatorMarketingCampaign(w http.ResponseWriter,
 		IdempotentReplay bool                             `json:"idempotentReplay"`
 	}{item, replayed})
 }
+
+// Membership is owned by the campaign, protected by the caller's expected
+// version and by unique indexes preventing ownership by a second campaign.
+func (s *MarketingServer) linkOperatorMarketingCampaignElement(w http.ResponseWriter, r *http.Request) {
+	if !s.operatorAuthorized(w, r) {
+		return
+	}
+	_, _, _, expected, ok := requiredVersionedCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Kind       string `json:"kind"`
+		ResourceID string `json:"resourceId"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	var item postgres.MarketingCampaignRecord
+	var err error
+	switch strings.ToUpper(strings.TrimSpace(body.Kind)) {
+	case "PROMOTION":
+		item, err = postgres.LinkMarketingCampaignPromotion(r.Context(), s.db, r.PathValue("campaignId"), body.ResourceID, expected)
+	case "CONTENT":
+		item, err = postgres.LinkMarketingCampaignContent(r.Context(), s.db, r.PathValue("campaignId"), body.ResourceID, expected)
+	default:
+		writeMarketingError(w, postgres.ErrMarketingCampaignInvalid)
+		return
+	}
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, struct {
+		Campaign postgres.MarketingCampaignRecord `json:"campaign"`
+	}{item})
+}
