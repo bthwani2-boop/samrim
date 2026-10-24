@@ -48,3 +48,27 @@ test("only one reel plays and navigation can restore position", () => {
   assert.ok(viewer.includes("resume?.id === item.id ? resume.seconds : 0"));
   assert.ok(!viewer.includes("StoreProductSheet"));
 });
+
+test("reels use the real poster, subtle gradients and one compact destination", () => {
+  assert.match(viewer, /item\.posterUri/);
+  assert.match(viewer, /statusChange/);
+  assert.match(viewer, /ActivityIndicator/);
+  assert.match(viewer, /LinearGradient/);
+  assert.match(viewer, /styles\.destination/);
+  assert.match(viewer, /destinationThumbnail/);
+  assert.doesNotMatch(viewer, /styles\.counter|اختبار مؤقت لتشغيل الريلز/);
+  assert.doesNotMatch(viewer, /addCatalogOfferToCart|StoreProductSheet/);
+});
+
+test("reels keep a single playing video with explicit audio, press-to-pause and background protection", () => {
+  assert.match(viewer, /created\.muted = true/);
+  assert.match(viewer, /player\.muted = muted/);
+  assert.match(viewer, /onToggleSound/);
+  assert.match(viewer, /onLongPress/);
+  assert.match(viewer, /onPressOut/);
+  assert.match(viewer, /AppState\.addEventListener/);
+  assert.match(viewer, /active=\{foreground && index === position\}/);
+  assert.match(viewer, /initialNumToRender=\{2\}/);
+  assert.match(viewer, /windowSize=\{3\}/);
+  assert.match(viewer, /bottomInset=\{insets\.bottom\}/);
+});
