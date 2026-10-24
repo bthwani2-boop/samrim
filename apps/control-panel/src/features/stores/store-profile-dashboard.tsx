@@ -17,6 +17,7 @@ import { StoreOperationsPreview } from "./store-operations-preview";
 import { StoreProfileTabs } from "./store-profile-tabs";
 
 type Store = StorePublicationResponse["store"];
+type OperationalReadback = { availability: { storeId: string }; orderabilityByMode: ReadonlyArray<{ state: string }> };
 type ProfileProps = Readonly<{
   store: Store;
   partner: Readonly<{ partner: ActorRoleView; joiningCase: JoiningCaseView | null }> | null;
@@ -63,6 +64,7 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
 
   const [activeTab, setActiveTab] = useState("overview");
   const [orderSummary, setOrderSummary] = useState<OperatorOperationsSummary | null>(null);
+  const [operationalReadback, setOperationalReadback] = useState<OperationalReadback | "unavailable" | null>(null);
   const [imageRole, setImageRole] = useState<"primary" | "cover" | null>(null);
   const [imageNotice, setImageNotice] = useState("");
   const imageDialog = useRef<HTMLDialogElement>(null);
@@ -77,6 +79,31 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
       imageTrigger.current?.focus();
     }
   }, [imageRole]);
+  useEffect(() => {
+    if (!canViewOperations) return;
+    let active = true;
+    setOperationalReadback(null);
+    const check = () => {
+      void fetch("/api/stores/" + encodeURIComponent(store.id) + "/operational-availability", { cache: "no-store" })
+        .then(async (response) => {
+          if (!response.ok) throw new Error("Operational availability unavailable");
+          const value = await response.json() as OperationalReadback;
+          if (value.availability?.storeId !== store.id || !Array.isArray(value.orderabilityByMode)) throw new Error("Invalid store readback");
+          if (active) setOperationalReadback(value);
+        })
+        .catch(() => { if (active) setOperationalReadback("unavailable"); });
+    };
+    check();
+    const timer = window.setInterval(check, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [canViewOperations, store.id]);
+  const visibleModes = operationalReadback && operationalReadback !== "unavailable" ? operationalReadback.orderabilityByMode : [];
+  const openModeCount = visibleModes.filter((mode) => mode.state === "OPEN_FOR_ORDERS").length;
+  const operationalLabel = store.publicationState !== "published" ? "غير منشور"
+    : operationalReadback === "unavailable" ? "حالة التشغيل غير متاحة"
+    : !operationalReadback ? "التحقق من التشغيل…"
+    : openModeCount === 0 ? "مغلق"
+    : openModeCount < visibleModes.length ? "مفتوح جزئيًا" : "مفتوح";
   const recordView = useAdaptiveRecordView();
   const openEditor = () => { setActiveTab("identity"); openManagement(); };
   const selectTab = (tab: string) => {
@@ -101,7 +128,7 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
             <span className="store-profile-eyebrow">ملف المتجر · الشركاء والمتاجر</span>
             <h2>{store.name}</h2>
             <p>{[store.primaryVerticalName, store.serviceCityName].filter(Boolean).join(" · ") || "سجل متجر"}</p>
-            <div className="store-profile-identity-meta"><span className="store-sheet-state" data-status={store.publicationState}>{publication} <PublicationIndicator state={store.publicationState} /></span></div>
+            <div className="store-profile-identity-meta"><span className="store-sheet-state" data-status={store.publicationState}>{publication} <PublicationIndicator state={store.publicationState} /></span>{canViewOperations ? <button type="button" className="store-profile-operating-state" data-state={openModeCount > 0 && store.publicationState === "published" ? "open" : "closed"} onClick={() => selectTab("operations")} aria-label={"حالة استقبال الطلبات: " + operationalLabel + "، فتح التشغيل"}>{operationalLabel}</button> : null}</div>
           </div>
         </div>
         <div className="store-profile-hero-info">
