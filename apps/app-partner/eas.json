@@ -29,7 +29,7 @@
       "android": { "image": "latest", "buildType": "apk" }
     },
     "ios-simulator": {
-      "extends": "internal",
+      "extends": "development",
       "ios": {
         "simulator": true,
         "image": "latest"
