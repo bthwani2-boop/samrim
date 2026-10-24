@@ -30,7 +30,7 @@ function ReelSlide({ item, active, height, width, onOpen }: {
     "تعرف على المزيد";
   return (
     <View style={[styles.slide, { height, width }]}>
-      <VideoView player={player} style={StyleSheet.absoluteFillObject} contentFit="cover" nativeControls={false} surfaceType="textureView" />
+      <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} surfaceType="textureView" />
       <View style={styles.bottom}>
         <Text style={styles.title} numberOfLines={2}>{item.titleAr}</Text>
         {item.bodyAr ? <Text style={styles.body} numberOfLines={3}>{item.bodyAr}</Text> : null}
