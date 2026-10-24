@@ -1,4 +1,5 @@
-import { BthwaniButton, BthwaniMap, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniMap } from "@bthwani/design-system/native/map";
 import { isFreshOpportunitySample, type CaptainAssignment, type CaptainDeliveryTask, type CaptainOpportunityHeatmap } from "@bthwani/dsh";
 import * as Location from "expo-location";
 import { type Href, Link, useFocusEffect } from "expo-router";
