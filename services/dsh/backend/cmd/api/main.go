@@ -214,6 +214,9 @@ func main() {
 		go runFieldAcquisitionRewardReconciliationLoop(ctx, time.Minute, storePublication.ReconcileFieldAcquisitionRewards)
 		go runFinancialHandoffReconciliationLoop(ctx, 5*time.Second, financialHandoff.Reconcile)
 		go runCaptainAutomaticDispatchLoop(ctx, 30*time.Second, captainServer.ReconcileAutomaticDispatch)
+		if os.Getenv("DSH_EXPO_PUSH_ENABLED") == "true" {
+			go runNotificationPushLoop(ctx, 6*time.Second, notificationServer.DispatchPushBatch)
+		}
 		go runOperatorExceptionDetectorLoop(ctx, time.Minute, func(ctx context.Context) (int64, error) {
 			opened, err := postgres.DetectOperatorOrderExceptions(ctx, database, 25)
 			if err != nil {

@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 158
+const SchemaVersion = 160
 
 type MigrationRecord struct {
 	Version int
@@ -26,6 +26,9 @@ type MigrationRecord struct {
 }
 
 var requiredTables = []schemaRelationExpectation{
+	{name: "dsh.captain_delivery_arrivals", columns: []string{"id", "assignment_id", "order_id", "captain_actor_id", "arrived_at"}, constraints: []string{"captain_delivery_arrivals_pkey", "captain_delivery_arrivals_assignment_id_key"}, indexes: []string{"captain_delivery_arrivals_order_idx"}},
+	{name: "dsh.notification_push_devices", columns: []string{"installation_id", "actor_id", "actor_role", "expo_push_token", "tone", "registered_at", "updated_at", "enabled"}, constraints: []string{"notification_push_devices_pkey"}, indexes: []string{"notification_push_token_uq", "notification_push_actor_idx"}},
+	{name: "dsh.notification_push_outbox", columns: []string{"id", "installation_id", "notification_id", "actor_id", "actor_role", "order_id", "kind", "next_attempt_at", "locked_until", "attempts", "state", "sent_at", "ticket_id", "next_receipt_at", "receipt_checked_at", "receipt_status"}, constraints: []string{"notification_push_outbox_pkey", "push_once_per_installation_event"}, indexes: []string{"push_outbox_due_idx", "push_receipt_due_idx"}},
 	{name: "dsh.operator_stage_sla_policy_events", columns: []string{"idempotency_key", "policy_id", "request_hash", "actor_id", "correlation_id", "created_at"}, constraints: []string{"operator_stage_sla_policy_events_pkey", "operator_stage_sla_policy_events_policy_id_fkey"}, indexes: []string{"operator_stage_sla_policy_events_policy_idx"}},
 	{name: "dsh.operator_stage_sla_policies", columns: []string{"id", "fulfillment_mode", "stage", "target_minutes", "warning_minutes", "policy_version", "effective_at", "approved_by_actor_id", "created_at"}, constraints: []string{"operator_stage_sla_policies_pkey", "operator_stage_sla_policies_version_uq", "operator_stage_sla_policies_effective_uq"}, indexes: []string{"operator_stage_sla_policies_lookup_idx"}},
 	{name: "dsh.operator_order_cases", columns: []string{"id", "order_id", "reason", "state", "priority", "owner_actor_id", "next_action", "opened_by_actor_id", "updated_by_actor_id", "version", "resolution_note", "resolution_evidence_ref", "opened_at", "updated_at", "resolved_at"}, constraints: []string{"ops_case_sensitive_evidence_chk", "operator_order_cases_pkey", "operator_order_cases_order_id_fkey", "ops_case_reason_chk", "ops_case_state_chk", "ops_case_priority_chk", "ops_case_next_action_chk", "ops_case_version_chk", "ops_case_resolution_chk"}, indexes: []string{"ops_case_one_active_reason_uq", "ops_case_order_recent_idx", "ops_case_work_queue_idx"}},

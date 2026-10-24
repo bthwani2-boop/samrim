@@ -996,6 +996,14 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.readOwnCaptainDeliveryTask.path.replace("{assignmentId}", encodeURIComponent(normalized));
       return userRequest<CaptainDeliveryTaskResponse>(accessToken, path, dshOperationPaths.readOwnCaptainDeliveryTask.method);
     },
+    async readOwnCaptainArrival(accessToken: string, assignmentID: string): Promise<{ arrivedAt: string | null }> {
+      if (!assignmentID.trim()) throw new Error("DSH_CAPTAIN_ASSIGNMENT_INPUT_INVALID");
+      return userRequest<{ arrivedAt: string | null }>(accessToken, `/dsh/captains/me/assignments/${encodeURIComponent(assignmentID.trim())}/arrival`, "GET");
+    },
+    async confirmOwnCaptainArrival(accessToken: string, assignmentID: string): Promise<{ arrivedAt: string }> {
+      if (!assignmentID.trim()) throw new Error("DSH_CAPTAIN_ASSIGNMENT_INPUT_INVALID");
+      return userRequest<{ arrivedAt: string }>(accessToken, `/dsh/captains/me/assignments/${encodeURIComponent(assignmentID.trim())}/arrive`, "POST", {}, mutationHeaders());
+    },
     async completeCaptainPickup(accessToken: string, assignmentID: string, expectedVersion: number): Promise<CaptainAssignmentResponse> {
       const normalized = assignmentID.trim();
       if (!normalized || expectedVersion < 1) throw new Error("DSH_CAPTAIN_ASSIGNMENT_INPUT_INVALID");

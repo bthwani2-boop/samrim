@@ -162,7 +162,7 @@ func MarkNotificationRead(ctx context.Context, db *sql.DB, actorID, role, notifi
 
 func validNotificationID(notificationID string) bool {
 	parts := strings.SplitN(notificationID, ":", 2)
-	if len(parts) != 2 || (parts[0] != "order" && parts[0] != "captain" && parts[0] != "field" && parts[0] != "store" && parts[0] != "availability") {
+	if len(parts) != 2 || (parts[0] != "order" && parts[0] != "captain" && parts[0] != "field" && parts[0] != "store" && parts[0] != "availability" && parts[0] != "arrival") {
 		return false
 	}
 	value, err := strconv.ParseInt(parts[1], 10, 64)
@@ -230,7 +230,13 @@ func visibleNotificationEvents(role string) string {
 		WHERE notification.actor_id=$1 AND notification.actor_role=`
 	switch role {
 	case "client":
-		return fmt.Sprintf(clientOrPartner, "WHERE orders.client_actor_id = $1", "WHERE orders.client_actor_id = $1")
+		return fmt.Sprintf(clientOrPartner, "WHERE orders.client_actor_id = $1", "WHERE orders.client_actor_id = $1") + `
+            UNION ALL SELECT 'arrival:' || arrival.id::text AS notification_id,
+            'captain_arrived_dropoff' AS event_type, arrival.order_id,
+            ''::text AS joining_case_id, ''::text AS store_id, 'arrived'::text AS to_state, arrival.arrived_at AS created_at
+            FROM dsh.captain_delivery_arrivals arrival
+            JOIN dsh.commerce_orders orders ON orders.id=arrival.order_id
+            WHERE orders.client_actor_id=$1`
 	case "partner":
 		return fmt.Sprintf(clientOrPartner, "JOIN dsh.stores stores ON stores.id = orders.store_id WHERE stores.partner_actor_id = $1", "JOIN dsh.stores stores ON stores.id = orders.store_id WHERE stores.partner_actor_id = $1") + ` UNION ALL ` + storeGoLive + `'partner'`
 	case "captain":
@@ -238,7 +244,11 @@ func visibleNotificationEvents(role string) string {
 	case "field":
 		return field + ` UNION ALL ` + storeGoLive + `'field'`
 	case "operator":
-		return operator
+		return operator + `
+            UNION ALL SELECT 'arrival:' || arrival.id::text AS notification_id,
+            'captain_arrived_dropoff' AS event_type, arrival.order_id,
+            ''::text AS joining_case_id, ''::text AS store_id, 'arrived'::text AS to_state, arrival.arrived_at AS created_at
+            FROM dsh.captain_delivery_arrivals arrival`
 	default:
 		return ""
 	}

@@ -68,6 +68,8 @@ func (s *CaptainServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/mission-location", s.publishMissionLocation)
 	mux.HandleFunc("GET /dsh/captains/me/opportunities", s.readOwnOpportunities)
 	mux.HandleFunc("GET /dsh/operator/opportunities", s.readOperatorOpportunities)
+	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/arrive", s.recordArrival)
+	mux.HandleFunc("GET /dsh/captains/me/assignments/{assignmentId}/arrival", s.readArrival)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/pickup", s.pickup)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/complete", s.complete)
 	mux.HandleFunc("POST /dsh/captains/assignments/{assignmentId}/recover", s.recover)
@@ -560,6 +562,42 @@ func toOptionalCaptainFee(value *int64) *int {
 	}
 	fee := int(*value)
 	return &fee
+}
+
+func (s *CaptainServer) recordArrival(w http.ResponseWriter, r *http.Request) {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session required")
+		return
+	}
+	arrived, err := s.service.RecordDeliveryArrival(r.Context(), token, r.PathValue("assignmentId"))
+	if errors.Is(err, postgres.ErrCaptainArrivalUnavailable) {
+		writeError(w, http.StatusConflict, "ARRIVAL_UNAVAILABLE", "Only the assigned captain with an active in-custody delivery can confirm arrival")
+		return
+	}
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"arrivedAt": arrived.UTC().Format(time.RFC3339Nano)})
+}
+
+func (s *CaptainServer) readArrival(w http.ResponseWriter, r *http.Request) {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session required")
+		return
+	}
+	arrived, err := s.service.ReadDeliveryArrival(r.Context(), token, r.PathValue("assignmentId"))
+	if errors.Is(err, postgres.ErrCaptainArrivalUnavailable) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "Assignment is not available")
+		return
+	}
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"arrivedAt": arrived})
 }
 
 func (s *CaptainServer) pickup(w http.ResponseWriter, r *http.Request) {
