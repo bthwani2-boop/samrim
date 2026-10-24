@@ -23,7 +23,7 @@ $CredentialVaultPath = Join-Path $SecretsRoot ("expo\" + $App + "\credentials.js
 $KeystoreVaultPath = Join-Path $SecretsRoot ("eas\android\" + $App + "\development.jks")
 $MaterializedCredentialPath = Join-Path $AppRoot "credentials.json"
 $MaterializedKeystorePath = Join-Path $AppRoot "development.jks"
-$FirebaseVaultPath = Join-Path $SecretsRoot ("expo\" + $App + "\google-services.json")
+$FirebaseVaultPath = Join-Path $SecretsRoot ("firebase\" + $App + "\google-services.json")
 $MaterializedFirebasePath = Join-Path $AppRoot "google-services.json"
 $FirebaseMaterialized = $false
 Import-Module -Name (Join-Path $PSScriptRoot "eas-credential-materialization.psm1") -Force
