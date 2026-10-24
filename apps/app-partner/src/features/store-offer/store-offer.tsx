@@ -8,7 +8,10 @@ import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { useLocalSearchParams } from "expo-router";
+import { onPartnerProductAction } from "../../shell/partner-product-actions";
+import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { StoreCatalogExportCard } from "./store-catalog-export";
 import { StoreProductTrash } from "./store-product-trash";
@@ -122,15 +125,30 @@ function isResolvedProductMatch(match: CatalogIdentifierResolution): match is Re
   return match.outcome === "SHARED_PRODUCT_MATCH" || match.outcome === "STORE_LOCAL_PRODUCT_MATCH";
 }
 
-export function StoreOfferManagement({ storeId, verticalId, toolsView = false }: { storeId: string; verticalId: string; toolsView?: boolean }) {
+export function StoreOfferManagement({ storeId, verticalId, serviceCityId, canManagePromotions = false, toolsView = false }: { storeId: string; verticalId: string; serviceCityId: string; canManagePromotions?: boolean; toolsView?: boolean }) {
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OfferState>({ kind: "loading" });
   const [panel, setPanel] = useState<"prices" | "create" | "tools" | null>(toolsView ? "tools" : null);
   useEffect(() => { setPanel(toolsView ? "tools" : null); }, [toolsView]);
   const [expandedInventoryId, setExpandedInventoryId] = useState<string | null>(null);
-  const [listQuery, setListQuery] = useState("");
-  const [listFilter, setListFilter] = useState<"all" | "published" | "unavailable" | "hidden">("all");
+  const { q: rawListQuery } = useLocalSearchParams<{ q?: string | string[] }>();
+  const listQuery = Array.isArray(rawListQuery) ? rawListQuery[0] ?? "" : rawListQuery ?? "";
+  const [listFilter, setListFilter] = useState<"all" | "popular" | "offers" | "published" | "unavailable" | "hidden">("all");
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [popularIDs, setPopularIDs] = useState<ReadonlyArray<string> | null>(null);
+  const [popularError, setPopularError] = useState(false);
+  useEffect(() => onPartnerProductAction((action) => setPanel((previous) => action === "list" || action === previous ? null : action)), []);
+  useEffect(() => {
+    if (listFilter !== "popular" || !storeId || !serviceCityId) return;
+    let active = true;
+    setPopularIDs(null);
+    setPopularError(false);
+    void dshClient().readPublicStoreCatalog(storeId, serviceCityId, "", "", 100, "", "", "MOST_ORDERED_30_DAYS")
+      .then((result) => { if (active) setPopularIDs(result.offers.map((offer) => offer.offerId)); })
+      .catch(() => { if (active) { setPopularIDs([]); setPopularError(true); } });
+    return () => { active = false; };
+  }, [listFilter, storeId, serviceCityId]);
   const [offerNextCursor, setOfferNextCursor] = useState("");
   const [loadingMoreOffers, setLoadingMoreOffers] = useState(false);
   const offerLoadedPageCount = useRef(1);
@@ -700,13 +718,14 @@ const theme = useAppearanceTheme();
   }
 
   const matchingOffers = state.kind === "ready" ? state.offers.filter((offer) => {
-    const matchesQuery = offer.productName.toLocaleLowerCase().includes(listQuery.trim().toLocaleLowerCase());
-    if (!matchesQuery) return false;
+    if (!offer.productName.toLocaleLowerCase().includes(listQuery.trim().toLocaleLowerCase())) return false;
+    if (listFilter === "offers") return false;
+    if (listFilter === "popular") return popularIDs?.includes(offer.offerId) ?? false;
     if (listFilter === "published") return offer.publicationState === "published" && offer.availability;
     if (listFilter === "unavailable") return !offer.availability;
     if (listFilter === "hidden") return offer.publicationState !== "published";
     return true;
-  }) : [];
+  }).sort((a, b) => listFilter === "popular" ? (popularIDs?.indexOf(a.offerId) ?? 999) - (popularIDs?.indexOf(b.offerId) ?? 999) : 0) : [];
   const parsedPrice = Number(priceMinor.trim());
   const parsedMin = Number(quantityMinBaseUnits.trim());
   const parsedMax = Number(quantityMaxBaseUnits.trim());
@@ -718,13 +737,20 @@ const theme = useAppearanceTheme();
   return (
     <View style={styles.container} accessibilityLabel="إدارة عروض المتجر">
       {!catalogReady ? <Text accessibilityRole="alert" style={styles.warning}>قائمة المتجر غير جاهزة للإدارة بعد. تعذرت إضافة المنتجات أو نشر العروض حاليًا؛ تواصل مع الدعم لاستكمال التجهيز.</Text> : null}
-      {catalogReady && !toolsView ? <View style={styles.topActions}>
-        <Pressable accessibilityRole="button" accessibilityLabel="تعديل الأسعار" onPress={() => setPanel(panel === "prices" ? null : "prices")} style={[styles.headerButton, panel === "prices" && styles.headerButtonSelected]}><BthwaniIcon name="offers" size={19} color={theme.color} /><Text style={styles.headerButtonText}>تعديل الأسعار</Text></Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="إضافة منتج" onPress={() => setPanel(panel === "create" ? null : "create")} style={[styles.headerButton, styles.createButton]}><BthwaniIcon name="cart" size={19} color={theme.onAction} /><Text style={styles.createButtonText}>{panel === "create" ? "إغلاق الإضافة" : "إضافة منتج"}</Text></Pressable>
-      </View> : null}
       {!toolsView && panel === null && state.kind === "ready" ? <>
-        <TextInput accessibilityLabel="البحث في منتجات المتجر" placeholder="ابحث باسم المنتج" placeholderTextColor={theme.colorMuted} value={listQuery} onChangeText={setListQuery} style={styles.listSearch} />
-        <View style={styles.filterRow}>{([{ key: "all", label: "الكل" },{ key: "published", label: "منشور" },{ key: "unavailable", label: "غير متاح" },{ key: "hidden", label: "مخفي" }] as const).map((item) => <Pressable key={item.key} accessibilityRole="button" accessibilityState={{ selected: listFilter === item.key }} onPress={() => setListFilter(item.key)} style={[styles.filterChip, listFilter === item.key && styles.filterChipActive]}><Text style={[styles.filterText, listFilter === item.key && styles.filterTextActive]}>{item.label}</Text></Pressable>)}</View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow} accessibilityLabel="تصنيف المنتجات">
+          {([{ key: "all", label: "الكل" }, { key: "popular", label: "الأكثر رواجًا" }, { key: "offers", label: "العروض" }] as const).map((item) =>
+            <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={item.label} accessibilityState={{ selected: listFilter === item.key }} onPress={() => setListFilter(item.key)} style={[styles.filterChip, listFilter === item.key && styles.filterChipActive]}>
+              <Text style={[styles.filterText, listFilter === item.key && styles.filterTextActive]}>{item.label}</Text>
+            </Pressable>)}
+          <Pressable accessibilityRole="button" accessibilityLabel="تصفية حسب حالة المنتج" accessibilityState={{ expanded: filterModalOpen }} onPress={() => setFilterModalOpen(true)} style={[styles.filterChip, ["published","unavailable","hidden"].includes(listFilter) && styles.filterChipActive]}>
+            <BthwaniIcon name="categories" color={theme.color} size={14} />
+            <Text style={[styles.filterText, ["published","unavailable","hidden"].includes(listFilter) && styles.filterTextActive]}>تصفية</Text>
+          </Pressable>
+        </ScrollView>
+        {(listFilter === "all" || listFilter === "offers") ? <PartnerStorePromotionBanner key={storeId} storeId={storeId} serviceCityId={serviceCityId} canManage={canManagePromotions} offersOnly={listFilter === "offers"} /> : null}
+        {listFilter === "popular" && popularIDs === null ? <ActivityIndicator color={theme.brandAction} /> : null}
+        {listFilter === "popular" && popularError ? <Text style={styles.muted}>تعذر قراءة ترتيب الطلبات لآخر 30 يومًا.</Text> : null}
       </> : null}
       {catalogReady && panel === "prices" ? <MobileStoreQuickPricesWorkspace
         client={dshClient()}
@@ -774,7 +800,7 @@ const theme = useAppearanceTheme();
       {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة عروض المتجر…</Text></View> : null}
       {state.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error || "تعذر قراءة عروض المتجر."}</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
         {!toolsView && panel === null && state.kind === "ready" && state.offers.length === 0 ? <Text style={styles.muted}>لا توجد عروض مرتبطة بهذا المتجر بعد.</Text> : null}
-        {!toolsView && panel === null && state.kind === "ready" && state.offers.length > 0 ? <View style={styles.offerList}>
+        {!toolsView && panel === null && state.kind === "ready" && listFilter !== "offers" && state.offers.length > 0 ? <View style={styles.offerList}>
         {matchingOffers.map((offer) => {
           const primaryMedia = getPrimaryMedia(offer.media);
           const inventoryDraft = inventoryDrafts[offer.offerId] ?? String(offer.inventoryOnHandBaseUnits);
@@ -809,8 +835,23 @@ const theme = useAppearanceTheme();
           </View>;
         })}
       </View> : null}
-      {!toolsView && panel === null && state.kind === "ready" && state.offers.length > 0 && matchingOffers.length === 0 ? <Text style={styles.muted}>لا توجد منتجات تطابق البحث أو التصفية.</Text> : null}
-            {!toolsView && panel === null && offerNextCursor ? <BthwaniButton busy={loadingMoreOffers} disabled={loadingMoreOffers || busy} label={loadingMoreOffers ? "جارٍ تحميل العروض…" : "تحميل المزيد من العروض"} onPress={() => void loadMoreOffers()} variant="secondary" /> : null}
+      {!toolsView && panel === null && state.kind === "ready" && listFilter !== "offers" && !popularError && (listFilter !== "popular" || popularIDs !== null) && state.offers.length > 0 && matchingOffers.length === 0 ? <Text style={styles.muted}>لا توجد منتجات تطابق البحث أو التصفية.</Text> : null}
+            {!toolsView && panel === null && listFilter !== "offers" && offerNextCursor ? <BthwaniButton busy={loadingMoreOffers} disabled={loadingMoreOffers || busy} label={loadingMoreOffers ? "جارٍ تحميل العروض…" : "تحميل المزيد من العروض"} onPress={() => void loadMoreOffers()} variant="secondary" /> : null}
+      <Modal visible={filterModalOpen} transparent animationType="slide" onRequestClose={() => setFilterModalOpen(false)}>
+        <View style={styles.filterModalBackdrop}>
+          <Pressable accessibilityRole="button" accessibilityLabel="إغلاق التصفية" style={styles.filterBackdropFill} onPress={() => setFilterModalOpen(false)} />
+          <View style={styles.filterModalPanel}>
+            <View style={styles.filterModalTitle}><Text style={styles.itemTitle}>تصفية المنتجات</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="إغلاق" onPress={() => setFilterModalOpen(false)}><BthwaniIcon name="close" size={21} color={theme.color} /></Pressable>
+            </View>
+            {([{ key: "all", label: "كل المنتجات" }, { key: "published", label: "المنشورة والمتاحة" }, { key: "unavailable", label: "غير المتاحة" }, { key: "hidden", label: "المخفية" }] as const).map((item) =>
+              <Pressable key={item.key} accessibilityRole="button" accessibilityState={{ selected: listFilter === item.key }} onPress={() => { setListFilter(item.key); setFilterModalOpen(false); }} style={[styles.filterModalItem, listFilter === item.key && styles.filterChipActive]}>
+                <Text style={styles.itemTitle}>{item.label}</Text>
+                {listFilter === item.key ? <BthwaniIcon name="success" color={theme.brandAction} size={18} /> : null}
+              </Pressable>)}
+          </View>
+        </View>
+      </Modal>
       {error && state.kind !== "error" ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );
@@ -826,11 +867,16 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     createButton: { backgroundColor: theme.brandAction, borderColor: theme.brandAction },
     createButtonText: { ...typography.bodyStrong, color: theme.onAction, textAlign: "center" },
     listSearch: { borderWidth: 1, borderColor: theme.borderColor, backgroundColor: theme.surface, borderRadius: 11, minHeight: 43, paddingHorizontal: 12, color: theme.color, textAlign: "right" },
-    filterRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-    filterChip: { borderWidth: 1, borderColor: theme.borderColor, borderRadius: 12, backgroundColor: theme.surface, paddingHorizontal: 13, minHeight: 34, justifyContent: "center" },
+    filterRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 1 },
+    filterChip: { borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10, backgroundColor: theme.surface, paddingHorizontal: 12, minHeight: 34, justifyContent: "center", flexDirection: "row", alignItems: "center", gap: 5 },
     filterChipActive: { borderColor: theme.brandAction, backgroundColor: theme.actionSoft },
     filterText: { ...typography.caption, color: theme.colorMuted },
     filterTextActive: { color: theme.brandAction, fontWeight: "800" },
+    filterModalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.48)" },
+    filterBackdropFill: { flex: 1 },
+    filterModalPanel: { backgroundColor: theme.surface, borderTopLeftRadius: 19, borderTopRightRadius: 19, padding: 16, gap: 8 },
+    filterModalTitle: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingBottom: 6 },
+    filterModalItem: { borderWidth: 1, borderColor: theme.borderColor, borderRadius: 11, minHeight: 43, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     price: { ...typography.bodyStrong, fontWeight: "800", color: theme.color },
     editLink: { flexDirection: "row", gap: 4, alignItems: "center", minHeight: 36, paddingHorizontal: 8, borderRadius: 9, borderColor: theme.borderColor, borderWidth: 1 },
     editLabel: { ...typography.caption, color: theme.color },

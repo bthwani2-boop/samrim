@@ -52,6 +52,7 @@ export function PartnerMore() {
       { label: "الصور", icon: "edit" as const, description: "صور المتجر والعقود", destination: "settings" as const },
     ] : []),
     ...(state.kind === "ready" && !stores.length ? [{ label: "حالة الانضمام", icon: "store" as const, description: "متابعة طلب الشراكة", href: "/onboarding" as Href }] : []),
+    { label: "الأداء", icon: "orders", description: "مؤشرات المتجر وفرص النمو", href: "/insights" as Href },
     { label: "الحساب", icon: "account", description: "معلومات الحساب وتفضيلاته", href: "/account" as Href },
   ];
   function navigate(item: MenuItem) {
