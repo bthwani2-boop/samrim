@@ -384,6 +384,22 @@ func (s *Service) ReadDeliveryTask(ctx context.Context, accessToken, assignmentI
 	return task, nil
 }
 
+func (s *Service) RecordDeliveryArrival(ctx context.Context, token, assignmentID string) (time.Time, error) {
+	actor, err := s.requireCaptain(ctx, token)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return postgres.RecordCaptainArrival(ctx, s.db, assignmentID, actor.Subject)
+}
+
+func (s *Service) ReadDeliveryArrival(ctx context.Context, token, assignmentID string) (*time.Time, error) {
+	actor, err := s.requireCaptain(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	return postgres.ReadCaptainArrival(ctx, s.db, assignmentID, actor.Subject)
+}
+
 // PublishMissionLocation is tied to the bearer identity and the live assignment.
 func (s *Service) PublishMissionLocation(ctx context.Context, token, assignmentID string, latitude, longitude, accuracy float64, recordedAt time.Time, sequence int64) error {
 	identity, err := s.requireCaptain(ctx, token)

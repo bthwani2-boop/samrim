@@ -10,6 +10,7 @@ export function orderAlertLevel(role: AlertRole, item: Pick<Notification, "kind"
   if (role === "captain" && item.kind === "CAPTAIN_OFFER" && item.title === "طلب توصيل جديد") return "action";
   // There is not yet a canonical drop-off-arrival event. Do not infer arrival
   // from pickup or assignment; that would falsely wake the customer.
+  if (role === "client" && item.kind === "CAPTAIN_ARRIVED") return "action";
   if (role === "client") return "silent";
   if (role === "operator" && item.kind === "DELIVERY_FAILED") return "action";
   return "silent";

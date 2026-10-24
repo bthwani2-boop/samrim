@@ -6,6 +6,7 @@ import { type Href, useRouter } from "expo-router";
 import { AppState, Platform } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { currentAlertTone } from "./order-alert-preferences";
+import { registerOwnPushDevice } from "./push-device";
 
 const role = "captain" as const;
 const alerts = new OrderAlertCursor();
@@ -56,6 +57,9 @@ export function OrderAlertMonitor() {
           await Notifications.requestPermissionsAsync();
         }
         const token = await getUsableIdentityAccessToken();
+        // Registration is best effort. Foreground polling remains functional
+        // without Firebase credentials before the first EAS development build.
+        void currentAlertTone().then(tone => registerOwnPushDevice(token, actor, tone));
         const data = await createDshMobileClient(url, { cryptoRandomUUID: () => Crypto.randomUUID() }).listNotifications(token, 35);
         if (cancelled || AppState.currentState !== "active") return;
         const current = currentIdentityState();

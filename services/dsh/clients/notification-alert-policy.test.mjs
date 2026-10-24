@@ -61,3 +61,11 @@ test("unrelated newer event does not suppress an unresolved operator failure", (
   const unrelated = event("other", "ORDER_STATUS", "تحديث", new Date(now - 4000).toISOString());
   assert.deepEqual(cursor.receive("operator", "operator-x", [unrelated, failure], now).map(i => i.id), ["failure"]);
 });
+
+test("client rings only for explicit captain arrival", () => {
+  const now = Date.parse("2026-10-24T06:00:00Z");
+  const cursor = new OrderAlertCursor();
+  cursor.receive("client", "client", [], now);
+  assert.deepEqual(cursor.receive("client", "client", [event("arrival:123", "CAPTAIN_ARRIVED", "وصل الكابتن", new Date(now - 1000).toISOString())], now).map(e => e.id), ["arrival:123"]);
+  assert.equal(orderAlertLevel("client", event("x", "PICKED_UP", "", "")), "silent");
+});

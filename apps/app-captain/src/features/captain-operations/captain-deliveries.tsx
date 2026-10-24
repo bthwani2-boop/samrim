@@ -74,6 +74,7 @@ export function CaptainDeliveries() {
   const readSequence = useRef(0);
   const mutationInFlight = useRef(false);
   const [tasks, setTasks] = useState<Readonly<Record<string, CaptainDeliveryTask>>>({});
+  const [arrivalStatus, setArrivalStatus] = useState<Readonly<Record<string, boolean>>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -94,6 +95,7 @@ export function CaptainDeliveries() {
       setAssignments([]);
       setPendingCompletion(null);
       setTasks({});
+      setArrivalStatus({});
       setCompletionStorageReady(false);
     }
     setError("");
@@ -131,6 +133,15 @@ export function CaptainDeliveries() {
       }));
       if (!stillCurrent()) return;
       setTasks(Object.fromEntries(taskEntries.filter((entry): entry is readonly [string, CaptainDeliveryTask] => entry !== null)));
+      const arrivalEntries = await Promise.all(response.assignments
+        .filter(assignment => assignment.state === "in_custody")
+        .map(async assignment => {
+          try {
+            const result = await api.readOwnCaptainArrival(token, assignment.id);
+            return [assignment.id, Boolean(result.arrivedAt)] as const;
+          } catch { return null; }
+        }));
+      if (stillCurrent()) setArrivalStatus(Object.fromEntries(arrivalEntries.filter((entry): entry is readonly [string, boolean] => entry !== null)));
     } catch (cause) {
       console.error("DSH Captain deliveries readback failed", cause);
       if (sequence === readSequence.current && (!quiet || !mutationInFlight.current) && (!actorID || hasCurrentDeliveryActor(actorID))) {
@@ -150,6 +161,7 @@ export function CaptainDeliveries() {
       setLoadedActorID("");
       setAssignments([]);
       setTasks({});
+      setArrivalStatus({});
       setPendingCompletion(null);
       setCompletionStorageReady(false);
       setLoading(false);
@@ -164,6 +176,27 @@ export function CaptainDeliveries() {
     const resume = AppState.addEventListener("change", (state) => { if (state === "active") update(); });
     return () => { clearInterval(timer); resume.remove(); };
   }, [isFocused, activeActorID, loading, busy, load]);
+
+  async function confirmArrival(assignment: CaptainAssignment) {
+    if (!hasCurrentDeliveryActor(loadedActorID) || busy || mutationInFlight.current || assignment.state !== "in_custody" || arrivalStatus[assignment.id] !== false) return;
+    mutationInFlight.current = true;
+    setBusy(assignment.id);
+    setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentDeliveryActor(loadedActorID)) return;
+      const response = await captainClient().confirmOwnCaptainArrival(token, assignment.id);
+      if (!hasCurrentDeliveryActor(loadedActorID)) return;
+      if (!response.arrivedAt) throw new Error("ARRIVAL_CONFIRMATION_MISSING");
+      setArrivalStatus(previous => ({ ...previous, [assignment.id]: true }));
+    } catch (cause) {
+      console.error("DSH captain arrival failed", cause);
+      setError("تعذر تأكيد الوصول؛ تحقّق من الاتصال وحالة المهمة ثم أعد المحاولة.");
+    } finally {
+      mutationInFlight.current = false;
+      setBusy("");
+    }
+  }
 
   async function pickup(assignment: CaptainAssignment) {
     if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || mutationInFlight.current || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
@@ -367,6 +400,11 @@ export function CaptainDeliveries() {
             {!taskReady && task ? <Text style={styles.warning}>تغيرت حالة المهمة؛ يجري التحقق منها تلقائيًا قبل إتاحة إجراء جديد.</Text> : null}
             {assignment.state === "assigned" && assignment.handoff.state === "store_confirmed" ? <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || !completionStorageReady || Boolean(pendingCompletion) || !taskReady} label="تأكيد استلام الطلب" onPress={() => void pickup(assignment)} /> : null}
             {assignment.state === "assigned" && assignment.handoff.state === "pending" ? <Text style={styles.muted}>بانتظار تأكيد المتجر قبل الاستلام.</Text> : null}
+            {assignment.state === "in_custody" && arrivalStatus[assignment.id] === false && !pendingCompletion
+              ? <BthwaniButton label="وصلت إلى موقع التسليم" variant="secondary" disabled={Boolean(busy) || !taskReady} busy={busy === assignment.id} onPress={() => void confirmArrival(assignment)} />
+              : null}
+            {assignment.state === "in_custody" && arrivalStatus[assignment.id] === true
+              ? <Text style={styles.progress}>تم إبلاغ العميل بوصولك</Text> : null}
             {assignment.state === "in_custody" && pendingCompletion?.assignmentID === assignment.id ? <Text style={styles.warning}>يُحسم هذا الإجراء من المحاولة المحفوظة أعلاه.</Text> : null}
             {assignment.state === "in_custody" && !pendingCompletion ? (
               <View style={styles.row}>

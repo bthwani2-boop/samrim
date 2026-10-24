@@ -1,11 +1,9 @@
 "use client";
 
-import type { Notification } from "@bthwani/dsh";
-import { OrderAlertCursor } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { operationNotificationHref } from "../notifications/notification-operation-link";
-import { parseOperatorNotificationList } from "../notifications/notification-readback";
+import { useSession } from "../../session/session-provider";
 
 const LEVEL_KEY = "bthwani:operations-alert-volume:v1";
 
@@ -13,12 +11,22 @@ const LEVEL_KEY = "bthwani:operations-alert-volume:v1";
 export function OperationsAlertMonitor() {
   const [enabled, setEnabled] = useState(false);
   const [volume, setVolume] = useState(65);
-  const [alert, setAlert] = useState<Notification | null>(null);
+  const { state } = useSession();
+  const actorID = state.kind === "authenticated" && state.identity.role === "operator"
+    ? state.identity.subject.trim() : "";
+  const [caseAlert, setCaseAlert] = useState<{ id: number; orderId: string; reason: string } | null>(null);
+  const seenCases = useRef<Set<string>>(new Set());
+  const casesPrimed = useRef(false);
   const audio = useRef<AudioContext | null>(null);
-  const cursor = useRef(new OrderAlertCursor());
   const pending = useRef(false);
   const enabledRef = useRef(false);
   const volumeRef = useRef(65);
+
+  useEffect(() => {
+    seenCases.current.clear();
+    casesPrimed.current = false;
+    setCaseAlert(null);
+  }, [actorID]);
 
   useEffect(() => {
     try {
@@ -52,25 +60,33 @@ export function OperationsAlertMonitor() {
   useEffect(() => {
     let disposed = false;
     const check = async () => {
-      if (disposed || pending.current || document.visibilityState !== "visible") return;
+      if (disposed || !actorID || pending.current || document.visibilityState !== "visible") return;
       pending.current = true;
       try {
-        const result = await fetch("/api/notifications?limit=40", { cache: "no-store", signal: AbortSignal.timeout(10_000) });
-        if (!result.ok) return;
-        const list = parseOperatorNotificationList(await result.json()).notifications;
-        if (disposed) return;
-        const incoming = cursor.current.receive("operator", "operator", list);
-        // Recovery takes precedence over a stale failure in the returned page.
-        const latestOrderEvent = new Map<string, string>();
-        for (const item of list) if (item.orderId && !latestOrderEvent.has(item.orderId)) latestOrderEvent.set(item.orderId, item.kind);
-        const active = incoming.filter(item => latestOrderEvent.get(item.orderId) === "DELIVERY_FAILED");
-        if (!active.length) {
-          setAlert(current => current && latestOrderEvent.get(current.orderId) !== "DELIVERY_FAILED" ? null : current);
-          return;
+        // Existing operations cases already own SLA and escalation. Sound only
+        // for cases assigned to THIS operator, never for every global order.
+        const mine = await fetch("/api/operations/cases?limit=20&scope=mine", {
+          cache: "no-store", signal: AbortSignal.timeout(10_000),
+        });
+        if (mine.ok) {
+          const data = await mine.json() as { items?: Array<{ id: number; orderId: string; reason: string; priority: string; state: string }> };
+          if (Array.isArray(data.items) && !disposed) {
+            const activeCases = data.items.filter(item => Number.isSafeInteger(item.id) && item.id>0
+              && typeof item.orderId === "string" && item.orderId.length>0
+              && typeof item.priority === "string" && typeof item.state === "string"
+              && item.state.toLowerCase() !== "resolved");
+            const unseen = activeCases.filter(item => !seenCases.current.has(`${item.id}:${item.priority}`));
+            for (const item of activeCases) seenCases.current.add(`${item.id}:${item.priority}`);
+            if (casesPrimed.current && unseen.length) {
+              const latest = unseen.at(0)!;
+              setCaseAlert({ id: latest.id, orderId: latest.orderId, reason: latest.reason });
+              play();
+            }
+            if (casesPrimed.current) setCaseAlert(current =>
+              current && !activeCases.some(item => item.id===current.id) ? null : current);
+            casesPrimed.current = true;
+          }
         }
-        const newest = active.at(-1)!;
-        setAlert(newest);
-        play();
       } catch {
         // Network failure should not invent or repeat an alert.
       } finally {
@@ -82,7 +98,7 @@ export function OperationsAlertMonitor() {
     const visible = () => { if (document.visibilityState === "visible") void check(); };
     document.addEventListener("visibilitychange", visible);
     return () => { disposed = true; window.clearInterval(interval); document.removeEventListener("visibilitychange", visible); };
-  }, [play]);
+  }, [play, actorID]);
 
   async function toggleSound() {
     if (enabledRef.current) {
@@ -107,7 +123,7 @@ export function OperationsAlertMonitor() {
     try { window.localStorage.setItem(LEVEL_KEY, String(next)); } catch { /* Storage blocked */ }
   }
 
-  const orderHref = alert ? operationNotificationHref(alert.orderId) : null;
+  const orderHref = caseAlert ? operationNotificationHref(caseAlert.orderId) : null;
   return (
     <div className="ops-alert-monitor" aria-label="تنبيهات العمليات" style={{ display:"flex", flexWrap:"wrap", alignItems:"center", gap:12, marginBlock: "0 12px" }}>
       <button className="button button-secondary" type="button" aria-pressed={enabled} onClick={() => void toggleSound()}>
@@ -118,10 +134,10 @@ export function OperationsAlertMonitor() {
         <input type="range" min="0" max="100" step="5" value={volume} onChange={e => changeVolume(Number(e.target.value))} aria-label="مستوى صوت تنبيهات العمليات" />
         <span>{volume}%</span>
       </label> : null}
-      {alert ? <div role="alert" style={{ display:"inline-flex", flexWrap:"wrap", alignItems:"center", gap:8 }}>
-        <strong>تعذر توصيل طلب ويحتاج تدخلاً</strong>
+      {caseAlert ? <div role="alert" style={{ display:"inline-flex", flexWrap:"wrap", alignItems:"center", gap:8 }}>
+        <strong>{"حالة تشغيلية مسندة إليك وتحتاج تدخلاً"}</strong>
         {orderHref ? <Link href={orderHref} className="button button-secondary">فتح الطلب</Link> : null}
-        <button className="button button-secondary" type="button" onClick={() => setAlert(null)}>إخفاء</button>
+        <button className="button button-secondary" type="button" onClick={() => { setCaseAlert(null); }}>إخفاء</button>
       </div> : <span className="muted">الأحداث العادية صامتة</span>}
     </div>
   );

@@ -59,3 +59,14 @@ func TestNotificationPresentationReportsCancelledOrderWithoutPaymentClaim(t *tes
 		t.Fatalf("rejection notification changed while adding cancellation: title=%q body=%q", title, body)
 	}
 }
+
+func TestDeliveryArrivalNotificationOnlyWhenCaptainConfirms(t *testing.T) {
+	kind, title, body := message("captain_arrived_dropoff", "client", "order-123", "arrived")
+	if kind != "CAPTAIN_ARRIVED" || title == "" || body == "" {
+		t.Fatalf("explicit arrival must yield a distinct customer alert: %q %q %q", kind, title, body)
+	}
+	kind, _, _ = message("captain_pickup_completed", "client", "order-123", "in_custody")
+	if kind == "CAPTAIN_ARRIVED" {
+		t.Fatal("pickup is not a delivery arrival")
+	}
+}

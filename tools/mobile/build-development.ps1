@@ -23,6 +23,9 @@ $CredentialVaultPath = Join-Path $SecretsRoot ("expo\" + $App + "\credentials.js
 $KeystoreVaultPath = Join-Path $SecretsRoot ("eas\android\" + $App + "\development.jks")
 $MaterializedCredentialPath = Join-Path $AppRoot "credentials.json"
 $MaterializedKeystorePath = Join-Path $AppRoot "development.jks"
+$FirebaseVaultPath = Join-Path $SecretsRoot ("expo\" + $App + "\google-services.json")
+$MaterializedFirebasePath = Join-Path $AppRoot "google-services.json"
+$FirebaseMaterialized = $false
 Import-Module -Name (Join-Path $PSScriptRoot "eas-credential-materialization.psm1") -Force
 
 function Fail([string] $Message) { throw $Message }
@@ -81,7 +84,10 @@ if ($LASTEXITCODE -ne 0) { Fail "Dependency lock must match the committed manife
 & node (Join-Path $PSScriptRoot "verify-mobile-config.mjs") --app $App
 if ($LASTEXITCODE -ne 0) { Fail "Mobile dependency/configuration preflight failed for $App." }
 
-foreach ($Required in @($CredentialVaultPath, $KeystoreVaultPath)) {
+$FirebaseEnabled = $App -in @("app-client", "app-partner", "app-captain")
+$RequiredInputs = @($CredentialVaultPath, $KeystoreVaultPath)
+if ($FirebaseEnabled) { $RequiredInputs += $FirebaseVaultPath }
+foreach ($Required in $RequiredInputs) {
     if (-not (Test-Path -LiteralPath $Required -PathType Leaf)) { Fail "Missing target build input: $Required" }
 }
 
@@ -90,6 +96,18 @@ $Credential.android.keystore.keystorePath = "development.jks"
 
 $Materialization = $null
 try {
+    if ($FirebaseEnabled) {
+        if (Test-Path -LiteralPath $MaterializedFirebasePath -PathType Leaf) {
+            Fail "Existing local Firebase file must be handled outside this script before a materialized build."
+        }
+        $FirebaseConfig = Get-Content -LiteralPath $FirebaseVaultPath -Raw | ConvertFrom-Json
+        $AndroidPackages = @($FirebaseConfig.client | ForEach-Object { [string]$_.client_info.android_client_info.package_name })
+        if ([string]$Config.androidPackage -notin $AndroidPackages) {
+            Fail "Firebase client package does not match app $App."
+        }
+        Copy-Item -LiteralPath $FirebaseVaultPath -Destination $MaterializedFirebasePath
+        $FirebaseMaterialized = $true
+    }
     $Materialization = New-EasCredentialMaterialization `
         -KeystoreVaultPath $KeystoreVaultPath `
         -MaterializedCredentialPath $MaterializedCredentialPath `
@@ -141,6 +159,9 @@ try {
     }
 }
 finally {
+    if ($FirebaseMaterialized) {
+        Remove-Item -LiteralPath $MaterializedFirebasePath -Force -ErrorAction SilentlyContinue
+    }
     if ($null -ne $Materialization) {
         Remove-EasCredentialMaterialization -Materialization $Materialization
     }

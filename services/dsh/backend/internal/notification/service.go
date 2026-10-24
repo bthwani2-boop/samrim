@@ -159,6 +159,8 @@ func message(eventType, role, orderID, toState string) (string, string, string) 
 		orderRef = "الطلب"
 	}
 	switch eventType {
+	case "captain_arrived_dropoff":
+		return "CAPTAIN_ARRIVED", "وصل الكابتن إلى موقع التسليم", fmt.Sprintf("وصل الكابتن لتسليم الطلب رقم %s. يرجى استلام الطلب.", orderRef)
 	case "order_created":
 		if role == "partner" {
 			return "ORDER_CREATED", "وصل طلب جديد", fmt.Sprintf("وصل طلب جديد رقم %s إلى متجرك.", orderRef)
