@@ -10,7 +10,7 @@ import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
 import { operationHistoryLabel } from "./operation-history";
-import { OperatorOrderConversation } from "./operator-order-conversation";
+import { OperatorOrderChatDialog } from "./operator-order-chat-dialog";
 import { operationalAge } from "./operational-age";
 import { OperationLocationMap } from "./operation-location-map";
 import { OperatorMissionLocation } from "./operator-mission-location";
@@ -419,7 +419,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
         </section>
       )}
 
-      <OperatorOrderConversation orderId={order.id} />
+      <OperatorOrderChatDialog orderId={order.id} reference={order.id.slice(-8)} status={orderStateLabel(order.state)} summary={operation.storeName} total={formatMoney(order.totalAmountMinor,order.currency)}/>
       {(
         <section className="order-detail-panel" aria-labelledby="order-assignment-title">
           <h2 id="order-assignment-title">إسناد الكابتن</h2>
