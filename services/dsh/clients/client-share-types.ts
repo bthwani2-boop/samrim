@@ -13,6 +13,7 @@ export type ClientShareEntry = Readonly<{
   senderActorId: string;
   contentKind: ClientShareKind;
   contentId: string;
+  contentTitle: string;
   storeId: string;
   productId: string;
   messageCode: ClientShareMessage;

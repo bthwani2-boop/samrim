@@ -61,12 +61,13 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [id, senderActorId, contentKind, contentId, storeId, productId, messageCode, createdAt, readAt]
+                      required: [id, senderActorId, contentKind, contentId, contentTitle, storeId, productId, messageCode, createdAt, readAt]
                       properties:
                         id: { type: integer, format: int64 }
                         senderActorId: { type: string }
                         contentKind: { type: string, enum: [STORE, OFFER, PROMOTION, CONTENT] }
                         contentId: { type: string }
+                        contentTitle: { type: string }
                         storeId: { type: string }
                         productId: { type: string }
                         messageCode: { type: string, enum: [LOOK, LIKE, OFFER, TRY] }

@@ -21,6 +21,7 @@ type ClientShare struct {
 	SenderActorID string     `json:"senderActorId"`
 	ContentKind   string     `json:"contentKind"`
 	ContentID     string     `json:"contentId"`
+	ContentTitle  string     `json:"contentTitle"`
 	StoreID       string     `json:"storeId"`
 	ProductID     string     `json:"productId"`
 	MessageCode   string     `json:"messageCode"`
@@ -110,12 +111,16 @@ func ListClientShares(ctx context.Context, db *sql.DB, actorID string, before in
 		return ClientSharePage{}, ErrClientShareInvalid
 	}
 	rows, err := db.QueryContext(ctx, `SELECT share.id,share.sender_actor_id,share.content_kind,share.content_id,
+      COALESCE(store.name,product.canonical_name,promotion.name_ar,content.title_ar,''),
       COALESCE(offer.store_id,promotion.store_id,CASE WHEN share.content_kind='STORE' THEN share.content_id END,''),
       COALESCE(variant.product_id,''),share.message_code,share.created_at,share.read_at
       FROM dsh.client_content_shares share
+      LEFT JOIN dsh.stores store ON share.content_kind='STORE' AND store.id=share.content_id
       LEFT JOIN dsh.catalog_store_offers offer ON share.content_kind='OFFER' AND offer.id=share.content_id
       LEFT JOIN dsh.catalog_product_variants variant ON variant.id=offer.variant_id
+      LEFT JOIN dsh.catalog_products product ON product.id=variant.product_id
       LEFT JOIN dsh.commerce_promotions promotion ON share.content_kind='PROMOTION' AND promotion.id=share.content_id
+      LEFT JOIN dsh.discovery_content content ON share.content_kind='CONTENT' AND content.id=share.content_id
       WHERE share.recipient_actor_id=$1 AND ($2::bigint=0 OR share.id<$2)
       ORDER BY share.id DESC LIMIT $3`, actorID, before, limit+1)
 	if err != nil {
@@ -126,7 +131,7 @@ func ListClientShares(ctx context.Context, db *sql.DB, actorID string, before in
 	for rows.Next() {
 		var item ClientShare
 		var readAt sql.NullTime
-		if err = rows.Scan(&item.ID, &item.SenderActorID, &item.ContentKind, &item.ContentID, &item.StoreID, &item.ProductID, &item.MessageCode, &item.CreatedAt, &readAt); err != nil {
+		if err = rows.Scan(&item.ID, &item.SenderActorID, &item.ContentKind, &item.ContentID, &item.ContentTitle, &item.StoreID, &item.ProductID, &item.MessageCode, &item.CreatedAt, &readAt); err != nil {
 			return ClientSharePage{}, err
 		}
 		if readAt.Valid {

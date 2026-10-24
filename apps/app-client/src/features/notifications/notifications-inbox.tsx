@@ -211,7 +211,8 @@ export function NotificationsInbox() {
     const kindLabel = ({ STORE: "متجر", OFFER: "منتج", PROMOTION: "عرض", CONTENT: "محتوى" } as const)[share.contentKind];
     return <View key={`share:${share.id}`} style={[styles.item, !share.readAt && styles.unread]}>
       <Text style={styles.itemTitle}>شارك معك أحد العملاء {kindLabel}</Text>
-      <Text style={styles.body}>{clientShareMessageLabel(share.messageCode)}</Text>
+      <Text style={styles.body}>{share.contentTitle || "محتوى من بثواني"}</Text>
+      <Text style={styles.muted}>«{clientShareMessageLabel(share.messageCode)}»</Text>
       <Text style={styles.date}>{formatNotificationDate(share.createdAt)}</Text>
       <View style={styles.itemHeader}>
         <BthwaniButton label="فتح المشاركة" onPress={() => void openShare(share)} disabled={shareBusy} variant="secondary" />
