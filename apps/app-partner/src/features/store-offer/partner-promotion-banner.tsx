@@ -2,9 +2,10 @@ import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, formatMoney, type PublicDiscoveryContentView, type PublicPromotionView } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
+import { Image as ExpoImage } from "expo-image";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, AppState, Easing, Image, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, AppState, Easing, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
 
 type BannerMode = "STATIC" | "CINEMATIC" | "CROSSFADE";
 type BannerData = Readonly<{ promotion: PublicPromotionView; content: PublicDiscoveryContentView | undefined }>;
@@ -126,7 +127,7 @@ export function PartnerStorePromotionBanner({ storeId, serviceCityId, canManage,
   if(!current) return offersOnly?<View style={styles.wrap}><Text style={styles.empty}>{error?"تعذر تحميل العروض حاليًا.":"لا توجد عروض منشورة حاليًا."}</Text>
     {canManage?<Pressable accessibilityRole="button" onPress={openManagement} style={styles.action}><Text style={styles.actionText}>إدارة العروض</Text></Pressable>:null}</View>:null;
   const slide=(item:BannerData,layerStyle:object)=><Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill,layerStyle]}>
-    {item.content?<Image source={{uri:item.content.mediaUri}} resizeMode="cover" style={StyleSheet.absoluteFill}/>:null}
+    {item.content?<ExpoImage cachePolicy="disk" source={{uri:item.content.mediaUri}} contentFit="cover" style={StyleSheet.absoluteFill}/>:null}
     <View style={styles.copy}><Text style={styles.title} numberOfLines={2}>{item.promotion.nameAr}</Text>
       <Text style={styles.benefit}>{offerLabel(item.promotion)}</Text></View>
   </Animated.View>;

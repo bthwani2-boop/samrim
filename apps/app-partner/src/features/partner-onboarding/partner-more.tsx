@@ -1,17 +1,18 @@
 import { type resolveTheme, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, useAppearanceTheme, useMobileAppearance, type MobileIconName } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniIcon, type MobileIconName, useAppearanceTheme, useMobileAppearance } from "@bthwani/design-system/native";
 import type { PartnerStoreOperationalAvailabilityResponse, StoreAccessGrant, StoreImagesResponse } from "@bthwani/dsh";
+import { Image as ExpoImage } from "expo-image";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, logoutIdentity, subscribeIdentitySession } from "../../bootstrap/identity";
+import { PartnerAccountSecurity } from "../access/partner-account-security";
 import { PartnerAccessInvitationsCard } from "./partner-access-invitations";
 import { PartnerPerformancePeek } from "./partner-performance-peek";
-import { PartnerAccountSecurity } from "../access/partner-account-security";
-import { readOwnJoiningCase, listOwnStoreAccessInvitations, readOwnStoreOperationalAvailability, readOwnStoreImages } from "./store-readback-client";
-import { onStoreAvailabilityChanged } from "./store-availability-events";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
+import { onStoreAvailabilityChanged } from "./store-availability-events";
+import { listOwnStoreAccessInvitations, readOwnJoiningCase, readOwnStoreImages, readOwnStoreOperationalAvailability } from "./store-readback-client";
 
 type MenuItem = Readonly<{label:string;icon:MobileIconName;href?:Href;section?:"promotions"|"team"}>;
 type IdentityDisplay = Readonly<{name:string;role:string}>;
@@ -165,10 +166,10 @@ export function PartnerMore() {
       <Pressable accessibilityRole="button" accessibilityLabel={"غلاف وشعار المتجر "+selectedStore.name+"، فتح ملف المتجر"}
         onPress={()=>router.push({pathname:"/store",params:{section:"settings",returnTo:"more"}} as Href)}>
         <View style={styles.coverArea}>
-          {storeImages?.storeCoverImage?.uri&&!coverFailed?<Image source={{uri:storeImages.storeCoverImage.uri}} resizeMode="cover" onError={()=>setCoverFailed(true)} style={styles.heroCover}/>:<View style={styles.heroFallback}><BthwaniIcon name="store" color={theme.brandAction} size={30}/></View>}
+          {storeImages?.storeCoverImage?.uri&&!coverFailed?<ExpoImage cachePolicy="memory" source={{uri:storeImages.storeCoverImage.uri}} contentFit="cover" onError={()=>setCoverFailed(true)} style={styles.heroCover}/>:<View style={styles.heroFallback}><BthwaniIcon name="store" color={theme.brandAction} size={30}/></View>}
         </View>
         <View style={styles.heroFooter}>
-          <View style={styles.heroLogo}>{storeImages?.storeProfileImage?.uri&&!logoFailed?<Image source={{uri:storeImages.storeProfileImage.uri}} onError={()=>setLogoFailed(true)} style={styles.heroLogoImage}/>:<BthwaniIcon name="store" color={theme.brandAction} size={25}/>}</View>
+          <View style={styles.heroLogo}>{storeImages?.storeProfileImage?.uri&&!logoFailed?<ExpoImage cachePolicy="memory" source={{uri:storeImages.storeProfileImage.uri}} onError={()=>setLogoFailed(true)} style={styles.heroLogoImage}/>:<BthwaniIcon name="store" color={theme.brandAction} size={25}/>}</View>
           <View style={styles.heroText}><Text style={styles.heroName} numberOfLines={1}>{selectedStore.name}</Text><Text style={styles.heroSubtitle}>ملف المتجر والصور</Text></View>
           <BthwaniIcon name="edit" color={theme.brandAction} size={18}/>
         </View>
