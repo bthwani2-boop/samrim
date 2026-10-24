@@ -17,6 +17,7 @@ import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
 import { getFieldJoiningRequirements } from "./field-joining-readiness";
 import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
 import { createFieldOperationStyles } from "./field-operation-styles";
+import { prepareFieldPublicStoreImage } from "./field-store-image-preparation";
 import { fieldStoreImageProvenance } from "./field-store-image-provenance";
 import { type EditableWorkingHours, type EditableWorkingHoursInterval, FieldWorkingHoursEditor, toStoreWorkingHoursIntervals } from "./field-working-hours-editor";
 import { useOwnFieldAdmission } from "./use-field-admission";
@@ -563,15 +564,8 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
     if (result.canceled || !result.assets[0]?.uri) return;
     const asset = result.assets[0];
     try {
-      if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) throw new Error("STORE_IMAGE_SIZE_INVALID");
-      if (!fieldJoiningImageDimensionsSupported(asset.width, asset.height)) throw new Error("STORE_IMAGE_DIMENSIONS_INVALID");
-      const response = await fetch(asset.uri);
-      if (!response.ok) throw new Error("STORE_IMAGE_READ_FAILED");
-      const blob = await response.blob();
-      if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("STORE_IMAGE_SIZE_INVALID");
-      const type = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
-      if (!type) throw new Error("STORE_IMAGE_TYPE_INVALID");
-      setStoreImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "store-image.png" : "store-image.jpg"), type, blob, source, provenance: fieldStoreImageProvenance(source, input.ownerFullName, admissionState.kind === "ready" ? admissionState.admission.fullNameAr ?? "" : "") });
+      const image = await prepareFieldPublicStoreImage(asset);
+      setStoreImage({ ...image, source, provenance: fieldStoreImageProvenance(source, input.ownerFullName, admissionState.kind === "ready" ? admissionState.admission.fullNameAr ?? "" : "") });
       setError("");
     } catch (cause) {
       console.warn("Field store image preparation failed", cause);
