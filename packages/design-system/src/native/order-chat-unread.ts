@@ -11,6 +11,8 @@ export function useOrderChatUnreadCounts(
   const [counts,setCounts]=useState<Readonly<Record<string,number>>>({});
   const idsKey=orderIds.slice(0,12).join("|");
   useEffect(()=>{
+    // Deliberate invalidation signal: a new refreshKey must restart unread polling.
+    void refreshKey;
     let active=true;
     setCounts({});
     if(!enabled||!actorScope||!idsKey)return()=>{active=false;};
