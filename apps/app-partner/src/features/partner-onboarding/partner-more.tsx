@@ -36,7 +36,6 @@ export function PartnerMore() {
   const [storeImages,setStoreImages]=useState<StoreImagesResponse|null>(null);
   const [coverFailed,setCoverFailed]=useState(false);
   const [logoFailed,setLogoFailed]=useState(false);
-  const [themeExpanded,setThemeExpanded]=useState(false);
   const [themeBusy,setThemeBusy]=useState(false);
   const [themeError,setThemeError]=useState("");
   const [invitesExpanded,setInvitesExpanded]=useState(false);
@@ -160,24 +159,27 @@ export function PartnerMore() {
       <Text style={styles.menuLabel}>{item.label}</Text>
       <View style={[styles.menuIcon,{backgroundColor:index%2===0?theme.actionSoft:theme.surfaceRaised}]}><BthwaniIcon name={item.icon} size={20} color={index%2===0?theme.brandAction:theme.color}/></View>
     </Pressable>)}</View>
-    <View style={styles.grid}>
-      <Pressable accessibilityRole="button" accessibilityLabel="المظهر" style={styles.utilityCard} onPress={()=>setThemeExpanded(v=>!v)}>
-        <BthwaniIcon name="edit" size={19} color={theme.colorMuted}/><Text style={styles.utilityTitle}>المظهر</Text>
-        <Text style={styles.utilityHint}>{preference==="system"?"حسب النظام":preference==="dark"?"داكن":"فاتح"}</Text>
-      </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel="الدعوات" style={styles.utilityCard} onPress={()=>setInvitesExpanded(v=>!v)}>
-        <BthwaniIcon name="account" size={19} color={theme.colorMuted}/><Text style={styles.utilityTitle}>الدعوات</Text>
-        <Text style={styles.utilityHint}>دعوات الوصول إليك</Text>
-      </Pressable>
+    <View style={styles.appearanceCard} accessibilityLabel="المظهر">
+      <View style={styles.appearanceHeading}>
+        <BthwaniIcon name="edit" size={18} color={theme.colorMuted}/>
+        <Text style={styles.utilityTitle}>المظهر</Text>
+      </View>
+      <View style={styles.appearanceSwitch} accessibilityLabel="اختيار المظهر">
+        {([{value:"system",label:"النظام"},{value:"dark",label:"داكن"},{value:"light",label:"فاتح"}] as const).map(option=><Pressable
+          key={option.value} accessibilityRole="radio" accessibilityLabel={option.label}
+          accessibilityState={{selected:preference===option.value,disabled:themeBusy}}
+          onPress={()=>void chooseTheme(option.value)} disabled={themeBusy}
+          style={[styles.appearanceSegment,preference===option.value&&styles.appearanceSegmentSelected]}>
+          <Text numberOfLines={1} style={[styles.appearanceSegmentText,preference===option.value&&styles.appearanceSegmentTextSelected]}>{option.label}</Text>
+        </Pressable>)}
+      </View>
     </View>
-    {themeExpanded?<View style={styles.panel} accessibilityLabel="خيارات المظهر">
-      {([{value:"system",label:"حسب النظام"},{value:"light",label:"فاتح"},{value:"dark",label:"داكن"}] as const).map(option=><Pressable key={option.value}
-        accessibilityRole="radio" accessibilityState={{selected:preference===option.value,disabled:themeBusy,busy:themeBusy}}
-        onPress={()=>void chooseTheme(option.value)} disabled={themeBusy} style={[styles.themeOption,preference===option.value&&styles.themeSelected]}>
-        <Text style={[styles.themeText,preference===option.value&&styles.themeActiveText]}>{option.label}</Text>
-      </Pressable>)}
-      {themeError?<Text accessibilityRole="alert" style={styles.error}>{themeError}</Text>:null}
-    </View>:null}
+    {themeError?<Text accessibilityRole="alert" style={styles.error}>{themeError}</Text>:null}
+    <Pressable accessibilityRole="button" accessibilityLabel="الدعوات" style={styles.inviteCard} onPress={()=>setInvitesExpanded(v=>!v)}>
+      <BthwaniIcon name="account" size={19} color={theme.colorMuted}/>
+      <Text style={styles.utilityTitle}>الدعوات</Text>
+      <Text style={styles.inviteHint}>دعوات الوصول إليك</Text>
+    </Pressable>
     {invitesExpanded?<PartnerAccessInvitationsCard/>:null}
     <View style={styles.logout}><BthwaniButton variant="secondary" label={logoutBusy?"جارٍ تسجيل الخروج":"تسجيل الخروج"} disabled={logoutBusy} busy={logoutBusy} onPress={()=>void logout()}/></View>
     {logoutError?<Text accessibilityRole="alert" style={styles.error}>{logoutError}</Text>:null}
@@ -206,10 +208,15 @@ function createStyles(p:ReturnType<typeof resolveTheme>){return StyleSheet.creat
   grid:{flexDirection:"row",flexWrap:"wrap",gap:9,justifyContent:"space-between"},
   menuCard:{width:"48.5%",minHeight:64,padding:11,borderRadius:12,borderWidth:1,borderColor:p.borderColor,backgroundColor:p.surface,flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:6},
   menuLabel:{...typography.bodyStrong,color:p.color,fontSize:13,flex:1},menuIcon:{height:33,width:33,borderRadius:9,alignItems:"center",justifyContent:"center"},
-  utilityCard:{width:"48.5%",minHeight:73,borderWidth:1,borderColor:p.borderColor,borderRadius:12,backgroundColor:p.surface,flexDirection:"row",alignItems:"center",justifyContent:"flex-start",gap:8,padding:11,flexWrap:"wrap"},
-  utilityTitle:{...typography.bodyStrong,color:p.color,fontSize:13},utilityHint:{...typography.caption,color:p.colorMuted,width:"100%"},
-  themeOption:{minHeight:43,borderRadius:9,borderWidth:1,borderColor:p.borderColor,backgroundColor:p.surface,alignItems:"flex-start",justifyContent:"center",paddingHorizontal:12},
-  themeSelected:{backgroundColor:p.actionSoft,borderColor:p.brandAction},
-  themeText:{...typography.bodySm,color:p.color},themeActiveText:{color:p.brandAction,fontWeight:"800"},
+  appearanceCard:{minHeight:58,borderWidth:1,borderColor:p.borderColor,borderRadius:12,backgroundColor:p.surface,flexDirection:"row",alignItems:"center",gap:8,paddingHorizontal:10,paddingVertical:8},
+  appearanceHeading:{flexDirection:"row",alignItems:"center",gap:6},
+  appearanceSwitch:{flex:1,minWidth:0,flexDirection:"row",alignItems:"stretch",borderRadius:10,borderWidth:1,borderColor:p.borderColor,backgroundColor:p.surfaceRaised,padding:3,gap:2},
+  appearanceSegment:{flex:1,minWidth:0,minHeight:36,borderRadius:7,alignItems:"center",justifyContent:"center",paddingHorizontal:3},
+  appearanceSegmentSelected:{backgroundColor:p.actionSoft,borderWidth:1,borderColor:p.brandAction},
+  appearanceSegmentText:{...typography.caption,color:p.colorMuted,fontSize:12,fontWeight:"600"},
+  appearanceSegmentTextSelected:{color:p.brandAction,fontWeight:"800"},
+  inviteCard:{minHeight:49,borderWidth:1,borderColor:p.borderColor,borderRadius:12,backgroundColor:p.surface,flexDirection:"row",alignItems:"center",gap:8,paddingHorizontal:12},
+  utilityTitle:{...typography.bodyStrong,color:p.color,fontSize:13},
+  inviteHint:{...typography.caption,color:p.colorMuted,flex:1,textAlign:"left"},
   logout:{paddingTop:7},error:{...typography.bodySm,color:p.warning},
 });}
