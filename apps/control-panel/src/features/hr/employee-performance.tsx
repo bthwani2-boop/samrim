@@ -61,7 +61,7 @@ export function EmployeePerformance({ employeeId }: Readonly<{ employeeId: strin
   return <section className={"bt-employee-performance-performance"} aria-labelledby="attendance-performance-title">
     <header className={"bt-employee-performance-heading"}>
       <div><h2 id="attendance-performance-title">مؤشرات الالتزام المسجلة</h2><p>آخر 30 يومًا: {period.from} إلى {period.to}</p></div>
-      <button className="button button-secondary" type="button" disabled={loading} onClick={() => void load()}>تحديث المؤشرات</button>
+
     </header>
     <p className={"bt-employee-performance-method"}>هذه مؤشرات وصفية للتسجيلات اليدوية المعتمدة في الموارد البشرية، وليست تقييمًا لإنتاجية الموظف أو نسبة حضوره الفعلية. اليوم غير المسجل لا يُعد غيابًا.</p>
     {loading ? <p role="status">جارٍ حساب المؤشرات من سجل الحضور…</p> : null}

@@ -6,6 +6,7 @@ import type { HREmployee } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
 import { RecordTabPanel, RecordTabs } from "../shared/record-tabs";
+import { useReadOnReturn } from "../shared/use-read-on-return";
 import { EmployeeAccessRequest } from "./employee-access-request";
 import { EmployeeAttendance } from "./employee-attendance";
 import { EmployeeAuditHistory } from "./employee-audit-history";
@@ -15,14 +16,13 @@ import { EmployeePerformance } from "./employee-performance";
 import { EmployeeProfileEditor } from "./employee-profile-editor";
 
 
-type EmployeeTab = "overview" | "performance" | "employment" | "attendance" | "access" | "history";
+type EmployeeTab = "overview" | "employment" | "attendance" | "access" | "history";
 const tabs: ReadonlyArray<{ key: EmployeeTab; label: string }> = [
-  { key: "overview", label: "نظرة عامة" },
-  { key: "performance", label: "الأداء" },
+  { key: "overview", label: "ملخص" },
   { key: "employment", label: "البيانات الوظيفية" },
-  { key: "attendance", label: "الحضور" },
-  { key: "access", label: "الوصول والصلاحيات" },
-  { key: "history", label: "سجل التغييرات" },
+  { key: "attendance", label: "الدوام" },
+  { key: "access", label: "الوصول" },
+  { key: "history", label: "السجل" },
 ];
 function dateLabel(value?: string) {
   if (!value) return "غير مسجل";
@@ -56,6 +56,7 @@ export function EmployeeProfileWorkspace({ employeeId, embedded = false }: Reado
   useEffect(() => {
     if (state.kind === "authenticated") void reload();
   }, [reload, state.kind]);
+  useReadOnReturn(() => reload(), state.kind === "authenticated" && !loading);
 
   function selectTab(key: string) {
     if (!tabs.some((entry) => entry.key === key)) return;
@@ -80,7 +81,7 @@ export function EmployeeProfileWorkspace({ employeeId, embedded = false }: Reado
           <div className={"bt-employee-profile-heading"}>
             <h1>{employee.fullNameAr}</h1>
             <span className={employee.status === "active" ? "bt-employee-profile-active" : "bt-employee-profile-inactive"}>{employee.status === "active" ? "على رأس العمل" : "غير نشط"}</span>
-            <span className={"bt-employee-profile-tag"}>{employee.operatorActorId ? "موظف ومشغّل" : "موظف"}</span>
+            <span className={"bt-employee-profile-tag"}>{employee.operatorActorId ? "مرتبط بحساب تشغيل" : "موظف"}</span>
           </div>
           <p>{employee.jobTitle} · {employee.department}</p>
           <div className={"bt-employee-profile-contact"}>
@@ -89,7 +90,7 @@ export function EmployeeProfileWorkspace({ employeeId, embedded = false }: Reado
           </div>
         </div>
         <div className={"bt-employee-profile-heroActions"}>
-          <button type="button" className="button button-secondary" onClick={() => void reload()} disabled={loading}>تحديث الملف</button>
+
           {employee.operatorActorId && employee.phoneE164 && canManageOperator ? <Link className="button button-primary" href={"/access/operators/" + encodeURIComponent(employee.phoneE164)}>فتح ملف المشغّل</Link> : null}
         </div>
       </header>
@@ -121,16 +122,11 @@ export function EmployeeProfileWorkspace({ employeeId, embedded = false }: Reado
           <div className={"bt-employee-profile-sectionHead"}><h2>الهوية والوصول</h2><button type="button" className="button button-secondary" onClick={() => selectTab("access")}>إدارة الوصول</button></div>
           <p className={"bt-employee-profile-helper"}>{employee.operatorActorId ? "هذا الموظف مرتبط بهوية مشغّل؛ صلاحيات التشغيل مستقلة عن حالته الوظيفية." : "لا يمتلك الموظف هوية تشغيل مرتبطة، ولا يمنح سجل الموارد البشرية أي وصول تلقائي."}</p>
           <div className={"bt-employee-profile-quickLinks"}>
-            <button type="button" className="button button-secondary" onClick={() => selectTab("performance")}>مؤشرات الأداء</button>
-            <button type="button" className="button button-secondary" onClick={() => selectTab("attendance")}>سجل الحضور</button>
+            <button type="button" className="button button-secondary" onClick={() => selectTab("attendance")}>الدوام والمؤشرات</button>
             <button type="button" className="button button-secondary" onClick={() => selectTab("history")}>سجل القرارات</button>
           </div>
         </section>
         </div>
-      </RecordTabPanel>
-
-      <RecordTabPanel id="employee-file" tab="performance" active={tab === "performance"}>
-        {visited.has("performance") ? <section className={"bt-employee-profile-panel"}><EmployeePerformance employeeId={employee.id} /></section> : null}
       </RecordTabPanel>
 
       <RecordTabPanel id="employee-file" tab="employment" active={tab === "employment"}>
@@ -141,7 +137,13 @@ export function EmployeeProfileWorkspace({ employeeId, embedded = false }: Reado
       </RecordTabPanel>
 
       <RecordTabPanel id="employee-file" tab="attendance" active={tab === "attendance"}>
-        {visited.has("attendance") ? <section className={"bt-employee-profile-panel"}><EmployeeAttendance employeeId={employee.id} /></section> : null}
+        {visited.has("attendance") ? <>
+          <section className={"bt-employee-profile-panel"}><EmployeeAttendance employeeId={employee.id} /></section>
+          <details className={"bt-employee-profile-section"}>
+            <summary>مؤشرات التسجيلات اليدوية خلال 30 يومًا</summary>
+            <section className={"bt-employee-profile-panel"}><EmployeePerformance employeeId={employee.id} /></section>
+          </details>
+        </> : null}
       </RecordTabPanel>
 
       <RecordTabPanel id="employee-file" tab="access" active={tab === "access"}>
