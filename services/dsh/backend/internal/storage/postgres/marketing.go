@@ -953,7 +953,7 @@ func ListDiscoveryContent(ctx context.Context, db *sql.DB, public bool, serviceC
                 FROM dsh.discovery_content content
                 JOIN eligible ON eligible.id=content.id
                 WHERE (eligible.media_group AND eligible.priority_rank<=8)
-                   OR (NOT eligible.media_group AND eligible.priority_rank<=4)
+                   OR (NOT eligible.media_group AND eligible.priority_rank<=12)
                 ORDER BY content.ordinal ASC,content.starts_at DESC,content.id DESC`
 	}
 	rows, err := db.QueryContext(ctx, query, args...)
