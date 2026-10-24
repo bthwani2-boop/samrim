@@ -37,9 +37,10 @@ const visibleQuoteExpression = verifiedQuoteNode.initializer.getText(ast);
 const runnableVisibleQuote = ts.transpileModule(`function readVisibleQuote(readyCart, quote, storeId, pickupMode, serviceableAddressId, fulfillmentMode, appliedPromotionCode, storeAcceptingOrders = true) { return ${visibleQuoteExpression}; }`, { compilerOptions }).outputText;
 const readVisibleQuote = vm.runInNewContext(`${runnableQuote}\n${runnableVisibleQuote}\nreadVisibleQuote`);
 
-function scenario({ accessToken, persist, submit, recover } = {}) {
+function scenario({ accessToken, persist, submit, recover, isOffline = false } = {}) {
   const counts = { token: 0, persist: 0, submit: 0, generatedIds: 0, pending: [], busy: [], errors: [] };
   const context = {
+    isOffline,
     checkoutSubmitting: { current: false },
     pickupMode: true,
     serviceableAddressId: undefined,
@@ -93,6 +94,22 @@ function scenario({ accessToken, persist, submit, recover } = {}) {
   const checkout = vm.runInNewContext(`${runnableQuote}\n${runnableHandler}\ncheckout`, context);
   return { checkout, counts, context };
 }
+
+test("confirmed offline state never creates an order or a pending payment attempt", async () => {
+  const { checkout, counts, context } = scenario({ isOffline: true });
+  await checkout();
+  assert.equal(counts.token, 0);
+  assert.equal(counts.persist, 0);
+  assert.equal(counts.submit, 0);
+  assert.equal(counts.generatedIds, 0);
+  assert.equal(counts.pending.length, 0);
+  assert.equal(context.checkoutSubmitting.current, false);
+  assert.ok(counts.errors.some((message) => message.includes("لم يُرسل الطلب")));
+  context.isOffline = false;
+  await checkout();
+  assert.equal(counts.persist, 1);
+  assert.equal(counts.submit, 1);
+});
 
 test("checkout funds the remaining cash automatically from the available wallet", async () => {
   let accepted;
