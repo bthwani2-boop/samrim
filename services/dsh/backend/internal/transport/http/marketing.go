@@ -72,6 +72,7 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/discovery-content/analytics", s.listOperatorDiscoveryContentAnalytics)
 	mux.HandleFunc("POST /dsh/operator/discovery-content", s.createOperatorDiscoveryContent)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content", s.listPartnerStoreDiscoveryContent)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-targets", s.listPartnerStoreDiscoveryTargets)
 	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/discovery-content", s.createPartnerStoreDiscoveryContent)
 	mux.HandleFunc("POST /dsh/operator/discovery-content/{contentId}/publication", s.setOperatorDiscoveryContentPublication)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/promotions", s.listPartnerStorePromotions)
@@ -533,6 +534,22 @@ func (s *MarketingServer) createPartnerStoreDiscoveryContent(w http.ResponseWrit
 	s.createDiscoveryContentWithMedia(w, r, actorID, idempotency, r.PathValue("storeId"))
 }
 
+func (s *MarketingServer) listPartnerStoreDiscoveryTargets(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	targets, err := postgres.ListPartnerReelTargets(r.Context(), s.db, r.PathValue("storeId"))
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, struct {
+		Targets []postgres.PartnerReelTarget `json:"targets"`
+	}{Targets: targets})
+}
+
 func (s *MarketingServer) listPartnerStoreDiscoveryContent(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
 		writeMarketingError(w, err)
@@ -564,12 +581,22 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 		return
 	}
 	input := parsed.input
-	// Partner identity is resolved from the authenticated session, never from
-	// client-supplied Actor or Store headers. A partner can only submit an
-	// own-Store SHORT_FORM draft. Central marketing owns other destinations.
-	if partnerStoreID != "" && (input.Kind != "SHORT_FORM" || input.TargetType != "STORE" || input.TargetID != partnerStoreID) {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "a Partner reel must target its authorized Store")
-		return
+	// The session must authorize the Store, then the database verifies ownership
+	// of each destination before any video transcoding or media writes.
+	if partnerStoreID != "" {
+		if input.Kind != "SHORT_FORM" {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "partners may submit only short-form reels")
+			return
+		}
+		owned, err := postgres.PartnerReelTargetBelongsToStore(r.Context(), s.db, partnerStoreID, string(input.TargetType), input.TargetID)
+		if err != nil {
+			writeMarketingError(w, err)
+			return
+		}
+		if !owned {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "reel target does not belong to the authorized Store")
+			return
+		}
 	}
 	var posterBytes []byte
 	if parsed.contentType == "video/mp4" {
@@ -636,7 +663,7 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 		}
 	}
 	item, replayed, err := postgres.CreateDiscoveryContent(r.Context(), s.db, postgres.DiscoveryContentInput{
-		ID: input.ID, Kind: string(input.Kind), TitleAr: input.TitleAr, BodyAr: input.BodyAr, MediaAssetID: asset.ID, TargetType: string(input.TargetType), TargetID: input.TargetID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, Ordinal: input.Ordinal, CreatedByActorID: acting,
+		ID: input.ID, Kind: string(input.Kind), TitleAr: input.TitleAr, BodyAr: input.BodyAr, MediaAssetID: asset.ID, SourceStoreID: partnerStoreID, TargetType: string(input.TargetType), TargetID: input.TargetID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, Ordinal: input.Ordinal, CreatedByActorID: acting,
 	}, idempotency, requestHash)
 	if err != nil {
 		resolved, found, readErr := postgres.ReadDiscoveryContentMutation(r.Context(), s.db, idempotency, input.ID, requestHash)
