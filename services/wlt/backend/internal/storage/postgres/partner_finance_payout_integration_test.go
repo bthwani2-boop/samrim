@@ -154,7 +154,7 @@ func TestPartnerStoreFinanceAndRecipientSettlementLifecycle(t *testing.T) {
 		t.Fatalf("historical frozen staff payout released new transfer export after recipient change: %v", err)
 	}
 
-	receipt, err := SaveFinanceEvidenceDocument(s.ctx, s.db, cipher, FinanceEvidenceDocumentInput{Purpose: "TRANSFER_RECEIPT", Filename: "staff-transfer.pdf", ContentType: "application/pdf", Content: []byte("isolated transfer evidence " + s.suffix), ActorID: "finance-executor", IdempotencyKey: "receipt-" + s.suffix, CorrelationID: "receipt-corr-" + s.suffix})
+	receipt, err := SaveFinanceEvidenceDocument(s.ctx, s.db, cipher, FinanceEvidenceDocumentInput{Purpose: "TRANSFER_RECEIPT", Filename: "staff-transfer.pdf", ContentType: "application/pdf", Content: []byte("%PDF-1.4\nisolated transfer evidence " + s.suffix), ActorID: "finance-executor", IdempotencyKey: "receipt-" + s.suffix, CorrelationID: "receipt-corr-" + s.suffix})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,11 +162,23 @@ func TestPartnerStoreFinanceAndRecipientSettlementLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Recording a transfer is not authorization for the executor to verify it.
+	// A second independent operator must approve the real transfer evidence.
+	if _, err = VerifyManualTransfer(s.ctx, s.db, VerifyTransferInput{
+		TransferID: transfer.ID, ActorID: "finance-executor",
+		IdempotencyKey: "transfer-self-verify-" + s.suffix,
+		CorrelationID:  "transfer-self-verify-corr-" + s.suffix,
+	}); !errors.Is(err, ErrTransferSeparation) {
+		t.Fatalf("transfer executor was allowed to verify their own payment: %v", err)
+	}
+	if unverified, err := ReadPayoutRequest(s.ctx, s.db, staffPayout.ID); err != nil || unverified.Status == "COMPLETED" {
+		t.Fatalf("self-verification affected payout completion: %+v %v", unverified, err)
+	}
 	transfer, err = VerifyManualTransfer(s.ctx, s.db, VerifyTransferInput{TransferID: transfer.ID, ActorID: "finance-transfer-verifier", IdempotencyKey: "transfer-verify-" + s.suffix, CorrelationID: "transfer-verify-corr-" + s.suffix})
 	if err != nil {
 		t.Fatal(err)
 	}
-	statementEvidence, err := SaveFinanceEvidenceDocument(s.ctx, s.db, cipher, FinanceEvidenceDocumentInput{Purpose: "SETTLEMENT_STATEMENT", Filename: "staff-statement.pdf", ContentType: "application/pdf", Content: []byte("isolated statement evidence " + s.suffix), ActorID: "finance-statement-uploader", IdempotencyKey: "statement-evidence-" + s.suffix, CorrelationID: "statement-evidence-corr-" + s.suffix})
+	statementEvidence, err := SaveFinanceEvidenceDocument(s.ctx, s.db, cipher, FinanceEvidenceDocumentInput{Purpose: "SETTLEMENT_STATEMENT", Filename: "staff-statement.pdf", ContentType: "application/pdf", Content: []byte("%PDF-1.4\nisolated statement evidence " + s.suffix), ActorID: "finance-statement-uploader", IdempotencyKey: "statement-evidence-" + s.suffix, CorrelationID: "statement-evidence-corr-" + s.suffix})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,6 +190,31 @@ func TestPartnerStoreFinanceAndRecipientSettlementLifecycle(t *testing.T) {
 	statementRow, err := RecordSettlementStatementRow(s.ctx, s.db, cipher, SettlementStatementRowInput{StatementID: statement.ID, RowSequence: 1, ExternalReference: "staff-external-" + s.suffix, WalletIdentifier: staffFacts.PhoneE164, AmountMinor: 2000, Currency: "YER", TransactionAt: now, ActorID: "finance-statement-recorder", IdempotencyKey: "statement-row-" + s.suffix, CorrelationID: "statement-row-corr-" + s.suffix})
 	if err != nil {
 		t.Fatal(err)
+	}
+	// A transfer receipt without a matching provider statement amount cannot
+	// complete or release the held payout. The wrong row remains unmatched.
+	wrongRow, err := RecordSettlementStatementRow(s.ctx, s.db, cipher, SettlementStatementRowInput{
+		StatementID: statement.ID, RowSequence: 2,
+		ExternalReference: "staff-external-" + s.suffix,
+		WalletIdentifier:  staffFacts.PhoneE164, AmountMinor: 2001,
+		Currency: "YER", TransactionAt: now,
+		ActorID:        "finance-statement-recorder",
+		IdempotencyKey: "statement-wrong-row-" + s.suffix,
+		CorrelationID:  "statement-wrong-row-corr-" + s.suffix,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReconcileManualTransfer(s.ctx, s.db, cipher, ReconcileTransferInput{
+		TransferID: transfer.ID, StatementRowID: wrongRow.ID,
+		ActorID:        "finance-reconciler",
+		IdempotencyKey: "reconcile-wrong-" + s.suffix,
+		CorrelationID:  "reconcile-wrong-corr-" + s.suffix,
+	}); !errors.Is(err, ErrTransferState) {
+		t.Fatalf("mismatched provider statement amount completed payout: %v", err)
+	}
+	if stillPending, err := ReadPayoutRequest(s.ctx, s.db, staffPayout.ID); err != nil || stillPending.Status == "COMPLETED" {
+		t.Fatalf("mismatched provider statement changed payout state: %+v %v", stillPending, err)
 	}
 	transfer, err = ReconcileManualTransfer(s.ctx, s.db, cipher, ReconcileTransferInput{TransferID: transfer.ID, StatementRowID: statementRow.ID, ActorID: "finance-reconciler", IdempotencyKey: "reconcile-" + s.suffix, CorrelationID: "reconcile-corr-" + s.suffix})
 	if err != nil || transfer.ExecutionStatus != "RECONCILED" {

@@ -85,6 +85,9 @@ func hashCreateRequest(input CreatePaymentIntentInput, includePromotionFunding b
 	if input.CustomerPaymentAllocation != nil {
 		allocation := input.CustomerPaymentAllocation
 		parts = append(parts, allocation.OrderID, allocation.StoreID, allocation.PartnerActorID, allocation.CommercialStoreTypeID, allocation.FulfillmentMode, allocation.Currency, fmt.Sprintf("%d", allocation.SubtotalMinor), fmt.Sprintf("%d", allocation.DeliveryFeeMinor), fmt.Sprintf("%d", allocation.DiscountMinor), fmt.Sprintf("%d", allocation.InternalBalanceAmountMinor), fmt.Sprintf("%d", allocation.CashAmountMinor), fmt.Sprintf("%d", allocation.CustomerPayableMinor), allocation.PolicyVersion)
+		if allocation.DeliveryMarginMinor != 0 {
+			parts = append(parts, "delivery-margin:v1", fmt.Sprintf("%d", allocation.DeliveryMarginMinor))
+		}
 		if includePromotionFunding && allocation.PromotionFunding != nil {
 			funding := allocation.PromotionFunding
 			parts = append(parts, "promotion-funding:v1", strings.TrimSpace(funding.PromotionID), fmt.Sprintf("%d", funding.PromotionVersion), strings.TrimSpace(funding.PromotionCode), strings.TrimSpace(funding.StoreID), strings.ToUpper(strings.TrimSpace(funding.FundingSource)), fmt.Sprintf("%d", funding.DiscountMinor))

@@ -52,8 +52,14 @@ func TestCustomerPaymentAllocationRequiresCanonicalStoreModeFacts(t *testing.T) 
 				t.Fatalf("balance-only allocation rejected: %v", err)
 			}
 			allocation.DeliveryFeeMinor = 50
-			if validateCustomerPaymentAllocation(allocation) != ErrCustomerPaymentAllocationInvalidInput {
-				t.Fatal("store fulfillment accepted a delivery fee")
+			if mode == "PARTNER_CAPTAIN" {
+				allocation.CustomerPayableMinor += 50
+				allocation.CashAmountMinor += 50
+				if err := validateCustomerPaymentAllocation(allocation); err != nil {
+					t.Fatalf("partner delivery fee must use shared platform policy: %v", err)
+				}
+			} else if validateCustomerPaymentAllocation(allocation) != ErrCustomerPaymentAllocationInvalidInput {
+				t.Fatal("pickup accepted a delivery fee")
 			}
 		})
 	}

@@ -1,12 +1,21 @@
 import { borders, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, type CustomerFulfillmentMode, type DeliveryAddress, fulfillmentModeLabel, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
 import { type Href, Link, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { evaluateStoreServiceability, listOwnDeliveryAddresses, readPublishedStore } from "../store-discovery/store-discovery-client";
-import { CartCheckout } from "./cart-checkout";
+import { CartCheckout, type CheckoutFooterState } from "./cart-checkout";
+import { readSavedFulfillmentMode, resolveFulfillmentChoice, saveFulfillmentMode } from "./fulfillment-choice";
+import { PremiumFulfillmentSelector, PremiumStickyFooter, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
+
+const fulfillmentDetails: Readonly<Record<CustomerFulfillmentMode, string>> = {
+  BTHWANI_CAPTAIN: "كابتن من بثواني",
+  PARTNER_CAPTAIN: "كابتن تابع للمتجر",
+  CUSTOMER_PICKUP: "تستلم من المتجر",
+};
 
 type CartScreenState =
   | { kind: "loading" }
@@ -38,6 +47,22 @@ export default function ClientCartScreen() {
   const [addressesState, setAddressesState] = useState<AddressesState>({ kind: "idle", addresses: [] });
   const [serviceability, setServiceability] = useState<ServiceabilityState>({ kind: "idle" });
   const [fulfillmentMode, setFulfillmentMode] = useState<CustomerFulfillmentMode | null>(null);
+  const [expandedAddresses, setExpandedAddresses] = useState(false);
+  const [expandedFulfillment, setExpandedFulfillment] = useState(false);
+  const [footer, setFooter] = useState<CheckoutFooterState | null>(null);
+  const checkoutAction = useRef<() => void>(() => undefined);
+  const updateFooter = useCallback((next: CheckoutFooterState | null) => {
+    setFooter((previous) => {
+      if (previous === next || (previous && next &&
+        previous.label === next.label &&
+        previous.total === next.total &&
+        previous.totalReady === next.totalReady &&
+        previous.disabled === next.disabled &&
+        previous.busy === next.busy)) return previous;
+      return next;
+    });
+  }, []);
+  const openRequiredAddress = useCallback(() => setExpandedAddresses(true), []);
   const loadRequestID = useRef(0);
   const addressRequestID = useRef(0);
   const serviceabilityRequestID = useRef(0);
@@ -75,16 +100,22 @@ export default function ClientCartScreen() {
       if (!isCurrent()) return;
       setState({ kind: "ready", store });
       const enabledModes = availableCustomerFulfillmentModes(store.fulfillmentModes);
-      setFulfillmentMode(enabledModes.includes(requestedFulfillmentMode as CustomerFulfillmentMode) ? requestedFulfillmentMode as CustomerFulfillmentMode : null);
+      const saved = await readSavedFulfillmentMode(storeId, selectedCityID, enabledModes);
+      if (!isCurrent()) return;
+      const resolvedMode = resolveFulfillmentChoice(enabledModes, requestedFulfillmentMode, saved);
+      setFulfillmentMode(resolvedMode);
+      setExpandedFulfillment(enabledModes.length > 1 && resolvedMode === null);
     } catch {
       if (isCurrent()) setState({ kind: "error" });
     }
   }, [requestedFulfillmentMode, selectedCityID, storeId]);
 
   useFocusEffect(useCallback(() => {
+    // A delivery-mode change should re-evaluate focus-sensitive address loading.
+    void fulfillmentMode;
     if (state.kind === "ready" && fulfillmentModeRef.current !== null && fulfillmentModeRef.current !== "CUSTOMER_PICKUP") void loadAddresses();
     return () => { addressRequestID.current += 1; };
-  }, [loadAddresses, state.kind]));
+  }, [loadAddresses, state.kind, fulfillmentMode]));
 
   useEffect(() => {
     void load();
@@ -95,7 +126,7 @@ export default function ClientCartScreen() {
     };
   }, [load]);
 
-  async function evaluateAddress(addressId: string) {
+  const evaluateAddress = useCallback(async (addressId: string) => {
     if (state.kind !== "ready") return;
     const requestID = ++serviceabilityRequestID.current;
     const targetStoreID = state.store.id;
@@ -108,7 +139,14 @@ export default function ClientCartScreen() {
     } catch {
       if (isCurrent()) setServiceability({ kind: "error", addressId });
     }
-  }
+  }, [state, selectedCityID]);
+
+  useEffect(() => {
+    if (state.kind !== "ready" || !fulfillmentMode || fulfillmentMode === "CUSTOMER_PICKUP"
+        || addressesState.kind !== "ready" || addressesState.addresses.length === 0
+        || serviceability.kind !== "idle") return;
+    void evaluateAddress(addressesState.addresses[0]!.id);
+  }, [state.kind, fulfillmentMode, addressesState, serviceability.kind, evaluateAddress]);
 
   if (state.kind === "ready" && (state.store.id !== storeId || state.store.serviceCity.id !== selectedCityID)) {
     return <View style={styles.state} accessibilityLabel="جارٍ تحديث المتجر"><BthwaniSkeleton width="35%" height={28} /><BthwaniSkeleton height={88} /><BthwaniSkeleton height={152} /></View>;
@@ -124,33 +162,79 @@ export default function ClientCartScreen() {
   const availableFulfillmentModes = availableCustomerFulfillmentModes(state.store.fulfillmentModes);
   if (availableFulfillmentModes.length === 0) return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>لا تتوفر طريقة استلام مدعومة لهذا المتجر</Text><Text style={styles.muted}>اختر متجرًا آخر؛ خيارات هذا المتجر لا تسمح حاليًا بإتمام طلب العميل.</Text><BthwaniButton label="العودة إلى المتجر" onPress={() => router.push(`/store/${encodeURIComponent(state.store.id)}` as Href)} variant="secondary" /></View>;
   const serviceableAddressId = fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" && serviceability.kind === "ready" && serviceability.result.status === "SERVICEABLE" ? serviceability.addressId : undefined;
+  const chosenAddress = serviceability.kind === "ready" ? addressesState.addresses.find((address) => address.id === serviceability.addressId) : undefined;
+  const selectedOrderability = state.store.orderabilityByMode.find((item) => item.fulfillmentMode === fulfillmentMode);
+  const orderabilityHint = selectedOrderability?.state === "CLOSED_BY_SCHEDULE" ? "المتجر مغلق الآن"
+    : selectedOrderability?.state === "PAUSED" ? "استقبال الطلبات متوقف مؤقتًا"
+    : selectedOrderability?.state === "OPERATIONALLY_UNAVAILABLE" ? "التنفيذ غير متاح حاليًا" : "";
   return (
-    <View style={styles.container} accessibilityLabel={`السلة وإتمام الطلب من ${state.store.name}`}>
-      <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتجر" onPress={() => router.push(`/store/${encodeURIComponent(state.store.id)}` as Href)} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>العودة إلى الكتالوج</Text></Pressable>
-      <BthwaniSurface tone="raised" style={styles.storeContext}>
-        <View style={styles.storeIcon}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconXl} /></View>
-        <View style={styles.storeCopy}><Text style={styles.eyebrow}>سلة الطلب</Text><Text style={styles.title}>{state.store.name}</Text><Text style={styles.muted}>{fulfillmentMode === "BTHWANI_CAPTAIN" ? "المنصة تتولى التوصيل؛ اختر عنوانًا مؤهلًا." : fulfillmentMode === "PARTNER_CAPTAIN" ? "المتجر يختار كابتنه لتوصيل الطلب؛ اختر عنوانًا مؤهلًا." : fulfillmentMode === "CUSTOMER_PICKUP" ? "اذهب إلى المتجر لاستلام طلبك بنفسك." : "اختر وضع الطلب قبل الإتمام."}</Text></View>
-      </BthwaniSurface>
-      <BthwaniSectionHeader title="طريقة الاستلام" subtitle="اختر من الخيارات التي يدعمها هذا المتجر." />
-      <View style={styles.addressCard} accessibilityLabel="خيارات استلام الطلب">
-        {availableFulfillmentModes.map((mode) => <BthwaniChip key={mode} label={fulfillmentModeLabel(mode)} onPress={() => { serviceabilityRequestID.current += 1; setFulfillmentMode(mode); setServiceability({ kind: "idle" }); if (mode !== "CUSTOMER_PICKUP" && addressesState.kind === "idle") void loadAddresses(); }} selected={fulfillmentMode === mode} />)}
-      </View>
-      {fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <>
-        <BthwaniSectionHeader title="عنوان التوصيل" subtitle="يعيد الخادم التحقق من الأهلية عند الإتمام." />
-        <View style={styles.addressCard}>
-          {addressesState.kind === "loading" && addressesState.addresses.length === 0 ? <View accessibilityLabel="جارٍ تحميل عناوين التوصيل"><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل عناوين التوصيل.</Text></View> : null}
-          {addressesState.kind === "ready" && addressesState.addresses.length === 0 ? <><Text style={styles.muted}>لا يوجد عنوان محفوظ. أضف عنوانًا ثم ارجع إلى السلة لمتابعة الطلب.</Text><Link href={"/addresses" as Href} asChild><BthwaniButton accessibilityLabel="إضافة عنوان توصيل" label="إضافة عنوان توصيل" variant="secondary" /></Link></> : null}
-          {addressesState.kind === "error" ? <><Text accessibilityRole="alert" style={styles.error}>تعذر تحميل عناوين التوصيل. أعد المحاولة أو أضف عنوانًا ثم ارجع إلى السلة.</Text><BthwaniButton label="إعادة تحميل العناوين" onPress={() => void loadAddresses()} variant="secondary" /><Link href={"/addresses" as Href} asChild><BthwaniButton accessibilityLabel="إضافة عنوان توصيل" label="إضافة عنوان توصيل" variant="quiet" /></Link></> : null}
-          {addressesState.addresses.map((address) => {
-            const selected = serviceability.kind !== "idle" && serviceability.addressId === address.id;
-            const busy = serviceability.kind === "loading" && selected;
-            return <Pressable key={address.id} accessibilityRole="button" accessibilityState={{ selected, busy }} disabled={serviceability.kind === "loading"} onPress={() => void evaluateAddress(address.id)} style={[styles.address, selected && styles.addressSelected, serviceability.kind === "loading" && styles.disabled]}><Text style={styles.addressText}>{address.addressText}</Text><Text style={styles.muted}>{selected && serviceability.kind === "ready" ? serviceabilityMessage(serviceability.result.status) : "اضغط لتقييم أهلية التوصيل"}</Text>{busy ? <ActivityIndicator color={theme.actionBackground} /> : null}</Pressable>;
-          })}
-          {serviceability.kind === "error" ? <Text accessibilityRole="alert" style={styles.error}>تعذر تقييم العنوان. أعد المحاولة.</Text> : null}
+    <SafeAreaView edges={["top", "bottom"]} style={styles.page}>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        <View style={styles.header}>
+          <Text style={styles.title}>تأكيد الطلب</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتجر" onPress={() => router.push(("/store/" + encodeURIComponent(state.store.id)) as Href)} style={styles.headerBack}>
+            <BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconLg} />
+          </Pressable>
         </View>
-      </> : fulfillmentMode === "CUSTOMER_PICKUP" ? <BthwaniSurface tone="inset" style={styles.addressCard}><Text style={styles.addressText}>استلم بنفسك من المتجر</Text><Text style={styles.muted}>اذهب إلى المتجر لاستلام طلبك وادفع قيمة المنتجات نقدًا للمتجر.</Text></BthwaniSurface> : <Text accessibilityRole="alert" style={styles.error}>اختر أحد أوضاع الطلب المتاحة لإتمام الشراء.</Text>}
-      {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} addresses={addressesState.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} initialPromotionCode={requestedPromotionCode} /> : null}
-    </View>
+        <BthwaniSurface tone="raised" style={styles.storeCard}>
+          <PremiumStoreIdentity compact title={state.store.name}
+            subtitle={state.store.addressLine || "متجر منشور في بثواني"}
+            imageUri={state.store.storeCoverImage?.uri ?? state.store.storeProfileImage?.uri}
+            rating={state.store.ratingCount > 0 ? state.store.ratingAverage.toFixed(1) + " (" + state.store.ratingCount + ")" : undefined}
+          />
+        </BthwaniSurface>
+        <BthwaniSurface tone="raised" style={styles.section}>
+          <Text style={styles.sectionTitle}>طريقة التنفيذ</Text>
+          {fulfillmentMode && !expandedFulfillment ? <View style={styles.row}>
+            <View style={styles.rowCopy}>
+              <Text style={styles.sectionTitle}>{fulfillmentModeLabel(fulfillmentMode)}</Text>
+
+            </View>
+            {availableFulfillmentModes.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="تغيير طريقة التنفيذ" onPress={() => setExpandedFulfillment(true)} style={styles.change}>
+              <Text style={styles.changeLabel}>تغيير</Text>
+            </Pressable> : null}
+          </View> : <PremiumFulfillmentSelector available={availableFulfillmentModes} selected={fulfillmentMode} onSelect={(mode) => {
+            if (mode === fulfillmentMode) { setExpandedFulfillment(false); return; }
+            serviceabilityRequestID.current += 1;
+            setFulfillmentMode(mode);
+            setExpandedFulfillment(false);
+            setServiceability({ kind: "idle" });
+            setExpandedAddresses(false);
+            if (selectedCityID) void saveFulfillmentMode(storeId, selectedCityID, mode);
+            if (mode !== "CUSTOMER_PICKUP" && addressesState.kind === "idle") void loadAddresses();
+          }} />}
+          {orderabilityHint ? <Text accessibilityRole="alert" style={styles.error}>{orderabilityHint}</Text> : null}
+        </BthwaniSurface>
+        {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} serviceCityId={selectedCityID ?? ""} addresses={addressesState.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} initialPromotionCode={requestedPromotionCode} onFooterChange={updateFooter} checkoutAction={checkoutAction}
+          onRequiredAddress={openRequiredAddress} storeAcceptingOrders={!selectedOrderability || selectedOrderability.state === "OPEN_FOR_ORDERS"} onRefreshStore={load} addressSection={<>{fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <BthwaniSurface tone="raised" style={styles.section}>
+          <View style={styles.row}>
+            <BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconLg}/>
+            <View style={styles.rowCopy}><Text style={styles.sectionTitle}>عنوان التوصيل</Text><Text style={styles.muted} numberOfLines={2}>{chosenAddress ? chosenAddress.addressText : "اختر عنوانًا مؤهلًا لتوصيل الطلب"}</Text></View>
+            <Pressable style={styles.change} accessibilityRole="button" accessibilityLabel="تغيير عنوان التوصيل" accessibilityState={{ expanded: expandedAddresses }} onPress={() => setExpandedAddresses((value) => !value)}><Text style={styles.changeLabel}>{expandedAddresses ? "إغلاق" : "تغيير"}</Text></Pressable>
+          </View>
+          {addressesState.kind === "loading" ? <ActivityIndicator color={theme.actionBackground} /> : null}
+          {addressesState.kind === "error" ? <><Text accessibilityRole="alert" style={styles.error}>تعذر تحميل العناوين.</Text><BthwaniButton label="إعادة تحميل العناوين" onPress={() => void loadAddresses()} variant="secondary"/></> : null}
+          {addressesState.kind === "ready" && addressesState.addresses.length === 0 ? <Link href={"/addresses" as Href} asChild><BthwaniButton label="إضافة عنوان توصيل" variant="secondary" /></Link> : null}
+          {expandedAddresses ? <View style={styles.addresses}>
+            {addressesState.addresses.map((address) => {
+              const selected = serviceability.kind !== "idle" && serviceability.addressId === address.id;
+              return <Pressable key={address.id} accessibilityRole="button" accessibilityState={{ selected }} disabled={serviceability.kind === "loading"} style={[styles.address, selected && styles.addressSelected]} onPress={() => { setExpandedAddresses(false); void evaluateAddress(address.id); }}>
+                <Text style={styles.addressText}>{address.addressText}</Text><Text style={styles.muted}>{selected && serviceability.kind === "ready" ? serviceabilityMessage(serviceability.result.status) : "اختيار هذا العنوان"}</Text>
+              </Pressable>;
+            })}
+            <Link href={"/addresses" as Href} asChild><BthwaniButton label="إضافة عنوان آخر" variant="secondary"/></Link>
+          </View> : null}
+          {serviceability.kind === "loading" ? <Text style={styles.muted}>جارٍ التحقق من عنوان التوصيل…</Text> : null}
+          {serviceability.kind === "error" ? <Text accessibilityRole="alert" style={styles.error}>تعذر التحقق من العنوان؛ أعد اختياره.</Text> : null}
+          {serviceability.kind === "ready" && serviceability.result.status !== "SERVICEABLE" ? <Text accessibilityRole="alert" style={styles.error}>{serviceabilityMessage(serviceability.result.status)}</Text> : null}
+        </BthwaniSurface> : fulfillmentMode === "CUSTOMER_PICKUP" ? <BthwaniSurface tone="raised" style={styles.section}><View style={styles.row}>
+          <BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconLg}/>
+          <View style={styles.rowCopy}><Text style={styles.sectionTitle}>استلام بنفسي</Text><Text style={styles.muted}>ستظهر تعليمات الاستلام بعد تجهيز الطلب.</Text></View>
+        </View></BthwaniSurface> : <Text accessibilityRole="alert" style={styles.error}>اختر طريقة تنفيذ الطلب أولًا.</Text>}</>}/> : null}
+      </ScrollView>
+      {footer ? <PremiumStickyFooter amount={footer.total} label={footer.label} disabled={footer.disabled} busy={footer.busy} caption={footer.totalReady ? "الإجمالي الكلي" : "قبل التأكيد"}
+        onPress={() => checkoutAction.current()} /> : null}
+    </SafeAreaView>
   );
 }
 
@@ -161,22 +245,43 @@ function serviceabilityMessage(status: ServiceabilityResponse["status"]): string
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
+  const premium = premiumColors(theme);
   return StyleSheet.create({
-    container: { gap: spacing[4], paddingBottom: spacing[4], width: "100%" },
-    state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
-    eyebrow: { ...typography.label, color: theme.interactiveText },
-    title: { ...typography.titleMd, color: theme.color },
-    muted: { ...typography.bodySm, color: theme.colorMuted },
-    backButton: { alignItems: "center", flexDirection: "row", gap: spacing[1], minHeight: sizing.controlMd },
-    storeContext: { alignItems: "center", borderRadius: radius.xl, flexDirection: "row", gap: spacing[3], padding: spacing[4] },
-    storeIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
+    page: { flex: 1, backgroundColor: premium.background },
+    scroll: { paddingHorizontal: spacing[3], paddingVertical: spacing[2], gap: spacing[2], paddingBottom: spacing[5] },
+    state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[8] },
+    header: { flexDirection: "row", alignItems: "center", minHeight: sizing.controlLg },
+    title: { ...typography.titleLg, color: premium.text, textAlign: "center", flex: 1 },
+    headerBack: { minWidth: sizing.controlLg, minHeight: sizing.controlLg, justifyContent: "center", alignItems: "center" },
+    storeCard: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[2], borderRadius: radius.lg },
+    storeIcon: { backgroundColor: theme.actionBackground, padding: spacing[3], borderRadius: radius.lg },
     storeCopy: { flex: 1, gap: spacing[1] },
-    addressCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    address: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
-    addressSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
-    addressText: { ...typography.bodyStrong, color: theme.color },
-    back: { ...typography.body, color: theme.interactiveText },
-    error: { ...typography.bodySm, color: theme.danger },
-    disabled: { opacity: opacity.disabled },
+    subheading: { ...typography.caption, color: theme.interactiveText, textAlign: "right" },
+    storeName: { ...typography.titleMd, color: theme.color, textAlign: "right" },
+    muted: { ...typography.bodySm, color: premium.muted, textAlign: "right" },
+    section: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[2], borderRadius: radius.lg, gap: spacing[1] },
+    sectionTitle: { ...typography.bodyStrong, color: premium.text, textAlign: "right" },
+    modes: { flexDirection: "row", gap: spacing[2], marginTop: spacing[2] },
+    mode: { flex: 1, minWidth: 0, minHeight: 128, paddingHorizontal: spacing[1], paddingVertical: spacing[3], gap: spacing[2], alignItems: "center", justifyContent: "center", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline },
+    modeSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText, borderWidth: 2 },
+    modeTitle: { ...typography.bodyStrong, color: theme.color, fontSize: 12, textAlign: "center" },
+    modeTitleSelected: { color: theme.interactiveText },
+    modeDescription: { ...typography.caption, color: theme.colorMuted, fontSize: 10, textAlign: "center" },
+    modeCheck: { ...typography.bodySm, color: theme.colorMuted },
+    modeCheckSelected: { color: theme.interactiveText },
+    row: { flexDirection: "row", gap: spacing[2], minHeight: 44, alignItems: "center" },
+    rowCopy: { flex: 1, gap: spacing[1] },
+    change: { minWidth: 56, minHeight: 44, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing[2], borderWidth: borders.hairline, borderColor: theme.borderColorStrong, borderRadius: radius.md },
+    changeLabel: { ...typography.bodyStrong, color: theme.interactiveText },
+    addresses: { gap: spacing[2] },
+    address: { borderColor: theme.borderColor, borderWidth: borders.hairline, backgroundColor: theme.surfaceRaised, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] },
+    addressSelected: { borderColor: theme.interactiveText, backgroundColor: theme.actionSoft },
+    addressText: { ...typography.bodyStrong, color: premium.text, textAlign: "right" },
+    error: { ...typography.bodySm, color: theme.danger, textAlign: "right" },
+    footer: { flexDirection: "row", alignItems: "center", gap: spacing[2], padding: spacing[3], backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline },
+    footerAmount: { flexShrink: 1, alignItems: "flex-end", gap: spacing[1] },
+    footerCaption: { ...typography.caption, color: theme.interactiveText },
+    footerNumber: { ...typography.titleMd, color: theme.color },
+    footerCTA: { flex: 1 },
   });
 }

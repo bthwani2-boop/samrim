@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 )
 
 var ErrPartnerCommissionRegistryInput = errors.New("partner commission receivable registry input is invalid")
@@ -13,6 +14,7 @@ type PartnerCommissionReceivableRegistryItem struct {
 	PartnerActorID                       string
 	Currency                             string
 	OutstandingCommissionReceivableMinor int64
+	OldestUnpaidAt                       *time.Time
 	ProfileState                         string
 }
 
@@ -42,8 +44,31 @@ func ListPartnerCommissionReceivables(ctx context.Context, db *sql.DB, search, s
 			GROUP BY actor_id
 			HAVING SUM(CASE direction WHEN 'DEBIT' THEN amount_minor ELSE -amount_minor END) > 0
 		)
-		SELECT r.actor_id, r.outstanding_minor, COALESCE(p.state, '')
+		, debits AS (
+			SELECT e.actor_id, t.created_at,
+				SUM(e.amount_minor) OVER (
+					PARTITION BY e.actor_id ORDER BY t.created_at,e.transaction_id,e.line_sequence
+					ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+				) AS accrued_minor
+			FROM wlt.ledger_entries e
+			JOIN wlt.ledger_transactions t ON t.id=e.transaction_id
+			WHERE e.account_code='PARTNER_COMMISSION_RECEIVABLE'
+				AND e.actor_type='partner' AND e.direction='DEBIT'
+		), credits AS (
+			SELECT actor_id, SUM(amount_minor) AS paid_minor
+			FROM wlt.ledger_entries
+			WHERE account_code='PARTNER_COMMISSION_RECEIVABLE'
+				AND actor_type='partner' AND direction='CREDIT'
+			GROUP BY actor_id
+		), oldest_open AS (
+			SELECT d.actor_id, MIN(d.created_at) AS oldest_at
+			FROM debits d LEFT JOIN credits c ON c.actor_id=d.actor_id
+			WHERE d.accrued_minor > COALESCE(c.paid_minor,0)
+			GROUP BY d.actor_id
+		)
+		SELECT r.actor_id, r.outstanding_minor, COALESCE(p.state, ''), o.oldest_at
 		FROM receivables r
+		LEFT JOIN oldest_open o ON o.actor_id=r.actor_id
 		LEFT JOIN wlt.partner_financial_profiles p ON p.partner_actor_id=r.actor_id
 		WHERE ($1='' OR r.actor_id ILIKE '%' || $1 || '%') AND `+keyset+`
 		ORDER BY `+orderBy+`
@@ -57,8 +82,13 @@ func ListPartnerCommissionReceivables(ctx context.Context, db *sql.DB, search, s
 	items := make([]PartnerCommissionReceivableRegistryItem, 0, limit+1)
 	for rows.Next() {
 		var item PartnerCommissionReceivableRegistryItem
-		if err := rows.Scan(&item.PartnerActorID, &item.OutstandingCommissionReceivableMinor, &item.ProfileState); err != nil {
+		var oldest sql.NullTime
+		if err := rows.Scan(&item.PartnerActorID, &item.OutstandingCommissionReceivableMinor, &item.ProfileState, &oldest); err != nil {
 			return nil, false, err
+		}
+		if oldest.Valid {
+			date := oldest.Time.UTC()
+			item.OldestUnpaidAt = &date
 		}
 		item.Currency = "YER"
 		items = append(items, item)

@@ -24,8 +24,11 @@ type StoreCommercialAgreementPage struct {
 }
 
 type StoreCommercialAgreementRate struct {
-	FulfillmentMode   string `json:"fulfillmentMode"`
-	CommissionRateBps int    `json:"commissionRateBps"`
+	FulfillmentMode       string `json:"fulfillmentMode"`
+	CommissionRateBps     int    `json:"commissionRateBps"`
+	DeliveryMarkupMinor   int64  `json:"deliveryMarkupMinor"`
+	DeliveryPricingMode   string `json:"deliveryPricingMode"`
+	DeliveryFixedFeeMinor int64  `json:"deliveryFixedFeeMinor"`
 }
 
 type StoreCommercialAgreementRecord struct {
@@ -165,6 +168,12 @@ func ProposeStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Prop
 	parts := []string{"store-commercial-agreement-proposal-v1", input.StoreID, input.PartnerActorID, input.ActorID, formatInt(input.ExpectedCurrentVersion), input.Reason}
 	for _, rate := range input.Rates {
 		parts = append(parts, rate.FulfillmentMode, formatInt(rate.CommissionRateBps))
+		if rate.DeliveryMarkupMinor > 0 {
+			parts = append(parts, "delivery-markup:v1", formatInt64(rate.DeliveryMarkupMinor))
+		}
+		if rate.DeliveryPricingMode != "DISTANCE" {
+			parts = append(parts, "partner-delivery-pricing:v1", rate.DeliveryPricingMode, formatInt64(rate.DeliveryFixedFeeMinor))
+		}
 	}
 	requestHash := hashFacts(parts...)
 	tx, err := db.BeginTx(ctx, nil)
@@ -210,7 +219,7 @@ func ProposeStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Prop
 		return StoreCommercialAgreementRecord{}, false, err
 	}
 	for _, rate := range input.Rates {
-		if _, err := tx.ExecContext(ctx, "INSERT INTO wlt.store_commercial_agreement_rates(agreement_id,fulfillment_mode,commission_rate_bps) VALUES($1,$2,$3)", agreementID, rate.FulfillmentMode, rate.CommissionRateBps); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO wlt.store_commercial_agreement_rates(agreement_id,fulfillment_mode,commission_rate_bps,delivery_markup_minor,delivery_pricing_mode,delivery_fixed_fee_minor) VALUES($1,$2,$3,$4,$5,$6)", agreementID, rate.FulfillmentMode, rate.CommissionRateBps, rate.DeliveryMarkupMinor, rate.DeliveryPricingMode, rate.DeliveryFixedFeeMinor); err != nil {
 			return StoreCommercialAgreementRecord{}, false, err
 		}
 	}
@@ -404,6 +413,10 @@ func normalizeAgreementRates(rates []StoreCommercialAgreementRate) []StoreCommer
 	copy(result, rates)
 	for index := range result {
 		result[index].FulfillmentMode = strings.ToUpper(strings.TrimSpace(result[index].FulfillmentMode))
+		result[index].DeliveryPricingMode = strings.ToUpper(strings.TrimSpace(result[index].DeliveryPricingMode))
+		if result[index].DeliveryPricingMode == "" {
+			result[index].DeliveryPricingMode = "DISTANCE"
+		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].FulfillmentMode < result[j].FulfillmentMode })
 	return result
@@ -415,7 +428,7 @@ func validStoreCommercialAgreementRates(rates []StoreCommercialAgreementRate) bo
 	}
 	previous := ""
 	for _, rate := range rates {
-		if !isStoreTypeCommissionMode(rate.FulfillmentMode) || rate.CommissionRateBps < 0 || rate.CommissionRateBps > 10000 || rate.FulfillmentMode == previous {
+		if !isStoreTypeCommissionMode(rate.FulfillmentMode) || rate.CommissionRateBps < 0 || rate.CommissionRateBps > 10000 || rate.DeliveryMarkupMinor < 0 || rate.DeliveryMarkupMinor > 10000 || rate.DeliveryFixedFeeMinor < 0 || rate.DeliveryFixedFeeMinor > 20000 || (rate.FulfillmentMode != "PARTNER_CAPTAIN" && (rate.DeliveryPricingMode != "DISTANCE" || rate.DeliveryFixedFeeMinor != 0)) || (rate.FulfillmentMode == "PARTNER_CAPTAIN" && !((rate.DeliveryPricingMode == "DISTANCE" && rate.DeliveryFixedFeeMinor == 0) || (rate.DeliveryPricingMode == "FREE" && rate.DeliveryFixedFeeMinor == 0) || (rate.DeliveryPricingMode == "FIXED" && rate.DeliveryFixedFeeMinor > 0))) || (rate.DeliveryMarkupMinor > 0 && (rate.FulfillmentMode != "BTHWANI_CAPTAIN" || rate.CommissionRateBps != 0)) || rate.FulfillmentMode == previous {
 			return false
 		}
 		previous = rate.FulfillmentMode
@@ -524,7 +537,7 @@ func readStoreCommercialAgreement(ctx context.Context, source interface {
 func readStoreCommercialAgreementRates(ctx context.Context, source interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }, item *StoreCommercialAgreementRecord) error {
-	rows, err := source.QueryContext(ctx, "SELECT fulfillment_mode,commission_rate_bps FROM wlt.store_commercial_agreement_rates WHERE agreement_id=$1 ORDER BY fulfillment_mode", item.AgreementID)
+	rows, err := source.QueryContext(ctx, "SELECT fulfillment_mode,commission_rate_bps,delivery_markup_minor,delivery_pricing_mode,delivery_fixed_fee_minor FROM wlt.store_commercial_agreement_rates WHERE agreement_id=$1 ORDER BY fulfillment_mode", item.AgreementID)
 	if err != nil {
 		return err
 	}
@@ -532,7 +545,7 @@ func readStoreCommercialAgreementRates(ctx context.Context, source interface {
 	item.Rates = make([]StoreCommercialAgreementRate, 0, len(supportedStoreTypeCommissionModes))
 	for rows.Next() {
 		var rate StoreCommercialAgreementRate
-		if err := rows.Scan(&rate.FulfillmentMode, &rate.CommissionRateBps); err != nil {
+		if err := rows.Scan(&rate.FulfillmentMode, &rate.CommissionRateBps, &rate.DeliveryMarkupMinor, &rate.DeliveryPricingMode, &rate.DeliveryFixedFeeMinor); err != nil {
 			return err
 		}
 		item.Rates = append(item.Rates, rate)

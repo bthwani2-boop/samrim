@@ -36,9 +36,10 @@ export function ClientNotificationAction() {
         if (sequence !== requestID.current || currentClientActorID() !== actorID) return;
         const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
         if (!url) return;
-        const result = await createDshMobileClient(url, { cryptoRandomUUID: () => Crypto.randomUUID() }).listNotifications(token, 1);
+        const client = createDshMobileClient(url, { cryptoRandomUUID: () => Crypto.randomUUID() });
+        const [result, shares] = await Promise.all([client.listNotifications(token, 1), client.listClientShares(token).catch(() => null)]);
         if (sequence === requestID.current && currentClientActorID() === actorID) {
-          setUnreadCount(Number.isSafeInteger(result.unreadCount) && result.unreadCount > 0 ? result.unreadCount : 0);
+          setUnreadCount(Math.max(0, result.unreadCount || 0) + Math.max(0, shares?.unreadCount || 0));
         }
       } catch {
         // The notifications screen offers the full load/retry state.

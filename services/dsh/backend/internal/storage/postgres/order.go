@@ -63,6 +63,8 @@ type ProvisionedPayment struct {
 }
 
 type DeliveryFeeQuoteInput struct {
+	StoreID              string
+	FulfillmentMode      string
 	ServiceCityID        string
 	OriginLatitude       float64
 	OriginLongitude      float64
@@ -72,8 +74,9 @@ type DeliveryFeeQuoteInput struct {
 }
 
 type DeliveryFeeQuote struct {
-	FeeMinor      int64
-	PolicyVersion string
+	PlatformMarginMinor int64
+	FeeMinor            int64
+	PolicyVersion       string
 }
 
 type DeliveryFeeResolver func(ctx context.Context, input DeliveryFeeQuoteInput) (DeliveryFeeQuote, error)
@@ -88,7 +91,7 @@ type PromotionFunding struct {
 	PartnerSharePercent *int
 }
 
-type PaymentIntentProvisioner func(ctx context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, promotion PromotionFunding, idempotencyKey, correlationID string) (ProvisionedPayment, error)
+type PaymentIntentProvisioner func(ctx context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor, deliveryMarginMinor int64, deliveryPolicyVersion string, amountMinor int64, promotion PromotionFunding, idempotencyKey, correlationID string) (ProvisionedPayment, error)
 
 type PaymentIntentCanceller func(ctx context.Context, intentID, reason, idempotencyKey, correlationID string) error
 
@@ -136,6 +139,8 @@ type CheckoutInput struct {
 	PaymentCancellationKey      string
 	PaymentMethod               string
 	PromotionCode               string
+	DiscoveryClickEventID       string
+	CustomerNote                string
 	Recipient                   DeliveryRecipientInput
 	DeliveryProofKeyring        *DeliveryProofKeyring
 	DeliveryFeeResolver         DeliveryFeeResolver
@@ -200,6 +205,7 @@ type OrderRecord struct {
 	StoreName                    string
 	PickupLocation               *OrderPickupLocationRecord
 	CartID                       string
+	CustomerNote                 string
 	FulfillmentMode              string
 	AddressID                    string
 	AddressVersion               int
@@ -310,11 +316,14 @@ type OperatorOperationRecord struct {
 }
 
 type OperatorOperationListRecord struct {
-	OrderID    string
-	StoreName  string
-	State      string
-	UpdatedAt  time.Time
-	Assignment *OperatorAssignmentListRecord
+	StageSLA           OperatorStageSLA
+	StageStartedAt     *time.Time
+	PreparationMinutes *int
+	OrderID            string
+	StoreName          string
+	State              string
+	UpdatedAt          time.Time
+	Assignment         *OperatorAssignmentListRecord
 }
 
 type OperatorAssignmentListRecord struct {
@@ -333,12 +342,14 @@ type OperatorOperationsResult struct {
 }
 
 type OperatorOperationsSummary struct {
-	TotalCount            int
-	ActionableCount       int
-	AwaitingDispatchCount int
-	ActiveCount           int
-	DeliveredCount        int
-	MeasuredAt            time.Time
+	TotalCount               int
+	ActionableCount          int
+	AwaitingDispatchCount    int
+	ActiveCount              int
+	InCustodyOrderCount      int
+	InCustodyOrderValueMinor int64
+	DeliveredCount           int
+	MeasuredAt               time.Time
 }
 
 // Legacy multi-store children omit a displayed total. Direct client checkout
@@ -353,11 +364,17 @@ func HashCheckoutRequest(input CheckoutInput) string {
 	if strings.EqualFold(strings.TrimSpace(input.Recipient.Mode), "OTHER") {
 		facts = append(facts, "delivery-recipient-other", strings.TrimSpace(input.Recipient.Name), phoneformat.NormalizeYemenE164(input.Recipient.PhoneE164), strings.TrimSpace(input.Recipient.Instructions))
 	}
+	if input.CustomerNote != "" {
+		facts = append(facts, "customer-note", input.CustomerNote)
+	}
 	if input.InternalBalanceAmountMinor > 0 {
 		facts = append(facts, "internal-balance", strconv.FormatInt(input.InternalBalanceAmountMinor, 10))
 	}
 	if input.ExpectedTotalAmountMinor != nil {
 		facts = append(facts, "confirmed-total", strconv.FormatInt(*input.ExpectedTotalAmountMinor, 10))
+	}
+	if clickID := strings.TrimSpace(input.DiscoveryClickEventID); clickID != "" {
+		facts = append(facts, "discovery-click", clickID)
 	}
 	facts = append(facts, strconv.Itoa(input.ExpectedCartVersion), input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, strconv.Itoa(input.Evidence.StoreVersion), strconv.Itoa(input.Evidence.AddressVersion), strings.TrimSpace(input.PromotionCode))
 	return hashFacts(facts...)
@@ -679,7 +696,10 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	// The operations attention queue includes stalled early fulfillment states, even
 	// when no automatic state transition is safe. Read-only review must not depend
 	// on an available dispatch action; terminal and customer-pickup states stay out.
-	const actionable = "(o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed') OR (o.state IN ('CREATED','PARTNER_ACCEPTED','PREPARING') AND o.updated_at <= statement_timestamp() - interval '30 minutes'))"
+	// A configured, stage-effective SLA overrides approximate early-stage attention.
+	// Missing canonical stage events always require review; unconfigured stages
+	// retain a clearly non-contractual operational attention fallback.
+	const actionable = "(o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed') OR (o.state IN ('CREATED','PARTNER_ACCEPTED','PREPARING') AND (stage.stage_started_at IS NULL OR (sla.target_minutes IS NOT NULL AND stage.stage_started_at <= statement_timestamp() - make_interval(mins => sla.target_minutes - sla.warning_minutes)) OR (sla.target_minutes IS NULL AND stage.stage_started_at <= statement_timestamp() - make_interval(mins => CASE WHEN o.state='PREPARING' THEN COALESCE(soa.preparation_minutes,30) ELSE 30 END)))) OR (o.state IN ('IN_CUSTODY','READY_FOR_PICKUP') AND sla.target_minutes IS NOT NULL AND stage.stage_started_at IS NOT NULL AND stage.stage_started_at <= statement_timestamp() - make_interval(mins => sla.target_minutes - sla.warning_minutes)))"
 	if actionableOnly {
 		where += " AND " + actionable
 	}
@@ -708,8 +728,10 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	// The filtered registry, totals and bounded page share a single statement snapshot.
 	// Cursor predicates apply only to the page, never to the result-set summary.
 	rows, err := db.QueryContext(ctx, `WITH filtered AS MATERIALIZED (
-		SELECT o.id,s.name,o.state,o.updated_at,
+		SELECT o.id,s.name,o.state,o.updated_at,o.total_amount_minor AS order_value_minor,
 		a.id AS assignment_id,a.order_id,a.captain_actor_id,a.state AS assignment_state,a.version,COALESCE(h.state,'') AS handoff_state,
+        stage.stage_started_at, CASE WHEN o.state='PREPARING' THEN soa.preparation_minutes ELSE NULL END AS preparation_minutes,
+        sla.target_minutes AS sla_target_minutes,sla.warning_minutes AS sla_warning_minutes,sla.policy_version AS sla_policy_version,
 		`+actionable+` AS actionable
 		FROM dsh.commerce_orders o
 		JOIN dsh.stores s ON s.id=o.store_id
@@ -720,6 +742,35 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 			ORDER BY created_at DESC LIMIT 1
 		) a ON TRUE
 		LEFT JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
+        LEFT JOIN dsh.store_operational_availability soa ON soa.store_id=o.store_id
+        LEFT JOIN LATERAL (
+        SELECT max(e.entered_at) FROM (
+                SELECT a.created_at AS entered_at
+                  FROM dsh.commerce_order_audit a
+                 WHERE a.order_id=o.id AND a.to_state=o.state
+                   AND a.event_type IN (
+                      'order_created','order_partner_accepted','order_preparing',
+                      'order_ready_for_dispatch','order_ready_for_pickup',
+                      'order_picked_up','order_rejected','order_cancelled'
+                   )
+                UNION ALL
+                SELECT c.created_at AS entered_at
+                  FROM dsh.captain_audit c WHERE c.order_id=o.id
+                   AND (
+                      (o.state='CAPTAIN_ASSIGNED' AND c.event_type='dispatch_offer_accepted')
+                      OR (o.state='IN_CUSTODY' AND c.event_type IN ('captain_pickup_completed','delivery_recovered'))
+                      OR (o.state='DELIVERED' AND c.event_type='delivery_completed')
+                      OR (o.state='DELIVERY_FAILED' AND c.event_type='delivery_failed')
+                   )
+            ) e
+        ) AS stage(stage_started_at) ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT p.target_minutes,p.warning_minutes,p.policy_version
+            FROM dsh.operator_stage_sla_policies p
+            WHERE p.fulfillment_mode=o.fulfillment_mode AND p.stage=o.state
+              AND stage.stage_started_at IS NOT NULL AND p.effective_at<=stage.stage_started_at
+            ORDER BY p.effective_at DESC,p.policy_version DESC LIMIT 1
+        ) sla ON TRUE
 		WHERE `+where+`
 	), summary AS (
 		SELECT count(*) AS total_count,
@@ -727,11 +778,13 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		count(*) FILTER (WHERE state='READY_FOR_DISPATCH') AS awaiting_dispatch_count,
 		count(*) FILTER (WHERE state NOT IN ('READY_FOR_DISPATCH','DELIVERY_FAILED','DELIVERED','REJECTED','CANCELLED')) AS active_count,
 		count(*) FILTER (WHERE state='DELIVERED') AS delivered_count,
+		count(*) FILTER (WHERE assignment_state='in_custody') AS in_custody_order_count,
+		COALESCE(sum(order_value_minor) FILTER (WHERE assignment_state='in_custody'),0)::bigint AS in_custody_order_value_minor,
 		statement_timestamp() AS measured_at FROM filtered
 	), page AS (
-		SELECT * FROM filtered WHERE `+pageWhere+" ORDER BY updated_at "+order+",id "+order+" LIMIT $"+strconv.Itoa(len(args))+`
+        SELECT * FROM filtered WHERE `+pageWhere+" ORDER BY updated_at "+order+",id "+order+" LIMIT $"+strconv.Itoa(len(args))+`
 	)
-	SELECT summary.*,page.id,page.name,page.state,page.updated_at,page.assignment_id,page.order_id,page.captain_actor_id,page.assignment_state,page.version,page.handoff_state
+	SELECT summary.*,page.id,page.name,page.state,page.updated_at,page.assignment_id,page.order_id,page.captain_actor_id,page.assignment_state,page.version,page.handoff_state,page.stage_started_at,page.preparation_minutes,page.sla_target_minutes,page.sla_warning_minutes,page.sla_policy_version
 	FROM summary LEFT JOIN page ON TRUE ORDER BY page.updated_at `+order+",page.id "+order, args...)
 	if err != nil {
 		return OperatorOperationsResult{}, err
@@ -745,15 +798,27 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		var updatedAt sql.NullTime
 		var assignmentID, assignmentOrderID, captainActorID, assignmentState, handoffState sql.NullString
 		var assignmentVersion sql.NullInt64
-		if err := rows.Scan(&summary.TotalCount, &summary.ActionableCount, &summary.AwaitingDispatchCount, &summary.ActiveCount, &summary.DeliveredCount, &summary.MeasuredAt,
+		var stageStartedAt sql.NullTime
+		var preparationMinutes sql.NullInt64
+		var slaTarget, slaWarning, slaVersion sql.NullInt64
+		if err := rows.Scan(&summary.TotalCount, &summary.ActionableCount, &summary.AwaitingDispatchCount, &summary.ActiveCount, &summary.DeliveredCount, &summary.InCustodyOrderCount, &summary.InCustodyOrderValueMinor, &summary.MeasuredAt,
 			&id, &storeName, &state, &updatedAt,
-			&assignmentID, &assignmentOrderID, &captainActorID, &assignmentState, &assignmentVersion, &handoffState); err != nil {
+			&assignmentID, &assignmentOrderID, &captainActorID, &assignmentState, &assignmentVersion, &handoffState, &stageStartedAt, &preparationMinutes, &slaTarget, &slaWarning, &slaVersion); err != nil {
 			return OperatorOperationsResult{}, err
 		}
 		if !id.Valid {
 			continue // The summary still exists for empty results or an exhausted cursor.
 		}
 		item.OrderID, item.StoreName, item.State, item.UpdatedAt = id.String, storeName.String, state.String, updatedAt.Time
+		if stageStartedAt.Valid {
+			timeValue := stageStartedAt.Time
+			item.StageStartedAt = &timeValue
+		}
+		if preparationMinutes.Valid {
+			v := int(preparationMinutes.Int64)
+			item.PreparationMinutes = &v
+		}
+		item.StageSLA = EvaluateOperatorStageSLA(summary.MeasuredAt, item.State, item.StageStartedAt, int(slaTarget.Int64), int(slaWarning.Int64), int(slaVersion.Int64))
 		if assignmentID.Valid {
 			item.Assignment = &OperatorAssignmentListRecord{ID: assignmentID.String, OrderID: assignmentOrderID.String, CaptainActorID: captainActorID.String, State: assignmentState.String, Version: int(assignmentVersion.Int64), HandoffState: handoffState.String}
 		}
@@ -864,7 +929,7 @@ func escapeOperatorOperationSearch(value string) string {
 	return strings.ReplaceAll(value, "_", "!_")
 }
 
-const orderSelectColumns = `o.id,o.client_actor_id,o.store_id,o.cart_id,o.fulfillment_mode,COALESCE(o.address_id,''),COALESCE(o.address_version,0),COALESCE(o.address_text,''),COALESCE(o.address_latitude,0),COALESCE(o.address_longitude,0),o.service_city_id,COALESCE(o.serviceability_policy_version,''),COALESCE(o.serviceability_status,''),o.serviceability_store_version,COALESCE(o.serviceability_address_version,0),COALESCE((SELECT a.orderability_state FROM dsh.commerce_order_store_orderability_snapshots a WHERE a.order_id=o.id),''),COALESCE((SELECT a.availability_version FROM dsh.commerce_order_store_orderability_snapshots a WHERE a.order_id=o.id),0),(SELECT a.evaluated_at FROM dsh.commerce_order_store_orderability_snapshots a WHERE a.order_id=o.id),o.state,o.subtotal_amount_minor,o.discount_minor,o.promotion_id,o.promotion_code,COALESCE(o.promotion_version,0),COALESCE(o.promotion_funding_source,''),COALESCE(o.promotion_funding_share_partner_percent,0),o.total_amount_minor,o.payment_cash_amount_minor,o.currency,o.payment_intent_id,o.payment_method,o.payment_state,o.version,o.created_at,o.updated_at,COALESCE((SELECT h.state FROM dsh.commerce_order_store_cash_handoffs h WHERE h.order_id=o.id),''),o.recipient_mode,o.recipient_name,o.recipient_phone_e164,o.recipient_instructions,o.cancellation_mode,o.cancellation_policy_version`
+const orderSelectColumns = `o.id,o.client_actor_id,o.store_id,o.cart_id,o.fulfillment_mode,COALESCE(o.address_id,''),COALESCE(o.address_version,0),COALESCE(o.address_text,''),COALESCE(o.address_latitude,0),COALESCE(o.address_longitude,0),o.service_city_id,COALESCE(o.serviceability_policy_version,''),COALESCE(o.serviceability_status,''),o.serviceability_store_version,COALESCE(o.serviceability_address_version,0),COALESCE((SELECT a.orderability_state FROM dsh.commerce_order_store_orderability_snapshots a WHERE a.order_id=o.id),''),COALESCE((SELECT a.availability_version FROM dsh.commerce_order_store_orderability_snapshots a WHERE a.order_id=o.id),0),(SELECT a.evaluated_at FROM dsh.commerce_order_store_orderability_snapshots a WHERE a.order_id=o.id),o.state,o.subtotal_amount_minor,o.discount_minor,o.promotion_id,o.promotion_code,COALESCE(o.promotion_version,0),COALESCE(o.promotion_funding_source,''),COALESCE(o.promotion_funding_share_partner_percent,0),o.total_amount_minor,o.payment_cash_amount_minor,o.currency,o.payment_intent_id,o.payment_method,o.payment_state,o.version,o.created_at,o.updated_at,COALESCE((SELECT h.state FROM dsh.commerce_order_store_cash_handoffs h WHERE h.order_id=o.id),''),o.recipient_mode,o.recipient_name,o.recipient_phone_e164,o.recipient_instructions,o.cancellation_mode,o.cancellation_policy_version,COALESCE(o.customer_note,'')`
 const orderSelectColumnsWithStore = orderSelectColumns + `,s.name,CASE WHEN o.fulfillment_mode='CUSTOMER_PICKUP' THEN s.delivery_origin_latitude END,CASE WHEN o.fulfillment_mode='CUSTOMER_PICKUP' THEN s.delivery_origin_longitude END`
 
 func scanOrder(row rowScanner) (OrderRecord, error) {
@@ -888,7 +953,7 @@ func scanOrderColumns(row rowScanner, includeStore bool) (OrderRecord, error) {
 		&order.AddressLatitude, &order.AddressLongitude, &order.ServiceCityID, &order.ServiceabilityPolicyVersion, &order.ServiceabilityStatus,
 		&order.ServiceabilityStoreVersion, &order.ServiceabilityAddressVersion, &orderabilityState, &orderabilityVersion, &orderabilityEvaluatedAt, &order.State, &order.SubtotalAmountMinor, &order.DiscountMinor, &promotionID, &promotionCode, &order.PromotionVersion, &order.PromotionFundingSource, &order.PromotionFundingSharePercent, &order.TotalAmountMinor, &order.PaymentCashAmountMinor, &order.Currency,
 		&paymentIntentID, &order.PaymentMethod, &order.PaymentState, &order.Version, &order.CreatedAt, &order.UpdatedAt, &order.StoreCashHandoffState,
-		&order.Recipient.Mode, &recipientName, &recipientPhone, &recipientInstructions, &order.CancellationMode, &order.CancellationPolicyVersion,
+		&order.Recipient.Mode, &recipientName, &recipientPhone, &recipientInstructions, &order.CancellationMode, &order.CancellationPolicyVersion, &order.CustomerNote,
 	}
 	if includeStore {
 		destinations = append(destinations, &order.StoreName, &pickupLatitude, &pickupLongitude)
@@ -1429,13 +1494,14 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 			return OrderRecord{}, false, err
 		}
 	}
-	requiresDeliveryFee := input.FulfillmentMode == FulfillmentModeBthwaniCaptain
+	// Every delivery uses the shared city policy; customer pickup remains fee-free.
+	requiresDeliveryFee := input.FulfillmentMode == FulfillmentModeBthwaniCaptain || input.FulfillmentMode == FulfillmentModePartnerCaptain
 	if orderSizeBaseUnits <= 0 || (requiresDeliveryFee && input.DeliveryFeeResolver == nil) {
 		return OrderRecord{}, false, ErrDeliveryFeeUnavailable
 	}
 	feeQuote := DeliveryFeeQuote{FeeMinor: 0, PolicyVersion: "NOT_APPLICABLE"}
 	if requiresDeliveryFee {
-		feeQuote, err = input.DeliveryFeeResolver(ctx, DeliveryFeeQuoteInput{ServiceCityID: input.Evidence.ServiceCityID, OriginLatitude: input.Evidence.StoreOriginLatitude, OriginLongitude: input.Evidence.StoreOriginLongitude, DestinationLatitude: input.Evidence.AddressLatitude, DestinationLongitude: input.Evidence.AddressLongitude, OrderSizeBaseUnits: orderSizeBaseUnits})
+		feeQuote, err = input.DeliveryFeeResolver(ctx, DeliveryFeeQuoteInput{StoreID: input.StoreID, FulfillmentMode: input.FulfillmentMode, ServiceCityID: input.Evidence.ServiceCityID, OriginLatitude: input.Evidence.StoreOriginLatitude, OriginLongitude: input.Evidence.StoreOriginLongitude, DestinationLatitude: input.Evidence.AddressLatitude, DestinationLongitude: input.Evidence.AddressLongitude, OrderSizeBaseUnits: orderSizeBaseUnits})
 		if err != nil || feeQuote.FeeMinor < 0 || strings.TrimSpace(feeQuote.PolicyVersion) == "" {
 			return OrderRecord{}, false, ErrDeliveryFeeUnavailable
 		}
@@ -1476,7 +1542,7 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 	if promotion.ID != "" {
 		promotionFunding = PromotionFunding{PromotionID: promotion.ID, PromotionVersion: promotion.Version, PromotionCode: promotion.Code, FundingSource: promotion.FundingSource, PartnerSharePercent: promotion.FundingSharePartnerPercent}
 	}
-	payment, err := input.PaymentProvisioner(ctx, newOrderID, input.PaymentExternalReference, input.ClientActorID, total, discountMinor, feeQuote.FeeMinor, feeQuote.PolicyVersion, totalWithDelivery, promotionFunding, input.PaymentIdempotencyKey, input.CorrelationID)
+	payment, err := input.PaymentProvisioner(ctx, newOrderID, input.PaymentExternalReference, input.ClientActorID, total, discountMinor, feeQuote.FeeMinor, feeQuote.PlatformMarginMinor, feeQuote.PolicyVersion, totalWithDelivery, promotionFunding, input.PaymentIdempotencyKey, input.CorrelationID)
 	if err != nil {
 		return OrderRecord{}, false, fmt.Errorf("%w: %w", ErrPaymentProvisioning, err)
 	}
@@ -1490,7 +1556,12 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 	if payment.CashAmountMinor < 0 || payment.CashAmountMinor > totalWithDelivery || payment.CashAmountMinor != totalWithDelivery-input.InternalBalanceAmountMinor {
 		return OrderRecord{}, false, ErrPaymentProvisioning
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,fulfillment_mode,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,subtotal_amount_minor,discount_minor,promotion_id,promotion_code,promotion_version,promotion_funding_source,promotion_funding_share_partner_percent,total_amount_minor,payment_cash_amount_minor,payment_intent_id,payment_method,payment_state,recipient_mode,recipient_name,recipient_phone_e164,recipient_instructions,cancellation_mode,cancellation_policy_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'CREATED',$16,$17,NULLIF($18,''),NULLIF($19,''),NULLIF($20,0),NULLIF($21,''),$22,$23,$24,$25,$26,$27,$28,NULLIF($29,''),NULLIF($30,''),NULLIF($31,''),COALESCE((SELECT type.cancellation_mode FROM dsh.stores store JOIN dsh.commercial_store_types type ON type.id=store.commercial_store_type_id WHERE store.id=$3),'OPERATIONS_ONLY'),COALESCE((SELECT type.version FROM dsh.stores store JOIN dsh.commercial_store_types type ON type.id=store.commercial_store_type_id WHERE store.id=$3),0))`, newOrderID, input.ClientActorID, input.StoreID, input.CartID, input.FulfillmentMode, orderAddressID, orderAddressVersion, orderAddressText, orderAddressLatitude, orderAddressLongitude, input.Evidence.ServiceCityID, serviceabilityPolicy, serviceabilityStatus, storeVersion, serviceabilityAddressVersion, total, discountMinor, promotion.ID, promotion.Code, promotion.Version, promotion.FundingSource, promotion.FundingSharePartnerPercent, totalWithDelivery, payment.CashAmountMinor, payment.IntentID, input.PaymentMethod, payment.State, input.Recipient.Mode, input.Recipient.Name, input.Recipient.PhoneE164, input.Recipient.Instructions); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,fulfillment_mode,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,subtotal_amount_minor,discount_minor,promotion_id,promotion_code,promotion_version,promotion_funding_source,promotion_funding_share_partner_percent,total_amount_minor,payment_cash_amount_minor,payment_intent_id,payment_method,payment_state,recipient_mode,recipient_name,recipient_phone_e164,recipient_instructions,cancellation_mode,cancellation_policy_version,customer_note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'CREATED',$16,$17,NULLIF($18,''),NULLIF($19,''),NULLIF($20,0),NULLIF($21,''),$22,$23,$24,$25,$26,$27,$28,NULLIF($29,''),NULLIF($30,''),NULLIF($31,''),COALESCE((SELECT type.cancellation_mode FROM dsh.stores store JOIN dsh.commercial_store_types type ON type.id=store.commercial_store_type_id WHERE store.id=$3),'OPERATIONS_ONLY'),COALESCE((SELECT type.version FROM dsh.stores store JOIN dsh.commercial_store_types type ON type.id=store.commercial_store_type_id WHERE store.id=$3),0),$32)`, newOrderID, input.ClientActorID, input.StoreID, input.CartID, input.FulfillmentMode, orderAddressID, orderAddressVersion, orderAddressText, orderAddressLatitude, orderAddressLongitude, input.Evidence.ServiceCityID, serviceabilityPolicy, serviceabilityStatus, storeVersion, serviceabilityAddressVersion, total, discountMinor, promotion.ID, promotion.Code, promotion.Version, promotion.FundingSource, promotion.FundingSharePartnerPercent, totalWithDelivery, payment.CashAmountMinor, payment.IntentID, input.PaymentMethod, payment.State, input.Recipient.Mode, input.Recipient.Name, input.Recipient.PhoneE164, input.Recipient.Instructions, input.CustomerNote); err != nil {
+		return OrderRecord{}, false, err
+	}
+	// Bind a server-acknowledged click to the Order before its transaction commits.
+	// Invalid, stale or superseded clicks leave checkout valid and unattributed.
+	if err := RecordCheckoutDiscoveryConversionTx(ctx, tx, newOrderID, input.ClientActorID, input.DiscoveryClickEventID); err != nil {
 		return OrderRecord{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_store_orderability_snapshots(order_id,availability_version,orderability_state,evaluated_at) VALUES($1,$2,$3,$4)`, newOrderID, orderability.Version, orderability.State, orderability.EvaluatedAt); err != nil {

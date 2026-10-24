@@ -13,10 +13,15 @@ import (
 	"time"
 )
 
+// The initial operating radius is conservative until city-specific geographic
+// boundaries are configured; DSH serviceability enforces the same 30km limit.
+const maximumDeliveryDistanceMeters int64 = 30_000
+
 var (
 	ErrDeliveryFeePolicyInvalidInput = errors.New("delivery fee policy input is invalid")
 	ErrDeliveryFeePolicyNotFound     = errors.New("delivery fee policy was not found")
 	ErrDeliveryFeeQuoteInvalidInput  = errors.New("delivery fee quote input is invalid")
+	ErrDeliveryOutsideCoverage       = errors.New("delivery distance exceeds supported service radius")
 )
 
 type DeliveryFeePolicyRecord struct {
@@ -55,6 +60,8 @@ type CreateDeliveryFeePolicyInput struct {
 }
 
 type DeliveryFeeQuoteInput struct {
+	StoreID              string
+	FulfillmentMode      string
 	ServiceCityID        string
 	OriginLatitude       float64
 	OriginLongitude      float64
@@ -64,14 +71,16 @@ type DeliveryFeeQuoteInput struct {
 }
 
 type DeliveryFeeQuoteRecord struct {
-	FeeMinor           int64
-	PolicyVersion      string
-	ServiceCityID      string
-	DistanceMeters     int64
-	DistanceUnits      int64
-	OrderSizeBaseUnits int64
-	OrderSizeUnits     int64
-	RoundingUnitMinor  int64
+	CaptainEarningMinor int64
+	PlatformMarginMinor int64
+	FeeMinor            int64
+	PolicyVersion       string
+	ServiceCityID       string
+	DistanceMeters      int64
+	DistanceUnits       int64
+	OrderSizeBaseUnits  int64
+	OrderSizeUnits      int64
+	RoundingUnitMinor   int64
 }
 
 func HashDeliveryFeePolicyRequest(input CreateDeliveryFeePolicyInput) string {
@@ -175,7 +184,9 @@ func readExactActiveDeliveryFeePolicy(ctx context.Context, db *sql.DB, serviceCi
 
 func ResolveDeliveryFeeQuote(ctx context.Context, db *sql.DB, input DeliveryFeeQuoteInput) (DeliveryFeeQuoteRecord, error) {
 	input.ServiceCityID = strings.TrimSpace(input.ServiceCityID)
-	if db == nil || len(input.ServiceCityID) > 128 || !validCoordinate(input.OriginLatitude, input.OriginLongitude) || !validCoordinate(input.DestinationLatitude, input.DestinationLongitude) {
+	input.StoreID = strings.TrimSpace(input.StoreID)
+	input.FulfillmentMode = strings.TrimSpace(input.FulfillmentMode)
+	if db == nil || len(input.ServiceCityID) > 128 || len(input.StoreID) > 128 || (input.StoreID != "" && input.FulfillmentMode != "BTHWANI_CAPTAIN" && input.FulfillmentMode != "PARTNER_CAPTAIN") || !validCoordinate(input.OriginLatitude, input.OriginLongitude) || !validCoordinate(input.DestinationLatitude, input.DestinationLongitude) {
 		return DeliveryFeeQuoteRecord{}, ErrDeliveryFeeQuoteInvalidInput
 	}
 	policy, err := readActiveDeliveryFeePolicy(ctx, db, input.ServiceCityID)
@@ -183,6 +194,11 @@ func ResolveDeliveryFeeQuote(ctx context.Context, db *sql.DB, input DeliveryFeeQ
 		return DeliveryFeeQuoteRecord{}, err
 	}
 	distanceMeters := haversineMeters(input.OriginLatitude, input.OriginLongitude, input.DestinationLatitude, input.DestinationLongitude)
+	// A shared city identifier is insufficient proof that an address is
+	// deliverable. Never quote a 140km order as an ordinary local trip.
+	if !deliveryDistanceWithinCoverage(distanceMeters) {
+		return DeliveryFeeQuoteRecord{}, ErrDeliveryOutsideCoverage
+	}
 	if !validDeliveryDistanceBands(policy.DistanceBands) {
 		return DeliveryFeeQuoteRecord{}, ErrDeliveryFeePolicyNotFound
 	}
@@ -190,8 +206,56 @@ func ResolveDeliveryFeeQuote(ctx context.Context, db *sql.DB, input DeliveryFeeQ
 	if err != nil {
 		return DeliveryFeeQuoteRecord{}, err
 	}
+	marginMinor := int64(0)
+	policyVersion := policy.PolicyVersion
+	if input.StoreID != "" {
+		var agreementID string
+		var agreementVersion int
+		var pricingMode string
+		var fixedFeeMinor int64
+		err := db.QueryRowContext(ctx, `SELECT a.agreement_id,a.agreement_version,r.delivery_markup_minor,r.delivery_pricing_mode,r.delivery_fixed_fee_minor
+			FROM wlt.store_commercial_agreements a JOIN wlt.store_commercial_agreement_rates r
+			ON r.agreement_id=a.agreement_id AND r.fulfillment_mode=$2
+			WHERE a.store_id=$1 AND a.status='ACTIVE'`, input.StoreID, input.FulfillmentMode).
+			Scan(&agreementID, &agreementVersion, &marginMinor, &pricingMode, &fixedFeeMinor)
+		if errors.Is(err, sql.ErrNoRows) {
+			return DeliveryFeeQuoteRecord{}, ErrStoreCommercialAgreementUnavailable
+		}
+		if err != nil {
+			return DeliveryFeeQuoteRecord{}, err
+		}
+		if marginMinor < 0 || marginMinor > 10000 || marginMinor > math.MaxInt64-amountMinor {
+			return DeliveryFeeQuoteRecord{}, ErrDeliveryFeeQuoteInvalidInput
+		}
+		if input.FulfillmentMode == "PARTNER_CAPTAIN" {
+			switch pricingMode {
+			case "FREE":
+				if fixedFeeMinor != 0 {
+					return DeliveryFeeQuoteRecord{}, ErrDeliveryFeeQuoteInvalidInput
+				}
+				amountMinor = 0
+			case "FIXED":
+				if fixedFeeMinor <= 0 || fixedFeeMinor > 20000 {
+					return DeliveryFeeQuoteRecord{}, ErrDeliveryFeeQuoteInvalidInput
+				}
+				amountMinor = fixedFeeMinor
+			case "DISTANCE":
+				if fixedFeeMinor != 0 {
+					return DeliveryFeeQuoteRecord{}, ErrDeliveryFeeQuoteInvalidInput
+				}
+			default:
+				return DeliveryFeeQuoteRecord{}, ErrDeliveryFeeQuoteInvalidInput
+			}
+		}
+		policyVersion = fmt.Sprintf("%s;agreement=%s:v%d", policyVersion, agreementID, agreementVersion)
+	}
+	// The Store, not a BThwani Captain Wallet, owns Partner Captain delivery.
+	captainEarningMinor := amountMinor
+	if input.FulfillmentMode == "PARTNER_CAPTAIN" {
+		captainEarningMinor = 0
+	}
 	distanceUnits := int64(0)
-	return DeliveryFeeQuoteRecord{FeeMinor: amountMinor, PolicyVersion: policy.PolicyVersion, ServiceCityID: input.ServiceCityID, DistanceMeters: distanceMeters, DistanceUnits: distanceUnits, OrderSizeBaseUnits: input.OrderSizeBaseUnits, OrderSizeUnits: 0, RoundingUnitMinor: 1}, nil
+	return DeliveryFeeQuoteRecord{FeeMinor: amountMinor + marginMinor, CaptainEarningMinor: captainEarningMinor, PlatformMarginMinor: marginMinor, PolicyVersion: policyVersion, ServiceCityID: input.ServiceCityID, DistanceMeters: distanceMeters, DistanceUnits: distanceUnits, OrderSizeBaseUnits: input.OrderSizeBaseUnits, OrderSizeUnits: 0, RoundingUnitMinor: 1}, nil
 }
 
 func readActiveDeliveryFeePolicy(ctx context.Context, source interface {
@@ -250,4 +314,8 @@ func haversineMeters(latitudeA, longitudeA, latitudeB, longitudeB float64) int64
 		a = 1
 	}
 	return int64(math.Round(earthRadiusMeters * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))))
+}
+
+func deliveryDistanceWithinCoverage(distanceMeters int64) bool {
+	return distanceMeters >= 0 && distanceMeters <= maximumDeliveryDistanceMeters
 }

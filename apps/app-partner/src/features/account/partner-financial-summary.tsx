@@ -1,15 +1,19 @@
-import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, formatMoney, settlementPeriodLabel, type PartnerScopedFinancialSummary } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect } from "expo-router";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
-function client() { const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim(); if (!baseUrl) throw new Error("DSH_BASE_URL_REQUIRED"); return createDshMobileClient(baseUrl, { cryptoRandomUUID: () => Crypto.randomUUID() }); }
+function client() {
+  const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
+  if (!baseUrl) throw new Error("DSH_BASE_URL_REQUIRED");
+  return createDshMobileClient(baseUrl, { cryptoRandomUUID: () => Crypto.randomUUID() });
+}
 
-export function PartnerFinancialSummaryCard() {
+export function PartnerFinancialSummaryCard({ actions, workflow }: { actions?: ReactNode; workflow?: ReactNode }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const authenticated = currentIdentityState().kind === "authenticated";
@@ -26,29 +30,66 @@ export function PartnerFinancialSummaryCard() {
     } catch (cause) {
       setSummary(null);
       console.error("DSH partner financial summary readback failed", cause);
-      setError("تعذر قراءة مستحقات الشريك. أعد المحاولة.");
+      setError("تعذر قراءة المستحقات. أعد المحاولة.");
     } finally { setLoading(false); }
   }, [authenticated]);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
-  return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="مستحقات الشريك">
-    <View style={styles.header}><Text style={styles.muted}>الرصيد المتاح</Text></View>
-    {loading ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المستحقات…</Text></View> : null}
-    {!loading && summary ? <>
-      <Text style={styles.balance}>{formatMoney(summary.eligibleAvailableMinor, summary.currency)}</Text>
-      <Text style={styles.muted}>المحجوز {formatMoney(summary.heldMinor, summary.currency)} · المصروف {formatMoney(summary.settledMinor, summary.currency)}</Text>
-      {!summary.attributionComplete ? <Text style={styles.error}>بعض عمليات الصرف القديمة تحتاج مطابقة مع المتاجر. تفاصيل الحجز والصرف لكل متجر تعرض التوزيع المثبت فقط.</Text> : null}
-      {showDetails && summary.ownerCommissionReceivableMinor !== undefined ? <Text style={styles.muted}>ذمة العمولة على محفظتك: {formatMoney(summary.ownerCommissionReceivableMinor, summary.currency)}</Text> : null}
-      {summary.stores.length > 0 ? <BthwaniButton label={showDetails ? "إخفاء تفاصيل المتاجر" : "تفاصيل المتاجر"} variant="secondary" onPress={() => setShowDetails((current) => !current)} /> : null}
-      {showDetails ? summary.stores.map((store) => <View key={store.storeId} style={styles.metrics}>
-        <Text style={styles.title}>{store.storeName}</Text>
-        <Text style={styles.muted}>المتاح: {formatMoney(store.eligibleAvailableMinor, store.currency)} · المحجوز: {formatMoney(store.heldMinor, store.currency)}</Text>
-        <Text style={styles.muted}>المكتسب بعد تسويات العمولة: {formatMoney(store.earnedMinor, store.currency)} · العمولة: {formatMoney(store.commissionMinor, store.currency)}</Text>
-        <Text style={styles.muted}>المصروف: {formatMoney(store.settledMinor, store.currency)} · {store.orderCount.toLocaleString("ar-YE")} طلب · {settlementPeriodLabel(store.settlementPeriod)}</Text>
-      </View>) : null}
+  return <View style={styles.container} accessibilityLabel="ملخص مستحقات الشريك">
+    <View style={styles.balanceCard}>
+      <View style={styles.balanceCopy}><View style={styles.availableTitle}><View style={[styles.dot, { backgroundColor: theme.success }]} /><Text style={styles.balanceLabel}>الرصيد المتاح للصرف</Text></View>
+        {loading && !summary ? <ActivityIndicator color={theme.color} /> : null}
+        <Text style={styles.balance}>{summary ? formatMoney(summary.eligibleAvailableMinor, summary.currency) : "—"}</Text>
+      </View>
+      <View style={styles.moneyIcon}><BthwaniIcon name="wallet" color={theme.color} size={27} /></View>
+    </View>
+    {summary ? <>
+      <View style={styles.metrics}>
+        <View style={styles.metric}><BthwaniIcon name="wallet" color={theme.info} size={22} /><Text style={styles.metricLabel}>المحجوز</Text><Text style={styles.metricValue}>{formatMoney(summary.heldMinor, summary.currency)}</Text></View>
+        <View style={styles.metric}><BthwaniIcon name="orders" color={theme.success} size={22} /><Text style={styles.metricLabel}>المصروف سابقًا</Text><Text style={styles.metricValue}>{formatMoney(summary.settledMinor, summary.currency)}</Text></View>
+        {summary.ownerCommissionReceivableMinor !== undefined ? <View style={styles.metric}><BthwaniIcon name="offers" color={theme.warning} size={22} /><Text style={styles.metricLabel}>ذمة العمولة</Text><Text style={styles.metricValue}>{formatMoney(summary.ownerCommissionReceivableMinor, summary.currency)}</Text></View> : null}
+      </View>
     </> : null}
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-
-  </BthwaniSurface>;
+    {actions}
+    {workflow}
+    {summary ? <>
+      {!summary.attributionComplete ? <Text style={styles.error}>بعض التحويلات القديمة غير مكتملة النسبة للمتاجر؛ الصرف الجديد يتطلب اكتمال المطابقة.</Text> : null}
+      {summary.stores.length > 0 ? <View style={styles.stores}>
+        <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>تفاصيل المتاجر</Text><BthwaniIcon name="store" size={24} color={theme.brandAction} /></View>
+        {showDetails ? summary.stores.map((store) => <View key={store.storeId} style={styles.store}>
+          <View style={styles.storeTop}><Text style={styles.storeAmount}>{formatMoney(store.eligibleAvailableMinor, store.currency)}</Text><Text style={styles.storeName} numberOfLines={1}>{store.storeName}</Text></View>
+          <Text style={styles.muted}>المحجوز: {formatMoney(store.heldMinor, store.currency)} · {settlementPeriodLabel(store.settlementPeriod)}</Text>
+          {showDetails ? <Text style={styles.muted}>المكتسب: {formatMoney(store.earnedMinor, store.currency)} · العمولة: {formatMoney(store.commissionMinor, store.currency)} · المصروف: {formatMoney(store.settledMinor, store.currency)} · {store.orderCount.toLocaleString("ar-YE")} طلب</Text> : null}
+        </View>) : null}
+        <Pressable accessibilityRole="button" accessibilityLabel={showDetails ? "إخفاء تفاصيل المتاجر" : "تفاصيل المتاجر"} onPress={() => setShowDetails((value) => !value)} style={styles.detailsButton}><Text style={styles.detailsLabel}>{showDetails ? "إخفاء التفاصيل" : "عرض التفاصيل"}</Text></Pressable>
+      </View> : null}
+    </> : null}
+    {error ? <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.infoCard}><Text accessibilityRole="alert" style={styles.error}>{error} · إعادة المحاولة</Text></Pressable> : null}
+  </View>;
 }
-
-function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ card: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] }, header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" }, eyebrow: { ...typography.label, color: theme.interactiveText }, title: { ...typography.titleSm, color: theme.color }, balance: { ...typography.hero, color: theme.color }, period: { ...typography.label, color: theme.interactiveText }, loading: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, metrics: { gap: spacing[3] }, metricLabel: { ...typography.caption, color: theme.colorMuted }, metricValue: { ...typography.titleMd, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, error: { ...typography.bodySm, color: theme.warning } }); }
+function createStyles(p: ReturnType<typeof resolveTheme>) { return StyleSheet.create({
+  container: { gap: 9 },
+  balanceCard: { flexDirection: "row", alignItems: "center", minHeight: 107, borderRadius: 15, padding: 13, gap: 10, backgroundColor: p.actionSoft, borderWidth: 1, borderColor: p.brandAction },
+  moneyIcon: { width: 39, height: 39, borderRadius: 10, backgroundColor: p.actionSoft, alignItems: "center", justifyContent: "center" },
+  balanceCopy: { flex: 1, alignItems: "flex-start", gap: 3 },
+  availableTitle: { flexDirection: "row", gap: 8, alignItems: "center" },
+  dot: { height: 10, width: 10, borderRadius: 5 },
+  balanceLabel: { ...typography.bodyStrong, color: p.color },
+  balance: { color: p.color, fontSize: 24, fontWeight: "800", writingDirection: "rtl" },
+  metrics: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  metric: { flexGrow: 1, flexBasis: 90, gap: 2, backgroundColor: p.surface, borderColor: p.borderColor, borderWidth: 1, borderRadius: 11, padding: 8, minHeight: 70, alignItems: "flex-end" },
+  metricLabel: { ...typography.caption, color: p.colorMuted },
+  metricValue: { ...typography.bodyStrong, color: p.color },
+  infoCard: { backgroundColor: p.surfaceRaised, borderColor: p.borderColor, borderWidth: 1, borderRadius: 16, padding: 14, gap: 6 },
+  infoTitle: { ...typography.bodyStrong, color: p.color },
+  muted: { ...typography.caption, color: p.colorMuted },
+  error: { ...typography.bodySm, color: p.warning },
+  stores: { backgroundColor: p.surface, borderColor: p.borderColor, borderWidth: 1, borderRadius: 12, padding: 10, gap: 7 },
+  sectionHeader: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 9 },
+  sectionTitle: { ...typography.titleSm, color: p.color },
+  store: { backgroundColor: p.surfaceRaised, borderRadius: 12, padding: 12, gap: 5 },
+  storeTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  storeName: { ...typography.bodyStrong, color: p.color },
+  storeAmount: { ...typography.bodyStrong, color: p.success },
+  detailsButton: { minHeight: 40, justifyContent: "center", alignItems: "center", borderRadius: 10, borderColor: p.borderColor, borderWidth: 1 },
+  detailsLabel: { ...typography.label, color: p.color },
+}); }

@@ -492,6 +492,12 @@ paths:
   /dsh/public/promotions:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1promotions"
 
+  /dsh/public/banner-presentation:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1banner-presentation"
+
+  /dsh/operator/marketing/banner-presentation:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1banner-presentation"
+
   /dsh/public/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content"
 
@@ -501,9 +507,22 @@ paths:
   /dsh/public/discovery-content/{contentId}/target:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content~1{contentId}~1target"
 
+  /dsh/operator/promotions/{promotionId}/partner-decisions:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1partner-decisions"
+
   /dsh/operator/promotions/{promotionId}/settlement-summary:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1settlement-summary"
 
+  /dsh/client/marketing-consent/{channel}:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1client~1marketing-consent~1{channel}"
+  /dsh/operator/marketing/campaigns:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1campaigns"
+  /dsh/operator/marketing/campaigns/{campaignId}/details:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1campaigns~1{campaignId}~1details"
+  /dsh/operator/marketing/campaigns/{campaignId}/elements:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1campaigns~1{campaignId}~1elements"
+  /dsh/operator/marketing/campaigns/{campaignId}/state:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1campaigns~1{campaignId}~1state"
   /dsh/operator/marketing/summary:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1summary"
 
@@ -590,6 +609,9 @@ paths:
   /dsh/public/wallet-providers:
     $ref: "./paths/wallet-provider.yaml#/paths/~1dsh~1public~1wallet-providers"
 
+  /dsh/wallet-providers/{providerKey}/logo/upload:
+    $ref: "./paths/wallet-provider.yaml#/paths/~1dsh~1wallet-providers~1{providerKey}~1logo~1upload"
+
   /dsh/serviceability:
     $ref: "./paths/serviceability.yaml#/paths/~1dsh~1serviceability"
 
@@ -668,6 +690,18 @@ paths:
   /dsh/notifications/{notificationId}/read:
     $ref: "./paths/notifications.yaml#/paths/~1dsh~1notifications~1{notificationId}~1read"
 
+  /dsh/client-shares:
+    $ref: "./paths/client-shares.yaml#/paths/~1dsh~1client-shares"
+
+  /dsh/client-shares/{shareId}/read:
+    $ref: "./paths/client-shares.yaml#/paths/~1dsh~1client-shares~1{shareId}~1read"
+
+  /dsh/client-shares/senders/{senderId}/block:
+    $ref: "./paths/client-shares.yaml#/paths/~1dsh~1client-shares~1senders~1{senderId}~1block"
+
+  /dsh/operator/stage-sla-policies:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1stage-sla-policies"
+
   /dsh/operator/operations:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations"
 
@@ -676,6 +710,27 @@ paths:
 
   /dsh/operator/operations/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}"
+
+  /dsh/operator/operations/{orderId}/mission-location:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1mission-location"
+
+  /dsh/operator/operations/{orderId}/cases:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cases"
+  /dsh/operator/operations/{orderId}/cases/{caseId}/resolution-evidence:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cases~1{caseId}~1resolution-evidence"
+  /dsh/operator/operations/{orderId}/cases/{caseId}/events:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cases~1{caseId}~1events"
+  /dsh/operator/operations/{orderId}/cases/{caseId}/transition:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1cases~1{caseId}~1transition"
+  /dsh/operator/operations/{orderId}/contact-review:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1contact-review"
+  /dsh/operator/operations/{orderId}/contact-review/claim:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}~1contact-review~1claim"
+
+  /dsh/operator/operational-cases:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operational-cases"
+  /dsh/operator/customer-contact-queue:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1customer-contact-queue"
 
   /dsh/orders/{orderId}/cancel:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1cancel"
@@ -747,6 +802,9 @@ paths:
 
   /dsh/me/funding-intents/{fundingIntentId}:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1funding-intents~1{fundingIntentId}"
+
+  /dsh/me/funding-intents/{fundingIntentId}/reconcile:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1funding-intents~1{fundingIntentId}~1reconcile"
 
   /dsh/me/funding-intents/{fundingIntentId}/simulate:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1funding-intents~1{fundingIntentId}~1simulate"
@@ -910,6 +968,9 @@ paths:
 
   /dsh/captains/me/assignments/{assignmentId}/delivery-task:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1delivery-task"
+
+  /dsh/captains/me/assignments/{assignmentId}/mission-location:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1mission-location"
 
   /dsh/captains/me/assignments/{assignmentId}/pickup:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1pickup"
@@ -1258,6 +1319,197 @@ components:
         pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
 
   schemas:
+    OperatorOrderCaseEvent:
+      type: object
+      additionalProperties: false
+      required: [id, caseId, action, actorId, detail, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        caseId:
+          type: integer
+          format: int64
+        action:
+          type: string
+          enum: [OPEN, CLAIM, ACTION_REQUIRED, NEXT_ACTION, RESOLVE]
+        actorId:
+          type: string
+        detail:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    OperatorOrderCaseEventPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperatorOrderCaseEvent"
+        nextCursor:
+          type: string
+    OperatorCaseResolutionEvidence:
+      type: object
+      additionalProperties: false
+      required: [reference, kind, confirmedAt]
+      properties:
+        reference:
+          type: string
+          maxLength: 128
+        kind:
+          type: string
+        confirmedAt:
+          type: string
+          format: date-time
+    OperatorOrderCase:
+      type: object
+      required: [id, orderId, reason, state, priority, nextAction, version, openedAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        orderId:
+          type: string
+        reason:
+          type: string
+          enum: [PARTNER_DELAY, DISPATCH_UNAVAILABLE, DELIVERY_BLOCKED, CUSTOMER_CONTACT, PAYMENT_EXCEPTION, OTHER]
+        state:
+          type: string
+          enum: [OPEN, IN_PROGRESS, ACTION_REQUIRED, RESOLVED]
+        priority:
+          type: string
+          enum: [NORMAL, URGENT]
+        ownerActorId:
+          type: string
+        nextAction:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        resolutionNote:
+          type: string
+        resolutionEvidenceRef:
+          type: string
+          maxLength: 128
+        openedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+    OperatorOrderCasePage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperatorOrderCase"
+        nextCursor:
+          type: string
+    CaptainMissionLocation:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        assignmentId: { type: string }
+        state:
+          type: string
+          enum: [NO_ACTIVE, NO_SIGNAL, FRESH, STALE, LOST]
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        accuracyMeters: { type: number, minimum: 0, maximum: 5000 }
+        recordedAt: { type: string, format: date-time }
+        receivedAt: { type: string, format: date-time }
+
+    PendingCustomerContactItem:
+      type: object
+      additionalProperties: false
+      required: [orderId, storeName, state, createdAt, lastContactState]
+      properties:
+        orderId:
+          type: string
+        storeName:
+          type: string
+        state:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastContactState:
+          type: string
+    PendingCustomerContactsPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PendingCustomerContactItem"
+        nextCursor:
+          type: string
+    CustomerOrderContactReview:
+      type: object
+      additionalProperties: false
+      required: [orderId, state, attemptCount, version, lastActorId, verifiedSuccessfulOrders, legacyExempt, trusted, needsContact, claimedByMe, claimedByOther]
+      properties:
+        orderId:
+          type: string
+        state:
+          type: string
+          enum: [PENDING, NO_ANSWER, CONFIRMED, DENIED, WRONG_NUMBER]
+        attemptCount:
+          type: integer
+          minimum: 0
+        version:
+          type: integer
+          minimum: 0
+        lastActorId:
+          type: string
+        lastAttemptAt:
+          type: string
+          format: date-time
+        confirmedAt:
+          type: string
+          format: date-time
+        verifiedSuccessfulOrders:
+          type: integer
+          minimum: 0
+        legacyExempt:
+          type: boolean
+        trusted:
+          type: boolean
+        needsContact:
+          type: boolean
+        claimedByMe: { type: boolean }
+        claimedByOther: { type: boolean }
+        claimExpiresAt: { type: string, format: date-time }
+    BannerPresentation:
+      type: object
+      required: [placement, mode, intervalSeconds, version]
+      properties:
+        placement:
+          type: string
+          enum: [HOME]
+        mode:
+          type: string
+          enum: [STATIC, CINEMATIC, CROSSFADE]
+        intervalSeconds:
+          type: integer
+          minimum: 3
+          maximum: 10
+        version:
+          type: integer
+          minimum: 1
+        updatedByActorId:
+          type: string
     StatusResponse:
       type: object
       required: [service, status]
@@ -3455,6 +3707,20 @@ components:
           type: integer
           minimum: 0
           maximum: 10000
+        deliveryMarkupMinor:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          description: Optional approved additional customer delivery charge paid to the platform for zero-commission BThwani Captain delivery; the Captain keeps the base tariff.
+        deliveryPricingMode:
+          type: string
+          enum: [DISTANCE, FIXED, FREE]
+          description: Store Captain delivery fee rule. Defaults to DISTANCE for older agreements; other modes only apply to PARTNER_CAPTAIN.
+        deliveryFixedFeeMinor:
+          type: integer
+          minimum: 0
+          maximum: 20000
+          description: Only positive for PARTNER_CAPTAIN with deliveryPricingMode FIXED.
 
     StoreCommercialAgreement:
       type: object
@@ -5579,9 +5845,12 @@ components:
 
     WalletProvider:
       type: object
-      required: [key, displayNameAr, active, version]
+      required: [key, displayNameAr, active, version, logoUri]
       additionalProperties: false
       properties:
+        logoUri:
+          type: string
+          description: Validated immutable public media URI, or empty until an authorized logo is uploaded.
         key:
           type: string
           pattern: '^wallet_provider_[a-z0-9_]{2,60}$'
@@ -5907,6 +6176,10 @@ components:
       required: [cartId, storeId, fulfillmentMode]
       additionalProperties: false
       properties:
+        customerNote:
+          type: string
+          maxLength: 500
+          description: Optional order note for the store, distinct from alternate recipient instructions.
         cartId:
           type: string
           minLength: 1
@@ -5931,6 +6204,10 @@ components:
         promotionCode:
           type: string
           maxLength: 64
+        discoveryClickEventId:
+          type: string
+          maxLength: 128
+          description: Optional DSH-acknowledged discovery click event ID used for server-owned order attribution.
         recipient:
           $ref: "#/components/schemas/CheckoutRecipient"
 
@@ -6053,6 +6330,10 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        discoveryClickEventId:
+          type: string
+          maxLength: 128
+          description: Optional acknowledged discovery click; assigned to no more than one eligible child store.
         children:
           type: array
           minItems: 2
@@ -6771,7 +7052,7 @@ components:
 
     NotificationKind:
       type: string
-      enum: [ORDER_CREATED, ORDER_ACCEPTED, ORDER_PREPARING, ORDER_READY, ORDER_REJECTED, ORDER_STATUS, CAPTAIN_OFFER, CAPTAIN_ASSIGNED, HANDOFF_CONFIRMED, PICKED_UP, DELIVERY_FAILED, DELIVERY_RECOVERED, DELIVERED, REASSIGNED, FIELD_CASE_CREATED, FIELD_CASE_SUBMITTED, FIELD_CASE_NEEDS_CORRECTION, FIELD_CASE_APPROVED, FIELD_CASE_STATUS, STORE_PUBLISHED, FIELD_MISSION_COMPLETED, FIELD_REWARD_CONFIRMED]
+      enum: [ORDER_CREATED, ORDER_ACCEPTED, ORDER_PREPARING, ORDER_READY, ORDER_REJECTED, ORDER_STATUS, CAPTAIN_OFFER, CAPTAIN_ARRIVED, CAPTAIN_ASSIGNED, HANDOFF_CONFIRMED, PICKED_UP, DELIVERY_FAILED, DELIVERY_RECOVERED, DELIVERED, REASSIGNED, FIELD_CASE_CREATED, FIELD_CASE_SUBMITTED, FIELD_CASE_NEEDS_CORRECTION, FIELD_CASE_APPROVED, FIELD_CASE_STATUS, STORE_PUBLISHED, FIELD_MISSION_COMPLETED, FIELD_REWARD_CONFIRMED, STORE_AVAILABILITY_CHANGED]
 
     Notification:
       type: object
@@ -6871,7 +7152,7 @@ components:
           type: boolean
         mediaKind:
           type: string
-          enum: [image, audio]
+          enum: [image, audio, video]
         mediaContentType:
           type: string
           maxLength: 64
@@ -6924,7 +7205,7 @@ components:
             enum: [client, partner, captain, operator]
         mediaKind:
           type: string
-          enum: [image, audio]
+          enum: [image, audio, video]
         mediaContentType:
           type: string
           maxLength: 64
@@ -6939,7 +7220,7 @@ components:
       properties:
         mediaKind:
           type: string
-          enum: [image, audio]
+          enum: [image, audio, video]
         contentType:
           type: string
           maxLength: 64
@@ -7481,6 +7762,11 @@ components:
         outstandingCommissionReceivableMinor:
           type: integer
           minimum: 1
+        oldestUnpaidAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Oldest open commission after FIFO allocation of collected settlements.
         profileState:
           type: string
           maxLength: 32
@@ -8530,6 +8816,8 @@ components:
           type: boolean
         simulator:
           type: boolean
+        providerMock:
+          type: boolean
         recentCompensations:
           type: array
           items:
@@ -8725,6 +9013,10 @@ components:
         pickupLocation:
           $ref: "#/components/schemas/OrderPickupLocation"
           nullable: true
+        customerNote:
+          type: string
+          maxLength: 500
+          description: Customer order note saved at checkout, distinct from recipient instructions.
         cartId:
           type: string
         fulfillmentMode:
@@ -9053,6 +9345,36 @@ components:
         updatedAt:
           type: string
           format: date-time
+        stageStartedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Most recent matching canonical DSH Order transition event. Null when unavailable; not an SLA deadline.
+        preparationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          nullable: true
+          description: Current Store-specified preparation target for PREPARING; null if unspecified. Not a historical contractual snapshot.
+        slaStatus:
+          type: string
+          description: Evaluated by DSH from canonical stage entry and explicitly approved effective policy. UNCONFIGURED is not on-time.
+        slaReason:
+          type: string
+          description: Source of evaluation or explanation for unavailable SLA.
+        slaDeadlineAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Deadline only from approved, stage-effective policy and canonical stage entry; never inferred from updatedAt.
+        slaPolicyVersion:
+          type: integer
+          minimum: 1
+          description: Immutable policy version effective when current stage began; absent when not configured.
+        slaTargetMinutes:
+          type: integer
+          minimum: 1
+          description: Approved duration of the current stage; absent when not configured.
         assignment:
           $ref: "#/components/schemas/OperatorAssignmentSummary"
           nullable: true
@@ -9111,7 +9433,7 @@ components:
     OperatorOperationsSummary:
       type: object
       description: Counts over the complete authorized filtered result set before cursor paging, measured with the returned page in one database statement snapshot. Each subsequent request refreshes that snapshot.
-      required: [totalCount, actionableCount, awaitingDispatchCount, activeCount, deliveredCount, measuredAt]
+      required: [totalCount, actionableCount, awaitingDispatchCount, activeCount, deliveredCount, inCustodyOrderCount, inCustodyOrderValueMinor, measuredAt]
       additionalProperties: false
       properties:
         totalCount:
@@ -9136,6 +9458,16 @@ components:
           type: integer
           format: int64
           minimum: 0
+        inCustodyOrderCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Current BThwani Captain custody assignments among filtered orders.
+        inCustodyOrderValueMinor:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Sum of customer-order payable amounts in captain custody; a risk-monitoring proxy, not insured goods replacement value or held collateral.
         measuredAt:
           type: string
           format: date-time
@@ -9449,10 +9781,161 @@ components:
           format: date-time
           nullable: true
 
+    OperatorPartnerDecision:
+      type: object
+      additionalProperties: false
+      required: [storeId, storeName, storePublished, decision, version]
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        storeName:
+          type: string
+        storePublished:
+          type: boolean
+        decision:
+          type: string
+          description: Empty until the Store has explicitly accepted or declined.
+        version:
+          type: integer
+          minimum: 0
+
+    OperatorPartnerDecisionPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperatorPartnerDecision"
+        nextCursor:
+          type: string
+          maxLength: 128
+
+    MarketingCampaign:
+      type: object
+      additionalProperties: false
+      required: [id, nameAr, objective, state, budgetLimitMinor, assignedPromotionBudgetMinor, promotionCount, contentCount, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        nameAr:
+          type: string
+        objective:
+          type: string
+          enum: [ACQUISITION, REACTIVATION, CONVERSION, RETENTION]
+        state:
+          type: string
+          enum: [DRAFT, PUBLISHED, PAUSED, ENDED, ARCHIVED]
+        budgetLimitMinor:
+          type: integer
+          minimum: 1
+        assignedPromotionBudgetMinor:
+          type: integer
+          minimum: 0
+        promotionCount:
+          type: integer
+          minimum: 0
+        contentCount:
+          type: integer
+          minimum: 0
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateMarketingCampaignRequest:
+      type: object
+      additionalProperties: false
+      required: [nameAr, objective, budgetLimitMinor]
+      properties:
+        nameAr:
+          type: string
+          minLength: 1
+          maxLength: 160
+        objective:
+          type: string
+          enum: [ACQUISITION, REACTIVATION, CONVERSION, RETENTION]
+        budgetLimitMinor:
+          type: integer
+          minimum: 1
+
+    MarketingCampaignLinkRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, resourceId]
+      properties:
+        kind:
+          type: string
+          enum: [PROMOTION, CONTENT]
+        resourceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    MarketingCampaignPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarketingCampaign"
+        nextCursor:
+          type: string
+          maxLength: 128
+
+    MarketingConsentSnapshot:
+      type: object
+      additionalProperties: false
+      required: [channel, decision, version]
+      properties:
+        channel:
+          type: string
+          enum: [PUSH, SMS, EMAIL, IN_APP]
+        decision:
+          type: string
+          enum: [OPTED_IN, OPTED_OUT]
+        version:
+          type: integer
+          minimum: 0
+
+    MarketingConsentResult:
+      type: object
+      additionalProperties: false
+      required: [decision, version, replay]
+      properties:
+        decision:
+          type: string
+          enum: [OPTED_IN, OPTED_OUT]
+        version:
+          type: integer
+          minimum: 1
+        replay:
+          type: boolean
+
+    MarketingCampaignResponse:
+      type: object
+      additionalProperties: false
+      required: [campaign]
+      properties:
+        campaign:
+          $ref: "#/components/schemas/MarketingCampaign"
+        idempotentReplay:
+          type: boolean
+
     OperatorMarketingSummary:
       type: object
       additionalProperties: false
-      required: [activePromotions, scheduledPromotions, endedPromotions, draftPromotions, pausedPromotions, activeContent, asOf]
+      required: [activePromotions, scheduledPromotions, endedPromotions, draftPromotions, pausedPromotions, activeContent, partnerInvitations, partnerApproved, partnerDeclined, partnerPending, asOf]
       properties:
         activePromotions:
           type: integer
@@ -9470,6 +9953,18 @@ components:
           type: integer
           minimum: 0
         activeContent:
+          type: integer
+          minimum: 0
+        partnerInvitations:
+          type: integer
+          minimum: 0
+        partnerApproved:
+          type: integer
+          minimum: 0
+        partnerDeclined:
+          type: integer
+          minimum: 0
+        partnerPending:
           type: integer
           minimum: 0
         asOf:
@@ -9668,7 +10163,7 @@ components:
 
     DiscoveryContentView:
       type: object
-      required: [id, kind, titleAr, bodyAr, mediaUri, targetType, state, startsAt, ordinal, version, createdByActorId, createdAt, updatedAt]
+      required: [id, kind, titleAr, bodyAr, mediaUri, mediaKind, targetType, state, startsAt, ordinal, version, createdByActorId, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -9681,6 +10176,9 @@ components:
           type: string
         mediaUri:
           type: string
+        mediaKind:
+          type: string
+          enum: [image, video]
         targetType:
           $ref: "#/components/schemas/DiscoveryContentTargetType"
         targetId:
@@ -9725,7 +10223,7 @@ components:
 
     PublicDiscoveryContentView:
       type: object
-      required: [id, kind, titleAr, bodyAr, mediaUri, targetType]
+      required: [id, kind, titleAr, bodyAr, mediaUri, mediaKind, targetType]
       additionalProperties: false
       properties:
         id:
@@ -9738,6 +10236,9 @@ components:
           type: string
         mediaUri:
           type: string
+        mediaKind:
+          type: string
+          enum: [image, video]
         targetType:
           $ref: "#/components/schemas/DiscoveryContentTargetType"
         targetId:

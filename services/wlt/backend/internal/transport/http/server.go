@@ -47,8 +47,8 @@ func New(db *sql.DB, serviceToken, destinationEncryptionKey string, financeEvide
 	return &Server{db: db, serviceToken: strings.TrimSpace(serviceToken), destinationEncryptionKey: cipher, financeEvidenceCipher: evidenceCipher}, nil
 }
 
-func NewWithCashInConfig(db *sql.DB, serviceToken, destinationEncryptionKey, financeEvidenceEncryptionKey, cashInMode, environment string) (*Server, error) {
-	rail, simulatorEnabled, err := cashInRailForConfig(cashInMode, environment)
+func NewWithCashInConfig(db *sql.DB, serviceToken, destinationEncryptionKey, financeEvidenceEncryptionKey, cashInMode, environment string, mockURL ...string) (*Server, error) {
+	rail, simulatorEnabled, err := cashInRailForConfig(cashInMode, environment, mockURL...)
 	if err != nil {
 		return nil, err
 	}
@@ -61,16 +61,23 @@ func NewWithCashInConfig(db *sql.DB, serviceToken, destinationEncryptionKey, fin
 	return server, nil
 }
 
-func cashInRailForConfig(cashInMode, environment string) (cashin.CashInRail, bool, error) {
+func cashInRailForConfig(cashInMode, environment string, mockURL ...string) (cashin.CashInRail, bool, error) {
 	mode := strings.ToLower(strings.TrimSpace(cashInMode))
 	environment = strings.ToLower(strings.TrimSpace(environment))
 	if mode == "" || mode == "disabled" {
 		return nil, false, nil
 	}
-	if mode != "simulator" || environment != "development" {
-		return nil, false, errors.New("WLT Cash-In simulator is permitted only in development; production requires an approved real rail")
+	if environment != "development" {
+		return nil, false, errors.New("WLT Cash-In testing rails are permitted only in development; production requires an approved real rail")
 	}
-	return cashin.DevelopmentSimulator{}, true, nil
+	if mode == "simulator" {
+		return cashin.DevelopmentSimulator{}, true, nil
+	}
+	if mode == "wiremock" && len(mockURL) == 1 {
+		rail, err := cashin.NewWireMockRail(mockURL[0])
+		return rail, err == nil, err
+	}
+	return nil, false, errors.New("unsupported WLT Cash-In rail configuration")
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
@@ -184,8 +191,11 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/wallets/{actorType}/{actorId}/state", s.readWalletState)
 	mux.HandleFunc("GET /wlt/v1/wallets/{actorType}/{actorId}/funding-intents", s.listCashInFundingIntents)
 	mux.HandleFunc("GET /wlt/v1/funding-intents/{fundingIntentId}", s.readCashInFundingIntent)
-	if s.cashInSimulatorEnabled {
+	if _, ok := s.cashInRail.(cashInSimulator); ok && s.cashInSimulatorEnabled {
 		mux.HandleFunc("POST /wlt/v1/development/funding-intents/{fundingIntentId}/simulate", s.simulateCashInFundingIntent)
+	}
+	if isProviderMock(s.cashInRail) && s.cashInSimulatorEnabled {
+		mux.HandleFunc("POST /wlt/v1/development/funding-intents/{fundingIntentId}/reconcile", s.reconcileDevelopmentFundingIntent)
 	}
 }
 
@@ -208,6 +218,7 @@ type customerPaymentAllocationRequest struct {
 	Currency                   string                   `json:"currency"`
 	SubtotalMinor              int64                    `json:"subtotalMinor"`
 	DeliveryFeeMinor           int64                    `json:"deliveryFeeMinor"`
+	DeliveryMarginMinor        int64                    `json:"deliveryMarginMinor"`
 	DiscountMinor              int64                    `json:"discountMinor"`
 	InternalBalanceAmountMinor int64                    `json:"internalBalanceAmountMinor"`
 	CashAmountMinor            int64                    `json:"cashAmountMinor"`
@@ -576,6 +587,8 @@ type partnerFinancialSummaryJSON struct {
 }
 
 type deliveryFeeQuoteRequest struct {
+	StoreID              string  `json:"storeId,omitempty"`
+	FulfillmentMode      string  `json:"fulfillmentMode,omitempty"`
 	ServiceCityID        string  `json:"serviceCityId"`
 	OriginLatitude       float64 `json:"originLatitude"`
 	OriginLongitude      float64 `json:"originLongitude"`
@@ -632,6 +645,7 @@ type customerPaymentAllocationJSON struct {
 	Currency                   string                              `json:"currency"`
 	SubtotalMinor              int64                               `json:"subtotalMinor"`
 	DeliveryFeeMinor           int64                               `json:"deliveryFeeMinor"`
+	DeliveryMarginMinor        int64                               `json:"deliveryMarginMinor"`
 	DiscountMinor              int64                               `json:"discountMinor"`
 	InternalBalanceAmountMinor int64                               `json:"internalBalanceAmountMinor"`
 	CashAmountMinor            int64                               `json:"cashAmountMinor"`
@@ -773,14 +787,16 @@ type deliveryFeeQuoteResponse struct {
 }
 
 type deliveryFeeQuoteJSON struct {
-	FeeMinor           int64  `json:"feeMinor"`
-	PolicyVersion      string `json:"policyVersion"`
-	ServiceCityID      string `json:"serviceCityId"`
-	DistanceMeters     int64  `json:"distanceMeters"`
-	DistanceUnits      int64  `json:"distanceUnits"`
-	OrderSizeBaseUnits int64  `json:"orderSizeBaseUnits"`
-	OrderSizeUnits     int64  `json:"orderSizeUnits"`
-	RoundingUnitMinor  int64  `json:"roundingUnitMinor"`
+	CaptainEarningMinor int64  `json:"captainEarningMinor"`
+	PlatformMarginMinor int64  `json:"platformMarginMinor"`
+	FeeMinor            int64  `json:"feeMinor"`
+	PolicyVersion       string `json:"policyVersion"`
+	ServiceCityID       string `json:"serviceCityId"`
+	DistanceMeters      int64  `json:"distanceMeters"`
+	DistanceUnits       int64  `json:"distanceUnits"`
+	OrderSizeBaseUnits  int64  `json:"orderSizeBaseUnits"`
+	OrderSizeUnits      int64  `json:"orderSizeUnits"`
+	RoundingUnitMinor   int64  `json:"roundingUnitMinor"`
 }
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {
@@ -797,7 +813,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	}
 	var allocation *postgres.CustomerPaymentAllocationInput
 	if input.CustomerPaymentAllocation != nil {
-		value := postgres.CustomerPaymentAllocationInput{OrderID: input.CustomerPaymentAllocation.OrderID, StoreID: input.CustomerPaymentAllocation.StoreID, PartnerActorID: input.CustomerPaymentAllocation.PartnerActorID, CommercialStoreTypeID: input.CustomerPaymentAllocation.CommercialStoreTypeID, FulfillmentMode: input.CustomerPaymentAllocation.FulfillmentMode, Currency: input.CustomerPaymentAllocation.Currency, SubtotalMinor: input.CustomerPaymentAllocation.SubtotalMinor, DeliveryFeeMinor: input.CustomerPaymentAllocation.DeliveryFeeMinor, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor, InternalBalanceAmountMinor: input.CustomerPaymentAllocation.InternalBalanceAmountMinor, CashAmountMinor: input.CustomerPaymentAllocation.CashAmountMinor, CustomerPayableMinor: input.CustomerPaymentAllocation.CustomerPayableMinor, PolicyVersion: input.CustomerPaymentAllocation.PolicyVersion}
+		value := postgres.CustomerPaymentAllocationInput{OrderID: input.CustomerPaymentAllocation.OrderID, StoreID: input.CustomerPaymentAllocation.StoreID, PartnerActorID: input.CustomerPaymentAllocation.PartnerActorID, CommercialStoreTypeID: input.CustomerPaymentAllocation.CommercialStoreTypeID, FulfillmentMode: input.CustomerPaymentAllocation.FulfillmentMode, Currency: input.CustomerPaymentAllocation.Currency, SubtotalMinor: input.CustomerPaymentAllocation.SubtotalMinor, DeliveryFeeMinor: input.CustomerPaymentAllocation.DeliveryFeeMinor, DeliveryMarginMinor: input.CustomerPaymentAllocation.DeliveryMarginMinor, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor, InternalBalanceAmountMinor: input.CustomerPaymentAllocation.InternalBalanceAmountMinor, CashAmountMinor: input.CustomerPaymentAllocation.CashAmountMinor, CustomerPayableMinor: input.CustomerPaymentAllocation.CustomerPayableMinor, PolicyVersion: input.CustomerPaymentAllocation.PolicyVersion}
 		if input.CustomerPaymentAllocation.PromotionFunding != nil && input.CustomerPaymentAllocation.PromotionFunding.PromotionID != "" {
 			funding := input.CustomerPaymentAllocation.PromotionFunding
 			value.PromotionFunding = &postgres.PromotionFundingInput{PromotionID: funding.PromotionID, PromotionVersion: funding.PromotionVersion, PromotionCode: funding.PromotionCode, StoreID: input.CustomerPaymentAllocation.StoreID, FundingSource: funding.FundingSource, PartnerSharePercent: funding.PartnerSharePercent, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor}
@@ -905,24 +921,14 @@ func writeCashLiability(w http.ResponseWriter, result postgres.CashLiabilityList
 	writeJSON(w, http.StatusOK, cashLiabilityResponse{Items: items, TotalAmountMinor: result.TotalAmountMinor, TotalItems: result.TotalItems, HasMore: result.HasMore})
 }
 
+// New COD is settled from the Captain's reserved WLT balance. The legacy
+// remittance route remains explicitly closed so neither a new collection nor
+// a historically settled COD can produce a second cash obligation.
 func (s *Server) remitCash(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
-	correlation, idempotency, expected, ok := versionedMutationHeaders(w, r)
-	if !ok {
-		return
-	}
-	var input remitCashRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	result, replayed, err := postgres.RemitCash(r.Context(), s.db, postgres.RemitCashInput{PaymentIntentID: r.PathValue("intentId"), CaptainActorID: input.CaptainActorID, AmountMinor: input.AmountMinor, RemittanceReference: input.RemittanceReference, ExpectedPaymentVersion: expected, IdempotencyKey: idempotency, CorrelationID: correlation})
-	if err != nil {
-		writePaymentError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, cashRemittanceResponse{CashRemittance: toCashRemittance(result), IdempotentReplay: replayed})
+	writeError(w, http.StatusGone, "CAPTAIN_CASH_REMITTANCE_DISABLED", "BThwani no longer accepts Captain cash remittances; COD is settled from the reserved wallet once")
 }
 
 func (s *Server) reconcileCashRemittance(w http.ResponseWriter, r *http.Request) {
@@ -953,7 +959,7 @@ func (s *Server) deliveryQuote(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	quote, err := postgres.ResolveDeliveryFeeQuote(r.Context(), s.db, postgres.DeliveryFeeQuoteInput{ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.DestinationLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
+	quote, err := postgres.ResolveDeliveryFeeQuote(r.Context(), s.db, postgres.DeliveryFeeQuoteInput{StoreID: input.StoreID, FulfillmentMode: input.FulfillmentMode, ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.DestinationLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
 	if err != nil {
 		writeDeliveryFeeError(w, err)
 		return
@@ -1702,7 +1708,7 @@ func toPaymentIntent(item postgres.PaymentIntentRecord) paymentIntentJSON {
 	}
 	if item.CustomerPaymentAllocation != nil {
 		allocation := item.CustomerPaymentAllocation
-		jsonAllocation := &customerPaymentAllocationJSON{ID: allocation.ID, OrderID: allocation.OrderID, PaymentIntentID: allocation.PaymentIntentID, StoreID: allocation.StoreID, PartnerActorID: allocation.PartnerActorID, CommercialStoreTypeID: allocation.CommercialStoreTypeID, FulfillmentMode: allocation.FulfillmentMode, Currency: allocation.Currency, SubtotalMinor: allocation.SubtotalMinor, DeliveryFeeMinor: allocation.DeliveryFeeMinor, DiscountMinor: allocation.DiscountMinor, InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor, CashAmountMinor: allocation.CashAmountMinor, CustomerPayableMinor: allocation.CustomerPayableMinor, PolicyVersion: allocation.PolicyVersion, CreatedAt: allocation.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+		jsonAllocation := &customerPaymentAllocationJSON{ID: allocation.ID, OrderID: allocation.OrderID, PaymentIntentID: allocation.PaymentIntentID, StoreID: allocation.StoreID, PartnerActorID: allocation.PartnerActorID, CommercialStoreTypeID: allocation.CommercialStoreTypeID, FulfillmentMode: allocation.FulfillmentMode, Currency: allocation.Currency, SubtotalMinor: allocation.SubtotalMinor, DeliveryFeeMinor: allocation.DeliveryFeeMinor, DeliveryMarginMinor: allocation.DeliveryMarginMinor, DiscountMinor: allocation.DiscountMinor, InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor, CashAmountMinor: allocation.CashAmountMinor, CustomerPayableMinor: allocation.CustomerPayableMinor, PolicyVersion: allocation.PolicyVersion, CreatedAt: allocation.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
 		if allocation.CommissionSnapshot != nil {
 			snapshot := allocation.CommissionSnapshot
 			jsonAllocation.CommissionSnapshot = &partnerStoreCommissionSnapshotJSON{CommercialStoreTypeID: snapshot.CommercialStoreTypeID, RateBps: snapshot.RateBps, PolicyVersion: snapshot.PolicyVersion, ProfileID: snapshot.ProfileID, ProfileVersion: snapshot.ProfileVersion, RoundingUnitMinor: snapshot.RoundingUnitMinor, SettlementPeriod: snapshot.SettlementPeriod}
@@ -1731,7 +1737,7 @@ func toDeliveryFeePolicy(item postgres.DeliveryFeePolicyRecord) deliveryFeePolic
 }
 
 func toDeliveryFeeQuote(item postgres.DeliveryFeeQuoteRecord) deliveryFeeQuoteJSON {
-	return deliveryFeeQuoteJSON{FeeMinor: item.FeeMinor, PolicyVersion: item.PolicyVersion, ServiceCityID: item.ServiceCityID, DistanceMeters: item.DistanceMeters, DistanceUnits: item.DistanceUnits, OrderSizeBaseUnits: item.OrderSizeBaseUnits, OrderSizeUnits: item.OrderSizeUnits, RoundingUnitMinor: item.RoundingUnitMinor}
+	return deliveryFeeQuoteJSON{CaptainEarningMinor: item.CaptainEarningMinor, PlatformMarginMinor: item.PlatformMarginMinor, FeeMinor: item.FeeMinor, PolicyVersion: item.PolicyVersion, ServiceCityID: item.ServiceCityID, DistanceMeters: item.DistanceMeters, DistanceUnits: item.DistanceUnits, OrderSizeBaseUnits: item.OrderSizeBaseUnits, OrderSizeUnits: item.OrderSizeUnits, RoundingUnitMinor: item.RoundingUnitMinor}
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
@@ -1860,6 +1866,8 @@ func writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_PAYMENT_ALLOCATION", "payment allocation is invalid")
 	case errors.Is(err, postgres.ErrInsufficientCustomerBalance):
 		writeError(w, http.StatusConflict, "INSUFFICIENT_CUSTOMER_BALANCE", "available customer balance does not cover the requested contribution")
+	case errors.Is(err, postgres.ErrPartnerCommissionCreditExceeded):
+		writeError(w, http.StatusConflict, "PARTNER_CREDIT_LIMIT", "new merchant cash commission exceeds the approved credit policy")
 	case errors.Is(err, postgres.ErrStoreCommercialAgreementUnavailable):
 		writeError(w, http.StatusConflict, "STORE_COMMERCIAL_AGREEMENT_REQUIRED", "an active Store-specific agreement is required for this fulfillment mode")
 	default:
@@ -1876,6 +1884,8 @@ func writeDeliveryFeeError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different delivery fee policy facts")
 	case errors.Is(err, postgres.ErrVersionConflict):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "the active delivery fee policy changed after it was read")
+	case errors.Is(err, postgres.ErrDeliveryOutsideCoverage):
+		writeError(w, http.StatusUnprocessableEntity, "DELIVERY_OUTSIDE_SERVICE_AREA", "delivery distance exceeds the active service radius")
 	case errors.Is(err, postgres.ErrDeliveryFeePolicyInvalidInput), errors.Is(err, postgres.ErrDeliveryFeeQuoteInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_DELIVERY_FEE", "delivery fee policy or quote is invalid")
 	default:
@@ -1919,6 +1929,8 @@ func writeFinancialProfileError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "financial profile state does not allow this operation")
 	case errors.Is(err, postgres.ErrFinancialProfileInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "financial profile input is invalid")
+	case errors.Is(err, postgres.ErrPartnerCommissionCreditExceeded):
+		writeError(w, http.StatusConflict, "PARTNER_CREDIT_LIMIT", "new merchant cash commission exceeds the approved credit policy")
 	case errors.Is(err, postgres.ErrStoreCommercialAgreementUnavailable):
 		writeError(w, http.StatusConflict, "STORE_COMMERCIAL_AGREEMENT_REQUIRED", "an active Store-specific agreement is required for this fulfillment mode")
 	default:

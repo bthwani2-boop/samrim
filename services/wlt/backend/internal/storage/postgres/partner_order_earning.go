@@ -38,6 +38,7 @@ type PartnerOrderEarningRecord struct {
 	Currency                        string
 	GrossProductMinor               int64
 	DeliveryFeeMinor                int64
+	DeliveryMarginMinor             int64
 	CommissionMinor                 int64
 	PartnerNetMinor                 int64
 	CommissionReceivableOffsetMinor int64
@@ -143,7 +144,11 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 	if paymentState != domain.StateCollected || method != domain.MethodCashOnDelivery || allocation.OrderID != input.OrderID || currency != allocation.Currency || paymentAmount != allocation.CashAmountMinor || allocation.PartnerActorID != input.PartnerActorID || allocation.FulfillmentMode != "BTHWANI_CAPTAIN" {
 		return PartnerOrderEarningRecord{}, false, ErrPartnerEarningPaymentState
 	}
-	if allocation.DeliveryFeeMinor > 0 {
+	captainDeliveryFee := allocation.DeliveryFeeMinor - allocation.DeliveryMarginMinor
+	if captainDeliveryFee < 0 || (allocation.CommissionSnapshot != nil && allocation.DeliveryMarginMinor != allocation.CommissionSnapshot.DeliveryMarkupMinor) {
+		return PartnerOrderEarningRecord{}, false, ErrPartnerEarningInvalidInput
+	}
+	if captainDeliveryFee > 0 {
 		if err := lockCaptainWalletBalance(ctx, tx, input.CaptainActorID); err != nil {
 			return PartnerOrderEarningRecord{}, false, err
 		}
@@ -196,7 +201,7 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_transactions(id,transaction_type,source_type,source_id,currency,idempotency_key,request_hash,correlation_id) VALUES($1,'PARTNER_ORDER_EARNING_POSTED','ORDER_DELIVERED',$2,$3,$4,$5,$6)`, transactionID, input.OrderID, allocation.Currency, input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
 		return PartnerOrderEarningRecord{}, false, err
 	}
-	entries := []ledgerEntryInput{{"asset", "CAPTAIN_CASH_RECEIVABLE", "DEBIT", allocation.CashAmountMinor}, {"liability", "CUSTOMER_WALLET", "DEBIT", allocation.InternalBalanceAmountMinor}, {"liability", "PARTNER_WALLET", "CREDIT", partnerNet - receivableOffset}, {"asset", "PARTNER_COMMISSION_RECEIVABLE", "CREDIT", receivableOffset}, {"income", "PLATFORM_COMMISSION_INCOME", "CREDIT", commission}, {"liability", "CAPTAIN_WALLET", "CREDIT", allocation.DeliveryFeeMinor}, {"expense", "BTHWANI_PROMOTION_EXPENSE", "DEBIT", bthwaniSubsidy}}
+	entries := []ledgerEntryInput{{"asset", "CAPTAIN_CASH_RECEIVABLE", "DEBIT", allocation.CashAmountMinor}, {"liability", "CUSTOMER_WALLET", "DEBIT", allocation.InternalBalanceAmountMinor}, {"liability", "PARTNER_WALLET", "CREDIT", partnerNet - receivableOffset}, {"asset", "PARTNER_COMMISSION_RECEIVABLE", "CREDIT", receivableOffset}, {"income", "PLATFORM_COMMISSION_INCOME", "CREDIT", commission}, {"liability", "CAPTAIN_WALLET", "CREDIT", captainDeliveryFee}, {"income", "PLATFORM_DELIVERY_MARGIN_INCOME", "CREDIT", allocation.DeliveryMarginMinor}, {"expense", "BTHWANI_PROMOTION_EXPENSE", "DEBIT", bthwaniSubsidy}}
 	debitTotal, creditTotal := int64(0), int64(0)
 	sequence := 1
 	for _, entry := range entries {
@@ -226,7 +231,7 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 	if debitTotal != creditTotal || debitTotal != allocation.CustomerPayableMinor+bthwaniSubsidy {
 		return PartnerOrderEarningRecord{}, false, ErrLedgerUnbalanced
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_order_earnings(order_id,payment_intent_id,partner_actor_id,captain_actor_id,store_id,currency,gross_product_minor,delivery_fee_minor,commission_minor,partner_net_minor,commission_receivable_offset_minor,profile_id,profile_version,policy_version,ledger_transaction_id,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`, input.OrderID, input.PaymentIntentID, input.PartnerActorID, input.CaptainActorID, allocation.StoreID, allocation.Currency, chargeableProduct, allocation.DeliveryFeeMinor, commission, partnerNet, receivableOffset, snapshot.ProfileID, snapshot.ProfileVersion, storeAgreementSnapshotPolicyVersion(*snapshot), transactionID, input.IdempotencyKey, requestHash); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_order_earnings(order_id,payment_intent_id,partner_actor_id,captain_actor_id,store_id,currency,gross_product_minor,delivery_fee_minor,commission_minor,partner_net_minor,commission_receivable_offset_minor,profile_id,profile_version,policy_version,ledger_transaction_id,idempotency_key,request_hash,delivery_margin_minor) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`, input.OrderID, input.PaymentIntentID, input.PartnerActorID, input.CaptainActorID, allocation.StoreID, allocation.Currency, chargeableProduct, captainDeliveryFee, commission, partnerNet, receivableOffset, snapshot.ProfileID, snapshot.ProfileVersion, storeAgreementSnapshotPolicyVersion(*snapshot), transactionID, input.IdempotencyKey, requestHash, allocation.DeliveryMarginMinor); err != nil {
 		return PartnerOrderEarningRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -282,7 +287,7 @@ func readPartnerOrderEarning(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, orderID string) (PartnerOrderEarningRecord, error) {
 	var item PartnerOrderEarningRecord
-	err := source.QueryRowContext(ctx, `SELECT order_id,payment_intent_id,partner_actor_id,captain_actor_id,store_id,currency,gross_product_minor,delivery_fee_minor,commission_minor,partner_net_minor,commission_receivable_offset_minor,profile_id,profile_version,policy_version,ledger_transaction_id,created_at FROM wlt.partner_order_earnings WHERE order_id=$1`, orderID).Scan(&item.OrderID, &item.PaymentIntentID, &item.PartnerActorID, &item.CaptainActorID, &item.StoreID, &item.Currency, &item.GrossProductMinor, &item.DeliveryFeeMinor, &item.CommissionMinor, &item.PartnerNetMinor, &item.CommissionReceivableOffsetMinor, &item.ProfileID, &item.ProfileVersion, &item.PolicyVersion, &item.LedgerTransactionID, &item.CreatedAt)
+	err := source.QueryRowContext(ctx, `SELECT order_id,payment_intent_id,partner_actor_id,captain_actor_id,store_id,currency,gross_product_minor,delivery_fee_minor,commission_minor,partner_net_minor,commission_receivable_offset_minor,profile_id,profile_version,policy_version,ledger_transaction_id,delivery_margin_minor,created_at FROM wlt.partner_order_earnings WHERE order_id=$1`, orderID).Scan(&item.OrderID, &item.PaymentIntentID, &item.PartnerActorID, &item.CaptainActorID, &item.StoreID, &item.Currency, &item.GrossProductMinor, &item.DeliveryFeeMinor, &item.CommissionMinor, &item.PartnerNetMinor, &item.CommissionReceivableOffsetMinor, &item.ProfileID, &item.ProfileVersion, &item.PolicyVersion, &item.LedgerTransactionID, &item.DeliveryMarginMinor, &item.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PartnerOrderEarningRecord{}, ErrPartnerEarningNotFound
 	}

@@ -1,13 +1,17 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, BthwaniMap, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { cashCollectionPartyLabel, createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, orderStateLabel, orderPaymentDisclosure } from "@bthwani/dsh";
+import { BthwaniButton, BthwaniIcon, BthwaniOrderChatSheet, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniMap } from "@bthwani/design-system/native/map";
+import { cashCollectionPartyLabel, createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, type PublicStoreView, orderStateLabel, orderPaymentDisclosure } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
 import { isClientOrderScopeCurrent } from "./order-session-scope";
+import { orderJourneyPresentation } from "./order-journey";
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -23,10 +27,11 @@ function hasCurrentClientActor(actorID: string): boolean {
 }
 
 export default function ClientOrderDetail() {
-  const { orderId: rawOrderId } = useLocalSearchParams<{ orderId?: string | string[] }>();
+  const { orderId: rawOrderId, chat: chatIntent } = useLocalSearchParams<{ orderId?: string | string[]; chat?: string }>();
   const orderId = Array.isArray(rawOrderId) ? rawOrderId[0] ?? "" : rawOrderId ?? "";
   const router = useRouter();
   const theme = useAppearanceTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; order: Order; actorID: string } | { kind: "error" } | { kind: "auth_required" }>({ kind: "loading" });
   const [identityState, setIdentityState] = useState(currentIdentityState);
@@ -35,6 +40,9 @@ export default function ClientOrderDetail() {
   const latestOrderState = useRef<Order["state"] | null>(null);
   const [showCancellationForm, setShowCancellationForm] = useState(false);
   const [showConversation, setShowConversation] = useState(false);
+  useEffect(()=>{if(chatIntent==="1")setShowConversation(true);},[chatIntent]);
+  const [showAllItems, setShowAllItems] = useState(false);
+  const [storeIdentity, setStoreIdentity] = useState<PublicStoreView | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
   const [cancelling, setCancelling] = useState(false);
@@ -140,6 +148,19 @@ export default function ClientOrderDetail() {
     }
   }, [orderId, readCancellationReview, refreshDeliveryProof, refreshRating]);
 
+  const storeIdForMedia = state.kind === "ready" ? state.order.storeId : "";
+  const cityIdForMedia = state.kind === "ready" ? state.order.serviceCityId : "";
+  useEffect(() => {
+    let current = true;
+    setStoreIdentity(null);
+    if (storeIdForMedia && cityIdForMedia) {
+      void client().readPublishedStore(storeIdForMedia, cityIdForMedia)
+        .then((store) => { if (current) setStoreIdentity(store); })
+        .catch(() => { if (current) setStoreIdentity(null); });
+    }
+    return () => { current = false; };
+  }, [storeIdForMedia, cityIdForMedia]);
+
   const submitRating = useCallback(async () => {
     if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || !hasCurrentClientActor(state.actorID) || (state.order.state !== "DELIVERED" && state.order.state !== "PICKED_UP") || selectedRating < 1 || ratingSubmitting) return;
     setRatingSubmitting(true);
@@ -240,7 +261,7 @@ export default function ClientOrderDetail() {
       !["DELIVERED", "DELIVERY_FAILED", "CANCELLED", "PICKED_UP", "REJECTED"].includes(latestOrderState.current);
     const timer = setInterval(() => {
       if (AppState.currentState === "active" && isActive()) void load(true);
-    }, 60_000);
+    }, 30_000);
     const resume = AppState.addEventListener("change", next => {
       if (next === "active" && isActive()) void load(true);
     });
@@ -256,6 +277,7 @@ export default function ClientOrderDetail() {
   if (state.kind === "error") return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة تفاصيل الطلب</Text><Text style={styles.muted}>قد تكون الجلسة أو الطلب غير متاحين الآن.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى الطلبات" onPress={() => router.back()} variant="secondary" /></View>;
 
   const { order } = state;
+  const journey = orderJourneyPresentation(order);
   const isStorePickup = order.fulfillmentMode === "CUSTOMER_PICKUP";
   const proofLabel = isStorePickup ? "رمز الاستلام" : "تأكيد التسليم";
   const proofAvailableMessage = "أظهر الرمز لموظف المتجر بعد تجهيز طلبك." ;
@@ -275,22 +297,90 @@ export default function ClientOrderDetail() {
   const cashDue = order.paymentState === "REQUIRES_COLLECTION" && !["CANCELLED", "REJECTED"].includes(order.state) && order.cashAmountMinor > 0;
   return (
     <View style={styles.container} accessibilityLabel="تفاصيل الطلب">
-      <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى الطلبات" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>طلباتي</Text></Pressable>
-      <BthwaniSurface tone="raised" style={styles.summary}>
-        <View style={styles.summaryCopy}>
-          <Text style={styles.title} numberOfLines={1}>{order.storeName}</Text>
-          <Text style={styles.muted}>{formatOrderDate(order.createdAt)}</Text>
+      <View style={styles.headerBar}>
+        <Text style={styles.pageTitle}>متابعة الطلب</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى الطلبات" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconLg} /></Pressable>
+      </View>
+      <BthwaniSurface tone="raised" style={styles.hero}>
+        <PremiumStoreIdentity compact title={order.storeName}
+          subtitle={storeIdentity?.addressLine ?? formatOrderDate(order.createdAt)}
+          imageUri={storeIdentity?.storeCoverImage?.uri ?? storeIdentity?.storeProfileImage?.uri}
+          rating={storeIdentity && storeIdentity.ratingCount > 0 ? storeIdentity.ratingAverage.toFixed(1) + " (" + storeIdentity.ratingCount + ")" : undefined} />
+        <View style={styles.heroStatus}>
+          <BthwaniIcon name={isStorePickup ? "cart" : "orders"} color={theme.interactiveText} size={sizing.iconXl} />
+          <Text accessibilityLiveRegion="polite" style={styles.heroTitle}>{journey.title}</Text>
         </View>
+        <Text style={styles.muted} numberOfLines={1}>{journey.description}</Text>
+        {order.customerNote ? <View style={styles.modeTag}>
+          <Text style={styles.sectionTitle}>ملاحظات الطلب</Text>
+          <Text style={styles.muted} numberOfLines={2}>{order.customerNote}</Text>
+        </View> : null}
+        <View style={styles.modeTag}><Text style={styles.modeTagText}>طريقة التنفيذ: {journey.fulfillmentLabel}</Text></View>
       </BthwaniSurface>
-      <View style={styles.status}>
-        <BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} />
-        <View style={styles.amountRow}>
-          <Text style={styles.muted}>الإجمالي</Text>
-          <Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text>
+      <BthwaniSurface tone="raised" style={styles.journey}>
+        {!journey.exception ? <PremiumOrderProgress steps={journey.steps} index={journey.currentStep} /> : null}
+      </BthwaniSurface>
+      {!isStorePickup ? <BthwaniSurface tone="raised" style={styles.deliveryOverview}>
+        <View style={styles.courierHeading}>
+          <BthwaniIcon name="orders" color={theme.interactiveText} size={sizing.iconLg} />
+          <View style={styles.heroCopy}>
+            <Text style={styles.sectionTitle}>{order.fulfillmentMode === "PARTNER_CAPTAIN" ? "توصيل المتجر" : "كابتن بثواني"}</Text>
+            <Text style={styles.muted}>{order.state === "IN_CUSTODY" ? "خرج الطلب للتوصيل" : order.state === "CAPTAIN_ASSIGNED" ? "الكابتن مُسند" : "بانتظار بدء التوصيل"}</Text>
+          </View>
         </View>
-        <Text style={styles.payment} numberOfLines={2}>{paymentDisclosure.amount}</Text>
-        {walletAllocation > 0 ? <Text style={styles.muted}>حصة المحفظة في الطلب: {formatMoney(walletAllocation, order.currency)}</Text> : null}
-        {cashDue ? <Text style={styles.muted}>يُدفع المتبقي إلى: {cashCollectionPartyLabel(order.fulfillmentMode)}</Text> : null}
+        {order.pickupLocation ? <BthwaniMap accessibilityLabel="موقع المتجر ووجهة الطلب دون تتبع مباشر للكابتن" markers={[
+          { id: "store", title: order.storeName, coordinate: order.pickupLocation },
+          { id: "destination", title: "عنوان التوصيل", coordinate: { latitude: order.addressLatitude, longitude: order.addressLongitude } },
+        ]} /> : null}
+        {order.state === "IN_CUSTODY" ? <Text style={styles.muted}>موقع المتجر ووجهتك · لا يوجد تتبع مباشر</Text> : null}
+      </BthwaniSurface> : null}
+      {((isStorePickup && ["READY_FOR_PICKUP", "PICKED_UP"].includes(order.state)) ||
+        (!isStorePickup && ["IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED"].includes(order.state)) ||
+        (deliveryProof.kind === "ready" && deliveryProof.value.state !== "PENDING")) ? <>
+      <BthwaniSectionHeader title={isStorePickup ? "رمز الاستلام" : "التسليم"} />
+      <BthwaniSurface tone="base" style={styles.proofSurface}>
+        {deliveryProof.kind === "loading" ? <Text style={styles.muted}>جارٍ تجهيز {proofLabel}…</Text> : null}
+        {deliveryProof.kind === "error" ? <Text style={styles.refreshError}>تعذر عرض {proofLabel} حاليًا.</Text> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "PENDING" ? <><Text style={styles.proofTitle}>{proofLabel}</Text>{isStorePickup && deliveryProof.value.code ? <Text accessibilityLabel={proofLabel} style={styles.proofCode}>{deliveryProof.value.code}</Text> : null}<Text style={styles.muted}>{isStorePickup && deliveryProof.value.code ? proofAvailableMessage : proofWaitingMessage}</Text></> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "VERIFIED" ? <><BthwaniStatusBadge icon="success" label={isStorePickup ? "تم تأكيد الاستلام" : "تم إثبات التسليم بالرمز"} tone="success" /><Text style={styles.muted}>{isStorePickup ? "تم قبول رمز الاستلام وتسجيل استلامك للطلب." : "تم قبول رمز التسليم وتسجيل الاستلام."}</Text></> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "CAPTAIN_CONFIRMED" ? <BthwaniStatusBadge icon="success" label="أكد الكابتن التسليم" tone="success" /> : null}
+      </BthwaniSurface></> : null}
+      {isStorePickup ? <>
+        <BthwaniSectionHeader title="موقع الاستلام" />
+        <BthwaniSurface tone="base" style={styles.pickupLocationSurface}>
+          <Text style={styles.pickupLocationTitle}>{order.storeName}</Text>
+          {order.pickupLocation ? <>
+            <Text style={styles.muted}>هذا هو موقع الفرع الحالي للاستلام.</Text>
+            <BthwaniMap accessibilityLabel={`خريطة موقع استلام ${order.storeName}`} markers={[{ id: "pickup", coordinate: order.pickupLocation, title: order.storeName }]} />
+            <BthwaniButton accessibilityLabel={`فتح موقع ${order.storeName} على الخريطة`} label="الاتجاهات إلى المتجر" onPress={() => {
+              const { latitude, longitude } = order.pickupLocation!;
+              const mapUrl = `geo:${latitude},${longitude}?q=${latitude},${longitude}(${encodeURIComponent(order.storeName)})`;
+              void Linking.openURL(mapUrl).catch(() => Alert.alert("تعذر فتح الخريطة", "يمكنك مراسلة المتجر من المحادثة للتأكد من نقطة الاستلام."));
+            }} variant="secondary" />
+          </> : <Text style={styles.muted}>موقع الفرع غير متاح على الخريطة حاليًا. راسل المتجر من المحادثة للتأكد من نقطة الاستلام.</Text>}
+        </BthwaniSurface>
+      </> : <>
+        <BthwaniSectionHeader title="عنوان التوصيل" />
+        <BthwaniSurface tone="base" style={styles.address}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.muted}>{order.addressText}</Text></BthwaniSurface>
+      </>}
+      <View style={styles.actions}>
+        <View style={styles.action}><BthwaniButton label={showConversation ? "إغلاق المحادثة" : "محادثة الطلب"} variant="primary" onPress={() => setShowConversation((value) => !value)}/></View>
+        <View style={styles.action}><BthwaniButton label="المساعدة" variant="secondary" onPress={() => Alert.alert("مساعدة الطلب", "يمكنك متابعة المشكلة عبر محادثة الطلب أو طلب مراجعة الإلغاء حين يكون متاحًا.", [{ text: "إغلاق", style: "cancel" }, { text: "مراسلة الطلب", onPress: () => setShowConversation(true) }, ...(order.state !== "CREATED" && !completedState && !["CANCELLED", "REJECTED"].includes(order.state) ? [{ text: "مراجعة الإلغاء", onPress: () => setShowCancellationForm(true) }] : []) ])}/></View>
+      </View>
+      <BthwaniOrderChatSheet visible={showConversation} bottomInset={insets.bottom} onClose={()=>setShowConversation(false)}
+        orderReference={order.id.slice(-8)} status={orderStateLabel(order.state)}
+        summary={order.storeName+" · "+order.lines.length+" أصناف · "+(order.fulfillmentMode==="CUSTOMER_PICKUP"?"استلام من المتجر":order.fulfillmentMode==="PARTNER_CAPTAIN"?"توصيل المتجر":"توصيل بثواني")}
+        total={formatMoney(order.totalAmountMinor,order.currency)} onDetails={()=>setShowConversation(false)}>
+        {showConversation?<OrderConversation orderId={order.id}/>:null}
+      </BthwaniOrderChatSheet>
+      <View style={styles.status}>
+        <Text style={styles.sectionTitle}>ملخص الدفع</Text>
+        {journey.exception ? <BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} /> : null}
+        <View style={styles.amountRow}>
+          <View style={styles.paymentColumn}><Text style={styles.muted}>الإجمالي</Text><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text></View>
+          <View style={styles.paymentColumn}><Text style={styles.muted}>{cashDue ? "المتبقي نقدًا" : "حالة الدفع"}</Text><Text style={styles.statusTotal}>{cashDue ? formatMoney(order.cashAmountMinor, order.currency) : walletAllocation > 0 && order.cashAmountMinor === 0 ? "محفظة بثواني" : paymentDisclosure.amount}</Text></View>
+        </View>
+        {cashDue ? <Text style={styles.muted}>التحصيل: {cashCollectionPartyLabel(order.fulfillmentMode)}</Text> : null}
         {order.state === "CANCELLED" && order.paymentState !== "CANCELLED" ? <Text style={styles.payment}>{paymentDisclosure.status}</Text> : null}
         {order.state === "CREATED" && order.cancellationMode === "CLIENT_BEFORE_ACCEPTANCE" ?
           <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={refreshing || cancelling}
@@ -298,7 +388,9 @@ export default function ClientOrderDetail() {
             onPress={() => Alert.alert("إلغاء الطلب", "هل تريد إلغاء طلبك قبل قبول المتجر؟",
               [{ text: "رجوع", style: "cancel" }, { text: "إلغاء الطلب", style: "destructive", onPress: () => void cancelOrder() }])} /> : null}
       </View>
-      {!["CANCELLED", "DELIVERED", "PICKED_UP", "REJECTED"].includes(order.state) &&
+      <Text style={styles.sectionTitle}>المنتجات ({order.lines.length})</Text>
+      {order.lines.length > 2 ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: showAllItems }} onPress={() => setShowAllItems((value) => !value)} style={styles.itemsShowAll}><Text style={styles.itemsAction}>{showAllItems ? "إظهار عنصرين" : "عرض كل المنتجات"}</Text></Pressable> : null}
+      <View style={styles.lines}>{order.lines.slice(0, showAllItems ? undefined : 2).map((line) => <BthwaniSurface key={line.id} tone="base" style={styles.line}><View style={styles.lineTop}><Text style={styles.lineTitle} numberOfLines={2}>{line.productName}</Text><Text style={styles.linePrice}>{formatMoney(line.lineAmountMinor, line.currency)}</Text></View><Text style={styles.muted}>{formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}{line.modifierSnapshots.length ? ` · ${line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}` : ""}</Text></BthwaniSurface>)}</View>      {!["CANCELLED", "DELIVERED", "PICKED_UP", "REJECTED"].includes(order.state) &&
         (order.state !== "CREATED" || order.cancellationMode !== "CLIENT_BEFORE_ACCEPTANCE") ? (
           <BthwaniSurface tone="base" style={styles.cancellationSupport}>
             <Text style={styles.title}>طلب إلغاء</Text>
@@ -344,17 +436,6 @@ export default function ClientOrderDetail() {
           </BthwaniSurface>;
         })}</View>
       </> : null}
-      {((isStorePickup && ["READY_FOR_PICKUP", "PICKED_UP"].includes(order.state)) ||
-        (!isStorePickup && ["IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED"].includes(order.state)) ||
-        (deliveryProof.kind === "ready" && deliveryProof.value.state !== "PENDING")) ? <>
-      <BthwaniSectionHeader title={isStorePickup ? "رمز الاستلام" : "التسليم"} />
-      <BthwaniSurface tone="base" style={styles.proofSurface}>
-        {deliveryProof.kind === "loading" ? <Text style={styles.muted}>جارٍ تجهيز {proofLabel}…</Text> : null}
-        {deliveryProof.kind === "error" ? <Text style={styles.refreshError}>تعذر عرض {proofLabel} حاليًا.</Text> : null}
-        {deliveryProof.kind === "ready" && deliveryProof.value.state === "PENDING" ? <><Text style={styles.proofTitle}>{proofLabel}</Text>{isStorePickup && deliveryProof.value.code ? <Text accessibilityLabel={proofLabel} style={styles.proofCode}>{deliveryProof.value.code}</Text> : null}<Text style={styles.muted}>{isStorePickup && deliveryProof.value.code ? proofAvailableMessage : proofWaitingMessage}</Text></> : null}
-        {deliveryProof.kind === "ready" && deliveryProof.value.state === "VERIFIED" ? <><BthwaniStatusBadge icon="success" label={isStorePickup ? "تم تأكيد الاستلام" : "تم إثبات التسليم بالرمز"} tone="success" /><Text style={styles.muted}>{isStorePickup ? "تم قبول رمز الاستلام وتسجيل استلامك للطلب." : "تم قبول رمز التسليم وتسجيل الاستلام."}</Text></> : null}
-        {deliveryProof.kind === "ready" && deliveryProof.value.state === "CAPTAIN_CONFIRMED" ? <BthwaniStatusBadge icon="success" label="أكد الكابتن التسليم" tone="success" /> : null}
-      </BthwaniSurface></> : null}
       {completedState ? <>
         <BthwaniSectionHeader title="تقييم المتجر" />
         <BthwaniSurface tone="base" style={styles.ratingSurface}>
@@ -369,43 +450,40 @@ export default function ClientOrderDetail() {
           </> : null}
         </BthwaniSurface>
       </> : null}
-      {isStorePickup ? <>
-        <BthwaniSectionHeader title="موقع الاستلام" />
-        <BthwaniSurface tone="base" style={styles.pickupLocationSurface}>
-          <Text style={styles.pickupLocationTitle}>{order.storeName}</Text>
-          {order.pickupLocation ? <>
-            <Text style={styles.muted}>هذا هو موقع الفرع الحالي للاستلام.</Text>
-            <BthwaniMap accessibilityLabel={`خريطة موقع استلام ${order.storeName}`} markers={[{ id: "pickup", coordinate: order.pickupLocation, title: order.storeName }]} />
-            <BthwaniButton accessibilityLabel={`فتح موقع ${order.storeName} على الخريطة`} label="الاتجاهات إلى المتجر" onPress={() => {
-              const { latitude, longitude } = order.pickupLocation!;
-              const mapUrl = `geo:${latitude},${longitude}?q=${latitude},${longitude}(${encodeURIComponent(order.storeName)})`;
-              void Linking.openURL(mapUrl).catch(() => Alert.alert("تعذر فتح الخريطة", "يمكنك مراسلة المتجر من المحادثة للتأكد من نقطة الاستلام."));
-            }} variant="secondary" />
-          </> : <Text style={styles.muted}>موقع الفرع غير متاح على الخريطة حاليًا. راسل المتجر من المحادثة للتأكد من نقطة الاستلام.</Text>}
-        </BthwaniSurface>
-      </> : <>
-        <BthwaniSectionHeader title="عنوان التوصيل" />
-        <BthwaniSurface tone="base" style={styles.address}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.muted}>{order.addressText}</Text></BthwaniSurface>
-      </>}
       {order.recipient.mode === "OTHER" ? <><BthwaniSectionHeader title="مستلم الطلب" />
       <BthwaniSurface tone="base" style={styles.trackingSurface}>
         <Text style={styles.proofTitle}>{order.recipient.name}</Text>
           <Text selectable style={styles.muted}>رقم التواصل: {order.recipient.phoneE164}</Text>
           {order.recipient.instructions ? <Text style={styles.muted}>تعليمات التوصيل: {order.recipient.instructions}</Text> : null}
       </BthwaniSurface></> : null}
-      <BthwaniSectionHeader title={`المنتجات (${order.lines.length})`} />
-      <View style={styles.lines}>{order.lines.map((line) => <BthwaniSurface key={line.id} tone="base" style={styles.line}><View style={styles.lineTop}><Text style={styles.lineTitle} numberOfLines={2}>{line.productName}</Text><Text style={styles.linePrice}>{formatMoney(line.lineAmountMinor, line.currency)}</Text></View><Text style={styles.muted}>{formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}{line.modifierSnapshots.length ? ` · ${line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}` : ""}</Text></BthwaniSurface>)}</View>
-      <BthwaniButton label={showConversation ? "إغلاق المحادثة" : "محادثة الطلب"}
-        variant="secondary" onPress={() => setShowConversation(value => !value)} />
-      {showConversation ? <OrderConversation orderId={order.id} /> : null}
+
 
     </View>
   );
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
+  const premium = premiumColors(theme);
   return StyleSheet.create({
-    container: { backgroundColor: theme.background, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
+    container: { backgroundColor: premium.background, gap: spacing[2], paddingBottom: spacing[5], width: "100%" },
+    headerBar: { flexDirection: "row-reverse", alignItems: "center", minHeight: sizing.controlLg, gap: spacing[2] },
+    pageTitle: { ...typography.titleLg, color: theme.color, textAlign: "center", flex: 1 },
+    hero: { borderRadius: radius.lg, backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[2], gap: spacing[2] },
+    heroStore: { flexDirection: "row-reverse", alignItems: "center", gap: spacing[3] },
+    heroImage: { height: 100, width: 100, borderRadius: radius.lg, backgroundColor: theme.surfaceRaised },
+    heroImageFallback: { height: 100, width: 100, borderRadius: radius.lg, backgroundColor: theme.actionSoft, alignItems: "center", justifyContent: "center" },
+    heroCopy: { flex: 1, alignItems: "flex-end", gap: spacing[1] },
+    heroStoreTitle: { ...typography.titleMd, color: theme.color, textAlign: "right" },
+    ratingText: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "right" },
+    heroStatus: { flexDirection: "row-reverse", alignItems: "center", gap: spacing[3], justifyContent: "flex-start" },
+    heroTitle: { ...typography.titleMd, color: premium.orange, flex: 1 },
+    modeTag: { padding: spacing[2], borderRadius: radius.md, backgroundColor: premium.soft, borderColor: premium.coral, borderWidth: borders.hairline },
+    modeTagText: { ...typography.bodyStrong, color: premium.orange, textAlign: "right" },
+    sectionTitle: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
+    deliveryOverview: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, padding: spacing[2], gap: spacing[2], borderRadius: radius.lg },
+    courierHeading: { flexDirection: "row-reverse", alignItems: "center", gap: spacing[3] },
+    actions: { flexDirection: "row-reverse", gap: spacing[2] },
+    action: { flex: 1 },
     state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[10], width: "100%" },
     backButton: { alignItems: "center", flexDirection: "row", gap: spacing[1], minHeight: sizing.controlMd },
     back: { ...typography.body, color: theme.interactiveText },
@@ -418,28 +496,44 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     eyebrow: { ...typography.label, color: theme.interactiveText },
     title: { ...typography.titleMd, color: theme.color },
     muted: { ...typography.bodySm, color: theme.colorMuted },
-    status: { backgroundColor: theme.actionSoft, borderRadius: radius.lg, gap: spacing[1], padding: spacing[4] },
+    status: { backgroundColor: premium.surface, borderColor: premium.stroke, borderWidth: 1, borderRadius: radius.lg, gap: spacing[2], padding: spacing[2] },
+    paymentColumn: { flex: 1, gap: spacing[1] },
+    journey: { gap: spacing[1], padding: spacing[2], borderRadius: radius.lg, backgroundColor: premium.surface },
+    journeyHeading: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", gap: spacing[2] },
+    journeyTitle: { ...typography.titleMd, color: theme.interactiveText, flex: 1, textAlign: "right" },
+    journeyFulfillment: { ...typography.bodyStrong, color: theme.color, backgroundColor: theme.actionSoft, borderRadius: radius.md, padding: spacing[2], textAlign: "right" },
+    journeySteps: { flexDirection: "row-reverse", justifyContent: "space-between", gap: spacing[1], paddingTop: spacing[2] },
+    journeyStep: { flex: 1, alignItems: "center", gap: spacing[2] },
+    journeyMarker: { width: 35, height: 35, borderRadius: 18, borderWidth: borders.hairline, borderColor: theme.borderColorStrong, backgroundColor: theme.surfaceRaised, alignItems: "center", justifyContent: "center" },
+    journeyMarkerDone: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
+    journeyMarkerActive: { backgroundColor: theme.actionBackground },
+    journeyMarkerText: { ...typography.bodyStrong, color: theme.colorMuted },
+    journeyMarkerTextDone: { color: theme.color },
+    journeyStepLabel: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
+    journeyStepActive: { color: theme.interactiveText },
     statusCopy: { flex: 1, gap: spacing[1] },
     statusTitle: { ...typography.caption, color: theme.colorMuted },
     statusValue: { ...typography.titleSm, color: theme.interactiveText },
     statusTotal: { ...typography.bodyStrong, color: theme.color },
     payment: { ...typography.bodySm, color: theme.interactiveText },
     actionStack: { gap: spacing[2] },
-    address: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], padding: spacing[4] },
+    address: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], padding: spacing[2] },
     pickupLocationSurface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
     pickupLocationTitle: { ...typography.bodyStrong, color: theme.color },
-    lines: { gap: spacing[3] },
+    lines: { gap: spacing[2] },
+    itemsShowAll: { alignSelf: "flex-start", paddingHorizontal: spacing[3], minHeight: 44, alignItems: "center", justifyContent: "center", borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.md },
+    itemsAction: { ...typography.bodySm, color: theme.interactiveText },
     adjustments: { gap: spacing[3] },
     adjustment: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
     adjustmentActions: { gap: spacing[2] },
-    line: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
+    line: { borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
     lineTop: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
     lineTitle: { ...typography.bodyStrong, color: theme.color, flex: 1 },
     linePrice: { ...typography.bodyStrong, color: theme.interactiveText },
     refreshError: { ...typography.bodySm, color: theme.danger },
     trackingSurface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
     trackingTitle: { ...typography.bodyStrong, color: theme.interactiveText },
-    proofSurface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
+    proofSurface: { backgroundColor: premium.soft, borderColor: premium.coral, borderRadius: radius.xl, borderWidth: 1, gap: spacing[3], padding: spacing[4] },
     proofTitle: { ...typography.bodyStrong, color: theme.color },
     proofCode: { ...typography.titleLg, color: theme.interactiveText, letterSpacing: 6, textAlign: "center" },
     ratingSurface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] },

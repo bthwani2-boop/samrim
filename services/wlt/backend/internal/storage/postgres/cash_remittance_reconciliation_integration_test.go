@@ -254,7 +254,7 @@ func (f remittanceMigrationFixture) reconcileReopenedRemittance(t *testing.T, ct
 		t.Fatalf("create test finance evidence cipher: %v", err)
 	}
 	wrongPurpose, err := SaveFinanceEvidenceDocument(ctx, db, cipher, FinanceEvidenceDocumentInput{
-		Purpose: "SETTLEMENT_STATEMENT", Filename: "statement.pdf", ContentType: "application/pdf", Content: []byte("test settlement statement"),
+		Purpose: "SETTLEMENT_STATEMENT", Filename: "statement.pdf", ContentType: "application/pdf", Content: []byte("%PDF-1.4\ntest settlement statement"),
 		ActorID: "finance-" + f.suffix, IdempotencyKey: "wrong-purpose-" + f.suffix, CorrelationID: "wrong-purpose-correlation-" + f.suffix,
 	})
 	if err != nil {
@@ -267,7 +267,7 @@ func (f remittanceMigrationFixture) reconcileReopenedRemittance(t *testing.T, ct
 		t.Fatalf("wrong-purpose reconciliation error = %v", err)
 	}
 	captainEvidence, err := SaveFinanceEvidenceDocument(ctx, db, cipher, FinanceEvidenceDocumentInput{
-		Purpose: "TRANSFER_RECEIPT", Filename: "captain-receipt.pdf", ContentType: "application/pdf", Content: []byte("captain provided receipt"),
+		Purpose: "TRANSFER_RECEIPT", Filename: "captain-receipt.pdf", ContentType: "application/pdf", Content: []byte("%PDF-1.4\ncaptain provided receipt"),
 		ActorID: f.legacyCaptain, IdempotencyKey: "captain-evidence-" + f.suffix, CorrelationID: "captain-evidence-correlation-" + f.suffix,
 	})
 	if err != nil {
@@ -281,7 +281,7 @@ func (f remittanceMigrationFixture) reconcileReopenedRemittance(t *testing.T, ct
 	}
 	financeActor := "finance-" + f.suffix
 	receipt, err := SaveFinanceEvidenceDocument(ctx, db, cipher, FinanceEvidenceDocumentInput{
-		Purpose: "TRANSFER_RECEIPT", Filename: "bank-transfer.pdf", ContentType: "application/pdf", Content: []byte("verified transfer receipt"),
+		Purpose: "TRANSFER_RECEIPT", Filename: "bank-transfer.pdf", ContentType: "application/pdf", Content: []byte("%PDF-1.4\nverified transfer receipt"),
 		ActorID: financeActor, IdempotencyKey: "finance-receipt-" + f.suffix, CorrelationID: "finance-receipt-correlation-" + f.suffix,
 	})
 	if err != nil {
@@ -375,7 +375,7 @@ func (f remittanceMigrationFixture) submitAndReconcileCurrentRemittance(t *testi
 	}
 	financeActor := "operator-receipt-" + f.suffix
 	receipt, err := SaveFinanceEvidenceDocument(ctx, db, cipher, FinanceEvidenceDocumentInput{
-		Purpose: "TRANSFER_RECEIPT", Filename: "current-transfer.pdf", ContentType: "application/pdf", Content: []byte("current transfer evidence"),
+		Purpose: "TRANSFER_RECEIPT", Filename: "current-transfer.pdf", ContentType: "application/pdf", Content: []byte("%PDF-1.4\ncurrent transfer evidence"),
 		ActorID: financeActor, IdempotencyKey: "current-evidence-" + f.suffix, CorrelationID: "current-evidence-correlation-" + f.suffix,
 	})
 	if err != nil {
@@ -424,7 +424,7 @@ func (f remittanceMigrationFixture) reconcilePartnerCommissionFromStoredReceipt(
 		{"wrong-uploader", "TRANSFER_RECEIPT", "another-operator-" + f.suffix},
 	} {
 		saved, err := SaveFinanceEvidenceDocument(ctx, db, receiptCipher, FinanceEvidenceDocumentInput{
-			Purpose: document.purpose, Filename: fmt.Sprintf("receipt-%d.pdf", index+1), ContentType: "application/pdf", Content: []byte("verified partner transfer evidence " + document.id + f.suffix),
+			Purpose: document.purpose, Filename: fmt.Sprintf("receipt-%d.pdf", index+1), ContentType: "application/pdf", Content: []byte("%PDF-1.4\nverified partner transfer evidence " + document.id + f.suffix),
 			ActorID: document.actor, IdempotencyKey: "evidence-key-" + document.id + "-" + f.suffix, CorrelationID: "evidence-correlation-" + document.id + "-" + f.suffix,
 		})
 		if err != nil {

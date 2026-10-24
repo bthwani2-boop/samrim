@@ -1,12 +1,12 @@
-import { radius, spacing } from "@bthwani/design-system";
-import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { radius, spacing, typography } from "@bthwani/design-system";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { type PartnerStoreOperationalAvailabilityResponse, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { useFocusEffect } from "expo-router";
+import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { AppState, Text, View } from "react-native";
+import { AppState, Pressable, StyleSheet, Text, View } from "react-native";
 import { readOwnStoreOperationalAvailability, updateOwnStoreOperationalAvailability } from "./store-readback-client";
-import { createPartnerSurfaceStyles } from "./partner-surface-styles";
+import { onStoreAvailabilityChanged, signalStoreAvailabilityChanged } from "./store-availability-events";
 
 type UpdateAttempt = Readonly<{ input: StoreOperationalAvailabilityRequest; idempotencyKey: string; correlationID: string }>;
 type AvailabilityRead = "loading" | "error" | PartnerStoreOperationalAvailabilityResponse;
@@ -17,11 +17,12 @@ function httpStatus(error: unknown): number | null {
   return value.kind === "http" && typeof value.status === "number" ? value.status : null;
 }
 
-/** Routine order work has no operating-hours link or pause toggle.
- * Only exceptions that prevent receiving new orders appear above the queue. */
-export function PartnerOrderAvailability({ storeID }: { storeID: string }) {
+/** Orderability is read from its canonical owner; the status card opens operational settings.
+ * Resume keeps the existing idempotent update/recovery flow. */
+export function PartnerOrderAvailability({ storeID, published }: { storeID: string; published: boolean }) {
   const theme = useAppearanceTheme();
-  const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
+  const router = useRouter();
+  const styles = useMemo(() => StyleSheet.create({ pill: { minHeight: 30, maxWidth: 156, borderRadius: radius.lg, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingHorizontal: 9 }, label: { ...typography.caption, fontWeight: "800" } }), []);
   const [status, setStatus] = useState<AvailabilityRead>("loading");
   const [readError, setReadError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -47,6 +48,7 @@ export function PartnerOrderAvailability({ storeID }: { storeID: string }) {
 
   useFocusEffect(useCallback(() => {
     void readAvailability();
+    const stopListening = onStoreAvailabilityChanged(storeID, () => void readAvailability());
     const poll = setInterval(() => {
       if (AppState.currentState === "active") void readAvailability();
     }, 60_000);
@@ -55,17 +57,16 @@ export function PartnerOrderAvailability({ storeID }: { storeID: string }) {
     });
     return () => {
       clearInterval(poll);
+      stopListening();
       subscription.remove();
       generation.current += 1;
     };
-  }, [readAvailability]));
+  }, [readAvailability, storeID]));
 
   const ready = typeof status === "object";
   const paused = ready && status.availability.paused &&
     (!status.availability.pauseUntil || Date.parse(status.availability.pauseUntil) > Date.now());
   const accepting = ready && status.orderabilityByMode.some((item) => item.state === "OPEN_FOR_ORDERS");
-  const scheduledClosed = ready && status.orderabilityByMode.some((item) => item.state === "CLOSED_BY_SCHEDULE");
-  const operationallyUnavailable = ready && status.orderabilityByMode.some((item) => item.state === "OPERATIONALLY_UNAVAILABLE");
 
   async function resumeOrders() {
     if (!ready || !paused || busyRef.current) return;
@@ -95,6 +96,7 @@ export function PartnerOrderAvailability({ storeID }: { storeID: string }) {
       setStatus(confirmed);
       setReadError(false);
       setPending(null);
+      signalStoreAvailabilityChanged(storeID);
     } catch (cause) {
       const code = httpStatus(cause);
       try {
@@ -125,37 +127,24 @@ export function PartnerOrderAvailability({ storeID }: { storeID: string }) {
     }
   }
 
-  if (status === "loading") return null;
-  if (status === "error") return <View style={{ gap: spacing[1] }}>
-    <Text accessibilityRole="alert" style={styles.error}>تعذر التحقق من استقبال الطلبات.</Text>
-    <BthwaniButton variant="secondary" label="إعادة المحاولة" onPress={() => void readAvailability()} />
-  </View>;
-
-  if (!paused && accepting && !readError) return null;
-
-  return <View accessibilityLabel="حالة استقبال الطلبات" style={{
-    backgroundColor: theme.surfaceInset, borderRadius: radius.md,
-    padding: spacing[3], gap: spacing[2],
-  }}>
-    {paused ? <View style={[styles.headerRow, { alignItems: "center" }]}>
-      <View style={[styles.headerCopy, { flex: 1 }]}>
-        <Text style={styles.value}>المتجر متوقف مؤقتًا</Text>
-        <Text style={styles.muted}>لن تصل طلبات جديدة حتى الاستئناف</Text>
-      </View>
-      <BthwaniButton
-        label={pending ? "التحقق من الاستئناف" : "استئناف الطلبات"}
-        disabled={busy}
-        busy={busy}
-        variant="secondary"
-        onPress={() => void resumeOrders()}
-      />
-    </View> : <Text style={styles.muted}>
-      {accepting ? "تعذر تحديث حالة الاستقبال؛ آخر حالة مؤكدة: يستقبل الطلبات." :
-        scheduledClosed ? "المتجر مغلق حسب ساعات العمل" :
-        operationallyUnavailable ? "استقبال الطلبات غير متاح حاليًا" :
-          "لا يستقبل المتجر طلبات جديدة حاليًا"}
-    </Text>}
-    {readError ? <BthwaniButton label="إعادة المحاولة" variant="quiet" onPress={() => void readAvailability()} /> : null}
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-  </View>;
+  const stable = status !== "loading" && status !== "error";
+  const openModes = ready ? status.orderabilityByMode.filter((mode) => mode.state === "OPEN_FOR_ORDERS").length : 0;
+  const totalModes = ready ? status.orderabilityByMode.length : 0;
+  const label = error ? "تعذر الاستئناف" : status === "loading" ? "جارٍ التحقق" : status === "error" || readError ? "حالة غير مؤكدة" : !published ? "غير منشور" : paused ? "متوقف" : accepting ? (openModes < totalModes ? `مفتوح ${openModes}/${totalModes}` : "مفتوح") : "مغلق";
+  const tone = status === "loading" || status === "error" || readError ? theme.warning : published && accepting && !paused ? theme.success : theme.warning;
+  return <Pressable
+    accessibilityRole="button"
+    accessibilityLabel={paused ? "استئناف استقبال الطلبات" : stable && !readError ? "المتجر " + label + "، إدارة التشغيل" : "إعادة قراءة حالة المتجر"}
+    accessibilityState={{ disabled: busy }}
+    disabled={busy}
+    onPress={() => {
+      if (paused) void resumeOrders();
+      else if (status === "error" || readError || status === "loading") void readAvailability();
+      else router.push({ pathname: "/store", params: { section: "operations" } } as Href);
+    }}
+    style={[styles.pill, { borderColor: tone, backgroundColor: theme.surface }]}
+  >
+    <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: tone }} />
+    <Text numberOfLines={1} style={[styles.label, { color: tone }]}>{busy ? "جارٍ التحديث" : label}</Text>
+  </Pressable>;
 }

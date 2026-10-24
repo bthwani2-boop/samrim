@@ -79,7 +79,7 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
     href: "/operations",
     label: "العمليات",
     permission: "operations",
-    children: [{ href: "/captains", label: "الكباتن" }, { href: "/operations/customer-withdrawals", label: "طلبات سحب العملاء الاستثنائية", showInWorkspaceNavigation: false }]
+    children: [{ href: "/operations/customer-withdrawals", label: "طلبات سحب العملاء الاستثنائية", showInWorkspaceNavigation: false }]
   },
   {
     href: "/partners",

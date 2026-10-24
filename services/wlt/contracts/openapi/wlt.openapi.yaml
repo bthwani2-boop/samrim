@@ -440,20 +440,14 @@ paths:
   /wlt/v1/payment-intents/{intentId}/remit:
     post:
       operationId: remitCashForPaymentIntent
+      deprecated: true
+      description: Retired. New Captain COD cash is settled by WLT wallet debit exactly once; no new remittance is accepted.
       security: [{ serviceToken: [] }]
       parameters:
         - { $ref: '#/components/parameters/IntentId' }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/RemitCashRequest' }
       responses:
-        '200':
-          description: Cash remittance recorded or idempotently replayed
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/CashRemittanceResponse' }
+        '410':
+          description: CAPTAIN_CASH_REMITTANCE_DISABLED. Historical remittances remain accessible for governed reconciliation only.
   /wlt/v1/delivery-quotes:
     post:
       operationId: quoteDeliveryFee
@@ -2146,10 +2140,21 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CashInFundingIntentReadResponse' }
+  /wlt/v1/development/funding-intents/{fundingIntentId}/reconcile:
+    post:
+      operationId: reconcileDevelopmentCashInProvider
+      description: Development-only authenticated mock provider inquiry and financial reconciliation.
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: fundingIntentId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      responses:
+        '200': { description: Canonical provider-verified funding result or still-pending intent. }
   /wlt/v1/development/funding-intents/{fundingIntentId}/simulate:
     post:
       operationId: simulateCashInFundingOutcome
-      description: Development-only simulator route; not registered unless BTHWANI_ENV=development and WLT_CASH_IN_MODE=simulator.
+      description: Legacy manual-outcome route, registered only in development with WLT_CASH_IN_MODE=simulator. The HTTP provider mock uses provider inquiry, never caller-selected outcomes.
       security: [{ serviceToken: [] }]
       parameters:
         - { name: fundingIntentId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
@@ -2228,6 +2233,7 @@ components:
         availableMinor: { type: integer }
         cashInEnabled: { type: boolean }
         simulator: { type: boolean }
+        providerMock: { type: boolean }
         recentCompensations:
           type: array
           items: { $ref: '#/components/schemas/CustomerWalletCompensationSummary' }
@@ -2253,10 +2259,11 @@ components:
       required: [amountMinor]
       properties:
         amountMinor: { type: integer, minimum: 1 }
+        providerKey: { type: string, description: "Configured wallet provider key for development HTTP emulation." }
     CashInFundingIntent:
       type: object
       additionalProperties: false
-      required: [id, actorType, actorId, fundingPurpose, providerKey, externalReference, amountMinor, currency, state, version, createdAt, updatedAt]
+      required: [id, actorType, actorId, fundingPurpose, providerKey, externalReference, amountMinor, providerFeeMinor, currency, state, version, createdAt, updatedAt]
       properties:
         id: { type: string }
         actorType: { type: string, enum: [customer, captain] }
@@ -2267,6 +2274,7 @@ components:
         providerReference: { type: string }
         providerTransactionReference: { type: string }
         amountMinor: { type: integer, minimum: 1 }
+        providerFeeMinor: { type: integer, minimum: 0, description: 'Verified provider settlement charge borne by the platform; beneficiary receives the full amountMinor.' }
         currency: { type: string, const: YER }
         state: { type: string, enum: [PENDING_PROVIDER, UNKNOWN, FAILED, SETTLED] }
         version: { type: integer, minimum: 1 }
@@ -2431,6 +2439,7 @@ components:
         partnerActorId: { type: string, minLength: 1, maxLength: 128 }
         currency: { type: string, const: YER }
         outstandingCommissionReceivableMinor: { type: integer, minimum: 1 }
+        oldestUnpaidAt: { type: string, format: date-time, nullable: true, description: 'Oldest still-outstanding debit after FIFO allocation of confirmed receipts and offsets.' }
         profileState: { type: string }
     PartnerCommissionReceivableRegistryResponse:
       type: object
@@ -3182,6 +3191,7 @@ components:
         currency: { type: string, const: YER }
         subtotalMinor: { type: integer, minimum: 0 }
         deliveryFeeMinor: { type: integer, minimum: 0 }
+        deliveryMarginMinor: { type: integer, minimum: 0, description: "Frozen platform delivery margin. Only BTHWANI_CAPTAIN; never deducted from the approved Captain base fee." }
         discountMinor: { type: integer, minimum: 0 }
         internalBalanceAmountMinor: { type: integer, minimum: 0 }
         cashAmountMinor: { type: integer, minimum: 0 }
@@ -3205,7 +3215,7 @@ components:
     CustomerPaymentAllocation:
       type: object
       additionalProperties: false
-      required: [id, orderId, paymentIntentId, currency, subtotalMinor, deliveryFeeMinor, discountMinor, internalBalanceAmountMinor, cashAmountMinor, customerPayableMinor, policyVersion, createdAt]
+      required: [id, orderId, paymentIntentId, currency, subtotalMinor, deliveryFeeMinor, deliveryMarginMinor, discountMinor, internalBalanceAmountMinor, cashAmountMinor, customerPayableMinor, policyVersion, createdAt]
       properties:
         commercialStoreTypeId: { type: string, minLength: 1, maxLength: 128, nullable: true }
         id: { type: string }
@@ -3217,6 +3227,7 @@ components:
         currency: { type: string, const: YER }
         subtotalMinor: { type: integer, minimum: 0 }
         deliveryFeeMinor: { type: integer, minimum: 0 }
+        deliveryMarginMinor: { type: integer, minimum: 0, description: "Frozen platform delivery margin. Only BTHWANI_CAPTAIN; never deducted from the approved Captain base fee." }
         discountMinor: { type: integer, minimum: 0 }
         internalBalanceAmountMinor: { type: integer, minimum: 0 }
         cashAmountMinor: { type: integer, minimum: 0 }
@@ -3282,6 +3293,9 @@ components:
       properties:
         fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
         commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
+        deliveryMarkupMinor: { type: integer, minimum: 0, maximum: 10000, description: "Additional customer fee for a BTHWANI_CAPTAIN Store agreement with zero commission; 100% credited to platform margin, not subtracted from Captain base earning." }
+        deliveryPricingMode: { type: string, enum: [DISTANCE, FIXED, FREE], description: "Store Captain pricing; older agreements default to DISTANCE." }
+        deliveryFixedFeeMinor: { type: integer, minimum: 0, maximum: 20000, description: "Positive only for PARTNER_CAPTAIN FIXED pricing." }
     StoreCommercialAgreement:
       type: object
       additionalProperties: false
@@ -3588,6 +3602,8 @@ components:
       additionalProperties: false
       required: [serviceCityId, originLatitude, originLongitude, destinationLatitude, destinationLongitude, orderSizeBaseUnits]
       properties:
+        storeId: { type: string, maxLength: 128, description: "BThwani checkout Store; resolves the active approved agreement and delivery markup." }
+        fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN] }
         serviceCityId: { type: string, maxLength: 128 }
         originLatitude: { type: number, minimum: -90, maximum: 90 }
         originLongitude: { type: number, minimum: -180, maximum: 180 }
@@ -3597,9 +3613,11 @@ components:
     DeliveryFeeQuote:
       type: object
       additionalProperties: false
-      required: [feeMinor, policyVersion, serviceCityId, distanceMeters, distanceUnits, orderSizeBaseUnits, orderSizeUnits, roundingUnitMinor]
+      required: [feeMinor, captainEarningMinor, platformMarginMinor, policyVersion, serviceCityId, distanceMeters, distanceUnits, orderSizeBaseUnits, orderSizeUnits, roundingUnitMinor]
       properties:
         feeMinor: { type: integer, minimum: 0 }
+        captainEarningMinor: { type: integer, minimum: 0 }
+        platformMarginMinor: { type: integer, minimum: 0 }
         policyVersion: { type: string }
         serviceCityId: { type: string }
         distanceMeters: { type: integer, minimum: 0 }

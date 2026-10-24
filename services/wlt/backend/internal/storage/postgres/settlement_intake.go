@@ -193,6 +193,14 @@ func CreateSettlementIntake(ctx context.Context, db *sql.DB, input SettlementInt
 			held += codHold
 		}
 		eligible := gross - held
+		if input.ActorType == "captain" {
+			// Match the direct payout rule. An intake may not represent
+			// replenishment funds or consume the minimum working balance.
+			eligible, err = captainEarningsEligibleForPayout(ctx, tx, input.ActorID, eligible)
+			if err != nil {
+				return SettlementIntakeRecord{}, false, err
+			}
+		}
 		resolved = eligible
 		if input.AmountMode == "SPECIFIED" {
 			resolved = *input.AmountMinor

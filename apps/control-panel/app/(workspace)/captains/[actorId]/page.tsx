@@ -4,5 +4,4 @@ export default async function CaptainDetailPage({ params }: Readonly<{ params: P
   const { actorId } = await params;
   return <CaptainDetailWorkspace actorId={actorId} />;
 }
-
 export const metadata = { title: "ملف الكابتن" };

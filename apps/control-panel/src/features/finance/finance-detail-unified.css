@@ -1,0 +1,24 @@
+/* Unified finance detail presentation: preserve operational controls and ledger behavior. */
+.fr-detail-surface{min-width:0;display:grid;gap:13px}
+.fr-detail-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px;border:1px solid var(--fr-line);border-radius:11px;background:var(--fr-card)}
+.fr-detail-header>div{display:grid;gap:6px}
+.fr-detail-header small{font-size:11px;color:var(--fr-muted)}
+.fr-detail-header h2{font-size:18px;font-weight:800;margin:0;color:var(--fr-text)}
+.fr-detail-back{border:1px solid var(--fr-orange);color:var(--fr-orange)!important;background:transparent;border-radius:8px;min-height:38px;padding:8px 14px;font-size:12px;white-space:nowrap}
+.fr-detail-content{min-width:0;border:1px solid var(--fr-line);border-radius:11px;background:var(--fr-card);padding:16px;overflow-x:auto;color:var(--fr-text)}
+.fr-detail-content .work-stack{display:grid;gap:13px;min-width:0}
+.fr-detail-content :is(.section-heading,.finance-toolbar,.registry-toolbar,.finance-summary-grid,.action-row){display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fr-detail-content .section-heading{justify-content:space-between;padding:7px 0}
+.fr-detail-content :is(.section-heading h2,.section-heading h3){font-size:15px;color:var(--fr-text);margin:0}
+.fr-detail-content :is(.finance-summary-card,.access-card,.finance-card,.surface-card,.collection-card){border:1px solid var(--fr-line);background:var(--fr-card-alt);border-radius:9px;padding:14px;color:var(--fr-text)}
+.fr-detail-content :is(.finance-table-wrap,.table-wrap){min-width:0;overflow-x:auto;border:1px solid var(--fr-line);border-radius:9px}
+.fr-detail-content :is(.finance-table,.data-table){width:100%;border-collapse:collapse;min-width:650px;text-align:right;background:var(--fr-card);color:var(--fr-text)}
+.fr-detail-content :is(.finance-table,.data-table) th{background:var(--fr-card-alt);color:var(--fr-muted);font-size:11px;text-align:right;white-space:nowrap;padding:11px;border-bottom:1px solid var(--fr-line)}
+.fr-detail-content :is(.finance-table,.data-table) td{padding:10px;border-bottom:1px solid var(--fr-line);font-size:12px;color:var(--fr-text)}
+.fr-detail-content :is(.finance-table,.data-table) tr:hover td{background:color-mix(in srgb,var(--fr-orange) 5%,var(--fr-card))}
+.fr-detail-content :is(.button,.registry-toolbar button,.action-row button){min-height:36px;border-radius:7px;font-size:12px}
+.fr-detail-content :is(.button-secondary,.button-quiet){background:var(--fr-card-alt);border:1px solid var(--fr-line);color:var(--fr-text)}
+.fr-detail-content .button-primary{background:var(--fr-orange);color:#121922}
+.fr-detail-content :is(input,select,textarea){border-color:var(--fr-line);border-radius:7px;max-width:100%}
+.fr-detail-content :is(.muted,.field-label,.eyebrow){color:var(--fr-muted)}
+@media(max-width:720px){.fr-detail-header{flex-direction:column;align-items:stretch}.fr-detail-content{padding:10px}.fr-detail-back{width:100%}}

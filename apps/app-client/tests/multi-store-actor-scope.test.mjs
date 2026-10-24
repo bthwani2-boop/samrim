@@ -44,6 +44,16 @@ function scenario({ switchDuringRead = false } = {}) {
       ] };
     },
     listOwnDeliveryAddresses: async () => ({ addresses: [{ id: "private-address-A", addressText: "private" }] }),
+    getUsableIdentityAccessToken: async () => "token-A",
+    readPublishedStore: async (storeID) => ({ id: storeID, publicationState: "published" }),
+    readCartForPreview: async () => ({
+      version: 1,
+      lines: [{ requiresReview: false, lineAmountMinor: 1500 }],
+    }),
+    availableCustomerFulfillmentModes: (modes) => modes ?? ["CUSTOMER_PICKUP"],
+    readSavedFulfillmentMode: async () => null,
+    resolveFulfillmentChoice: (available) => available[0] ?? null,
+    setMultiMode: () => {},
     resolvePendingMultiStoreAttempt: async () => { throw new Error("no pending attempt"); },
     console: { error: () => {} },
   };

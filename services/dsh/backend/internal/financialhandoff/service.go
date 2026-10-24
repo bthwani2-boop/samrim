@@ -80,13 +80,15 @@ func (s *Service) apply(ctx context.Context, item postgres.FinancialHandoffOutbo
 		if intent.State != "COLLECTED" || !collectionActorMatches(intent, item.CaptainActorID, cashAmount) {
 			return errors.New("WLT delivery collection does not match the allocated cash source")
 		}
-		if cashAmount > 0 {
-			if _, _, err := s.wlt.FinalizeCaptainCOD(ctx, item.OrderID, item.PaymentIntentID, item.CaptainActorID, wltintegration.DerivedIdempotencyKey("captain-cod-finalize", item.SourceRef), item.CorrelationID); err != nil {
-				return fmt.Errorf("finalize captain COD: %w", err)
-			}
-		}
+		// Create the earned receivable before settling the COD hold against
+		// it. Both operations are idempotent across outbox retries.
 		if _, _, err := s.wlt.FinalizePartnerOrderEarning(ctx, item.OrderID, item.PaymentIntentID, item.PartnerActorID, item.CaptainActorID, wltintegration.DerivedIdempotencyKey("partner-earning", item.OrderID), item.CorrelationID); err != nil {
 			return fmt.Errorf("finalize partner earning: %w", err)
+		}
+		if cashAmount > 0 {
+			if _, _, err := s.wlt.FinalizeCaptainCOD(ctx, item.OrderID, item.PaymentIntentID, item.CaptainActorID, wltintegration.DerivedIdempotencyKey("captain-cod-finalize", item.SourceRef), item.CorrelationID); err != nil {
+				return fmt.Errorf("debit settled captain COD: %w", err)
+			}
 		}
 		return nil
 	case "STORE_PICKUP_COLLECTION":

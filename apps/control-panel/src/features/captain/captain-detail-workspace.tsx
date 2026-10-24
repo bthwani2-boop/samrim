@@ -11,6 +11,7 @@ import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { PageHeader } from "../../shell/page-header";
 import { responseMessage } from "../access/identity-error-message";
 import { OfficialWalletDestinationManager } from "../finance/official-wallet-destination-manager";
+import { ActorWalletStatement } from "../finance/actor-wallet-statement";
 import { RecordTabs } from "../shared/record-tabs";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 
@@ -338,6 +339,7 @@ export function CaptainDetailWorkspace({ actorId, embedded = false }: Readonly<{
       <div className="captain-profile-layout captain-profile-single">
         <div className={activeTab === "orders" || activeTab === "history" ? "captain-profile-content captain-profile-contentWide" : "captain-profile-content"}>
           {activeTab === "overview" ? <>
+          <ActorWalletStatement actorType="captain" actorId={actorId} />
             <section className="captain-profile-overviewMain" aria-labelledby="captain-overview-status">
               <div className="captain-profile-overviewHeading"><span className="captain-profile-eyebrow">حالة الكابتن الآن</span><h2 id="captain-overview-status">{ready ? "ملف معتمد ومفعّل" : "يتطلب متابعة تشغيلية"}</h2><p>{ready ? "تستطيع إدارة التوفر أو إيقاف الحساب مباشرة من شريط التحكم. لا تعني هذه الحالة اجتياز شرط رصيد المحفظة." : "راجع حالة الهوية والقبول والتفعيل قبل السماح بإسناد الطلبات."}</p></div>
               <div className="captain-profile-checklist">
@@ -454,6 +456,7 @@ export function CaptainDetailWorkspace({ actorId, embedded = false }: Readonly<{
             </dl>
             <p className={"captain-profile-hint"}>مستحقات الصرف لا تمثل رصيد محفظة الكابتن التشغيلي. تعديل وجهة الصرف يخضع لصلاحية المالية والتحقق المستقل.</p>
             {financeReady ? <OfficialWalletDestinationManager actorType="captain" actorId={actorId} /> : null}
+            <ActorWalletStatement actorType="captain" actorId={actorId} />
           </Card> : null}
 
           {activeTab === "history" ? <Card title="سجل الملف والمرجعيات">

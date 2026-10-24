@@ -3,7 +3,7 @@
   "slug": "app-client",
   "scheme": "client",
   "owner": "bthwani1",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "androidPackage": "com.bthwani.client",
   "iosBundleIdentifier": "com.bthwani.client",
   "projectId": "4adf3184-fc07-4186-b49e-0dc821a5ab73"

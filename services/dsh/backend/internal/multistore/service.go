@@ -39,6 +39,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken string, input postgr
 	}
 	input.ClientActorID = actorID
 	input.ID = strings.TrimSpace(input.ID)
+	input.DiscoveryClickEventID = strings.TrimSpace(input.DiscoveryClickEventID)
 	for index := range input.Children {
 		input.Children[index].CartID = strings.TrimSpace(input.Children[index].CartID)
 		input.Children[index].StoreID = strings.TrimSpace(input.Children[index].StoreID)
@@ -59,6 +60,11 @@ func (s *Service) Checkout(ctx context.Context, accessToken string, input postgr
 	if replayed && checkout.State != "PROCESSING" {
 		return checkout, true, nil
 	}
+	// Attribute only a click resolving to exactly one child store.
+	attributedStore, err := postgres.ResolveMultiStoreDiscoveryAttributionStore(ctx, s.db, input.DiscoveryClickEventID, actorID, input.Children)
+	if err != nil {
+		return postgres.MultiStoreCheckoutRecord{}, false, err
+	}
 	for _, child := range checkout.Children {
 		if child.State != "PENDING" {
 			continue
@@ -74,7 +80,12 @@ func (s *Service) Checkout(ctx context.Context, accessToken string, input postgr
 		childInput.ExpectedTotalAmountMinor = input.Children[child.ChildIndex].ExpectedTotalAmountMinor
 		childKey := postgres.HashMarketingFacts("multi-store-child-checkout", checkout.ID, child.ID)
 		childCorrelation := postgres.HashMarketingFacts("multi-store-child-correlation", strings.TrimSpace(correlationID), checkout.ID, child.ID)
-		order, _, checkoutErr := s.cart.Checkout(ctx, accessToken, childInput.CartID, childInput.StoreID, childInput.AddressID, childInput.FulfillmentMode, childInput.PromotionCode, childInput.ExpectedTotalAmountMinor, childInput.Recipient, 0, childInput.CartVersion, childKey, childCorrelation)
+		order, _, checkoutErr := s.cart.Checkout(ctx, accessToken, childInput.CartID, childInput.StoreID, childInput.AddressID, childInput.FulfillmentMode, childInput.PromotionCode, func() string {
+			if child.StoreID == attributedStore {
+				return input.DiscoveryClickEventID
+			}
+			return ""
+		}(), childInput.ExpectedTotalAmountMinor, childInput.Recipient, "", 0, childInput.CartVersion, childKey, childCorrelation)
 		if checkoutErr != nil {
 			if !isDefinitiveChildCheckoutError(checkoutErr) {
 				return postgres.MultiStoreCheckoutRecord{}, false, ErrCheckoutInProgress

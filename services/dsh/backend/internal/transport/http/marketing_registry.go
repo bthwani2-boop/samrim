@@ -17,6 +17,8 @@ const operatorMarketingRegistryDefaultLimit = 50
 type operatorPromotionRegistryCursor struct {
 	Search        string `json:"search"`
 	State         string `json:"state"`
+	DiscountKind  string `json:"discountKind"`
+	FundingSource string `json:"fundingSource"`
 	ServiceCityID string `json:"serviceCityId"`
 	Sort          string `json:"sort"`
 	StartsAt      string `json:"startsAt"`
@@ -38,16 +40,18 @@ func parseOperatorPromotionRegistryQuery(r *http.Request) (postgres.OperatorProm
 	params := r.URL.Query()
 	search := strings.TrimSpace(params.Get("search"))
 	state := strings.ToUpper(strings.TrimSpace(params.Get("state")))
+	discountKind := strings.ToUpper(strings.TrimSpace(params.Get("discountKind")))
+	fundingSource := strings.ToUpper(strings.TrimSpace(params.Get("fundingSource")))
 	serviceCityID := strings.TrimSpace(params.Get("serviceCityId"))
 	sort := strings.ToLower(strings.TrimSpace(params.Get("sort")))
 	if sort == "" {
 		sort = "starts_desc"
 	}
 	limit, err := parseOperatorMarketingRegistryLimit(params.Get("limit"))
-	if err != nil || utf8.RuneCountInString(search) > 128 || len(serviceCityID) > 128 || (state != "" && state != "DRAFT" && state != "PUBLISHED" && state != "PAUSED" && state != "ENDED") || (sort != "starts_desc" && sort != "starts_asc") {
+	if err != nil || utf8.RuneCountInString(search) > 128 || len(serviceCityID) > 128 || (state != "" && state != "DRAFT" && state != "PUBLISHED" && state != "PAUSED" && state != "ENDED") || (sort != "starts_desc" && sort != "starts_asc") || (discountKind != "" && discountKind != "PERCENTAGE" && discountKind != "FIXED") || (fundingSource != "" && fundingSource != "BTHWANI" && fundingSource != "PARTNER" && fundingSource != "SHARED") {
 		return postgres.OperatorPromotionRegistryQuery{}, postgres.ErrPromotionInvalid
 	}
-	query := postgres.OperatorPromotionRegistryQuery{Search: search, State: state, ServiceCityID: serviceCityID, Sort: sort, Limit: limit}
+	query := postgres.OperatorPromotionRegistryQuery{Search: search, State: state, DiscountKind: discountKind, FundingSource: fundingSource, ServiceCityID: serviceCityID, Sort: sort, Limit: limit}
 	rawCursor := strings.TrimSpace(params.Get("cursor"))
 	if rawCursor == "" {
 		return query, nil
@@ -57,7 +61,7 @@ func parseOperatorPromotionRegistryQuery(r *http.Request) (postgres.OperatorProm
 	}
 	decoded, err := base64.RawURLEncoding.DecodeString(rawCursor)
 	var cursor operatorPromotionRegistryCursor
-	if err != nil || len(decoded) > 1536 || json.Unmarshal(decoded, &cursor) != nil || cursor.Search != search || cursor.State != state || cursor.ServiceCityID != serviceCityID || cursor.Sort != sort || cursor.ID == "" || len(cursor.ID) > 128 {
+	if err != nil || len(decoded) > 1536 || json.Unmarshal(decoded, &cursor) != nil || cursor.Search != search || cursor.State != state || cursor.DiscountKind != discountKind || cursor.FundingSource != fundingSource || cursor.ServiceCityID != serviceCityID || cursor.Sort != sort || cursor.ID == "" || len(cursor.ID) > 128 {
 		return postgres.OperatorPromotionRegistryQuery{}, postgres.ErrPromotionInvalid
 	}
 	startsAt, err := time.Parse(time.RFC3339Nano, cursor.StartsAt)
@@ -70,7 +74,7 @@ func parseOperatorPromotionRegistryQuery(r *http.Request) (postgres.OperatorProm
 }
 
 func encodeOperatorPromotionRegistryCursor(item postgres.PromotionRecord, query postgres.OperatorPromotionRegistryQuery) (string, error) {
-	encoded, err := json.Marshal(operatorPromotionRegistryCursor{Search: query.Search, State: query.State, ServiceCityID: query.ServiceCityID, Sort: query.Sort, StartsAt: item.StartsAt.UTC().Format(time.RFC3339Nano), ID: item.ID})
+	encoded, err := json.Marshal(operatorPromotionRegistryCursor{Search: query.Search, State: query.State, DiscountKind: query.DiscountKind, FundingSource: query.FundingSource, ServiceCityID: query.ServiceCityID, Sort: query.Sort, StartsAt: item.StartsAt.UTC().Format(time.RFC3339Nano), ID: item.ID})
 	if err != nil {
 		return "", err
 	}

@@ -1,9 +1,11 @@
 package transporthttp
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -33,10 +35,65 @@ func NewNotification(identityClient *identityintegration.Client, accessToken str
 }
 
 func (s *NotificationServer) Register(mux *http.ServeMux) {
+	mux.HandleFunc("POST /dsh/notifications/devices", s.registerDevice)
+	mux.HandleFunc("DELETE /dsh/notifications/devices/{installationId}", s.unregisterDevice)
 	mux.HandleFunc("GET /dsh/notifications", s.list)
 	mux.HandleFunc("POST /dsh/notifications/{notificationId}/read", s.markRead)
+	s.registerClientShares(mux)
 }
 
+func (s *NotificationServer) DispatchPushBatch(ctx context.Context) (int, error) {
+	return s.service.DispatchPushBatch(ctx)
+}
+func (s *NotificationServer) registerDevice(w http.ResponseWriter, r *http.Request) {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Mobile session required")
+		return
+	}
+	var input notificationdomain.PushDeviceInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	err := s.service.RegisterPushDevice(r.Context(), token, input)
+	if errors.Is(err, notificationdomain.ErrPushRegistration) {
+		writeError(w, http.StatusBadRequest, "INVALID_PUSH_DEVICE", "Invalid installation or Expo push token")
+		return
+	}
+	if errors.Is(err, notificationdomain.ErrPushRole) || errors.Is(err, notificationdomain.ErrSessionForbidden) {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "An authenticated mobile role is required")
+		return
+	}
+	if err != nil {
+		writeNotificationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"registered":  true,
+		"pushEnabled": os.Getenv("DSH_EXPO_PUSH_ENABLED") == "true",
+	})
+}
+func (s *NotificationServer) unregisterDevice(w http.ResponseWriter, r *http.Request) {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Mobile session required")
+		return
+	}
+	err := s.service.UnregisterPushDevice(r.Context(), token, r.PathValue("installationId"))
+	if errors.Is(err, notificationdomain.ErrPushRegistration) {
+		writeError(w, http.StatusBadRequest, "INVALID_PUSH_DEVICE", "Invalid installation")
+		return
+	}
+	if errors.Is(err, notificationdomain.ErrPushRole) || errors.Is(err, notificationdomain.ErrSessionForbidden) {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "An authenticated mobile role is required")
+		return
+	}
+	if err != nil {
+		writeNotificationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"unregistered": true})
+}
 func (s *NotificationServer) list(w http.ResponseWriter, r *http.Request) {
 	if s.auth.Authorized(r) {
 		actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))

@@ -33,6 +33,15 @@ export async function listPublicPromotions(serviceCityID: string, storeID = ""):
   return client().listPublicPromotions(serviceCityID, storeID);
 }
 
+export type BannerPresentation = Readonly<{ placement: "HOME"; mode: "STATIC" | "CINEMATIC" | "CROSSFADE"; intervalSeconds: number; version: number }>;
+export async function readPublicBannerPresentation(): Promise<BannerPresentation> {
+  const response = await fetch(`${dshBaseUrl()}/dsh/public/banner-presentation`, { headers: { Accept: "application/json" } });
+  if (!response.ok) throw new Error("BANNER_PRESENTATION_UNAVAILABLE");
+  const value = await response.json() as BannerPresentation;
+  if (!["STATIC", "CINEMATIC", "CROSSFADE"].includes(value.mode) || !Number.isInteger(value.intervalSeconds) || value.intervalSeconds < 3 || value.intervalSeconds > 10) throw new Error("BANNER_PRESENTATION_INVALID");
+  return value;
+}
+
 export async function listPublicDiscoveryContent(serviceCityID: string): Promise<DiscoveryContentListResponse> {
   return client().listPublicDiscoveryContent(serviceCityID);
 }

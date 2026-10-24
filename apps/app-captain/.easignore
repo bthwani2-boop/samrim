@@ -10,4 +10,4 @@ credentials.json
 *.jks
 *.keystore
 .env*
-google-services.json
+# Firebase is supplied to EAS from the GOOGLE_SERVICES_JSON file secret, never from the Git archive.

@@ -16,8 +16,10 @@ type CaptainPage = Readonly<{ items: ReadonlyArray<CaptainRecord>; nextCursor?: 
 
 const admissionLabel = (admission: CaptainAdmission | null) => admission ? captainAdmissionStateLabel(admission.state) : "لا توجد أهلية تشغيل ";
 
-export function CaptainAdmissionPanel() {
+export function CaptainAdmissionPanel({ active = true }: Readonly<{ active?: boolean }> = {}) {
   const [query, setQuery] = useState("");
+  const [showCandidateForms, setShowCandidateForms] = useState(false);
+  const [candidateFormsVisited, setCandidateFormsVisited] = useState(false);
   const [enabledFilter, setEnabledFilter] = useState("");
   const [sort, setSort] = useState<"phone_asc" | "phone_desc">("phone_asc");
   const [identityFilter, setIdentityFilter] = useState("all");
@@ -100,8 +102,8 @@ export function CaptainAdmissionPanel() {
     }
   }, [enabledFilter, query, sort, cursorPage.cursor]);
 
-  useEffect(() => { if (cursorPage.ready) void load(); }, [load, cursorPage.ready]);
-  useReadOnReturn(() => load(), cursorPage.ready && !loading && !busy && !Object.values(reasons).some((value) => value.trim()));
+  useEffect(() => { if (cursorPage.ready && active) void load(); }, [active, load, cursorPage.ready]);
+  useReadOnReturn(() => load(), active && cursorPage.ready && !loading && !busy && !Object.values(reasons).some((value) => value.trim()));
 
   async function changeStatus(captain: CaptainRecord) {
     const reason = reasons[captain.actorId]?.trim() ?? "";
@@ -272,20 +274,23 @@ export function CaptainAdmissionPanel() {
   }
 
   return (
-    <AdaptiveRecordWorkspace preferenceKey="captains" open={Boolean(selectedCaptain)} onClose={closeCaptain}
+    <AdaptiveRecordWorkspace preferenceKey="captains" open={Boolean(selectedCaptain) && active} onClose={closeCaptain}
       detail={<AdaptiveRecordPanel title="ملف الكابتن"
         onClose={closeCaptain} onPrevious={selectedIndex > 0 ? () => moveSelection(-1) : undefined}
         onNext={selectedIndex >= 0 && selectedIndex < items.length - 1 ? () => moveSelection(1) : undefined}>
         {selectedCaptain ? <CaptainDetailWorkspace key={selectedCaptain} actorId={selectedCaptain} embedded /> : null}
       </AdaptiveRecordPanel>}>
-      <CaptainCandidatePanel />
+      <div className="ops-captain-reveal"><span>إدارة الكباتن</span><button type="button" className="button button-secondary" aria-expanded={showCandidateForms} aria-controls="ops-captain-candidates" onClick={() => {setCandidateFormsVisited(true);setShowCandidateForms(current => !current);}}>{showCandidateForms ? "إخفاء ملفات الانضمام" : "طلبات الانضمام وملف كابتن جديد"} ←</button></div>
+      {candidateFormsVisited ? <div id="ops-captain-candidates" hidden={!showCandidateForms}>
+        <CaptainCandidatePanel />
+      </div> : null}
       <section className="access-card" aria-labelledby="captain-roster-title">
         <div className="access-card-heading"><h2 id="captain-roster-title">قائمة الكباتن وأهليتهم وتوفرهم</h2><p className="muted">إيقاف التشغيل يوقف الأهلية فقط؛ الهوية تبقى محفوظة.</p></div>
         <div className="workspace-toolbar">
           <label className="field-label" htmlFor="captain-search">بحث برقم الهاتف<input id="captain-search" inputMode="tel" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث في أرقام الكباتن" /></label>
           <label className="field-label" htmlFor="captain-status-filter">حالة الدور<select id="captain-status-filter" value={enabledFilter} onChange={(event) => setEnabledFilter(event.target.value)}><option value="">كل الحالات</option><option value="true">مفعّل</option><option value="false">موقوف</option></select></label>
           <label className="field-label" htmlFor="captain-sort">ترتيب رقم الهاتف<select id="captain-sort" value={sort} onChange={(event) => setSort(event.target.value as "phone_asc" | "phone_desc")}><option value="phone_asc">تصاعدي</option><option value="phone_desc">تنازلي</option></select></label>
-          <button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button>
+          {error ? <button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>إعادة المحاولة</button> : null}
         </div>
         {notice ? <p className="success-inline" role="status">{notice}</p> : null}
         {error ? <p className="identity-error" role="alert">{error}</p> : null}
@@ -293,12 +298,7 @@ export function CaptainAdmissionPanel() {
         {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد نتائج</strong><p>جرّب إزالة المرشح أو البحث برقم آخر.</p></div> : null}
         {items.length > 0 && hasPageFilters ? <p className="access-center-scope">معروض من الصفحة: {visibleCaptains.length} من {items.length}. المرشحات الإضافية تخص الصفحة الحالية.</p> : null}
         {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr>
-          <RegistryColumnHeader label="الاسم والهاتف">
-            <label>بحث برقم الهاتف<input type="search" inputMode="tel" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="رقم الكابتن" /></label>
-            <label>الترتيب<select value={sort} onChange={(event) => setSort(event.target.value as "phone_asc" | "phone_desc")}>
-              <option value="phone_asc">الهاتف تصاعديًا</option><option value="phone_desc">الهاتف تنازليًا</option>
-            </select></label>
-          </RegistryColumnHeader>
+          <th scope="col">الاسم والهاتف</th>
           <RegistryColumnHeader label="تسجيل الهوية" scope="page" active={identityFilter !== "all"}>
             <label>حالة التسجيل<select value={identityFilter} onChange={(event) => setIdentityFilter(event.target.value)}>
               <option value="all">جميع الحالات</option><option value="activated">مسجل</option><option value="pending">بانتظار التسجيل</option>

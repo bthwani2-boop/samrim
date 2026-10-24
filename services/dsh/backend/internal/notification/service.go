@@ -130,6 +130,9 @@ func present(event postgres.NotificationEvent, role string) View {
 }
 
 func message(eventType, role, orderID, toState string) (string, string, string) {
+	if role == "operator" && eventType == "operational_availability_changed" {
+		return "STORE_AVAILABILITY_CHANGED", "تحديث تشغيل متجر", "غيّر الشريك ساعات العمل أو استقبال الطلبات أو طرق التوصيل. راجع حالة المتجر."
+	}
 	if role == "field" || (role == "operator" && strings.HasPrefix(eventType, "joining_case_")) {
 		switch eventType {
 		case "field_mission_completed":
@@ -156,6 +159,8 @@ func message(eventType, role, orderID, toState string) (string, string, string) 
 		orderRef = "الطلب"
 	}
 	switch eventType {
+	case "captain_arrived_dropoff":
+		return "CAPTAIN_ARRIVED", "وصل الكابتن إلى موقع التسليم", fmt.Sprintf("وصل الكابتن لتسليم الطلب رقم %s. يرجى استلام الطلب.", orderRef)
 	case "order_created":
 		if role == "partner" {
 			return "ORDER_CREATED", "وصل طلب جديد", fmt.Sprintf("وصل طلب جديد رقم %s إلى متجرك.", orderRef)

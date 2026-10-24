@@ -74,6 +74,7 @@ func (s *StoreAccessServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/actor/store-access-invitations", s.listForDelegate)
 	mux.HandleFunc("POST /dsh/actor/store-access-invitations/{grantId}/decision", s.decideForDelegate)
 	mux.HandleFunc("POST /dsh/partner/store-access-invitations/{grantId}/activate", s.activateForDelegate)
+	mux.HandleFunc("GET /dsh/operations/partners/{actorId}/team", s.listTeamForOperator)
 	mux.HandleFunc("GET /dsh/operations/store-access-role-admissions", s.listRoleAdmissionsForOperator)
 	mux.HandleFunc("POST /dsh/operations/store-access-role-admissions/{grantId}/provision", s.admitPartnerRoleForOperator)
 }
@@ -201,6 +202,39 @@ func (s *StoreAccessServer) activateForDelegate(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusOK, storeAccessMutationResponse{Grant: grant, IdempotentReplay: replayed})
+}
+
+func (s *StoreAccessServer) listTeamForOperator(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := storeAccessOperatorActor(w, r, s.operatorAuth)
+	if !ok {
+		return
+	}
+	limit := 25
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 50 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "team limit must be 1 to 50")
+			return
+		}
+		limit = parsed
+	}
+	cursor := r.URL.Query().Get("cursor")
+	if len(cursor) > 512 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid team cursor")
+		return
+	}
+	ownerID := strings.TrimSpace(r.PathValue("actorId"))
+	storeID := strings.TrimSpace(r.URL.Query().Get("storeId"))
+	if ownerID == "" || len(ownerID) > 128 || len(storeID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid partner or store")
+		return
+	}
+	page, err := s.service.ListTeamForOperator(r.Context(), actorID, ownerID, storeID, limit, cursor)
+	if err != nil {
+		writeStoreAccessError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
 }
 
 func (s *StoreAccessServer) listRoleAdmissionsForOperator(w http.ResponseWriter, r *http.Request) {

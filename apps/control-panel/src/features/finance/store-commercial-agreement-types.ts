@@ -9,6 +9,9 @@ type StoreCommercialAgreementMode = (typeof storeCommercialAgreementModes)[numbe
 type StoreCommercialAgreementRate = Readonly<{
   fulfillmentMode: StoreCommercialAgreementMode;
   commissionRateBps: number;
+  deliveryMarkupMinor?: number;
+  deliveryPricingMode?: "DISTANCE" | "FIXED" | "FREE";
+  deliveryFixedFeeMinor?: number;
 }>;
 
 export type StoreCommercialAgreementRecord = Readonly<{

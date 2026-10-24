@@ -266,7 +266,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
             {agreement.rates.length > 0 ? agreement.rates.map((rate) => (
               <View key={`${agreement.agreementId}:${rate.fulfillmentMode}`} style={styles.rateRow}>
                 <Text style={styles.rateLabel}>{modeLabel(rate.fulfillmentMode)}</Text>
-                <Text selectable style={styles.rateValue}>{rateValue(rate.commissionRateBps)}</Text>
+                <Text selectable style={styles.rateValue}>{rateValue(rate.commissionRateBps)}{rate.fulfillmentMode === "PARTNER_CAPTAIN" ? ` · رسوم توصيل المتجر: ${rate.deliveryPricingMode === "FREE" ? "مجاني" : rate.deliveryPricingMode === "FIXED" ? `${rate.deliveryFixedFeeMinor ?? 0} ريال` : "حسب المسافة"}` : ""}{rate.deliveryMarkupMinor ? ` · زيادة توصيل ${rate.deliveryMarkupMinor} ريال لبثواني دون مساس بأجرة الكابتن` : ""}</Text>
               </View>
             )) : <Text style={styles.error}>لا تحتوي الاتفاقية على معدلات تشغيل صالحة.</Text>}
             {agreement.status === "PROPOSED" ? <View style={styles.acceptance}>
@@ -287,7 +287,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
         busy={Boolean(agreementToConfirm && busyAgreementID === agreementToConfirm.agreementId)}
         confirmLabel="تأكيد قبول الاتفاقية"
         description={agreementToConfirm
-          ? `ستوافق على الاتفاقية التجارية. النسب: ${agreementToConfirm.rates.map((rate) => `${modeLabel(rate.fulfillmentMode)}: ${rateValue(rate.commissionRateBps)}`).join("، ")}. بعد قبولك تراجعها الإدارة المالية قبل أن تصبح سارية.`
+          ? `ستوافق على الاتفاقية التجارية. النسب: ${agreementToConfirm.rates.map((rate) => `${modeLabel(rate.fulfillmentMode)}: ${rateValue(rate.commissionRateBps)}${rate.fulfillmentMode === "PARTNER_CAPTAIN" ? ` · رسوم توصيل المتجر: ${rate.deliveryPricingMode === "FREE" ? "مجاني" : rate.deliveryPricingMode === "FIXED" ? `${rate.deliveryFixedFeeMinor ?? 0} ريال` : "حسب المسافة"}` : ""}${rate.deliveryMarkupMinor ? ` + ${rate.deliveryMarkupMinor} ريال هامش توصيل لبثواني` : ""}`).join("، ")}. بعد قبولك تراجعها الإدارة المالية قبل أن تصبح سارية.`
           : ""}
         onCancel={() => setAgreementToConfirm(null)}
         onConfirm={() => {

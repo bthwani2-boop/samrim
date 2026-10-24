@@ -71,6 +71,14 @@ func TestReviewedCustomerWalletCompensationUsesExistingCaseAndBalancedLedger(t *
 	if newCount != 1 || replayCount != 1 {
 		t.Fatalf("new=%d replay=%d, want one each", newCount, replayCount)
 	}
+	cases, err := ListOrderAdjustmentReconciliationCases(s.ctx, s.db, orderID, customerID)
+	if err != nil || len(cases) != 1 || cases[0].ID != adjustment.ID || cases[0].State != "COMPENSATED" {
+		t.Fatalf("posted compensation must close review case: %+v %v", cases, err)
+	}
+	caseReplay, replayedCase, err := RecordOrderAdjustmentReconciliationCase(s.ctx, s.db, caseInput)
+	if err != nil || !replayedCase || caseReplay.State != "COMPENSATED" {
+		t.Fatalf("committed case must replay as resolved: %+v replay=%t err=%v", caseReplay, replayedCase, err)
+	}
 	walletAfter, err := readCustomerWalletState(s.ctx, s.db, customerID)
 	if err != nil {
 		t.Fatal(err)

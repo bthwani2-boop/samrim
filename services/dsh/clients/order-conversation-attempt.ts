@@ -6,7 +6,7 @@ export type OrderConversationMessageAttempt = Readonly<{
   orderID: string;
   body: string;
   recipientRoles?: ReadonlyArray<"client" | "partner" | "captain" | "operator">;
-  mediaKind?: "image" | "audio";
+  mediaKind?: "image" | "audio" | "video";
   mediaContentType?: string;
   mediaFileUri?: string;
   idempotencyKey: string;
@@ -29,7 +29,7 @@ export function createOrderConversationMessageAttempt(
   idempotencyKey: string,
   correlationID: string,
   recipientRoles?: ReadonlyArray<"client" | "partner" | "captain" | "operator">,
-  media?: Readonly<{ kind: "image" | "audio"; contentType: string; fileUri: string }>,
+  media?: Readonly<{ kind: "image" | "audio" | "video"; contentType: string; fileUri: string }>,
 ): OrderConversationMessageAttempt {
   const normalizedActor = actorID.trim();
   const normalizedOrder = orderID.trim();
@@ -39,7 +39,8 @@ export function createOrderConversationMessageAttempt(
   if (recipientRoles && (!recipientRoles.length || recipientRoles.length > 4 || new Set(recipientRoles).size !== recipientRoles.length || recipientRoles.some(role => !["client", "partner", "captain", "operator"].includes(role)))) throw new Error("DSH_ORDER_CONVERSATION_RECIPIENTS_INVALID");
   if (media && (!media.fileUri.startsWith("file://") || media.fileUri.length > 1024 ||
        !((media.kind === "image" && ["image/jpeg", "image/png", "image/webp"].includes(media.contentType)) ||
-         (media.kind === "audio" && ["audio/mp4", "audio/m4a", "audio/3gpp", "audio/aac", "audio/webm"].includes(media.contentType))))) {
+         (media.kind === "audio" && ["audio/mp4", "audio/m4a", "audio/3gpp", "audio/aac", "audio/webm"].includes(media.contentType)) ||
+         (media.kind === "video" && ["video/mp4", "video/webm"].includes(media.contentType))))) {
     throw new Error("DSH_ORDER_CONVERSATION_MEDIA_INVALID");
   }
   if (

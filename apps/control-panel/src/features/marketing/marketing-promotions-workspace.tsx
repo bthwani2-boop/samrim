@@ -7,6 +7,7 @@ import { useSession } from "../../session/session-provider";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 
 import { MarketingPromotionSettlementReadback } from "./marketing-promotion-settlement-readback";
+import { MarketingPartnerDecisions } from "./marketing-partner-decisions";
 import { MarketingStateIndicator } from "./marketing-state-indicator";
 import { apiMessage, clearPendingMarketingCreate, dateTimeLocalValue, emptyPromotionForm, futureDateInput, type MarketingTargetOption, type PendingPromotionCreate, type PromotionFormState, type PromotionTargetKind, persistMarketingCreate, promotionTargetSummary, readActiveServiceCities, readPendingPromotionCreate, readPromotionById } from "./marketing-workspace";
 
@@ -24,11 +25,6 @@ export function MarketingPromotionsWorkspace() {
   const [sort, setSort] = useState<"starts_desc" | "starts_asc">("starts_desc");
   const [discountKind, setDiscountKind] = useState("all");
   const [fundingFilter, setFundingFilter] = useState("all");
-  const pageFiltered = discountKind !== "all" || fundingFilter !== "all";
-  const visiblePromotions = (registry?.promotions ?? []).filter((item) =>
-    (discountKind === "all" || item.kind === discountKind)
-    && (fundingFilter === "all" || item.fundingSource === fundingFilter)
-  );
   const [cursor, setCursor] = useState("");
   const [cursorStack, setCursorStack] = useState<ReadonlyArray<string>>([]);
   const [loading, setLoading] = useState(false);
@@ -67,6 +63,8 @@ export function MarketingPromotionsWorkspace() {
     const params = new URLSearchParams({ limit: "25", sort: query.sort ?? sort });
     if (query.search ?? appliedSearch) params.set("search", query.search ?? appliedSearch);
     if (query.state ?? state) params.set("state", query.state ?? state);
+    if (discountKind !== "all") params.set("discountKind", discountKind);
+    if (fundingFilter !== "all") params.set("fundingSource", fundingFilter);
     if (query.cursor ?? cursor) params.set("cursor", query.cursor ?? cursor);
     try {
       const response = await fetch(`/api/marketing/promotions?${params}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
@@ -82,7 +80,7 @@ export function MarketingPromotionsWorkspace() {
     } finally {
       if (sequence === registrySequence.current) setLoading(false);
     }
-  }, [appliedSearch, cursor, sort, state]);
+  }, [appliedSearch, cursor, sort, state, discountKind, fundingFilter]);
 
   useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل العروض.")); }, [load]);
   useReadOnReturn(() => load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل العروض.")), !loading && !busy && !pendingCreate && !attemptChecking);
@@ -284,6 +282,7 @@ export function MarketingPromotionsWorkspace() {
         if (promotionForm.fundingSource === "SHARED" && (!Number.isSafeInteger(fundingShare) || fundingShare < 1 || fundingShare > 99)) throw new Error("حدد حصة الشريك من التمويل المشترك بين 1 و99.");
         if (promotionForm.storeId && promotionForm.fundingSource !== "BTHWANI") throw new Error("لا يمكن تحميل متجر محدد تكلفة عرض ينشئه المشغل. أنشئ حملة عامة بموافقة الشركاء أو دع الشريك ينشئ عرض متجره.");
         if (budgetLimit !== null && (!Number.isSafeInteger(budgetLimit) || budgetLimit <= 0)) throw new Error("سقف مجموع الخصومات يجب أن يكون مبلغًا صحيحًا موجبًا.");
+        if (!promotionForm.storeId && budgetLimit === null) throw new Error("حدد سقفًا إجماليًا لخصومات حملة المنصة قبل المتابعة.");
         if (promotionForm.targetKind !== "NONE" && !promotionForm.targetId) throw new Error("اختر هدف العرض من السجل المعتمد.");
         const targets: NonNullable<CreatePromotionRequest["targets"]> = promotionForm.targetKind === "NONE" ? [] : [{ targetKind: promotionForm.targetKind, targetRef: promotionForm.targetId }];
         const input: CreatePromotionRequest = {
@@ -394,7 +393,7 @@ export function MarketingPromotionsWorkspace() {
       const positiveOrBlank = [promotionForm.kind === "PERCENTAGE" ? promotionForm.maxDiscountMinor : "", promotionForm.minOrderSubtotalMinor,
         promotionForm.redemptionLimit, promotionForm.discountBudgetLimitMinor]
         .every((v) => v === "" || (Number.isSafeInteger(Number(v)) && Number(v) > 0));
-      if (!positiveOrBlank || (promotionForm.fundingSource === "SHARED" && (!Number.isSafeInteger(share) || share < 1 || share > 99))) {
+      if (!positiveOrBlank || (!promotionForm.storeId && !promotionForm.discountBudgetLimitMinor.trim()) || (promotionForm.fundingSource === "SHARED" && (!Number.isSafeInteger(share) || share < 1 || share > 99))) {
         setWizardError("راجع حدود الخصم والميزانية وحصة التمويل؛ يجب أن تكون قيمًا صحيحة موجبة.");
         return;
       }
@@ -473,7 +472,7 @@ export function MarketingPromotionsWorkspace() {
           {promotionForm.fundingSource === "SHARED" ? <label className="field-label">حصة الشريك من التمويل (%)<input aria-label="حصة الشريك من التمويل" inputMode="numeric" type="number" min="1" max="99" disabled={formLocked} value={promotionForm.fundingSharePartnerPercent} onChange={(event) => setPromotionForm((current) => ({ ...current, fundingSharePartnerPercent: event.target.value }))} /></label> : null}
           <label className="field-label">الحد الأدنى للطلب (اختياري)<input aria-label="حد الطلب الأدنى" inputMode="numeric" type="number" min="1" placeholder="بالريال اليمني" disabled={formLocked} value={promotionForm.minOrderSubtotalMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, minOrderSubtotalMinor: event.target.value }))} /></label>
           <label className="field-label">عدد مرات الاستخدام (اختياري)<input aria-label="حد الاستخدام" inputMode="numeric" type="number" min="1" placeholder="اتركه بلا حد" disabled={formLocked} value={promotionForm.redemptionLimit} onChange={(event) => setPromotionForm((current) => ({ ...current, redemptionLimit: event.target.value }))} /></label>
-          <label className="field-label">سقف مجموع الخصومات (اختياري، ر.ي)<input aria-label="سقف مجموع خصومات الحملة" inputMode="numeric" type="number" min="1" placeholder="يتحقق الخادم من المبلغ عند الدفع" disabled={formLocked} value={promotionForm.discountBudgetLimitMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, discountBudgetLimitMinor: event.target.value }))} /></label>
+          <label className="field-label">{!promotionForm.storeId ? "سقف خصومات حملة المنصة (إلزامي، ر.ي)" : "سقف مجموع الخصومات (اختياري، ر.ي)"}<input aria-label="سقف مجموع خصومات الحملة" required={!promotionForm.storeId} inputMode="numeric" type="number" min="1" placeholder="يتحقق الخادم من المبلغ عند الدفع" disabled={formLocked} value={promotionForm.discountBudgetLimitMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, discountBudgetLimitMinor: event.target.value }))} /></label>
           <label className="field-label"><input type="checkbox" disabled={formLocked || Boolean(promotionForm.storeId) || promotionForm.fundingSource !== "BTHWANI"} checked={!promotionForm.storeId && (promotionForm.requiresPartnerOptIn || promotionForm.fundingSource !== "BTHWANI")} onChange={(event) => setPromotionForm((current) => ({ ...current, requiresPartnerOptIn: event.target.checked }))} /> {promotionForm.fundingSource !== "BTHWANI" && !promotionForm.storeId ? "موافقة كل شريك على تمويل الخصم إلزامية قبل المشاركة" : "تتطلب الحملة موافقة الشريك قبل المشاركة"}</label>
           <p className="marketing-flow-note">تمويل الشريك أو التمويل المشترك يحتاج موافقته الصريحة قبل مشاركته. لا يؤثر الخصم في مستحق الكابتن.</p>
         </div> : null}
@@ -508,15 +507,15 @@ export function MarketingPromotionsWorkspace() {
           <label className="field-label" htmlFor="promotion-state">الحالة<select id="promotion-state" value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option><option value="ENDED">منتهٍ</option></select></label>
           <label className="field-label" htmlFor="promotion-sort">ترتيب البداية<select id="promotion-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="starts_desc">الأحدث بداية</option><option value="starts_asc">الأقدم بداية</option></select></label>
           <details className="marketing-registry-extra-filters">
-            <summary>تصفية إضافية للصفحة الحالية</summary>
+            <summary>تصفية إضافية لجميع العروض</summary>
             <div className="marketing-registry-extra-controls">
-              <label className="field-label">نوع الخصم في الصفحة
-                <select value={discountKind} onChange={(event) => setDiscountKind(event.target.value)}>
+              <label className="field-label">نوع الخصم
+                <select value={discountKind} onChange={(event) => { setDiscountKind(event.target.value); setCursor(""); setCursorStack([]); }}>
                   <option value="all">كل الأنواع</option><option value="PERCENTAGE">نسبة مئوية</option><option value="FIXED">مبلغ ثابت</option>
                 </select>
               </label>
-              <label className="field-label">مصدر التمويل في الصفحة
-                <select value={fundingFilter} onChange={(event) => setFundingFilter(event.target.value)}>
+              <label className="field-label">مصدر التمويل
+                <select value={fundingFilter} onChange={(event) => { setFundingFilter(event.target.value); setCursor(""); setCursorStack([]); }}>
                   <option value="all">الجميع</option><option value="SHARED">مشترك</option><option value="BTHWANI">بثواني</option><option value="PARTNER">الشريك</option>
                 </select>
               </label>
@@ -524,7 +523,6 @@ export function MarketingPromotionsWorkspace() {
           </details>
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
         </form>
-        {registry && pageFiltered ? <p className="access-center-scope">معروض من الصفحة: {visiblePromotions.length} من {registry.promotions.length} عرضًا. مرشحات القيمة والتمويل تخص الصفحة الحالية.</p> : null}
         {registry?.promotions.length ? <div className="table-wrap"><table className="data-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr>
           <th scope="col">العرض</th>
           <th scope="col">الرمز</th>
@@ -533,9 +531,12 @@ export function MarketingPromotionsWorkspace() {
           <th scope="col">الحالة</th>
           <th scope="col">البداية</th>
           <th scope="col">الإجراء</th>
-        </tr></thead><tbody>{visiblePromotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}</th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? item.valueMinor + "%" : formatMoney(item.valueMinor, "YER")}</td><td>{item.fundingSource === "SHARED" ? "مشترك · حصة الشريك " + (item.fundingSharePartnerPercent ?? 0) + "%" : item.fundingSource === "BTHWANI" ? "بثواني" : "الشريك"}<br />{item.storeId ? "متجر محدد" : item.serviceCityId ? "حملة مدينة" : "حملة منصة"}{item.requiresPartnerOptIn ? " · تتطلب موافقة" : ""}<br />{promotionTargetSummary(item)}{item.minOrderSubtotalMinor ? <><br />حد الطلب {formatMoney(item.minOrderSubtotalMinor, "YER")}</> : null}{item.discountBudgetLimitMinor ? <><br />سقف الخصومات: {formatMoney(item.discountBudgetLimitMinor, "YER")} · مستخدم: {formatMoney(item.discountSpentMinor ?? 0, "YER")}</> : null}</td><td><MarketingStateIndicator state={item.state} /></td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className="action-row">{item.state === "ENDED" ? <span className="muted">لا إجراء</span> : <button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button>}{item.state === "PUBLISHED" ? <Link className="button button-quiet" href={`/marketing/content?promotionId=${encodeURIComponent(item.id)}`}>إنشاء بنر للعرض</Link> : null}{canReadFinance ? <MarketingPromotionSettlementReadback promotionId={item.id} /> : null}</div></td></tr>)}{visiblePromotions.length === 0 ? <tr><td colSpan={7}>لا توجد عروض مطابقة في الصفحة الحالية.</td></tr> : null}</tbody></table></div> : null}
+        </tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}</th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? item.valueMinor + "%" : formatMoney(item.valueMinor, "YER")}</td><td>{item.fundingSource === "SHARED" ? "مشترك · حصة الشريك " + (item.fundingSharePartnerPercent ?? 0) + "%" : item.fundingSource === "BTHWANI" ? "بثواني" : "الشريك"}<br />{item.storeId ? "متجر محدد" : item.serviceCityId ? "حملة مدينة" : "حملة منصة"}{item.requiresPartnerOptIn ? " · تتطلب موافقة" : ""}<br />{promotionTargetSummary(item)}{item.minOrderSubtotalMinor ? <><br />حد الطلب {formatMoney(item.minOrderSubtotalMinor, "YER")}</> : null}{item.discountBudgetLimitMinor ? <><br />سقف الخصومات: {formatMoney(item.discountBudgetLimitMinor, "YER")} · مستخدم: {formatMoney(item.discountSpentMinor ?? 0, "YER")}</> : null}</td><td><MarketingStateIndicator state={item.state} /></td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className="action-row">{item.state === "ENDED" ? <span className="muted">لا إجراء</span> : <button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button>}{item.state === "PUBLISHED" ? <Link className="button button-quiet" href={`/marketing/content?promotionId=${encodeURIComponent(item.id)}`}>إنشاء بنر للعرض</Link> : null}{canReadFinance ? <MarketingPromotionSettlementReadback promotionId={item.id} /> : null}{item.requiresPartnerOptIn ? <MarketingPartnerDecisions promotionId={item.id} /> : null}</div></td></tr>)}{registry.promotions.length === 0 ? <tr><td colSpan={7}>لا توجد عروض مطابقة في الصفحة الحالية.</td></tr> : null}</tbody></table></div> : null}
         {!registry?.promotions.length && loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة العروض…</p> : null}
-        {registry && !registry.promotions.length && !loading && !registryError ? <p className="collection-state">لا توجد عروض مطابقة.</p> : null}
+        {registry && !registry.promotions.length && !loading && !registryError ? <div className="collection-state">
+          <p>{appliedSearch || state || discountKind !== "all" || fundingFilter !== "all" || cursorStack.length ? "لا توجد عروض مطابقة للتصفية الحالية." : "لا توجد عروض خصم محفوظة بعد. أنشئ عرضًا وحدد المتجر والتمويل ثم انشره؛ لا تظهر المسودة للعملاء."}</p>
+          {!appliedSearch && !state && discountKind === "all" && fundingFilter === "all" && !cursorStack.length ? <button className="button button-secondary" type="button" onClick={startPromotionEditor}>إنشاء أول عرض</button> : null}
+        </div> : null}
         <nav className="pagination" aria-label="صفحات سجل العروض"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
       </section> : null}
     </div>

@@ -145,7 +145,7 @@ func RecordPartnerStoreCashCommission(ctx context.Context, db *sql.DB, input Par
 	if err != nil {
 		return PartnerStoreCashCommissionRecord{}, false, err
 	}
-	if paymentState != domain.StateCollected || method != domain.MethodCashAtStore || paymentAmount != allocation.CashAmountMinor || (allocation.CashAmountMinor > 0 && (!collectedBy.Valid || collectedBy.String != input.PartnerActorID)) || (allocation.CashAmountMinor == 0 && collectedBy.Valid) || allocation.OrderID != input.OrderID || allocation.Currency != currency || allocation.DeliveryFeeMinor != 0 || allocation.CashAmountMinor+allocation.InternalBalanceAmountMinor != allocation.CustomerPayableMinor || allocation.CustomerPayableMinor != allocation.SubtotalMinor-allocation.DiscountMinor || allocation.PartnerActorID != input.PartnerActorID || allocation.FulfillmentMode != input.FulfillmentMode {
+	if paymentState != domain.StateCollected || method != domain.MethodCashAtStore || paymentAmount != allocation.CashAmountMinor || (allocation.CashAmountMinor > 0 && (!collectedBy.Valid || collectedBy.String != input.PartnerActorID)) || (allocation.CashAmountMinor == 0 && collectedBy.Valid) || allocation.OrderID != input.OrderID || allocation.Currency != currency || (input.FulfillmentMode == "CUSTOMER_PICKUP" && allocation.DeliveryFeeMinor != 0) || allocation.CashAmountMinor+allocation.InternalBalanceAmountMinor != allocation.CustomerPayableMinor || allocation.CustomerPayableMinor != allocation.SubtotalMinor+allocation.DeliveryFeeMinor-allocation.DiscountMinor || allocation.PartnerActorID != input.PartnerActorID || allocation.FulfillmentMode != input.FulfillmentMode {
 		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerCashCommissionState
 	}
 	if allocation.CommissionSnapshot == nil {

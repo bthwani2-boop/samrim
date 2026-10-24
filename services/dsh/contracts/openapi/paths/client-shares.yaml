@@ -1,0 +1,116 @@
+paths:
+  /dsh/client-shares:
+    post:
+      operationId: sendClientShare
+      summary: Send a single preset-message content share between authenticated customers
+      security:
+        - userBearer: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recipientPhoneE164, contentKind, contentId, messageCode]
+              properties:
+                recipientPhoneE164: { type: string, minLength: 9, maxLength: 20 }
+                contentKind: { type: string, enum: [STORE, OFFER, PROMOTION, CONTENT] }
+                contentId: { type: string, minLength: 1, maxLength: 128 }
+                messageCode: { type: string, enum: [LOOK, LIKE, OFFER, TRY] }
+      responses:
+        "202":
+          description: Generic acceptance; does not reveal if the recipient exists or has blocked the sender.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted: { type: boolean }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "429": { description: Sharing rate limit reached }
+    get:
+      operationId: listClientShares
+      summary: Read private content shares for the authenticated customer only
+      security:
+        - userBearer: []
+      parameters:
+        - name: before
+          in: query
+          required: false
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Actor-scoped bounded share inbox, including unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, unreadCount, nextBefore]
+                properties:
+                  unreadCount: { type: integer, minimum: 0 }
+                  nextBefore: { type: integer, format: int64, minimum: 0 }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, senderActorId, contentKind, contentId, contentTitle, storeId, productId, messageCode, createdAt, readAt]
+                      properties:
+                        id: { type: integer, format: int64 }
+                        senderActorId: { type: string }
+                        contentKind: { type: string, enum: [STORE, OFFER, PROMOTION, CONTENT] }
+                        contentId: { type: string }
+                        contentTitle: { type: string }
+                        storeId: { type: string }
+                        productId: { type: string }
+                        messageCode: { type: string, enum: [LOOK, LIKE, OFFER, TRY] }
+                        createdAt: { type: string, format: date-time }
+                        readAt: { type: string, format: date-time, nullable: true }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+  /dsh/client-shares/{shareId}/read:
+    post:
+      operationId: markClientShareRead
+      summary: Mark one own share read (not the sender's)
+      security:
+        - userBearer: []
+      parameters:
+        - name: shareId
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200": { description: Read state confirmed }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+  /dsh/client-shares/senders/{senderId}/block:
+    post:
+      operationId: blockClientShareSender
+      summary: Block new shares from a previous sender
+      security:
+        - userBearer: []
+      parameters:
+        - name: senderId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200": { description: Sender blocked without exposing other customer information }
+    delete:
+      operationId: unblockClientShareSender
+      summary: Remove a private share sender block
+      security:
+        - userBearer: []
+      parameters:
+        - name: senderId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200": { description: Block removed }

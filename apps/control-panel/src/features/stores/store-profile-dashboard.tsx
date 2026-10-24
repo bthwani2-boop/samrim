@@ -17,6 +17,7 @@ import { StoreOperationsPreview } from "./store-operations-preview";
 import { StoreProfileTabs } from "./store-profile-tabs";
 
 type Store = StorePublicationResponse["store"];
+type OperationalReadback = { availability: { storeId: string }; orderabilityByMode: ReadonlyArray<{ state: string }> };
 type ProfileProps = Readonly<{
   store: Store;
   partner: Readonly<{ partner: ActorRoleView; joiningCase: JoiningCaseView | null }> | null;
@@ -30,12 +31,8 @@ type ProfileProps = Readonly<{
 }>;
 
 const profileTabIcons: Record<string, OperationalIconName> = {
-  overview: "home", basics: "storeDelivery", orders: "operations", products: "catalog",
-  promotions: "marketing", branches: "field", coverage: "map", hours: "pending",
-  customers: "partners", quality: "review", ratings: "active", documents: "access",
-  history: "review", finance: "finance",
+  overview: "home", operations: "operations", catalog: "catalog", identity: "storeDelivery", quality: "review", documents: "access", finance: "finance",
 };
-
 function profileDate(value: string) {
   return new Intl.DateTimeFormat("ar-YE", { dateStyle: "medium" }).format(new Date(value));
 }
@@ -67,6 +64,7 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
 
   const [activeTab, setActiveTab] = useState("overview");
   const [orderSummary, setOrderSummary] = useState<OperatorOperationsSummary | null>(null);
+  const [operationalReadback, setOperationalReadback] = useState<OperationalReadback | "unavailable" | null>(null);
   const [imageRole, setImageRole] = useState<"primary" | "cover" | null>(null);
   const [imageNotice, setImageNotice] = useState("");
   const imageDialog = useRef<HTMLDialogElement>(null);
@@ -81,23 +79,47 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
       imageTrigger.current?.focus();
     }
   }, [imageRole]);
+  useEffect(() => {
+    if (!canViewOperations) return;
+    let active = true;
+    setOperationalReadback(null);
+    const check = () => {
+      void fetch("/api/stores/" + encodeURIComponent(store.id) + "/operational-availability", { cache: "no-store" })
+        .then(async (response) => {
+          if (!response.ok) throw new Error("Operational availability unavailable");
+          const value = await response.json() as OperationalReadback;
+          if (value.availability?.storeId !== store.id || !Array.isArray(value.orderabilityByMode)) throw new Error("Invalid store readback");
+          if (active) setOperationalReadback(value);
+        })
+        .catch(() => { if (active) setOperationalReadback("unavailable"); });
+    };
+    check();
+    const timer = window.setInterval(check, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [canViewOperations, store.id]);
+  const visibleModes = operationalReadback && operationalReadback !== "unavailable" ? operationalReadback.orderabilityByMode : [];
+  const openModeCount = visibleModes.filter((mode) => mode.state === "OPEN_FOR_ORDERS").length;
+  const operationalLabel = store.publicationState !== "published" ? "غير منشور"
+    : operationalReadback === "unavailable" ? "حالة التشغيل غير متاحة"
+    : !operationalReadback ? "التحقق من التشغيل…"
+    : openModeCount === 0 ? "مغلق"
+    : openModeCount < visibleModes.length ? "مفتوح جزئيًا" : "مفتوح";
   const recordView = useAdaptiveRecordView();
-  const openEditor = () => { setActiveTab("basics"); openManagement(); };
+  const openEditor = () => { setActiveTab("identity"); openManagement(); };
   const selectTab = (tab: string) => {
-    setActiveTab(tab);
-    if (tab === "basics") openManagement();
-    if (tab !== "overview") recordView?.expandForEditing();
+    const group = ({ orders: "operations", hours: "operations", products: "catalog", promotions: "catalog",
+      basics: "identity", branches: "identity", coverage: "identity", customers: "quality",
+      ratings: "quality", history: "documents" } as Record<string, string>)[tab] ?? tab;
+    setActiveTab(group);
+    if (group !== "overview") recordView?.expandForEditing();
     document.querySelector(".adaptive-record-sheet .workspace-side-drawer-scroll")?.scrollTo({ top: 0, behavior: "smooth" });
   };
   const tabs: ReadonlyArray<readonly [string, string]> = [
-    ["overview", "نظرة عامة"], ["basics", "البيانات الأساسية"], ["orders", "الطلبات"],
-    ["products", "الكتالوج والمنتجات"], ["promotions", "العروض"], ["branches", "الفروع"],
-    ["coverage", "مناطق الخدمة"], ["hours", "أوقات العمل"], ["customers", "العملاء"],
-    ["quality", "المراجعة والجودة"], ["ratings", "التقييمات"],
-    ["documents", "الوثائق والاعتمادات"], ["history", "السجل والإجراءات"],
+    ["overview", "نظرة عامة"], ["operations", "التشغيل والطلبات"],
+    ["catalog", "المنتجات والعروض"], ["identity", "بيانات المتجر"],
+    ["quality", "العملاء والجودة"], ["documents", "الوثائق والسجل"],
     ...(canViewFinance ? [["finance", "المالية"] as const] : []),
   ];
-
   return <div className="store-profile" data-managing={manageOpen}>
     <section className="store-profile-hero store-sheet-hero" aria-label="هوية المتجر">
       <div className="store-profile-hero-main">
@@ -110,7 +132,7 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
             <span className="store-profile-eyebrow">ملف المتجر · الشركاء والمتاجر</span>
             <h2>{store.name}</h2>
             <p>{[store.primaryVerticalName, store.serviceCityName].filter(Boolean).join(" · ") || "سجل متجر"}</p>
-            <div className="store-profile-identity-meta"><span className="store-sheet-state" data-status={store.publicationState}>{publication} <PublicationIndicator state={store.publicationState} /></span></div>
+            <div className="store-profile-identity-meta"><span className="store-sheet-state" data-status={store.publicationState}>{publication} <PublicationIndicator state={store.publicationState} /></span>{canViewOperations ? <button type="button" className="store-profile-operating-state" data-state={openModeCount > 0 && store.publicationState === "published" ? "open" : "closed"} onClick={() => selectTab("operations")} aria-label={"حالة استقبال الطلبات: " + operationalLabel + "، فتح التشغيل"}>{operationalLabel}</button> : null}</div>
           </div>
         </div>
         <div className="store-profile-hero-info">
@@ -133,98 +155,49 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
     </dialog>, document.body) : null}
 
     {imageNotice ? <output className="store-profile-image-notice">{imageNotice}</output> : null}
-    <RecordTabs id="store-profile" ariaLabel="تبويبات ملف المتجر" className="store-profile-sections"
-      tabs={tabs.map(([key, label]) => ({ key, label: <><OperationalIcon name={profileTabIcons[key] ?? "review"}/>{label}</> }))}
-      active={activeTab} onSelect={selectTab}/>
+    <div className="store-profile-navigation" data-has-finance={canViewFinance}>
+      <RecordTabs id="store-profile" ariaLabel="أقسام ملف المتجر" className="store-profile-sections"
+        tabs={tabs.map(([key, label]) => ({ key, label: <><OperationalIcon name={profileTabIcons[key] ?? "review"}/>{label}</> }))}
+        active={activeTab} onSelect={selectTab}/>
+    </div>
 
     <section id="store-profile-panel-overview" role="tabpanel" aria-labelledby="store-profile-tab-overview" hidden={activeTab !== "overview"} className="store-profile-overview">
-    {canViewOperations ? <section id="store-profile-overview" className="store-profile-kpis" aria-label="مؤشرات طلبات المتجر المعتمدة">
-      <div className="store-profile-kpi"><span className="store-profile-kpi-icon" data-tone="neutral" aria-hidden="true">▤</span><div><span>إجمالي الطلبات</span><strong>{orderSummary?.totalCount ?? "—"}</strong><small>كل طلبات المتجر</small></div></div>
-      <div className="store-profile-kpi"><span className="store-profile-kpi-icon" data-tone="warning" aria-hidden="true">!</span><div><span>تحتاج متابعة</span><strong>{orderSummary?.actionableCount ?? "—"}</strong><small>طلبات تستدعي تدخلًا</small></div></div>
-      <div className="store-profile-kpi"><span className="store-profile-kpi-icon" data-tone="warning" aria-hidden="true">▣</span><div><span>بانتظار كابتن</span><strong>{orderSummary?.awaitingDispatchCount ?? "—"}</strong><small>قبل الإسناد</small></div></div>
-      <div className="store-profile-kpi"><span className="store-profile-kpi-icon" data-tone="success" aria-hidden="true">▥</span><div><span>قيد التنفيذ</span><strong>{orderSummary?.activeCount ?? "—"}</strong><small>حالات جارية</small></div></div>
-      <div className="store-profile-kpi"><span className="store-profile-kpi-icon" data-tone="success" aria-hidden="true">✓</span><div><span>تم التسليم</span><strong>{orderSummary?.deliveredCount ?? "—"}</strong><small>ضمن جميع الطلبات</small></div></div>
+    {canViewOperations ? <section id="store-profile-overview" className="store-profile-kpis" aria-label="مؤشرات طلبات المتجر">
+      <div className="store-profile-kpi"><div><span>طلبات تحتاج متابعة</span><strong>{orderSummary?.actionableCount ?? "—"}</strong></div></div>
+      <div className="store-profile-kpi"><div><span>بانتظار الإسناد</span><strong>{orderSummary?.awaitingDispatchCount ?? "—"}</strong></div></div>
+      <div className="store-profile-kpi"><div><span>الطلبات النشطة</span><strong>{orderSummary?.activeCount ?? "—"}</strong></div></div>
     </section> : null}
 
-    <section className="store-profile-alert" data-ready={ready} aria-label="رحلة انضمام ونشر المتجر" id="store-onboarding-readiness">
+    <section className="store-profile-alert" data-ready={ready} aria-label="جاهزية نشر المتجر" id="store-onboarding-readiness">
       <div>
-        <strong>رحلة المتجر — {store.publicationState === "published" ? "منشور للعملاء" : ready ? "جاهز للنشر" : "قيد التجهيز"}</strong>
-        <ol className="store-profile-blockers">
-          <li>تسجيل واعتماد المتجر: مكتمل.</li>
-          <li>تجهيز الهوية والاتفاقية والكتالوج: {ready ? "مكتمل." : "قيد الاستكمال."}</li>
-          <li>النشر للعميل: {store.publicationState === "published" ? "مكتمل." : "لم يكتمل بعد."}</li>
-        </ol>
-        {store.publicationState === "published" ? <p>المتجر منشور. تحقق أيضًا من أوقات العمل والتوفر الفعلي لاستقبال الطلبات؛ النشر وحده لا يعني أن المتجر مفتوح الآن.</p> : ready ? <p>اكتملت شروط الجاهزية. يمكن للمشغّل الآن استخدام زر «نشر المتجر» أعلى هذا الملف.</p> : <>
-          <p>المطلوب الآن — كل إجراء لدى صاحبه، ويمكن إكمال الصور والمنتجات بالتوازي مع الاتفاقية:</p>
-          <ul className="store-profile-blockers">
-            {blockers.map((reason) => <li key={reason}>
-              <span>{publicationReadinessBlockedReasonLabel(reason)}</span>
-              {reason === "PARTNER_IDENTITY_NOT_ELIGIBLE" ?
-                <Link className="button button-quiet" href={"/partners/actors/" + encodeURIComponent(store.partnerActorId)}>حساب الشريك</Link> :
-              reason === "COMMERCIAL_AGREEMENT_NOT_READY" ?
-                (canViewFinance ? <Link className="button button-quiet" href="/finance/partner-store-commissions">مراجعة الاتفاقية في المالية</Link> : <span>بانتظار الشريك والمالية</span>) :
-              reason === "STORE_LOGO_NOT_READY" || reason === "STORE_COVER_NOT_READY" ?
-                <button className="button button-quiet" type="button" onClick={() => setImageRole(reason === "STORE_LOGO_NOT_READY" ? "primary" : "cover")}>إضافة الصورة</button> :
-                <button className="button button-quiet" type="button" onClick={() => {
-                  if (reason === "CATALOG_NOT_READY") selectTab("products");
-                  else if (reason === "STORE_SCHEDULE_NOT_READY") selectTab("hours");
-                  else if (reason === "FINANCIAL_PROFILE_NOT_READY") selectTab(canViewFinance ? "finance" : "documents");
-                  else selectTab("basics");
-                }}>معالجة النقص</button>}
-            </li>)}
-          </ul>
-          {blockers.includes("COMMERCIAL_AGREEMENT_NOT_READY") && canViewFinance ? <p>في صفحة المالية اختر اتفاقية هذا المتجر. لا يُنفذ الاعتماد إلا بعد قبول مالك المتجر لشروطها.</p> : null}
-        </>}
+        <strong>{ready ? "متطلبات النشر مكتملة" : "متطلبات نشر تحتاج متابعة"}</strong>
+        <p>حالة النشر: {publication}. {ready ? "تُحدد إمكانية استقبال الطلبات بصورة مستقلة وفق حالة التشغيل." : "العوائق: " + (blockers.length || 1)}</p>
       </div>
+      {!ready && blockers.length ? <details className="store-profile-readiness-detail">
+        <summary>عرض أسباب عدم الجاهزية</summary>
+        <ul>{blockers.map((reason) => <li key={reason}>{publicationReadinessBlockedReasonLabel(reason)}</li>)}</ul>
+      </details> : null}
     </section>
 
     <div className="store-profile-content store-sheet-dashboard">
-      <div id="store-profile-information" className="store-profile-information"><ProfileCard title="معلومات المتجر والشريك" icon="♙">
+      <div className="store-profile-information"><ProfileCard title="بيانات المتجر" icon="⌂">
         <dl className="store-profile-facts">
-          <Fact label="الشريك المالك"><Link href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}>{store.partnerName || caseView?.ownerFullName || "حساب مرتبط"}</Link></Fact>
-          {account?.phoneE164 ? <Fact label="رقم التواصل"><a href={`tel:${account.phoneE164}`}><bdi dir="ltr">{account.phoneE164}</bdi></a></Fact> : null}
+          <Fact label="المالك"><Link href={"/partners/actors/" + encodeURIComponent(store.partnerActorId)}>{store.partnerName || caseView?.ownerFullName || "ملف الشريك"}</Link></Fact>
           <Fact label="المدينة">{store.serviceCityName || "غير محددة"}</Fact>
           <Fact label="النشاط">{store.primaryVerticalName || "غير محدد"}</Fact>
-          <Fact label="نوع المتجر">{store.commercialStoreTypeId ? "محدد في سياسة المتجر" : "غير محدد"}</Fact>
         </dl>
         {partnerError ? <p className="store-profile-minor-error">{partnerError}</p> : null}
       </ProfileCard></div>
-
-      <div id="store-profile-delivery" className="store-profile-delivery"><ProfileCard title="حالة المتجر والتوصيل" icon="◉">
-        <StoreModeControls store={store} onUpdated={onUpdated} />
-      </ProfileCard></div>
-
-      {caseView ? <div id="store-profile-joining" className="store-profile-joining"><ProfileCard title="الانضمام والمراجعة" icon="▤">
-        {caseView ? <dl className="store-profile-facts">
-          <Fact label="طلب الانضمام">{caseView.businessName}</Fact>
-          <Fact label="حالة الانضمام">{joiningCaseStateLabel(caseView.state)}</Fact>
-        </dl> : <MissingData message={partnerError ? "تعذرت قراءة طلب الانضمام المرتبط." : "لا يظهر طلب انضمام مرتبط في القراءة الحالية."} />}
+      {canViewOperations ? <div className="store-profile-readiness"><ProfileCard title="طلبات المتجر" icon="▤">
+        <StoreOperationsPreview storeId={store.id} compact onSummary={setOrderSummary} />
       </ProfileCard></div> : null}
-
-      <div className="store-profile-readiness"><ProfileCard title="الطلبات النشطة" icon="▥">
-        {canViewOperations ? <StoreOperationsPreview storeId={store.id} compact onSummary={setOrderSummary} />
-          : <MissingData message="قراءة طلبات المتجر محصورة بالمشغّل المخوّل بصلاحية العمليات." />}
+      <div className="store-profile-access"><ProfileCard title="حالة حساب الشريك" icon="○">
+        <div className="store-profile-state-row"><span>حساب المالك</span><strong>{accountState}</strong></div>
+        <Link className="store-profile-action-link" href={"/partners/actors/" + encodeURIComponent(store.partnerActorId)}>فتح ملف الشريك ←</Link>
       </ProfileCard></div>
-
-      <div className="store-profile-products"><ProfileCard title="منتجات المتجر وعروضه" icon="▣"><StoreOffersPreview storeId={store.id} /></ProfileCard></div>
-
-      <div className="store-profile-access"><ProfileCard title="الوصول والصلاحيات" icon="♧">
-        <div className="store-profile-state-row"><span>حالة حساب الشريك</span><strong>{accountState}</strong></div>
-        <div className="store-profile-state-row"><span>حالة التفعيل</span><strong>{!account ? "غير متاحة" : account.activatedAt ? "مفعّل" : "بانتظار التفعيل"}</strong></div>
-        <p className="store-profile-muted">الصلاحيات التفصيلية تُقرأ من مالكها لدى Identity؛ لا يمنح هذا الملف أي وصول جديد.</p>
-      </ProfileCard></div>
-
-      {store.deliveryOrigin ? <div className="store-profile-map"><ProfileCard title="موقع المتجر" icon="⌖">
-        <dl className="store-profile-map-coordinates">
-          <div><dt>خط العرض</dt><dd><bdi dir="ltr">{store.deliveryOrigin.latitude}</bdi></dd></div>
-          <div><dt>خط الطول</dt><dd><bdi dir="ltr">{store.deliveryOrigin.longitude}</bdi></dd></div>
-        </dl>
-        <a href={`https://www.google.com/maps?q=${store.deliveryOrigin.latitude},${store.deliveryOrigin.longitude}`} target="_blank" rel="noopener noreferrer" className="store-profile-action-link">عرض موقع المتجر على الخريطة ↗</a>
-      </ProfileCard></div> : null}
-
     </div>
     </section>
     <StoreProfileTabs activeTab={activeTab} store={store} partner={partner} partnerError={partnerError}
-      canViewFinance={canViewFinance} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openEditor} management={management} />
+      canViewFinance={canViewFinance} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openEditor} management={management} onUpdated={onUpdated} onSelectTab={selectTab} />
   </div>;
 }

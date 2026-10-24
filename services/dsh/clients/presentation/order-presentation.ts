@@ -40,7 +40,7 @@ export function defaultCustomerFulfillmentMode(modes: ReadonlyArray<FulfillmentM
 }
 
 export function fulfillmentModeLabel(mode: FulfillmentMode): string {
-  if (mode === "CUSTOMER_PICKUP") return "استلم بنفسك من المتجر";
+  if (mode === "CUSTOMER_PICKUP") return "استلم بنفسك";
   if (mode === "BTHWANI_CAPTAIN") return "توصيل بثواني";
   return "توصيل المتجر";
 }

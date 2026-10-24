@@ -20,7 +20,7 @@ export function parsePercentToBps(value: string): number | null {
 export function sameAgreementRates(left: StoreCommercialAgreement["rates"], right: StoreCommercialAgreement["rates"]): boolean {
   const normalize = (rates: StoreCommercialAgreement["rates"]) => [...rates]
     .sort((a, b) => a.fulfillmentMode.localeCompare(b.fulfillmentMode))
-    .map((rate) => `${rate.fulfillmentMode}:${rate.commissionRateBps}`)
+    .map((rate) => `${rate.fulfillmentMode}:${rate.commissionRateBps}:${rate.deliveryMarkupMinor ?? 0}:${rate.deliveryPricingMode ?? "DISTANCE"}:${rate.deliveryFixedFeeMinor ?? 0}`)
     .join("|");
   return normalize(left) === normalize(right);
 }

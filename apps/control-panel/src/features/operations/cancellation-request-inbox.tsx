@@ -5,7 +5,7 @@ type PendingCancellation = Readonly<{
   id:string; orderId:string; clientActorId:string; reason:string;
   state:"PENDING"|"APPROVED"|"DECLINED"; createdAt:string;
 }>;
-export function CancellationRequestInbox({onOpenOrder, refreshVersion}:Readonly<{onOpenOrder:(id:string)=>void; refreshVersion:number}>) {
+export function CancellationRequestInbox({onOpenOrder, refreshVersion, active=true}:Readonly<{onOpenOrder:(id:string)=>void; refreshVersion:number; active?:boolean}>) {
   const [items,setItems]=useState<readonly PendingCancellation[]>([]);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -23,11 +23,12 @@ export function CancellationRequestInbox({onOpenOrder, refreshVersion}:Readonly<
     }catch(cause){setError(cause instanceof Error?cause.message:"تعذر عرض طلبات الإلغاء");setItems([])}
     finally {setLoading(false)}
   },[]);
-  useEffect(() => { if (refreshVersion >= 0) void load(); }, [load, refreshVersion]);
+  useEffect(() => { if (active && refreshVersion >= 0) void load(); }, [load, refreshVersion, active]);
   useEffect(() => {
+    if (!active) return;
     const timer = window.setInterval(() => { if (!document.hidden && !busy) void load(); }, 60_000);
     return () => window.clearInterval(timer);
-  }, [load, busy]);
+  }, [load, busy, active]);
   async function decline(id:string) {
     if(busy||Array.from(reason.trim()).length<12)return;
     setBusy(true);setError("");
@@ -40,7 +41,7 @@ export function CancellationRequestInbox({onOpenOrder, refreshVersion}:Readonly<
     }catch(cause){setError(cause instanceof Error?cause.message:"تعذّر تنفيذ القرار")}
     finally{setBusy(false)}
   }
-  if (!loading && !error && items.length === 0) return null;
+
   return <section aria-labelledby="ops-cancellation-inbox-title" className="order-detail-panel">
     <div className="action-row">
       <h2 id="ops-cancellation-inbox-title">طلبات الإلغاء من العملاء ({items.length})</h2>

@@ -2,7 +2,7 @@ import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native
 import { type CashLiabilityItem, formatMoney } from "@bthwani/dsh";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Text, TextInput, View } from "react-native";
+import { Pressable, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
 import { createCaptainOperationStyles } from "../captain-operations/captain-operation-styles";
@@ -15,6 +15,7 @@ export function CaptainCashLiabilityPanel() {
   const [liability, setLiability] = useState<{ items: ReadonlyArray<CashLiabilityItem>; totalAmountMinor: number } | null>(null);
   const [references, setReferences] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState("");
+  const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -65,9 +66,16 @@ export function CaptainCashLiabilityPanel() {
   if (!liability?.items.length && !error) return null;
 
   return <View style={styles.summaryCard} accessibilityLabel="عهدة الكابتن المالية">
-    <Text style={styles.cardTitle}>العهدة النقدية</Text>
-    {liability ? <Text style={styles.warning}>المبلغ المفتوح: {formatMoney(liability.totalAmountMinor, "YER")}</Text> : null}
-    {liability?.items.map((item) => {
+    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+      <Text style={styles.cardTitle}>العهدة النقدية</Text>
+      {liability ? <Text style={styles.warning}>{formatMoney(liability.totalAmountMinor, "YER")}</Text> : null}
+    </View>
+    {liability?.items.length ? <Pressable accessibilityRole="button"
+      accessibilityState={{ expanded }} onPress={() => setExpanded((value) => !value)}
+      style={{ minHeight: 44, justifyContent: "center", alignItems: "center" }}>
+      <Text style={styles.muted}>{expanded ? "إخفاء التفاصيل −" : "تفاصيل التوريد +"}</Text>
+    </Pressable> : null}
+    {expanded ? liability?.items.map((item) => {
       const reference = references[item.paymentIntentId] ?? item.remittanceReference ?? "";
       return <View key={item.paymentIntentId} style={styles.task}>
         <Text style={styles.muted}>مستحق توريد: {formatMoney(item.amountMinor, item.currency)}</Text>
@@ -78,8 +86,9 @@ export function CaptainCashLiabilityPanel() {
         <BthwaniButton label="إرسال المرجع للمالية" busy={busy === item.paymentIntentId}
           disabled={Boolean(busy) || !reference.trim()} onPress={() => void remit(item)} />
       </View>;
-    })}
+    }) : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    <BthwaniButton label="تحديث العهدة" disabled={Boolean(busy)} variant="secondary" onPress={() => void load()} />
+    {expanded || error ? <BthwaniButton label="تحديث العهدة" disabled={Boolean(busy)}
+      variant="secondary" onPress={() => void load()} /> : null}
   </View>;
 }

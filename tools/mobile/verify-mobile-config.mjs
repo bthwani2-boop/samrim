@@ -86,6 +86,25 @@ for (const retired of [
   }
 }
 
+// expo-notifications embeds each sound as an Android raw resource during prebuild.
+ // Reject a platform-invalid name before submitting a remote EAS build.
+ for (const app of ["app-client","app-partner","app-captain"]) {
+   const soundsRoot=path.join(appsRoot,app,"assets","sounds");
+   const files=fs.readdirSync(soundsRoot);
+   for (const name of files) {
+     if (!/^[a-z][a-z0-9_]*\.(?:wav|mp3|ogg)$/.test(name)) {
+       console.error(app+": Android notification sound has an invalid resource name: "+name);
+       process.exit(1);
+     }
+   }
+   for (const tone of ["classic","soft","urgent"]) {
+     if (!files.includes("order_"+tone+".wav")) {
+       console.error(app+": Missing Android notification sound: order_"+tone+".wav");
+       process.exit(1);
+     }
+   }
+ }
+
 const env = parseEnv(fs.readFileSync(envExamplePath, "utf8"));
 const rootPackage = JSON.parse(fs.readFileSync(rootPackagePath, "utf8"));
 const seen = {
@@ -229,6 +248,21 @@ for (const app of apps) {
     }
     if (path.basename(cacheRoot) !== app) {
       console.error(`${app}: Metro cache root is not app-scoped: ${cacheRoot}`);
+      failed = true;
+    }
+    const packageInfo = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+    const dependencies = { ...packageInfo.dependencies, ...packageInfo.devDependencies };
+    const requiredWatchRoots = new Set([
+      appRoot,
+      path.join(repoRoot, "node_modules"),
+      ...Object.entries(dependencies)
+        .filter(([, version]) => version.startsWith("workspace:"))
+        .map(([name]) => path.dirname(workspacePackages.get(name))),
+    ]);
+    const missingRoots = [...requiredWatchRoots].filter((root) => !metroRuntimeConfig.watchFolders.includes(root));
+    const extraRoots = metroRuntimeConfig.watchFolders.filter((root) => !requiredWatchRoots.has(root));
+    if (missingRoots.length || extraRoots.length) {
+      console.error(`${app}: Metro watch roots must match app dependencies (missing=${missingRoots.join(",")}, extra=${extraRoots.join(",")})`);
       failed = true;
     }
   } catch (error) {

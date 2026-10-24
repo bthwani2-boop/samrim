@@ -30,6 +30,7 @@ type CashInFundingIntentRecord struct {
 	ProviderKey                  string
 	ExternalReference            string
 	RequestedAmountMinor         int64
+	ProviderFeeMinor             int64
 	Currency                     string
 	State                        string
 	Version                      int
@@ -54,6 +55,7 @@ type ApplyCashInFundingResultInput struct {
 	FundingIntentID              string
 	Outcome                      string
 	ProviderTransactionReference string
+	ProviderFeeMinor             int64
 	ActorID                      string
 	IdempotencyKey               string
 	CorrelationID                string
@@ -169,10 +171,13 @@ func ApplyCashInFundingResult(ctx context.Context, db *sql.DB, input ApplyCashIn
 	input.ActorID = strings.TrimSpace(input.ActorID)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if db == nil || boundedText(input.FundingIntentID, 1, 128) == "" || (input.Outcome != "SUCCESS" && input.Outcome != "FAILURE" && input.Outcome != "UNKNOWN" && input.Outcome != "DELAYED") || boundedText(input.ActorID, 1, 128) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) || (input.Outcome == "SUCCESS" && boundedText(input.ProviderTransactionReference, 1, 160) == "") {
+	if db == nil || boundedText(input.FundingIntentID, 1, 128) == "" || (input.Outcome != "SUCCESS" && input.Outcome != "FAILURE" && input.Outcome != "UNKNOWN" && input.Outcome != "DELAYED") || boundedText(input.ActorID, 1, 128) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) || (input.Outcome == "SUCCESS" && boundedText(input.ProviderTransactionReference, 1, 160) == "") || input.ProviderFeeMinor < 0 || (input.Outcome != "SUCCESS" && input.ProviderFeeMinor != 0) {
 		return CashInFundingIntentRecord{}, false, ErrInvalidInput
 	}
 	requestHash := hashFacts("cash-in-result", input.FundingIntentID, input.Outcome, input.ProviderTransactionReference, input.ActorID)
+	if input.ProviderFeeMinor != 0 {
+		requestHash = hashFacts("cash-in-result-fee:v1", input.FundingIntentID, input.Outcome, input.ProviderTransactionReference, input.ActorID, formatInt64(input.ProviderFeeMinor))
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return CashInFundingIntentRecord{}, false, err
@@ -210,6 +215,9 @@ func ApplyCashInFundingResult(ctx context.Context, db *sql.DB, input ApplyCashIn
 	if item.State != "PENDING_PROVIDER" && item.State != "UNKNOWN" {
 		return CashInFundingIntentRecord{}, false, ErrFundingIntentState
 	}
+	if input.Outcome == "SUCCESS" && input.ProviderFeeMinor >= item.RequestedAmountMinor {
+		return CashInFundingIntentRecord{}, false, ErrInvalidInput
+	}
 	if input.Outcome == "SUCCESS" && item.ActorType == "captain" {
 		if err := lockCaptainWalletBalance(ctx, tx, item.ActorID); err != nil {
 			return CashInFundingIntentRecord{}, false, err
@@ -240,13 +248,18 @@ func ApplyCashInFundingResult(ctx context.Context, db *sql.DB, input ApplyCashIn
 		if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_transactions(id,transaction_type,source_type,source_id,currency,idempotency_key,request_hash,correlation_id) VALUES($1,$2,'FUNDING_INTENT',$3,$4,$5,$6,$7)`, ledgerID, transactionType, item.ID, item.Currency, input.IdempotencyKey+"-ledger", ledgerHash, input.CorrelationID); err != nil {
 			return CashInFundingIntentRecord{}, false, err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,direction,amount_minor,currency) VALUES($1,1,'asset','EXTERNAL_SETTLEMENT_CASH','DEBIT',$2,$3)`, ledgerID, item.RequestedAmountMinor, item.Currency); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,direction,amount_minor,currency) VALUES($1,1,'asset','EXTERNAL_SETTLEMENT_CASH','DEBIT',$2,$3)`, ledgerID, item.RequestedAmountMinor-input.ProviderFeeMinor, item.Currency); err != nil {
 			return CashInFundingIntentRecord{}, false, err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency) VALUES($1,2,'liability',$2,$3,$4,'CREDIT',$5,$6)`, ledgerID, walletCode, walletActorType, item.ActorID, item.RequestedAmountMinor, item.Currency); err != nil {
 			return CashInFundingIntentRecord{}, false, err
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE wlt.cash_in_funding_intents SET state='SETTLED',provider_transaction_reference=$2,ledger_transaction_id=$3,version=version+1,updated_at=clock_timestamp() WHERE id=$1`, item.ID, input.ProviderTransactionReference, ledgerID)
+		if input.ProviderFeeMinor > 0 {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,direction,amount_minor,currency) VALUES($1,3,'expense','PLATFORM_CASH_IN_PROVIDER_FEE_EXPENSE','DEBIT',$2,$3)`, ledgerID, input.ProviderFeeMinor, item.Currency); err != nil {
+				return CashInFundingIntentRecord{}, false, err
+			}
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE wlt.cash_in_funding_intents SET state='SETTLED',provider_transaction_reference=$2,ledger_transaction_id=$3,provider_fee_minor=$4,version=version+1,updated_at=clock_timestamp() WHERE id=$1`, item.ID, input.ProviderTransactionReference, ledgerID, input.ProviderFeeMinor)
 		if err != nil {
 			// The unique(provider_key,provider_transaction_reference) constraint is
 			// the concurrency-safe arbiter across distinct funding intents.
@@ -358,7 +371,7 @@ func ListCashInFundingIntents(ctx context.Context, db *sql.DB, actorType, actorI
 	if limit < 1 || limit > 100 {
 		limit = 50
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id,actor_type,actor_id,funding_purpose,provider_key,external_reference,requested_amount_minor,currency,state,version,provider_reference,provider_transaction_reference,ledger_transaction_id,created_at,updated_at FROM wlt.cash_in_funding_intents WHERE actor_type=$1 AND actor_id=$2 ORDER BY created_at DESC,id DESC LIMIT $3`, actorType, actorID, limit)
+	rows, err := db.QueryContext(ctx, `SELECT id,actor_type,actor_id,funding_purpose,provider_key,external_reference,requested_amount_minor,provider_fee_minor,currency,state,version,provider_reference,provider_transaction_reference,ledger_transaction_id,created_at,updated_at FROM wlt.cash_in_funding_intents WHERE actor_type=$1 AND actor_id=$2 ORDER BY created_at DESC,id DESC LIMIT $3`, actorType, actorID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +379,7 @@ func ListCashInFundingIntents(ctx context.Context, db *sql.DB, actorType, actorI
 	items := make([]CashInFundingIntentRecord, 0)
 	for rows.Next() {
 		var item CashInFundingIntentRecord
-		if err := rows.Scan(&item.ID, &item.ActorType, &item.ActorID, &item.FundingPurpose, &item.ProviderKey, &item.ExternalReference, &item.RequestedAmountMinor, &item.Currency, &item.State, &item.Version, &item.ProviderReference, &item.ProviderTransactionReference, &item.LedgerTransactionID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.ActorType, &item.ActorID, &item.FundingPurpose, &item.ProviderKey, &item.ExternalReference, &item.RequestedAmountMinor, &item.ProviderFeeMinor, &item.Currency, &item.State, &item.Version, &item.ProviderReference, &item.ProviderTransactionReference, &item.LedgerTransactionID, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -388,11 +401,11 @@ func readCashInFundingIntent(ctx context.Context, source interface {
 func scanCashInFundingIntent(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, id string, forUpdate bool, item *CashInFundingIntentRecord) error {
-	query := `SELECT id,actor_type,actor_id,funding_purpose,provider_key,external_reference,requested_amount_minor,currency,state,version,provider_reference,provider_transaction_reference,ledger_transaction_id,created_at,updated_at FROM wlt.cash_in_funding_intents WHERE id=$1`
+	query := `SELECT id,actor_type,actor_id,funding_purpose,provider_key,external_reference,requested_amount_minor,provider_fee_minor,currency,state,version,provider_reference,provider_transaction_reference,ledger_transaction_id,created_at,updated_at FROM wlt.cash_in_funding_intents WHERE id=$1`
 	if forUpdate {
 		query += " FOR UPDATE"
 	}
-	return source.QueryRowContext(ctx, query, id).Scan(&item.ID, &item.ActorType, &item.ActorID, &item.FundingPurpose, &item.ProviderKey, &item.ExternalReference, &item.RequestedAmountMinor, &item.Currency, &item.State, &item.Version, &item.ProviderReference, &item.ProviderTransactionReference, &item.LedgerTransactionID, &item.CreatedAt, &item.UpdatedAt)
+	return source.QueryRowContext(ctx, query, id).Scan(&item.ID, &item.ActorType, &item.ActorID, &item.FundingPurpose, &item.ProviderKey, &item.ExternalReference, &item.RequestedAmountMinor, &item.ProviderFeeMinor, &item.Currency, &item.State, &item.Version, &item.ProviderReference, &item.ProviderTransactionReference, &item.LedgerTransactionID, &item.CreatedAt, &item.UpdatedAt)
 }
 
 func ReadCashInFundingIntent(ctx context.Context, db *sql.DB, id string) (CashInFundingIntentRecord, error) {

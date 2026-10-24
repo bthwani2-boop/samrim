@@ -57,9 +57,23 @@ test("acknowledged click is persisted only after DSH records it", async () => {
   assert.equal(h.events[0].lastClickAtSend, null);
   const click = JSON.parse([...h.saved].find(([key]) => key.includes("last-click"))[1]);
   assert.equal(click.contentId, "content-a");
-  await h.api.recordPendingDiscoveryConversion("order-1");
-  assert.equal(h.events[1].eventType, "CONVERSION");
-  assert.equal(h.events[1].contentId, "content-a");
-  assert.equal(h.events[1].orderId, "order-1");
-  assert.equal([...h.saved.keys()].some((key) => key.includes("last-click")), false);
+  assert.equal(click.clickEventId, h.events[0].clientEventId);
+  assert.equal(await h.api.acknowledgedDiscoveryClickForCheckout(), click.clickEventId);
+  // The client passes a reference into checkout; conversion is server-owned.
+  assert.equal(h.events.length, 1);
+  assert.equal([...h.saved.keys()].some((key) => key.includes("last-click")), true);
+});
+
+test("expired, legacy and future clicks never become checkout attribution", async () => {
+  const h = harness();
+  await h.api.recordDiscoveryClick("content-a");
+  const key = [...h.saved.keys()].find((entry) => entry.includes("last-click"));
+  const current = JSON.parse(h.saved.get(key));
+  h.saved.set(key, JSON.stringify({ ...current, clickedAt: Date.now() - 25 * 60 * 60 * 1000 }));
+  assert.equal(await h.api.acknowledgedDiscoveryClickForCheckout(), undefined);
+  h.saved.set(key, JSON.stringify({ ...current, clickedAt: Date.now() + 60_000 }));
+  assert.equal(await h.api.acknowledgedDiscoveryClickForCheckout(), undefined);
+  h.saved.set(key, JSON.stringify({ contentId: "content-a", clickedAt: Date.now() }));
+  assert.equal(await h.api.acknowledgedDiscoveryClickForCheckout(), undefined);
+  assert.equal(h.events.length, 1);
 });

@@ -54,9 +54,22 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 			}
 		}
 
+		// The current stage clock is an owner transition event, not a
+		// refreshed order updated_at value. The synthetic source is 1 min earlier.
+		stageAt := updatedAt.Add(-time.Minute)
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_audit
+            (event_type,idempotency_key,correlation_id,acting_actor_id,order_id,from_state,to_state,from_version,result_version,request_hash,created_at)
+            VALUES('order_ready_for_dispatch','ops-stage-event-03','ops-stage-corr-03','partner_operator_ops',
+                   'operator_order_03','PREPARING','READY_FOR_DISPATCH',1,2,'stage-verified',$1)`, stageAt); err != nil {
+			t.Fatalf("insert canonical dispatch stage transition: %v", err)
+		}
 		first, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", "", "updated_desc", true, 2, "")
 		if err != nil || len(first.Operations) != 2 || first.Operations[0].OrderID != "operator_order_03" || first.Operations[1].OrderID != "operator_order_02" || first.NextCursor == "" {
 			t.Fatalf("first operator operations page is not stable: %+v err=%v", first, err)
+		}
+		if first.Operations[0].StageStartedAt == nil || !first.Operations[0].StageStartedAt.Equal(stageAt) ||
+			first.Operations[1].StageStartedAt != nil {
+			t.Fatalf("stage elapsed must use owner transition; unavailable source stays null: %+v", first.Operations)
 		}
 		if first.Summary.TotalCount != 3 || first.Summary.ActionableCount != 3 || first.Summary.AwaitingDispatchCount != 3 || first.Summary.ActiveCount != 0 || first.Summary.DeliveredCount != 0 || first.Summary.MeasuredAt.IsZero() {
 			t.Fatalf("first-page summary must cover all filtered results, not the two loaded rows: %+v", first.Summary)
@@ -220,6 +233,11 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 			VALUES('order_picked_up','ops-pickup-1','ops-pickup-corr','partner_operator_ops','operator_order_02','READY_FOR_PICKUP','PICKED_UP',2,3,'pickup-proof',timestamp '2026-09-18 06:02:00+00')`); err != nil {
 			t.Fatalf("insert canonical pickup completion audit: %v", err)
 		}
+		pickupStage, err := postgres.ListOrdersForOperator(ctx, db, "PICKED_UP", "", "updated_desc", false, 10, "")
+		if err != nil || len(pickupStage.Operations) != 1 || pickupStage.Operations[0].StageStartedAt == nil ||
+			!pickupStage.Operations[0].StageStartedAt.Equal(time.Date(2026, 9, 18, 6, 2, 0, 0, time.UTC)) {
+			t.Fatalf("customer pickup stage missing canonical audit timestamp: %+v err=%v", pickupStage, err)
+		}
 		afterPickup, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_02")
 		if err != nil || afterPickup.CustomerSuccessfulOrdersCount != 1 || afterPickup.SuccessfulOrderOrdinal != 1 {
 			t.Fatalf("customer pickup must be first confirmed success: %+v err=%v", afterPickup, err)
@@ -241,6 +259,11 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,to_state,result_version,request_hash,created_at)
 			VALUES('delivery_completed','ops-delivery-1','ops-delivery-corr','captain_operator_ops','operator_order_01','delivered',2,'delivery-proof',timestamp '2026-09-18 06:03:00+00')`); err != nil {
 			t.Fatalf("insert canonical Captain delivery completion audit: %v", err)
+		}
+		deliveryStage, err := postgres.ListOrdersForOperator(ctx, db, "DELIVERED", "", "updated_desc", false, 10, "")
+		if err != nil || len(deliveryStage.Operations) != 1 || deliveryStage.Operations[0].StageStartedAt == nil ||
+			!deliveryStage.Operations[0].StageStartedAt.Equal(time.Date(2026, 9, 18, 6, 3, 0, 0, time.UTC)) {
+			t.Fatalf("Captain delivery stage missing its canonical event timestamp: %+v err=%v", deliveryStage, err)
 		}
 		afterDelivery, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_01")
 		if err != nil || afterDelivery.CustomerSuccessfulOrdersCount != 2 || afterDelivery.SuccessfulOrderOrdinal != 2 {
@@ -293,6 +316,56 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		allReview, err := postgres.ListOrdersForOperator(ctx, db, "", "operator_review_", "updated_desc", false, 10, "")
 		if err != nil || len(allReview.Operations) != 3 || allReview.Summary.ActionableCount != 1 {
 			t.Fatalf("review counts must use the same eligibility predicate: %+v err=%v", allReview, err)
+		}
+		// Independent Captain goods custody has a single current operational
+		// readback even when the operator requests a one-row page.
+		const riskOrder = "operator_custody_risk"
+		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.captain_admissions(id,actor_id,full_name_ar,state,availability_state,requires_profile_review,version) VALUES('operator-risk-admission','operator-risk-captain','كابتن اختبار','eligible','unavailable',false,1)"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES('operator-risk-cart','client_operator_ops','store_operator_ops','checked_out',1)"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(
+			id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,
+			address_latitude,address_longitude,service_city_id,serviceability_policy_version,
+			serviceability_status,serviceability_store_version,serviceability_address_version,
+			state,total_amount_minor,payment_cash_amount_minor,currency,version,
+			payment_intent_id,payment_method,payment_state,fulfillment_mode)
+			VALUES($1,'client_operator_ops','store_operator_ops','operator-risk-cart',
+			'operator-risk-address',1,'عنوان اختبار العهدة',15.3694457,44.1910064,
+			'sanaa_operator_ops','CITY_SCOPE_V1','SERVICEABLE',1,1,
+			'IN_CUSTODY',6400,6400,'YER',1,'operator-risk-payment',
+			'CASH_ON_DELIVERY','REQUIRES_COLLECTION','BTHWANI_CAPTAIN')`, riskOrder); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_dispatch_offers(
+			id,order_id,captain_actor_id,state,expires_at,version,idempotency_key,request_hash)
+			VALUES('operator-risk-offer',$1,'operator-risk-captain','accepted',
+			clock_timestamp()+interval '1 hour',2,'operator-risk-offer-key','operator-risk-offer-hash')`, riskOrder); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_assignments(
+			id,order_id,captain_actor_id,accepted_offer_id,state,version,custody_started_at)
+			VALUES('operator-risk-assignment',$1,'operator-risk-captain',
+			'operator-risk-offer','in_custody',1,clock_timestamp())`, riskOrder); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_handoffs(
+			assignment_id,order_id,store_id,state,version,store_confirmed_at,captain_picked_up_at)
+			VALUES('operator-risk-assignment',$1,'store_operator_ops','completed',
+			3,clock_timestamp(),clock_timestamp())`, riskOrder); err != nil {
+			t.Fatal(err)
+		}
+		custody, err := postgres.ListOrdersForOperator(ctx, db, "IN_CUSTODY", "", "updated_desc", false, 1, "")
+		if err != nil || custody.Summary.InCustodyOrderCount != 1 ||
+			custody.Summary.InCustodyOrderValueMinor != 6400 || custody.Summary.TotalCount != 1 {
+			t.Fatalf("custody value readback failed: %+v err=%v", custody.Summary, err)
+		}
+		nonCustody, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", "", "updated_desc", false, 1, "")
+		if err != nil || nonCustody.Summary.InCustodyOrderCount != 0 ||
+			nonCustody.Summary.InCustodyOrderValueMinor != 0 {
+			t.Fatalf("custody leaked across state filter: %+v err=%v", nonCustody.Summary, err)
 		}
 	})
 }

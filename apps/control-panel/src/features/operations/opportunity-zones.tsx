@@ -113,10 +113,9 @@ function CircleMap({ cells }: { cells: ReadonlyArray<HeatCell> }) {
   </section>;
 }
 
-export function OpportunityZones() {
+export function OpportunityZones({ variant = "compact" }: Readonly<{ variant?: "compact" | "full" }>) {
   const [value, setValue] = useState<CaptainOpportunityHeatmap | null>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const latestRequest = useRef(0);
 
@@ -161,18 +160,22 @@ export function OpportunityZones() {
   }, [load]);
 
   const cells = value?.cells ?? [];
-  // An empty or unverified activity sample is not a map and must not displace active work.
-  if (error && !value) return <div className="ops-activity-failure" role="alert"><span>تعذرت قراءة خريطة النشاط.</span><button type="button" className="button button-secondary" onClick={() => void load()}>إعادة المحاولة</button></div>;
-  if (!value || cells.length === 0) return null;
-  return <details className="ops-activity-disclosure" onToggle={(event) => setExpanded(event.currentTarget.open)}>
-    <summary>خريطة النشاط · آخر 30 دقيقة</summary>
-    <section className="ops-page-intro" aria-label="الخريطة الحرارية الآنية للطلبات والكباتن">
-      <p>كثافة الطلبات والكباتن المتاحين دون عرض مواقع الأفراد.</p>
-      <p><strong className="ops-activity-legend-orders">● الطلبات</strong>{" · "}
-        <strong className="ops-activity-legend-captains">● الكباتن المتاحون</strong>
-        {" · "}الدائرة الأكبر تعني نشاطًا أعلى
-      </p>
-      {expanded ? <CircleMap cells={cells} /> : null}
-    </section>
-  </details>;
+  const ready = value && isFreshOpportunitySample(value.measuredAt) && cells.length > 0;
+  const sampleTime = value ? new Date(value.measuredAt).toLocaleString("ar-YE") : null;
+  return <section className={"ops-activity-surface ops-activity-" + variant} aria-label="خريطة التغطية التشغيلية" data-testid="operations-coverage">
+    <header className="ops-activity-surface-heading">
+      <div><h2>التغطية الجغرافية</h2><p>نشاط الطلبات والكباتن ببيانات دورية، وليس تتبعًا حيًا.</p></div>
+      <span className="ops-activity-sample">{sampleTime ? "آخر عينة: " + sampleTime : "لا توجد عينة حديثة معتمدة"}</span>
+    </header>
+    {ready ? <>
+      <div className="ops-activity-legend"><strong className="ops-activity-legend-orders">● الطلبات</strong><strong className="ops-activity-legend-captains">● الكباتن المتاحون</strong><small>حجم الدائرة يعبر عن مستوى النشاط ضمن العينة</small></div>
+      <CircleMap cells={cells} />
+      <p className="ops-activity-sample">هذه خريطة نشاط مجمّع؛ لا تمثل موقع أي عميل أو كابتن بصورة آنية.</p>
+    </> : <div className="ops-coverage-unavailable" role={error ? "alert" : "status"}>
+      <span className="ops-coverage-placeholder" aria-hidden="true">◉</span>
+      <strong>{error ? "تعذر تحميل بيانات التغطية" : loading ? "جارٍ التحقق من النشاط" : value?.sampleStatus === "INSUFFICIENT_DATA" || (value && !cells.length) ? "العينة الحديثة لا تحتوي نقاطًا كافية" : "لا توجد عينة نشاط حديثة للعرض"}</strong>
+      <p>{error || (loading ? "يُقرأ نشاط الطلبات والكباتن من المصدر التشغيلي." : value ? `الفترة المقاسة: ${new Date(value.windowStart).toLocaleString("ar-YE")} — ${new Date(value.windowEnd).toLocaleString("ar-YE")}. لا يمكن رسم خريطة موثوقة من ${cells.length} نقطة نشاط؛ وغياب النقاط لا يعني غياب الطلبات.` : "لا توجد بيانات جغرافية حديثة معتمدة؛ لا يُفترض غياب الطلبات.")}</p>
+      {error ? <button type="button" className="button button-secondary" onClick={() => void load()}>إعادة القراءة</button> : null}
+    </div>}
+  </section>;
 }

@@ -15,7 +15,13 @@
     "./native": "./src/native/index.tsx",
     "./theme.css": "./theme.css",
     "./web": "./src/web/index.ts",
-    "./web.css": "./web.css"
+    "./web.css": "./web.css",
+    "./native/map": {
+      "types": "./src/native/map.tsx",
+      "react-native": "./src/native/map.tsx",
+      "browser": "./src/native/map.web.tsx",
+      "default": "./src/native/map.tsx"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -27,13 +33,13 @@
     "leaflet": "1.9.4"
   },
   "peerDependencies": {
-    "@expo/ui": "~57.0.22",
+    "@expo/ui": "57.0.26",
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-maps": "1.27.2"
   },
   "devDependencies": {
-    "@expo/ui": "57.0.22",
+    "@expo/ui": "57.0.26",
     "@types/leaflet": "1.9.21",
     "@types/react": "19.2.17",
     "react": "19.2.3",
@@ -43,6 +49,9 @@
   },
   "peerDependenciesMeta": {
     "@expo/ui": {
+      "optional": true
+    },
+    "react-native-maps": {
       "optional": true
     }
   }

@@ -38,6 +38,8 @@ export function OperatorOrderMedia({
     {dataUri && kind === "image"
       ? <img alt="صورة مرفقة خاصة بالطلب" src={dataUri} style={{ maxWidth: 240, maxHeight: 200, objectFit: "contain" }} />
       : null}
+    {dataUri && kind === "video" ? <video src={dataUri} controls preload="none"
+      aria-label="فيديو خاص بمحادثة الطلب" style={{maxWidth:260,maxHeight:220,borderRadius:10}}><track kind="captions" src={captions ?? undefined} srcLang="ar" label="التفريغ النصي المرفق" default /></video>:null}
     {dataUri && kind === "audio" ? <>
       <audio aria-label="تشغيل التسجيل الصوتي الخاص بالطلب" src={dataUri} controls preload="none">
         <track kind="captions" label="النص المرفق من المرسل" src={captions ?? undefined} srcLang="ar" default />

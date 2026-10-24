@@ -73,6 +73,7 @@ func TestCreateForOrderSendsRequiredAllocationContract(t *testing.T) {
 				Currency                   string `json:"currency"`
 				SubtotalMinor              int64  `json:"subtotalMinor"`
 				DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
+				DeliveryMarginMinor        int64  `json:"deliveryMarginMinor"`
 				DiscountMinor              int64  `json:"discountMinor"`
 				InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
 				CashAmountMinor            int64  `json:"cashAmountMinor"`

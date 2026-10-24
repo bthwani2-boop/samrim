@@ -23,8 +23,8 @@ WLT owns the Captain FundingIntent, purpose-to-wallet resolution, provider event
 - provider success is accepted only with evidence sufficient for the approved provider contract;
 - timeout/unknown outcomes remain unresolved until inquiry/reconciliation and cannot trigger an unsafe duplicate movement;
 - each intent and provider event is idempotent and the balance credit posts exactly once;
-- provider fee bearer is versioned policy and does not silently change the credited amount;
-- Cash-In does not settle COD cash custody/remittance and does not authorize withdrawal;
+- BThwani bears provider Cash-In fees; confirmed gross funding is credited in full to the Captain's internal balance, while provider fees are separate platform expenses under the versioned provider contract;
+- Cash-In replenishes confirmed internal COD coverage, but is not itself a posted delivery earning or a remittance of cash to BThwani; Captains retain customer cash and settlement occurs through the one WLT wallet debit after confirmed collection;
 - secrets and provider credentials never enter client authority.
 
 ## Failure and recovery

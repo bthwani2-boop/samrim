@@ -46,6 +46,15 @@ func TestCashInRailConfigurationGuard(t *testing.T) {
 	if _, _, err := cashInRailForConfig("simulator", "production"); err == nil {
 		t.Fatal("Cash-In simulator was accepted outside development")
 	}
+	if rail, enabled, err := cashInRailForConfig("wiremock", "development", "http://payment-mock:8080"); err != nil || rail == nil || !enabled {
+		t.Fatalf("development HTTP mock: rail=%T enabled=%v err=%v", rail, enabled, err)
+	}
+	if _, _, err := cashInRailForConfig("wiremock", "production", "http://payment-mock:8080"); err == nil {
+		t.Fatal("HTTP mock was accepted in production")
+	}
+	if _, _, err := cashInRailForConfig("wiremock", "development"); err == nil {
+		t.Fatal("HTTP mock without a verified endpoint was accepted")
+	}
 	if _, _, err := cashInRailForConfig("unknown", "development"); err == nil {
 		t.Fatal("unknown Cash-In rail mode was accepted")
 	}

@@ -23,6 +23,9 @@ $CredentialVaultPath = Join-Path $SecretsRoot ("expo\" + $App + "\credentials.js
 $KeystoreVaultPath = Join-Path $SecretsRoot ("eas\android\" + $App + "\development.jks")
 $MaterializedCredentialPath = Join-Path $AppRoot "credentials.json"
 $MaterializedKeystorePath = Join-Path $AppRoot "development.jks"
+$FirebaseVaultPath = Join-Path $SecretsRoot ("firebase\" + $App + "\google-services.json")
+$MaterializedFirebasePath = Join-Path $AppRoot "google-services.json"
+$FirebaseMaterialized = $false
 Import-Module -Name (Join-Path $PSScriptRoot "eas-credential-materialization.psm1") -Force
 
 function Fail([string] $Message) { throw $Message }
@@ -81,7 +84,10 @@ if ($LASTEXITCODE -ne 0) { Fail "Dependency lock must match the committed manife
 & node (Join-Path $PSScriptRoot "verify-mobile-config.mjs") --app $App
 if ($LASTEXITCODE -ne 0) { Fail "Mobile dependency/configuration preflight failed for $App." }
 
-foreach ($Required in @($CredentialVaultPath, $KeystoreVaultPath)) {
+$FirebaseEnabled = $App -in @("app-client", "app-partner", "app-captain")
+$RequiredInputs = @($CredentialVaultPath, $KeystoreVaultPath)
+if ($FirebaseEnabled) { $RequiredInputs += $FirebaseVaultPath }
+foreach ($Required in $RequiredInputs) {
     if (-not (Test-Path -LiteralPath $Required -PathType Leaf)) { Fail "Missing target build input: $Required" }
 }
 
@@ -90,6 +96,18 @@ $Credential.android.keystore.keystorePath = "development.jks"
 
 $Materialization = $null
 try {
+    if ($FirebaseEnabled) {
+        if (Test-Path -LiteralPath $MaterializedFirebasePath -PathType Leaf) {
+            Fail "Existing local Firebase file must be handled outside this script before a materialized build."
+        }
+        $FirebaseConfig = Get-Content -LiteralPath $FirebaseVaultPath -Raw | ConvertFrom-Json
+        $AndroidPackages = @($FirebaseConfig.client | ForEach-Object { [string]$_.client_info.android_client_info.package_name })
+        if ([string]$Config.androidPackage -notin $AndroidPackages) {
+            Fail "Firebase client package does not match app $App."
+        }
+        Copy-Item -LiteralPath $FirebaseVaultPath -Destination $MaterializedFirebasePath
+        $FirebaseMaterialized = $true
+    }
     $Materialization = New-EasCredentialMaterialization `
         -KeystoreVaultPath $KeystoreVaultPath `
         -MaterializedCredentialPath $MaterializedCredentialPath `
@@ -109,14 +127,26 @@ try {
     if ($RemoteProjectId -ne $ProjectId) { Fail "EAS project binding mismatch for $App." }
     Write-Host "EAS_PROJECT_BINDING=PASS app=$App projectId=$ProjectId"
 
+    if ($FirebaseEnabled) {
+        $Environment = [string]$EasConfig.build.development.environment
+        if ([string]::IsNullOrWhiteSpace($Environment)) { Fail "Missing development EAS environment for $App." }
+        $EnvironmentVariables = Invoke-EasText @("env:list", "--environment", $Environment, "--format", "short")
+        if ($EnvironmentVariables -notmatch '\bGOOGLE_SERVICES_JSON\b') {
+            Fail "Missing GOOGLE_SERVICES_JSON EAS file environment variable for $App in $Environment."
+        }
+        Write-Host "EAS_FIREBASE_FILE_ENV=PASS app=$App environment=$Environment"
+    }
+
     $Fingerprint = Invoke-EasJson @("fingerprint:generate", "--platform", "android", "--build-profile", "development", "--json", "--non-interactive")
     $Hash = [string]$Fingerprint.hash
     if ([string]::IsNullOrWhiteSpace($Hash)) { Fail "Unable to resolve Android fingerprint for $App." }
     Write-Host "ANDROID_FINGERPRINT=$Hash"
 
     $Builds = @(Invoke-EasJson @("build:list", "--platform", "android", "--build-profile", "development", "--distribution", "internal", "--fingerprint-hash", $Hash, "--limit", "50", "--json", "--non-interactive"))
-    $Finished = $Builds | Where-Object { ([string]$_.status).ToUpperInvariant() -eq "FINISHED" } | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) } -Descending | Select-Object -First 1
-    $Pending = $Builds | Where-Object { ([string]$_.status).ToUpperInvariant() -in @("IN_PROGRESS", "IN_QUEUE", "NEW") } | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) } -Descending | Select-Object -First 1
+    # A matching native fingerprint is not sufficient: the JS/TS source commit
+    # must also match exactly, or reuse would silently hand out an older APK.
+    $Finished = $Builds | Where-Object { ([string]$_.status).ToUpperInvariant() -eq "FINISHED" -and (Get-BuildSourceSha $_) -eq $LocalSha } | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) } -Descending | Select-Object -First 1
+    $Pending = $Builds | Where-Object { ([string]$_.status).ToUpperInvariant() -in @("IN_PROGRESS", "IN_QUEUE", "NEW") -and (Get-BuildSourceSha $_) -eq $LocalSha } | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) } -Descending | Select-Object -First 1
 
     if ($null -ne $Finished) {
         $ActualSourceSha = Get-BuildSourceSha $Finished
@@ -141,6 +171,9 @@ try {
     }
 }
 finally {
+    if ($FirebaseMaterialized) {
+        Remove-Item -LiteralPath $MaterializedFirebasePath -Force -ErrorAction SilentlyContinue
+    }
     if ($null -ne $Materialization) {
         Remove-EasCredentialMaterialization -Materialization $Materialization
     }

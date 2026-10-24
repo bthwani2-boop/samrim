@@ -7,6 +7,8 @@ const repositoryRoot = path.resolve(__dirname, "../..");
 
 const PERMISSION_TEXT = {
   locationWhenInUse: "نحتاج الوصول إلى موقعك عند طلب التقاط موقع العنوان أو أصل المتجر.",
+  captainForeground: "يستخدم بثواني موقعك أثناء مهمة توصيل نشطة فقط لإتاحته لفريق العمليات.",
+  captainBackground: "يستخدم بثواني موقعك أثناء مهمة التوصيل النشطة في الخلفية فقط بموافقتك مع إشعار دائم.",
 };
 
 const MAP_KEY_NAMES = {
@@ -95,9 +97,14 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
       : "expo-splash-screen",
   );
 
-  if (locationMode === "foreground") {
+  if (locationMode === "foreground" || locationMode === "background") {
     const locationOptions = {
-      locationWhenInUsePermission: PERMISSION_TEXT.locationWhenInUse,
+      locationWhenInUsePermission: locationMode === "background" ? PERMISSION_TEXT.captainForeground : PERMISSION_TEXT.locationWhenInUse,
+      ...(locationMode === "background" ? {
+        locationAlwaysAndWhenInUsePermission: PERMISSION_TEXT.captainBackground,
+        isAndroidBackgroundLocationEnabled: true,
+        isAndroidForegroundServiceEnabled: true,
+      } : {}),
     };
     plugins.push(["expo-location", locationOptions]);
   }
@@ -111,6 +118,12 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
     }]);
   }
 
+  if (["app-client", "app-partner", "app-captain"].includes(appKey)) {
+    plugins.push(["expo-notifications", {
+      defaultChannel: "order-classic-v1",
+      sounds: ["./assets/sounds/order_classic.wav", "./assets/sounds/order_soft.wav", "./assets/sounds/order_urgent.wav"],
+    }]);
+  }
   plugins.push("expo-secure-store");
   plugins.push([
     "expo-localization",
@@ -126,13 +139,13 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
 
 /**
  * @param {string} appKey
- * @param {{ cameraMode?: "barcode", locationMode?: "foreground", maps?: boolean, web?: boolean }} options
+ * @param {{ cameraMode?: "barcode", locationMode?: "foreground" | "background", maps?: boolean, web?: boolean }} options
  */
 function defineSamrimExpoApp(appKey, options = {}) {
   const app = readMobileConfig(appKey);
   const locationMode = options.locationMode;
   const cameraMode = options.cameraMode;
-  if (locationMode !== undefined && locationMode !== "foreground") {
+  if (locationMode !== undefined && locationMode !== "foreground" && locationMode !== "background") {
     throw new Error("Invalid locationMode for " + appKey + ": " + locationMode);
   }
   if (cameraMode !== undefined && cameraMode !== "barcode") {
@@ -144,8 +157,14 @@ function defineSamrimExpoApp(appKey, options = {}) {
   if (options.maps && (!androidMapsApiKey || !iosMapsApiKey)) {
     throw new Error("Missing Google Maps API keys for " + appKey + " in the mobile secret environment.");
   }
+  const firebaseClientApps = ["app-client", "app-partner", "app-captain"];
+  const easFirebaseFile = process.env.GOOGLE_SERVICES_JSON?.trim();
+  const localFirebaseFile = fs.existsSync(path.join(appRoot(appKey), "google-services.json"))
+    ? "./google-services.json" : undefined;
   const android = {
     package: app.androidPackage,
+    ...(firebaseClientApps.includes(appKey) && (easFirebaseFile || localFirebaseFile)
+      ? { googleServicesFile: easFirebaseFile || localFirebaseFile } : {}),
     ...(adaptiveIcon ? { adaptiveIcon: { foregroundImage: adaptiveIcon, backgroundColor: "#FFFFFF" } } : {}),
   };
 

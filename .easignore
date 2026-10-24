@@ -1,0 +1,69 @@
+# Dependencies / package managers
+node_modules/
+.pnpm-store/
+
+# Build / framework / coverage
+**/next-env.d.ts
+**/expo-env.d.ts
+.next/
+.next-dev/
+dist/
+build/
+coverage/
+**/test-results/
+*.tsbuildinfo
+.expo/
+
+# Tool caches and ephemeral evidence
+.nx/cache/
+.nx/workspace-data/
+.sonar/
+.artifacts/
+.diagnostics/
+graphify-out/
+.graphify/
+.codeatlas/
+.tmp/
+.cache/
+.local/
+apps/**/.gitignore
+packages/**/.gitignore
+
+# Logs / OS noise
+*.log
+.DS_Store
+Thumbs.db
+
+# Local agent/editor state
+.claude/settings.local.json
+
+# Environment and local bindings
+.env
+.env.*
+!.env.example
+!**/.env.example
+infra/local/*.env
+secrets.local.*
+**/*local*.secret.json
+
+# Firebase / mobile signing / credentials — external vault only
+**/credentials.json
+**/google-services.json
+**/GoogleService-Info.plist
+*.jks
+*.keystore
+*.p12
+*.p8
+*.pem
+*.key
+tools/dev-app-credentials.csv
+
+# Local-only BThwani materialization
+.bthwani-local/
+
+# Local security-scan hook state
+.mimosa/
+
+# Keep Firebase client configs outside the Git-backed EAS archive.
+# Android builds load them from the per-project GOOGLE_SERVICES_JSON EAS file secret.
+# Never archive service-account JSON or FCM server credentials.

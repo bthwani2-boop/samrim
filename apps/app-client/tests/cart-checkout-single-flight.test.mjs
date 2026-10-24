@@ -4,7 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
-import { checkoutWalletAllocation } from "../../../services/dsh/clients/presentation/order-presentation.ts";
+import { paymentSplit } from "../src/features/cart-checkout/payment-selection.ts";
 
 // Execute the actual checkout handler with isolated dependencies; no device, API, or DB mutation.
 const source = fs.readFileSync(path.resolve(import.meta.dirname, "../src/features/cart-checkout/cart-checkout.tsx"), "utf8");
@@ -34,7 +34,7 @@ const runnableHandler = ts.transpileModule(checkoutNode.getText(ast), { compiler
 const quoteMatchesCheckout = vm.runInNewContext(`${runnableQuote}\nquoteMatchesCheckout`);
 const pendingCheckoutHasAcceptedTotal = vm.runInNewContext(`${ts.transpileModule(pendingTotalNode.getText(ast), { compilerOptions }).outputText}\npendingCheckoutHasAcceptedTotal`);
 const visibleQuoteExpression = verifiedQuoteNode.initializer.getText(ast);
-const runnableVisibleQuote = ts.transpileModule(`function readVisibleQuote(readyCart, quote, storeId, pickupMode, serviceableAddressId, fulfillmentMode, appliedPromotionCode) { return ${visibleQuoteExpression}; }`, { compilerOptions }).outputText;
+const runnableVisibleQuote = ts.transpileModule(`function readVisibleQuote(readyCart, quote, storeId, pickupMode, serviceableAddressId, fulfillmentMode, appliedPromotionCode, storeAcceptingOrders = true) { return ${visibleQuoteExpression}; }`, { compilerOptions }).outputText;
 const readVisibleQuote = vm.runInNewContext(`${runnableQuote}\n${runnableVisibleQuote}\nreadVisibleQuote`);
 
 function scenario({ accessToken, persist, submit, recover } = {}) {
@@ -46,11 +46,14 @@ function scenario({ accessToken, persist, submit, recover } = {}) {
     mutationBusy: false,
     state: { kind: "ready", cart: { id: "cart-1", version: 3, lines: [{}] } },
     quote: { kind: "ready", quote: { cartId: "cart-1", storeId: "store-1", cartVersion: 3, addressId: "", fulfillmentMode: "CUSTOMER_PICKUP", promotionCode: "", totalAmountMinor: 200 } },
-    useWalletBalance: false,
-    checkoutWalletAllocation,
+    paymentChoice: "CASH",
+    paymentSplit,
+    customerNote: "",
+    acknowledgedDiscoveryClickForCheckout: async () => null,
     wallet: { kind: "ready", availableMinor: 0 },
     recipient: { mode: "SELF" },
     storeId: "store-1",
+    storeAcceptingOrders: true,
     fulfillmentMode: "CUSTOMER_PICKUP",
     promotionCode: "",
     appliedPromotionCode: "",
@@ -100,7 +103,7 @@ test("checkout funds the remaining cash automatically from the available wallet"
     },
   });
   context.wallet = { kind: "ready", availableMinor: 80 };
-  context.useWalletBalance = true;
+  context.paymentChoice = "MIXED";
   await checkout();
   assert.equal(accepted.expectedTotalAmountMinor, 200);
   assert.equal(accepted.internalBalanceAmountMinor, 80);
@@ -115,7 +118,7 @@ test("checkout can cover the whole amount from wallet without negative cash", as
     },
   });
   context.wallet = { kind: "ready", availableMinor: 500 };
-  context.useWalletBalance = true;
+  context.paymentChoice = "WALLET";
   await checkout();
   assert.equal(accepted.internalBalanceAmountMinor, 200);
 });
@@ -123,7 +126,7 @@ test("checkout can cover the whole amount from wallet without negative cash", as
 test("unavailable selected wallet fails before creating a payment attempt", async () => {
   const { checkout, counts, context } = scenario();
   context.wallet = { kind: "error" };
-  context.useWalletBalance = true;
+  context.paymentChoice = "WALLET";
   await checkout();
   assert.equal(counts.persist, 0);
   assert.equal(counts.submit, 0);
@@ -250,6 +253,7 @@ test("typing a coupon does not change the quote request until the applied coupon
     quoteAddressID: "",
     serviceableAddressId: undefined,
     storeId: "store-1",
+    storeAcceptingOrders: true,
     quoteRequestID: { current: 0 },
     setQuote: (state) => quoteStates.push(state),
     getUsableIdentityAccessToken: async () => "token",
@@ -285,6 +289,7 @@ test("cart with unavailable modifier never calls the checkout quote API", async 
     quoteAddressID: "",
     serviceableAddressId: undefined,
     storeId: "store-1",
+    storeAcceptingOrders: true,
     quoteRequestID: { current: 12 },
     setQuote: (state) => states.push(state),
     getUsableIdentityAccessToken: async () => { throw new Error("no identity read for invalid cart"); },
@@ -375,6 +380,7 @@ test("checkout quote explains unavailable, invalid and out-of-scope offers witho
     quoteAddressID: "",
     serviceableAddressId: undefined,
     storeId: "store-1",
+    storeAcceptingOrders: true,
     quoteRequestID: { current: 0 },
     setQuote: (state) => calls.push(state),
     getUsableIdentityAccessToken: async () => "token",

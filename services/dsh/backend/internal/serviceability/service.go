@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
@@ -12,7 +13,11 @@ import (
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
-const PolicyVersion = "CITY_SCOPE_V1"
+const PolicyVersion = "CITY_SCOPE_V2_RADIUS_30KM"
+
+// Until governed per-city boundaries exist, no city label alone can authorize
+// a delivery across an implausible distance. Keep the quote guard in WLT aligned.
+const maximumDeliveryDistanceMeters = 30_000
 
 var (
 	ErrClientSessionForbidden = errors.New("an active app-client session is required")
@@ -63,10 +68,31 @@ func (s *Service) Evaluate(ctx context.Context, accessToken, storeID, addressID 
 	if partner.Role != "partner" || !partner.Enabled || !partner.SecurityEnabled || partner.ActivatedAt == nil {
 		return result, nil
 	}
-	if facts.StoreServiceCityID == facts.AddressServiceCityID {
+	if facts.StoreServiceCityID == facts.AddressServiceCityID && withinDeliveryCoverage(facts) {
 		result.Status = "SERVICEABLE"
 	} else {
 		result.Status = "UNSERVICEABLE"
 	}
 	return result, nil
+}
+
+func withinDeliveryCoverage(f postgres.ServiceabilityFacts) bool {
+	if !f.StoreOriginAvailable || !f.AddressFound {
+		return false
+	}
+	for _, coord := range []float64{f.StoreOriginLatitude, f.StoreOriginLongitude, f.AddressLatitude, f.AddressLongitude} {
+		if math.IsNaN(coord) || math.IsInf(coord, 0) {
+			return false
+		}
+	}
+	if math.Abs(f.StoreOriginLatitude) > 90 || math.Abs(f.AddressLatitude) > 90 ||
+		math.Abs(f.StoreOriginLongitude) > 180 || math.Abs(f.AddressLongitude) > 180 {
+		return false
+	}
+	lat1, lat2 := f.StoreOriginLatitude*math.Pi/180, f.AddressLatitude*math.Pi/180
+	dLat := (f.AddressLatitude - f.StoreOriginLatitude) * math.Pi / 180
+	dLon := (f.AddressLongitude - f.StoreOriginLongitude) * math.Pi / 180
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) + math.Cos(lat1)*math.Cos(lat2)*math.Sin(dLon/2)*math.Sin(dLon/2)
+	a = math.Max(0, math.Min(1, a))
+	return 2*6_371_000*math.Atan2(math.Sqrt(a), math.Sqrt(1-a)) <= maximumDeliveryDistanceMeters
 }

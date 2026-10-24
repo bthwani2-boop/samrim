@@ -3,15 +3,18 @@
 
 import { captainAssignmentStateLabel, captainHandoffStateLabel, cashCollectionPartyLabel, formatMoney, formatOrderDate, fulfillmentModeLabel, type OperatorOperation, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
+import { CustomerContactReviewPanel } from "./customer-contact-review-panel";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
 import { operationHistoryLabel } from "./operation-history";
-import { OperatorOrderConversation } from "./operator-order-conversation";
+import { OperatorOrderChatDialog } from "./operator-order-chat-dialog";
 import { operationalAge } from "./operational-age";
 import { OperationLocationMap } from "./operation-location-map";
+import { OperatorMissionLocation } from "./operator-mission-location";
+import { OperatorOrderCases } from "./operator-order-cases";
 import { operationActionLabel, operationResponseMessage, resolveOperatorAction } from "./operator-actions";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 
@@ -336,14 +339,17 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
             <div><dt>رقم الطلب</dt><dd><code dir="ltr" style={{ overflowWrap: "anywhere" }}>{order.id}</code></dd></div>
             <div><dt>المتجر</dt><dd><Link href={`/partners/stores/${encodeURIComponent(order.storeId)}`}>{operation.storeName}</Link></dd></div>
             <div><dt>العميل</dt><dd><Link href={`/customers/${encodeURIComponent(order.clientActorId)}`}>فتح ملف العميل</Link></dd></div>
-            {operation.successfulOrderOrdinal > 0 && operation.successfulOrderOrdinal <= 3 ? <div><dt>متابعة الطلبات الأولى</dt><dd>هذا الطلب الناجح رقم {operation.successfulOrderOrdinal} من أول 3 طلبات مكتملة للعميل. متابعة فقط دون تعطيل التسليم.</dd></div>
-              : operation.customerSuccessfulOrdersCount < 3 && !["DELIVERED", "PICKED_UP", "REJECTED", "CANCELLED"].includes(order.state) ? <div><dt>متابعة الطلبات الأولى</dt><dd>أكمل العميل {operation.customerSuccessfulOrdersCount} من أول 3 طلبات ناجحة. لا يُحتسب هذا الطلب إلا بعد إثبات اكتماله.</dd></div> : null}
+
             <div><dt>عدد العناصر</dt><dd>{countLabel}</dd></div>
             <div><dt>تاريخ الطلب</dt><dd><time dateTime={order.createdAt}>{formatOrderDate(order.createdAt)}</time></dd></div>
             <div><dt>آخر تحديث</dt><dd><time dateTime={order.updatedAt}>{formatOrderDate(order.updatedAt)}</time></dd></div>
           </dl>
         </section>
       )}
+
+      <CustomerContactReviewPanel key={order.id} orderId={order.id} onUpdated={onUpdated} />
+      <OperatorMissionLocation key={order.id} orderId={order.id} />
+      <OperatorOrderCases key={order.id} orderId={order.id} onUpdated={onUpdated} />
 
       {(
         <section className="order-detail-panel" aria-labelledby="order-items-title">
@@ -413,7 +419,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
         </section>
       )}
 
-      <OperatorOrderConversation orderId={order.id} />
+      <OperatorOrderChatDialog orderId={order.id} reference={order.id.slice(-8)} status={orderStateLabel(order.state)} summary={operation.storeName} total={formatMoney(order.totalAmountMinor,order.currency)}/>
       {(
         <section className="order-detail-panel" aria-labelledby="order-assignment-title">
           <h2 id="order-assignment-title">إسناد الكابتن</h2>

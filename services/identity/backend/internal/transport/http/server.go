@@ -82,6 +82,7 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/provision", s.internal(s.provisionExistingRole))
 	mux.HandleFunc("POST /internal/bootstrap/operator", s.internal(s.bootstrapFirstOperator))
 	mux.HandleFunc("GET /internal/actor-roles/search", s.internal(s.searchRoles))
+	mux.HandleFunc("GET /internal/client-share-recipient/resolve", s.internal(s.resolveClientShareRecipient))
 	mux.HandleFunc("POST /internal/actor-roles/read", s.internal(s.readActorRoles))
 	mux.HandleFunc("GET /internal/actors/{actorId}", s.internal(s.readCanonicalActor))
 	mux.HandleFunc("GET /internal/operators/{actorId}/permissions/{permission}", s.internal(s.readOperatorPermission))

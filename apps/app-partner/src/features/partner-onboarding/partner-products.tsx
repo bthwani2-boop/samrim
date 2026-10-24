@@ -27,7 +27,7 @@ export function PartnerProducts() {
   return <View style={styles.container}>
     {permittedStores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={["catalog"]} /> : null}
     {toolsView ? <BthwaniButton label="العودة إلى المنتجات" variant="secondary" onPress={() => router.replace("/products" as Href)} /> : null}
-    {selectedStore && canCatalog && selectedStore.primaryVerticalId ? <StoreOfferManagement key={selectedStore.id} storeId={selectedStore.id} verticalId={selectedStore.primaryVerticalId} toolsView={toolsView} /> : null}
+    {selectedStore && canCatalog && selectedStore.primaryVerticalId ? <StoreOfferManagement key={selectedStore.id} storeId={selectedStore.id} serviceCityId={selectedStore.serviceCityId} canManagePromotions={selectedStore.owned || selectedStore.permissions.includes("promotions")} verticalId={selectedStore.primaryVerticalId} toolsView={toolsView} /> : null}
     {state.kind === "ready" && !canCatalog ? <Text style={styles.muted}>لا تتوفر صلاحية المنتجات لهذا المتجر.</Text> : null}
     {selectedStore && canCatalog && !selectedStore.primaryVerticalId ? <Text style={styles.muted}>تصنيف المتجر غير مكتمل.</Text> : null}
   </View>;

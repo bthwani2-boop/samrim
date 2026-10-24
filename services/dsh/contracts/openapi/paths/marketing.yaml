@@ -1,4 +1,99 @@
 paths:
+  /dsh/client/marketing-consent/{channel}:
+    get:
+      operationId: readClientMarketingConsent
+      summary: Read caller-owned promotional contact preference; no consent defaults to OPTED_OUT
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema: { type: string, enum: [PUSH, SMS, EMAIL, IN_APP] }
+      responses:
+        "200":
+          description: Client's current promotional contact preference
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingConsentSnapshot" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+    post:
+      operationId: changeClientMarketingConsent
+      summary: Set or withdraw authenticated client's own promotional consent
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema: { type: string, enum: [PUSH, SMS, EMAIL, IN_APP] }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - name: X-Expected-Version
+          in: header
+          required: true
+          schema: { type: integer, minimum: 0 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [OPTED_IN, OPTED_OUT] }
+      responses:
+        "200":
+          description: Decision and version, including idempotent replay
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingConsentResult" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/public/banner-presentation:
+    get:
+      operationId: readPublicBannerPresentation
+      summary: Read published HOME banner presentation settings
+      responses:
+        "200":
+          description: Current marketing-owned banner presentation
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/BannerPresentation" } } }
+
+  /dsh/operator/marketing/banner-presentation:
+    get:
+      operationId: readOperatorBannerPresentation
+      summary: Read marketing banner presentation for operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      responses:
+        "200":
+          description: Current presentation and version
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/BannerPresentation" } } }
+    put:
+      operationId: setOperatorBannerPresentation
+      summary: Save version-checked marketing banner presentation
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode, intervalSeconds]
+              properties:
+                mode: { type: string, enum: [STATIC, CINEMATIC, CROSSFADE] }
+                intervalSeconds: { type: integer, minimum: 3, maximum: 10 }
+      responses:
+        "200": { description: Updated or replayed presentation }
+
   /dsh/public/promotions:
     get:
       operationId: listPublicPromotions
@@ -62,6 +157,38 @@ paths:
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
 
+  /dsh/operator/promotions/{promotionId}/partner-decisions:
+    get:
+      operationId: listOperatorPartnerDecisions
+      summary: Read Store participation decisions for an operator-selected platform campaign with server pagination
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - name: promotionId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: decision
+          in: query
+          required: false
+          schema: { type: string, enum: [PENDING, OPTED_IN, DECLINED] }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "200":
+          description: One page of Store decisions and an optional next cursor, never customer PII.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/OperatorPartnerDecisionPage" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
   /dsh/operator/promotions/{promotionId}/settlement-summary:
     get:
       operationId: readOperatorPromotionSettlementSummary
@@ -81,6 +208,163 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/marketing/campaigns:
+    get:
+      operationId: listOperatorMarketingCampaigns
+      summary: Server-paginated campaign registry, optionally filtered by state
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - name: state
+          in: query
+          required: false
+          schema: { type: string, enum: [DRAFT, PUBLISHED, PAUSED, ENDED, ARCHIVED] }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "200":
+          description: Ordered campaign page with bounded cursor
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/MarketingCampaignPage"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+    post:
+      operationId: createOperatorMarketingCampaign
+      summary: Create an idempotent campaign draft with mandatory budget
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/CreateMarketingCampaignRequest"
+      responses:
+        "200":
+          description: Idempotent replay
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/MarketingCampaignResponse"
+        "201":
+          description: Created campaign draft
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/MarketingCampaignResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/operator/marketing/campaigns/{campaignId}/details:
+    get:
+      operationId: readOperatorMarketingCampaign
+      summary: Read one marketing campaign, including its aggregate assigned caps
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Campaign readback
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingCampaignResponse" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
+  /dsh/operator/marketing/campaigns/{campaignId}/elements:
+    post:
+      operationId: linkOperatorMarketingCampaignElement
+      summary: Link a draft promotion or creative to a draft campaign with expected version
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/MarketingCampaignLinkRequest"
+      responses:
+        "200":
+          description: Canonical campaign budget and resource counts after linking
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/MarketingCampaignResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/operator/marketing/campaigns/{campaignId}/state:
+    post:
+      operationId: setOperatorMarketingCampaignState
+      summary: Versioned, audited, replay-safe campaign state change with readiness checks
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [state]
+              properties:
+                state: { type: string, enum: [PUBLISHED, PAUSED, ENDED, ARCHIVED] }
+      responses:
+        "200":
+          description: Changed or replayed campaign state
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingCampaignResponse" }
+        "201":
+          description: Accepted state change
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingCampaignResponse" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
 
   /dsh/operator/marketing/summary:
     get:
@@ -116,6 +400,14 @@ paths:
           in: query
           required: false
           schema: { type: string, enum: [DRAFT, PUBLISHED, PAUSED] }
+        - name: discountKind
+          in: query
+          required: false
+          schema: { type: string, enum: [PERCENTAGE, FIXED] }
+        - name: fundingSource
+          in: query
+          required: false
+          schema: { type: string, enum: [BTHWANI, PARTNER, SHARED] }
         - name: sort
           in: query
           required: false

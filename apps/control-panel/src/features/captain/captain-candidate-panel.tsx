@@ -7,7 +7,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
-import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { useWalletProviders, walletProviderLabel } from "../wallet-provider/use-wallet-providers";
 
 type CandidatePage = Readonly<{ items: ReadonlyArray<CaptainAdmission>; nextCursor?: string }>;
@@ -149,27 +148,15 @@ export function CaptainCandidatePanel() {
         <label className="field-label" htmlFor="captain-candidate-search">بحث بالاسم أو الهاتف<input id="captain-candidate-search" value={query} disabled={Boolean(busy)} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث في ملفات الكباتن" /></label>
         <label className="field-label" htmlFor="captain-candidate-state">مرحلة الملف<select id="captain-candidate-state" value={state} disabled={Boolean(busy)} onChange={(event) => setState(event.target.value)}><option value="review_required">يحتاج استكمالًا ومراجعة</option><option value="pending_review">ملف جديد بانتظار المراجعة</option><option value="pending_identity">معتمد وينتظر منح الدور</option><option value="eligible">مؤهل</option><option value="suspended">موقوف</option><option value="all">كل المراحل</option></select></label>
         <label className="field-label" htmlFor="captain-candidate-sort">ترتيب الإنشاء<select id="captain-candidate-sort" value={sort} disabled={Boolean(busy)} onChange={(event) => setSort(event.target.value as "created_asc" | "created_desc")}><option value="created_desc">الأحدث أولًا</option><option value="created_asc">الأقدم أولًا</option></select></label>
-        <button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button>
+        {error ? <button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>إعادة المحاولة</button> : null}
       </div>
       {notice ? <p className="success-inline" role="status">{notice}</p> : null}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
       {loading && items.length === 0 ? <p role="status">جارٍ قراءة ملفات الكباتن…</p> : null}
       {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد ملفات بهذه المرحلة</strong><p>أنشئ ملفًا جديدًا أو غيّر البحث والمرحلة.</p></div> : null}
       {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr>
-          <RegistryColumnHeader label="الاسم والهاتف" active={Boolean(query)}>
-            <label>بحث بالاسم أو الهاتف<input type="search" value={query} onChange={e=>setQuery(e.target.value)} disabled={Boolean(busy)} /></label>
-            <label>الترتيب<select value={sort} disabled={Boolean(busy)} onChange={e=>setSort(e.target.value as typeof sort)}>
-              <option value="created_desc">الأحدث أولًا</option><option value="created_asc">الأقدم أولًا</option>
-            </select></label>
-          </RegistryColumnHeader>
-          <RegistryColumnHeader label="مرحلة الملف" active={state!=="review_required"}>
-            <label>مرحلة الملف<select value={state} disabled={Boolean(busy)} onChange={e=>setState(e.target.value)}>
-              <option value="review_required">يحتاج استكمالًا ومراجعة</option>
-              <option value="pending_review">ملف جديد بانتظار المراجعة</option>
-              <option value="pending_identity">معتمد وينتظر منح الدور</option>
-              <option value="eligible">مؤهل</option><option value="suspended">موقوف</option><option value="all">كل المراحل</option>
-            </select></label>
-          </RegistryColumnHeader>
+          <th scope="col">الاسم والهاتف</th>
+          <th scope="col">مرحلة الملف</th>
           <th scope="col">الخطوة التالية</th>
         </tr></thead><tbody>
         {items.map((profile) => {

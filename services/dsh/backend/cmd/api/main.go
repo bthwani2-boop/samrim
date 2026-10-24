@@ -104,7 +104,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	walletProviderServer, err := transporthttp.NewWalletProvider(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	walletProviderServer, err := transporthttp.NewWalletProvider(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, mediaStore)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -214,8 +214,22 @@ func main() {
 		go runFieldAcquisitionRewardReconciliationLoop(ctx, time.Minute, storePublication.ReconcileFieldAcquisitionRewards)
 		go runFinancialHandoffReconciliationLoop(ctx, 5*time.Second, financialHandoff.Reconcile)
 		go runCaptainAutomaticDispatchLoop(ctx, 30*time.Second, captainServer.ReconcileAutomaticDispatch)
+		if os.Getenv("DSH_EXPO_PUSH_ENABLED") == "true" {
+			go runNotificationPushLoop(ctx, 6*time.Second, notificationServer.DispatchPushBatch)
+		}
+		go runOperatorExceptionDetectorLoop(ctx, time.Minute, func(ctx context.Context) (int64, error) {
+			opened, err := postgres.DetectOperatorOrderExceptions(ctx, database, 25)
+			if err != nil {
+				return opened, err
+			}
+			escalated, err := postgres.EscalateUnclaimedOperatorCases(ctx, database, 25, 30*time.Minute)
+			return opened + escalated, err
+		})
 		go runCaptainPresenceRetentionLoop(ctx, time.Minute, func(ctx context.Context) error {
-			_, err := postgres.PruneExpiredCaptainPresence(ctx, database)
+			if _, err := postgres.PruneExpiredCaptainPresence(ctx, database); err != nil {
+				return err
+			}
+			_, err := postgres.PurgeExpiredCaptainMissionLocations(ctx, database)
 			return err
 		})
 		runMediaReconciliationLoop(ctx, time.Minute, reconcileMediaStorage)

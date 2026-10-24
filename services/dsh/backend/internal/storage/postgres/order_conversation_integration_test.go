@@ -106,8 +106,8 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 			t.Fatalf("remove temporary staff message from history fixture: %v", err)
 		}
 
-		// Directed messages are visible only to the chosen recipients, original sender,
-		// and operations. Non-recipients cannot forge read acknowledgments.
+		// Directed messages are visible only to their sender and addressed roles.
+		// Operations must be explicitly addressed, never granted implicit private access.
 		privateBody := "رسالة خاصة بالعمليات"
 		privateMessage, privateReplay, err := postgres.SendOrderConversationMessage(ctx, db, orderID, clientID, "client", privateBody,
 			"conversation-private-operator-key", postgres.HashOrderConversationMessageRequest(orderID, privateBody, "operator"), "conversation-private-operator-correlation", "operator")
@@ -134,6 +134,24 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 			t.Fatalf("same key with changed recipient leaked or bypassed idempotency: %v", err)
 		}
 		if _, err := db.ExecContext(ctx, "DELETE FROM dsh.commerce_order_conversation_messages WHERE id=$1", privateMessage.ID); err != nil {
+			t.Fatal(err)
+		}
+
+		// A partner-only message must never be disclosed to or acknowledged by operations.
+		partnerOnlyBody := "partner-only private chat"
+		partnerOnly, partnerReplay, err := postgres.SendOrderConversationMessage(ctx, db, orderID, clientID, "client", partnerOnlyBody,
+			"conversation-partner-only-key", postgres.HashOrderConversationMessageRequest(orderID, partnerOnlyBody, "partner"),
+			"conversation-partner-only-correlation", "partner")
+		if err != nil || partnerReplay {
+			t.Fatalf("partner-only message failed: replay=%t err=%v", partnerReplay, err)
+		}
+		if visible, err := postgres.ReadOrderConversation(ctx, db, orderID, "conversation-test-operator", "operator", 10); err != nil || len(visible.Messages) != 0 || visible.UnreadCount != 0 {
+			t.Fatalf("partner-only message exposed to operations: %+v %v", visible, err)
+		}
+		if _, err := postgres.MarkOrderConversationRead(ctx, db, orderID, "conversation-test-operator", "operator", partnerOnly.ID); !errors.Is(err, postgres.ErrOrderConversationMessageNotFound) {
+			t.Fatalf("operations acknowledged hidden partner message: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, "DELETE FROM dsh.commerce_order_conversation_messages WHERE id=$1", partnerOnly.ID); err != nil {
 			t.Fatal(err)
 		}
 

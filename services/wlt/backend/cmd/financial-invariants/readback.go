@@ -30,6 +30,7 @@ type deliveryHandoffReadback struct {
 	CODCaptainActorID      string
 	CODAmountMinor         int64
 	CODState               string
+	CODDebitLedgerValid    bool
 }
 
 func (r deliveryHandoffReadback) violations() []string {
@@ -53,8 +54,11 @@ func (r deliveryHandoffReadback) violations() []string {
 		if r.CollectedByActorID != r.CaptainActorID {
 			violations = append(violations, "cash_collector_mismatch")
 		}
-		if !r.CODReservationFound || r.CODPaymentIntentID != r.PaymentIntentID || r.CODCaptainActorID != r.CaptainActorID || r.CODAmountMinor != r.CashAmountMinor || (r.CODState != "FINALIZED" && r.CODState != "REMITTED") {
+		if !r.CODReservationFound || r.CODPaymentIntentID != r.PaymentIntentID || r.CODCaptainActorID != r.CaptainActorID || r.CODAmountMinor != r.CashAmountMinor || (r.CODState != "DEBITED" && r.CODState != "REMITTED") {
 			violations = append(violations, "cod_reservation_not_settled")
+		}
+		if r.CODState == "DEBITED" && !r.CODDebitLedgerValid {
+			violations = append(violations, "cod_wallet_debit_ledger_mismatch")
 		}
 	} else if !r.CollectorIsNull {
 		violations = append(violations, "zero_cash_has_collector")
@@ -141,7 +145,17 @@ func verifyDeliveryHandoffReadbacks(ctx context.Context, db *sql.DB) (int, error
 		d.id IS NOT NULL,COALESCE(d.payment_intent_id,''),COALESCE(d.payment_cash_amount_minor,-1),
 		p.id IS NOT NULL,COALESCE(p.state,''),COALESCE(p.amount_minor,-1),COALESCE(p.collected_by_actor_id,''),p.collected_by_actor_id IS NULL,
 		e.order_id IS NOT NULL,COALESCE(e.payment_intent_id,''),COALESCE(e.partner_actor_id,''),COALESCE(e.captain_actor_id,''),
-		c.id IS NOT NULL,COALESCE(c.payment_intent_id,''),COALESCE(c.captain_actor_id,''),COALESCE(c.amount_minor,-1),COALESCE(c.state,'')
+		c.id IS NOT NULL,COALESCE(c.payment_intent_id,''),COALESCE(c.captain_actor_id,''),COALESCE(c.amount_minor,-1),COALESCE(c.state,''),
+		(t.id IS NOT NULL AND
+		 (SELECT COUNT(*) FROM wlt.ledger_entries le WHERE le.transaction_id=t.id)=2 AND
+		 EXISTS (SELECT 1 FROM wlt.ledger_entries le WHERE le.transaction_id=t.id
+		   AND le.account_class='liability' AND le.account_code='CAPTAIN_WALLET'
+		   AND le.actor_type='captain' AND le.actor_id=o.captain_actor_id
+		   AND le.direction='DEBIT' AND le.amount_minor=c.amount_minor AND le.currency='YER') AND
+		 EXISTS (SELECT 1 FROM wlt.ledger_entries le WHERE le.transaction_id=t.id
+		   AND le.account_class='asset' AND le.account_code='CAPTAIN_CASH_RECEIVABLE'
+		   AND le.actor_type IS NULL AND le.actor_id IS NULL
+		   AND le.direction='CREDIT' AND le.amount_minor=c.amount_minor AND le.currency='YER')) AS cod_debit_ledger_valid
 		FROM dsh.commerce_financial_handoff_outbox o
 		LEFT JOIN dsh.commerce_orders d ON d.id=o.order_id
 		LEFT JOIN wlt.payment_intents p ON p.id=o.payment_intent_id
@@ -149,9 +163,11 @@ func verifyDeliveryHandoffReadbacks(ctx context.Context, db *sql.DB) (int, error
 		LEFT JOIN LATERAL (
 			SELECT id,payment_intent_id,captain_actor_id,amount_minor,state
 			FROM wlt.captain_cod_reservations
-			WHERE order_id=o.order_id AND payment_intent_id=o.payment_intent_id AND captain_actor_id=o.captain_actor_id AND state IN ('FINALIZED','REMITTED')
+			WHERE order_id=o.order_id AND payment_intent_id=o.payment_intent_id AND captain_actor_id=o.captain_actor_id AND state IN ('FINALIZED','REMITTED','DEBITED')
 			ORDER BY created_at DESC,id DESC LIMIT 1
 		) c ON TRUE
+		LEFT JOIN wlt.ledger_transactions t ON t.source_type='CAPTAIN_COD_WALLET_DEBIT'
+			AND t.source_id=c.id AND t.transaction_type='CAPTAIN_COD_WALLET_DEBITED'
 		WHERE o.state='POSTED' AND o.effect_type='DELIVERY_SETTLEMENT'`)
 	if err != nil {
 		return 0, err
@@ -165,7 +181,7 @@ func verifyDeliveryHandoffReadbacks(ctx context.Context, db *sql.DB) (int, error
 			&r.OrderFound, &r.OrderPaymentIntentID, &r.OrderCashAmountMinor,
 			&r.PaymentFound, &r.PaymentState, &r.PaymentAmountMinor, &r.CollectedByActorID, &r.CollectorIsNull,
 			&r.EarningFound, &r.EarningPaymentIntentID, &r.EarningPartnerActorID, &r.EarningCaptainActorID,
-			&r.CODReservationFound, &r.CODPaymentIntentID, &r.CODCaptainActorID, &r.CODAmountMinor, &r.CODState); err != nil {
+			&r.CODReservationFound, &r.CODPaymentIntentID, &r.CODCaptainActorID, &r.CODAmountMinor, &r.CODState, &r.CODDebitLedgerValid); err != nil {
 			return violations, err
 		}
 		if issues := r.violations(); len(issues) > 0 {

@@ -64,7 +64,7 @@ export type StorePublicationMutationContext = DshVersionedMutationContext & Read
 export type DshOperatorReadContext = Readonly<{
   operatorActorId: string;
 }>;
-export type WalletProvider = Readonly<{ key: string; displayNameAr: string; active: boolean; version: number }>;
+export type WalletProvider = Readonly<{ key: string; displayNameAr: string; active: boolean; version: number; logoUri: string }>;
 export type WalletProviderListResponse = Readonly<{ walletProviders: ReadonlyArray<WalletProvider> }>;
 type WalletProviderResponse = Readonly<{ walletProvider: WalletProvider }>;
 
@@ -93,6 +93,15 @@ export async function updateOperatorWalletProvider(providerKey: string, input: R
   const key = providerKey.trim();
   if (!key || key.length > 128) throw new Error("DSH_WALLET_PROVIDER_KEY_INVALID");
   return requestDshJson<WalletProviderResponse>("PATCH", `/dsh/wallet-providers/${encodeURIComponent(key)}`, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function uploadOperatorWalletProviderLogo(providerKey: string,file: File,provenance: MediaProvenanceInput,context: JoiningCaseMutationContext & Readonly<{ expectedVersion: number }>): Promise<Readonly<{status:number;payload:WalletProviderResponse}>> {
+ if(!providerKey.trim() || file.size<1 || file.size>10*1024*1024 || !["image/jpeg","image/png"].includes(file.type) || !isMediaProvenanceInputValid(provenance)) throw new Error("WALLET_PROVIDER_LOGO_INVALID");
+ validateVersionedMutationContext(context);
+ const body=new FormData();
+ body.set("file",file,file.name || "wallet-logo");
+ appendMediaProvenance(body,provenance);
+ return requestDshMultipart<WalletProviderResponse>("POST","/dsh/wallet-providers/"+encodeURIComponent(providerKey.trim())+"/logo/upload",body,{"X-Acting-Actor-ID":context.operatorActorId.trim(),"X-Correlation-ID":context.correlationId.trim(),"X-Expected-Version":String(context.expectedVersion),"Idempotency-Key":context.idempotencyKey.trim()});
 }
 
 export type HREmployee = DshHREmployee;
@@ -988,6 +997,17 @@ export async function listJoiningCases(state: string, query: string, sort: "crea
   return (await requestDshJson<JoiningCaseListResponse>(dshOperationPaths.listJoiningCases.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
+export type OperatorPartnerTeamPage = Readonly<{
+ items: ReadonlyArray<import("@bthwani/dsh").StoreAccessGrant>;
+ nextCursor?: string;
+ counts: Readonly<{total:number;active:number;pending:number;suspended:number}>;
+}>;
+export async function listOperatorPartnerTeam(ownerId:string,storeId:string,limit:number,cursor:string,context:DshOperatorReadContext):Promise<OperatorPartnerTeamPage>{
+ if(!ownerId.trim()||ownerId.length>128||storeId.length>128||cursor.length>512||!Number.isInteger(limit)||limit<1||limit>50||!context.operatorActorId.trim())throw Error("INVALID_PARTNER_TEAM_READ");
+ const query=new URLSearchParams({limit:String(limit)});
+ if(storeId)query.set("storeId",storeId);if(cursor)query.set("cursor",cursor);
+ return (await requestDshJson<OperatorPartnerTeamPage>("GET","/dsh/operations/partners/"+encodeURIComponent(ownerId.trim())+"/team?"+query,undefined,{"X-Acting-Actor-ID":context.operatorActorId.trim()})).payload;
+}
 export async function listStoreAccessRoleAdmissionsForOperator(context: DshOperatorReadContext, limit = 25, cursor = ""): Promise<StoreAccessGrantListResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_STORE_ACCESS_OPERATOR_REQUIRED");
   if (!Number.isInteger(limit) || limit < 1 || limit > 50 || cursor.length > 512) throw new Error("DSH_STORE_ACCESS_PAGE_INVALID");
@@ -1746,15 +1766,20 @@ export async function recoverCaptainDelivery(assignmentId: string, context: DshV
   return requestDshJson<CaptainAssignmentResponse>(dshOperationPaths.recoverCaptainDelivery.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim(), "X-Expected-Version": String(context.expectedVersion) });
 }
 
-export type OperatorPromotionRegistryQuery = Readonly<{ search: string; state: string; serviceCityId?: string; sort: "starts_desc" | "starts_asc"; cursor: string; limit: number }>;
+export type OperatorPromotionRegistryQuery = Readonly<{ search: string; state: string; discountKind?: string; fundingSource?: string; serviceCityId?: string; sort: "starts_desc" | "starts_asc"; cursor: string; limit: number }>;
 export type OperatorDiscoveryContentRegistryQuery = Readonly<{ search: string; state: string; kind: string; sort: "priority" | "created_desc"; cursor: string; limit: number }>;
 
 export async function listMarketingPromotions(query: OperatorPromotionRegistryQuery, context: DshOperatorReadContext): Promise<OperatorPromotionRegistryResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_MARKETING_READ_INPUT_INVALID");
   const serviceCityId = query.serviceCityId?.trim() ?? "";
+  const discountKind = query.discountKind ?? "";
+  const fundingSource = query.fundingSource ?? "";
+  if ((discountKind && !["PERCENTAGE", "FIXED"].includes(discountKind)) || (fundingSource && !["BTHWANI", "PARTNER", "SHARED"].includes(fundingSource))) throw new Error("DSH_MARKETING_PROMOTION_FILTER_INVALID");
   if (query.search.trim().length > 128 || serviceCityId.length > 128 || query.cursor.length > 2048 || !["starts_desc", "starts_asc"].includes(query.sort) || !Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100) throw new Error("DSH_MARKETING_PROMOTION_REGISTRY_INPUT_INVALID");
   const params = new URLSearchParams({ search: query.search.trim(), sort: query.sort, limit: String(query.limit) });
   if (query.state) params.set("state", query.state);
+  if (discountKind) params.set("discountKind", discountKind);
+  if (fundingSource) params.set("fundingSource", fundingSource);
   if (serviceCityId) params.set("serviceCityId", serviceCityId);
   if (query.cursor) params.set("cursor", query.cursor);
   const path = `${dshOperationPaths.listOperatorPromotions.path}?${params.toString()}`;
@@ -1931,4 +1956,85 @@ export async function readOperatorOpportunities(context: DshOperatorReadContext)
     "X-Acting-Actor-ID": context.operatorActorId,
   });
   return response.payload;
+}
+
+
+import type { OperatorPartnerDecisionPage } from "@bthwani/dsh";
+
+export async function listMarketingPartnerDecisions(
+  promotionId: string,
+  cursor: string,
+  decision: "" | "PENDING" | "OPTED_IN" | "DECLINED",
+  context: DshOperatorReadContext,
+): Promise<OperatorPartnerDecisionPage> {
+  if (!context.operatorActorId.trim() || !promotionId.trim() || promotionId.length > 128 || cursor.length > 128)
+    throw new Error("DSH_PARTNER_DECISIONS_READ_INPUT_INVALID");
+  const route = dshOperationPaths.listOperatorPartnerDecisions;
+  const path = route.path.replace("{promotionId}", encodeURIComponent(promotionId.trim()));
+  const search = new URLSearchParams({ limit: "25" });
+  if (cursor) search.set("cursor", cursor);
+  if (decision) search.set("decision", decision);
+  return (await requestDshJson<OperatorPartnerDecisionPage>(
+    route.method,
+    path + "?" + search.toString(),
+    undefined,
+    { "X-Acting-Actor-ID": context.operatorActorId.trim() },
+  )).payload;
+}
+
+
+// Canonical campaign registry: no client-side first-page filtering.
+import type { CreateMarketingCampaignRequest, MarketingCampaignPage, MarketingCampaignResponse } from "@bthwani/dsh";
+
+export function listOperatorMarketingCampaigns(
+  state: string, cursor: string, context: DshOperatorReadContext,
+): Promise<MarketingCampaignPage> {
+  if (cursor.length > 128 || !["", "DRAFT", "PUBLISHED", "PAUSED", "ENDED", "ARCHIVED"].includes(state)) {
+    throw new Error("MARKETING_CAMPAIGN_FILTER_INVALID");
+  }
+  const query = new URLSearchParams({ limit: "25" });
+  if (state) query.set("state", state);
+  if (cursor) query.set("cursor", cursor);
+  return requestDshJson<MarketingCampaignPage>(
+    dshOperationPaths.listOperatorMarketingCampaigns.method,
+    dshOperationPaths.listOperatorMarketingCampaigns.path + "?" + query,
+    undefined, { "X-Acting-Actor-ID": context.operatorActorId },
+  ).then(({ payload }) => payload);
+}
+
+export function createOperatorMarketingCampaign(
+  input: CreateMarketingCampaignRequest, context: JoiningCaseMutationContext,
+): Promise<Readonly<{ status: number; payload: MarketingCampaignResponse }>> {
+  validateAttributedMutationContext(context);
+  return requestDshJson<MarketingCampaignResponse>(
+    dshOperationPaths.createOperatorMarketingCampaign.method,
+    dshOperationPaths.createOperatorMarketingCampaign.path, input,
+    { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey },
+  );
+}
+
+export function setOperatorMarketingCampaignState(
+  id: string, state: "PUBLISHED" | "PAUSED" | "ENDED" | "ARCHIVED", context: StorePublicationMutationContext,
+): Promise<Readonly<{ status: number; payload: MarketingCampaignResponse }>> {
+  validateVersionedMutationContext(context);
+  return requestDshJson<MarketingCampaignResponse>(
+    dshOperationPaths.setOperatorMarketingCampaignState.method,
+    dshOperationPaths.setOperatorMarketingCampaignState.path.replace("{campaignId}", encodeURIComponent(id)),
+    { state },
+    { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey, "X-Expected-Version": String(context.expectedVersion) },
+  );
+}
+
+export function linkOperatorMarketingCampaignElement(
+  id: string, kind: "PROMOTION" | "CONTENT", resourceId: string, context: StorePublicationMutationContext,
+): Promise<Readonly<{ status: number; payload: MarketingCampaignResponse }>> {
+  validateVersionedMutationContext(context);
+  if (!id.trim() || id.length > 128 || !resourceId.trim() || resourceId.length > 128) throw new Error("INVALID_CAMPAIGN_LINK");
+  return requestDshJson<MarketingCampaignResponse>(
+    "POST",
+    `/dsh/operator/marketing/campaigns/${encodeURIComponent(id)}/elements`,
+    { kind, resourceId },
+    { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId,
+      "Idempotency-Key": context.idempotencyKey, "X-Expected-Version": String(context.expectedVersion) },
+  );
 }

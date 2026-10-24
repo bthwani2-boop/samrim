@@ -14,30 +14,31 @@ A client can maintain an owned delivery address and receive one canonical DSH se
 
 DSH owns delivery-address operational truth, Store delivery-origin operational location truth, canonical Service City operational truth, and serviceability policy/evaluation result. Map/geocoding/routing providers are technical adapters for physical delivery and are not serviceability authorities.
 
-## Admitted policy: CITY_SCOPE_V1
+## Admitted policy: CITY_SCOPE_V2_RADIUS_30KM
 
 The admitted serviceability policy is:
 
-- `POLICY_VERSION = CITY_SCOPE_V1`
-- `MEASUREMENT`: canonical Service City identity
-- `BOUNDARY`: same active canonical Service City
-- `UNIT`: Service City identity
-- `COMPARISON`: exact canonical Service City identity equality
+- `POLICY_VERSION = CITY_SCOPE_V2_RADIUS_30KM`
+- `MEASUREMENT`: matching canonical Service City plus straight-line distance between the Store delivery origin and the owned Client delivery address
+- `BOUNDARY`: both locations in the same active Service City and at most 30,000 metres apart
+- `COMPARISON`: inclusive maximum of 30 kilometres; invalid or missing coordinates fail closed
+- WLT delivery quotes enforce the same maximum independently; a quote beyond this limit must not produce an arbitrary long-distance charge.
 
-Canonical evaluation inputs for `CITY_SCOPE_V1` are:
+Canonical evaluation inputs for `CITY_SCOPE_V2_RADIUS_30KM` are:
 
 - target canonical customer-visible Store and its assigned Service City (`Store.service_city_id`);
 - owned client delivery address and its assigned Service City (`DeliveryAddress.service_city_id`);
 - canonical active Service City state;
-- immutable `CITY_SCOPE_V1` policy identity and version.
+- canonical Store origin and Address coordinates;
+- immutable `CITY_SCOPE_V2_RADIUS_30KM` policy identity and version.
 
 Canonical decision semantics:
 
-- `SERVICEABLE`: Store and owned Address reference the same active canonical Service City, and the target Store satisfies customer-visible Store eligibility;
-- `UNSERVICEABLE`: Store and owned Address are valid and active but belong to different active canonical Service Cities;
+- `SERVICEABLE`: Store and owned Address reference the same active canonical Service City, and the target Store satisfies customer-visible eligibility and the 30 km radius;
+- `UNSERVICEABLE`: Store and owned Address are active but in different Cities or exceed the accepted operating radius;
 - `UNAVAILABLE`: required City assignment missing, required City inactive or unknown, legacy unassigned state, target Store not customer-visible, or required canonical dependency unavailable.
 
-Store delivery origin and exact DeliveryAddress coordinates are preserved as purpose-limited operational location facts for physical delivery and routing, but they are explicitly not evaluation inputs for `CITY_SCOPE_V1`. Distance, radius, polygons, geofences, and map/routing provider measurements are not part of `CITY_SCOPE_V1`.
+Store origin and DeliveryAddress coordinates are evaluated server-side only. Straight-line distance is a conservative operating limit, not a road distance or travel-time promise. Expanding service radius requires a new explicitly governed policy, not merely extending delivery-price bands.
 
 ## Invariants
 
@@ -63,7 +64,7 @@ SERVICE CITY SCOPE:
 - DSH owns canonical Service City identity and lifecycle (active/inactive);
 - Store belongs to exactly one canonical Service City;
 - DeliveryAddress belongs to exactly one canonical Service City;
-- `CITY_SCOPE_V1` evaluates equality of active Service City identities.
+- `CITY_SCOPE_V2_RADIUS_30KM` evaluates same-city identity and a bounded origin-to-address radius.
 
 ## Failure and recovery
 

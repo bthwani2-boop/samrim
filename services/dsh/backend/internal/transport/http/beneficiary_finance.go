@@ -47,6 +47,7 @@ func (s *BeneficiaryFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/me/funding-intents", s.createOwnFundingIntent)
 	mux.HandleFunc("GET /dsh/me/funding-intents/{fundingIntentId}", s.readOwnFundingIntent)
 	mux.HandleFunc("POST /dsh/me/funding-intents/{fundingIntentId}/simulate", s.simulateOwnFundingIntent)
+	mux.HandleFunc("POST /dsh/me/funding-intents/{fundingIntentId}/reconcile", s.reconcileOwnFundingIntent)
 	mux.HandleFunc("GET /dsh/me/payout-state", s.readOwnPayoutState)
 	mux.HandleFunc("GET /dsh/partners/me/payout-summary", s.readPartnerPayoutSummary)
 	mux.HandleFunc("POST /dsh/me/payout-intents", s.createOwnPayoutIntent)
@@ -78,6 +79,10 @@ func (s *BeneficiaryFinanceServer) readOwnWallet(w http.ResponseWriter, r *http.
 		writeWLTFinanceError(w, err)
 		return
 	}
+	if !beneficiaryFinanceActorMatches(actorType, identity.Subject, state.ActorType, state.ActorID) {
+		writeError(w, http.StatusBadGateway, "WLT_ACTOR_MISMATCH", "wallet owner verification failed")
+		return
+	}
 	intents, _, err := s.payment.ListCashInFundingIntents(r.Context(), actorType, identity.Subject, 50)
 	if err != nil {
 		writeWLTFinanceError(w, err)
@@ -96,12 +101,24 @@ func (s *BeneficiaryFinanceServer) createOwnFundingIntent(w http.ResponseWriter,
 		return
 	}
 	var input struct {
-		AmountMinor int64 `json:"amountMinor"`
+		AmountMinor int64  `json:"amountMinor"`
+		ProviderKey string `json:"providerKey"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	intent, simulator, replayed, err := s.payment.CreateCashInFundingIntent(r.Context(), actorType, identity.Subject, input.AmountMinor, idempotency, correlation)
+	if input.ProviderKey != "" {
+		active, err := postgres.IsActiveWalletProvider(r.Context(), s.db, input.ProviderKey)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "PROVIDER_DIRECTORY_UNAVAILABLE", "Wallet providers could not be verified")
+			return
+		}
+		if !active {
+			writeError(w, http.StatusBadRequest, "INVALID_PROVIDER", "The selected payment provider is not active")
+			return
+		}
+	}
+	intent, simulator, replayed, err := s.payment.CreateCashInFundingIntent(r.Context(), actorType, identity.Subject, input.AmountMinor, idempotency, correlation, input.ProviderKey)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -130,6 +147,37 @@ func (s *BeneficiaryFinanceServer) readOwnFundingIntent(w http.ResponseWriter, r
 	writeJSON(w, http.StatusOK, map[string]any{"intent": intent})
 }
 
+func (s *BeneficiaryFinanceServer) reconcileOwnFundingIntent(w http.ResponseWriter, r *http.Request) {
+	identity, actorType, ok := s.requireFundingSession(w, r)
+	if !ok {
+		return
+	}
+	correlation, idempotency, ok := requiredBeneficiaryFinanceMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	intentID := strings.TrimSpace(r.PathValue("fundingIntentId"))
+	item, err := s.payment.ReadCashInFundingIntent(r.Context(), intentID)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	if item.ActorType != actorType || item.ActorID != identity.Subject {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "Funding intent not found")
+		return
+	}
+	if !strings.HasPrefix(item.ProviderKey, "WALLET_PROVIDER_") {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "Provider recovery unavailable")
+		return
+	}
+	updated, err := s.payment.ReconcileMockCashInFundingIntent(r.Context(), intentID, identity.Subject, idempotency, correlation)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"intent": updated, "simulator": true})
+}
+
 func (s *BeneficiaryFinanceServer) simulateOwnFundingIntent(w http.ResponseWriter, r *http.Request) {
 	identity, actorType, ok := s.requireFundingSession(w, r)
 	if !ok {
@@ -144,8 +192,8 @@ func (s *BeneficiaryFinanceServer) simulateOwnFundingIntent(w http.ResponseWrite
 		writeWLTFinanceError(w, err)
 		return
 	}
-	if !state.Simulator {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "development simulator is not available")
+	if !state.Simulator || state.ProviderMock {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "manual outcome selection is unavailable for provider-backed Cash-In")
 		return
 	}
 	intentID := strings.TrimSpace(r.PathValue("fundingIntentId"))
@@ -187,6 +235,10 @@ func (s *BeneficiaryFinanceServer) readOwnPayoutState(w http.ResponseWriter, r *
 		writeWLTFinanceError(w, err)
 		return
 	}
+	if !beneficiaryFinanceActorMatches(identity.Role, identity.Subject, state.ActorType, state.ActorID) {
+		writeError(w, http.StatusBadGateway, "WLT_ACTOR_MISMATCH", "payout owner verification failed")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"state": state})
 }
 
@@ -219,6 +271,11 @@ func (s *BeneficiaryFinanceServer) createOwnPayoutIntent(w http.ResponseWriter, 
 	payout, replayed, err := s.payment.CreatePayoutIntent(r.Context(), identity.Role, identity.Subject, input.AmountMode, input.AmountMinor, identityFacts, idempotency, correlation)
 	if err != nil {
 		writeWLTFinanceError(w, err)
+		return
+	}
+	if !beneficiaryFinanceActorMatches(identity.Role, identity.Subject, payout.ActorType, payout.ActorID) ||
+		payout.ResolvedAmountMinor <= 0 {
+		writeError(w, http.StatusBadGateway, "WLT_PAYOUT_READBACK_INVALID", "payout ownership and amount verification failed")
 		return
 	}
 	status := http.StatusCreated
@@ -609,4 +666,11 @@ func (s *BeneficiaryFinanceServer) destinationBelongsToActor(w http.ResponseWrit
 		return false
 	}
 	return true
+}
+
+// beneficiaryFinanceActorMatches prevents cross-actor WLT responses from being
+// surfaced to a signed-in beneficiary even if an upstream integration misroutes.
+func beneficiaryFinanceActorMatches(role, actorID, responseRole, responseActorID string) bool {
+	return actorID != "" && role != "" && responseActorID == actorID &&
+		responseRole == role
 }

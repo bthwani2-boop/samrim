@@ -1,4 +1,5 @@
 "use client";
+import { preserveFinanceRouteContext } from "./finance-route-context";
 
 import { type BeneficiaryPayoutState, formatMoney, fulfillmentModeLabel, officialWalletDestinationStatusLabel, orderStateLabel, publicationStateLabel, type PayoutRequest, payoutStatusLabel } from "@bthwani/dsh";
 import Link from "next/link";
@@ -68,7 +69,8 @@ const financialTransactionLabels: Readonly<Record<string, string>> = {
   CAPTAIN_OPENING_FUNDING: "تمويل افتتاحي للمحفظة",
   CUSTOMER_WALLET_TOPUP: "شحن محفظة العميل",
   CAPTAIN_TOPUP: "شحن محفظة الكابتن",
-  CAPTAIN_CASH_REMITTED: "توريد النقد المحصل",
+  CAPTAIN_CASH_REMITTED: "تسوية توريد نقدي تاريخي",
+  CAPTAIN_COD_WALLET_DEBITED: "خصم قيمة طلب نقدي من محفظة الكابتن",
   FIELD_ACQUISITION_ENTITLEMENT_POSTED: "استحقاق ضم شريك للميداني",
   PARTNER_ORDER_EARNING_POSTED: "استحقاق طلب شريك",
   PAYOUT_COMPLETED: "إتمام الصرف",
@@ -78,7 +80,8 @@ const financialSourceLabels: Readonly<Record<string, string>> = {
   PARTNER_COMMISSION_REMITTANCE: "حوالة عمولة",
   CAPTAIN_OPENING_FUNDING: "تمويل افتتاحي",
   FUNDING_INTENT: "عملية شحن",
-  CASH_REMITTANCE: "توريد نقدي",
+  CASH_REMITTANCE: "توريد نقدي تاريخي",
+  CAPTAIN_COD_WALLET_DEBIT: "خصم تحصيل طلب نقدي من المحفظة",
   PARTNER_STORE_CLIENT_VISIBLE: "استحقاق متجر",
   ORDER_DELIVERED: "طلب مستلم",
   MANUAL_EXTERNAL_TRANSFER: "تحويل خارجي يدوي",
@@ -107,6 +110,7 @@ function settlementRouteHref(pathname: string, query: BeneficiarySettlementIniti
   if (next.batchId) params.set("batchId", next.batchId);
   if (next.batchStatus) params.set("batchStatus", next.batchStatus);
   if (next.batchCursor) params.set("batchCursor", next.batchCursor);
+  preserveFinanceRouteContext(params, pathname);
   const serialized = params.toString();
   return pathname + (serialized ? `?${serialized}` : "");
 }

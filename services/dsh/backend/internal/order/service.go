@@ -277,6 +277,79 @@ func (s *Service) ListForAuthorizedPartnerStores(ctx context.Context, accessToke
 	return page, counts, nil
 }
 
+func (s *Service) ListOpenCasesForOperator(ctx context.Context, actorID, scope string, limit int, cursor string) (postgres.OpsCasePage, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.OpsCasePage{}, err
+	}
+	return postgres.ListOpenOpsCases(ctx, s.db, actorID, scope, limit, cursor)
+}
+
+func (s *Service) ListOrderCaseResolutionEvidenceForOperator(ctx context.Context, orderID string, caseID int64, actorID string) ([]postgres.OpsCaseResolutionEvidence, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return nil, err
+	}
+	return postgres.ListOrderCaseResolutionEvidence(ctx, s.db, orderID, caseID)
+}
+
+func (s *Service) ListOrderCaseEventsForOperator(ctx context.Context, orderID string, caseID int64, actorID string, limit int, cursor string) (postgres.OpsCaseEventPage, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.OpsCaseEventPage{}, err
+	}
+	return postgres.ListOrderOpsCaseEvents(ctx, s.db, orderID, caseID, limit, cursor)
+}
+
+func (s *Service) ListOrderCasesForOperator(ctx context.Context, orderID, actorID string, limit int, cursor string) (postgres.OpsCasePage, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.OpsCasePage{}, err
+	}
+	return postgres.ListOrderOpsCases(ctx, s.db, orderID, limit, cursor)
+}
+func (s *Service) OpenOrderCaseForOperator(ctx context.Context, orderID, actorID, reason, priority, nextAction, key, correlationID string) (postgres.OpsCase, bool, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.OpsCase{}, false, err
+	}
+	return postgres.OpenOpsCase(ctx, s.db, orderID, actorID, reason, priority, nextAction, key, correlationID)
+}
+func (s *Service) UpdateOrderCaseForOperator(ctx context.Context, orderID string, id int64, actorID, action, note, key, correlationID string, expectedVersion int, evidenceRefs ...string) (postgres.OpsCase, bool, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.OpsCase{}, false, err
+	}
+	return postgres.UpdateOpsCase(ctx, s.db, orderID, id, actorID, action, note, key, correlationID, expectedVersion, evidenceRefs...)
+}
+
+func (s *Service) ReadMissionLocationForOperator(ctx context.Context, orderID, actorID string) (postgres.CaptainMissionLocation, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.CaptainMissionLocation{}, err
+	}
+	return postgres.ReadOperatorMissionLocation(ctx, s.db, orderID)
+}
+
+func (s *Service) ReadCustomerContactForOperator(ctx context.Context, orderID, actingActorID string) (postgres.CustomerOrderContactReview, error) {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
+		return postgres.CustomerOrderContactReview{}, err
+	}
+	return postgres.ReadCustomerOrderContactReview(ctx, s.db, orderID, actingActorID)
+}
+func (s *Service) UpdateCustomerContactClaimForOperator(ctx context.Context, orderID, actorID string, release bool, expectedVersion int) (postgres.CustomerOrderContactReview, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.CustomerOrderContactReview{}, err
+	}
+	return postgres.UpdateCustomerContactClaim(ctx, s.db, orderID, actorID, release, expectedVersion)
+}
+func (s *Service) RecordCustomerContactForOperator(ctx context.Context, orderID, actingActorID, decision, idempotencyKey, correlationID string, expectedVersion int) (postgres.CustomerOrderContactReview, bool, error) {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
+		return postgres.CustomerOrderContactReview{}, false, err
+	}
+	return postgres.RecordCustomerOrderContactDecision(ctx, s.db, orderID, actingActorID, decision, idempotencyKey, correlationID, expectedVersion)
+}
+
+func (s *Service) ListPendingCustomerContactsForOperator(ctx context.Context, actorID string, limit int, cursor string) (postgres.PendingCustomerContactsPage, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
+		return postgres.PendingCustomerContactsPage{}, err
+	}
+	return postgres.ListPendingCustomerContacts(ctx, s.db, limit, cursor)
+}
+
 func (s *Service) ListForOperator(ctx context.Context, state, query, sort, actingActorID string, actionableOnly bool, limit int, cursor string) (postgres.OperatorOperationsResult, error) {
 	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
 		return postgres.OperatorOperationsResult{}, err

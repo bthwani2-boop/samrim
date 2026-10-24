@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -156,6 +157,25 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 			}
 			actors[id] = actor
 		}
+		// A prepaid delivery must not bypass merchandise custody risk limits.
+		// A rejected attempt must leave the offer available for a later valid
+		// acceptance without recording a winner or changing the order.
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.captain_goods_custody_policies SET single_order_cap_minor=1000,concurrent_cap_minor=1000,version=version+1 WHERE id='platform'"); err != nil {
+			t.Fatal(err)
+		}
+		blockedID := offers[0]
+		blockedKey := "accept-goods-limit"
+		_, err = postgres.RespondToCaptainOffer(ctx, db, blockedID, actors[blockedID], "accept", 1, blockedKey, postgres.HashCaptainOfferResponse(blockedID, "accept", 1), blockedKey)
+		if !errors.Is(err, postgres.ErrCaptainGoodsCustodyLimit) {
+			t.Fatalf("goods over limit must fail closed: %v", err)
+		}
+		var stillOffered int
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.captain_dispatch_offers WHERE id=$1 AND state='offered'", blockedID).Scan(&stillOffered); err != nil || stillOffered != 1 {
+			t.Fatalf("rejected exposure mutated the offer: %d %v", stillOffered, err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.captain_goods_custody_policies SET single_order_cap_minor=50000,concurrent_cap_minor=50000,version=version+1 WHERE id='platform'"); err != nil {
+			t.Fatal(err)
+		}
 		var wg sync.WaitGroup
 		for i, id := range offers {
 			wg.Add(1)
@@ -258,6 +278,41 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 		remaining := readParallelOfferIDs(t, ctx, db, orderID)
 		if len(remaining) != 2 {
 			t.Fatalf("rejecting one candidate must leave two outstanding offers, got %d", len(remaining))
+		}
+		// An order that was eligible at offer acceptance must be checked again
+		// at physical pickup: policy may have changed meanwhile.
+		var finalActor string
+		if err := db.QueryRowContext(ctx, "SELECT captain_actor_id FROM dsh.captain_dispatch_offers WHERE id=$1", remaining[0]).Scan(&finalActor); err != nil {
+			t.Fatal(err)
+		}
+		key := "dispatch-three-final-accept"
+		finalAccept, err := postgres.RespondToCaptainOffer(ctx, db, remaining[0], finalActor, "accept", 1, key, postgres.HashCaptainOfferResponse(remaining[0], "accept", 1), key)
+		if err != nil || finalAccept.Assignment == nil {
+			t.Fatalf("second batch acceptance: %+v err=%v", finalAccept, err)
+		}
+		assignmentID := finalAccept.Assignment.ID
+		var handoffVersion int
+		if err := db.QueryRowContext(ctx, "UPDATE dsh.captain_handoffs SET state='store_confirmed',store_confirmed_at=clock_timestamp(),version=version+1 WHERE assignment_id=$1 RETURNING version", assignmentID).Scan(&handoffVersion); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.captain_goods_custody_policies SET single_order_cap_minor=1000,concurrent_cap_minor=1000,version=version+1 WHERE id='platform'"); err != nil {
+			t.Fatal(err)
+		}
+		pickupKey := "dispatch-three-pickup-policy"
+		_, _, err = postgres.CompleteCaptainPickup(ctx, db, assignmentID, finalActor, handoffVersion, pickupKey, postgres.HashCaptainPickupRequest(assignmentID, handoffVersion), pickupKey)
+		if !errors.Is(err, postgres.ErrCaptainGoodsCustodyLimit) {
+			t.Fatalf("policy changed after acceptance must block physical custody: %v", err)
+		}
+		var assignedState string
+		if err := db.QueryRowContext(ctx, "SELECT state FROM dsh.captain_assignments WHERE id=$1", assignmentID).Scan(&assignedState); err != nil || assignedState != "assigned" {
+			t.Fatalf("blocked pickup changed physical custody: state=%s err=%v", assignedState, err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.captain_goods_custody_policies SET single_order_cap_minor=50000,concurrent_cap_minor=50000,version=version+1 WHERE id='platform'"); err != nil {
+			t.Fatal(err)
+		}
+		pickedUp, replayed, err := postgres.CompleteCaptainPickup(ctx, db, assignmentID, finalActor, handoffVersion, pickupKey, postgres.HashCaptainPickupRequest(assignmentID, handoffVersion), pickupKey)
+		if err != nil || replayed || pickedUp.State != "in_custody" {
+			t.Fatalf("covered pickup should succeed exactly once: %+v replay=%t err=%v", pickedUp, replayed, err)
 		}
 	})
 }

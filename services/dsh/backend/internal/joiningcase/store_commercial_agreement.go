@@ -344,16 +344,16 @@ func normalizeStoreAgreementRates(storeModes []string, rates []wltintegration.St
 	if err != nil || len(modes) == 0 || len(rates) != len(modes) {
 		return nil, ErrStoreAgreementInvalidInput
 	}
-	byMode := make(map[string]int, len(rates))
+	byMode := make(map[string]wltintegration.StoreCommercialAgreementRate, len(rates))
 	for _, rate := range rates {
 		mode := strings.ToUpper(strings.TrimSpace(rate.FulfillmentMode))
-		if !isSupportedStoreAgreementMode(mode) || rate.CommissionRateBps < 0 || rate.CommissionRateBps > 10000 {
+		if !isSupportedStoreAgreementMode(mode) || rate.CommissionRateBps < 0 || rate.CommissionRateBps > 10000 || rate.DeliveryMarkupMinor < 0 || rate.DeliveryMarkupMinor > 10000 || rate.DeliveryFixedFeeMinor < 0 || rate.DeliveryFixedFeeMinor > 20000 || (mode != "PARTNER_CAPTAIN" && ((rate.DeliveryPricingMode != "" && strings.ToUpper(strings.TrimSpace(rate.DeliveryPricingMode)) != "DISTANCE") || rate.DeliveryFixedFeeMinor != 0)) || (mode == "PARTNER_CAPTAIN" && !validPartnerCaptainFeeMode(rate.DeliveryPricingMode, rate.DeliveryFixedFeeMinor)) || (rate.DeliveryMarkupMinor > 0 && (mode != "BTHWANI_CAPTAIN" || rate.CommissionRateBps != 0)) {
 			return nil, ErrStoreAgreementInvalidInput
 		}
 		if _, exists := byMode[mode]; exists {
 			return nil, ErrStoreAgreementInvalidInput
 		}
-		byMode[mode] = rate.CommissionRateBps
+		byMode[mode] = wltintegration.StoreCommercialAgreementRate{FulfillmentMode: mode, CommissionRateBps: rate.CommissionRateBps, DeliveryMarkupMinor: rate.DeliveryMarkupMinor, DeliveryPricingMode: normalizedPartnerCaptainPricingMode(rate.DeliveryPricingMode), DeliveryFixedFeeMinor: rate.DeliveryFixedFeeMinor}
 	}
 	result := make([]wltintegration.StoreCommercialAgreementRate, 0, len(modes))
 	for _, mode := range modes {
@@ -361,7 +361,7 @@ func normalizeStoreAgreementRates(storeModes []string, rates []wltintegration.St
 		if !exists {
 			return nil, ErrStoreAgreementInvalidInput
 		}
-		result = append(result, wltintegration.StoreCommercialAgreementRate{FulfillmentMode: mode, CommissionRateBps: rate})
+		result = append(result, rate)
 	}
 	return result, nil
 }
@@ -391,6 +391,28 @@ func isSupportedStoreAgreementMode(mode string) bool {
 	switch mode {
 	case "BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP":
 		return true
+	default:
+		return false
+	}
+}
+
+func normalizedPartnerCaptainPricingMode(raw string) string {
+	mode := strings.ToUpper(strings.TrimSpace(raw))
+	if mode == "" {
+		return "DISTANCE"
+	}
+	return mode
+}
+
+func validPartnerCaptainFeeMode(raw string, fixed int64) bool {
+	if fixed < 0 || fixed > 20000 {
+		return false
+	}
+	switch normalizedPartnerCaptainPricingMode(raw) {
+	case "DISTANCE", "FREE":
+		return fixed == 0
+	case "FIXED":
+		return fixed > 0
 	default:
 		return false
 	}

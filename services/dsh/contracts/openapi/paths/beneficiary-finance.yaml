@@ -227,6 +227,7 @@ paths:
               required: [amountMinor]
               properties:
                 amountMinor: { type: integer, minimum: 1 }
+                providerKey: { type: string, description: "Active provider key required for HTTP-provider emulation." }
       responses:
         "201":
           description: Funding intent accepted by the configured Cash-In rail.
@@ -273,11 +274,32 @@ paths:
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/me/funding-intents/{fundingIntentId}/reconcile:
+    post:
+      operationId: reconcileOwnFundingIntent
+      summary: Verify a pending local-test payment with its originating mock provider
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: fundingIntentId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Provider-verified funding status without caller-defined outcome
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/BeneficiaryFundingIntentResponse" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
   /dsh/me/funding-intents/{fundingIntentId}/simulate:
     post:
       operationId: simulateOwnFundingIntent
       summary: Apply a deterministic development-only simulated Cash-In outcome
-      description: Available only when WLT is explicitly configured for the development simulator. Never enabled in production.
+      description: Available only when WLT uses the legacy manual-outcome development simulator. Returns 404 for the HTTP-provider Cash-In mock and in production.
       security:
         - userBearer: []
       parameters:

@@ -1,4 +1,5 @@
 "use client";
+import { preserveFinanceRouteContext } from "./finance-route-context";
 
 import {
   financialProfileStateLabel,
@@ -35,6 +36,7 @@ function buildHref(pathname: string, query: PartnerEarningsInitialQuery) {
   const params = new URLSearchParams();
   if (query.cursor) params.set("cursor", query.cursor);
   if (query.partnerActorId) params.set("partnerActorId", query.partnerActorId);
+  preserveFinanceRouteContext(params, pathname);
   const suffix = params.toString();
   return suffix ? `${pathname}?${suffix}` : pathname;
 }
@@ -390,6 +392,7 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
             <RegistryColumnHeader label="المبلغ المستحق" scope="page" active={Boolean(amountFilter)}>
               <label>بحث في المبلغ المعروض<input type="search" inputMode="numeric" value={amountFilter} onChange={e=>setAmountFilter(e.target.value)} /></label>
             </RegistryColumnHeader>
+            <th scope="col">أقدم ذمة مفتوحة</th>
             <th scope="col">التفاصيل</th>
           </tr></thead>
           <tbody>{visibleItems.map((item) => {
@@ -399,9 +402,10 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
               <th scope="row"><span className="identity-copy"><strong>{displayName}</strong>{item.partnerPhoneMasked ? <bdi dir="ltr">{item.partnerPhoneMasked}</bdi> : <span className="muted">الهاتف غير متاح</span>}</span></th>
               <td>{financialProfileStateLabel(item.profileState as PartnerFinancialSummary["profileState"])}</td>
               <td>{formatMoney(item.outstandingCommissionReceivableMinor, item.currency)}</td>
+              <td>{item.oldestUnpaidAt ? new Date(item.oldestUnpaidAt).toLocaleDateString("ar-YE", { day: "2-digit", month: "short", year: "numeric" }) : "غير محدد — يحتاج مراجعة"}</td>
               <td><button className="button button-quiet" type="button" onClick={() => navigate({ cursor: initialQuery.cursor, partnerActorId: item.partnerActorId })} aria-label={`فتح مستحقات ${accessibleName}`}>فتح التفاصيل</button></td>
             </tr>;
-          })}{items.length>0&&visibleItems.length===0?<tr><td colSpan={4}>لا توجد مطابقة ضمن مستحقات الصفحة الحالية.</td></tr>:null}</tbody>
+          })}{items.length>0&&visibleItems.length===0?<tr><td colSpan={5}>لا توجد مطابقة ضمن مستحقات الصفحة الحالية.</td></tr>:null}</tbody>
         </table>
         {!registryLoading && items.length === 0 ? <p className="state-message">لا توجد مستحقات مفتوحة مطابقة لهذا البحث.</p> : null}
       </div>

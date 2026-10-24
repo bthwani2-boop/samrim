@@ -21,27 +21,27 @@ func TestFundedNearestCaptainsOnlyAndFailClosed(t *testing.T) {
 		}
 		return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: balance}, nil
 	}
-	selected, err := selectFundedNearbyCaptains(context.Background(), pool, 2000, 0, wallet)
+	selected, err := selectFundedNearbyCaptains(context.Background(), pool, 2000, wallet)
 	if err != nil || !reflect.DeepEqual(selected, []string{"second", "third", "fourth"}) {
 		t.Fatalf("selected %v err %v", selected, err)
 	}
 	if len(called) != 4 {
 		t.Fatalf("wallet preflight count=%d", len(called))
 	}
-	noMoney, err := selectFundedNearbyCaptains(context.Background(), pool, 0, 0, func(context.Context, string) (wlt.CaptainWalletState, error) {
+	noMoney, err := selectFundedNearbyCaptains(context.Background(), pool, 0, func(context.Context, string) (wlt.CaptainWalletState, error) {
 		t.Fatal("wallet must not block prepaid orders")
 		return wlt.CaptainWalletState{}, nil
 	})
-	if err != nil || len(noMoney) != 3 {
+	if err != nil || !reflect.DeepEqual(noMoney, []string{"nearest-no-balance", "second", "third"}) {
 		t.Fatalf("prepaid offers %v err %v", noMoney, err)
 	}
-	_, err = selectFundedNearbyCaptains(context.Background(), pool, 2000, 0, func(context.Context, string) (wlt.CaptainWalletState, error) {
+	_, err = selectFundedNearbyCaptains(context.Background(), pool, 2000, func(context.Context, string) (wlt.CaptainWalletState, error) {
 		return wlt.CaptainWalletState{AvailableMinor: 0, Currency: "YER"}, nil
 	})
 	if !errors.Is(err, postgres.ErrCaptainNoAvailable) {
-		t.Fatalf("all insolvent: %v", err)
+		t.Fatalf("all insufficient cash coverage: %v", err)
 	}
-	_, err = selectFundedNearbyCaptains(context.Background(), pool, 2000, 0, func(context.Context, string) (wlt.CaptainWalletState, error) {
+	_, err = selectFundedNearbyCaptains(context.Background(), pool, 2000, func(context.Context, string) (wlt.CaptainWalletState, error) {
 		return wlt.CaptainWalletState{}, errors.New("WLT unavailable")
 	})
 	if !errors.Is(err, ErrPaymentUnavailable) {
@@ -49,43 +49,41 @@ func TestFundedNearestCaptainsOnlyAndFailClosed(t *testing.T) {
 	}
 }
 
-func TestCaptainMinimumBalanceAppliesToAllPaymentModes(t *testing.T) {
-	candidates := []postgres.NearbyCaptainCandidate{{ActorID: "below"}, {ActorID: "equal"}, {ActorID: "above"}}
-	for _, testCase := range []struct {
-		name string
-		cash int64
-	}{
-		{"wallet-only", 0}, {"mixed", 100}, {"cash", 200},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			calls := 0
-			selected, err := selectFundedNearbyCaptains(context.Background(), candidates, testCase.cash, 500, func(_ context.Context, id string) (wlt.CaptainWalletState, error) {
-				calls++
-				balance := int64(499)
-				if id == "equal" {
-					balance = 500
-				}
-				if id == "above" {
-					balance = 1000
-				}
-				return wlt.CaptainWalletState{AvailableMinor: balance, Currency: "YER"}, nil
-			})
-			if err != nil || !reflect.DeepEqual(selected, []string{"equal", "above"}) || calls != 3 {
-				t.Fatalf("%s: selected %v, reads %d, err %v", testCase.name, selected, calls, err)
-			}
-		})
+func TestCaptainCoverageDoesNotRequireRecurringDailyMinimum(t *testing.T) {
+	candidates := []postgres.NearbyCaptainCandidate{{ActorID: "balance-7000"}, {ActorID: "balance-3000"}, {ActorID: "balance-0"}}
+	lookup := func(_ context.Context, id string) (wlt.CaptainWalletState, error) {
+		available := int64(0)
+		switch id {
+		case "balance-7000":
+			available = 7000
+		case "balance-3000":
+			available = 3000
+		}
+		return wlt.CaptainWalletState{AvailableMinor: available, Currency: "YER"}, nil
+	}
+	cashOffers, err := selectFundedNearbyCaptains(context.Background(), candidates, 4000, lookup)
+	if err != nil || !reflect.DeepEqual(cashOffers, []string{"balance-7000"}) {
+		t.Fatalf("4000 cash with 7000 capacity: %v %v", cashOffers, err)
+	}
+	prepaid, err := selectFundedNearbyCaptains(context.Background(), candidates, 0, func(context.Context, string) (wlt.CaptainWalletState, error) {
+		t.Fatal("prepaid candidates must not require cash balance lookup")
+		return wlt.CaptainWalletState{}, nil
+	})
+	if err != nil || !reflect.DeepEqual(prepaid, []string{"balance-7000", "balance-3000", "balance-0"}) {
+		t.Fatalf("zero cash eligible candidates: %v %v", prepaid, err)
 	}
 }
-func TestCaptainMinimumPreservesCashExposureRequirement(t *testing.T) {
-	pool := []postgres.NearbyCaptainCandidate{{ActorID: "minimum-only"}, {ActorID: "both"}}
-	selected, err := selectFundedNearbyCaptains(context.Background(), pool, 1200, 500, func(_ context.Context, id string) (wlt.CaptainWalletState, error) {
+
+func TestCaptainCashExposureRequiresFullCoverage(t *testing.T) {
+	pool := []postgres.NearbyCaptainCandidate{{ActorID: "not-covered"}, {ActorID: "exactly-covered"}}
+	selected, err := selectFundedNearbyCaptains(context.Background(), pool, 1200, func(_ context.Context, id string) (wlt.CaptainWalletState, error) {
 		available := int64(600)
-		if id == "both" {
-			available = 1250
+		if id == "exactly-covered" {
+			available = 1200
 		}
 		return wlt.CaptainWalletState{AvailableMinor: available, Currency: "YER"}, nil
 	})
-	if err != nil || !reflect.DeepEqual(selected, []string{"both"}) {
-		t.Fatalf("cash exposure: %v %v", selected, err)
+	if err != nil || !reflect.DeepEqual(selected, []string{"exactly-covered"}) {
+		t.Fatalf("cash exposure must be fully covered: %v %v", selected, err)
 	}
 }

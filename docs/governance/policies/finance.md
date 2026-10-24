@@ -67,29 +67,37 @@ Provider timeout or missing confirmation is not automatic failure or success. Un
 
 External provider Cash-In is currently admitted only for Customers and BThwani Captains. Customer funding and Captain funding are separately governed capabilities even when they share a CashInRail implementation. Partner, Field and Store-affiliated Partner Captain funding are not enabled by this admission. The provider rail never chooses the WLT wallet/accounting destination; the server-owned funding purpose does.
 
-## COD exposure, collateral and remittance
+## Captain COD coverage and wallet settlement
 
-Captain COD coverage is a risk hold, not ordinary settlement consumption.
+A BThwani Captain is an independent service provider who retains cash collected from the Customer. BThwani does not accept physical cash from Captains, Partners or Field actors, and does not disburse cash to them. Cash deposited by a Captain at an external exchanger becomes their *external* official-wallet balance, not WLT funding until a separately verified Cash-In completes.
 
 ```text
-available_exposure
-= governed collateral / eligible balance capacity
+available_cod_coverage
+= posted Captain WLT balance
 - active COD holds
-- other governed exposure
+- active payout holds
+- other governed locks
+
+new_cash_reservation <= available_cod_coverage
 ```
 
-- accepting a covered COD obligation creates/reserves a hold against available exposure;
-- ordinary successful COD delivery/collection does not consume the Captain's collateral;
-- the hold remains until the associated cash remittance/reconciliation closes the exposure;
-- cash remittance closes the corresponding WLT cash receivable in the ledger and releases the governed hold;
-- collateral/balance is debited only for an explicit governed shortage/default/loss or another independently authorized financial effect;
-- Store-affiliated Partner Captain or Store-collected cash must not be silently treated as BThwani Captain cash custody.
+- one initial Captain activation funding threshold may be configured (10,000 YER in the current local policy); it is checked only before the Captain first becomes available, never reset or topped up automatically at midnight;
+- previously activated Captains may receive prepaid Orders regardless of their later COD balance, subject to distinct identity/operational and goods-in-custody risk checks;
+- a Captain accepting an Order with positive cash collection must atomically reserve 100% of the actual cash portion in WLT; multiple Orders cannot spend the same available cover;
+- when that Captain successfully collects and delivers the Order, WLT posts the relevant delivery entitlement and atomically debits the reserved cash amount from the Captain Wallet against the posted cash receivable once, in terminal state DEBITED; the Captain keeps the collected physical cash;
+- cancellation before collection releases the hold without a wallet debit; mixed Orders cover only the cash portion, not the Customer's prepaid internal-wallet portion;
+- a completed WLT debit must never be followed by a second request to remit the same cash to BThwani; physical Captain cash-remittance routes are obsolete for new Orders;
+- historical FINALIZED or REMITTED reservations are not automatically DEBITED; they require evidence-bound reconciliation and must never be charged again if already settled through a previous rail;
+- personal Cash-In funding is not delivery earnings and is not eligible for earnings withdrawal; eligible earnings remain capped by real posted unheld balance;
+- Store-affiliated Partner Captains and Store-collected cash are owned by the Store relationship, not BThwani Captain custody.
 
-Risk policy may require full collateral at one stage and a different exposure limit later; the architecture governs exposure capacity, not an eternal fixed percentage.
+The COD prepayment cover limits exposure to cash retained after successful collection; it does not independently guarantee merchandise already in a Captain's physical custody. Goods-loss risk requires separate bounded controls and evidence.
 
 ## Fees, discounts and commissions
 
-Commercial fee bearer is versioned policy rather than an architectural constant. Where an external funding provider charges a fee, the policy may designate platform, customer or campaign funding as bearer.
+Cash-In provider charges are borne by BThwani under the current provider agreements, not silently withheld from the beneficiary's gross funded balance. Their exact amount must come from trusted provider settlement evidence under the provider's approved external contract, not a hard-coded 2% deduction. On successful funding, WLT credits the Customer or Captain gross amount, debits `EXTERNAL_SETTLEMENT_CASH` for the provider's net proceeds, and separately debits `PLATFORM_CASH_IN_PROVIDER_FEE_EXPENSE` for the provider fee (zero fees retain the two-entry posting). All three facts are frozen together and verified for conservation; replay cannot modify the fee. Without a real provider rail or fee evidence, the development simulator proves accounting behavior only, not real payment-provider integration.
+
+An approved Store-specific commercial agreement with **zero product commission** for `BTHWANI_CAPTAIN` may instead specify a fixed customer delivery markup in YER. WLT quotes the general distance tariff plus that explicit Store markup, and snapshots both the agreement and markup at checkout. On delivery, WLT credits the **entire base distance tariff** to the Captain and books the extra amount only to `PLATFORM_DELIVERY_MARGIN_INCOME`; it may never reduce Captain earnings or be disguised as product commission. The Customer sees the full fee before confirmation. A Store with a nonzero product commission cannot add this markup under the initial admitted rule; Partner Captain/Customer Pickup never create this BThwani delivery margin. A frozen old Order is not repriced when Store agreements change.
 
 Field acquisition reward is a one-time earning for a Field-attributed Partner joining case. Its qualifying event remains canonical `STORE_CLIENT_VISIBLE`; DSH proves that event and WLT records the resulting earning exactly once under an explicit versioned policy for the commercial Store Type of the first qualifying Store. A joining case can produce at most one Field acquisition reward regardless of additional Stores, repeated publication or visibility changes. The reward is financially distinct from per-Order Partner commission: Store Type may parameterize this Field reward only, while per-Order Partner commission is governed by the active Store-specific STORE_COMMERCIAL_AGREEMENT and never by a shared Store Type rate. Missing policy never falls back to another type or a default. Later policy changes must not reinterpret or duplicate historical earnings.
 

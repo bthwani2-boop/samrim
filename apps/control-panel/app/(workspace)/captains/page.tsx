@@ -2,12 +2,9 @@ import { CaptainAdmissionPanel } from "../../../src/features/captain/captain-adm
 import { PageHeader } from "../../../src/shell/page-header";
 
 export default function CaptainsPage() {
-  return (
-    <section className="workspace-page" aria-labelledby="captains-page-title">
-      <PageHeader id="captains-page-title" title="الكباتن — السجل والإدارة" />
-      <CaptainAdmissionPanel />
-    </section>
-  );
+  return <section className="workspace-page" aria-labelledby="captains-page-title">
+    <PageHeader id="captains-page-title" title="الكباتن — السجل والإدارة" />
+    <CaptainAdmissionPanel />
+  </section>;
 }
-
 export const metadata = { title: "الكباتن — السجل والإدارة" };

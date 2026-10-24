@@ -9,6 +9,7 @@ import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adapti
 import { responseMessage } from "../access/identity-error-message";
 import { RecordTabs } from "../shared/record-tabs";
 import { OfficialWalletDestinationManager } from "../finance/official-wallet-destination-manager";
+import { ActorWalletStatement } from "../finance/actor-wallet-statement";
 import { RecordIndicator } from "../shared/record-indicator";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
@@ -1017,6 +1018,7 @@ function FieldRecordProfile({ item, data, onClose, onPrevious, onNext }: Readonl
         tabs={fieldRecordTabs.map(({ id: key, label }) => ({ key, label }))} active={activeTab} onSelect={selectTab}/>
       <div id={`field-${id}-panel`} className="field-profile-tab-content" role="tabpanel" aria-labelledby={`field-${id}-tab-${activeTab}`}>
         {activeTab === "overview" ? <div className="field-profile-stack">
+          {field ? <ActorWalletStatement actorType="field" actorId={field.actorId} /> : null}
           <dl className="field-profile-metrics">
             <div><dt>ملفات ضم الشركاء</dt><dd>{caseCount === undefined ? "—" : caseCount.toLocaleString("ar-YE")}</dd></div>
             <div><dt>آخر فتح للتطبيق</dt><dd className="field-profile-metric-small">{field?.lastAppOpenedAt ? fieldTimestamp(field.lastAppOpenedAt) : "غير مسجل"}</dd></div>

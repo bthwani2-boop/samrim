@@ -18,6 +18,7 @@ export type StoreProductGalleryProps = {
   favoriteBusy: boolean;
   onToggleFavorite: (offerId: string) => void;
   onQuickAdd: (offerId: string) => void;
+  onShare: (offerId: string, productId: string, title: string) => void;
   onBrowse: (offerId: string) => void;
   onClose: () => void;
 };
@@ -25,7 +26,7 @@ export type StoreProductGalleryProps = {
 const price = (offer: Offer) => formatMoney(offer.priceMinor, offer.currency).replace(/ريال يمني/g, "ريال");
 const unit = (offer: Offer) => offer.variantTitle?.trim() || (offer.baseUnit === "GRAM" ? "بالكيلو" : offer.baseUnit === "MILLILITER" ? "باللتر" : "للوحدة");
 
-export function StoreProductGallery({ offer, offers, sourceRect, isFavorite, favoriteBusy, onToggleFavorite, onQuickAdd, onBrowse, onClose }: StoreProductGalleryProps) {
+export function StoreProductGallery({ offer, offers, sourceRect, isFavorite, favoriteBusy, onToggleFavorite, onQuickAdd, onShare, onBrowse, onClose }: StoreProductGalleryProps) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -126,6 +127,9 @@ export function StoreProductGallery({ offer, offers, sourceRect, isFavorite, fav
       <View pointerEvents="box-none" style={styles.favorite}>
         <BthwaniIconButton icon="favorite" size={compact ? sizing.controlSm : sizing.controlMd} tone={isFavorite(item.offerId) ? "primary" : "soft"} label={isFavorite(item.offerId) ? "إزالة المنتج من المفضلة" : "إضافة المنتج للمفضلة"} disabled={favoriteBusy} onPress={() => onToggleFavorite(item.offerId)} />
       </View>
+      <View pointerEvents="box-none" style={styles.share}>
+        <BthwaniIconButton icon="share" size={compact ? sizing.controlSm : sizing.controlMd} tone="soft" label={"مشاركة " + item.productName} onPress={() => onShare(item.offerId, item.productId, item.productName)} />
+      </View>
       <View style={styles.info}>
         <Text numberOfLines={compact ? 1 : 2} style={[styles.name, compact && styles.compactName]}>{item.productName}</Text>
         {columns < 4 ? <Text numberOfLines={1} style={styles.unit}>{unit(item)}</Text> : null}
@@ -169,6 +173,7 @@ function makeStyles(theme: ReturnType<typeof resolveTheme>) {
     image: { width: "100%", backgroundColor: theme.surfaceInset, borderRadius: radius.lg },
     imageFallback: { width: "100%", backgroundColor: theme.surfaceInset, justifyContent: "center", alignItems: "center", borderRadius: radius.lg },
     favorite: { position: "absolute", top: spacing[3], right: spacing[3] },
+    share: { position: "absolute", top: spacing[3], left: spacing[3] },
     info: { width: "100%", alignItems: "stretch", gap: spacing[1] },
     name: { ...typography.bodyStrong, color: theme.color, textAlign: "auto", alignSelf: "stretch" },
     compactName: { ...typography.caption, minHeight: 18 },

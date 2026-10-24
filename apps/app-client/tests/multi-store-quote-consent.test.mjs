@@ -76,7 +76,7 @@ test("UI does not create a parent before customer sees the complete per-store qu
   assert.match(submit, /if \(submitInFlight\.current \|\| busy/);
   assert.ok(submit.indexOf("submitInFlight.current = true") < submit.indexOf("SecureStore.setItemAsync("), "single-flight lock precedes durable mutation");
   assert.match(submit, /finally \{\s*submitInFlight\.current = false;/);
-  assert.match(source, /تأكيد الطلب بالمبلغ المعروض/);
+  assert.match(source, /label=\{quotePreview \? "[^"]+" : "[^"]+"\}/, "confirming a displayed quote has a distinct action label");
 });
 
 test("parent checkout cancellation remains restricted and a historical pending cancel is readback-only", () => {

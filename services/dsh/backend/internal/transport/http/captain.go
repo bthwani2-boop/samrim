@@ -65,8 +65,11 @@ func (s *CaptainServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/captains/me/cash-liability/{paymentIntentId}/remit", s.remitCash)
 	mux.HandleFunc("GET /dsh/captains/me/assignments/{assignmentId}/delivery-task", s.readDeliveryTask)
 	mux.HandleFunc("POST /dsh/captains/me/presence", s.updatePresence)
+	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/mission-location", s.publishMissionLocation)
 	mux.HandleFunc("GET /dsh/captains/me/opportunities", s.readOwnOpportunities)
 	mux.HandleFunc("GET /dsh/operator/opportunities", s.readOperatorOpportunities)
+	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/arrive", s.recordArrival)
+	mux.HandleFunc("GET /dsh/captains/me/assignments/{assignmentId}/arrival", s.readArrival)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/pickup", s.pickup)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/complete", s.complete)
 	mux.HandleFunc("POST /dsh/captains/assignments/{assignmentId}/recover", s.recover)
@@ -515,30 +518,14 @@ func (s *CaptainServer) readCashLiability(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, contract.CashLiabilityResponse{Items: items, TotalAmountMinor: int(liability.TotalAmountMinor)})
 }
 
+// Direct cash remittance to BThwani was retired with wallet-settled COD.
+// Historical liability records remain available for governed reconciliation.
 func (s *CaptainServer) remitCash(w http.ResponseWriter, r *http.Request) {
 	if bearerToken(r) == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session is required")
 		return
 	}
-	_, correlation, idempotency, expected, ok := captainHeaders(w, r, true)
-	if !ok {
-		return
-	}
-	var input contract.CaptainCashRemittanceRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	remittance, replayed, err := s.service.RemitCash(r.Context(), bearerToken(r), r.PathValue("paymentIntentId"), int64(input.AmountMinor), input.RemittanceReference, expected, idempotency, correlation)
-	if err != nil {
-		writeCaptainError(w, err)
-		return
-	}
-	createdAt, parseErr := time.Parse(time.RFC3339Nano, remittance.CreatedAt)
-	if parseErr != nil {
-		writeError(w, http.StatusBadGateway, "WLT_CASH_UNAVAILABLE", "cash remittance timestamp is invalid")
-		return
-	}
-	writeJSON(w, http.StatusOK, contract.CaptainCashRemittanceResponse{CashRemittance: contract.CaptainCashRemittance{ID: remittance.ID, PaymentIntentID: remittance.PaymentIntentID, CaptainActorID: remittance.CaptainActorID, AmountMinor: int(remittance.AmountMinor), Currency: remittance.Currency, RemittanceReference: remittance.RemittanceReference, State: remittance.State, CreatedAt: createdAt}, IdempotentReplay: replayed})
+	writeError(w, http.StatusGone, "CAPTAIN_CASH_REMITTANCE_DISABLED", "Captain COD cash is retained by the Captain and settled from WLT coverage")
 }
 
 func (s *CaptainServer) readDeliveryTask(w http.ResponseWriter, r *http.Request) {
@@ -575,6 +562,42 @@ func toOptionalCaptainFee(value *int64) *int {
 	}
 	fee := int(*value)
 	return &fee
+}
+
+func (s *CaptainServer) recordArrival(w http.ResponseWriter, r *http.Request) {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session required")
+		return
+	}
+	arrived, err := s.service.RecordDeliveryArrival(r.Context(), token, r.PathValue("assignmentId"))
+	if errors.Is(err, postgres.ErrCaptainArrivalUnavailable) {
+		writeError(w, http.StatusConflict, "ARRIVAL_UNAVAILABLE", "Only the assigned captain with an active in-custody delivery can confirm arrival")
+		return
+	}
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"arrivedAt": arrived.UTC().Format(time.RFC3339Nano)})
+}
+
+func (s *CaptainServer) readArrival(w http.ResponseWriter, r *http.Request) {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session required")
+		return
+	}
+	arrived, err := s.service.ReadDeliveryArrival(r.Context(), token, r.PathValue("assignmentId"))
+	if errors.Is(err, postgres.ErrCaptainArrivalUnavailable) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "Assignment is not available")
+		return
+	}
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"arrivedAt": arrived})
 }
 
 func (s *CaptainServer) pickup(w http.ResponseWriter, r *http.Request) {
@@ -889,6 +912,8 @@ func writeCaptainError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, captain.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Captain input is invalid")
+	case errors.Is(err, postgres.ErrCaptainGoodsCustodyLimit):
+		writeError(w, http.StatusConflict, "GOODS_CUSTODY_LIMIT", "Goods custody risk limit exceeded")
 	case errors.Is(err, postgres.ErrCaptainAdmissionRegistry):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Captain admission search, cursor, filters, or sort order are invalid")
 	case errors.Is(err, postgres.ErrStoreCaptainMembershipNotFound):

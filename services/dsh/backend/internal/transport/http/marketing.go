@@ -49,12 +49,23 @@ func NewMarketingWithDependencies(identityClient *identityintegration.Client, ac
 }
 
 func (s *MarketingServer) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /dsh/client/marketing-consent/{channel}", s.readClientMarketingConsent)
+	mux.HandleFunc("POST /dsh/client/marketing-consent/{channel}", s.changeClientMarketingConsent)
 	mux.HandleFunc("GET /dsh/public/promotions", s.listPublicPromotions)
 	mux.HandleFunc("GET /dsh/public/discovery-content", s.listPublicDiscoveryContent)
+	mux.HandleFunc("GET /dsh/public/banner-presentation", s.readPublicBannerPresentation)
+	mux.HandleFunc("GET /dsh/operator/marketing/banner-presentation", s.readOperatorBannerPresentation)
+	mux.HandleFunc("PUT /dsh/operator/marketing/banner-presentation", s.setOperatorBannerPresentation)
 	mux.HandleFunc("POST /dsh/public/discovery-content/events", s.recordPublicDiscoveryContentEvent)
 	mux.HandleFunc("GET /dsh/public/discovery-content/{contentId}/target", s.resolvePublicDiscoveryContentTarget)
 	mux.HandleFunc("GET /dsh/operator/marketing/summary", s.readOperatorMarketingSummary)
+	mux.HandleFunc("GET /dsh/operator/marketing/campaigns", s.listOperatorMarketingCampaigns)
+	mux.HandleFunc("POST /dsh/operator/marketing/campaigns", s.createOperatorMarketingCampaign)
+	mux.HandleFunc("GET /dsh/operator/marketing/campaigns/{campaignId}/details", s.readOperatorMarketingCampaign)
+	mux.HandleFunc("POST /dsh/operator/marketing/campaigns/{campaignId}/state", s.setOperatorMarketingCampaignState)
+	mux.HandleFunc("POST /dsh/operator/marketing/campaigns/{campaignId}/elements", s.linkOperatorMarketingCampaignElement)
 	mux.HandleFunc("GET /dsh/operator/promotions", s.listOperatorPromotions)
+	mux.HandleFunc("GET /dsh/operator/promotions/{promotionId}/partner-decisions", s.listOperatorPartnerDecisions)
 	mux.HandleFunc("POST /dsh/operator/promotions", s.createOperatorPromotion)
 	mux.HandleFunc("POST /dsh/operator/promotions/{promotionId}/publication", s.setOperatorPromotionPublication)
 	mux.HandleFunc("GET /dsh/operator/discovery-content", s.listOperatorDiscoveryContent)
@@ -501,7 +512,7 @@ func (s *MarketingServer) createOperatorDiscoveryContent(w http.ResponseWriter, 
 		return
 	}
 	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "discovery content requires a canonical image file upload")
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "discovery content requires a canonical media file upload")
 		return
 	}
 	if s.media == nil {
@@ -516,7 +527,7 @@ func (s *MarketingServer) createOperatorDiscoveryContent(w http.ResponseWriter, 
 	digest := sha256Bytes(parsed.bytes)
 	objectKey, keyErr := media.KeyForMarketingUpload(input.ID, idempotency, digest, parsed.contentType)
 	if keyErr != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing image upload is invalid")
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing media upload is invalid")
 		return
 	}
 	uri := s.media.PublicURL(objectKey)
@@ -600,10 +611,20 @@ func parseMarketingContentUpload(w http.ResponseWriter, r *http.Request) (market
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
 		return marketingContentUpload{}, false
 	}
-	contentType, _, _, err := media.ValidateImageBytes(bytes)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "only valid JPEG and PNG images are accepted")
-		return marketingContentUpload{}, false
+	contentType := ""
+	if strings.EqualFold(strings.TrimSpace(r.FormValue("kind")), "SHORT_FORM") && strings.EqualFold(header.Header.Get("Content-Type"), "video/mp4") {
+		if videoErr := media.ValidateMarketingMP4Bytes(bytes); videoErr != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid MP4 video")
+			return marketingContentUpload{}, false
+		}
+		contentType = "video/mp4"
+	} else {
+		imageType, _, _, imageErr := media.ValidateImageBytes(bytes)
+		if imageErr != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "only JPEG/PNG images or SHORT_FORM MP4 videos are accepted")
+			return marketingContentUpload{}, false
+		}
+		contentType = imageType
 	}
 	startsAt, err := time.Parse(time.RFC3339, strings.TrimSpace(r.FormValue("startsAt")))
 	if err != nil {
@@ -731,11 +752,11 @@ func toPublicPromotionView(item postgres.PromotionRecord) contract.PublicPromoti
 }
 
 func toDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.DiscoveryContentView {
-	return contract.DiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, Ordinal: item.Ordinal, Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.DiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, MediaKind: item.MediaKind, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, Ordinal: item.Ordinal, Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toPublicDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.PublicDiscoveryContentView {
-	return contract.PublicDiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID}
+	return contract.PublicDiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, MediaKind: item.MediaKind, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID}
 }
 
 func intValue(value *int64) int {
@@ -765,18 +786,28 @@ func writeMarketingError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an active Partner session is required")
 	case errors.Is(err, errPartnerPromotionStoreAuthority):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "promotions access to this Store is denied")
-	case errors.Is(err, postgres.ErrPromotionInvalid), errors.Is(err, postgres.ErrDiscoveryContentInvalid), errors.Is(err, postgres.ErrDiscoveryContentEventInvalid):
+	case errors.Is(err, postgres.ErrMarketingCampaignInvalid), errors.Is(err, postgres.ErrPromotionInvalid), errors.Is(err, postgres.ErrDiscoveryContentInvalid), errors.Is(err, postgres.ErrDiscoveryContentEventInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing input is invalid")
-	case errors.Is(err, postgres.ErrPromotionNotFound), errors.Is(err, postgres.ErrDiscoveryContentNotFound), errors.Is(err, postgres.ErrDiscoveryContentEventNotFound):
+	case errors.Is(err, postgres.ErrMarketingCampaignNotFound), errors.Is(err, postgres.ErrPromotionNotFound), errors.Is(err, postgres.ErrDiscoveryContentNotFound), errors.Is(err, postgres.ErrDiscoveryContentEventNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "marketing record was not found")
+	case errors.Is(err, postgres.ErrBannerPresentationInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid banner presentation")
+	case errors.Is(err, postgres.ErrBannerPresentationConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "banner presentation was changed; reload before saving")
 	case errors.Is(err, postgres.ErrPromotionCodeConflict):
 		writeError(w, http.StatusConflict, "PROMOTION_CODE_EXISTS", "promotion code already exists")
 	case errors.Is(err, postgres.ErrPromotionIdempotencyConflict), errors.Is(err, postgres.ErrDiscoveryContentIdempotency), errors.Is(err, postgres.ErrDiscoveryContentEventConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "marketing mutation idempotency key conflicts with a prior request")
-	case errors.Is(err, postgres.ErrPromotionVersionConflict), errors.Is(err, postgres.ErrDiscoveryContentVersion):
+	case errors.Is(err, postgres.ErrMarketingCampaignIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "campaign create key was already used for different facts")
+	case errors.Is(err, postgres.ErrMarketingCampaignVersionConflict), errors.Is(err, postgres.ErrPromotionVersionConflict), errors.Is(err, postgres.ErrDiscoveryContentVersion):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "marketing record version is stale")
 	case errors.Is(err, postgres.ErrDiscoveryContentTargetInvalid):
 		writeError(w, http.StatusConflict, "TARGET_UNAVAILABLE", "discovery content target is not canonical and available")
+	case errors.Is(err, postgres.ErrMarketingCampaignNotReady):
+		writeError(w, http.StatusConflict, "CAMPAIGN_NOT_READY", "campaign requires eligible published content or a funded promotion")
+	case errors.Is(err, postgres.ErrMarketingCampaignBudgetExceeded):
+		writeError(w, http.StatusConflict, "CAMPAIGN_BUDGET_EXCEEDED", "campaign aggregate budget is exceeded")
 	case errors.Is(err, postgres.ErrPromotionUnavailable), errors.Is(err, postgres.ErrPromotionAlreadyRedeemed), errors.Is(err, postgres.ErrPromotionLimitReached):
 		writeError(w, http.StatusConflict, "PROMOTION_UNAVAILABLE", "promotion is not currently eligible")
 	default:

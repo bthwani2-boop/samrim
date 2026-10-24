@@ -1,10 +1,12 @@
-import { BthwaniButton, BthwaniMap, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import { BthwaniButton, BthwaniOrderChatSheet, useOrderChatUnreadCounts, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniMap } from "@bthwani/design-system/native/map";
+import { createDshMobileClient, type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useIsFocused } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, AppState, Image, Linking, Text, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, Image, Linking, Pressable, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
@@ -65,15 +67,18 @@ function hasCurrentDeliveryActor(actorID: string): boolean {
 
 export function CaptainDeliveries() {
   const theme = useAppearanceTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
   const isFocused = useIsFocused();
   const [assignments, setAssignments] = useState<ReadonlyArray<CaptainAssignment>>([]);
+  const [chatOrderId,setChatOrderId]=useState("");
   const [loadedActorID, setLoadedActorID] = useState("");
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
   const readSequence = useRef(0);
   const mutationInFlight = useRef(false);
   const [tasks, setTasks] = useState<Readonly<Record<string, CaptainDeliveryTask>>>({});
+  const [arrivalStatus, setArrivalStatus] = useState<Readonly<Record<string, boolean>>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -82,6 +87,13 @@ export function CaptainDeliveries() {
   const [completionStorageIssue, setCompletionStorageIssue] = useState(false);
   const [completionRejected, setCompletionRejected] = useState(false);
   const currentActorReadback = isCurrentCaptainActor(loadedActorID, activeActorID);
+  const getChatUnread = useCallback(async (orderId: string) => {
+    const token = await getUsableIdentityAccessToken();
+    const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
+    if (!base) throw new Error("DSH_BASE_URL_REQUIRED");
+    return (await createDshMobileClient(base,{cryptoRandomUUID:()=>Crypto.randomUUID()}).readOrderConversation(token,orderId,1)).unreadCount;
+  }, []);
+  const unreadChatCounts = useOrderChatUnreadCounts(assignments.map(assignment => assignment.orderId), activeActorID, isFocused, getChatUnread, chatOrderId);
 
   const load = useCallback(async (quiet = false) => {
     const sequence = ++readSequence.current;
@@ -94,6 +106,7 @@ export function CaptainDeliveries() {
       setAssignments([]);
       setPendingCompletion(null);
       setTasks({});
+      setArrivalStatus({});
       setCompletionStorageReady(false);
     }
     setError("");
@@ -131,6 +144,15 @@ export function CaptainDeliveries() {
       }));
       if (!stillCurrent()) return;
       setTasks(Object.fromEntries(taskEntries.filter((entry): entry is readonly [string, CaptainDeliveryTask] => entry !== null)));
+      const arrivalEntries = await Promise.all(response.assignments
+        .filter(assignment => assignment.state === "in_custody")
+        .map(async assignment => {
+          try {
+            const result = await api.readOwnCaptainArrival(token, assignment.id);
+            return [assignment.id, Boolean(result.arrivedAt)] as const;
+          } catch { return null; }
+        }));
+      if (stillCurrent()) setArrivalStatus(Object.fromEntries(arrivalEntries.filter((entry): entry is readonly [string, boolean] => entry !== null)));
     } catch (cause) {
       console.error("DSH Captain deliveries readback failed", cause);
       if (sequence === readSequence.current && (!quiet || !mutationInFlight.current) && (!actorID || hasCurrentDeliveryActor(actorID))) {
@@ -150,6 +172,7 @@ export function CaptainDeliveries() {
       setLoadedActorID("");
       setAssignments([]);
       setTasks({});
+      setArrivalStatus({});
       setPendingCompletion(null);
       setCompletionStorageReady(false);
       setLoading(false);
@@ -164,6 +187,27 @@ export function CaptainDeliveries() {
     const resume = AppState.addEventListener("change", (state) => { if (state === "active") update(); });
     return () => { clearInterval(timer); resume.remove(); };
   }, [isFocused, activeActorID, loading, busy, load]);
+
+  async function confirmArrival(assignment: CaptainAssignment) {
+    if (!hasCurrentDeliveryActor(loadedActorID) || busy || mutationInFlight.current || assignment.state !== "in_custody" || arrivalStatus[assignment.id] !== false) return;
+    mutationInFlight.current = true;
+    setBusy(assignment.id);
+    setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentDeliveryActor(loadedActorID)) return;
+      const response = await captainClient().confirmOwnCaptainArrival(token, assignment.id);
+      if (!hasCurrentDeliveryActor(loadedActorID)) return;
+      if (!response.arrivedAt) throw new Error("ARRIVAL_CONFIRMATION_MISSING");
+      setArrivalStatus(previous => ({ ...previous, [assignment.id]: true }));
+    } catch (cause) {
+      console.error("DSH captain arrival failed", cause);
+      setError("تعذر تأكيد الوصول؛ تحقّق من الاتصال وحالة المهمة ثم أعد المحاولة.");
+    } finally {
+      mutationInFlight.current = false;
+      setBusy("");
+    }
+  }
 
   async function pickup(assignment: CaptainAssignment) {
     if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || mutationInFlight.current || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
@@ -296,6 +340,7 @@ export function CaptainDeliveries() {
       {completionStorageIssue ? <Text accessibilityRole="alert" style={styles.error}>تعذر قراءة المحاولة الآمنة السابقة. لا تؤكد تسليمًا جديدًا حتى يتم التحقق تلقائيًا أو يراجع المشغل المحاولة.</Text> : null}
       {!completionStorageReady && !completionStorageIssue && !loading ? <Text accessibilityRole="alert" style={styles.warning}>تعذر التحقق من المحاولات المحفوظة؛ لن نرسل تأكيدًا حتى تنجح إعادة القراءة.</Text> : null}
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
+      {!loading && assignments.some((assignment) => assignment.state === "assigned" || assignment.state === "in_custody") ? <Text style={styles.muted}>يُشارك موقع المهمة مع العمليات عند فتح تطبيق الكابتن والسماح بالموقع. إذا تعذر الاتصال أو أُغلق التطبيق فقد تنقطع الإشارة.</Text> : null}
       {!loading && assignments.length > 0 ? <Text style={styles.sectionTitle}>التكليفات ({assignments.length})</Text> : null}
       {!loading && !assignments.length ? <View style={styles.card}>
         <Text style={styles.muted}>لا توجد توصيلات حالية.</Text>
@@ -320,6 +365,11 @@ export function CaptainDeliveries() {
           <View key={assignment.id} style={styles.card}>
             <View style={styles.orderHeader}>
               <Text style={styles.cardTitle}>{task?.orderReference ? `مهمة التوصيل ${task.orderReference}` : "مهمة توصيل"}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={"محادثة الطلب "+assignment.orderId.slice(-8)}
+                onPress={()=>setChatOrderId(assignment.orderId)} style={{padding:8,borderRadius:10,backgroundColor:theme.surfaceRaised}}>
+                <Text style={{fontSize:19}}>💬</Text>
+                {unreadChatCounts[assignment.orderId] ? <Text accessibilityLabel={unreadChatCounts[assignment.orderId]+" رسائل غير مقروءة"} style={{color:theme.brandAction,fontSize:10,fontWeight:"800"}}>{(unreadChatCounts[assignment.orderId] ?? 0)>99?"99+":unreadChatCounts[assignment.orderId]}</Text> : null}
+              </Pressable>
               <BthwaniStatusBadge icon={assignmentStatusIcon} label={assignmentLabel} tone={assignmentStatusTone} />
             </View>
             <BthwaniStatusBadge icon={assignment.handoff.state === "completed" ? "success" : "store"} label={`التسليم من المتجر: ${handoffLabel}`} tone={assignment.handoff.state === "completed" ? "success" : "warning"} />
@@ -366,6 +416,11 @@ export function CaptainDeliveries() {
             {!taskReady && task ? <Text style={styles.warning}>تغيرت حالة المهمة؛ يجري التحقق منها تلقائيًا قبل إتاحة إجراء جديد.</Text> : null}
             {assignment.state === "assigned" && assignment.handoff.state === "store_confirmed" ? <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || !completionStorageReady || Boolean(pendingCompletion) || !taskReady} label="تأكيد استلام الطلب" onPress={() => void pickup(assignment)} /> : null}
             {assignment.state === "assigned" && assignment.handoff.state === "pending" ? <Text style={styles.muted}>بانتظار تأكيد المتجر قبل الاستلام.</Text> : null}
+            {assignment.state === "in_custody" && arrivalStatus[assignment.id] === false && !pendingCompletion
+              ? <BthwaniButton label="وصلت إلى موقع التسليم" variant="secondary" disabled={Boolean(busy) || !taskReady} busy={busy === assignment.id} onPress={() => void confirmArrival(assignment)} />
+              : null}
+            {assignment.state === "in_custody" && arrivalStatus[assignment.id] === true
+              ? <Text style={styles.progress}>تم إبلاغ العميل بوصولك</Text> : null}
             {assignment.state === "in_custody" && pendingCompletion?.assignmentID === assignment.id ? <Text style={styles.warning}>يُحسم هذا الإجراء من المحاولة المحفوظة أعلاه.</Text> : null}
             {assignment.state === "in_custody" && !pendingCompletion ? (
               <View style={styles.row}>
@@ -374,10 +429,15 @@ export function CaptainDeliveries() {
               </View>
             ) : null}
             {assignment.state === "delivery_failed" ? <View style={styles.warningBox}><Text style={styles.warning}>يبقى الطلب في عهدتك حتى يعالج المشغل التعذر؛ لن تُفتح لك مهمة جديدة قبل الاسترداد.</Text></View> : null}
+            <BthwaniOrderChatSheet visible={chatOrderId===assignment.orderId} bottomInset={insets.bottom} onClose={()=>setChatOrderId("")}
+              orderReference={task?.orderReference ?? assignment.orderId.slice(-8)} status={assignmentLabel}
+              summary={task?.storeName ?? "طلب توصيل"}>
+              {chatOrderId===assignment.orderId?<OrderConversation orderId={assignment.orderId}/>:null}
+            </BthwaniOrderChatSheet>
           </View>
         );
       }) : null}
-       {!loading ? assignments.map((assignment) => <OrderConversation key={`conversation-${assignment.id}`} orderId={assignment.orderId} />) : null}
+
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );

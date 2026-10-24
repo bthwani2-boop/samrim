@@ -36,6 +36,41 @@ func main() {
 
 	checks := []invariant{
 		{
+			name: "customer-compensation-closes-financial-case",
+			query: `SELECT COUNT(*) FROM wlt.order_adjustment_reconciliation_cases c
+				LEFT JOIN wlt.customer_wallet_compensations compensation ON compensation.case_id=c.id
+				WHERE (c.state='COMPENSATED') IS DISTINCT FROM (compensation.case_id IS NOT NULL)
+					OR (compensation.case_id IS NOT NULL AND (
+						compensation.order_id<>c.order_id
+						OR compensation.customer_actor_id<>c.customer_actor_id
+						OR COALESCE((SELECT SUM(e.amount_minor) FROM wlt.ledger_entries e
+							WHERE e.transaction_id=compensation.ledger_transaction_id
+							AND e.account_code='CUSTOMER_COMPENSATION_EXPENSE'
+							AND e.direction='DEBIT' AND e.actor_id IS NULL),0) <> compensation.amount_minor
+						OR COALESCE((SELECT SUM(e.amount_minor) FROM wlt.ledger_entries e
+							WHERE e.transaction_id=compensation.ledger_transaction_id
+							AND e.account_code='CUSTOMER_WALLET' AND e.direction='CREDIT'
+							AND e.actor_type='customer' AND e.actor_id=c.customer_actor_id),0) <> compensation.amount_minor
+					))`,
+		},
+		{
+			name: "delivery-margin-and-captain-earning-conservation",
+			query: `SELECT COUNT(*) FROM wlt.partner_order_earnings earning
+				JOIN wlt.customer_payment_allocations allocation ON allocation.payment_intent_id=earning.payment_intent_id
+				WHERE earning.delivery_fee_minor + earning.delivery_margin_minor <> allocation.delivery_fee_minor
+					OR earning.delivery_margin_minor <> allocation.delivery_margin_minor
+					OR COALESCE((SELECT SUM(entry.amount_minor) FROM wlt.ledger_entries entry
+						WHERE entry.transaction_id=earning.ledger_transaction_id
+							AND entry.account_code='CAPTAIN_WALLET' AND entry.account_class='liability'
+							AND entry.actor_type='captain' AND entry.actor_id=earning.captain_actor_id
+							AND entry.direction='CREDIT'),0) <> earning.delivery_fee_minor
+					OR COALESCE((SELECT SUM(entry.amount_minor) FROM wlt.ledger_entries entry
+						WHERE entry.transaction_id=earning.ledger_transaction_id
+							AND entry.account_code='PLATFORM_DELIVERY_MARGIN_INCOME'
+							AND entry.account_class='income' AND entry.actor_type IS NULL AND entry.actor_id IS NULL
+							AND entry.direction='CREDIT'),0) <> earning.delivery_margin_minor`,
+		},
+		{
 			name: "ledger-balanced",
 			query: `SELECT COUNT(*) FROM (
 				SELECT t.id
@@ -82,7 +117,7 @@ func main() {
 					AND e.account_code='EXTERNAL_SETTLEMENT_CASH'
 					AND e.actor_type IS NULL AND e.actor_id IS NULL
 					AND e.direction='DEBIT'
-					AND e.amount_minor=f.requested_amount_minor
+					AND e.amount_minor=f.requested_amount_minor-f.provider_fee_minor
 					AND e.currency=f.currency) <> 1
 				OR (SELECT COUNT(*) FROM wlt.ledger_entries e
 					WHERE e.transaction_id=f.ledger_transaction_id
@@ -93,7 +128,13 @@ func main() {
 					AND e.direction='CREDIT'
 					AND e.amount_minor=f.requested_amount_minor
 					AND e.currency=f.currency) <> 1
-				OR (SELECT COUNT(*) FROM wlt.ledger_entries e WHERE e.transaction_id=f.ledger_transaction_id) <> 2
+				OR (SELECT COUNT(*) FROM wlt.ledger_entries e WHERE e.transaction_id=f.ledger_transaction_id) <> 2 + CASE WHEN f.provider_fee_minor>0 THEN 1 ELSE 0 END
+				OR (SELECT COUNT(*) FROM wlt.ledger_entries e
+					WHERE e.transaction_id=f.ledger_transaction_id
+					AND e.account_class='expense' AND e.account_code='PLATFORM_CASH_IN_PROVIDER_FEE_EXPENSE'
+					AND e.actor_type IS NULL AND e.actor_id IS NULL
+					AND e.direction='DEBIT' AND e.amount_minor=f.provider_fee_minor
+					AND e.currency=f.currency) <> CASE WHEN f.provider_fee_minor>0 THEN 1 ELSE 0 END
 			)`,
 		},
 		{

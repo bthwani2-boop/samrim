@@ -1510,6 +1510,9 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 			return CaptainOfferResult{}, err
 		}
 	}
+	if err := requireCaptainGoodsCustodyLimitTx(ctx, tx, offer.OrderID, captainActorID); err != nil {
+		return CaptainOfferResult{}, err
+	}
 	assignmentID, err := newID("captain-assignment")
 	if err != nil {
 		return CaptainOfferResult{}, err
@@ -1749,6 +1752,9 @@ func CompleteCaptainPickup(ctx context.Context, db *sql.DB, assignmentID, captai
 	}
 	if assignment.State != "assigned" || assignment.Handoff.State != "store_confirmed" || assignment.Handoff.Version != expectedVersion {
 		return CaptainAssignment{}, false, ErrCaptainCustodyConflict
+	}
+	if err := requireCaptainGoodsCustodyLimitTx(ctx, tx, assignment.OrderID, captainActorID); err != nil {
+		return CaptainAssignment{}, false, err
 	}
 	var pickedUpAt time.Time
 	if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_handoffs SET state='completed',captain_picked_up_at=clock_timestamp(),version=version+1,updated_at=clock_timestamp() WHERE assignment_id=$1 AND version=$2 AND state='store_confirmed' RETURNING captain_picked_up_at`, assignmentID, expectedVersion).Scan(&pickedUpAt); err != nil {

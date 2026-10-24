@@ -1,21 +1,37 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { matchesOrderFilters } from "./order-list-filter.ts";
+import { matchesOrderFilters, matchesOrderStatus } from "./order-list-filter.ts";
 
 const makeOrder = (state, fulfillmentMode) => ({ state, fulfillmentMode });
+const fulfillmentModes = {
+  bthwani: "BTHWANI_CAPTAIN",
+  store: "PARTNER_CAPTAIN",
+  pickup: "CUSTOMER_PICKUP",
+};
 
 test("all fulfillment modes keep active, finished and cancelled history visible", () => {
   for (const state of ["CREATED", "PREPARING", "IN_CUSTODY", "DELIVERED", "PICKED_UP", "CANCELLED", "REJECTED", "DELIVERY_FAILED"]) {
-    for (const mode of ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"]) {
+    for (const mode of Object.values(fulfillmentModes)) {
       assert.equal(matchesOrderFilters(makeOrder(state, mode), "all"), true, state + " " + mode);
     }
   }
 });
 
-test("delivery includes platform and partner couriers, never store pickup", () => {
-  assert.equal(matchesOrderFilters(makeOrder("DELIVERED", "BTHWANI_CAPTAIN"), "delivery"), true);
-  assert.equal(matchesOrderFilters(makeOrder("CANCELLED", "PARTNER_CAPTAIN"), "delivery"), true);
-  assert.equal(matchesOrderFilters(makeOrder("PICKED_UP", "CUSTOMER_PICKUP"), "delivery"), false);
+test("each fulfillment filter selects exactly one of the three methods", () => {
+  for (const [selected, mode] of Object.entries(fulfillmentModes)) {
+    for (const [filter, expectedMode] of Object.entries(fulfillmentModes)) {
+      assert.equal(matchesOrderFilters(makeOrder("CREATED", mode), filter), mode === expectedMode, selected + " / " + filter);
+    }
+  }
+});
+
+test("store delivery does not disappear or merge with Bthwani delivery in any order state", () => {
+  for (const state of ["CREATED", "PREPARING", "IN_CUSTODY", "DELIVERED", "CANCELLED", "REJECTED", "DELIVERY_FAILED"]) {
+    const store = makeOrder(state, "PARTNER_CAPTAIN");
+    assert.equal(matchesOrderFilters(store, "store"), true, state);
+    assert.equal(matchesOrderFilters(store, "bthwani"), false, state);
+    assert.equal(matchesOrderFilters(store, "pickup"), false, state);
+  }
 });
 
 test("store pickup shows only pickup orders, including cancelled and completed", () => {
@@ -24,8 +40,22 @@ test("store pickup shows only pickup orders, including cancelled and completed",
   assert.equal(matchesOrderFilters(makeOrder("CREATED", "BTHWANI_CAPTAIN"), "pickup"), false);
 });
 
-test("removing the status tabs never silently hides a terminal status", () => {
+test("active, completed and cancelled order tabs partition order states without losing history", () => {
+  const active = ["CREATED", "ACCEPTED", "PREPARING", "READY_FOR_PICKUP", "IN_CUSTODY", "CAPTAIN_ASSIGNED"];
+  const completed = ["DELIVERED", "PICKED_UP"];
+  const cancelled = ["CANCELLED", "REJECTED", "DELIVERY_FAILED"];
+  for (const state of [...active, ...completed, ...cancelled]) {
+    assert.equal(matchesOrderStatus(state, "all"), true, state);
+    const matches = ["active", "completed", "cancelled"].filter((filter) => matchesOrderStatus(state, filter));
+    assert.equal(matches.length, 1, state);
+    assert.equal(matches[0], completed.includes(state) ? "completed" : cancelled.includes(state) ? "cancelled" : "active");
+  }
+});
+
+test("terminal order states remain visible for the correct fulfillment mode", () => {
   for (const state of ["CANCELLED", "REJECTED", "DELIVERY_FAILED", "DELIVERED", "PICKED_UP"]) {
-    assert.equal(matchesOrderFilters(makeOrder(state, "BTHWANI_CAPTAIN"), "delivery"), true, state);
+    for (const [filter, mode] of Object.entries(fulfillmentModes)) {
+      assert.equal(matchesOrderFilters(makeOrder(state, mode), filter), true, state + " " + filter);
+    }
   }
 });

@@ -1,6 +1,6 @@
-import PartnerAccount from "../../src/features/account/account";
-import { PartnerScrollScreen } from "../../src/shell/partner-shell";
+import { Redirect, type Href } from "expo-router";
 
+/** Preserve old account links; settings now live in More. */
 export default function PartnerAccountRoute() {
-  return <PartnerScrollScreen><PartnerAccount /></PartnerScrollScreen>;
+  return <Redirect href={"/more" as Href} />;
 }

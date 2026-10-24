@@ -217,6 +217,13 @@ func (s *Service) UpdatePermissionsForOwner(ctx context.Context, accessToken, st
 	return postgres.UpdateStoreAccessGrantPermissions(ctx, s.db, storeID, actorID, grantID, permissions, expectedVersion, idempotencyKey, correlationID)
 }
 
+func (s *Service) ListTeamForOperator(ctx context.Context, actingActorID, ownerID, storeID string, limit int, cursor string) (postgres.StoreAccessTeamPage, error) {
+	if err := s.requirePartnerAdmissionOperator(ctx, actingActorID); err != nil {
+		return postgres.StoreAccessTeamPage{}, err
+	}
+	return postgres.ListStoreAccessTeamPage(ctx, s.db, ownerID, storeID, limit, cursor)
+}
+
 func (s *Service) ListRoleAdmissionsForOperator(ctx context.Context, actingActorID string, limit int, cursor string) (postgres.StoreAccessRoleAdmissionPage, error) {
 	if err := s.requirePartnerAdmissionOperator(ctx, actingActorID); err != nil {
 		return postgres.StoreAccessRoleAdmissionPage{}, err

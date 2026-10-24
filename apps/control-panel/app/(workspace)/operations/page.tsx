@@ -3,7 +3,7 @@
 import { PageHeader } from "../../../src/shell/page-header";
 
 import { OperationsWorkspace } from "../../../src/features/operations/operations-workspace";
-import { OpportunityZones } from "../../../src/features/operations/opportunity-zones";
+import { OperationsAlertMonitor } from "../../../src/features/operations/operations-alert-monitor";
 import { useSession } from "../../../src/session/session-provider";
 
 export default function OperationsPage() {
@@ -14,9 +14,8 @@ export default function OperationsPage() {
   }
   return (
     <section className="workspace-page" aria-labelledby="operations-page-title">
-      <PageHeader id="operations-page-title" title="العمليات" />
+      <OperationsAlertMonitor />
       <OperationsWorkspace />
-      <OpportunityZones />
     </section>
   );
 }

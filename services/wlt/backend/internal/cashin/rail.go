@@ -7,6 +7,7 @@ import (
 )
 
 type CreatePaymentRequest struct {
+	ProviderKey       string
 	IntentID          string
 	ExternalReference string
 	AmountMinor       int64
@@ -20,6 +21,7 @@ type CreatePaymentResult struct {
 }
 
 type PaymentInquiryRequest struct {
+	ProviderKey       string
 	IntentID          string
 	ProviderReference string
 }
@@ -27,8 +29,12 @@ type PaymentInquiryRequest struct {
 type PaymentInquiryResult struct {
 	Outcome                      string
 	ProviderTransactionReference string
+	ProviderFeeMinor             int64
 }
 
+// CashInRail is intentionally Cash-In only: no payout, Cash-Out, or external
+// transfer API exists on this interface. Payout execution remains operator-
+// evidenced and independently verified in WLT settlement governance.
 type CashInRail interface {
 	CreatePayment(context.Context, CreatePaymentRequest) (CreatePaymentResult, error)
 	InquirePayment(context.Context, PaymentInquiryRequest) (PaymentInquiryResult, error)

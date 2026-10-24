@@ -1,3 +1,4 @@
+import { unregisterOwnPushDevice } from "../features/notifications/push-device";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "./compatible-storage";
 import { Platform } from "react-native";
@@ -29,7 +30,13 @@ export const restoreIdentitySession = runtime.restoreIdentitySession;
 export const currentIdentityState = runtime.currentIdentityState;
 export const getUsableIdentityAccessToken = runtime.getUsableAccessToken;
 export const subscribeIdentitySession = runtime.subscribeIdentityState;
-export const logoutIdentity = runtime.logoutIdentity;
+export async function logoutIdentity() {
+  try {
+    const token = await runtime.getUsableAccessToken();
+    await unregisterOwnPushDevice(token);
+  } catch { /* Preserve logout even if deregistration is offline. */ }
+  return runtime.logoutIdentity();
+}
 export const requestManagedActivation = runtime.requestManagedActivation;
 export const requestManagedRecovery = runtime.requestManagedRecovery;
 export const recoverManagedIdentity = runtime.recoverManagedIdentity;

@@ -21,6 +21,7 @@ var (
 	ErrClientSessionForbidden      = errors.New("an active app-client session is required")
 	ErrCheckoutNotServiceable      = errors.New("address is not serviceable for this Store")
 	ErrFulfillmentModeUnavailable  = errors.New("the requested fulfillment mode is not available")
+	ErrStoreNotAcceptingOrders     = errors.New("store is not accepting orders for the selected fulfillment mode")
 	ErrInsufficientCustomerBalance = errors.New("customer internal balance does not cover the requested contribution")
 	ErrCheckoutBalanceContribution = errors.New("checkout internal balance contribution is invalid")
 )
@@ -149,14 +150,11 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 		return CheckoutQuote{}, err
 	}
 	if orderability.State != postgres.StoreOrderabilityOpenForOrders {
-		return CheckoutQuote{}, ErrFulfillmentModeUnavailable
+		return CheckoutQuote{}, ErrStoreNotAcceptingOrders
 	}
 	serviceCityID := store.ServiceCityID
 	var originLatitude, originLongitude, destinationLatitude, destinationLongitude float64
-	var deliveryPolicyVersion string
-	if fulfillmentMode == FulfillmentModeCustomerPickup {
-		deliveryPolicyVersion = "NOT_APPLICABLE"
-	} else {
+	if fulfillmentMode != FulfillmentModeCustomerPickup {
 		serviceabilityResult, serviceabilityErr := s.serviceability.Evaluate(ctx, accessToken, storeID, addressID)
 		if serviceabilityErr != nil {
 			return CheckoutQuote{}, serviceabilityErr
@@ -168,10 +166,6 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 		serviceCityID = facts.StoreServiceCityID
 		originLatitude, originLongitude = facts.StoreOriginLatitude, facts.StoreOriginLongitude
 		destinationLatitude, destinationLongitude = facts.AddressLatitude, facts.AddressLongitude
-		deliveryPolicyVersion = serviceability.PolicyVersion
-	}
-	if fulfillmentMode == FulfillmentModePartnerCaptain {
-		deliveryPolicyVersion = "NOT_APPLICABLE"
 	}
 
 	subtotal := new(big.Int)
@@ -209,8 +203,8 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	}
 
 	feeQuote := postgres.DeliveryFeeQuote{FeeMinor: 0, PolicyVersion: "NOT_APPLICABLE"}
-	if fulfillmentMode == FulfillmentModeBthwaniCaptain {
-		feeQuote, err = s.quoteDeliveryFee(ctx, postgres.DeliveryFeeQuoteInput{ServiceCityID: serviceCityID, OriginLatitude: originLatitude, OriginLongitude: originLongitude, DestinationLatitude: destinationLatitude, DestinationLongitude: destinationLongitude, OrderSizeBaseUnits: orderSize.Int64()})
+	if fulfillmentMode != FulfillmentModeCustomerPickup {
+		feeQuote, err = s.quoteDeliveryFee(ctx, postgres.DeliveryFeeQuoteInput{StoreID: storeID, FulfillmentMode: fulfillmentMode, ServiceCityID: serviceCityID, OriginLatitude: originLatitude, OriginLongitude: originLongitude, DestinationLatitude: destinationLatitude, DestinationLongitude: destinationLongitude, OrderSizeBaseUnits: orderSize.Int64()})
 		if err != nil || feeQuote.FeeMinor < 0 || strings.TrimSpace(feeQuote.PolicyVersion) == "" {
 			return CheckoutQuote{}, postgres.ErrDeliveryFeeUnavailable
 		}
@@ -233,13 +227,13 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 		DeliveryFeeMinor:      feeQuote.FeeMinor,
 		TotalAmountMinor:      total.Int64(),
 		Currency:              currency,
-		DeliveryPolicyVersion: deliveryPolicyVersion,
+		DeliveryPolicyVersion: feeQuote.PolicyVersion,
 		ServiceCityID:         serviceCityID,
 		QuotedAt:              time.Now().UTC(),
 	}, nil
 }
 
-func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode string, expectedTotalAmountMinor int64, recipient postgres.DeliveryRecipientInput, internalBalanceAmountMinor int64, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode, discoveryClickEventID string, expectedTotalAmountMinor int64, recipient postgres.DeliveryRecipientInput, customerNote string, internalBalanceAmountMinor int64, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	actorID, err := s.requireClient(ctx, accessToken)
 	if err != nil {
 		return postgres.OrderRecord{}, false, err
@@ -247,6 +241,10 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	fulfillmentMode = strings.TrimSpace(fulfillmentMode)
 	cartID, storeID, addressID = strings.TrimSpace(cartID), strings.TrimSpace(storeID), strings.TrimSpace(addressID)
 	idempotencyKey, correlationID = strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
+	customerNote, err = postgres.NormalizeCustomerOrderNote(customerNote)
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
 	recipient, err = postgres.NormalizeDeliveryRecipient(recipient, fulfillmentMode)
 	if err != nil {
 		return postgres.OrderRecord{}, false, err
@@ -276,9 +274,9 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID,
 		FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedTotalAmountMinor: confirmedTotal, ExpectedCartVersion: expectedCartVersion,
 		IdempotencyKey: idempotencyKey, CorrelationID: correlationID,
-		Recipient:                recipient,
+		Recipient: recipient, CustomerNote: customerNote,
 		PaymentExternalReference: paymentExternalReference, PaymentCancellationKey: paymentCancellationKey,
-		PaymentMethod: paymentMethod, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)),
+		PaymentMethod: paymentMethod, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), DiscoveryClickEventID: strings.TrimSpace(discoveryClickEventID),
 		PaymentIntentRecoveryReader: paymentRecoveryReader, PaymentCanceller: paymentCanceller,
 	}
 	resolvedOrder, replayed, resolveErr := postgres.ResolveCheckoutAttempt(ctx, s.db, attemptInput)
@@ -303,7 +301,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		return postgres.OrderRecord{}, false, err
 	}
 	if orderability.State != postgres.StoreOrderabilityOpenForOrders {
-		return postgres.OrderRecord{}, false, ErrFulfillmentModeUnavailable
+		return postgres.OrderRecord{}, false, ErrStoreNotAcceptingOrders
 	}
 	var evidence postgres.CheckoutEvidence
 	if fulfillmentMode == FulfillmentModeCustomerPickup {
@@ -320,16 +318,16 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		evidence = postgres.CheckoutEvidence{ServiceCityID: facts.StoreServiceCityID, PolicyVersion: serviceability.PolicyVersion, Status: serviceabilityResult.Status, StoreVersion: facts.StoreVersion, AddressVersion: facts.AddressVersion, StoreOriginLatitude: facts.StoreOriginLatitude, StoreOriginLongitude: facts.StoreOriginLongitude, AddressLatitude: facts.AddressLatitude, AddressLongitude: facts.AddressLongitude}
 	}
 	input := postgres.CheckoutInput{
-		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID, FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedTotalAmountMinor: confirmedTotal, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), PaymentMethod: paymentMethod, DeliveryProofKeyring: s.proofKeys,
+		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID, FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedTotalAmountMinor: confirmedTotal, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), DiscoveryClickEventID: strings.TrimSpace(discoveryClickEventID), PaymentMethod: paymentMethod, DeliveryProofKeyring: s.proofKeys,
 		Evidence:       evidence,
 		IdempotencyKey: idempotencyKey, ActingActorID: actorID, CorrelationID: correlationID,
-		Recipient:                recipient,
+		Recipient: recipient, CustomerNote: customerNote,
 		PaymentExternalReference: paymentExternalReference,
 		PaymentIdempotencyKey:    wlt.DerivedIdempotencyKey("create", idempotencyKey),
 		PaymentCancellationKey:   paymentCancellationKey,
 	}
 	input.DeliveryFeeResolver = s.quoteDeliveryFee
-	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, promotion postgres.PromotionFunding, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
+	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor, deliveryMarginMinor int64, deliveryPolicyVersion string, amountMinor int64, promotion postgres.PromotionFunding, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
 		if internalBalanceAmountMinor > amountMinor {
 			return postgres.ProvisionedPayment{}, ErrCheckoutBalanceContribution
 		}
@@ -337,10 +335,10 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		if fulfillmentMode == FulfillmentModeCustomerPickup {
 			allocationPolicy = "cash-at-store-v1"
 		} else if fulfillmentMode == FulfillmentModePartnerCaptain {
-			allocationPolicy = "store-captain-cash-v1"
+			allocationPolicy = fmt.Sprintf("store-captain-cash-v2;delivery=%s", deliveryPolicyVersion)
 		}
 		cashAmountMinor := amountMinor - internalBalanceAmountMinor
-		allocation := wlt.CustomerPaymentAllocationInput{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, CommercialStoreTypeID: store.CommercialStoreTypeID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, InternalBalanceAmountMinor: internalBalanceAmountMinor, CashAmountMinor: cashAmountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
+		allocation := wlt.CustomerPaymentAllocationInput{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, CommercialStoreTypeID: store.CommercialStoreTypeID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DeliveryMarginMinor: deliveryMarginMinor, DiscountMinor: discountMinor, InternalBalanceAmountMinor: internalBalanceAmountMinor, CashAmountMinor: cashAmountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
 		if promotion.PromotionID != "" {
 			allocation.PromotionFunding = &wlt.PromotionFundingRequest{PromotionID: promotion.PromotionID, PromotionVersion: promotion.PromotionVersion, PromotionCode: promotion.PromotionCode, FundingSource: promotion.FundingSource, PartnerSharePercent: promotion.PartnerSharePercent}
 		}
@@ -425,11 +423,11 @@ func externalMutationOutcome(err error) error {
 }
 
 func (s *Service) quoteDeliveryFee(ctx context.Context, input postgres.DeliveryFeeQuoteInput) (postgres.DeliveryFeeQuote, error) {
-	quote, err := s.payment.QuoteDeliveryFee(ctx, wlt.DeliveryFeeQuoteInput{ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.DestinationLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
+	quote, err := s.payment.QuoteDeliveryFee(ctx, wlt.DeliveryFeeQuoteInput{StoreID: input.StoreID, FulfillmentMode: input.FulfillmentMode, ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.DestinationLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
 	if err != nil {
 		return postgres.DeliveryFeeQuote{}, fmt.Errorf("%w: %w", postgres.ErrDeliveryFeeUnavailable, err)
 	}
-	return postgres.DeliveryFeeQuote{FeeMinor: quote.FeeMinor, PolicyVersion: quote.PolicyVersion}, nil
+	return postgres.DeliveryFeeQuote{FeeMinor: quote.FeeMinor, PlatformMarginMinor: quote.PlatformMarginMinor, PolicyVersion: quote.PolicyVersion}, nil
 }
 
 func (s *Service) requireClient(ctx context.Context, accessToken string) (string, error) {

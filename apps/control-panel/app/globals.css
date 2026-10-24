@@ -55,7 +55,7 @@
   .workspace-breadcrumbs li { display: flex; gap: 8px; align-items: center; }
   .workspace-header-tools { display: flex; align-items: center; gap: 8px; }
   .workspace-header-tools svg, .workspace-icon { inline-size: 20px; block-size: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-  .workspace-notifications-link, .workspace-trash-link, .workspace-search-trigger, .account-menu > summary, .workspace-nav-toggle, .workspace-search-close, .workspace-nav-close { display: inline-flex; align-items: center; justify-content: center; inline-size: 40px; block-size: 40px; padding: 8px; border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--color-primary); background: var(--surface-base); }
+  .workspace-notifications-link, .workspace-trash-link, .workspace-search-trigger, .workspace-account-trigger, .workspace-nav-toggle, .workspace-search-close, .workspace-nav-close { display: inline-flex; align-items: center; justify-content: center; inline-size: 40px; block-size: 40px; padding: 8px; border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--color-primary); background: var(--surface-base); }
   .workspace-trash-link svg { inline-size: 22px; block-size: 22px; }
   .workspace-trash-restore-arrow { stroke: var(--success-text); stroke-width: 2.5; }
   .workspace-trash-link[aria-current="page"] { background: var(--surface-muted); }
@@ -72,10 +72,10 @@
   .workspace-nav-child-link { font-size: 13px; font-weight: 450; min-block-size: 36px; margin-inline-start: 6px; }
   .workspace-nav-child-link[aria-current="page"] { background: var(--surface-base); color: var(--interactive-text); font-weight: 700; }
   .workspace-main { min-inline-size: 0; padding: 24px; }
-  .workspace-search-control, .account-menu { position: relative; }
-  .account-menu > summary { list-style: none; }
-  .account-menu > summary::-webkit-details-marker { display: none; }
-  .account-menu-panel, .workspace-search-panel { position: absolute; inset-block-start: calc(100% + 8px); inset-inline-end: 0; inline-size: min(380px, calc(100vw - 24px)); max-block-size: calc(100dvh - 90px); overflow: auto; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-base); box-shadow: var(--shadow-card); z-index: 45; }
+  .workspace-search-control { position: relative; }
+  .workspace-account-trigger { list-style: none; }
+  .workspace-account-trigger::-webkit-details-marker { display: none; }
+  .workspace-search-panel { position: absolute; inset-block-start: calc(100% + 8px); inset-inline-end: 0; inline-size: min(380px, calc(100vw - 24px)); max-block-size: calc(100dvh - 90px); overflow: auto; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-base); box-shadow: var(--shadow-card); z-index: 45; }
   .workspace-search-panel { inset-inline-end: 72px; }
   .workspace-search-form { display: flex; gap: 6px; }
   .workspace-search-form input { inline-size: min(240px, 35vw); }
@@ -3234,3 +3234,545 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   .catalog-result-source small {display:block;padding:8px;font-size:11px;line-height:1.65;max-inline-size:270px;}
   @media(max-width:700px) {.catalog-selection-bar {justify-content:flex-start;}.catalog-result-source {margin-inline-start:0;}}
 }
+
+/* Wallet-provider policy: one compact, responsive management surface. */
+.policy-rich-drawer[open]:has([data-policy-editor= wallet-providers]:not([hidden])) {
+  inline-size: min(552px, calc(100vw - 24px));
+}
+.wallet-policy-panel { display: grid; gap: 14px; min-inline-size: 0; font-size: 13px; color: var(--color-primary); }
+.wallet-policy-panel *, .wallet-policy-panel *::before, .wallet-policy-panel *::after { box-sizing: border-box; }
+.wallet-policy-intro { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.wallet-policy-intro > div { display: grid; gap: 3px; min-inline-size: 0; flex: 1 1 180px; }
+.wallet-policy-intro strong { font-size: 15px; }
+.wallet-policy-intro p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.7; }
+.wallet-policy-intro > button { flex: 0 0 auto; }
+.wallet-policy-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(112px, .45fr); gap: 9px; }
+.wallet-policy-panel :is(input:not([type=checkbox]):not([type=file]), select) {
+  display: block; inline-size: 100%; min-inline-size: 0; min-block-size: 40px;
+  border: 1px solid var(--border-subtle); border-radius: 9px; color: var(--color-primary);
+  background: var(--surface-base); padding: 8px 11px; outline-offset: 2px;
+}
+.wallet-policy-panel :is(input,select,button):focus-visible { outline: 2px solid var(--action-bg); outline-offset: 2px; }
+.wallet-policy-count { margin: -4px 0 0; color: var(--text-muted); font-size: 11px; }
+.wallet-policy-list { display: grid; gap: 9px; min-inline-size: 0; }
+.wallet-provider-card { min-inline-size: 0; overflow: clip; border: 1px solid var(--border-subtle); background: var(--surface-base); border-radius: 12px; }
+.wallet-provider-card.is-selected { border-color: var(--action-bg); box-shadow: 0 0 0 1px var(--border-subtle); }
+.wallet-provider-summary { display: flex; align-items: center; gap: 12px; padding: 11px 12px; min-block-size: 76px; }
+.wallet-provider-avatar, .wallet-provider-logo-preview {
+  display: inline-grid; place-items: center; flex: 0 0 auto; inline-size: 48px; block-size: 48px;
+  overflow: hidden; border-radius: 11px; background: var(--surface-muted);
+  border: 1px solid var(--border-subtle); color: var(--interactive-text); font-size: 23px;
+}
+.wallet-provider-avatar img, .wallet-provider-logo-preview img { display: block; inline-size: 100%; block-size: 100%; object-fit: contain; }
+.wallet-provider-identity { flex: 1 1 auto; min-inline-size: 0; display: grid; gap: 5px; }
+.wallet-provider-identity strong { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.wallet-provider-status { display: inline-flex; align-items: center; inline-size: fit-content; gap: 4px; color: var(--text-muted); font-size: 11px; }
+.wallet-provider-status.is-on { color: var(--success-text); }
+.wallet-provider-manage { flex: none; min-inline-size: 65px; }
+.wallet-provider-settings { padding: 16px; background: var(--surface-muted); border-block-start: 1px solid var(--border-subtle); display: grid; gap: 16px; min-inline-size: 0; }
+.wallet-provider-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.wallet-provider-settings-heading > span { font-size: 11px; color: var(--text-muted); }
+.wallet-policy-form, .wallet-policy-editor { display: grid; gap: 11px; padding: 0; min-inline-size: 0; }
+.wallet-policy-editor { border: 1px solid var(--border-subtle); border-radius: 11px; padding: 14px; background: var(--surface-muted); }
+.wallet-policy-form > label:not(.wallet-policy-check):not(.wallet-provider-logo-picker), .wallet-policy-editor > label:not(.wallet-policy-check), .wallet-provider-logo-fields > label {
+  display: grid; gap: 6px; font-weight: 650; font-size: 12px; min-inline-size: 0;
+}
+.wallet-policy-form-actions, .wallet-policy-inline-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.wallet-policy-panel .button { min-block-size: 36px; font-size: 12px; }
+.wallet-provider-logo-form { padding-block-start: 15px; border-block-start: 1px solid var(--border-subtle); }
+.wallet-provider-logo-picker { position: relative; display: flex; align-items: center; gap: 12px; min-inline-size: 0; cursor: pointer; border: 1px dashed var(--border-subtle); border-radius: 10px; background: var(--surface-base); padding: 12px; }
+.wallet-provider-logo-picker:focus-within { outline: 2px solid var(--action-bg); outline-offset: 2px; }
+.wallet-provider-logo-picker input[type=file] { position: absolute; inset: 0; opacity: 0; inline-size: 100%; block-size: 100%; cursor: pointer; }
+.wallet-provider-logo-preview { inline-size: 56px; block-size: 56px; }
+.wallet-provider-file-copy { display: grid; gap: 5px; min-inline-size: 0; flex: 1; overflow-wrap: anywhere; }
+.wallet-provider-file-copy strong { font-size: 12px; }
+.wallet-provider-file-copy small { color: var(--text-muted); font-size: 11px; }
+.wallet-policy-check { display: flex; align-items: flex-start; gap: 9px; line-height: 1.6; font-size: 12px; font-weight: 500; }
+.wallet-policy-check input { margin: 3px 0 0; flex: 0 0 auto; inline-size: 16px; block-size: 16px; accent-color: var(--action-bg); }
+.wallet-policy-empty { margin: 0; padding: 18px; text-align: center; color: var(--text-muted); border: 1px dashed var(--border-subtle); border-radius: 10px; }
+@media (max-width: 560px) {
+  .policy-rich-drawer[open]:has([data-policy-editor=wallet-providers]:not([hidden])) { inset: 44px 0 0; inline-size: 100vw; }
+  .wallet-policy-intro { align-items: flex-start; }
+}
+@media (max-width: 390px) {
+  .wallet-policy-toolbar { grid-template-columns: minmax(0,1fr); }
+  .wallet-provider-summary { gap: 9px; padding: 10px; }
+  .wallet-provider-avatar { inline-size: 42px; block-size: 42px; }
+  .wallet-provider-settings { padding: 12px; }
+}
+
+/* Finance decision desk: three distinct tasks, one calm work surface. */
+@layer composition {
+  .finance-desk-modes { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; border-block-end:1px solid var(--border-subtle); padding-block-end:12px; }
+  .finance-desk-mode { display:grid; gap:3px; min-inline-size:0; min-block-size:68px; padding:12px 15px; border:1px solid var(--border-subtle); border-radius:9px; background:var(--surface-base); color:var(--color-primary); text-align:start; }
+  .finance-desk-mode strong { font-size:14px; font-weight:750; }
+  .finance-desk-mode span { color:var(--text-muted); font-size:12px; }
+  .finance-desk-mode:hover { border-color:var(--border-strong); background:var(--surface-muted); }
+  .finance-desk-mode[aria-current="page"] { border-color:var(--interactive-text); box-shadow:inset -3px 0 var(--interactive-text); }
+  .finance-desk-overview { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-base); overflow:hidden; }
+  .finance-desk-overview > div { display:grid; align-content:center; min-inline-size:0; gap:2px; min-block-size:88px; padding:12px 17px; border-inline-end:1px solid var(--border-subtle); }
+  .finance-desk-overview > div:last-child { border:0; }
+  .finance-desk-overview span,.finance-desk-overview small { color:var(--text-muted); font-size:12px; }
+  .finance-desk-overview strong { font-size:23px; font-weight:750; line-height:1.4; font-variant-numeric:tabular-nums; }
+  .finance-desk-overview > div:last-child strong { font-size:15px; }
+  .finance-desk-context { color:var(--text-muted); font-size:12px; margin:0; }
+  @media(max-width:720px){ .finance-desk-modes { grid-template-columns:1fr; gap:6px; } .finance-desk-mode { min-block-size:52px; padding:8px 12px; } .finance-desk-mode span { display:none; } .finance-desk-overview > div { padding:9px; min-block-size:76px; } .finance-desk-overview strong { font-size:19px; } .finance-desk-overview small { font-size:11px; } }
+}
+
+
+/*
+ * Financial-center visual language for the full operator workspace.
+ * All feature flows, controls, permissions and API ownership remain unchanged.
+ * This layer only consolidates density, navigation, cards, tables and drawers.
+ */
+@layer composition {
+  .workspace-app-shell {
+    --bt-workspace-canvas: var(--surface-muted);
+    --bt-workspace-accent: var(--action-bg);
+    --bt-workspace-shadow: var(--shadow-card);
+    --bt-workspace-panel: var(--surface-base);
+    --bt-workspace-pane-alt: var(--surface-muted);
+    --bt-workspace-navigation: var(--surface-muted);
+    background: var(--bt-workspace-canvas);
+    min-block-size: 100dvh;
+  }
+  .workspace-app-shell .workspace-header {
+    min-block-size: 55px;
+    padding: 7px 18px;
+    gap: 14px;
+    background: var(--bt-workspace-panel);
+    border-block-end: 1px solid var(--border-subtle);
+  }
+  .workspace-app-shell .brand-link { min-inline-size: 170px; }
+  .workspace-app-shell .brand-name { font-size: 21px; font-weight: 850; }
+  .workspace-app-shell .brand-rail { background: var(--bt-workspace-accent); }
+  .workspace-app-shell .workspace-header-tools { gap: 7px; }
+  .workspace-app-shell :is(.workspace-notifications-link,.workspace-trash-link,.workspace-search-trigger,.workspace-account-trigger,.workspace-nav-toggle) {
+    min-inline-size: 35px;
+    inline-size: 35px;
+    block-size: 35px;
+    border-color: var(--border-subtle);
+    border-radius: 8px;
+    background: transparent;
+  }
+  .workspace-app-shell .workspace-layout { grid-template-columns: 198px minmax(0,1fr); }
+  .workspace-app-shell .workspace-nav {
+    inset-block-start: 55px;
+    max-block-size: calc(100dvh - 55px);
+    background: var(--bt-workspace-navigation);
+    border-inline-end: 1px solid var(--border-subtle);
+    padding: 13px 10px;
+  }
+  .workspace-app-shell .workspace-nav-group { margin-block-end: 3px; }
+  .workspace-app-shell :is(.workspace-nav-link,.workspace-nav-child-link) {
+    min-block-size: 39px;
+    padding: 8px 12px;
+    font-size: 12px;
+    border-radius: 8px;
+    font-weight: 620;
+    transition: background .14s ease, color .14s ease;
+  }
+  .workspace-app-shell .workspace-nav-link[aria-current] {
+    background: var(--bt-workspace-panel);
+    color: var(--color-primary);
+    box-shadow: inset -3px 0 var(--bt-workspace-accent);
+  }
+  .workspace-app-shell .workspace-nav-child-link[aria-current="page"] {
+    background: var(--bt-workspace-panel);
+    color: var(--bt-workspace-accent);
+  }
+  .workspace-app-shell .workspace-main { padding: 17px clamp(12px,1.8vw,23px) 25px; background: var(--bt-workspace-canvas); }
+  .workspace-app-shell .workspace-main:not([data-workspace-section="finance"]) {
+    --bt-card-edge: var(--border-subtle);
+    color: var(--color-primary);
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(.workspace-page,.work-stack,.operations-workspace,.store-workspace,.partner-detail-workspace) {
+    gap: 12px;
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(.page-header,.workspace-page-heading,.section-heading,.access-page-heading) {
+    min-block-size: 47px;
+    padding: 4px 2px 9px;
+    gap: 10px;
+    align-items: center;
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(.page-header,.workspace-page-heading,.access-page-heading) h1 {
+    color: var(--color-primary);
+    font-size: clamp(19px,1.65vw,23px);
+    font-weight: 850;
+    letter-spacing: -.35px;
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(.page-header,.workspace-page-heading,.section-heading) h2 {
+    color: var(--color-primary);
+    font-size: 15px;
+    font-weight: 780;
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(.page-header,.workspace-page-heading) :is(.muted,.field-help,small,p) {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  /* Unified operator surfaces, without replacing domain-specific components. */
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .panel,.access-card,.order-detail-panel,.partner-detail-section,.store-detail-section,
+    .review-panel,.home-work-area,.access-workspace-section,.account-access-panel,
+    .partner-case-summary,.partner-case-details,.partner-case-attachments,.partner-case-actions,
+    .finance-summary-card,.operator-notification-list,.store-advanced-settings,.field-workbench-pane
+  ) {
+    background: var(--bt-workspace-panel);
+    border: 1px solid var(--bt-card-edge,var(--border-subtle));
+    border-radius: 11px;
+    box-shadow: var(--bt-workspace-shadow);
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .panel,.access-card,.order-detail-panel,.partner-detail-section,.store-detail-section,
+    .review-panel,.home-work-area,.access-workspace-section,.account-access-panel
+  ) { padding: 14px; }
+  .workspace-main:not([data-workspace-section="finance"]) :is(.finance-summary-card,.bt-home-metric) {
+    padding: 13px 15px;
+    min-block-size: 97px;
+    background: var(--bt-workspace-panel);
+    border: 1px solid var(--border-subtle);
+    border-radius: 11px;
+    box-shadow: var(--bt-workspace-shadow);
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(.finance-summary-card,.bt-home-metric) strong {
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    color: var(--color-primary);
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .registry-toolbar,.workspace-toolbar,.finance-toolbar,.partner-registry-toolbar,
+    .catalog-registry-toolbar,.joining-case-queue-toolbar,.operations-toolbar,.field-roster-tools,
+    .policy-toolbar
+  ) {
+    padding: 9px 11px;
+    gap: 8px;
+    background: var(--bt-workspace-panel);
+    border: 1px solid var(--border-subtle);
+    border-radius: 9px;
+    align-items: end;
+    box-shadow: var(--bt-workspace-shadow);
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(.field-label,.registry-toolbar label,.workspace-toolbar label) {
+    font-size: 11px;
+    color: var(--text-muted);
+    gap: 4px;
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select,textarea
+  ) {
+    min-block-size: 35px;
+    padding: 7px 10px;
+    border-color: var(--border-subtle);
+    border-radius: 8px;
+    font-size: 12px;
+    background: var(--bt-workspace-pane-alt);
+    color: var(--color-primary);
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(input,select,textarea):focus-visible {
+    outline: 2px solid var(--bt-workspace-accent);
+    outline-offset: 1px;
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .button,.table-action,.row-action,.partner-row-action,.catalog-row-action,.access-row-action,
+    .joining-case-row-action
+  ) {
+    min-block-size: 34px;
+    padding: 6px 11px;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 7px;
+    line-height: 1.4;
+  }
+  .workspace-main:not([data-workspace-section="finance"]) .button-primary {
+    background: var(--action-bg);
+    color: var(--color-on-action);
+    border-color: var(--action-bg);
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .workspace-tabs,.detail-tabs,.workspace-route-tabs,.order-detail-tabs,.partner-detail-tabs,
+    .operations-sub-lanes,.access-view-nav,.partners-workbench-scopes
+  ) {
+    min-block-size: 43px;
+    padding: 2px 5px;
+    gap: 5px;
+    align-items: stretch;
+    border: 1px solid var(--border-subtle);
+    border-radius: 9px;
+    background: var(--bt-workspace-panel);
+    overflow-x: auto;
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .workspace-tabs,.detail-tabs,.workspace-route-tabs,.order-detail-tabs,.partner-detail-tabs,
+    .operations-sub-lanes,.access-view-nav
+  ) > :is(a,button) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-block-size: 37px;
+    padding: 6px 13px;
+    border: 0;
+    border-block-end: 2px solid transparent;
+    border-radius: 6px 6px 0 0;
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-size: 12px;
+    background: transparent;
+    text-decoration: none;
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .workspace-tabs,.detail-tabs,.workspace-route-tabs,.order-detail-tabs,.partner-detail-tabs,
+    .operations-sub-lanes,.access-view-nav
+  ) > :is(a,button):is([aria-current],[aria-selected="true"],[aria-pressed="true"],.active) {
+    border-block-end-color: var(--bt-workspace-accent);
+    color: var(--bt-workspace-accent);
+    background: color-mix(in srgb,var(--bt-workspace-accent) 8%,transparent);
+    font-weight: 800;
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .table-wrap,.operations-table-wrap,.finance-table-wrap,.partner-registry-table-wrap,
+    .store-registry-table-wrap,.joining-case-table-wrap,.catalog-registry-table-wrap,
+    .access-table-wrap,.field-agent-table-wrap,.partner-stores-table-wrap
+  ) {
+    max-block-size: min(67dvh,770px);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    background: var(--bt-workspace-panel);
+    box-shadow: var(--bt-workspace-shadow);
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(table,.data-table) {
+    color: var(--color-primary);
+    font-size: 12px;
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(th,td) {
+    padding: 9px 10px;
+    border-block-end-color: var(--border-subtle);
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(thead th,.data-table thead th) {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    background: var(--bt-workspace-pane-alt);
+    padding-block: 10px;
+  }
+  .workspace-main:not([data-workspace-section="finance"]) tbody tr:is(:hover,:focus-within) {
+    background: color-mix(in srgb,var(--bt-workspace-accent) 5%,var(--bt-workspace-panel));
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .pagination,.partner-registry-pagination,.joining-case-pagination,.operator-notification-pagination
+  ) {
+    padding-block: 9px;
+    gap: 7px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .operator-notification-card,.home-queue-shortcut,.home-record-link,.home-notification-link,
+    .joining-case-row-main
+  ) { border-color: var(--border-subtle); }
+  .workspace-main:not([data-workspace-section="finance"]) .operator-notification-card {
+    padding: 11px 14px;
+    background: var(--bt-workspace-panel);
+  }
+  .workspace-main:not([data-workspace-section="finance"]) .operator-notification-card:hover {
+    background: var(--bt-workspace-pane-alt);
+  }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .home-queue-shortcut,.home-record-link
+  ) { background: var(--bt-workspace-pane-alt);border-radius:8px; }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .home-queue-shortcut,.home-record-link
+  ):hover { background: color-mix(in srgb,var(--bt-workspace-accent) 9%,var(--bt-workspace-pane-alt)); }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .partner-case-summary,.partner-detail-section,.store-detail-section,.field-workbench-pane
+  ) { min-inline-size:0; }
+  .workspace-main:not([data-workspace-section="finance"]) :is(
+    .managed-status,.status-badge,.record-status,.state-badge
+  ) { border-radius: 7px; }
+  .workspace-main:not([data-workspace-section="finance"]) :is(dialog,.policy-rich-drawer[open]) {
+    border-color: var(--border-subtle);
+    background: var(--bt-workspace-panel);
+    color: var(--color-primary);
+  }
+  @media(max-width:1050px) {
+    .workspace-app-shell .workspace-layout {grid-template-columns: 176px minmax(0,1fr);}
+    .workspace-app-shell .workspace-nav {padding-inline:7px;}
+  }
+  @media(max-width:700px) {
+    .workspace-app-shell .workspace-main {padding:12px 10px 22px;}
+    .workspace-app-shell .workspace-header {min-block-size:55px;padding-inline:12px;}
+    .workspace-main:not([data-workspace-section="finance"]) :is(.workspace-resource-grid,.home-dashboard) {grid-template-columns:minmax(0,1fr);}
+    .workspace-main:not([data-workspace-section="finance"]) :is(.registry-toolbar,.operations-toolbar,.partner-registry-toolbar) {padding:9px;}
+  }
+}
+
+
+/* Respect the existing compact-navigation and mobile-drawer behavior. */
+@layer composition {
+  @media (min-width: 820px) {
+    .workspace-app-shell .workspace-layout[data-nav-compact="true"] {
+      grid-template-columns: 68px minmax(0,1fr);
+    }
+    .workspace-app-shell .workspace-layout[data-nav-compact="true"] .workspace-nav {
+      padding-inline: 7px;
+    }
+  }
+  @media (max-width: 819px) {
+    .workspace-app-shell .workspace-layout { display: block; }
+    .workspace-app-shell .workspace-nav {
+      position: fixed;
+      inset-block: 0;
+      inline-size: min(300px,calc(100vw - 48px));
+      max-block-size: 100dvh;
+      z-index: 60;
+      background: var(--bt-workspace-navigation);
+    }
+    .workspace-app-shell :is(.workspace-nav-link,.workspace-nav-child-link) { min-block-size: 44px; }
+    .workspace-app-shell :is(.workspace-notifications-link,.workspace-trash-link,.workspace-search-trigger,.workspace-account-trigger,.workspace-nav-toggle) {
+      min-inline-size: 40px;
+      inline-size: 40px;
+      block-size: 40px;
+    }
+    .workspace-app-shell .brand-link { min-inline-size: 0; }
+  }
+}
+
+
+/* Partner/store profile: decision-first, three-section layout.
+ * Inherit all palette and theme semantics from the canonical design system. */
+.store-profile { gap: 10px; }
+.store-profile-hero { grid-template-columns: minmax(0,1fr) 155px; border-radius: 11px; }
+.store-profile-hero-main { padding: 12px 15px; gap: 9px; justify-content: center; }
+.store-profile-brand { gap: 10px; }
+.store-profile-brand .store-list-logo { inline-size: 52px; block-size: 52px; border-radius: 10px; }
+.store-profile-brand-copy h2 { font-size: 19px; }
+.store-profile-hero-info { gap: 6px 14px; align-items: center; }
+.store-profile-main-action { min-block-size: 34px; padding-inline: 12px; }
+.store-profile-cover { block-size: 118px; }
+.store-profile-sections { overflow-x: visible; }
+.store-profile-kpis { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.store-profile-kpi { padding: 11px 12px; min-block-size: 68px; }
+.store-profile-alert { padding: 10px 12px; gap: 12px; border-inline-start-width: 2px; }
+.store-profile-alert p { line-height: 1.55; }
+.store-profile-readiness-detail { color: var(--text-muted); font-size: 12px; }
+.store-profile-readiness-detail summary { cursor: pointer; color: var(--interactive-text); font-weight: 650; }
+.store-profile-readiness-detail ul { margin-block: 5px 0; padding-inline-start: 18px; }
+.store-profile-content { gap: 9px; grid-template-columns: repeat(3,minmax(0,1fr)); }
+.store-profile-content > div { min-inline-size: 0; grid-column: auto; }
+.store-profile-focused-grid { align-items: start; }
+.store-profile-focused-grid > .store-profile-card { block-size: auto; }
+.store-profile-card { padding: 11px 12px; gap: 8px; border-radius: 10px; }
+.store-profile-card-header { padding-block-end: 6px; }
+.store-profile-fact { padding: 6px 0; }
+.store-profile-tab-grid.store-profile-focused-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.store-profile-tab-grid.store-profile-focused-grid > * { min-inline-size: 0; }
+.store-profile-context-links { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; }
+.store-profile-context-links a { display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  min-block-size: 43px; border-radius: 10px; padding-inline: 12px; border: 1px solid var(--border-subtle);
+  background: var(--surface-base); color: var(--interactive-text); font-size: 12px; font-weight: 700; }
+.store-profile-context-links a:hover { background: var(--surface-muted); }
+.store-profile-context-links a:focus-visible { outline: 2px solid var(--interactive-text); outline-offset: 2px; }
+@container (max-width: 780px) {
+ .store-profile-hero { grid-template-columns: minmax(0,1fr); }
+ .store-profile-cover { display: none; }
+ .store-profile-content { grid-template-columns: minmax(0,1fr); }
+ .store-profile-context-links { grid-template-columns: repeat(2,minmax(0,1fr)); }
+ .store-profile-tab-grid.store-profile-focused-grid { grid-template-columns: minmax(0,1fr); }
+}
+@container (max-width: 410px) {
+ .store-profile-kpis { grid-template-columns: minmax(0,1fr); }
+ .store-profile-context-links { grid-template-columns: minmax(0,1fr); }
+}
+
+.store-profile-operating-state { min-block-size: 29px; border: 1px solid var(--border-subtle); border-radius: 99px; padding-inline: 10px; background: var(--surface-muted); color: var(--text-muted); font-size: 11px; cursor: pointer; }
+.store-profile-operating-state[data-state="open"] { color: var(--success-text); background: var(--success-soft); }
+.store-profile-operating-state:focus-visible { outline: 2px solid var(--interactive-text); outline-offset: 2px; }
+
+.store-profile-navigation { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.store-profile-navigation .store-profile-sections { flex: 1; min-inline-size: 0; }
+.store-profile-section-picker { min-height: 38px; max-width: 220px; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--border-subtle); background: var(--surface-base); color: var(--text-primary); cursor: pointer; }
+.store-profile-section-picker:focus-visible { outline: 2px solid var(--interactive-text); outline-offset: 2px; }
+.store-profile-context-links button { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-block-size: 43px; border-radius: 10px; padding-inline: 12px; border: 1px solid var(--border-subtle); background: var(--surface-base); color: var(--interactive-text); font-size: 12px; font-weight: 700; cursor: pointer; }
+.store-profile-context-links button:hover { background: var(--surface-muted); }
+.store-profile-context-links button:focus-visible { outline: 2px solid var(--interactive-text); outline-offset: 2px; }
+@media(max-width:600px) { .store-profile-section-picker { max-width: none; width: 100%; } }
+
+/* Store profile: all primary destinations stay in ONE row.
+   Contextual links open these same panels rather than creating copies. */
+.store-profile-navigation { display: block; min-inline-size:0; }
+.store-profile-navigation .store-profile-sections {
+  display:grid;
+  grid-template-columns:repeat(7,minmax(0,1fr));
+  width:100%; min-inline-size:0; gap:2px; overflow:visible;
+}
+.store-profile-navigation[data-has-finance="false"] .store-profile-sections {
+  grid-template-columns:repeat(6,minmax(0,1fr));
+}
+.store-profile-navigation .store-profile-sections > button {
+  box-sizing:border-box; min-inline-size:0; max-inline-size:100%;
+  padding-inline:7px; gap:5px; font-size:12px;
+  justify-content:center; white-space:nowrap;
+}
+.store-profile-navigation .store-profile-sections > button .workspace-icon { inline-size:13px;block-size:13px; }
+.store-profile-tab-panel > section { min-inline-size:0; }
+.store-profile-tab-panel .store-profile-tab-panel { padding-block:6px; }
+@media (max-width: 960px) {
+  .store-profile-navigation { overflow-x:auto; scrollbar-width:thin; }
+  .store-profile-navigation .store-profile-sections { min-inline-size:900px; }
+  .store-profile-navigation[data-has-finance="false"] .store-profile-sections { min-inline-size:780px; }
+}
+
+
+/* No empty grid columns from the previous large inspector layout. */
+.store-profile-content.store-sheet-dashboard {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 9px;
+}
+.store-profile-content.store-sheet-dashboard > div {
+  grid-column: auto !important;
+  grid-row: auto !important;
+  min-inline-size: 0;
+}
+.store-profile-content.store-sheet-dashboard .store-profile-card { min-block-size: 0; }
+@container (max-width: 980px) {
+  .store-profile-content.store-sheet-dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 650px) {
+  .store-profile-content.store-sheet-dashboard { grid-template-columns: minmax(0, 1fr); }
+}
+
+
+/* Unified partner team on owner/store views; tokens follow CP theme. */
+.partner-team-workspace { display:grid; gap:12px; min-inline-size:0; }
+.partner-team-heading { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; }
+.partner-team-heading h2 { font-size:16px; font-weight:800; margin:0; }
+.partner-team-heading p { color:var(--text-muted); font-size:12px; margin:4px 0 0; }
+.partner-team-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.partner-team-metrics > div { display:grid; gap:3px; padding:10px; border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-muted); }
+.partner-team-metrics strong { font-size:18px; font-weight:800; }
+.partner-team-metrics span { font-size:11px; color:var(--text-muted); }
+.partner-team-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; align-items:start; }
+.partner-team-member { border:1px solid var(--border-subtle); border-radius:10px; min-inline-size:0; display:grid; gap:7px; padding:12px; }
+.partner-team-member-main { display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
+.partner-team-member-main strong { font-size:13px; font-weight:750; }
+.partner-team-member > a { font-size:12px; color:var(--interactive-text); }
+.partner-team-member p { color:var(--text-muted); font-size:12px; margin:0; }
+.partner-team-member details { font-size:12px; }
+.partner-team-member details summary { cursor:pointer; }
+.partner-team-member details dl { display:grid; gap:5px; margin:8px 0 0; }
+.partner-team-member details dl > div { display:flex; justify-content:space-between; gap:8px; }
+.partner-team-member details dt { color:var(--text-muted); }
+.partner-team-state { color:var(--text-muted); border:1px solid var(--border-subtle); border-radius:999px; font-size:11px; padding:4px 8px; }
+.partner-team-state[data-state="active"] { color:var(--success-text); background:var(--success-soft); }
+.partner-team-compact .partner-team-list { grid-template-columns:minmax(0,1fr); }
+.partner-team-compact .partner-team-member { padding:8px; }
+.partner-team-compact .partner-team-metrics > div { padding:7px; }
+@media(max-width:700px) { .partner-team-list { grid-template-columns:minmax(0,1fr); } }
+
+.partner-team-member-stores { display:grid; gap:8px; }
+.partner-team-store-access { display:grid; gap:6px; border-top:1px solid var(--border-subtle); padding-top:8px; }
+.partner-team-store-access:first-child { border-top:0; padding-top:0; }
+.partner-team-store-access a { color:var(--interactive-text); font-size:12px; font-weight:750; }

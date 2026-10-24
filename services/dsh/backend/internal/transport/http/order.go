@@ -56,9 +56,22 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/cancellation-requests/{requestId}/decline", s.declineOperatorCancellationRequest)
 	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/cancel", s.cancelForOperator)
 	mux.HandleFunc("GET /dsh/operator/operations", s.listOperatorOperations)
+	mux.HandleFunc("GET /dsh/operator/stage-sla-policies", s.readOperatorStageSLAPolicies)
+	mux.HandleFunc("POST /dsh/operator/stage-sla-policies", s.createOperatorStageSLAPolicy)
+	mux.HandleFunc("GET /dsh/operator/customer-contact-queue", s.listOperatorCustomerContactQueue)
+	mux.HandleFunc("GET /dsh/operator/operational-cases", s.listOperatorCaseInbox)
 	mux.HandleFunc("GET /dsh/operator/home-analytics", s.readOperatorHomeAnalytics)
 	mux.HandleFunc("GET /dsh/operator/customers/{actorId}/orders", s.listOperatorCustomerOrders)
 	mux.HandleFunc("GET /dsh/operator/operations/{orderId}", s.readOperatorOperation)
+	mux.HandleFunc("GET /dsh/operator/operations/{orderId}/contact-review", s.readOperatorContactReview)
+	mux.HandleFunc("GET /dsh/operator/operations/{orderId}/mission-location", s.readOperatorMissionLocation)
+	mux.HandleFunc("GET /dsh/operator/operations/{orderId}/cases", s.listOperatorOrderCases)
+	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/cases", s.openOperatorOrderCase)
+	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/cases/{caseId}/transition", s.transitionOperatorOrderCase)
+	mux.HandleFunc("GET /dsh/operator/operations/{orderId}/cases/{caseId}/events", s.listOperatorCaseEvents)
+	mux.HandleFunc("GET /dsh/operator/operations/{orderId}/cases/{caseId}/resolution-evidence", s.listOperatorCaseResolutionEvidence)
+	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/contact-review", s.recordOperatorContactReview)
+	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/contact-review/claim", s.updateOperatorContactClaim)
 	mux.HandleFunc("GET /dsh/operator/cash-custody", s.listOperatorCashCustody)
 	mux.HandleFunc("POST /dsh/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileOperatorCashRemittance)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
@@ -134,7 +147,8 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 	summary := operations.Summary
 	writeJSON(w, http.StatusOK, contract.OperatorOperationsResponse{Operations: items, NextCursor: operations.NextCursor,
 		Summary: contract.OperatorOperationsSummary{TotalCount: summary.TotalCount, ActionableCount: summary.ActionableCount,
-			AwaitingDispatchCount: summary.AwaitingDispatchCount, ActiveCount: summary.ActiveCount, DeliveredCount: summary.DeliveredCount, MeasuredAt: summary.MeasuredAt}})
+			AwaitingDispatchCount: summary.AwaitingDispatchCount, ActiveCount: summary.ActiveCount, DeliveredCount: summary.DeliveredCount,
+			InCustodyOrderCount: summary.InCustodyOrderCount, InCustodyOrderValueMinor: int(summary.InCustodyOrderValueMinor), MeasuredAt: summary.MeasuredAt}})
 }
 
 func (s *OrderServer) readOperatorOperation(w http.ResponseWriter, r *http.Request) {
@@ -279,12 +293,20 @@ func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.Op
 	return contract.OperatorOperation{Order: toOrder(operation.Order), StoreName: operation.StoreName, Assignment: assignment, CustomerSuccessfulOrdersCount: operation.CustomerSuccessfulOrdersCount, SuccessfulOrderOrdinal: operation.SuccessfulOrderOrdinal, History: history, HistoryHasMore: operation.HistoryHasMore}
 }
 
+// The generated field is optional; 0 is omitted for stores without a target.
+func optionalPreparationMinutes(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
 func toOperatorOperationListItem(operation postgres.OperatorOperationListRecord) contract.OperatorOperationListItem {
 	var assignment *contract.OperatorAssignmentSummary
 	if operation.Assignment != nil {
 		assignment = &contract.OperatorAssignmentSummary{ID: operation.Assignment.ID, OrderID: operation.Assignment.OrderID, CaptainActorID: operation.Assignment.CaptainActorID, State: operation.Assignment.State, Version: operation.Assignment.Version, HandoffState: operation.Assignment.HandoffState}
 	}
-	return contract.OperatorOperationListItem{OrderID: operation.OrderID, StoreName: operation.StoreName, State: contract.OrderState(operation.State), UpdatedAt: operation.UpdatedAt, Assignment: assignment}
+	return contract.OperatorOperationListItem{OrderID: operation.OrderID, StoreName: operation.StoreName, State: contract.OrderState(operation.State), UpdatedAt: operation.UpdatedAt, StageStartedAt: operation.StageStartedAt, PreparationMinutes: optionalPreparationMinutes(operation.PreparationMinutes), SlaStatus: operation.StageSLA.Status, SlaReason: operation.StageSLA.Reason, SlaDeadlineAt: operation.StageSLA.DeadlineAt, SlaPolicyVersion: operation.StageSLA.PolicyVersion, SlaTargetMinutes: operation.StageSLA.TargetMinutes, Assignment: assignment}
 }
 
 func (s *OrderServer) listClient(w http.ResponseWriter, r *http.Request) {
@@ -361,7 +383,7 @@ func (s *OrderServer) sendConversationMessage(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "conversation ownership comes from the canonical session")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 5*1024*1024)
+	r.Body = http.MaxBytesReader(w, r.Body, 9*1024*1024)
 	var input contract.CreateOrderConversationMessageRequest
 	if !decodeJSON(w, r, &input) {
 		return
@@ -374,7 +396,7 @@ func (s *OrderServer) sendConversationMessage(w http.ResponseWriter, r *http.Req
 	var replayed bool
 	var err error
 	if input.MediaKind != "" || input.MediaContentType != "" || input.MediaBase64 != "" {
-		if input.MediaKind == "" || input.MediaContentType == "" || len(input.MediaBase64) > 4*1024*1024+64 {
+		if input.MediaKind == "" || input.MediaContentType == "" || len(input.MediaBase64) > 8*1024*1024+128 {
 			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid private media input")
 			return
 		}
@@ -884,7 +906,7 @@ func toOrder(item postgres.OrderRecord) contract.Order {
 	if item.Recipient.Instructions != nil {
 		recipient.Instructions = *item.Recipient.Instructions
 	}
-	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, CancellationMode: item.CancellationMode, CancellationPolicyVersion: item.CancellationPolicyVersion, StoreName: item.StoreName, PickupLocation: pickupLocation, CartID: item.CartID, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, Recipient: recipient, State: contract.OrderState(item.State), SubtotalAmountMinor: int(item.SubtotalAmountMinor), DiscountMinor: int(item.DiscountMinor), PromotionID: item.PromotionID, PromotionCode: item.PromotionCode, TotalAmountMinor: int(item.TotalAmountMinor), CashAmountMinor: int(item.PaymentCashAmountMinor), Currency: item.Currency, PaymentMethod: contract.PaymentMethod(item.PaymentMethod), PaymentState: contract.PaymentState(item.PaymentState), PaymentIntentID: paymentIntentID, StoreCashHandoffState: item.StoreCashHandoffState, Version: item.Version, Lines: lines, Adjustments: adjustments, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, CancellationMode: item.CancellationMode, CancellationPolicyVersion: item.CancellationPolicyVersion, StoreName: item.StoreName, PickupLocation: pickupLocation, CartID: item.CartID, CustomerNote: item.CustomerNote, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, Recipient: recipient, State: contract.OrderState(item.State), SubtotalAmountMinor: int(item.SubtotalAmountMinor), DiscountMinor: int(item.DiscountMinor), PromotionID: item.PromotionID, PromotionCode: item.PromotionCode, TotalAmountMinor: int(item.TotalAmountMinor), CashAmountMinor: int(item.PaymentCashAmountMinor), Currency: item.Currency, PaymentMethod: contract.PaymentMethod(item.PaymentMethod), PaymentState: contract.PaymentState(item.PaymentState), PaymentIntentID: paymentIntentID, StoreCashHandoffState: item.StoreCashHandoffState, Version: item.Version, Lines: lines, Adjustments: adjustments, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toOrderRating(item postgres.OrderRatingRecord) contract.OrderRating {
@@ -932,6 +954,24 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "order conversation was not found")
 	case errors.Is(err, postgres.ErrOrderRatingNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "order rating was not found")
+	case errors.Is(err, postgres.ErrOpsCaseInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "case input is invalid")
+	case errors.Is(err, postgres.ErrOpsCaseConflict):
+		writeError(w, http.StatusConflict, "CASE_CONFLICT", "case exists, changed or already resolved")
+	case errors.Is(err, postgres.ErrOpsCaseIdempotency):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "case key reused with different facts")
+	case errors.Is(err, postgres.ErrOpsCaseForbidden):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only the assigned case owner may advance the case")
+	case errors.Is(err, postgres.ErrOpsCaseUnverified):
+		writeError(w, http.StatusConflict, "CASE_CLOSURE_UNVERIFIED", "the canonical settlement or goods proof is not confirmed")
+	case errors.Is(err, postgres.ErrOpsCaseNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "case not found")
+	case errors.Is(err, postgres.ErrCustomerContactInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "customer contact review input is invalid")
+	case errors.Is(err, postgres.ErrCustomerContactConflict):
+		writeError(w, http.StatusConflict, "CONTACT_REVIEW_STALE", "customer contact review changed or order is already complete")
+	case errors.Is(err, postgres.ErrCustomerContactIdempotency):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "contact Idempotency-Key was reused with different facts")
 	case errors.Is(err, postgres.ErrOrderRatingInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "order rating input is invalid")
 	case errors.Is(err, orderdomain.ErrCashRemittanceInputInvalid):

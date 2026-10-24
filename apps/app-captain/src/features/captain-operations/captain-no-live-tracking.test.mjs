@@ -4,7 +4,7 @@ import test from "node:test";
 
 const source = readFileSync(new URL("./captain-deliveries.tsx", import.meta.url), "utf8");
 
-test("captain delivery screen does not request or publish live GPS", () => {
+test("captain delivery screen never owns GPS publishing or a movement trail", () => {
   for (const forbidden of [
     "expo-location",
     "watchPositionAsync(",
@@ -24,7 +24,7 @@ test("captain delivery retains store and customer map markers", () => {
   assert.equal(source.includes("maps/dir/?api=1&destination="), true);
 });
 
-test("captain GPS is reserved for active dispatch presence, not assignment tracking", () => {
+test("dispatch presence stays periodic and separate from the active mission publisher", () => {
   const fs = readFileSync;
   const backend = fs(new URL("../../../../../services/dsh/backend/internal/transport/http/captain.go", import.meta.url), "utf8");
   const clientBackend = fs(new URL("../../../../../services/dsh/backend/internal/transport/http/order.go", import.meta.url), "utf8");
@@ -33,6 +33,33 @@ test("captain GPS is reserved for active dispatch presence, not assignment track
   assert.equal(clientBackend.includes('/orders/{orderId}/tracking"'), false);
   assert.equal(publisher.includes("getCurrentPositionAsync"), true);
   assert.equal(publisher.includes("watchPositionAsync"), false);
+  const mission = fs(new URL("./captain-mission-location-publisher.tsx", import.meta.url), "utf8");
+  assert.equal(mission.includes("Location.watchPositionAsync({"), true);
+  assert.equal(mission.includes("distanceInterval: 0,"), true);
+  assert.equal(mission.includes('AppState.currentState !== "active"'), true);
+  assert.equal(mission.includes('Location.getForegroundPermissionsAsync()'), true);
+  assert.equal(mission.includes('task.task.fulfillmentMode !== "BTHWANI_CAPTAIN"'), true);
+  assert.equal(mission.includes('/assignments/${encodeURIComponent(targetAssignment)}/mission-location'), true);
+  assert.equal(mission.includes("subscribeIdentitySession((identity) =>"), true);
+  assert.equal(mission.includes("pendingRequest?.abort()"), true);
+  assert.equal(mission.includes("activeAssignment !== targetAssignment"), true);
+  assert.equal(mission.includes("currentSession.identity.subject !== sourceActor"), true);
+  assert.equal(mission.includes("startLocationUpdatesAsync"), false,
+    "Background location is not implemented and must not be claimed to work");
+});
+
+
+test("only Operations has a mission-location read route and the server checks permission", () => {
+  const http = readFileSync(new URL("../../../../../services/dsh/backend/internal/transport/http/mission_location.go", import.meta.url), "utf8");
+  const order = readFileSync(new URL("../../../../../services/dsh/backend/internal/order/service.go", import.meta.url), "utf8");
+  const captainHttp = readFileSync(new URL("../../../../../services/dsh/backend/internal/transport/http/captain.go", import.meta.url), "utf8");
+  const opsBff = readFileSync(new URL("../../../../control-panel/app/api/operations/[orderId]/mission-location/route.ts", import.meta.url), "utf8");
+  assert.equal(http.includes("readOperatorMissionLocation"), true);
+  assert.equal(order.includes('s.requireOperatorPermission(ctx, actorID, "operations")'), true);
+  assert.equal(captainHttp.includes('POST /dsh/captains/me/assignments/{assignmentId}/mission-location'), true);
+  assert.equal(opsBff.includes('operatorWorkspacePermissionDenied(identity, "operations")'), true);
+  assert.equal(opsBff.includes('readOperatorSession()'), true);
+  assert.equal(opsBff.includes('Cache-Control'), true);
 });
 
 test("unverified captain mission does not disclose cached customer destination", () => {

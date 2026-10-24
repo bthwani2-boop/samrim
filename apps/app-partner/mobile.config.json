@@ -3,7 +3,7 @@
   "slug": "app-partner",
   "scheme": "partner",
   "owner": "bthwani1",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "androidPackage": "com.bthwani.partner",
   "iosBundleIdentifier": "com.bthwani.partner",
   "projectId": "bcd22a76-d4b2-4de0-93b3-f6d13074a802"

@@ -1,13 +1,17 @@
 package postgres
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var (
@@ -59,7 +63,7 @@ func SaveFinanceEvidenceDocument(ctx context.Context, db *sql.DB, cipher *Destin
 	input.ActorID = strings.TrimSpace(input.ActorID)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if db == nil || cipher == nil || !validEvidencePurpose(input.Purpose) || boundedText(input.Filename, 1, 255) == "" || !validEvidenceContentType(input.ContentType) || len(input.Content) == 0 || len(input.Content) > 10*1024*1024 || boundedText(input.ActorID, 1, 128) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
+	if db == nil || cipher == nil || !validEvidencePurpose(input.Purpose) || boundedText(input.Filename, 1, 255) == "" || !validEvidenceContentType(input.ContentType) || !validEvidencePurposeMedia(input.Purpose, input.ContentType) || len(input.Content) == 0 || len(input.Content) > 10*1024*1024 || !validEvidenceContent(input.ContentType, input.Content) || boundedText(input.ActorID, 1, 128) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
 		return FinanceEvidenceDocumentRecord{}, ErrSettlementBatchInput
 	}
 	digest := sha256.Sum256(input.Content)
@@ -219,6 +223,57 @@ func validEvidenceContentType(value string) bool {
 	switch value {
 	case "application/pdf", "image/jpeg", "image/png", "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
 		return true
+	default:
+		return false
+	}
+}
+
+// validEvidenceContent verifies bytes rather than trusting a user-controlled
+// MIME header or filename. Evidence is encrypted and audited after admission.
+func validEvidenceContent(contentType string, content []byte) bool {
+	if len(content) == 0 || len(content) > 10*1024*1024 {
+		return false
+	}
+	detected := http.DetectContentType(content)
+	switch contentType {
+	case "application/pdf":
+		return bytes.HasPrefix(content, []byte("%PDF-")) && detected == "application/pdf"
+	case "image/jpeg":
+		return len(content) >= 3 && bytes.HasPrefix(content, []byte{0xff, 0xd8, 0xff}) && detected == "image/jpeg"
+	case "image/png":
+		return bytes.HasPrefix(content, []byte("\x89PNG\r\n\x1a\n")) && detected == "image/png"
+	case "text/csv":
+		return utf8.Valid(content) && bytes.IndexByte(content, 0) == -1 &&
+			(detected == "text/plain; charset=utf-8" || detected == "text/plain; charset=us-ascii")
+	case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+		archive, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+		if err != nil {
+			return false
+		}
+		var contentTypes, workbook bool
+		for _, entry := range archive.File {
+			switch entry.Name {
+			case "[Content_Types].xml":
+				contentTypes = true
+			case "xl/workbook.xml":
+				workbook = true
+			}
+		}
+		return contentTypes && workbook
+	default:
+		return false
+	}
+}
+
+func validEvidencePurposeMedia(purpose, contentType string) bool {
+	switch purpose {
+	case "TRANSFER_RECEIPT", "CUSTOMER_WITHDRAWAL_REQUEST":
+		return contentType == "application/pdf" || contentType == "image/jpeg" || contentType == "image/png"
+	case "SETTLEMENT_STATEMENT":
+		return contentType == "application/pdf" || contentType == "text/csv" ||
+			contentType == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case "SETTLEMENT_BATCH_EXPORT":
+		return contentType == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 	default:
 		return false
 	}

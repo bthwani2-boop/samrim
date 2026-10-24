@@ -1,14 +1,36 @@
 import { spacing, typography } from "@bthwani/design-system";
-import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { useMemo } from "react";
-import { Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { CaptainPayoutCard } from "../account/captain-payout-card";
-import { createCaptainOperationStyles } from "../captain-operations/captain-operation-styles";
 import { CaptainCashInPanel } from "./cash-in-panel";
-import { CaptainCashLiabilityPanel } from "./captain-cash-liability-panel";
 
 export default function CaptainWallet() {
   const theme = useAppearanceTheme();
-  const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
-  return <View style={[styles.container, { gap: spacing[4] }]} accessibilityLabel="محفظة الكابتن"><View style={styles.orderHeader}><View><Text style={styles.title}>المحفظة</Text><Text style={styles.muted}>الرصيد والشحن والتسويات المالية.</Text></View><BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} /></View><CaptainCashInPanel /><CaptainPayoutCard /><CaptainCashLiabilityPanel /></View>;
+  const styles = useMemo(() => StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.background },
+    content: {
+      paddingHorizontal: spacing[3],
+      paddingTop: spacing[3],
+      paddingBottom: spacing[4],
+      gap: spacing[2],
+    },
+    title: { ...typography.titleLg, color: theme.color },
+  }), [theme]);
+
+  return <View style={styles.screen} accessibilityLabel="محفظة الكابتن">
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      showsVerticalScrollIndicator={false}
+      nestedScrollEnabled
+    >
+      <Text accessibilityRole="header" style={styles.title}>محفظة الكابتن</Text>
+      <Text style={{ ...typography.caption, color: theme.colorMuted }}>الرصيد التشغيلي مستقل عن الأرباح المؤهلة للسحب.</Text>
+      <CaptainCashInPanel />
+      <CaptainPayoutCard />
+    </ScrollView>
+  </View>;
 }

@@ -1,0 +1,27 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPathPattern": "/v1/providers/wallet_provider_[a-z0-9_]{2,60}/payments",
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.intentId"
+      },
+      {
+        "matchesJsonPath": "$.externalReference"
+      },
+      {
+        "matchesJsonPath": "$.amountMinor"
+      },
+      {
+        "matchesJsonPath": "$.currency"
+      }
+    ]
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "{\"providerKey\":\"{{request.pathSegments.[2]}}\",\"providerReference\":\"WM-{{request.pathSegments.[2]}}-{{jsonPath request.body '$.externalReference'}}\",\"state\":\"PENDING_PROVIDER\"}"
+  }
+}

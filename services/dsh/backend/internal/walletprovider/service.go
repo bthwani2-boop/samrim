@@ -63,6 +63,9 @@ func (s *Service) requireOperator(ctx context.Context, actor string) error {
 	}
 	return nil
 }
+func (s *Service) RequirePolicyOperator(ctx context.Context, actor string) error {
+	return s.requirePolicyOperator(ctx, actor)
+}
 func (s *Service) requirePolicyOperator(ctx context.Context, actor string) error {
 	if e := s.requireOperator(ctx, actor); e != nil {
 		return e

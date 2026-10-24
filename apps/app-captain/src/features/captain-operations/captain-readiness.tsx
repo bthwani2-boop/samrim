@@ -10,6 +10,7 @@ import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { publishCaptainPresence } from "./captain-presence-publisher";
 import { isCurrentCaptainActor } from "./captain-session-scope";
+import { hasBackgroundMissionConsent, setBackgroundMissionConsent } from "./captain-mission-location-background";
 
 async function isPhoneLocationReady() {
   const [permission, services] = await Promise.all([
@@ -29,7 +30,7 @@ async function openPhoneLocationSettings() {
   await Linking.openSettings();
 }
 
-export function CaptainReadiness({ overlay = false, missionActive = false }: { overlay?: boolean; missionActive?: boolean } = {}) {
+export function CaptainReadiness({ overlay = false, missionActive = false, missionAssignmentId = "" }: { overlay?: boolean; missionActive?: boolean; missionAssignmentId?: string } = {}) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
   const [identityState, setIdentityState] = useState(currentIdentityState);
@@ -41,6 +42,8 @@ export function CaptainReadiness({ overlay = false, missionActive = false }: { o
   const [assignmentsUnknown, setAssignmentsUnknown] = useState(false);
   const [gpsReady, setGpsReady] = useState(false);
   const [gpsChecked, setGpsChecked] = useState(false);
+  const [backgroundConsent, setBackgroundConsent] = useState(false);
+  const [backgroundBusy, setBackgroundBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -124,18 +127,22 @@ export function CaptainReadiness({ overlay = false, missionActive = false }: { o
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void refreshGps();
+      if (state === "active") {
+        void refreshGps();
+        void hasBackgroundMissionConsent(actorID, missionAssignmentId).then(setBackgroundConsent).catch(() => setBackgroundConsent(false));
+      }
     });
     return () => subscription.remove();
-  }, [refreshGps]);
+  }, [refreshGps, actorID, missionAssignmentId]);
 
   useFocusEffect(useCallback(() => {
     setError("");
     void refreshGps();
+    void hasBackgroundMissionConsent(actorID, missionAssignmentId).then(setBackgroundConsent).catch(() => setBackgroundConsent(false));
     if (actorID) void load();
     else { setAdmission(null); setStoreOnly(false); setHasActiveDelivery(false); setAssignmentsUnknown(false); setLoadedActorID(""); setLoading(false); }
     return () => { readSequence.current += 1; };
-  }, [load, refreshGps, actorID]));
+  }, [load, refreshGps, actorID, missionAssignmentId]));
 
   const current = isCurrentCaptainActor(loadedActorID, actorID) ? admission : null;
   const eligible = current?.state === "eligible";
@@ -237,6 +244,19 @@ export function CaptainReadiness({ overlay = false, missionActive = false }: { o
     }
   }
 
+  async function toggleBackground(next: boolean) {
+    if (!missionActive || !actorID || !missionAssignmentId || backgroundBusy) return;
+    setBackgroundBusy(true);
+    setError("");
+    try {
+      await setBackgroundMissionConsent(next, actorID, missionAssignmentId);
+      setBackgroundConsent(await hasBackgroundMissionConsent(actorID, missionAssignmentId));
+    } catch {
+      setBackgroundConsent(false);
+      setError("تعذر تفعيل مشاركة الموقع بالخلفية. اسمح بإذن الموقع الدائم من إعدادات Android أو استخدم التتبع في المقدمة.");
+    } finally { setBackgroundBusy(false); }
+  }
+
   if (overlay) return <View style={{ marginHorizontal: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 7, borderRadius: 16, backgroundColor: "rgba(15,29,40,0.73)" }} accessibilityLabel="التحكم بالجاهزية على الخريطة">
     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-around", gap: 10 }}>
       <View style={{ flex: 1, alignItems: "center", gap: 3 }}>
@@ -270,6 +290,12 @@ export function CaptainReadiness({ overlay = false, missionActive = false }: { o
         </>}
       </View>
     </View>
+    {missionActive ? <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+      <Text style={{ fontSize: 12, color: "#FFFFFF" }}>مشاركة الموقع أثناء المهمة بالخلفية</Text>
+      <Switch accessibilityLabel="مشاركة موقع المهمة بالخلفية للعمليات" value={backgroundConsent}
+        disabled={backgroundBusy || !gpsReady} onValueChange={(enabled) => void toggleBackground(enabled)}
+        trackColor={{ false: "#76818A", true: "#78D8A7" }} thumbColor={backgroundConsent ? "#087F46" : "#F9FAFB"} />
+    </View> : null}
     {storeOnly && !missionActive ? <Text style={{ color: "#FFFFFF", fontSize: 12 }}>طلبات المتجر تصل من التوصيلات، دون تفعيل توزيع بثواني العام.</Text> : null}
     {error ? <Text accessibilityRole="alert" style={{ color: "#FFE4B3", fontSize: 12 }}>{error}</Text> : null}
     {newOffersBlockedByDelivery && !missionActive ? <Text accessibilityRole="alert" style={{ color: "#FFE4B3", fontSize: 12 }}>مشغول بتوصيل جارٍ · افتح إجراءات المهمة أسفل الخريطة</Text> : null}

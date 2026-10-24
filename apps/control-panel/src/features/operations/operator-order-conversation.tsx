@@ -4,6 +4,7 @@ import type { OrderConversationResponse } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch } from "../../session/identity-fetch";
 import { OperatorOrderMedia } from "./operator-order-media";
+import { OperatorOrderChatAttachments } from "./operator-order-chat-attachments";
 
 const roles = [
   { key: "client", label: "العميل" },
@@ -11,18 +12,19 @@ const roles = [
   { key: "captain", label: "الكابتن" },
 ] as const;
 type Recipient = typeof roles[number]["key"];
-const who = (role: string) => role === "operator" ? "عمليات بثواني" : roles.find(item => item.key === role)?.label ?? "المشارك";
+const who=(role:string)=>role==="operator"?"العمليات":roles.find(item=>item.key===role)?.label??"مستخدم";
 
 export function OperatorOrderConversation({ orderId }: Readonly<{ orderId: string }>) {
   const [conversation, setConversation] = useState<OrderConversationResponse | null>(null);
   const [error, setError] = useState("");
   const [body, setBody] = useState("");
-  const [recipients, setRecipients] = useState<ReadonlyArray<Recipient>>(["client"]);
-  const [replying, setReplying] = useState(false);
+  const [recipients, setRecipients] = useState<ReadonlyArray<Recipient>>([]);
+  const [recipientOpen,setRecipientOpen]=useState(false);
   const [busy, setBusy] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const pending = useRef<{ body: string; recipients: string; key: string } | null>(null);
   const sequence = useRef(0);
+  const readReceiptAttempt=useRef("");
 
   const load = useCallback(async () => {
     const run = ++sequence.current;
@@ -33,6 +35,21 @@ export function OperatorOrderConversation({ orderId }: Readonly<{ orderId: strin
       if (run !== sequence.current) return;
       setConversation(value);
       setError("");
+      const latest=value.messages.at(-1);
+      if(value.unreadCount>0&&latest){
+        const receiptKey=orderId+":"+latest.id;
+        if(readReceiptAttempt.current!==receiptKey){
+          readReceiptAttempt.current=receiptKey;
+          void identityFetch(`/api/operations/${encodeURIComponent(orderId)}/conversation/read`,{
+            method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({messageId:latest.id}),
+          }).then(response=>{
+            if(!response.ok)throw new Error("READ_RECEIPT_FAILED");
+            if(run===sequence.current)
+              setConversation(current=>current&&current.orderId===orderId?{...current,unreadCount:0}:current);
+          }).catch(()=>{if(readReceiptAttempt.current===receiptKey)readReceiptAttempt.current="";});
+        }
+      }
     } catch {
       if (run === sequence.current) setError("تعذر قراءة مراسلة الطلب؛ لا يمكن الرد دون سجل محدث.");
     }
@@ -40,9 +57,10 @@ export function OperatorOrderConversation({ orderId }: Readonly<{ orderId: strin
 
   useEffect(() => {
     setConversation(null);
-    setReplying(false);
+    setRecipientOpen(false);
     setBody("");
     pending.current = null;
+    readReceiptAttempt.current="";
     void load();
     return () => { sequence.current += 1; };
   }, [load]);
@@ -67,7 +85,7 @@ export function OperatorOrderConversation({ orderId }: Readonly<{ orderId: strin
   async function send() {
     const message = body.trim();
     const chosen = [...recipients].sort();
-    if (!conversation?.canSend || !replying || busy || !message || !chosen.length) return;
+    if (!conversation?.canSend || busy || !message || !chosen.length) return;
     const fingerprint = message + ":" + chosen.join(",");
     if (pending.current && pending.current.body + ":" + pending.current.recipients !== fingerprint) {
       setError("هناك محاولة إرسال لم تتأكد نتيجتها. أعد إرسالها كما هي قبل تغيير الرسالة.");
@@ -96,34 +114,44 @@ export function OperatorOrderConversation({ orderId }: Readonly<{ orderId: strin
 
   const canCaptain = conversation && ["CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERY_FAILED"].includes(conversation.orderState);
   const available = roles.filter(item => item.key !== "captain" || canCaptain);
-  return <section className="order-detail-panel" aria-labelledby="ops-conversation-title">
-    <h2 id="ops-conversation-title">مراسلة الطلب</h2>
-    <p className="muted">يمكن للعمليات المخولة قراءة كامل سجل الطلب. الرد غير مفعل إلا بعد اختياره.</p>
-    {error ? <p role="alert" className="muted">{error}</p> : null}
-    {!conversation ? <p className="muted">جارٍ قراءة السجل…</p> : <>
-      {conversation.nextCursor ? <button className="button button-secondary" type="button" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? "جارٍ التحميل…" : "الرسائل الأقدم"}</button> : null}
-      {!conversation.messages.length ? <p className="muted">لا توجد رسائل.</p> : <div style={{ display: "grid", gap: 8 }}>
-        {conversation.messages.map(message => <div key={message.id} style={{ border: "1px solid var(--border, #ddd)", borderRadius: 8, padding: 10 }}>
-          <strong>{who(message.senderRole)}</strong>
-          <p style={{ margin: "6px 0" }}>{message.body}</p><OperatorOrderMedia orderId={orderId} messageId={message.id} kind={message.mediaKind} body={message.body} />
-          <small className="muted">إلى: {message.recipientRoles.map(who).join("، ")} · {new Date(message.createdAt).toLocaleString("ar-YE")}</small>
+  return <section aria-label="محادثة الطلب" style={{display:"grid",gap:10,minWidth:0}}>
+    {error?<p role="alert" className="muted">{error}</p>:null}
+    {!conversation?<p className="muted">جارٍ تحميل المحادثة…</p>:<>
+      {conversation.nextCursor?<button className="button button-secondary" type="button" disabled={loadingOlder} onClick={()=>void loadOlder()}>{loadingOlder?"جارٍ التحميل…":"الرسائل السابقة"}</button>:null}
+      <div role="log" aria-label="رسائل الطلب" style={{display:"grid",gap:9,alignContent:"start",minHeight:140}}>
+        {!conversation.messages.length?<p className="muted" style={{textAlign:"center",padding:30}}>ابدأ المحادثة حول هذا الطلب.</p>:null}
+        {conversation.messages.map(message=><div key={message.id}
+          style={{justifySelf:message.mine?"start":"end",maxWidth:"86%",padding:"9px 12px",borderRadius:14,
+            background:message.mine?"var(--surface-raised, #243246)":"var(--surface-muted, #18243a)",
+            border:"1px solid var(--border-subtle)"}}>
+          <strong style={{fontSize:11}}>{who(message.senderRole)}</strong>
+          <p style={{margin:"5px 0",whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{message.body}</p>
+          <OperatorOrderMedia orderId={orderId} messageId={message.id} kind={message.mediaKind} body={message.body}/>
+          <small className="muted">{message.recipientRoles.map(who).join("، ")} · {new Date(message.createdAt).toLocaleString("ar-YE")}</small>
         </div>)}
-      </div>}
-      {!conversation.canSend ? <p className="muted">انتهى الطلب، والمراسلة للقراءة فقط.</p> :
-        !replying ? <button type="button" className="button button-secondary" onClick={() => setReplying(true)}>الرد باسم عمليات بثواني</button> :
-        <div style={{ display: "grid", gap: 10 }}>
-          <p className="muted">إرسال الرد إلى:</p>
-          <div className="action-row">{available.map(item => <label key={item.key}>
-            <input type="checkbox" checked={recipients.includes(item.key)} disabled={busy || Boolean(pending.current)}
-              onChange={() => setRecipients(current => current.includes(item.key) ? current.filter(role => role !== item.key) : [...current, item.key])} />
+      </div>
+      {conversation.canSend?<div style={{position:"sticky",bottom:0,background:"var(--surface)",padding:"10px 0",display:"grid",gap:8,borderTop:"1px solid var(--border-subtle)"}}>
+        <button type="button" className="button button-secondary" style={{justifySelf:"start"}}
+          aria-expanded={recipientOpen} onClick={()=>setRecipientOpen(v=>!v)}>
+          {"إلى: "+(recipients.length===0?"اختر المستلم":recipients.length===available.length?"الجميع":available.filter(item=>recipients.includes(item.key)).map(item=>item.label).join("، "))+" ▾"}
+        </button>
+        {recipientOpen?<div style={{display:"flex",gap:12,flexWrap:"wrap",border:"1px solid var(--border-subtle)",borderRadius:10,padding:10}}>
+          {available.map(item=><label key={item.key} style={{display:"flex",gap:6,alignItems:"center"}}>
+            <input type="checkbox" checked={recipients.includes(item.key)} disabled={busy||Boolean(pending.current)}
+              onChange={()=>setRecipients(current=>current.includes(item.key)?current.filter(role=>role!==item.key):[...current,item.key])}/>
             {item.label}
-          </label>)}</div>
-          <textarea aria-label="رد عمليات بثواني" className="input" maxLength={2000} rows={3} disabled={busy || Boolean(pending.current)} value={body} onChange={event => setBody(event.target.value)} />
-          <div className="action-row">
-            <button className="button button-primary" disabled={busy || !body.trim() || !recipients.length} type="button" onClick={() => void send()}>إرسال الرد</button>
-            <button className="button button-secondary" disabled={busy || Boolean(pending.current)} type="button" onClick={() => setReplying(false)}>إلغاء الرد</button>
-          </div>
-        </div>}
+          </label>)}
+          <button type="button" className="button button-secondary" disabled={busy||Boolean(pending.current)}
+            onClick={()=>setRecipients(available.map(item=>item.key))}>الجميع</button>
+        </div>:null}
+        <OperatorOrderChatAttachments orderId={orderId} recipients={recipients} disabled={busy} onSent={()=>void load()}/>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <textarea className="input" aria-label="كتابة رسالة" placeholder="اكتب رسالة…" maxLength={2000}
+            disabled={busy||Boolean(pending.current)} value={body} onChange={event=>setBody(event.target.value)}
+            rows={1} style={{flex:1,resize:"vertical",minHeight:42,borderRadius:14}}/>
+          <button className="button button-primary" type="button" disabled={busy||!body.trim()||!recipients.length} onClick={()=>void send()}>إرسال</button>
+        </div>
+      </div>:<p className="muted">المحادثة للقراءة فقط بعد انتهاء الطلب.</p>}
     </>}
   </section>;
 }
