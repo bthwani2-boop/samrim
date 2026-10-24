@@ -41,7 +41,7 @@ export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>, 
   const styles = createStyles(theme);
   const icons = { orders: "orders", products: "cart", wallet: "wallet", more: "categories" } as const;
   return ({ route }: { route: { name: string } }) => ({
-    headerShown: true,
+    headerShown: route.name !== "more",
     header: ({ route: headerRoute, navigation }: { route: { name: string; params?: unknown }; navigation: unknown }) => {
       const params = headerRoute.params as { focus?: string | string[]; q?: string | string[]; returnTo?: string; panel?: string } | undefined;
       return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><PartnerHeader title={headerRoute.name === "orders" ? "الطلبات" : headerRoute.name === "products" ? ((headerRoute.params as { panel?: string } | undefined)?.panel === "tools" ? "الكتالوج" : "المنتجات") : headerRoute.name === "wallet" ? "المحفظة" : headerRoute.name === "insights" ? "الأداء" : headerRoute.name === "account" ? "الحساب" : headerRoute.name === "onboarding" ? "الانضمام" : headerRoute.name === "store" ? ((headerRoute.params as { section?: string } | undefined)?.section === "promotions" ? "العروض" : (headerRoute.params as { section?: string } | undefined)?.section === "team" ? "الفريق" : (headerRoute.params as { section?: string } | undefined)?.section === "settings" ? "ملف المتجر" : "التشغيل") : "المزيد"} isOrders={headerRoute.name === "orders"} isProducts={headerRoute.name === "products" && params?.panel !== "tools"} isSubpage={["store", "account", "onboarding", "insights"].includes(headerRoute.name) || (headerRoute.name === "products" && params?.panel === "tools")} returnTo={params?.returnTo} canSearchOrders={canSearchOrders && headerRoute.name === "orders"} focus={params?.focus} searchQuery={params?.q} navigation={navigation as PartnerSearchNavigation} styles={styles} /></SafeAreaView>;
@@ -63,6 +63,7 @@ export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>, 
 
 function PartnerHeader({ title, isOrders, isProducts, isSubpage, returnTo, canSearchOrders, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { title: string; isOrders: boolean; isProducts: boolean; isSubpage: boolean; returnTo?: string | undefined; canSearchOrders: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation: PartnerSearchNavigation; styles: ReturnType<typeof createStyles> }) {
   const theme = useAppearanceTheme();
+  const router = useRouter();
   const { stores, selectedStore, selectStore } = usePartnerStoreScope();
   const [pickerOpen, setPickerOpen] = useState(false);
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
@@ -88,6 +89,7 @@ function PartnerHeader({ title, isOrders, isProducts, isSubpage, returnTo, canSe
           {isOrders && selectedStore && (selectedStore.owned || selectedStore.permissions.includes("store_operations")) ? <PartnerOrderAvailability key={selectedStore.id} storeID={selectedStore.id} published={selectedStore.publicationState === "published"} /> : null}
         </View>
         <View style={styles.headerActions}>
+          {isOrders ? <BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlSm} tone="soft" /> : null}
           {isProducts ? <>
             <Pressable accessibilityRole="button" accessibilityLabel="إضافة منتج" onPress={() => dispatchPartnerProductAction("create")} style={[styles.productHeaderAction, styles.productHeaderPrimary]}><BthwaniIcon name="cart" size={15} color={theme.onAction} /><Text style={styles.productHeaderPrimaryLabel}>إضافة</Text></Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel="تعديل المنتجات" onPress={() => dispatchPartnerProductAction("prices")} style={styles.productHeaderAction}><BthwaniIcon name="edit" size={15} color={theme.color} /><Text style={styles.productHeaderActionLabel}>تعديل</Text></Pressable>
