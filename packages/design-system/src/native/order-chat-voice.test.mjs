@@ -12,6 +12,8 @@ const surfaces = [
 test("voice recording stays inline instead of opening the legacy form", () => {
   assert.match(composer, /audioControls\?<View style=\{styles\.composer\}>\{audioControls\}/);
   assert.match(composer, /name="mic"/);
+  assert.match(composer, /attachmentsOpen&&recipients\.length>1/);
+  assert.match(composer, /attachmentsOpen&&recipientOpen/);
   for (const surface of surfaces) {
     const voice = readFileSync(new URL(surface + "/order-conversation-audio-controls.tsx", import.meta.url), "utf8");
     const chat = readFileSync(new URL(surface + "/order-conversation.tsx", import.meta.url), "utf8");

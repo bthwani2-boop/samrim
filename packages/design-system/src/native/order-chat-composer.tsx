@@ -29,11 +29,11 @@ export function BthwaniOrderChatComposer({recipients,selected,onToggleRecipient,
   const chosen=recipients.filter(item=>selected.includes(item.role)).map(item=>item.label);
   const label=chosen.length===1?chosen[0]:chosen.length===recipients.length?"الجميع":chosen.join("، ");
   return <View style={[styles.root,{borderTopColor:theme.borderColor}]}>
-    {recipients.length>1?<Pressable accessibilityRole="button" accessibilityLabel={"اختيار المستلمين، "+(label||"لم يتم التحديد")}
+    {attachmentsOpen&&recipients.length>1?<Pressable accessibilityRole="button" accessibilityLabel={"اختيار المستلمين، "+(label||"لم يتم التحديد")}
       accessibilityState={{expanded:recipientOpen}} style={styles.recipientSummary} onPress={()=>setRecipientOpen(current=>!current)}>
       <Text style={[styles.recipientText,{color:theme.interactiveText}]}>إلى: {label||"اختر المستلم"} ▾</Text>
     </Pressable>:null}
-    {recipientOpen?<View style={[styles.options,{backgroundColor:theme.surfaceRaised,borderColor:theme.borderColor}]}>
+    {attachmentsOpen&&recipientOpen?<View style={[styles.options,{backgroundColor:theme.surfaceRaised,borderColor:theme.borderColor}]}>
       {recipients.map(item=><Pressable key={item.role} accessibilityRole="checkbox"
         accessibilityState={{checked:selected.includes(item.role),disabled}}
         disabled={disabled} onPress={()=>onToggleRecipient(item.role)} style={styles.option}>
@@ -53,7 +53,7 @@ export function BthwaniOrderChatComposer({recipients,selected,onToggleRecipient,
       </Pressable>
     </View>:null}
     {canSend?(audioControls?<View style={styles.composer}>{audioControls}</View>:<View style={styles.composer}>
-      <Pressable accessibilityRole="button" accessibilityLabel="إرفاق صورة" accessibilityState={{expanded:attachmentsOpen}} disabled={disabled}
+      <Pressable accessibilityRole="button" accessibilityLabel={recipients.length>1?"المرفقات والمستلمون":"إرفاق صورة"} accessibilityState={{expanded:attachmentsOpen}} disabled={disabled}
         style={[styles.round,{backgroundColor:theme.surfaceRaised}]} onPress={()=>setAttachmentsOpen(v=>!v)}>
         <Text style={[styles.plus,{color:theme.color}]}>＋</Text>
       </Pressable>
@@ -63,7 +63,7 @@ export function BthwaniOrderChatComposer({recipients,selected,onToggleRecipient,
       <Pressable accessibilityRole="button" accessibilityLabel={body.trim()?"إرسال الرسالة":"تسجيل رسالة صوتية"}
         disabled={disabled||(Boolean(body.trim())&&!selected.length)||(!body.trim()&&!selected.length)}
         style={[styles.round,{backgroundColor:theme.brandAction,opacity:disabled?0.45:1}]}
-        onPress={()=>body.trim()?onSend():onVoice()}>
+        onPress={()=>{if(body.trim())onSend();else{setAttachmentsOpen(false);setRecipientOpen(false);onVoice();}}}>
         {body.trim()
           ? <BthwaniIcon name="send" size={22} color={theme.onAction}/>
           : <BthwaniIcon name="mic" size={22} color={theme.onAction}/>}
