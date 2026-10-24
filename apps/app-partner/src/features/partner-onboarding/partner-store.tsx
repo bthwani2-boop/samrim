@@ -4,6 +4,7 @@ import { type Href, Link, Redirect, useLocalSearchParams, useRouter } from "expo
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { StorePromotionsCard } from "../store-offer/store-promotions";
+import { PartnerStoreReels } from "../store-offer/partner-store-reels";
 import { PartnerStoreAccess } from "./partner-store-access";
 import { usePartnerStoreContext } from "./partner-store-context";
 import { type PartnerAccessibleStore, usePartnerStoreScope } from "./partner-store-scope-context";
@@ -79,7 +80,7 @@ export function PartnerStore() {
     {stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={requiredPermissions(section)} /> : null}
     {selectedStore && permitted ? <>
       {section === "operations" ? <StoreOperationalAvailabilityManagement key={selectedStore.id} storeID={selectedStore.id} fulfillmentModes={selectedStore.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
-      {section === "promotions" ? <StorePromotionsCard key={selectedStore.id} storeID={selectedStore.id} verticalID={selectedStore.primaryVerticalId} /> : null}
+      {section === "promotions" ? <><StorePromotionsCard key={selectedStore.id} storeID={selectedStore.id} verticalID={selectedStore.primaryVerticalId} /><PartnerStoreReels key={selectedStore.id + ":reels"} storeId={selectedStore.id} storeName={selectedStore.name} /></> : null}
       {section === "team" ? <TeamManagement key={selectedStore.id} storeID={selectedStore.id} /> : null}
       {section === "settings" ? <>
         {selectedStore.owned && selectedStore.publicationState !== "published" ? <View style={styles.card}>

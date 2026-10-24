@@ -48,9 +48,10 @@ function ReelSlide({ item, active, height, width, onOpen, onShare }: {
   );
 }
 
-export function DiscoveryReelsViewer({ items, visible, initialIndex, onClose, onOpen, onShare }: {
+export function DiscoveryReelsViewer({ items, visible, initialIndex, onClose, onOpen, onShare, paused = false }: {
   items: ReadonlyArray<Reel>;
   visible: boolean;
+  paused?: boolean;
   initialIndex: number;
   onClose: () => void;
   onOpen: (item: Reel) => void;
@@ -86,7 +87,7 @@ export function DiscoveryReelsViewer({ items, visible, initialIndex, onClose, on
           maxToRenderPerBatch={2}
           windowSize={3}
           renderItem={({ item, index: position }) => (
-            <ReelSlide item={item} active={visible && foreground && index === position} height={height} width={width} onOpen={onOpen} onShare={onShare} />
+            <ReelSlide item={item} active={visible && foreground && !paused && index === position} height={height} width={width} onOpen={onOpen} onShare={onShare} />
           )}
         />
         <View pointerEvents="box-none" style={[styles.top, { paddingTop: insets.top + 12 }]}>

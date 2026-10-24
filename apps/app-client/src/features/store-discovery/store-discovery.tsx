@@ -10,6 +10,7 @@ import { serviceCityDisplayName, useServiceCityScope } from "../service-city/ser
 import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { DiscoveryReelsViewer } from "./discovery-reels-viewer";
+import { DiscoveryReelShop } from "./discovery-reel-shop";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { LoopingHeroBanner } from "./looping-hero-banner";
 import { PromotionCard } from "./promotion-card";
@@ -354,6 +355,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const shortFormContent = useMemo(() => marketing.content.filter((item) => item.kind === "SHORT_FORM" && Boolean(item.mediaUri)), [marketing.content]);
   const videoShorts = useMemo(() => shortFormContent.filter((item) => item.mediaKind === "video"), [shortFormContent]);
   const [selectedReelIndex, setSelectedReelIndex] = useState<number | null>(null);
+  const [reelProduct, setReelProduct] = useState<PublicDiscoveryContentView | null>(null);
   const [shareTarget, setShareTarget] = useState<ClientShareTarget | null>(null);
   const openShort = (item: PublicDiscoveryContentView) => {
     const index = videoShorts.findIndex((video) => video.id === item.id);
@@ -639,9 +641,31 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       items={videoShorts}
       initialIndex={selectedReelIndex ?? 0}
       visible={selectedReelIndex !== null && isScreenActive}
-      onClose={() => setSelectedReelIndex(null)}
-      onOpen={(item) => { setSelectedReelIndex(null); openDiscoveryContent(item.id); }}
+      paused={reelProduct !== null}
+      onClose={() => { setSelectedReelIndex(null); setReelProduct(null); }}
+      onOpen={(item) => {
+        if (item.targetType === "PRODUCT") {
+          void recordDiscoveryClick(item.id);
+          setReelProduct(item);
+          return;
+        }
+        setSelectedReelIndex(null);
+        openDiscoveryContent(item.id);
+      }}
       onShare={(item) => { setSelectedReelIndex(null); setShareTarget({kind:"CONTENT",id:item.id,title:item.titleAr,link:ExpoLinking.createURL(`discovery-content/${encodeURIComponent(item.id)}`)}); }}
+    />
+    <DiscoveryReelShop
+      content={reelProduct}
+      cityId={selectedCityID ?? ""}
+      onClose={() => setReelProduct(null)}
+      onOpenStore={(storeId, productId) => {
+        setReelProduct(null); setSelectedReelIndex(null);
+        router.push((`/store/${encodeURIComponent(storeId)}?productId=${encodeURIComponent(productId)}`) as Href);
+      }}
+      onGoToCart={(storeId) => {
+        setReelProduct(null); setSelectedReelIndex(null);
+        router.push((`/cart/${encodeURIComponent(storeId)}`) as Href);
+      }}
     />
     <ClientShareSheet target={shareTarget} onClose={() => setShareTarget(null)} />
     </>
@@ -998,7 +1022,7 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
         ] } : undefined;
         return <Pressable accessibilityRole="button" accessibilityLabel={"عرض " + item.titleAr} accessibilityHint={item.mediaKind === "video" ? "تشغيل الريل" : "يفتح وجهة المحتوى"} key={instanceKey} onPress={() => onOpen(item)}>
           <View style={[styles.mediaCard, hero && styles.heroMediaCard, shortForm && styles.shortFormCard, { width: cardWidth }, hero && { height: Math.round(cardWidth / 1.75) }]}>
-            {item.mediaKind === "video" ? <View style={[styles.mediaFallback, { backgroundColor: "#171821", justifyContent: "center" }]}><Text style={{ fontSize: 32, color: "#fff" }}>▶</Text><Text style={{ color: "#fff", textAlign: "center", padding: 8 }} numberOfLines={2}>{item.titleAr}</Text></View> : failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text><Text style={styles.mediaFallbackHint}>تعذر تحميل الصورة. اضغط لعرض التفاصيل.</Text></View> : <>
+            {item.mediaKind === "video" ? <View style={[styles.mediaFallback, { backgroundColor: "#171821", justifyContent: "center" }]}>{item.posterUri ? <ExpoImage source={{ uri: item.posterUri }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" /> : null}<View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center", backgroundColor: "#0004" }]}><Text style={{ fontSize: 32, color: "#fff" }}>▶</Text><Text style={{ color: "#fff", textAlign: "center", padding: 8 }} numberOfLines={2}>{item.titleAr}</Text></View></View> : failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text><Text style={styles.mediaFallbackHint}>تعذر تحميل الصورة. اضغط لعرض التفاصيل.</Text></View> : <>
               <Animated.Image accessibilityLabel={"صورة " + item.titleAr} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={[styles.mediaImage, imageMotion]} resizeMode="cover" />
               {!hero ? <View pointerEvents="none" style={styles.mediaCaption}><Text numberOfLines={1} style={styles.mediaCaptionTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text numberOfLines={1} style={styles.mediaCaptionBody}>{item.bodyAr}</Text> : null}</View> : null}
             </>}

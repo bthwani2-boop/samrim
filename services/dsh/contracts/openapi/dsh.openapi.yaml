@@ -532,6 +532,8 @@ paths:
   /dsh/operator/promotions/{promotionId}/publication:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1publication"
 
+  /dsh/partner/stores/{storeId}/discovery-content:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-content"
   /dsh/partner/stores/{storeId}/promotions:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1promotions"
   /dsh/partner/stores/{storeId}/promotions/{promotionId}/state:
@@ -10179,6 +10181,9 @@ components:
         mediaKind:
           type: string
           enum: [image, video]
+        posterUri:
+          type: string
+          description: Generated JPEG poster for short-form video
         targetType:
           $ref: "#/components/schemas/DiscoveryContentTargetType"
         targetId:
@@ -10239,6 +10244,9 @@ components:
         mediaKind:
           type: string
           enum: [image, video]
+        posterUri:
+          type: string
+          description: Generated JPEG poster for short-form video
         targetType:
           $ref: "#/components/schemas/DiscoveryContentTargetType"
         targetId:
