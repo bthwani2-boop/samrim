@@ -9,10 +9,11 @@ import (
 // OperatorPartnerDecision is an operator-only Store-scoped participation row.
 // No customer identifiers or Partner financial account data are exposed.
 type OperatorPartnerDecision struct {
-	StoreID   string `json:"storeId"`
-	StoreName string `json:"storeName"`
-	Decision  string `json:"decision"`
-	Version   int    `json:"version"`
+	StoreID        string `json:"storeId"`
+	StoreName      string `json:"storeName"`
+	StorePublished bool   `json:"storePublished"`
+	Decision       string `json:"decision"`
+	Version        int    `json:"version"`
 }
 
 type OperatorPartnerDecisionPage struct {
@@ -37,12 +38,12 @@ func ListOperatorPartnerDecisions(ctx context.Context, db *sql.DB, promotionID, 
 	if !eligible {
 		return OperatorPartnerDecisionPage{}, ErrPromotionNotFound
 	}
-	rows, err := db.QueryContext(ctx, `SELECT s.id,s.name,COALESCE(o.state,''),COALESCE(o.version,0)
+	rows, err := db.QueryContext(ctx, `SELECT s.id,s.name,(s.publication_state='published'),COALESCE(o.state,''),COALESCE(o.version,0)
  FROM dsh.stores s
  JOIN dsh.commerce_promotions p ON p.id=$1 AND p.store_id IS NULL
  LEFT JOIN dsh.commerce_promotion_store_opt_ins o ON o.promotion_id=p.id AND o.store_id=s.id
- WHERE s.publication_state='published'
-   AND (p.service_city_id IS NULL OR p.service_city_id=s.service_city_id)
+ WHERE ((s.publication_state='published' AND (p.service_city_id IS NULL OR p.service_city_id=s.service_city_id))
+        OR o.state IS NOT NULL)
    AND s.id>$2
    AND ($3='' OR ($3='PENDING' AND o.state IS NULL) OR o.state=$3)
  ORDER BY s.id ASC LIMIT $4`, promotionID, cursor, decision, limit+1)
@@ -53,7 +54,7 @@ func ListOperatorPartnerDecisions(ctx context.Context, db *sql.DB, promotionID, 
 	page := OperatorPartnerDecisionPage{Items: make([]OperatorPartnerDecision, 0, limit)}
 	for rows.Next() {
 		var record OperatorPartnerDecision
-		if err := rows.Scan(&record.StoreID, &record.StoreName, &record.Decision, &record.Version); err != nil {
+		if err := rows.Scan(&record.StoreID, &record.StoreName, &record.StorePublished, &record.Decision, &record.Version); err != nil {
 			return OperatorPartnerDecisionPage{}, err
 		}
 		page.Items = append(page.Items, record)

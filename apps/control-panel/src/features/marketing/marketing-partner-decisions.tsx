@@ -53,7 +53,7 @@ export function MarketingPartnerDecisions({ promotionId }: Readonly<{ promotionI
       </label>
       {loading ? <p role="status">قراءة القرارات...</p> : error ? <p role="alert">{error}</p> :
         data?.items.length ? <ul>{data.items.map((item) => <li key={item.storeId}>
-          {item.storeName} — {labels[(item.decision || "PENDING") as Decision] ?? "غير معروف"}
+          {item.storeName}{item.storePublished ? "" : " (غير منشور الآن)"} — {labels[(item.decision || "PENDING") as Decision] ?? "غير معروف"}
         </li>)}</ul> : <p className="muted">لا توجد نتائج مطابقة.</p>}
       <nav className="pagination" aria-label="صفحات قرارات الشركاء">
         <button className="button button-quiet" type="button" disabled={loading || history.length === 0}

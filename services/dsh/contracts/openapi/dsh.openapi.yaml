@@ -9743,7 +9743,7 @@ components:
     OperatorPartnerDecision:
       type: object
       additionalProperties: false
-      required: [storeId, storeName, decision, version]
+      required: [storeId, storeName, storePublished, decision, version]
       properties:
         storeId:
           type: string
@@ -9751,6 +9751,8 @@ components:
           maxLength: 128
         storeName:
           type: string
+        storePublished:
+          type: boolean
         decision:
           type: string
           description: Empty until the Store has explicitly accepted or declined.

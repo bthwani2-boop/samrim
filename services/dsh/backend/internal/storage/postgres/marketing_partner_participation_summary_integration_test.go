@@ -131,6 +131,26 @@ func TestMarketingPartnerParticipationSummaryDoesNotTruncateAfter100Campaigns(t 
 		if err != nil || len(pending.Items) != 25 || pending.NextCursor == "" {
 			t.Fatalf("pending filter: %+v err=%v", pending, err)
 		}
+		// Historical commercial decisions must remain auditable when a Store
+		// stops publishing or moves outside the current campaign city.
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.stores SET publication_state='hidden' WHERE id='summary-store-a'"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.stores SET service_city_id='summary-city-b' WHERE id='summary-store-b'"); err != nil {
+			t.Fatal(err)
+		}
+		approvedHistory, err := postgres.ListOperatorPartnerDecisions(ctx, db, "summary-promo-000", "", "OPTED_IN", 25)
+		if err != nil || len(approvedHistory.Items) != 1 || approvedHistory.Items[0].StoreID != "summary-store-a" || approvedHistory.Items[0].StorePublished {
+			t.Fatalf("hidden Store consent missing from audit readback: %+v err=%v", approvedHistory, err)
+		}
+		declinedHistory, err := postgres.ListOperatorPartnerDecisions(ctx, db, "summary-promo-001", "", "DECLINED", 25)
+		if err != nil || len(declinedHistory.Items) != 1 || declinedHistory.Items[0].StoreID != "summary-store-b" {
+			t.Fatalf("Store decision must survive a city move: %+v err=%v", declinedHistory, err)
+		}
+		currentPending, err := postgres.ListOperatorPartnerDecisions(ctx, db, "summary-promo-000", "", "PENDING", 100)
+		if err != nil || len(currentPending.Items) != 100 {
+			t.Fatalf("pending must exclude ineligible/history-only Stores: count=%d err=%v", len(currentPending.Items), err)
+		}
 		if _, err := postgres.ListOperatorPartnerDecisions(ctx, db, "unknown-campaign", "", "", 25); err == nil {
 			t.Fatal("unknown campaign should be rejected")
 		}
