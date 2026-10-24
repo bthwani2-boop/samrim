@@ -118,6 +118,12 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
     }]);
   }
 
+  if (["app-client", "app-partner", "app-captain"].includes(appKey)) {
+    plugins.push(["expo-notifications", {
+      defaultChannel: "order-classic-v1",
+      sounds: ["./assets/sounds/order-classic.wav", "./assets/sounds/order-soft.wav", "./assets/sounds/order-urgent.wav"],
+    }]);
+  }
   plugins.push("expo-secure-store");
   plugins.push([
     "expo-localization",

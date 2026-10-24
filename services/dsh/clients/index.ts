@@ -1,6 +1,7 @@
 export * from "./generated/dsh-types";
 export { dshOperationPaths } from "./generated/dsh-operations";
 export * from "./mobile";
+export * from "./notification-alert-policy";
 export * from "./joining-case-media";
 export * from "./order-conversation-attempt";
 export * from "./cash-in-simulator";

@@ -6,6 +6,7 @@ import { Platform } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { appearance } from "../src/bootstrap/appearance";
+import { OrderAlertMonitor } from "../src/features/notifications/order-alert-monitor";
 
 export default function RootLayout() {
   useEffect(() => {
@@ -17,6 +18,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AppearanceProvider controller={appearance}>
+        <OrderAlertMonitor />
         <RootNavigation />
       </AppearanceProvider>
     </SafeAreaProvider>
