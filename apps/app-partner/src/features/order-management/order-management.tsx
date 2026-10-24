@@ -1,5 +1,5 @@
 import { borders, radius, sizing, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniConfirmDialog, BthwaniIcon, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniConfirmDialog, BthwaniIcon, BthwaniOrderChatSheet, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useIsFocused, useLocalSearchParams } from "expo-router";
@@ -74,6 +74,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const [sidecarError, setSidecarError] = useState("");
   const [filter, setFilter] = useState<QueueFilter>("ACTIVE");
   const [expandedOrderIds, setExpandedOrderIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [chatOrderId, setChatOrderId] = useState("");
   const openedTargetRef=useRef("");
   const closeDetails=(id:string)=>setExpandedOrderIds(current=>{const next=new Set(current);next.delete(id);return next;});
   const [pickupCodes, setPickupCodes] = useState<Readonly<Record<string, string>>>({});
@@ -312,6 +313,10 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
                 <Text style={styles.orderTitle}>{"#" + order.id.slice(-8)}</Text>
                 <Text style={styles.compactDim}>{formatOrderDate(order.createdAt)}</Text>
               </View>
+              <Pressable accessibilityRole="button" accessibilityLabel={"محادثة الطلب "+order.id.slice(-8)} onPress={()=>setChatOrderId(order.id)}
+                style={{padding:8,borderRadius:12,backgroundColor:theme.surfaceRaised}}>
+                <Text style={{fontSize:19}}>💬</Text>
+              </Pressable>
               <BthwaniStatusBadge icon={badgeIcon} label={orderStateLabel(order.state)} tone={badgeTone} />
             </View>
             <View style={styles.compactMetaRow}>
@@ -395,7 +400,9 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
             {order.state === "READY_FOR_PICKUP" ? <View style={styles.pickupConfirmation}><TextInput accessibilityLabel="رمز الاستلام الذي قدمه العميل" editable={!actionDisabled} keyboardType="number-pad" maxLength={6} onChangeText={(value) => setPickupCodes((current) => ({ ...current, [order.id]: toAsciiDigits(value).replace(/[^0-9]/g, "").slice(0, 6) }))} placeholder="رمز الاستلام من العميل" placeholderTextColor={theme.colorMuted} style={styles.pickupCodeInput} textAlign="center" value={pickupCodes[order.id] ?? ""} /><BthwaniButton busy={busy === order.id} disabled={actionDisabled || toAsciiDigits(pickupCodes[order.id] ?? "").length !== 6} label="تأكيد استلام العميل" onPress={() => void confirmStorePickup(order)} />{order.fulfillmentMode === "CUSTOMER_PICKUP" && order.paymentMethod === "CASH_AT_STORE" && order.paymentState === "REQUIRES_COLLECTION" ? <BthwaniButton disabled={actionDisabled} label="العميل لم يحضر" onPress={() => markPickupNoShow(order)} variant="danger" /> : null}</View> : null}
             {canFulfillOrder(order.storeId) && order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "DELIVERED" ? <View style={styles.pickupConfirmation}><Text style={styles.lineTitle}>تسوية طلب توصيل المتجر</Text>{settlementContent}</View> : null}
             </> : null}
-            {expandedOrderIds.has(order.id) ? <OrderConversation orderId={order.id} /> : null}
+            {expandedOrderIds.has(order.id) ? <Pressable accessibilityRole="button" accessibilityLabel="فتح محادثة الطلب" onPress={()=>{closeDetails(order.id);setChatOrderId(order.id);}} style={{padding:12}}>
+              <Text style={{color:theme.brandAction,fontWeight:"800"}}>💬 فتح محادثة الطلب</Text>
+            </Pressable> : null}
                   </ScrollView>
                   {next ? <View style={styles.sheetFooter}>
                     {next === "PARTNER_ACCEPTED" ? <Pressable accessibilityRole="button" disabled={actionDisabled} onPress={() => setConfirmation({kind:"reject",order})} style={styles.compactReject}><Text style={styles.rejectLabel}>رفض الطلب</Text></Pressable> : null}
@@ -410,6 +417,13 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
                 </View>
               </View>
             </Modal>
+            <BthwaniOrderChatSheet visible={chatOrderId===order.id} onClose={()=>setChatOrderId("")}
+              orderReference={order.id.slice(-8)} status={orderStateLabel(order.state)}
+              summary={order.storeName+" · "+order.lines.length+" أصناف · "+(order.fulfillmentMode==="CUSTOMER_PICKUP"?"استلام من المتجر":order.fulfillmentMode==="PARTNER_CAPTAIN"?"توصيل المتجر":"توصيل بثواني")}
+              total={formatMoney(order.totalAmountMinor,order.currency)}
+              onDetails={()=>{setChatOrderId("");setExpandedOrderIds(()=>new Set([order.id]));}}>
+              {chatOrderId===order.id?<OrderConversation orderId={order.id}/>:null}
+            </BthwaniOrderChatSheet>
           </View>
         );
       })}

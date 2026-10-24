@@ -1,11 +1,11 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniOrderChatComposer, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt, type OrderConversationMessageAttempt } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
 import * as SecureStore from "../../bootstrap/compatible-storage";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { OrderConversationMediaMessage } from "./order-conversation-media";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 
@@ -260,26 +260,30 @@ export function OrderConversation({ orderId }: { orderId: string }) {
 
   if (!activeActorID || (loadedActorID && !correctOwner)) return <BthwaniSurface tone="base" style={styles.surface} accessibilityLabel="محادثة الطلب"><Text style={styles.muted}>{activeActorID ? "جارٍ التحقق من محادثة الحساب الحالي…" : "سجّل الدخول لقراءة محادثة الطلب."}</Text></BthwaniSurface>;
   return <BthwaniSurface tone="base" style={styles.surface} accessibilityLabel="محادثة الطلب">
-    <View style={styles.header}><View><Text style={styles.title}>محادثة الطلب</Text><Text style={styles.muted}>تواصل تشغيلي مرتبط بهذا الطلب فقط.</Text></View>{state.kind === "ready" && state.value.unreadCount > 0 ? <Text style={styles.unread}>{state.value.unreadCount} غير مقروء</Text> : null}</View>
+    {state.kind==="ready"&&state.value.unreadCount>0?<Text style={styles.unread}>{state.value.unreadCount} غير مقروءة</Text>:null}
     {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المحادثة…</Text></View> : null}
     {state.kind === "error" ? <View style={styles.state}><Text style={styles.error}>تعذر قراءة المحادثة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" />{pendingAttempt ? <BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /> : null}</View> : null}
     {state.kind === "ready" ? <>
-      {!state.value.messages.length ? <Text style={styles.muted}>لا توجد رسائل بعد.</Text> : <View style={styles.messages}>{state.value.messages.map((message) => <View key={message.id} style={[styles.message, message.mine ? styles.mine : null]}><Text style={styles.sender}>{message.mine ? "أنت" : senderLabel(message.senderRole)}</Text><Text style={styles.body}>{message.body}</Text><OrderConversationMediaMessage orderId={orderId} messageId={message.id} mediaKind={message.mediaKind} /><Text style={styles.time}>{new Date(message.createdAt).toLocaleString("ar-YE")}</Text></View>)}</View>}
-      {pendingAttempt ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>المحاولة محفوظة لهذا الحساب والطلب. سنتحقق من نتيجتها قبل إعادة الإرسال.</Text><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /></View> : state.value.canSend ? <><View style={{ gap: spacing[2] }}><Text style={styles.muted}>إرسال إلى:</Text><View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing[2] }}>{recipientOptions.map(item => <BthwaniButton key={item.role} label={selectedRecipients.includes(item.role) ? "✓ " + item.label : item.label} disabled={busy} variant={selectedRecipients.includes(item.role) ? "primary" : "secondary"} onPress={() => setSelectedRecipients(roles => roles.includes(item.role) ? roles.filter(r => r !== item.role) : [...roles, item.role])} />)}<BthwaniButton label="الجميع" disabled={busy} variant="secondary" onPress={() => setSelectedRecipients(recipientOptions.map(item => item.role))} /></View><Text style={styles.muted}>العمليات المخولة تستطيع مراجعة الرسائل ولو لم تخترها.</Text></View><View style={{flexDirection:"row",flexWrap:"wrap",gap:spacing[2]}}>
-        <BthwaniButton label="صورة" variant="secondary" disabled={busy} onPress={()=>void pickPhoto(false)} />
-        <BthwaniButton label="الكاميرا" variant="secondary" disabled={busy} onPress={()=>void pickPhoto(true)} />
-        {showAudioControls ? <Suspense fallback={<Text>جارٍ تجهيز الصوت…</Text>}>
-          <AudioRecorderControls disabled={busy} onRecorded={(uri,mime,text)=>sendPrivateMedia(uri,"audio",mime,text)} />
-        </Suspense> : <BthwaniButton label="تسجيل صوتي" variant="secondary" disabled={busy} onPress={()=>setShowAudioControls(true)} />}
-      </View><TextInput accessibilityLabel="رسالة المحادثة" editable={!busy} maxLength={2000} multiline onChangeText={setBody} placeholder="اكتب رسالة تشغيلية قصيرة" placeholderTextColor={theme.colorMuted} style={styles.input} textAlign="right" value={body} /><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady || !body.trim() || !selectedRecipients.length} label="إرسال الرسالة" onPress={() => void send()} /></> : <Text style={styles.muted}>أُغلقت المحادثة للكتابة، ويمكنك قراءة سجلها فقط.</Text>}
+      {<View style={{flex:1,minHeight:120}}>{!state.value.messages.length ? <Text style={styles.muted}>ابدأ المحادثة حول هذا الطلب.</Text> : <ScrollView style={styles.messageScroll} contentContainerStyle={styles.messages} keyboardShouldPersistTaps="handled">{state.value.messages.map((message) => <View key={message.id} style={[styles.message, message.mine ? styles.mine : null]}><Text style={styles.sender}>{message.mine ? "أنت" : senderLabel(message.senderRole)}</Text><Text style={styles.body}>{message.body}</Text><OrderConversationMediaMessage orderId={orderId} messageId={message.id} mediaKind={message.mediaKind} /><Text style={styles.time}>{new Date(message.createdAt).toLocaleString("ar-YE")}</Text></View>)}</ScrollView>}</View>}
+      {pendingAttempt ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>المحاولة محفوظة لهذا الحساب والطلب. سنتحقق من نتيجتها قبل إعادة الإرسال.</Text><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /></View> : state.value.canSend ? <BthwaniOrderChatComposer
+  recipients={recipientOptions} selected={selectedRecipients}
+  onToggleRecipient={(value)=>{const target=recipientOptions.find(item=>item.role===value)?.role;if(!target)return;setSelectedRecipients(current=>current.includes(target)?current.filter(role=>role!==target):[...current,target]);}}
+  onSelectAll={()=>setSelectedRecipients(recipientOptions.map(item=>item.role))}
+  body={body} onChangeText={setBody} onSend={()=>void send()}
+  onGallery={()=>void pickPhoto(false)} onCamera={()=>void pickPhoto(true)}
+  onVoice={()=>setShowAudioControls(v=>!v)}
+  disabled={busy || !attemptStorageReady || Boolean(pendingAttempt)}
+  audioControls={showAudioControls ? <Suspense fallback={<Text>جارٍ تهيئة الميكروفون…</Text>}><AudioRecorderControls disabled={busy}
+     onRecorded={(uri,mime,text)=>sendPrivateMedia(uri,"audio",mime,text)} /></Suspense>:null}
+/> : <Text style={styles.muted}>أُغلقت المحادثة للكتابة، ويمكنك قراءة سجلها فقط.</Text>}
     </> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
   </BthwaniSurface>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({
-  surface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] },
+  surface: { flex:1, gap: spacing[3], padding: 0 },
   header: { alignItems: "flex-start", flexDirection: "row", gap: spacing[2], justifyContent: "space-between" },
   title: { ...typography.titleSm, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, unread: { ...typography.label, color: theme.interactiveText },
-  messages: { gap: spacing[2] }, message: { alignSelf: "flex-start", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], maxWidth: "92%", padding: spacing[3] }, mine: { alignSelf: "flex-end", backgroundColor: theme.actionSoft }, sender: { ...typography.label, color: theme.interactiveText }, body: { ...typography.body, color: theme.color }, time: { ...typography.caption, color: theme.colorMuted }, input: { ...typography.body, backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 72, padding: spacing[3] }, state: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, error: { ...typography.bodySm, color: theme.warning },
+  messageScroll:{flex:1,minHeight:0}, messages: { gap: spacing[2], paddingBottom:16 }, message: { alignSelf: "flex-start", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], maxWidth: "92%", padding: spacing[3] }, mine: { alignSelf: "flex-end", backgroundColor: theme.actionSoft }, sender: { ...typography.label, color: theme.interactiveText }, body: { ...typography.body, color: theme.color }, time: { ...typography.caption, color: theme.colorMuted }, input: { ...typography.body, backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 72, padding: spacing[3] }, state: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, error: { ...typography.bodySm, color: theme.warning },
 }); }

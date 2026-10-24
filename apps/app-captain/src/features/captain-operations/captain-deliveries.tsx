@@ -1,10 +1,10 @@
-import { BthwaniButton, BthwaniMap, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniOrderChatSheet, BthwaniMap, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useIsFocused } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, AppState, Image, Linking, Text, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, Image, Linking, Pressable, Text, View } from "react-native";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
@@ -68,6 +68,7 @@ export function CaptainDeliveries() {
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
   const isFocused = useIsFocused();
   const [assignments, setAssignments] = useState<ReadonlyArray<CaptainAssignment>>([]);
+  const [chatOrderId,setChatOrderId]=useState("");
   const [loadedActorID, setLoadedActorID] = useState("");
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
@@ -321,6 +322,10 @@ export function CaptainDeliveries() {
           <View key={assignment.id} style={styles.card}>
             <View style={styles.orderHeader}>
               <Text style={styles.cardTitle}>{task?.orderReference ? `مهمة التوصيل ${task.orderReference}` : "مهمة توصيل"}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={"محادثة الطلب "+assignment.orderId.slice(-8)}
+                onPress={()=>setChatOrderId(assignment.orderId)} style={{padding:8,borderRadius:10,backgroundColor:theme.surfaceRaised}}>
+                <Text style={{fontSize:19}}>💬</Text>
+              </Pressable>
               <BthwaniStatusBadge icon={assignmentStatusIcon} label={assignmentLabel} tone={assignmentStatusTone} />
             </View>
             <BthwaniStatusBadge icon={assignment.handoff.state === "completed" ? "success" : "store"} label={`التسليم من المتجر: ${handoffLabel}`} tone={assignment.handoff.state === "completed" ? "success" : "warning"} />
@@ -375,10 +380,15 @@ export function CaptainDeliveries() {
               </View>
             ) : null}
             {assignment.state === "delivery_failed" ? <View style={styles.warningBox}><Text style={styles.warning}>يبقى الطلب في عهدتك حتى يعالج المشغل التعذر؛ لن تُفتح لك مهمة جديدة قبل الاسترداد.</Text></View> : null}
+            <BthwaniOrderChatSheet visible={chatOrderId===assignment.orderId} onClose={()=>setChatOrderId("")}
+              orderReference={task?.orderReference ?? assignment.orderId.slice(-8)} status={assignmentLabel}
+              summary={task?.storeName ?? "طلب توصيل"}>
+              {chatOrderId===assignment.orderId?<OrderConversation orderId={assignment.orderId}/>:null}
+            </BthwaniOrderChatSheet>
           </View>
         );
       }) : null}
-       {!loading ? assignments.map((assignment) => <OrderConversation key={`conversation-${assignment.id}`} orderId={assignment.orderId} />) : null}
+
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );

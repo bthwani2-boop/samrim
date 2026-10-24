@@ -1,5 +1,5 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, BthwaniMap, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniIcon, BthwaniOrderChatSheet, BthwaniMap, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { cashCollectionPartyLabel, createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, type PublicStoreView, orderStateLabel, orderPaymentDisclosure } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -25,7 +25,7 @@ function hasCurrentClientActor(actorID: string): boolean {
 }
 
 export default function ClientOrderDetail() {
-  const { orderId: rawOrderId } = useLocalSearchParams<{ orderId?: string | string[] }>();
+  const { orderId: rawOrderId, chat: chatIntent } = useLocalSearchParams<{ orderId?: string | string[]; chat?: string }>();
   const orderId = Array.isArray(rawOrderId) ? rawOrderId[0] ?? "" : rawOrderId ?? "";
   const router = useRouter();
   const theme = useAppearanceTheme();
@@ -37,6 +37,7 @@ export default function ClientOrderDetail() {
   const latestOrderState = useRef<Order["state"] | null>(null);
   const [showCancellationForm, setShowCancellationForm] = useState(false);
   const [showConversation, setShowConversation] = useState(false);
+  useEffect(()=>{if(chatIntent==="1")setShowConversation(true);},[chatIntent]);
   const [showAllItems, setShowAllItems] = useState(false);
   const [storeIdentity, setStoreIdentity] = useState<PublicStoreView | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -363,7 +364,12 @@ export default function ClientOrderDetail() {
         <View style={styles.action}><BthwaniButton label={showConversation ? "إغلاق المحادثة" : "محادثة الطلب"} variant="primary" onPress={() => setShowConversation((value) => !value)}/></View>
         <View style={styles.action}><BthwaniButton label="المساعدة" variant="secondary" onPress={() => Alert.alert("مساعدة الطلب", "يمكنك متابعة المشكلة عبر محادثة الطلب أو طلب مراجعة الإلغاء حين يكون متاحًا.", [{ text: "إغلاق", style: "cancel" }, { text: "مراسلة الطلب", onPress: () => setShowConversation(true) }, ...(order.state !== "CREATED" && !completedState && !["CANCELLED", "REJECTED"].includes(order.state) ? [{ text: "مراجعة الإلغاء", onPress: () => setShowCancellationForm(true) }] : []) ])}/></View>
       </View>
-      {showConversation ? <OrderConversation orderId={order.id} /> : null}
+      <BthwaniOrderChatSheet visible={showConversation} onClose={()=>setShowConversation(false)}
+        orderReference={order.id.slice(-8)} status={orderStateLabel(order.state)}
+        summary={order.storeName+" · "+order.lines.length+" أصناف · "+(order.fulfillmentMode==="CUSTOMER_PICKUP"?"استلام من المتجر":order.fulfillmentMode==="PARTNER_CAPTAIN"?"توصيل المتجر":"توصيل بثواني")}
+        total={formatMoney(order.totalAmountMinor,order.currency)} onDetails={()=>setShowConversation(false)}>
+        {showConversation?<OrderConversation orderId={order.id}/>:null}
+      </BthwaniOrderChatSheet>
       <View style={styles.status}>
         <Text style={styles.sectionTitle}>ملخص الدفع</Text>
         {journey.exception ? <BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} /> : null}

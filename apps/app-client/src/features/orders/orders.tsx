@@ -270,6 +270,11 @@ export default function ClientOrders() {
           <View style={styles.orderBottom}>
             <View style={styles.orderData}>
               <Text style={styles.muted}>{formatOrderDate(order.createdAt)}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={"محادثة الطلب "+order.id.slice(-8)}
+                onPress={()=>router.push(("/orders/"+encodeURIComponent(order.id)+"?chat=1") as Href)}
+                style={{alignSelf:"flex-start",paddingHorizontal:10,paddingVertical:5,borderRadius:12,backgroundColor:premium.soft}}>
+                <Text style={{fontSize:18}}>💬</Text>
+              </Pressable>
               <Text numberOfLines={1} style={styles.orderId}>طلب #{order.id.slice(0, 8)}</Text>
             </View>
             <View style={styles.orderData}><Text style={styles.muted}>إجمالي الطلب</Text>
