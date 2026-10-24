@@ -977,6 +977,30 @@ func ListDiscoveryContent(ctx context.Context, db *sql.DB, public bool, serviceC
 	}
 	return items, nil
 }
+
+// ListPartnerStoreReels reads only drafts and published short-form content
+// attached to the already-authorized Store. Caller authenticates the grant.
+func ListPartnerStoreReels(ctx context.Context, db *sql.DB, storeID string) ([]DiscoveryContentRecord, error) {
+	storeID = strings.TrimSpace(storeID)
+	if storeID == "" {
+		return nil, ErrDiscoveryContentInvalid
+	}
+	rows, err := db.QueryContext(ctx, "SELECT "+discoveryContentSelect+" FROM dsh.discovery_content content WHERE content.kind='SHORT_FORM' AND content.target_type='STORE' AND content.target_id=$1 ORDER BY content.created_at DESC LIMIT 40", storeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]DiscoveryContentRecord, 0)
+	for rows.Next() {
+		item, err := scanDiscoveryContent(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func SetDiscoveryContentState(ctx context.Context, db *sql.DB, id, state, idempotencyKey, requestHash string, expectedVersion int) (DiscoveryContentRecord, bool, error) {
 	state = strings.ToUpper(strings.TrimSpace(state))
 	if (state != "PUBLISHED" && state != "PAUSED") || strings.TrimSpace(id) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" {

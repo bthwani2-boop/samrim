@@ -71,6 +71,8 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/discovery-content", s.listOperatorDiscoveryContent)
 	mux.HandleFunc("GET /dsh/operator/discovery-content/analytics", s.listOperatorDiscoveryContentAnalytics)
 	mux.HandleFunc("POST /dsh/operator/discovery-content", s.createOperatorDiscoveryContent)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content", s.listPartnerStoreDiscoveryContent)
+	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/discovery-content", s.createPartnerStoreDiscoveryContent)
 	mux.HandleFunc("POST /dsh/operator/discovery-content/{contentId}/publication", s.setOperatorDiscoveryContentPublication)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/promotions", s.listPartnerStorePromotions)
 	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/promotions", s.createPartnerStorePromotion)
@@ -511,6 +513,40 @@ func (s *MarketingServer) createOperatorDiscoveryContent(w http.ResponseWriter, 
 	if !ok {
 		return
 	}
+	s.createDiscoveryContentWithMedia(w, r, acting, idempotency, "")
+}
+
+func (s *MarketingServer) createPartnerStoreDiscoveryContent(w http.ResponseWriter, r *http.Request) {
+	_, idempotency, ok := storeAccessMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	actorID, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId"))
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	s.createDiscoveryContentWithMedia(w, r, actorID, idempotency, r.PathValue("storeId"))
+}
+
+func (s *MarketingServer) listPartnerStoreDiscoveryContent(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	items, err := postgres.ListPartnerStoreReels(r.Context(), s.db, r.PathValue("storeId"))
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	values := make([]contract.DiscoveryContentView, 0, len(items))
+	for _, item := range items {
+		values = append(values, toDiscoveryContentView(item))
+	}
+	writeJSON(w, http.StatusOK, contract.OperatorDiscoveryContentRegistryResponse{Items: values, Limit: len(values)})
+}
+
+func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter, r *http.Request, acting, idempotency, partnerStoreID string) {
 	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "discovery content requires a canonical media file upload")
 		return
@@ -524,6 +560,13 @@ func (s *MarketingServer) createOperatorDiscoveryContent(w http.ResponseWriter, 
 		return
 	}
 	input := parsed.input
+	// Partner identity is resolved from the authenticated session, never from
+	// client-supplied Actor or Store headers. A partner can only submit an
+	// own-Store SHORT_FORM draft. Central marketing owns other destinations.
+	if partnerStoreID != "" && (input.Kind != "SHORT_FORM" || input.TargetType != "STORE" || input.TargetID != partnerStoreID) {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "a Partner reel must target its authorized Store")
+		return
+	}
 	digest := sha256Bytes(parsed.bytes)
 	objectKey, keyErr := media.KeyForMarketingUpload(input.ID, idempotency, digest, parsed.contentType)
 	if keyErr != nil {
