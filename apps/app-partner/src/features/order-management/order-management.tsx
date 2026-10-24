@@ -51,7 +51,8 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const isFocused = useIsFocused();
-  const { q: rawQuery } = useLocalSearchParams<{ q?: string | string[] }>();
+  const { q: rawQuery, orderId: rawTargetOrder } = useLocalSearchParams<{q?: string | string[]; orderId?: string | string[]}>();
+  const targetOrderId = (Array.isArray(rawTargetOrder) ? rawTargetOrder[0] : rawTargetOrder)?.trim() ?? "";
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const { stores: scopedStores } = usePartnerStoreScope();
   const fulfillableStoreIDs = useMemo(() => new Set(scopedStores.filter((store) => store.owned || store.permissions.includes("fulfillment")).map((store) => store.id)), [scopedStores]);
@@ -76,7 +77,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const [confirmation, setConfirmation] = useState<OrderConfirmation>(null);
   const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(searchQuery), 350); return () => clearTimeout(timer); }, [searchQuery]);
-  const normalizedSearch = debouncedSearch.trim();
+  const normalizedSearch = targetOrderId || debouncedSearch.trim();
 
   const load = useCallback(async (options: { append?: boolean; cursor?: string; quiet?: boolean } = {}) => {
     const generation = options.append ? loadGeneration.current : ++loadGeneration.current;
@@ -90,7 +91,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const queueStates = queueFilters.find(({ key }) => key === filter)?.states;
+      const queueStates = targetOrderId ? undefined : queueFilters.find(({ key }) => key === filter)?.states;
       const response = await client().listPartnerOrders(token, {
         ...(storeId ? { storeIds: [storeId] } : {}),
         ...(queueStates ? { state: queueStates.join(",") } : {}),
@@ -142,9 +143,14 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
     } finally {
       if (generation === loadGeneration.current) { if (!options.quiet) setLoading(false); setLoadingMore(false); }
     }
-  }, [canFulfillOrder, filter, normalizedSearch, storeId]);
+  }, [canFulfillOrder, filter, normalizedSearch, storeId, targetOrderId]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!targetOrderId || loading) return;
+    const target = orders.find(order => order.id === targetOrderId);
+    if (target) setExpandedOrderIds(current => new Set([...current, target.id]));
+  }, [targetOrderId, loading, orders]);
   useEffect(() => {
     if (!isFocused || loading || busy) return;
     const update = () => { if (AppState.currentState === "active") void load({ quiet: true }); };

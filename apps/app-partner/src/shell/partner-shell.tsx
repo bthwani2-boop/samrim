@@ -3,6 +3,7 @@ import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo
 import { BthwaniIcon, BthwaniIconButton, BthwaniSearchField, useAppearanceTheme } from "@bthwani/design-system/native";
 
 import { PartnerOrderAvailability } from "../features/partner-onboarding/partner-order-availability";
+import { PartnerNotificationsHeaderAction } from "../features/notifications/partner-notifications-header-action";
 import { dispatchPartnerProductAction } from "./partner-product-actions";
 
 import { type PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -89,7 +90,7 @@ function PartnerHeader({ title, isOrders, isProducts, isSubpage, returnTo, canSe
           {isOrders && selectedStore && (selectedStore.owned || selectedStore.permissions.includes("store_operations")) ? <PartnerOrderAvailability key={selectedStore.id} storeID={selectedStore.id} published={selectedStore.publicationState === "published"} /> : null}
         </View>
         <View style={styles.headerActions}>
-          {isOrders ? <BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlSm} tone="soft" /> : null}
+          {isOrders ? <PartnerNotificationsHeaderAction /> : null}
           {isProducts ? <>
             <Pressable accessibilityRole="button" accessibilityLabel="إضافة منتج" onPress={() => dispatchPartnerProductAction("create")} style={[styles.productHeaderAction, styles.productHeaderPrimary]}><BthwaniIcon name="cart" size={15} color={theme.onAction} /><Text style={styles.productHeaderPrimaryLabel}>إضافة</Text></Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel="تعديل المنتجات" onPress={() => dispatchPartnerProductAction("prices")} style={styles.productHeaderAction}><BthwaniIcon name="edit" size={15} color={theme.color} /><Text style={styles.productHeaderActionLabel}>تعديل</Text></Pressable>

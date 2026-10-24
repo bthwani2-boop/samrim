@@ -76,15 +76,30 @@ export function NotificationsInbox() {
     return () => { requestID.current += 1; };
   }, [load]));
 
+  function destination(item: Notification): Href | null {
+    if (item.orderId?.trim() && item.kind !== "STORE_AVAILABILITY_CHANGED" && item.kind !== "STORE_PUBLISHED") {
+      return { pathname: "/orders", params: { orderId: item.orderId, ...(item.storeId ? { storeId: item.storeId } : {}) } } as Href;
+    }
+    if (item.storeId && item.kind === "STORE_AVAILABILITY_CHANGED") return { pathname: "/store", params: { section: "operations", returnTo: "orders" } } as Href;
+    if (item.storeId && item.kind === "STORE_PUBLISHED") return { pathname: "/store", params: { section: "settings", returnTo: "orders" } } as Href;
+    return null;
+  }
+
   async function markRead(item: Notification) {
-    if (item.readAt || busy || !actorID || activeActorID() !== actorID) return;
+    if (busy || !actorID || activeActorID() !== actorID) return;
     setBusy(item.id);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       if (activeActorID() !== actorID) return;
-      await dshClient().markNotificationRead(token, item.id);
-      if (activeActorID() === actorID) await load(true);
+      if (!item.readAt) {
+        await dshClient().markNotificationRead(token, item.id);
+        if (activeActorID() === actorID) await load(true);
+      }
+      if (activeActorID() === actorID) {
+        const target = destination(item);
+        if (target) router.push(target);
+      }
     } catch (cause) {
       console.error("DSH partner notification read-state write failed", cause);
       if (activeActorID() === actorID) setError("تعذر تحديث حالة الإشعار.");

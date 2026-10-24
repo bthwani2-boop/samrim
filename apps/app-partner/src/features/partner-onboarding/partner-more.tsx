@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, logoutIdentity, subscribeIdentitySession } from "../../bootstrap/identity";
 import { PartnerAccessInvitationsCard } from "./partner-access-invitations";
+import { PartnerAccountSecurity } from "../access/partner-account-security";
 import { readOwnJoiningCase, listOwnStoreAccessInvitations, readOwnStoreOperationalAvailability, readOwnStoreImages } from "./store-readback-client";
 import { onStoreAvailabilityChanged } from "./store-availability-events";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
@@ -39,7 +40,9 @@ export function PartnerMore() {
   const [themeBusy,setThemeBusy]=useState(false);
   const [themeError,setThemeError]=useState("");
   const [invitesExpanded,setInvitesExpanded]=useState(false);
+  const [pendingInvites,setPendingInvites]=useState<number|null>(null);
   const [profileExpanded,setProfileExpanded]=useState(false);
+  const [securityExpanded,setSecurityExpanded]=useState(false);
   const [logoutBusy,setLogoutBusy]=useState(false);
   const [logoutError,setLogoutError]=useState("");
   const selectedID=selectedStore?.id;
@@ -78,6 +81,17 @@ export function PartnerMore() {
     void resolve();
     return ()=>{active=false;};
   },[actor,selectedStore?.id,selectedStore?.owned,selectedStore?.permissions.join(",")]));
+
+  useFocusEffect(useCallback(()=>{
+    let active=true;
+    setPendingInvites(null);
+    if(actor) void listOwnStoreAccessInvitations().then(page=>{
+      if(active && currentIdentityState().kind==="authenticated"){
+        setPendingInvites(page.items.filter(item => item.state==="pending_acceptance" || item.state==="pending_partner_activation").length);
+      }
+    }).catch(()=>{if(active)setPendingInvites(null);});
+    return()=>{active=false;};
+  },[actor,invitesExpanded]));
 
   useFocusEffect(useCallback(()=>{
     let active=true;
@@ -132,6 +146,12 @@ export function PartnerMore() {
     {profileExpanded?<View style={styles.profilePanel}><Text style={styles.muted}>هذه هوية المستخدم، وتُعرض الصلاحيات بحسب المتجر المحدد. إعدادات المظهر والدعوات بالأسفل.</Text>
       {selectedStore?<Text style={styles.accountRole}>المتجر الحالي: {selectedStore.name}</Text>:null}
       <Text style={styles.accountRole}>الصفة: {identity.role}</Text>
+      <Text style={styles.muted}>صلاحيات الحساب تُدار من فريق المتجر المعتمد، ولا تُغيّر من هذه الشاشة.</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="أمان الحساب" onPress={()=>setSecurityExpanded(v=>!v)} style={styles.accountSecurityAction}>
+        <BthwaniIcon name="account" color={theme.brandAction} size={17}/>
+        <Text style={styles.accountRole}>أمان الحساب وإعادة تعيين كلمة المرور</Text>
+      </Pressable>
+      {securityExpanded?<PartnerAccountSecurity/>:null}
     </View>:null}
     {stores.length>1?<PartnerStoreScopeSelector/>:null}
     {state.kind==="error"?<View style={styles.panel}><Text style={styles.muted}>تعذر تحميل المتاجر.</Text><BthwaniButton label="إعادة المحاولة" variant="secondary" onPress={()=>void reload()}/></View>:null}
@@ -178,7 +198,7 @@ export function PartnerMore() {
     <Pressable accessibilityRole="button" accessibilityLabel="الدعوات" style={styles.inviteCard} onPress={()=>setInvitesExpanded(v=>!v)}>
       <BthwaniIcon name="account" size={19} color={theme.colorMuted}/>
       <Text style={styles.utilityTitle}>الدعوات</Text>
-      <Text style={styles.inviteHint}>دعوات الوصول إليك</Text>
+      <Text style={styles.inviteHint}>{pendingInvites===null?"دعوات الوصول إليك":pendingInvites>0?pendingInvites+" دعوة تحتاج إجراء":"لا توجد دعوات معلقة"}</Text>
     </Pressable>
     {invitesExpanded?<PartnerAccessInvitationsCard/>:null}
     <View style={styles.logout}><BthwaniButton variant="secondary" label={logoutBusy?"جارٍ تسجيل الخروج":"تسجيل الخروج"} disabled={logoutBusy} busy={logoutBusy} onPress={()=>void logout()}/></View>
@@ -192,6 +212,7 @@ function createStyles(p:ReturnType<typeof resolveTheme>){return StyleSheet.creat
   accountText:{flex:1,minWidth:0,gap:3},accountName:{...typography.bodyStrong,color:p.color,fontWeight:"800",fontSize:15},
   accountRole:{...typography.caption,color:p.colorMuted},
   profilePanel:{backgroundColor:p.surface,borderRadius:12,borderWidth:1,borderColor:p.borderColor,padding:12,gap:6},
+  accountSecurityAction:{minHeight:44,flexDirection:"row",gap:9,alignItems:"center"},
   panel:{backgroundColor:p.surface,padding:8,borderWidth:1,borderColor:p.borderColor,borderRadius:12,gap:6},
   muted:{...typography.bodySm,color:p.colorMuted},
   storeHero:{backgroundColor:p.surface,borderWidth:1,borderColor:p.borderColor,borderRadius:14,overflow:"hidden"},
