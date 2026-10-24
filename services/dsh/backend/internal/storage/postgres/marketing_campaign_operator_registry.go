@@ -84,38 +84,36 @@ func ListOperatorMarketingCampaigns(ctx context.Context, db *sql.DB, state, curs
 	default:
 		return MarketingCampaignPage{}, ErrMarketingCampaignInvalid
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id FROM dsh.marketing_campaigns
-  WHERE ($1='' OR state=$1) AND id>$2
-  ORDER BY id ASC LIMIT $3`, state, cursor, limit+1)
+	rows, err := db.QueryContext(ctx, `SELECT c.id,c.name_ar,c.objective,c.state,c.budget_limit_minor,
+     COALESCE((SELECT SUM(p.discount_budget_limit_minor) FROM dsh.marketing_campaign_promotion_links l
+       JOIN dsh.commerce_promotions p ON p.id=l.promotion_id WHERE l.campaign_id=c.id),0),
+     (SELECT COUNT(*) FROM dsh.marketing_campaign_promotion_links WHERE campaign_id=c.id),
+     (SELECT COUNT(*) FROM dsh.marketing_campaign_content_links WHERE campaign_id=c.id),
+     c.version,c.created_at,c.updated_at
+     FROM dsh.marketing_campaigns c
+     WHERE ($1='' OR c.state=$1) AND c.id>$2
+     ORDER BY c.id ASC LIMIT $3`, state, cursor, limit+1)
 	if err != nil {
 		return MarketingCampaignPage{}, err
 	}
-	ids := make([]string, 0, limit+1)
-	for rows.Next() {
-		var id string
-		if err = rows.Scan(&id); err != nil {
-			break
-		}
-		ids = append(ids, id)
-	}
-	if err == nil {
-		err = rows.Err()
-	}
-	_ = rows.Close()
-	if err != nil {
-		return MarketingCampaignPage{}, err
-	}
+	defer rows.Close()
 	page := MarketingCampaignPage{Items: make([]MarketingCampaignRecord, 0, limit)}
-	if len(ids) > limit {
-		page.NextCursor = ids[limit-1]
-		ids = ids[:limit]
-	}
-	for _, id := range ids {
-		item, err := ReadMarketingCampaign(ctx, db, id)
+	for rows.Next() {
+		var rec MarketingCampaignRecord
+		err = rows.Scan(&rec.ID, &rec.NameAr, &rec.Objective, &rec.State, &rec.BudgetLimitMinor,
+			&rec.AssignedPromotionBudgetMinor, &rec.PromotionCount, &rec.ContentCount,
+			&rec.Version, &rec.CreatedAt, &rec.UpdatedAt)
 		if err != nil {
 			return MarketingCampaignPage{}, err
 		}
-		page.Items = append(page.Items, item)
+		if len(page.Items) >= limit {
+			page.NextCursor = page.Items[len(page.Items)-1].ID
+			break
+		}
+		page.Items = append(page.Items, rec)
+	}
+	if err = rows.Err(); err != nil {
+		return MarketingCampaignPage{}, err
 	}
 	return page, nil
 }
