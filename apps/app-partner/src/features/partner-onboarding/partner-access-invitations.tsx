@@ -2,8 +2,8 @@ import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native
 import type { StoreAccessGrant } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
-import { usePartnerStoreScope } from "./partner-store-scope-context";
+import { Text, View } from "react-native";
+import { notifyPartnerStoreAccessChanged } from "./partner-store-scope-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { type InvitationAction, invitationActionConfirmed, invitationActionIdentity } from "./store-access-invitation-recovery";
 import { activateOwnStoreAccessInvitation, decideOwnStoreAccessInvitation, listOwnStoreAccessInvitations } from "./store-readback-client";
@@ -32,7 +32,6 @@ async function attemptHeaders(grant:StoreAccessGrant,action:InvitationAction){
 export function PartnerAccessInvitationsCard(){
   const theme=useAppearanceTheme();
   const styles=useMemo(()=>createPartnerSurfaceStyles(theme),[theme]);
-  const {reload:reloadScope}=usePartnerStoreScope();
   const [invitations,setInvitations]=useState<ReadonlyArray<StoreAccessGrant>>([]);
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
@@ -62,22 +61,22 @@ export function PartnerAccessInvitationsCard(){
       const latest=await reload();
       const canonical=latest?.find(item=>item.id===grant.id);
       if(!invitationActionConfirmed(grant,canonical,action)){
-        setError("لم تتأكد نتيجة العملية من الخادم. حدّث الدعوات قبل المحاولة مجددًا.");
+        setError("لم تتأكد نتيجة العملية من الخادم. أعد فتح الإشعارات قبل المحاولة مجددًا.");
         return;
       }
       setNotice(action==="decline"?"تم رفض الدعوة.":action==="activate"||canonical?.state==="active"?"تم تفعيل العضوية.":"تم قبول الدعوة، وقد تحتاج إلى اعتماد أو تفعيل.");
       if(action==="activate"||(action==="accept"&&canonical?.state==="active")){
-        try{await reloadScope();}catch{setError("تم تأكيد الدعوة، لكن تعذر تحديث المتاجر. أعد فتح التطبيق.");}
+        try{await notifyPartnerStoreAccessChanged();}catch{setError("تم تأكيد الدعوة، لكن تعذر تحديث المتاجر. أعد فتح التطبيق.");}
       }
     }catch{
-      setError("تعذر التحقق من الدعوة. أعد تحديث القائمة.");
+      setError("تعذر التحقق من الدعوة. أعد فتح الإشعارات.");
     }finally{setBusy(false);}
   }
-  return <View style={styles.card} accessibilityLabel="دعوات الوصول إليك">
-    <Text style={styles.value}>دعوات الوصول إليك</Text>
-    {loading?<View style={styles.state}><ActivityIndicator color={theme.brandAction}/><Text style={styles.muted}>جارٍ تحميل الدعوات…</Text></View>:null}
-    {!loading&&!invitations.length&&!error?<Text style={styles.muted}>لا توجد دعوات موجهة إليك حاليًا.</Text>:null}
-    {invitations.map(grant=><View key={grant.id} style={{gap:8,borderColor:theme.borderColor,borderWidth:1,borderRadius:12,padding:10}}>
+  const actionableInvitations=invitations.filter(grant=>grant.state==="pending_acceptance"||grant.state==="pending_partner_activation");
+  if(!actionableInvitations.length&&!notice)return null;
+  return <View style={styles.card} accessibilityLabel="دعوات الفريق">
+    <Text style={styles.value}>دعوات الفريق</Text>
+    {actionableInvitations.map(grant=><View key={grant.id} style={{gap:8,borderColor:theme.borderColor,borderWidth:1,borderRadius:12,padding:10}}>
       <Text style={styles.value}>{grant.storeName}</Text>
       <Text style={styles.muted}>{label(grant.state)} · {grant.permissions.map(p=>names[p]??p).join("، ")}</Text>
       {grant.state==="pending_role_admission"?<Text style={styles.muted}>تنتظر الدعوة اعتماد المنصة.</Text>:null}
@@ -89,6 +88,5 @@ export function PartnerAccessInvitationsCard(){
     </View>)}
     {error?<Text accessibilityRole="alert" style={styles.error}>{error}</Text>:null}
     {notice?<Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text>:null}
-    <BthwaniButton disabled={busy||loading} label="تحديث الدعوات" variant="secondary" onPress={()=>void reload()}/>
   </View>;
 }

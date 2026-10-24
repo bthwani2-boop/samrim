@@ -7,7 +7,6 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, logoutIdentity, subscribeIdentitySession } from "../../bootstrap/identity";
 import { PartnerAccountSecurity } from "../access/partner-account-security";
-import { PartnerAccessInvitationsCard } from "./partner-access-invitations";
 import { PartnerPerformancePeek } from "./partner-performance-peek";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
@@ -41,8 +40,6 @@ export function PartnerMore() {
   const [logoFailed,setLogoFailed]=useState(false);
   const [themeBusy,setThemeBusy]=useState(false);
   const [themeError,setThemeError]=useState("");
-  const [invitesExpanded,setInvitesExpanded]=useState(false);
-  const [pendingInvites,setPendingInvites]=useState<number|null>(null);
   const [profileExpanded,setProfileExpanded]=useState(false);
   const [securityExpanded,setSecurityExpanded]=useState(false);
   const [logoutBusy,setLogoutBusy]=useState(false);
@@ -84,19 +81,6 @@ export function PartnerMore() {
     return ()=>{active=false;};
   },[actor,selectedStore]));
 
-  useFocusEffect(useCallback(()=>{
-    // Recheck when the invitation panel expands, without stale invitation counts.
-    void invitesExpanded;
-    let active=true;
-    setPendingInvites(null);
-    if(actor) void listOwnStoreAccessInvitations().then(page=>{
-      const latest=currentIdentityState();
-      if(active && latest.kind==="authenticated" && latest.identity.subject===actor){
-        setPendingInvites(page.items.filter(item => item.state==="pending_acceptance" || item.state==="pending_partner_activation").length);
-      }
-    }).catch(()=>{if(active)setPendingInvites(null);});
-    return()=>{active=false;};
-  },[actor,invitesExpanded]));
 
   useFocusEffect(useCallback(()=>{
     let active=true;
@@ -203,12 +187,6 @@ export function PartnerMore() {
       </View>
     </View>
     {themeError?<Text accessibilityRole="alert" style={styles.error}>{themeError}</Text>:null}
-    <Pressable accessibilityRole="button" accessibilityLabel="الدعوات" style={styles.inviteCard} onPress={()=>setInvitesExpanded(v=>!v)}>
-      <BthwaniIcon name="account" size={19} color={theme.colorMuted}/>
-      <Text style={styles.utilityTitle}>الدعوات</Text>
-      <Text style={styles.inviteHint}>{pendingInvites===null?"دعوات الوصول إليك":pendingInvites>0?pendingInvites+" دعوة تحتاج إجراء":"لا توجد دعوات معلقة"}</Text>
-    </Pressable>
-    {invitesExpanded?<PartnerAccessInvitationsCard/>:null}
     <View style={styles.logout}><BthwaniButton variant="secondary" label={logoutBusy?"جارٍ تسجيل الخروج":"تسجيل الخروج"} disabled={logoutBusy} busy={logoutBusy} onPress={()=>void logout()}/></View>
     {logoutError?<Text accessibilityRole="alert" style={styles.error}>{logoutError}</Text>:null}
   </View>;
@@ -246,8 +224,6 @@ function createStyles(p:ReturnType<typeof resolveTheme>){return StyleSheet.creat
   appearanceSegmentSelected:{backgroundColor:p.actionSoft,borderWidth:1,borderColor:p.brandAction},
   appearanceSegmentText:{...typography.caption,color:p.colorMuted,fontSize:12,fontWeight:"600"},
   appearanceSegmentTextSelected:{color:p.brandAction,fontWeight:"800"},
-  inviteCard:{minHeight:49,borderWidth:1,borderColor:p.borderColor,borderRadius:12,backgroundColor:p.surface,flexDirection:"row",alignItems:"center",gap:8,paddingHorizontal:12},
   utilityTitle:{...typography.bodyStrong,color:p.color,fontSize:13},
-  inviteHint:{...typography.caption,color:p.colorMuted,flex:1,textAlign:"left"},
   logout:{paddingTop:7},error:{...typography.bodySm,color:p.warning},
 });}
