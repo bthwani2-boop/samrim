@@ -40,7 +40,9 @@ test("eligible store promotions are shown before products without duplicate hero
   const section = source.indexOf('title="عروض هذا المتجر"');
   const footer = source.indexOf('ListFooterComponent=');
   assert.ok(header >= 0 && section > header && section < footer, "promotions must be visible ahead of product catalog");
-  assert.match(source, /promotions\.map\(\(promotion\) => <View key=\{promotion\.id\}/);
+  assert.match(source, /remainingPromotions\.map\(\(promotion\) => <View key=\{promotion\.id\}/);
+  assert.match(source, /const remainingPromotions = spotlightPromotion \? promotions\.filter\(item => item\.id !== spotlightPromotion\.id\) : promotions;/);
+  assert.match(source, /<PromotionCard promotion=\{spotlightPromotion\} onUse=\{\(\) => openStorePromotion\(spotlightPromotion\.code\)\} \/>/);
   assert.doesNotMatch(source, /\.\.\.promotions\.map\(\(promotion\) => \(\{ kind: "promotion"/);
   assert.match(source, /promotionError \? <View style=\{styles\.promotionNotice\}/);
 });
