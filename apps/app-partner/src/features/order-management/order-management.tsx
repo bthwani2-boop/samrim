@@ -397,6 +397,16 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
             </> : null}
             {expandedOrderIds.has(order.id) ? <OrderConversation orderId={order.id} /> : null}
                   </ScrollView>
+                  {next ? <View style={styles.sheetFooter}>
+                    {next === "PARTNER_ACCEPTED" ? <Pressable accessibilityRole="button" disabled={actionDisabled} onPress={() => setConfirmation({kind:"reject",order})} style={styles.compactReject}><Text style={styles.rejectLabel}>رفض الطلب</Text></Pressable> : null}
+                    <Pressable accessibilityRole="button" accessibilityLabel={nextActionLabel}
+                      disabled={actionDisabled || (hasOpenAdjustments && (next === "READY_FOR_DISPATCH" || next === "READY_FOR_PICKUP"))}
+                      accessibilityState={{disabled:actionDisabled || (hasOpenAdjustments && (next === "READY_FOR_DISPATCH" || next === "READY_FOR_PICKUP"))}}
+                      onPress={()=>void transition(order)} style={styles.compactPrimary}>
+                      {busy===order.id ? <ActivityIndicator color={theme.onAction}/> : <BthwaniIcon name="success" color={theme.onAction} size={17}/>}
+                      <Text numberOfLines={1} style={styles.compactPrimaryLabel}>{nextActionLabel}</Text>
+                    </Pressable>
+                  </View> : null}
                 </View>
               </View>
             </Modal>
@@ -502,6 +512,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     sheetHeading:{...typography.bodyStrong,color:theme.color,fontWeight:"800",fontSize:14},
     sheetFact:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:10},
     sheetFactValue:{...typography.bodySm,color:theme.color,flexShrink:1},
+    sheetFooter:{borderTopWidth:1,borderColor:theme.borderColor,backgroundColor:theme.surface,flexDirection:"row",gap:9,padding:10},
 
     payment: { ...typography.bodySm, color: theme.interactiveText },
     lines: { gap: spacing[2], marginTop: spacing[1] },
