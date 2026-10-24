@@ -24,6 +24,7 @@ export function OperatorOrderConversation({ orderId }: Readonly<{ orderId: strin
   const [loadingOlder, setLoadingOlder] = useState(false);
   const pending = useRef<{ body: string; recipients: string; key: string } | null>(null);
   const sequence = useRef(0);
+  const readReceiptAttempt=useRef("");
 
   const load = useCallback(async () => {
     const run = ++sequence.current;
@@ -34,6 +35,21 @@ export function OperatorOrderConversation({ orderId }: Readonly<{ orderId: strin
       if (run !== sequence.current) return;
       setConversation(value);
       setError("");
+      const latest=value.messages.at(-1);
+      if(value.unreadCount>0&&latest){
+        const receiptKey=orderId+":"+latest.id;
+        if(readReceiptAttempt.current!==receiptKey){
+          readReceiptAttempt.current=receiptKey;
+          void identityFetch(`/api/operations/${encodeURIComponent(orderId)}/conversation/read`,{
+            method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({messageId:latest.id}),
+          }).then(response=>{
+            if(!response.ok)throw new Error("READ_RECEIPT_FAILED");
+            if(run===sequence.current)
+              setConversation(current=>current&&current.orderId===orderId?{...current,unreadCount:0}:current);
+          }).catch(()=>{if(readReceiptAttempt.current===receiptKey)readReceiptAttempt.current="";});
+        }
+      }
     } catch {
       if (run === sequence.current) setError("تعذر قراءة مراسلة الطلب؛ لا يمكن الرد دون سجل محدث.");
     }
@@ -44,6 +60,7 @@ export function OperatorOrderConversation({ orderId }: Readonly<{ orderId: strin
     setRecipientOpen(false);
     setBody("");
     pending.current = null;
+    readReceiptAttempt.current="";
     void load();
     return () => { sequence.current += 1; };
   }, [load]);
