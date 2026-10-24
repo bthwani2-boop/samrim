@@ -158,10 +158,13 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const fulfillmentModes = useMemo(() => state.kind === "ready" ? availableCustomerFulfillmentModes(state.store.fulfillmentModes) : [], [state]);
   const mutationBusy = Boolean(busyOfferId);
   const bannerCatalogOffers = bannerOffers.length > 0 ? bannerOffers : (catalogTabs[0]?.catalog.offers ?? (state.kind === "ready" ? state.catalog.offers : []));
+  // Short-form clips belong in the dedicated Reels viewer, not Store image banners.
   const storeMarketingContents = marketingContents.filter((item) =>
-    (item.targetType === "STORE" && item.targetId === storeId) ||
-    (item.targetType === "PRODUCT" && [...bannerCatalogOffers, ...(state.kind === "ready" ? state.catalog.offers : [])].some((offer) => offer.productId === item.targetId)) ||
-    (item.targetType === "PROMOTION" && promotions.some((promotion) => promotion.id === item.targetId))
+    item.kind !== "SHORT_FORM" && (
+      (item.targetType === "STORE" && item.targetId === storeId) ||
+      (item.targetType === "PRODUCT" && [...bannerCatalogOffers, ...(state.kind === "ready" ? state.catalog.offers : [])].some((offer) => offer.productId === item.targetId)) ||
+      (item.targetType === "PROMOTION" && promotions.some((promotion) => promotion.id === item.targetId))
+    )
   );
   const bannerItems: StoreBannerItem[] = [
     ...storeMarketingContents.map((content) => ({ kind: "content" as const, key: "content:" + content.id, content })),
