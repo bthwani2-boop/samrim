@@ -6,6 +6,7 @@ import { Platform } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { appearance } from "../src/bootstrap/appearance";
+import { AppKeyboardProvider } from "../src/bootstrap/keyboard-provider";
 import { OrderAlertMonitor } from "../src/features/notifications/order-alert-monitor";
 
 export default function RootLayout() {
@@ -17,10 +18,12 @@ export default function RootLayout() {
   }, []);
   return (
     <SafeAreaProvider>
+      <AppKeyboardProvider>
       <AppearanceProvider controller={appearance}>
         <OrderAlertMonitor />
         <RootNavigation />
       </AppearanceProvider>
+      </AppKeyboardProvider>
     </SafeAreaProvider>
   );
 }
