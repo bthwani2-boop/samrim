@@ -513,8 +513,8 @@ paths:
   /dsh/operator/promotions/{promotionId}/settlement-summary:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1settlement-summary"
 
-  /dsh/operator/marketing/campaigns/{campaignId}:
-    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1campaigns~1{campaignId}"
+  /dsh/operator/marketing/campaigns/{campaignId}/details:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1campaigns~1{campaignId}~1details"
   /dsh/operator/marketing/campaigns/{campaignId}/state:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1campaigns~1{campaignId}~1state"
   /dsh/operator/marketing/summary:

@@ -156,7 +156,7 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
-  /dsh/operator/marketing/campaigns/{campaignId}:
+  /dsh/operator/marketing/campaigns/{campaignId}/details:
     get:
       operationId: readOperatorMarketingCampaign
       summary: Read one marketing campaign, including its aggregate assigned caps
