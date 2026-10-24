@@ -157,11 +157,14 @@ function defineSamrimExpoApp(appKey, options = {}) {
   if (options.maps && (!androidMapsApiKey || !iosMapsApiKey)) {
     throw new Error("Missing Google Maps API keys for " + appKey + " in the mobile secret environment.");
   }
+  const firebaseClientApps = ["app-client", "app-partner", "app-captain"];
+  const easFirebaseFile = process.env.GOOGLE_SERVICES_JSON?.trim();
+  const localFirebaseFile = fs.existsSync(path.join(appRoot(appKey), "google-services.json"))
+    ? "./google-services.json" : undefined;
   const android = {
     package: app.androidPackage,
-    ...(["app-client", "app-partner", "app-captain"].includes(appKey) &&
-        fs.existsSync(path.join(appRoot(appKey), "google-services.json"))
-      ? { googleServicesFile: "./google-services.json" } : {}),
+    ...(firebaseClientApps.includes(appKey) && (easFirebaseFile || localFirebaseFile)
+      ? { googleServicesFile: easFirebaseFile || localFirebaseFile } : {}),
     ...(adaptiveIcon ? { adaptiveIcon: { foregroundImage: adaptiveIcon, backgroundColor: "#FFFFFF" } } : {}),
   };
 

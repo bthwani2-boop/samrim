@@ -127,6 +127,16 @@ try {
     if ($RemoteProjectId -ne $ProjectId) { Fail "EAS project binding mismatch for $App." }
     Write-Host "EAS_PROJECT_BINDING=PASS app=$App projectId=$ProjectId"
 
+    if ($FirebaseEnabled) {
+        $Environment = [string]$EasConfig.build.development.environment
+        if ([string]::IsNullOrWhiteSpace($Environment)) { Fail "Missing development EAS environment for $App." }
+        $EnvironmentVariables = Invoke-EasText @("env:list", "--environment", $Environment, "--format", "short")
+        if ($EnvironmentVariables -notmatch '\bGOOGLE_SERVICES_JSON\b') {
+            Fail "Missing GOOGLE_SERVICES_JSON EAS file environment variable for $App in $Environment."
+        }
+        Write-Host "EAS_FIREBASE_FILE_ENV=PASS app=$App environment=$Environment"
+    }
+
     $Fingerprint = Invoke-EasJson @("fingerprint:generate", "--platform", "android", "--build-profile", "development", "--json", "--non-interactive")
     $Hash = [string]$Fingerprint.hash
     if ([string]::IsNullOrWhiteSpace($Hash)) { Fail "Unable to resolve Android fingerprint for $App." }

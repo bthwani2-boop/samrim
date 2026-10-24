@@ -64,8 +64,6 @@ tools/dev-app-credentials.csv
 # Local security-scan hook state
 .mimosa/
 
-# Only upload locally materialized app Firebase client config to EAS.
-# Never track service-account JSON or FCM server credentials.
-!apps/app-client/google-services.json
-!apps/app-partner/google-services.json
-!apps/app-captain/google-services.json
+# Keep Firebase client configs outside the Git-backed EAS archive.
+# Android builds load them from the per-project GOOGLE_SERVICES_JSON EAS file secret.
+# Never archive service-account JSON or FCM server credentials.
