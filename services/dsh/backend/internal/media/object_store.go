@@ -1,6 +1,7 @@
 package media
 
 import (
+	"encoding/binary"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -116,7 +117,7 @@ func (s *S3Store) EnsureBucket(ctx context.Context) error {
 }
 
 func (s *S3Store) Put(ctx context.Context, objectKey string, reader io.Reader, size int64, contentType string) error {
-	if err := ValidateObjectKey(objectKey); err != nil || size < 1 || size > s.config.MaxBytes || !validContentType(contentType) {
+	if err := ValidateObjectKey(objectKey); err != nil || size < 1 || size > s.config.MaxBytes || !validMarketingContentType(contentType) {
 		return ErrInvalidObjectKey
 	}
 	_, err := s.client.PutObject(ctx, s.config.Bucket, objectKey, reader, size, minio.PutObjectOptions{ContentType: contentType, CacheControl: "public, max-age=31536000, immutable"})
@@ -229,13 +230,15 @@ func KeyForCommerceVerticalUpload(verticalID, idempotencyKey, contentSHA256, con
 }
 
 func KeyForMarketingUpload(contentID, idempotencyKey, contentSHA256, contentType string) (string, error) {
-	if !validPathSegment(contentID) || !validPathSegment(contentSHA256) || len(contentSHA256) != 64 || !validContentType(contentType) {
+	if !validPathSegment(contentID) || !validPathSegment(contentSHA256) || len(contentSHA256) != 64 || !validMarketingContentType(contentType) {
 		return "", ErrInvalidObjectKey
 	}
 	keyHash := sha256.Sum256([]byte(idempotencyKey))
 	extension := "jpg"
 	if contentType == "image/png" {
 		extension = "png"
+	} else if contentType == "video/mp4" {
+		extension = "mp4"
 	}
 	return fmt.Sprintf("marketing/discovery-content/%s/%s-%s.%s", contentID, hex.EncodeToString(keyHash[:]), contentSHA256, extension), nil
 }
@@ -258,6 +261,38 @@ func validPathSegment(value string) bool {
 
 func validContentType(value string) bool {
 	return value == "image/jpeg" || value == "image/png"
+}
+
+// Video media is bounded by the existing marketing-media 10 MiB upload limit.
+// Catalog and profile uploads retain image-only validation in their owners.
+func validMarketingContentType(value string) bool { return validContentType(value) || value == "video/mp4" }
+
+// ValidateMarketingMP4Bytes checks bounded outer ISO BMFF boxes only.
+// It does not transcode or verify particular codecs.
+func ValidateMarketingMP4Bytes(data []byte) error {
+ if len(data) < 32 || int64(len(data)) > MaxUploadBytes { return ErrInvalidObjectKey }
+ var brand, movie, payload bool
+ for offset := 0; offset < len(data); {
+  if len(data)-offset < 8 { return ErrInvalidObjectKey }
+  size := uint64(binary.BigEndian.Uint32(data[offset:offset+4]))
+  kind := string(data[offset+4:offset+8])
+  header := uint64(8)
+  if size == 1 {
+   if len(data)-offset < 16 { return ErrInvalidObjectKey }
+   size = binary.BigEndian.Uint64(data[offset+8:offset+16])
+   header = 16
+  } else if size == 0 { size = uint64(len(data)-offset) }
+  if size < header || size > uint64(len(data)-offset) { return ErrInvalidObjectKey }
+  if offset == 0 && (kind != "ftyp" || size < header+8) { return ErrInvalidObjectKey }
+  switch kind {
+   case "ftyp": brand = true
+   case "moov": movie = true
+   case "mdat": payload = size > header
+  }
+  offset += int(size)
+ }
+ if !brand || !movie || !payload { return ErrInvalidObjectKey }
+ return nil
 }
 
 func ValidateImageBytes(data []byte) (string, int, int, error) {
