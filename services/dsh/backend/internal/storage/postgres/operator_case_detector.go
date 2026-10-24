@@ -53,6 +53,45 @@ FROM updated u`
 	if _, err := db.ExecContext(ctx, recoverLocations, max); err != nil {
 		return 0, err
 	}
+	// Only automatic, unclaimed stage-delay cases can auto-resolve. The
+	// canonical transition after case opening proves progress; an updatedAt,
+	// staff note, cancellation, or financial unknown never proves recovery.
+	// Claimed investigations and all money/custody cases remain staff-owned.
+	const recoverStages = `WITH recovered AS MATERIALIZED (
+ SELECT c.id FROM dsh.operator_order_cases c
+ JOIN dsh.commerce_orders o ON o.id=c.order_id
+ WHERE c.opened_by_actor_id='dsh:operations-detector'
+   AND c.reason IN ('OTHER','PARTNER_DELAY')
+   AND c.state='OPEN' AND c.owner_actor_id IS NULL
+   AND o.state IN ('PARTNER_ACCEPTED','PREPARING','READY_FOR_DISPATCH','READY_FOR_PICKUP')
+   AND EXISTS (
+      SELECT 1 FROM dsh.commerce_order_audit a
+      WHERE a.order_id=c.order_id AND a.created_at>c.opened_at
+        AND a.to_state=o.state
+        AND a.event_type IN ('order_partner_accepted','order_preparing',
+                             'order_ready_for_dispatch','order_ready_for_pickup')
+   )
+ ORDER BY c.id LIMIT $1 FOR UPDATE OF c SKIP LOCKED
+), updated AS (
+ UPDATE dsh.operator_order_cases c
+ SET state='RESOLVED',
+     resolution_note='Canonical DSH order-stage transition verified after the delay; no financial or custody decision implied.',
+     resolved_at=clock_timestamp(),updated_at=clock_timestamp(),
+     updated_by_actor_id='dsh:operations-detector',version=version+1
+ FROM recovered r WHERE c.id=r.id
+ RETURNING c.id
+)
+INSERT INTO dsh.operator_order_case_events
+ (case_id,action,actor_id,idempotency_key,request_hash,correlation_id,detail)
+SELECT u.id,'RESOLVE','dsh:operations-detector',
+ 'ops-stage-recovered-'||u.id::text,
+ md5('STAGE_RECOVERED:'||u.id::text),
+ 'ops-stage-recovered-'||u.id::text,
+ 'Canonical DSH stage transition proves automatic recovery'
+FROM updated u`
+	if _, err := db.ExecContext(ctx, recoverStages, max); err != nil {
+		return 0, err
+	}
 	// One statement owns both the case and its event.  Every candidate Order
 	// is locked before writing so a concurrent Order transition cannot race.
 	// SKIP LOCKED keeps concurrent detectors non-blocking.
