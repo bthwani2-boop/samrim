@@ -70,8 +70,14 @@ func TestOperatorContactReviewThreeVerifiedSuccessesAndReplay(t *testing.T) {
 			t.Fatalf("decision without claim was accepted: %v", err)
 		}
 		claim, err := postgres.UpdateCustomerContactClaim(ctx, db, "contact_order_1", "ops_a", false, 0)
-		if err != nil || !claim.ClaimedByMe || claim.State != "PENDING" {
-			t.Fatalf("claim not owned: %+v err=%v", claim, err)
+		if err != nil || !claim.ClaimedByMe || claim.State != "PENDING" || claim.LastAttemptAt != nil || claim.LastActorID != "" {
+			t.Fatalf("claim must be PENDING before a real call: %+v err=%v", claim, err)
+		}
+		var storedState string
+		var attempts int
+		var lastAttempt sql.NullTime
+		if err := db.QueryRowContext(ctx, "SELECT state,attempt_count,last_attempt_at FROM dsh.customer_order_contact_reviews WHERE order_id='contact_order_1'").Scan(&storedState, &attempts, &lastAttempt); err != nil || storedState != "PENDING" || attempts != 0 || lastAttempt.Valid {
+			t.Fatalf("phantom missed call persisted: state=%s attempts=%d last=%+v err=%v", storedState, attempts, lastAttempt, err)
 		}
 		blocked, err := postgres.ReadCustomerOrderContactReview(ctx, db, "contact_order_1", "ops_b")
 		if err != nil || !blocked.ClaimedByOther {

@@ -65,6 +65,7 @@ func ReadCustomerOrderContactReview(ctx context.Context, db *sql.DB, orderID str
 	}
 	if record.AttemptCount == 0 {
 		record.State = "PENDING"
+		record.LastActorID = ""
 	}
 	if claimActor.Valid && claimUntil.Valid && claimUntil.Time.After(time.Now().UTC()) {
 		t := claimUntil.Time
@@ -162,7 +163,7 @@ func RecordCustomerOrderContactDecision(ctx context.Context, db *sql.DB, orderID
 	// share-lock guards against deleting/changing its identity.
 	if _, err = tx.ExecContext(ctx, `INSERT INTO dsh.customer_order_contact_reviews
        (order_id,client_actor_id,state,attempt_count,version,last_actor_id,confirmed_at)
-       VALUES($1,$2,'NO_ANSWER',0,0,$3,NULL) ON CONFLICT(order_id) DO NOTHING`, orderID, customerID, actorID); err != nil {
+       VALUES($1,$2,'PENDING',0,0,$3,NULL) ON CONFLICT(order_id) DO NOTHING`, orderID, customerID, actorID); err != nil {
 		return CustomerOrderContactReview{}, false, err
 	}
 	var currentVersion int
@@ -243,7 +244,7 @@ func UpdateCustomerContactClaim(ctx context.Context, db *sql.DB, orderID, actorI
 	if !release {
 		_, err = tx.ExecContext(ctx, `INSERT INTO dsh.customer_order_contact_reviews
           (order_id,client_actor_id,state,attempt_count,version,last_actor_id)
-          VALUES($1,$2,'NO_ANSWER',0,0,$3) ON CONFLICT(order_id) DO NOTHING`, orderID, clientID, actorID)
+          VALUES($1,$2,'PENDING',0,0,$3) ON CONFLICT(order_id) DO NOTHING`, orderID, clientID, actorID)
 		if err != nil {
 			return CustomerOrderContactReview{}, err
 		}
