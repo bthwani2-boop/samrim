@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { typography } from "../index";
 import { useAppearanceTheme } from "./appearance";
+import { BthwaniIcon } from "./icons";
 
 type Recipient = Readonly<{role:string;label:string}>;
 type Props = Readonly<{
@@ -64,7 +65,9 @@ export function BthwaniOrderChatComposer({recipients,selected,onToggleRecipient,
         disabled={disabled||(Boolean(body.trim())&&!selected.length)||(!body.trim()&&!selected.length)}
         style={[styles.round,{backgroundColor:theme.brandAction,opacity:disabled?0.45:1}]}
         onPress={()=>body.trim()?onSend():onVoice()}>
-        <Text style={[styles.action,{color:theme.onAction}]}>{body.trim()?"➤":"🎤"}</Text>
+        {body.trim()
+          ? <Text style={[styles.action,{color:theme.onAction}]}>➤</Text>
+          : <BthwaniIcon name="mic" size={22} color={theme.onAction}/>}
       </Pressable>
     </View>:<Text style={[styles.closed,{color:theme.colorMuted}]}>أُغلقت المحادثة لهذا الطلب.</Text>}
   </View>;
