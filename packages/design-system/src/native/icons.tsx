@@ -47,6 +47,7 @@ const iconNames: Record<MobileIconName, ReturnType<typeof Icon.select>> = {
   honey: Icon.select({ ios: "leaf", android: require("@expo/material-symbols/hive.xml") }),
   mall: Icon.select({ ios: "bag", android: require("@expo/material-symbols/local_mall.xml") }),
   mic: Icon.select({ ios: "mic.fill", android: require("@expo/material-symbols/mic.xml") }),
+  send: Icon.select({ ios: "paperplane.fill", android: require("@expo/material-symbols/send.xml") }),
 };
 
 export function BthwaniIcon({

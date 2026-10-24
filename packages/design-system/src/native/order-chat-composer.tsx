@@ -52,8 +52,7 @@ export function BthwaniOrderChatComposer({recipients,selected,onToggleRecipient,
         <Text style={[styles.optionText,{color:theme.color}]}>▧ المعرض</Text>
       </Pressable>
     </View>:null}
-    {audioControls}
-    {canSend?<View style={styles.composer}>
+    {canSend?(audioControls?<View style={styles.composer}>{audioControls}</View>:<View style={styles.composer}>
       <Pressable accessibilityRole="button" accessibilityLabel="إرفاق صورة" accessibilityState={{expanded:attachmentsOpen}} disabled={disabled}
         style={[styles.round,{backgroundColor:theme.surfaceRaised}]} onPress={()=>setAttachmentsOpen(v=>!v)}>
         <Text style={[styles.plus,{color:theme.color}]}>＋</Text>
@@ -66,10 +65,10 @@ export function BthwaniOrderChatComposer({recipients,selected,onToggleRecipient,
         style={[styles.round,{backgroundColor:theme.brandAction,opacity:disabled?0.45:1}]}
         onPress={()=>body.trim()?onSend():onVoice()}>
         {body.trim()
-          ? <Text style={[styles.action,{color:theme.onAction}]}>➤</Text>
+          ? <BthwaniIcon name="send" size={22} color={theme.onAction}/>
           : <BthwaniIcon name="mic" size={22} color={theme.onAction}/>}
       </Pressable>
-    </View>:<Text style={[styles.closed,{color:theme.colorMuted}]}>أُغلقت المحادثة لهذا الطلب.</Text>}
+    </View>):<Text style={[styles.closed,{color:theme.colorMuted}]}>أُغلقت المحادثة لهذا الطلب.</Text>}
   </View>;
 }
 const styles=StyleSheet.create({
