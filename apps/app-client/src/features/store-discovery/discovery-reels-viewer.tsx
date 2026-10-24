@@ -22,7 +22,8 @@ function ReelSlide({ item, active, height, width, onOpen, onShare }: {
   useEffect(() => {
     if (active) player.play();
     else player.pause();
-    return () => player.pause();
+    // useVideoPlayer releases its native player on unmount. Calling pause in
+    // the cleanup can target an already-released native instance on Android.
   }, [active, player]);
   const cta = item.targetType === "PRODUCT" ? "عرض المنتج" :
     item.targetType === "STORE" ? "تصفح المتجر" :
