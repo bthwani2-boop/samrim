@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -65,6 +66,19 @@ func TestPromotionDraftPublishAppearsAndPauseRemovesFromStore(t *testing.T) {
 		hidden, err := postgres.ListPromotions(ctx, db, true, "city-any", "store-any")
 		if err != nil || len(hidden) != 0 {
 			t.Fatalf("paused promotion must disappear: count=%d err=%v", len(hidden), err)
+		}
+		// A legacy paused campaign without a cap must fail at publish too;
+		// its state and idempotency records may not be advanced on rejection.
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET discount_budget_limit_minor=NULL WHERE id=$1", input.ID); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err = postgres.SetPromotionState(ctx, db, input.ID, "PUBLISHED", "uncapped-publish-key", "uncapped-publish-hash", paused.Version)
+		if !errors.Is(err, postgres.ErrPromotionInvalid) {
+			t.Fatalf("uncapped draft/paused campaign was published: %v", err)
+		}
+		current, err := postgres.ReadPromotion(ctx, db, input.ID)
+		if err != nil || current.State != "PAUSED" || current.Version != paused.Version {
+			t.Fatalf("rejected publish modified state: %+v err=%v", current, err)
 		}
 		// Previously published uncapped platform offers must not remain public.
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET discount_budget_limit_minor=NULL,state='PUBLISHED' WHERE id=$1", input.ID); err != nil {

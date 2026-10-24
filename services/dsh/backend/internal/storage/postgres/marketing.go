@@ -525,10 +525,17 @@ func SetPromotionState(ctx context.Context, db *sql.DB, id, state, idempotencyKe
 	}
 	var stateGuard int
 	if state == "PUBLISHED" {
-		if err := tx.QueryRowContext(ctx, "SELECT 1 FROM dsh.commerce_promotions WHERE id=$1 AND state IN ('DRAFT','PAUSED')", id).Scan(&stateGuard); errors.Is(err, sql.ErrNoRows) {
+		// Revalidate an older draft against today's mandatory funding cap.
+		// A blocked publish must not create a replayable success record.
+		var storeID string
+		var budget sql.NullInt64
+		if err := tx.QueryRowContext(ctx, "SELECT COALESCE(store_id,''),discount_budget_limit_minor FROM dsh.commerce_promotions WHERE id=$1 AND state IN ('DRAFT','PAUSED') FOR UPDATE", id).Scan(&storeID, &budget); errors.Is(err, sql.ErrNoRows) {
 			return PromotionRecord{}, false, ErrPromotionNotFound
 		} else if err != nil {
 			return PromotionRecord{}, false, err
+		}
+		if storeID == "" && !budget.Valid {
+			return PromotionRecord{}, false, ErrPromotionInvalid
 		}
 	}
 	if state == "PAUSED" {
