@@ -10,4 +10,4 @@ credentials.json
 *.jks
 *.keystore
 .env*
-google-services.json
+# Android Firebase client config is added temporarily from the secure vault for EAS.
