@@ -302,7 +302,10 @@ const listPublicPromotionsQuery = `SELECT id,code,name_ar,description_ar,kind,va
         WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())
           AND (redemption_limit IS NULL OR redeemed_count < redemption_limit)
           AND (discount_budget_limit_minor IS NULL OR discount_spent_minor < discount_budget_limit_minor)
-          AND (store_id IS NOT NULL OR discount_budget_limit_minor IS NOT NULL)))
+          AND (store_id IS NOT NULL OR discount_budget_limit_minor IS NOT NULL)
+          AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_promotion_links link
+            JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+            WHERE link.promotion_id=dsh.commerce_promotions.id AND campaign.state<>'PUBLISHED')))
         AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2)
         AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3))
         AND (NOT $1 OR store_id IS NOT NULL OR (funding_source='BTHWANI' AND requires_partner_opt_in=false) OR EXISTS (SELECT 1 FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=dsh.commerce_promotions.id AND o.store_id=$3 AND o.state='OPTED_IN'))
@@ -400,6 +403,9 @@ func CountPublicPromotionsForStores(ctx context.Context, db *sql.DB, cityID stri
 			AND (p.redemption_limit IS NULL OR p.redeemed_count < p.redemption_limit)
 			AND (p.discount_budget_limit_minor IS NULL OR p.discount_spent_minor < p.discount_budget_limit_minor)
 			AND (p.store_id IS NOT NULL OR p.discount_budget_limit_minor IS NOT NULL)
+			AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_promotion_links link
+				JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+				WHERE link.promotion_id=p.id AND campaign.state<>'PUBLISHED')
 			AND (p.service_city_id IS NULL OR p.service_city_id=$1)
 			AND (p.store_id IS NULL OR p.store_id=s.id)
 			AND (p.store_id IS NOT NULL OR (p.funding_source='BTHWANI' AND p.requires_partner_opt_in=false)
@@ -620,6 +626,17 @@ func EvaluatePromotion(ctx context.Context, source rowQueryer, code, storeID, st
 	if item.StoreID == "" && item.DiscountBudgetLimitMinor == nil {
 		return PromotionRecord{}, 0, ErrPromotionUnavailable
 	}
+	// A linked offer never bypasses its parent campaign's publication decision.
+	// This check is server-owned and applies to Checkout as well as public feeds.
+	var campaignHeld bool
+	if err := source.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM dsh.marketing_campaign_promotion_links link
+		JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+		WHERE link.promotion_id=$1 AND campaign.state<>'PUBLISHED')`, item.ID).Scan(&campaignHeld); err != nil {
+		return PromotionRecord{}, 0, err
+	}
+	if campaignHeld {
+		return PromotionRecord{}, 0, ErrPromotionUnavailable
+	}
 	// A platform campaign applies to a Store only when the Store opted in where
 	// opt-in is required.
 	if item.StoreID == "" && (item.RequiresPartnerOptIn || item.FundingSource != "BTHWANI") {
@@ -747,7 +764,10 @@ func RedeemPromotion(ctx context.Context, tx *sql.Tx, promotion PromotionRecord,
 	result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_promotions SET redeemed_count=redeemed_count+1,discount_spent_minor=discount_spent_minor+$2,updated_at=clock_timestamp()
 		WHERE id=$1 AND (redemption_limit IS NULL OR redeemed_count < redemption_limit)
 		  AND discount_spent_minor<=9223372036854775807-$2
-		  AND (discount_budget_limit_minor IS NULL OR discount_spent_minor<=discount_budget_limit_minor-$2)`, promotion.ID, discountMinor)
+		  AND (discount_budget_limit_minor IS NULL OR discount_spent_minor<=discount_budget_limit_minor-$2)
+		  AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_promotion_links link
+			JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+			WHERE link.promotion_id=$1 AND campaign.state<>'PUBLISHED')`, promotion.ID, discountMinor)
 	if err != nil {
 		return err
 	}
@@ -913,6 +933,9 @@ func ListDiscoveryContent(ctx context.Context, db *sql.DB, public bool, serviceC
                                ) AS priority_rank
                         FROM dsh.discovery_content content
                         WHERE content.state='PUBLISHED'
+                          AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_content_links link
+                            JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+                            WHERE link.content_id=content.id AND campaign.state<>'PUBLISHED')
                           AND content.starts_at <= statement_timestamp()
                           AND (content.ends_at IS NULL OR content.ends_at > statement_timestamp())
                           AND (content.service_city_id IS NULL OR content.service_city_id=$1)
@@ -1063,6 +1086,9 @@ func ListPartnerEligibleCampaigns(ctx context.Context, db *sql.DB, storeID strin
                 AND (p.redemption_limit IS NULL OR p.redeemed_count < p.redemption_limit)
                 AND (p.discount_budget_limit_minor IS NULL OR p.discount_spent_minor < p.discount_budget_limit_minor)
                 AND p.discount_budget_limit_minor IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_promotion_links link
+                    JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+                    WHERE link.promotion_id=p.id AND campaign.state<>'PUBLISHED')
                 ORDER BY p.starts_at DESC, p.id DESC`, storeID, storeCityID)
 	if err != nil {
 		return nil, err
@@ -1149,6 +1175,9 @@ func SetPartnerCampaignOptIn(ctx context.Context, db *sql.DB, promotionID, store
 			SELECT 1 FROM dsh.commerce_promotions p
 			JOIN dsh.stores s ON s.id=$2
 			WHERE p.id=$1 AND p.store_id IS NULL AND p.requires_partner_opt_in
+			  AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_promotion_links link
+			    JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+			    WHERE link.promotion_id=p.id AND campaign.state<>'PUBLISHED')
 			  AND p.discount_budget_limit_minor IS NOT NULL
 			  AND (p.redemption_limit IS NULL OR p.redeemed_count < p.redemption_limit)
 			  AND (p.discount_budget_limit_minor IS NULL OR p.discount_spent_minor < p.discount_budget_limit_minor)

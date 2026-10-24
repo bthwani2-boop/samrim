@@ -31,6 +31,15 @@ func ResolveDiscoveryContentTarget(ctx context.Context, db *sql.DB, contentID, s
 		return DiscoveryContentTargetResolution{}, err
 	}
 	now := time.Now().UTC()
+	var held bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM dsh.marketing_campaign_content_links link
+		JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+		WHERE link.content_id=$1 AND campaign.state<>'PUBLISHED')`, content.ID).Scan(&held); err != nil {
+		return DiscoveryContentTargetResolution{}, err
+	}
+	if held {
+		return DiscoveryContentTargetResolution{}, ErrDiscoveryContentNotFound
+	}
 	if content.State != "PUBLISHED" || content.MediaURI == "" || content.StartsAt.After(now) || (content.EndsAt != nil && !content.EndsAt.After(now)) || (content.ServiceCityID != "" && content.ServiceCityID != serviceCityID) {
 		return DiscoveryContentTargetResolution{}, ErrDiscoveryContentNotFound
 	}
@@ -126,6 +135,9 @@ func discoveryContentTargetEligibilityPredicate(contentAlias, serviceCityPlaceho
 			FROM dsh.commerce_promotions promotion
 			WHERE promotion.id=` + contentAlias + `.target_id
 			  AND promotion.state='PUBLISHED'
+			  AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_promotion_links link
+			    JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+			    WHERE link.promotion_id=promotion.id AND campaign.state<>'PUBLISHED')
 			  AND promotion.starts_at<=` + atExpression + `
 			  AND (promotion.ends_at IS NULL OR promotion.ends_at>` + atExpression + `)
 			  AND (promotion.redemption_limit IS NULL OR promotion.redeemed_count < promotion.redemption_limit)

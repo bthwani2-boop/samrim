@@ -40,7 +40,7 @@ func TestMarketingCampaignRegistryOwnsMembershipAndSharedBudget(t *testing.T) {
 			_, _, err := postgres.CreatePromotion(ctx, db, postgres.PromotionInput{
 				ID: info.id, Code: info.code, NameAr: "خصم الحملة",
 				Kind: "PERCENTAGE", ValueMinor: 10, FundingSource: "BTHWANI",
-				DiscountBudgetLimitMinor: &cap, StartsAt: time.Now().UTC().Add(time.Hour),
+				DiscountBudgetLimitMinor: &cap, StartsAt: time.Now().UTC().Add(-time.Hour),
 				CreatedByActorID: "operator-a",
 			}, info.id+"-idem", info.id+"-hash")
 			if err != nil {
@@ -101,8 +101,73 @@ func TestMarketingCampaignRegistryOwnsMembershipAndSharedBudget(t *testing.T) {
 		if !errors.Is(err, postgres.ErrMarketingCampaignInvalid) {
 			t.Fatalf("creative assigned to two campaigns: %v", err)
 		}
+		// Linked published creatives must also be invisible while their
+		// parent is draft or paused, including direct target resolution.
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.discovery_content_media_assets(
+			id,idempotency_key,request_hash,object_key,uri,content_sha256,content_type,byte_size,
+			state,creator,source_description,rights_statement,rights_attested_by_actor_id)
+			VALUES('campaign-media-asset','campaign-media-key', $1,'campaign/media','asset://campaign-media',
+			$2,'image/png',128,'active','Fixture Owner','Licensed isolated content','Test rights','operator-a')`,
+			postgres.HashMarketingFacts("campaign-media"), strings.Repeat("a", 64)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.discovery_content
+			SET state='PUBLISHED',media_asset_id='campaign-media-asset',
+			    starts_at=clock_timestamp()-interval '1 hour'
+			WHERE id='campaign-content-info'`); err != nil {
+			t.Fatal(err)
+		}
+		beforeCreative, err := postgres.ListDiscoveryContent(ctx, db, true, "city-any")
+		if err != nil || len(beforeCreative) != 0 {
+			t.Fatalf("draft campaign leaked creative: %+v err=%v", beforeCreative, err)
+		}
+		_, err = postgres.ResolveDiscoveryContentTarget(ctx, db, "campaign-content-info", "city-any")
+		if !errors.Is(err, postgres.ErrDiscoveryContentNotFound) {
+			t.Fatalf("draft creative target resolved: %v", err)
+		}
+		// A linked promotion can have its own publication state, but may not
+		// appear in any Store feed or Checkout until the parent is active.
+		published, replayed, err := postgres.SetPromotionState(ctx, db, "campaign-promo-a", "PUBLISHED", "campaign-guard-publish", "campaign-guard-hash", 1)
+		if err != nil || replayed || published.State != "PUBLISHED" {
+			t.Fatalf("child publish: %+v err=%v", published, err)
+		}
+		beforeActive, err := postgres.ListPromotions(ctx, db, true, "city-any", "")
+		if err != nil || len(beforeActive) != 0 {
+			t.Fatalf("draft campaign leaked published offer: %+v err=%v", beforeActive, err)
+		}
+		_, _, err = postgres.EvaluatePromotion(ctx, db, "CAMP10A", "store-any", "city-any", "customer-guard", 500, nil, false)
+		if !errors.Is(err, postgres.ErrPromotionUnavailable) {
+			t.Fatalf("draft campaign allowed Checkout: %v", err)
+		}
 		if _, err = db.ExecContext(ctx, "UPDATE dsh.marketing_campaigns SET state='PUBLISHED' WHERE id=$1", in.ID); err != nil {
 			t.Fatal(err)
+		}
+		activeCreative, err := postgres.ListDiscoveryContent(ctx, db, true, "city-any")
+		if err != nil || len(activeCreative) != 1 || activeCreative[0].ID != "campaign-content-info" {
+			t.Fatalf("active campaign creative absent: %+v err=%v", activeCreative, err)
+		}
+		active, err := postgres.ListPromotions(ctx, db, true, "city-any", "")
+		if err != nil || len(active) != 1 || active[0].ID != "campaign-promo-a" {
+			t.Fatalf("active campaign did not expose child: %+v err=%v", active, err)
+		}
+		_, amount, err := postgres.EvaluatePromotion(ctx, db, "CAMP10A", "store-any", "city-any", "customer-guard", 500, nil, false)
+		if err != nil || amount != 50 {
+			t.Fatalf("active campaign offer evaluation: %d err=%v", amount, err)
+		}
+		if _, err = db.ExecContext(ctx, "UPDATE dsh.marketing_campaigns SET state='PAUSED' WHERE id=$1", in.ID); err != nil {
+			t.Fatal(err)
+		}
+		heldCreative, err := postgres.ListDiscoveryContent(ctx, db, true, "city-any")
+		if err != nil || len(heldCreative) != 0 {
+			t.Fatalf("paused campaign leaked creative: %+v err=%v", heldCreative, err)
+		}
+		held, err := postgres.ListPromotions(ctx, db, true, "city-any", "")
+		if err != nil || len(held) != 0 {
+			t.Fatalf("paused campaign leaked offer: %+v err=%v", held, err)
+		}
+		_, _, err = postgres.EvaluatePromotion(ctx, db, "CAMP10A", "store-any", "city-any", "customer-guard", 500, nil, false)
+		if !errors.Is(err, postgres.ErrPromotionUnavailable) {
+			t.Fatalf("paused campaign allowed Checkout: %v", err)
 		}
 		_, err = postgres.LinkMarketingCampaignPromotion(ctx, db, in.ID, "campaign-promo-b", 4)
 		if !errors.Is(err, postgres.ErrMarketingCampaignInvalid) {

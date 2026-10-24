@@ -84,6 +84,9 @@ func RecordDiscoveryContentEvent(ctx context.Context, db *sql.DB, input Discover
 	if err := db.QueryRowContext(ctx, `SELECT EXISTS (
 		SELECT 1 FROM dsh.discovery_content content
 		WHERE content.id=$1 AND content.state='PUBLISHED' AND content.starts_at <= clock_timestamp()
+		  AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_content_links link
+			JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+			WHERE link.content_id=content.id AND campaign.state<>'PUBLISHED')
 		  AND (content.ends_at IS NULL OR content.ends_at > clock_timestamp())
 		  AND EXISTS (
 			SELECT 1 FROM dsh.discovery_content_media_assets asset
