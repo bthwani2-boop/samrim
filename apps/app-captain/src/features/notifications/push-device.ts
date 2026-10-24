@@ -1,7 +1,7 @@
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
-import * as Notifications from "expo-notifications";
+
 import { Platform } from "react-native";
 
 const installationStorageKey = "bthwani.order-alert.installation-v1";
@@ -52,6 +52,7 @@ export function registerOwnPushDevice(accessToken: string, actor: string, tone: 
     try {
       if (!stillCurrent()) return false;
       if (lastRegistered.actor === actor && lastRegistered.tone === tone && lastRegistered.expires > Date.now()) return lastRegistered.pushActive;
+      const Notifications = await import("expo-notifications");
       const permission = await Notifications.getPermissionsAsync();
       if (!permission.granted) return false;
       const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
