@@ -23,6 +23,8 @@ func TestMarketingCampaignOperatorEndpointsRejectUnauthenticatedRequest(t *testi
 	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/payout-state", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	server.Register(mux)
 	for _, route := range []struct{ method, path string }{
+		{"GET", "/dsh/operator/marketing/campaigns"},
+		{"POST", "/dsh/operator/marketing/campaigns"},
 		{"GET", "/dsh/operator/marketing/campaigns/test-campaign/details"},
 		{"POST", "/dsh/operator/marketing/campaigns/test-campaign/state"},
 	} {

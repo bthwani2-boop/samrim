@@ -57,6 +57,8 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/public/discovery-content/events", s.recordPublicDiscoveryContentEvent)
 	mux.HandleFunc("GET /dsh/public/discovery-content/{contentId}/target", s.resolvePublicDiscoveryContentTarget)
 	mux.HandleFunc("GET /dsh/operator/marketing/summary", s.readOperatorMarketingSummary)
+	mux.HandleFunc("GET /dsh/operator/marketing/campaigns", s.listOperatorMarketingCampaigns)
+	mux.HandleFunc("POST /dsh/operator/marketing/campaigns", s.createOperatorMarketingCampaign)
 	mux.HandleFunc("GET /dsh/operator/marketing/campaigns/{campaignId}/details", s.readOperatorMarketingCampaign)
 	mux.HandleFunc("POST /dsh/operator/marketing/campaigns/{campaignId}/state", s.setOperatorMarketingCampaignState)
 	mux.HandleFunc("GET /dsh/operator/promotions", s.listOperatorPromotions)
@@ -783,6 +785,8 @@ func writeMarketingError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "PROMOTION_CODE_EXISTS", "promotion code already exists")
 	case errors.Is(err, postgres.ErrPromotionIdempotencyConflict), errors.Is(err, postgres.ErrDiscoveryContentIdempotency), errors.Is(err, postgres.ErrDiscoveryContentEventConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "marketing mutation idempotency key conflicts with a prior request")
+	case errors.Is(err, postgres.ErrMarketingCampaignIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "campaign create key was already used for different facts")
 	case errors.Is(err, postgres.ErrMarketingCampaignVersionConflict), errors.Is(err, postgres.ErrPromotionVersionConflict), errors.Is(err, postgres.ErrDiscoveryContentVersion):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "marketing record version is stale")
 	case errors.Is(err, postgres.ErrDiscoveryContentTargetInvalid):
