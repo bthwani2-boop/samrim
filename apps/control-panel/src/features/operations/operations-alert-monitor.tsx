@@ -11,6 +11,7 @@ const LEVEL_KEY = "bthwani:operations-alert-volume:v1";
 export function OperationsAlertMonitor() {
   const [enabled, setEnabled] = useState(false);
   const [volume, setVolume] = useState(65);
+  const [tone, setTone] = useState<"classic" | "soft" | "urgent">("classic");
   const { state } = useSession();
   const actorID = state.kind === "authenticated" && state.identity.role === "operator"
     ? state.identity.subject.trim() : "";
@@ -21,6 +22,7 @@ export function OperationsAlertMonitor() {
   const pending = useRef(false);
   const enabledRef = useRef(false);
   const volumeRef = useRef(65);
+  const toneRef = useRef<"classic" | "soft" | "urgent">("classic");
 
   useEffect(() => {
     seenCases.current.clear();
@@ -29,21 +31,37 @@ export function OperationsAlertMonitor() {
   }, [actorID]);
 
   useEffect(() => {
+    enabledRef.current = false;
+    setEnabled(false);
+    const suffix = actorID ? ":" + actorID : "";
+    let nextVolume = 65;
+    let nextTone: "classic" | "soft" | "urgent" = "classic";
     try {
-      const level = Number(window.localStorage.getItem(LEVEL_KEY));
-      if (Number.isFinite(level) && level >= 0 && level <= 100) {
-        setVolume(level);
-        volumeRef.current = level;
+      const raw = window.localStorage.getItem(LEVEL_KEY + suffix);
+      if (raw !== null) {
+        const level = Number(raw);
+        if (Number.isFinite(level) && level >= 0 && level <= 100) nextVolume = level;
       }
+      const storedTone = window.localStorage.getItem("bthwani:operations-alert-tone:v1" + suffix);
+      if (storedTone === "classic" || storedTone === "soft" || storedTone === "urgent") nextTone = storedTone;
     } catch { /* Storage may be blocked. */ }
-    return () => { void audio.current?.close(); audio.current = null; };
-  }, []);
+    volumeRef.current = nextVolume;
+    toneRef.current = nextTone;
+    setVolume(nextVolume);
+    setTone(nextTone);
+  }, [actorID]);
+  useEffect(() => () => { void audio.current?.close(); audio.current = null; }, []);
 
   const play = useCallback(() => {
     if (!enabledRef.current || !audio.current || audio.current.state !== "running") return;
     const ctx = audio.current;
     const start = ctx.currentTime;
-    for (const [offset, frequency] of [[0, 720], [0.19, 940]] as const) {
+    const pattern = toneRef.current === "soft"
+      ? [[0, 590]] as const
+      : toneRef.current === "urgent"
+        ? [[0, 880], [0.18, 1030], [0.36, 880]] as const
+        : [[0, 720], [0.19, 940]] as const;
+    for (const [offset, frequency] of pattern) {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = "sine";
@@ -120,7 +138,15 @@ export function OperationsAlertMonitor() {
     const next = Math.max(0, Math.min(100, value));
     volumeRef.current = next;
     setVolume(next);
-    try { window.localStorage.setItem(LEVEL_KEY, String(next)); } catch { /* Storage blocked */ }
+    try { window.localStorage.setItem(LEVEL_KEY + ":" + actorID, String(next)); } catch { /* Storage blocked */ }
+  }
+
+  function changeTone(value: string) {
+    if (value !== "classic" && value !== "soft" && value !== "urgent") return;
+    toneRef.current = value;
+    setTone(value);
+    try { window.localStorage.setItem("bthwani:operations-alert-tone:v1:" + actorID, value); }
+    catch { /* Browser storage unavailable; current session selection remains. */ }
   }
 
   const orderHref = caseAlert ? operationNotificationHref(caseAlert.orderId) : null;
@@ -129,6 +155,14 @@ export function OperationsAlertMonitor() {
       <button className="button button-secondary" type="button" aria-pressed={enabled} onClick={() => void toggleSound()}>
         {enabled ? "كتم صوت العمليات" : "تفعيل صوت العمليات"}
       </button>
+      {enabled ? <label style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
+        النغمة
+        <select aria-label="اختيار نغمة العمليات" value={tone} onChange={event => changeTone(event.target.value)}>
+          <option value="classic">الأساسية</option>
+          <option value="soft">الهادئة</option>
+          <option value="urgent">العاجلة</option>
+        </select>
+      </label> : null}
       {enabled ? <label style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
         مستوى الصوت
         <input type="range" min="0" max="100" step="5" value={volume} onChange={e => changeVolume(Number(e.target.value))} aria-label="مستوى صوت تنبيهات العمليات" />

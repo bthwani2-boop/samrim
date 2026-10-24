@@ -53,6 +53,45 @@ FROM updated u`
 	if _, err := db.ExecContext(ctx, recoverLocations, max); err != nil {
 		return 0, err
 	}
+	// Only automatic, unclaimed stage-delay cases can auto-resolve. The
+	// canonical transition after case opening proves progress; an updatedAt,
+	// staff note, cancellation, or financial unknown never proves recovery.
+	// Claimed investigations and all money/custody cases remain staff-owned.
+	const recoverStages = `WITH recovered AS MATERIALIZED (
+ SELECT c.id FROM dsh.operator_order_cases c
+ JOIN dsh.commerce_orders o ON o.id=c.order_id
+ WHERE c.opened_by_actor_id='dsh:operations-detector'
+   AND c.reason IN ('OTHER','PARTNER_DELAY')
+   AND c.state='OPEN' AND c.owner_actor_id IS NULL
+   AND o.state IN ('PARTNER_ACCEPTED','PREPARING','READY_FOR_DISPATCH','READY_FOR_PICKUP')
+   AND EXISTS (
+      SELECT 1 FROM dsh.commerce_order_audit a
+      WHERE a.order_id=c.order_id AND a.created_at>c.opened_at
+        AND a.to_state=o.state
+        AND a.event_type IN ('order_partner_accepted','order_preparing',
+                             'order_ready_for_dispatch','order_ready_for_pickup')
+   )
+ ORDER BY c.id LIMIT $1 FOR UPDATE OF c SKIP LOCKED
+), updated AS (
+ UPDATE dsh.operator_order_cases c
+ SET state='RESOLVED',
+     resolution_note='Canonical DSH order-stage transition verified after the delay; no financial or custody decision implied.',
+     resolved_at=clock_timestamp(),updated_at=clock_timestamp(),
+     updated_by_actor_id='dsh:operations-detector',version=version+1
+ FROM recovered r WHERE c.id=r.id
+ RETURNING c.id
+)
+INSERT INTO dsh.operator_order_case_events
+ (case_id,action,actor_id,idempotency_key,request_hash,correlation_id,detail)
+SELECT u.id,'RESOLVE','dsh:operations-detector',
+ 'ops-stage-recovered-'||u.id::text,
+ md5('STAGE_RECOVERED:'||u.id::text),
+ 'ops-stage-recovered-'||u.id::text,
+ 'Canonical DSH stage transition proves automatic recovery'
+FROM updated u`
+	if _, err := db.ExecContext(ctx, recoverStages, max); err != nil {
+		return 0, err
+	}
 	// One statement owns both the case and its event.  Every candidate Order
 	// is locked before writing so a concurrent Order transition cannot race.
 	// SKIP LOCKED keeps concurrent detectors non-blocking.
@@ -82,13 +121,13 @@ WITH candidates AS MATERIALIZED (
    CASE WHEN ce.id IS NOT NULL THEN 'URGENT'
        WHEN gps.assignment_id IS NOT NULL THEN 'URGENT'
        WHEN o.state='CREATED'
-       THEN CASE WHEN statement_timestamp()-cr.created_at >= interval '60 minutes' THEN 'URGENT' ELSE 'NORMAL' END
+       THEN CASE WHEN statement_timestamp()-cr.created_at >= make_interval(mins => 2*COALESCE(sla.target_minutes,30)) THEN 'URGENT' ELSE 'NORMAL' END
        WHEN o.state='PARTNER_ACCEPTED'
-       THEN CASE WHEN statement_timestamp()-aa.created_at >= interval '60 minutes' THEN 'URGENT' ELSE 'NORMAL' END
+       THEN CASE WHEN statement_timestamp()-aa.created_at >= make_interval(mins => 2*COALESCE(sla.target_minutes,30)) THEN 'URGENT' ELSE 'NORMAL' END
        WHEN o.state='READY_FOR_DISPATCH'
        THEN CASE WHEN statement_timestamp()-rd.created_at >= interval '30 minutes' THEN 'URGENT' ELSE 'NORMAL' END
        WHEN o.state='PREPARING'
-       THEN CASE WHEN statement_timestamp()-pa.created_at >= 2*make_interval(mins => COALESCE(soa.preparation_minutes,30))
+       THEN CASE WHEN statement_timestamp()-pa.created_at >= 2*make_interval(mins => COALESCE(sla.target_minutes,soa.preparation_minutes,30))
            THEN 'URGENT' ELSE 'NORMAL' END
        ELSE 'URGENT' END AS priority,
    CASE WHEN ce.id IS NOT NULL
@@ -156,13 +195,21 @@ WITH candidates AS MATERIALIZED (
      WHERE a.order_id=o.id AND a.event_type='delivery_failed'
      ORDER BY a.created_at DESC,a.id DESC LIMIT 1
  ) ca ON o.state='DELIVERY_FAILED'
+ LEFT JOIN LATERAL (
+    SELECT p.target_minutes FROM dsh.operator_stage_sla_policies p
+    WHERE p.fulfillment_mode=o.fulfillment_mode AND p.stage=o.state
+      AND p.effective_at <= CASE WHEN o.state='CREATED' THEN cr.created_at
+                                 WHEN o.state='PARTNER_ACCEPTED' THEN aa.created_at
+                                 WHEN o.state='PREPARING' THEN pa.created_at ELSE NULL END
+    ORDER BY p.effective_at DESC,p.policy_version DESC LIMIT 1
+ ) sla ON TRUE
  WHERE (ce.id IS NOT NULL OR gps.assignment_id IS NOT NULL
        OR o.state='CREATED' AND cr.id IS NOT NULL
-          AND cr.created_at <= statement_timestamp()-interval '30 minutes'
+          AND cr.created_at <= statement_timestamp()-make_interval(mins => COALESCE(sla.target_minutes,30))
        OR o.state='PARTNER_ACCEPTED' AND aa.id IS NOT NULL
-          AND aa.created_at <= statement_timestamp()-interval '30 minutes'
+          AND aa.created_at <= statement_timestamp()-make_interval(mins => COALESCE(sla.target_minutes,30))
        OR o.state='PREPARING' AND pa.id IS NOT NULL
-          AND pa.created_at <= statement_timestamp()-make_interval(mins => COALESCE(soa.preparation_minutes,30))
+          AND pa.created_at <= statement_timestamp()-make_interval(mins => COALESCE(sla.target_minutes,soa.preparation_minutes,30))
        OR o.state='READY_FOR_DISPATCH' AND o.fulfillment_mode='BTHWANI_CAPTAIN'
           AND rd.id IS NOT NULL AND rd.created_at <= statement_timestamp()-interval '5 minutes'
           AND NOT EXISTS (

@@ -6,7 +6,7 @@ import { Platform } from "react-native";
 
 const installationStorageKey = "bthwani.order-alert.installation-v1";
 let lastRegistered = { actor: "", expires: 0, tone: "", pushActive: false };
-let registrationInFlight: Promise<boolean> | null = null;
+let registrationInFlight: { actor: string; task: Promise<boolean> } | null = null;
 
 function endpoint(): string {
   const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -26,6 +26,8 @@ async function installationId(): Promise<string> {
 export async function unregisterOwnPushDevice(accessToken: string): Promise<void> {
   if (Platform.OS !== "android" || !accessToken) return;
   try {
+    // Do not allow an in-flight registration to re-bind the token after logout.
+    await registrationInFlight?.task.catch(() => false);
     const id = await SecureStore.getItemAsync(installationStorageKey);
     if (!id) return;
     await fetch(endpoint() + "/" + encodeURIComponent(id), {
@@ -41,11 +43,14 @@ export async function unregisterOwnPushDevice(accessToken: string): Promise<void
   }
 }
 
-export function registerOwnPushDevice(accessToken: string, actor: string, tone: "classic" | "soft" | "urgent"): Promise<boolean> {
-  if (Platform.OS !== "android" || !accessToken || !actor) return Promise.resolve(false);
-  if (registrationInFlight) return registrationInFlight;
-  registrationInFlight = (async () => {
+export function registerOwnPushDevice(accessToken: string, actor: string, tone: "classic" | "soft" | "urgent", stillCurrent: () => boolean): Promise<boolean> {
+  if (Platform.OS !== "android" || !accessToken || !actor || !stillCurrent()) return Promise.resolve(false);
+  if (registrationInFlight?.actor === actor) return registrationInFlight.task;
+  const previousTask = registrationInFlight?.task;
+  const task = (async () => {
+    if (previousTask) await previousTask.catch(() => false);
     try {
+      if (!stillCurrent()) return false;
       if (lastRegistered.actor === actor && lastRegistered.tone === tone && lastRegistered.expires > Date.now()) return lastRegistered.pushActive;
       const permission = await Notifications.getPermissionsAsync();
       if (!permission.granted) return false;
@@ -53,6 +58,7 @@ export function registerOwnPushDevice(accessToken: string, actor: string, tone: 
       if (!projectId) throw new Error("EAS_PROJECT_ID_MISSING");
       const push = await Notifications.getExpoPushTokenAsync({ projectId });
       const installation = await installationId();
+      if (!stillCurrent()) return false;
       const result = await fetch(endpoint(), {
         method: "POST",
         headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
@@ -61,13 +67,17 @@ export function registerOwnPushDevice(accessToken: string, actor: string, tone: 
       });
       if (!result.ok) return false;
       const body = await result.json() as { registered?: boolean; pushEnabled?: boolean };
-      if (body.registered !== true) return false;
+      if (body.registered !== true || !stillCurrent()) return false;
       const pushActive = body.pushEnabled === true;
       lastRegistered = { actor, tone, expires: Date.now() + 15 * 60_000, pushActive };
       return pushActive;
     } catch {
       return false;
     }
-  })().finally(() => { registrationInFlight = null; });
-  return registrationInFlight;
+  })();
+  registrationInFlight = { actor, task };
+  void task.finally(() => {
+    if (registrationInFlight?.task === task) registrationInFlight = null;
+  });
+  return task;
 }

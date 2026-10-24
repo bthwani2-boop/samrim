@@ -2024,3 +2024,17 @@ export function setOperatorMarketingCampaignState(
     { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey, "X-Expected-Version": String(context.expectedVersion) },
   );
 }
+
+export function linkOperatorMarketingCampaignElement(
+  id: string, kind: "PROMOTION" | "CONTENT", resourceId: string, context: StorePublicationMutationContext,
+): Promise<Readonly<{ status: number; payload: MarketingCampaignResponse }>> {
+  validateVersionedMutationContext(context);
+  if (!id.trim() || id.length > 128 || !resourceId.trim() || resourceId.length > 128) throw new Error("INVALID_CAMPAIGN_LINK");
+  return requestDshJson<MarketingCampaignResponse>(
+    "POST",
+    `/dsh/operator/marketing/campaigns/${encodeURIComponent(id)}/elements`,
+    { kind, resourceId },
+    { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId,
+      "Idempotency-Key": context.idempotencyKey, "X-Expected-Version": String(context.expectedVersion) },
+  );
+}

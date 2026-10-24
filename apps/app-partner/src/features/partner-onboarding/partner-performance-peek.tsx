@@ -5,7 +5,7 @@ import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 export function PartnerPerformancePeek({store}:{store:PartnerAccessibleStore|undefined}){
   const theme=useAppearanceTheme();
@@ -25,7 +25,9 @@ export function PartnerPerformancePeek({store}:{store:PartnerAccessibleStore|und
     let alive=true;
     setData(null);
     const storeID=store?.id;
-    if(!storeID||!store.owned)return()=>{alive=false;};
+    const state=currentIdentityState();
+    const actorID=state.kind==="authenticated"?state.identity.subject:"";
+    if(!actorID||!storeID||!store.owned)return()=>{alive=false;};
     void (async()=>{
       const base=process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
       if(!base)return;
@@ -33,7 +35,8 @@ export function PartnerPerformancePeek({store}:{store:PartnerAccessibleStore|und
       const api=createDshMobileClient(base,{cryptoRandomUUID:()=>Crypto.randomUUID()});
       const result=await api.readOwnPartnerFinancialSummary(token);
       const summary=result.summary.stores.find(item=>item.storeId===storeID);
-      if(alive&&summary?.attributionComplete)setData(summary);
+      const latest=currentIdentityState();
+      if(alive&&latest.kind==="authenticated"&&latest.identity.subject===actorID&&summary?.attributionComplete)setData(summary);
     })().catch(()=>{if(alive)setData(null);});
     return()=>{alive=false;};
   },[store?.id,store?.owned]));

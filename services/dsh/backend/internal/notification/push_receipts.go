@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -59,6 +61,9 @@ func (s *Service) checkPushReceipts(ctx context.Context) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if key := strings.TrimSpace(os.Getenv("DSH_EXPO_PUSH_ACCESS_TOKEN")); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
 	res, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
 		return err

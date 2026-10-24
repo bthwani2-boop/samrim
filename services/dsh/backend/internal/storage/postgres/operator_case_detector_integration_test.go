@@ -267,5 +267,62 @@ func TestOperatorExceptionDetectionAuditedStagesAndReplay(t *testing.T) {
 				t.Fatalf("detector changed canonical order state: %s %s err=%v", item.id, state, err)
 			}
 		}
+		// A newly audited, forward transition permits only an unclaimed
+		// automatic delay to self-resolve. A claimed investigation remains
+		// human-owned; the detector cannot declare its outcome on behalf of staff.
+		claimedDelay, _, err := postgres.UpdateOpsCase(ctx, db,
+			"auto_ops_accepted_late", func() int64 {
+				for _, c := range cases.Items {
+					if c.OrderID == "auto_ops_accepted_late" {
+						return c.ID
+					}
+				}
+				return 0
+			}(), "auto_ops_operator", "CLAIM", "", "auto-stage-claim-2026",
+			"auto-stage-claim-correlation", 1)
+		if err != nil || claimedDelay.State != "IN_PROGRESS" {
+			t.Fatalf("failed to claim operator-owned investigation: %+v %v", claimedDelay, err)
+		}
+		if _, err = db.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state='PARTNER_ACCEPTED',version=version+1 WHERE id='auto_ops_created_late'"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state='PREPARING',version=version+1 WHERE id='auto_ops_accepted_late'"); err != nil {
+			t.Fatal(err)
+		}
+		for _, transition := range []struct{ id, event, from, to string }{
+			{"auto_ops_created_late", "order_partner_accepted", "CREATED", "PARTNER_ACCEPTED"},
+			{"auto_ops_accepted_late", "order_preparing", "PARTNER_ACCEPTED", "PREPARING"},
+		} {
+			if _, err = db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_audit
+               (event_type,idempotency_key,correlation_id,acting_actor_id,order_id,from_state,to_state,
+                from_version,result_version,request_hash)
+               VALUES($1,$2,$3,'auto_ops_partner',$4,$5,$6,2,3,'recovery-transition')`,
+				transition.event, "recovery-idem-"+transition.id, "recovery-corr-"+transition.id,
+				transition.id, transition.from, transition.to); err != nil {
+				t.Fatal(err)
+			}
+		}
+		again, err = postgres.DetectOperatorOrderExceptions(ctx, db, 25)
+		if err != nil || again != 0 {
+			t.Fatalf("transition triggered an unwanted case: %d %v", again, err)
+		}
+		var resolvedState, claimedState string
+		if err = db.QueryRowContext(ctx, "SELECT state FROM dsh.operator_order_cases WHERE order_id='auto_ops_created_late' AND reason='OTHER'").Scan(&resolvedState); err != nil || resolvedState != "RESOLVED" {
+			t.Fatalf("unclaimed stage did not recover: %s %v", resolvedState, err)
+		}
+		if err = db.QueryRowContext(ctx, "SELECT state FROM dsh.operator_order_cases WHERE order_id='auto_ops_accepted_late' AND reason='PARTNER_DELAY'").Scan(&claimedState); err != nil || claimedState != "IN_PROGRESS" {
+			t.Fatalf("claimed investigation was automatically overwritten: %s %v", claimedState, err)
+		}
+		var recoverCount int
+		if err = db.QueryRowContext(ctx, `SELECT count(*) FROM dsh.operator_order_case_events e
+               JOIN dsh.operator_order_cases c ON c.id=e.case_id
+               WHERE c.order_id='auto_ops_created_late' AND e.action='RESOLVE'
+                 AND e.actor_id='dsh:operations-detector'`).Scan(&recoverCount); err != nil || recoverCount != 1 {
+			t.Fatalf("expected one audited automatic resolution: %d %v", recoverCount, err)
+		}
+		again, err = postgres.DetectOperatorOrderExceptions(ctx, db, 25)
+		if err != nil || again != 0 {
+			t.Fatalf("replayed stage recovery: %d %v", again, err)
+		}
 	})
 }

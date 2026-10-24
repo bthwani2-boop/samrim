@@ -41,11 +41,31 @@ export function OrderAlertMonitor() {
     let cancelled = false;
     let busy = false;
     let permissionRequested = false;
+    const openedResponses = new Set<string>();
+    const handleResponse = (result: Notifications.NotificationResponse) => {
+      const data = result.notification.request.content.data;
+      const orderId = data?.orderId;
+      const session = currentIdentityState();
+      if (session.kind !== "authenticated") return;
+      if (session.identity.subject.trim() !== data?.actorId) {
+        void Notifications.clearLastNotificationResponseAsync();
+        return;
+      }
+      if (typeof orderId !== "string" || !/^[A-Za-z0-9._~-]{1,160}$/.test(orderId)) return;
+      const responseId = result.notification.request.identifier;
+      if (openedResponses.has(responseId)) return;
+      openedResponses.add(responseId);
+      void Notifications.clearLastNotificationResponseAsync();
+      router.push({ pathname: "/offers", params: { q: orderId } } as Href);
+    };
     const tick = async () => {
       if (busy || cancelled || AppState.currentState !== "active") return;
       const session = currentIdentityState();
       const actor = session.kind === "authenticated" ? session.identity.subject.trim() : "";
       if (!actor) { alerts.reset(""); return; }
+      void Notifications.getLastNotificationResponseAsync()
+        .then(last => { if (last && !cancelled) handleResponse(last); })
+        .catch(() => undefined);
       const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
       if (!url) return;
       busy = true;
@@ -60,7 +80,10 @@ export function OrderAlertMonitor() {
         // Registration is best effort. Foreground polling remains functional
         // without Firebase credentials before the first EAS development build.
         const chosenTone = await currentAlertTone();
-        const remotePushActive = await registerOwnPushDevice(token, actor, chosenTone);
+        const remotePushActive = await registerOwnPushDevice(token, actor, chosenTone, () => {
+          const current = currentIdentityState();
+          return !cancelled && current.kind === "authenticated" && current.identity.subject.trim() === actor;
+        });
         const data = await createDshMobileClient(url, { cryptoRandomUUID: () => Crypto.randomUUID() }).listNotifications(token, 35);
         if (cancelled || AppState.currentState !== "active") return;
         const current = currentIdentityState();
@@ -98,14 +121,7 @@ export function OrderAlertMonitor() {
     void tick();
     const interval = setInterval(() => void tick(), 8_000);
     const listener = AppState.addEventListener("change", (state) => { if (state === "active") void tick(); });
-    const response = Notifications.addNotificationResponseReceivedListener(result => {
-      const data = result.notification.request.content.data;
-      const orderId = data?.orderId;
-      const session = currentIdentityState();
-      if (typeof orderId !== "string" || !/^[A-Za-z0-9._~-]{1,160}$/.test(orderId)) return;
-      if (session.kind !== "authenticated" || session.identity.subject.trim() !== data?.actorId) return;
-      router.push({ pathname: "/offers", params: { q: orderId } } as Href);
-    });
+    const response = Notifications.addNotificationResponseReceivedListener(handleResponse);
     return () => { cancelled = true; clearInterval(interval); listener.remove(); response.remove(); };
   }, [router]);
   return null;

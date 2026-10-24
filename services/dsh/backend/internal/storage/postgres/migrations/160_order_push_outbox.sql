@@ -17,6 +17,8 @@ CREATE TABLE dsh.notification_push_outbox (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     installation_id text NOT NULL REFERENCES dsh.notification_push_devices(installation_id) ON DELETE CASCADE,
     notification_id text NOT NULL,
+    actor_id text NOT NULL CHECK (length(btrim(actor_id)) BETWEEN 1 AND 128),
+    actor_role text NOT NULL CHECK (actor_role IN ('client','partner','captain')),
     order_id text NOT NULL,
     kind text NOT NULL CHECK (kind IN ('ORDER_CREATED','CAPTAIN_OFFER','CAPTAIN_ARRIVED')),
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),

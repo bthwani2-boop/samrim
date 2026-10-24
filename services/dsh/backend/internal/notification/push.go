@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -130,8 +132,8 @@ func pushCopy(kind string) (string, string) {
 // Audit rows and one-time arrivals are canonical; no fake notification records.
 func (s *Service) enqueuePush(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO dsh.notification_push_outbox
-      (installation_id,notification_id,order_id,kind)
-    SELECT devices.installation_id, events.notification_id,events.order_id,events.kind
+      (installation_id,notification_id,actor_id,actor_role,order_id,kind)
+    SELECT devices.installation_id, events.notification_id,devices.actor_id,devices.actor_role,events.order_id,events.kind
     FROM (
       SELECT 'order:' || audit.id AS notification_id, audit.order_id, 'ORDER_CREATED'::text AS kind,
         stores.partner_actor_id AS actor_id, 'partner'::text AS role, audit.created_at AS occurred_at
@@ -172,15 +174,16 @@ func (s *Service) claimPush(ctx context.Context) ([]pushItem, error) {
         ORDER BY id LIMIT 20 FOR UPDATE SKIP LOCKED
     ), claimed AS (
         UPDATE dsh.notification_push_outbox o
-        SET locked_until=clock_timestamp()+interval '30 seconds',attempts=o.attempts+1
+        SET locked_until=clock_timestamp()+interval '5 minutes',attempts=o.attempts+1
         FROM due WHERE due.id=o.id
-        RETURNING o.id,o.installation_id,o.notification_id,o.order_id,o.kind
+        RETURNING o.id,o.installation_id,o.notification_id,o.order_id,o.kind,o.actor_id,o.actor_role
     )
     SELECT c.id,c.installation_id,COALESCE(devices.expo_push_token,''),
         COALESCE(devices.actor_id,''),COALESCE(devices.tone,'classic'),
         c.notification_id,c.order_id,c.kind
     FROM claimed c LEFT JOIN dsh.notification_push_devices devices
       ON devices.installation_id=c.installation_id AND devices.enabled
+      AND devices.actor_id=c.actor_id AND devices.actor_role=c.actor_role
     ORDER BY c.id`)
 	if err != nil {
 		return nil, err
@@ -297,6 +300,9 @@ func (s *Service) DispatchPushBatch(ctx context.Context) (int, error) {
 			continue
 		}
 		request.Header.Set("Content-Type", "application/json")
+		if key := strings.TrimSpace(os.Getenv("DSH_EXPO_PUSH_ACCESS_TOKEN")); key != "" {
+			request.Header.Set("Authorization", "Bearer "+key)
+		}
 		response, err := client.Do(request)
 		if err != nil {
 			_ = s.retryPush(ctx, item.ID)

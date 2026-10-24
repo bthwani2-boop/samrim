@@ -118,9 +118,45 @@ export function MarketingCampaignRegistry() {
           <div><dt>العروض / المواد</dt><dd>{fmt(c.promotionCount)} / {fmt(c.contentCount)}</dd></div>
           <div><dt>الإصدار</dt><dd>{fmt(c.version)}</dd></div>
         </dl>
+        {c.state === "DRAFT" ? <CampaignElementLink campaign={c} onChanged={() => void read()} /> : null}
         <div className="actions-row">{(transitions[c.state]??[]).map(action=><button type="button" className="button button-secondary" key={action.state} disabled={busy} onClick={()=>void mutate(c,action.state)}>{action.label}</button>)}</div>
       </details>)}
       {cursor?<button className="button button-secondary" type="button" disabled={busy} onClick={()=>{setBusy(true);void read(cursor,true).catch(e=>setMessage(String(e))).finally(()=>setBusy(false));}}>عرض المزيد</button>:null}
     </div>
   </section>;
+}
+
+
+function CampaignElementLink({ campaign, onChanged }: Readonly<{ campaign: MarketingCampaign; onChanged: () => void }>) {
+  const [kind, setKind] = useState<"PROMOTION"|"CONTENT">("PROMOTION");
+  const [resourceId, setResourceId] = useState("");
+  const [error,setError] = useState("");
+  const [pending,setPending] = useState(false);
+  const submit=async(e:React.FormEvent)=>{
+    e.preventDefault();
+    if(!resourceId.trim())return;
+    setPending(true);setError("");
+    try{
+      const response=await fetch("/api/marketing/campaigns/"+encodeURIComponent(campaign.id)+"/elements",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID(),"X-Expected-Version":String(campaign.version)},
+        body:JSON.stringify({kind,resourceId:resourceId.trim()})
+      });
+      const data=await response.json() as { error?: {message?: string} };
+      if(!response.ok)throw new Error(data.error?.message??"تعذر ربط العنصر");
+      setResourceId("");onChanged();
+    }catch(reason){setError(reason instanceof Error?reason.message:"تعذر ربط العنصر");}
+    finally{setPending(false);}
+  };
+  return <details>
+    <summary>ربط عرض أو مادة موجودة</summary>
+    <form className="work-stack" onSubmit={submit}>
+      <label className="field-label">نوع العنصر<select value={kind} onChange={e=>setKind(e.target.value as typeof kind)}>
+        <option value="PROMOTION">عرض خصم</option><option value="CONTENT">مادة تسويقية</option>
+      </select></label>
+      <label className="field-label">معرّف العنصر<input required maxLength={128} value={resourceId} onChange={e=>setResourceId(e.target.value)} /></label>
+      <button className="button button-secondary" type="submit" disabled={pending}>{pending?"جارٍ الربط...":"ربط بالمسودة"}</button>
+      {error?<p role="alert">{error}</p>:null}
+    </form>
+  </details>;
 }

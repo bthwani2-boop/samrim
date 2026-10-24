@@ -27,7 +27,8 @@ export function PartnerNotificationsHeaderAction() {
         const identity=currentIdentityState();
         if(!active||identity.kind!=="authenticated"||identity.identity.subject!==current)return;
         const response=await createDshMobileClient(base,{cryptoRandomUUID:()=>Crypto.randomUUID()}).listNotifications(token,1);
-        if(active&&currentIdentityState().kind==="authenticated")setUnread(response.unreadCount);
+        const latest=currentIdentityState();
+        if(active&&latest.kind==="authenticated"&&latest.identity.subject===current)setUnread(response.unreadCount);
       }catch{if(active)setUnread(null);}
     };
     void refresh();

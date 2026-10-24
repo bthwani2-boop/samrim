@@ -159,7 +159,8 @@ function defineSamrimExpoApp(appKey, options = {}) {
   }
   const android = {
     package: app.androidPackage,
-    ...(["app-client", "app-partner", "app-captain"].includes(appKey) && appAsset(appKey, "google-services.json")
+    ...(["app-client", "app-partner", "app-captain"].includes(appKey) &&
+        fs.existsSync(path.join(appRoot(appKey), "google-services.json"))
       ? { googleServicesFile: "./google-services.json" } : {}),
     ...(adaptiveIcon ? { adaptiveIcon: { foregroundImage: adaptiveIcon, backgroundColor: "#FFFFFF" } } : {}),
   };

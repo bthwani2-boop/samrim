@@ -87,7 +87,8 @@ export function PartnerMore() {
     let active=true;
     setPendingInvites(null);
     if(actor) void listOwnStoreAccessInvitations().then(page=>{
-      if(active && currentIdentityState().kind==="authenticated"){
+      const latest=currentIdentityState();
+      if(active && latest.kind==="authenticated" && latest.identity.subject===actor){
         setPendingInvites(page.items.filter(item => item.state==="pending_acceptance" || item.state==="pending_partner_activation").length);
       }
     }).catch(()=>{if(active)setPendingInvites(null);});
@@ -144,13 +145,15 @@ export function PartnerMore() {
       <View style={styles.accountText}><Text style={styles.accountName} numberOfLines={1}>{identity.name}</Text><Text style={styles.accountRole} numberOfLines={1}>{identity.role}</Text></View>
       <BthwaniIcon name="edit" size={17} color={theme.colorMuted}/>
     </Pressable>
-    {profileExpanded?<View style={styles.profilePanel}><Text style={styles.muted}>هذه هوية المستخدم، وتُعرض الصلاحيات بحسب المتجر المحدد. إعدادات المظهر والدعوات بالأسفل.</Text>
-      {selectedStore?<Text style={styles.accountRole}>المتجر الحالي: {selectedStore.name}</Text>:null}
-      <Text style={styles.accountRole}>الصفة: {identity.role}</Text>
-      <Text style={styles.muted}>صلاحيات الحساب تُدار من فريق المتجر المعتمد، ولا تُغيّر من هذه الشاشة.</Text>
+    {profileExpanded?<View style={styles.profilePanel}>
+      <View style={styles.profileCompactHeading}>
+        <Text style={styles.accountRole}>{identity.role}</Text>
+        {selectedStore?<Text numberOfLines={1} style={styles.accountRole}>{selectedStore.name}</Text>:null}
+      </View>
       <Pressable accessibilityRole="button" accessibilityLabel="أمان الحساب" onPress={()=>setSecurityExpanded(v=>!v)} style={styles.accountSecurityAction}>
         <BthwaniIcon name="account" color={theme.brandAction} size={17}/>
-        <Text style={styles.accountRole}>أمان الحساب وإعادة تعيين كلمة المرور</Text>
+        <Text style={styles.accountSecurityText}>أمان الحساب</Text>
+        <Text style={styles.accountRole}>{securityExpanded?"إخفاء":"فتح"}</Text>
       </Pressable>
       {securityExpanded?<PartnerAccountSecurity/>:null}
     </View>:null}
@@ -215,6 +218,8 @@ function createStyles(p:ReturnType<typeof resolveTheme>){return StyleSheet.creat
   accountRole:{...typography.caption,color:p.colorMuted},
   profilePanel:{backgroundColor:p.surface,borderRadius:12,borderWidth:1,borderColor:p.borderColor,padding:12,gap:6},
   accountSecurityAction:{minHeight:44,flexDirection:"row",gap:9,alignItems:"center"},
+  profileCompactHeading:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:8},
+  accountSecurityText:{...typography.bodyStrong,color:p.color,flex:1},
   panel:{backgroundColor:p.surface,padding:8,borderWidth:1,borderColor:p.borderColor,borderRadius:12,gap:6},
   muted:{...typography.bodySm,color:p.colorMuted},
   storeHero:{backgroundColor:p.surface,borderWidth:1,borderColor:p.borderColor,borderRadius:14,overflow:"hidden"},
