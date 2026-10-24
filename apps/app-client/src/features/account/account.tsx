@@ -6,6 +6,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, logoutIdentity, subscribeIdentitySession } from "../../bootstrap/identity";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { StoreAccessInvitationInbox } from "./store-access-invitations";
+import { MarketingContactPreference } from "./marketing-contact-preference";
 
 export default function ClientAccount() {
   const router = useRouter();
@@ -64,6 +65,7 @@ export default function ClientAccount() {
         <BthwaniNavigationRow compact description={changingCity ? "جارٍ التغيير…" : cityName} disabled={changingCity} icon="location" title="تغيير المدينة" onPress={() => void changeCity()} />
       </View>
       {isAuthenticated ? <StoreAccessInvitationInbox key={invitationReadKey} /> : null}
+      <MarketingContactPreference active={isAuthenticated} />
       <AppearancePicker compact title="المظهر" helper="" />
       {isAuthenticated ? <BthwaniButton busy={busy} disabled={busy} label="تسجيل الخروج" onPress={() => void logout()} variant="secondary" /> : null}
       {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}

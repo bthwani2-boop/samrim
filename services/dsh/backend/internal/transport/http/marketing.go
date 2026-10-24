@@ -49,6 +49,8 @@ func NewMarketingWithDependencies(identityClient *identityintegration.Client, ac
 }
 
 func (s *MarketingServer) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /dsh/client/marketing-consent/{channel}", s.readClientMarketingConsent)
+	mux.HandleFunc("POST /dsh/client/marketing-consent/{channel}", s.changeClientMarketingConsent)
 	mux.HandleFunc("GET /dsh/public/promotions", s.listPublicPromotions)
 	mux.HandleFunc("GET /dsh/public/discovery-content", s.listPublicDiscoveryContent)
 	mux.HandleFunc("GET /dsh/public/banner-presentation", s.readPublicBannerPresentation)
