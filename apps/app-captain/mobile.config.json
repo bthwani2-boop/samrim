@@ -3,7 +3,7 @@
   "slug": "app-captain",
   "scheme": "captain",
   "owner": "bthwani1",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "androidPackage": "com.bthwani.captain",
   "iosBundleIdentifier": "com.bthwani.captain",
   "projectId": "7efa39e1-895f-44d7-a597-d613c79297b6"

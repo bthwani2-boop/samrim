@@ -3,7 +3,7 @@
   "slug": "app-field",
   "scheme": "field",
   "owner": "bthwani1",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "androidPackage": "com.bthwani.field",
   "iosBundleIdentifier": "com.bthwani.field",
   "projectId": "8fcddca1-71ad-4f85-84ff-756d669c3e27"
