@@ -19,9 +19,19 @@ type PartnerStoreScopeContextValue = Readonly<{
 }>;
 
 const PartnerStoreScopeContext = createContext<PartnerStoreScopeContextValue | null>(null);
+const accessChangeListeners = new Set<() => Promise<void>>();
+
+// Refresh already-mounted store scopes after an invitation is accepted or activated.
+export async function notifyPartnerStoreAccessChanged(): Promise<void> {
+  await Promise.all([...accessChangeListeners].map(reload => reload()));
+}
 
 export function PartnerStoreScopeProvider({ children }: Readonly<{ children: ReactNode }>) {
   const scopes = usePartnerAccessibleStoreScopes();
+  useEffect(() => {
+    accessChangeListeners.add(scopes.reload);
+    return () => { accessChangeListeners.delete(scopes.reload); };
+  }, [scopes.reload]);
   const [selectedStoreID, setSelectedStoreID] = useState("");
   const stores = scopes.state.kind === "ready" ? scopes.state.stores : [];
   const authority = useMemo(() => (scopes.state.kind === "ready" ? derivePartnerAuthority(scopes.state.stores) : RESOLVING_PARTNER_AUTHORITY), [scopes.state]);

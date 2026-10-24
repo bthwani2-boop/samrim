@@ -120,7 +120,7 @@ foreach($old in @(Get-Process scrcpy -ErrorAction SilentlyContinue)){
 }
 
 Write-Host "SCRCPY_START adb=$Adb"
-$ports=Read-BackendPorts
+$ports=@(Read-BackendPorts)+@(18101,18102,18103,18104)
 $process=$null
 $mode=$null
 

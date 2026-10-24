@@ -123,8 +123,8 @@ export function OrderConversation({ orderId }: { orderId: string }) {
       const extension=kind==="image"?".jpg":kind==="video"?(contentType==="video/webm"?".webm":".mp4"):Platform.OS==="ios"?".m4a":".3gp";
       const local=new File(Paths.document, "order-attachment-"+Crypto.randomUUID()+extension);
       original.copy(local);
-      const label=kind==="image"?"صورة مرفقة":transcript.trim();
-      if (kind === "audio" && (!label || label.length > 2000)) throw new Error("AUDIO_TRANSCRIPT_REQUIRED");
+      const label=kind==="image"?"صورة مرفقة":kind==="audio"?"رسالة صوتية"+(transcript?" ("+transcript+")":""):transcript.trim();
+
       const attempt=createOrderConversationMessageAttempt(actorID,orderId,label,
         "conversation_"+Crypto.randomUUID(),"conversation_corr_"+Crypto.randomUUID(),
         selectedRecipients,{kind,contentType,fileUri:local.uri});
@@ -213,22 +213,22 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المحادثة…</Text></View> : null}
     {state.kind === "error" ? <View style={styles.state}><Text style={styles.error}>تعذر قراءة المحادثة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" />{pendingAttempt ? <BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /> : null}</View> : null}
     {state.kind === "ready" ? <>
-      {<View style={{flex:1,minHeight:120}}>{!state.value.messages.length ? <Text style={styles.muted}>ابدأ المحادثة حول هذا الطلب.</Text> : <ScrollView style={styles.messageScroll} contentContainerStyle={styles.messages} keyboardShouldPersistTaps="handled">{state.value.messages.map((message) => <View key={message.id} style={[styles.message, message.mine ? styles.mine : null]}><Text style={styles.sender}>{message.mine ? "أنت" : senderLabel(message.senderRole)}</Text><Text style={styles.body}>{message.body}</Text><OrderConversationMediaMessage orderId={orderId} messageId={message.id} mediaKind={message.mediaKind} /><Text style={styles.time}>{new Date(message.createdAt).toLocaleString("ar-YE")}</Text></View>)}</ScrollView>}</View>}
+      {<View style={{flex:1,minHeight:120}}>{!state.value.messages.length ? <Text style={styles.muted}>ابدأ المحادثة حول هذا الطلب.</Text> : <ScrollView style={styles.messageScroll} contentContainerStyle={styles.messages} keyboardShouldPersistTaps="handled">{state.value.messages.map((message) => message.mediaKind==="audio" ? <OrderConversationMediaMessage key={message.id} orderId={orderId} messageId={message.id} mediaKind="audio" mine={message.mine} sender={message.mine?"أنت":senderLabel(message.senderRole)} createdAt={message.createdAt} readAt={message.readAt} caption={message.body}/> : <View key={message.id} style={[styles.message, message.mine ? styles.mine : null]}><Text style={styles.sender}>{message.mine ? "أنت" : senderLabel(message.senderRole)}</Text><Text style={styles.body}>{message.body}</Text><OrderConversationMediaMessage orderId={orderId} messageId={message.id} mediaKind={message.mediaKind} /><Text style={styles.time}>{new Date(message.createdAt).toLocaleString("ar-YE")}</Text></View>)}</ScrollView>}</View>}
       {pendingAttempt ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>المحاولة محفوظة لهذا الحساب والطلب. سنتحقق من نتيجتها قبل إعادة الإرسال.</Text><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /></View> : state.value.canSend ? <BthwaniOrderChatComposer
   recipients={recipientOptions} selected={selectedRecipients}
   onToggleRecipient={(value)=>{const target=recipientOptions.find(item=>item.role===value)?.role;if(!target)return;setSelectedRecipients(current=>current.includes(target)?current.filter(role=>role!==target):[...current,target]);}}
   onSelectAll={()=>setSelectedRecipients(recipientOptions.map(item=>item.role))}
   body={body} onChangeText={setBody} onSend={()=>void send()}
   onGallery={()=>void pickPhoto(false)} onCamera={()=>void pickPhoto(true)}
-  onVoice={()=>setShowAudioControls(v=>!v)}
+  onVoice={()=>setShowAudioControls(true)}
   onVideo={()=>Alert.alert("إضافة فيديو","اختر المصدر",[
     {text:"الكاميرا",onPress:()=>void pickVideo(true)},
     {text:"المعرض",onPress:()=>void pickVideo(false)},
     {text:"إلغاء",style:"cancel"},
   ])}
   disabled={busy || !attemptStorageReady || Boolean(pendingAttempt)}
-  audioControls={showAudioControls ? <Suspense fallback={<Text>جارٍ تهيئة الميكروفون…</Text>}><AudioRecorderControls disabled={busy}
-     onRecorded={(uri,mime,text)=>sendPrivateMedia(uri,"audio",mime,text)} /></Suspense>:null}
+  audioControls={showAudioControls ? <Suspense fallback={<ActivityIndicator color={theme.brandAction} size="small"/>}><AudioRecorderControls disabled={busy}
+     onRecorded={(uri,mime,duration)=>sendPrivateMedia(uri,"audio",mime,Math.floor(duration/60)+":"+String(duration%60).padStart(2,"0"))} onClose={()=>setShowAudioControls(false)} /></Suspense>:null}
 /> : <Text style={styles.muted}>أُغلقت المحادثة للكتابة، ويمكنك قراءة سجلها فقط.</Text>}
     </> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}

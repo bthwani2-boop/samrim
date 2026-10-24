@@ -36,4 +36,8 @@ export type MobileIconName =
   | "home-projects"
   | "auto-parts"
   | "honey"
-  | "mall";
+  | "mall"
+  | "mic"
+  | "send"
+  | "play"
+  | "pause";

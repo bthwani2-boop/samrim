@@ -427,9 +427,9 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
             </Modal>
             <BthwaniOrderChatSheet visible={chatOrderId===order.id} bottomInset={insets.bottom} onClose={()=>setChatOrderId("")}
               orderReference={order.id.slice(-8)} status={orderStateLabel(order.state)}
-              summary={order.storeName+" · "+order.lines.length+" أصناف · "+(order.fulfillmentMode==="CUSTOMER_PICKUP"?"استلام من المتجر":order.fulfillmentMode==="PARTNER_CAPTAIN"?"توصيل المتجر":"توصيل بثواني")}
+              summary={order.storeName+" · "+order.lines.length+" أصناف"} quickFacts={order.lines.slice(0,2).map(line=>line.productName).join("، ")+(order.lines.length>2?"…":"")+" · "+(order.fulfillmentMode==="CUSTOMER_PICKUP"?"استلام":order.fulfillmentMode==="PARTNER_CAPTAIN"?"توصيل المتجر":"توصيل بثواني")}
               total={formatMoney(order.totalAmountMinor,order.currency)}
-              onDetails={()=>{setChatOrderId("");setExpandedOrderIds(()=>new Set([order.id]));}}>
+              details={[...order.lines.map(line=>({id:line.id,label:"صنف",value:line.productName})),{label:"التوصيل",value:order.fulfillmentMode==="CUSTOMER_PICKUP"?"استلام من المتجر":order.fulfillmentMode==="PARTNER_CAPTAIN"?"توصيل المتجر":"توصيل بثواني"},...(order.fulfillmentMode!=="CUSTOMER_PICKUP"?[{label:"العنوان",value:order.addressText}]:[]),...(order.customerNote?[{label:"ملاحظات",value:order.customerNote}]:[])]}>
               {chatOrderId===order.id?<OrderConversation orderId={order.id}/>:null}
             </BthwaniOrderChatSheet>
           </View>

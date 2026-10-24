@@ -6,6 +6,9 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 type Reel = DiscoveryContentView;
+type ReelTargetType = "STORE" | "PRODUCT" | "PROMOTION";
+type ReelTarget = Readonly<{ targetType: "PRODUCT" | "PROMOTION"; targetId: string; label: string }>;
+const targetLabels: Record<ReelTargetType, string> = { STORE: "المتجر", PRODUCT: "منتج", PROMOTION: "عرض" };
 const baseUrl = () => {
   const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
   if (!url) throw new Error("DSH_BASE_URL_REQUIRED");
@@ -18,6 +21,10 @@ function statusLabel(value: Reel["state"]): string {
 
 export function PartnerStoreReels({ storeId, storeName }: { storeId: string; storeName: string }) {
   const [items, setItems] = useState<ReadonlyArray<Reel>>([]);
+  const [targets, setTargets] = useState<ReadonlyArray<ReelTarget>>([]);
+  const [targetType, setTargetType] = useState<ReelTargetType>("STORE");
+  const [targetId, setTargetId] = useState(storeId);
+  const [targetSearch, setTargetSearch] = useState("");
   const [file, setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [caption, setCaption] = useState("");
   const [rights, setRights] = useState(false);
@@ -30,12 +37,19 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
   const read = useCallback(async () => {
     try {
       const token = await getUsableIdentityAccessToken();
-      const response = await fetch(`${baseUrl()}/dsh/partner/stores/${encodeURIComponent(storeId)}/discovery-content`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      });
-      if (!response.ok) throw new Error("REELS_READ_FAILED");
-      const data = await response.json() as OperatorDiscoveryContentRegistryResponse;
+      const prefix = `${baseUrl()}/dsh/partner/stores/${encodeURIComponent(storeId)}`;
+      const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
+      const [response, targetResponse] = await Promise.all([
+        fetch(`${prefix}/discovery-content`, { headers }),
+        fetch(`${prefix}/discovery-targets`, { headers }),
+      ]);
+      if (!response.ok || !targetResponse.ok) throw new Error("REELS_READ_FAILED");
+      const [data, targetData] = await Promise.all([
+        response.json() as Promise<OperatorDiscoveryContentRegistryResponse>,
+        targetResponse.json() as Promise<{ targets: ReadonlyArray<ReelTarget> }>,
+      ]);
       setItems(data.items);
+      setTargets(targetData.targets);
       setMessage("");
     } catch {
       setMessage("تعذر تحميل حالة الفيديوهات.");
@@ -44,7 +58,22 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
     }
   }, [storeId]);
 
-  useEffect(() => { setLoading(true); void read(); }, [read]);
+  useEffect(() => {
+    setTargetType("STORE");
+    setTargetId(storeId);
+    setTargetSearch("");
+    attempt.current = null;
+    setLoading(true);
+    void read();
+  }, [read, storeId]);
+  const selectKind = (kind: ReelTargetType) => {
+    setTargetType(kind);
+    setTargetId(kind === "STORE" ? storeId : "");
+    setTargetSearch("");
+    attempt.current = null;
+  };
+  const visibleTargets = targets.filter(item => item.targetType === targetType)
+    .filter(item => !targetSearch.trim() || item.label.toLocaleLowerCase().includes(targetSearch.trim().toLocaleLowerCase())).slice(0, 8);
 
   const choose = async () => {
     if (busy) return;
@@ -71,7 +100,7 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
   };
 
   const submit = async () => {
-    if (busy || !file || !caption.trim() || !rights) return;
+    if (busy || !file || !caption.trim() || !rights || !targetId) return;
     if (currentIdentityState().kind !== "authenticated") {
       setMessage("سجل الدخول لإضافة الفيديو.");
       return;
@@ -81,7 +110,7 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
     try {
       const token = await getUsableIdentityAccessToken();
       const mime = file.mimeType ?? "video/mp4";
-      const fingerprint = [storeId, file.uri, file.size, caption.trim()].join(":");
+      const fingerprint = [storeId, targetType, targetId, file.uri, file.size, caption.trim()].join(":");
       if (!attempt.current || attempt.current.fingerprint !== fingerprint) {
         attempt.current = {
           fingerprint,
@@ -95,8 +124,8 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
       input.append("id", attempt.current.contentId);
       input.append("kind", "SHORT_FORM");
       input.append("titleAr", caption.trim());
-      input.append("targetType", "STORE");
-      input.append("targetId", storeId);
+      input.append("targetType", targetType);
+      input.append("targetId", targetId);
       input.append("startsAt", attempt.current.startsAt);
       input.append("ordinal", "0");
       input.append("creator", storeName);
@@ -118,6 +147,7 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
       setFile(null);
       setCaption("");
       setRights(false);
+      selectKind("STORE");
       await read();
       setMessage("تم إرسال الفيديو للمراجعة. يظهر للعملاء بعد موافقة بثواني.");
     } catch {
@@ -135,10 +165,27 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
     </Pressable>
     {file ? <>
       <TextInput accessibilityLabel="وصف الفيديو" placeholder="عنوان قصير للمقطع" value={caption} onChangeText={setCaption} maxLength={160} style={styles.input} />
+      <Text style={styles.note}>إلى أين ينتقل العميل من الفيديو؟</Text>
+      <View style={styles.kindRow}>
+        {(["STORE", "PRODUCT", "PROMOTION"] as const).map(kind =>
+          <Pressable key={kind} accessibilityRole="radio" accessibilityState={{ selected: targetType === kind }} onPress={() => selectKind(kind)} style={[styles.kind, targetType === kind && styles.kindSelected]}>
+            <Text style={styles.kindText}>{targetLabels[kind]}</Text>
+          </Pressable>
+        )}
+      </View>
+      {targetType !== "STORE" ? <>
+        <TextInput accessibilityLabel="البحث عن وجهة الفيديو" placeholder={targetType === "PRODUCT" ? "ابحث عن منتج متجرك" : "ابحث عن عرض متجرك"} value={targetSearch} onChangeText={setTargetSearch} style={styles.input} />
+        {visibleTargets.map(target =>
+          <Pressable key={target.targetType + target.targetId} accessibilityRole="radio" accessibilityState={{ selected: targetId === target.targetId }} style={[styles.target, targetId === target.targetId && styles.kindSelected]} onPress={() => { setTargetId(target.targetId); attempt.current = null; }}>
+            <Text style={styles.title} numberOfLines={1}>{target.label}</Text>
+          </Pressable>
+        )}
+        {visibleTargets.length === 0 ? <Text style={styles.note}>لا توجد وجهة متاحة لهذا المتجر.</Text> : null}
+      </> : null}
       <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: rights }} onPress={() => setRights(value => !value)} style={styles.rights}>
         <Text style={styles.note}>{rights ? "☑" : "☐"} أؤكد امتلاك حقوق نشر هذا المحتوى.</Text>
       </Pressable>
-      <Pressable accessibilityRole="button" disabled={busy || !rights || caption.trim().length < 2} style={[styles.action, (busy || !rights || caption.trim().length < 2) && styles.disabled]} onPress={() => { void submit(); }}>
+      <Pressable accessibilityRole="button" disabled={busy || !rights || !targetId || caption.trim().length < 2} style={[styles.action, (busy || !rights || !targetId || caption.trim().length < 2) && styles.disabled]} onPress={() => { void submit(); }}>
         <Text style={styles.actionText}>{busy ? "جارٍ الإرسال…" : "إرسال للمراجعة"}</Text>
       </Pressable>
     </> : null}
@@ -161,6 +208,11 @@ const styles = StyleSheet.create({
   actionText: { color: "#fff", fontWeight: "700", textAlign: "center" },
   disabled: { opacity: .45 },
   rights: { minHeight: 44, justifyContent: "center" },
+  kindRow: { flexDirection: "row", gap: 8 },
+  kind: { flex: 1, padding: 10, minHeight: 44, backgroundColor: "#343b59", borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  kindSelected: { borderWidth: 2, borderColor: "#818cf8" },
+  kindText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  target: { minHeight: 44, padding: 10, borderWidth: 1, borderColor: "#777", borderRadius: 10, justifyContent: "center" },
   item: { paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: "#888" },
   title: { fontSize: 15, fontWeight: "600", textAlign: "right" },
 });

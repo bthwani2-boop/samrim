@@ -68,6 +68,7 @@ type DiscoveryContentRecord struct {
 	MediaURI         string
 	MediaKind        string
 	PosterURI        string
+	SourceStoreID    string
 	TargetType       string
 	TargetID         string
 	ServiceCityID    string
@@ -162,6 +163,7 @@ type DiscoveryContentInput struct {
 	TitleAr          string
 	BodyAr           string
 	MediaAssetID     string
+	SourceStoreID    string
 	TargetType       string
 	TargetID         string
 	ServiceCityID    string
@@ -820,11 +822,14 @@ func releaseOrderPromotionRedemptionTx(ctx context.Context, tx *sql.Tx, orderID,
 
 func scanDiscoveryContent(row rowScanner) (DiscoveryContentRecord, error) {
 	var item DiscoveryContentRecord
-	var targetID, cityID sql.NullString
+	var targetID, cityID, sourceStoreID sql.NullString
 	var endsAt sql.NullTime
-	err := row.Scan(&item.ID, &item.Kind, &item.TitleAr, &item.BodyAr, &item.MediaURI, &item.MediaKind, &item.PosterURI, &item.TargetType, &targetID, &cityID, &item.State, &item.StartsAt, &endsAt, &item.Ordinal, &item.Version, &item.CreatedByActorID, &item.CreatedAt, &item.UpdatedAt)
+	err := row.Scan(&item.ID, &item.Kind, &item.TitleAr, &item.BodyAr, &item.MediaURI, &item.MediaKind, &item.PosterURI, &sourceStoreID, &item.TargetType, &targetID, &cityID, &item.State, &item.StartsAt, &endsAt, &item.Ordinal, &item.Version, &item.CreatedByActorID, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return DiscoveryContentRecord{}, err
+	}
+	if sourceStoreID.Valid {
+		item.SourceStoreID = sourceStoreID.String
 	}
 	if targetID.Valid {
 		item.TargetID = targetID.String
@@ -839,7 +844,7 @@ func scanDiscoveryContent(row rowScanner) (DiscoveryContentRecord, error) {
 	return item, nil
 }
 
-const discoveryContentSelect = `content.id,content.kind,content.title_ar,content.body_ar,COALESCE((SELECT asset.uri FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' THEN 'video' ELSE 'image' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id),'image'),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' AND right(asset.uri,4)='.mp4' THEN left(asset.uri,length(asset.uri)-4)||'.poster.jpg' ELSE '' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),content.target_type,content.target_id,content.service_city_id,content.state,content.starts_at,content.ends_at,content.ordinal,content.version,content.created_by_actor_id,content.created_at,content.updated_at`
+const discoveryContentSelect = `content.id,content.kind,content.title_ar,content.body_ar,COALESCE((SELECT asset.uri FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' THEN 'video' ELSE 'image' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id),'image'),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' AND right(asset.uri,4)='.mp4' THEN left(asset.uri,length(asset.uri)-4)||'.poster.jpg' ELSE '' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),content.source_store_id,content.target_type,content.target_id,content.service_city_id,content.state,content.starts_at,content.ends_at,content.ordinal,content.version,content.created_by_actor_id,content.created_at,content.updated_at`
 
 func CreateDiscoveryContent(ctx context.Context, db *sql.DB, input DiscoveryContentInput, idempotencyKey, requestHash string) (DiscoveryContentRecord, bool, error) {
 	input.ID = strings.TrimSpace(input.ID)
@@ -847,11 +852,15 @@ func CreateDiscoveryContent(ctx context.Context, db *sql.DB, input DiscoveryCont
 	input.TitleAr = strings.TrimSpace(input.TitleAr)
 	input.BodyAr = strings.TrimSpace(input.BodyAr)
 	input.MediaAssetID = strings.TrimSpace(input.MediaAssetID)
+	input.SourceStoreID = strings.TrimSpace(input.SourceStoreID)
 	input.TargetType = strings.ToUpper(strings.TrimSpace(input.TargetType))
 	input.TargetID = strings.TrimSpace(input.TargetID)
 	input.ServiceCityID = strings.TrimSpace(input.ServiceCityID)
 	input.CreatedByActorID = strings.TrimSpace(input.CreatedByActorID)
 	if input.ID == "" || input.TitleAr == "" || len(input.TitleAr) > 160 || input.MediaAssetID == "" || input.StartsAt.IsZero() || input.Ordinal < 0 || (input.TargetType == "INFO" && input.TargetID != "") || (input.TargetType != "INFO" && input.TargetID == "") || (input.Kind != "BANNER" && input.Kind != "CAROUSEL" && input.Kind != "SHORT_FORM") || (input.TargetType != "STORE" && input.TargetType != "PRODUCT" && input.TargetType != "CATEGORY" && input.TargetType != "PROMOTION" && input.TargetType != "INFO") || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" {
+		return DiscoveryContentRecord{}, false, ErrDiscoveryContentInvalid
+	}
+	if input.SourceStoreID != "" && (input.Kind != "SHORT_FORM" || (input.TargetType != "STORE" && input.TargetType != "PRODUCT" && input.TargetType != "PROMOTION")) {
 		return DiscoveryContentRecord{}, false, ErrDiscoveryContentInvalid
 	}
 	if input.EndsAt != nil && !input.EndsAt.After(input.StartsAt) {
@@ -883,11 +892,20 @@ func CreateDiscoveryContent(ctx context.Context, db *sql.DB, input DiscoveryCont
 	if !errors.Is(err, sql.ErrNoRows) {
 		return DiscoveryContentRecord{}, false, err
 	}
+	if input.SourceStoreID != "" {
+		owned, err := PartnerReelTargetBelongsToStore(ctx, tx, input.SourceStoreID, input.TargetType, input.TargetID)
+		if err != nil {
+			return DiscoveryContentRecord{}, false, err
+		}
+		if !owned {
+			return DiscoveryContentRecord{}, false, ErrDiscoveryContentInvalid
+		}
+	}
 	var mediaState string
 	if err := tx.QueryRowContext(ctx, `SELECT state FROM dsh.discovery_content_media_assets WHERE id=$1 AND idempotency_key=$2 AND request_hash=$3 FOR UPDATE`, input.MediaAssetID, idempotencyKey, requestHash).Scan(&mediaState); err != nil || mediaState != "pending" {
 		return DiscoveryContentRecord{}, false, ErrDiscoveryContentInvalid
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.discovery_content(id,kind,title_ar,body_ar,media_asset_id,target_type,target_id,service_city_id,starts_at,ends_at,ordinal,created_by_actor_id) VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),NULLIF($8,''),$9,$10,$11,$12)`, input.ID, input.Kind, input.TitleAr, input.BodyAr, input.MediaAssetID, input.TargetType, input.TargetID, input.ServiceCityID, input.StartsAt, input.EndsAt, input.Ordinal, input.CreatedByActorID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.discovery_content(id,kind,title_ar,body_ar,media_asset_id,source_store_id,target_type,target_id,service_city_id,starts_at,ends_at,ordinal,created_by_actor_id) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,NULLIF($8,''),NULLIF($9,''),$10,$11,$12,$13)`, input.ID, input.Kind, input.TitleAr, input.BodyAr, input.MediaAssetID, input.SourceStoreID, input.TargetType, input.TargetID, input.ServiceCityID, input.StartsAt, input.EndsAt, input.Ordinal, input.CreatedByActorID); err != nil {
 		return DiscoveryContentRecord{}, false, err
 	}
 	if result, err := tx.ExecContext(ctx, `UPDATE dsh.discovery_content_media_assets SET state='active',last_cleanup_error=NULL WHERE id=$1 AND state='pending'`, input.MediaAssetID); err != nil {
@@ -986,7 +1004,7 @@ func ListPartnerStoreReels(ctx context.Context, db *sql.DB, storeID string) ([]D
 	if storeID == "" {
 		return nil, ErrDiscoveryContentInvalid
 	}
-	rows, err := db.QueryContext(ctx, "SELECT "+discoveryContentSelect+" FROM dsh.discovery_content content WHERE content.kind='SHORT_FORM' AND content.target_type='STORE' AND content.target_id=$1 ORDER BY content.created_at DESC LIMIT 40", storeID)
+	rows, err := db.QueryContext(ctx, "SELECT "+discoveryContentSelect+" FROM dsh.discovery_content content WHERE content.kind='SHORT_FORM' AND (content.source_store_id=$1 OR (content.source_store_id IS NULL AND content.target_type='STORE' AND content.target_id=$1)) ORDER BY content.created_at DESC LIMIT 40", storeID)
 	if err != nil {
 		return nil, err
 	}
@@ -1057,9 +1075,9 @@ func SetDiscoveryContentState(ctx context.Context, db *sql.DB, id, state, idempo
 }
 
 func validateDiscoveryContentPublication(ctx context.Context, tx *sql.Tx, id string) error {
-	var targetType, targetID, contentCityID string
+	var targetType, targetID, contentCityID, sourceStoreID string
 	var startsAt time.Time
-	if err := tx.QueryRowContext(ctx, "SELECT target_type,COALESCE(target_id,''),COALESCE(service_city_id,''),starts_at FROM dsh.discovery_content content WHERE id=$1", id).Scan(&targetType, &targetID, &contentCityID, &startsAt); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, "SELECT target_type,COALESCE(target_id,''),COALESCE(service_city_id,''),COALESCE(source_store_id,''),starts_at FROM dsh.discovery_content content WHERE id=$1", id).Scan(&targetType, &targetID, &contentCityID, &sourceStoreID, &startsAt); errors.Is(err, sql.ErrNoRows) {
 		return ErrDiscoveryContentNotFound
 	} else if err != nil {
 		return err
@@ -1068,7 +1086,7 @@ func validateDiscoveryContentPublication(ctx context.Context, tx *sql.Tx, id str
 	if startsAt.After(eligibleAt) {
 		eligibleAt = startsAt
 	}
-	if _, err := resolveDiscoveryContentTarget(ctx, tx, targetType, targetID, contentCityID, eligibleAt); err != nil {
+	if _, err := resolveDiscoveryContentTarget(ctx, tx, targetType, targetID, contentCityID, sourceStoreID, eligibleAt); err != nil {
 		if errors.Is(err, ErrDiscoveryContentNotFound) || errors.Is(err, ErrDiscoveryContentTargetInvalid) {
 			return ErrDiscoveryContentTargetInvalid
 		}

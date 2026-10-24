@@ -1,89 +1,125 @@
-import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder } from "expo-audio";
-import { useState } from "react";
-import { Platform, Text, TextInput, View } from "react-native";
-import { BthwaniButton } from "@bthwani/design-system/native";
+import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
+import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
+import { useEffect, useRef, useState } from "react";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
-type RecordedAudio = Readonly<{ uri: string; contentType: string }>;
+type Phase = "starting" | "recording" | "sending" | "failed";
 
+/** Compact, inline voice composer. Mounting starts recording; Send stops and uploads the audio. */
 export default function OrderConversationAudioRecorder({
-  disabled, onRecorded,
+  disabled, onRecorded, onClose,
 }: Readonly<{
   disabled: boolean;
-  onRecorded: (uri: string, contentType: string, transcript: string) => Promise<void>;
+  onRecorded: (uri: string, contentType: string, durationSeconds: number) => Promise<void>;
+  onClose: () => void;
 }>) {
+  const theme = useAppearanceTheme();
   const recorder = useAudioRecorder(RecordingPresets.LOW_QUALITY);
-  const [recording, setRecording] = useState(false);
-  const [pending, setPending] = useState<RecordedAudio | null>(null);
-  const [transcript, setTranscript] = useState("");
-  const [sending, setSending] = useState(false);
+  const recorderState = useAudioRecorderState(recorder, 250);
+  const [phase, setPhase] = useState<Phase>("starting");
   const [error, setError] = useState("");
+  const stopped = useRef(true);
+  const disposed = useRef(false);
+  const sending = useRef(false);
+  const savedUri = useRef<string | null>(null);
+  const durationSeconds = useRef(0);
 
-  async function toggle() {
-    if (pending || sending) return;
-    setError("");
-    try {
-      if (recording) {
-        await recorder.stop();
-        setRecording(false);
-        if (!recorder.uri) throw new Error("AUDIO_RECORDING_MISSING");
-        setPending({
-          uri: recorder.uri,
-          contentType: Platform.OS === "ios" ? "audio/mp4" : "audio/3gpp",
-        });
-        return;
+  useEffect(() => {
+    disposed.current = false;
+    void (async () => {
+      try {
+        const permission = await AudioModule.requestRecordingPermissionsAsync();
+        if (disposed.current) return;
+        if (!permission.granted) {
+          setError("يرجى السماح باستخدام الميكروفون");
+          setPhase("failed");
+          return;
+        }
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+        if (disposed.current) return;
+        await recorder.prepareToRecordAsync();
+        if (disposed.current) return;
+        recorder.record();
+        stopped.current = false;
+        setPhase("recording");
+      } catch {
+        if (!disposed.current) {
+          setError("تعذر تشغيل الميكروفون");
+          setPhase("failed");
+        }
       }
-      const permission = await AudioModule.requestRecordingPermissionsAsync();
-      if (!permission.granted) {
-        setError("يجب السماح باستخدام الميكروفون.");
-        return;
+    })();
+    return () => {
+      disposed.current = true;
+      if (!stopped.current) {
+        stopped.current = true;
+        void recorder.stop().catch(() => {});
       }
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-      setRecording(true);
-    } catch {
-      setRecording(false);
-      setError("تعذر تسجيل الصوت.");
-    }
+    };
+  }, [recorder]);
+
+  async function stop() {
+    if (stopped.current) return;
+    stopped.current = true;
+    durationSeconds.current = Math.max(1, Math.round(recorder.getStatus().durationMillis / 1000));
+    await recorder.stop();
+    savedUri.current = recorder.uri;
+    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+  }
+
+  async function cancel() {
+    if (sending.current) return;
+    disposed.current = true;
+    try { await stop(); } catch { /* Leaving the composer still cancels the recording. */ }
+    onClose();
   }
 
   async function send() {
-    const text = transcript.trim();
-    if (!pending || sending || disabled || !text || text.length > 2000) return;
-    setSending(true);
+    if (sending.current || disabled || phase === "starting" || (phase === "failed" && !savedUri.current)) return;
+    sending.current = true;
+    setPhase("sending");
     setError("");
     try {
-      await onRecorded(pending.uri, pending.contentType, text);
-      setPending(null);
-      setTranscript("");
+      await stop();
+      if (!savedUri.current) throw new Error("AUDIO_RECORDING_MISSING");
+      await onRecorded(savedUri.current, Platform.OS === "ios" ? "audio/mp4" : "audio/3gpp", durationSeconds.current);
+      onClose();
     } catch {
-      setError("تعذر إرسال التسجيل مع نصه. أعد المحاولة.");
-    } finally {
-      setSending(false);
+      setError("تعذر إرسال الصوت، حاول مجددًا");
+      setPhase("failed");
+      sending.current = false;
     }
   }
 
-  return <View style={{ gap: 8 }}>
-    {!pending ? <BthwaniButton
-      label={recording ? "إيقاف التسجيل" : "تسجيل صوتي"}
-      variant="secondary"
-      disabled={(disabled && !recording) || sending}
-      onPress={() => void toggle()}
-    /> : <>
-      <Text>اكتب ما قلته في التسجيل ليتمكن الجميع من قراءته.</Text>
-      <TextInput
-        accessibilityLabel="تفريغ نصي للتسجيل الصوتي"
-        editable={!disabled && !sending}
-        maxLength={2000}
-        multiline
-        onChangeText={setTranscript}
-        placeholder="نص التسجيل الصوتي"
-        style={{ borderWidth: 1, borderColor: "#9AA5B1", borderRadius: 8, padding: 10, minHeight: 56, textAlign: "right" }}
-        value={transcript}
-      />
-      <BthwaniButton label="إرسال التسجيل مع نصه" disabled={disabled || sending || !transcript.trim()} onPress={() => void send()} />
-      <BthwaniButton label="إلغاء التسجيل" variant="secondary" disabled={sending} onPress={() => { setPending(null); setTranscript(""); setError(""); }} />
-    </>}
-    {error ? <Text accessibilityRole="alert">{error}</Text> : null}
+  const seconds = Math.floor(recorderState.durationMillis / 1000);
+  const time = String(Math.floor(seconds / 60)).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0");
+  const active = phase === "recording";
+  return <View style={styles.row} accessibilityLabel="تسجيل رسالة صوتية">
+    <Pressable accessibilityRole="button" accessibilityLabel="إلغاء التسجيل" disabled={phase === "sending"}
+      onPress={() => void cancel()} style={styles.control}>
+      <BthwaniIcon name="close" color={theme.colorMuted} size={23}/>
+    </Pressable>
+    <View style={styles.status}>
+      {active ? <View style={[styles.dot, { backgroundColor: theme.warning }]}/> : null}
+      <Text numberOfLines={1} style={[styles.statusText, {color: phase === "failed" ? theme.warning : theme.color}]}>
+        {phase === "starting" ? "جارٍ بدء التسجيل…" : phase === "sending" ? "جارٍ الإرسال…" : phase === "failed" ? error : time}
+      </Text>
+    </View>
+    <Pressable accessibilityRole="button" accessibilityLabel={phase === "failed" && !savedUri.current ? "إغلاق التسجيل" : "إرسال التسجيل الصوتي"}
+      accessibilityState={{ disabled: disabled || phase === "sending" || phase === "starting" }}
+      disabled={disabled || phase === "sending" || phase === "starting"}
+      onPress={phase === "failed" && !savedUri.current ? () => void cancel() : () => void send()}
+      style={[styles.send, { backgroundColor: theme.brandAction, opacity: disabled ? 0.5 : 1 }]}>
+      <BthwaniIcon name={phase === "failed" && !savedUri.current ? "close" : "send"} color={theme.onAction} size={22}/>
+    </Pressable>
   </View>;
 }
+
+const styles = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44, flex: 1 },
+  status: { flexDirection: "row", alignItems: "center", gap: 7, flex: 1, minWidth: 0 },
+  statusText: { fontSize: 13, fontWeight: "600", flexShrink: 1 },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  control: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
+  send: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
+});
