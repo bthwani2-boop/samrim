@@ -10167,6 +10167,9 @@ components:
           type: string
         mediaUri:
           type: string
+        mediaKind:
+          type: string
+          enum: [image, video]
         targetType:
           $ref: "#/components/schemas/DiscoveryContentTargetType"
         targetId:
@@ -10224,6 +10227,9 @@ components:
           type: string
         mediaUri:
           type: string
+        mediaKind:
+          type: string
+          enum: [image, video]
         targetType:
           $ref: "#/components/schemas/DiscoveryContentTargetType"
         targetId:
