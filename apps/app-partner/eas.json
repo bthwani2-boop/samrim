@@ -27,6 +27,13 @@
       "distribution": "internal",
       "ios": { "image": "latest" },
       "android": { "image": "latest", "buildType": "apk" }
+    },
+    "ios-simulator": {
+      "extends": "internal",
+      "ios": {
+        "simulator": true,
+        "image": "latest"
+      }
     }
   }
 }
