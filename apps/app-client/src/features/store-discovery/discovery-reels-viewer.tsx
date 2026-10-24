@@ -160,7 +160,21 @@ export function DiscoveryReelsViewer({ items, visible, initialIndex, resume, onC
     return () => subscription.remove();
   }, []);
 
-  if (!visible || items.length === 0) return null;
+  if (!visible) return null;
+  if (items.length === 0) return (
+    <Modal visible={visible} onRequestClose={onClose} animationType="slide" statusBarTranslucent>
+      <View style={[styles.emptyScreen, { paddingTop: insets.top + 18, paddingBottom: insets.bottom + 28 }]}>
+        <Pressable style={styles.emptyClose} accessibilityRole="button" accessibilityLabel="إغلاق الريلز" onPress={onClose}>
+          <Text style={styles.actionText}>×</Text>
+        </Pressable>
+        <View style={styles.emptyContent}>
+          <Text style={styles.emptySymbol}>▶</Text>
+          <Text style={styles.emptyTitle}>لا توجد فيديوهات متاحة الآن</Text>
+          <Text style={styles.emptyDescription}>ستظهر الفيديوهات هنا بمجرد نشرها من قسم التسويق.</Text>
+        </View>
+      </View>
+    </Modal>
+  );
   const safeIndex = Math.max(0, Math.min(initialIndex, items.length - 1));
   const activeItem = items[index] ?? items[safeIndex];
 
@@ -215,6 +229,12 @@ export function DiscoveryReelsViewer({ items, visible, initialIndex, resume, onC
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#090b0e" },
+  emptyScreen: { flex: 1, backgroundColor: "#0c1320", paddingHorizontal: 24 },
+  emptyClose: { alignSelf: "flex-end", width: 44, height: 44, borderRadius: 22, backgroundColor: "#ffffff1a", alignItems: "center", justifyContent: "center" },
+  emptyContent: { flex: 1, justifyContent: "center", alignItems: "center", gap: 14, paddingBottom: 72 },
+  emptySymbol: { color: "#ffa375", fontSize: 35, textAlign: "center", marginBottom: 6 },
+  emptyTitle: { color: "#fff", fontSize: 20, fontWeight: "800", textAlign: "center" },
+  emptyDescription: { color: "#bcc6d7", fontSize: 14, lineHeight: 23, textAlign: "center" },
   slide: { backgroundColor: "#10151b" },
   posterFallback: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0, backgroundColor: "#10151b" },
   loading: { position: "absolute", top: "49%", alignSelf: "center" },

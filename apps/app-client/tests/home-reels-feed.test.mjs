@@ -22,8 +22,13 @@ test("the home page exposes exactly one fixed reels button next to All", () => {
 });
 
 test("reels button remains mounted and does not move with horizontal filters", () => {
-  assert.ok(home.includes('disabled={videoShorts.length === 0}'));
-  assert.ok(home.includes('onPress={() => { setReelResume(null); setSelectedReelIndex(0); }}'));
+  assert.ok(!home.includes('disabled={videoShorts.length === 0}'));
+  assert.ok(viewer.includes('if (items.length === 0) return'));
+  assert.ok(viewer.includes('لا توجد فيديوهات متاحة الآن'));
+  assert.ok(home.includes('onPress={() => { void openReels(); }}'));
+  assert.ok(home.includes('await listPublicDiscoveryContent(selectedCityID)'));
+  assert.ok(home.includes('content: response.items'));
+  assert.ok(home.includes('setSelectedReelIndex(0)'));
   assert.ok(home.includes('storeFilterScroll: { flex: 1, minWidth: 0 }'));
   assert.ok(home.includes('storeFilterRow: { flexDirection: "row"'));
   assert.ok(home.includes('reelsFilterButton:'));
