@@ -77,6 +77,8 @@ export function PartnerTeamWorkspace({ownerId,storeId="",compact=false}:Props){
  const base="/partners/actors/"+encodeURIComponent(ownerId);
  const teamUrl=base+"?view=team"+(storeId?"&storeId="+encodeURIComponent(storeId):"");
  const visible=history?items:items.filter(m=>!["revoked","declined","expired"].includes(m.state));
+ const groups=new Map<string,StoreAccessGrant[]>();
+ for(const grant of visible){const id=grant.delegateActorId?.trim()||grant.id;const existing=groups.get(id)||[];groups.set(id,[...existing,grant]);}
  return <div className={compact?"partner-team-workspace partner-team-compact":"partner-team-workspace"} aria-label={storeId?"فريق المتجر":"فريق الشريك"}>
   {compact?null:<div className="partner-team-heading">
    <div><h2>فريق الشريك</h2><p>العضويات والدعوات والصلاحيات المرتبطة بالمتاجر.</p></div>
@@ -91,23 +93,28 @@ export function PartnerTeamWorkspace({ownerId,storeId="",compact=false}:Props){
   {error?<p className="managed-status managed-status-warning" role="alert">{error} <button type="button" className="button button-secondary" onClick={reload}>إعادة المحاولة</button></p>:null}
   {!loading&&!error&&counts.total===0?<p className="muted">لا توجد عضويات أو دعوات لهذا {storeId?"المتجر":"الشريك"}.</p>:null}
   {!loading? <div className="partner-team-list">
-   {visible.map(grant=><article className="partner-team-member" key={grant.id}>
+   {[...groups.entries()].map(([id,grants])=><article className="partner-team-member" key={id}>
     <div className="partner-team-member-main">
-     <strong>{grant.displayNameAr?.trim()||"عضو فريق"}</strong>
-     <span className="partner-team-state" data-state={grant.state}>{partnerTeamStateLabel(grant.state)}</span>
+     <strong>{grants.find(g=>g.displayNameAr?.trim())?.displayNameAr?.trim()||"عضو فريق"}</strong>
+     <span className="partner-team-state">{grants.length} {grants.length===1?"عضوية":"عضويات"}</span>
     </div>
-    {!storeId?<Link href={"/partners/stores/"+encodeURIComponent(grant.storeId)}>{grant.storeName||"متجر"}</Link>:null}
-    <p>{partnerTeamAccessLabel(grant.permissions)} · {partnerTeamPermissionLabel(grant.permissions)}</p>
-    {!compact?<details><summary>تفاصيل العضوية</summary><dl>
-     <div><dt>المتجر</dt><dd>{grant.storeName}</dd></div>
-     <div><dt>الصلاحيات</dt><dd>{partnerTeamPermissionLabel(grant.permissions)}</dd></div>
-     <div><dt>آخر تحديث</dt><dd>{new Date(grant.updatedAt).toLocaleDateString("ar-YE")}</dd></div>
-    </dl></details>:null}
+    <div className="partner-team-member-stores">{grants.map(grant=><div className="partner-team-store-access" key={grant.id}>
+      <div className="partner-team-member-main">
+       {!storeId?<Link href={"/partners/stores/"+encodeURIComponent(grant.storeId)}>{grant.storeName||"متجر"}</Link>:<strong>{grant.storeName||"المتجر الحالي"}</strong>}
+       <span className="partner-team-state" data-state={grant.state}>{partnerTeamStateLabel(grant.state)}</span>
+      </div>
+      <p>{partnerTeamAccessLabel(grant.permissions)} · {partnerTeamPermissionLabel(grant.permissions)}</p>
+      {!compact?<details><summary>تفاصيل الصلاحيات</summary><dl>
+       <div><dt>المتجر</dt><dd>{grant.storeName}</dd></div>
+       <div><dt>الصلاحيات</dt><dd>{partnerTeamPermissionLabel(grant.permissions)}</dd></div>
+       <div><dt>آخر تحديث</dt><dd>{new Date(grant.updatedAt).toLocaleDateString("ar-YE")}</dd></div>
+      </dl></details>:null}
+     </div>)}</div>
    </article>)}
   </div>:null}
   {compact?<Link className="store-profile-action-link" href={teamUrl}>عرض فريق المتجر ←</Link>:<>
    {items.some(item=>["expired","revoked","declined"].includes(item.state))?<button type="button" className="button button-secondary" onClick={()=>setHistory(v=>!v)}>{history?"إخفاء العضويات السابقة":"عرض العضويات السابقة"}</button>:null}
-   {!storeId?<p className="muted">كل صف يمثل عضوية العضو في متجر؛ قد يظهر العضو بأكثر من عضوية إذا كان مخولًا لعدة متاجر.</p>:null}
+   {!storeId?<p className="muted">قد توجد متاجر أخرى للعضو نفسه إذا كانت هناك صفحات إضافية؛ استخدم «عرض المزيد» للاطلاع على بقية العضويات.</p>:null}
    {cursor?<button type="button" className="button button-secondary" disabled={loadingMore} onClick={()=>void loadMore()}>{loadingMore?"جارٍ التحميل…":"عرض المزيد"}</button>:null}
   </>}
  </div>;

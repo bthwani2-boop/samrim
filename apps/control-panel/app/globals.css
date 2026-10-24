@@ -3815,3 +3815,8 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 .partner-team-compact .partner-team-member { padding:8px; }
 .partner-team-compact .partner-team-metrics > div { padding:7px; }
 @media(max-width:700px) { .partner-team-list { grid-template-columns:minmax(0,1fr); } }
+
+.partner-team-member-stores { display:grid; gap:8px; }
+.partner-team-store-access { display:grid; gap:6px; border-top:1px solid var(--border-subtle); padding-top:8px; }
+.partner-team-store-access:first-child { border-top:0; padding-top:0; }
+.partner-team-store-access a { color:var(--interactive-text); font-size:12px; font-weight:750; }
