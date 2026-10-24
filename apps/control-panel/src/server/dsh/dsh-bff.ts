@@ -1981,3 +1981,46 @@ export async function listMarketingPartnerDecisions(
     { "X-Acting-Actor-ID": context.operatorActorId.trim() },
   )).payload;
 }
+
+
+// Canonical campaign registry: no client-side first-page filtering.
+import type { CreateMarketingCampaignRequest, MarketingCampaignPage, MarketingCampaignResponse } from "@bthwani/dsh";
+
+export function listOperatorMarketingCampaigns(
+  state: string, cursor: string, context: DshOperatorReadContext,
+): Promise<MarketingCampaignPage> {
+  if (cursor.length > 128 || !["", "DRAFT", "PUBLISHED", "PAUSED", "ENDED", "ARCHIVED"].includes(state)) {
+    throw new Error("MARKETING_CAMPAIGN_FILTER_INVALID");
+  }
+  const query = new URLSearchParams({ limit: "25" });
+  if (state) query.set("state", state);
+  if (cursor) query.set("cursor", cursor);
+  return requestDshJson<MarketingCampaignPage>(
+    dshOperationPaths.listOperatorMarketingCampaigns.method,
+    dshOperationPaths.listOperatorMarketingCampaigns.path + "?" + query,
+    undefined, { "X-Acting-Actor-ID": context.operatorActorId },
+  ).then(({ payload }) => payload);
+}
+
+export function createOperatorMarketingCampaign(
+  input: CreateMarketingCampaignRequest, context: JoiningCaseMutationContext,
+): Promise<Readonly<{ status: number; payload: MarketingCampaignResponse }>> {
+  validateAttributedMutationContext(context);
+  return requestDshJson<MarketingCampaignResponse>(
+    dshOperationPaths.createOperatorMarketingCampaign.method,
+    dshOperationPaths.createOperatorMarketingCampaign.path, input,
+    { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey },
+  );
+}
+
+export function setOperatorMarketingCampaignState(
+  id: string, state: "PUBLISHED" | "PAUSED" | "ENDED" | "ARCHIVED", context: StorePublicationMutationContext,
+): Promise<Readonly<{ status: number; payload: MarketingCampaignResponse }>> {
+  validateVersionedMutationContext(context);
+  return requestDshJson<MarketingCampaignResponse>(
+    dshOperationPaths.setOperatorMarketingCampaignState.method,
+    dshOperationPaths.setOperatorMarketingCampaignState.path.replace("{campaignId}", encodeURIComponent(id)),
+    { state },
+    { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey, "X-Expected-Version": String(context.expectedVersion) },
+  );
+}

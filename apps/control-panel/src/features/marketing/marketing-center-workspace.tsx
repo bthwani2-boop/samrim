@@ -8,6 +8,7 @@ import { MarketingContentWorkspace } from "./marketing-content-workspace";
 import { MarketingOverviewSummary } from "./marketing-overview-summary";
 import { CommandFrame, CommandSectionTabs } from "../shared/command-surface";
 import { MarketingPromotionsWorkspace } from "./marketing-promotions-workspace";
+import { MarketingCampaignRegistry } from "./marketing-campaign-registry";
 
 type Section = "overview" | "campaigns" | "content" | "customers" | "analytics";
 const sections: ReadonlyArray<Readonly<{ id: Section; label: string; description: string }>> = [
@@ -161,6 +162,7 @@ function MarketingAuthorizedCenter() {
             {active === section.id ? isLoading ? <p role="status">جارٍ قراءة العروض...</p> : loadError ?
               <p role="alert">{loadError}</p> : snapshot ? <PartnerCampaignSummary snapshot={snapshot} /> : null : null}
           </details>
+          <MarketingCampaignRegistry />
           <MarketingPromotionsWorkspace />
         </> : section.id === "content" ? <MarketingContentWorkspace /> :
           section.id === "customers" ? <CustomerDirectory /> : null}
