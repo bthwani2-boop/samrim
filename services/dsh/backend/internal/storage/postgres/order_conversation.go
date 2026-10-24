@@ -88,6 +88,16 @@ func ValidateOrderConversationMedia(media OrderConversationMedia) error {
 			return nil
 		}
 	}
+	if media.Kind == "video" {
+		if n < 12 || n > 6*1024*1024 {
+			return ErrOrderConversationInvalid
+		}
+		mp4 := string(media.Bytes[4:8]) == "ftyp"
+		webm := bytes.HasPrefix(media.Bytes, []byte{0x1a, 0x45, 0xdf, 0xa3})
+		if media.ContentType == "video/mp4" && mp4 || media.ContentType == "video/webm" && webm {
+			return nil
+		}
+	}
 	return ErrOrderConversationInvalid
 }
 func HashOrderConversationMediaRequest(orderID, body string, recipients []string, media OrderConversationMedia) string {

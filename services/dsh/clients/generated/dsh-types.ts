@@ -2222,7 +2222,7 @@ export type OrderConversationMessage = {
   readonly createdAt: string;
   readonly readAt: string | null;
   readonly mine: boolean;
-  readonly mediaKind?: "image" | "audio";
+  readonly mediaKind?: "image" | "audio" | "video";
   readonly mediaContentType?: string;
 };
 
@@ -2239,13 +2239,13 @@ export type OrderConversationResponse = {
 export type CreateOrderConversationMessageRequest = {
   readonly body: string;
   readonly recipientRoles?: ReadonlyArray<string>;
-  readonly mediaKind?: "image" | "audio";
+  readonly mediaKind?: "image" | "audio" | "video";
   readonly mediaContentType?: string;
   readonly mediaBase64?: string;
 };
 
 export type OrderConversationPrivateMediaResponse = {
-  readonly mediaKind: "image" | "audio";
+  readonly mediaKind: "image" | "audio" | "video";
   readonly contentType: string;
   readonly dataBase64: string;
 };

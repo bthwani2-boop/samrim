@@ -73,6 +73,20 @@ func TestOrderConversationMediaValidationAndBoundedIdempotency(t *testing.T) {
 	if err := ValidateOrderConversationMedia(aac); err != nil {
 		t.Fatalf("AAC rejected: %v", err)
 	}
+	video := OrderConversationMedia{Kind: "video", ContentType: "video/mp4", Bytes: append([]byte{0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'}, make([]byte, 40)...)}
+	if err := ValidateOrderConversationMedia(video); err != nil {
+		t.Fatalf("valid MP4 video rejected: %v", err)
+	}
+	spoofedVideo := video
+	spoofedVideo.ContentType = "video/webm"
+	if err := ValidateOrderConversationMedia(spoofedVideo); !errors.Is(err, ErrOrderConversationInvalid) {
+		t.Fatalf("spoofed video accepted: %v", err)
+	}
+	largeVideo := video
+	largeVideo.Bytes = make([]byte, 6*1024*1024+1)
+	if err := ValidateOrderConversationMedia(largeVideo); !errors.Is(err, ErrOrderConversationInvalid) {
+		t.Fatalf("oversized video accepted: %v", err)
+	}
 	if HashOrderConversationMediaRequest("order", "صورة", []string{"partner"}, png) == HashOrderConversationMediaRequest("order", "صورة", []string{"operator"}, png) {
 		t.Fatal("audience not bound to media hash")
 	}

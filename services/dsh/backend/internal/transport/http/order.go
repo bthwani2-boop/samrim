@@ -383,7 +383,7 @@ func (s *OrderServer) sendConversationMessage(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "conversation ownership comes from the canonical session")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 5*1024*1024)
+	r.Body = http.MaxBytesReader(w, r.Body, 9*1024*1024)
 	var input contract.CreateOrderConversationMessageRequest
 	if !decodeJSON(w, r, &input) {
 		return
@@ -396,7 +396,7 @@ func (s *OrderServer) sendConversationMessage(w http.ResponseWriter, r *http.Req
 	var replayed bool
 	var err error
 	if input.MediaKind != "" || input.MediaContentType != "" || input.MediaBase64 != "" {
-		if input.MediaKind == "" || input.MediaContentType == "" || len(input.MediaBase64) > 4*1024*1024+64 {
+		if input.MediaKind == "" || input.MediaContentType == "" || len(input.MediaBase64) > 8*1024*1024+128 {
 			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid private media input")
 			return
 		}
