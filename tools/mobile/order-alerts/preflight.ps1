@@ -13,7 +13,7 @@ foreach($App in $Apps){
   if($Config.projectId -notmatch '^[a-f0-9-]{36}$'){throw "EAS project ID missing for $App"}
   if($Eas.build.development.android.buildType -ne "apk"){throw "Development APK profile missing for $App"}
   foreach($tone in @("classic","soft","urgent")){
-    $File=Join-Path $AppRoot ("assets/sounds/order-"+$tone+".wav")
+    $File=Join-Path $AppRoot ("assets/sounds/order_"+$tone+".wav")
     if(!(Test-Path -LiteralPath $File)){throw "Missing notification sound for $App / $tone"}
   }
   $FirebaseFile=Join-Path $SecretsRoot ("expo/"+$App+"/google-services.json")

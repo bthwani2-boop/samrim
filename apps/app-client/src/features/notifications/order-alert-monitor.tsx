@@ -13,9 +13,9 @@ const alerts = new OrderAlertCursor();
 let initialized = false;
 
 const channels = [
-  ["classic", "order-classic-v1", "order-classic.wav"],
-  ["soft", "order-soft-v1", "order-soft.wav"],
-  ["urgent", "order-urgent-v1", "order-urgent.wav"],
+  ["classic", "order-classic-v1", "order_classic.wav"],
+  ["soft", "order-soft-v1", "order_soft.wav"],
+  ["urgent", "order-urgent-v1", "order_urgent.wav"],
 ] as const;
 
 async function ensureChannel(Notifications: typeof import("expo-notifications") | null) {

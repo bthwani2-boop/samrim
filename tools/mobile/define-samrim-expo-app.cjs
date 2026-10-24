@@ -121,7 +121,7 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
   if (["app-client", "app-partner", "app-captain"].includes(appKey)) {
     plugins.push(["expo-notifications", {
       defaultChannel: "order-classic-v1",
-      sounds: ["./assets/sounds/order-classic.wav", "./assets/sounds/order-soft.wav", "./assets/sounds/order-urgent.wav"],
+      sounds: ["./assets/sounds/order_classic.wav", "./assets/sounds/order_soft.wav", "./assets/sounds/order_urgent.wav"],
     }]);
   }
   plugins.push("expo-secure-store");

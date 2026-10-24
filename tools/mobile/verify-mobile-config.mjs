@@ -86,6 +86,25 @@ for (const retired of [
   }
 }
 
+// expo-notifications embeds each sound as an Android raw resource during prebuild.
+ // Reject a platform-invalid name before submitting a remote EAS build.
+ for (const app of ["app-client","app-partner","app-captain"]) {
+   const soundsRoot=path.join(appsRoot,app,"assets","sounds");
+   const files=fs.readdirSync(soundsRoot);
+   for (const name of files) {
+     if (!/^[a-z][a-z0-9_]*\.(?:wav|mp3|ogg)$/.test(name)) {
+       console.error(app+": Android notification sound has an invalid resource name: "+name);
+       process.exit(1);
+     }
+   }
+   for (const tone of ["classic","soft","urgent"]) {
+     if (!files.includes("order_"+tone+".wav")) {
+       console.error(app+": Missing Android notification sound: order_"+tone+".wav");
+       process.exit(1);
+     }
+   }
+ }
+
 const env = parseEnv(fs.readFileSync(envExamplePath, "utf8"));
 const rootPackage = JSON.parse(fs.readFileSync(rootPackagePath, "utf8"));
 const seen = {
