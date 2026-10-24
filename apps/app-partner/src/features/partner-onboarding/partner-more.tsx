@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, logoutIdentity, subscribeIdentitySession } from "../../bootstrap/identity";
 import { PartnerAccessInvitationsCard } from "./partner-access-invitations";
+import { PartnerPerformancePeek } from "./partner-performance-peek";
 import { PartnerAccountSecurity } from "../access/partner-account-security";
 import { readOwnJoiningCase, listOwnStoreAccessInvitations, readOwnStoreOperationalAvailability, readOwnStoreImages } from "./store-readback-client";
 import { onStoreAvailabilityChanged } from "./store-availability-events";
@@ -179,6 +180,7 @@ export function PartnerMore() {
       <Text style={styles.menuLabel}>{item.label}</Text>
       <View style={[styles.menuIcon,{backgroundColor:index%2===0?theme.actionSoft:theme.surfaceRaised}]}><BthwaniIcon name={item.icon} size={20} color={index%2===0?theme.brandAction:theme.color}/></View>
     </Pressable>)}</View>
+    <PartnerPerformancePeek store={selectedStore}/>
     <View style={styles.appearanceCard} accessibilityLabel="المظهر">
       <View style={styles.appearanceHeading}>
         <BthwaniIcon name="edit" size={18} color={theme.colorMuted}/>
