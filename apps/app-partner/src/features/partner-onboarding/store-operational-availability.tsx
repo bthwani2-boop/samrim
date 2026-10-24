@@ -3,9 +3,10 @@ import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-
 import type { PartnerStoreOperationalAvailabilityResponse, StoreFulfillmentMode, StoreOperationalAvailability, StoreOperationalAvailabilityRequest, StoreScheduleWindow } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { readOwnStoreOperationalAvailability, updateOwnStoreOperationalAvailability } from "./store-readback-client";
 import { PartnerWeeklyHoursEditor, type PartnerWorkingWindow } from "./partner-weekly-hours-editor";
+import { signalStoreAvailabilityChanged } from "./store-availability-events";
 
 type AvailabilityState = { kind: "loading" } | { kind: "ready"; value: PartnerStoreOperationalAvailabilityResponse } | { kind: "error" };
 type WindowDraft = PartnerWorkingWindow;
@@ -148,6 +149,7 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [showPreparation, setShowPreparation] = useState(false);
   const [pendingAttempt, setPendingAttempt] = useState<PendingAttempt | null>(null);
   const requestSequence = useRef(0);
   const disabled = busy || pendingAttempt !== null;
@@ -177,10 +179,11 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
   }, [load]);
 
 
-  async function save() {
+  async function save(override?: AvailabilityDraft) {
     if (state.kind !== "ready" || !draft || busy) return;
+    const selectedDraft = override ?? draft;
     const attempt = pendingAttempt ?? (() => {
-      const input = buildAvailabilityRequest(draft, state.value.availability, fulfillmentModes);
+      const input = buildAvailabilityRequest(selectedDraft, state.value.availability, fulfillmentModes);
       if (!input) return null;
       return { input, idempotencyKey: `store_availability_${Crypto.randomUUID()}`, correlationID: `store_availability_corr_${Crypto.randomUUID()}` };
     })();
@@ -197,7 +200,8 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
       setPendingAttempt(null);
       setState({ kind: "ready", value: updated });
       setDraft(availabilityDraft(updated.availability));
-      setNotice("حُفظت الإتاحة وأُعيدت قراءة حالتها المعتمدة.");
+      setNotice("تم تحديث استقبال الطلبات.");
+      signalStoreAvailabilityChanged(storeID);
     } catch (cause) {
       const status = httpStatus(cause);
       if (status === 409) {
@@ -218,57 +222,74 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
   if (state.kind === "loading") return <View style={styles.card}><ActivityIndicator accessibilityLabel="جارٍ قراءة إتاحة المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة ساعات العمل وإمكانية استقبال الطلبات…</Text></View>;
   if (state.kind === "error" || !draft) return <View style={styles.card}><Text accessibilityRole="alert" style={styles.error}>تعذرت قراءة الإتاحة المعتمدة للمتجر.</Text><BthwaniButton label="إعادة القراءة" onPress={() => void load()} variant="secondary" /></View>;
 
+  const confirmedOpen = state.value.orderabilityByMode.some((mode) => mode.state === "OPEN_FOR_ORDERS");
+  const dirty = JSON.stringify(availabilityDraft(state.value.availability)) !== JSON.stringify(draft);
+  const commit = (next: AvailabilityDraft) => { if (!disabled) void save(next); };
   return <View style={styles.card}>
-    <View style={styles.heading}><Text style={styles.title}>استقبال الطلبات</Text></View>
-    <View style={styles.block}>
-      <View style={styles.chips}>
-        <BthwaniChip accessibilityLabel="المتجر مفتوح دائمًا" disabled={disabled} label="مفتوح دائمًا" onPress={() => setDraft((value) => value ? { ...value, scheduleMode: "ALWAYS_OPEN" } : value)} selected={draft.scheduleMode === "ALWAYS_OPEN"} />
-        <BthwaniChip accessibilityLabel="تحديد ساعات أسبوعية" disabled={disabled} label="ساعات أسبوعية" onPress={() => setDraft((value) => value ? { ...value, scheduleMode: "WEEKLY" } : value)} selected={draft.scheduleMode === "WEEKLY"} />
+    <View style={styles.headerLine}>
+      <Text style={styles.title}>استقبال الطلبات</Text>
+      <View style={[styles.stateTag, { backgroundColor: confirmedOpen ? theme.successSoft : theme.warningSoft }]}>
+        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: confirmedOpen ? theme.success : theme.warning }} />
+        <Text style={[styles.stateLabel, { color: confirmedOpen ? theme.success : theme.warning }]}>{confirmedOpen ? "مفتوح" : "مغلق"}</Text>
       </View>
-      {draft.scheduleMode === "WEEKLY" ? <PartnerWeeklyHoursEditor disabled={disabled} windows={draft.weeklySchedule} onChange={(weeklySchedule) => setDraft((value) => value ? { ...value, weeklySchedule } : value)} /> : null}
     </View>
-    <View style={styles.settingRow}><View style={styles.settingCopy}><Text style={styles.label}>إيقاف استقبال الطلبات مؤقتًا</Text>{draft.paused ? <Text style={styles.muted}>{draft.pauseUntil ? `حتى ${draft.pauseUntil} بتوقيت اليمن` : "حتى الاستئناف يدويًا"}</Text> : null}</View><Switch accessibilityLabel="إيقاف استقبال الطلبات مؤقتًا" disabled={disabled} onValueChange={(paused) => setDraft((value) => value ? { ...value, paused, pauseReason: paused ? value.pauseReason : "", pauseUntil: paused ? value.pauseUntil : null } : value)} value={draft.paused} /></View>
-    {draft.paused ? <>
-      <TextInput accessibilityLabel="سبب إيقاف استقبال الطلبات" editable={!disabled} maxLength={500} onChangeText={(pauseReason) => setDraft((value) => value ? { ...value, pauseReason } : value)} placeholder="سبب الإيقاف" value={draft.pauseReason} style={styles.input} />
-      <TextInput accessibilityLabel="موعد استئناف استقبال الطلبات" editable={!disabled} maxLength={16} onChangeText={(pauseUntil) => setDraft((value) => value ? { ...value, pauseUntil: toAsciiDigits(pauseUntil) || null } : value)} placeholder="يوم/شهر/سنة ساعة:دقيقة" value={draft.pauseUntil ?? ""} style={styles.input} />
-      <Text style={styles.muted}>اختياري · بتوقيت اليمن</Text>
-    </> : null}
-    <View style={styles.block}>
-      <Text style={styles.label}>مدة التجهيز</Text>
-      <TextInput accessibilityLabel="مدة التجهيز بالدقائق" editable={!disabled} keyboardType="number-pad" onChangeText={(preparationMinutes) => setDraft((value) => value ? { ...value, preparationMinutes: toAsciiDigits(preparationMinutes).replace(/[^0-9]/g, "") } : value)} placeholder="بالدقائق، اختياري" value={draft.preparationMinutes} style={styles.input} />
+    <View style={styles.chips}>
+      <BthwaniChip disabled={disabled} label="مفتوح دائمًا" selected={draft.scheduleMode === "ALWAYS_OPEN" && !draft.paused && draft.unavailableFulfillmentModes.length === 0}
+        onPress={() => commit({ ...draft, scheduleMode: "ALWAYS_OPEN", weeklySchedule: [], paused: false, pauseReason: "", pauseUntil: null, unavailableFulfillmentModes: [] })} />
+      <BthwaniChip disabled={disabled} label="ساعات أسبوعية" selected={draft.scheduleMode === "WEEKLY"}
+        onPress={() => setDraft((value) => value ? { ...value, scheduleMode: "WEEKLY" } : value)} />
     </View>
-    {fulfillmentModes.length ? <View style={styles.block}>
-      <Text style={styles.label}>إيقاف وضع طلب مؤقتًا</Text>
-      {fulfillmentModes.map((mode) => {
-        const unavailable = draft.unavailableFulfillmentModes.includes(mode);
-        const status = state.value.orderabilityByMode.find((item) => item.fulfillmentMode === mode);
-        return <View key={mode} style={styles.settingRow}><View style={styles.settingCopy}><Text style={styles.label}>{modeLabel(mode)}</Text><Text style={styles.muted}>{status ? orderabilityLabel(status.state) : "الحالة الحالية غير متاحة"}</Text></View><Switch accessibilityLabel={`إيقاف ${modeLabel(mode)} مؤقتًا`} disabled={disabled} onValueChange={(value) => setDraft((currentDraft) => currentDraft ? { ...currentDraft, unavailableFulfillmentModes: value ? [...currentDraft.unavailableFulfillmentModes, mode] : currentDraft.unavailableFulfillmentModes.filter((candidate) => candidate !== mode) } : currentDraft)} value={unavailable} /></View>;
-      })}
-    </View> : null}
-    <View style={styles.currentState}>
-      <Text style={styles.label}>الحالة الحالية المعتمدة</Text>
-      {state.value.orderabilityByMode.length ? state.value.orderabilityByMode.map((item) => <Text key={item.fulfillmentMode} style={styles.muted}>{modeLabel(item.fulfillmentMode)}: {orderabilityLabel(item.state)}{item.preparationMinutes ? ` · تجهيز ${item.preparationMinutes} دقيقة` : ""}</Text>) : <Text style={styles.muted}>لا يوجد وضع طلب دائم معتمد لهذا المتجر بعد.</Text>}
+    {draft.scheduleMode === "WEEKLY" ? <View style={styles.schedule}><PartnerWeeklyHoursEditor disabled={disabled} windows={draft.weeklySchedule} onChange={(weeklySchedule) => setDraft((current) => current ? { ...current, weeklySchedule } : current)} /></View> : null}
+    <View style={styles.settingRow}>
+      <Text style={styles.label}>إيقاف مؤقت</Text>
+      <Switch accessibilityLabel="إيقاف استقبال الطلبات مؤقتًا" disabled={disabled} value={draft.paused}
+        onValueChange={(paused) => commit({ ...draft, paused, pauseReason: paused ? "إيقاف مؤقت من الشريك" : "", pauseUntil: null })} />
     </View>
+    <View style={styles.divider} />
+    <Text style={styles.label}>طرق الاستلام والتوصيل</Text>
+    {fulfillmentModes.map((mode) => {
+      const available = !draft.unavailableFulfillmentModes.includes(mode);
+      const confirmed = state.value.orderabilityByMode.find((item) => item.fulfillmentMode === mode);
+      return <View key={mode} style={styles.settingRow}>
+        <View style={styles.modeText}><Text style={styles.label}>{modeLabel(mode)}</Text>
+          <Text numberOfLines={1} style={styles.muted}>{confirmed ? orderabilityLabel(confirmed.state) : "قيد التحقق"}</Text>
+        </View>
+        <Switch accessibilityLabel={"تفعيل " + modeLabel(mode)} disabled={disabled} value={available} onValueChange={(enabled) => commit({
+          ...draft, unavailableFulfillmentModes: enabled
+            ? draft.unavailableFulfillmentModes.filter((candidate) => candidate !== mode)
+            : [...draft.unavailableFulfillmentModes, mode],
+        })} />
+      </View>;
+    })}
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded: showPreparation }} onPress={() => setShowPreparation((current) => !current)} style={styles.advancedTrigger}>
+      <Text style={styles.advancedLabel}>مدة التجهيز {draft.preparationMinutes ? "· " + draft.preparationMinutes + " دقيقة" : ""}</Text>
+      <Text style={styles.muted}>{showPreparation ? "إخفاء" : "تعديل"}</Text>
+    </Pressable>
+    {showPreparation ? <TextInput accessibilityLabel="مدة التجهيز بالدقائق" editable={!disabled} keyboardType="number-pad"
+      onChangeText={(preparationMinutes) => setDraft((value) => value ? { ...value, preparationMinutes: toAsciiDigits(preparationMinutes).replace(/[^0-9]/g, "") } : value)}
+      placeholder="دقائق التجهيز" value={draft.preparationMinutes} style={styles.input} /> : null}
     {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
-    <BthwaniButton busy={busy} disabled={busy || (pendingAttempt === null && (fulfillmentModes.length === 0 || (draft.scheduleMode === "WEEKLY" && draft.weeklySchedule.length === 0) || (draft.paused && draft.pauseReason.trim().length < 2)))} label={pendingAttempt ? "إعادة إرسال التحديث المحفوظ" : "حفظ إتاحة المتجر"} onPress={() => void save()} />
+    {dirty || pendingAttempt ? <BthwaniButton busy={busy} disabled={busy || (!pendingAttempt && (fulfillmentModes.length === 0 || (draft.scheduleMode === "WEEKLY" && !draft.weeklySchedule.length)))} label={pendingAttempt ? "إعادة المحاولة" : "حفظ التعديلات"} onPress={() => void save()} /> : null}
   </View>;
 }
 
-function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  return StyleSheet.create({
-    card: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] },
-    heading: { gap: spacing[1] },
-    title: { ...typography.titleMd, color: theme.color },
-    label: { ...typography.label, color: theme.color },
-    muted: { ...typography.bodySm, color: theme.colorMuted },
-    error: { ...typography.label, color: theme.danger },
-    notice: { ...typography.label, color: theme.actionBackground },
-    block: { gap: spacing[2] },
-    chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
-    input: { backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, minHeight: 44, paddingHorizontal: spacing[2], textAlign: "right" },
-    settingRow: { alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "space-between" },
-    settingCopy: { flex: 1, gap: spacing[1] },
-    currentState: { backgroundColor: theme.surfaceInset, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] },
-  });
-}
+function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({
+  card: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, gap: 10, padding: 13 },
+  headerLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 9 },
+  title: { ...typography.titleSm, color: theme.color, fontWeight: "800" },
+  stateTag: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 11, flexDirection: "row", gap: 5, alignItems: "center" },
+  stateLabel: { ...typography.caption, fontWeight: "700" },
+  label: { ...typography.bodyStrong, color: theme.color },
+  muted: { ...typography.caption, color: theme.colorMuted },
+  error: { ...typography.bodySm, color: theme.danger },
+  notice: { ...typography.caption, color: theme.success },
+  chips: { flexDirection: "row", gap: 7, flexWrap: "wrap" },
+  schedule: { backgroundColor: theme.surfaceInset, borderRadius: 12, padding: 8 },
+  settingRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 43, gap: 8 },
+  modeText: { flex: 1, gap: 2 },
+  divider: { height: 1, backgroundColor: theme.borderColor },
+  advancedTrigger: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", minHeight: 40 },
+  advancedLabel: { ...typography.bodySm, color: theme.color },
+  input: { backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderWidth: 1, borderRadius: 9, minHeight: 43, paddingHorizontal: 11, color: theme.color, textAlign: "right" },
+}); }

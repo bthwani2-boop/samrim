@@ -1,19 +1,35 @@
 import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { BthwaniIcon, BthwaniIconButton, BthwaniSearchField, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type Href, useRouter } from "expo-router";
+
 import { PartnerOrderAvailability } from "../features/partner-onboarding/partner-order-availability";
 
-import { type PropsWithChildren, useEffect, useMemo, useRef, useState } from "react";
-import { type ColorValue, Modal, Pressable, ScrollView, StyleSheet, Text, type TextInput, View } from "react-native";
+import { type PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BackHandler, type ColorValue, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, type TextInput, View } from "react-native";
 import { usePartnerStoreScope } from "../features/partner-onboarding/partner-store-scope-context";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type PartnerSearchNavigation = {
-  navigate: (screen: "orders", params: { focus: "search" }) => void;
+  navigate: ((screen: "orders", params: { focus: "search" }) => void) & ((screen: "more") => void);
+  canGoBack: () => boolean;
+  goBack: () => void;
   setParams: (params: { focus?: string; q?: string }) => void;
 };
 
 export function PartnerScrollScreen({ children }: PropsWithChildren) {
+  const router = useRouter();
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
+  const origin = Array.isArray(returnTo) ? returnTo[0] : returnTo;
+  // An Expo Tab screen can have Orders in its internal back history even when
+  // the user entered this management screen from More. Respect that origin.
+  useFocusEffect(useCallback(() => {
+    if (Platform.OS !== "android" || origin !== "more") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      router.navigate("/more" as Href);
+      return true;
+    });
+    return () => sub.remove();
+  }, [origin, router]));
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
@@ -25,8 +41,8 @@ export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>, 
   return ({ route }: { route: { name: string } }) => ({
     headerShown: true,
     header: ({ route: headerRoute, navigation }: { route: { name: string; params?: unknown }; navigation: unknown }) => {
-      const params = headerRoute.params as { focus?: string | string[]; q?: string | string[] } | undefined;
-      return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><PartnerHeader title={headerRoute.name === "orders" ? "الطلبات" : headerRoute.name === "products" ? ((headerRoute.params as { panel?: string } | undefined)?.panel === "tools" ? "الكتالوج" : "المنتجات") : headerRoute.name === "wallet" ? "المحفظة" : headerRoute.name === "account" ? "الحساب" : headerRoute.name === "onboarding" ? "الانضمام" : headerRoute.name === "store" ? ((headerRoute.params as { section?: string } | undefined)?.section === "promotions" ? "العروض" : (headerRoute.params as { section?: string } | undefined)?.section === "team" ? "الفريق" : (headerRoute.params as { section?: string } | undefined)?.section === "settings" ? "الصور" : "التشغيل") : "المزيد"} isOrders={headerRoute.name === "orders"} isSubpage={["store", "account", "onboarding"].includes(headerRoute.name)} canSearchOrders={canSearchOrders && headerRoute.name === "orders"} focus={params?.focus} searchQuery={params?.q} navigation={navigation as PartnerSearchNavigation} styles={styles} /></SafeAreaView>;
+      const params = headerRoute.params as { focus?: string | string[]; q?: string | string[]; returnTo?: string; panel?: string } | undefined;
+      return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><PartnerHeader title={headerRoute.name === "orders" ? "الطلبات" : headerRoute.name === "products" ? ((headerRoute.params as { panel?: string } | undefined)?.panel === "tools" ? "الكتالوج" : "المنتجات") : headerRoute.name === "wallet" ? "المحفظة" : headerRoute.name === "account" ? "الحساب" : headerRoute.name === "onboarding" ? "الانضمام" : headerRoute.name === "store" ? ((headerRoute.params as { section?: string } | undefined)?.section === "promotions" ? "العروض" : (headerRoute.params as { section?: string } | undefined)?.section === "team" ? "الفريق" : (headerRoute.params as { section?: string } | undefined)?.section === "settings" ? "الصور" : "التشغيل") : "المزيد"} isOrders={headerRoute.name === "orders"} isSubpage={["store", "account", "onboarding"].includes(headerRoute.name) || (headerRoute.name === "products" && params?.panel === "tools")} returnTo={params?.returnTo} canSearchOrders={canSearchOrders && headerRoute.name === "orders"} focus={params?.focus} searchQuery={params?.q} navigation={navigation as PartnerSearchNavigation} styles={styles} /></SafeAreaView>;
     },
     tabBarPosition: desktopWeb ? "right" as const : "bottom" as const,
     tabBarVariant: desktopWeb ? "material" as const : "uikit" as const,
@@ -43,9 +59,8 @@ export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>, 
   });
 }
 
-function PartnerHeader({ title, isOrders, isSubpage, canSearchOrders, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { title: string; isOrders: boolean; isSubpage: boolean; canSearchOrders: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation: PartnerSearchNavigation; styles: ReturnType<typeof createStyles> }) {
+function PartnerHeader({ title, isOrders, isSubpage, returnTo, canSearchOrders, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { title: string; isOrders: boolean; isSubpage: boolean; returnTo?: string | undefined; canSearchOrders: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation: PartnerSearchNavigation; styles: ReturnType<typeof createStyles> }) {
   const theme = useAppearanceTheme();
-  const router = useRouter();
   const { stores, selectedStore, selectStore } = usePartnerStoreScope();
   const [pickerOpen, setPickerOpen] = useState(false);
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
@@ -65,9 +80,9 @@ function PartnerHeader({ title, isOrders, isSubpage, canSearchOrders, focus: raw
         <BthwaniSearchField accessibilityLabel="البحث في الطلبات" autoCapitalize="none" autoCorrect={false} containerStyle={styles.headerSearchField} inputRef={searchInputRef} onChangeText={(value) => navigation.setParams({ q: value })} onClear={() => navigation.setParams({ q: "" })} placeholder="ابحث في الطلبات" returnKeyType="search" value={searchQuery} />
         <BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => navigation.setParams({ focus: "", q: "" })} size={sizing.controlMd} tone="soft" />
       </View> : <>
-        <View style={styles.headerMain}><Text accessibilityRole="header" numberOfLines={1} style={styles.headerTitle}>{title}</Text>{isOrders && selectedStore && (selectedStore.owned || selectedStore.permissions.includes("store_operations")) ? <PartnerOrderAvailability key={selectedStore.id} storeID={selectedStore.id} /> : null}</View>
+        <View style={styles.headerMain}><Text accessibilityRole="header" numberOfLines={1} style={styles.headerTitle}>{title}</Text>{isOrders && selectedStore && (selectedStore.owned || selectedStore.permissions.includes("store_operations")) ? <PartnerOrderAvailability key={selectedStore.id} storeID={selectedStore.id} published={selectedStore.publicationState === "published"} /> : null}</View>
         <View style={styles.headerActions}>
-          {isSubpage ? <BthwaniIconButton icon="back" label="رجوع" onPress={() => router.replace("/more" as Href)} size={sizing.controlSm} tone="soft" /> : null}
+          {isSubpage && Platform.OS === "web" ? <BthwaniIconButton icon="back" label="رجوع" onPress={() => returnTo === "more" ? navigation.navigate("more") : navigation.canGoBack() ? navigation.goBack() : navigation.navigate("more")} size={sizing.controlSm} tone="soft" /> : null}
           {canSearchOrders ? <BthwaniIconButton icon="search" label="البحث في الطلبات" onPress={() => navigation.navigate("orders", { focus: "search" })} size={sizing.controlMd} tone="soft" /> : null}
           {stores.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="تبديل المتجر" onPress={() => setPickerOpen(true)} style={styles.storePickerButton}><BthwaniIcon name="store" size={20} color={theme.brandAction} /><Text style={styles.pickerArrow}>⌄</Text></Pressable> : null}
         </View>

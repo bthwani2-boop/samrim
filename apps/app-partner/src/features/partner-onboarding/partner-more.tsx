@@ -5,6 +5,7 @@ import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { readOwnStoreOperationalAvailability } from "./store-readback-client";
+import { onStoreAvailabilityChanged } from "./store-availability-events";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
 
@@ -31,11 +32,13 @@ export function PartnerMore() {
     let active = true;
     setAvailability(null);
     setAvailabilityError(false);
-    if (storeID) void readOwnStoreOperationalAvailability(storeID).then(
-      (value) => { if (active) setAvailability(value); },
+    const refresh = () => { if (storeID) void readOwnStoreOperationalAvailability(storeID).then(
+      (value) => { if (active) { setAvailability(value); setAvailabilityError(false); } },
       () => { if (active) setAvailabilityError(true); },
-    );
-    return () => { active = false; };
+    ); };
+    refresh();
+    const stop = storeID ? onStoreAvailabilityChanged(storeID, refresh) : () => {};
+    return () => { active = false; stop(); };
   }, [storeID]));
   const orderable = availability?.orderabilityByMode.some((mode) => mode.state === "OPEN_FOR_ORDERS") ?? false;
   const stopped = availability?.availability.paused ?? false;
@@ -52,8 +55,8 @@ export function PartnerMore() {
     { label: "الحساب", icon: "account", description: "معلومات الحساب وتفضيلاته", href: "/account" as Href },
   ];
   function navigate(item: MenuItem) {
-    if (item.destination) router.push({ pathname: "/store", params: { section: item.destination } } as Href);
-    else if (item.href) router.push(item.href);
+    if (item.destination) router.push({ pathname: "/store", params: { section: item.destination, returnTo: "more" } } as Href);
+    else if (item.href) router.push((String(item.href).includes("?") ? String(item.href) + "&returnTo=more" : String(item.href) + "?returnTo=more") as Href);
   }
   const operationalItem: MenuItem = { label: "التشغيل وساعات العمل", icon: "store", description: "إعدادات التشغيل", destination: "operations" };
   return <View style={styles.screen}>
@@ -71,7 +74,7 @@ export function PartnerMore() {
     </View> : null}
     <View style={styles.grid}>
       {actions.map((item, index) => <Pressable key={item.label} accessibilityRole="button" accessibilityLabel={item.label} onPress={() => navigate(item)} style={({ pressed }) => [styles.menuCard, pressed && styles.menuPressed]}>
-        <View style={styles.menuTop}><View style={[styles.menuIcon, { backgroundColor: index % 3 === 0 ? theme.actionSoft : theme.surfaceRaised }]}><BthwaniIcon name={item.icon} size={20} color={index % 3 === 0 ? theme.brandAction : theme.color} /></View><Text numberOfLines={1} style={styles.menuTitle}>{item.label}</Text><BthwaniIcon name="back" size={15} color={theme.colorMuted} /></View>
+        <View style={styles.menuTop}><View style={[styles.menuIcon, { backgroundColor: index % 3 === 0 ? theme.actionSoft : theme.surfaceRaised }]}><BthwaniIcon name={item.icon} size={20} color={index % 3 === 0 ? theme.brandAction : theme.color} /></View><Text numberOfLines={1} style={styles.menuTitle}>{item.label}</Text></View>
       </Pressable>)}
     </View>
   </View>;

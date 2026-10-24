@@ -31,7 +31,7 @@ const queueFilters = [
   { key: "NEEDS_ACTION", label: "جديدة", states: ["CREATED"] },
   { key: "PREPARING", label: "التجهيز", states: ["PARTNER_ACCEPTED", "PREPARING"] },
   { key: "HANDOFF", label: "التسليم", states: ["READY_FOR_DISPATCH", "READY_FOR_PICKUP", "CAPTAIN_ASSIGNED", "IN_CUSTODY"] },
-  { key: "CLOSED", label: "مغلقة", states: ["DELIVERED", "REJECTED", "CANCELLED", "PICKED_UP", "DELIVERY_FAILED"] },
+  { key: "CLOSED", label: "المنتهية", states: ["DELIVERED", "REJECTED", "CANCELLED", "PICKED_UP", "DELIVERY_FAILED"] },
 ] as const;
 
 type QueueFilter = (typeof queueFilters)[number]["key"];
@@ -231,28 +231,16 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
 
   return (
     <View style={styles.container} accessibilityLabel="إدارة طلبات المتجر">
-      <View style={styles.toolbar}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={filter === "CLOSED" ? "العودة إلى الطلبات النشطة" : "عرض سجل الطلبات"}
-          disabled={Boolean(busy)}
-          onPress={() => setFilter(filter === "CLOSED" ? "ACTIVE" : "CLOSED")}
-          style={styles.archiveButton}
-        >
-          <Text style={styles.archiveText}>{filter === "CLOSED" ? "النشطة" : "السجل"}</Text>
-        </Pressable>
-      </View>
-
       {!loading && attention ? <View style={styles.summaryRow} accessibilityLabel="ملخص طابور الطلبات">
           <View style={styles.summaryCard}><BthwaniIcon name="orders" size={21} color={theme.brandAction} /><Text style={styles.summaryValue}>{attention.newOrders}</Text><Text style={styles.summaryLabel}>طلبات جديدة</Text></View>
           <View style={styles.summaryCard}><BthwaniIcon name="store" size={21} color={theme.info} /><Text style={styles.summaryValue}>{attention.awaitingDispatch}</Text><Text style={styles.summaryLabel}>بانتظار التسليم</Text></View>
           <View style={styles.summaryCard}><BthwaniIcon name="warning" size={21} color={theme.warning} /><Text style={styles.summaryValue}>{attention.deliveryRecovery}</Text><Text style={styles.summaryLabel}>تسليم متعثر</Text></View>
         </View> : null}
 
-      {filter !== "CLOSED" ? <ScrollView horizontal accessibilityLabel="تصفية طلبات المتجر" contentContainerStyle={styles.filterRow} showsHorizontalScrollIndicator={false}>
-        {queueFilters.filter(({ key }) => key !== "CLOSED").map(({ key, label }) =>
+      <ScrollView horizontal accessibilityLabel="تصفية طلبات المتجر" contentContainerStyle={styles.filterRow} showsHorizontalScrollIndicator={false}>
+        {queueFilters.map(({ key, label }) =>
           <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: filter === key, disabled: loading || Boolean(busy) }} key={key} disabled={loading || Boolean(busy)} onPress={() => setFilter(key)} style={[styles.filterChip, filter === key && styles.filterSelected]}><Text style={[styles.filterLabel, filter === key && styles.filterLabelSelected]}>{label}</Text>{key === "NEEDS_ACTION" && attention?.newOrders ? <Text style={styles.filterCount}>{attention.newOrders}</Text> : null}</Pressable>)}
-      </ScrollView> : null}
+      </ScrollView>
 
       {loading ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة طلبات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الطلبات…</Text></View> : null}
       {sidecarError ? <Text accessibilityRole="alert" style={styles.muted}>{sidecarError}</Text> : null}
