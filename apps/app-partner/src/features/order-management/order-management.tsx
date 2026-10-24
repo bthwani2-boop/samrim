@@ -3,6 +3,7 @@ import { BthwaniButton, BthwaniConfirmDialog, BthwaniIcon, BthwaniStatusBadge, u
 import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useIsFocused, useLocalSearchParams } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -49,6 +50,7 @@ function storeCaptainChoiceLabel(membership: StoreCaptainMembership): string {
 
 export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const theme = useAppearanceTheme();
+  const insets=useSafeAreaInsets();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const isFocused = useIsFocused();
   const { q: rawQuery, orderId: rawTargetOrder } = useLocalSearchParams<{q?: string | string[]; orderId?: string | string[]}>();
@@ -338,7 +340,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
             <Modal transparent statusBarTranslucent animationType="slide" visible={expandedOrderIds.has(order.id)} onRequestClose={()=>closeDetails(order.id)}>
               <View style={styles.sheetOverlay}>
                 <Pressable accessibilityRole="button" accessibilityLabel="إغلاق التفاصيل" style={styles.sheetScrim} onPress={()=>closeDetails(order.id)}/>
-                <View style={styles.sheet}>
+                <View style={[styles.sheet,{paddingBottom:Math.max(insets.bottom,12)}]}>
                   <View style={styles.sheetGrabber}/>
                   <View style={styles.sheetTop}>
                     <View style={styles.sheetTitleArea}><Text style={styles.sheetTitle}>تفاصيل الطلب #{order.id.slice(-8)}</Text><Text style={styles.compactDim}>{formatOrderDate(order.createdAt)}</Text></View>
