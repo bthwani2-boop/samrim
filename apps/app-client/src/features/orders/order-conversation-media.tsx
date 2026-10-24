@@ -2,17 +2,16 @@ import { createDshMobileClient } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import type { AudioPlayer } from "expo-audio";
 import { File, Paths } from "expo-file-system";
-import { useVideoPlayer, VideoView } from "expo-video";
-import { useEffect, useRef, useState } from "react";
+
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Image, Text, View } from "react-native";
 import { BthwaniButton } from "@bthwani/design-system/native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
-function PrivateVideo({uri}:{uri:string}){
-  const player=useVideoPlayer({uri,useCaching:false});
-  return <VideoView player={player} nativeControls contentFit="contain"
-    surfaceType="textureView" style={{width:230,height:175,borderRadius:12}}/>;
-}
+const PrivateVideo = lazy(async()=>{
+ try { return await import("./order-conversation-private-video"); }
+ catch { return { default: (_props:{uri:string})=><Text>تشغيل الفيديو يتطلب تحديث التطبيق.</Text> }; }
+});
 
 export function OrderConversationMediaMessage({ orderId, messageId, mediaKind }: Readonly<{orderId: string; messageId: string; mediaKind?: string | undefined}>) {
   const [imageUri,setImageUri] = useState("");
@@ -64,7 +63,7 @@ export function OrderConversationMediaMessage({ orderId, messageId, mediaKind }:
       label={mediaKind==="image"?"عرض الصورة":mediaKind==="video"?"عرض الفيديو":"تشغيل الصوت"}
       onPress={()=>void open()}/>
     {imageUri?<Image source={{uri:imageUri}} resizeMode="contain" style={{width:210,height:180,borderRadius:10}}/>:null}
-    {videoUri?<PrivateVideo uri={videoUri}/>:null}
+    {videoUri?<Suspense fallback={<Text>جارٍ تحميل الفيديو…</Text>}><PrivateVideo uri={videoUri}/></Suspense>:null}
     {error?<Text accessibilityRole="alert">{error}</Text>:null}
   </View>;
 }
