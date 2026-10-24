@@ -11,6 +11,7 @@ import { StoreAvailabilityControls } from "./store-availability-controls";
 import { StoreBranchesPreview } from "./store-branches-preview";
 import { StoreModeControls } from "./store-mode-controls";
 import { StoreOperationsPreview } from "./store-operations-preview";
+import { StoreProfileLegacyTabs } from "./store-profile-legacy-tabs";
 
 type Store = StorePublicationResponse["store"];
 type Props = Readonly<{
@@ -24,6 +25,7 @@ type Props = Readonly<{
   openManagement: () => void;
   management: ReactNode;
   onUpdated: () => void;
+  onSelectTab: (tab: string) => void;
 }>;
 
 function Panel({ id, activeTab, children }: Readonly<{ id: string; activeTab: string; children: ReactNode }>) {
@@ -46,7 +48,7 @@ function DateFact({ title, value }: Readonly<{ title: string; value: string }>) 
 /** All existing management capabilities are reachable, but only three top-level sections remain. */
 export function StoreProfileTabs({
   activeTab, store, partner, partnerError, canViewFinance, canViewOperations,
-  manageOpen, openManagement, management, onUpdated,
+  manageOpen, openManagement, management, onUpdated, onSelectTab,
 }: Props) {
   const joining = partner?.joiningCase;
   const account = partner?.partner;
@@ -109,11 +111,14 @@ export function StoreProfileTabs({
       </section> : null}
     </Panel>
 
-    {activeTab === "overview" ? <nav className="store-profile-context-links" aria-label="الوظائف المرتبطة بالمتجر">
-      <Link href={`/operations?storeId=${encodeURIComponent(store.id)}`}>العمليات <span aria-hidden="true">←</span></Link>
-      <Link href={`/catalog?storeId=${encodeURIComponent(store.id)}`}>الكتالوج <span aria-hidden="true">←</span></Link>
-      <Link href={`/marketing?storeId=${encodeURIComponent(store.id)}`}>العروض والتسويق <span aria-hidden="true">←</span></Link>
-      {canViewFinance ? <Link href={`/finance/partner-store-commissions?storeId=${encodeURIComponent(store.id)}`}>المالية <span aria-hidden="true">←</span></Link> : null}
+    {activeTab === "overview" ? <nav className="store-profile-context-links" aria-label="مداخل سريعة لأقسام المتجر">
+      {canViewOperations ? <button type="button" onClick={() => onSelectTab("orders")}>الطلبات <span aria-hidden="true">←</span></button> : null}
+      <button type="button" onClick={() => onSelectTab("products")}>الكتالوج والمنتجات <span aria-hidden="true">←</span></button>
+      <button type="button" onClick={() => onSelectTab("promotions")}>العروض <span aria-hidden="true">←</span></button>
+      {canViewFinance ? <button type="button" onClick={() => onSelectTab("finance")}>المالية <span aria-hidden="true">←</span></button> : null}
     </nav> : null}
+    <StoreProfileLegacyTabs activeTab={activeTab} store={store} partner={partner} partnerError={partnerError}
+      canViewFinance={canViewFinance} canViewOperations={canViewOperations} manageOpen={manageOpen}
+      openManagement={openManagement} management={management} />
   </>;
 }

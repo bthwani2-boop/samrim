@@ -116,6 +116,13 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
     ["overview", "نظرة عامة"], ["operations", "التشغيل"], ["identity", "البيانات والاعتمادات"],
   ];
 
+  const additionalSections: ReadonlyArray<readonly [string, string]> = [
+    ["basics", "البيانات الأساسية"], ["orders", "الطلبات"], ["products", "الكتالوج والمنتجات"],
+    ["promotions", "العروض"], ["branches", "الفروع"], ["coverage", "مناطق الخدمة"],
+    ["hours", "أوقات العمل"], ["customers", "العملاء"], ["quality", "المراجعة والجودة"],
+    ["ratings", "التقييمات"], ["documents", "الوثائق والاعتمادات"], ["history", "السجل"],
+    ...(canViewFinance ? [["finance", "المالية"] as const] : []),
+  ];
   return <div className="store-profile" data-managing={manageOpen}>
     <section className="store-profile-hero store-sheet-hero" aria-label="هوية المتجر">
       <div className="store-profile-hero-main">
@@ -151,9 +158,16 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
     </dialog>, document.body) : null}
 
     {imageNotice ? <output className="store-profile-image-notice">{imageNotice}</output> : null}
-    <RecordTabs id="store-profile" ariaLabel="تبويبات ملف المتجر" className="store-profile-sections"
+    <div className="store-profile-navigation"><RecordTabs id="store-profile" ariaLabel="تبويبات ملف المتجر" className="store-profile-sections"
       tabs={tabs.map(([key, label]) => ({ key, label: <><OperationalIcon name={profileTabIcons[key] ?? "review"}/>{label}</> }))}
       active={activeTab} onSelect={selectTab}/>
+      <select className="store-profile-section-picker" aria-label="الأقسام الإضافية للمتجر"
+        value={additionalSections.some(([key]) => key === activeTab) ? activeTab : ""}
+        onChange={(event) => { if (event.target.value) selectTab(event.target.value); }}>
+        <option value="">أقسام المتجر الأخرى</option>
+        {additionalSections.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select>
+    </div>
 
     <section id="store-profile-panel-overview" role="tabpanel" aria-labelledby="store-profile-tab-overview" hidden={activeTab !== "overview"} className="store-profile-overview">
     {canViewOperations ? <section id="store-profile-overview" className="store-profile-kpis" aria-label="مؤشرات طلبات المتجر">
@@ -192,6 +206,6 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
     </div>
     </section>
     <StoreProfileTabs activeTab={activeTab} store={store} partner={partner} partnerError={partnerError}
-      canViewFinance={canViewFinance} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openEditor} management={management} onUpdated={onUpdated} />
+      canViewFinance={canViewFinance} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openEditor} management={management} onUpdated={onUpdated} onSelectTab={selectTab} />
   </div>;
 }

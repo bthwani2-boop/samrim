@@ -3732,3 +3732,12 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 .store-profile-operating-state { min-block-size: 29px; border: 1px solid var(--border-subtle); border-radius: 99px; padding-inline: 10px; background: var(--surface-muted); color: var(--text-muted); font-size: 11px; cursor: pointer; }
 .store-profile-operating-state[data-state="open"] { color: var(--success-text); background: var(--success-soft); }
 .store-profile-operating-state:focus-visible { outline: 2px solid var(--interactive-text); outline-offset: 2px; }
+
+.store-profile-navigation { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.store-profile-navigation .store-profile-sections { flex: 1; min-inline-size: 0; }
+.store-profile-section-picker { min-height: 38px; max-width: 220px; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--border-subtle); background: var(--surface-base); color: var(--text-primary); cursor: pointer; }
+.store-profile-section-picker:focus-visible { outline: 2px solid var(--interactive-text); outline-offset: 2px; }
+.store-profile-context-links button { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-block-size: 43px; border-radius: 10px; padding-inline: 12px; border: 1px solid var(--border-subtle); background: var(--surface-base); color: var(--interactive-text); font-size: 12px; font-weight: 700; cursor: pointer; }
+.store-profile-context-links button:hover { background: var(--surface-muted); }
+.store-profile-context-links button:focus-visible { outline: 2px solid var(--interactive-text); outline-offset: 2px; }
+@media(max-width:600px) { .store-profile-section-picker { max-width: none; width: 100%; } }
