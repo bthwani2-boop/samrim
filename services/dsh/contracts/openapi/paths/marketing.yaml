@@ -565,6 +565,34 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/partner/stores/{storeId}/discovery-targets:
+    get:
+      operationId: listPartnerStoreReelTargets
+      summary: List only owned Store products and promotions eligible to be reel destinations
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      responses:
+        "200":
+          description: Product and offer references scoped to the authenticated Store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [targets]
+                properties:
+                  targets:
+                    type: array
+                    items:
+                      type: object
+                      required: [targetType, targetId, label]
+                      properties:
+                        targetType: { type: string, enum: [PRODUCT, PROMOTION] }
+                        targetId: { type: string }
+                        label: { type: string }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
   /dsh/partner/stores/{storeId}/discovery-content:
     get:
       operationId: listPartnerStoreReels

@@ -43,7 +43,7 @@ func ResolveDiscoveryContentTarget(ctx context.Context, db *sql.DB, contentID, s
 	if content.State != "PUBLISHED" || content.MediaURI == "" || content.StartsAt.After(now) || (content.EndsAt != nil && !content.EndsAt.After(now)) || (content.ServiceCityID != "" && content.ServiceCityID != serviceCityID) {
 		return DiscoveryContentTargetResolution{}, ErrDiscoveryContentNotFound
 	}
-	result, err := resolveDiscoveryContentTarget(ctx, db, content.TargetType, content.TargetID, serviceCityID, now)
+	result, err := resolveDiscoveryContentTarget(ctx, db, content.TargetType, content.TargetID, serviceCityID, content.SourceStoreID, now)
 	if err != nil {
 		return DiscoveryContentTargetResolution{}, err
 	}
@@ -51,7 +51,7 @@ func ResolveDiscoveryContentTarget(ctx context.Context, db *sql.DB, contentID, s
 	return result, nil
 }
 
-func resolveDiscoveryContentTarget(ctx context.Context, source discoveryContentTargetQuerier, targetType, targetID, serviceCityID string, at time.Time) (DiscoveryContentTargetResolution, error) {
+func resolveDiscoveryContentTarget(ctx context.Context, source discoveryContentTargetQuerier, targetType, targetID, serviceCityID, sourceStoreID string, at time.Time) (DiscoveryContentTargetResolution, error) {
 	targetType = strings.TrimSpace(targetType)
 	targetID = strings.TrimSpace(targetID)
 	serviceCityID = strings.TrimSpace(serviceCityID)
@@ -72,7 +72,7 @@ func resolveDiscoveryContentTarget(ctx context.Context, source discoveryContentT
 
 	targetPredicate := discoveryContentTargetEligibilityPredicate("target", "$3", "$4")
 	query := `WITH target AS (
-		SELECT $1::text AS target_type,NULLIF($2::text,'') AS target_id
+		SELECT $1::text AS target_type,NULLIF($2::text,'') AS target_id,NULLIF($5::text,'') AS source_store_id
 	)
 	SELECT target.target_type,COALESCE(target.target_id,''),
 	       CASE
@@ -90,7 +90,8 @@ func resolveDiscoveryContentTarget(ctx context.Context, source discoveryContentT
 	           LEFT JOIN dsh.catalog_product_categories product_category
 	             ON target.target_type='CATEGORY' AND product_category.product_id=product.id
 	           WHERE ($3='' OR store.service_city_id=$3)
-	             AND ((target.target_type='PRODUCT' AND product.id=target.target_id)
+	             AND (target.source_store_id IS NULL OR store.id=target.source_store_id)
+		             AND ((target.target_type='PRODUCT' AND product.id=target.target_id)
 	               OR (target.target_type='CATEGORY' AND product_category.category_id=target.target_id))
 	             AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
 	           ORDER BY store.id ASC LIMIT 1
@@ -100,7 +101,7 @@ func resolveDiscoveryContentTarget(ctx context.Context, source discoveryContentT
 	FROM target
 	WHERE ` + targetPredicate
 	var result DiscoveryContentTargetResolution
-	err := source.QueryRowContext(ctx, query, targetType, targetID, serviceCityID, at.UTC()).Scan(&result.TargetType, &result.TargetID, &result.StoreID)
+	err := source.QueryRowContext(ctx, query, targetType, targetID, serviceCityID, at.UTC(), sourceStoreID).Scan(&result.TargetType, &result.TargetID, &result.StoreID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DiscoveryContentTargetResolution{}, ErrDiscoveryContentNotFound
 	}
@@ -121,6 +122,7 @@ func discoveryContentTargetEligibilityPredicate(contentAlias, serviceCityPlaceho
 			FROM dsh.stores store
 			JOIN dsh.service_cities city ON city.id=store.service_city_id AND city.active=true
 			WHERE store.id=` + contentAlias + `.target_id
+			  AND (` + contentAlias + `.source_store_id IS NULL OR store.id=` + contentAlias + `.source_store_id)
 			  AND (` + serviceCityPlaceholder + `='' OR store.service_city_id=` + serviceCityPlaceholder + `)
 			  AND store.publication_state='published'
 			  AND store.publication_changed_at IS NOT NULL
@@ -134,6 +136,7 @@ func discoveryContentTargetEligibilityPredicate(contentAlias, serviceCityPlaceho
 			SELECT 1
 			FROM dsh.commerce_promotions promotion
 			WHERE promotion.id=` + contentAlias + `.target_id
+			  AND (` + contentAlias + `.source_store_id IS NULL OR promotion.store_id=` + contentAlias + `.source_store_id)
 			  AND promotion.state='PUBLISHED'
 			  AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_promotion_links link
 			    JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
@@ -176,6 +179,7 @@ func discoveryContentTargetEligibilityPredicate(contentAlias, serviceCityPlaceho
 			JOIN dsh.catalog_products product ON product.id=variant.product_id
 			WHERE (` + serviceCityPlaceholder + `='' OR store.service_city_id=` + serviceCityPlaceholder + `)
 			  AND product.id=` + contentAlias + `.target_id
+			  AND (` + contentAlias + `.source_store_id IS NULL OR store.id=` + contentAlias + `.source_store_id)
 			  AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
 		))
 		OR (` + contentAlias + `.target_type='CATEGORY' AND EXISTS (
