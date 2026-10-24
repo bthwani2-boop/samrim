@@ -14,6 +14,7 @@ export type StoreProductSheetProps = {
   isFavorite: (offerID: string) => boolean;
   favoriteBusy: boolean;
   onToggleFavorite: (offerID: string) => void;
+  onShareOffer: (offerID: string, productID: string, title: string) => void;
   gallerySourceRect?: GallerySourceRect | undefined;
   onQuickAdd: (offerID: string) => void;
   presentation?: "gallery" | "quick";
@@ -88,7 +89,7 @@ function lineEstimate(offer: Offer, quantity: number, selected: ReadonlyArray<st
 }
 
 export function StoreProductSheet(props: StoreProductSheetProps) {
-  const { offer, galleryOffers, onBrowseOffer, isFavorite, favoriteBusy, onToggleFavorite, gallerySourceRect, onQuickAdd, quantityBaseUnits, selectedOptionIds, busy, added, fulfillmentSelected, orderingUnavailableMessage, error, onQuantityChange, onToggleModifier, onAdd, onClose, onGoToCart, onShopOtherStore, presentation = "gallery", anchorY } = props;
+  const { offer, galleryOffers, onBrowseOffer, isFavorite, favoriteBusy, onToggleFavorite, onShareOffer, gallerySourceRect, onQuickAdd, quantityBaseUnits, selectedOptionIds, busy, added, fulfillmentSelected, orderingUnavailableMessage, error, onQuantityChange, onToggleModifier, onAdd, onClose, onGoToCart, onShopOtherStore, presentation = "gallery", anchorY } = props;
   const quick = presentation === "quick";
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -223,6 +224,7 @@ export function StoreProductSheet(props: StoreProductSheetProps) {
     favoriteBusy={favoriteBusy}
     onToggleFavorite={onToggleFavorite}
     onQuickAdd={onQuickAdd}
+    onShare={onShareOffer}
     onBrowse={onBrowseOffer}
     onClose={onClose}
   />;
@@ -241,6 +243,7 @@ export function StoreProductSheet(props: StoreProductSheetProps) {
               <Text numberOfLines={1} style={styles.quickPrice}>{money(offer.priceMinor)} / {quantityLabel(offer, offer.pricingUnitBaseUnits)}</Text>
             </View>
           </View>
+          <BthwaniIconButton icon="share" label="مشاركة المنتج" onPress={() => onShareOffer(offer.offerId,offer.productId,offer.productName)} size={sizing.controlMd} tone="soft" />
           <BthwaniIconButton icon="close" label="إغلاق اختيار الكمية" onPress={onClose} size={sizing.controlMd} tone="soft" />
         </View>
         {added ? <View style={styles.quickDone}>

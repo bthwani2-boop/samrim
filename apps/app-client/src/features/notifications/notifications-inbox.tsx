@@ -1,6 +1,6 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniIconButton, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, type BeneficiaryWalletResponse, type Notification } from "@bthwani/dsh";
+import { clientShareMessageLabel, createDshMobileClient, type ClientShareEntry, type BeneficiaryWalletResponse, type Notification } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -32,6 +32,11 @@ export function NotificationsInbox() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState("");
   const [items, setItems] = useState<ReadonlyArray<Notification>>([]);
+  const [shares, setShares] = useState<ReadonlyArray<ClientShareEntry>>([]);
+  const [shareBefore, setShareBefore] = useState(0);
+  const [shareUnread, setShareUnread] = useState(0);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState("");
   const [walletCredits, setWalletCredits] = useState<ReadonlyArray<WalletCreditNotice>>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(authenticated);
@@ -57,8 +62,15 @@ export function NotificationsInbox() {
       setItems(response.notifications);
       setUnreadCount(response.unreadCount);
       setNextCursor(response.nextCursor ?? "");
-      const walletReadback = await dshClient().readOwnWallet(token).catch(() => null);
+      const [walletReadback, shareReadback] = await Promise.all([
+        dshClient().readOwnWallet(token).catch(() => null),
+        dshClient().listClientShares(token).catch(() => null),
+      ]);
       if (sequence !== loadSequence.current || activeClientActorID() !== actorID) return;
+      setShares(shareReadback?.items ?? []);
+      setShareBefore(shareReadback?.nextBefore ?? 0);
+      setShareUnread(shareReadback?.unreadCount ?? 0);
+      setShareError(shareReadback ? "" : "تعذر قراءة المشاركات حاليًا.");
       const credits = (walletReadback?.state as (BeneficiaryWalletResponse["state"] & { recentCompensations?: ReadonlyArray<WalletCreditNotice> }) | undefined)?.recentCompensations ?? [];
       setWalletCredits(credits);
     } catch (cause) {
@@ -76,6 +88,10 @@ export function NotificationsInbox() {
     pageSequence.current += 1;
     setActorID(activeClientActorID());
     setItems([]);
+    setShares([]);
+    setShareBefore(0);
+    setShareUnread(0);
+    setShareError("");
     setWalletCredits([]);
     setUnreadCount(0);
     setNextCursor("");
@@ -147,6 +163,63 @@ export function NotificationsInbox() {
     }
   }
 
+  async function loadMoreShares() {
+    if (!shareBefore || shareBusy) return;
+    setShareBusy(true); setShareError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const response = await dshClient().listClientShares(token, shareBefore);
+      if (activeClientActorID() !== actorID) return;
+      setShares((previous) => [...previous, ...response.items.filter((item) => !previous.some((existing) => existing.id === item.id))]);
+      setShareBefore(response.nextBefore);
+      setShareUnread(response.unreadCount);
+    } catch { setShareError("تعذر تحميل مشاركات أقدم."); }
+    finally { setShareBusy(false); }
+  }
+
+  async function openShare(share: ClientShareEntry) {
+    if (shareBusy) return;
+    setShareBusy(true); setShareError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      if (activeClientActorID() !== actorID) return;
+      await dshClient().markClientShareRead(token, share.id);
+      if (activeClientActorID() !== actorID) return;
+      const destination = share.contentKind === "CONTENT" ? `/discovery-content/${encodeURIComponent(share.contentId)}` :
+        share.storeId ? `/store/${encodeURIComponent(share.storeId)}${share.productId ? `?productId=${encodeURIComponent(share.productId)}` : ""}` : "";
+      if (destination) router.push(destination as Href);
+      else setShareError("لم يعد لهذا المحتوى رابط قابل للفتح.");
+      await load(true);
+    } catch {
+      if (activeClientActorID() === actorID) setShareError("تعذر فتح المشاركة. أعد المحاولة.");
+    } finally { setShareBusy(false); }
+  }
+
+  async function blockShareSender(share: ClientShareEntry) {
+    if (shareBusy) return;
+    setShareBusy(true); setShareError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      if (activeClientActorID() !== actorID) return;
+      await dshClient().blockClientShareSender(token, share.senderActorId);
+      await load(true);
+    } catch { setShareError("تعذر حظر المرسل، حاول مجددًا."); }
+    finally { setShareBusy(false); }
+  }
+
+  function renderShare(share: ClientShareEntry) {
+    const kindLabel = ({ STORE: "متجر", OFFER: "منتج", PROMOTION: "عرض", CONTENT: "محتوى" } as const)[share.contentKind];
+    return <View key={`share:${share.id}`} style={[styles.item, !share.readAt && styles.unread]}>
+      <Text style={styles.itemTitle}>شارك معك أحد العملاء {kindLabel}</Text>
+      <Text style={styles.body}>{clientShareMessageLabel(share.messageCode)}</Text>
+      <Text style={styles.date}>{formatNotificationDate(share.createdAt)}</Text>
+      <View style={styles.itemHeader}>
+        <BthwaniButton label="فتح المشاركة" onPress={() => void openShare(share)} disabled={shareBusy} variant="secondary" />
+        <Pressable accessibilityRole="button" disabled={shareBusy} onPress={() => void blockShareSender(share)}><Text style={styles.muted}>حظر المرسل</Text></Pressable>
+      </View>
+    </View>;
+  }
+
   function renderItem(item: Notification) {
     return (
       <Pressable
@@ -208,11 +281,17 @@ export function NotificationsInbox() {
           <BthwaniSurface tone="raised" style={styles.summary}>
             <View style={styles.summaryIcon}><BthwaniIcon name="notifications" color={theme.interactiveText} size={sizing.iconLg} /></View>
             <View style={styles.summaryCopy}>
-              <Text style={styles.summaryTitle}>{unreadCount} إشعارات غير مقروءة</Text>
+              <Text style={styles.summaryTitle}>{unreadCount + shareUnread} إشعارات غير مقروءة</Text>
               <Text style={styles.muted}>{unreadCount ? "ابدأ بالأحدث لتبقى على اطلاع." : "أنت على اطلاع بكل تحديثاتك."}</Text>
             </View>
           </BthwaniSurface>
 
+          {shares.length ? <View style={styles.group}>
+            <View style={styles.groupHeader}><Text style={styles.groupTitle}>المشاركات</Text><Text style={styles.groupCount}>{shareUnread ? `${shareUnread} جديدة` : `${shares.length}`}</Text></View>
+            <View style={styles.list}>{shares.map(renderShare)}</View>
+            {shareBefore ? <BthwaniButton label="مشاركات أقدم" disabled={shareBusy} onPress={() => void loadMoreShares()} variant="secondary" /> : null}
+          </View> : null}
+          {shareError ? <View style={styles.group}><Text accessibilityRole="alert" style={styles.error}>{shareError}</Text><BthwaniButton label="إعادة قراءة المشاركات" onPress={() => void load(true)} variant="secondary" /></View> : null}
           {unreadItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>الجديدة</Text><Text style={styles.groupCount}>{unreadItems.length}</Text></View><View style={styles.list}>{unreadItems.map(renderItem)}</View></View> : null}
           {walletCredits.length ? <View style={styles.group}>
             <View style={styles.groupHeader}><Text style={styles.groupTitle}>تعويضات المحفظة</Text></View>
@@ -227,7 +306,7 @@ export function NotificationsInbox() {
             {moreError ? <Text accessibilityRole="alert" style={styles.error}>{moreError}</Text> : null}
             <BthwaniButton busy={loadingMore} disabled={Boolean(busy) || refreshing || loadingMore} label={loadingMore ? "جارٍ تحميل المزيد…" : "عرض إشعارات أقدم"} onPress={() => void loadMore()} variant="secondary" />
           </View> : null}
-          {!items.length && !walletCredits.length ? <BthwaniSurface tone="inset" style={styles.state}><View style={styles.stateIcon}><BthwaniIcon name="notifications" color={theme.colorMuted} size={sizing.iconXl} /></View><Text style={styles.cardTitle}>لا توجد إشعارات حالياً</Text><Text style={styles.muted}>ستظهر تحديثات الطلبات هنا عند توفرها.</Text></BthwaniSurface> : null}
+          {!items.length && !walletCredits.length && !shares.length ? <BthwaniSurface tone="inset" style={styles.state}><View style={styles.stateIcon}><BthwaniIcon name="notifications" color={theme.colorMuted} size={sizing.iconXl} /></View><Text style={styles.cardTitle}>لا توجد إشعارات حالياً</Text><Text style={styles.muted}>ستظهر تحديثات الطلبات هنا عند توفرها.</Text></BthwaniSurface> : null}
           {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
         </>
       )}

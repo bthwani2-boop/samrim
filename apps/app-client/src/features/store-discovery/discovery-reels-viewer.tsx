@@ -8,12 +8,13 @@ type Reel = PublicDiscoveryContentView;
 
 // Only the visible video plays; off-screen videos are paused, and playback
 // stops when the app enters the background or the viewer is dismissed.
-function ReelSlide({ item, active, height, width, onOpen }: {
+function ReelSlide({ item, active, height, width, onOpen, onShare }: {
   item: Reel;
   active: boolean;
   height: number;
   width: number;
   onOpen: (item: Reel) => void;
+  onShare: (item: Reel) => void;
 }) {
   const player = useVideoPlayer({ uri: item.mediaUri, useCaching: true }, (created) => {
     created.loop = true;
@@ -34,6 +35,9 @@ function ReelSlide({ item, active, height, width, onOpen }: {
       <View style={styles.bottom}>
         <Text style={styles.title} numberOfLines={2}>{item.titleAr}</Text>
         {item.bodyAr ? <Text style={styles.body} numberOfLines={3}>{item.bodyAr}</Text> : null}
+        <Pressable accessibilityRole="button" accessibilityLabel="مشاركة الريلز داخل بثواني" style={styles.shareAction} onPress={() => onShare(item)}>
+          <Text style={styles.ctaText}>مشاركة</Text>
+        </Pressable>
         {item.targetType !== "INFO" ? (
           <Pressable accessibilityRole="button" accessibilityLabel={cta} style={styles.cta} onPress={() => onOpen(item)}>
             <Text style={styles.ctaText}>{cta}</Text>
@@ -44,12 +48,13 @@ function ReelSlide({ item, active, height, width, onOpen }: {
   );
 }
 
-export function DiscoveryReelsViewer({ items, visible, initialIndex, onClose, onOpen }: {
+export function DiscoveryReelsViewer({ items, visible, initialIndex, onClose, onOpen, onShare }: {
   items: ReadonlyArray<Reel>;
   visible: boolean;
   initialIndex: number;
   onClose: () => void;
   onOpen: (item: Reel) => void;
+  onShare: (item: Reel) => void;
 }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -81,7 +86,7 @@ export function DiscoveryReelsViewer({ items, visible, initialIndex, onClose, on
           maxToRenderPerBatch={2}
           windowSize={3}
           renderItem={({ item, index: position }) => (
-            <ReelSlide item={item} active={visible && foreground && index === position} height={height} width={width} onOpen={onOpen} />
+            <ReelSlide item={item} active={visible && foreground && index === position} height={height} width={width} onOpen={onOpen} onShare={onShare} />
           )}
         />
         <View pointerEvents="box-none" style={[styles.top, { paddingTop: insets.top + 12 }]}>
@@ -108,5 +113,6 @@ const styles = StyleSheet.create({
   title: { color: "#fff", fontSize: 20, fontWeight: "700", textAlign: "right" },
   body: { color: "#eee", fontSize: 14, textAlign: "right" },
   cta: { paddingVertical: 12, paddingHorizontal: 20, backgroundColor: "#fff", borderRadius: 14, alignSelf: "stretch", alignItems: "center" },
+  shareAction: { minHeight: 44, paddingVertical: 10, paddingHorizontal: 16, backgroundColor: "#fff", borderRadius: 14, alignSelf: "flex-end", alignItems: "center" },
   ctaText: { color: "#13151b", fontWeight: "700", fontSize: 15 },
 });

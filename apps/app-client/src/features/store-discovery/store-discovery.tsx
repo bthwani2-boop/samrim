@@ -7,6 +7,8 @@ import { AccessibilityInfo, Animated, AppState, FlatList, I18nManager, Image, Pl
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { DiscoveryReelsViewer } from "./discovery-reels-viewer";
+import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
+import * as ExpoLinking from "expo-linking";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { LoopingHeroBanner } from "./looping-hero-banner";
 import { PromotionCard } from "./promotion-card";
@@ -351,6 +353,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const shortFormContent = useMemo(() => marketing.content.filter((item) => item.kind === "SHORT_FORM" && Boolean(item.mediaUri)), [marketing.content]);
   const videoShorts = useMemo(() => shortFormContent.filter((item) => item.mediaKind === "video"), [shortFormContent]);
   const [selectedReelIndex, setSelectedReelIndex] = useState<number | null>(null);
+  const [shareTarget, setShareTarget] = useState<ClientShareTarget | null>(null);
   const openShort = (item: PublicDiscoveryContentView) => {
     const index = videoShorts.findIndex((video) => video.id === item.id);
     if (index >= 0) { setSelectedReelIndex(index); return; }
@@ -637,7 +640,9 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       visible={selectedReelIndex !== null && isScreenActive}
       onClose={() => setSelectedReelIndex(null)}
       onOpen={(item) => { setSelectedReelIndex(null); openDiscoveryContent(item.id); }}
+      onShare={(item) => { setSelectedReelIndex(null); setShareTarget({kind:"CONTENT",id:item.id,title:item.titleAr,link:ExpoLinking.createURL(`discovery-content/${encodeURIComponent(item.id)}`)}); }}
     />
+    <ClientShareSheet target={shareTarget} onClose={() => setShareTarget(null)} />
     </>
   );
 }

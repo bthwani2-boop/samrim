@@ -5,7 +5,7 @@ import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, FlatList, Image, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { AccessibilityInfo, Alert, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,6 +18,7 @@ import { PromotionCard } from "./promotion-card";
 import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicDiscoveryContent, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 import type { GallerySourceRect } from "./store-product-gallery";
 import { StoreProductSheet } from "./store-product-sheet";
+import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
 
 type DetailState =
   | { kind: "loading" }
@@ -80,6 +81,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<DetailState>({ kind: "loading" });
+  const [shareTarget, setShareTarget] = useState<ClientShareTarget | null>(null);
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [selectedModifierOptionIds, setSelectedModifierOptionIds] = useState<Record<string, ReadonlyArray<string>>>({});
   const [busyOfferId, setBusyOfferId] = useState("");
@@ -574,17 +576,12 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
   }
 
-  async function shareStore() {
-    setError("");
-    const storeLink = ExpoLinking.createURL(`store/${encodeURIComponent(storeId)}`);
-    try {
-      await Share.share({
-        message: `${state.kind === "ready" ? state.store.name : "متجر"} على بثواني\n${storeLink}`,
-        title: state.kind === "ready" ? state.store.name : "مشاركة المتجر",
-      });
-    } catch {
-      setError("تعذر فتح خيارات مشاركة المتجر. حاول مجددًا.");
-    }
+  function shareStore() {
+    setShareTarget({ kind: "STORE", id: storeId, title: state.kind === "ready" ? state.store.name : "متجر", link: ExpoLinking.createURL(`store/${encodeURIComponent(storeId)}`) });
+  }
+  function shareOffer(offerID: string, productID: string, title: string) {
+    setDetailOffer(null);
+    setShareTarget({ kind: "OFFER", id: offerID, title, link: ExpoLinking.createURL(`store/${encodeURIComponent(storeId)}?productId=${encodeURIComponent(productID)}`) });
   }
 
   async function toggleOfferFavorite(offerID: string) {
@@ -866,6 +863,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing[3], gap: spacing[2] }}>
             {promotions.map((promotion) => <View key={promotion.id} style={{ width: Math.min(320, Math.max(245, windowWidth - spacing[3] * 3)) }}>
               <PromotionCard promotion={promotion} onUse={() => openStorePromotion(promotion.code)} />
+              <BthwaniButton label="مشاركة العرض" variant="secondary" onPress={() => setShareTarget({ kind: "PROMOTION", id: promotion.id, title: promotion.nameAr, link: ExpoLinking.createURL(`store/${encodeURIComponent(storeId)}`) })} />
             </View>)}
           </ScrollView>
           </> : null}
@@ -884,6 +882,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         gallerySourceRect={gallerySourceRect}
         favoriteBusy={Boolean(favoriteOfferBusyID)}
         onToggleFavorite={(offerID) => { void toggleOfferFavorite(offerID); }}
+        onShareOffer={(offerID,productID,title) => shareOffer(offerID,productID,title)}
         onQuickAdd={(offerID) => { void openOfferDetails(offerID, "quick"); }}
         presentation={sheetMode}
         anchorY={quickAnchorY}
@@ -902,6 +901,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         onClose={() => { detailRequestID.current += 1; setDetailOffer(null); setDetailLoading(false); }}
         onGoToCart={() => { detailRequestID.current += 1; setDetailOffer(null); router.push(`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}` as Href); }}
       />
+      <ClientShareSheet target={shareTarget} onClose={() => setShareTarget(null)} />
       {openCart?.lines.length || cartReadError ? <SafeAreaView edges={["bottom"]} style={styles.cartSafeArea}>
         <Pressable accessibilityRole="button" accessibilityLabel={cartReadError ? "فتح السلة لإعادة قراءة محتوياتها" : "مراجعة السلة، " + (openCart?.lines.length ?? 0) + " منتجات"} disabled={mutationBusy} accessibilityState={{ disabled: mutationBusy }} onPress={() => router.push((`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}`) as Href)} style={styles.cartCta}>
           <View style={styles.cartOpenAction}><Text style={styles.cartOpenText}>مراجعة السلة</Text></View>
