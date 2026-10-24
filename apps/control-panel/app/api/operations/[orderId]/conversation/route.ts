@@ -46,9 +46,10 @@ export async function POST(request: Request, context: { params: Promise<{ orderI
   const mediaBase64=body?.mediaBase64;
   const hasMedia=kind!==undefined||contentType!==undefined||mediaBase64!==undefined;
   const mimeAllowed=kind==="image"&&["image/jpeg","image/png","image/webp"].includes(String(contentType))
-    ||kind==="audio"&&["audio/mp4","audio/m4a","audio/3gpp","audio/webm","audio/aac"].includes(String(contentType));
+    ||kind==="audio"&&["audio/mp4","audio/m4a","audio/3gpp","audio/webm","audio/aac"].includes(String(contentType))
+    ||kind==="video"&&["video/mp4","video/webm"].includes(String(contentType));
   if(hasMedia&&(!mimeAllowed||typeof mediaBase64!=="string"||mediaBase64.length<16
-    ||mediaBase64.length>4*1024*1024+64||!/^[a-zA-Z0-9+/]*={0,2}$/.test(mediaBase64))){
+    ||mediaBase64.length>8*1024*1024+128||!/^[a-zA-Z0-9+/]*={0,2}$/.test(mediaBase64))){
     return failure("INVALID_INPUT","private media kind, encoding or size invalid",400);
   }
   const allowed = ["client", "partner", "captain", "operator"];

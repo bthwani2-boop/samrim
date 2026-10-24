@@ -15,12 +15,13 @@ type Props = Readonly<{
   onGallery:()=>void;
   onCamera:()=>void;
   onVoice:()=>void;
+  onVideo?:()=>void;
   audioControls?:ReactNode;
   disabled?:boolean;
   canSend?:boolean;
 }>;
 /** Role choices are presentation only. DSH validates actual message recipients. */
-export function BthwaniOrderChatComposer({recipients,selected,onToggleRecipient,onSelectAll,body,onChangeText,onSend,onGallery,onCamera,onVoice,audioControls,disabled=false,canSend=true}:Props) {
+export function BthwaniOrderChatComposer({recipients,selected,onToggleRecipient,onSelectAll,body,onChangeText,onSend,onGallery,onCamera,onVoice,onVideo,audioControls,disabled=false,canSend=true}:Props) {
   const theme=useAppearanceTheme();
   const [recipientOpen,setRecipientOpen]=useState(false);
   const [attachmentsOpen,setAttachmentsOpen]=useState(false);
@@ -43,6 +44,9 @@ export function BthwaniOrderChatComposer({recipients,selected,onToggleRecipient,
       <Pressable accessibilityRole="button" accessibilityLabel="التقاط صورة" disabled={disabled} onPress={()=>{setAttachmentsOpen(false);onCamera();}}>
         <Text style={[styles.optionText,{color:theme.color}]}>📷 الكاميرا</Text>
       </Pressable>
+      {onVideo?<Pressable accessibilityRole="button" accessibilityLabel="اختيار أو تصوير فيديو" disabled={disabled} onPress={()=>{setAttachmentsOpen(false);onVideo();}}>
+        <Text style={[styles.optionText,{color:theme.color}]}>فيديو</Text>
+      </Pressable>:null}
       <Pressable accessibilityRole="button" accessibilityLabel="اختيار صورة" disabled={disabled} onPress={()=>{setAttachmentsOpen(false);onGallery();}}>
         <Text style={[styles.optionText,{color:theme.color}]}>▧ المعرض</Text>
       </Pressable>

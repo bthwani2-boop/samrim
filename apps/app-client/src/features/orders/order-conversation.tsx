@@ -5,7 +5,7 @@ import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
 import * as SecureStore from "../../bootstrap/compatible-storage";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { OrderConversationMediaMessage } from "./order-conversation-media";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 
@@ -164,16 +164,16 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     } finally { setBusy(false); }
   }
 
-  async function sendPrivateMedia(sourceUri: string, kind: "image" | "audio", contentType: string, transcript = "") {
+  async function sendPrivateMedia(sourceUri: string, kind: "image" | "audio" | "video", contentType: string, transcript = "") {
     if (!correctOwner || busy || !attemptStorageReady || pendingAttempt || !selectedRecipients.length || state.kind !== "ready" || !state.value.canSend) return;
     setBusy(true);setError("");
     try {
       const original=new File(sourceUri);
-      const cap=kind==="image"?3145728:1572864;
+      const cap=kind==="image"?3145728:kind==="video"?6*1024*1024:1572864;
       if (!original.exists || !original.size || original.size>cap) throw new Error("MEDIA_TOO_LARGE");
       const actorID=conversationActorID();
       if (!actorID || actorID!==loadedActorID || !isCurrentActor(actorID)) throw new Error("ACTOR_MISMATCH");
-      const extension=kind==="image"?".jpg":Platform.OS==="ios"?".m4a":".3gp";
+      const extension=kind==="image"?".jpg":kind==="video"?(contentType==="video/webm"?".webm":".mp4"):Platform.OS==="ios"?".m4a":".3gp";
       const local=new File(Paths.document, "order-attachment-"+Crypto.randomUUID()+extension);
       original.copy(local);
       const label=kind==="image"?"صورة مرفقة":transcript.trim();
@@ -208,6 +208,26 @@ export function OrderConversation({ orderId }: { orderId: string }) {
       if (!["image/jpeg","image/png","image/webp"].includes(mime)) {setError("اختر صورة JPG أو PNG أو WebP.");return;}
       await sendPrivateMedia(photo.uri,"image",mime);
     } catch {setError("تعذر اختيار الصورة.");}
+  }
+
+  async function pickVideo(fromCamera:boolean){
+    try {
+      const ImagePicker=await import("expo-image-picker");
+      if(fromCamera){
+        const permission=await ImagePicker.requestCameraPermissionsAsync();
+        if(!permission.granted){setError("يلزم السماح للكاميرا لتصوير الفيديو.");return;}
+      }
+      const selection=fromCamera
+        ? await ImagePicker.launchCameraAsync({mediaTypes:["videos"],videoMaxDuration:15})
+        : await ImagePicker.launchImageLibraryAsync({mediaTypes:["videos"],videoMaxDuration:15});
+      const item=selection.assets?.[0];
+      if(selection.canceled||!item)return;
+      const mime=item.mimeType??(item.uri.toLowerCase().endsWith(".mp4")?"video/mp4":"");
+      if(mime!=="video/mp4"&&mime!=="video/webm"){
+        setError("يجب اختيار فيديو MP4 أو WebM مدعوم.");return;
+      }
+      await sendPrivateMedia(item.uri,"video",mime,"فيديو مرفق");
+    } catch(cause) {console.error("Order video selection failed",cause);setError("تعذر اختيار الفيديو. تحقق من النوع والحجم.");}
   }
 
   async function retryPendingAttempt() {
@@ -272,6 +292,11 @@ export function OrderConversation({ orderId }: { orderId: string }) {
   body={body} onChangeText={setBody} onSend={()=>void send()}
   onGallery={()=>void pickPhoto(false)} onCamera={()=>void pickPhoto(true)}
   onVoice={()=>setShowAudioControls(v=>!v)}
+  onVideo={()=>Alert.alert("إضافة فيديو","اختر المصدر",[
+    {text:"الكاميرا",onPress:()=>void pickVideo(true)},
+    {text:"المعرض",onPress:()=>void pickVideo(false)},
+    {text:"إلغاء",style:"cancel"},
+  ])}
   disabled={busy || !attemptStorageReady || Boolean(pendingAttempt)}
   audioControls={showAudioControls ? <Suspense fallback={<Text>جارٍ تهيئة الميكروفون…</Text>}><AudioRecorderControls disabled={busy}
      onRecorded={(uri,mime,text)=>sendPrivateMedia(uri,"audio",mime,text)} /></Suspense>:null}
