@@ -517,6 +517,10 @@ func (s *MarketingServer) createOperatorDiscoveryContent(w http.ResponseWriter, 
 }
 
 func (s *MarketingServer) createPartnerStoreDiscoveryContent(w http.ResponseWriter, r *http.Request) {
+	if len(r.Header.Values("X-Acting-Actor-ID")) > 0 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Partner reel identity is derived from the authenticated session")
+		return
+	}
 	_, idempotency, ok := storeAccessMutationHeaders(w, r)
 	if !ok {
 		return
