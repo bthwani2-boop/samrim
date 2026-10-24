@@ -1,0 +1,12 @@
+.bt-hr-center .bt-command-frame{gap:12px}
+.bt-hr-register .page-header{min-height:0;background:transparent;border:0;margin:0;padding:0 0 6px}
+.bt-hr-register .page-header .page-header-title{display:none}
+.bt-hr-register .page-header .action-row{margin:0}
+.bt-hr-register .access-table-wrap{background:var(--btc-bg);border:1px solid var(--btc-border);border-radius:10px;max-width:100%;overflow:auto}
+.bt-hr-register .access-table th{background:#162b42;color:var(--btc-muted)}
+.bt-hr-register .access-table td{color:var(--btc-text);border-color:var(--btc-border)}
+.bt-hr-register :is(.workspace-toolbar,.registry-toolbar){background:#11243a;border-color:var(--btc-border);border-radius:9px}
+[data-theme="light"] .bt-hr-register .access-table-wrap{background:#fff}
+[data-theme="light"] .bt-hr-register .access-table td{color:#273b57}
+[data-theme="light"] .bt-hr-register .access-table th{background:#eef3f9;color:#415975}
+[data-theme="light"] .bt-hr-register :is(.workspace-toolbar,.registry-toolbar){background:#fff}
