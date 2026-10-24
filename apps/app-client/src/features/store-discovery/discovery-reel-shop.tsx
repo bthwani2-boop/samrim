@@ -13,6 +13,7 @@ type ProductProps = {
   onClose: () => void;
   onOpenStore: (storeId: string, productId: string) => void;
   onGoToCart: (storeId: string) => void;
+  onRequireLogin: (storeId: string, productId: string) => void;
 };
 
 function validSelections(offer: Product, selected: ReadonlyArray<string>): string {
@@ -28,7 +29,7 @@ function validSelections(offer: Product, selected: ReadonlyArray<string>): strin
 
 /** Reuses the canonical store product sheet and DSH cart mutation.
  * Neither reel prices nor reel captions are accepted as commerce facts. */
-export function DiscoveryReelShop({ content, cityId, onClose, onOpenStore, onGoToCart }: ProductProps) {
+export function DiscoveryReelShop({ content, cityId, onClose, onOpenStore, onGoToCart, onRequireLogin }: ProductProps) {
   const [load, setLoad] = useState<ProductLoad>({ kind: "loading" });
   const [offerId, setOfferId] = useState("");
   const [quantity, setQuantity] = useState(1);
@@ -109,7 +110,7 @@ export function DiscoveryReelShop({ content, cityId, onClose, onOpenStore, onGoT
   const add = async () => {
     if (busy) return;
     if (currentIdentityState().kind !== "authenticated") {
-      setError("سجل الدخول أولًا لإضافة المنتج للسلة.");
+      onRequireLogin(storeId, offer.productId);
       return;
     }
     if (!Number.isSafeInteger(quantity) || quantity < offer.quantityMinBaseUnits || quantity > offer.quantityMaxBaseUnits ||

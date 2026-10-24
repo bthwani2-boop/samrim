@@ -666,6 +666,11 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         setReelProduct(null); setSelectedReelIndex(null);
         router.push((`/cart/${encodeURIComponent(storeId)}`) as Href);
       }}
+      onRequireLogin={(storeId, productId) => {
+        setReelProduct(null); setSelectedReelIndex(null);
+        const destination = `/store/${encodeURIComponent(storeId)}?productId=${encodeURIComponent(productId)}`;
+        router.push((`/?returnTo=${encodeURIComponent(destination)}`) as Href);
+      }}
     />
     <ClientShareSheet target={shareTarget} onClose={() => setShareTarget(null)} />
     </>
