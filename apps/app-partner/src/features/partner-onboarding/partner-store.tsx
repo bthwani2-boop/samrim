@@ -1,7 +1,7 @@
 import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type JoiningCaseResponse, type PublicationState, publicationStateLabel, type StoreAccessPermission, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { type Href, Link, Redirect, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { StorePromotionsCard } from "../store-offer/store-promotions";
 import { PartnerStoreAccess } from "./partner-store-access";
@@ -65,15 +65,9 @@ export function PartnerStore() {
   const section = isStoreSection(sectionValue) ? sectionValue : null;
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
-  const { state, selectedStore, stores, selectStore } = usePartnerStoreScope();
+  const { selectedStore, stores } = usePartnerStoreScope();
   const onboarding = usePartnerStoreContext();
   const firstStoreCase = onboarding.state.kind === "ready" ? onboarding.state.value : null;
-
-  useEffect(() => {
-    if (state.kind !== "ready" || !section || !selectedStore || eligibleForSection(selectedStore, section)) return;
-    const eligible = stores.find((store) => eligibleForSection(store, section));
-    if (eligible && eligible.id !== selectedStore.id) selectStore(eligible.id);
-  }, [state.kind, section, selectedStore, stores, selectStore]);
 
   if (!section) return <Redirect href={"/more" as Href} />;
 
