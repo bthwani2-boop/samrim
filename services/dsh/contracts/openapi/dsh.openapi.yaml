@@ -513,6 +513,8 @@ paths:
   /dsh/operator/promotions/{promotionId}/settlement-summary:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1settlement-summary"
 
+  /dsh/client/marketing-consent/{channel}:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1client~1marketing-consent~1{channel}"
   /dsh/operator/marketing/campaigns:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1campaigns"
   /dsh/operator/marketing/campaigns/{campaignId}/details:
@@ -9881,6 +9883,35 @@ components:
         nextCursor:
           type: string
           maxLength: 128
+
+    MarketingConsentSnapshot:
+      type: object
+      additionalProperties: false
+      required: [channel, decision, version]
+      properties:
+        channel:
+          type: string
+          enum: [PUSH, SMS, EMAIL, IN_APP]
+        decision:
+          type: string
+          enum: [OPTED_IN, OPTED_OUT]
+        version:
+          type: integer
+          minimum: 0
+
+    MarketingConsentResult:
+      type: object
+      additionalProperties: false
+      required: [decision, version, replay]
+      properties:
+        decision:
+          type: string
+          enum: [OPTED_IN, OPTED_OUT]
+        version:
+          type: integer
+          minimum: 1
+        replay:
+          type: boolean
 
     MarketingCampaignResponse:
       type: object

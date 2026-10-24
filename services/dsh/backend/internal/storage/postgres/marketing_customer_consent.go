@@ -26,9 +26,9 @@ type MarketingConsentChange struct {
 }
 
 type MarketingConsentResult struct {
-	Decision string
-	Version  int
-	Replay   bool
+	Decision string `json:"decision"`
+	Version  int    `json:"version"`
+	Replay   bool   `json:"replay"`
 }
 
 // CanSendPromotionalContact is fail-closed when consent does not exist.

@@ -1,4 +1,57 @@
 paths:
+  /dsh/client/marketing-consent/{channel}:
+    get:
+      operationId: readClientMarketingConsent
+      summary: Read caller-owned promotional contact preference; no consent defaults to OPTED_OUT
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema: { type: string, enum: [PUSH, SMS, EMAIL, IN_APP] }
+      responses:
+        "200":
+          description: Client's current promotional contact preference
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingConsentSnapshot" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+    post:
+      operationId: changeClientMarketingConsent
+      summary: Set or withdraw authenticated client's own promotional consent
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema: { type: string, enum: [PUSH, SMS, EMAIL, IN_APP] }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - name: X-Expected-Version
+          in: header
+          required: true
+          schema: { type: integer, minimum: 0 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [OPTED_IN, OPTED_OUT] }
+      responses:
+        "200":
+          description: Decision and version, including idempotent replay
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingConsentResult" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
   /dsh/public/banner-presentation:
     get:
       operationId: readPublicBannerPresentation
