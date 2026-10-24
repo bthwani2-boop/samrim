@@ -129,6 +129,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/partner-store-cash-commissions/finalize", s.finalizePartnerStoreCashCommission)
 	mux.HandleFunc("POST /wlt/v1/operator/partners/{partnerActorId}/commission-remittances", s.recordPartnerCommissionRemittance)
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-summary", s.readPartnerFinancialSummary)
+	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-activity", s.readPartnerActivity)
 	mux.HandleFunc("GET /wlt/v1/operator/partner-commission-receivables", s.listPartnerCommissionReceivables)
 	mux.HandleFunc("POST /wlt/v1/operator/field-acquisition-reward-policies", s.createFieldAcquisitionRewardPolicy)
 	mux.HandleFunc("GET /wlt/v1/operator/field-acquisition-reward-policies", s.readOperatorFieldAcquisitionRewardPolicy)

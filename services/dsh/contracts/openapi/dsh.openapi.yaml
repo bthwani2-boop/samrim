@@ -11112,6 +11112,44 @@ components:
           type: string
           enum: [DAILY, WEEKLY, MONTHLY]
 
+    PartnerActivityRecordView:
+      type: object
+      additionalProperties: false
+      required: [id, kind, storeId, storeName, status, paymentMethod, direction, grossMinor, commissionMinor, offsetMinor, amountMinor, currency, ledgerTransactionId, createdAt]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [ORDER, PAYOUT, CASH_COMMISSION] }
+        storeId: { type: string }
+        storeName: { type: string }
+        status: { type: string }
+        paymentMethod: { type: string }
+        direction: { type: string, enum: [CREDIT, DEBIT, HOLD, RECEIVABLE] }
+        grossMinor: { type: integer }
+        commissionMinor: { type: integer }
+        offsetMinor: { type: integer }
+        amountMinor: { type: integer }
+        currency: { type: string, const: YER }
+        ledgerTransactionId: { type: string }
+        createdAt: { type: string, format: date-time }
+    PartnerActivityPageView:
+      type: object
+      additionalProperties: false
+      required: [items, stores]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PartnerActivityRecordView" }
+        stores:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [storeId, storeName]
+            properties:
+              storeId: { type: string }
+              storeName: { type: string }
+        nextCursor: { type: string }
+
     PartnerScopedFinancialSummary:
       type: object
       additionalProperties: false

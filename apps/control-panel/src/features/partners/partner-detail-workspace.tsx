@@ -10,6 +10,7 @@ import { PageHeader } from "../../shell/page-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { StoreLogo } from "../stores/store-logo";
 import { ActorWalletStatement } from "../finance/actor-wallet-statement";
+import { PartnerFinancialRegister } from "../finance/partner-financial-register";
 import { ActorLegalNameWorkspace } from "./actor-legal-name-workspace";
 import { partnerErrorMessage } from "./partner-error-message";
 import { PartnerTeamWorkspace } from "./partner-team-workspace";
@@ -297,6 +298,7 @@ export function PartnerDetailWorkspace({ actorId, embedded = false }: Readonly<{
       </section>
       <ActorLegalNameWorkspace actorId={actorId} />
       <ActorWalletStatement actorType="partner" actorId={actorId} />
+      <PartnerFinancialRegister partnerActorId={actorId} compact />
     </div> : null}
 
     {detail && activeTab === "team" ? <section className="partner-detail-section" aria-label="فريق الشريك">

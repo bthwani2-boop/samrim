@@ -1344,6 +1344,72 @@ func (c *Client) RecordPartnerCommissionRemittance(ctx context.Context, partnerA
 	return response.Remittance, response.IdempotentReplay, err
 }
 
+type PartnerActivity struct {
+	ID                  string `json:"id"`
+	Kind                string `json:"kind"`
+	StoreID             string `json:"storeId"`
+	Status              string `json:"status"`
+	PaymentMethod       string `json:"paymentMethod"`
+	Direction           string `json:"direction"`
+	GrossMinor          int64  `json:"grossMinor"`
+	CommissionMinor     int64  `json:"commissionMinor"`
+	OffsetMinor         int64  `json:"offsetMinor"`
+	AmountMinor         int64  `json:"amountMinor"`
+	Currency            string `json:"currency"`
+	LedgerTransactionID string `json:"ledgerTransactionId"`
+	CreatedAt           string `json:"createdAt"`
+}
+type PartnerActivityPage struct {
+	Items      []PartnerActivity `json:"items"`
+	NextCursor string            `json:"nextCursor,omitempty"`
+}
+type PartnerActivityFilters struct {
+	StoreIDs      []string
+	Kind          string
+	Status        string
+	PaymentMethod string
+	Search        string
+	From          string
+	To            string
+	Cursor        string
+	Limit         int
+}
+
+func (c *Client) ListPartnerActivity(ctx context.Context, owner string, q PartnerActivityFilters) (PartnerActivityPage, error) {
+	if strings.TrimSpace(owner) == "" || len(q.StoreIDs) == 0 {
+		return PartnerActivityPage{}, fmt.Errorf("store-scoped financial activity is required")
+	}
+	values := url.Values{}
+	for _, id := range q.StoreIDs {
+		values.Add("storeId", id)
+	}
+	values.Set("limit", strconv.Itoa(q.Limit))
+	if q.Kind != "" {
+		values.Set("kind", q.Kind)
+	}
+	if q.Status != "" {
+		values.Set("status", q.Status)
+	}
+	if q.PaymentMethod != "" {
+		values.Set("paymentMethod", q.PaymentMethod)
+	}
+	if q.Search != "" {
+		values.Set("search", q.Search)
+	}
+	if q.From != "" {
+		values.Set("from", q.From)
+	}
+	if q.To != "" {
+		values.Set("to", q.To)
+	}
+	if q.Cursor != "" {
+		values.Set("cursor", q.Cursor)
+	}
+	var response PartnerActivityPage
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/partners/"+url.PathEscape(strings.TrimSpace(owner))+"/financial-activity?"+values.Encode(), nil, "", "", 0, &response)
+	return response, err
+}
+
 func (c *Client) ReadPartnerFinancialSummary(ctx context.Context, partnerActorID string) (PartnerFinancialSummary, error) {
 	var response partnerFinancialSummaryResponse
 	err := c.request(ctx, http.MethodGet, "/wlt/v1/partners/"+url.PathEscape(strings.TrimSpace(partnerActorID))+"/financial-summary", nil, "", "", 0, &response)

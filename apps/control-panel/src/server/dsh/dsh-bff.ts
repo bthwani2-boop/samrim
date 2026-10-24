@@ -519,6 +519,18 @@ export async function reconcileOperatorCashRemittance(remittanceId: string, evid
   return (await requestDshJson<import("@bthwani/dsh").CaptainCashRemittanceResponse>(dshOperationPaths.reconcileOperatorCashRemittance.method, path, { evidenceDocumentId: evidenceDocumentId.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
 }
 
+export async function readOperatorPartnerFinancialActivity(
+  partnerActorId: string,
+  filters: Readonly<Record<string, string>>,
+  context: DshOperatorReadContext,
+): Promise<import("@bthwani/dsh").PartnerFinancialActivityPage> {
+  if (!partnerActorId.trim() || partnerActorId.length > 128 || !context.operatorActorId.trim()) throw new Error("INVALID_PARTNER_ACTIVITY_SCOPE");
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) if (value) query.set(key, value);
+  const path = "/dsh/operator/partners/" + encodeURIComponent(partnerActorId.trim()) + "/financial-activity?" + query;
+  return (await requestDshJson<import("@bthwani/dsh").PartnerFinancialActivityPage>("GET", path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
 export async function readOperatorPartnerFinancialSummary(partnerActorId: string, context: DshOperatorReadContext): Promise<PartnerFinancialSummaryResponse> {
   if (!partnerActorId.trim() || partnerActorId.trim().length > 128 || !context.operatorActorId.trim()) throw new Error("DSH_PARTNER_FINANCIAL_SUMMARY_INPUT_INVALID");
   const path = dshOperationPaths.readOperatorPartnerFinancialSummary.path.replace("{partnerActorId}", encodeURIComponent(partnerActorId.trim()));

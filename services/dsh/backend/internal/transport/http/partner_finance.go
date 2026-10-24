@@ -53,6 +53,8 @@ func NewPartnerFinance(identity *identityintegration.Client, accessToken string,
 
 func (s *PartnerFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/partners/me/financial-summary", s.readOwnSummary)
+	mux.HandleFunc("GET /dsh/partners/me/financial-activity", s.readOwnActivity)
+	mux.HandleFunc("GET /dsh/operator/partners/{partnerActorId}/financial-activity", s.readOperatorActivity)
 	mux.HandleFunc("GET /dsh/operator/partner-commission-receivables", s.listOperatorCommissionReceivables)
 	mux.HandleFunc("GET /dsh/operator/partners/{partnerActorId}/financial-summary", s.readOperatorSummary)
 	mux.HandleFunc("GET /dsh/operator/partners/{partnerActorId}/store-payout-recipients", s.readOperatorStorePayoutRecipients)

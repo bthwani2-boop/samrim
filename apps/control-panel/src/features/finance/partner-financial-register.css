@@ -1,0 +1,19 @@
+.pfr-root{display:grid;gap:12px;min-width:0;border:1px solid var(--border, #dde3ec);border-radius:14px;padding:14px;background:var(--surface,#fff)}
+.pfr-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.pfr-head h3{margin:0;font-size:1.1rem}.pfr-head p{margin:4px 0 0;color:var(--muted,#687588);font-size:.85rem}
+.pfr-toolbar{display:flex;flex-wrap:wrap;align-items:end;gap:8px}
+.pfr-field{display:grid;gap:4px;min-width:122px;flex:1 1 135px;font-size:.78rem}
+.pfr-search{flex:2 1 220px}.pfr-field select,.pfr-field input{width:100%;min-height:40px;min-width:0;border-radius:9px;padding:6px 9px;background:var(--surface,#fff);color:inherit;border:1px solid var(--border,#cdd4df);font:inherit;font-size:.9rem}
+.pfr-table-wrap{max-width:100%;overflow:auto;border:1px solid var(--border,#dde3ec);border-radius:10px}
+.pfr-table{width:100%;min-width:750px;border-collapse:collapse;font-size:.85rem}
+.pfr-table th,.pfr-table td{padding:9px 10px;text-align:start;white-space:normal;vertical-align:middle}
+.pfr-table th{font-size:.8rem;white-space:nowrap}
+.pfr-table td small{font-size:.72rem;color:var(--muted,#687588)}
+.pfr-open{display:grid;gap:3px;border:0;background:transparent;color:inherit;text-align:start;font:inherit;cursor:pointer;padding:2px 0}
+.pfr-open:hover strong{text-decoration:underline}.pfr-open small{word-break:break-all}
+.pfr-active-row{background:var(--surface-muted,#f5f7fa)}.pfr-money{white-space:nowrap;font-variant-numeric:tabular-nums}
+.pfr-state{display:inline-flex;border-radius:99px;border:1px solid var(--border,#d7dfe9);padding:3px 8px;font-size:.75rem;white-space:nowrap}
+.pfr-block-muted{display:block;padding-top:2px}.pfr-detail{display:flex;flex-wrap:wrap;gap:12px 24px;padding:10px 4px;background:var(--surface-muted,#fafbfc)}
+.pfr-detail>div{display:grid;gap:5px;min-width:160px;max-width:270px}.pfr-detail strong{font-size:.76rem;color:var(--muted,#687588)}.pfr-detail span{overflow-wrap:anywhere;font-size:.83rem}
+.pfr-bottom{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+@media(max-width:720px){.pfr-root{padding:10px}.pfr-field{flex:1 1 140px}.pfr-head{align-items:flex-start}}
