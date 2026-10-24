@@ -1,13 +1,12 @@
 "use client";
 
 import type { DiscoveryContentAnalytics, DiscoveryContentView, OperatorDiscoveryContentRegistryResponse, OperatorMarketingSummary } from "@bthwani/dsh";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
-import { PageHeader } from "../../shell/page-header";
 import { CustomerDirectory } from "../customers/customer-directory";
 import { MarketingContentWorkspace } from "./marketing-content-workspace";
 import { MarketingOverviewSummary } from "./marketing-overview-summary";
+import { CommandFrame, CommandSectionTabs } from "../shared/command-surface";
 import { MarketingPromotionsWorkspace } from "./marketing-promotions-workspace";
 
 type Section = "overview" | "campaigns" | "content" | "customers" | "analytics";
@@ -142,19 +141,17 @@ function MarketingAuthorizedCenter() {
     return () => controller.abort();
   }, [active, readVersion, partnerDetailsOpen]);
 
-  return <section className="workspace-page marketing-center" aria-labelledby="marketing-center-title">
-    <PageHeader id="marketing-center-title" title="التسويق والمحتوى" />
-    <nav aria-label="أقسام التسويق" className="action-row">
-      {sections.map((section) => <button key={section.id} type="button" className={active === section.id ? "button button-primary" : "button button-secondary"}
-        aria-current={active === section.id ? "page" : undefined} onClick={() => {
-          const url = new URL(window.location.href);
-          if (section.id === "overview") url.searchParams.delete("section");
-          else url.searchParams.set("section", section.id);
-          window.history.pushState(window.history.state, "", url.pathname + url.search);
-          setActive(section.id);
-          setVisited((previous) => previous.includes(section.id) ? previous : [...previous, section.id]);
-        }}>{section.label}</button>)}
-    </nav>
+  const selectSection = (next: Section) => {
+    const url = new URL(window.location.href);
+    if (next === "overview") url.searchParams.delete("section");
+    else url.searchParams.set("section",next);
+    window.history.pushState(window.history.state,"",url.pathname+url.search);
+    setActive(next);
+    setVisited(previous => previous.includes(next) ? previous : [...previous,next]);
+  };
+  return <section className="workspace-page marketing-center" aria-label="التسويق والمحتوى">
+    <CommandFrame title="التسويق والمحتوى" subtitle="إدارة الحملات والخصومات والبنرات والموافقات والنتائج">
+      <CommandSectionTabs label="أقسام التسويق" active={active} tabs={sections} onSelect={selectSection}/>
     {sections.map((section) => <section key={section.id} hidden={active !== section.id} aria-label={section.label} className="work-stack">
       {visited.includes(section.id) ? <>
         {section.id !== "overview" ? <p className="visually-hidden">{section.description}</p> : null}
@@ -168,10 +165,6 @@ function MarketingAuthorizedCenter() {
         </> : section.id === "content" ? <MarketingContentWorkspace /> :
           section.id === "customers" ? <CustomerDirectory /> : null}
         {section.id === "overview" && active === section.id ? <>
-          <div className="marketing-entry-choices">
-            <Link className="marketing-entry-choice" href="/marketing/content"><strong>إعلان دون خصم</strong><span>اختر المحتوى والصورة والوجهة المناسبة.</span></Link>
-            <Link className="marketing-entry-choice" href="/marketing/promotions"><strong>خصم أو قسيمة</strong><span>حدد الخصم والممول والنطاق ثم احفظ مسودة للمراجعة.</span></Link>
-          </div>
           <MarketingOverviewSummary />
         </> : null}
         {section.id === "analytics" && active === section.id ? <>
@@ -179,6 +172,7 @@ function MarketingAuthorizedCenter() {
         </> : null}
       </> : null}
     </section>)}
+    </CommandFrame>
   </section>;
 }
 
