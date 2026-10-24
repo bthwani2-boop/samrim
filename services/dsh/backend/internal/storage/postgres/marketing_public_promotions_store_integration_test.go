@@ -30,8 +30,8 @@ func TestPublicPromotionsListAllEligibleForSelectedStore(t *testing.T) {
 		}
 		for i := 0; i < 7; i++ {
 			_, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_promotions
-                (id,code,name_ar,kind,value_minor,funding_source,state,starts_at,ends_at,created_by_actor_id)
-                VALUES($1,$2,'عرض معتمد','PERCENTAGE',10,'BTHWANI','PUBLISHED',now()-interval '1 hour',now()+interval '1 day','test-operator')`,
+                (id,code,name_ar,kind,value_minor,funding_source,state,starts_at,ends_at,created_by_actor_id,discount_budget_limit_minor)
+                VALUES($1,$2,'عرض معتمد','PERCENTAGE',10,'BTHWANI','PUBLISHED',now()-interval '1 hour',now()+interval '1 day','test-operator',50000)`,
 				fmt.Sprintf("isolated-promotion-%d", i), fmt.Sprintf("ISOLATED%d", i))
 			if err != nil {
 				t.Fatalf("fixture %d: %v", i, err)
