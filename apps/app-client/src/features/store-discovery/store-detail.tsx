@@ -75,7 +75,7 @@ function categoryTrail(categoryId: string, categories: PublicCatalogResponse["ca
   return trail;
 }
 
-export default function ClientStoreDetail({ storeId, categoryId = "", productId = "" }: { storeId: string; categoryId?: string; productId?: string }) {
+export default function ClientStoreDetail({ storeId, categoryId = "", productId = "", promotionId = "" }: { storeId: string; categoryId?: string; productId?: string; promotionId?: string }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { selectedCityID } = useServiceCityScope();
@@ -122,6 +122,9 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [favoriteLoadError, setFavoriteLoadError] = useState(false);
   const [promotions, setPromotions] = useState<ReadonlyArray<PublicPromotionView>>([]);
+  // The original Store page owns promotion details; a reel only links here.
+  const spotlightPromotion = promotionId ? promotions.find(item => item.id === promotionId) : undefined;
+  const remainingPromotions = spotlightPromotion ? promotions.filter(item => item.id !== spotlightPromotion.id) : promotions;
   const [marketingContents, setMarketingContents] = useState<ReadonlyArray<PublicDiscoveryContentView>>([]);
   const [bannerOffers, setBannerOffers] = useState<PublicCatalogResponse["offers"]>([]);
   const [bannerIndex, setBannerIndex] = useState(0);
@@ -844,6 +847,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           })}
         </View> : null}
       </BthwaniSurface>
+      {spotlightPromotion ? (
+        <View accessibilityLabel="العرض المرتبط بالفيديو" style={styles.promotionNotice}>
+          <PromotionCard promotion={spotlightPromotion} onUse={() => openStorePromotion(spotlightPromotion.code)} />
+        </View>
+      ) : null}
 
           {bannerItems.length ? <View style={styles.bannerBlock}>
             <ScrollView ref={bannerRef} horizontal snapToInterval={bannerStep} decelerationRate="fast" contentContainerStyle={{ paddingHorizontal: bannerSidePadding, gap: spacing[1] }} onTouchStart={() => setBannerPaused(true)} onTouchEnd={() => setBannerPaused(false)} onMomentumScrollEnd={(event) => { setBannerIndex(Math.max(0, Math.min(bannerItems.length - 1, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / bannerStep)))); setBannerPaused(false); }} showsHorizontalScrollIndicator={false}>
@@ -859,10 +867,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           {bannerError && bannerItems.length === 0 ? <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل المنتجات الرائجة" onPress={() => void loadBanner()} style={styles.inlineRecovery}><Text style={styles.bannerPause}>تعذر تحميل المنتجات الرائجة · إعادة المحاولة</Text></Pressable> : null}
 
           {promotionError ? <View style={styles.promotionNotice}><Text accessibilityRole="alert" style={styles.validationError}>تعذر قراءة عروض هذا المتجر؛ يمكنك متابعة الطلب من دونها.</Text><BthwaniButton label="إعادة قراءة العروض" onPress={() => void retryPromotions()} variant="secondary" /></View> : null}
-          {!promotionLoading && !promotionError && promotions.length > 0 ? <>
+          {!promotionLoading && !promotionError && remainingPromotions.length > 0 ? <>
             <BthwaniSectionHeader title="عروض هذا المتجر"  />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing[3], gap: spacing[2] }}>
-            {promotions.map((promotion) => <View key={promotion.id} style={{ width: Math.min(320, Math.max(245, windowWidth - spacing[3] * 3)) }}>
+            {remainingPromotions.map((promotion) => <View key={promotion.id} style={{ width: Math.min(320, Math.max(245, windowWidth - spacing[3] * 3)) }}>
               <PromotionCard promotion={promotion} onUse={() => openStorePromotion(promotion.code)} />
               <BthwaniButton label="مشاركة العرض" variant="secondary" onPress={() => setShareTarget({ kind: "PROMOTION", id: promotion.id, title: promotion.nameAr, link: ExpoLinking.createURL(`store/${encodeURIComponent(storeId)}`) })} />
             </View>)}
