@@ -66,6 +66,7 @@ type DiscoveryContentRecord struct {
 	TitleAr          string
 	BodyAr           string
 	MediaURI         string
+	MediaKind        string
 	TargetType       string
 	TargetID         string
 	ServiceCityID    string
@@ -820,7 +821,7 @@ func scanDiscoveryContent(row rowScanner) (DiscoveryContentRecord, error) {
 	var item DiscoveryContentRecord
 	var targetID, cityID sql.NullString
 	var endsAt sql.NullTime
-	err := row.Scan(&item.ID, &item.Kind, &item.TitleAr, &item.BodyAr, &item.MediaURI, &item.TargetType, &targetID, &cityID, &item.State, &item.StartsAt, &endsAt, &item.Ordinal, &item.Version, &item.CreatedByActorID, &item.CreatedAt, &item.UpdatedAt)
+	err := row.Scan(&item.ID, &item.Kind, &item.TitleAr, &item.BodyAr, &item.MediaURI, &item.MediaKind, &item.TargetType, &targetID, &cityID, &item.State, &item.StartsAt, &endsAt, &item.Ordinal, &item.Version, &item.CreatedByActorID, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return DiscoveryContentRecord{}, err
 	}
@@ -837,7 +838,7 @@ func scanDiscoveryContent(row rowScanner) (DiscoveryContentRecord, error) {
 	return item, nil
 }
 
-const discoveryContentSelect = `content.id,content.kind,content.title_ar,content.body_ar,COALESCE((SELECT asset.uri FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),content.target_type,content.target_id,content.service_city_id,content.state,content.starts_at,content.ends_at,content.ordinal,content.version,content.created_by_actor_id,content.created_at,content.updated_at`
+const discoveryContentSelect = `content.id,content.kind,content.title_ar,content.body_ar,COALESCE((SELECT asset.uri FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' THEN 'video' ELSE 'image' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id),'image'),content.target_type,content.target_id,content.service_city_id,content.state,content.starts_at,content.ends_at,content.ordinal,content.version,content.created_by_actor_id,content.created_at,content.updated_at`
 
 func CreateDiscoveryContent(ctx context.Context, db *sql.DB, input DiscoveryContentInput, idempotencyKey, requestHash string) (DiscoveryContentRecord, bool, error) {
 	input.ID = strings.TrimSpace(input.ID)
