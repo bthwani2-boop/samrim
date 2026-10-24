@@ -3267,7 +3267,7 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 .wallet-provider-identity { flex: 1 1 auto; min-inline-size: 0; display: grid; gap: 5px; }
 .wallet-provider-identity strong { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 .wallet-provider-status { display: inline-flex; align-items: center; inline-size: fit-content; gap: 4px; color: var(--text-muted); font-size: 11px; }
-.wallet-provider-status.is-on { color: var(--success-text, #22c55e); }
+.wallet-provider-status.is-on { color: var(--success-text); }
 .wallet-provider-manage { flex: none; min-inline-size: 65px; }
 .wallet-provider-settings { padding: 16px; background: var(--surface-muted); border-block-start: 1px solid var(--border-subtle); display: grid; gap: 16px; min-inline-size: 0; }
 .wallet-provider-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -3327,58 +3327,14 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
  */
 @layer composition {
   .workspace-app-shell {
-    --bt-workspace-canvas: #f1f5fb;
-    --bt-workspace-accent: #c35320;
-    --bt-workspace-shadow: 0 8px 24px rgba(16, 39, 69, .06);
-    --bt-workspace-panel: #ffffff;
-    --bt-workspace-pane-alt: #f4f7fb;
-    --bt-workspace-navigation: #edf2f8;
+    --bt-workspace-canvas: var(--surface-muted);
+    --bt-workspace-accent: var(--action-bg);
+    --bt-workspace-shadow: var(--shadow-card);
+    --bt-workspace-panel: var(--surface-base);
+    --bt-workspace-pane-alt: var(--surface-muted);
+    --bt-workspace-navigation: var(--surface-muted);
     background: var(--bt-workspace-canvas);
     min-block-size: 100dvh;
-  }
-  :root[data-theme="dark"] .workspace-app-shell {
-    --bt-workspace-canvas: #1b2a3e;
-    --bt-workspace-accent: #ff7838;
-    --bt-workspace-shadow: none;
-    --bt-workspace-panel: #0d1b2e;
-    --bt-workspace-pane-alt: #13263d;
-    --bt-workspace-navigation: #111f33;
-    --surface-base: #0d1b2e;
-    --surface-muted: #18283e;
-    --color-primary: #edf5ff;
-    --color-secondary: #d3e0f1;
-    --text-muted: #a5b9d0;
-    --border-subtle: #263b53;
-    --border-strong: #40556d;
-    --interactive-text: #ff9a68;
-    --action-bg: #ff7838;
-    --action-hover: #ff9d6e;
-    --color-on-action: #081627;
-    --focus-ring: #ffae83;
-    --shadow-card: none;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme]) .workspace-app-shell {
-      --bt-workspace-canvas: #1b2a3e;
-      --bt-workspace-accent: #ff7838;
-      --bt-workspace-shadow: none;
-      --bt-workspace-panel: #0d1b2e;
-      --bt-workspace-pane-alt: #13263d;
-      --bt-workspace-navigation: #111f33;
-      --surface-base: #0d1b2e;
-      --surface-muted: #18283e;
-      --color-primary: #edf5ff;
-      --color-secondary: #d3e0f1;
-      --text-muted: #a5b9d0;
-      --border-subtle: #263b53;
-      --border-strong: #40556d;
-      --interactive-text: #ff9a68;
-      --action-bg: #ff7838;
-      --action-hover: #ff9d6e;
-      --color-on-action: #081627;
-      --focus-ring: #ffae83;
-      --shadow-card: none;
-    }
   }
   .workspace-app-shell .workspace-header {
     min-block-size: 55px;
