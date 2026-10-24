@@ -11,6 +11,8 @@ import { StoreAvailabilityControls } from "./store-availability-controls";
 import { StoreBranchesPreview } from "./store-branches-preview";
 import { StoreModeControls } from "./store-mode-controls";
 import { StoreOperationsPreview } from "./store-operations-preview";
+
+const intakeWeekdays = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"] as const;
 import { StoreProfileLegacyTabs } from "./store-profile-legacy-tabs";
 
 type Store = StorePublicationResponse["store"];
@@ -67,6 +69,14 @@ export function StoreProfileTabs({
         </Card>
       </div> :
         <p className="store-profile-muted" role="status">ليست لديك صلاحية عرض العمليات لهذا المتجر.</p>}
+      {joining?.firstStoreWorkingHours?.intervals.length ? <details className="store-intake-archive">
+        <summary>ساعات الانضمام السابقة (للاطلاع فقط)</summary>
+        <ul>{[...joining.firstStoreWorkingHours.intervals].sort((a,b) => a.dayOfWeek - b.dayOfWeek || a.opensAt.localeCompare(b.opensAt)).map((item) =>
+          <li key={item.dayOfWeek + "-" + item.opensAt + "-" + item.closesAt}>
+            <span>{intakeWeekdays[item.dayOfWeek - 1] ?? "يوم " + item.dayOfWeek}</span>
+            <bdi dir="ltr">{item.opensAt}-{item.closesAt}{item.closesNextDay ? " (+1)" : ""}</bdi>
+          </li>)}</ul>
+      </details> : null}
     </Panel>
 
     <Panel id="identity" activeTab={activeTab}>
@@ -99,8 +109,15 @@ export function StoreProfileTabs({
           {joining ? <Link className="store-profile-action-link" href={`/partners/${encodeURIComponent(joining.id)}`}>فتح ملف الانضمام والوثائق ←</Link> : null}
           {!joining && partnerError ? <p role="alert" className="store-profile-minor-error">{partnerError}</p> : null}
         </Card>
-        {store.deliveryOrigin ? <Card title="موقع المتجر">
-          <a className="store-profile-action-link" href={`https://www.google.com/maps?q=${store.deliveryOrigin.latitude},${store.deliveryOrigin.longitude}`} target="_blank" rel="noopener noreferrer">عرض موقع المتجر على الخريطة ↗</a>
+        {store.deliveryOrigin ? <Card title="الموقع ونطاق الخدمة">
+          <details>
+            <summary>عرض موقع المتجر على الخريطة</summary>
+            <div className="store-profile-map-frame">
+              <iframe title={"موقع " + store.name} loading="lazy" referrerPolicy="no-referrer"
+                src={"https://maps.google.com/maps?q=" + store.deliveryOrigin.latitude + "," + store.deliveryOrigin.longitude + "&z=14&output=embed"}/>
+            </div>
+          </details>
+          <button type="button" className="button button-secondary" onClick={openManagement}>تعديل بيانات الخدمة</button>
         </Card> : null}
         <Card title="المتاجر المرتبطة">
           <StoreBranchesPreview actorId={store.partnerActorId} currentStoreId={store.id} />
@@ -117,8 +134,11 @@ export function StoreProfileTabs({
       <button type="button" onClick={() => onSelectTab("promotions")}>العروض <span aria-hidden="true">←</span></button>
       {canViewFinance ? <button type="button" onClick={() => onSelectTab("finance")}>المالية <span aria-hidden="true">←</span></button> : null}
     </nav> : null}
-    <StoreProfileLegacyTabs activeTab={activeTab} store={store} partner={partner} partnerError={partnerError}
-      canViewFinance={canViewFinance} canViewOperations={canViewOperations} manageOpen={manageOpen}
-      openManagement={openManagement} management={management} />
+    {(["catalog", "quality", "documents", ...(canViewFinance ? ["finance"] : [])] as const).map((group) =>
+      <Panel key={group} id={group} activeTab={activeTab}>
+        <StoreProfileLegacyTabs activeTab={group} store={store} partner={partner} partnerError={partnerError}
+          canViewFinance={canViewFinance} canViewOperations={canViewOperations} manageOpen={manageOpen}
+          openManagement={openManagement} management={management} />
+      </Panel>)}
   </>;
 }

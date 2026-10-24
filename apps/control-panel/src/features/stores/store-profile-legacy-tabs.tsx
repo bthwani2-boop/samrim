@@ -8,6 +8,7 @@ import { StoreAvailabilityControls } from "./store-availability-controls";
 import { StoreBranchesPreview } from "./store-branches-preview";
 import { StoreOperationsPreview } from "./store-operations-preview";
 import { StoreProductsWorkspace } from "./store-products-workspace";
+import { StoreOffersPreview } from "./store-offers-preview";
 
 type Store = StorePublicationResponse["store"];
 type StoreProfileTabsProps = Readonly<{
@@ -35,7 +36,8 @@ function Unavailable({ title, reason }: Readonly<{ title: string; reason: string
   return <Card title={title}><div className="store-profile-empty"><span aria-hidden="true">◇</span><p>{reason}</p></div></Card>;
 }
 function Panel({ id, selected, children }: Readonly<{ id: string; selected: boolean; children: ReactNode }>) {
-  return <section id={`store-profile-panel-${id}`} role="tabpanel" aria-labelledby={`store-profile-tab-${id}`} hidden={!selected}
+  const names: Readonly<Record<string, string>> = { products: "المنتجات", promotions: "العروض", customers: "العملاء", quality: "الجودة", ratings: "التقييمات", documents: "الوثائق", history: "السجل", finance: "المالية" };
+  return <section id={`store-profile-detail-${id}`} aria-label={names[id] ?? id} hidden={!selected}
     className="store-profile-tab-panel">{selected ? children : null}</section>;
 }
 
@@ -89,16 +91,17 @@ export function StoreProfileLegacyTabs({ activeTab, store, partner, partnerError
       </div>
     </Panel>
 
-    <Panel id="products" selected={activeTab === "products"}>
+    <Panel id="products" selected={activeTab === "catalog"}>
       <div className="store-profile-tab-grid">
         <Card title="المنتجات والأسعار والتوفر"><StoreProductsWorkspace storeId={store.id} verticalId={store.primaryVerticalId} storeName={store.name}/></Card>
       </div>
     </Panel>
 
-    <Panel id="promotions" selected={activeTab === "promotions"}>
-      <div className="store-profile-tab-grid">
-        <Unavailable title="الحملات والخصومات" reason="لا تتوفر قراءة متجر مأذونة للحملات التسويقية والخصومات في هذا الملف حاليًا. لن تُعرض نسب خصم أو إيرادات غير مثبتة."/>
-      </div>
+    <Panel id="promotions" selected={activeTab === "catalog"}>
+      <Card title="العروض والحملات">
+        <StoreOffersPreview storeId={store.id}/>
+        <Link className="store-profile-action-link" href="/marketing">فتح مركز التسويق والحملات ←</Link>
+      </Card>
     </Panel>
 
     <Panel id="branches" selected={activeTab === "branches"}>
@@ -138,7 +141,7 @@ export function StoreProfileLegacyTabs({ activeTab, store, partner, partnerError
       </details> : null}
     </Panel>
 
-    <Panel id="customers" selected={activeTab === "customers"}>
+    <Panel id="customers" selected={activeTab === "quality"}>
       <div className="store-profile-tab-grid">
         <Unavailable title="عملاء هذا المتجر" reason="لا توجد قراءة مصرح بها تُعيد عملاء المتجر وتكرار طلباتهم مع حدود خصوصية مناسبة. لا يُكشف العميل أو رقم هاتفه من سجل عام."/>
         <Card title="معلومات المتجر"><p className="store-profile-muted">عند توافر قراءة تحليلية آمنة ستظهر المقاييس الإجمالية ومعدل العودة والعملاء الجدد هنا، منفصلة عن هوية العميل الشخصية.</p></Card>
@@ -177,14 +180,14 @@ export function StoreProfileLegacyTabs({ activeTab, store, partner, partnerError
       </div>
     </Panel>
 
-    <Panel id="ratings" selected={activeTab === "ratings"}>
+    <Panel id="ratings" selected={activeTab === "quality"}>
       <div className="store-profile-tab-grid">
         <Unavailable title="تقييمات العملاء" reason="لا تتوفر قراءة مصرح بها لتقييمات عملاء هذا المتجر ومتوسطها وعددها. لا يمكن اعتماد تقييم ظاهر في نموذج تصميم على أنه بيانات النظام."/>
         <Card title="حماية الخصوصية"><p className="store-profile-muted">عند توافر عقد معتمد ستعرض مؤشرات التقييم وملاحظات العملاء المخوّل بها فقط، مع الفصل بين تقييم المنتج والمتجر والكابتن.</p></Card>
       </div>
     </Panel>
 
-    <Panel id="history" selected={activeTab === "history"}>
+    <Panel id="history" selected={activeTab === "documents"}>
       <div className="store-profile-tab-grid">
         <Card title="محطات موثوقة">
           <dl className="store-profile-facts">

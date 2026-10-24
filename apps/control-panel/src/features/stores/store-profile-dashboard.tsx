@@ -31,7 +31,7 @@ type ProfileProps = Readonly<{
 }>;
 
 const profileTabIcons: Record<string, OperationalIconName> = {
-  overview: "home", operations: "operations", identity: "storeDelivery",
+  overview: "home", operations: "operations", catalog: "catalog", identity: "storeDelivery", quality: "review", documents: "access", finance: "finance",
 };
 function profileDate(value: string) {
   return new Intl.DateTimeFormat("ar-YE", { dateStyle: "medium" }).format(new Date(value));
@@ -107,20 +107,17 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
   const recordView = useAdaptiveRecordView();
   const openEditor = () => { setActiveTab("identity"); openManagement(); };
   const selectTab = (tab: string) => {
-    setActiveTab(tab);
-
-    if (tab !== "overview") recordView?.expandForEditing();
+    const group = ({ orders: "operations", hours: "operations", products: "catalog", promotions: "catalog",
+      basics: "identity", branches: "identity", coverage: "identity", customers: "quality",
+      ratings: "quality", history: "documents" } as Record<string, string>)[tab] ?? tab;
+    setActiveTab(group);
+    if (group !== "overview") recordView?.expandForEditing();
     document.querySelector(".adaptive-record-sheet .workspace-side-drawer-scroll")?.scrollTo({ top: 0, behavior: "smooth" });
   };
   const tabs: ReadonlyArray<readonly [string, string]> = [
-    ["overview", "نظرة عامة"], ["operations", "التشغيل"], ["identity", "البيانات والاعتمادات"],
-  ];
-
-  const additionalSections: ReadonlyArray<readonly [string, string]> = [
-    ["basics", "البيانات الأساسية"], ["orders", "الطلبات"], ["products", "الكتالوج والمنتجات"],
-    ["promotions", "العروض"], ["branches", "الفروع"], ["coverage", "مناطق الخدمة"],
-    ["hours", "أوقات العمل"], ["customers", "العملاء"], ["quality", "المراجعة والجودة"],
-    ["ratings", "التقييمات"], ["documents", "الوثائق والاعتمادات"], ["history", "السجل"],
+    ["overview", "نظرة عامة"], ["operations", "التشغيل والطلبات"],
+    ["catalog", "المنتجات والعروض"], ["identity", "بيانات المتجر"],
+    ["quality", "العملاء والجودة"], ["documents", "الوثائق والسجل"],
     ...(canViewFinance ? [["finance", "المالية"] as const] : []),
   ];
   return <div className="store-profile" data-managing={manageOpen}>
@@ -158,15 +155,10 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
     </dialog>, document.body) : null}
 
     {imageNotice ? <output className="store-profile-image-notice">{imageNotice}</output> : null}
-    <div className="store-profile-navigation"><RecordTabs id="store-profile" ariaLabel="تبويبات ملف المتجر" className="store-profile-sections"
-      tabs={tabs.map(([key, label]) => ({ key, label: <><OperationalIcon name={profileTabIcons[key] ?? "review"}/>{label}</> }))}
-      active={activeTab} onSelect={selectTab}/>
-      <select className="store-profile-section-picker" aria-label="الأقسام الإضافية للمتجر"
-        value={additionalSections.some(([key]) => key === activeTab) ? activeTab : ""}
-        onChange={(event) => { if (event.target.value) selectTab(event.target.value); }}>
-        <option value="">أقسام المتجر الأخرى</option>
-        {additionalSections.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-      </select>
+    <div className="store-profile-navigation" data-has-finance={canViewFinance}>
+      <RecordTabs id="store-profile" ariaLabel="أقسام ملف المتجر" className="store-profile-sections"
+        tabs={tabs.map(([key, label]) => ({ key, label: <><OperationalIcon name={profileTabIcons[key] ?? "review"}/>{label}</> }))}
+        active={activeTab} onSelect={selectTab}/>
     </div>
 
     <section id="store-profile-panel-overview" role="tabpanel" aria-labelledby="store-profile-tab-overview" hidden={activeTab !== "overview"} className="store-profile-overview">

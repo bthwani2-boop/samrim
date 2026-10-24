@@ -3741,3 +3741,49 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 .store-profile-context-links button:hover { background: var(--surface-muted); }
 .store-profile-context-links button:focus-visible { outline: 2px solid var(--interactive-text); outline-offset: 2px; }
 @media(max-width:600px) { .store-profile-section-picker { max-width: none; width: 100%; } }
+
+/* Store profile: all primary destinations stay in ONE row.
+   Contextual links open these same panels rather than creating copies. */
+.store-profile-navigation { display: block; min-inline-size:0; }
+.store-profile-navigation .store-profile-sections {
+  display:grid;
+  grid-template-columns:repeat(7,minmax(0,1fr));
+  width:100%; min-inline-size:0; gap:2px; overflow:visible;
+}
+.store-profile-navigation[data-has-finance="false"] .store-profile-sections {
+  grid-template-columns:repeat(6,minmax(0,1fr));
+}
+.store-profile-navigation .store-profile-sections > button {
+  box-sizing:border-box; min-inline-size:0; max-inline-size:100%;
+  padding-inline:7px; gap:5px; font-size:12px;
+  justify-content:center; white-space:nowrap;
+}
+.store-profile-navigation .store-profile-sections > button .workspace-icon { inline-size:13px;block-size:13px; }
+.store-profile-tab-panel > section { min-inline-size:0; }
+.store-profile-tab-panel .store-profile-tab-panel { padding-block:6px; }
+@media (max-width: 960px) {
+  .store-profile-navigation { overflow-x:auto; scrollbar-width:thin; }
+  .store-profile-navigation .store-profile-sections { min-inline-size:900px; }
+  .store-profile-navigation[data-has-finance="false"] .store-profile-sections { min-inline-size:780px; }
+}
+
+
+/* No empty grid columns from the previous large inspector layout. */
+.store-profile-content.store-sheet-dashboard {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 9px;
+}
+.store-profile-content.store-sheet-dashboard > div {
+  grid-column: auto !important;
+  grid-row: auto !important;
+  min-inline-size: 0;
+}
+.store-profile-content.store-sheet-dashboard .store-profile-card { min-block-size: 0; }
+@container (max-width: 980px) {
+  .store-profile-content.store-sheet-dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 650px) {
+  .store-profile-content.store-sheet-dashboard { grid-template-columns: minmax(0, 1fr); }
+}
