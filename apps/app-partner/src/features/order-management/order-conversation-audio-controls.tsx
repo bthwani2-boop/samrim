@@ -10,7 +10,7 @@ export default function OrderConversationAudioRecorder({
   disabled, onRecorded, onClose,
 }: Readonly<{
   disabled: boolean;
-  onRecorded: (uri: string, contentType: string) => Promise<void>;
+  onRecorded: (uri: string, contentType: string, durationSeconds: number) => Promise<void>;
   onClose: () => void;
 }>) {
   const theme = useAppearanceTheme();
@@ -22,6 +22,7 @@ export default function OrderConversationAudioRecorder({
   const disposed = useRef(false);
   const sending = useRef(false);
   const savedUri = useRef<string | null>(null);
+  const durationSeconds = useRef(0);
 
   useEffect(() => {
     disposed.current = false;
@@ -60,6 +61,7 @@ export default function OrderConversationAudioRecorder({
   async function stop() {
     if (stopped.current) return;
     stopped.current = true;
+    durationSeconds.current = Math.max(1, Math.round(recorder.getStatus().durationMillis / 1000));
     await recorder.stop();
     savedUri.current = recorder.uri;
     await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
@@ -80,7 +82,7 @@ export default function OrderConversationAudioRecorder({
     try {
       await stop();
       if (!savedUri.current) throw new Error("AUDIO_RECORDING_MISSING");
-      await onRecorded(savedUri.current, Platform.OS === "ios" ? "audio/mp4" : "audio/3gpp");
+      await onRecorded(savedUri.current, Platform.OS === "ios" ? "audio/mp4" : "audio/3gpp", durationSeconds.current);
       onClose();
     } catch {
       setError("تعذر إرسال الصوت، حاول مجددًا");

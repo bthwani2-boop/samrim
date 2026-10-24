@@ -48,6 +48,8 @@ const iconNames: Record<MobileIconName, ReturnType<typeof Icon.select>> = {
   mall: Icon.select({ ios: "bag", android: require("@expo/material-symbols/local_mall.xml") }),
   mic: Icon.select({ ios: "mic.fill", android: require("@expo/material-symbols/mic.xml") }),
   send: Icon.select({ ios: "paperplane.fill", android: require("@expo/material-symbols/send.xml") }),
+  play: Icon.select({ ios: "play.fill", android: require("@expo/material-symbols/play_arrow.xml") }),
+  pause: Icon.select({ ios: "pause.fill", android: require("@expo/material-symbols/pause.xml") }),
 };
 
 export function BthwaniIcon({

@@ -431,7 +431,7 @@ export function CaptainDeliveries() {
             {assignment.state === "delivery_failed" ? <View style={styles.warningBox}><Text style={styles.warning}>يبقى الطلب في عهدتك حتى يعالج المشغل التعذر؛ لن تُفتح لك مهمة جديدة قبل الاسترداد.</Text></View> : null}
             <BthwaniOrderChatSheet visible={chatOrderId===assignment.orderId} bottomInset={insets.bottom} onClose={()=>setChatOrderId("")}
               orderReference={task?.orderReference ?? assignment.orderId.slice(-8)} status={assignmentLabel}
-              summary={task?.storeName ?? "طلب توصيل"}>
+              summary={task?.storeName ?? "المتجر"} quickFacts={task?(task.fulfillmentMode==="PARTNER_CAPTAIN"?"توصيل المتجر":"توصيل بثواني")+" · "+formatMoney(task.amountDueMinor,task.currency):""} details={task?[{label:"التوصيل",value:task.fulfillmentMode==="PARTNER_CAPTAIN"?"توصيل المتجر":"توصيل بثواني"},{label:"العنوان",value:task.customerAddressText},{label:"التحصيل",value:formatMoney(task.amountDueMinor,task.currency)}]:[]}>
               {chatOrderId===assignment.orderId?<OrderConversation orderId={assignment.orderId}/>:null}
             </BthwaniOrderChatSheet>
           </View>

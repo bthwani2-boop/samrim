@@ -38,4 +38,6 @@ export type MobileIconName =
   | "honey"
   | "mall"
   | "mic"
-  | "send";
+  | "send"
+  | "play"
+  | "pause";
