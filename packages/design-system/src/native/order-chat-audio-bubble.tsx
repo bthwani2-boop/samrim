@@ -18,7 +18,8 @@ type Props = Readonly<{
   error?: string;
 }>;
 
-const bars = [11, 19, 28, 35, 26, 17, 30, 38, 22, 13, 34, 27, 18, 39, 30, 23, 17, 32, 37, 25, 15, 28, 40, 34, 22, 14, 31, 36, 24, 18, 33, 26, 14, 30, 38, 23] as const;
+const bars = ([11, 19, 28, 35, 26, 17, 30, 38, 22, 13, 34, 27, 18, 39, 30, 23, 17, 32, 37, 25, 15, 28, 40, 34, 22, 14, 31, 36, 24, 18, 33, 26, 14, 30, 38, 23] as const)
+  .map((height, index) => ({ id: `wave-${index}`, height }));
 
 export function BthwaniOrderChatAudioBubble({
   mine, sender, sentAt, read, playing, loading,
@@ -63,9 +64,9 @@ export function BthwaniOrderChatAudioBubble({
           onLayout={event => setWaveWidth(event.nativeEvent.layout.width)}
           onPress={event => onSeek(Math.max(0, Math.min(1, event.nativeEvent.locationX / waveWidth)))}>
           <View style={styles.bars} pointerEvents="none">
-            {bars.map((height, index) => <View key={index} style={[
+            {bars.map((bar, index) => <View key={bar.id} style={[
               styles.bar,
-              {height: height * 0.72, backgroundColor: index / bars.length <= progress ? waveform : secondary},
+              {height: bar.height * 0.72, backgroundColor: index / bars.length <= progress ? waveform : secondary},
             ]}/>)}
           </View>
           <View pointerEvents="none" style={[styles.progressDot, {

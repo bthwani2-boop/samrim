@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleShee
 import { typography } from "../index";
 import { useAppearanceTheme } from "./appearance";
 
-type Detail = Readonly<{ label: string; value: string }>;
+type Detail = Readonly<{ id?: string; label: string; value: string }>;
 type Props = PropsWithChildren<Readonly<{
   visible: boolean;
   onClose: () => void;
@@ -22,7 +22,7 @@ export function BthwaniOrderChatSheet({
 }: Props) {
   const theme = useAppearanceTheme();
   const [expanded, setExpanded] = useState(false);
-  useEffect(() => setExpanded(false), [orderReference, visible]);
+  useEffect(() => { if (visible && orderReference) setExpanded(false); }, [orderReference, visible]);
 
   return <Modal transparent statusBarTranslucent animationType="slide" visible={visible} onRequestClose={onClose}>
     <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -47,8 +47,9 @@ export function BthwaniOrderChatSheet({
               <Text style={[styles.detailsLink, {color: theme.brandAction}]}>{expanded ? "أقل ⌃" : "تفاصيل ⌄"}</Text>
             </Pressable> : null}
           </View>
-          {quickFacts ? <Text style={[styles.quickFacts, {color: theme.colorMuted}]} numberOfLines={1}>{quickFacts}</Text> : null}`n          {expanded && details.length > 0 ? <ScrollView nestedScrollEnabled style={styles.detailsScroll} contentContainerStyle={styles.detailsContents}>
-            {details.map((detail, index) => <View key={index} style={styles.detailRow}>
+          {quickFacts ? <Text style={[styles.quickFacts, {color: theme.colorMuted}]} numberOfLines={1}>{quickFacts}</Text> : null}
+          {expanded && details.length > 0 ? <ScrollView nestedScrollEnabled style={styles.detailsScroll} contentContainerStyle={styles.detailsContents}>
+            {details.map((detail) => <View key={detail.id ?? `${detail.label}:${detail.value}`} style={styles.detailRow}>
               <Text style={[styles.detailLabel, {color: theme.colorMuted}]}>{detail.label}</Text>
               <Text selectable style={[styles.detailValue, {color: theme.color}]}>{detail.value}</Text>
             </View>)}

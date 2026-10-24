@@ -370,7 +370,7 @@ export default function ClientOrderDetail() {
       <BthwaniOrderChatSheet visible={showConversation} bottomInset={insets.bottom} onClose={()=>setShowConversation(false)}
         orderReference={order.id.slice(-8)} status={orderStateLabel(order.state)}
         summary={order.storeName+" · "+order.lines.length+" أصناف"} quickFacts={order.lines.slice(0,2).map(line=>line.productName).join("، ")+(order.lines.length>2?"…":"")+" · "+journey.fulfillmentLabel}
-        total={formatMoney(order.totalAmountMinor,order.currency)} details={[...order.lines.map(line=>({label:"صنف",value:line.productName})),{label:"التوصيل",value:journey.fulfillmentLabel},...(!isStorePickup?[{label:"العنوان",value:order.addressText}]:[]),...(order.customerNote?[{label:"ملاحظات",value:order.customerNote}]:[])]}>
+        total={formatMoney(order.totalAmountMinor,order.currency)} details={[...order.lines.map(line=>({id:line.id,label:"صنف",value:line.productName})),{label:"التوصيل",value:journey.fulfillmentLabel},...(!isStorePickup?[{label:"العنوان",value:order.addressText}]:[]),...(order.customerNote?[{label:"ملاحظات",value:order.customerNote}]:[])]}>
         {showConversation?<OrderConversation orderId={order.id}/>:null}
       </BthwaniOrderChatSheet>
       <View style={styles.status}>
