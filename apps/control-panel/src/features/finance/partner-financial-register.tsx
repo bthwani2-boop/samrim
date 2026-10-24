@@ -37,7 +37,7 @@ function dateLabel(value: string) {
 const select = (name: string, options: string[][], value: string, update: (value: string) => void) =>
   <label className="pfr-field"><span>{name}</span><select value={value} onChange={(event) => update(event.target.value)}>{options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>;
 
-export function PartnerFinancialRegister({ partnerActorId, compact = false }: { partnerActorId: string; compact?: boolean }) {
+export function PartnerFinancialRegister({ partnerActorId, storeId = "", compact = false }: { partnerActorId: string; storeId?: string; compact?: boolean }) {
   const [filters, setFilters] = useState<Filters>(defaults);
   const [search, setSearch] = useState("");
   const [data, setData] = useState<PartnerFinancialActivityPage | null>(null);
@@ -54,7 +54,8 @@ export function PartnerFinancialRegister({ partnerActorId, compact = false }: { 
   useEffect(() => {
     const controller = new AbortController();
     const qs = new URLSearchParams({ partnerActorId, limit: compact ? "5" : "25", ...periodRange(filters.period) });
-    for (const field of ["storeId", "kind", "status", "paymentMethod", "search"] as const) if (filters[field]) qs.set(field, filters[field]);
+    if (storeId) qs.set("storeId", storeId);
+    for (const field of ["storeId", "kind", "status", "paymentMethod", "search"] as const) if (filters[field] && !(storeId && field === "storeId")) qs.set(field, filters[field]);
     setLoading(true); setItems([]); setCursor(""); setError(""); setExpanded("");
     void fetch("/api/finance/partner-activity?" + qs, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
@@ -64,14 +65,15 @@ export function PartnerFinancialRegister({ partnerActorId, compact = false }: { 
       .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "تعذرت قراءة الحركات"); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [filters, partnerActorId, compact]);
+  }, [filters, partnerActorId, storeId, compact]);
   const update = (key: keyof Filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
   async function more() {
     if (!cursor || busy) return;
     setBusy(true); setError("");
     try {
       const qs = new URLSearchParams({ partnerActorId, limit: "25", cursor, ...periodRange(filters.period) });
-      for (const field of ["storeId", "kind", "status", "paymentMethod", "search"] as const) if (filters[field]) qs.set(field, filters[field]);
+      if (storeId) qs.set("storeId", storeId);
+      for (const field of ["storeId", "kind", "status", "paymentMethod", "search"] as const) if (filters[field] && !(storeId && field === "storeId")) qs.set(field, filters[field]);
       const response = await fetch("/api/finance/partner-activity?" + qs, { cache: "no-store" });
       if (!response.ok) throw new Error("تعذرت قراءة الصفحة التالية");
       const page = await response.json() as PartnerFinancialActivityPage;
@@ -87,7 +89,7 @@ export function PartnerFinancialRegister({ partnerActorId, compact = false }: { 
     {!compact ? <div className="pfr-toolbar">
       <label className="pfr-field pfr-search"><span>بحث برقم الطلب أو الصرف</span><input value={search} onChange={(event) => setSearch(event.target.value)} type="search" maxLength={128} placeholder="ابحث في جميع الحركات..." /></label>
       {select("الفترة", [["today","اليوم"],["week","7 أيام"],["month","هذا الشهر"],["all","كل الفترات"]], filters.period, (v) => update("period", v))}
-      {select("المتجر", [["","كل المتاجر"], ...((data?.stores ?? []).map((store) => [store.storeId, store.storeName]))], filters.storeId, (v) => update("storeId", v))}
+      {!storeId ? select("المتجر", [["","كل المتاجر"], ...((data?.stores ?? []).map((store) => [store.storeId, store.storeName]))], filters.storeId, (v) => update("storeId", v)) : null}
       {select("نوع الحركة", kindOptions, filters.kind, (v) => update("kind", v))}
       {select("الحالة", statusOptions, filters.status, (v) => update("status", v))}
       {select("الدفع", paymentOptions, filters.paymentMethod, (v) => update("paymentMethod", v))}
