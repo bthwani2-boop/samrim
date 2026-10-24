@@ -1,5 +1,5 @@
 import { borders, radius, sizing, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniConfirmDialog, BthwaniIcon, BthwaniOrderChatSheet, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniConfirmDialog, BthwaniIcon, BthwaniOrderChatSheet, useOrderChatUnreadCounts, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useIsFocused, useLocalSearchParams } from "expo-router";
@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
 import { mergeOrderPageRecords } from "./order-page-records";
 
@@ -83,6 +83,13 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(searchQuery), 350); return () => clearTimeout(timer); }, [searchQuery]);
   const normalizedSearch = targetOrderId || debouncedSearch.trim();
+  const getChatUnread = useCallback(async (orderId: string) => {
+    const token = await getUsableIdentityAccessToken();
+    return (await client().readOrderConversation(token, orderId, 1)).unreadCount;
+  }, []);
+  const currentSession = currentIdentityState();
+  const unreadScope = currentSession.kind === "authenticated" ? currentSession.identity.subject.trim() : "";
+  const unreadChatCounts = useOrderChatUnreadCounts(orders.map(order => order.id), unreadScope, isFocused, getChatUnread, chatOrderId);
 
   const load = useCallback(async (options: { append?: boolean; cursor?: string; quiet?: boolean } = {}) => {
     const generation = options.append ? loadGeneration.current : ++loadGeneration.current;
@@ -316,6 +323,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
               <Pressable accessibilityRole="button" accessibilityLabel={"محادثة الطلب "+order.id.slice(-8)} onPress={()=>setChatOrderId(order.id)}
                 style={{padding:8,borderRadius:12,backgroundColor:theme.surfaceRaised}}>
                 <Text style={{fontSize:19}}>💬</Text>
+                {unreadChatCounts[order.id] ? <Text accessibilityLabel={unreadChatCounts[order.id]+" رسائل غير مقروءة"} style={{color:theme.brandAction,fontSize:10,fontWeight:"800"}}>{(unreadChatCounts[order.id] ?? 0)>99?"99+":unreadChatCounts[order.id]}</Text> : null}
               </Pressable>
               <BthwaniStatusBadge icon={badgeIcon} label={orderStateLabel(order.state)} tone={badgeTone} />
             </View>

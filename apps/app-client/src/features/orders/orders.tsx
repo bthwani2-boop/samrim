@@ -1,8 +1,8 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useOrderChatUnreadCounts, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, formatMoney, formatOrderDate, fulfillmentModeLabel, orderPaymentDisclosure, paymentStateLabel, type Cart, type Order, type PublicStoreView, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { type Href, useFocusEffect, useRouter } from "expo-router";
+import { type Href, useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
@@ -43,6 +43,7 @@ function hasCurrentOrdersActor(actorID: string): boolean {
 
 export default function ClientOrders() {
   const router = useRouter();
+  const ordersFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const theme = useAppearanceTheme();
   const premium = premiumColors(theme);
@@ -102,6 +103,12 @@ export default function ClientOrders() {
       return !q || order.storeName.toLocaleLowerCase("ar").includes(q) || order.id.toLowerCase().includes(q);
     });
   }, [fulfillmentFilter, statusFilter, search, state]);
+
+  const getChatUnread = useCallback(async (orderId: string) => {
+    const token = await getUsableIdentityAccessToken();
+    return (await client().readOrderConversation(token, orderId, 1)).unreadCount;
+  }, []);
+  const unreadChatCounts = useOrderChatUnreadCounts(visibleOrders.map(order => order.id), activeActorID, ordersFocused, getChatUnread);
 
   const loadMore = useCallback(async () => {
     if (state.kind !== "ready" || !state.nextCursor || loadingMore || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID)) return;
@@ -274,6 +281,7 @@ export default function ClientOrders() {
                 onPress={()=>router.push(("/orders/"+encodeURIComponent(order.id)+"?chat=1") as Href)}
                 style={{alignSelf:"flex-start",paddingHorizontal:10,paddingVertical:5,borderRadius:12,backgroundColor:premium.soft}}>
                 <Text style={{fontSize:18}}>💬</Text>
+                {unreadChatCounts[order.id] ? <Text accessibilityLabel={unreadChatCounts[order.id]+" رسائل غير مقروءة"} style={{color:premium.orange,fontSize:10,fontWeight:"800"}}>{(unreadChatCounts[order.id] ?? 0)>99?"99+":unreadChatCounts[order.id]}</Text> : null}
               </Pressable>
               <Text numberOfLines={1} style={styles.orderId}>طلب #{order.id.slice(0, 8)}</Text>
             </View>

@@ -1,5 +1,5 @@
-import { BthwaniButton, BthwaniOrderChatSheet, BthwaniMap, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import { BthwaniButton, BthwaniOrderChatSheet, useOrderChatUnreadCounts, BthwaniMap, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { createDshMobileClient, type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useIsFocused } from "expo-router";
@@ -84,6 +84,13 @@ export function CaptainDeliveries() {
   const [completionStorageIssue, setCompletionStorageIssue] = useState(false);
   const [completionRejected, setCompletionRejected] = useState(false);
   const currentActorReadback = isCurrentCaptainActor(loadedActorID, activeActorID);
+  const getChatUnread = useCallback(async (orderId: string) => {
+    const token = await getUsableIdentityAccessToken();
+    const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
+    if (!base) throw new Error("DSH_BASE_URL_REQUIRED");
+    return (await createDshMobileClient(base,{cryptoRandomUUID:()=>Crypto.randomUUID()}).readOrderConversation(token,orderId,1)).unreadCount;
+  }, []);
+  const unreadChatCounts = useOrderChatUnreadCounts(assignments.map(assignment => assignment.orderId), activeActorID, isFocused, getChatUnread, chatOrderId);
 
   const load = useCallback(async (quiet = false) => {
     const sequence = ++readSequence.current;
@@ -358,6 +365,7 @@ export function CaptainDeliveries() {
               <Pressable accessibilityRole="button" accessibilityLabel={"محادثة الطلب "+assignment.orderId.slice(-8)}
                 onPress={()=>setChatOrderId(assignment.orderId)} style={{padding:8,borderRadius:10,backgroundColor:theme.surfaceRaised}}>
                 <Text style={{fontSize:19}}>💬</Text>
+                {unreadChatCounts[assignment.orderId] ? <Text accessibilityLabel={unreadChatCounts[assignment.orderId]+" رسائل غير مقروءة"} style={{color:theme.brandAction,fontSize:10,fontWeight:"800"}}>{(unreadChatCounts[assignment.orderId] ?? 0)>99?"99+":unreadChatCounts[assignment.orderId]}</Text> : null}
               </Pressable>
               <BthwaniStatusBadge icon={assignmentStatusIcon} label={assignmentLabel} tone={assignmentStatusTone} />
             </View>
