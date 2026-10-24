@@ -55,21 +55,6 @@ export function MarketingContentWorkspace() {
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const mediaPreviewCanvasRef = useRef<HTMLCanvasElement>(null);
   const [mediaPreviewError, setMediaPreviewError] = useState("");
-  const videoPreviewRef = useRef<HTMLVideoElement>(null);
-  const showVideoPreview = contentForm.kind === "SHORT_FORM" && mediaFile?.type.toLowerCase() === "video/mp4";
-  useEffect(() => {
-    const video = videoPreviewRef.current;
-    if (!video || !showVideoPreview || !mediaFile) return;
-    // Keep the local File object URL out of markup/HTML serialization.
-    const url = URL.createObjectURL(mediaFile);
-    video.src = url;
-    return () => {
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
-      URL.revokeObjectURL(url);
-    };
-  }, [mediaFile, showVideoPreview]);
   const [mediaProvenance, setMediaProvenance] = useState<MediaProvenanceInput>(emptyMediaProvenance());
   const canPreviewMedia = Boolean(mediaFile && ["image/jpeg", "image/png"].includes(mediaFile.type.toLowerCase()));
   useEffect(() => {
@@ -497,7 +482,6 @@ export function MarketingContentWorkspace() {
           <label className="field-label" htmlFor="marketing-content-kind">نوع المحتوى<select id="marketing-content-kind" aria-label="نوع المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.kind} onChange={(event) => setContentForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="BANNER">بنر رئيسي</option><option value="CAROUSEL">شريحة كاروسيل</option><option value="SHORT_FORM">ريلز / قصة قصيرة</option></select></label>
           <label className="field-label" htmlFor="marketing-content-media">وسائط المحتوى<input id="marketing-content-media" aria-label="ملف وسائط المحتوى" type="file" accept={contentForm.kind === "SHORT_FORM" ? "image/jpeg,image/png,video/mp4" : "image/jpeg,image/png"} required disabled={busy || !attemptReady || Boolean(pendingCreate && mediaFile)} onChange={(event) => { setMediaFile(event.target.files?.[0] ?? null); if (!pendingCreate) setMediaProvenance(emptyMediaProvenance()); }} /></label><CatalogMediaProvenanceFields idPrefix="marketing-content-media" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={mediaProvenance} onChange={setMediaProvenance} />
           {mediaFile ? <p className="muted" data-testid="marketing-content-file">{mediaFile.name} · {(mediaFile.size / 1024).toFixed(0)} كيلوبايت</p> : <p className="muted">JPEG أو PNG، وللريلز MP4، حتى 10 ميجابايت.</p>}
-          {showVideoPreview ? <figure aria-label="معاينة الفيديو قبل النشر" className="marketing-local-preview is-story" data-testid="marketing-content-video-preview"><video ref={videoPreviewRef} controls muted playsInline preload="metadata" style={{width:"100%",maxHeight:320,borderRadius:16,background:"#090909"}} /><figcaption className="muted">معاينة محلية فقط؛ لن يظهر الفيديو للعميل قبل النشر.</figcaption></figure> : null}
           {canPreviewMedia ? <figure aria-label="معاينة صورة المحتوى قبل النشر" data-testid="marketing-content-preview" className={contentForm.kind === "SHORT_FORM" ? "marketing-local-preview is-story" : "marketing-local-preview"}>
             <div className="marketing-local-preview-visual">
               <canvas ref={mediaPreviewCanvasRef} role="img" aria-label="معاينة الصورة المختارة" width={contentForm.kind === "SHORT_FORM" ? 240 : 600} height={contentForm.kind === "SHORT_FORM" ? 280 : 240} className="marketing-local-preview-canvas" />
