@@ -107,6 +107,16 @@ export async function uploadOperatorWalletProviderLogo(providerKey: string,file:
 export type HREmployee = DshHREmployee;
 export type HREmployeeInput = HRCreateEmployeeRequest;
 export type HREmployeePage = DshHREmployeePage;
+export type HRSummary = Readonly<{
+  total: number;
+  active: number;
+  inactive: number;
+  linked: number;
+  departments: ReadonlyArray<Readonly<{ name: string; count: number }>>;
+}>;
+export function readHRSummary(context: DshOperatorReadContext): Promise<HRSummary> {
+  return requestDshJson<HRSummary>("GET", "/dsh/hr/summary", undefined, { "X-Acting-Actor-ID": context.operatorActorId }).then((response) => response.payload);
+}
 export function listHREmployees(q: string, cursor: string, context: DshOperatorReadContext, limit = 25): Promise<HREmployeePage> {
   const search = new URLSearchParams({ q, cursor, limit: String(limit) });
   return requestDshJson<HREmployeePage>("GET", `/dsh/hr/employees?${search}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId }).then((response) => response.payload);

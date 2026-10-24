@@ -577,6 +577,9 @@ paths:
   /dsh/hr/access-requests/{requestId}/admit:
     $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}~1admit"
 
+  /dsh/hr/summary:
+    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1summary"
+
   /dsh/hr/employees:
     $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees"
 
@@ -5461,6 +5464,25 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+
+    HREmployeeSummary:
+      type: object
+      additionalProperties: false
+      required: [total, active, inactive, linked, departments]
+      properties:
+        total: { type: integer, minimum: 0 }
+        active: { type: integer, minimum: 0 }
+        inactive: { type: integer, minimum: 0 }
+        linked: { type: integer, minimum: 0 }
+        departments:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, count]
+            properties:
+              name: { type: string }
+              count: { type: integer, minimum: 0 }
 
     HREmployeePage:
       type: object

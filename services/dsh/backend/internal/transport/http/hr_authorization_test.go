@@ -57,6 +57,7 @@ func TestHRDirectoryRequiresExplicitHRGrantOnEveryPath(t *testing.T) {
 	server.Register(mux)
 	cases := []struct{ name, method, path, body string }{
 		{"directory", http.MethodGet, "/dsh/hr/employees", ""},
+		{"summary", http.MethodGet, "/dsh/hr/summary", ""},
 		{"detail", http.MethodGet, "/dsh/hr/employees/emp_a", ""},
 		{"create", http.MethodPost, "/dsh/hr/employees", `{"fullNameAr":"Test","department":"Ops","jobTitle":"Agent","startDate":"2026-10-01","workLocation":"Sanaa"}`},
 		{"employee_update", http.MethodPatch, "/dsh/hr/employees/emp_00000000000000000000000000000000", `{"fullNameAr":"Test","department":"Ops","jobTitle":"Agent","startDate":"2026-10-01","workLocation":"Sanaa","expectedVersion":1}`},

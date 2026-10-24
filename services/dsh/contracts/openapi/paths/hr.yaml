@@ -1,4 +1,17 @@
 paths:
+  /dsh/hr/summary:
+    get:
+      operationId: readHREmployeeSummary
+      summary: Company-wide HR employee totals and leading department distribution
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      responses:
+        "200": { description: Exact totals for the full employee directory., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HREmployeeSummary" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/hr/employees:
     get:
       operationId: listHREmployees
