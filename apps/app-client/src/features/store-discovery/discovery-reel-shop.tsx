@@ -37,9 +37,11 @@ export function DiscoveryReelShop({ content, cityId, onClose, onOpenStore, onGoT
   const [busy, setBusy] = useState(false);
   const [added, setAdded] = useState(false);
   const [error, setError] = useState("");
+  const contentId = content?.id;
+  const targetType = content?.targetType;
 
   useEffect(() => {
-    if (!content || !cityId || content.targetType !== "PRODUCT") return;
+    if (!contentId || !cityId || targetType !== "PRODUCT") return;
     let alive = true;
     setLoad({ kind: "loading" });
     setOfferId("");
@@ -48,7 +50,7 @@ export function DiscoveryReelShop({ content, cityId, onClose, onOpenStore, onGoT
     setError("");
     void (async () => {
       try {
-        const target = await resolvePublicDiscoveryContentTarget(content.id, cityId);
+        const target = await resolvePublicDiscoveryContentTarget(contentId, cityId);
         if (target.targetType !== "PRODUCT" || !target.storeId || !target.targetId) {
           throw new Error("PRODUCT_TARGET_UNAVAILABLE");
         }
@@ -65,7 +67,7 @@ export function DiscoveryReelShop({ content, cityId, onClose, onOpenStore, onGoT
       }
     })();
     return () => { alive = false; };
-  }, [content?.id, content?.targetType, cityId]);
+  }, [contentId, targetType, cityId]);
 
   if (!content) return null;
   if (load.kind !== "ready") {
