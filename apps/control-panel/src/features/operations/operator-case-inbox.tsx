@@ -15,8 +15,8 @@ const labels:Readonly<Record<string,string>>={
  PAYMENT_EXCEPTION:"استثناء مالي",OTHER:"متابعة تشغيلية"
 };
 
-export function OperatorCaseInbox({onOpenOrder,refreshVersion}:Readonly<{
- onOpenOrder:(orderId:string)=>void;refreshVersion:number;
+export function OperatorCaseInbox({onOpenOrder,refreshVersion,active=true}:Readonly<{
+ onOpenOrder:(orderId:string)=>void;refreshVersion:number;active?:boolean;
 }>) {
  const [scope,setScope]=useState<Scope>("all");
  const [items,setItems]=useState<ReadonlyArray<Case>>([]);
@@ -58,15 +58,16 @@ export function OperatorCaseInbox({onOpenOrder,refreshVersion}:Readonly<{
    }finally{if(current===generation.current)setLoading(false);}
  },[read]);
  useEffect(()=>{
-   if (refreshVersion < 0) return;
+   if (!active || refreshVersion < 0) return;
    setItems([]);setCursor("");setError("");
    void reload();
    return ()=>{generation.current+=1;};
- },[reload,refreshVersion]);
+ },[reload,refreshVersion,active]);
  useEffect(()=>{
+   if (!active) return;
    const interval=window.setInterval(()=>{if(!document.hidden&&!busy)void reload();},60_000);
    return ()=>window.clearInterval(interval);
- },[reload,busy]);
+ },[reload,busy,active]);
  async function more(){
    if(!cursor||busy||loading)return;
    const current=generation.current;

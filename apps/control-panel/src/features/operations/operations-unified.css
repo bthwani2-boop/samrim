@@ -161,3 +161,7 @@
 [data-theme="light"] .ops-center .ops-command-link-grid button{background:#f4f8ff;color:#203959;border-color:#cbdbea}
 [data-theme="light"] .ops-center .ops-command-link-grid button span{color:#9d4b23}
 @media(max-width:600px){.ops-center .ops-command-link-grid{grid-template-columns:1fr}}
+
+/* Retain the selected queue's unsaved inputs while removing hidden panels from layout. */
+.ops-center .ops-decision-pane[hidden]{display:none!important}
+.ops-center .ops-decision-pane{min-width:0}

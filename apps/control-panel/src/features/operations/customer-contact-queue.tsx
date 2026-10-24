@@ -11,9 +11,10 @@ type ContactQueueItem = Readonly<{
 }>;
 type ContactQueuePage = Readonly<{ items: ReadonlyArray<ContactQueueItem>; nextCursor: string }>;
 
-export function CustomerContactQueue({ onOpenOrder, refreshVersion }: Readonly<{
+export function CustomerContactQueue({ onOpenOrder, refreshVersion, active = true }: Readonly<{
   onOpenOrder: (orderId: string) => void;
   refreshVersion: number;
+  active?: boolean;
 }>) {
   const [items, setItems] = useState<ReadonlyArray<ContactQueueItem>>([]);
   const [nextCursor, setNextCursor] = useState("");
@@ -55,13 +56,15 @@ export function CustomerContactQueue({ onOpenOrder, refreshVersion }: Readonly<{
   }, [read]);
 
   useEffect(() => {
+    if (!active || refreshVersion < 0) return;
     void reload();
     return () => { sequence.current += 1; };
-  }, [reload, refreshVersion]);
+  }, [reload, refreshVersion, active]);
   useEffect(() => {
+    if (!active) return;
     const interval = window.setInterval(() => { if (!document.hidden && !moreBusy) void reload(); }, 60_000);
     return () => window.clearInterval(interval);
-  }, [reload, moreBusy]);
+  }, [reload, moreBusy, active]);
 
   async function loadMore() {
     if (!nextCursor || loading || moreBusy) return;
@@ -82,7 +85,7 @@ export function CustomerContactQueue({ onOpenOrder, refreshVersion }: Readonly<{
       setMoreBusy(false);
     }
   }
-  if (!loading && !error && items.length === 0) return null;
+
   return <section className="order-detail-panel" aria-labelledby="ops-contact-queue-title">
     <h2 id="ops-contact-queue-title">التحقق من العملاء الجدد</h2>
     <p className="muted">طلبات تحتاج اتصال موظف العمليات. تأكيد المكالمة وحده لا يجعل الطلب ناجحًا؛ يحتسب النجاح بعد التسليم الموثق.</p>
@@ -90,6 +93,7 @@ export function CustomerContactQueue({ onOpenOrder, refreshVersion }: Readonly<{
     {error ? <div role="alert" className="managed-status managed-status-warning">
       <p>{error}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void reload()}>إعادة القراءة</button>
     </div> : null}
+    {!loading && !error && items.length === 0 ? <p className="muted" role="status">لا توجد طلبات تحقق تحتاج اتصالًا ضمن هذا المصدر.</p> : null}
     {items.length > 0 ? <ul className="order-detail-list">
       {items.map((item) => <li key={item.orderId}>
         <div><strong>{item.storeName}</strong>
