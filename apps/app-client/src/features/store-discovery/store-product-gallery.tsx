@@ -1,8 +1,9 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniIcon, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { formatMoney, type PublicCatalogResponse } from "@bthwani/dsh";
+import { Image as ExpoImage } from "expo-image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, Easing, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { AccessibilityInfo, Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -121,7 +122,7 @@ export function StoreProductGallery({ offer, offers, sourceRect, isFavorite, fav
     const imageHeight = compact ? undefined : Math.max(190, Math.min(300, screenHeight * 0.30));
     return <View key={item.offerId} style={[styles.card, compact && styles.gridCard]}>
       <Pressable accessibilityRole="button" accessibilityLabel={"عرض بطاقة " + item.productName} onPress={compact ? () => { onBrowse(item.offerId); setColumns(1); } : undefined} style={styles.imageFrame}>
-        {media ? <Image source={{ uri: media.uri }} resizeMode="cover" accessibilityLabel={"صورة " + item.productName} style={[styles.image, compact ? { aspectRatio: 1 } : { height: imageHeight }]} /> :
+        {media ? <ExpoImage cachePolicy="disk" source={{ uri: media.uri }} contentFit="cover" accessibilityLabel={"صورة " + item.productName} style={[styles.image, compact ? { aspectRatio: 1 } : { height: imageHeight }]} /> :
           <View style={[styles.imageFallback, compact ? { aspectRatio: 1 } : { height: imageHeight }]}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
       </Pressable>
       <View pointerEvents="box-none" style={styles.favorite}>

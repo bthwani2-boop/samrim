@@ -1,9 +1,10 @@
 import { radius, spacing } from "@bthwani/design-system";
 import type { PublicDiscoveryContentView } from "@bthwani/dsh";
+import { Image as ExpoImage } from "expo-image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, AppState, Easing, Image, PanResponder, Pressable, Text, View } from "react-native";
-import { recordDiscoveryImpression } from "./discovery-analytics";
+import { AccessibilityInfo, Animated, AppState, Easing, PanResponder, Pressable, Text, View } from "react-native";
 import { wrapBannerIndex } from "./banner-loop";
+import { recordDiscoveryImpression } from "./discovery-analytics";
 import type { BannerPresentation } from "./store-discovery-client";
 
 type Direction = 1 | -1;
@@ -125,7 +126,7 @@ export function LoopingHeroBanner({
     <Animated.View key={key} pointerEvents="none" style={[{ position: "absolute", top: 0, left: 0, width: cardWidth, height }, style]}>
       {failedMedia.has(item.id + ":" + item.mediaUri)
         ? <View style={{ flex: 1, justifyContent: "center", backgroundColor: "#192335", padding: spacing[3] }}><Text style={{ color: "#FFFFFF", textAlign: "center" }}>{item.titleAr}</Text></View>
-        : <Image source={{ uri: item.mediaUri }} resizeMode="cover"
+        : <ExpoImage cachePolicy="disk" source={{ uri: item.mediaUri }} contentFit="cover"
           onLoad={() => setLoadedMedia((current) => {
             const key = item.id + ":" + item.mediaUri;
             return current.has(key) ? current : new Set(current).add(key);

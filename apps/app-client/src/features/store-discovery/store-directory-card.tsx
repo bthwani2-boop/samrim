@@ -1,8 +1,9 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, type PublicStoreView } from "@bthwani/dsh";
+import { Image as ExpoImage } from "expo-image";
 import { useMemo } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 export function StoreDirectoryCard({
   store, activityLabel, favorite, favoriteBusy, imageFailed, onImageError, onOpen, onFavorite, promotionCount,
@@ -47,7 +48,7 @@ export function StoreDirectoryCard({
     <View style={styles.logoColumn}>
       <View style={styles.logoFrame}>
         {store.storeProfileImage?.uri && !imageFailed
-          ? <Image
+          ? <ExpoImage cachePolicy="disk"
             accessibilityLabel={`شعار متجر ${store.name}`}
             onError={onImageError}
             source={{ uri: store.storeProfileImage.uri }}
