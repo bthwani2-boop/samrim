@@ -743,6 +743,9 @@ const theme = useAppearanceTheme();
             <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={item.label} accessibilityState={{ selected: listFilter === item.key }} onPress={() => setListFilter(item.key)} style={[styles.filterChip, listFilter === item.key && styles.filterChipActive]}>
               <Text style={[styles.filterText, listFilter === item.key && styles.filterTextActive]}>{item.label}</Text>
             </Pressable>)}
+          <Pressable accessibilityRole="button" accessibilityLabel="أدوات الكتالوج" onPress={() => setPanel("tools")} style={styles.filterChip}>
+            <BthwaniIcon name="cart" color={theme.color} size={14} /><Text style={styles.filterText}>الأدوات</Text>
+          </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="تصفية حسب حالة المنتج" accessibilityState={{ expanded: filterModalOpen }} onPress={() => setFilterModalOpen(true)} style={[styles.filterChip, ["published","unavailable","hidden"].includes(listFilter) && styles.filterChipActive]}>
             <BthwaniIcon name="categories" color={theme.color} size={14} />
             <Text style={[styles.filterText, ["published","unavailable","hidden"].includes(listFilter) && styles.filterTextActive]}>تصفية</Text>

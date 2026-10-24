@@ -2,7 +2,7 @@ import { type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, useAppearanceTheme, type MobileIconName } from "@bthwani/design-system/native";
 import type { PartnerStoreOperationalAvailabilityResponse } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { readOwnStoreOperationalAvailability } from "./store-readback-client";
 import { onStoreAvailabilityChanged } from "./store-availability-events";
@@ -16,15 +16,9 @@ export function PartnerMore() {
   const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const { selectedStore, stores, selectStore, state, reload } = usePartnerStoreScope();
+  const { selectedStore, stores, state, reload } = usePartnerStoreScope();
   const [availability, setAvailability] = useState<PartnerStoreOperationalAvailabilityResponse | null>(null);
   const [availabilityError, setAvailabilityError] = useState(false);
-  const firstManageable = stores.find((store) => store.owned || store.permissions.includes("store_operations") || store.permissions.includes("promotions"));
-  useEffect(() => {
-    if (state.kind !== "ready" || !firstManageable || !selectedStore) return;
-    const permitted = selectedStore.owned || selectedStore.permissions.includes("store_operations") || selectedStore.permissions.includes("promotions");
-    if (!permitted && firstManageable.id !== selectedStore.id) selectStore(firstManageable.id);
-  }, [state.kind, firstManageable, selectedStore, selectStore]);
   const can = (permission: "store_operations" | "promotions") => Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes(permission)));
   const canOperate = can("store_operations");
   const storeID = canOperate ? selectedStore?.id : undefined;
@@ -46,10 +40,9 @@ export function PartnerMore() {
   const actions: MenuItem[] = [
     ...(canOperate ? [{ label: "التشغيل", icon: "store" as const, description: "الجاهزية والجدول وطرق التسليم", destination: "operations" as const }] : []),
     ...(can("promotions") ? [{ label: "العروض", icon: "offers" as const, description: "إنشاء ومتابعة العروض", destination: "promotions" as const }] : []),
-    ...(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("catalog")) ? [{ label: "الكتالوج", icon: "cart" as const, description: "الأقسام والإضافات والاستيراد", href: "/products?panel=tools" as Href }] : []),
     ...(selectedStore?.owned ? [
       { label: "الفريق", icon: "account" as const, description: "الموظفون وأذونات الوصول", destination: "team" as const },
-      { label: "الصور", icon: "edit" as const, description: "صور المتجر والعقود", destination: "settings" as const },
+      { label: "ملف المتجر", icon: "edit" as const, description: "صور المتجر والعقود", destination: "settings" as const },
     ] : []),
     ...(state.kind === "ready" && !stores.length ? [{ label: "حالة الانضمام", icon: "store" as const, description: "متابعة طلب الشراكة", href: "/onboarding" as Href }] : []),
     { label: "الأداء", icon: "orders", description: "مؤشرات المتجر وفرص النمو", href: "/insights" as Href },
@@ -61,8 +54,9 @@ export function PartnerMore() {
   }
   const operationalItem: MenuItem = { label: "التشغيل وساعات العمل", icon: "store", description: "إعدادات التشغيل", destination: "operations" };
   return <View style={styles.screen}>
-    {stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={["store_operations", "promotions"]} /> : null}
+    {stores.length > 1 ? <PartnerStoreScopeSelector /> : null}
     {state.kind === "error" ? <View style={styles.warning}><Text style={styles.muted}>تعذر تحميل المتاجر</Text><BthwaniButton label="إعادة المحاولة" variant="secondary" onPress={() => void reload()} /></View> : null}
+    {selectedStore && !canOperate && !can("promotions") ? <Text style={styles.muted}>لا تتوفر صلاحية إدارة هذا المتجر. اختر متجرًا آخر عند الحاجة.</Text> : null}
     {canOperate ? <View style={styles.statusCard} accessibilityLabel="حالة المتجر">
       <View style={styles.statusCopy}>
         <View style={styles.statusHeading}><View style={[styles.dot, { backgroundColor: orderable && !stopped ? theme.success : theme.warning }]} /><Text style={styles.statusTitle}>{statusTitle}</Text></View>
