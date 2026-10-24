@@ -5,3 +5,4 @@ export * from "./order-chat-composer";
 export * from "./order-chat-sheet";
 export * from "./order-chat-unread";
 export * from "./primitives";
+export * from "./ui-switch";
