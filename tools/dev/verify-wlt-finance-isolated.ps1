@@ -8,7 +8,9 @@ $password = [Convert]::ToHexString([System.Security.Cryptography.RandomNumberGen
 $databaseUrl = "postgres://$($dbUser):$($password)@127.0.0.1:$($port)/$($dbName)?sslmode=disable&connect_timeout=5"
 $existing = docker container ls --all --filter "name=^/$name$" --format "{{.Names}}"
 if($existing){throw 'Isolated finance test container already exists; refusing to replace it'}
-docker run -d --rm --name $name -p "127.0.0.1:$($port):5432" -e "POSTGRES_DB=$dbName" -e "POSTGRES_USER=$dbUser" -e "POSTGRES_PASSWORD=$password" 'postgis/postgis:16-3.4-alpine' | Out-Null
+# The PostGIS image declares a data VOLUME. Bind it to tmpfs in isolated proofs
+# so docker run --rm cannot leave anonymous PostgreSQL volumes behind.
+docker run -d --rm --name $name --tmpfs '/var/lib/postgresql/data:rw,size=512m' -p "127.0.0.1:$($port):5432" -e "POSTGRES_DB=$dbName" -e "POSTGRES_USER=$dbUser" -e "POSTGRES_PASSWORD=$password" 'postgis/postgis:16-3.4-alpine' | Out-Null
 if ($LASTEXITCODE -ne 0) {throw 'Could not create isolated PostgreSQL container'}
 try {
   $ready = $false

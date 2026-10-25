@@ -1,9 +1,16 @@
 name: samrim-local
 
+x-bthwani-logging: &bthwani-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgis/postgis:16-3.4-alpine@sha256:681931a625df344215e9b8998bf34daf146b6a395ceacee4439eb9c85869239f
     restart: unless-stopped
+    logging: *bthwani-logging
     environment:
       POSTGRES_USER: "${SAMRIM_POSTGRES_USER}"
       POSTGRES_PASSWORD: "${SAMRIM_POSTGRES_PASSWORD}"
@@ -21,6 +28,9 @@ services:
   postgres-access:
     image: postgis/postgis:16-3.4-alpine@sha256:681931a625df344215e9b8998bf34daf146b6a395ceacee4439eb9c85869239f
     restart: "no"
+    tmpfs:
+      - /var/lib/postgresql/data:rw,size=64m
+    logging: *bthwani-logging
     depends_on:
       identity-bootstrap:
         condition: service_completed_successfully
@@ -56,7 +66,8 @@ services:
 
   payment-mock:
     image: wiremock/wiremock:3.13.2-2
-    restart: "no"
+    restart: unless-stopped
+    logging: *bthwani-logging
     environment:
       JAVA_OPTS: "-Xms64m -Xmx160m"
     command: ["--global-response-templating"]
@@ -68,12 +79,14 @@ services:
   mailpit:
     image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
     restart: unless-stopped
+    logging: *bthwani-logging
     ports:
       - "127.0.0.1:${SAMRIM_MAILPIT_WEB_PORT:-18026}:8025"
 
   media:
     image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     restart: unless-stopped
+    logging: *bthwani-logging
     command: ["mini", "-dir=/data"]
     environment:
       AWS_ACCESS_KEY_ID: "${DSH_MEDIA_ACCESS_KEY:-samrim-media}"
@@ -99,6 +112,7 @@ services:
       args:
         SAMRIM_SOURCE_REVISION: ${SAMRIM_SOURCE_REVISION:-unverified}
     restart: "no"
+    logging: *bthwani-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,6 +134,7 @@ services:
       args:
         SAMRIM_SOURCE_REVISION: ${SAMRIM_SOURCE_REVISION:-unverified}
     restart: "no"
+    logging: *bthwani-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -140,6 +155,7 @@ services:
   identity:
     image: samrim-local-identity:dev
     restart: unless-stopped
+    logging: *bthwani-logging
     build:
       context: ../../..
       dockerfile: services/identity/backend/Dockerfile
@@ -208,6 +224,7 @@ services:
       args:
         SAMRIM_SOURCE_REVISION: ${SAMRIM_SOURCE_REVISION:-unverified}
     restart: "no"
+    logging: *bthwani-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -225,6 +242,7 @@ services:
   dsh:
     image: samrim-local-dsh:dev
     restart: unless-stopped
+    logging: *bthwani-logging
     build:
       context: ../../..
       dockerfile: services/dsh/backend/Dockerfile
@@ -286,6 +304,7 @@ services:
       args:
         SAMRIM_SOURCE_REVISION: ${SAMRIM_SOURCE_REVISION:-unverified}
     restart: "no"
+    logging: *bthwani-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -302,6 +321,7 @@ services:
   wlt:
     image: samrim-local-wlt:dev
     restart: unless-stopped
+    logging: *bthwani-logging
     build:
       context: ../../..
       dockerfile: services/wlt/backend/Dockerfile
