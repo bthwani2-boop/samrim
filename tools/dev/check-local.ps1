@@ -50,6 +50,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Candidate UTF-8 integrity check failed.' }
         node tools/dev/check-typescript-ast-tests.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate TypeScript AST regression tests failed.' }
+        node --test packages/push-device/src/push-device.test.mjs packages/push-device/src/alert-tone.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate native notification regression tests failed.' }
         if (@($candidateFiles | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -gt 0) {
             pnpm exec nx affected -t lint format-check typecheck contract build vet export-smoke --base=$governanceBase --head=$head --outputStyle=static --parallel=2 --nxBail=true
             if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
@@ -82,6 +84,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Local UTF-8 integrity check failed.' }
     node tools/dev/check-typescript-ast-tests.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local TypeScript AST regression tests failed.' }
+    node --test packages/push-device/src/push-device.test.mjs packages/push-device/src/alert-tone.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local native notification regression tests failed.' }
 
     $env:NX_NO_CLOUD = 'true'
 
