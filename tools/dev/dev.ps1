@@ -1,7 +1,7 @@
 #Requires -Version 7.4
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('up', 'down', 'status')]
+    [ValidateSet('up', 'warm', 'light', 'down', 'status')]
     [string]$Target = 'up'
 )
 
@@ -16,6 +16,21 @@ Set-Location $Root
 function Compose([string[]]$Arguments) {
     & docker compose --ansi never --project-name samrim-local --env-file $EnvPath -f $ComposePath @Arguments
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
+function Ensure-DockerRunning {
+    & docker info --format '{{.ServerVersion}}' *> $null
+    if ($LASTEXITCODE -eq 0) { return }
+    Write-Host 'DOCKER_DESKTOP_STARTING=on-demand'
+    & docker desktop start --timeout 150
+    if ($LASTEXITCODE -ne 0) { throw 'Could not start Docker Desktop' }
+    $ready = $false
+    for ($attempt = 0; $attempt -lt 45; $attempt++) {
+        & docker info --format '{{.ServerVersion}}' *> $null
+        if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+        Start-Sleep -Seconds 2
+    }
+    if (-not $ready) { throw 'Docker Desktop engine did not become ready' }
 }
 
 function Stop-RepositoryHosts {
@@ -60,11 +75,66 @@ function Ensure-DatabaseRuntimePasswords {
 switch ($Target) {
     'down' {
         Stop-RepositoryHosts
+        & docker info --format '{{.ServerVersion}}' *> $null
+        if ($LASTEXITCODE -ne 0) { Write-Host 'RUNTIME_DOWN=PASS already-stopped'; break }
         Compose @('down', '--remove-orphans')
         Write-Host 'RUNTIME_DOWN=PASS scope=repository-hosts+backend'
     }
-    'status' { Compose @('ps', '-a') }
+    'light' {
+        & docker info --format '{{.ServerVersion}}' *> $null
+        if ($LASTEXITCODE -ne 0) { Write-Host 'RUNTIME_LIGHT=PASS engine-already-stopped'; break }
+        $outside = @(& docker ps --format '{{.Names}}' | Where-Object { $_ -notlike 'samrim-local-*' })
+        Compose @('stop', '--timeout', '20')
+        if ($outside.Count -gt 0) {
+            Write-Host "RUNTIME_LIGHT=PARTIAL other-containers-running=$($outside.Count); Docker Desktop left running"
+        } else {
+            # Prevent test-volume and stale-cache accumulation when leaving development.
+            $activeBuild = @(Get-CimInstance Win32_Process | Where-Object {
+                $_.Name -match '^(docker|node|pwsh|powershell)\.exe$' -and
+                $_.CommandLine -match '(?i)docker (build|buildx|compose.+build)|buildx build'
+            })
+            if ($activeBuild.Count -eq 0) {
+                & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'clean-docker-anonymous.ps1') -Apply
+                & docker buildx prune --all --filter 'until=168h' --force *> $null
+                Write-Host 'DOCKER_OLD_CACHE=pruned-7d'
+            } else {
+                Write-Host 'DOCKER_OLD_CACHE=skipped-active-build'
+            }
+            & docker desktop stop --timeout 120
+            if ($LASTEXITCODE -ne 0) { throw 'Docker Desktop could not be stopped safely' }
+            # Reclaim the remaining WSL VM memory only when Docker owns the sole distro.
+            $distros = @(& wsl --list --quiet 2>$null | ForEach-Object { ($_ -replace [char]0, '').Trim() } | Where-Object { $_ })
+            if ($distros.Count -eq 1 -and $distros[0] -eq 'docker-desktop') {
+                & wsl --shutdown
+                Write-Host 'WSL_IDLE_MEMORY=released'
+            }
+            Write-Host 'RUNTIME_LIGHT=PASS Docker Desktop stopped; volumes and images retained'
+        }
+    }
+    'status' {
+        & docker info --format '{{.ServerVersion}}' *> $null
+        if ($LASTEXITCODE -ne 0) { Write-Host 'RUNTIME_STATUS=Docker Desktop stopped'; break }
+        Compose @('ps', '-a')
+    }
+    'warm' {
+        Ensure-DockerRunning
+        Ensure-DatabaseRuntimePasswords
+        # Warm start is only valid after initial migrations/bootstrap have completed.
+        foreach ($job in @('identity-migrate', 'identity-bootstrap', 'dsh-migrate', 'wlt-migrate', 'postgres-access')) {
+            $id = "samrim-local-$job-1"
+            $state = & docker inspect $id --format '{{.State.Status}}:{{.State.ExitCode}}' 2>$null
+            if ($LASTEXITCODE -ne 0 -or "$state" -ne 'exited:0') {
+                throw "Warm mode requires completed setup ($job). Use pnpm dev for full setup and rebuild."
+            }
+        }
+        # Preserve completed one-shot jobs: never rerun migrations merely to resume development.
+        Compose @('up', '-d', '--no-build', '--no-deps', '--wait', '--wait-timeout', '120', 'postgres', 'media', 'mailpit', 'payment-mock')
+        Compose @('up', '-d', '--no-build', '--no-deps', '--wait', '--wait-timeout', '120', 'identity', 'wlt')
+        Compose @('up', '-d', '--no-build', '--no-deps', '--wait', '--wait-timeout', '120', 'dsh')
+        Write-Host 'RUNTIME_WARM=PASS existing-images-reused one-shot-jobs-untouched'
+    }
     default {
+        Ensure-DockerRunning
         Ensure-DatabaseRuntimePasswords
         # A Git SHA labels the built source only when the working tree is clean.
         $sourceRevision = (& git -C $Root rev-parse --verify HEAD).Trim()
