@@ -111,10 +111,24 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
 
   if (cameraMode === "barcode") {
     plugins.push(["expo-camera", {
-      cameraPermission: "نحتاج الوصول إلى الكاميرا لمسح باركود المنتجات.",
-      microphonePermission: false,
+      cameraPermission: "نحتاج الوصول إلى الكاميرا لمسح باركود المنتجات أو التقاط صورة أو فيديو عند اختيارك.",
+      // Barcode scanning does not record audio; voice messages use expo-audio.
       recordAudioAndroid: false,
       barcodeScannerEnabled: true,
+    }]);
+  }
+
+  if (["app-client", "app-partner"].includes(appKey)) {
+    plugins.push(["expo-image-picker", {
+      photosPermission: "نحتاج الوصول إلى الصور التي تختارها لمنتجاتك أو مرفقات طلباتك.",
+      cameraPermission: "نحتاج الوصول إلى الكاميرا فقط عندما تختار التقاط صورة أو فيديو.",
+      microphonePermission: "نحتاج الوصول إلى الميكروفون فقط عند تسجيل رسالة صوتية أو فيديو.",
+    }]);
+    plugins.push(["expo-audio", {
+      microphonePermission: "نحتاج الوصول إلى الميكروفون فقط عند تسجيل رسالة صوتية.",
+      recordAudioAndroid: true,
+      enableBackgroundRecording: false,
+      enableBackgroundPlayback: false,
     }]);
   }
 
