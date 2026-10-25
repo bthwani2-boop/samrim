@@ -26,6 +26,11 @@
       "types": "./src/native/order-chat-voice-recorder.tsx",
       "react-native": "./src/native/order-chat-voice-recorder.tsx",
       "default": "./src/native/order-chat-voice-recorder.tsx"
+    },
+    "./native/order-chat-private-media": {
+      "types": "./src/native/order-chat-private-media.tsx",
+      "react-native": "./src/native/order-chat-private-media.tsx",
+      "default": "./src/native/order-chat-private-media.tsx"
     }
   },
   "scripts": {
@@ -42,7 +47,10 @@
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-maps": "1.27.2",
-    "expo-audio": "57.0.5"
+    "expo-audio": "57.0.5",
+    "expo-crypto": "57.0.4",
+    "expo-file-system": "57.0.7",
+    "expo-video": "57.0.5"
   },
   "devDependencies": {
     "@expo/ui": "57.0.26",
@@ -52,7 +60,10 @@
     "react-native": "0.86.3",
     "react-native-maps": "1.27.2",
     "typescript": "7.0.2",
-    "expo-audio": "57.0.5"
+    "expo-audio": "57.0.5",
+    "expo-crypto": "57.0.4",
+    "expo-file-system": "57.0.7",
+    "expo-video": "57.0.5"
   },
   "peerDependenciesMeta": {
     "@expo/ui": {
@@ -62,6 +73,15 @@
       "optional": true
     },
     "expo-audio": {
+      "optional": true
+    },
+    "expo-crypto": {
+      "optional": true
+    },
+    "expo-file-system": {
+      "optional": true
+    },
+    "expo-video": {
       "optional": true
     }
   }

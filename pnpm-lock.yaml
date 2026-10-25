@@ -645,6 +645,15 @@ importers:
       expo-audio:
         specifier: 57.0.5
         version: 57.0.5(expo-asset@57.0.20(expo@57.0.31)(react-native@0.86.3(@react-native/metro-config@0.86.3)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)(typescript@7.0.2))(expo@57.0.31)(react-native@0.86.3(@react-native/metro-config@0.86.3)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
+      expo-crypto:
+        specifier: 57.0.4
+        version: 57.0.4(expo@57.0.31)
+      expo-file-system:
+        specifier: 57.0.7
+        version: 57.0.7(expo@57.0.31)(react-native@0.86.3(@react-native/metro-config@0.86.3)(@types/react@19.2.17)(react@19.2.3))
+      expo-video:
+        specifier: 57.0.5
+        version: 57.0.5(expo@57.0.31)(react-native@0.86.3(@react-native/metro-config@0.86.3)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
       react:
         specifier: 19.2.3
         version: 19.2.3

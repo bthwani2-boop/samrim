@@ -1,14 +1,13 @@
-import { createDshMobileClient } from "@bthwani/dsh";
-import { BthwaniButton, BthwaniOrderChatAudioBubble } from "@bthwani/design-system/native";
-import * as Crypto from "expo-crypto";
 import type { AudioPlayer, AudioStatus } from "expo-audio";
+import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Image, Text, View } from "react-native";
-import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { BthwaniOrderChatAudioBubble } from "./order-chat-audio-bubble";
+import { BthwaniButton } from "./primitives";
 
 const PrivateVideo = lazy(async () => {
-  try { return await import("./order-conversation-private-video"); }
+  try { return await import("./order-chat-private-video"); }
   catch { return { default: (_props: {uri: string}) => <Text>تعذر تشغيل الفيديو على هذا الجهاز.</Text> }; }
 });
 
@@ -21,6 +20,7 @@ type Props = Readonly<{
   createdAt?: string;
   readAt?: string | null;
   caption?: string;
+  readPrivateMedia: (orderId: string, messageId: string) => Promise<{ mediaKind: string; contentType: string; dataBase64: string }>;
 }>;
 
 function durationFromCaption(caption: string): number {
@@ -29,7 +29,7 @@ function durationFromCaption(caption: string): number {
 }
 
 export function OrderConversationMediaMessage({
-  orderId, messageId, mediaKind, mine = false, sender = "", createdAt = "", readAt, caption = "",
+  orderId, messageId, mediaKind, mine = false, sender = "", createdAt = "", readAt, caption = "", readPrivateMedia,
 }: Props) {
   const [imageUri, setImageUri] = useState("");
   const [videoUri, setVideoUri] = useState("");
@@ -62,12 +62,9 @@ export function OrderConversationMediaMessage({
     if (status.error) setError("تعذر تشغيل الصوت");
   }
 
-  async function readMedia() {
-    const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-    if (!base) throw new Error("DSH_BASE_URL_REQUIRED");
-    const token = await getUsableIdentityAccessToken();
-    const api = createDshMobileClient(base, {cryptoRandomUUID: () => Crypto.randomUUID()});
-    const result = await api.readOrderConversationMedia(token, orderId, messageId);
+
+  async function readCheckedMedia() {
+    const result = await readPrivateMedia(orderId, messageId);
     if (result.mediaKind !== mediaKind || !result.dataBase64) throw new Error("INVALID_MEDIA");
     return result;
   }
@@ -88,7 +85,7 @@ export function OrderConversationMediaMessage({
     loading.current = true;
     setBusy(true);
     try {
-      const result = await readMedia();
+      const result = await readCheckedMedia();
       if (result.mediaKind !== "audio") throw new Error("INVALID_AUDIO");
       const extensions: Record<string, string> = {
         "audio/mp4": ".m4a", "audio/m4a": ".m4a", "audio/aac": ".aac",
@@ -130,7 +127,7 @@ export function OrderConversationMediaMessage({
     setBusy(true);
     setError("");
     try {
-      const result = await readMedia();
+      const result = await readCheckedMedia();
       if (!alive.current) return;
       if (result.mediaKind === "image") {
         setImageUri("data:" + result.contentType + ";base64," + result.dataBase64);

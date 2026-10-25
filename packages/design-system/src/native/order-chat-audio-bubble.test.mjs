@@ -34,14 +34,15 @@ test("voice notes use a compact waveform bubble with playback progress instead o
   assert.match(bubble, /BthwaniIcon name=\{playing \? "pause" : "play"\}/);
   assert.match(bubble, /onSeek\(Math\.max\(0, Math\.min\(1,/);
   assert.match(bubble, /formatDuration\(elapsed\)/);
+  const media = readFileSync(new URL("./order-chat-private-media.tsx", base), "utf8");
+  assert.match(media, /<BthwaniOrderChatAudioBubble/);
+  assert.match(media, /playbackStatusUpdate/);
+  assert.match(media, /audio\/3gpp/);
+  assert.doesNotMatch(media, /label=\{mediaKind=== "audio"/);
   for (const surface of surfaces) {
-    const media = readFileSync(new URL(surface + "/order-conversation-media.tsx", base), "utf8");
     const chat = readFileSync(new URL(surface + "/order-conversation.tsx", base), "utf8");
-    assert.match(media, /<BthwaniOrderChatAudioBubble/);
-    assert.match(media, /playbackStatusUpdate/);
-    assert.match(media, /audio\/3gpp/);
-    assert.doesNotMatch(media, /label=\{mediaKind=== "audio"/);
     assert.match(chat, /message\.mediaKind==="audio" \? <OrderConversationMediaMessage/);
     assert.match(chat, /caption=\{message\.body\}/);
+    assert.match(chat, /@bthwani\/design-system\/native\/order-chat-private-media/);
   }
 });
