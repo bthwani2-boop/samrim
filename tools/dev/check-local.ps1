@@ -66,6 +66,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Candidate client/partner native contract check failed.' }
         node --test tools/mobile/check-captain-field-native-scope.test.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate captain/field native permission scope failed.' }
+        node --test tools/mobile/check-eas-offline-plan.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate EAS offline plan contract failed.' }
         if (@($candidateFiles | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -gt 0) {
             pnpm exec nx affected -t lint format-check typecheck contract build vet export-smoke --base=$governanceBase --head=$head --outputStyle=static --parallel=2 --nxBail=true
             if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
@@ -114,6 +116,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Local client/partner native contract check failed.' }
     node --test tools/mobile/check-captain-field-native-scope.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local captain/field native permission scope failed.' }
+    node --test tools/mobile/check-eas-offline-plan.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local EAS offline plan contract failed.' }
 
     $env:NX_NO_CLOUD = 'true'
 

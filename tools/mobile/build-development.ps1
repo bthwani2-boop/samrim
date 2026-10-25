@@ -5,7 +5,8 @@ param(
     [ValidatePattern("^app-(client|partner|captain|field)$")]
     [string] $App,
     [switch] $Submit,
-    [switch] $Wait
+    [switch] $Wait,
+    [switch] $OfflinePlan
 )
 
 Set-StrictMode -Version Latest
@@ -91,6 +92,22 @@ if ($IosEnabled) {
     if ($null -eq $IosProfile -or [string]$IosProfile.extends -ne "development" -or -not [bool]$IosProfile.ios.simulator) {
         Fail "iOS development simulator profile is required for $App."
     }
+}
+if ($OfflinePlan) {
+    if ($Submit -or $Wait) { Fail "OfflinePlan does not accept Submit or Wait." }
+    $AndroidProfile = $EasConfig.build.development
+    if ($null -eq $AndroidProfile -or [string]$AndroidProfile.extends -ne "base" -or
+        -not [bool]$AndroidProfile.developmentClient -or
+        [string]$AndroidProfile.android.buildType -ne "apk") {
+        Fail "Android development APK profile is invalid for $App."
+    }
+    Write-Host "EAS_OFFLINE_PLAN=READY app=$App sourceSha=$LocalSha"
+    Write-Host "EAS_PLAN app=$App platform=android profile=development output=apk"
+    if ($IosEnabled) {
+        Write-Host "EAS_PLAN app=$App platform=ios profile=ios-simulator output=simulator"
+    }
+    Write-Host "EAS_CLOUD_CALLS=0 EAS_BUILDS_SUBMITTED=0 EAS_SECRETS_MATERIALIZED=0"
+    return
 }
 $RequiredInputs = @($CredentialVaultPath, $KeystoreVaultPath)
 if ($FirebaseEnabled) { $RequiredInputs += $FirebaseVaultPath }
