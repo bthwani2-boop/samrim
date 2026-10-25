@@ -56,6 +56,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Candidate service import boundary tests failed.' }
         node tools/governance/check-service-import-boundaries.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate service import boundaries failed.' }
+        node --test apps/control-panel/tests/finance-operator-recovery-scope.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate finance operator recovery isolation failed.' }
         if (@($candidateFiles | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -gt 0) {
             pnpm exec nx affected -t lint format-check typecheck contract build vet export-smoke --base=$governanceBase --head=$head --outputStyle=static --parallel=2 --nxBail=true
             if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
@@ -94,6 +96,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Local service import boundary tests failed.' }
     node tools/governance/check-service-import-boundaries.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local service import boundaries failed.' }
+    node --test apps/control-panel/tests/finance-operator-recovery-scope.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local finance operator recovery isolation failed.' }
 
     $env:NX_NO_CLOUD = 'true'
 

@@ -16,6 +16,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWalletProviders, walletProviderLabel } from "../wallet-provider/use-wallet-providers";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
+import { useSession } from "../../session/session-provider";
+import { operatorRecoveryStorageKey } from "./operator-recovery-key";
 import { PartnerFinancialRegister } from "./partner-financial-register";
 
 export type PartnerEarningsInitialQuery = Readonly<{
@@ -79,9 +81,11 @@ function isPartnerCommissionRemittanceResponse(value: unknown): value is Partner
 
 const partnerRemittanceRecoveryKey = "bthwani.finance.partner-remittance.recovery.v1";
 
-function readPartnerRemittanceRecovery(): Map<string, PendingRemittance> {
+function readPartnerRemittanceRecovery(operatorActorId: string): Map<string, PendingRemittance> {
   try {
-    const raw = window.sessionStorage.getItem(partnerRemittanceRecoveryKey);
+    const key = operatorRecoveryStorageKey(partnerRemittanceRecoveryKey, operatorActorId);
+    if (!key) return new Map();
+    const raw = window.sessionStorage.getItem(key);
     if (!raw) return new Map();
     const parsed = JSON.parse(raw) as { version?: unknown; pending?: unknown };
     if (parsed.version !== 1 || !parsed.pending || typeof parsed.pending !== "object") return new Map();
@@ -114,6 +118,8 @@ function readPartnerRemittanceRecovery(): Map<string, PendingRemittance> {
 }
 
 export function PartnerEarningsWorkspace({ initialQuery }: Props) {
+  const { state: operatorSession } = useSession();
+  const operatorActorId = operatorSession.kind === "authenticated" ? operatorSession.identity.subject.trim() : "";
   const { walletProviders } = useWalletProviders();
   const router = useRouter();
   const pathname = usePathname() ?? "/finance/partner-commission-receivables";
@@ -150,7 +156,9 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
 
   function persistPendingRemittances() {
     try {
-      window.sessionStorage.setItem(partnerRemittanceRecoveryKey, JSON.stringify({ version: 1, pending: Object.fromEntries(pendingByPartner.current) }));
+      const key = operatorRecoveryStorageKey(partnerRemittanceRecoveryKey, operatorActorId);
+      if (!key) return;
+      window.sessionStorage.setItem(key, JSON.stringify({ version: 1, pending: Object.fromEntries(pendingByPartner.current) }));
     } catch {
       // WLT remains authoritative; storage failure only disables reload recovery.
     }
@@ -272,10 +280,10 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
   }, [initialQuery.partnerActorId, loadPayoutRecipients, loadSummary]);
 
   useEffect(() => {
-    pendingByPartner.current = readPartnerRemittanceRecovery();
+    pendingByPartner.current = readPartnerRemittanceRecovery(operatorActorId);
     const actorId = activePartnerActorId.current;
     setPending(actorId ? pendingByPartner.current.get(actorId) ?? null : null);
-  }, []);
+  }, [operatorActorId]);
 
   const nextPage = () => {
     if (!nextCursor) return;
