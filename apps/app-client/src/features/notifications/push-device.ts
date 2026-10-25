@@ -1,7 +1,7 @@
+import { requireOptionalNativeModule } from "expo";
+import Constants from "expo-constants";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
-import Constants from "expo-constants";
-import { requireOptionalNativeModule } from "expo";
 
 import { Platform } from "react-native";
 
@@ -31,7 +31,7 @@ async function installationId(): Promise<string> {
 }
 
 export async function unregisterOwnPushDevice(accessToken: string): Promise<void> {
-  if (Platform.OS !== "android" || !accessToken) return;
+  if (Platform.OS === "web" || !accessToken) return;
   try {
     // Do not allow an in-flight registration to re-bind the token after logout.
     await registrationInFlight?.task.catch(() => false);
@@ -51,7 +51,7 @@ export async function unregisterOwnPushDevice(accessToken: string): Promise<void
 }
 
 export function registerOwnPushDevice(accessToken: string, actor: string, tone: "classic" | "soft" | "urgent", stillCurrent: () => boolean): Promise<boolean> {
-  if (Platform.OS !== "android" || !accessToken || !actor || !stillCurrent()) return Promise.resolve(false);
+  if (Platform.OS === "web" || !accessToken || !actor || !stillCurrent()) return Promise.resolve(false);
   if (registrationInFlight?.actor === actor) return registrationInFlight.task;
   const previousTask = registrationInFlight?.task;
   const task = (async () => {

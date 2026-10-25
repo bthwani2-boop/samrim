@@ -25,6 +25,7 @@ test("no tracked JavaScript AST tests import the native compiler without its par
     encoding: "utf8",
   }).split("\0").filter(Boolean);
   for (const path of tracked) {
+    if (path === "tools/dev/typescript-ast-compat.test.mjs") continue; // Contains the intentional negative fixture.
     if (!path.endsWith(".test.mjs") && !path.endsWith(".test.js")) continue;
     const text = readFileSync(resolve(repositoryRoot, path), "utf8");
     assert.doesNotMatch(text, oldAstImports, path);
