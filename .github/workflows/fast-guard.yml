@@ -131,7 +131,7 @@ jobs:
         if: steps.changed.outputs.node == 'true'
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
         with:
-          version: 10.34.0
+          version: 10.34.7
           run_install: false
 
       - name: Set up Node
