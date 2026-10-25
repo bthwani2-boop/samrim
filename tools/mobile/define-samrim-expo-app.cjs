@@ -104,6 +104,7 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
         locationAlwaysAndWhenInUsePermission: PERMISSION_TEXT.captainBackground,
         isAndroidBackgroundLocationEnabled: true,
         isAndroidForegroundServiceEnabled: true,
+        isIosBackgroundLocationEnabled: true,
       } : {}),
     };
     plugins.push(["expo-location", locationOptions]);

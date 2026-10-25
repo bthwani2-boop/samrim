@@ -64,6 +64,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Candidate customer fulfillment actor isolation failed.' }
         node --test tools/mobile/check-client-partner-native-contract.test.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate client/partner native contract check failed.' }
+        node --test tools/mobile/check-captain-field-native-scope.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate captain/field native permission scope failed.' }
         if (@($candidateFiles | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -gt 0) {
             pnpm exec nx affected -t lint format-check typecheck contract build vet export-smoke --base=$governanceBase --head=$head --outputStyle=static --parallel=2 --nxBail=true
             if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
@@ -110,6 +112,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Local customer fulfillment actor isolation failed.' }
     node --test tools/mobile/check-client-partner-native-contract.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local client/partner native contract check failed.' }
+    node --test tools/mobile/check-captain-field-native-scope.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local captain/field native permission scope failed.' }
 
     $env:NX_NO_CLOUD = 'true'
 
