@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import ts from "typescript";
+import ts from "typescript-ast";
 
 for (const app of ["app-client", "app-partner", "app-captain"]) {
   const file = path.resolve(import.meta.dirname, "../../apps", app, "src/features/notifications/order-alert-preferences.tsx");

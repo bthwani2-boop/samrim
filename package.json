@@ -53,6 +53,7 @@
     "knip": "6.34.0",
     "next": "16.4.3",
     "nx": "23.2.1",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "typescript-ast": "npm:typescript@6.0.2"
   }
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import ts from "typescript";
+import ts from "typescript-ast";
 
 const panel = readFileSync(new URL("../src/features/marketing/marketing-partner-decisions.tsx", import.meta.url), "utf8");
 const route = readFileSync(new URL("../app/api/marketing/promotions/[promotionId]/partner-decisions/route.ts", import.meta.url), "utf8");

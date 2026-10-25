@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import ts from "typescript";
+import ts from "typescript-ast";
 
 const types = readFileSync(new URL("./icon-types.ts", import.meta.url), "utf8");
 const web = readFileSync(new URL("./icons.web.tsx", import.meta.url), "utf8");

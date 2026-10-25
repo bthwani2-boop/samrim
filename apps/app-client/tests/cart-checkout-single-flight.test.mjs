@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import vm from "node:vm";
-import ts from "typescript";
+import ts from "typescript-ast";
 import { paymentSplit } from "../src/features/cart-checkout/payment-selection.ts";
 
 // Execute the actual checkout handler with isolated dependencies; no device, API, or DB mutation.

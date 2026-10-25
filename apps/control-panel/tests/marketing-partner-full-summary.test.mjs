@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import ts from "typescript";
+import ts from "typescript-ast";
 
 const view = readFileSync(new URL("../src/features/marketing/marketing-center-workspace.tsx", import.meta.url), "utf8");
 test("partner participation summary is an authoritative full-registry DSH readback", () => {

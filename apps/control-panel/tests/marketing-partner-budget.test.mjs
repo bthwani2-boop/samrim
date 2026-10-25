@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import ts from "typescript";
+import ts from "typescript-ast";
 
 const partner = readFileSync(new URL("../../app-partner/src/features/store-offer/store-promotions.tsx", import.meta.url), "utf8");
 const operator = readFileSync(new URL("../src/features/marketing/marketing-promotions-workspace.tsx", import.meta.url), "utf8");
