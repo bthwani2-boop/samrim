@@ -1,6 +1,8 @@
 import { BthwaniButton, BthwaniConfirmDialog, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { StoreAccessGrant, StoreAccessPermission } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
+import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
+import { Contact } from "expo-contacts";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -283,6 +285,18 @@ function TeamInvitationCard({ styles, busy, validInvite, phoneError, nameError, 
 }>) {
   const theme = useAppearanceTheme();
   const [showCustom, setShowCustom] = useState(false);
+  const [contactError, setContactError] = useState("");
+  async function chooseContact() {
+    try {
+      const contact = await Contact.presentPicker();
+      if (!contact) return;
+      const phones = await contact.getPhones();
+      const number = phones.find((item) => item.number?.trim())?.number;
+      if (!number) { setContactError("لا يوجد رقم هاتف في جهة الاتصال المختارة."); return; }
+      onPhoneChange(normalizeYemenPhoneE164(number));
+      setContactError("");
+    } catch { setContactError("تعذر اختيار جهة الاتصال. أدخل الرقم يدويًا."); }
+  }
   const canInvite = !busy && validInvite && selectedPermissions.length > 0 && selectedStoreIDs.length > 0;
   return <View style={styles.card}>
     <Text style={styles.value}>إضافة موظف</Text>
@@ -290,6 +304,8 @@ function TeamInvitationCard({ styles, busy, validInvite, phoneError, nameError, 
     {nameError ? <Text accessibilityRole="alert" style={styles.error}>{nameError}</Text> : null}
     <TextInput accessibilityLabel="رقم هاتف الموظف" autoCapitalize="none" autoCorrect={false} editable={!busy} keyboardType="phone-pad" onChangeText={onPhoneChange} placeholder="رقم الهاتف" placeholderTextColor={theme.colorMuted} style={[styles.formInput, { textAlign: "left", writingDirection: "ltr" }]} value={phone} />
     {phoneError ? <Text accessibilityRole="alert" style={styles.error}>{phoneError}</Text> : null}
+    <BthwaniButton disabled={busy} label="اختيار رقم من جهات الاتصال" onPress={() => void chooseContact()} variant="secondary" />
+    {contactError ? <Text accessibilityRole="alert" style={styles.error}>{contactError}</Text> : null}
     {filteredOwnedStores.length > 1 ? <>
       <Text style={styles.metaLabel}>المتاجر</Text>
       <TextInput accessibilityLabel="بحث المتاجر المملوكة" autoCapitalize="none" autoCorrect={false} editable={!busy} onChangeText={onStoreSearchChange} placeholder="بحث عن متجر" placeholderTextColor={theme.colorMuted} style={styles.formInput} value={storeSearch} />

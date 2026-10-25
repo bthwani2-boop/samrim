@@ -1,9 +1,12 @@
+import * as Application from "expo-application";
+import * as Clipboard from "expo-clipboard";
+import * as Device from "expo-device";
 import { radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { AppearancePicker, appearanceOptions, BthwaniButton, BthwaniIcon, BthwaniNavigationRow, BthwaniSurface, useAppearanceTheme, useMobileAppearance } from "@bthwani/design-system/native";
 import { fieldAdmissionStateLabel } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { logoutIdentity } from "../../bootstrap/identity";
 import { fieldAdmissionActionability } from "../field-operations/field-eligibility";
 import { useOwnFieldAdmission } from "../field-operations/use-field-admission";
@@ -66,6 +69,17 @@ export default function FieldAccount() {
         {showAppearance ? <AppearancePicker compact title="المظهر" helper="" /> : null}
       </View>
 
+    <Pressable accessibilityRole="button" accessibilityLabel="نسخ معلومات إصدار التطبيق"
+      onPress={() => void Clipboard.setStringAsync([
+        "بثواني", Application.nativeApplicationVersion ?? "—",
+        "build:" + (Application.nativeBuildVersion ?? "—"),
+        Device.modelName ?? "جهاز غير معروف", Device.osVersion ?? "—",
+      ].join(" · ")).then(() => setNotice("تم نسخ معلومات إصدار التطبيق")).catch(() => setNotice("تعذر نسخ معلومات التطبيق"))}
+      style={{ paddingVertical: 7, alignItems: "center" }}>
+      <Text style={{ color: theme.colorMuted, fontSize: 12 }}>
+        {"إصدار التطبيق " + (Application.nativeApplicationVersion ?? "—") + " · نسخ معلومات الإصدار"}
+      </Text>
+    </Pressable>
       <View style={styles.footer}>
         <BthwaniButton busy={busy} disabled={busy} label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} onPress={() => void logout()} variant="secondary" />
         {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}

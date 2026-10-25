@@ -142,6 +142,21 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
       defaultChannel: "order-classic-v1",
       sounds: ["./assets/sounds/order_classic.wav", "./assets/sounds/order_soft.wav", "./assets/sounds/order_urgent.wav"],
     }]);
+  } else if (appKey === "app-field") {
+    // Field work notifications do not need the order alert sounds or microphone.
+    plugins.push(["expo-notifications", { defaultChannel: "field-work-v1" }]);
+  }
+  // Calendar is add-only on iOS: never request to read the user's schedule.
+  plugins.push(["expo-calendar", {
+    calendarPermission: "تسمح هذه الميزة بإضافة الموعد الذي تختاره إلى تقويمك.",
+    writeOnlyCalendarPermission: "إضافة موعد تختاره إلى التقويم دون قراءة مواعيدك.",
+    writeOnlyAccess: true,
+  }]);
+  if (appKey === "app-client" || appKey === "app-partner") {
+    // Contact selection must be initiated by the user; never enumerate contacts.
+    plugins.push(["expo-contacts", {
+      contactsPermission: "اختيار رقم صديق أو موظف لمشاركته أو دعوته بناءً على طلبك فقط.",
+    }]);
   }
   plugins.push("expo-secure-store");
   plugins.push([
@@ -182,6 +197,9 @@ function defineSamrimExpoApp(appKey, options = {}) {
     ? "./google-services.json" : undefined;
   const android = {
     package: app.androidPackage,
+    // Contact selection never writes back to the phone's address book.
+    ...(["app-client", "app-partner"].includes(appKey)
+      ? { blockedPermissions: ["android.permission.WRITE_CONTACTS"] } : {}),
     ...(firebaseClientApps.includes(appKey) && (easFirebaseFile || localFirebaseFile)
       ? { googleServicesFile: easFirebaseFile || localFirebaseFile } : {}),
     ...(adaptiveIcon ? { adaptiveIcon: { foregroundImage: adaptiveIcon, backgroundColor: "#FFFFFF" } } : {}),

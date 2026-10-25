@@ -1,3 +1,6 @@
+import * as Application from "expo-application";
+import * as Clipboard from "expo-clipboard";
+import * as Device from "expo-device";
 import { type resolveTheme, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, type MobileIconName, useAppearanceTheme, useMobileAppearance } from "@bthwani/design-system/native";
 import type { PartnerStoreOperationalAvailabilityResponse, StoreAccessGrant, StoreImagesResponse } from "@bthwani/dsh";
@@ -31,6 +34,7 @@ export function PartnerMore() {
   const styles=useMemo(()=>createStyles(theme),[theme]);
   const {selectedStore,stores,state,reload}=usePartnerStoreScope();
   const [actor,setActor]=useState(actorID);
+  const [diagnosticNotice, setDiagnosticNotice] = useState("");
   const [identity,setIdentity]=useState<IdentityDisplay>({name:"الحساب الحالي",role:"جارٍ التحقق من الصفة"});
   const [availability,setAvailability]=useState<PartnerStoreOperationalAvailabilityResponse|null>(null);
   const [availabilityError,setAvailabilityError]=useState(false);
@@ -176,6 +180,18 @@ export function PartnerMore() {
       </View>
     </View>
     {themeError?<Text accessibilityRole="alert" style={styles.error}>{themeError}</Text>:null}
+    <Pressable accessibilityRole="button" accessibilityLabel="نسخ معلومات إصدار التطبيق"
+      onPress={() => void Clipboard.setStringAsync([
+        "بثواني", Application.nativeApplicationVersion ?? "—",
+        "build:" + (Application.nativeBuildVersion ?? "—"),
+        Device.modelName ?? "جهاز غير معروف", Device.osVersion ?? "—",
+      ].join(" · ")).then(() => setDiagnosticNotice("تم نسخ معلومات إصدار التطبيق")).catch(() => setDiagnosticNotice("تعذر نسخ معلومات التطبيق"))}
+      style={{ paddingVertical: 7, alignItems: "center" }}>
+      <Text style={{ color: theme.colorMuted, fontSize: 12 }}>
+        {"إصدار التطبيق " + (Application.nativeApplicationVersion ?? "—") + " · نسخ معلومات الإصدار"}
+      </Text>
+    </Pressable>
+    {diagnosticNotice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{diagnosticNotice}</Text> : null}
     <View style={styles.logout}><BthwaniButton variant="secondary" label={logoutBusy?"جارٍ تسجيل الخروج":"تسجيل الخروج"} disabled={logoutBusy} busy={logoutBusy} onPress={()=>void logout()}/></View>
     {logoutError?<Text accessibilityRole="alert" style={styles.error}>{logoutError}</Text>:null}
   </View>;
