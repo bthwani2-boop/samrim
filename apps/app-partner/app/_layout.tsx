@@ -1,12 +1,14 @@
 import { AppearanceProvider, BthwaniNetworkStatusNotice, useMobileAppearance } from "@bthwani/design-system/native";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { useNetworkState } from "expo-network";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Platform } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { appearance } from "../src/bootstrap/appearance";
+import { createPartnerActorQueryClient } from "../src/bootstrap/actor-query-client";
 import { currentIdentityState, subscribeIdentitySession } from "../src/bootstrap/identity";
 
 function currentMobileActorID(): string {
@@ -38,9 +40,18 @@ export default function RootLayout() {
 
 function RootNavigation() {
   const { themeName } = useMobileAppearance();
-  // A new session actor must not inherit React screen state or previous responses.
   const actorID = useSyncExternalStore(subscribeIdentitySession, currentMobileActorID, () => "");
-  return <><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false }}><Stack.Screen name="notifications" options={{ headerShown: false }} /></Stack></>;
+  // Remounting this boundary replaces the query client and the entire navigation tree.
+  return <PartnerActorNavigation key={actorID || "signed-out"} actorID={actorID} themeName={themeName} />;
+}
+
+function PartnerActorNavigation({ actorID, themeName }: { actorID: string; themeName: "light" | "dark" | "system" }) {
+  const [queryClient] = useState(createPartnerActorQueryClient);
+  useEffect(() => () => { queryClient.clear(); }, [queryClient]);
+  return <QueryClientProvider client={queryClient}>
+    <StatusBar style={themeName === "dark" ? "light" : "dark"} />
+    <Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false }}><Stack.Screen name="notifications" options={{ headerShown: false }} /></Stack>
+  </QueryClientProvider>;
 }
 
 function RootNetworkNotice() {

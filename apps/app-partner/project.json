@@ -10,6 +10,12 @@
         "command": "pnpm --dir apps/app-partner typecheck"
       }
     },
+    "contract": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test apps/app-partner/tests/actor-query-client.test.mjs"
+      }
+    },
     "export-smoke": {
       "executor": "nx:run-commands",
       "options": {

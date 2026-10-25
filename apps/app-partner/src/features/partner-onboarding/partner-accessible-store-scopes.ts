@@ -1,36 +1,42 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useCallback } from "react";
 
 import type { PartnerAccessibleStore } from "@bthwani/dsh";
 import { listPartnerAccessibleStores } from "./store-readback-client";
 
-type StoreScopesState = { kind: "loading" } | { kind: "ready"; stores: ReadonlyArray<PartnerAccessibleStore> } | { kind: "error" };
+type StoreScopesState =
+  | { kind: "loading" }
+  | { kind: "ready"; stores: ReadonlyArray<PartnerAccessibleStore> }
+  | { kind: "error" };
 
+// The provider belongs to the currently signed-in actor and is destroyed on
+// session changes. Do not persist this permission-bearing cache to disk.
 export function usePartnerAccessibleStoreScopes() {
-  const [state, setState] = useState<StoreScopesState>({ kind: "loading" });
-  const sequence = useRef(0);
-
-  const reload = useCallback(async () => {
-    const current = ++sequence.current;
-    setState({ kind: "loading" });
-    try {
+  const scopes = useQuery({
+    queryKey: ["partner", "accessible-stores"],
+    queryFn: async ({ signal }) => {
       const stores: PartnerAccessibleStore[] = [];
       let cursor = "";
       do {
+        if (signal.aborted) throw new Error("PARTNER_STORE_SCOPE_CANCELLED");
         const page = await listPartnerAccessibleStores(cursor);
-        if (sequence.current !== current) return;
+        if (signal.aborted) throw new Error("PARTNER_STORE_SCOPE_CANCELLED");
         stores.push(...page.stores);
         cursor = page.nextCursor;
       } while (cursor);
-      setState({ kind: "ready", stores });
-    } catch {
-      if (sequence.current === current) setState({ kind: "error" });
-    }
-  }, []);
+      return stores;
+    },
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
 
-  useEffect(() => {
-    void reload();
-    return () => { sequence.current += 1; };
-  }, [reload]);
+  const reload = useCallback(async () => {
+    await scopes.refetch();
+  }, [scopes.refetch]);
 
+  const state: StoreScopesState = scopes.isPending || scopes.isFetching
+    ? { kind: "loading" }
+    : scopes.isError ? { kind: "error" }
+    : { kind: "ready", stores: scopes.data ?? [] };
   return { state, reload };
 }
