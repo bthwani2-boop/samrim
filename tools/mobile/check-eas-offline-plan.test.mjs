@@ -33,14 +33,21 @@ for (const app of sourceApps) {
     assert.match(eas.build.base.node, /^\d+\.\d+\.\d+$/);
     assert.match(eas.build.base.pnpm, /^\d+\.\d+\.\d+$/);
     const sim = eas.build["ios-simulator"];
-    if (app === "app-client" || app === "app-partner") {
-      assert.equal(sim.extends, "development");
-      assert.equal(sim.ios.simulator, true);
-    } else {
-      assert.equal(sim, undefined);
-    }
+    assert.equal(sim.extends, "development");
+    assert.equal(sim.ios.simulator, true);
+    assert.equal(sim.developmentClient, undefined); // Inherited from development.
   });
 }
+
+test("every application is eligible for parallel Android and iOS submissions", () => {
+  assert.match(script, /\$IosEnabled = \$App -in @\("app-client", "app-partner", "app-captain", "app-field"\)/);
+  for (const app of sourceApps) {
+    const eas = JSON.parse(readFileSync(resolve(root, "apps", app, "eas.json"), "utf8"));
+    assert.equal(eas.build["ios-simulator"].extends, "development", app);
+    assert.equal(eas.build["ios-simulator"].ios.simulator, true, app);
+    assert.equal(eas.build.development.developmentClient, true, app);
+  }
+});
 
 test("explicit Submit retains parallel Android and iOS submission logic", () => {
   assert.match(script, /\$BuildRequests \+= \[pscustomobject\]@\{ Platform = "android"; Profile = "development" \}/);
