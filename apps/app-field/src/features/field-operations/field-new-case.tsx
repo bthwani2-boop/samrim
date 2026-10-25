@@ -7,7 +7,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { type Href, Link, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Keyboard, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Image, Keyboard, ScrollView, type ScrollViewInstance, Text, TextInput, useWindowDimensions, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
@@ -82,7 +82,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   const { state: admissionState, refresh: refreshAdmission } = useOwnFieldAdmission();
   const admissionActionability = admissionState.kind === "ready" ? fieldAdmissionActionability(admissionState.admission) : null;
   const [input, setInput] = useState<CreateJoiningCaseRequest>(initialJoiningCaseInput);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const keyboardTop = useRef<number | null>(null);
   const scrollOffset = useRef(0);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
