@@ -10,7 +10,7 @@ $existing = docker container ls --all --filter "name=^/$name$" --format "{{.Name
 if($existing){throw 'Isolated finance test container already exists; refusing to replace it'}
 # The PostGIS image declares a data VOLUME. Bind it to tmpfs in isolated proofs
 # so docker run --rm cannot leave anonymous PostgreSQL volumes behind.
-docker run -d --rm --name $name --tmpfs '/var/lib/postgresql/data:rw,size=512m' -p "127.0.0.1:$($port):5432" -e "POSTGRES_DB=$dbName" -e "POSTGRES_USER=$dbUser" -e "POSTGRES_PASSWORD=$password" 'postgis/postgis:16-3.4-alpine' | Out-Null
+docker run -d --rm --name $name --tmpfs '/var/lib/postgresql:rw,size=512m' -p "127.0.0.1:$($port):5432" -e "POSTGRES_DB=$dbName" -e "POSTGRES_USER=$dbUser" -e "POSTGRES_PASSWORD=$password" 'postgis/postgis:18-3.6@sha256:e84455a058f60f06dd8c40e66a2c628b8fc113d9fca0896e1f308b25b897207f' | Out-Null
 if ($LASTEXITCODE -ne 0) {throw 'Could not create isolated PostgreSQL container'}
 try {
   $ready = $false
