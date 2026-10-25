@@ -26,7 +26,7 @@ function isCurrentActor(actorID: string): boolean { return Boolean(actorID) && a
 
 // Delay loading the native recorder until requested; older dev builds retain text chat.
 const AudioRecorderControls = lazy(async () => {
-  try { return await import("./order-conversation-audio-controls"); }
+  try { return await import("@bthwani/design-system/native/order-chat-voice-recorder"); }
   catch { return { default: () => <Text>يتطلب تسجيل الصوت إصدار Android يحتوي مكتبة الصوت.</Text> }; }
 });
 

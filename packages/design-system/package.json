@@ -21,6 +21,11 @@
       "react-native": "./src/native/map.tsx",
       "browser": "./src/native/map.web.tsx",
       "default": "./src/native/map.tsx"
+    },
+    "./native/order-chat-voice-recorder": {
+      "types": "./src/native/order-chat-voice-recorder.tsx",
+      "react-native": "./src/native/order-chat-voice-recorder.tsx",
+      "default": "./src/native/order-chat-voice-recorder.tsx"
     }
   },
   "scripts": {
@@ -36,7 +41,8 @@
     "@expo/ui": "57.0.26",
     "react": "19.2.3",
     "react-native": "0.86.3",
-    "react-native-maps": "1.27.2"
+    "react-native-maps": "1.27.2",
+    "expo-audio": "57.0.5"
   },
   "devDependencies": {
     "@expo/ui": "57.0.26",
@@ -45,13 +51,17 @@
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-maps": "1.27.2",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "expo-audio": "57.0.5"
   },
   "peerDependenciesMeta": {
     "@expo/ui": {
       "optional": true
     },
     "react-native-maps": {
+      "optional": true
+    },
+    "expo-audio": {
       "optional": true
     }
   }

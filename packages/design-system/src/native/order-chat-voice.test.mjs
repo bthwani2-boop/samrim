@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const composer = readFileSync(new URL("./order-chat-composer.tsx", import.meta.url), "utf8");
+const voice = readFileSync(new URL("./order-chat-voice-recorder.tsx", import.meta.url), "utf8");
 const surfaces = [
   "../../../../apps/app-client/src/features/orders",
   "../../../../apps/app-partner/src/features/order-management",
@@ -15,7 +16,7 @@ test("voice recording stays inline instead of opening the legacy form", () => {
   assert.match(composer, /attachmentsOpen&&recipients\.length>1/);
   assert.match(composer, /attachmentsOpen&&recipientOpen/);
   for (const surface of surfaces) {
-    const voice = readFileSync(new URL(surface + "/order-conversation-audio-controls.tsx", import.meta.url), "utf8");
+    assert.equal(existsSync(new URL(surface + "/order-conversation-audio-controls.tsx", import.meta.url)), false, "obsolete app recorder must be removed");
     const chat = readFileSync(new URL(surface + "/order-conversation.tsx", import.meta.url), "utf8");
     assert.doesNotMatch(voice, /TextInput|transcript|نص التسجيل الصوتي|إرسال التسجيل مع نصه/);
     assert.match(voice, /useEffect\(\(\) => \{/);
@@ -25,6 +26,7 @@ test("voice recording stays inline instead of opening the legacy form", () => {
     assert.match(voice, /accessibilityLabel=\{phase === "failed"/);
     assert.match(chat, /kind==="audio"\?"رسالة صوتية"/);
     assert.doesNotMatch(chat, /AUDIO_TRANSCRIPT_REQUIRED/);
+    assert.match(chat, /import\("@bthwani\/design-system\/native\/order-chat-voice-recorder"\)/);
     assert.match(chat, /onVoice=\{\(\)=>setShowAudioControls\(true\)\}/);
     assert.match(chat, /onClose=\{\(\)=>setShowAudioControls\(false\)\}/);
   }
