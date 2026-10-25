@@ -1,6 +1,6 @@
 module github.com/bthwani2-boop/samrim/services/dsh/backend
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/bthwani2-boop/samrim/services/identity/clients/go v0.0.0

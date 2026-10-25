@@ -77,9 +77,18 @@ func normalizeAttendance(in AttendanceInput) (AttendanceInput, *time.Time, *time
 	if e1 != nil || e2 != nil || !finish.After(start) || finish.Sub(start) > 36*time.Hour {
 		return AttendanceInput{}, nil, nil, ErrInvalid
 	}
+	// The attendance date is the start of the shift in Yemen, even when a
+	// shift crosses midnight. Timestamps are preserved in UTC in storage.
+	if start.In(time.FixedZone("Asia/Aden", 3*60*60)).Format("2006-01-02") != in.Date {
+		return AttendanceInput{}, nil, nil, ErrInvalid
+	}
 	in.CheckInAt = start.UTC().Format(time.RFC3339)
 	in.CheckOutAt = finish.UTC().Format(time.RFC3339)
 	return in, &start, &finish, nil
+}
+
+func attendanceAllowedForEmployment(day, status string, start time.Time) bool {
+	return status == "active" && day >= start.Format("2006-01-02")
 }
 
 type attendanceScanner interface{ Scan(...any) error }
@@ -146,14 +155,15 @@ func RecordAttendance(ctx context.Context, db *sql.DB, employeeID string, input 
 		return AttendanceResult{}, err
 	}
 	var employmentStatus string
-	err = tx.QueryRowContext(ctx, "SELECT status FROM dsh.hr_employees WHERE id=$1 FOR SHARE", employeeID).Scan(&employmentStatus)
+	var employmentStart time.Time
+	err = tx.QueryRowContext(ctx, "SELECT status,start_date FROM dsh.hr_employees WHERE id=$1 FOR SHARE", employeeID).Scan(&employmentStatus, &employmentStart)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AttendanceResult{}, ErrNotFound
 	}
 	if err != nil {
 		return AttendanceResult{}, err
 	}
-	if employmentStatus != "active" {
+	if !attendanceAllowedForEmployment(input.Date, employmentStatus, employmentStart) {
 		return AttendanceResult{}, ErrConflict
 	}
 	var currentVersion int

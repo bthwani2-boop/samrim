@@ -55,10 +55,24 @@ type Page struct {
 	Items      []Employee `json:"items"`
 	NextCursor string     `json:"nextCursor,omitempty"`
 }
+type ListFilters struct {
+	Query      string
+	Cursor     string
+	Department string
+	JobTitle   string
+	Status     string
+	Linked     string
+	Limit      int
+}
+
 type cursor struct {
-	Query     string    `json:"q"`
-	CreatedAt time.Time `json:"t"`
-	ID        string    `json:"id"`
+	Query      string    `json:"q"`
+	Department string    `json:"d,omitempty"`
+	JobTitle   string    `json:"j,omitempty"`
+	Status     string    `json:"s,omitempty"`
+	Linked     string    `json:"l,omitempty"`
+	CreatedAt  time.Time `json:"t"`
+	ID         string    `json:"id"`
 }
 
 func normalize(in CreateInput) (CreateInput, error) {
@@ -209,8 +223,12 @@ const (
 	employeeSelectList          = `SELECT ` + employeeColumns + `
         FROM dsh.hr_employees
         WHERE ($1='' OR lower(full_name_ar) LIKE '%' || lower($1) || '%' OR lower(department) LIKE '%' || lower($1) || '%')
-        AND ($2::timestamptz IS NULL OR (created_at,id)<($2::timestamptz,$3))
-        ORDER BY created_at DESC,id DESC LIMIT $4`
+        AND ($2='' OR lower(department) LIKE '%' || lower($2) || '%')
+        AND ($3='' OR lower(job_title) LIKE '%' || lower($3) || '%')
+        AND ($4='' OR status=$4)
+        AND ($5='' OR ($5='linked' AND operator_actor_id IS NOT NULL) OR ($5='unlinked' AND operator_actor_id IS NULL))
+        AND ($6::timestamptz IS NULL OR (created_at,id)<($6::timestamptz,$7))
+        ORDER BY created_at DESC,id DESC LIMIT $8`
 )
 
 func read(ctx context.Context, db rowQueryer, id string) (Employee, error) {
@@ -236,31 +254,54 @@ func Read(ctx context.Context, db *sql.DB, id string) (Employee, error) {
 	}
 	return read(ctx, db, id)
 }
-func List(ctx context.Context, db *sql.DB, query, encoded string, limit int) (Page, error) {
-	if db == nil || utf8.RuneCountInString(query) > 80 || len(encoded) > 1024 || limit < 1 || limit > 50 {
+func validateListFilters(filters ListFilters) (ListFilters, error) {
+	filters.Query = strings.TrimSpace(filters.Query)
+	filters.Department = strings.TrimSpace(filters.Department)
+	filters.JobTitle = strings.TrimSpace(filters.JobTitle)
+	if utf8.RuneCountInString(filters.Query) > 80 ||
+		utf8.RuneCountInString(filters.Department) > 80 ||
+		utf8.RuneCountInString(filters.JobTitle) > 80 ||
+		len(filters.Cursor) > 1024 || filters.Limit < 1 || filters.Limit > 50 ||
+		(filters.Status != "" && filters.Status != "active" && filters.Status != "inactive") ||
+		(filters.Linked != "" && filters.Linked != "linked" && filters.Linked != "unlinked") {
+		return ListFilters{}, ErrInvalid
+	}
+	return filters, nil
+}
+
+func List(ctx context.Context, db *sql.DB, options ListFilters) (Page, error) {
+	if db == nil {
 		return Page{}, ErrInvalid
 	}
-	query = strings.TrimSpace(query)
+	filters, err := validateListFilters(options)
+	if err != nil {
+		return Page{}, err
+	}
 	var since any
 	var afterID string
-	if encoded != "" {
-		b, err := base64.RawURLEncoding.DecodeString(encoded)
+	if filters.Cursor != "" {
+		b, err := base64.RawURLEncoding.DecodeString(filters.Cursor)
 		if err != nil {
 			return Page{}, ErrInvalid
 		}
 		var c cursor
-		if json.Unmarshal(b, &c) != nil || c.Query != query || c.ID == "" || c.CreatedAt.IsZero() {
+		if json.Unmarshal(b, &c) != nil ||
+			c.Query != filters.Query || c.Department != filters.Department ||
+			c.JobTitle != filters.JobTitle || c.Status != filters.Status ||
+			c.Linked != filters.Linked || c.ID == "" || c.CreatedAt.IsZero() {
 			return Page{}, ErrInvalid
 		}
 		since = c.CreatedAt
 		afterID = c.ID
 	}
-	rows, err := db.QueryContext(ctx, employeeSelectList, query, since, afterID, limit+1)
+	rows, err := db.QueryContext(ctx, employeeSelectList,
+		filters.Query, filters.Department, filters.JobTitle, filters.Status,
+		filters.Linked, since, afterID, filters.Limit+1)
 	if err != nil {
 		return Page{}, err
 	}
 	defer rows.Close()
-	page := Page{Items: make([]Employee, 0, limit)}
+	page := Page{Items: make([]Employee, 0, 51)} // Limit is at most 50; include the pagination lookahead.
 	for rows.Next() {
 		employee, scanErr := scan(rows)
 		if scanErr != nil {
@@ -271,10 +312,14 @@ func List(ctx context.Context, db *sql.DB, query, encoded string, limit int) (Pa
 	if err = rows.Err(); err != nil {
 		return Page{}, err
 	}
-	if len(page.Items) > limit {
-		page.Items = page.Items[:limit]
+	if len(page.Items) > filters.Limit {
+		page.Items = page.Items[:filters.Limit]
 		last := page.Items[len(page.Items)-1]
-		raw, _ := json.Marshal(cursor{Query: query, CreatedAt: last.CreatedAt, ID: last.ID})
+		raw, _ := json.Marshal(cursor{
+			Query: filters.Query, Department: filters.Department, JobTitle: filters.JobTitle,
+			Status: filters.Status, Linked: filters.Linked,
+			CreatedAt: last.CreatedAt, ID: last.ID,
+		})
 		page.NextCursor = base64.RawURLEncoding.EncodeToString(raw)
 	}
 	return page, nil

@@ -39,7 +39,7 @@ export function EmployeeDirectory() {
   const [jobFilter, setJobFilter] = useState("");
   const [identityFilter, setIdentityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [pageSort, setPageSort] = useState("default");
+  const [appliedFilters, setAppliedFilters] = useState({ department: "", jobTitle: "", status: "", linked: "" });
   const [items, setItems] = useState<readonly HREmployee[]>([]);
   const [cursor, setCursor] = useState("");
   const [history, setHistory] = useState<string[]>([]);
@@ -49,32 +49,54 @@ export function EmployeeDirectory() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [selectedEmployee, setSelectedEmployee] = useState("");
-  const pageFiltered = Boolean(departmentFilter || jobFilter || identityFilter !== "all" || statusFilter !== "all" || pageSort !== "default");
-  const visibleItems = items.filter((item) =>
-    (!departmentFilter || item.department.toLocaleLowerCase().includes(departmentFilter.toLocaleLowerCase()))
-    && (!jobFilter || item.jobTitle.toLocaleLowerCase().includes(jobFilter.toLocaleLowerCase()))
-    && (identityFilter === "all" || (identityFilter === "linked" ? Boolean(item.operatorActorId) : !item.operatorActorId))
-    && (statusFilter === "all" || item.status === statusFilter)
-  ).sort((a,b) => pageSort === "default" ? 0 : (pageSort === "name_asc" ? 1 : -1) * a.fullNameAr.localeCompare(b.fullNameAr,"ar"));
+  const pageFiltered = Boolean(appliedFilters.department || appliedFilters.jobTitle || appliedFilters.status || appliedFilters.linked);
+  // The displayed page has already been filtered by DSH, not by local table rows.
+  const visibleItems = items;
   const mutation = useRef<{ signature: string; key: string } | null>(null);
+  const loadRevision = useRef(0);
+
+  const applyFilters = useCallback(() => {
+    setApplied(query.trim());
+    const next = {
+      department: departmentFilter.trim(), jobTitle: jobFilter.trim(),
+      status: statusFilter === "all" ? "" : statusFilter,
+      linked: identityFilter === "all" ? "" : identityFilter,
+    };
+    setAppliedFilters(previous => Object.keys(next).every(key =>
+      previous[key as keyof typeof previous] === next[key as keyof typeof next]) ? previous : next);
+    setCursor("");
+    setHistory([]);
+  }, [query, departmentFilter, jobFilter, statusFilter, identityFilter]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(applyFilters, 350);
+    return () => window.clearTimeout(timer);
+  }, [applyFilters]);
 
   const load = useCallback(async (overrides?: { q: string; cursor: string }) => {
+    const revision = ++loadRevision.current;
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ q: overrides?.q ?? applied, cursor: overrides?.cursor ?? cursor });
+      const params = new URLSearchParams({
+        q: overrides?.q ?? applied, cursor: overrides?.cursor ?? cursor,
+        department: appliedFilters.department, jobTitle: appliedFilters.jobTitle,
+        status: appliedFilters.status, linked: appliedFilters.linked,
+      });
       const result = await identityFetch(`/api/hr/employees?${params.toString()}`);
       if (!result.ok) throw new Error("تعذر تحميل سجل الموظفين. تحقق من صلاحياتك أو حاول مجددًا.");
       const page: unknown = await result.json();
       if (!isEmployeePage(page)) throw new Error("تعذر قراءة سجل الموظفين: الاستجابة غير صالحة. أعد المحاولة.");
+      if (revision !== loadRevision.current) return;
       setItems(page.items);
       setNextCursor(page.nextCursor ?? "");
     } catch (cause) {
+      if (revision !== loadRevision.current) return;
       setItems([]);
       setNextCursor("");
       setError(cause instanceof Error ? cause.message : "تعذر تحميل الموظفين.");
-    } finally { setLoading(false); }
-  }, [applied, cursor]);
+    } finally { if (revision === loadRevision.current) setLoading(false); }
+  }, [applied, cursor, appliedFilters]);
 
   useEffect(() => {
     const sync = () => setSelectedEmployee(new URLSearchParams(window.location.search).get("employee")?.slice(0, 160) ?? "");
@@ -186,32 +208,28 @@ export function EmployeeDirectory() {
     </form> : null}
     {notice ? <p role="status" className="success-inline">{notice}</p> : null}
     {error ? <div role="alert" className="managed-status managed-status-warning"><p>{error}</p><button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading || saving}>إعادة تحميل السجل</button></div> : null}
-    <form className="form-actions" noValidate onSubmit={(e) => { e.preventDefault(); setApplied(query.trim()); setCursor(""); setHistory([]); }}>
+    <form className="form-actions" noValidate onSubmit={(e) => { e.preventDefault(); applyFilters(); }}>
       <label className="field-label">البحث عن موظف<input aria-label="ابحث عن موظف أو قسم" maxLength={80} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="الاسم أو القسم" /></label>
       <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
     </form>
-    {pageFiltered ? <p className="access-center-scope">معروض من الصفحة: {visibleItems.length} من {items.length} موظف · المرشحات الإضافية تخص الصفحة الحالية.</p> : null}
+    {pageFiltered ? <p className="access-center-scope">تُطبّق المرشحات على جميع ملفات الموظفين · {visibleItems.length} نتيجة في الصفحة الحالية.</p> : null}
     <div className="access-table-wrap" aria-busy={loading}>
       <table className="operations-table access-table">
         <caption className="visually-hidden">دليل موظفي بثواني</caption>
         <thead><tr>
-          <RegistryColumnHeader label="الموظف" active={Boolean(applied || pageSort !== "default")}>
-            <label>ترتيب الصفحة<select value={pageSort} onChange={(event) => setPageSort(event.target.value)}>
-              <option value="default">الترتيب الأصلي</option><option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option>
-            </select></label>
+          <RegistryColumnHeader label="الموظف" active={Boolean(applied)} />
+          <RegistryColumnHeader label="القسم" scope="results" active={Boolean(departmentFilter)}>
+            <label>القسم في جميع السجلات<input type="search" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} /></label>
           </RegistryColumnHeader>
-          <RegistryColumnHeader label="القسم" scope="page" active={Boolean(departmentFilter)}>
-            <label>القسم في الصفحة<input type="search" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} /></label>
-          </RegistryColumnHeader>
-          <RegistryColumnHeader label="المسمى" scope="page" active={Boolean(jobFilter)}>
+          <RegistryColumnHeader label="المسمى" scope="results" active={Boolean(jobFilter)}>
             <label>المسمى الوظيفي<input type="search" value={jobFilter} onChange={(event) => setJobFilter(event.target.value)} /></label>
           </RegistryColumnHeader>
-          <RegistryColumnHeader label="النوع" scope="page" active={identityFilter !== "all"}>
+          <RegistryColumnHeader label="النوع" scope="results" active={identityFilter !== "all"}>
             <label>ارتباط الحساب<select value={identityFilter} onChange={(event) => setIdentityFilter(event.target.value)}>
               <option value="all">جميع الموظفين</option><option value="linked">مرتبط بهوية تشغيل</option><option value="unlinked">دون هوية تشغيل</option>
             </select></label>
           </RegistryColumnHeader>
-          <RegistryColumnHeader label="الحالة" scope="page" active={statusFilter !== "all"}>
+          <RegistryColumnHeader label="الحالة" scope="results" active={statusFilter !== "all"}>
             <label>حالة الموظف<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
               <option value="all">جميع الحالات</option><option value="active">نشط</option><option value="inactive">غير نشط</option>
             </select></label>

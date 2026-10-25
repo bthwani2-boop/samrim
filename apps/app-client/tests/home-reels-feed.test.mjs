@@ -22,8 +22,13 @@ test("the home page exposes exactly one fixed reels button next to All", () => {
 });
 
 test("reels button remains mounted and does not move with horizontal filters", () => {
-  assert.ok(home.includes('disabled={videoShorts.length === 0}'));
-  assert.ok(home.includes('onPress={() => { setReelResume(null); setSelectedReelIndex(0); }}'));
+  assert.ok(!home.includes('disabled={videoShorts.length === 0}'));
+  assert.ok(viewer.includes('if (items.length === 0) return'));
+  assert.ok(viewer.includes('لا توجد فيديوهات متاحة الآن'));
+  assert.ok(home.includes('onPress={() => { void openReels(); }}'));
+  assert.ok(home.includes('await listPublicDiscoveryContent(selectedCityID)'));
+  assert.ok(home.includes('content: response.items'));
+  assert.ok(home.includes('setSelectedReelIndex(0)'));
   assert.ok(home.includes('storeFilterScroll: { flex: 1, minWidth: 0 }'));
   assert.ok(home.includes('storeFilterRow: { flexDirection: "row"'));
   assert.ok(home.includes('reelsFilterButton:'));
@@ -47,4 +52,28 @@ test("only one reel plays and navigation can restore position", () => {
   assert.ok(viewer.includes("onOpen(item, player.currentTime)"));
   assert.ok(viewer.includes("resume?.id === item.id ? resume.seconds : 0"));
   assert.ok(!viewer.includes("StoreProductSheet"));
+});
+
+test("reels use the real poster, subtle gradients and one compact destination", () => {
+  assert.match(viewer, /item\.posterUri/);
+  assert.match(viewer, /statusChange/);
+  assert.match(viewer, /ActivityIndicator/);
+  assert.match(viewer, /LinearGradient/);
+  assert.match(viewer, /styles\.destination/);
+  assert.match(viewer, /destinationThumbnail/);
+  assert.doesNotMatch(viewer, /styles\.counter|اختبار مؤقت لتشغيل الريلز/);
+  assert.doesNotMatch(viewer, /addCatalogOfferToCart|StoreProductSheet/);
+});
+
+test("reels keep a single playing video with explicit audio, press-to-pause and background protection", () => {
+  assert.match(viewer, /created\.muted = true/);
+  assert.match(viewer, /player\.muted = muted/);
+  assert.match(viewer, /onToggleSound/);
+  assert.match(viewer, /onLongPress/);
+  assert.match(viewer, /onPressOut/);
+  assert.match(viewer, /AppState\.addEventListener/);
+  assert.match(viewer, /active=\{foreground && index === position\}/);
+  assert.match(viewer, /initialNumToRender=\{2\}/);
+  assert.match(viewer, /windowSize=\{3\}/);
+  assert.match(viewer, /bottomInset=\{insets\.bottom\}/);
 });

@@ -1,4 +1,59 @@
 paths:
+  /dsh/partners/me/financial-activity:
+    get:
+      operationId: listOwnPartnerFinancialActivity
+      summary: Store-authorized accounting activity, immutable WLT sources
+      description: Orders, cash commission receivables and payout allocations. Holds and receivables must not be shown as wallet debits. Filters and paging apply on the server.
+      security:
+        - userBearer: []
+      parameters:
+        - name: storeId
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: kind
+          in: query
+          required: false
+          schema: { type: string, enum: [ORDER, PAYOUT, CASH_COMMISSION] }
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [POSTED, PENDING, COMPLETED, EXCEPTION, CANCELLED] }
+        - name: paymentMethod
+          in: query
+          required: false
+          schema: { type: string, enum: [CASH_ON_DELIVERY, CASH_AT_STORE, WALLET, MIXED] }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        "200":
+          description: Authorized Store-attributed financial activities and cursor.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerActivityPageView" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/partners/me/financial-summary:
     get:
       operationId: readOwnPartnerFinancialSummary
@@ -55,6 +110,66 @@ paths:
           content:
             application/json:
               schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerCommissionReceivableRegistryResponse" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/partners/{partnerActorId}/financial-activity:
+    get:
+      operationId: listOperatorPartnerFinancialActivity
+      summary: Finance-operator view of the same Store financial activity
+      description: Requires Finance operator authority and restricts Store scope via partner grants.
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: partnerActorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: storeId
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: kind
+          in: query
+          required: false
+          schema: { type: string, enum: [ORDER, PAYOUT, CASH_COMMISSION] }
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [POSTED, PENDING, COMPLETED, EXCEPTION, CANCELLED] }
+        - name: paymentMethod
+          in: query
+          required: false
+          schema: { type: string, enum: [CASH_ON_DELIVERY, CASH_AT_STORE, WALLET, MIXED] }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        "200":
+          description: Authorized Store-attributed financial activities and cursor.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerActivityPageView" }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }

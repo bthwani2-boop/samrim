@@ -16,6 +16,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWalletProviders, walletProviderLabel } from "../wallet-provider/use-wallet-providers";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
+import { PartnerFinancialRegister } from "./partner-financial-register";
 
 export type PartnerEarningsInitialQuery = Readonly<{
   cursor: string;
@@ -429,6 +430,7 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
             <div><dt>الطلبات المسلّمة</dt><dd>{selectedSummary.orderCount.toLocaleString("ar-YE")}</dd></div>
           </dl>
           <p className="muted">فترة التسوية: {settlementPeriodLabel(selectedSummary.settlementPeriod)} · الحالة المالية: {financialProfileStateLabel(selectedSummary.profileState)}</p>
+          <PartnerFinancialRegister partnerActorId={initialQuery.partnerActorId} />
           <section className="panel" aria-labelledby="partner-payout-recipients-title">
             <div className="section-heading">
               <div><h4 id="partner-payout-recipients-title">مستلمو صرف المتاجر</h4></div>

@@ -144,6 +144,7 @@ FROM pg_constraint con
 JOIN pg_class c ON c.oid=con.conrelid
 JOIN pg_namespace n ON n.oid=c.relnamespace
 WHERE n.nspname='public' AND c.relname LIKE 'identity_%'
+  AND con.contype <> 'n' -- PostgreSQL 18 catalogs column NOT NULL constraints separately.
 ORDER BY c.relname, con.conname`)
 	if err != nil {
 		return fmt.Errorf("schema constraint census: %w", err)

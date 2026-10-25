@@ -1,6 +1,7 @@
 import { type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, settlementPeriodLabel, type PartnerScopedFinancialSummary } from "@bthwani/dsh";
+import { createDshMobileClient, formatMoney, type PartnerScopedFinancialSummary } from "@bthwani/dsh";
+import { PartnerFinancialActivity } from "../wallet/partner-financial-activity";
 import * as Crypto from "expo-crypto";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
@@ -20,7 +21,6 @@ export function PartnerFinancialSummaryCard({ actions, workflow }: { actions?: R
   const [summary, setSummary] = useState<PartnerScopedFinancialSummary | null>(null);
   const [loading, setLoading] = useState(authenticated);
   const [error, setError] = useState("");
-  const [showDetails, setShowDetails] = useState(false);
   const load = useCallback(async () => {
     if (!authenticated) return;
     setLoading(true); setError("");
@@ -53,15 +53,7 @@ export function PartnerFinancialSummaryCard({ actions, workflow }: { actions?: R
     {workflow}
     {summary ? <>
       {!summary.attributionComplete ? <Text style={styles.error}>بعض التحويلات القديمة غير مكتملة النسبة للمتاجر؛ الصرف الجديد يتطلب اكتمال المطابقة.</Text> : null}
-      {summary.stores.length > 0 ? <View style={styles.stores}>
-        <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>تفاصيل المتاجر</Text><BthwaniIcon name="store" size={24} color={theme.brandAction} /></View>
-        {showDetails ? summary.stores.map((store) => <View key={store.storeId} style={styles.store}>
-          <View style={styles.storeTop}><Text style={styles.storeAmount}>{formatMoney(store.eligibleAvailableMinor, store.currency)}</Text><Text style={styles.storeName} numberOfLines={1}>{store.storeName}</Text></View>
-          <Text style={styles.muted}>المحجوز: {formatMoney(store.heldMinor, store.currency)} · {settlementPeriodLabel(store.settlementPeriod)}</Text>
-          {showDetails ? <Text style={styles.muted}>المكتسب: {formatMoney(store.earnedMinor, store.currency)} · العمولة: {formatMoney(store.commissionMinor, store.currency)} · المصروف: {formatMoney(store.settledMinor, store.currency)} · {store.orderCount.toLocaleString("ar-YE")} طلب</Text> : null}
-        </View>) : null}
-        <Pressable accessibilityRole="button" accessibilityLabel={showDetails ? "إخفاء تفاصيل المتاجر" : "تفاصيل المتاجر"} onPress={() => setShowDetails((value) => !value)} style={styles.detailsButton}><Text style={styles.detailsLabel}>{showDetails ? "إخفاء التفاصيل" : "عرض التفاصيل"}</Text></Pressable>
-      </View> : null}
+      {summary.stores.length ? <PartnerFinancialActivity stores={summary.stores} /> : <Text style={styles.muted}>لا توجد متاجر مالية مرتبطة بهذا الحساب بعد.</Text>}
     </> : null}
     {error ? <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.infoCard}><Text accessibilityRole="alert" style={styles.error}>{error} · إعادة المحاولة</Text></Pressable> : null}
   </View>;
@@ -83,13 +75,4 @@ function createStyles(p: ReturnType<typeof resolveTheme>) { return StyleSheet.cr
   infoTitle: { ...typography.bodyStrong, color: p.color },
   muted: { ...typography.caption, color: p.colorMuted },
   error: { ...typography.bodySm, color: p.warning },
-  stores: { backgroundColor: p.surface, borderColor: p.borderColor, borderWidth: 1, borderRadius: 12, padding: 10, gap: 7 },
-  sectionHeader: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 9 },
-  sectionTitle: { ...typography.titleSm, color: p.color },
-  store: { backgroundColor: p.surfaceRaised, borderRadius: 12, padding: 12, gap: 5 },
-  storeTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  storeName: { ...typography.bodyStrong, color: p.color },
-  storeAmount: { ...typography.bodyStrong, color: p.success },
-  detailsButton: { minHeight: 40, justifyContent: "center", alignItems: "center", borderRadius: 10, borderColor: p.borderColor, borderWidth: 1 },
-  detailsLabel: { ...typography.label, color: p.color },
 }); }

@@ -353,11 +353,32 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const carouselContent = useMemo(() => marketing.content.filter((item) => item.kind === "CAROUSEL" && Boolean(item.mediaUri)), [marketing.content]);
   const videoShorts = useMemo(() => marketing.content.filter((item) => item.kind === "SHORT_FORM" && item.mediaKind === "video" && Boolean(item.mediaUri)), [marketing.content]);
   const [selectedReelIndex, setSelectedReelIndex] = useState<number | null>(null);
+  const [openingReels, setOpeningReels] = useState(false);
   // Preserve the reel and its playhead while navigating to the canonical destination.
   const [reelResume, setReelResume] = useState<{ id: string; seconds: number } | null>(null);
   const [shareTarget, setShareTarget] = useState<ClientShareTarget | null>(null);
   const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri), [marketing.content]);
   const showHomeMarketing = !searchIsActive && !selectedVerticalID && !selectedCategoryID && !selectedShortcutID;
+
+  async function openReels() {
+    if (openingReels) return;
+    setOpeningReels(true);
+    setReelResume(null);
+    const requestID = discoveryLoadRequestID.current;
+    try {
+      if (selectedCityID) {
+        // Always refresh when opening: videos can be published after the home feed loaded.
+        const response = await listPublicDiscoveryContent(selectedCityID);
+        if (requestID !== discoveryLoadRequestID.current) return;
+        setMarketing((current) => ({ ...current, content: response.items, error: false }));
+      }
+    } catch {
+      // Retain the last available videos if the connection is temporarily unavailable.
+    } finally {
+      if (requestID === discoveryLoadRequestID.current) setSelectedReelIndex(0);
+      setOpeningReels(false);
+    }
+  }
 
   function openDiscoveryContent(contentId: string) {
     void recordDiscoveryClick(contentId);
@@ -556,9 +577,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           accessibilityRole="button"
           accessibilityLabel="ريلز"
           accessibilityHint={videoShorts.length ? "افتح الفيديوهات واسحب للأعلى والأسفل للتنقل" : "لا توجد فيديوهات متاحة الآن"}
-          disabled={videoShorts.length === 0}
-          style={[styles.reelsFilterButton, videoShorts.length === 0 && styles.reelsFilterDisabled]}
-          onPress={() => { setReelResume(null); setSelectedReelIndex(0); }}
+          style={styles.reelsFilterButton}
+          onPress={() => { void openReels(); }}
         >
           <Text style={styles.reelsFilterPlay}>▶</Text>
           <Text style={styles.reelsFilterText}>ريلز</Text>
@@ -819,7 +839,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     storeFilterRow: { flexDirection: "row", alignItems: "center", gap: spacing[2] },
     storeFilterScroll: { flex: 1, minWidth: 0 },
     reelsFilterButton: { alignItems: "center", justifyContent: "center", flexDirection: "row", gap: spacing[1], paddingHorizontal: spacing[3], minHeight: 40, borderRadius: radius.round, backgroundColor: theme.actionBackground },
-    reelsFilterDisabled: { opacity: 0.55 },
     reelsFilterPlay: { color: theme.onAction, fontSize: 12 },
     reelsFilterText: { color: theme.onAction, fontSize: 13, fontWeight: "700" },
     filterRow: { alignItems: "center", flexDirection: "row", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },

@@ -29,6 +29,7 @@ func NewHR(identity *identityintegration.Client, serviceToken string, db *sql.DB
 	return &HRServer{auth: authorization, identity: identity, db: db}, nil
 }
 func (s *HRServer) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /dsh/hr/summary", s.readSummary)
 	mux.HandleFunc("GET /dsh/hr/employees", s.listEmployees)
 	mux.HandleFunc("POST /dsh/hr/employees", s.createEmployee)
 	mux.HandleFunc("GET /dsh/hr/operator-employees/{actorId}", s.readEmployeeByOperatorActor)
@@ -119,6 +120,19 @@ func (s *HRServer) createEmployee(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, status, result)
 }
+func (s *HRServer) readSummary(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorize(w, r); !ok {
+		return
+	}
+	result, err := hr.ReadSummary(r.Context(), s.db)
+	if err != nil {
+		writeHRError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *HRServer) listEmployees(w http.ResponseWriter, r *http.Request) {
 	_, ok := s.authorize(w, r)
 	if !ok {
@@ -133,7 +147,11 @@ func (s *HRServer) listEmployees(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = num
 	}
-	page, err := hr.List(r.Context(), s.db, r.URL.Query().Get("q"), r.URL.Query().Get("cursor"), limit)
+	page, err := hr.List(r.Context(), s.db, hr.ListFilters{
+		Query: r.URL.Query().Get("q"), Cursor: r.URL.Query().Get("cursor"),
+		Department: r.URL.Query().Get("department"), JobTitle: r.URL.Query().Get("jobTitle"),
+		Status: r.URL.Query().Get("status"), Linked: r.URL.Query().Get("linked"), Limit: limit,
+	})
 	if err != nil {
 		writeHRError(w, err)
 		return

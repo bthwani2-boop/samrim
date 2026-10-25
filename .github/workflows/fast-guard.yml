@@ -61,7 +61,7 @@ jobs:
         if: steps.changed.outputs.dsh == 'true' || steps.changed.outputs.wlt == 'true' || steps.changed.outputs.identity == 'true' || steps.changed.outputs.node == 'true' || steps.changed.outputs.finance == 'true'
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
-          go-version: '1.27.1'
+          go-version: '1.27.3'
           cache: true
           cache-dependency-path: |
             services/dsh/backend/go.sum
@@ -92,7 +92,7 @@ jobs:
           cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
           trap cleanup EXIT
           password="$(openssl rand -hex 16)"
-          docker run -d --rm --name "$container" -e "POSTGRES_PASSWORD=$password" -e POSTGRES_DB=wlt_proof -p 127.0.0.1:19432:5432 postgis/postgis:16-3.4-alpine
+          docker run -d --rm --name "$container" -e "POSTGRES_PASSWORD=$password" -e POSTGRES_DB=wlt_proof -p 127.0.0.1:19432:5432 postgis/postgis:18-3.6@sha256:e84455a058f60f06dd8c40e66a2c628b8fc113d9fca0896e1f308b25b897207f
           ready=false
           for i in $(seq 1 50); do
             if docker exec "$container" pg_isready -h 127.0.0.1 -p 5432 -U postgres -d wlt_proof >/dev/null 2>&1; then ready=true; break; fi
@@ -131,14 +131,14 @@ jobs:
         if: steps.changed.outputs.node == 'true'
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
         with:
-          version: 10.34.0
+          version: 10.34.7
           run_install: false
 
       - name: Set up Node
         if: steps.changed.outputs.node == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
-          node-version: '24.17.0'
+          node-version: '24.22.1'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 

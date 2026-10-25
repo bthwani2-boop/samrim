@@ -4,6 +4,35 @@ import type { ClientSharePage, ClientShareSendRequest, ClientShareSendResponse }
 import type { AcceptStoreCaptainInvitationRequest, BeneficiaryFundingIntentResponse, BeneficiaryPayoutStateResponse, BeneficiaryWalletResponse, CampaignOptInRequest, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOpportunityHeatmap, CaptainOfferResponse, CartResponse, CashInFundingIntent, CashLiabilityResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeRuleListResponse, CatalogCategoryListResponse, CatalogIdentifierResolveResponse, CatalogImportCommitResponse, CatalogImportPreviewResponse, CatalogImportRunResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposal, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogProductResponse, CatalogQuickPriceCommitRequest, CatalogQuickPriceCommitResponse, CatalogStorefrontSectionListResponse, CatalogStorefrontSectionResponse, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, ClientOpenCartListResponse, CommerceVerticalListResponse, CommercialStoreTypeListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateFieldJoiningCaseDraftRequest, CreateJoiningCaseRequest, CreateOrderConversationMessageRequest, CreateOrderRatingRequest, CreatePromotionRequest, CreateStoreOfferRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, DiscoveryContentEventRequest, DiscoveryContentListResponse, DiscoveryContentTargetResolution, FavoriteStoreListResponse, FavoriteStoreOfferListResponse, FavoriteStoreOfferResponse, FavoriteStoreResponse, FieldAcquisitionEntitlementPage, FieldAdmissionResponse, FieldFinancialSummaryResponse, FieldPayoutRequestHistoryPage, FieldWalletHistoryPage, JoiningCaseListResponse, JoiningCaseResponse, MarketingPublicationRequest, MarkOrderConversationReadRequest, MediaProvenanceInput, MultiStoreCheckoutRequest, MultiStoreCheckoutResponse, NotificationListResponse, NotificationReadResponse, OperatorPromotionRegistryResponse, OrderAdjustmentDecisionRequest, OrderAdjustmentProposalRequest, OrderConversationMessageResponse, OrderConversationPrivateMediaResponse, OrderConversationReadResponse, OrderConversationResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTransitionRequest, PartnerAccessibleStorePage, PartnerCampaignListResponse, PartnerCampaignOptInResponse, PartnerOrdersResponse, PartnerPayoutRequestCreateRequest, PartnerPayoutRequestResponse, PartnerPayoutSummaryResponse, PartnerScopedFinancialSummaryResponse, PartnerStoreOperationalAvailabilityMutationResponse, PartnerStoreOperationalAvailabilityResponse, PayoutRequest, PromotionListResponse, PromotionResponse, PublicCatalogResponse, PublicCatalogSearchResponse, PublicStoreOrderabilityResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreFulfillmentModesRequest, StoreAccessGrantActivationRequest, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreAccessGrantPermissionsRequest, StoreAccessGrantTransitionRequest, StoreAccessInvitationCreateRequest, StoreAccessInvitationDecisionRequest, StoreAccessPermission, StoreCaptainDispatchRequest, StoreCaptainInvitationResponse, StoreCaptainMembershipListResponse, StoreCaptainMembershipResponse, StoreCaptainMembershipTransitionRequest, StoreCommercialAgreementListResponse, StoreCommercialAgreementMutationResponse, StoreCommercialAgreementProposalRequest, StoreDeliveryOriginResponse, StoreFulfillmentModesResponse, StoreImagesResponse, StoreOperationalAvailabilityRequest, StorePayoutRecipientListResponse, StorePayoutRecipientMutationResponse, StorePayoutRecipientRevertRequest, StorePayoutRecipientRevertResponse, StorePayoutRecipientSelectRequest, StoreTypeCommissionDefaultsResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpdateStoreOfferRequest, UpsertCartLineRequest, WalletProviderListResponse } from "./generated/dsh-types";
 import { joiningCaseImageMultipartPart } from "./joining-case-media";
 
+export type PartnerFinancialActivity = Readonly<{
+  id: string;
+  kind: "ORDER" | "PAYOUT" | "CASH_COMMISSION";
+  storeId: string;
+  storeName: string;
+  status: string;
+  paymentMethod: string;
+  direction: "CREDIT" | "DEBIT" | "HOLD" | "RECEIVABLE" | "NONE";
+  grossMinor: number;
+  commissionMinor: number;
+  offsetMinor: number;
+  amountMinor: number;
+  currency: "YER";
+  ledgerTransactionId: string;
+  createdAt: string;
+}>;
+export type PartnerFinancialActivityPage = Readonly<{ items: ReadonlyArray<PartnerFinancialActivity>; stores?: ReadonlyArray<Readonly<{ storeId: string; storeName: string }>>; nextCursor?: string }>;
+export type PartnerFinancialActivityFilters = Readonly<{
+  storeId?: string;
+  kind?: string;
+  status?: string;
+  paymentMethod?: string;
+  search?: string;
+  from?: string;
+  to?: string;
+  cursor?: string;
+  limit?: number;
+}>;
+
 export type StoreDeletedCatalogProduct = Readonly<{ id: string; storeId?: string; canonicalName: string; version: number; deletedAt?: string; deletedBy?: string; deletionReason?: string }>;
 export type StoreDeletedCatalogProductPage = Readonly<{ products: ReadonlyArray<StoreDeletedCatalogProduct>; nextCursor: string }>;
 
@@ -367,6 +396,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedStore || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || !idempotencyKey.trim() || !correlationID.trim()) throw new Error("DSH_STORE_OPERATIONAL_AVAILABILITY_INPUT_INVALID");
       const path = dshOperationPaths.updatePartnerStoreOperationalAvailability.path.replace("{storeId}", encodeURIComponent(normalizedStore));
       return userRequest<PartnerStoreOperationalAvailabilityMutationResponse>(accessToken, path, dshOperationPaths.updatePartnerStoreOperationalAvailability.method, input, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async listOwnPartnerFinancialActivity(accessToken: string, filters: PartnerFinancialActivityFilters = {}): Promise<PartnerFinancialActivityPage> {
+      const query = new URLSearchParams();
+      for (const [key, value] of Object.entries(filters)) {
+        if (value !== undefined && value !== "") query.set(key, String(value));
+      }
+      return userRequest<PartnerFinancialActivityPage>(accessToken, "/dsh/partners/me/financial-activity?" + query.toString(), "GET");
     },
     async readOwnPartnerFinancialSummary(accessToken: string): Promise<PartnerScopedFinancialSummaryResponse> {
       return userRequest<PartnerScopedFinancialSummaryResponse>(accessToken, dshOperationPaths.readOwnPartnerFinancialSummary.path, dshOperationPaths.readOwnPartnerFinancialSummary.method);

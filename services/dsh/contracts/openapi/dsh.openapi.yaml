@@ -577,6 +577,9 @@ paths:
   /dsh/hr/access-requests/{requestId}/admit:
     $ref: "./paths/hr-access.yaml#/paths/~1dsh~1hr~1access-requests~1{requestId}~1admit"
 
+  /dsh/hr/summary:
+    $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1summary"
+
   /dsh/hr/employees:
     $ref: "./paths/hr.yaml#/paths/~1dsh~1hr~1employees"
 
@@ -771,11 +774,17 @@ paths:
   /dsh/partners/me/payout-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1payout-summary"
 
+  /dsh/partners/me/financial-activity:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1financial-activity"
+
   /dsh/partners/me/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1financial-summary"
 
   /dsh/operator/partner-commission-receivables:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partner-commission-receivables"
+
+  /dsh/operator/partners/{partnerActorId}/financial-activity:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1financial-activity"
 
   /dsh/operator/partners/{partnerActorId}/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1financial-summary"
@@ -5461,6 +5470,39 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+
+    HREmployeeDepartmentCount:
+      type: object
+      additionalProperties: false
+      required: [name, count]
+      properties:
+        name:
+          type: string
+        count:
+          type: integer
+          minimum: 0
+
+    HREmployeeSummary:
+      type: object
+      additionalProperties: false
+      required: [total, active, inactive, linked, departments]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        active:
+          type: integer
+          minimum: 0
+        inactive:
+          type: integer
+          minimum: 0
+        linked:
+          type: integer
+          minimum: 0
+        departments:
+          type: array
+          items:
+            $ref: "#/components/schemas/HREmployeeDepartmentCount"
 
     HREmployeePage:
       type: object
@@ -11089,6 +11131,70 @@ components:
         settlementPeriod:
           type: string
           enum: [DAILY, WEEKLY, MONTHLY]
+
+    PartnerActivityRecordView:
+      type: object
+      additionalProperties: false
+      required: [id, kind, storeId, storeName, status, paymentMethod, direction, grossMinor, commissionMinor, offsetMinor, amountMinor, currency, ledgerTransactionId, createdAt]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [ORDER, PAYOUT, CASH_COMMISSION]
+        storeId:
+          type: string
+        storeName:
+          type: string
+        status:
+          type: string
+        paymentMethod:
+          type: string
+        direction:
+          type: string
+          enum: [CREDIT, DEBIT, HOLD, RECEIVABLE, NONE]
+        grossMinor:
+          type: integer
+        commissionMinor:
+          type: integer
+        offsetMinor:
+          type: integer
+        amountMinor:
+          type: integer
+        currency:
+          type: string
+          const: YER
+        ledgerTransactionId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    PartnerActivityStoreOptionView:
+      type: object
+      additionalProperties: false
+      required: [storeId, storeName]
+      properties:
+        storeId:
+          type: string
+        storeName:
+          type: string
+
+    PartnerActivityPageView:
+      type: object
+      additionalProperties: false
+      required: [items, stores]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerActivityRecordView"
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerActivityStoreOptionView"
+        nextCursor:
+          type: string
 
     PartnerScopedFinancialSummary:
       type: object
