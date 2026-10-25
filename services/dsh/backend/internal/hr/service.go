@@ -301,7 +301,7 @@ func List(ctx context.Context, db *sql.DB, options ListFilters) (Page, error) {
 		return Page{}, err
 	}
 	defer rows.Close()
-	page := Page{Items: make([]Employee, 0, filters.Limit)}
+	page := Page{Items: make([]Employee, 0, 51)} // Limit is at most 50; include the pagination lookahead.
 	for rows.Next() {
 		employee, scanErr := scan(rows)
 		if scanErr != nil {
