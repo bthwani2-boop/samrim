@@ -85,6 +85,13 @@ if ($LASTEXITCODE -ne 0) { Fail "Dependency lock must match the committed manife
 if ($LASTEXITCODE -ne 0) { Fail "Mobile dependency/configuration preflight failed for $App." }
 
 $FirebaseEnabled = $App -in @("app-client", "app-partner", "app-captain")
+$IosEnabled = $App -in @("app-client", "app-partner")
+if ($IosEnabled) {
+    $IosProfile = $EasConfig.build.'ios-simulator'
+    if ($null -eq $IosProfile -or [string]$IosProfile.extends -ne "development" -or -not [bool]$IosProfile.ios.simulator) {
+        Fail "iOS development simulator profile is required for $App."
+    }
+}
 $RequiredInputs = @($CredentialVaultPath, $KeystoreVaultPath)
 if ($FirebaseEnabled) { $RequiredInputs += $FirebaseVaultPath }
 foreach ($Required in $RequiredInputs) {
@@ -142,32 +149,107 @@ try {
     if ([string]::IsNullOrWhiteSpace($Hash)) { Fail "Unable to resolve Android fingerprint for $App." }
     Write-Host "ANDROID_FINGERPRINT=$Hash"
 
-    $Builds = @(Invoke-EasJson @("build:list", "--platform", "android", "--build-profile", "development", "--distribution", "internal", "--fingerprint-hash", $Hash, "--limit", "50", "--json", "--non-interactive"))
-    # A matching native fingerprint is not sufficient: the JS/TS source commit
-    # must also match exactly, or reuse would silently hand out an older APK.
-    $Finished = $Builds | Where-Object { ([string]$_.status).ToUpperInvariant() -eq "FINISHED" -and (Get-BuildSourceSha $_) -eq $LocalSha } | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) } -Descending | Select-Object -First 1
-    $Pending = $Builds | Where-Object { ([string]$_.status).ToUpperInvariant() -in @("IN_PROGRESS", "IN_QUEUE", "NEW") -and (Get-BuildSourceSha $_) -eq $LocalSha } | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) } -Descending | Select-Object -First 1
+    $AndroidBuilds = @(Invoke-EasJson @("build:list", "--platform", "android", "--build-profile", "development", "--distribution", "internal", "--fingerprint-hash", $Hash, "--limit", "50", "--json", "--non-interactive"))
+    # Never reuse a native-compatible build from a different JS/TS revision.
+    $AndroidFinished = $AndroidBuilds | Where-Object { ([string]$_.status).ToUpperInvariant() -eq "FINISHED" -and (Get-BuildSourceSha $_) -eq $LocalSha } | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) } -Descending | Select-Object -First 1
+    $AndroidPending = $AndroidBuilds | Where-Object { ([string]$_.status).ToUpperInvariant() -in @("IN_PROGRESS", "IN_QUEUE", "NEW") -and (Get-BuildSourceSha $_) -eq $LocalSha } | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) } -Descending | Select-Object -First 1
+    $BuildRequests = @()
 
-    if ($null -ne $Finished) {
-        $ActualSourceSha = Get-BuildSourceSha $Finished
-        Write-Host "BUILD_DECISION=REUSED app=$App currentCandidateSha=$LocalSha nativeFingerprint=$Hash reusedBuildId=$($Finished.id) reusedBuildActualSourceSha=$ActualSourceSha compatibilityReason=fingerprint"
+    if ($null -ne $AndroidFinished) {
+        Write-Host "BUILD_DECISION=REUSED app=$App platform=android currentCandidateSha=$LocalSha nativeFingerprint=$Hash reusedBuildId=$($AndroidFinished.id) reusedBuildActualSourceSha=$(Get-BuildSourceSha $AndroidFinished)"
     }
-    elseif ($null -ne $Pending) {
-        $ActualSourceSha = Get-BuildSourceSha $Pending
-        Write-Host "BUILD_DECISION=REUSED_PENDING app=$App currentCandidateSha=$LocalSha nativeFingerprint=$Hash reusedBuildId=$($Pending.id) reusedBuildActualSourceSha=$ActualSourceSha compatibilityReason=fingerprint"
+    elseif ($null -ne $AndroidPending) {
+        Write-Host "BUILD_DECISION=REUSED_PENDING app=$App platform=android currentCandidateSha=$LocalSha nativeFingerprint=$Hash reusedBuildId=$($AndroidPending.id) reusedBuildActualSourceSha=$(Get-BuildSourceSha $AndroidPending)"
     }
     elseif (-not $Submit) {
-        Write-Host "BUILD_DECISION=REQUIRED app=$App nativeFingerprint=$Hash submitted=false"
-        Write-Host "Run with -Submit only when a new remote build for this app is intended."
+        Write-Host "BUILD_DECISION=REQUIRED app=$App platform=android nativeFingerprint=$Hash submitted=false"
     }
     else {
-        $BuildArgs = @("build", "--platform", "android", "--profile", "development", "--non-interactive", "--json")
-        if (-not $Wait) { $BuildArgs += "--no-wait" }
-        $Submitted = Invoke-EasJson $BuildArgs
-        $BuildId = [string]$Submitted.id
-        if ([string]::IsNullOrWhiteSpace($BuildId)) { $BuildId = [string]$Submitted.build.id }
-        if ([string]::IsNullOrWhiteSpace($BuildId)) { Fail "EAS submission returned no build ID." }
-        Write-Host "BUILD_DECISION=SUBMITTED app=$App localSourceSha=$LocalSha nativeFingerprint=$Hash submittedBuildId=$BuildId sourceMode=clean-local-commit compatibilityReason=new-build"
+        $BuildRequests += [pscustomobject]@{ Platform = "android"; Profile = "development" }
+    }
+
+    if ($IosEnabled) {
+        $IosBuilds = @(Invoke-EasJson @("build:list", "--platform", "ios", "--build-profile", "ios-simulator", "--limit", "50", "--json", "--non-interactive"))
+        $MatchingIos = $IosBuilds | Where-Object {
+            (Get-BuildSourceSha $_) -eq $LocalSha -and
+            [string]$_.updateChannel.name -eq "development" -and
+            [bool]$_.isForIosSimulator
+        }
+        $IosFinished = $MatchingIos | Where-Object { ([string]$_.status).ToUpperInvariant() -eq "FINISHED" } | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) } -Descending | Select-Object -First 1
+        $IosPending = $MatchingIos | Where-Object { ([string]$_.status).ToUpperInvariant() -in @("IN_PROGRESS", "IN_QUEUE", "NEW") } | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) } -Descending | Select-Object -First 1
+
+        if ($null -ne $IosFinished) {
+            Write-Host "BUILD_DECISION=REUSED app=$App platform=ios currentCandidateSha=$LocalSha reusedBuildId=$($IosFinished.id)"
+        }
+        elseif ($null -ne $IosPending) {
+            Write-Host "BUILD_DECISION=REUSED_PENDING app=$App platform=ios currentCandidateSha=$LocalSha reusedBuildId=$($IosPending.id)"
+        }
+        elseif (-not $Submit) {
+            Write-Host "BUILD_DECISION=REQUIRED app=$App platform=ios submitted=false"
+        }
+        else {
+            $BuildRequests += [pscustomobject]@{ Platform = "ios"; Profile = "ios-simulator" }
+        }
+    }
+
+    if ($BuildRequests.Count -gt 0) {
+        # Both requests start before either is awaited; EAS schedules them independently.
+        $Jobs = @()
+        try {
+            foreach ($Request in $BuildRequests) {
+                $Jobs += Start-ThreadJob -Name $Request.Platform -ArgumentList @($AppRoot, $EasCliVersion, $Request.Platform, $Request.Profile, [bool]$Wait) -ScriptBlock {
+                    param($BuildRoot, $Version, $Platform, $Profile, [bool]$MustWait)
+                    $ErrorFile = [IO.Path]::GetTempFileName()
+                    try {
+                        Push-Location $BuildRoot
+                        try {
+                            $Arguments = @("dlx", ("eas-cli@" + $Version), "build", "--platform", $Platform, "--profile", $Profile, "--non-interactive", "--json")
+                            if (-not $MustWait) { $Arguments += "--no-wait" }
+                            $Output = (& pnpm @Arguments 2> $ErrorFile | Out-String).Trim()
+                            $Code = $LASTEXITCODE
+                        }
+                        finally {
+                            Pop-Location
+                        }
+                        if ($Code -ne 0) {
+                            throw ("EAS " + $Platform + " submission failed (exit=" + $Code + "): " + [IO.File]::ReadAllText($ErrorFile).Trim())
+                        }
+                        $Response = $Output | ConvertFrom-Json
+                        $BuildId = [string]$Response.id
+                        if ([string]::IsNullOrWhiteSpace($BuildId)) { $BuildId = [string]$Response.build.id }
+                        if ([string]::IsNullOrWhiteSpace($BuildId)) { throw "EAS $Platform submission returned no build ID." }
+                        if ($MustWait -and ([string]$Response.status).ToUpperInvariant() -ne "FINISHED") {
+                            throw "EAS $Platform build ended with status $($Response.status), build ID $BuildId."
+                        }
+                        [pscustomobject]@{ Platform = $Platform; BuildId = $BuildId }
+                    }
+                    finally {
+                        Remove-Item -LiteralPath $ErrorFile -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+            $Jobs | Wait-Job | Out-Null
+            $Failures = @()
+            foreach ($Job in $Jobs) {
+                try {
+                    $Result = Receive-Job -Job $Job -ErrorAction Stop
+                    if ($null -eq $Result -or [string]::IsNullOrWhiteSpace([string]$Result.BuildId)) {
+                        throw "Missing confirmed build ID."
+                    }
+                    Write-Host "BUILD_DECISION=SUBMITTED app=$App platform=$($Result.Platform) localSourceSha=$LocalSha submittedBuildId=$($Result.BuildId) sourceMode=clean-local-commit"
+                }
+                catch {
+                    $Failures += "$($Job.Name): $($_.Exception.Message)"
+                }
+            }
+            if ($Failures.Count -gt 0) { Fail ("Remote build submission failure: " + ($Failures -join "; ")) }
+        }
+        finally {
+            $Jobs | Remove-Job -Force -ErrorAction SilentlyContinue
+        }
+    }
+    elseif (-not $Submit) {
+        Write-Host "Run with -Submit only when a new remote build for this app is intended."
     }
 }
 finally {
