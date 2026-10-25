@@ -56,3 +56,13 @@ test("explicit Submit retains parallel Android and iOS submission logic", () => 
   assert.match(script, /\$Jobs \| Wait-Job/);
   assert.ok(script.indexOf("Start-ThreadJob") < script.indexOf("$Jobs | Wait-Job"));
 });
+
+
+test("EAS CLI temporary peer compatibility is scoped only to pnpm dlx", () => {
+  const inline = script.match(/pnpm --config\.strict-peer-dependencies=false dlx/g) ?? [];
+  assert.equal(inline.length, 2, "text and JSON EAS CLI wrappers");
+  assert.match(script, /"\-\-config\.strict-peer-dependencies=false", "dlx"/);
+  const workspace = readFileSync(resolve(root, "pnpm-workspace.yaml"), "utf8");
+  assert.match(workspace, /^strictPeerDependencies: true$/m);
+  assert.match(workspace, /^autoInstallPeers: false$/m);
+});

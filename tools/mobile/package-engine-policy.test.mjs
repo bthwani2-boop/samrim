@@ -13,6 +13,12 @@ const common = {
   "date-fns": "4.4.0",
   "@date-fns/tz": "1.5.0",
 };
+const catalogYaml = fs.readFileSync(path.join(root, "pnpm-workspace.yaml"), "utf8");
+const catalogSection = catalogYaml.match(/^catalog:\r?\n([\s\S]*?)(?=^overrides:)/m)?.[1];
+assert.ok(catalogSection, "shared pnpm catalog must be present");
+const sharedCatalog = new Map(
+  Array.from(catalogSection.matchAll(/^  "([^"]+)": "([^"]+)"$/gm), ([, name, version]) => [name, version]),
+);
 const mobile = {
   "@shopify/flash-list": "2.3.2",
   "zustand": "5.0.16",
@@ -39,7 +45,12 @@ for (const [app, other] of Object.entries(extras)) {
     const localRequire = createRequire(filename);
     const dependencies = { ...common, ...(app === "control-panel" ? {} : mobile), ...other };
     for (const [name, pinnedVersion] of Object.entries(dependencies)) {
-      assert.equal(manifest.dependencies[name], pinnedVersion, app + " " + name);
+      if (Object.hasOwn(common, name)) {
+        assert.equal(manifest.dependencies[name], "catalog:", app + " " + name);
+        assert.equal(sharedCatalog.get(name), pinnedVersion, "shared catalog " + name);
+      } else {
+        assert.equal(manifest.dependencies[name], pinnedVersion, app + " " + name);
+      }
       assert.ok(localRequire.resolve(name), "unable to resolve " + name);
     }
     // Shared platform versions cannot drift as a side effect of a package-adoption roll-out.

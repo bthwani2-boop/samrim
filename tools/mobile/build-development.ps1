@@ -36,7 +36,7 @@ function Invoke-EasJson([string[]] $Arguments) {
     try {
         Push-Location $AppRoot
         try {
-            $Output = (& pnpm dlx ("eas-cli@" + $EasCliVersion) @Arguments 2> $ErrorFile | Out-String).Trim()
+            $Output = (& pnpm --config.strict-peer-dependencies=false dlx ("eas-cli@" + $EasCliVersion) @Arguments 2> $ErrorFile | Out-String).Trim()
             $Code = $LASTEXITCODE
         }
         finally {
@@ -56,7 +56,7 @@ function Invoke-EasJson([string[]] $Arguments) {
 function Invoke-EasText([string[]] $Arguments) {
     Push-Location $AppRoot
     try {
-        $Output = (& pnpm dlx ("eas-cli@" + $EasCliVersion) @Arguments 2>&1 | Out-String).Trim()
+        $Output = (& pnpm --config.strict-peer-dependencies=false dlx ("eas-cli@" + $EasCliVersion) @Arguments 2>&1 | Out-String).Trim()
         $Code = $LASTEXITCODE
     }
     finally {
@@ -220,7 +220,7 @@ try {
                     try {
                         Push-Location $BuildRoot
                         try {
-                            $Arguments = @("dlx", ("eas-cli@" + $Version), "build", "--platform", $Platform, "--profile", $Profile, "--non-interactive", "--json")
+                            $Arguments = @("--config.strict-peer-dependencies=false", "dlx", ("eas-cli@" + $Version), "build", "--platform", $Platform, "--profile", $Profile, "--non-interactive", "--json")
                             if (-not $MustWait) { $Arguments += "--no-wait" }
                             $Output = (& pnpm @Arguments 2> $ErrorFile | Out-String).Trim()
                             $Code = $LASTEXITCODE
