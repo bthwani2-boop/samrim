@@ -35,6 +35,12 @@
         "controlPanelBuildEnvironment"
       ]
     },
+    "contract": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test apps/control-panel/tests/partner-financial-table.test.mjs"
+      }
+    },
     "lint": {
       "executor": "nx:run-commands",
       "options": {

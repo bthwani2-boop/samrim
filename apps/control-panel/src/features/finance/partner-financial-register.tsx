@@ -2,7 +2,9 @@
 
 import { formatMoney, type PartnerFinancialActivity, type PartnerFinancialActivityPage } from "@bthwani/dsh";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useReactTable, getCoreRowModel, type ColumnDef } from "@tanstack/react-table";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./partner-financial-register.css";
 
 type Filters = { storeId: string; kind: string; status: string; paymentMethod: string; period: string; search: string };
@@ -47,6 +49,39 @@ export function PartnerFinancialRegister({ partnerActorId, storeId = "", compact
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // Filtering, ordering and pagination belong to DSH, not to the local page.
+  const columns = useMemo<ColumnDef<PartnerFinancialActivity>[]>(() => [
+    { accessorKey: "createdAt", header: "Date" },
+    { accessorKey: "kind", header: "Activity" },
+    { accessorKey: "storeName", header: "Store" },
+    { accessorKey: "grossMinor", header: "Gross" },
+    { accessorKey: "commissionMinor", header: "Commission" },
+    { accessorKey: "amountMinor", header: "Amount" },
+    { accessorKey: "status", header: "Status" },
+  ], []);
+  const table = useReactTable({
+    data: items,
+    columns,
+    getRowId: (item) => item.kind + ":" + item.id,
+    getCoreRowModel: getCoreRowModel(),
+    manualPagination: true,
+    manualSorting: true,
+    manualFiltering: true,
+  });
+  const tableRows = table.getRowModel().rows;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualEnabled = tableRows.length > 60 && !expanded;
+  const rowVirtualizer = useVirtualizer({
+    count: virtualEnabled ? tableRows.length : 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 62,
+    overscan: 8,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const visibleRows = virtualEnabled ? virtualRows.map((row) => tableRows[row.index]).filter((row) => row !== undefined) : tableRows;
+  const topPadding = virtualEnabled ? (virtualRows[0]?.start ?? 0) : 0;
+  const bottomPadding = virtualEnabled ? Math.max(0, rowVirtualizer.getTotalSize() - (virtualRows.at(-1)?.end ?? 0)) : 0;
+
   useEffect(() => {
     const timeout = setTimeout(() => setFilters((current) => ({ ...current, search: search.trim() })), 300);
     return () => clearTimeout(timeout);
@@ -97,9 +132,12 @@ export function PartnerFinancialRegister({ partnerActorId, storeId = "", compact
     </div> : null}
     {error ? <p className="state-error" role="alert">{error}</p> : null}
     {loading ? <p className="muted" role="status">جارٍ قراءة السجل المالي…</p> : null}
-    {!loading ? <div className="pfr-table-wrap"><table className="data-table pfr-table"><caption className="sr-only">قائمة الحركات المالية المسندة للمتاجر</caption>
+    {!loading ? <div ref={scrollRef} className={virtualEnabled ? "pfr-table-wrap pfr-virtualized" : "pfr-table-wrap"}><table className="data-table pfr-table"><caption className="sr-only">قائمة الحركات المالية المسندة للمتاجر</caption>
       <thead><tr><th scope="col">التاريخ والمرجع</th><th scope="col">نوع الحركة</th><th scope="col">المتجر / الدفع</th><th scope="col">المنتجات</th><th scope="col">العمولة</th><th scope="col">الصافي أو المستحق</th><th scope="col">الحالة</th></tr></thead>
-      <tbody>{items.map((item) => <FragmentRow key={item.kind + ":" + item.id} item={item} open={expanded === item.kind + ":" + item.id} toggle={() => setExpanded((current) => current === item.kind + ":" + item.id ? "" : item.kind + ":" + item.id)} />)}
+      <tbody>
+        {virtualEnabled && topPadding > 0 ? <tr className="pfr-spacer"><td colSpan={7} style={{ height: topPadding }} /></tr> : null}
+        {visibleRows.map((row) => <FragmentRow key={row.id} index={virtualEnabled ? row.index : undefined} measure={virtualEnabled ? rowVirtualizer.measureElement : undefined} item={row.original} open={expanded === row.id} toggle={() => setExpanded((current) => current === row.id ? "" : row.id)} />)}
+        {virtualEnabled && bottomPadding > 0 ? <tr className="pfr-spacer"><td colSpan={7} style={{ height: bottomPadding }} /></tr> : null}
         {!items.length ? <tr><td colSpan={7}>لا توجد حركات مالية مطابقة لهذه الفلاتر.</td></tr> : null}
       </tbody>
     </table></div> : null}
@@ -107,9 +145,9 @@ export function PartnerFinancialRegister({ partnerActorId, storeId = "", compact
       {!compact && cursor ? <button className="button button-secondary" type="button" disabled={busy} onClick={() => void more()}>{busy ? "جارٍ التحميل..." : "تحميل المزيد"}</button> : null}</div>
   </section>;
 }
-function FragmentRow({ item, open, toggle }: { item: PartnerFinancialActivity; open: boolean; toggle: () => void }) {
+function FragmentRow({ item, open, toggle, measure, index }: { item: PartnerFinancialActivity; open: boolean; toggle: () => void; measure?: ((element: Element | null) => void) | undefined; index?: number | undefined }) {
   return <>
-    <tr className={open ? "pfr-active-row" : ""}>
+    <tr data-index={index} ref={measure} className={open ? "pfr-active-row" : ""}>
       <td><button type="button" className="pfr-open" aria-expanded={open} onClick={toggle}><strong>{dateLabel(item.createdAt)}</strong><small dir="auto">#{item.id}</small></button></td>
       <td>{activityType(item)}</td><td>{item.storeName}<small className="pfr-block-muted">{item.paymentMethod ? ({ CASH_ON_DELIVERY: "نقدي عند التسليم", CASH_AT_STORE: "نقدي للمتجر", WALLET: "محفظة", MIXED: "مختلط" } as Record<string,string>)[item.paymentMethod] ?? item.paymentMethod : "—"}</small></td>
       <td>{item.kind === "PAYOUT" ? "—" : formatMoney(item.grossMinor, item.currency)}</td><td>{item.kind === "PAYOUT" ? "—" : formatMoney(item.commissionMinor, item.currency)}</td>
