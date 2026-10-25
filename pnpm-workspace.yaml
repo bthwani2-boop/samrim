@@ -4,6 +4,19 @@ packages:
   - "services/*"
   - "packages/*"
 
+overrides:
+  "uuid": "11.1.1"
+  "decode-uri-component": "0.5.0"
+  "nx>smol-toml": "1.9.0"
+  "shell-quote": "1.11.0"
+  "axios": "1.20.0"
+  "follow-redirects": "1.16.1"
+  "sharp": "0.35.5"
+  "source-map-js": "1.2.2"
+  "compression": "1.8.2"
+  "smol-toml": "1.9.0"
+  "brace-expansion": "5.0.12"
+
 allowBuilds:
   nx: true
   sharp: true
