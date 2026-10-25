@@ -60,6 +60,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Candidate finance operator recovery isolation failed.' }
         node --test tools/mobile/check-actor-scoped-navigation.test.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate mobile actor-scoped navigation failed.' }
+        node --test apps/app-client/src/features/cart-checkout/fulfillment-choice-session.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate customer fulfillment actor isolation failed.' }
         if (@($candidateFiles | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -gt 0) {
             pnpm exec nx affected -t lint format-check typecheck contract build vet export-smoke --base=$governanceBase --head=$head --outputStyle=static --parallel=2 --nxBail=true
             if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
@@ -102,6 +104,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Local finance operator recovery isolation failed.' }
     node --test tools/mobile/check-actor-scoped-navigation.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local mobile actor-scoped navigation failed.' }
+    node --test apps/app-client/src/features/cart-checkout/fulfillment-choice-session.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local customer fulfillment actor isolation failed.' }
 
     $env:NX_NO_CLOUD = 'true'
 

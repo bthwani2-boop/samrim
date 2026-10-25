@@ -19,8 +19,12 @@ export async function readSavedFulfillmentMode(
 ): Promise<CustomerFulfillmentMode | null> {
   const key = preferenceKey(storeID, cityID);
   if (!key) return null;
-  try { return resolveFulfillmentChoice(available, null, await SecureStore.getItemAsync(key)); }
-  catch { return null; }
+  try {
+    const saved = await SecureStore.getItemAsync(key);
+    // Never apply a previous actor's saved delivery choice after switching accounts.
+    if (preferenceKey(storeID, cityID) !== key) return null;
+    return resolveFulfillmentChoice(available, null, saved);
+  } catch { return null; }
 }
 
 export async function saveFulfillmentMode(storeID: string, cityID: string, mode: CustomerFulfillmentMode): Promise<void> {
