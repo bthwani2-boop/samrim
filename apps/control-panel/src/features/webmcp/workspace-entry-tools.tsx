@@ -98,7 +98,12 @@ export function WorkspaceEntryWebMCPTools({ identity }: Readonly<{ identity: Act
   const enabled = identity.role === "operator";
   const entries = useMemo(() => allowedWorkspaceEntries(identity), [identity]);
 
-  useEffect(() => { proposalRef.current = null; setProposal(null); setMessage(""); }, [pathname, identity.subject]);
+  useEffect(() => {
+    if (!pathname || !identity.subject) return;
+    proposalRef.current = null;
+    setProposal(null);
+    setMessage("");
+  }, [pathname, identity.subject]);
   useEffect(() => {
     if (!proposal) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -217,7 +222,7 @@ export function WorkspaceEntryWebMCPTools({ identity }: Readonly<{ identity: Act
       } catch (error) { console.warn("WebMCP registration failed:", tool.name, error); }
     }
     return () => controller.abort();
-  }, [enabled, identity, pathname, entries, router]);
+  }, [enabled, pathname, entries, router]);
 
   function approveDraft() {
     if (!proposal || proposal.path !== pathname) { proposalRef.current = null; setProposal(null); return; }
