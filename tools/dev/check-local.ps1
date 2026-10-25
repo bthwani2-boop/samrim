@@ -48,6 +48,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect candidate governance scope.' }
         node tools/dev/check-encoding.mjs --base $governanceBase
         if ($LASTEXITCODE -ne 0) { throw 'Candidate UTF-8 integrity check failed.' }
+        node tools/dev/check-typescript-ast-tests.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate TypeScript AST regression tests failed.' }
         if (@($candidateFiles | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -gt 0) {
             pnpm exec nx affected -t lint format-check typecheck contract build vet export-smoke --base=$governanceBase --head=$head --outputStyle=static --parallel=2 --nxBail=true
             if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
@@ -78,6 +80,8 @@ try {
 
     node tools/dev/check-encoding.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local UTF-8 integrity check failed.' }
+    node tools/dev/check-typescript-ast-tests.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local TypeScript AST regression tests failed.' }
 
     $env:NX_NO_CLOUD = 'true'
 
