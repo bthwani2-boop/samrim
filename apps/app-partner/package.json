@@ -18,6 +18,7 @@
     "@bthwani/design-system": "workspace:*",
     "@bthwani/dsh": "workspace:*",
     "@bthwani/identity": "workspace:*",
+    "@bthwani/push-device": "workspace:*",
     "@expo/metro-runtime": "57.0.17",
     "@expo/ui": "57.0.26",
     "expo": "57.0.31",

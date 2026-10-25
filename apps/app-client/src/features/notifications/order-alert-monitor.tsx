@@ -1,4 +1,5 @@
 import { createDshMobileClient, OrderAlertCursor } from "@bthwani/dsh";
+import { hasNativeNotificationModules, registerOwnPushDevice } from "@bthwani/push-device";
 import * as Crypto from "expo-crypto";
 import { type Href, useRouter } from "expo-router";
 import { useEffect } from "react";
@@ -6,7 +7,6 @@ import { AppState, Platform } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { clientPushDestination } from "./notification-tap-destination";
 import { currentAlertTone } from "./order-alert-preferences";
-import { hasNativeNotificationModules, registerOwnPushDevice } from "./push-device";
 
 const role = "client" as const;
 const alerts = new OrderAlertCursor();
@@ -86,7 +86,7 @@ export function OrderAlertMonitor() {
         const remotePushActive = await registerOwnPushDevice(token, actor, chosenTone, () => {
           const current = currentIdentityState();
           return !cancelled && current.kind === "authenticated" && current.identity.subject.trim() === actor;
-        });
+        }, url);
         const data = await createDshMobileClient(url, { cryptoRandomUUID: () => Crypto.randomUUID() }).listNotifications(token, 35);
         if (cancelled || AppState.currentState !== "active") return;
         const current = currentIdentityState();
