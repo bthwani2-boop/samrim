@@ -52,6 +52,10 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Candidate TypeScript AST regression tests failed.' }
         node --test packages/push-device/src/push-device.test.mjs packages/push-device/src/alert-tone.test.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate native notification regression tests failed.' }
+        node --test tools/governance/check-service-import-boundaries.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate service import boundary tests failed.' }
+        node tools/governance/check-service-import-boundaries.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate service import boundaries failed.' }
         if (@($candidateFiles | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -gt 0) {
             pnpm exec nx affected -t lint format-check typecheck contract build vet export-smoke --base=$governanceBase --head=$head --outputStyle=static --parallel=2 --nxBail=true
             if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
@@ -86,6 +90,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Local TypeScript AST regression tests failed.' }
     node --test packages/push-device/src/push-device.test.mjs packages/push-device/src/alert-tone.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local native notification regression tests failed.' }
+    node --test tools/governance/check-service-import-boundaries.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local service import boundary tests failed.' }
+    node tools/governance/check-service-import-boundaries.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local service import boundaries failed.' }
 
     $env:NX_NO_CLOUD = 'true'
 
