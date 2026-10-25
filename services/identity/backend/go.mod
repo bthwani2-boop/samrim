@@ -1,11 +1,11 @@
 module github.com/bthwani2-boop/samrim/services/identity/backend
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/go-webauthn/webauthn v0.17.1
 	github.com/lib/pq v1.12.3
-	golang.org/x/crypto v0.53.0
+	golang.org/x/crypto v0.57.0
 )
 
 require (
@@ -18,5 +18,5 @@ require (
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )
