@@ -92,7 +92,7 @@ jobs:
           cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
           trap cleanup EXIT
           password="$(openssl rand -hex 16)"
-          docker run -d --rm --name "$container" -e "POSTGRES_PASSWORD=$password" -e POSTGRES_DB=wlt_proof -p 127.0.0.1:19432:5432 postgis/postgis:16-3.4-alpine
+          docker run -d --rm --name "$container" -e "POSTGRES_PASSWORD=$password" -e POSTGRES_DB=wlt_proof -p 127.0.0.1:19432:5432 postgis/postgis:18-3.6@sha256:e84455a058f60f06dd8c40e66a2c628b8fc113d9fca0896e1f308b25b897207f
           ready=false
           for i in $(seq 1 50); do
             if docker exec "$container" pg_isready -h 127.0.0.1 -p 5432 -U postgres -d wlt_proof >/dev/null 2>&1; then ready=true; break; fi

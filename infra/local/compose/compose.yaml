@@ -8,7 +8,7 @@ x-bthwani-logging: &bthwani-logging
 
 services:
   postgres:
-    image: postgis/postgis:16-3.4-alpine@sha256:681931a625df344215e9b8998bf34daf146b6a395ceacee4439eb9c85869239f
+    image: postgis/postgis:18-3.6@sha256:e84455a058f60f06dd8c40e66a2c628b8fc113d9fca0896e1f308b25b897207f
     restart: unless-stopped
     logging: *bthwani-logging
     environment:
@@ -16,7 +16,7 @@ services:
       POSTGRES_PASSWORD: "${SAMRIM_POSTGRES_PASSWORD}"
       POSTGRES_DB: "${SAMRIM_POSTGRES_DB}"
     volumes:
-      - samrim-postgres-data:/var/lib/postgresql/data
+      - samrim-postgres18-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 30s
@@ -26,10 +26,10 @@ services:
       start_interval: 2s
 
   postgres-access:
-    image: postgis/postgis:16-3.4-alpine@sha256:681931a625df344215e9b8998bf34daf146b6a395ceacee4439eb9c85869239f
+    image: postgis/postgis:18-3.6@sha256:e84455a058f60f06dd8c40e66a2c628b8fc113d9fca0896e1f308b25b897207f
     restart: "no"
     tmpfs:
-      - /var/lib/postgresql/data:rw,size=64m
+      - /var/lib/postgresql:rw,size=64m
     logging: *bthwani-logging
     depends_on:
       identity-bootstrap:
@@ -361,5 +361,5 @@ services:
       start_interval: 2s
 
 volumes:
-  samrim-postgres-data:
+  samrim-postgres18-data:
   samrim-media-data:
