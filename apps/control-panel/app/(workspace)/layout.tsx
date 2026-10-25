@@ -11,6 +11,8 @@ import { OperatorAccountDrawer } from "../../src/shell/operator-account-drawer";
 import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/public-shell";
 import { WorkspaceIcon } from "../../src/shell/workspace-icon";
 import { WorkspaceRecordSearch } from "../../src/shell/workspace-record-search";
+import { StoreCatalogWebMCPTools } from "../../src/features/webmcp/store-catalog-webmcp-tools";
+import { WorkspaceEntryWebMCPTools } from "../../src/features/webmcp/workspace-entry-tools";
 
 function currentChild(pathname: string, destination: (typeof workspaceDestinations)[number]) {
   const child = currentWorkspaceChild(pathname, destination);
@@ -446,6 +448,8 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
 
   return (
     <ControlShell className="workspace-app-shell" surface="workspace" footer={null} header={<WorkspaceHeader busy={busy} navOpen={navigationOpen} navTriggerRef={navTriggerRef} onLogout={() => { setLocalSignOut(true); void logout(); }} onOpenNavigation={() => setNavigationOpen(true)} pathname={pathname} />}>
+      <StoreCatalogWebMCPTools enabled={state.identity.role === "operator" && state.identity.permissions?.includes("catalog") === true} />
+      <WorkspaceEntryWebMCPTools identity={state.identity} />
       <a className="skip-link" href="#workspace-main">تخطي إلى المحتوى الرئيسي</a>
       <div className="workspace-layout" data-nav-compact={navigationCompact ? "true" : "false"} data-table-density={tableDense ? "compact" : "comfortable"}>
         {navigationOpen ? <button type="button" className="workspace-nav-backdrop" aria-label="إغلاق مسارات العمل" onClick={closeNavigation} /> : null}
