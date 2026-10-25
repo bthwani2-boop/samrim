@@ -64,3 +64,29 @@ test("negative fixture catches missing iOS background permission", () => {
   assert.equal(missing.isAndroidBackgroundLocationEnabled, true);
   assert.notEqual(missing.isIosBackgroundLocationEnabled, true);
 });
+
+test("captain native media plugins declare Arabic microphone and photo permissions without background recording", () => {
+  const audio = captain.plugins.find((entry) => Array.isArray(entry) && entry[0] === "expo-audio");
+  const photos = captain.plugins.find((entry) => Array.isArray(entry) && entry[0] === "expo-image-picker");
+  assert.ok(audio);
+  assert.ok(photos);
+  assert.match(audio[1].microphonePermission, /[\u0600-\u06ff]/);
+  assert.match(photos[1].photosPermission, /[\u0600-\u06ff]/);
+  assert.match(photos[1].cameraPermission, /[\u0600-\u06ff]/);
+  assert.equal(audio[1].recordAudioAndroid, true);
+  assert.equal(audio[1].enableBackgroundRecording, false);
+  assert.equal(audio[1].enableBackgroundPlayback, false);
+});
+
+test("field camera and image picker explicitly forbid microphone permission and recording", () => {
+  const camera = field.plugins.find((entry) => Array.isArray(entry) && entry[0] === "expo-camera");
+  const photos = field.plugins.find((entry) => Array.isArray(entry) && entry[0] === "expo-image-picker");
+  assert.ok(camera);
+  assert.ok(photos);
+  assert.equal(camera[1].microphonePermission, false);
+  assert.equal(camera[1].recordAudioAndroid, false);
+  assert.equal(photos[1].microphonePermission, false);
+  assert.match(photos[1].photosPermission, /[\u0600-\u06ff]/);
+  assert.match(photos[1].cameraPermission, /[\u0600-\u06ff]/);
+  assert.equal(field.plugins.some((entry) => Array.isArray(entry) && entry[0] === "expo-audio"), false);
+});
