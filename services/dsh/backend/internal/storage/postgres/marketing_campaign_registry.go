@@ -24,15 +24,15 @@ type MarketingCampaignInput struct {
 }
 
 type MarketingCampaignRecord struct {
-	ID                           string `json:"id"`
-	NameAr                       string `json:"nameAr"`
-	Objective                    string `json:"objective"`
-	State                        string `json:"state"`
-	BudgetLimitMinor             int64 `json:"budgetLimitMinor"`
-	AssignedPromotionBudgetMinor int64 `json:"assignedPromotionBudgetMinor"`
-	PromotionCount               int64 `json:"promotionCount"`
-	ContentCount                 int64 `json:"contentCount"`
-	Version                      int `json:"version"`
+	ID                           string    `json:"id"`
+	NameAr                       string    `json:"nameAr"`
+	Objective                    string    `json:"objective"`
+	State                        string    `json:"state"`
+	BudgetLimitMinor             int64     `json:"budgetLimitMinor"`
+	AssignedPromotionBudgetMinor int64     `json:"assignedPromotionBudgetMinor"`
+	PromotionCount               int64     `json:"promotionCount"`
+	ContentCount                 int64     `json:"contentCount"`
+	Version                      int       `json:"version"`
 	CreatedAt                    time.Time `json:"createdAt"`
 	UpdatedAt                    time.Time `json:"updatedAt"`
 }

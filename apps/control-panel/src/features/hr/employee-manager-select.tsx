@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { HREmployee, HREmployeePage } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
 
@@ -30,7 +30,7 @@ export function EmployeeManagerSelect({ value, initial, excludeId = "", onChange
   }, [initial, matches, excludeId]);
   const hasSelected = people.some(employee => employee.id === value);
 
-  async function load(term: string, cursor = "", requestRevision = revision.current) {
+  const load = useCallback(async (term: string, cursor = "", requestRevision = revision.current) => {
     setLoading(true);
     setError("");
     try {
@@ -49,7 +49,7 @@ export function EmployeeManagerSelect({ value, initial, excludeId = "", onChange
     } finally {
       if (requestRevision === revision.current) setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     const requestRevision = ++revision.current;
@@ -63,7 +63,7 @@ export function EmployeeManagerSelect({ value, initial, excludeId = "", onChange
     }
     const timer = window.setTimeout(() => { void load(term, "", requestRevision); }, 300);
     return () => window.clearTimeout(timer);
-  }, [search]);
+  }, [search, load]);
 
   return <div className="form-section form-section--w400">
     <label className="field-label">ابحث عن المسؤول المباشر

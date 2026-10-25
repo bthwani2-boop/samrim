@@ -1,6 +1,6 @@
 import { type resolveTheme, typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type PartnerFinancialActivity, type PartnerFinancialActivityFilters, type PartnerScopedFinancialSummary } from "@bthwani/dsh";
+import { createDshMobileClient, formatMoney, type PartnerFinancialActivity as PartnerFinancialActivityRecord, type PartnerFinancialActivityFilters, type PartnerScopedFinancialSummary } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -27,7 +27,7 @@ function range(period: Period): Pick<PartnerFinancialActivityFilters, "from" | "
   if (period === "month") return { from: today.slice(0, 7) + "-01", to: today };
   return { from: adenDate(new Date(now.getTime() - 6 * 86_400_000)), to: today };
 }
-function stateLabel(item: PartnerFinancialActivity): string {
+function stateLabel(item: PartnerFinancialActivityRecord): string {
   if (item.kind === "CASH_COMMISSION") return item.direction === "CREDIT" ? "رصيد وذمة عمولة" : item.direction === "NONE" ? "بدون حركة رصيد" : "ذمة عمولة";
   if (item.kind === "ORDER") return "مستحق مثبت";
   if (item.status === "COMPLETED") return "تم الصرف";
@@ -35,18 +35,18 @@ function stateLabel(item: PartnerFinancialActivity): string {
   if (item.status === "EXCEPTION") return "يحتاج مراجعة";
   return "قيد الصرف";
 }
-function itemTitle(item: PartnerFinancialActivity): string {
+function itemTitle(item: PartnerFinancialActivityRecord): string {
   return item.kind === "PAYOUT" ? "صرف مستحقات" : item.kind === "CASH_COMMISSION" ? "تسوية طلب نقدي" : "مستحقات طلب";
 }
-function reference(item: PartnerFinancialActivity): string {
+function reference(item: PartnerFinancialActivityRecord): string {
   return item.kind === "PAYOUT" ? (item.id.split(":")[0] ?? item.id) : item.id;
 }
-function amountPrefix(item: PartnerFinancialActivity): string {
+function amountPrefix(item: PartnerFinancialActivityRecord): string {
   if (item.direction === "CREDIT") return "+";
   if (item.direction === "DEBIT" || item.direction === "RECEIVABLE") return "−";
   return "";
 }
-function paymentLabel(item: PartnerFinancialActivity): string {
+function paymentLabel(item: PartnerFinancialActivityRecord): string {
   return payments.find((option) => option.id === item.paymentMethod)?.label ?? (item.kind === "PAYOUT" ? "الصرف" : "—");
 }
 function dateLabel(value: string): string {
@@ -88,8 +88,8 @@ export function PartnerFinancialActivity({ stores }: { stores: PartnerScopedFina
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [detail, setDetail] = useState<PartnerFinancialActivity | null>(null);
-  const [items, setItems] = useState<PartnerFinancialActivity[]>([]);
+  const [detail, setDetail] = useState<PartnerFinancialActivityRecord | null>(null);
+  const [items, setItems] = useState<PartnerFinancialActivityRecord[]>([]);
   const [cursor, setCursor] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);

@@ -25,6 +25,7 @@ export function HRCommandOverview({ onRegistry }: Readonly<{onEmployee:(id:strin
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
+    void revision; // Retry key: changing it intentionally re-runs this request.
     const controller = new AbortController();
     setLoading(true);
     setError("");

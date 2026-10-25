@@ -5487,19 +5487,22 @@ components:
       additionalProperties: false
       required: [total, active, inactive, linked, departments]
       properties:
-        total: { type: integer, minimum: 0 }
-        active: { type: integer, minimum: 0 }
-        inactive: { type: integer, minimum: 0 }
-        linked: { type: integer, minimum: 0 }
+        total:
+          type: integer
+          minimum: 0
+        active:
+          type: integer
+          minimum: 0
+        inactive:
+          type: integer
+          minimum: 0
+        linked:
+          type: integer
+          minimum: 0
         departments:
           type: array
           items:
-            type: object
-            additionalProperties: false
-            required: [name, count]
-            properties:
-              name: { type: string }
-              count: { type: integer, minimum: 0 }
+            $ref: "#/components/schemas/HREmployeeDepartmentCount"
 
     HREmployeePage:
       type: object
@@ -11134,20 +11137,49 @@ components:
       additionalProperties: false
       required: [id, kind, storeId, storeName, status, paymentMethod, direction, grossMinor, commissionMinor, offsetMinor, amountMinor, currency, ledgerTransactionId, createdAt]
       properties:
-        id: { type: string }
-        kind: { type: string, enum: [ORDER, PAYOUT, CASH_COMMISSION] }
-        storeId: { type: string }
-        storeName: { type: string }
-        status: { type: string }
-        paymentMethod: { type: string }
-        direction: { type: string, enum: [CREDIT, DEBIT, HOLD, RECEIVABLE, NONE] }
-        grossMinor: { type: integer }
-        commissionMinor: { type: integer }
-        offsetMinor: { type: integer }
-        amountMinor: { type: integer }
-        currency: { type: string, const: YER }
-        ledgerTransactionId: { type: string }
-        createdAt: { type: string, format: date-time }
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [ORDER, PAYOUT, CASH_COMMISSION]
+        storeId:
+          type: string
+        storeName:
+          type: string
+        status:
+          type: string
+        paymentMethod:
+          type: string
+        direction:
+          type: string
+          enum: [CREDIT, DEBIT, HOLD, RECEIVABLE, NONE]
+        grossMinor:
+          type: integer
+        commissionMinor:
+          type: integer
+        offsetMinor:
+          type: integer
+        amountMinor:
+          type: integer
+        currency:
+          type: string
+          const: YER
+        ledgerTransactionId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    PartnerActivityStoreOptionView:
+      type: object
+      additionalProperties: false
+      required: [storeId, storeName]
+      properties:
+        storeId:
+          type: string
+        storeName:
+          type: string
+
     PartnerActivityPageView:
       type: object
       additionalProperties: false
@@ -11155,17 +11187,14 @@ components:
       properties:
         items:
           type: array
-          items: { $ref: "#/components/schemas/PartnerActivityRecordView" }
+          items:
+            $ref: "#/components/schemas/PartnerActivityRecordView"
         stores:
           type: array
           items:
-            type: object
-            additionalProperties: false
-            required: [storeId, storeName]
-            properties:
-              storeId: { type: string }
-              storeName: { type: string }
-        nextCursor: { type: string }
+            $ref: "#/components/schemas/PartnerActivityStoreOptionView"
+        nextCursor:
+          type: string
 
     PartnerScopedFinancialSummary:
       type: object
