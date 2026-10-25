@@ -774,11 +774,17 @@ paths:
   /dsh/partners/me/payout-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1payout-summary"
 
+  /dsh/partners/me/financial-activity:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1financial-activity"
+
   /dsh/partners/me/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1financial-summary"
 
   /dsh/operator/partner-commission-receivables:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partner-commission-receivables"
+
+  /dsh/operator/partners/{partnerActorId}/financial-activity:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1financial-activity"
 
   /dsh/operator/partners/{partnerActorId}/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1financial-summary"
@@ -5464,6 +5470,17 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+
+    HREmployeeDepartmentCount:
+      type: object
+      additionalProperties: false
+      required: [name, count]
+      properties:
+        name:
+          type: string
+        count:
+          type: integer
+          minimum: 0
 
     HREmployeeSummary:
       type: object
