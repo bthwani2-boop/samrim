@@ -86,7 +86,6 @@
   .workspace-search-results a:hover { background: var(--surface-muted); }
   .workspace-search-results small, .workspace-search-empty, .workspace-search-label { color: var(--text-muted); font-size: 13px; }
   .workspace-record-search { border-block-start: 1px solid var(--border-subtle); margin-block-start: 10px; padding-block-start: 10px; }
-  .workspace-record-search h3 { margin-block: 10px 4px; font-size: 14px; }
   .operator-profile, .operator-profile-details { display: grid; gap: 12px; }
   .operator-profile-heading { display: flex; align-items: center; gap: 12px; }
   .operator-profile-avatar { display: grid; place-items: center; inline-size: 40px; block-size: 40px; border-radius: 50%; background: var(--surface-muted); font-weight: 700; }
