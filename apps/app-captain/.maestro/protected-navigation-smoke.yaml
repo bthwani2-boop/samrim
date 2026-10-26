@@ -11,7 +11,7 @@ name: Captain protected stack navigation
     timeout: 15000
 - tapOn: "حسابي"
 - extendedWaitUntil:
-    visible: "إدارة حساب الكابتن"
+    visible: "مساحات العمل"
     timeout: 15000
 - tapOn: "عروض التوصيل"
 - extendedWaitUntil:
@@ -19,7 +19,7 @@ name: Captain protected stack navigation
     timeout: 15000
 - back
 - extendedWaitUntil:
-    visible: "إدارة حساب الكابتن"
+    visible: "مساحات العمل"
     timeout: 15000
 - tapOn: "توصيلاتي"
 - extendedWaitUntil:
@@ -27,7 +27,7 @@ name: Captain protected stack navigation
     timeout: 15000
 - back
 - extendedWaitUntil:
-    visible: "إدارة حساب الكابتن"
+    visible: "مساحات العمل"
     timeout: 15000
 - tapOn: "الخريطة والمهمة الحالية"
 - extendedWaitUntil:
