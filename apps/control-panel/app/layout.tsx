@@ -24,6 +24,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <AntDesignProvider nonce={nonce}>
           <SessionProvider>{children}</SessionProvider>
         </AntDesignProvider>
+        <div id="control-panel-overlay-root" />
       </body>
     </html>
   );

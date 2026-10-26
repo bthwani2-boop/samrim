@@ -1,6 +1,7 @@
 "use client";
 
 import { isThemePreference, type ThemePreference } from "@bthwani/design-system";
+import { Alert, Segmented, Typography } from "antd";
 import { useEffect, useState } from "react";
 
 const STORAGE_KEY = "bthwani.control-panel.appearance";
@@ -17,11 +18,8 @@ function readPreference(): ThemePreference {
 
 function applyPreference(preference: ThemePreference) {
   const root = document.documentElement;
-  if (preference === "system") {
-    root.removeAttribute("data-theme");
-  } else {
-    root.dataset.theme = preference;
-  }
+  if (preference === "system") root.removeAttribute("data-theme");
+  else root.dataset.theme = preference;
 }
 
 export function AppearanceControl() {
@@ -48,27 +46,20 @@ export function AppearanceControl() {
   }, [preference]);
 
   return (
-    <fieldset className="appearance-control" aria-describedby={error ? "appearance-error" : undefined}>
-      <legend>المظهر</legend>
-      <div className="appearance-options">
-        {[
-          ["system", "حسب النظام"],
-          ["light", "فاتح"],
-          ["dark", "داكن"],
-        ].map(([value, label]) => (
-          <label key={value}>
-            <input
-              type="radio"
-              name="appearance"
-              value={value}
-              checked={preference === value}
-              onChange={() => setPreference(value as ThemePreference)}
-            />
-            <span>{label}</span>
-          </label>
-        ))}
-      </div>
-      {error ? <small id="appearance-error" role="alert">{error}</small> : null}
+    <fieldset aria-label="المظهر">
+      <legend><Typography.Text strong>المظهر</Typography.Text></legend>
+      <Segmented<ThemePreference>
+        block
+        aria-label="اختيار المظهر"
+        value={preference}
+        onChange={setPreference}
+        options={[
+          { value: "system", label: "حسب النظام" },
+          { value: "light", label: "فاتح" },
+          { value: "dark", label: "داكن" },
+        ]}
+      />
+      {error ? <Alert type="error" showIcon message={error} /> : null}
     </fieldset>
   );
 }

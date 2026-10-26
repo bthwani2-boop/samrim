@@ -7,6 +7,8 @@
 @layer base {
   * { box-sizing: border-box; }
   html { direction: rtl; min-height: 100%; background: var(--surface-muted); }
+  /* Keep the viewport locked while an Ant Design overlay uses the dedicated portal host. */
+  html:has(.ant-drawer-open) { overflow-y: hidden; }
   body { margin: 0; color: var(--color-primary); background: var(--surface-muted); font: 400 14px/1.6 var(--font-family-arabic); }
   button, input, select, textarea { font: inherit; }
   :where(input,select,textarea,button,a,summary,[tabindex]) { scroll-margin-block: 76px 12px; }
@@ -85,12 +87,10 @@
   .workspace-search-results small, .workspace-search-empty, .workspace-search-label { color: var(--text-muted); font-size: 13px; }
   .workspace-record-search { border-block-start: 1px solid var(--border-subtle); margin-block-start: 10px; padding-block-start: 10px; }
   .workspace-record-search h3 { margin-block: 10px 4px; font-size: 14px; }
-  .operator-profile, .appearance-control, .operator-profile-details { display: grid; gap: 12px; }
+  .operator-profile, .operator-profile-details { display: grid; gap: 12px; }
   .operator-profile-heading { display: flex; align-items: center; gap: 12px; }
   .operator-profile-avatar { display: grid; place-items: center; inline-size: 40px; block-size: 40px; border-radius: 50%; background: var(--surface-muted); font-weight: 700; }
   .operator-profile-details > div { display: grid; grid-template-columns: 100px 1fr; gap: 8px; }
-  .appearance-control { margin-block: 16px; padding-block: 12px; border-block: 1px solid var(--border-subtle); }
-  .appearance-options { display: flex; gap: 6px; }
   .workspace-nav-backdrop { display: none; }
   .control-shell-public, .state-shell { min-block-size: 100dvh; display: grid; align-items: center; padding: 24px; }
   .control-shell-public .control-frame, .state-shell .control-frame { max-inline-size: 880px; margin-inline: auto; }
