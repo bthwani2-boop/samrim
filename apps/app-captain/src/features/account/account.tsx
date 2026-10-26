@@ -10,7 +10,6 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { getUsableIdentityAccessToken, logoutIdentity } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
 import { StoreCaptainMemberships } from "../captain-operations/store-memberships";
-import { StoreAccessInvitationInbox } from "./store-access-invitations";
 
 const actions: ReadonlyArray<Readonly<{
   description: string;
@@ -101,8 +100,6 @@ export default function CaptainAccount() {
       </View>
 
       <StoreCaptainMemberships />
-
-      <StoreAccessInvitationInbox />
 
       <AppearancePicker compact title="المظهر" helper="" />
 
