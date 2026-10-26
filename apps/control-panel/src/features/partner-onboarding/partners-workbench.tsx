@@ -334,7 +334,7 @@ export function PartnersWorkbench() {
         <label className="field-label" htmlFor="partner-unified-status">الحالة
           <select id="partner-unified-status" value={status} onChange={(event) => {
             const next = event.target.value;
-            navigate(activeTab, kind, next, "", sort, appliedSearch);
+            navigate(activeTab, kind, next, city, sort, appliedSearch);
           }}>{statusOptions.map((s) => <option value={s.value} key={s.value}>{s.label}</option>)}</select>
         </label>
         <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
@@ -369,7 +369,7 @@ export function PartnersWorkbench() {
             </select></label>
           </RegistryColumnHeader> : <th scope="col">النوع والموقع</th>}
           {statusOptions.length > 1 ? <RegistryColumnHeader label="الحالة" active={Boolean(status)}>
-            <label>حالة السجل<select value={status} onChange={(event) => navigate(activeTab, kind, event.target.value, "", sort, appliedSearch)}>
+            <label>حالة السجل<select value={status} onChange={(event) => navigate(activeTab, kind, event.target.value, city, sort, appliedSearch)}>
               {statusOptions.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
             </select></label>
           </RegistryColumnHeader> : <th scope="col">الحالة</th>}
