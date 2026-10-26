@@ -1,6 +1,7 @@
 "use client";
 
 import type { ActorIdentity } from "@bthwani/identity";
+import { Menu, type MenuProps } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type FormEvent, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
@@ -298,6 +299,26 @@ function WorkspaceNavigation({
     ? workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false && canOpenWorkspaceDestination(state.identity, destination))
     : [];
   const activeDestination = workspaceNavigationContext(pathname, state.kind === "authenticated" ? state.identity : null).destination;
+  const activeChild = currentWorkspaceChild(pathname, activeDestination);
+  const activeKey = !open && compact ? activeDestination.href : activeChild && activeChild.href !== activeDestination.href
+    ? activeChild.href
+    : activeDestination.href;
+  const items: MenuProps["items"] = visibleDestinations.flatMap((destination, index) => {
+    const current = activeDestination.href === destination.href;
+    const childItems = current && (!compact || open) ? destination.children
+      .filter((child) => child.showInWorkspaceNavigation !== false && child.href !== destination.href)
+      .map((child) => ({
+        key: child.href,
+        className: "workspace-nav-child-item",
+        label: <Link href={child.href} title={child.label} aria-current={activeKey === child.href ? "page" : undefined} onClick={onClose}>{child.label}</Link>,
+      })) : [];
+    return [{
+      key: destination.href,
+      icon: <WorkspaceIcon href={destination.href} />,
+      label: <Link ref={index === 0 ? firstLinkRef : undefined} href={destination.href} title={destination.label} aria-label={destination.label} aria-current={current && activeKey === destination.href ? "page" : undefined} onClick={onClose}>{destination.label}</Link>,
+    }, ...childItems];
+  });
+
   return (
     <nav ref={navRef} id="workspace-navigation" className="workspace-nav" data-open={open} aria-label="تنقل مساحة المشغل">
       <div className="workspace-nav-header">
@@ -306,39 +327,13 @@ function WorkspaceNavigation({
         <button type="button" className="workspace-nav-compact-toggle" onClick={onToggleCompact} aria-label={compact ? "توسيع الشريط الجانبي" : "تصغير الشريط الجانبي"} title={compact ? "توسيع الشريط الجانبي" : "تصغير الشريط الجانبي"} aria-pressed={compact}><span aria-hidden="true">{compact ? "»" : "«"}</span></button>
         <button type="button" className="workspace-nav-close" onClick={onClose} aria-label="إغلاق مسارات العمل">×</button>
       </div>
-      {visibleDestinations.map((destination, index) => {
-        const current = activeDestination.href === destination.href;
-        const activeChild = currentWorkspaceChild(pathname, destination);
-        return (
-            <div className="workspace-nav-group" key={destination.href}>
-              <Link
-                ref={index === 0 ? firstLinkRef : undefined}
-                className="workspace-nav-link"
-                href={destination.href}
-                title={destination.label}
-                aria-label={destination.label}
-                aria-current={current ? (activeChild || pathname !== destination.href ? "location" : "page") : undefined}
-                onClick={onClose}
-              >
-                <WorkspaceIcon href={destination.href} /><span className="workspace-nav-link-label">{destination.label}</span>
-              </Link>
-              {current && destination.children.length > 0 ? (
-                <ul className="workspace-nav-children" aria-label={`مسارات ${destination.label}`}>
-                  {destination.children.filter((child) => child.showInWorkspaceNavigation !== false).map((child) => {
-                    const childCurrent = activeChild?.href === child.href;
-                    return (
-                      <li key={child.href}>
-                        <Link className="workspace-nav-child-link" href={child.href} title={child.label} aria-label={child.label} aria-current={childCurrent ? "page" : undefined} onClick={onClose}>
-                          <span className="workspace-nav-child-compact-marker" aria-hidden="true"><WorkspaceIcon href={child.href} /></span><span className="workspace-nav-child-label">{child.label}</span>
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : null}
-            </div>
-        );
-      })}
+      <Menu
+        mode="inline"
+        inlineCollapsed={compact && !open}
+        selectedKeys={[activeKey]}
+        items={items}
+        className="workspace-nav-menu"
+      />
     </nav>
   );
 }
