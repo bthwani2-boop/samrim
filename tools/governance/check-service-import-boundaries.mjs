@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript-ast";
@@ -69,9 +69,14 @@ export function scanRepositoryServiceBoundaries(root) {
   let checked = 0;
   for (const file of trackedSources(root)) {
     const path = resolve(root, file);
-    if (!statSync(path).isFile()) continue;
-    checked++;
-    violations.push(...scanServiceBoundaryFile(file, readFileSync(path, "utf8")));
+    const descriptor = openSync(path, "r");
+    try {
+      if (!fstatSync(descriptor).isFile()) continue;
+      checked++;
+      violations.push(...scanServiceBoundaryFile(file, readFileSync(descriptor, "utf8")));
+    } finally {
+      closeSync(descriptor);
+    }
   }
   return { checked, violations };
 }
