@@ -2902,19 +2902,7 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 
 /* Shared column controls: table headings retain native keyboard/RTL semantics. */
 @layer composition {
-  .registry-column-head { position:relative; vertical-align:top; }
-  .registry-column-details { min-inline-size:0; }
-  .registry-column-details > summary {
-    display:flex; align-items:center; justify-content:space-between; gap:6px;
-    min-block-size:40px; cursor:pointer; font:inherit; font-weight:700;
-    padding:4px 2px; list-style:none; border-radius:6px; white-space:nowrap;
-  }
-  .registry-column-details > summary::-webkit-details-marker { display:none; }
-  .registry-column-details > summary:focus-visible { outline:2px solid var(--interactive-text); outline-offset:1px; }
-  .registry-column-details > summary:hover { color:var(--interactive-text); }
-  .registry-column-arrow { font-weight:700; font-size:14px; opacity:.66; }
-  .registry-column-details[open] .registry-column-arrow { transform:rotate(180deg); }
-  .registry-column-active-mark { color:var(--color-primary); font-size:18px; }
+  .registry-column-head { vertical-align:middle; }
   .registry-column-controls {
     display:grid; gap:9px; min-inline-size:170px; max-inline-size:245px;
     padding:9px 2px 12px;
@@ -2940,36 +2928,6 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   }
   .registry-column-controls :is(input,select,button):disabled { opacity:.55; cursor:not-allowed; }
 }
-/* Column actions float above scrollable registries rather than expanding every row. */
-@layer composition {
-  .registry-column-popover {
-    position:fixed; z-index:1500; box-sizing:border-box;
-    inline-size:min(270px,calc(100vw - 16px));
-    max-block-size:min(70vh,calc(100vh - 20px));
-    overflow:auto; overscroll-behavior:contain;
-    border:1px solid var(--border-subtle);
-    border-radius:10px; box-shadow:var(--shadow-card);
-    background:var(--surface-base); color:var(--text-primary,inherit);
-    padding:10px 12px;
-  }
-  .registry-column-popover .registry-column-controls {
-    max-inline-size:none; min-inline-size:0; padding:0;
-  }
-  .registry-column-popover-heading {
-    display:flex; align-items:center; justify-content:space-between;
-    gap:12px; font-size:13px;
-  }
-  .registry-column-popover-heading > button {
-    min-block-size:32px; border:0; background:transparent;
-    color:var(--interactive-text); cursor:pointer;
-    padding:3px 5px; font-size:12px;
-  }
-  .registry-column-head { vertical-align:middle; }
-  .registry-column-head .registry-column-details > summary {
-    min-block-size:36px; padding-block:0;
-  }
-}
-
 /* Finance desk: work first, one review action, bounded source facts. */
 @layer composition {
   .finance-center { gap:16px; }
