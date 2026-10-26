@@ -1,5 +1,6 @@
 "use client";
 
+import { Tabs } from "antd";
 import { useState } from "react";
 import { OperatorCaseInbox } from "./operator-case-inbox";
 import { CustomerContactQueue } from "./customer-contact-queue";
@@ -17,28 +18,32 @@ export function OperationsInterventionCenter({ onOpenOrder, refreshVersion }: Re
   refreshVersion: number;
 }>) {
   const [queue, setQueue] = useState<Queue>("cases");
-  const [visited, setVisited] = useState<ReadonlyArray<Queue>>(["cases"]);
   return <section className="ops-decision-center" data-testid="operations-interventions" aria-labelledby="ops-decision-title">
     <header className="ops-decision-heading">
       <div><h2 id="ops-decision-title">مركز القرارات التشغيلية</h2>
         <p>حدد نوع التدخل، ثم افتح الملف المرتبط لإجراء المراجعة المصرح بها دون مغادرة العمليات.</p></div>
       <span className="ops-decision-scope">قوائم المصدر المعتمد؛ ليست إحصاءً موحدًا لكل الحالات</span>
     </header>
-    <fieldset className="ops-decision-switch"><legend className="visually-hidden">نوع التدخل</legend>
-      {queues.map(item => <button type="button" key={item.id} onClick={() => { setQueue(item.id); setVisited(current => current.includes(item.id) ? current : [...current, item.id]); }}
-        className={queue === item.id ? "is-current" : ""} aria-pressed={queue === item.id}>
-        {item.label}
-      </button>)}
-    </fieldset>
-    <div className="ops-decision-description" role="status">{queues.find(item => item.id === queue)?.note}</div>
-    {visited.includes("cases") ? <div className="ops-decision-pane" hidden={queue !== "cases"}>
-      <OperatorCaseInbox onOpenOrder={onOpenOrder} refreshVersion={refreshVersion} active={queue === "cases"} />
-    </div> : null}
-    {visited.includes("contacts") ? <div className="ops-decision-pane" hidden={queue !== "contacts"}>
-      <CustomerContactQueue onOpenOrder={onOpenOrder} refreshVersion={refreshVersion} active={queue === "contacts"} />
-    </div> : null}
-    {visited.includes("cancellations") ? <div className="ops-decision-pane" hidden={queue !== "cancellations"}>
-      <CancellationRequestInbox onOpenOrder={onOpenOrder} refreshVersion={refreshVersion} active={queue === "cancellations"} />
-    </div> : null}
+    <Tabs
+      activeKey={queue}
+      destroyOnHidden={false}
+      onChange={(key) => {
+        if (key === "cases" || key === "contacts" || key === "cancellations") setQueue(key);
+      }}
+      items={queues.map((item) => ({
+        key: item.id,
+        label: item.label,
+        children: <div className="ops-decision-pane">
+          <div className="ops-decision-description" role="status">{item.note}</div>
+          {item.id === "cases" ? (
+            <OperatorCaseInbox onOpenOrder={onOpenOrder} refreshVersion={refreshVersion} active={queue === "cases"} />
+          ) : item.id === "contacts" ? (
+            <CustomerContactQueue onOpenOrder={onOpenOrder} refreshVersion={refreshVersion} active={queue === "contacts"} />
+          ) : (
+            <CancellationRequestInbox onOpenOrder={onOpenOrder} refreshVersion={refreshVersion} active={queue === "cancellations"} />
+          )}
+        </div>,
+      }))}
+    />
   </section>;
 }
