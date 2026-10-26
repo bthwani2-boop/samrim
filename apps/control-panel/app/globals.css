@@ -779,13 +779,13 @@
   .workspace-side-drawer-heading strong { font-size: 16px; font-weight: 750; }
   .workspace-side-drawer-heading small { color: var(--text-muted); font-size: 11px; }
   .workspace-side-drawer-controls { display: flex; align-items: center; gap: 6px; flex: none; }
-  .workspace-side-icon {
+  .workspace-side-drawer-controls .workspace-side-icon {
     display: grid; place-items: center; inline-size: 34px; block-size: 34px;
     padding: 0; border: 1px solid var(--border-subtle); border-radius: 8px;
     background: var(--surface-muted); color: var(--color-primary);
     font-size: 21px; cursor: pointer;
   }
-  .workspace-side-icon:disabled { opacity: .4; cursor: not-allowed; }
+  .workspace-side-drawer-controls .workspace-side-icon:disabled { opacity: .4; cursor: not-allowed; }
   .workspace-side-icon:focus-visible, .workspace-side-drawer :is(a,button,summary):focus-visible {
     outline: 2px solid var(--interactive-text); outline-offset: 2px;
   }

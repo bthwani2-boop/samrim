@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "antd";
 import { createContext, type KeyboardEvent, type PointerEvent, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 type RecordView = Readonly<{ expanded: boolean; canExpand: boolean; toggleExpanded: () => void; expandForEditing: () => void }>;
@@ -153,14 +154,14 @@ export function AdaptiveRecordPanel({ title, subtitle, children, actions, onClos
       </div>
       <div className="workspace-side-drawer-controls">
         {(onPrevious || onNext) ? <>
-          <button type="button" className="workspace-side-icon" disabled={!onPrevious} onClick={onPrevious} aria-label="السجل السابق" title="السجل السابق">›</button>
-          <button type="button" className="workspace-side-icon" disabled={!onNext} onClick={onNext} aria-label="السجل التالي" title="السجل التالي">‹</button>
+          <Button type="text" className="workspace-side-icon" disabled={!onPrevious} onClick={onPrevious} aria-label="السجل السابق" title="السجل السابق">›</Button>
+          <Button type="text" className="workspace-side-icon" disabled={!onNext} onClick={onNext} aria-label="السجل التالي" title="السجل التالي">‹</Button>
         </> : null}
-        {view?.canExpand ? <button type="button" className="workspace-side-icon adaptive-record-expand" onClick={view.toggleExpanded}
+        {view?.canExpand ? <Button type="text" className="workspace-side-icon adaptive-record-expand" onClick={view.toggleExpanded}
           aria-label={view.expanded ? "استعادة عرض القائمة والملف" : "توسيع ملف السجل"} title={view.expanded ? "استعادة القائمة" : "توسيع الملف"}>
           <span aria-hidden="true">{view.expanded ? "⤡" : "⤢"}</span>
-        </button> : null}
-        <button type="button" className="workspace-side-icon" onClick={onClose} aria-label="إغلاق التفاصيل" title="العودة إلى القائمة">×</button>
+        </Button> : null}
+        <Button type="text" className="workspace-side-icon" onClick={onClose} aria-label="إغلاق التفاصيل" title="العودة إلى القائمة">×</Button>
       </div>
     </header>
     <div className="workspace-side-drawer-scroll">{children}</div>
