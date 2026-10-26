@@ -1,6 +1,7 @@
 "use client";
 
 import { captainAssignmentStateLabel, formatOrderDate, type OperatorOperationListItem, type OperatorOperationsSummary, orderStateLabel } from "@bthwani/dsh";
+import { Alert, Button, Empty, Flex, Input, Select, Spin, Tag } from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
@@ -289,56 +290,79 @@ export function OperationsWorkspace() {
       {view === "dispatch" ? <OperationsDispatchOverview state={state} summary={summary}
         onState={next => navigate({view:"dispatch",state:next})}
         onView={next => navigate({view:next,state:""})} /> : null}
-      <div className="ops-tools">
-        <search className="ops-search" aria-label="البحث في الطلبات">
-          <form noValidate onSubmit={(event) => {
-            event.preventDefault();
-            navigate({ view, state: "", q: search.trim().slice(0, 128) });
-          }}>
-            <label className="visually-hidden" htmlFor="ops-search-input">رقم الطلب أو اسم المتجر</label>
-            <input id="ops-search-input" type="search" value={search} maxLength={128}
-              onChange={(event) => setSearch(event.target.value)} placeholder="رقم الطلب أو اسم المتجر" />
-            <button type="submit" className="button button-secondary">بحث</button>
-          </form>
+      <Flex className="ops-tools" gap="middle" wrap align="end">
+        <search aria-label="البحث في الطلبات" style={{ flex: "1 1 280px", minWidth: 0 }}>
+          <label htmlFor="ops-search-input" className="visually-hidden">رقم الطلب أو اسم المتجر</label>
+          <Input.Search
+            id="ops-search-input"
+            aria-label="رقم الطلب أو اسم المتجر"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onSearch={() => navigate({ view, state: "", q: search.trim().slice(0, 128) })}
+            placeholder="رقم الطلب أو اسم المتجر"
+            maxLength={128}
+            allowClear
+            enterButton="بحث"
+          />
         </search>
-        <details className="ops-more-filters">
-          <summary>تصفية وترتيب</summary>
-          <div className="ops-more-filters-content">
-            <label className="ops-select-label">حالة الطلب
-              <select aria-label="تصفية حسب حالة الطلب" value={selectedFilter} onChange={(event) => {
-                const chosen = event.target.value;
-                navigate({ view: chosen === "attention" ? "attention" : view, state: chosen === "attention" ? "" : chosen });
-              }}>
-                {specificStates.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                {preciseState && !specificStates.some((item) => item.value === preciseState) ? <option value={preciseState}>{preciseState}</option> : null}
-              </select>
-            </label>
-            <label className="ops-select-label">الترتيب
-              <select id="operations-sort" aria-label="ترتيب الطلبات" value={sort} onChange={(event) => navigate({ sort: event.target.value })}>
-                <option value="updated_desc">الأحدث أولًا</option>
-                <option value="updated_asc">الأقدم أولًا</option>
-              </select>
-            </label>
-          </div>
-        </details>
-      </div>
+        <Flex vertical gap="small" style={{ flex: "1 1 160px", minWidth: 145 }}>
+          <label htmlFor="ops-order-state">حالة الطلب</label>
+          <Select
+            id="ops-order-state"
+            aria-label="تصفية حسب حالة الطلب"
+            value={selectedFilter}
+            options={[
+              ...specificStates.map((item) => ({ value: item.value, label: item.label })),
+              ...(preciseState && !specificStates.some((item) => item.value === preciseState)
+                ? [{ value: preciseState, label: preciseState }] : []),
+            ]}
+            onChange={(chosen: string) => navigate({
+              view: chosen === "attention" ? "attention" : view,
+              state: chosen === "attention" ? "" : chosen,
+            })}
+          />
+        </Flex>
+        <Flex vertical gap="small" style={{ flex: "1 1 160px", minWidth: 145 }}>
+          <label htmlFor="operations-sort">الترتيب</label>
+          <Select
+            id="operations-sort"
+            aria-label="ترتيب الطلبات"
+            value={sort}
+            onChange={(chosen: string) => navigate({ sort: chosen })}
+            options={[{ value: "updated_desc", label: "الأحدث أولًا" }, { value: "updated_asc", label: "الأقدم أولًا" }]}
+          />
+        </Flex>
+      </Flex>
 
       {hasSearch ? (
-        <div className="ops-active-search"><span>البحث: {searchFromUrl}</span>
-          <button type="button" onClick={() => { setSearch(""); navigate({ q: "" }); }}>مسح البحث ×</button>
-        </div>
+        <Flex align="center" gap="small" wrap role="status">
+          <Tag closable onClose={(event) => {
+            event.preventDefault();
+            setSearch("");
+            navigate({ q: "" });
+          }}>البحث: {searchFromUrl}</Tag>
+        </Flex>
       ) : null}
-      {error ? <div className="managed-status managed-status-warning" role="alert">
-        <strong>{errorStatus === 403 ? "لا تملك صلاحية قراءة الطلبات" : "تعذر قراءة الطلبات"}</strong>
-        <p>{error}</p><button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>إعادة المحاولة</button>
-      </div> : null}
+      {error ? (
+        <Alert
+          role="alert"
+          type="warning"
+          showIcon
+          message={errorStatus === 403 ? "لا تملك صلاحية قراءة الطلبات" : "تعذر قراءة الطلبات"}
+          description={error}
+          action={<Button disabled={loading} onClick={() => void load(true)}>إعادة المحاولة</Button>}
+        />
+      ) : null}
 
-      {overdueOnPage > 0 ? <div className="operations-attention-note" role="status">
-        <span>{overdueOnPage.toLocaleString("ar-YE")} طلب متأخر أو متعثر في الصفحة الحالية.</span>
-        <button type="button" className="button button-secondary" onClick={() => setPageReviewFilter("overdue")}>
-          عرض المتأخرة في الصفحة
-        </button>
-      </div> : null}
+      {overdueOnPage > 0 ? (
+        <Alert
+          type="warning"
+          showIcon
+          role="status"
+          message={`${overdueOnPage.toLocaleString("ar-YE")} طلب متأخر أو متعثر في الصفحة الحالية.`}
+          action={<Button onClick={() => setPageReviewFilter("overdue")}>عرض المتأخرة في الصفحة</Button>}
+        />
+      ) : null}
       <div className="ops-list-heading">
         <div className="ops-list-name"><h2 id="operations-list-title">{selectedViewLabel}</h2>
           <span className="muted">{operations.length} طلب في هذه الصفحة{visibleOperations.length !== operations.length ? " · معروض من الصفحة " + visibleOperations.length : ""}{summary ? ` · ${summary.totalCount} إجمالي النتائج` : ""}{nextCursor ? " · المزيد في الصفحة التالية" : ""}</span>
@@ -346,11 +370,16 @@ export function OperationsWorkspace() {
 
       </div>
 
-      {loading && operations.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" />جارٍ تحميل الطلبات...</div> : null}
-      {!loading && !error && operations.length === 0 ? <div className="collection-state">
-        <strong>{hasSearch ? "لا توجد طلبات تطابق البحث" : "لا توجد طلبات في هذا العرض"}</strong>
-        {hasSearch ? <button type="button" className="button button-secondary" onClick={() => { setSearch(""); navigate({ q: "" }); }}>عرض الطلبات</button> : null}
-      </div> : null}
+      {loading && operations.length === 0 ? (
+        <Flex gap="small" align="center" role="status">
+          <Spin size="small" /> جارٍ تحميل الطلبات...
+        </Flex>
+      ) : null}
+      {!loading && !error && operations.length === 0 ? (
+        <Empty description={hasSearch ? "لا توجد طلبات تطابق البحث" : "لا توجد طلبات في هذا العرض"}>
+          {hasSearch ? <Button onClick={() => { setSearch(""); navigate({ q: "" }); }}>عرض الطلبات</Button> : null}
+        </Empty>
+      ) : null}
 
       <div className="ops-results">
         {operations.length > 0 ? (
@@ -362,15 +391,33 @@ export function OperationsWorkspace() {
                 <th scope="col">المتجر</th>
                 <th scope="col">الحالة</th>
                 <RegistryColumnHeader label="الكابتن" active={pageCaptainFilter !== "all"} scope="page">
-                  <label>الإسناد<select value={pageCaptainFilter} onChange={(event) => setPageCaptainFilter(event.target.value)}>
-                    <option value="all">الكل</option><option value="assigned">مسند</option><option value="unassigned">غير مسند</option>
-                  </select></label>
+                  <Flex vertical gap="small">
+                    <label htmlFor="ops-captain-filter">الإسناد</label>
+                    <Select
+                      id="ops-captain-filter"
+                      aria-label="تصفية الإسناد في الصفحة"
+                      size="small"
+                      value={pageCaptainFilter}
+                      onChange={(value: string) => setPageCaptainFilter(value)}
+                      options={[{ value: "all", label: "الكل" }, { value: "assigned", label: "مسند" }, { value: "unassigned", label: "غير مسند" }]}
+                      style={{ minWidth: 118 }}
+                    />
+                  </Flex>
                 </RegistryColumnHeader>
                 <th scope="col">آخر تحديث</th>
                 <RegistryColumnHeader label="المتابعة" active={pageReviewFilter !== "all"} scope="page">
-                  <label>حالة المتابعة<select value={pageReviewFilter} onChange={(event) => setPageReviewFilter(event.target.value)}>
-                    <option value="all">الجميع</option><option value="overdue">متعثر أو متأخر</option><option value="action">له إجراء متاح</option>
-                  </select></label>
+                  <Flex vertical gap="small">
+                    <label htmlFor="ops-review-filter">حالة المتابعة</label>
+                    <Select
+                      id="ops-review-filter"
+                      aria-label="تصفية المتابعة في الصفحة"
+                      size="small"
+                      value={pageReviewFilter}
+                      onChange={(value: string) => setPageReviewFilter(value)}
+                      options={[{ value: "all", label: "الجميع" }, { value: "overdue", label: "متعثر أو متأخر" }, { value: "action", label: "له إجراء متاح" }]}
+                      style={{ minWidth: 145 }}
+                    />
+                  </Flex>
                 </RegistryColumnHeader>
                 <th scope="col">فتح الطلب</th>
               </tr></thead>
@@ -393,7 +440,7 @@ export function OperationsWorkspace() {
                       {!stageAttention && operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt)) ? <span className="muted">{operationalStageElapsed(item.stageStartedAt, ageClock || Date.parse(item.updatedAt))}</span> : null}
                       {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
                     </div></td>
-                    <td><button type="button" className="ops-row-open" aria-label={(nextAction || needsReview ? "مراجعة" : "تفاصيل") + " طلب " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => openOrder(item.orderId)}>{nextAction || needsReview ? "مراجعة" : "تفاصيل"}</button></td>
+                    <td><Button aria-label={(nextAction || needsReview ? "مراجعة" : "تفاصيل") + " طلب " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => openOrder(item.orderId)}>{nextAction || needsReview ? "مراجعة" : "تفاصيل"}</Button></td>
                   </tr>;
                 })}
               </tbody>
@@ -419,7 +466,7 @@ export function OperationsWorkspace() {
                   </div>
                   <div className="ops-mobile-order-bottom">
                     <time dateTime={item.updatedAt}>آخر تحديث: {formatOrderDate(item.updatedAt)}</time>
-                    <button type="button" className="ops-row-open" aria-label={(nextAction || needsReview ? "مراجعة الطلب" : "تفاصيل الطلب") + " رقم " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => openOrder(item.orderId)}>{nextAction || needsReview ? "مراجعة الطلب" : "تفاصيل الطلب"}</button>
+                    <Button aria-label={(nextAction || needsReview ? "مراجعة الطلب" : "تفاصيل الطلب") + " رقم " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => openOrder(item.orderId)}>{nextAction || needsReview ? "مراجعة الطلب" : "تفاصيل الطلب"}</Button>
                   </div>
                 </li>;
               })}
